@@ -54,6 +54,71 @@ afterEach(() => {
   cleanup();
 });
 
+/**
+ * §T976 — THE PUBLISHER HALF, AT ITS CONSTRUCTION SITE.
+ *
+ * The seam's own tests assert the NUMBERS at exact values. These assert the thing §V205
+ * keeps catching: that the resolver is reachable from a real document through the hook the
+ * app actually mounts, and is merged into the composition root's channel resolver.
+ * `createInferenceSources` was fully tested and had exactly one construction site — its
+ * own GPU test — the last time nobody checked, and that is B25's whole shape.
+ */
+describe("§T976 — a real document's Depth node publishes its timing channels", () => {
+  const frame = { frameIndex: 0, timeSeconds: 0, absTimeSeconds: 0 } as never;
+  const askThrough = (view: { result: { current: { resolver: (c: string, ctx: never) => unknown } } }, channel: string) =>
+    view.result.current.resolver(channel, { frame } as never);
+
+  it("answers `<nodeName>:ready` for E44's Depth node, tracked from the real graph", async () => {
+    const graph = sounding!.graph as GraphDocument;
+    const view = renderHook(() => useModelInference(null));
+    act(() => {
+      view.result.current.track(graph, planFor(graph));
+    });
+    await settleRefresh();
+
+    // jsdom has no Worker, so no result can ever land here — which is exactly the state
+    // the channel has to describe honestly. NOT ready, as a NUMBER: a switch expression
+    // reading this must get 0, not an unknown channel that fails the expression.
+    expect(askThrough(view, "depth1:ready")).toBe(0);
+    expect(askThrough(view, "depth1:lagFrames")).toBe(0);
+    expect(askThrough(view, "depth1:fps")).toBe(0);
+  });
+
+  it("refuses a channel it does not own, so it can sit in the merge without shadowing", async () => {
+    const graph = sounding!.graph as GraphDocument;
+    const view = renderHook(() => useModelInference(null));
+    act(() => {
+      view.result.current.track(graph, planFor(graph));
+    });
+    await settleRefresh();
+
+    // The three resolvers ahead of it own `midi:`, `osc:` and bare node names. This one
+    // must answer for none of those, and for no unknown field either.
+    expect(askThrough(view, "midi:cc1")).toBeUndefined();
+    expect(askThrough(view, "osc:/x")).toBeUndefined();
+    expect(askThrough(view, "depth1")).toBeUndefined();
+    expect(askThrough(view, "depth1:whatever")).toBeUndefined();
+  });
+
+  it("stops answering for a node the document no longer has", async () => {
+    const graph = sounding!.graph as GraphDocument;
+    const view = renderHook(() => useModelInference(null));
+    act(() => {
+      view.result.current.track(graph, planFor(graph));
+    });
+    await settleRefresh();
+    expect(askThrough(view, "depth1:ready")).toBe(0);
+
+    act(() => {
+      view.result.current.track(EMPTY_GRAPH, planFor(EMPTY_GRAPH));
+    });
+    await settleRefresh();
+    // A channel that outlived its node would let an expression keep reading a number for
+    // something nobody can see — the stale-notice defect one seam over.
+    expect(askThrough(view, "depth1:ready")).toBeUndefined();
+  });
+});
+
 describe("the model notice for a document whose star node has no model", () => {
   it("names what is ON THE SCREEN for E44 Sounding, and warns rather than offers", async () => {
     expect(sounding, "E44 Sounding is missing from the catalogue").toBeDefined();

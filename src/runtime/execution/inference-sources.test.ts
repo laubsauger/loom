@@ -51,6 +51,15 @@ function frameBuffer(byte: number): ArrayBuffer {
  * lands mid-run and a test that used one would be asserting on a half-finished state —
  * which is how a cadence test goes green while the cadence does nothing.
  */
+/** A promise this test resolves by hand, so "in flight" is a state it can hold open. */
+function deferred() {
+  let resolve: (value: Uint8Array) => void = () => undefined;
+  const promise = new Promise<Uint8Array>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve: (value: Uint8Array) => resolve(value) };
+}
+
 async function settled(): Promise<void> {
   for (let i = 0; i < 8; i += 1) await Promise.resolve();
 }
@@ -464,6 +473,169 @@ describe("uploads and tracking", () => {
       await frozenSources.settle(0);
       await frozenSources.settle(1);
       expect(frozen.log).toHaveLength(1);
+    });
+  });
+
+  /**
+   * §T976 — THE TIMING, PUBLISHED AS CHANNELS.
+   *
+   * The owner asked for a CHOP-style readout AND for smoothing to compensate when the
+   * rate is low, and those are one feature: a fixed lerp is a constant pretending to know
+   * the lag. So these assert the numbers a lerp would be DRIVEN by, at exact values —
+   * a "it changed" assertion would pass on a resolver returning the frame index.
+   */
+  describe("§T976 — the timing channels", () => {
+    /*
+     * The ABSOLUTE clock, and the timeline one deliberately set to something ELSE.
+     *
+     * §T495's field, read through `absTimeSecondsOf`. If the resolver ever slipped back to
+     * `timeSeconds` the delay assertions below would come out wrong rather than merely
+     * equal — a fixture that set both to the same number would go green on the bug.
+     */
+    const frameAt = (frameIndex: number, seconds: number) =>
+      ({ frameIndex, timeSeconds: seconds * 1000 + 7, absTimeSeconds: seconds } as never);
+    const ask = (
+      sources: ReturnType<typeof createInferenceSources>,
+      channel: string,
+      frameIndex: number,
+      seconds: number,
+    ) => sources.resolver(channel, { frame: frameAt(frameIndex, seconds) } as never);
+
+    it("`ready` means A RESULT LANDED, never `the model downloaded`", async () => {
+      // The load-bearing one: it is what a source switch reads, and a model that is
+      // present but has produced nothing must read NOT ready — otherwise the switch flips
+      // to a node still publishing its neutral fallback, which is §B156's pair arriving
+      // in a consumer that cannot tell them apart either.
+      const gate = deferred();
+      const sources = createInferenceSources({
+        readBuffer: async () => frameBuffer(1),
+        run: async () => gate.promise,
+      });
+      sources.track([entry("depth1", { channel: "depth1" })]);
+
+      sources.sample(0, 0);
+      await settled();
+      // Tracked, sampling, in flight — and NOT ready.
+      expect(ask(sources, "depth1:ready", 0, 0)).toBe(0);
+
+      gate.resolve(new Uint8Array([7, 7, 7, 255]));
+      await settled();
+      expect(ask(sources, "depth1:ready", 1, 1)).toBe(1);
+    });
+
+    it("reports the lag in FRAMES and in SECONDS, from the frame the result was computed for", async () => {
+      const sources = createInferenceSources({ readBuffer: async () => frameBuffer(1), ...echoRunner() });
+      sources.track([entry("depth1", { channel: "depth1" })]);
+      sources.sample(10, 100);
+      await settled();
+
+      // Asked about frame 16 at t=100.5: six frames and half a second after the result.
+      expect(ask(sources, "depth1:lagFrames", 16, 100.5)).toBe(6);
+      expect(ask(sources, "depth1:delaySeconds", 16, 100.5)).toBeCloseTo(0.5);
+      // At the frame it was computed for, the lag is zero — which is what an offline take
+      // reads by construction, because `settle` blocks for THIS frame's result (§V586).
+      expect(ask(sources, "depth1:lagFrames", 10, 100)).toBe(0);
+    });
+
+    it("measures fps and the realtime factor from TWO clocks, not from a setting", async () => {
+      const sources = createInferenceSources({ readBuffer: async () => frameBuffer(1), ...echoRunner() });
+      sources.track([entry("depth1", { channel: "depth1" })]);
+
+      // One result is not a rate. Reporting one would be inventing a denominator.
+      sources.sample(0, 0);
+      await settled();
+      expect(ask(sources, "depth1:fps", 0, 0)).toBe(0);
+      expect(ask(sources, "depth1:realtimeFactor", 0, 0)).toBe(0);
+
+      // Frames every 0.1 s; the second result lands 0.4 s after the first.
+      sources.sample(1, 0.1);
+      await settled();
+      sources.sample(2, 0.2);
+      await settled();
+      sources.sample(3, 0.3);
+      await settled();
+      sources.sample(4, 0.4);
+      await settled();
+      expect(ask(sources, "depth1:fps", 4, 0.4)).toBeCloseTo(10, 5);
+      // 0.1 s a frame against 0.1 s an inference: keeping up exactly.
+      expect(ask(sources, "depth1:realtimeFactor", 4, 0.4)).toBeCloseTo(1, 5);
+    });
+
+    it("REFUSES a channel it does not own, so a typo is not a silent zero", async () => {
+      const sources = createInferenceSources({ readBuffer: async () => frameBuffer(1), ...echoRunner() });
+      sources.track([entry("depth1", { channel: "depth1" })]);
+      await sources.settle(0);
+
+      // An unknown FIELD and an unknown NODE both fall through to the next resolver. A 0
+      // here would turn `depth1:lagFrmes` into a number a document would happily use.
+      expect(ask(sources, "depth1:lagFrmes", 0, 0)).toBeUndefined();
+      expect(ask(sources, "other:ready", 0, 0)).toBeUndefined();
+      // And a bare name is ANALYZE's namespace, never this one.
+      expect(ask(sources, "depth1", 0, 0)).toBeUndefined();
+    });
+
+    it("answers zero, WITH `ready` zero beside it, before the first result", async () => {
+      // §T715 says a node with no result reports no AGE rather than 0. A channel cannot
+      // express absence — `undefined` is an UNKNOWN CHANNEL and fails the expression — so
+      // `ready` carries it instead, and this asserts the pairing that makes it honest.
+      const sources = createInferenceSources({
+        readBuffer: async () => frameBuffer(1),
+        run: async () => new Promise<Uint8Array>(() => undefined),
+      });
+      sources.track([entry("depth1", { channel: "depth1" })]);
+      expect(ask(sources, "depth1:ready", 5, 5)).toBe(0);
+      expect(ask(sources, "depth1:lagFrames", 5, 5)).toBe(0);
+      expect(ask(sources, "depth1:fps", 5, 5)).toBe(0);
+      expect(ask(sources, "depth1:delaySeconds", 5, 5)).toBe(0);
+    });
+
+    it("publishes NOTHING for an unnamed node rather than under a name nobody can type", async () => {
+      const sources = createInferenceSources({ readBuffer: async () => frameBuffer(1), ...echoRunner() });
+      sources.track([entry("depth1")]);
+      await sources.settle(0);
+      expect(ask(sources, "depth1:ready", 0, 0)).toBeUndefined();
+    });
+  });
+
+  /**
+   * §T978 — the recovery gesture's half of the state.
+   */
+  describe("§T978 — reset", () => {
+    it("forgets ONE node's result, so `ready` goes false and the fallback returns", async () => {
+      const sources = createInferenceSources({ readBuffer: async () => frameBuffer(4), ...echoRunner() });
+      sources.track([entry("a", { channel: "a" }), entry("b", { channel: "b" })]);
+      await sources.settle(0);
+      expect(sources.ready("a")).toBe(true);
+      expect(sources.ready("b")).toBe(true);
+
+      sources.reset("a");
+
+      expect(sources.ready("a")).toBe(false);
+      // Back to the identity, so the document still renders while it recomputes.
+      expect(sources.currentFrame("a")!.bytes[0]).toBe(GREY);
+      // ⚠ And ONLY that node: the pulse is on one node, so a `track([])` would be the
+      // wrong blast radius (§V126's lesson, one seam over).
+      expect(sources.ready("b")).toBe(true);
+    });
+
+    it("lets a HELD node compute again — a freeze must not survive its own reset", async () => {
+      let level = 1;
+      const sources = createInferenceSources({
+        readBuffer: async () => frameBuffer(level),
+        run: async () => new Uint8Array([level, level, level, 255]),
+      });
+      sources.track([entry("depth1", { hold: true, channel: "depth1" })]);
+      await sources.settle(0);
+      expect(sources.currentFrame("depth1")!.bytes[0]).toBe(1);
+
+      level = 9;
+      await sources.settle(1);
+      expect(sources.currentFrame("depth1")!.bytes[0]).toBe(1);
+
+      // Hold means "keep the one you computed". Reset says there is no longer one.
+      sources.reset("depth1");
+      await sources.settle(2);
+      expect(sources.currentFrame("depth1")!.bytes[0]).toBe(9);
     });
   });
 

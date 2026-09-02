@@ -1119,3 +1119,54 @@ describe("§V356/B68 — every command has something that invokes it", () => {
     expect(ghosts.map((entry) => entry.name), "not declared in any CommandMap — delete these").toEqual([]);
   });
 });
+
+/**
+ * §T976 — THE FOURTH CHANNEL RESOLVER IS IN THE MERGE.
+ *
+ * The rest of this file derives its subjects from the source tree, which is the right
+ * shape and cannot see this one: `externalChannels` is a `useCallback` inside the
+ * composition root, so "is inference's resolver actually in it" is a question about the
+ * BODY of one function and there is no seam to ask. It is asked here anyway, because the
+ * failure it guards is this file's own subject — a resolver that is built, unit-tested at
+ * exact values, and reachable by nobody. `createAnalyzeChannels` was in precisely that
+ * state (B25), one resolver earlier in the same merge.
+ *
+ * Comments are stripped first, for the reason §B171's worker guard strips them: the
+ * docblock above the merge names all four resolvers at length, so a whole-file scan would
+ * go green on a version where the prose survived and a call was deleted.
+ */
+describe("§T976 — inference publishes into the composition root's channel merge", () => {
+  const appSource = readFileSync(resolve(ROOT, "src/app/app.tsx"), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+
+  const merge = /const externalChannels[\s\S]*?\n {2}\);/.exec(appSource)?.[0] ?? "";
+
+  it("is reading the real merge, or it is measuring nothing", () => {
+    expect(merge, "the externalChannels callback was not found in app.tsx").not.toBe("");
+  });
+
+  it("merges FOUR resolvers, inference among them", () => {
+    /*
+     * The CALL, not the name — and this assertion was WRITTEN WRONG FIRST, which is worth
+     * recording. `toContain("depth.resolver")` passes on the dependency ARRAY at the
+     * bottom of the same callback, so deleting the call from the body left the guard
+     * green. A wiring test that a mutation cannot redden is decoration; a name that
+     * appears in a dependency list is not evidence that anything invokes it.
+     *
+     * Named individually rather than counted, too: a count would pass on four calls to
+     * the same resolver, and the property is that each SOURCE has a door into the value
+     * graph.
+     */
+    expect(merge).toContain("midi.resolver(channel, context)");
+    expect(merge).toContain("osc.resolver(channel, context)");
+    expect(merge).toContain("analyze.resolver(channel, context)");
+    expect(merge).toContain("depth.resolver(channel, context)");
+  });
+
+  it("hands the hook the BUS, or §T978's reset pulse fires into nothing", () => {
+    // The pulse names `runtime.resetInference`, which only this hook registers. Without
+    // the bus the parameter page grows a button that lies (§V123).
+    expect(appSource).toContain("useModelInference(backend, runtime.nodeRuntime, runtime.bus)");
+  });
+});

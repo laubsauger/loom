@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CompiledGraph } from "@compiler/index.ts";
-import type { FrameEvaluationInput } from "@domain/types/frame.ts";
+import type { ChannelResolver } from "@domain/parameters/resolve.ts";
+import { absTimeSecondsOf, type FrameEvaluationInput } from "@domain/types/frame.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
 import type { LoomBackend } from "@runtime/backend/index.ts";
 import type { NodeMetricSink } from "@runtime/telemetry/index.ts";
@@ -38,7 +39,17 @@ import {
   neutralPose,
   packPoseInput,
 } from "@runtime/models/pose-runner.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
 import type { Notice } from "./notices.tsx";
+
+declare module "@domain/types/commands.ts" {
+  interface CommandMap {
+    "runtime.resetInference": {
+      input: { nodeIds?: readonly string[] };
+      output: { reset: number };
+    };
+  }
+}
 
 /**
  * Depth inference, composed (T385, T715, §V205).
@@ -184,6 +195,8 @@ interface DepthTarget {
   readonly size: readonly [number, number];
   /** This node's own run settings, resolved from its parameters (§T965). */
   readonly settings: InferenceRunSettings;
+  /** The node's NAME — what its timing channels are addressed by (§T976, §V129). */
+  readonly channel: string | undefined;
 }
 
 /**
@@ -247,11 +260,25 @@ export interface ModelInferenceBinding {
   readonly settle: (frameIndex: number) => Promise<void>;
   /** Consent, progress and failure, for the strip under the top bar. */
   readonly notices: readonly Notice[];
+  /**
+   * §T976 — the fourth resolver in the composition root's `externalChannels` merge.
+   *
+   * Answers `<nodeName>:ready | :lagFrames | :delaySeconds | :fps | :realtimeFactor` and
+   * NOTHING else, so it composes in front of the others without shadowing them. Stable
+   * identity for the life of the hook, like analyze's, so putting it in the merge does not
+   * re-key the compile memo every render.
+   */
+  readonly resolver: ChannelResolver;
 }
 
 export function useModelInference(
   backend: LoomBackend | null | undefined,
   sink?: NodeMetricSink | undefined,
+  /**
+   * The bus §T978's reset pulse fires through. Optional so a test that only wants the
+   * seam can leave it out; the composition root passes the real one.
+   */
+  bus?: LoomBus | undefined,
 ): ModelInferenceBinding {
   const backendRef = useRef(backend);
   backendRef.current = backend;
@@ -398,6 +425,68 @@ export function useModelInference(
     [runnerFor],
   );
 
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════════════
+   * §T978 — `runtime.resetInference`, the command the Depth node's Reset pulse fires
+   * ═══════════════════════════════════════════════════════════════════════════════════
+   *
+   * WHAT IT CLEARS, and the scope is the whole design: the inference THREAD, and with it
+   * every model session, every provider ladder and every run in flight; then the named
+   * nodes' published results, so each goes back to its identity fallback and computes a
+   * fresh first one. §B171's arc produced the case — a rejected session promise cached
+   * forever — and while that instance is fixed, a download, a worker, a session and a
+   * ladder are four things that can wedge and "reload the tab" recovers none of them.
+   *
+   * ⚠ WHAT IT DOES NOT CLEAR: the cached weights. `acquire` reads the store before it
+   * reaches the network, so the rebuilt session loads from cache and this costs nothing.
+   * A reset that re-downloaded 94 MB would be worse than the state it was clearing, and
+   * §B175 records the model already re-downloading per origin more than anyone expects.
+   * `refresh` is called instead — the READ-ONLY half of acquisition, which is what turns a
+   * `failed` download state back into `ready` when the bytes were there all along.
+   *
+   * ⚠ NO PULSE ON LOAD AND NO AUTO-RESET. A gesture the user did not make is not a
+   * gesture — the same reasoning that rules against a completed download writing the
+   * user's document.
+   *
+   * REGISTERED HERE and not in `runtime-commands.ts`, which is the site with the pure
+   * `registerResetFeedbackCommand` so the headless MCP server registers the same body
+   * (§V39). The headless server has no inference thread at all, so the same registration
+   * there would be a command that lies — §V123's "a button that lies" one layer up.
+   */
+  const resetRef = useRef<(nodeIds: readonly string[] | undefined) => number>(() => 0);
+  resetRef.current = (nodeIds) => {
+    const wanted = nodeIds === undefined ? undefined : new Set(nodeIds);
+    const hit = targetsRef.current.filter(
+      (candidate) => wanted === undefined || wanted.has(candidate.nodeId),
+    );
+    // The THREAD goes first, and unconditionally: it is shared, so a wedged worker is not
+    // a per-node fact and refusing to drop it because the named node happens to be gone
+    // would leave the one state nothing else can clear.
+    workerRef.current?.dispose();
+    workerRef.current = null;
+    for (const target of hit) {
+      sources.reset(target.nodeId);
+      // Re-READ the cache (never the network): a failed download whose bytes are actually
+      // present becomes ready again instead of needing the notice's own retry.
+      void acquisition.refresh(target.descriptor);
+    }
+    return hit.length;
+  };
+
+  useEffect(() => {
+    if (bus === undefined || bus.hasCommand("runtime.resetInference")) return;
+    bus.registerCommand({
+      name: "runtime.resetInference",
+      description:
+        "Restart inference: the worker thread, model sessions and provider ladders, and the named nodes' results. Keeps the downloaded models.",
+      handler: (input) => ({
+        status: "applied",
+        output: { reset: resetRef.current(input.nodeIds) },
+        diagnostics: [],
+      }),
+    });
+  }, [bus]);
+
   const track = useCallback(
     (graph: GraphDocument, compiled: CompiledGraph | null) => {
       const allocated = new Set((compiled?.resources ?? []).map((resource) => resource.id));
@@ -426,6 +515,10 @@ export function useModelInference(
           descriptor: settings.descriptor,
           size: sized.get(resultId) ?? [1, 1],
           settings,
+          // §T976: the FLAT document's uniqued label, exactly as `analyzeChannelEntries`
+          // reads it from the same graph — so `depth1:ready` names the node the canvas
+          // shows and two instances of one component never collide.
+          channel: node.label,
         });
       }
       targetsRef.current = targets;
@@ -464,6 +557,7 @@ export function useModelInference(
         // one is allowed to start, and whether it stops after its first result.
         minIntervalSeconds: target.settings.minIntervalSeconds,
         hold: target.settings.hold,
+        ...(target.channel === undefined ? {} : { channel: target.channel }),
       }));
       sources.track(entries);
 
@@ -510,11 +604,18 @@ export function useModelInference(
         (candidate) => states[candidate.descriptor.id]?.kind === "ready",
       );
       if (!ready) return;
-      // Between frames, like analyze: `readBuffer` fails the frame guard from inside one.
-      // `timeSeconds` is the TIMELINE clock (§V44/§V172) — the rate limit is expressed in
-      // seconds and must not be measured against a wall reading, or the same document
-      // would re-run a different number of times on a slower machine.
-      queueMicrotask(() => sources.sample(frame.frameIndex, frame.timeSeconds));
+      /*
+       * Between frames, like analyze: `readBuffer` fails the frame guard from inside one.
+       *
+       * The ABSOLUTE clock (§T461/§T495), not the timeline one and never a wall reading
+       * (§V44). Two reasons, and both bite: the timeline clock WRAPS, so a looping
+       * document would report an inference rate that collapsed once a lap and a rate limit
+       * that reset with it; and a wall reading would make every gate that touches
+       * §T976's channels non-reproducible. `absTimeSecondsOf` falls back to `timeSeconds`
+       * on a transport that publishes no absolute clock, so an unbounded timeline keeps
+       * exactly the numbers it had.
+       */
+      queueMicrotask(() => sources.sample(frame.frameIndex, absTimeSecondsOf(frame)));
     },
     [sink, sources, states],
   );
@@ -547,7 +648,15 @@ export function useModelInference(
    * transport suites went red with nothing to do with depth, and the control at clean
    * HEAD passed. A hook whose consumer keys effects on it must return a stable value.
    */
-  return useMemo(() => ({ observe, track, settle, notices }), [observe, track, settle, notices]);
+  const resolver = useCallback<ChannelResolver>(
+    (channel, context) => sources.resolver(channel, context),
+    [sources],
+  );
+
+  return useMemo(
+    () => ({ observe, track, settle, notices, resolver }),
+    [observe, track, settle, notices, resolver],
+  );
 }
 
 /**

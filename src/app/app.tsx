@@ -280,7 +280,7 @@ export function App({
   const analyze = useAnalyzeChannels(backend, runtime.registry, runtime.nodeRuntime);
   // T385/T715: the depth seam, beside analyze because it is the same shape — a CPU half
   // outside the plan feeding a GPU half inside it (§V585).
-  const depth = useModelInference(backend, runtime.nodeRuntime);
+  const depth = useModelInference(backend, runtime.nodeRuntime, runtime.bus);
 
   /**
    * B27/T305 — the value graph, constructed. `createValueGraphSession` had no caller, so
@@ -306,17 +306,31 @@ export function App({
   const osc = useOscBridge();
 
   /**
-   * The value graph's external channels are a MERGE of THREE now, and the order still does
-   * not matter because no two namespaces can collide: MIDI answers only `midi:` names and
-   * OSC only `osc:` names (both CHECK the prefix rather than assuming it, §V665), and
-   * analyze answers node names, which can begin with neither since `:` is the addressing
-   * separator. Stated rather than relied on: a resolver that answered for everything would
-   * silently shadow the others.
+   * The value graph's external channels are a MERGE of FOUR now (§T976), and the order
+   * still does not matter because no two namespaces can collide:
+   *
+   *   MIDI       only `midi:` names        (CHECKS the prefix, §V665)
+   *   OSC        only `osc:` names         (CHECKS the prefix, §V665)
+   *   analyze    a bare node NAME, which can begin with neither and contains no `:`
+   *   inference  `<nodeName>:<field>` — a colon, a name it is currently TRACKING on the
+   *              left, and one of five known fields on the right; anything else is
+   *              `undefined` rather than 0, so `depth1:lagFrmes` stays an unknown channel
+   *
+   * Stated rather than relied on: a resolver that answered for everything would silently
+   * shadow the others, which is why each is written to refuse first.
    */
   const externalChannels = useCallback<ChannelResolver>(
     (channel, context) =>
-      midi.resolver(channel, context) ?? osc.resolver(channel, context) ?? analyze.resolver(channel, context),
-    [analyze.resolver, midi.resolver, osc.resolver],
+      midi.resolver(channel, context) ??
+      osc.resolver(channel, context) ??
+      analyze.resolver(channel, context) ??
+      // §T976: inference answers `<nodeName>:ready | :lagFrames | :delaySeconds | :fps |
+      // :realtimeFactor`. LAST, and it can be: it is the only one of the four that
+      // requires a colon AND a tracked node name on the left of it, so it cannot shadow
+      // anything. Publishing the timing is what lets a downstream lerp be DRIVEN by the
+      // measured lag instead of guessing it with a constant.
+      depth.resolver(channel, context),
+    [analyze.resolver, depth.resolver, midi.resolver, osc.resolver],
   );
 
   const valueGraph = useValueGraph(runtime, externalChannels);
@@ -1194,6 +1208,13 @@ export function App({
                 previewSinks={previewSinks}
                 valueHistory={valueHistory}
                 componentPath={editing.path}
+                /*
+                 * T969(b): the bus the KEYMAP dispatches on, which is the root one above
+                 * even while the pane edits a component through `editing.runtime.bus`.
+                 * Without it `mod+a` inside a component reached a bus the canvas had
+                 * vacated and refused with `selection.noCanvas`, silently.
+                 */
+                rootBus={runtime.bus}
                 orbits={insideComponent ? undefined : previewOrbits}
                 interest={insideComponent ? undefined : previewInterest}
               />

@@ -86,11 +86,19 @@ describe("§T965(c) — the schema is COMPUTED FROM THE CHOSEN MODEL", () => {
     expect(options).toContain(518);
     // Every option is a multiple of the ViT's 14-pixel patch; anything else is refused.
     for (const side of options) expect(side % 14).toBe(0);
-    // 518 is what it was exported at, so it is the default and says so.
     expect(schemaFor({})["inputSide"]?.label).toBe("Input Size");
     expect(
       enumOf({}, "inputSide").options.find((option) => option.value === "518")?.label,
     ).toContain("exported");
+  });
+
+  it("SHIPS 266, not the export size — the live-webcam default (T976, owner)", () => {
+    // Four times fewer pixels. The export size is one click away and still labelled as
+    // the export size, so the trade is visible at the moment of choosing rather than
+    // being a number someone has to know.
+    expect(enumOf({}, "inputSide").default).toBe("266");
+    expect(depthSettingsFor({}).inputSide).toBe(266);
+    expect(266 % 14).toBe(0);
   });
 
   it("makes Input Size a REBUILD, never a uniform write (§V5)", () => {
@@ -123,6 +131,38 @@ describe("§T965(c) — the schema is COMPUTED FROM THE CHOSEN MODEL", () => {
     for (const key of Object.keys(depthNode.parameters)) {
       expect(Object.keys(schemaFor({ model: "fast" }))).toContain(key);
     }
+  });
+});
+
+describe("§T978 — the reset pulse", () => {
+  it("is a PULSE, so it lands on the parameter page by being a parameter (§T960)", () => {
+    const reset = schemaFor({})["reset"];
+    expect(reset?.type).toBe("pulse");
+    // `pulse` is already a parameter type that is a gesture rather than a value, so this
+    // needs no new control kind and no Depth pane — and it takes every parameter mode,
+    // so an expression crossing zero fires it too.
+    expect(reset?.type === "pulse" ? reset.fires : undefined).toBe("runtime.resetInference");
+    expect(reset?.type === "pulse" ? reset.input : undefined).toEqual({ nodeIds: ["$node"] });
+  });
+
+  it("SAYS the scope, including the half it does NOT touch", () => {
+    // ⚠ 94 MB re-downloaded by a misread button is worse than the stuck state it clears.
+    // The copy has to rule that out where the button is, not in a docblock.
+    const said = schemaFor({})["reset"]?.description ?? "";
+    expect(said).toContain("worker");
+    expect(said).toContain("session");
+    expect(said).toContain("never re-downloads");
+    expect(said).toContain("KEPT");
+    // It is also honest that the thread is shared, rather than implying per-node scope.
+    expect(said).toContain("shared");
+  });
+
+  it("fires a command that is NOT the feedback reset — a button that lies is worse than none", () => {
+    // §V123: the pulse must reach the thing it names. `runtime.resetFeedback` clears
+    // temporal history and knows nothing about a model session, so naming it here would
+    // have been a reset that silently did nothing to the state that was stuck.
+    const reset = schemaFor({})["reset"];
+    expect(reset?.type === "pulse" ? reset.fires : undefined).not.toBe("runtime.resetFeedback");
   });
 });
 
@@ -169,10 +209,10 @@ describe("§T965 — the backend is SHOWN and PICKABLE, and worded honestly", ()
 });
 
 describe("the run settings the app reads are the schema's own defaults", () => {
-  it("resolves an empty bag to the export size, the ladder and no cap", () => {
+  it("resolves an empty bag to the shipped default, the ladder and no cap", () => {
     const settings = depthSettingsFor({});
     expect(settings.modelId).toBe(DEPTH_ACCURATE.id);
-    expect(settings.inputSide).toBe(518);
+    expect(settings.inputSide).toBe(266);
     expect(settings.minIntervalSeconds).toBe(0);
     expect(settings.hold).toBe(false);
   });
@@ -189,8 +229,8 @@ describe("the run settings the app reads are the schema's own defaults", () => {
   it("REFUSES an input size the model would refuse, and falls back rather than failing", () => {
     // §T715's degrade rule: an illegal stored value must leave a renderable document. 500
     // is not a multiple of 14 and the session would reject the tensor outright.
-    expect(depthSettingsFor({ inputSide: "500" }).inputSide).toBe(518);
-    expect(depthSettingsFor({ inputSide: "266" }).inputSide).toBe(266);
+    expect(depthSettingsFor({ inputSide: "500" }).inputSide).toBe(266);
+    expect(depthSettingsFor({ inputSide: "518" }).inputSide).toBe(518);
   });
 
   it("reads Hold as the freshness policy the seam binds on", () => {

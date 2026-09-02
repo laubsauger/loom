@@ -5,7 +5,7 @@ import { createNodeRegistry } from "../../nodes/registry/registry.ts";
 import { allNodeDefinitions } from "../../nodes/definitions/index.ts";
 import { createVgpuBackend } from "../../runtime/backend/vgpu/vgpu-backend.ts";
 import { nodeGpuHost, probeDawn } from "../../runtime/backend/vgpu/node-gpu-host.ts";
-import { DEPTH_INPUT_SIDE } from "../../nodes/definitions/depth.ts";
+import { depthSettingsFor } from "../../nodes/definitions/depth.ts";
 import { depthToRgba, occOf } from "../../runtime/models/depth-runner.ts";
 import type { GraphDocument } from "../../domain/types/graph.ts";
 
@@ -92,7 +92,17 @@ describe("T974 — depth aspect handling", () => {
         resolution: [512, 256],
       });
       const packed = new Float32Array(await backend.readBuffer("scratch:depth:modelInput"));
-      const side = DEPTH_INPUT_SIDE;
+      /*
+       * The side the NODE is actually using, asked rather than assumed (T976).
+       *
+       * This read `DEPTH_INPUT_SIDE` when the export size was also the shipped default.
+       * §T976 lowered the default to 266 for live use — four times fewer pixels — and 518
+       * stopped being the number this buffer is strided by, so every probe below indexed
+       * a 266² buffer at a stride of 518 and read the wrong rows. The letterbox itself was
+       * fine; the ruler was not. Asking the node keeps this measuring the ASPECT
+       * behaviour it is named for at whatever size the node runs at.
+       */
+      const { inputSide: side } = depthSettingsFor(graph.nodes["depth"]!.parameters);
       const rowValue = (row: number): number => packed[(row * side + Math.floor(side / 2)) * 4] ?? Number.NaN;
 
       // The 2:1 source occupies the centred vertical HALF: rows in the top bar replicate

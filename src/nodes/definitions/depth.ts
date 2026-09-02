@@ -74,6 +74,21 @@ const PATCH = 14;
 const INPUT_SIDES = [19 * PATCH, 28 * PATCH, DEPTH_INPUT_SIDE, 46 * PATCH] as const;
 
 /**
+ * THE SHIPPED DEFAULT, and it is NOT the export size (T976, owner).
+ *
+ * 266 is 19 patches — **four times fewer pixels than 518** — and it is the right default
+ * for the case a Depth node is usually in: a live webcam, where a result that arrives is
+ * worth more than a result that is better. 518 stays exactly one click away and stays
+ * right for a still. The trade is visible at the moment of choosing rather than buried
+ * here, because every option prints its own measured cost.
+ *
+ * `DEPTH_INPUT_SIDE` remains 518 and remains the EXPORT size: it is what the graph was
+ * traced at, what the signature table records, and the fallback whenever a stored side is
+ * one this model would refuse. Two constants because they answer two questions.
+ */
+const DEPTH_DEFAULT_INPUT_SIDE = 19 * PATCH;
+
+/**
  * ═══════════════════════════════════════════════════════════════════════════════════
  * WHAT THIS NODE KNOWS ABOUT EACH MODEL (§T965(b), §T965(c))
  * ═══════════════════════════════════════════════════════════════════════════════════
@@ -132,6 +147,22 @@ function acceptsInputSize(modelId: string): boolean {
   const { shape } = signature.input;
   const spatial = shape.slice(-2);
   return spatial.length === 2 && spatial.every((axis) => !Number.isFinite(Number(axis)));
+}
+
+/**
+ * The side a PINNED model declares, or `undefined` when it leaves the size free.
+ *
+ * The other half of `acceptsInputSize`, and the reason it is not the same function
+ * inverted: a model with a fixed graph does not fall back to OUR default, it falls back to
+ * ITS OWN — feeding 266 to a graph that declares 192 is refused by the session, and the
+ * degrade rule says an unavailable choice degrades the rate, never the contract.
+ */
+function pinnedInputSide(modelId: string): number | undefined {
+  const signature = signatureFor(modelId);
+  if (signature === undefined) return undefined;
+  const spatial = signature.input.shape.slice(-2);
+  const height = Number(spatial[0]);
+  return Number.isFinite(height) && height > 0 ? height : undefined;
 }
 
 /**
@@ -237,9 +268,12 @@ export function depthSettingsFor(stored: Readonly<Record<string, unknown>>): Dep
     requested !== undefined &&
     INPUT_SIDES.includes(requested as (typeof INPUT_SIDES)[number]);
   const rateLimit = storedNumber(stored, "rateLimit") ?? 0;
+  // A pinned graph gets ITS OWN declared side; a free one gets the stored choice when the
+  // model would accept it, and the shipped default when it would not.
+  const fallback = pinnedInputSide(choice.descriptor.id) ?? DEPTH_DEFAULT_INPUT_SIDE;
   return {
     modelId: choice.descriptor.id,
-    inputSide: legal && requested !== undefined ? requested : DEPTH_INPUT_SIDE,
+    inputSide: legal && requested !== undefined ? requested : fallback,
     providers: depthProvidersFor(stored),
     minIntervalSeconds: rateLimit > 0 ? 1 / rateLimit : 0,
     hold: stored["refresh"] === "held",
@@ -314,7 +348,7 @@ function depthParameters(stored: Readonly<Record<string, unknown>>): ParameterSc
       // Structural: the preprocess buffer and its dispatch are sized from this, so it is a
       // REBUILD rather than a uniform write (§V5).
       compileTime: true,
-      default: String(DEPTH_INPUT_SIDE),
+      default: String(DEPTH_DEFAULT_INPUT_SIDE),
       options: INPUT_SIDES.map((side) => ({
         value: String(side),
         label:
@@ -331,6 +365,42 @@ function depthParameters(stored: Readonly<Record<string, unknown>>): ParameterSc
         `input image's own resolution.`,
     };
   }
+
+  /*
+   * §T978 — THE RECOVERY GESTURE, AND IT IS A PARAMETER (owner: "a reset button / reset
+   * pulse like TD has it in case it gets stuck or whatever. let's get that on the
+   * parameter page").
+   *
+   * No new control kind and no pane (§T960): `pulse` is already a parameter type that is a
+   * GESTURE rather than a value, so this lands on the parameter page by BEING a parameter
+   * — and it takes every parameter mode like anything else, so an expression crossing zero
+   * fires it too. A trigger you can only click is a button.
+   *
+   * THE CASE IS NOT HYPOTHETICAL. §B171's own arc produced one: a failed session load
+   * stayed in the worker's cache as a rejected promise, so no retry could ever succeed.
+   * That instance is fixed; the CLASS is not. An inference runtime has a download, a
+   * worker thread, a session and a provider ladder — four things that can wedge — and
+   * "reload the tab" is not a recovery for any of them.
+   *
+   * ⚠ SCOPE, AND THE COPY SAYS THE SCOPE. It resets the SESSION: the thread, the ladder,
+   * the published result and any run in flight. It does NOT touch the cached weights.
+   * 94 MB re-downloaded by a misread button is worse than the stuck state it was meant to
+   * clear, and §B175 records the model already re-downloading per origin more than anyone
+   * expects. Forgetting the model is a different control and would want a confirmation.
+   */
+  schema["reset"] = {
+    type: "pulse",
+    label: "Reset",
+    group: "Model",
+    fires: "runtime.resetInference",
+    input: { nodeIds: ["$node"] },
+    description:
+      "Restarts inference from a clean state: the worker thread, the model session, the " +
+      "execution-provider ladder, the published result and any run in flight. The node " +
+      "goes back to publishing its neutral output and computes a fresh first result. " +
+      "THE DOWNLOADED MODEL IS KEPT — this never re-downloads, and never spends anything. " +
+      "The thread is shared, so any other model node in the document restarts with it.",
+  };
 
   schema["refresh"] = {
     type: "enum",

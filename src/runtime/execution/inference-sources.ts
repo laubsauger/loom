@@ -1,5 +1,7 @@
 import type { NodeId } from "../../domain/types/ids.ts";
 import type { FrameEvaluationInput } from "../../domain/types/frame.ts";
+import type { ChannelResolver } from "../../domain/parameters/resolve.ts";
+import { absTimeSecondsOf } from "../../domain/types/frame.ts";
 
 /**
  * The CPU half of an inference node — the async seam the whole ML program rests on
@@ -105,6 +107,15 @@ export interface InferenceEntry {
    * rendering a different document from the one on screen.
    */
   readonly hold?: boolean;
+  /**
+   * The node's NAME, under which this entry publishes its timing channels (§T976).
+   *
+   * The user-facing identity, not the id, for §V129's reason and `AnalyzeEntry.channel`'s:
+   * `depth1:ready` is a readable driven-parameter reference and a uuid is not. Absent for
+   * an unnamed node, which then publishes nothing rather than publishing under a name
+   * nobody can type.
+   */
+  readonly channel?: string;
 }
 
 /** What a node's model does. Injected, so a pseudo-inference and a real model both plug in. */
@@ -130,11 +141,16 @@ export interface InferenceSources {
    * `frameIndex` is the frame that just closed, whose input the buffer now holds. It is
    * passed in rather than counted here because §V44 puts the clock in the caller.
    *
-   * `timeSeconds` is that frame's TIMELINE time, and it is what `minIntervalSeconds` is
-   * measured against — never a wall reading, or the same document would run the model a
-   * different number of times on a slower machine. Absent, no entry is rate limited.
+   * `absSeconds` is that frame's ABSOLUTE time (§T461/§T495) — the free-running clock that
+   * never resets at a timeline lap — and it is what BOTH the rate limit and every timing
+   * channel are measured against. Never a wall reading (§V44): the offline transport
+   * publishes an absolute clock too, so a take measures the same numbers twice. The
+   * timeline clock would have been wrong for a different reason: it WRAPS, so a looping
+   * document would report an inference rate that collapsed once a lap.
+   *
+   * Absent, no entry is rate limited and the rate channels report nothing measured.
    */
-  sample(frameIndex: number, timeSeconds?: number): void;
+  sample(frameIndex: number, absSeconds?: number): void;
   /**
    * NON-REALTIME fill policy. Resolves once every tracked entry holds a result computed
    * from THIS frame's input, so the picture a take renders does not depend on when a
@@ -167,6 +183,54 @@ export interface InferenceSources {
    * saying (§V469 — not silent, not fatal).
    */
   lastFailure(nodeId: NodeId): string | undefined;
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════════════
+   * §T976 — THE TIMING, PUBLISHED AS ORDINARY CHANNELS
+   * ═══════════════════════════════════════════════════════════════════════════════════
+   *
+   * The owner asked for "a secondary output like a CHOP readout that tells us frame rate,
+   * realtime factor, delay" and, in the same breath, for "some sort of smoothing or
+   * lerping to compensate in case the framerate is low". Those are ONE feature: **a fixed
+   * lerp is a constant pretending to know the lag.** A lerp driven by the MEASURED lag is
+   * right at 2 fps and at 20, so publishing these numbers is what makes the smoothing
+   * honest instead of guessed — and the smoother is then an ordinary Lag with an ordinary
+   * driven parameter, not a hidden constant inside this node.
+   *
+   * No new mechanism (§T942, §T960): this is `analyze`'s seam, answering a node NAME.
+   * `analyze` publishes a bare name; an inference node publishes `<name>:<field>`, because
+   * it has more than one number to say and `:` is already the addressing separator.
+   *
+   *   `depth1:ready`           1 once a result HAS LANDED, else 0.
+   *   `depth1:lagFrames`       frames between the frame the published result was computed
+   *                            from and the frame being rendered.
+   *   `depth1:delaySeconds`    the same distance on the absolute clock — what a lerp wants.
+   *   `depth1:fps`             completed inferences per second.
+   *   `depth1:realtimeFactor`  that rate over the DISPLAY rate. 1 is keeping up; 0.05 is
+   *                            one inference every twenty frames.
+   *
+   * ⚠ `ready` IS THE LOAD-BEARING ONE and its definition is exact: **the first successful
+   * RESULT, never "the model downloaded"**. A model present but yet to produce a frame
+   * reads NOT ready, or a switch driven by it flips to a node still publishing its neutral
+   * fallback — which is the §B156 pair (downloaded-and-computing vs downloaded-and-broken)
+   * arriving in a consumer that cannot tell them apart either.
+   *
+   * ⚠ AND THE ONE PLACE §T715's "no result reports NO age" CANNOT BE HONOURED AS ABSENCE.
+   * A channel that answers `undefined` is not a channel that says "unknown", it is an
+   * UNKNOWN CHANNEL, and the expression referencing it fails. So before the first result
+   * the timing fields read 0 — and `ready` reads 0 beside them, which carries exactly the
+   * information the absence carried. Reading a lag without reading `ready` is the mistake
+   * that makes; the pairing is the contract, and it is why `ready` exists as its own field
+   * rather than being inferred from a lag of zero.
+   */
+  readonly resolver: ChannelResolver;
+  /**
+   * §T978 — FORGET THIS NODE'S RESULT, so `ready` goes false and the identity fallback is
+   * published again. The recovery gesture's half of the state that lives in here.
+   *
+   * Deliberately NOT a `track([])`: that would drop every node. This is one node, because
+   * the pulse is on one node.
+   */
+  reset(nodeId: NodeId): void;
 }
 
 /** §V586's seam. Phrased as "is this a real-time presentation?" — see the module note. */
@@ -187,6 +251,14 @@ export function inferenceSourceIdFor(nodeId: string): string {
   return `infer:${nodeId}`;
 }
 
+/** The numeric fields, named once so the no-result answer and the switch cannot diverge. */
+const TIMING_FIELDS: ReadonlySet<string> = new Set([
+  "lagFrames",
+  "delaySeconds",
+  "fps",
+  "realtimeFactor",
+]);
+
 export function createInferenceSources(options: {
   readBuffer: (resourceId: string) => Promise<ArrayBuffer>;
   run: InferenceRunner;
@@ -201,8 +273,24 @@ export function createInferenceSources(options: {
   const inFlight = new Set<NodeId>();
   /** nodeId -> why the most recent run failed. Cleared by the next success (B156). */
   const failure = new Map<NodeId, string>();
-  /** nodeId -> the timeline time the last live run was ISSUED at (`minIntervalSeconds`). */
+  /** nodeId -> the absolute time the last live run was ISSUED at (`minIntervalSeconds`). */
   const issuedAt = new Map<NodeId, number>();
+  /** nodeId -> the absolute time the CURRENT result completed (§T976's rate and delay). */
+  const resultAt = new Map<NodeId, number>();
+  /** nodeId -> seconds between the last two completed results. 0 until there are two. */
+  const resultInterval = new Map<NodeId, number>();
+  /**
+   * The clock, as the CALLER last reported it (§V44 — this module reads none).
+   *
+   * `settle` takes no seconds: `onFrameRendered` hands it a frame INDEX and nothing else.
+   * Both offline drivers run the frame observer, and therefore `sample`, before rendering
+   * the frame they then settle, so the value standing here is that frame's. Documented
+   * rather than assumed, because if that order ever inverts the delay channels go one
+   * frame stale and nothing else changes.
+   */
+  let clockSeconds: number | undefined;
+  /** Seconds per DISPLAYED frame, from consecutive samples. 0 until two have arrived. */
+  let displayInterval = 0;
 
   const forget = (nodeId: NodeId): void => {
     latest.delete(nodeId);
@@ -210,6 +298,8 @@ export function createInferenceSources(options: {
     generation.delete(nodeId);
     failure.delete(nodeId);
     issuedAt.delete(nodeId);
+    resultAt.delete(nodeId);
+    resultInterval.delete(nodeId);
   };
 
   /**
@@ -221,13 +311,55 @@ export function createInferenceSources(options: {
    */
   const heldBack = (entry: InferenceEntry): boolean => entry.hold === true && latest.has(entry.nodeId);
 
-  const rateLimited = (entry: InferenceEntry, timeSeconds: number | undefined): boolean => {
+  const rateLimited = (entry: InferenceEntry, absSeconds: number | undefined): boolean => {
     const gap = entry.minIntervalSeconds ?? 0;
-    if (gap <= 0 || timeSeconds === undefined) return false;
+    if (gap <= 0 || absSeconds === undefined) return false;
     const last = issuedAt.get(entry.nodeId);
-    // A timeline that jumped BACKWARDS (a loop, a scrub) must not lock the node out until
-    // it catches up again, so anything but "later by less than the gap" is allowed.
-    return last !== undefined && timeSeconds >= last && timeSeconds - last < gap;
+    // A clock that jumped BACKWARDS must not lock the node out until it catches up again,
+    // so anything but "later by less than the gap" is allowed. The absolute clock never
+    // steps back — but `absTimeSecondsOf` falls back to the TIMELINE one on a transport
+    // that publishes no absolute reading, and that one wraps at every lap, so the guard
+    // earns its place rather than being defensive about an impossibility.
+    return last !== undefined && absSeconds >= last && absSeconds - last < gap;
+  };
+
+  /**
+   * §T976's five fields, per entry. Zero everywhere until a result lands — see the
+   * interface note on why absence is not expressible here and `ready` carries it instead.
+   */
+  const timingOf = (entry: InferenceEntry, frame: FrameEvaluationInput, field: string): number | undefined => {
+    const { nodeId } = entry;
+    if (field === "ready") return latest.has(nodeId) ? 1 : 0;
+    const stamped = sourceFrame.get(nodeId);
+    // No result yet: every timing field is 0, and `ready` beside it is 0. An UNKNOWN field
+    // still answers `undefined` — the two must not collapse, or `depth1:lagFrmes` becomes
+    // a silent zero instead of an unknown channel.
+    if (stamped === undefined) return TIMING_FIELDS.has(field) ? 0 : undefined;
+    switch (field) {
+      case "lagFrames":
+        return Math.max(0, frame.frameIndex - stamped);
+      case "delaySeconds": {
+        const at = resultAt.get(nodeId);
+        if (at === undefined) return 0;
+        return Math.max(0, absTimeSecondsOf(frame) - at);
+      }
+      case "fps": {
+        const interval = resultInterval.get(nodeId) ?? 0;
+        return interval > 0 ? 1 / interval : 0;
+      }
+      case "realtimeFactor": {
+        const interval = resultInterval.get(nodeId) ?? 0;
+        // One measurement over another: inference rate / display rate. Both come off the
+        // same clock, so a slow machine moves the numerator and the denominator together
+        // and the ratio still says "one inference every N frames" truthfully.
+        if (interval <= 0 || displayInterval <= 0) return 0;
+        return displayInterval / interval;
+      }
+      default:
+        // NOT ours. An unrecognised field must fall through to the next resolver rather
+        // than answer 0, or a typo becomes a silent zero instead of an unknown channel.
+        return undefined;
+    }
   };
 
   /**
@@ -249,6 +381,16 @@ export function createInferenceSources(options: {
       sourceFrame.set(nodeId, frameIndex);
       generation.set(nodeId, (generation.get(nodeId) ?? 0) + 1);
       failure.delete(nodeId);
+      // §T976: the RATE is the gap between two completed results, measured on the clock
+      // the caller last reported. A rate derived from one result is not a rate, so the
+      // interval stays 0 until there are two and `fps` says 0 rather than infinity.
+      if (clockSeconds !== undefined) {
+        const previous = resultAt.get(nodeId);
+        if (previous !== undefined && clockSeconds > previous) {
+          resultInterval.set(nodeId, clockSeconds - previous);
+        }
+        resultAt.set(nodeId, clockSeconds);
+      }
     } catch (error) {
       // A failed read (plan mid-swap, device recovering) or a failed run (model not
       // acquired, backend refused) keeps the previous value — §V144's "stale beats
@@ -276,11 +418,21 @@ export function createInferenceSources(options: {
       }
     },
 
-    sample(frameIndex, timeSeconds) {
+    sample(frameIndex, absSeconds) {
+      // The DISPLAY rate, from consecutive samples on the same clock the results use, so
+      // `realtimeFactor` is one measurement divided by another rather than a measurement
+      // divided by a setting. A backwards step (a loop on a transport with no absolute
+      // clock) is ignored rather than producing a negative interval.
+      if (absSeconds !== undefined) {
+        if (clockSeconds !== undefined && absSeconds > clockSeconds) {
+          displayInterval = absSeconds - clockSeconds;
+        }
+        clockSeconds = absSeconds;
+      }
       for (const entry of tracked) {
         if (inFlight.has(entry.nodeId)) continue;
-        if (heldBack(entry) || rateLimited(entry, timeSeconds)) continue;
-        if (timeSeconds !== undefined) issuedAt.set(entry.nodeId, timeSeconds);
+        if (heldBack(entry) || rateLimited(entry, absSeconds)) continue;
+        if (absSeconds !== undefined) issuedAt.set(entry.nodeId, absSeconds);
         void runOnce(entry, frameIndex);
       }
     },
@@ -334,6 +486,28 @@ export function createInferenceSources(options: {
 
     lastFailure(nodeId) {
       return failure.get(nodeId);
+    },
+
+    /**
+     * §T976. Answers ONLY `<trackedNodeName>:<knownField>` and `undefined` for everything
+     * else, so it can sit in front of the other resolvers without shadowing them — the
+     * property `app.tsx`'s merge note states and the reason `midi`/`osc` check their own
+     * prefixes rather than assuming.
+     */
+    resolver: (channel, context) => {
+      const split = channel.lastIndexOf(":");
+      if (split <= 0) return undefined;
+      const name = channel.slice(0, split);
+      const field = channel.slice(split + 1);
+      const entry = tracked.find((candidate) => candidate.channel === name);
+      if (entry === undefined) return undefined;
+      const { frame } = context;
+      if (frame === undefined) return undefined;
+      return timingOf(entry, frame, field);
+    },
+
+    reset(nodeId) {
+      forget(nodeId);
     },
   };
 }
