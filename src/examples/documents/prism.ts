@@ -1,5 +1,5 @@
 import { settings, node, edge, graph, document, drivenSlot, expressionSlot } from "./builders.ts";
-import { prismTraceKernel } from "../shaders/prism-trace.wgsl.ts";
+import { PRISM_TRACE_KERNEL_HEAD, prismTraceKernel } from "../shaders/prism-trace.wgsl.ts";
 import { PRISM_EDGE, PRISM_HALF, PRISM_RC, PRISM_RHO } from "../shaders/prism-geometry.ts";
 
 /**
@@ -309,6 +309,76 @@ const PRISM_OPTICS_ATTRIBUTES = JSON.stringify([
 ]);
 
 /**
+ * T940 — THE DUST. "a basically black background and then just some of these animated
+ * dust particles in the path that catch the light" — and the physics reason it is
+ * structural, not decorative: a beam in air is visible ONLY by particulate scatter, so
+ * the scatter the owner missed IS this cloud. Each mote drifts deterministically and is
+ * lit by its distance to the beam's own traced path — the same trace head, the same aim
+ * expressions, the same tilt params as optics1, so the light the dust catches cannot
+ * disagree with the beam the fan draws.
+ */
+export const PRISM_DUST_KERNEL = `${PRISM_TRACE_KERNEL_HEAD}
+const RI: f32 = ${PRISM_RC} / 2.0;
+
+fn scatterTo(p: vec3f, a: vec3f, b: vec3f, sigma: f32) -> f32 {
+  let ab = b - a;
+  let h = clamp(dot(p - a, ab) / max(dot(ab, ab), 1e-6), 0.0, 1.0);
+  let d = length(p - a - ab * h);
+  return exp(-(d * d) / (sigma * sigma));
+}
+
+fn process(p: Point, ctx: PointCtx) -> Point {
+  var q = p;
+  /* A drifting mote: seeded box position plus a slow deterministic wander (absTime — it
+     keeps going through a timeline loop; a clock, not an RNG, §V74). */
+  let r1 = pointRand(ctx.index, 11u);
+  let r2 = pointRand(ctx.index, 23u);
+  let r3 = pointRand(ctx.index, 37u);
+  let r4 = pointRand(ctx.index, 51u);
+  let wander = ctx.absTime * (0.008 + 0.014 * r4);
+  let mote = vec3f(
+    (fract(r1 + wander * 0.7) * 2.0 - 1.0) * 2.6,
+    (fract(r2 + wander) * 2.0 - 1.0) * 1.4,
+    (fract(r3 + wander * 0.4) * 2.0 - 1.0) * 0.8,
+  );
+  q.position = mote;
+
+  /* The SAME beam the optics trace: lamp, aim, tilt — one set of expressions. */
+  let px = clamp(ctx.value3, 0.0, 1.0);
+  let py = clamp(ctx.value1, 0.0, 1.0);
+  let phi = mix(ARC_A, ARC_B, px) * PI / 180.0;
+  let S2 = vec2f(cos(phi), sin(phi)) * LAMP_R;
+  let ahead = normalize(-S2);
+  let aside = vec2f(-ahead.y, ahead.x);
+  let dIn2 = normalize(-S2 + aside * (py * OFF_MAX));
+  let yaw = ctx.params.tiltYaw;
+  let nod = ctx.params.tiltNod;
+  let S = toBody(vec3f(S2, 0.0), yaw, nod);
+  let dIn = normalize(toBody(vec3f(dIn2, 0.0), yaw, nod));
+  let nMid = cauchyN(0.5, ctx.value2);
+  let mid = tracePrism(S, dIn, nMid, RI);
+  let hit = mid.ok > 0.5;
+
+  let sW = toWorld(S, yaw, nod);
+  let entryW = toWorld(select(S + dIn * MISS_LEN, mid.entry, hit), yaw, nod);
+  /* Shaft scatter: strongest, the beam crossing the room. */
+  var glow = 0.85 * scatterTo(mote, sW, entryW, 0.055);
+  /* Exit scatter: the central band's ray, when it leaves. */
+  let gone = hit && dot(mid.exitDirection, mid.exitDirection) > 1.0e-9;
+  if (gone) {
+    let rootW = toWorld(mid.exitPoint, yaw, nod);
+    let tipW = toWorld(mid.exitPoint + mid.exitDirection * FAN_LEN, yaw, nod);
+    glow = glow + 0.5 * scatterTo(mote, rootW, tipW, 0.10);
+  }
+  /* Barely-there ambient dust, so the room reads as air rather than void — and varied
+     per mote, because uniform dust reads as a starfield (measured on the card). The
+     tint attribute is colour-qualified, so these are LINEAR numbers (§V313). */
+  let b = (glow + 0.0035) * (0.35 + 0.65 * r4);
+  q.tint = vec4f(vec3f(b) * vec3f(0.95, 0.97, 1.05), 1.0);
+  return q;
+}`;
+
+/**
  * THE OPTICS — T718: a TRACED ray, not a picture of one. The kernel lives in
  * `shaders/prism-trace.wgsl.ts` (imported like GRAY_SCOTT_WGSL) and emits the full
  * three-segment path: the shaft meets the entry face; a DRAWN internal segment crosses
@@ -364,12 +434,15 @@ export const prismDocument = document(
         /* T928: muted — the owner: "a bit more muted". The warm band drops 0.52 -> 0.30
            and cools toward neutral; the cool band settles with it. Still a wall, no
            longer a sunset. */
+        /* T940: near-black — the owner: "basically black background". The dust replaces
+           the wall as the transmission's content; what remains here is only enough
+           gradient that the frame has depth rather than a void. */
         stops: [
-          { position: 0.00, color: [0.04, 0.05, 0.08, 1] },
-          { position: 0.42, color: [0.16, 0.18, 0.24, 1] },
-          { position: 0.62, color: [0.30, 0.28, 0.26, 1] },
-          { position: 0.80, color: [0.12, 0.12, 0.12, 1] },
-          { position: 1.00, color: [0.03, 0.03, 0.05, 1] },
+          { position: 0.00, color: [0.010, 0.012, 0.020, 1] },
+          { position: 0.42, color: [0.030, 0.034, 0.046, 1] },
+          { position: 0.62, color: [0.055, 0.050, 0.046, 1] },
+          { position: 0.80, color: [0.025, 0.025, 0.027, 1] },
+          { position: 1.00, color: [0.008, 0.008, 0.012, 1] },
         ],
       }, { label: "wallramp1", definitionVersion: 2, resolution: { mode: "fixed", width: 64, height: 256 } }),
       node("wallgrid", "pointGrid", [-2200, -200], { count: WALL_COLS * WALL_ROWS, cols: WALL_COLS, rows: WALL_ROWS }, { label: "wallgrid1" }),
@@ -481,6 +554,28 @@ export const prismDocument = document(
            genuinely overlap; the soft edge is what keeps that from reading as a slab. */
         mode: "beam", endpoint: "tip", scale: 0.011, taper: 0.06, soft: 1, blend: "additive", material: "flare1", group: "p.role > 0.5",
       }, { label: "fan1", parameters: { tint: { mode: "map", bindings: { static: { kind: "static", value: [1, 1, 1, 1] }, map: { kind: "map", attribute: "tint" } } } } }),
+      // T940 — the dust cloud (see PRISM_DUST_KERNEL above).
+      node("dust", "pointKernel", [-1560, 260], {
+        capacity: 650, seed: 7,
+        attributes: JSON.stringify([
+          { name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] },
+          { name: "tint", type: "vec4f", semantic: "color", qualifier: "color", default: [1, 1, 1, 1] },
+        ]),
+        kernel: PRISM_DUST_KERNEL,
+        value2: 0.03,
+      }, {
+        label: "dust1",
+        parameters: {
+          value1: drivenSlot("follow1:y", 0),
+          value3: drivenSlot("follow1:x", 0),
+          tiltYaw: expressionSlot(TILT_YAW_EXPR, -0.1),
+          tiltNod: expressionSlot(TILT_NOD_EXPR, -0.05),
+        },
+      }),
+      node("motes", "geometry", [-1240, 260], {
+        /* Soft additive billboards: T917's light math on T647's markers. Tiny — dust. */
+        mode: "points", scale: 0.010, soft: 1, blend: "additive", material: "flare1", tint: [1, 1, 1, 1],
+      }, { label: "motes1", parameters: { tint: { mode: "map", bindings: { static: { kind: "static", value: [1, 1, 1, 1] }, map: { kind: "map", attribute: "tint" } } } } }),
 
       // ---- the studio: an equirect whose horizon IS the rim -----------------------
       // v = acos(R.y)/pi, so 0.5 is the horizon; u = atan2(R.x, -R.z)/2pi + 0.5. A normal
@@ -509,7 +604,9 @@ export const prismDocument = document(
       // round-over's normal, so the Blinn lobe lands as a GLINT on that edge and nowhere
       // else. Measured: kill it and 8,387 pixels move by more than 4 luma.
       node("key", "light", [-1240, -900], {
-        kind: "directional", direction: [0.73, -0.60, 0.31], color: [0.80, 0.88, 1, 1], intensity: 2.6, shadows: false,
+        /* T940: a directional key is by definition light that is not the beam — down to a
+           whisper that only keeps the wall's texture from reading as a hole. */
+        kind: "directional", direction: [0.73, -0.60, 0.31], color: [0.80, 0.88, 1, 1], intensity: 0.3, shadows: false,
       }, { label: "key1" }),
       node("eye", "camera", [-1240, -680], {
         // 26 degrees is a long lens on purpose: this is a poster, and a wide one would
@@ -522,12 +619,17 @@ export const prismDocument = document(
         eye: [0, 0.24, 6.6], lookAt: [0, 0.18, 0], fov: 26, near: 0.1, far: 40, ortho: false,
       }, { label: "eye1" }),
       node("shot", "render", [-920, -420], {
-        scenes: "wall1 solid1 fan1 shaft1", camera: "eye1", lights: "key1",
+        scenes: "wall1 solid1 fan1 shaft1 motes1", camera: "eye1", lights: "key1",
         // AMBIENT ZERO, and it is E33's lesson rather than taste (§V632/T636): the
         // physical terms here are a 4% head-on Fresnel and a 0.0009 albedo, so any
         // ambient worth the name drowns them and the glass goes to grey slate.
         ambientColor: [0, 0, 0, 1], ambientIntensity: 0,
-        background: [0, 0, 0, 1], environmentIntensity: 3.2, showEnvironment: false,
+        /* T940/T930: the room is DARK — the reference's glass reads from what the light
+           DOES (the traced interior, the dust's scatter, the fan), not from being lit.
+           env 3.2 -> 0.7 keeps just enough rim to draw the silhouette; the key drops to
+           a whisper. Asked three times; done with the dust in the same change so it
+           reads as a dark ROOM, not a dead one. */
+        background: [0, 0, 0, 1], environmentIntensity: 0.7, showEnvironment: false,
       }, { label: "shot1" }),
 
       // ---- the bloom, and the clamp that is load-bearing --------------------------
@@ -549,6 +651,7 @@ export const prismDocument = document(
       edge("e-mouse-follow", ["mouse", "out"], ["follow", "in"]),
 
       edge("e-bar-form", ["bar", "out"], ["form", "in"]),
+      edge("e-dust-motes", ["dust", "out"], ["motes", "points"]),
       edge("e-form-solid", ["form", "out"], ["solid", "points"]),
 
       edge("e-spectrum-optics", ["spectrum", "out"], ["optics", "field"]),

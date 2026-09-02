@@ -48,6 +48,17 @@
           "portId": "input"
         }
       },
+      "e-dust-motes": {
+        "id": "e-dust-motes",
+        "source": {
+          "nodeId": "dust",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "motes",
+          "portId": "points"
+        }
+      },
       "e-form-solid": {
         "id": "e-form-solid",
         "source": {
@@ -331,6 +342,75 @@
         },
         "type": "lfo"
       },
+      "dust": {
+        "definitionVersion": 1,
+        "id": "dust",
+        "label": "dust1",
+        "parameters": {
+          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"tint\",\"type\":\"vec4f\",\"semantic\":\"color\",\"qualifier\":\"color\",\"default\":[1,1,1,1]}]",
+          "capacity": 650,
+          "kernel": "const PI: f32 = 3.14159265358979323846;\n/* The three faces of the cross-section, as outward normals sharing one inradius. */\nconst NR: vec2f = vec2f(0.86602540, 0.5);\nconst NL: vec2f = vec2f(-0.86602540, 0.5);\nconst ND: vec2f = vec2f(0.0, -1.0);\n/* T758: the beams live INSIDE the body now (the cross-section's z spans ±0.55), so\n   the transmissive front face draws OVER the interior segment and the thread is seen\n   THROUGH the glass — absorption-tinted, edge-refracted. Before materialGlass this sat\n   at 0.60, in front, so the opaque solid could not swallow the beams; a glass body\n   inverts that reasoning: swallowing is the point. */\nconst ENTRY: f32 = -0.28;\n/* T929: every open end runs OFF-FRAME (frustum half-extents 2.71 x 1.52 at z = 0). */\nconst SHAFT_LEN: f32 = 2.10;\nconst GHOST_LEN: f32 = 6.0;\nconst FAN_LEN: f32 = 6.5;\nconst N_RED: f32 = 1.50;\n/* The SWING's band, unchanged since T710: two aims, 25 degrees apart, comfortably\n   inside the glass and comfortably clear of the violet end's critical angle. */\nconst THETA_LO: f32 = 37.0;\nconst THETA_HI: f32 = 62.0;\n/* T857 — THE POINTER'S OWN BAND, and it is wide on purpose. 84° is grazing on the\n   entry face; 6° is near normal, deep inside the regime where the internal ray meets\n   the exit face past its critical angle and leaves through the BASE instead. That used\n   to be a reason to stop at 37 degrees - refract2 returned zero and the band vanished - and\n   T718 removed the reason when it made TIR a drawn PATH rather than a deletion (§V750:\n   a compensation for an absent capability is an artifact once the capability exists).\n   The hand crosses the violet end's onset at 34.5° and the red end's at 27.9°, so\n   between them the spectrum SPLITS across two faces, which no aim could reach before. */\n/* T929 — THE LAMP. The cursor's x carries the light around the prism on a 240-degree\n   arc (all faces, all incidences reachable by walking around, like holding the torch);\n   its y slides the aim ACROSS the body — 0 aims at the INCENTER, which meets every face\n   at its exact middle (the rest strike the owner asked for, by construction), and the\n   far end carries the beam clear off the glass: the miss is the top of the y travel. */\nconst LAMP_R: f32 = 3.3;\n/* Rest (0,0) is phi 185: the lamp level-left, a hair below the axis, striking the left\n   face's centre at ~35 degrees — the classic left-in, spectrum-out-right card. */\nconst ARC_A: f32 = 185.0;\nconst ARC_B: f32 = -55.0;\nconst OFF_MAX: f32 = 0.9;\n/* Speed² → authority. A cursor crossing a TWENTIETH of the frame in a second reads\n   0.0025 here and clamps to 1: any deliberate move owns the aim outright, and a cursor\n   that has never moved reads exactly 0. */\nconst HAND_GAIN: f32 = 400.0;\n/* How far along the face the pointer walks the entry point, tip to tail. The face's\n   half-length is RI·√3 = 0.658, so ±0.8 runs PAST both vertices — which is the state\n   the owner asked for: the beam misses the glass. */\n\nconst ROOT3: f32 = 1.7320508;\n/* T937 — from prism-geometry.ts, the ONE description (§V818). */\nconst HALF: f32 = 0.72;\nconst EDGE: f32 = 0.12;\n/* A missed beam has to still be a beam: it carries straight on past where the glass\n   isn't, instead of stopping at a face it never met. */\nconst MISS_LEN: f32 = 7.0;\n\n/* T920 — THE BEAM'S SAMPLING. SLICES rays across the drawn shaft's full width (2 x its\n   0.006 half-width), BANDS wavelengths, three legs each (interior, TIR continuation,\n   exit). Odd slice count so a CENTRE slice exists — the exact ray every pre-T920 gate\n   measured. Brightness constants are per-beam: the additive draw sums the slices back. */\nconst SLICES: u32 = 9u;\nconst BANDS: u32 = 61u;\nconst APERTURE: f32 = 0.012;\nconst INTERIOR_GAIN: f32 = 0.55;\nconst EXIT_GAIN: f32 = 1.35;\n\n/* CAUCHY DISPERSION (T913): n(λ) = A + B/λ², the real curve, replacing linear-in-t.\n   λ runs 0.7µm (red, t = 0) → 0.4µm (violet, t = 1). B is derived from the SPREAD the\n   document asks for (value2 stays \"total Δn across the band\", so every measurement keeps\n   its meaning) — and the curve is violet-heavy, which is the end of the spectrum the eye\n   reads first and exactly what linear-in-t flattened. */\nconst LAMBDA_RED: f32 = 0.7;\nconst LAMBDA_VIOLET: f32 = 0.4;\nfn cauchyN(t: f32, spread: f32) -> f32 {\n  let lam = mix(LAMBDA_RED, LAMBDA_VIOLET, t);\n  let invRed = 1.0 / (LAMBDA_RED * LAMBDA_RED);\n  let k = 1.0 / (LAMBDA_VIOLET * LAMBDA_VIOLET) - invRed;\n  return N_RED + (spread / k) * (1.0 / (lam * lam) - invRed);\n}\n\n/* Schlick with the band's OWN normal-incidence reflectance — R0 = ((n−1)/(n+1))². */\nfn schlick(cosI: f32, n: f32) -> f32 {\n  let r0root = (n - 1.0) / (n + 1.0);\n  let r0 = r0root * r0root;\n  return r0 + (1.0 - r0) * pow(1.0 - cosI, 5.0);\n}\n\n/* WGSL's own refract, in 2D. A zero return IS total internal reflection — and unlike\n   the previous optics, TIR here selects the reflected path instead of deleting it. */\nfn refract3(i: vec3f, n: vec3f, eta: f32) -> vec3f {\n  let d = dot(n, i);\n  let k = 1.0 - eta * eta * (1.0 - d * d);\n  if (k < 0.0) { return vec3f(0.0); }\n  return i * eta - n * (eta * d + sqrt(k));\n}\n\nfn reflect3(i: vec3f, n: vec3f) -> vec3f {\n  return i - n * (2.0 * dot(i, n));\n}\n\n/* T920 — THE BOUNDARY IS THE BODY'S OWN CROSS-SECTION, bevel included; T937 lifts it to\n   the full solid. sdBody2 is the rounded-triangle cross-section the T920 gates march;\n   sdBody3 is form1's swept shape EXACTLY — the rounded extrusion whose edge radius is\n   the mesh's cap round — one description (prism-geometry.ts, §V818), gated by\n   prism-geometry.test.ts to 1e-6 at every mesh vertex. */\nconst BEVEL: f32 = 0.046;\n\nfn sdSegment2(p: vec2f, a: vec2f, b: vec2f) -> f32 {\n  let ab = b - a;\n  let h = clamp(dot(p - a, ab) / dot(ab, ab), 0.0, 1.0);\n  return length(p - a - ab * h);\n}\n\nfn sdSharpTri(p: vec2f, r: f32) -> f32 {\n  let inside = max(max(dot(p, NR), dot(p, NL)), dot(p, ND)) - r;\n  if (inside <= 0.0) { return inside; }\n  let v0 = -2.0 * r * NR;\n  let v1 = -2.0 * r * NL;\n  let v2 = -2.0 * r * ND;\n  return min(min(sdSegment2(p, v0, v1), sdSegment2(p, v1, v2)), sdSegment2(p, v2, v0));\n}\n\nfn sdBody2(p: vec2f) -> f32 {\n  return sdSharpTri(p, RI - BEVEL) - BEVEL;\n}\n\nfn sdBody(p: vec3f) -> f32 {\n  let q = vec2f(sdBody2(p.xy) + EDGE, abs(p.z) - (HALF - EDGE));\n  return min(max(q.x, q.y), 0.0) + length(max(q, vec2f(0.0))) - EDGE;\n}\n\n/* The boundary's own normal — a GRADIENT: it sweeps continuously through the corner\n   bevel AND the cap rounds, so a finite-width beam meets a different normal at each\n   slice and its straight sub-rays fan into a curved envelope. A caustic, from geometry. */\nfn bodyNormal(p: vec3f) -> vec3f {\n  let e = vec2f(1.0e-4, 0.0);\n  return normalize(vec3f(\n    sdBody(p + e.xyy) - sdBody(p - e.xyy),\n    sdBody(p + e.yxy) - sdBody(p - e.yxy),\n    sdBody(p + e.yyx) - sdBody(p - e.yyx),\n  ));\n}\n\nstruct Hit {\n  point: vec3f,\n  normal: vec3f,\n  ok: f32,\n};\n\n/* Sphere-march the SDF. inward = +1 marches OUTSIDE geometry toward the surface (entry),\n   -1 marches INSIDE it (the internal legs). */\nfn marchBody(origin: vec3f, dir: vec3f, inward: f32, maxT: f32) -> Hit {\n  var out: Hit;\n  out.ok = 0.0;\n  var t = 0.0;\n  for (var i = 0; i < 160; i = i + 1) {\n    let p = origin + dir * t;\n    let d = sdBody(p) * inward;\n    if (d < 2.0e-4) {\n      out.point = p;\n      out.normal = bodyNormal(p) * inward;\n      out.ok = 1.0;\n      return out;\n    }\n    t = t + max(d, 3.0e-4);\n    if (t > maxT) { break; }\n  }\n  out.point = origin + dir * maxT;\n  out.normal = vec3f(0.0, 1.0, 0.0);\n  return out;\n}\n\nstruct Traced {\n  /* Entry on the body, the first internal hit, and (TIR only) the second. */\n  entry: vec3f,\n  firstHit: vec3f,\n  exitPoint: vec3f,\n  exitDirection: vec3f,\n  tir: f32,\n  /* |cos| of incidence at entry and at the face the ray actually left through — the two\n     Fresnel shares (T913). 1 when degenerate so a collapsed ray costs no brightness. */\n  entryCos: f32,\n  exitCos: f32,\n  ok: f32,\n};\n\n/* The whole path of ONE ray of ONE wavelength, against the BEVELED solid (T937: in\n   BODY space — the caller rotates the ray in and the result out, so a swiveled body\n   refracts AS a swiveled body): march to entry, Snell in at the LOCAL normal, march the\n   interior, Snell out — and on TIR, the reflected leg and the exit there. A second TIR\n   collapses the exit ray rather than inventing one. */\nfn tracePrism(origin: vec3f, dIn: vec3f, n: f32, ri: f32) -> Traced {\n  var out: Traced;\n  out.ok = 0.0;\n  out.tir = 0.0;\n  out.entryCos = 1.0;\n  out.exitCos = 1.0;\n  let enter = marchBody(origin, dIn, 1.0, 4.5);\n  out.entry = enter.point;\n  out.firstHit = enter.point;\n  out.exitPoint = enter.point;\n  out.exitDirection = vec3f(0.0);\n  if (enter.ok < 0.5) { return out; }\n  out.ok = 1.0;\n  out.entryCos = abs(dot(dIn, enter.normal));\n  let d2 = refract3(dIn, enter.normal, 1.0 / n);\n  if (dot(d2, d2) < 1.0e-9) { return out; }\n  /* Step INSIDE past the surface before marching for the far wall. */\n  let inside1 = marchBody(enter.point + d2 * 2.0e-3, d2, -1.0, 4.5);\n  out.firstHit = inside1.point;\n  out.exitPoint = inside1.point;\n  if (inside1.ok < 0.5) { return out; }\n  let n1 = -inside1.normal;\n  /* refract3 wants the normal on the INCIDENT side — inside the glass, that is the\n     inward one (the raw marched normal). */\n  let d3 = refract3(d2, inside1.normal, n);\n  if (dot(d3, d3) > 1.0e-9) {\n    out.exitDirection = d3;\n    out.exitCos = abs(dot(d2, n1));\n    return out;\n  }\n  out.tir = 1.0;\n  let dr = reflect3(d2, n1);\n  let inside2 = marchBody(inside1.point + dr * 2.0e-3, dr, -1.0, 4.5);\n  out.exitPoint = inside2.point;\n  if (inside2.ok < 0.5) { return out; }\n  let n2 = -inside2.normal;\n  let d4 = refract3(dr, inside2.normal, n);\n  out.exitDirection = select(d4, vec3f(0.0), dot(d4, d4) < 1.0e-9);\n  out.exitCos = abs(dot(dr, n2));\n  return out;\n}\n\n/* T937 — the body's pose. form1 applies rotY(yaw) then rotX(nod); the trace applies the\n   inverse to bring a WORLD ray into body space and the forward pose to carry traced\n   points back out. */\nfn rotY(v: vec3f, a: f32) -> vec3f {\n  let c = cos(a); let s = sin(a);\n  return vec3f(v.x * c + v.z * s, v.y, -v.x * s + v.z * c);\n}\nfn rotX(v: vec3f, a: f32) -> vec3f {\n  let c = cos(a); let s = sin(a);\n  return vec3f(v.x, v.y * c - v.z * s, v.y * s + v.z * c);\n}\nfn toBody(v: vec3f, yaw: f32, nod: f32) -> vec3f { return rotY(rotX(v, -nod), -yaw); }\nfn toWorld(v: vec3f, yaw: f32, nod: f32) -> vec3f { return rotX(rotY(v, yaw), nod); }\n\nstruct Params {\n  tiltYaw: f32,\n  tiltNod: f32,\n}\n\nconst RI: f32 = 0.76 / 2.0;\n\nfn scatterTo(p: vec3f, a: vec3f, b: vec3f, sigma: f32) -> f32 {\n  let ab = b - a;\n  let h = clamp(dot(p - a, ab) / max(dot(ab, ab), 1e-6), 0.0, 1.0);\n  let d = length(p - a - ab * h);\n  return exp(-(d * d) / (sigma * sigma));\n}\n\nfn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  /* A drifting mote: seeded box position plus a slow deterministic wander (absTime — it\n     keeps going through a timeline loop; a clock, not an RNG, §V74). */\n  let r1 = pointRand(ctx.index, 11u);\n  let r2 = pointRand(ctx.index, 23u);\n  let r3 = pointRand(ctx.index, 37u);\n  let r4 = pointRand(ctx.index, 51u);\n  let wander = ctx.absTime * (0.008 + 0.014 * r4);\n  let mote = vec3f(\n    (fract(r1 + wander * 0.7) * 2.0 - 1.0) * 2.6,\n    (fract(r2 + wander) * 2.0 - 1.0) * 1.4,\n    (fract(r3 + wander * 0.4) * 2.0 - 1.0) * 0.8,\n  );\n  q.position = mote;\n\n  /* The SAME beam the optics trace: lamp, aim, tilt — one set of expressions. */\n  let px = clamp(ctx.value3, 0.0, 1.0);\n  let py = clamp(ctx.value1, 0.0, 1.0);\n  let phi = mix(ARC_A, ARC_B, px) * PI / 180.0;\n  let S2 = vec2f(cos(phi), sin(phi)) * LAMP_R;\n  let ahead = normalize(-S2);\n  let aside = vec2f(-ahead.y, ahead.x);\n  let dIn2 = normalize(-S2 + aside * (py * OFF_MAX));\n  let yaw = ctx.params.tiltYaw;\n  let nod = ctx.params.tiltNod;\n  let S = toBody(vec3f(S2, 0.0), yaw, nod);\n  let dIn = normalize(toBody(vec3f(dIn2, 0.0), yaw, nod));\n  let nMid = cauchyN(0.5, ctx.value2);\n  let mid = tracePrism(S, dIn, nMid, RI);\n  let hit = mid.ok > 0.5;\n\n  let sW = toWorld(S, yaw, nod);\n  let entryW = toWorld(select(S + dIn * MISS_LEN, mid.entry, hit), yaw, nod);\n  /* Shaft scatter: strongest, the beam crossing the room. */\n  var glow = 0.85 * scatterTo(mote, sW, entryW, 0.055);\n  /* Exit scatter: the central band's ray, when it leaves. */\n  let gone = hit && dot(mid.exitDirection, mid.exitDirection) > 1.0e-9;\n  if (gone) {\n    let rootW = toWorld(mid.exitPoint, yaw, nod);\n    let tipW = toWorld(mid.exitPoint + mid.exitDirection * FAN_LEN, yaw, nod);\n    glow = glow + 0.5 * scatterTo(mote, rootW, tipW, 0.10);\n  }\n  /* Barely-there ambient dust, so the room reads as air rather than void — and varied\n     per mote, because uniform dust reads as a starfield (measured on the card). The\n     tint attribute is colour-qualified, so these are LINEAR numbers (§V313). */\n  let b = (glow + 0.0035) * (0.35 + 0.65 * r4);\n  q.tint = vec4f(vec3f(b) * vec3f(0.95, 0.97, 1.05), 1.0);\n  return q;\n}",
+          "seed": 7,
+          "tiltNod": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "clamp(op('follow1').chan.y, 0, 1) * 0.22 - 0.05 + clamp(op('driftnod1').chan.value, -1, 1) * 0.03"
+              },
+              "static": {
+                "kind": "static",
+                "value": -0.05
+              }
+            },
+            "mode": "expression"
+          },
+          "tiltYaw": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "clamp(op('follow1').chan.x, 0, 1) * 0.44 - 0.10 + clamp(op('driftyaw1').chan.value, -1, 1) * 0.05"
+              },
+              "static": {
+                "kind": "static",
+                "value": -0.1
+              }
+            },
+            "mode": "expression"
+          },
+          "value1": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('follow1').chan.y"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "expression"
+          },
+          "value2": 0.03,
+          "value3": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('follow1').chan.x"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "expression"
+          }
+        },
+        "position": {
+          "x": -1560,
+          "y": 260
+        },
+        "type": "pointKernel"
+      },
       "eye": {
         "definitionVersion": 1,
         "id": "eye",
@@ -531,7 +611,7 @@
             -0.6,
             0.31
           ],
-          "intensity": 2.6,
+          "intensity": 0.3,
           "kind": "directional",
           "shadows": false
         },
@@ -540,6 +620,41 @@
           "y": -900
         },
         "type": "light"
+      },
+      "motes": {
+        "definitionVersion": 1,
+        "id": "motes",
+        "label": "motes1",
+        "parameters": {
+          "blend": "additive",
+          "material": "flare1",
+          "mode": "points",
+          "scale": 0.01,
+          "soft": 1,
+          "tint": {
+            "bindings": {
+              "map": {
+                "attribute": "tint",
+                "kind": "map"
+              },
+              "static": {
+                "kind": "static",
+                "value": [
+                  1,
+                  1,
+                  1,
+                  1
+                ]
+              }
+            },
+            "mode": "map"
+          }
+        },
+        "position": {
+          "x": -1240,
+          "y": 260
+        },
+        "type": "geometry"
       },
       "mouse": {
         "definitionVersion": 1,
@@ -688,9 +803,9 @@
             1
           ],
           "camera": "eye1",
-          "environmentIntensity": 3.2,
+          "environmentIntensity": 0.7,
           "lights": "key1",
-          "scenes": "wall1 solid1 fan1 shaft1",
+          "scenes": "wall1 solid1 fan1 shaft1 motes1",
           "showEnvironment": false
         },
         "position": {
@@ -945,45 +1060,45 @@
           "stops": [
             {
               "color": [
-                0.04,
-                0.05,
-                0.08,
+                0.01,
+                0.012,
+                0.02,
                 1
               ],
               "position": 0
             },
             {
               "color": [
-                0.16,
-                0.18,
-                0.24,
+                0.03,
+                0.034,
+                0.046,
                 1
               ],
               "position": 0.42
             },
             {
               "color": [
-                0.3,
-                0.28,
-                0.26,
+                0.055,
+                0.05,
+                0.046,
                 1
               ],
               "position": 0.62
             },
             {
               "color": [
-                0.12,
-                0.12,
-                0.12,
+                0.025,
+                0.025,
+                0.027,
                 1
               ],
               "position": 0.8
             },
             {
               "color": [
-                0.03,
-                0.03,
-                0.05,
+                0.008,
+                0.008,
+                0.012,
                 1
               ],
               "position": 1

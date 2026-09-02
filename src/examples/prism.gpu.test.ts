@@ -278,15 +278,20 @@ describe("E13 Prism — the picture", () => {
         }
       }
       // A mask that collapsed would satisfy any ratio, so both populations are real first.
+      // T940 re-measured: at env 0.7 (the dark room) the interior mask thins to 17.7k —
+      // still 8x the ring's floor; the RATIO claims below are the physics.
       expect(ringCount).toBeGreaterThan(2000);
-      expect(bodyCount).toBeGreaterThan(20000);
+      expect(bodyCount).toBeGreaterThan(15000);
 
       const ring = ringDelta / ringCount;
       const body = bodyDelta / bodyCount;
       expect(ring / body).toBeGreaterThan(4);
 
-      // And the picture the ratio is about: the outline is bright, the body is not.
-      expect(ringLuma / ringCount).toBeGreaterThan(30);
+      // And the picture the ratio is about: the outline reads, the body is dark. T940
+      // dimmed the room (env 3.2 -> 0.7): the rim now measures 24.9 display against the
+      // body's sub-20 — dimmer than the bright-room 30+, but still the brightest thing
+      // on the silhouette, which is the claim (§V751: both numbers moved together).
+      expect(ringLuma / ringCount).toBeGreaterThan(22);
       expect(bodyLuma / bodyCount).toBeLessThan(20);
     },
     240_000,

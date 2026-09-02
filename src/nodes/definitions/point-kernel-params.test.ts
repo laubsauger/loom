@@ -350,7 +350,8 @@ describe("T900 — migration: parse the legacy slots forever, emit them never (�
  *
  * Captured at `d7d9e26`, the commit before this work: a digest per shipped loom over every
  * pass belonging to a `pointKernel` or `pointKernelAdvanced` node — shader text, bindings,
- * workgroups and uniform VALUES. 19 looms carry 40 kernels between them (T918 added
+ * workgroups and uniform VALUES. 19 looms carry 41 kernels between them (T940 added dust,
+ * T918 added
  * E13's wall-placing kernel). A single changed
  * character in any generated module moves a digest, which is the point: the reflection had to
  * arrive as a pure ADDITION, costing a kernel that declares no `struct Params` exactly nothing.
@@ -364,7 +365,7 @@ const FRAME_ZERO_DIGESTS: Readonly<Record<string, string>> = {
   // resolved kernel state deliberately, then T920 rebuilt the optics kernel as a
   // marched BEAM (SDF bevel boundary, 9x61x3 slots) and T915b handed the aim to the
   // pointer exclusively (y angle / x walk, no authority blend); re-pinned at each.
-  "E13-Prism.loom.json": "7fb59fdddbeae5b1",
+  "E13-Prism.loom.json": "300897b5d4fd4d3c",
   "E16-Murmuration.loom.json": "74f35048da9b841e",
   "E20-Gooeyball.loom.json": "7d059f6ab538949e",
   "E25-Stage.loom.json": "8ef074cc584fae53",
@@ -404,7 +405,7 @@ describe("T900 — every shipped kernel resolves byte-equal at frame 0", () => {
 
   it("covers exactly the looms that carry kernels — a shrinking gate is a passing gate", () => {
     expect([...digests.keys()].sort()).toEqual(Object.keys(FRAME_ZERO_DIGESTS).sort());
-    expect(kernelCount).toBe(40);
+    expect(kernelCount).toBe(41);
   });
 
   it.each(Object.keys(FRAME_ZERO_DIGESTS))("%s is unchanged at frame 0", (fileName) => {

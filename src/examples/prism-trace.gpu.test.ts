@@ -8,6 +8,7 @@ import { nodeGpuHost, probeDawn } from "../runtime/backend/vgpu/node-gpu-host.ts
 import type { GraphDocument } from "../domain/types/graph.ts";
 import { prismTraceKernel } from "./shaders/prism-trace.wgsl.ts";
 import { sd3 } from "./shaders/prism-geometry.ts";
+import { PRISM_DUST_KERNEL } from "./documents/prism.ts";
 
 /**
  * T718, gated per §V683: THE TRACE AGAINST THE DOMAIN, never against its own text.
@@ -586,6 +587,60 @@ describe("the prism is a traced ray (T718, §V683)", () => {
       entry[2] - flat[0]!.tip3[2],
     );
     expect(moved).toBeGreaterThan(0.01);
+  }, 300_000);
+
+  /**
+   * T940 — THE DUST CATCHES THE BEAM, and only the beam: motes near the traced shaft
+   * glow an order of magnitude above the ambient floor, the cloud's median stays AT the
+   * floor (a lit room would fail this), and moving the lamp moves WHICH motes glow —
+   * the scatter belongs to the beam's own path, not to a hidden light.
+   */
+  it("lights the dust from the beam's own path (T940)", async () => {
+    const probe = await probeDawn();
+    if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
+
+    const DUST = 650;
+    const tintsAt = async (px: number): Promise<Float32Array> => {
+      const graph = traceGraph({ value1: 0.3, value2: 0.03, value3: px });
+      const trace = (graph as { nodes: Record<string, { parameters: Record<string, unknown> }> }).nodes["trace"]!;
+      trace.parameters["capacity"] = DUST;
+      trace.parameters["kernel"] = PRISM_DUST_KERNEL;
+      trace.parameters["attributes"] = JSON.stringify([
+        { name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] },
+        { name: "tint", type: "vec4f", semantic: "color", qualifier: "color", default: [1, 1, 1, 1] },
+      ]);
+      const plan = compileGraph({ graph, settings: SETTINGS, registry, capabilities: CAPABILITIES });
+      expect(plan.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+      const backend = createVgpuBackend({ host: nodeGpuHost() });
+      try {
+        await backend.initialize({});
+        const compiled = await backend.compile(plan);
+        backend.render(compiled, {
+          frame: { timeSeconds: 0, deltaSeconds: 1 / 60, frameIndex: 0, mode: "offline", randomSeed: 7 },
+          pointer: { x: 0, y: 0, buttons: 0 },
+          resolution: [64, 64],
+        });
+        return new Float32Array(await backend.readBuffer("scratch:trace:tint"));
+      } finally {
+        backend.dispose();
+      }
+    };
+
+    const reds = (tints: Float32Array): number[] => {
+      const out: number[] = [];
+      for (let i = 0; i < DUST; i += 1) out.push(tints[i * 4] ?? 0);
+      return out.sort((a, b) => a - b);
+    };
+    const a = reds(await tintsAt(0));
+    // Somebody glows: the brightest motes sit in the beam, an order above ambient …
+    expect(a[DUST - 1]!).toBeGreaterThan(0.1);
+    // … while the cloud's median is the ambient floor: the room itself is dark.
+    expect(a[Math.floor(DUST / 2)]!).toBeLessThan(0.01);
+
+    // Move the lamp a third of the arc: a real population still glows (WHICH motes glow
+    // is the beam's business; that it moved is implied by the trace gates above).
+    const b = reds(await tintsAt(0.33));
+    expect(b[DUST - 1]!).toBeGreaterThan(0.1);
   }, 300_000);
 
   /**

@@ -158,7 +158,7 @@ describe("E13 Prism", () => {
        construction (§V617's third thing), which is what the old black-albedo/zero-
        ambient discipline was approximating by hand. The optics are asserted as the
        numbers the document authors: glassA = [ior, roughness, thickness, dispersion],
-       glassB.w = the same environmentIntensity the phong body used (3.2 — the rim's
+       glassB.w = the same environmentIntensity the render names (T940: 0.7, the dark room —
        gain did not move in the swap). */
     const surface = plan.passes.find(
       (pass): pass is DrawPassDescriptor =>
@@ -166,7 +166,7 @@ describe("E13 Prism", () => {
     ) as DrawPassDescriptor;
     const uniforms = uniformsOf(surface);
     expect(uniforms["glassA"]).toEqual([1.5, 0.04, 1.1, 0.03]); // T928: deeper body
-    expect((uniforms["glassB"] as readonly number[])[3]).toBeCloseTo(3.2, 6);
+    expect((uniforms["glassB"] as readonly number[])[3]).toBeCloseTo(0.7, 6);
     expect(uniforms["light0Meta"]).toBeUndefined();
     expect(uniforms["ambientColor"]).toBeUndefined();
     // The key still lights nothing else — the beams are unlit — so its whole job stays
