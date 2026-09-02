@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentToolSurface } from "@agent/index.ts";
 import { SHADER_SOURCE_PARAMETER } from "@domain/commands/index.ts";
+import type { AdapterIdentity } from "@domain/types/backend.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
 import type { NodeId } from "@domain/types/ids.ts";
@@ -359,6 +360,19 @@ export function PerformancePane({
   );
 }
 
+/**
+ * One line for the granted adapter (B173). WebGPU lets a browser mask any field, so this
+ * prints the ones that carry a value and nothing for the ones that do not — a masked
+ * `architecture` must not become the word "undefined" in the panel.
+ */
+function describeAdapter(adapter: AdapterIdentity): string {
+  const named = [adapter.vendor, adapter.architecture, adapter.device].filter(
+    (part) => part !== "",
+  );
+  if (named.length > 0) return named.join(" · ");
+  return adapter.description;
+}
+
 function GpuStatusCard({ status }: { status: GpuStatus }) {
   if (status.kind === "probing") {
     return (
@@ -392,6 +406,22 @@ function GpuStatusCard({ status }: { status: GpuStatus }) {
           <dt>tier</dt>
           <dd>{capabilities.tier}</dd>
         </div>
+        {/*
+          B173/§T381 — the adapter we were GRANTED, not the one we asked for.
+
+          We request `high-performance` so a Windows laptop with switchable graphics stops
+          silently resolving to its integrated GPU. A request is not a grant, so the panel
+          reports the device's own `adapterInfo`: if this line says Intel while we asked
+          for high-performance, that is a fact worth seeing, and echoing the ask would have
+          hidden it. Absent when the browser masks the identity (Dawn and the mock host
+          expose none) — the row simply does not appear rather than reading "unknown".
+        */}
+        {capabilities.adapter === undefined ? null : (
+          <div className={styles.fact}>
+            <dt>adapter</dt>
+            <dd>{describeAdapter(capabilities.adapter)}</dd>
+          </div>
+        )}
         <div className={styles.fact}>
           <dt>timestamp query</dt>
           <dd>{capabilities.timestampQuery ? "yes" : "no"}</dd>

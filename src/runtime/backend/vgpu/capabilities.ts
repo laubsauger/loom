@@ -1,5 +1,9 @@
 import type { Gpu } from "vgpu";
-import type { BackendCapabilities, CapabilityTier } from "../../../domain/types/backend.ts";
+import type {
+  AdapterIdentity,
+  BackendCapabilities,
+  CapabilityTier,
+} from "../../../domain/types/backend.ts";
 import { TEXTURE_FORMATS } from "../../../domain/types/node-definition.ts";
 import type { TextureFormat } from "../../../domain/types/node-definition.ts";
 
@@ -81,6 +85,32 @@ function classifyTier(features: ReadonlySet<string>, limits: Record<string, numb
   return headroom && features.has("float32-filterable") ? "A" : "B";
 }
 
+/**
+ * B173 (§T381): the adapter identity of the device we are HOLDING.
+ *
+ * `GPUDevice.adapterInfo` is the granted adapter's own description — not the probe's
+ * (a multi-GPU machine can hand vgpu an adapter the probe never saw) and not an echo of
+ * the `powerPreference` we asked for. Reading it off the live device is the only way the
+ * report can contradict the request, which is the entire point of measuring.
+ *
+ * Undefined when the device exposes nothing: Dawn and the mock host have no
+ * `adapterInfo`, and a browser may mask it. Saying nothing beats naming a guess (§V328).
+ */
+export function grantedAdapter(gpu: Gpu): AdapterIdentity | undefined {
+  const native = (gpu.device as { gpu?: { adapterInfo?: unknown } }).gpu;
+  const info = native?.adapterInfo as Partial<AdapterIdentity> | undefined;
+  if (info === undefined || info === null) return undefined;
+  const identity: AdapterIdentity = {
+    vendor: typeof info.vendor === "string" ? info.vendor : "",
+    architecture: typeof info.architecture === "string" ? info.architecture : "",
+    device: typeof info.device === "string" ? info.device : "",
+    description: typeof info.description === "string" ? info.description : "",
+  };
+  // Every field masked is the same as no identity at all — reporting four empty strings
+  // would render as a blank row that looks like a bug rather than like a privacy setting.
+  return Object.values(identity).some((value) => value !== "") ? identity : undefined;
+}
+
 export function describeCapabilities(
   gpu: Gpu,
   /**
@@ -93,6 +123,7 @@ export function describeCapabilities(
 ): BackendCapabilities {
   const features = new Set<string>(gpu.device.features as ReadonlySet<string>);
   const limits = readLimits(gpu.device.limits);
+  const adapter = grantedAdapter(gpu);
 
   return {
     tier: classifyTier(features, limits),
@@ -100,6 +131,7 @@ export function describeCapabilities(
     formats: supportedFormats(),
     timestampQuery: features.has("timestamp-query"),
     timestampQueryRequested: (requestedFeatures ?? []).includes("timestamp-query"),
+    ...(adapter === undefined ? {} : { adapter }),
     limits,
   };
 }

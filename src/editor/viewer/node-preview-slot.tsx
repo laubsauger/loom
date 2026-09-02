@@ -287,7 +287,34 @@ export function NodePreviewSlot({ nodeId, runtime, bounds, views, orbits, orbita
       if (nodeElement === null) return;
       const slotRect = element.getBoundingClientRect();
       const nodeRect = nodeElement.getBoundingClientRect();
-      const zoom = flow.getViewport().zoom;
+      /*
+       * B174 — the scale comes from the SAME READING as the rects it divides.
+       *
+       * `getBoundingClientRect()` reports the transform the DOM is CARRYING; React Flow's
+       * store reports the transform it has DECIDED ON. They are the same number almost
+       * always and they are not the same SOURCE, and this measurement runs on a
+       * ResizeObserver — a callback that lands exactly at the paint boundary the store
+       * update and the committed style sit on either side of. Catch that window and the
+       * published box is off by (applied / decided), which the preview tick then
+       * multiplies by zoom again: the error is MULTIPLICATIVE, so at a fitView zoom of
+       * 0.24 every tile is drawn four times its node. Reproduced in real Chrome by
+       * pinning the committed transform while the store held a zoom (see
+       * `scratchpad/b174/race-repro.mjs`): tiny node bodies, enormous overlapping tiles —
+       * the owner's screenshot exactly.
+       *
+       * And it LATCHES: the only re-measure is this ResizeObserver, which a transform
+       * change never fires, so a lost race persists until something resizes the slot.
+       * That is the owner's "jiggle it and it comes good".
+       *
+       * `offsetWidth` is the node's UNTRANSFORMED layout width, read in the same
+       * expression as its transformed rect, so their ratio is the scale actually applied
+       * to `slotRect` whatever the store believes. When the transform is not yet on the
+       * DOM the ratio is 1 and the published box is already node-local, which is the
+       * right answer rather than a lucky one. The store zoom stays as the fallback for a
+       * node with no layout width to divide by.
+       */
+      const layoutWidth = (nodeElement as HTMLElement).offsetWidth;
+      const zoom = layoutWidth > 0 ? nodeRect.width / layoutWidth : flow.getViewport().zoom;
       if (!(zoom > 0) || slotRect.width <= 0 || slotRect.height <= 0) return;
       // A rect DELTA between two elements measured at the same instant cancels pan
       // entirely, so only zoom converts screen px to the node's own local (graph-space)

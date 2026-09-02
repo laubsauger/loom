@@ -17,7 +17,34 @@ export interface BackendCapabilities {
    * device's — so the diagnostic and the panel copy must not conflate them.
    */
   timestampQueryRequested?: boolean;
+  /**
+   * B173 (§T381): the adapter the device was actually GRANTED, read off the device we
+   * hold — never the probe's, and never an echo of what we asked for.
+   *
+   * We ask for `high-performance` because a Windows laptop with switchable graphics
+   * otherwise resolves a bare `requestAdapter({})` to the INTEGRATED GPU, which is the
+   * whole of §B173. The ask is a request, not a guarantee: the browser may hand back the
+   * integrated adapter anyway (a power-saving profile, one GPU, a policy). So the panel
+   * shows what arrived, and a report that says "high-performance" while running on Intel
+   * graphics is precisely the lie §T381 exists to prevent.
+   *
+   * Absent = the device exposes no adapter identity (older browsers, Dawn, the mock host).
+   * Absent is honest; a fabricated name is not.
+   */
+  adapter?: AdapterIdentity;
   limits: Readonly<Record<string, number>>;
+}
+
+/**
+ * WebGPU's own `GPUAdapterInfo` fields, as plain strings. Every one of them may be the
+ * empty string — the spec lets a browser mask them for fingerprinting — so a reader must
+ * treat "" as unknown rather than as a name.
+ */
+export interface AdapterIdentity {
+  readonly vendor: string;
+  readonly architecture: string;
+  readonly device: string;
+  readonly description: string;
 }
 
 export interface BackendInitOptions {

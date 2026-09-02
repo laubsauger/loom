@@ -87,3 +87,75 @@ describe("slot placement", () => {
     expect(rectsIntersect(scrolledAway, surface)).toBe(false);
   });
 });
+
+/**
+ * §B174's stated gate: a FRACTIONAL dpr AND a zoom ≠ 1, together.
+ *
+ * Windows at 125% UI scaling reports `devicePixelRatio` 1.25; a Mac reports exactly 2, and
+ * every dpr in this suite was 1, 2 or 3 before this block existed. At dpr 2 a dropped or
+ * doubled factor divides evenly and still looks plausible — 1.25 is where it cannot.
+ *
+ * The composed claim, which no single unit was making: the tile's DESTINATION is
+ * `node rect × viewport scale × dpr`, the backing store is sized from THE SAME dpr, and
+ * the tile ALLOCATION uses that dpr too. The compositor multiplies `slotScreenRect`'s
+ * output by `command.surface.dpr` (`vgpu-backend.presentPreviews`) and vgpu sizes the
+ * surface as `round(cssPx × dpr)`, so both sides are reproduced here rather than mocked.
+ *
+ * ⚠ Stated honestly: this went GREEN the day it was written. The defect §B174 was filed
+ * for was a measurement RACE, not this arithmetic (see `node-preview-slot-bounds.test.tsx`
+ * and `scratchpad/b174/race-repro.mjs`), and a fractional dpr does not reproduce it — a
+ * real Chrome at 1.25 and 1.5, static and changed live, places every tile correctly. This
+ * stays as the regression guard for the composition the row asked to have pinned.
+ */
+describe("§B174 fractional dpr with a zoom ≠ 1", () => {
+  const DPR = 1.25;
+  const ZOOM = 0.8;
+  /** The node's own preview slot, in graph px — what `PreviewSlotBounds` publishes. */
+  const SLOT = { x: 300, y: 160, width: 192, height: 108 };
+  const VIEWPORT = { x: 37, y: -14, zoom: ZOOM };
+
+  /** vgpu's own surface sizing: `round(clientWidth × dpr)` (`node_modules/vgpu/dist/surface.js`). */
+  const storeSize = (cssPx: number, dpr: number): number => Math.round(cssPx * dpr);
+  /** The compositor's own: `viewport = dest × command.surface.dpr`. */
+  const deviceRect = (rect: { x: number; y: number; width: number; height: number }, dpr: number) => ({
+    x: rect.x * dpr,
+    y: rect.y * dpr,
+    width: rect.width * dpr,
+    height: rect.height * dpr,
+  });
+
+  it("puts the destination at node rect × viewport scale × dpr, in the store's own units", () => {
+    const dest = deviceRect(slotScreenRect(SLOT, VIEWPORT), DPR);
+
+    // ONE expression, spelled out: nothing here divides by dpr, and nothing squares zoom.
+    expect(dest).toEqual({
+      x: (SLOT.x * ZOOM + VIEWPORT.x) * DPR,
+      y: (SLOT.y * ZOOM + VIEWPORT.y) * DPR,
+      width: SLOT.width * ZOOM * DPR,
+      height: SLOT.height * ZOOM * DPR,
+    });
+
+    // And it lands inside the surface the same dpr sized — the property that fails the
+    // moment the two stop sharing a factor. A 1000×600 CSS pane is 1250×750 device px.
+    const store = { width: storeSize(1000, DPR), height: storeSize(600, DPR) };
+    expect(store).toEqual({ width: 1250, height: 750 });
+    expect(dest.x).toBeGreaterThanOrEqual(0);
+    expect(dest.y).toBeGreaterThanOrEqual(0);
+    expect(dest.x + dest.width).toBeLessThanOrEqual(store.width);
+    expect(dest.y + dest.height).toBeLessThanOrEqual(store.height);
+  });
+
+  it("allocates from the same fractional dpr — the tile is not sized for a dpr of 1 or 2", () => {
+    // §V142: the ALLOCATION reads the node's own area, never the zoom. 192 × 1.25 = 240,
+    // which snaps UP to 256 — a step neither dpr 1 (192) nor dpr 2 (384) can produce, so
+    // this assertion cannot pass by an integer-dpr accident.
+    const tile = tileSizeFor({
+      sourceSize: [1920, 1080],
+      areaLongEdge: SLOT.width,
+      devicePixelRatio: DPR,
+      maxLongEdge: 192 * MAX_TILE_SCALE,
+    });
+    expect(tile[0]).toBe(256);
+    expect(tile[0]).toBeGreaterThanOrEqual(SLOT.width * DPR);
+  });
+});

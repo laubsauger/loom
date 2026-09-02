@@ -112,14 +112,31 @@ export function browserGpuHost(): GpuHost {
   return {
     label: "browser",
     async create(options) {
+      /*
+       * B173 — the DEFAULT is `high-performance`, and the default is the fix.
+       *
+       * `powerPreference` had existed as a type and as pass-through plumbing since the
+       * seam was built and NO caller ever supplied a value, so every session called
+       * `requestAdapter({})`. On a Windows laptop with switchable graphics a bare request
+       * typically resolves to the INTEGRATED GPU — exactly the reported profile: fine on a
+       * Mac, which has one adapter and no choice to get wrong, and poor and thermally
+       * variable on Windows (fps collapsing to ~15 while dragging the graph).
+       *
+       * Defaulted HERE rather than at the three `initialize()` call sites, for the same
+       * reason B172's feature negotiation lives here: an option every caller has to
+       * remember is an option some caller will forget, and this is the third time that
+       * shape has cost us. An explicit `low-power` from a caller still wins.
+       *
+       * A preference is a REQUEST. What we were granted is reported separately, off the
+       * device we ended up with (`describeCapabilities`) — §T381.
+       */
+      const powerPreference = options.powerPreference ?? "high-performance";
       // T338: read the adapter's offer FIRST (a bare requestAdapter is cheap and
       // side-effect free), clamp the ask to it, and fall back to the plain request if
       // the raised one fails — a multi-GPU machine can hand vgpu a different adapter
       // than the probe saw, and losing the headroom beats losing the device.
       const probeAdapter = await globalThis.navigator?.gpu
-        ?.requestAdapter(
-          options.powerPreference === undefined ? {} : { powerPreference: options.powerPreference },
-        )
+        ?.requestAdapter({ powerPreference })
         .catch(() => null);
       // B172: the same probe answers the FEATURE question. The adapter's list is the only
       // place the offer exists before a device is created, and a feature nobody asks for
@@ -132,9 +149,7 @@ export function browserGpuHost(): GpuHost {
       const required = options.requiredFeatures ?? [];
       const featured = (features: ReadonlyArray<string>) => ({
         label: "loom",
-        ...(options.powerPreference === undefined
-          ? {}
-          : { powerPreference: options.powerPreference }),
+        powerPreference,
         ...(features.length === 0
           ? {}
           : { requiredFeatures: [...features] as GPUFeatureName[] }),
