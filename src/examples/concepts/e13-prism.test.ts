@@ -62,7 +62,7 @@ describe("E13 Prism", () => {
    * face within 0.03 of each other fuse into an opaque wedge at any taper above roughly
    * zero (T680), and a single collimated shaft must not be pinched at all.
    */
-  it("splits one pointset into a pinched fan and a parallel-sided shaft", () => {
+  it("splits one pointset into a pinched fan, an in-glass core, and a parallel shaft", () => {
     /* T758: the prism's own draw moved to the TRANSMISSION phase (materialGlass draws
        after the opaques it samples), so the scene phase carries exactly the two beam
        draws and the body is found at its glass id. */
@@ -71,7 +71,9 @@ describe("E13 Prism", () => {
     const beams = sceneDraws(plan).filter((pass) =>
       buffersOf(pass).get("positions") === "scratch:optics:position",
     );
-    expect(beams).toHaveLength(2);
+    // T941b: THREE draws off one pointset — shaft (role < 0.5), the in-glass core
+    // (0.25 < role < 0.75), and the exit fan (role > 0.5). Still selection, not nodes.
+    expect(beams).toHaveLength(3);
     const surface = plan.passes.find(
       (pass): pass is DrawPassDescriptor =>
         pass.kind === "draw" && pass.id.includes(":glass:") && !pass.id.includes("pyramid"),
@@ -94,9 +96,10 @@ describe("E13 Prism", () => {
     }
 
     const tapers = beams.map((beam) => (uniformsOf(beam)["instance"] as readonly number[])[2] as number);
-    // One parallel-sided ribbon and one pinched at its origin — sorted, so this asserts
-    // the two VALUES rather than the order `scenes` happens to list them in (§V656).
-    expect([...tapers].sort((a, b) => a - b)).toEqual([0.02, 1]); // T941: the wedge pinches at the exit face
+    // The fan pinches at the exit face (0.02), the core at the shared entry (0.05), and
+    // the shaft stays parallel-sided (1) — sorted, so this asserts the VALUES rather
+    // than the order `scenes` happens to list them in (§V656).
+    expect([...tapers].sort((a, b) => a - b)).toEqual([0.02, 0.05, 1]);
 
     // And the predicates really are complementary halves. This one IS a source claim,
     // deliberately: whether the two draws select DIFFERENT points cannot be seen in a

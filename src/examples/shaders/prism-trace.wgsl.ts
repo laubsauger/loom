@@ -402,14 +402,32 @@ fn process(p: Point, ctx: PointCtx) -> Point {
   let frIn = schlick(band.entryCos, n);
   let seat = select(S, band.entry, live);
 
+  /* T941b — the NEIGHBOUR band, shared by the interior segment (leg 0) and the exit
+     segment (leg 2). The last band has no partner; its segment slots collapse. */
+  let hasNext = b + 1u < BANDS;
+  let t2 = f32(min(b + 1u, BANDS - 1u)) / f32(BANDS - 1u);
+  let n2 = cauchyN(t2, ctx.value2);
+  let band2 = tracePrism(castFrom + perp * off, dIn, n2, RI);
+  let colourM = fieldAt(vec3f((t + t2) - 1.0, 0.0, 0.0)).rgb;
+  let frIn2 = schlick(band2.entryCos, n2);
+
   if (leg == 0u) {
-    /* Interior 1: the in-glass spread, drawn per band per slice — dim, additive. */
-    q.position = toWorld(seat, yaw, nod);
-    q.tip = toWorld(select(seat, band.firstHit, live), yaw, nod);
-    q.tint = vec4f(colour * ((1.0 - frIn) * INTERIOR_GAIN / f32(SLICES)), 1.0);
-    /* Role 0: the interiors ride the SHAFT draw — the in-glass path, exactly where the
-       old slot-2 segment lived — so the shaft/fan split keeps meaning path/exits. */
-    q.role = 0.0;
+    /* T941b — the interior WEDGE SEGMENT (the owner: "doesnt sem possible to get a
+       rainbow spread inside"): the in-glass fan is one continuous gradient too, tiled
+       between adjacent bands exactly as the exit fan is. Entry is shared (one geometric
+       ray refracts at one point), so the segment naturally pinches there and opens to
+       the two bands' far-wall spacing. Role 0.5: its own draw (core1) — the shaft keeps
+       meaning "the beam outside", the fan "the exits". */
+    let ok2i = band2.ok > 0.5;
+    let alive0 = hasNext && live && ok2i;
+    let tipI = (band.firstHit + band2.firstHit) * 0.5;
+    /* Floored at the beam's own APERTURE: the segment tiling narrows to the physical
+       beam, never to a hairline — the in-glass core stays a lit beam at rest. */
+    let widthI = clamp(max(distance(band.firstHit, band2.firstHit), APERTURE), 2.0e-4, 4.0) * 0.25;
+    q.position = toWorld(select(S, band.entry, alive0), yaw, nod);
+    q.tip = toWorld(select(S, tipI, alive0), yaw, nod);
+    q.tint = vec4f(colourM * (((1.0 - frIn) + (1.0 - frIn2)) * 0.5 * INTERIOR_GAIN / f32(SLICES)), widthI);
+    q.role = 0.5;
     return q;
   }
   if (leg == 1u) {
@@ -431,20 +449,27 @@ fn process(p: Point, ctx: PointCtx) -> Point {
      energy: RAY DENSITY becomes brightness, from geometry, no analytic term needed.
      A segment whose two bands leave through DIFFERENT faces (the TIR split) collapses:
      the spectrum's split is a stated boundary, not a smeared band. */
-  if (b + 1u >= BANDS) {
+  if (!hasNext) {
     q.position = toWorld(S, yaw, nod);
     q.tip = q.position;
     q.tint = vec4f(0.0);
     q.role = 1.0;
     return q;
   }
-  let t2 = f32(b + 1u) / f32(BANDS - 1u);
-  let n2 = cauchyN(t2, ctx.value2);
-  let band2 = tracePrism(castFrom + perp * off, dIn, n2, RI);
   let gone1 = live && dot(band.exitDirection, band.exitDirection) > 1.0e-9;
   let gone2 = band2.ok > 0.5 && dot(band2.exitDirection, band2.exitDirection) > 1.0e-9;
-  let sameFace = distance(band.exitPoint, band2.exitPoint) < 0.35;
-  let alive = gone1 && gone2 && sameFace;
+  /* T941b — the owner's finding, verbatim: "where there is a legit separating into
+     multiple beams where a part is reflected differently... there may nothing be
+     inbetween them to connect those." Exit-point distance was the wrong discriminator:
+     near a corner, a face-exit and a TIR base-exit leave from almost the SAME spot with
+     directions ~90 degrees apart, and the bridge between them was the giant sail in
+     their shot. A segment lives only when its two edge rays took the SAME PATH (tir
+     flags match) and left in nearly the SAME DIRECTION (within ~9 degrees — adjacent
+     bands differ by ~0.2 degrees except across a discontinuity, and the sliver of
+     spectrum lost at the cut carries vanishing transmission anyway). */
+  let samePath = abs(band.tir - band2.tir) < 0.5;
+  let dirClose = dot(normalize(band.exitDirection + vec3f(1.0e-9)), normalize(band2.exitDirection + vec3f(1.0e-9))) > 0.988;
+  let alive = gone1 && gone2 && samePath && dirClose;
   let tipA = band.exitPoint + band.exitDirection * FAN_LEN;
   let tipB = band2.exitPoint + band2.exitDirection * FAN_LEN;
   let root = (band.exitPoint + band2.exitPoint) * 0.5;
@@ -455,9 +480,7 @@ fn process(p: Point, ctx: PointCtx) -> Point {
      segment overlaps its neighbours to their midlines, and the soft profile's triangle
      falloff makes the overlapping set a PARTITION OF UNITY — linear crossfade between
      adjacent bands, constant total energy, no seams and no strands at any spread. */
-  let segWidth = clamp(distance(tipA, tipB), 2.0e-4, 4.0) * 0.25;
-  let colourM = fieldAt(vec3f((t + t2) - 1.0, 0.0, 0.0)).rgb;
-  let frIn2 = schlick(band2.entryCos, n2);
+  let segWidth = clamp(max(distance(tipA, tipB), APERTURE), 2.0e-4, 4.0) * 0.25;
   let frOut = schlick(band.exitCos, n);
   let frOut2 = schlick(band2.exitCos, n2);
   let weight = ((1.0 - frIn) * (1.0 - frOut) + (1.0 - frIn2) * (1.0 - frOut2)) * 0.5;

@@ -539,8 +539,10 @@ describe("the prism is a traced ray (T718, §V683)", () => {
 
     expect(aimOf(0, 0).face).toEqual(NL); // the rest strike, θ1 = 35°
     const segments = await runTrace({ value1: 0, value2: 0.03, value3: 0 });
-    const red = segments[interiorIndex(0)]!;
-    const violet = segments[interiorIndex(1)]!;
+    // T941b: interiors are segments now — band 60 has no partner, so the violet END is
+    // the last live segment (bands 59-60), the red end the first (bands 0-1).
+    const red = segments[CENTRE_BASE + 0 * 3]!;
+    const violet = segments[CENTRE_BASE + 59 * 3]!;
     expect(length(red)).toBeGreaterThan(0.05);
     expect(length(violet)).toBeGreaterThan(0.05);
     const dr = direction(red);

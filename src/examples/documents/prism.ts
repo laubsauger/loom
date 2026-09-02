@@ -599,6 +599,15 @@ export const prismDocument = document(
         /* T941: width = 4 (node scale) x tint.a (the kernel's segment width / 4). */
         scale: { mode: "map", bindings: { static: { kind: "static", value: 4 }, map: { kind: "map", attribute: "tint", channel: "w" } } },
       } }),
+      // T941b — the IN-GLASS fan: interior wedge segments (role 0.5), width-mapped
+      // like the exit fan, pinched at the shared entry point by the taper.
+      node("core", "geometry", [-1240, 180], {
+        mode: "beam", endpoint: "tip", scale: 4, taper: 0.05, soft: 1, blend: "additive", material: "flare1",
+        group: "p.role > 0.25 && p.role < 0.75", tint: [1, 1, 1, 1],
+      }, { label: "core1", parameters: {
+        tint: { mode: "map", bindings: { static: { kind: "static", value: [1, 1, 1, 1] }, map: { kind: "map", attribute: "tint" } } },
+        scale: { mode: "map", bindings: { static: { kind: "static", value: 4 }, map: { kind: "map", attribute: "tint", channel: "w" } } },
+      } }),
       // T940 — the dust cloud (see PRISM_DUST_KERNEL above).
       node("dust", "pointKernel", [-1560, 260], {
         capacity: 650, seed: 7,
@@ -669,7 +678,7 @@ export const prismDocument = document(
         eye: [0, 0.24, 6.6], lookAt: [0, 0.18, 0], fov: 26, near: 0.1, far: 40, ortho: false,
       }, { label: "eye1" }),
       node("shot", "render", [-920, -420], {
-        scenes: "wall1 solid1 fan1 shaft1 motes1", camera: "eye1", lights: "key1",
+        scenes: "wall1 solid1 core1 fan1 shaft1 motes1", camera: "eye1", lights: "key1",
         // AMBIENT ZERO, and it is E33's lesson rather than taste (§V632/T636): the
         // physical terms here are a 4% head-on Fresnel and a 0.0009 albedo, so any
         // ambient worth the name drowns them and the glass goes to grey slate.
@@ -710,6 +719,7 @@ export const prismDocument = document(
       edge("e-spectrum-optics", ["spectrum", "out"], ["optics", "field"]),
       edge("e-optics-shaft", ["optics", "out"], ["shaft", "points"]),
       edge("e-optics-fan", ["optics", "out"], ["fan", "points"]),
+      edge("e-optics-core", ["optics", "out"], ["core", "points"]),
 
       edge("e-sky-studio", ["sky", "out"], ["studio", "in1"]),
       edge("e-band-studio", ["band", "out"], ["studio", "in2"], 0),

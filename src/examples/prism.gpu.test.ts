@@ -190,6 +190,13 @@ const lockTilt = (graph: GraphDocument): void => {
   }
 };
 
+const soloCore = (graph: GraphDocument): void => {
+  param(graph, "shot", "scenes", "core1");
+  muteBloom(graph);
+  soloBackdropOff(graph);
+  soloHard(graph, "core");
+};
+
 const soloPrism = (graph: GraphDocument): void => {
   param(graph, "shot", "scenes", "solid1");
   muteBloom(graph);
@@ -473,6 +480,12 @@ describe("E13 Prism — the picture", () => {
         param(graph, "optics", "value1", 0.142);
         param(graph, "optics", "value3", 0);
       });
+      const core = await shoot((graph) => {
+        soloCore(graph);
+        lockTilt(graph);
+        param(graph, "optics", "value1", 0.142);
+        param(graph, "optics", "value3", 0);
+      });
       const fan = await shoot((graph) => {
         soloFan(graph);
         lockTilt(graph);
@@ -484,6 +497,7 @@ describe("E13 Prism — the picture", () => {
       const near = dilate(glass, prism.w, prism.h, 3);
       const deep = erode(glass, prism.w, prism.h, 8);
       const shaftMask = maskAbove(shaft, 12);
+      const coreMask = maskAbove(core, 12);
       const fanMask = maskAbove(fan, 12);
 
       const overlap = (a: Uint8Array, b: Uint8Array): number => {
@@ -497,18 +511,13 @@ describe("E13 Prism — the picture", () => {
 
       // The shaft reaches the glass ...
       expect(overlap(shaftMask, near)).toBeGreaterThan(0);
-      /* ... and since T718, CONTINUES THROUGH IT: the shaft draw now carries the traced
-         internal segment, so the glass interior must hold a real population of its
-         pixels — this half of the claim INVERTED when the trace landed, deliberately.
-         "No shaft pixel inside the solid" was the gate for beams placed cosmetically
-         against the body; the trace makes the interior path the feature the owner asked
-         for by name, and an empty interior is now the failure (a kernel that stopped
-         emitting slot 2 would render the old disconnected picture and pass every other
-         assertion here). Measured at the T718 swap: 743 interior pixels. The geometry-
-         agreement duty the old zero carried — mesh and optics reading one constant —
-         lives on in prism-trace.gpu.test.ts's exact connectivity assertions (§V683).
-         The FAN keeps the no-burial claim: it starts ON the exit face and leaves. */
-      expect(overlap(shaftMask, deep)).toBeGreaterThan(300);
+      /* ... and since T718, the beam CONTINUES THROUGH IT — carried since T941b by the
+         CORE draw (the in-glass wedge segments, role 0.5): the glass interior must hold
+         a real population of core pixels, or the kernel stopped emitting the interior
+         path and the picture went back to the disconnected pre-T718 look while every
+         other assertion here still passed. The FAN keeps the no-burial claim: it starts
+         ON the exit face and leaves. */
+      expect(overlap(coreMask, deep)).toBeGreaterThan(300);
       /* T758 loosened this from exactly 0: the beams live INSIDE the glass body's z
          now, so the fan's ROOT — the exit point, which is ON the face by the trace's
          own connectivity gates — projects a few pixels into the 8px erosion under the
