@@ -5,7 +5,7 @@ import type { LogicalExecutionPlan } from "../../domain/types/backend.ts";
 import { readExecutionPlan } from "../../runtime/backend/plan.ts";
 import { createNodeRegistry, validateNodeDefinition } from "../registry/registry.ts";
 import { SHADER_SOURCE_PARAMETER } from "../../domain/commands/apply-patch.ts";
-import { customWgslNode, declaresUniformBlock } from "./custom-wgsl.ts";
+import { customWgslNode, declaresUniformBlock, paramsStructFields } from "./custom-wgsl.ts";
 import {
   CUSTOM_WGSL_DEFAULT_SOURCE,
   CUSTOM_WGSL_SHARED_BINDING,
@@ -242,5 +242,51 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
     expect(CUSTOM_WGSL_DEFAULT_SOURCE).toContain(
       `var<uniform> ${CUSTOM_WGSL_SHARED_BINDING}: SharedFrame;`,
     );
+  });
+
+  /**
+   * T880 — the uniform SLOTS. A shader opts into a fixed vocabulary by naming a field in its
+   * own `struct Params`, and gets EXACTLY those bound — the property that keeps E43/E45's
+   * §V147 identity intact (an amount-only kernel is handed only `amount`, never a colour).
+   */
+  describe("the uniform slots (T880, B)", () => {
+    const withParams = (fields: string) => `${SHARED_UNIFORMS_WGSL}
+struct Params { ${fields} };
+@group(0) @binding(0) var inputSampler: sampler;
+@group(0) @binding(1) var inputTexture: texture_2d<f32>;
+@group(0) @binding(3) var<uniform> params: Params;
+@fragment fn fs(@location(0) uv: vec2f) -> @location(0) vec4f { return params.color1 * params.scalar1; }`;
+
+    it("parses the field names its own Params struct declares, ignoring comments", () => {
+      const fields = paramsStructFields(withParams("color1: vec4f, scalar1: f32, /* color2 */"));
+      expect([...fields].sort()).toEqual(["color1", "scalar1"]);
+    });
+
+    it("binds ONLY the slots the struct declares — a colour when asked, its value from the param", () => {
+      const source = withParams("color1: vec4f, scalar1: f32,");
+      const pass = firstPass(contextFor({ parameters: { [SHADER_SOURCE_PARAMETER]: source, color1: [0.2, 0.4, 0.6, 1], scalar1: 0.5 } }));
+      expect(pass.uniforms).toEqual({ color1: [0.2, 0.4, 0.6, 1], scalar1: 0.5 });
+      // The slots the struct did NOT name are never handed to the kernel.
+      expect(pass.uniforms).not.toHaveProperty("color2");
+      expect(pass.uniforms).not.toHaveProperty("amount");
+      expect(pass.uniforms).not.toHaveProperty("scalar2");
+    });
+
+    it("keeps §V147: an amount-only kernel is still handed amount and nothing else", () => {
+      const source = withParams("amount: f32,");
+      const pass = firstPass(contextFor({ parameters: { [SHADER_SOURCE_PARAMETER]: source, amount: 0, color1: [1, 0, 0, 1] } }));
+      // color1 is set on the node but the shader never declared it, so it is not bound —
+      // the E43 identity (amount = 0 → byte-identical) cannot be perturbed by an unused slot.
+      expect(pass.uniforms).toEqual({ amount: 0 });
+    });
+
+    it("dims a slot the shader has not declared (§V146), and lights it once declared", () => {
+      const declares = customWgslNode.parameters["color1"];
+      if (declares?.type !== "color") throw new Error("color1 is not a colour param");
+      const off = declares.inactiveWhen?.({ [SHADER_SOURCE_PARAMETER]: "struct Params { amount: f32, };" });
+      const on = declares.inactiveWhen?.({ [SHADER_SOURCE_PARAMETER]: "struct Params { color1: vec4f, };" });
+      expect(typeof off).toBe("string"); // a reason to dim it
+      expect(on).toBeNull(); // declared → active
+    });
   });
 });
