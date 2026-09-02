@@ -1,0 +1,347 @@
+{
+  "assets": [],
+  "componentLibrary": {
+    "components": [
+      {
+        "componentId": "depthCut",
+        "description": "Model-free background cut: a depth map thresholds into a soft matte and masks the picture. Removes things further away — a real matte knows who the person is; this never needs to.",
+        "graph": {
+          "edges": {
+            "e-matte-cut": {
+              "id": "e-matte-cut",
+              "source": {
+                "nodeId": "matte",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "cut",
+                "portId": "mask"
+              }
+            },
+            "in_input_2_feed_1": {
+              "id": "in_input_2_feed_1",
+              "source": {
+                "nodeId": "in_input_2",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "cut",
+                "portId": "input"
+              }
+            },
+            "in_input_feed_1": {
+              "id": "in_input_feed_1",
+              "source": {
+                "nodeId": "in_input",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "matte",
+                "portId": "input"
+              }
+            },
+            "out_out_feed": {
+              "id": "out_out_feed",
+              "source": {
+                "nodeId": "cut",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "out_out",
+                "portId": "in"
+              }
+            }
+          },
+          "groups": {},
+          "nodes": {
+            "cut": {
+              "definitionVersion": 1,
+              "id": "cut",
+              "label": "cut1",
+              "parameters": {
+                "channel": "red"
+              },
+              "position": {
+                "x": 516,
+                "y": -82
+              },
+              "type": "mask"
+            },
+            "in_input": {
+              "definitionVersion": 1,
+              "id": "in_input",
+              "label": "input",
+              "parameters": {},
+              "position": {
+                "x": 0,
+                "y": -168
+              },
+              "type": "componentIn"
+            },
+            "in_input_2": {
+              "definitionVersion": 1,
+              "id": "in_input_2",
+              "label": "input_2",
+              "parameters": {},
+              "position": {
+                "x": 0,
+                "y": 20
+              },
+              "type": "componentIn"
+            },
+            "matte": {
+              "definitionVersion": 1,
+              "id": "matte",
+              "label": "matte1",
+              "parameters": {
+                "feather": 0.12,
+                "invert": 0,
+                "source": "struct SharedFrame {\n  time: f32,\n  deltaTime: f32,\n  frameIndex: f32,\n  randomSeed: f32,\n  wallTime: f32,\n  wallDelta: f32,\n  absTime: f32,\n  absFrame: f32,\n  resolution: vec2f,\n  pointer: vec4f,\n};\nstruct Params {\n  threshold: f32,\n  feather: f32,\n  invert: f32,\n}\n\n@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n@group(0) @binding(2) var<uniform> frameU: SharedFrame;\n@group(0) @binding(3) var<uniform> params: Params;\n\n@fragment\nfn fs(@location(0) uv: vec2f) -> @location(0) vec4f {\n  let s = textureSampleLevel(inputTexture, inputSampler, uv, 0.0);\n  /* Single-channel depth (r32float, T959) reads .r; colour maps read luma (T974's rule). */\n  let d = select(dot(s.rgb, vec3f(0.2126, 0.7152, 0.0722)), s.r, s.g + s.b < 1e-6);\n  var matte = smoothstep(params.threshold - params.feather, params.threshold + params.feather, d);\n  matte = select(matte, 1.0 - matte, params.invert > 0.5);\n  return vec4f(matte, matte, matte, matte);\n}",
+                "threshold": 0.5
+              },
+              "position": {
+                "x": 258,
+                "y": -74
+              },
+              "type": "customWgsl"
+            },
+            "out_out": {
+              "definitionVersion": 1,
+              "id": "out_out",
+              "label": "out",
+              "parameters": {},
+              "position": {
+                "x": 774,
+                "y": -74
+              },
+              "type": "componentOut"
+            }
+          },
+          "revision": 1
+        },
+        "inputs": [
+          {
+            "externalId": "input",
+            "label": "input",
+            "nodeId": "in_input",
+            "portId": "in"
+          },
+          {
+            "externalId": "input_2",
+            "label": "input_2",
+            "nodeId": "in_input_2",
+            "portId": "in"
+          }
+        ],
+        "name": "DepthCut",
+        "outputs": [
+          {
+            "externalId": "out",
+            "label": "out",
+            "nodeId": "out_out",
+            "portId": "out"
+          }
+        ],
+        "parameters": [
+          {
+            "definition": {
+              "default": 0.5,
+              "description": "The depth value the cut happens at. With inverse maps (bright = close), higher keeps less.",
+              "label": "Threshold",
+              "max": 1,
+              "min": 0,
+              "type": "number"
+            },
+            "key": "threshold",
+            "targets": [
+              {
+                "key": "threshold",
+                "nodeId": "matte"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": 0.12,
+              "description": "Softness of the cut edge, in depth units.",
+              "label": "Feather",
+              "max": 0.5,
+              "min": 0,
+              "type": "number"
+            },
+            "key": "feather",
+            "targets": [
+              {
+                "key": "feather",
+                "nodeId": "matte"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": 0,
+              "description": "1 keeps the far side instead — cut the subject out rather than the background.",
+              "label": "Invert",
+              "max": 1,
+              "min": 0,
+              "step": 1,
+              "type": "number"
+            },
+            "key": "invert",
+            "targets": [
+              {
+                "key": "invert",
+                "nodeId": "matte"
+              }
+            ]
+          }
+        ],
+        "version": 1
+      }
+    ],
+    "schemaVersion": 1
+  },
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "ed_depthCut2": {
+        "id": "ed_depthCut2",
+        "source": {
+          "nodeId": "depthsrc",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_depthCut1",
+          "portId": "input"
+        }
+      },
+      "ed_depthCut3": {
+        "id": "ed_depthCut3",
+        "source": {
+          "nodeId": "picture",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_depthCut1",
+          "portId": "input_2"
+        }
+      },
+      "ed_depthCut4": {
+        "id": "ed_depthCut4",
+        "source": {
+          "nodeId": "nd_depthCut1",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "depthsrc": {
+        "definitionVersion": 1,
+        "id": "depthsrc",
+        "label": "depthsrc1",
+        "parameters": {
+          "center": [
+            0.5,
+            0.5
+          ],
+          "fillcolor": [
+            1,
+            1,
+            1,
+            1
+          ],
+          "mode": "fill",
+          "radius": [
+            0.42,
+            0.42
+          ],
+          "softness": 0.42
+        },
+        "position": {
+          "x": -520,
+          "y": -140
+        },
+        "type": "circle"
+      },
+      "nd_depthCut1": {
+        "definitionVersion": 1,
+        "id": "nd_depthCut1",
+        "parameters": {},
+        "position": {
+          "x": -130,
+          "y": -70
+        },
+        "type": "component:depthCut@1"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "label": "out1",
+        "parameters": {},
+        "position": {
+          "x": 260,
+          "y": 0
+        },
+        "type": "output"
+      },
+      "picture": {
+        "definitionVersion": 1,
+        "id": "picture",
+        "label": "picture1",
+        "parameters": {
+          "color1": [
+            0.1,
+            0.14,
+            0.25,
+            1
+          ],
+          "color2": [
+            0.85,
+            0.7,
+            0.4,
+            1
+          ],
+          "offset": [
+            0,
+            0
+          ],
+          "size": [
+            8,
+            5
+          ]
+        },
+        "position": {
+          "x": -520,
+          "y": 140
+        },
+        "type": "checker"
+      }
+    },
+    "revision": 2
+  },
+  "name": "DepthCut",
+  "projectId": "component-depthCut",
+  "schemaVersion": 3,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 7,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}

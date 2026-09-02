@@ -85,8 +85,8 @@
                 "whitelevel": 1
               },
               "position": {
-                "x": -360,
-                "y": 60
+                "x": 774,
+                "y": -74
               },
               "type": "level"
             },
@@ -112,8 +112,8 @@
                 "xord": "srt"
               },
               "position": {
-                "x": -160,
-                "y": 220
+                "x": 258,
+                "y": -74
               },
               "type": "transform"
             },
@@ -131,8 +131,8 @@
                 "source": "over1"
               },
               "position": {
-                "x": 40,
-                "y": 152
+                "x": 0,
+                "y": -168
               },
               "type": "feedback"
             },
@@ -142,8 +142,8 @@
               "label": "in1",
               "parameters": {},
               "position": {
-                "x": -200,
-                "y": -60
+                "x": 0,
+                "y": 20
               },
               "type": "componentIn"
             },
@@ -153,8 +153,8 @@
               "label": "out",
               "parameters": {},
               "position": {
-                "x": 280,
-                "y": -60
+                "x": 1290,
+                "y": -74
               },
               "type": "componentOut"
             },
@@ -166,8 +166,8 @@
                 "opacity": 1
               },
               "position": {
-                "x": 40,
-                "y": -60
+                "x": 1032,
+                "y": -90
               },
               "type": "over"
             },
@@ -180,13 +180,13 @@
                 "size": 1.4
               },
               "position": {
-                "x": -360,
-                "y": 240
+                "x": 516,
+                "y": -74
               },
               "type": "blur"
             }
           },
-          "revision": 0
+          "revision": 1
         },
         "inputs": [
           {

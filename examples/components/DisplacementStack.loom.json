@@ -86,8 +86,8 @@
                 "type": "perlin4d"
               },
               "position": {
-                "x": -520,
-                "y": 120
+                "x": 0,
+                "y": -168
               },
               "type": "noise"
             },
@@ -97,8 +97,8 @@
               "label": "source",
               "parameters": {},
               "position": {
-                "x": 20,
-                "y": -60
+                "x": 0,
+                "y": 20
               },
               "type": "componentIn"
             },
@@ -108,8 +108,8 @@
               "label": "out",
               "parameters": {},
               "position": {
-                "x": 500,
-                "y": -60
+                "x": 1032,
+                "y": -74
               },
               "type": "componentOut"
             },
@@ -147,8 +147,8 @@
                 "xord": "srt"
               },
               "position": {
-                "x": 0,
-                "y": 120
+                "x": 516,
+                "y": -74
               },
               "type": "transform"
             },
@@ -162,8 +162,8 @@
                 "whitelevel": 0.67
               },
               "position": {
-                "x": -260,
-                "y": 120
+                "x": 258,
+                "y": -74
               },
               "type": "level"
             },
@@ -184,13 +184,13 @@
                 ]
               },
               "position": {
-                "x": 260,
-                "y": -60
+                "x": 774,
+                "y": -82
               },
               "type": "displace"
             }
           },
-          "revision": 0
+          "revision": 1
         },
         "inputs": [
           {

@@ -96,8 +96,8 @@
                 ]
               },
               "position": {
-                "x": -240,
-                "y": 0
+                "x": 516,
+                "y": -74
               },
               "type": "tile"
             },
@@ -135,8 +135,8 @@
                 "xord": "srt"
               },
               "position": {
-                "x": -500,
-                "y": 0
+                "x": 258,
+                "y": -74
               },
               "type": "transform"
             },
@@ -146,8 +146,8 @@
               "label": "input",
               "parameters": {},
               "position": {
-                "x": -740,
-                "y": 0
+                "x": 0,
+                "y": -74
               },
               "type": "componentIn"
             },
@@ -157,8 +157,8 @@
               "label": "out",
               "parameters": {},
               "position": {
-                "x": 260,
-                "y": 0
+                "x": 1032,
+                "y": -74
               },
               "type": "componentOut"
             },
@@ -196,13 +196,13 @@
                 "xord": "rst"
               },
               "position": {
-                "x": 20,
-                "y": 0
+                "x": 774,
+                "y": -74
               },
               "type": "transform"
             }
           },
-          "revision": 0
+          "revision": 1
         },
         "inputs": [
           {

@@ -60,8 +60,8 @@
               "label": "input",
               "parameters": {},
               "position": {
-                "x": -500,
-                "y": 0
+                "x": 0,
+                "y": -74
               },
               "type": "componentIn"
             },
@@ -75,8 +75,8 @@
                 "steps": 4
               },
               "position": {
-                "x": 260,
-                "y": 0
+                "x": 774,
+                "y": -74
               },
               "type": "limit"
             },
@@ -86,8 +86,8 @@
               "label": "out",
               "parameters": {},
               "position": {
-                "x": 500,
-                "y": 0
+                "x": 1032,
+                "y": -74
               },
               "type": "componentOut"
             },
@@ -103,8 +103,8 @@
                 "whitelevel": 1
               },
               "position": {
-                "x": -260,
-                "y": 0
+                "x": 258,
+                "y": -74
               },
               "type": "level"
             },
@@ -117,13 +117,13 @@
                 "value": 1
               },
               "position": {
-                "x": 0,
-                "y": 0
+                "x": 516,
+                "y": -74
               },
               "type": "hsv"
             }
           },
-          "revision": 0
+          "revision": 1
         },
         "inputs": [
           {

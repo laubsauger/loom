@@ -20,6 +20,8 @@ import {
   kaleidoscopeDocument,
 } from "./documents.ts";
 import { DEPTH_CARVE_KERNEL, DEPTH_PAINT_KERNEL } from "./shaders/depth-points.wgsl.ts";
+import { SHARED_UNIFORMS_WGSL } from "../runtime/backend/shared-uniforms.ts";
+import { SHADER_SOURCE_PARAMETER } from "../domain/commands/apply-patch.ts";
 
 /**
  * The starter component set (T190, §V94, §V79).
@@ -450,6 +452,92 @@ const depthPointsHost: ProjectDocument = {
 };
 
 /**
+ * DepthCut's host (T977): the MODEL-FREE background cut. A depth map thresholds into a
+ * soft matte and the compositing `mask` applies it to the picture — no download, no
+ * inference, works on any depth source including the fourth fallback cell (webcam
+ * understudy). The copy is honest about what it is: it removes things FURTHER AWAY,
+ * not "not-the-person" — a real matte (§T957) knows the difference; this never has to.
+ */
+const DEPTH_CUT_MATTE_WGSL = `${SHARED_UNIFORMS_WGSL}
+struct Params {
+  threshold: f32,
+  feather: f32,
+  invert: f32,
+}
+
+@group(0) @binding(0) var inputSampler: sampler;
+@group(0) @binding(1) var inputTexture: texture_2d<f32>;
+@group(0) @binding(2) var<uniform> frameU: SharedFrame;
+@group(0) @binding(3) var<uniform> params: Params;
+
+@fragment
+fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
+  let s = textureSampleLevel(inputTexture, inputSampler, uv, 0.0);
+  /* Single-channel depth (r32float, T959) reads .r; colour maps read luma (T974's rule). */
+  let d = select(dot(s.rgb, vec3f(0.2126, 0.7152, 0.0722)), s.r, s.g + s.b < 1e-6);
+  var matte = smoothstep(params.threshold - params.feather, params.threshold + params.feather, d);
+  matte = select(matte, 1.0 - matte, params.invert > 0.5);
+  return vec4f(matte, matte, matte, matte);
+}`;
+
+const depthCutHost: ProjectDocument = {
+  schemaVersion: SCHEMA_VERSION,
+  projectId: "component-depth-cut",
+  name: "DepthCut",
+  settings: DEPTH_POINTS_SETTINGS,
+  assets: [],
+  createdAt: STARTER_COMPONENT_TIMESTAMP,
+  updatedAt: STARTER_COMPONENT_TIMESTAMP,
+  graph: {
+    revision: 1,
+    nodes: {
+      depthsrc: {
+        id: "depthsrc",
+        type: "circle",
+        definitionVersion: 1,
+        position: { x: -520, y: -140 },
+        // The same hand-authored inverse-depth stand-in DepthPoints demos with: bright
+        // centre = close. Any depth texture serves — that is the point.
+        parameters: { mode: "fill", center: [0.5, 0.5], radius: [0.42, 0.42], softness: 0.42, fillcolor: [1, 1, 1, 1] },
+        label: "depthsrc1",
+      },
+      picture: {
+        id: "picture",
+        type: "checker",
+        definitionVersion: 1,
+        position: { x: -520, y: 140 },
+        parameters: { size: [8, 5], offset: [0, 0], color1: [0.1, 0.14, 0.25, 1], color2: [0.85, 0.7, 0.4, 1] },
+        label: "picture1",
+      },
+      matte: {
+        id: "matte",
+        type: "customWgsl",
+        definitionVersion: 1,
+        position: { x: -260, y: -140 },
+        parameters: { [SHADER_SOURCE_PARAMETER]: DEPTH_CUT_MATTE_WGSL, threshold: 0.5, feather: 0.12, invert: 0 },
+        label: "matte1",
+      },
+      cut: {
+        id: "cut",
+        type: "mask",
+        definitionVersion: 1,
+        position: { x: 0, y: 0 },
+        parameters: { channel: "red" },
+        label: "cut1",
+      },
+      out: { id: "out", type: "output", definitionVersion: 1, position: { x: 260, y: 0 }, parameters: {}, label: "out1" },
+    },
+    edges: {
+      "e-depth-matte": { id: "e-depth-matte", source: { nodeId: "depthsrc", portId: "out" }, target: { nodeId: "matte", portId: "input" } },
+      "e-picture-cut": { id: "e-picture-cut", source: { nodeId: "picture", portId: "out" }, target: { nodeId: "cut", portId: "input" } },
+      "e-matte-cut": { id: "e-matte-cut", source: { nodeId: "matte", portId: "out" }, target: { nodeId: "cut", portId: "mask" } },
+      "e-cut-out": { id: "e-cut-out", source: { nodeId: "cut", portId: "out" }, target: { nodeId: "out", portId: "input" } },
+    },
+    groups: {},
+  },
+};
+
+/**
  * The specs.
  *
  * Ordered the way the library reads them: the two most-reached-for first, then the two
@@ -853,6 +941,54 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
       },
     ],
   },
+  {
+    componentId: "depthCut",
+    name: "DepthCut",
+    description:
+      "Model-free background cut: a depth map thresholds into a soft matte and masks the picture. Removes things further away — a real matte knows who the person is; this never needs to.",
+    host: depthCutHost,
+    selection: ["matte", "cut"],
+    publish: [
+      {
+        key: "threshold",
+        definition: {
+          type: "number",
+          label: "Threshold",
+          default: 0.5,
+          min: 0,
+          max: 1,
+          description: "The depth value the cut happens at. With inverse maps (bright = close), higher keeps less.",
+        },
+        targets: [{ nodeId: "matte", key: "threshold" }],
+      },
+      {
+        key: "feather",
+        definition: {
+          type: "number",
+          label: "Feather",
+          default: 0.12,
+          min: 0,
+          max: 0.5,
+          description: "Softness of the cut edge, in depth units.",
+        },
+        targets: [{ nodeId: "matte", key: "feather" }],
+      },
+      {
+        key: "invert",
+        definition: {
+          type: "number",
+          label: "Invert",
+          default: 0,
+          min: 0,
+          max: 1,
+          step: 1,
+          description: "1 keeps the far side instead — cut the subject out rather than the background.",
+        },
+        targets: [{ nodeId: "matte", key: "invert" }],
+      },
+    ],
+  },
+
 ];
 
 /** Everything a failed authoring step needs to say, without a half-built component. */
@@ -864,12 +1000,27 @@ export class StarterComponentError extends Error {
 }
 
 /**
+ * Whether the authoring pass tidies the component's internals before publishing.
+ *
+ * ALWAYS TRUE IN THE SHIPPED SET. The knob exists for one caller — §T969's byte-identity
+ * gate in `layout.test.ts`, which builds the set both ways and compares everything except
+ * node positions, so a reordered edge or a dropped parameter cannot ride along inside a
+ * "layout only" regeneration (§T886's lesson).
+ */
+export interface StarterComponentOptions {
+  readonly tidy?: boolean;
+}
+
+/**
  * Authors one starter component the way a user does, and returns what a save would hold.
  *
  * Each call gets its own registry and store, so the five are independent and the
  * sequential id factory starts from the same place every time.
  */
-async function authorComponent(spec: StarterComponentSpec): Promise<StarterComponent> {
+async function authorComponent(
+  spec: StarterComponentSpec,
+  options: StarterComponentOptions = {},
+): Promise<StarterComponent> {
   const nodeRegistry = createNodeRegistry(allNodeDefinitions).view();
   const { components, nodes } = createComponentSystem(nodeRegistry);
   const store = createGraphStore({
@@ -909,6 +1060,45 @@ async function authorComponent(spec: StarterComponentSpec): Promise<StarterCompo
     ids: createSequentialIdFactory(`${spec.componentId}-inside`),
   });
   try {
+    /*
+     * T969 — THE TIDY, AND IT IS A GESTURE, NOT A POST-PROCESS.
+     *
+     * `component.saveSelection` carries the selected nodes across at the positions they
+     * held in the host and then ADDS boundary nodes for the ports it exposed — which have
+     * nowhere to go but on top of what is already there. Measured before this line
+     * existed: `depthPoints` had `in_field` overlapping `carve` by 158x148px and
+     * `in_field_2` overlapping `grid` by 158x140, `audioLevel` had `den` and `num` stacked
+     * on one point, `feedbackEcho` had `decay` under `in_in1`. That is the "bunched up
+     * mess" the owner found by digging into `holo1`, and it is what §V389's gate never saw
+     * because `layout.test.ts` iterated `EXAMPLE_DOCUMENTS` only.
+     *
+     * It runs INSIDE the session, as `graph.layoutAll` — the same bus command as the
+     * canvas "Layout" row, the `L` key and the agent's `layout_graph` (§V191, §V78). So
+     * this is literally "enter the component and press L", which keeps §V94 true: the
+     * shipped component is still exactly what the authoring path produces, with no second
+     * layout algorithm and no hand-placed coordinates to drift.
+     *
+     * BEFORE the publish loop, because publishing writes the parameter PAGE and moving
+     * nodes writes the GRAPH: keeping them in that order means the page is authored
+     * against final positions and a future publish that did care about geometry would see
+     * the geometry it ships with.
+     *
+     * `layout.alreadyTidy` is a SUCCESS here (§V288 makes an idempotent tidy a refusal so
+     * a keypress does not burn an undo entry) — it means the component was already where
+     * the layout would put it, which is the state this line exists to reach.
+     */
+    if (options.tidy !== false) {
+      const laid = await session.bus.execute("graph.layoutAll", {}, AUTHORING_CONTEXT);
+      const alreadyTidy = laid.diagnostics.some((diagnostic) => diagnostic.code === "layout.alreadyTidy");
+      if (laid.status !== "applied" && !alreadyTidy) {
+        throw new StarterComponentError(
+          spec,
+          "graph.layoutAll",
+          laid.diagnostics.map((diagnostic) => diagnostic.message).join(" ") || "rejected",
+        );
+      }
+    }
+
     for (const published of spec.publish) {
       const result = await session.bus.execute(
         "component.publishParameter",
@@ -951,8 +1141,10 @@ async function authorComponent(spec: StarterComponentSpec): Promise<StarterCompo
 }
 
 /** The whole starter set, authored. Order follows `STARTER_COMPONENT_SPECS`. */
-export async function buildStarterComponents(): Promise<readonly StarterComponent[]> {
+export async function buildStarterComponents(
+  options: StarterComponentOptions = {},
+): Promise<readonly StarterComponent[]> {
   const built: StarterComponent[] = [];
-  for (const spec of STARTER_COMPONENT_SPECS) built.push(await authorComponent(spec));
+  for (const spec of STARTER_COMPONENT_SPECS) built.push(await authorComponent(spec, options));
   return built;
 }

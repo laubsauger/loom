@@ -128,8 +128,8 @@
                 "bpm": 112
               },
               "position": {
-                "x": -720,
-                "y": 240
+                "x": 0,
+                "y": -74
               },
               "type": "audioPattern"
             },
@@ -141,8 +141,8 @@
                 "minimum": 0
               },
               "position": {
-                "x": 240,
-                "y": 280
+                "x": 1032,
+                "y": -74
               },
               "type": "valueLimit"
             },
@@ -153,8 +153,8 @@
                 "operation": "subtract"
               },
               "position": {
-                "x": -240,
-                "y": 360
+                "x": 516,
+                "y": 20
               },
               "type": "valueMath"
             },
@@ -166,8 +166,8 @@
                 "releaseRatio": 0.002
               },
               "position": {
-                "x": -480,
-                "y": 360
+                "x": 258,
+                "y": -168
               },
               "type": "valueLag"
             },
@@ -178,8 +178,8 @@
                 "operation": "divide"
               },
               "position": {
-                "x": 0,
-                "y": 280
+                "x": 774,
+                "y": -82
               },
               "type": "valueMath"
             },
@@ -190,8 +190,8 @@
                 "operation": "subtract"
               },
               "position": {
-                "x": -240,
-                "y": 200
+                "x": 516,
+                "y": -184
               },
               "type": "valueMath"
             },
@@ -201,8 +201,8 @@
               "label": "out",
               "parameters": {},
               "position": {
-                "x": 480,
-                "y": 280
+                "x": 1290,
+                "y": -74
               },
               "type": "componentOutValue"
             },
@@ -214,13 +214,13 @@
                 "releaseRatio": 100
               },
               "position": {
-                "x": -480,
-                "y": 120
+                "x": 258,
+                "y": 20
               },
               "type": "valueLag"
             }
           },
-          "revision": 0
+          "revision": 1
         },
         "inputs": [],
         "name": "AudioLevel",
