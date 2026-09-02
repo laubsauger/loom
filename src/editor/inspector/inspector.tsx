@@ -101,6 +101,70 @@ export interface InspectorProps {
    * than be forced to fabricate a resolver, which is the state that shipped.
    */
   channels?: ChannelResolver;
+  /**
+   * T893 — reads the LAST RENDERED frame. A ref read, never a subscription (§V16), and
+   * the same accessor `TimelineReadout` samples.
+   *
+   * With it, a driven or expression parameter's field shows what is ON SCREEN instead of
+   * the zero-frame resolution it showed since B46 (B95 caught the same lie from the other
+   * end: a kernel slot reading 0.00 while the LFO's own preview read 1.62). Absent — a
+   * component editor, a test of the layout, any caller with no frame loop — the panel
+   * behaves exactly as it did: §V44's deterministic zero frame.
+   *
+   * A FUNCTION, deliberately. Passing the frame itself would put whoever owns it on a
+   * per-frame render path and re-render this pane's whole ancestry sixty times a second,
+   * which is §T714's measured disaster with a different trigger.
+   */
+  latestFrame?: (() => FrameInputs | null) | undefined;
+}
+
+/** §V16: <= 10 Hz. Shared with `TimelineReadout`'s cap, for the same reason. */
+export const LIVE_VALUE_INTERVAL_MS = 100;
+
+/**
+ * T893 — the live frame, sampled at <=10 Hz, and ONLY while something here animates.
+ *
+ * §V16 has both halves of this: per-frame state does not enter the document store, and a
+ * UI metric refreshes at most ten times a second. So nothing is pushed at us — we pull,
+ * on an interval, from the ref the frame loop already keeps.
+ *
+ * Three things keep this from becoming §T714:
+ *
+ *  - `reader` is undefined when the selected node has no animated parameter, so a static
+ *    node — the overwhelming case — installs no timer and re-renders zero times.
+ *  - the state bump is skipped when the frame INDEX has not moved, so a paused transport
+ *    costs one render and then nothing, however long the panel stays open.
+ *  - only this pane re-renders. There is no context write and no store write, so nothing
+ *    outside the inspector can be re-rendered by a frame advancing.
+ */
+function useLiveFrame(
+  reader: (() => FrameInputs | null) | undefined,
+  intervalMs: number,
+): FrameEvaluationInput | null {
+  const [frame, setFrame] = useState<FrameEvaluationInput | null>(null);
+  const seen = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (reader === undefined) {
+      // Nothing animates here: drop whatever was last sampled so the panel falls back to
+      // the retained resolution rather than freezing on the last live number it saw.
+      seen.current = null;
+      setFrame(null);
+      return;
+    }
+    const tick = (): void => {
+      const inputs = reader();
+      if (inputs === null) return;
+      if (seen.current === inputs.frame.frameIndex) return;
+      seen.current = inputs.frame.frameIndex;
+      setFrame(inputs.frame);
+    };
+    tick();
+    const timer = setInterval(tick, intervalMs);
+    return () => clearInterval(timer);
+  }, [intervalMs, reader]);
+
+  return frame;
 }
 
 export function Inspector({
@@ -114,6 +178,7 @@ export function Inspector({
   editor: providedEditor,
   variant = "inspector",
   channels,
+  latestFrame,
   audioStatus,
   components,
 }: InspectorProps) {
@@ -164,6 +229,18 @@ export function Inspector({
   const node = nodeId === null ? undefined : graph.nodes[nodeId];
   const definition = node === undefined ? undefined : bus.registry.get(node.type);
 
+  /*
+   * T893 — sampled ABOVE the early return, because a hook may not be conditional. The
+   * PREDICATE carries the condition instead: a node with no expression, driven or bind
+   * slot hands `useLiveFrame` no reader, and it installs nothing.
+   */
+  const liveFrame = useLiveFrame(
+    latestFrame !== undefined && node !== undefined && nodeHasAnimatedParameters(node)
+      ? latestFrame
+      : undefined,
+    LIVE_VALUE_INTERVAL_MS,
+  );
+
   if (node === undefined || editor === null) {
     return (
       <div className={styles.empty}>
@@ -182,22 +259,47 @@ export function Inspector({
    * the sides swapped — and B8 is on record as having cost a day precisely because both
    * halves looked correct in isolation.
    */
-  const resolved = resolveParameters(node, definition, {
+  const readOptions = {
     nodes: createNodeReferenceReader({
       graph,
       schemaOf: (target) => effectiveParameterSchema(bus.registry.get(target.type), target.parameters),
     }),
-    /**
-     * B46 — and deliberately with NO `frame`.
-     *
-     * A frameless read is §V44's deterministic zero frame, which `useValueGraph` answers
-     * from a throwaway session keyed on the document revision. Passing the live frame
-     * instead would make a stateful stage advance because a panel re-rendered — a Lag
-     * jumping every time you drag a node — and it would put this pane on a per-frame
-     * render path §V16 forbids. The panel shows the resolved value at t=0 and, crucially,
-     * stops claiming the channel is unattached when it is.
-     */
     ...(channels === undefined ? {} : { channels }),
+  };
+
+  /**
+   * B46 — the RETAINED read, deliberately with NO `frame`.
+   *
+   * A frameless read is §V44's deterministic zero frame, which `useValueGraph` answers
+   * from a throwaway session keyed on the document revision. This is what the mode panel,
+   * the detach seed and every write are built from, and it must stay frameless: §V108's
+   * retained number is what flipping back to Constant restores, so a momentary sample may
+   * never land in that seat. The panel shows the resolved value at t=0 and, crucially,
+   * stops claiming the channel is unattached when it is.
+   */
+  const resolved = resolveParameters(node, definition, readOptions);
+
+  /**
+   * T893 — the LIVE read, the same call with the last rendered frame, for DISPLAY only.
+   *
+   * ⚠ The comment that stood here said a live frame "would make a stateful stage advance
+   * because a panel re-rendered — a Lag jumping every time you drag a node". THAT IS NOT
+   * TRUE OF THIS RESOLVER, and the difference is the whole fix. `useValueGraph`'s resolver
+   * branches on the frame: WITHOUT one it evaluates a throwaway session (which is what
+   * that warning is about, and it is right), WITH one it returns `latest.current` — a
+   * SNAPSHOT of the frame the loop already evaluated, evaluating nothing. §V155's "never
+   * twice per frame" rule is what makes it a snapshot, so a reader cannot advance it. The
+   * backstop below it, `graphChannelResolver`, is a pure function of values and frame by
+   * §V143. So the cost of asking is a lookup, not a step.
+   *
+   * ONE read path, not two (§V61, B8): the same function, the same options, differing by
+   * the one field that means "at which moment" — exactly how the structural compile and
+   * the per-frame compile already relate to each other. A second resolver here is the bug
+   * B8 recorded, and this is deliberately not one.
+   */
+  const live = liveFrame === null ? null : resolveParameters(node, definition, {
+    ...readOptions,
+    frame: liveFrame,
   });
   const groups = groupParameters(resolved.entries);
 
@@ -330,6 +432,14 @@ export function Inspector({
                 parameterKey={entry.key}
                 definition={entry.definition}
                 value={entry.value}
+                /*
+                 * T893: what is on screen right now, when it differs. Display only — the
+                 * line above stays the retained resolution, which is what the mode panel
+                 * seeds from and what a detach restores (§V108). Undefined for a static
+                 * parameter and for every caller with no frame loop, so those rows render
+                 * byte for byte as they did.
+                 */
+                {...(live === null ? {} : { liveValue: live.get(entry.key)?.value })}
                 variant={variant}
                 driven={entry.driven}
                 // §V146 (B14): the node itself says when one of its parameters cannot

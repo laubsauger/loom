@@ -13,6 +13,7 @@ import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
 import type { NodeId } from "@domain/types/ids.ts";
 import type { ChannelResolver } from "@domain/parameters/resolve.ts";
+import type { FrameInputs } from "@domain/types/backend.ts";
 import { ComponentPage } from "@editor/component/index.ts";
 import type { GraphComponentDefinition } from "@domain/types/components.ts";
 import type { ComponentRegistryView } from "@domain/components/registry.ts";
@@ -114,6 +115,12 @@ export interface InspectorPaneProps {
    * the bug B8 recorded.
    */
   channels?: ChannelResolver;
+  /**
+   * T893: reads the LAST RENDERED frame, so a driven parameter's field can show what is
+   * on screen instead of its zero-frame resolution. Passed straight through and sampled
+   * inside the panel at <=10 Hz (§V16) — this pane never calls it.
+   */
+  latestFrame?: (() => FrameInputs | null) | undefined;
   status: GpuStatus;
   /** Values the open file carried that this build cannot read (§V68, §V69). */
   unknownParameters?: readonly UnknownParameter[];  /** T434(b)/T432: the session audio capture's status, for the Inspector's Audio section. */
@@ -164,6 +171,7 @@ export function InspectorPane({
   compiled,
   diagnostics,
   channels,
+  latestFrame,
   status,
   unknownParameters = [],
   audioStatus,
@@ -234,6 +242,7 @@ export function InspectorPane({
           capabilities={status.kind === "ready" ? { formats: status.capabilities.formats } : undefined}
           inputResolutions={inputResolutions}
           {...(channels === undefined ? {} : { channels })}
+          {...(latestFrame === undefined ? {} : { latestFrame })}
           {...(audioStatus === undefined ? {} : { audioStatus })}
         />
       </div>

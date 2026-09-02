@@ -64,12 +64,22 @@ const ZERO_FRAME: FrameEvaluationInput = {
  * run at frame rate at all; a static project pays nothing.
  */
 export function hasAnimatedParameters(graph: GraphDocument): boolean {
-  for (const node of Object.values(graph.nodes)) {
-    for (const stored of Object.values(node.parameters)) {
-      if (typeof stored !== "object" || stored === null || Array.isArray(stored)) continue;
-      const mode = (stored as { mode?: unknown }).mode;
-      if (mode === "expression" || mode === "driven" || mode === "bind") return true;
-    }
+  return Object.values(graph.nodes).some(nodeHasAnimatedParameters);
+}
+
+/**
+ * The same question about ONE node, which is the unit the inspector asks about (T893).
+ *
+ * Extracted rather than copied: the panel decides whether to sample the live frame at all
+ * from this, and a second predicate that drifted would mean the inspector going quiet for
+ * exactly the parameters the frame loop is animating. Component keys (`color.g`) live in
+ * the same record, so a compound with one driven channel counts.
+ */
+export function nodeHasAnimatedParameters(node: GraphDocument["nodes"][string]): boolean {
+  for (const stored of Object.values(node.parameters)) {
+    if (typeof stored !== "object" || stored === null || Array.isArray(stored)) continue;
+    const mode = (stored as { mode?: unknown }).mode;
+    if (mode === "expression" || mode === "driven" || mode === "bind") return true;
   }
   return false;
 }

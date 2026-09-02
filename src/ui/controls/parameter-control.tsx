@@ -60,6 +60,26 @@ export interface ParameterControlProps {
   definition: ParameterDefinition;
   /** Stored value. A value that does not fit the manifest falls back to the default. */
   value: ParameterValue | undefined;
+  /**
+   * T893 — what is ON SCREEN RIGHT NOW, when that differs from `value`.
+   *
+   * The owner: "driven values / reference derived values dont seem to update their value
+   * in the respective input... this doesnt reflect whats actually currently rendering."
+   * `driven` was a STYLING flag and nothing else: the badge said "the shown value comes
+   * from a driver" over a number resolved at the deterministic zero frame (§V44), so the
+   * inspector stated a falsehood about the picture.
+   *
+   * SHOW LIVE, STORE RETAINED. This feeds the FIELD only. `value` still decides the mode
+   * envelope, the detach seed and every write, because §V108's retained number is what a
+   * flip back to Constant restores — displaying the live one into that seat would let a
+   * momentary sample overwrite the value the user is keeping. So the two never merge, and
+   * the switch below is the only place this is read.
+   *
+   * It arrives per RENDER, sampled by the caller at <=10 Hz (§V16). Nothing here polls,
+   * subscribes or holds a frame: a control that reached for the clock itself would be the
+   * per-frame React path §T714 measured at 10.8x.
+   */
+  liveValue?: ParameterValue | undefined;
   variant?: ControlVariant;
   disabled?: boolean;
   /** The value shown came from a driver rather than the document (doc §8.2 seam). */
@@ -118,6 +138,7 @@ export function ParameterControl({
   parameterKey,
   definition,
   value,
+  liveValue,
   variant = "inspector",
   disabled = false,
   driven = false,
@@ -134,6 +155,16 @@ export function ParameterControl({
   const controlId = `${generatedId}-${parameterKey}`;
   const descriptionId = definition.description === undefined ? undefined : `${controlId}-desc`;
   const resolved = valueForDefinition(definition, value);
+  /**
+   * T893 — the DISPLAY value, and the only thing the field branches below read.
+   *
+   * `resolved` stays the RETAINED one everywhere else in this component: `slot`, the mode
+   * panel's seed, `withMode`'s literal, `emitCompound`'s per-channel fallback. That split
+   * is the whole point — a live sample must never become the number a detach restores
+   * (§V108), and a field must never emit one back into the document (§V16: per-frame state
+   * does not enter the store).
+   */
+  const shown = liveValue === undefined ? resolved : valueForDefinition(definition, liveValue);
   const label = definition.label;
 
   const [expanded, setExpanded] = useState(false);
@@ -285,7 +316,7 @@ export function ParameterControl({
         <NumberField
           {...shared}
           id={controlId}
-          value={typeof resolved === "number" ? resolved : definition.default}
+          value={typeof shown === "number" ? shown : definition.default}
           defaultValue={definition.default}
           spec={definition}
           {...(definition.unit === undefined ? {} : { unit: definition.unit })}
@@ -299,7 +330,7 @@ export function ParameterControl({
         <BooleanField
           {...shared}
           id={controlId}
-          value={resolved === true}
+          value={shown === true}
           onChange={(next, phase) => emit(next, phase)}
         />,
       );
@@ -309,7 +340,7 @@ export function ParameterControl({
         <EnumField
           {...shared}
           id={controlId}
-          value={typeof resolved === "string" ? resolved : definition.default}
+          value={typeof shown === "string" ? shown : definition.default}
           options={definition.options}
           onChange={(next, phase) => emit(next, phase)}
         />,
@@ -319,7 +350,7 @@ export function ParameterControl({
       return row(
         <ColorField
           {...shared}
-          value={toRgba(resolved)}
+          value={toRgba(shown)}
           definition={definition}
           {...(componentDisabled === undefined ? {} : { componentDisabled })}
           onChange={(next, phase) => emitCompound(next, phase)}
@@ -331,7 +362,7 @@ export function ParameterControl({
       return row(
         <VectorField
           {...shared}
-          value={Array.isArray(resolved) ? (resolved as readonly number[]) : definition.default}
+          value={Array.isArray(shown) ? (shown as readonly number[]) : definition.default}
           definition={definition}
           {...(componentDisabled === undefined ? {} : { componentDisabled })}
           onChange={(next, phase) => emitCompound(next, phase)}
@@ -344,7 +375,7 @@ export function ParameterControl({
         <TextField
           {...shared}
           id={controlId}
-          value={typeof resolved === "string" ? resolved : definition.default}
+          value={typeof shown === "string" ? shown : definition.default}
           multiline={definition.multiline === true}
           onChange={(next, phase) => emit(next, phase)}
         />,
@@ -357,7 +388,7 @@ export function ParameterControl({
           codeField({
             id: controlId,
             label,
-            value: typeof resolved === "string" ? resolved : definition.default,
+            value: typeof shown === "string" ? shown : definition.default,
             language: definition.language,
             disabled: shared.disabled === true,
             onCommit: (next) => emit(next, "commit"),
@@ -366,7 +397,7 @@ export function ParameterControl({
           <TextField
             {...shared}
             id={controlId}
-            value={typeof resolved === "string" ? resolved : definition.default}
+            value={typeof shown === "string" ? shown : definition.default}
             multiline
             onChange={(next, phase) => emit(next, phase)}
           />
@@ -378,7 +409,7 @@ export function ParameterControl({
       return row(
         <AssetField
           label={label}
-          value={typeof resolved === "string" ? resolved : null}
+          value={typeof shown === "string" ? shown : null}
           kind={definition.kind}
           // T434: the picked object URL is the stored value — one commit, one undo step,
           // like every other control (§V114). Session-scoped; the field says so.
@@ -401,7 +432,7 @@ export function ParameterControl({
       return row(
         <StopsField
           {...shared}
-          value={Array.isArray(resolved) ? (resolved as readonly ColorStop[]) : definition.default}
+          value={Array.isArray(shown) ? (shown as readonly ColorStop[]) : definition.default}
           definition={definition}
           onChange={(next, phase) => emit(next, phase)}
         />,
@@ -414,7 +445,7 @@ export function ParameterControl({
       return row(
         <CurveField
           label={label}
-          value={Array.isArray(resolved) ? (resolved as readonly CurvePoint[]) : []}
+          value={Array.isArray(shown) ? (shown as readonly CurvePoint[]) : []}
         />,
       );
 

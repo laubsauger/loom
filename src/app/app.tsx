@@ -1166,6 +1166,10 @@ export function App({
                 diagnostics={compile.diagnostics}
                 // B46/§V61: the panel resolves through the resolver the COMPILE used.
                 channels={compile.channels}
+                // T893: the same accessor the timeline readout samples. A ref read, never
+                // a subscription (§V16) — the panel pulls at <=10 Hz and nothing here
+                // re-renders because a frame advanced.
+                latestFrame={frameLoop.latestFrame}
                 status={status}
                 unknownParameters={runtime.unknownParameters}
                 audioStatus={audioInput.status}
