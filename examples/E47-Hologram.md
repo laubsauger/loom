@@ -41,9 +41,30 @@ srcpick1 ─┬─────────────────────�
           ├─► flat1(hsv) ─► soften1(blur) ─► pick1(switch)
           └─► depth1(depth) ── index 1 ────────┘   │
                                   pick1 ─► holo1 (depth map)
-holo1(component:depthPoints@1) ─► dots1(geometry) ─► shot1(render) ─► out1
+holo1(component:depthPoints@1) ─► zone1(pointRange) ─► dots1(geometry) ─┐
+src1 ─┬─► holo2 (colour)                                                ├─► shot1(render) ─► out1
+      └─► flat2(hsv) ─► soften2(blur) ─► holo2 (depth map)              │
+holo2(component:depthPoints@1) ─► wall1(pointRange) ─► wdots1(geometry) ┘
 orbit1(lfo) ┄drives┄► eye1.eye.x
 ```
+
+## The zone and the wall
+
+`zone1` keeps holo1's points whose `depthN` falls inside [0, 0.13] — the subject band —
+and parks the rest out of shot. The cut happens ON the cloud, where depth is an exact
+per-point attribute, not on the texture; drag `to` and the room recedes live.
+
+`wall1` is the SAME operator in its other mode: it keeps a second DepthPoints instance's
+points OUTSIDE the same range. Inside + outside over one range partition a cloud exactly
+(the boundary belongs to inside), so between the two instances no depth band is drawn
+twice or lost.
+
+The second instance redeems the source switch: `holo2` reads the synthetic performer
+ALWAYS — `src1` for colour, its own luma chain (`flat2` → `soften2`) for depth — so
+flipping `srcpick1` to the webcam no longer throws the synthetic source away. It becomes
+the backdrop: you, near, in front of a wall of clouds, far. holo2's published `near`/`far`
+place its stage behind holo1's (2.0–4.4 against 0.7–2.6), so the two clouds separate by
+REAL world depth under the orbit's parallax — the thing a 2D key cannot do.
 
 | Node | Type | Doing |
 | --- | --- | --- |
@@ -57,8 +78,15 @@ orbit1(lfo) ┄drives┄► eye1.eye.x
 | `srcpick1` | `switch` | WHICH picture the cloud is made of: synthetic performer or webcam |
 | `pick1` | `switch` | WHICH depth map the component reads — the source-agnosticism, live |
 | `holo1` | `component:depthPoints@1` | the DepthPoints instance (T958): unprojection, declared encoding, retexture |
+| `zone1` | `pointRange` | the subject's zone (T983): keep depthN inside [0, 0.13], park the rest |
+| `flat2` | `hsv` | the backdrop's own luma — the wall never depends on the switch |
+| `soften2` | `blur` | the wall's carve reads a surface, same 14 px as the subject's |
+| `holo2` | `component:depthPoints@1` | the second instance (§T979): the synthetic performer as a backdrop, staged deeper |
+| `wall1` | `pointRange` | the same operator, mode outside: the wall keeps what the subject's zone drops |
 | `dots1` | `geometry` | soft additive points, per-point tint mapped from the component's paint |
+| `wdots1` | `geometry` | the wall's motes: finer, dimmer, mapped from holo2's thermal-heavy paint |
 | `glowm1` | `materialUnlit` | the hologram's cast: a cool cyan carrier the warm orb burns through |
+| `wallm1` | `materialUnlit` | the wall's carrier: deeper blue, light density rather than a second performer |
 | `eye1` | `camera` | orbited by `orbit1` — ±0.9 at 0.03 Hz, E44's ±16° parallax figure |
 | `shot1` | `render` | `antialias: ssaa` — thin bright motes on black, supersampled before bloom would see them |
 

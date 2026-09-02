@@ -7,7 +7,9 @@ import { settings, node, edge, graph, document, drivenSlot } from "./builders.ts
  *   orb1(circle)─┘              ├─► flat1(hsv, sat 0) ─► soften1(blur) ─► pick1(switch)
  *                               └─► depth1(depth) ────────── index 1 ──────┘   │
  *                                                              pick1 ─► holo1.field_2 (depth)
- *   holo1(component:depthPoints@1) ─► dots1(points, soft additive) ─► shot1 ─► out1
+ *   holo1(component:depthPoints@1) ─► zone1(pointRange, inside) ─► dots1 ─┐
+ *   src1 ─┬─► holo2.field   holo2 ─► wall1(pointRange, OUTSIDE) ─► wdots1 ─┴► shot1 ─► out1
+ *          └─► flat2 ─► soften2 ─► holo2.field_2
  *   orbit1(lfo) ┄drives┄► eye1.eye.x
  *
  * ## What the picture is
@@ -45,6 +47,27 @@ import { settings, node, edge, graph, document, drivenSlot } from "./builders.ts
  * ±16° figure for the same parallax problem. The motes are soft and additive, so the
  * cloud reads as light density, not billboards, and the swing carries the depth even
  * while the understudy holds still.
+ *
+ * ## The zone and the wall (T983 + §T979)
+ *
+ * The owner's ask, verbatim: "threshold based on the depth map point cloud … an IN and
+ * OUT zone, like a volume", and "the person is in front of a filled in wall of clouds".
+ * Both are ONE operator: `zone1` keeps holo1's points INSIDE depthN [0, 0.13] — the
+ * subject pops off its background geometrically, on the cloud where depth is exact —
+ * and `wall1` keeps a SECOND DepthPoints instance's points OUTSIDE the same range.
+ * Same range, two modes: an exact partition (the boundary belongs to inside), which is
+ * §T983's design property doing §T979's job.
+ *
+ * §T979's stronger point is that this REDEEMS the source switch: `holo2` reads the
+ * synthetic performer ALWAYS — `src1` for colour, its own luma chain (`flat2` →
+ * `soften2`) for depth — so flipping `srcpick1` to the webcam no longer throws the
+ * synthetic source away. It becomes the BACKDROP: you, near, in front of a wall of
+ * clouds, far — and they separate by REAL depth under the orbit's parallax, which a 2D
+ * key cannot do. holo2's published near/far place its stage behind holo1's (2.0–4.4
+ * against 0.7–2.6), so the wall is behind the subject in world space, not merely
+ * dimmer. (§T977's DepthCut — the 2D matte spelling — is deliberately NOT wired here
+ * yet: the paint kernel discards field alpha and additive draws carry light in rgb, so
+ * an alpha matte would be invisible through this chain; see the §T977 follow-up.)
  */
 export const hologramDocument = document(
   "e47-hologram",
@@ -101,6 +124,42 @@ export const hologramDocument = document(
         heat: 0.45,
       }, { label: "holo1" }),
 
+      /* T983 — the subject's zone: keep the near band of the cloud, park the rest. The
+         cut happens ON the cloud, where depthN is an exact per-point attribute (§T973),
+         not on the texture — the owner's own reasoning ("there we already did all the
+         work"). from/to are runtime knobs: drag `to` and the room recedes live. */
+      node("zone", "pointRange", [-720, 460], {
+        attribute: "depthN", component: "x", from: 0, to: 0.13, mode: "inside",
+      }, { label: "zone1" }),
+
+      // ---- the backdrop wall (§T979): the SAME component, instanced twice -----------
+      /* The synthetic performer stops being a fallback and becomes a LAYER: holo2 reads
+         it ALWAYS (its own luma chain for depth), so flipping srcpick1 to the webcam
+         keeps the cloud wall standing behind you instead of throwing it away. */
+      node("flat2", "hsv", [-1620, 760], { hueoffset: 0, saturation: 0, value: 1 }, { label: "flat2" }),
+      node("soften2", "blur", [-1320, 760], { size: 14, filter: "gaussian", extend: "hold" }, { label: "soften2" }),
+      node("holo2", "component:depthPoints@1", [-1020, 760], {
+        /* A deeper stage than the subject's (2.0–4.4 against 0.7–2.6): the wall stands
+           BEHIND the subject in world space, and the orbit's parallax separates them —
+           the thing a 2D key cannot do (§T979). Thermal-heavy heat: the wall reads as
+           an environment, not a second performer. */
+        resolution: 120,
+        unproject: 1,
+        fov: 55,
+        inverseDepth: 1,
+        near: 2.0,
+        far: 4.4,
+        displace: 1.2,
+        gain: 0.4,
+        heat: 0.8,
+      }, { label: "holo2" }),
+      /* T983's other mode, SAME range: the wall keeps what the subject's zone drops.
+         Inside + outside over one range partition exactly (the boundary belongs to
+         inside), so between the two instances no depth band is drawn twice or lost. */
+      node("wall", "pointRange", [-720, 760], {
+        attribute: "depthN", component: "x", from: 0, to: 0.13, mode: "outside",
+      }, { label: "wall1" }),
+
       // ---- styling and the stage ----------------------------------------------------
       /* The hologram's cast: a cool cyan carrier the warm orb burns through. */
       node("glowm", "materialUnlit", [-420, -300], { color: [0.55, 0.85, 1, 1] }, { label: "glowm1" }),
@@ -112,12 +171,20 @@ export const hologramDocument = document(
            static white and the retexturing is invisible. */
         tint: { mode: "map", bindings: { static: { kind: "static", value: [1, 1, 1, 1] }, map: { kind: "map", attribute: "tint" } } },
       } }),
+      /* The wall's motes: finer, dimmer, cooler — light density behind the subject. */
+      node("wallm", "materialUnlit", [-120, 760], { color: [0.32, 0.5, 0.95, 1] }, { label: "wallm1" }),
+      node("wdots", "geometry", [-420, 760], {
+        mode: "points", scale: 0.005, soft: 1, spherical: false, blend: "additive",
+        material: "wallm1", tint: [1, 1, 1, 1],
+      }, { label: "wdots1", parameters: {
+        tint: { mode: "map", bindings: { static: { kind: "static", value: [1, 1, 1, 1] }, map: { kind: "map", attribute: "tint" } } },
+      } }),
       node("eye", "camera", [-420, 180], {
         eye: [0, 0.85, 3.2], lookAt: [0, -0.1, 0], fov: 40, near: 0.1, far: 40, ortho: false,
       }, { label: "eye1", parameters: { "eye.x": drivenSlot("orbit1", 0) } }),
       node("orbit", "lfo", [-420, 420], { shape: "sine", frequency: 0.03, amplitude: 0.9, offset: 0, phase: 0 }, { label: "orbit1" }),
       node("shot", "render", [-120, -60], {
-        scenes: "dots1", camera: "eye1", lights: "",
+        scenes: "dots1 wdots1", camera: "eye1", lights: "",
         ambientColor: [0, 0, 0, 1], ambientIntensity: 0,
         background: [0.008, 0.01, 0.016, 1],
         /* T939: thin bright motes on black — supersampling shades them. */
@@ -140,7 +207,16 @@ export const hologramDocument = document(
          flattened plan's texture bindings, not assumed from the names. */
       edge("e-srcpick-holo", ["srcpick", "out"], ["holo", "field"]),
       edge("e-pick-holo", ["pick", "out"], ["holo", "field_2"]),
-      edge("e-holo-dots", ["holo", "out"], ["dots", "points"]),
+      /* T983: the subject's cloud passes through its zone before it is drawn. */
+      edge("e-holo-zone", ["holo", "out"], ["zone", "points"]),
+      edge("e-zone-dots", ["zone", "out"], ["dots", "points"]),
+      /* §T979: the backdrop reads the synthetic performer ALWAYS — never the switch. */
+      edge("e-src-holo2", ["src", "out"], ["holo2", "field"]),
+      edge("e-src-flat2", ["src", "out"], ["flat2", "input"]),
+      edge("e-flat2-soften2", ["flat2", "out"], ["soften2", "input"]),
+      edge("e-soften2-holo2", ["soften2", "out"], ["holo2", "field_2"]),
+      edge("e-holo2-wall", ["holo2", "out"], ["wall", "points"]),
+      edge("e-wall-wdots", ["wall", "out"], ["wdots", "points"]),
       edge("e-shot-out", ["shot", "out"], ["out", "input"]),
     ],
   ),

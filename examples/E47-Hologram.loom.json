@@ -398,14 +398,36 @@
           "portId": "input"
         }
       },
-      "e-holo-dots": {
-        "id": "e-holo-dots",
+      "e-flat2-soften2": {
+        "id": "e-flat2-soften2",
+        "source": {
+          "nodeId": "flat2",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "soften2",
+          "portId": "input"
+        }
+      },
+      "e-holo-zone": {
+        "id": "e-holo-zone",
         "source": {
           "nodeId": "holo",
           "portId": "out"
         },
         "target": {
-          "nodeId": "dots",
+          "nodeId": "zone",
+          "portId": "points"
+        }
+      },
+      "e-holo2-wall": {
+        "id": "e-holo2-wall",
+        "source": {
+          "nodeId": "holo2",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "wall",
           "portId": "points"
         }
       },
@@ -454,6 +476,39 @@
           "portId": "inputs"
         }
       },
+      "e-soften2-holo2": {
+        "id": "e-soften2-holo2",
+        "source": {
+          "nodeId": "soften2",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "holo2",
+          "portId": "field_2"
+        }
+      },
+      "e-src-flat2": {
+        "id": "e-src-flat2",
+        "source": {
+          "nodeId": "src",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "flat2",
+          "portId": "input"
+        }
+      },
+      "e-src-holo2": {
+        "id": "e-src-holo2",
+        "source": {
+          "nodeId": "src",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "holo2",
+          "portId": "field"
+        }
+      },
       "e-src-srcpick": {
         "id": "e-src-srcpick",
         "order": 0,
@@ -497,6 +552,28 @@
         "target": {
           "nodeId": "holo",
           "portId": "field"
+        }
+      },
+      "e-wall-wdots": {
+        "id": "e-wall-wdots",
+        "source": {
+          "nodeId": "wall",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "wdots",
+          "portId": "points"
+        }
+      },
+      "e-zone-dots": {
+        "id": "e-zone-dots",
+        "source": {
+          "nodeId": "zone",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "dots",
+          "portId": "points"
         }
       }
     },
@@ -643,6 +720,21 @@
         },
         "type": "hsv"
       },
+      "flat2": {
+        "definitionVersion": 1,
+        "id": "flat2",
+        "label": "flat2",
+        "parameters": {
+          "hueoffset": 0,
+          "saturation": 0,
+          "value": 1
+        },
+        "position": {
+          "x": -1620,
+          "y": 760
+        },
+        "type": "hsv"
+      },
       "glowm": {
         "definitionVersion": 1,
         "id": "glowm",
@@ -679,6 +771,27 @@
         "position": {
           "x": -720,
           "y": -60
+        },
+        "type": "component:depthPoints@1"
+      },
+      "holo2": {
+        "definitionVersion": 1,
+        "id": "holo2",
+        "label": "holo2",
+        "parameters": {
+          "displace": 1.2,
+          "far": 4.4,
+          "fov": 55,
+          "gain": 0.4,
+          "heat": 0.8,
+          "inverseDepth": 1,
+          "near": 2,
+          "resolution": 120,
+          "unproject": 1
+        },
+        "position": {
+          "x": -1020,
+          "y": 760
         },
         "type": "component:depthPoints@1"
       },
@@ -805,7 +918,7 @@
           ],
           "camera": "eye1",
           "lights": "",
-          "scenes": "dots1"
+          "scenes": "dots1 wdots1"
         },
         "position": {
           "x": -120,
@@ -825,6 +938,21 @@
         "position": {
           "x": -1320,
           "y": 40
+        },
+        "type": "blur"
+      },
+      "soften2": {
+        "definitionVersion": 1,
+        "id": "soften2",
+        "label": "soften2",
+        "parameters": {
+          "extend": "hold",
+          "filter": "gaussian",
+          "size": 14
+        },
+        "position": {
+          "x": -1320,
+          "y": 760
         },
         "type": "blur"
       },
@@ -887,6 +1015,94 @@
           "y": 540
         },
         "type": "lfo"
+      },
+      "wall": {
+        "definitionVersion": 1,
+        "id": "wall",
+        "label": "wall1",
+        "parameters": {
+          "attribute": "depthN",
+          "component": "x",
+          "from": 0,
+          "mode": "outside",
+          "to": 0.13
+        },
+        "position": {
+          "x": -720,
+          "y": 760
+        },
+        "type": "pointRange"
+      },
+      "wallm": {
+        "definitionVersion": 1,
+        "id": "wallm",
+        "label": "wallm1",
+        "parameters": {
+          "color": [
+            0.32,
+            0.5,
+            0.95,
+            1
+          ]
+        },
+        "position": {
+          "x": -120,
+          "y": 760
+        },
+        "type": "materialUnlit"
+      },
+      "wdots": {
+        "definitionVersion": 1,
+        "id": "wdots",
+        "label": "wdots1",
+        "parameters": {
+          "blend": "additive",
+          "material": "wallm1",
+          "mode": "points",
+          "scale": 0.005,
+          "soft": 1,
+          "spherical": false,
+          "tint": {
+            "bindings": {
+              "map": {
+                "attribute": "tint",
+                "kind": "map"
+              },
+              "static": {
+                "kind": "static",
+                "value": [
+                  1,
+                  1,
+                  1,
+                  1
+                ]
+              }
+            },
+            "mode": "map"
+          }
+        },
+        "position": {
+          "x": -420,
+          "y": 760
+        },
+        "type": "geometry"
+      },
+      "zone": {
+        "definitionVersion": 1,
+        "id": "zone",
+        "label": "zone1",
+        "parameters": {
+          "attribute": "depthN",
+          "component": "x",
+          "from": 0,
+          "mode": "inside",
+          "to": 0.13
+        },
+        "position": {
+          "x": -720,
+          "y": 460
+        },
+        "type": "pointRange"
       }
     },
     "revision": 1
