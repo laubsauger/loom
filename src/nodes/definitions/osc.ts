@@ -182,6 +182,18 @@ export const oscOutNode: NodeDefinition = {
   description:
     "Sends this node's incoming channels out as OSC, so Loom is a PEER in a studio chain rather than a leaf. One channel called value sends /address; several send /address/name each. Needs a local helper (pnpm mcp:serve) because a browser page cannot speak UDP. THERE IS NO DEFAULT DESTINATION: set Host and Port or nothing is transmitted, and broadcast and multicast addresses are refused by name — a lighting network is a network. OSC rides UDP, so the helper can report that a datagram LEFT this machine and can never report that it arrived: the inspector says sent, arrival unconfirmed, and means it. Passes its input through unchanged, so it can sit inline in a chain and its plot shows what is being sent. The transmission happens in the live session only — an offline or headless render of this document sends nothing.",
   tags: ["value", "output", "osc", "network", "bridge", "send"],
+  /*
+   * T949 — THE ONE WORLD-ACTING NODE IN THE CATALOGUE, and the declaration is separate
+   * from `NODE_REPRODUCIBILITY` on purpose.
+   *
+   * This node is `pure` there and that stays true: it publishes its input bag unchanged,
+   * so the render reproduces whether or not anything is listening. What that answer
+   * cannot say is that a datagram leaves the machine, and `pure` is exactly the class a
+   * headless export treats as safe to evaluate. `emissionRefusal` reads THIS field, and
+   * `use-osc-bridge.ts` consults it per node per frame — so a take, a headless export and
+   * every Dawn gate send nothing, by a check rather than by nobody having built a pump.
+   */
+  sideEffect: "emits",
   inputs: [{ id: "in", label: "In", type: VALUE_PORT }],
   outputs: [{ id: "out", label: "Out", type: VALUE_PORT }],
   parameters: {

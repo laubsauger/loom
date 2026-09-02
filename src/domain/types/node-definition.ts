@@ -68,6 +68,50 @@ export interface CapabilityRequirement {
   reason: string;
 }
 
+/**
+ * DOES THIS NODE ACT ON THE WORLD (T949)? — the axis the record lacked, and it is
+ * ORTHOGONAL to `Reproducibility`.
+ *
+ * `Reproducibility`'s three values all answer ONE question: how does this node's OUTPUT
+ * depend on the world. That question has nothing to say about a node whose whole purpose
+ * is to push something OUT of the process, and the classification it produces for one is
+ * actively dangerous: a `laserOut` has no output at all, so it is a pure function of its
+ * inputs, so it classifies as `pure` — and `pure` is exactly what makes a node safe to
+ * evaluate in a headless export. `src/tests/headless/**` and the example GPU gates render
+ * EVERY example. A laser that fires because a test suite rendered an example is the
+ * failure this declaration exists to prevent.
+ *
+ * A FOURTH `Reproducibility` VALUE WAS RULED OUT AND THE REASON IS WORTH KEEPING: it
+ * would make one field answer two unrelated questions, and every existing reader —
+ * `nonReproducibleNodes`, the render warning, the node info popup — would silently
+ * mis-handle it, because each of them branches on "is this `pure`" meaning "does the
+ * render reproduce" and would get "does this drive hardware" instead.
+ *
+ * TWO VALUES, because the axis is a yes/no. HAZARD TIER IS NOT THIS AXIS: a laser needs
+ * an interlock, a maximum power and scan-fail blanking; a DMX universe does not. That is
+ * a property of the TRANSPORT and belongs to the node and the device bridge, and putting
+ * it here would repeat the exact mistake this type was created to avoid.
+ *
+ * The ledger that forces every node to answer is `NODE_SIDE_EFFECTS`
+ * (`domain/render/side-effects.ts`), pinned to this field in both directions by
+ * `side-effects.test.ts`; the predicate every emission site must pass is
+ * `emissionRefusal` beside it.
+ */
+export type SideEffect =
+  /**
+   * This node changes nothing outside the render. The overwhelming majority, and the
+   * value a node gets by saying nothing — which is why the LEDGER, not this field, is
+   * what makes a decision mandatory.
+   */
+  | "none"
+  /**
+   * This node sends data OUT OF THIS PROCESS to something that may act on it: a lighting
+   * desk over OSC today, a laser DAC or a DMX universe next. The emission itself must NOT
+   * live in the node — see `NODE_SIDE_EFFECTS` for why, and for the gate that checks it —
+   * and whatever pumps it must refuse unless `emissionRefusal` says otherwise.
+   */
+  | "emits";
+
 /** How a stateful node behaves under seek, replay, and offline render (§V46, doc §16.4). */
 export interface StatefulDeclaration {
   reset: boolean;
@@ -266,6 +310,12 @@ export interface NodeDefinition {
   formatPolicy?: FormatPolicy;
   temporal?: TemporalDefinition;
   stateful?: StatefulDeclaration;
+  /**
+   * T949: does this node ACT ON THE WORLD? Absent means `"none"` — see `SideEffect` above
+   * for why that default is safe only because `NODE_SIDE_EFFECTS` makes the decision
+   * mandatory, and why this is not a fourth `Reproducibility` value.
+   */
+  sideEffect?: SideEffect;
   capabilities?: CapabilityRequirement[];
   /**
    * Kernel ABI version this definition was written against (§V77). Checked before a

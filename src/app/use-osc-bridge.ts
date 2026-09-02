@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { resolveParameters } from "@domain/parameters/index.ts";
-import type { ChannelResolver } from "@domain/parameters/resolve.ts";
+import { createNodeReferenceReader, resolveParameters } from "@domain/parameters/index.ts";
+import { effectiveParameterSchema, type ChannelResolver } from "@domain/parameters/resolve.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { FrameEvaluationInput } from "@domain/types/frame.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
@@ -10,6 +10,7 @@ import type { NodeRegistryView } from "@nodes/registry/registry.ts";
 import { OSC_CHANNEL_PREFIX } from "@domain/osc/osc-address.ts";
 import type { OscBridgeState } from "@domain/osc/osc-status.ts";
 import { describeSendOutcome, oscStatusLine } from "@domain/osc/osc-status.ts";
+import { emissionRefusal, type SideEffectPolicy } from "@domain/render/side-effects.ts";
 import { createDeviceClient, type DeviceClient } from "@/mcp/device-client.ts";
 import type { OscSendOutcome } from "@/mcp/device-protocol.ts";
 import type { BridgeSocketFactory } from "@/mcp/bridge-client.ts";
@@ -57,6 +58,13 @@ import type { OscMessage } from "@/mcp/osc-codec.ts";
  * so none of them transmit. A send inside `valueEvaluate` would have made a background
  * export fire UDP at a lighting rig, silently, once per exported frame.
  *
+ * T949 FOUND THE HOLE IN THAT STORY AND CLOSED IT. "An offline render never constructs
+ * this hook" is true of a HEADLESS render and false of an IN-APP TAKE: `renderFrameRange`
+ * steps the live transport, which runs the same `advanceChannels`, which calls this
+ * `sync` — so a range render transmitted at encode rate while this paragraph said it
+ * did not. `sync` now takes a `SideEffectPolicy` and `app.tsx` passes `"blocked"` while a
+ * take is running, checked per node against the node's own `sideEffect` declaration.
+ *
  * ## WHICH PORTS ARE OPEN IS THE DOCUMENT'S DECISION, AND ITS DEFAULT IS NONE
  *
  * The session listens on exactly the ports the document's `oscIn` nodes name, and their
@@ -98,6 +106,12 @@ export interface OscBridgeBinding {
     registry: NodeRegistryView,
     bags: ReadonlyMap<NodeId, Readonly<Record<string, number>>>,
     channels: ChannelResolver,
+    /**
+     * T949 — may a world-acting node reach the world on THIS frame? Required, not
+     * optional: an optional parameter nothing supplies is §V272's mechanism, and the
+     * thing it would silently default is a datagram at somebody's lighting rig.
+     */
+    policy: SideEffectPolicy,
   ) => void;
   /**
    * Why OSC is not working, keyed to the node it concerns (§V359, §V365).
@@ -197,6 +211,7 @@ export function useOscBridge(options: OscBridgeOptions = {}): OscBridgeBinding {
       registry: NodeRegistryView,
       bags: ReadonlyMap<NodeId, Readonly<Record<string, number>>>,
       channels: ChannelResolver,
+      policy: SideEffectPolicy,
     ): void => {
       const live = client.current;
       if (live === null) return;
@@ -206,6 +221,33 @@ export function useOscBridge(options: OscBridgeOptions = {}): OscBridgeBinding {
       const now = frame.timeSeconds * 1000;
       const next: RuntimeDiagnostic[] = [];
 
+      /*
+       * §T1001/§V837 — THE READER AND THE OPTIONS ARE BUILT TOGETHER, FROM ONE FACTORY.
+       *
+       * `op('lfo1').chan.value` is read INSIDE the reader (`node-references.ts`), off
+       * `options.base`. The reader is a CLOSURE built before the resolve, so the `frame`
+       * and `channels` handed to `resolveParameters` never reach it — and this call site
+       * passed no reader at all, so every `op().chan.*` on an OSC node answered "this
+       * context has no channel resolver", fell back to §V108's retained static, and froze
+       * there. A destination or a Rate driven by a channel expression would have sat on
+       * its last typed value for the life of the session while the picture animated.
+       *
+       * That is §B8's shape for the THIRD time (§T593 was the second, §T1000 the inspector
+       * one). Hence the factory rather than a `nodes` field spread on afterwards: "at
+       * which moment" is a PARAMETER here, so it cannot be set on the resolve and
+       * forgotten on the reader. Built once per frame, not per node — two frames in one
+       * evaluation is a value that is right on its own and wrong in context.
+       */
+      const base = { frame, channels };
+      const readOptions = {
+        nodes: createNodeReferenceReader({
+          graph,
+          schemaOf: (target) => effectiveParameterSchema(registry.get(target.type), target.parameters),
+          base,
+        }),
+        ...base,
+      };
+
       for (const [rawId, node] of Object.entries(graph.nodes)) {
         if (node.type !== "oscIn" && node.type !== "oscOut") continue;
         const nodeId = rawId as NodeId;
@@ -213,7 +255,7 @@ export function useOscBridge(options: OscBridgeOptions = {}): OscBridgeBinding {
         if (definition === undefined) continue;
         // §V61's single read path, so a driven or expression-valued destination works the
         // same way a driven `speed` does on a media node — nothing here knows about modes.
-        const resolved = resolveParameters(node, definition, { frame, channels });
+        const resolved = resolveParameters(node, definition, readOptions);
         const read = (key: string): unknown => resolved.get(key)?.value;
 
         if (node.type === "oscIn") {
@@ -231,6 +273,32 @@ export function useOscBridge(options: OscBridgeOptions = {}): OscBridgeBinding {
         // saying "start the helper" about it would be answering a question nobody asked.
         if (host === "" || port <= 0) continue;
         wanting.push(nodeId);
+
+        /*
+         * T949 — THE SIDE-EFFECT GATE, and it is here rather than at the top of `sync`
+         * for two reasons.
+         *
+         * It reads the NODE'S OWN DECLARATION (`oscOut.sideEffect === "emits"`), so the
+         * declaration is load-bearing rather than decorative: unset it and this check
+         * stops firing. And it is past the destination test, so an unconfigured node —
+         * which was never going to transmit — produces no row; the only nodes named are
+         * the ones that WOULD have reached hardware.
+         *
+         * §T950's fifth gap was "no side-effect story for offline/headless". The story
+         * used to be structural — an offline render installs no pump — and it had a hole
+         * this check closes: an IN-APP TAKE steps the same live transport through the same
+         * `advanceChannels`, so a range render was spraying OSC at encode rate, which is
+         * the opposite of what this module's own note claimed. `app.tsx` passes
+         * `"blocked"` for the duration of a take.
+         *
+         * WARNING, not silence (§V365): a rig that goes dark during a take with no
+         * explanation is indistinguishable from a rig that is broken.
+         */
+        const refusal = emissionRefusal(definition, policy);
+        if (refusal !== null) {
+          next.push({ severity: "warning", code: "sideEffect.blocked", nodeId, message: refusal });
+          continue;
+        }
 
         const bag = bags.get(nodeId);
         // No bag means the node published nothing this frame — nothing wired, or muted. A

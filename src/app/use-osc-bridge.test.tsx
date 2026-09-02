@@ -7,6 +7,8 @@ import type { FrameEvaluationInput } from "@domain/types/frame.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
 import type { NodeId } from "@domain/types/ids.ts";
 import type { BridgeSocket } from "@/mcp/bridge-client.ts";
+import type { ChannelResolver } from "@domain/parameters/resolve.ts";
+import type { SideEffectPolicy } from "@domain/render/side-effects.ts";
 import { messagesFor, useOscBridge } from "./use-osc-bridge.ts";
 
 /**
@@ -83,6 +85,13 @@ function graphOf(nodes: Record<string, { type: string; label: string; parameters
 const NO_CHANNELS = (): undefined => undefined;
 
 /**
+ * T949 — the policy every existing case in this file runs under: a live session, with a
+ * person watching. `BLOCKED` is what a take, a headless export and every gate get.
+ */
+const LIVE: SideEffectPolicy = "live-session";
+const BLOCKED: SideEffectPolicy = "blocked";
+
+/**
  * The hook with a fake socket available and NOTHING attached — the state every session
  * starts in and the one a machine with no helper stays in.
  */
@@ -102,6 +111,7 @@ describe("which UDP ports open is the DOCUMENT's decision, and its default is no
         registry,
         new Map(),
         NO_CHANNELS,
+        LIVE,
       );
     });
     // Port 0 means NOT LISTENING. Opening a document must never open a socket by itself,
@@ -120,6 +130,7 @@ describe("which UDP ports open is the DOCUMENT's decision, and its default is no
         registry,
         new Map(),
         NO_CHANNELS,
+        LIVE,
       );
     });
     // Nothing was sent, because nothing is attached — and that is the honest state, not an
@@ -139,6 +150,7 @@ describe("§T948 rule 3 — the reason reaches a surface, and says what to DO", 
         registry,
         new Map(),
         NO_CHANNELS,
+        LIVE,
       );
     });
     const [diagnostic] = hook.result.current.diagnostics;
@@ -165,6 +177,7 @@ describe("§T948 rule 3 — the reason reaches a surface, and says what to DO", 
         registry,
         new Map(),
         NO_CHANNELS,
+        LIVE,
       );
     });
     expect(hook.result.current.diagnostics).toEqual([]);
@@ -176,12 +189,12 @@ describe("§T948 rule 3 — the reason reaches a surface, and says what to DO", 
     const { hook } = unattached();
     const graph = graphOf({ a: { type: "oscIn", label: "osc1", parameters: { port: 9000 } } });
     act(() => {
-      hook.result.current.sync(frameAt(0), graph, registry, new Map(), NO_CHANNELS);
+      hook.result.current.sync(frameAt(0), graph, registry, new Map(), NO_CHANNELS, LIVE);
     });
     const first = hook.result.current.diagnostics;
     act(() => {
-      hook.result.current.sync(frameAt(1), graph, registry, new Map(), NO_CHANNELS);
-      hook.result.current.sync(frameAt(2), graph, registry, new Map(), NO_CHANNELS);
+      hook.result.current.sync(frameAt(1), graph, registry, new Map(), NO_CHANNELS, LIVE);
+      hook.result.current.sync(frameAt(2), graph, registry, new Map(), NO_CHANNELS, LIVE);
     });
     expect(hook.result.current.diagnostics).toBe(first);
   });
@@ -203,7 +216,7 @@ describe("oscOut transmits only what the document configured (§T950 gap 4)", ()
     const hook = renderHook(() => useOscBridge({ socketFactory: socket.factory, port: 1, autoConnect: false }));
     act(() => {
       // The document asks for OSC → the pump retries from the remembered code.
-      hook.result.current.sync(frameAt(0), graph, registry, new Map(), NO_CHANNELS);
+      hook.result.current.sync(frameAt(0), graph, registry, new Map(), NO_CHANNELS, LIVE);
       socket.open();
     });
     // The page presents the SAME pairing code the agent bridge uses — never a second
@@ -225,7 +238,7 @@ describe("oscOut transmits only what the document configured (§T950 gap 4)", ()
     });
     const { socket, hook } = pumped(graph);
     await act(async () => {
-      hook.result.current.sync(frameAt(0), graph, registry, new Map([["b" as NodeId, { value: 0.5 }]]), NO_CHANNELS);
+      hook.result.current.sync(frameAt(0), graph, registry, new Map([["b" as NodeId, { value: 0.5 }]]), NO_CHANNELS, LIVE);
       await Promise.resolve();
     });
     expect(socket.sent.filter((message) => message["type"] === "deviceSend")).toEqual([]);
@@ -239,15 +252,15 @@ describe("oscOut transmits only what the document configured (§T950 gap 4)", ()
     const bags = new Map([["b" as NodeId, { value: 0.5 }]]);
     await act(async () => {
       // Three frames inside one tenth of a second: the first sends, the next two do not.
-      hook.result.current.sync(frameAt(0), graph, registry, bags, NO_CHANNELS);
-      hook.result.current.sync(frameAt(0.016), graph, registry, bags, NO_CHANNELS);
-      hook.result.current.sync(frameAt(0.033), graph, registry, bags, NO_CHANNELS);
+      hook.result.current.sync(frameAt(0), graph, registry, bags, NO_CHANNELS, LIVE);
+      hook.result.current.sync(frameAt(0.016), graph, registry, bags, NO_CHANNELS, LIVE);
+      hook.result.current.sync(frameAt(0.033), graph, registry, bags, NO_CHANNELS, LIVE);
       await Promise.resolve();
     });
     const sends = socket.sent.filter((message) => message["type"] === "deviceSend");
     expect(sends).toHaveLength(1);
     await act(async () => {
-      hook.result.current.sync(frameAt(0.2), graph, registry, bags, NO_CHANNELS);
+      hook.result.current.sync(frameAt(0.2), graph, registry, bags, NO_CHANNELS, LIVE);
       await Promise.resolve();
     });
     expect(socket.sent.filter((message) => message["type"] === "deviceSend")).toHaveLength(2);
@@ -261,10 +274,107 @@ describe("oscOut transmits only what the document configured (§T950 gap 4)", ()
     });
     const { socket, hook } = pumped(graph);
     await act(async () => {
-      hook.result.current.sync(frameAt(0), graph, registry, new Map(), NO_CHANNELS);
+      hook.result.current.sync(frameAt(0), graph, registry, new Map(), NO_CHANNELS, LIVE);
       await Promise.resolve();
     });
     expect(socket.sent.filter((message) => message["type"] === "deviceSend")).toEqual([]);
+  });
+
+  /*
+   * T949 — A WORLD-ACTING NODE CANNOT FIRE FROM AN EXPORT PATH, AS THE CONSEQUENCE OF THE
+   * DECLARATION RATHER THAN AS A PROPERTY OF THE PUMP.
+   *
+   * Both directions, on the SAME document and the same attached socket (§V461, §V537), so
+   * the negative cannot be satisfied by a pump that never sends. And the positive is what
+   * makes the declaration load-bearing: delete `sideEffect: "emits"` from `oscOut` and
+   * `emissionRefusal` returns null, the blocked case transmits, and the first of these
+   * goes red — which is §V272's requirement that the reader stop reading being a failure.
+   */
+  const configured = () =>
+    graphOf({ b: { type: "oscOut", label: "send1", parameters: { host: "127.0.0.1", port: 9001 } } });
+
+  it("sends NOTHING while a take is running, and says why", async () => {
+    const graph = configured();
+    const { socket, hook } = pumped(graph);
+    const bags = new Map([["b" as NodeId, { value: 0.5 }]]);
+    await act(async () => {
+      hook.result.current.sync(frameAt(0), graph, registry, bags, NO_CHANNELS, BLOCKED);
+      await Promise.resolve();
+    });
+    expect(socket.sent.filter((message) => message["type"] === "deviceSend")).toEqual([]);
+    // §V365: a rig that goes dark with no explanation reads as a rig that is broken.
+    const blocked = hook.result.current.diagnostics.filter(
+      (diagnostic) => diagnostic.code === "sideEffect.blocked",
+    );
+    expect(blocked).toHaveLength(1);
+    expect(blocked[0]?.nodeId).toBe("b" as NodeId);
+    expect(blocked[0]?.severity).toBe("warning");
+    expect(blocked[0]?.message).toContain("only a live session");
+  });
+
+  it("sends the same document's messages when the session IS live", async () => {
+    const graph = configured();
+    const { socket, hook } = pumped(graph);
+    const bags = new Map([["b" as NodeId, { value: 0.5 }]]);
+    await act(async () => {
+      hook.result.current.sync(frameAt(0), graph, registry, bags, NO_CHANNELS, LIVE);
+      await Promise.resolve();
+    });
+    expect(socket.sent.filter((message) => message["type"] === "deviceSend")).toHaveLength(1);
+    expect(
+      hook.result.current.diagnostics.filter((diagnostic) => diagnostic.code === "sideEffect.blocked"),
+    ).toEqual([]);
+  });
+
+  /*
+   * §T1001/§V837 — A CHANNEL EXPRESSION ON AN OSC NODE IS LIVE, NOT FROZEN.
+   *
+   * The pump resolved its parameters with NO node-reference reader, so `op('x').chan.*`
+   * answered "this context has no channel resolver" and fell back to §V108's retained
+   * static — for the life of the session. §B8's shape for the third time.
+   *
+   * THE FIXTURE TAKES THE PATH A REAL DOCUMENT TAKES. Post-§T901 a channel read is stored
+   * as an EXPRESSION, not as `mode: "driven"`; §T1000's lesson is that the existing live
+   * suite stayed green through the whole bug because it used the mode that never enters
+   * the reader. So the destination port here is `op('p1').chan.value` on a real `constant`
+   * node, resolved through the real `resolveParameters` inside the real hook: with no
+   * reader the port reads as its retained `0` and the pump sends nothing at all.
+   */
+  it("resolves op().chan on an oscOut parameter, so a driven destination is not frozen", async () => {
+    const graph = graphOf({
+      p1: { type: "constant", label: "p1", parameters: { value: 9001 } },
+      // A statically configured `oscIn`, so the attachment happens at all — `pumped` seeds
+      // the pairing memory and the pump only dials when the document is asking, and this
+      // node's own port must not depend on the very read under test.
+      a: { type: "oscIn", label: "osc1", parameters: { port: 9000 } },
+      b: {
+        type: "oscOut",
+        label: "send1",
+        parameters: {
+          host: "127.0.0.1",
+          // The stored shape §T897's migration produces for a channel read.
+          port: { mode: "expression", bindings: { expression: { kind: "expression", source: "op('p1').chan.value" } } },
+        },
+      },
+    });
+    const channels = ((channel: string) => (channel === "p1:value" || channel === "p1" ? 9001 : undefined)) as ChannelResolver;
+    const { socket, hook } = pumped(graph);
+    await act(async () => {
+      hook.result.current.sync(frameAt(0), graph, registry, new Map([["b" as NodeId, { value: 0.5 }]]), channels, LIVE);
+      await Promise.resolve();
+    });
+    const sends = socket.sent.filter((message) => message["type"] === "deviceSend");
+    expect(sends).toHaveLength(1);
+    // The VALUE the expression produced, not merely that something was sent: a reader that
+    // answered a stale number would still have sent, to the wrong place.
+    expect((sends[0] as { to?: { port?: number } }).to?.port).toBe(9001);
+  });
+
+  it("is refusing because the NODE says it acts on the world, not because it is called oscOut", () => {
+    // The pump reads `definition.sideEffect`. This pins the fact the refusal turns on, so
+    // a definition that quietly loses the declaration fails here as well as above.
+    expect(registry.get("oscOut")?.sideEffect).toBe("emits");
+    expect(registry.get("oscIn")?.sideEffect).toBeUndefined();
   });
 });
 

@@ -73,6 +73,8 @@ import { useMediaSources } from "./use-media-sources.ts";
 import { createMediaControlRegistry, useMediaCommands } from "./media-commands.ts";
 import { useProject } from "./use-project.ts";
 import { useRenderRange } from "./use-render-range.ts";
+// T949: the ONE synchronous answer to "is a take running", read per frame by the OSC pump.
+import { renderRangeHolderFor } from "./render-range.ts";
 
 /**
  * The composition root (T51, T139).
@@ -614,6 +616,18 @@ export function App({
         runtime.registry,
         valueGraph.channels(),
         valueGraph.resolver,
+        /*
+         * T949 — A TAKE IS NOT A LIVE SESSION, and this argument is the whole difference.
+         *
+         * "An offline render installs no pump" was true of a HEADLESS render and false
+         * here: `renderFrameRange` steps this same transport, so this callback runs once
+         * per exported frame and `oscOut` was transmitting at encode rate throughout a
+         * range render. The holder's `busy()` is set SYNCHRONOUSLY before the first step
+         * and cleared in a `finally`, so there is no frame in which a take is running and
+         * this reads `"live-session"` — a state flag would have leaked the first frame,
+         * and one frame is a real firing for the hardware this axis exists to protect.
+         */
+        renderRangeHolderFor(runtime.bus).current?.busy() === true ? "blocked" : "live-session",
       );
     },
     observe: observeFrame,
