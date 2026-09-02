@@ -28,6 +28,8 @@ import { sourceReferenceForInput } from "../graph/source-references.ts";
 import { defaultParameters, validateParameters } from "../parameters/validate.ts";
 import { bindCycleDiagnostics } from "../parameters/bind-cycles.ts";
 import { effectiveParameterSchema } from "../parameters/resolve.ts";
+import { isParameterSlot, withBinding } from "../parameters/slots.ts";
+import type { ParameterValue } from "../types/parameters.ts";
 import { referenceCyclesThrough } from "../graph/reference-cycles.ts";
 import type { CommandContext, CommandOutcome } from "./bus.ts";
 import { isValueOnlyPatch, overlappingEntities } from "./patch-scope.ts";
@@ -678,7 +680,17 @@ function executeOperation(
         throw new PatchAbort();
       }
       for (const [key, value] of Object.entries(operation.parameters)) {
-        node.parameters[key] = value as StoredParameter;
+        const existing = node.parameters[key];
+        // §V108/§B166: a BARE value written over a SLOT is a value edit — the slider in
+        // Constant mode, a typed number — and it must update the retained STATIC binding
+        // WITHOUT erasing the inactive expression/bind payloads. Storing the bare value in
+        // place of the whole envelope dropped them, so switching Constant→Expression came
+        // back to a seeded default instead of the reference the user had. A slot-shaped write
+        // (a mode switch, a paste) still replaces wholesale.
+        node.parameters[key] =
+          isParameterSlot(existing) && !isParameterSlot(value)
+            ? withBinding(existing, { kind: "static", value: value as ParameterValue })
+            : (value as StoredParameter);
       }
       // §V110: a bind cycle is refused at the moment it is written — checked on the
       // MERGED result, because the loop may close through a parameter this patch never
