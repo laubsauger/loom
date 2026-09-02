@@ -132,7 +132,12 @@ interface InferenceKind {
    */
   settings(parameters: Readonly<Record<string, unknown>>): InferenceRunSettings;
   pack(texels: Float32Array, side: number): Float32Array | Int32Array | Uint8Array;
-  encode(output: Float32Array, size: readonly [number, number]): Uint8Array;
+  /** T992: `sourceSize` is the PICTURE's dims — pose un-letterboxes its joints there. */
+  encode(
+    output: Float32Array,
+    size: readonly [number, number],
+    sourceSize: readonly [number, number],
+  ): Uint8Array;
   fallback(size: readonly [number, number]): Uint8Array;
 }
 
@@ -225,9 +230,10 @@ const INFERENCE_KINDS: readonly InferenceKind[] = [
     dims: (side) => [1, side, side, POSE_INPUT_CHANNELS],
     settings: poseSettings,
     pack: (texels, side) => packPoseInput(texels, side),
-    // The keypoint map is a fixed 17x1 whatever the source is, so the node's size is not
-    // consulted — the joints are the data, not a picture of them.
-    encode: (output) => keypointsToTexture(output),
+    // The keypoint map is a fixed 17x1 whatever the source is, so the node's OUTPUT size
+    // is not consulted — the joints are the data, not a picture of them. The SOURCE size
+    // is (T992): the joints come back in letterboxed model uv and map onto the picture.
+    encode: (output, _size, sourceSize) => keypointsToTexture(output, sourceSize[0], sourceSize[1]),
     fallback: () => neutralPose(),
   },
   {
@@ -256,6 +262,14 @@ interface DepthTarget {
   readonly kind: InferenceKind;
   readonly descriptor: ModelDescriptor;
   readonly size: readonly [number, number];
+  /**
+   * T992: the PICTURE the node reads — the preprocess pass's source texture, looked up
+   * in the plan. Distinct from `size` (the OUTPUT), and the distinction is pose's whole
+   * defect history: its output is the fixed 17×1 keypoint map, so without this field
+   * the source aspect never reached the encoder and the joints could not be
+   * un-letterboxed.
+   */
+  readonly sourceSize: readonly [number, number];
   /** This node's own run settings, resolved from its parameters (§T965). */
   readonly settings: InferenceRunSettings;
   /** The node's NAME — what its timing channels are addressed by (§T976, §V129). */
@@ -437,6 +451,8 @@ export function useModelInference(
           nodeType: found.kind.nodeType as InferenceNodeType,
           width: found.size[0],
           height: found.size[1],
+          sourceWidth: found.sourceSize[0],
+          sourceHeight: found.sourceSize[1],
           side: found.settings.inputSide,
           providers: found.settings.providers,
         };
@@ -561,6 +577,19 @@ export function useModelInference(
         const entry = resource as { id?: string; size?: readonly [number, number] };
         if (entry.id !== undefined && entry.size !== undefined) sized.set(entry.id, entry.size);
       }
+      // T992: which texture each model node's preprocess actually reads, from the plan
+      // itself — the source aspect the un-letterbox needs, never assumed from the output.
+      const sourceOf = new Map<string, string>();
+      for (const pass of (compiled?.passes ?? []) as ReadonlyArray<{
+        id?: string;
+        textures?: ReadonlyArray<{ binding?: string; resourceId?: string }>;
+      }>) {
+        if (typeof pass.id !== "string" || !pass.id.endsWith(":preprocess")) continue;
+        const source = pass.textures?.find((texture) => texture.binding === "sourceTexture");
+        if (source?.resourceId !== undefined) {
+          sourceOf.set(pass.id.slice(0, -":preprocess".length), source.resourceId);
+        }
+      }
 
       const targets: DepthTarget[] = [];
       for (const nodeId of Object.keys(graph.nodes).sort()) {
@@ -580,6 +609,7 @@ export function useModelInference(
           kind,
           descriptor: settings.descriptor,
           size: sized.get(resultId) ?? [1, 1],
+          sourceSize: sized.get(sourceOf.get(nodeId) ?? "") ?? [1, 1],
           settings,
           // §T976: the FLAT document's uniqued label, exactly as `analyzeChannelEntries`
           // reads it from the same graph — so `depth1:ready` names the node the canvas

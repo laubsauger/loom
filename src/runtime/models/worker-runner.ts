@@ -33,6 +33,9 @@ export interface WorkerRunTarget {
   readonly width: number;
   readonly height: number;
   readonly side: number;
+  /** T992: the PICTURE's dims — pose's encoder un-letterboxes its joints against these. */
+  readonly sourceWidth: number;
+  readonly sourceHeight: number;
   /**
    * The execution providers this node asks the worker to try, in order (§T965's backend
    * parameter). Part of the SESSION IDENTITY, not just a hint: two nodes on the same
@@ -158,6 +161,8 @@ export function createWorkerRunner(options: WorkerRunnerOptions): WorkerRunner {
         width: target.width,
         height: target.height,
         side: target.side,
+        sourceWidth: target.sourceWidth,
+        sourceHeight: target.sourceHeight,
       };
       options.worker.postMessage(request, [texels]);
       return settled;

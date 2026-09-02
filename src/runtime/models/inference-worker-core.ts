@@ -55,7 +55,15 @@ interface Packing {
   readonly tensorType: string;
   pack(texels: Float32Array, side: number): Float32Array | Uint8Array;
   dims(side: number): readonly number[];
-  encode(output: Float32Array, width: number, height: number, side: number): Uint8Array;
+  encode(
+    output: Float32Array,
+    width: number,
+    height: number,
+    side: number,
+    /** T992: the PICTURE's dims — pose un-letterboxes its joints against these. */
+    sourceWidth: number,
+    sourceHeight: number,
+  ): Uint8Array;
 }
 
 /**
@@ -74,7 +82,11 @@ const PACKING: Readonly<Record<InferenceNodeType, Packing>> = {
     tensorType: "uint8",
     pack: (texels, side) => packPoseInput(texels, side),
     dims: (side) => [1, side, side, 4],
-    encode: (output) => keypointsToTexture(output),
+    /* T992: the joints come back in LETTERBOXED model uv; the encoder maps them onto
+       the picture, which is why it needs the source dims and the output dims cannot
+       stand in (they are the fixed 17×1 keypoint map). */
+    encode: (output, _width, _height, _side, sourceWidth, sourceHeight) =>
+      keypointsToTexture(output, sourceWidth, sourceHeight),
   },
   matte: {
     // float32 NCHW, (x-0.5)/0.5 — MODNet's own reference inference, not the card (§B148).
@@ -174,7 +186,14 @@ export function createWorkerCore(options: WorkerCoreOptions) {
         const data = outputName === undefined ? undefined : outputs[outputName]?.data;
         if (data === undefined) throw new Error("the model returned no output");
 
-        let bytes = packing.encode(data, request.width, request.height, side);
+        let bytes = packing.encode(
+          data,
+          request.width,
+          request.height,
+          side,
+          request.sourceWidth,
+          request.sourceHeight,
+        );
         if (request.nodeType === "matte") {
           /* Per-frame matting flickers at the edges; the EMA trades a few frames of
              edge lag for temporal stability (stated on the node's parameter, §T957).

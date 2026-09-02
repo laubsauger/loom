@@ -53,6 +53,8 @@ const target = {
   modelId: "m",
   nodeType: "depth" as const,
   width: 2,
+  sourceWidth: 2,
+  sourceHeight: 2,
   height: 2,
   side: 2,
   providers: PROVIDERS,
@@ -212,7 +214,7 @@ describe("the worker's half", () => {
     await c.instance.handle({ kind: "load", sessionKey: "m@wasm", weights: new ArrayBuffer(4), providers: ["wasm"] });
     await c.instance.handle({
       kind: "run", requestId: 7, sessionKey: "m@wasm", nodeType: "depth",
-      texels: new Float32Array(2 * 2 * 4).buffer, width: 2, height: 2, side: 2,
+      texels: new Float32Array(2 * 2 * 4).buffer, width: 2, height: 2, side: 2, sourceWidth: 2, sourceHeight: 2,
     });
     expect(c.created[0]).toEqual({ type: "float32", length: 3 * 4, dims: [1, 3, 2, 2] });
     const result = c.posted.find((m) => m.kind === "result");
@@ -224,7 +226,7 @@ describe("the worker's half", () => {
     await c.instance.handle({ kind: "load", sessionKey: "m@wasm", weights: new ArrayBuffer(4), providers: ["wasm"] });
     await c.instance.handle({
       kind: "run", requestId: 1, sessionKey: "m@wasm", nodeType: "pose",
-      texels: new Float32Array(2 * 2 * 4).buffer, width: 0, height: 0, side: 2,
+      texels: new Float32Array(2 * 2 * 4).buffer, width: 0, height: 0, side: 2, sourceWidth: 2, sourceHeight: 2,
     });
     expect(c.created[0]).toEqual({ type: "uint8", length: 2 * 2 * 4, dims: [1, 2, 2, 4] });
     const result = c.posted.find((m) => m.kind === "result");
@@ -237,7 +239,7 @@ describe("the worker's half", () => {
     const c = core(new Float32Array(4));
     await c.instance.handle({
       kind: "run", requestId: 42, sessionKey: "absent@wasm", nodeType: "depth",
-      texels: new ArrayBuffer(64), width: 2, height: 2, side: 2,
+      texels: new ArrayBuffer(64), width: 2, height: 2, side: 2, sourceWidth: 2, sourceHeight: 2,
     });
     expect(c.posted).toEqual([
       { kind: "error", requestId: 42, message: 'no session for "absent@wasm" — send a load before a run' },
@@ -310,7 +312,7 @@ describe("the worker's half", () => {
     });
     await instance.handle({
       kind: "run", requestId: 1, sessionKey: "m@wasm", nodeType: "depth",
-      texels: new Float32Array(2 * 2 * 4).buffer, width: 2, height: 2, side: 2,
+      texels: new Float32Array(2 * 2 * 4).buffer, width: 2, height: 2, side: 2, sourceWidth: 2, sourceHeight: 2,
     });
     const result = posted.find((m) => m.kind === "result");
     expect(result?.kind === "result" && result.backend).toBe("wasm");
@@ -418,7 +420,7 @@ describe("the worker's half", () => {
     await instance.handle({ kind: "load", sessionKey: "m@wasm", weights: new ArrayBuffer(4), providers: ["wasm"] });
     await instance.handle({
       kind: "run", requestId: 3, sessionKey: "m@wasm", nodeType: "depth",
-      texels: new ArrayBuffer(64), width: 2, height: 2, side: 2,
+      texels: new ArrayBuffer(64), width: 2, height: 2, side: 2, sourceWidth: 2, sourceHeight: 2,
     });
     expect(posted.at(-1)).toEqual({ kind: "error", requestId: 3, message: "kernel refused" });
   });

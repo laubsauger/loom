@@ -83,15 +83,46 @@ describe("encoding keypoints for the graph", () => {
     output[0] = 0.25; // y
     output[1] = 0.75; // x
     output[2] = 0.9; // score
-    const bytes = keypointsToTexture(output);
+    const bytes = keypointsToTexture(output, 192, 192);
 
     expect(readHalf(bytes, 0, 0)).toBeCloseTo(0.75, 3); // R = x
     expect(readHalf(bytes, 0, 1)).toBeCloseTo(0.25, 3); // G = y
     expect(readHalf(bytes, 0, 2)).toBeCloseTo(0.9, 3); // B = confidence
   });
 
+  /**
+   * T992 — THE UN-LETTERBOX, exact on a 2:1 source. The preprocess fits a wide frame
+   * into the model square with bars above and below (occ = [1, 0.5]), so the model's
+   * vertical uv only spans the centred half: model v 0.25 IS the frame's top edge,
+   * 0.75 its bottom, 0.5 its middle — and x passes through untouched. A joint the
+   * model parks inside a bar clamps to the frame edge instead of leaving [0, 1].
+   * Before this change every one of these joints shipped at its raw model uv — off by
+   * the bar width, plausibly (§T992's words).
+   */
+  it("maps letterboxed model uv back onto a 2:1 frame, exactly", () => {
+    const output = new Float32Array(POSE_KEYPOINT_COUNT * 3);
+    const joint = (i: number, y: number, x: number): void => {
+      output[i * 3] = y;
+      output[i * 3 + 1] = x;
+      output[i * 3 + 2] = 1;
+    };
+    joint(0, 0.25, 0.75); // the band's start: frame top, x untouched
+    joint(1, 0.75, 0.25); // the band's end: frame bottom
+    joint(2, 0.5, 0.5); //   dead centre stays dead centre
+    joint(3, 0.375, 0.5); // a quarter into the band: frame v 0.25
+    joint(4, 0.1, 0.5); //   inside the top bar: clamps to the edge, stays drawable
+    const bytes = keypointsToTexture(output, 512, 256);
+
+    expect(readHalf(bytes, 0, 0)).toBeCloseTo(0.75, 3); // x: occX = 1, identity
+    expect(readHalf(bytes, 0, 1)).toBe(0); //              v: (0.25 − 0.5)/0.5 + 0.5
+    expect(readHalf(bytes, 1, 1)).toBe(1);
+    expect(readHalf(bytes, 2, 1)).toBeCloseTo(0.5, 3);
+    expect(readHalf(bytes, 3, 1)).toBeCloseTo(0.25, 3);
+    expect(readHalf(bytes, 4, 1)).toBe(0); // clamped, not negative
+  });
+
   it("writes one texel per joint, opaque, at the model's own count", () => {
-    const bytes = keypointsToTexture(new Float32Array(POSE_KEYPOINT_COUNT * 3));
+    const bytes = keypointsToTexture(new Float32Array(POSE_KEYPOINT_COUNT * 3), 192, 192);
     expect(POSE_KEYPOINT_COUNT).toBe(17);
     expect(POSE_KEYPOINTS[9]).toBe("left_wrist");
     expect(bytes.length).toBe(17 * 8);
@@ -102,7 +133,7 @@ describe("encoding keypoints for the graph", () => {
     // A byte would quantise a joint to ~1/255 — about 7px at 1080p, a permanent tremor.
     const output = new Float32Array(POSE_KEYPOINT_COUNT * 3);
     output[1] = 0.5001;
-    const bytes = keypointsToTexture(output);
+    const bytes = keypointsToTexture(output, 192, 192);
     expect(Math.abs(readHalf(bytes, 0, 0) - 0.5001)).toBeLessThan(1 / 2048);
   });
 
@@ -110,7 +141,7 @@ describe("encoding keypoints for the graph", () => {
     const output = new Float32Array(POSE_KEYPOINT_COUNT * 3);
     output[0] = Number.NaN;
     output[1] = Number.POSITIVE_INFINITY;
-    const bytes = keypointsToTexture(output);
+    const bytes = keypointsToTexture(output, 192, 192);
     expect(Number.isFinite(readHalf(bytes, 0, 0))).toBe(true);
     expect(Number.isFinite(readHalf(bytes, 0, 1))).toBe(true);
   });
@@ -145,6 +176,6 @@ describe("the identity a Pose node publishes with no model", () => {
     // The argument for the identity in one assertion: the no-model state and the
     // no-person state are the SAME state, so nothing downstream can tell them apart and
     // nothing needs to.
-    expect([...neutralPose()]).toEqual([...keypointsToTexture(new Float32Array(POSE_KEYPOINT_COUNT * 3))]);
+    expect([...neutralPose()]).toEqual([...keypointsToTexture(new Float32Array(POSE_KEYPOINT_COUNT * 3), 192, 192)]);
   });
 });

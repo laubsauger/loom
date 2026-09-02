@@ -59,10 +59,20 @@ export type InferenceRequest =
       readonly nodeType: InferenceNodeType;
       /** Raw `vec4f` texels straight from the readback. Transferred. */
       readonly texels: ArrayBuffer;
-      /** The node's output size, for the encoder. Ignored by pose, which is fixed. */
+      /** The node's output size, for the encoder. For pose that is the fixed 17×1 map. */
       readonly width: number;
       readonly height: number;
       readonly side: number;
+      /**
+       * T992 — the PICTURE's size, distinct from the output's. Depth and matte never
+       * needed it because their output inherits the source, so width/height carried the
+       * aspect for free; pose's output is the 17×1 keypoint map and the source aspect
+       * never reached its encoder — which is why pose squeezed long after depth
+       * letterboxed (the un-letterbox is the letterbox's other half, and it happens at
+       * ENCODE). Every encoder may read it; pose must.
+       */
+      readonly sourceWidth: number;
+      readonly sourceHeight: number;
     };
 
 export type InferenceResponse =

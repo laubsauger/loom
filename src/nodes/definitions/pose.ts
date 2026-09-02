@@ -6,7 +6,7 @@ import { POSE_INPUT_SIDE, POSE_KEYPOINT_COUNT } from "../../runtime/models/pose-
 import { SHARED_SAMPLER_ID, scratchResourceId } from "../../compiler/resources.ts";
 import type { ModelDescriptor } from "../../runtime/models/model-acquisition.ts";
 import { POSE_ACCURATE, POSE_LIVE, POSE_MODELS } from "../../runtime/models/model-catalogue.ts";
-import { inferenceModelSchema, inferenceResetSchema } from "./inference-node.ts";
+import { inferenceModelSchema, inferenceResetSchema, letterboxPreprocessWgsl } from "./inference-node.ts";
 import { RGBA_TEXTURE } from "./common-ports.ts";
 import { readCompileInputs } from "./compile-context.ts";
 
@@ -50,43 +50,17 @@ export const POSE_INPUT_KEY = "modelInput";
 export const POSE_RESULT_KEY = "modelResult";
 
 /*
- * ⚠ STILL A SQUEEZE, AND NOT AN OVERSIGHT — the reason is written here so the next
- * session does not have to rediscover it (T974, §V827).
- *
- * Depth letterboxes: uniform scale, centred, edges replicated, because a non-uniformly
- * squeezed frame degrades a monocular estimator plausibly and silently. The same is true
- * of MoveNet, and `letterboxPreprocessWgsl()` from §V827's seam is right there.
- *
- * It is NOT adopted here because the letterbox is HALF a change. Depth's other half is
- * `depthToRgba` reading back only the occupied band (`occOf` is the WGSL's float64 twin);
- * pose's other half would be un-letterboxing the keypoints — a joint at model uv `m` is
- * at frame uv `(m - 0.5) / occ + 0.5` — and `keypointsToTexture` CANNOT DO IT: the source
- * aspect never reaches it. The worker's encoder is handed `request.width`/`height`, which
- * for pose is the 17x1 KEYPOINT MAP (`resolutionPolicy` is fixed), not the picture. So
- * adopting the letterbox without a new protocol field would letterbox the input and read
- * the joints back as if it had not — every joint off by the bar width, plausibly.
- *
- * The fix is a source-size field on the run request, which lands with whoever owns the
- * protocol next. Until then the squeeze is the honest state: wrong in a KNOWN way that
- * affects both halves consistently, rather than wrong in a way that only shows on
- * non-square input.
+ * T992 — LETTERBOXED, both halves at once, because either half alone is worse than
+ * neither (the row's own ruling). The preprocess is §V827's shared
+ * `letterboxPreprocessWgsl` — the same fit depth uses, T974's rule — and the other half
+ * is in `keypointsToTexture`: the model reports joints in letterboxed uv, and the
+ * encoder maps them back onto the picture with `occOf`, fed by the run request's
+ * sourceWidth/sourceHeight (the protocol field this change added — pose's output is the
+ * fixed 17×1 keypoint map, so the picture's aspect could never be recovered from the
+ * output size the way depth's inherit policy recovers it). A squeezed frame degraded
+ * MoveNet plausibly and silently; a letterbox without the un-letterbox would have put
+ * every joint off by the bar width, equally plausibly.
  */
-const POSE_PREPROCESS_WGSL = `struct PoseParams { side: f32 };
-
-@group(0) @binding(0) var<uniform> params: PoseParams;
-@group(0) @binding(1) var sourceTexture: texture_2d<f32>;
-@group(0) @binding(2) var<storage, read_write> modelInput: array<vec4f>;
-
-@compute @workgroup_size(8, 8)
-fn main(@builtin(global_invocation_id) gid: vec3u) {
-  let side = u32(params.side);
-  if (gid.x >= side || gid.y >= side) { return; }
-  let dims = vec2i(textureDimensions(sourceTexture, 0));
-  let uv = (vec2f(f32(gid.x), f32(gid.y)) + 0.5) / params.side;
-  let texel = clamp(vec2i(uv * vec2f(dims)), vec2i(0), dims - vec2i(1));
-  modelInput[gid.y * side + gid.x] = textureLoad(sourceTexture, texel, 0);
-}`;
-
 const POSE_BLIT_WGSL = `@group(0) @binding(0) var poseSampler: sampler;
 @group(0) @binding(1) var poseTexture: texture_2d<f32>;
 
@@ -179,7 +153,7 @@ export const poseNode: NodeDefinition = {
     const preprocess: DispatchPassDescriptor = {
       kind: "dispatch",
       id: `${nodeId}:preprocess`,
-      shader: POSE_PREPROCESS_WGSL,
+      shader: letterboxPreprocessWgsl(),
       entryPoint: "main",
       workgroups: [WORKGROUPS, WORKGROUPS, 1],
       buffers: [{ binding: "modelInput", resourceId: scratchResourceId(nodeId, POSE_INPUT_KEY) }],

@@ -87,11 +87,32 @@ export function toHalf(value: number): number {
  * R and G are the keypoint's x and y NORMALISED ACROSS THE FRAME, B is confidence, A is
  * 1. `pointsFromTexture` in Value mode reads exactly this: texel i is point i, by index.
  *
+ * T992 — UN-LETTERBOXED here, and this is the letterbox's other half: the preprocess
+ * fits the picture into the model square with bars (T974's rule, the seam's shared
+ * WGSL), so the model reports joints in LETTERBOXED uv, and a joint at model uv `m` is
+ * at frame uv `(m - 0.5) / occ + 0.5` — `occOf` from depth-runner is the WGSL's
+ * float64 twin, one formula on both ends. Shipping the letterbox WITHOUT this half
+ * would put every joint off by the bar width, plausibly (the dangerous kind, §T992),
+ * which is why the two halves land in one change and the source size rides the run
+ * request to reach this encoder at all.
+ *
+ * Joints the model parks in the bars (numerically possible on a noisy frame) clamp to
+ * the frame edge rather than leaving [0, 1] — an off-frame joint would park its point
+ * at a coordinate `pointsFromTexture` would still draw.
+ *
  * Half-float rather than 8-bit on purpose — a byte would quantise a joint to about 7
  * pixels at 1080p, which reads as a permanent tremor on every limb. Half gives ~1/2048,
  * comfortably under the model's own jitter.
  */
-export function keypointsToTexture(output: Float32Array): Uint8Array {
+export function keypointsToTexture(
+  output: Float32Array,
+  sourceWidth: number,
+  sourceHeight: number,
+): Uint8Array {
+  const aspect = sourceWidth / Math.max(sourceHeight, 1);
+  const [occX, occY] = aspect >= 1 ? [1, 1 / aspect] : [aspect, 1];
+  const unbox = (value: number, occ: number): number =>
+    Math.min(1, Math.max(0, (value - 0.5) / occ + 0.5));
   const bytes = new Uint8Array(POSE_KEYPOINT_COUNT * 8);
   const view = new DataView(bytes.buffer);
   for (let i = 0; i < POSE_KEYPOINT_COUNT; i += 1) {
@@ -101,8 +122,8 @@ export function keypointsToTexture(output: Float32Array): Uint8Array {
     const x = output[i * 3 + 1] ?? 0;
     const score = output[i * 3 + 2] ?? 0;
     const at = i * 8;
-    view.setUint16(at, toHalf(Number.isFinite(x) ? x : 0), true);
-    view.setUint16(at + 2, toHalf(Number.isFinite(y) ? y : 0), true);
+    view.setUint16(at, toHalf(Number.isFinite(x) ? unbox(x, occX) : 0), true);
+    view.setUint16(at + 2, toHalf(Number.isFinite(y) ? unbox(y, occY) : 0), true);
     view.setUint16(at + 4, toHalf(Number.isFinite(score) ? score : 0), true);
     view.setUint16(at + 6, toHalf(1), true);
   }
