@@ -2,9 +2,9 @@ import { useMemo, useState } from "react";
 import type { DragEvent as ReactDragEvent } from "react";
 import type { NodeDefinition } from "@domain/types/node-definition.ts";
 import { Button } from "@ui/primitives/button.tsx";
-import { PopoverContent, PopoverRoot, PopoverTrigger } from "@ui/primitives/popover.tsx";
 import { cx } from "@ui/cx.ts";
 import { portTypeColor } from "@ui/ports.ts";
+import { LibraryGroups, LibraryPanel, LibrarySearch } from "./library-panel.tsx";
 import { writeNodeDragPayload } from "./drag-payload.ts";
 import type { NodeDragPayload } from "./drag-payload.ts";
 import {
@@ -13,7 +13,6 @@ import {
   describeDrag,
   describeDragPrecisely,
   filterLibrary,
-  groupByCategory,
 } from "./search.ts";
 import type { PortDragQuery } from "./search.ts";
 import styles from "./library.module.css";
@@ -73,8 +72,6 @@ export function NodeLibrary({
     );
   }, [definitions, drag]);
 
-  const groups = groupByCategory(results);
-
   const add = (definition: NodeDefinition): void => {
     const connectTo = connectPorts.get(definition.type);
     if (connectTo === undefined) onAddNode?.(definition.type);
@@ -91,137 +88,88 @@ export function NodeLibrary({
   };
 
   return (
-    <div className={styles.library}>
-      <div className={styles.toolbar}>
-        <input
-          type="search"
-          className={styles.search}
-          value={query}
-          placeholder="Search nodes"
-          aria-label="Search nodes"
-          title="Enter adds the top hit"
-          onChange={(event) => setQuery(event.target.value)}
-          onKeyDown={(event) => {
-            // §V53: a text field swallows editing keys rather than driving the graph.
-            event.stopPropagation();
-            if (event.key !== "Enter") return;
-            event.preventDefault();
-            // Enter adds the top hit — the fastest path from typing to a node.
-            const top = results[0];
-            if (top !== undefined) add(top);
-          }}
-        />
+    <LibraryPanel
+      toolbar={
+        <>
+          {/*
+            §T877: the same search row the example pane uses. It was a hand-built copy
+            here, which is why §T855's one-row filter landed there and not here — the
+            owner's words: "node library didnt adjust its category filter".
+          */}
+          <LibrarySearch
+            label="Search nodes"
+            value={query}
+            onChange={setQuery}
+            title="Enter adds the top hit"
+            onKeyDown={(event) => {
+              if (event.key !== "Enter") return;
+              event.preventDefault();
+              // Enter adds the top hit — the fastest path from typing to a node.
+              const top = results[0];
+              if (top !== undefined) add(top);
+            }}
+            categories={categories}
+            category={category}
+            onCategoryChange={setCategory}
+            filtersOpen={filtersOpen}
+            onFiltersOpenChange={setFiltersOpen}
+          />
 
-        {drag === null ? null : (
-          <div className={styles.dragBanner} role="status">
-            <span
-              className={styles.dragDot}
-              aria-hidden
-              // V26: the dot is the source port's family colour, resolved to its token.
-              style={{ background: portTypeColor(drag.type) }}
-            />
-            <span>compatible with</span>
-            <span className={styles.dragType} title={describeDragPrecisely(drag)}>
-              {describeDrag(drag)}
-            </span>
-            {onClearPortDrag === undefined ? null : (
-              <Button onClick={onClearPortDrag} aria-label="Clear port filter">
-                clear
-              </Button>
-            )}
-          </div>
-        )}
-
-        {/*
-          §V90: the category set GROWS with the catalogue, so rendering it as a permanent
-          chip wall means a control that will eventually not fit — it was already three
-          rows deep. On demand: the trigger shows the ACTIVE filter (the answer to "what
-          am I looking at"), and the full set is one click away.
-        */}
-        <PopoverRoot open={filtersOpen} onOpenChange={setFiltersOpen}>
-          <PopoverTrigger asChild>
-            <button
-              type="button"
-              className={cx(styles.chip, styles.filterTrigger)}
-              aria-expanded={filtersOpen}
-              aria-label={category === null ? "Filter by category" : `Category: ${category}`}
-            >
-              {category ?? "all categories"}
-            </button>
-          </PopoverTrigger>
-          <PopoverContent className={styles.filterMenu} align="start" sideOffset={4}>
-            <div className={styles.categories}>
-              <button
-                type="button"
-                className={styles.chip}
-                aria-pressed={category === null}
-                onClick={() => {
-                  setCategory(null);
-                  setFiltersOpen(false);
-                }}
-              >
-                all
-              </button>
-              {categories.map((name) => (
-                <button
-                  key={name}
-                  type="button"
-                  className={styles.chip}
-                  aria-pressed={category === name}
-                  onClick={() => {
-                    setCategory(category === name ? null : name);
-                    setFiltersOpen(false);
-                  }}
-                >
-                  {name}
-                </button>
-              ))}
+          {drag === null ? null : (
+            <div className={styles.dragBanner} role="status">
+              <span
+                className={styles.dragDot}
+                aria-hidden
+                // V26: the dot is the source port's family colour, resolved to its token.
+                style={{ background: portTypeColor(drag.type) }}
+              />
+              <span>compatible with</span>
+              <span className={styles.dragType} title={describeDragPrecisely(drag)}>
+                {describeDrag(drag)}
+              </span>
+              {onClearPortDrag === undefined ? null : (
+                <Button onClick={onClearPortDrag} aria-label="Clear port filter">
+                  clear
+                </Button>
+              )}
             </div>
-          </PopoverContent>
-        </PopoverRoot>
-      </div>
-
-      <div className={styles.list}>
-        {groups.length === 0 ? (
-          <p className={styles.empty}>
-            {drag === null
-              ? "No node matches that search."
-              : "No compatible node — insert a conversion node instead."}
-          </p>
-        ) : (
-          groups.map((group) => (
-            <section className={styles.group} key={group.category} aria-label={group.category}>
-              <h3 className={styles.groupHeader}>{group.category}</h3>
-              {group.definitions.map((definition) => (
-                <button
-                  key={definition.type}
-                  type="button"
-                  className={cx(styles.item, "nodrag")}
-                  draggable
-                  onDragStart={(event) => onDragStart(event, definition)}
-                  /*
-                   * T635: SINGLE click adds — that is the stated gesture. A double-click
-                   * (the file-browser habit) is two click events, and treating both as
-                   * adds stacked two identical nodes on one spot; the owner's ~20-blur
-                   * pile-up reads as this gesture repeated. `detail > 1` is the burst's
-                   * second-and-later clicks, so a double-click adds exactly once, while
-                   * deliberate repeat-adds (clicks outside the double-click window)
-                   * still add one each.
-                   */
-                  onClick={(event) => {
-                    if (event.detail > 1) return;
-                    add(definition);
-                  }}
-                  title={definition.description ?? definition.type}
-                >
-                  <span className={styles.itemTitle}>{definition.title}</span>
-                  <span className={styles.itemMeta}>{definition.type}</span>
-                </button>
-              ))}
-            </section>
-          ))
+          )}
+        </>
+      }
+    >
+      <LibraryGroups
+        items={results}
+        keyOf={(definition) => definition.type}
+        empty={
+          drag === null
+            ? "No node matches that search."
+            : "No compatible node — insert a conversion node instead."
+        }
+        renderItem={(definition) => (
+          <button
+            type="button"
+            className={cx(styles.item, "nodrag")}
+            draggable
+            onDragStart={(event) => onDragStart(event, definition)}
+            /*
+             * T635: SINGLE click adds — that is the stated gesture. A double-click (the
+             * file-browser habit) is two click events, and treating both as adds stacked
+             * two identical nodes on one spot; the owner's ~20-blur pile-up reads as this
+             * gesture repeated. `detail > 1` is the burst's second-and-later clicks, so a
+             * double-click adds exactly once, while deliberate repeat-adds (clicks outside
+             * the double-click window) still add one each.
+             */
+            onClick={(event) => {
+              if (event.detail > 1) return;
+              add(definition);
+            }}
+            title={definition.description ?? definition.type}
+          >
+            <span className={styles.itemTitle}>{definition.title}</span>
+            <span className={styles.itemMeta}>{definition.type}</span>
+          </button>
         )}
-      </div>
-    </div>
+      />
+    </LibraryPanel>
   );
 }

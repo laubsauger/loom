@@ -180,6 +180,25 @@ describe("ExampleLibrary (T189, §V93)", () => {
     expect(headers[1]?.startsWith("points")).toBe(true);
   });
 
+  it("keeps the search field OUT of the scrolling list (§T876)", () => {
+    const { bus } = busWithOpen();
+    render(
+      <ExampleLibrary bus={bus} context={context} dirty={false} examples={[EXAMPLE, OTHER]} />,
+    );
+
+    // The sticky headers can only be safe at `top: 0` if nothing that is not a row lives
+    // in the scroller with them. This is the structural half of the fix, and it is the
+    // half a refactor could quietly undo — the CSS half (no top padding on the scroller)
+    // jsdom cannot see, so this pins what it can: the search box is a SIBLING of the
+    // scrolling list, never a descendant of it.
+    const search = screen.getByRole("searchbox", { name: "Search examples" });
+    const scroller = screen.getByRole("region", { name: "points" }).parentElement;
+    expect(scroller).not.toBeNull();
+    expect(scroller?.contains(search)).toBe(false);
+    // ...and the headers really are inside it, or the assertion above proves nothing.
+    expect(scroller?.contains(screen.getByRole("heading", { name: /points/ }))).toBe(true);
+  });
+
   it("stays grouped while searching, with the ranking kept inside each group", () => {
     const { bus } = busWithOpen();
     render(

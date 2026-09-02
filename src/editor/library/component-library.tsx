@@ -7,6 +7,7 @@ import type { InvocationContext } from "@domain/types/commands.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
 import type { ComponentId, NodeId } from "@domain/types/ids.ts";
 import { Button } from "@ui/primitives/button.tsx";
+import { LibraryPanel, LibrarySearch } from "./library-panel.tsx";
 import styles from "./library.module.css";
 
 /**
@@ -166,46 +167,48 @@ export function ComponentLibrary({
   };
 
   return (
-    <div className={styles.library}>
-      <div className={styles.toolbar}>
-        <input
-          type="search"
-          className={styles.search}
-          value={query}
-          placeholder="Search components"
-          aria-label="Search components"
-          onChange={(event) => setQuery(event.target.value)}
-          onKeyDown={(event) => event.stopPropagation()}
-        />
+    /*
+     * §T877: the SKELETON only, and that is the honest extent of the share. This pane has
+     * no categories to filter and a flat list of rows, so it takes `LibraryPanel` — which
+     * is where the toolbar-outside-the-scroller rule lives, so §T876's sticky fix is
+     * inherited here too — and stops there. Handing it a category control to look like
+     * its siblings would be inventing an affordance with nothing behind it.
+     */
+    <LibraryPanel
+      notice={message}
+      toolbar={
+        <>
+          <LibrarySearch label="Search components" value={query} onChange={setQuery} />
 
-        <div className={styles.saveRow}>
-          <input
-            type="text"
-            className={styles.search}
-            value={name}
-            placeholder="Component name"
-            aria-label="Component name"
-            disabled={selection.length === 0}
-            onChange={(event) => setName(event.target.value)}
-            onKeyDown={(event) => {
-              event.stopPropagation();
-              if (event.key !== "Enter") return;
-              event.preventDefault();
-              void save();
-            }}
-          />
-          <Button
-            variant="outline"
-            disabled={selection.length === 0 || name.trim() === ""}
-            onClick={() => void save()}
-          >
-            Save selection
-          </Button>
-        </div>
-        <p className={styles.hint}>{selection.length} selected</p>
-      </div>
-
-      <div className={styles.list}>
+          <div className={styles.saveRow}>
+            <input
+              type="text"
+              className={styles.search}
+              value={name}
+              placeholder="Component name"
+              aria-label="Component name"
+              disabled={selection.length === 0}
+              onChange={(event) => setName(event.target.value)}
+              onKeyDown={(event) => {
+                event.stopPropagation();
+                if (event.key !== "Enter") return;
+                event.preventDefault();
+                void save();
+              }}
+            />
+            <Button
+              variant="outline"
+              disabled={selection.length === 0 || name.trim() === ""}
+              onClick={() => void save()}
+            >
+              Save selection
+            </Button>
+          </div>
+          <p className={styles.hint}>{selection.length} selected</p>
+        </>
+      }
+    >
+      <>
         {matches.length === 0 ? (
           <p className={styles.empty}>
             {summaries.length === 0 ? "No component installed." : "No component matches."}
@@ -261,13 +264,7 @@ export function ComponentLibrary({
             ))}
           </section>
         )}
-      </div>
-
-      {message === null ? null : (
-        <p className={styles.notice} role="status">
-          {message}
-        </p>
-      )}
-    </div>
+      </>
+    </LibraryPanel>
   );
 }

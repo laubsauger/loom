@@ -88,11 +88,38 @@
   color: var(--text);
 }
 
+/*
+ * §T876 — NO TOP PADDING ON THE SCROLLER, and that is load-bearing, not tidying.
+ *
+ * A `position: sticky; top: 0` child sticks to the SCROLLPORT, which is the scroll
+ * container's PADDING box — so `padding-top` here parks every sticky header that many
+ * pixels below the visible top, and the band above it is live: rows scroll up through it
+ * and are clipped by the border box, not hidden by the header. That is exactly what the
+ * owner photographed — a 4px strip (`--space-2`) with the top of "E33 Obol" showing in
+ * it, above its own "3D" header.
+ *
+ * The search field was already OUT of this scroller (`.toolbar` is a flex sibling, not a
+ * descendant), so the offset was never the search box's height. The gap was the padding.
+ *
+ * With no top padding, `top: 0` is flush with the visible top and nothing can pass above
+ * a header by construction. The 4px is not lost — it moves INSIDE the scroller below, so
+ * it scrolls away like the content it is spacing rather than masking the sticky edge.
+ */
 .list {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
-  padding: var(--space-2) var(--space-3) var(--space-6);
+  padding: 0 var(--space-3) var(--space-6);
+}
+
+/*
+ * The scroller's old `padding-top`, re-expressed as content. Same 4px of breathing room
+ * above the first row in every pane that uses this list — the flat component library
+ * included — but now it is part of the scrollable flow, so it cannot hold a sticky
+ * header off the top edge.
+ */
+.list > *:first-child {
+  margin-top: var(--space-2);
 }
 
 .group {

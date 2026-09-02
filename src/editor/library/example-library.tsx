@@ -9,18 +9,16 @@ import {
   DialogRoot,
   DialogTitle,
 } from "@ui/primitives/dialog.tsx";
-import { PopoverContent, PopoverRoot, PopoverTrigger } from "@ui/primitives/popover.tsx";
 import {
-  TooltipContent,
-  TooltipProvider,
-  TooltipRoot,
-  TooltipTrigger,
-} from "@ui/primitives/tooltip.tsx";
-import { cx } from "@ui/cx.ts";
+  LibraryGroups,
+  LibraryPanel,
+  LibrarySearch,
+  useLibraryHoverCard,
+} from "./library-panel.tsx";
 import { listExampleProjects } from "./example-catalogue.ts";
 import type { ExampleProject } from "./example-catalogue.ts";
 import { filterExamples } from "./example-search.ts";
-import { categoriesOf, groupEntries } from "./search.ts";
+import { categoriesOf } from "./search.ts";
 import styles from "./library.module.css";
 
 /**
@@ -94,20 +92,19 @@ export function ExampleLibrary({
   );
 
   /**
-   * §T863 — the categories are SHOWN as the node pane shows them: as the shape of the
-   * list, under a sticky header, rather than repeated on every row as a badge.
+   * §T863 — the categories are SHOWN as the shape of the list, under a sticky header,
+   * rather than repeated on every row as a badge.
    *
-   * Both were on the table and the pane decides it. A badge spends the row's scarcest
-   * resource — width, in a dock this narrow, where the name already truncates — to
-   * restate on 38 rows what one header says once. And a header answers a question a
-   * badge cannot: how many kinds there ARE, and how big each is. That is what someone
-   * opening a library of 38 files is actually asking.
+   * Both were on the table. A badge spends the row's scarcest resource — width, in a dock
+   * this narrow, where the name already truncates — to restate on 38 rows what one header
+   * says once; and a header answers a question a badge cannot, which is how many kinds
+   * there ARE and how big each is. Since §T877 the answer is `LibraryGroups`, so the node
+   * pane gets the same one rather than a second copy of the reasoning.
    *
-   * It stays grouped while searching too, which is the node pane's behaviour and worth
-   * inheriting rather than switching idioms mid-gesture: `groupEntries` keeps members in
-   * arrival order, so a ranked result is still ranked inside its bucket.
+   * It stays grouped while searching, which is the node pane's behaviour: `groupEntries`
+   * keeps members in arrival order, so a ranked result is still ranked inside its bucket.
    */
-  const groups = useMemo(() => groupEntries(results), [results]);
+  const hover = useLibraryHoverCard<ExampleProject>();
 
   // `project.open` is registered by the mounted composition root, so it can genuinely be
   // absent — in a test harness, or before the root's effect has run. A row that would
@@ -138,168 +135,64 @@ export function ExampleLibrary({
   };
 
   return (
-    <div className={styles.library}>
-      {/*
-        §T855, the owner's own layout call: the filter sits BESIDE the search field, one
-        row. `saveRow` is the pane's existing two-control row (the component library saves
-        through it) — the input yields, the button keeps its label — so this is the
-        stylesheet's idiom rather than a third arrangement of the same two controls.
-      */}
-      <div className={styles.toolbar}>
-        <div className={styles.saveRow}>
-          <input
-            type="search"
-            className={styles.search}
-            value={query}
-            placeholder="Search examples"
-            aria-label="Search examples"
-            onChange={(event) => setQuery(event.target.value)}
-            // §V53: a text field swallows editing keys rather than driving the graph.
-            onKeyDown={(event) => event.stopPropagation()}
-          />
-
-          {/*
-            §V90, as the node pane resolved it: the trigger shows the ACTIVE filter — the
-            answer to "what am I looking at" — and the full set is one click away, so the
-            toolbar carries one control instead of a chip wall that grows with the list.
-
-            The resting label is the WORD "All", not an icon (§T855). A compact trigger
-            has to state its own state: the property a chip wall gives away for free is
-            that you can see nothing is hidden without touching anything, and an icon is
-            exactly what loses it. "All" costs three characters and keeps it.
-          */}
-          <PopoverRoot open={filtersOpen} onOpenChange={setFiltersOpen}>
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                className={cx(styles.chip, styles.filterTrigger)}
-                aria-expanded={filtersOpen}
-                aria-label={category === null ? "Filter by category" : `Category: ${category}`}
-              >
-                {category ?? "All"}
-              </button>
-            </PopoverTrigger>
-            <PopoverContent className={styles.filterMenu} align="end" sideOffset={4}>
-              <div className={styles.categories}>
-                <button
-                  type="button"
-                  className={styles.chip}
-                  aria-pressed={category === null}
-                  onClick={() => {
-                    setCategory(null);
-                    setFiltersOpen(false);
-                  }}
-                >
-                  All
-                </button>
-                {categories.map((name) => (
-                  <button
-                    key={name}
-                    type="button"
-                    className={styles.chip}
-                    aria-pressed={category === name}
-                    onClick={() => {
-                      setCategory(category === name ? null : name);
-                      setFiltersOpen(false);
-                    }}
-                  >
-                    {name}
-                  </button>
-                ))}
-              </div>
-            </PopoverContent>
-          </PopoverRoot>
-        </div>
-      </div>
-
-      {/*
-        The pane mounts its own provider so it is self-contained wherever it is embedded.
-        Radix opens the card on FOCUS as well as hover (§V19), so the description is not
-        something only a mouse can reach.
-      */}
-      <TooltipProvider delayDuration={250}>
-        <div className={styles.list}>
-          {catalogue.length === 0 ? (
-            <p className={styles.empty}>No example ships with this build.</p>
-          ) : groups.length === 0 ? (
-            <p className={styles.empty}>No example matches that search.</p>
-          ) : (
-            groups.map((group) => (
-              <section className={styles.group} key={group.category} aria-label={group.category}>
-                <h3 className={styles.groupHeader}>
-                  {group.category}
-                  {/* The size of the bucket, which is half of what a header is for. */}
-                  <span className={styles.groupCount}>{group.items.length}</span>
-                </h3>
-                {group.items.map((example) => (
-                <TooltipRoot key={example.fileName}>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      className={styles.item}
-                      disabled={busy || !canOpen}
-                      onClick={() => choose(example)}
-                    >
-                      <span className={styles.itemTitle}>{example.name}</span>
-                      <span className={styles.itemMeta}>{example.nodeCount} nodes</span>
-                    </button>
-                  </TooltipTrigger>
-                  {/*
-                    §T862 — ANCHORED TO THE ROW, positioned by the shipped primitive.
-                    Four props, and each is one of the owner's three requirements:
-
-                     - `side="right"` puts the card BESIDE the row, so it cannot cover the
-                       thing being hovered. A card on the main axis always can.
-                     - `align="start"` lines its top edge up with the row's, which is the
-                       strongest "this row" signal a list can give, and it is the same for
-                       every row — the consistency the owner asked for.
-                     - `avoidCollisions` + `collisionPadding` keep it on screen, flipping
-                       to the row's other side rather than jumping across the pane.
-
-                    An earlier pass computed this from `event.clientX` per row. That is the
-                    bug the owner hit rather than a tuning problem: a pointer anchor reads a
-                    live coordinate at the element edge, which is exactly where hover
-                    flickers, so it jitters BY CONSTRUCTION. The row does not move.
-                  */}
-                  <TooltipContent
-                    className={styles.card}
-                    side="right"
-                    align="start"
-                    sideOffset={8}
-                    avoidCollisions
-                    collisionPadding={8}
-                  >
-                    {example.thumbnailUrl === undefined ? null : (
-                      <img
-                        className={styles.cardThumb}
-                        src={example.thumbnailUrl}
-                        // Decorative beside the name and description it sits with: a second
-                        // reading of "E9 Ember" is noise, and there is no alt text that
-                        // conveys the picture better than the sentence already below it.
-                        alt=""
-                        width={256}
-                        height={144}
-                        loading="lazy"
-                      />
-                    )}
-                    <span className={styles.cardTitle}>{example.name}</span>
-                    <span className={styles.cardMeta}>{example.nodeCount} nodes</span>
-                    {example.description === "" ? null : (
-                      <span className={styles.cardText}>{example.description}</span>
-                    )}
-                  </TooltipContent>
-                </TooltipRoot>
-                ))}
-              </section>
-            ))
+    <LibraryPanel
+      hover={hover}
+      renderCard={(example) => (
+        <>
+          {example.thumbnailUrl === undefined ? null : (
+            <img
+              className={styles.cardThumb}
+              src={example.thumbnailUrl}
+              // Decorative beside the name and description it sits with: a second reading
+              // of "E9 Ember" is noise, and no alt text conveys the picture better than
+              // the sentence already below it.
+              alt=""
+              width={256}
+              height={144}
+              loading="lazy"
+            />
           )}
-        </div>
-      </TooltipProvider>
-
-      {message === null ? null : (
-        <p className={styles.notice} role="status">
-          {message}
-        </p>
+          <span className={styles.cardTitle}>{example.name}</span>
+          <span className={styles.cardMeta}>{example.nodeCount} nodes</span>
+          {example.description === "" ? null : (
+            <span className={styles.cardText}>{example.description}</span>
+          )}
+        </>
+      )}
+      notice={message}
+      toolbar={
+        <LibrarySearch
+          label="Search examples"
+          value={query}
+          onChange={setQuery}
+          categories={categories}
+          category={category}
+          onCategoryChange={setCategory}
+          filtersOpen={filtersOpen}
+          onFiltersOpenChange={setFiltersOpen}
+        />
+      }
+    >
+      {catalogue.length === 0 ? (
+        <p className={styles.empty}>No example ships with this build.</p>
+      ) : (
+        <LibraryGroups
+          items={results}
+          keyOf={(example) => example.fileName}
+          empty="No example matches that search."
+          renderItem={(example) => (
+            <button
+              type="button"
+              className={styles.item}
+              disabled={busy || !canOpen}
+              onClick={() => choose(example)}
+              {...hover.rowProps(example)}
+            >
+              <span className={styles.itemTitle}>{example.name}</span>
+              <span className={styles.itemMeta}>{example.nodeCount} nodes</span>
+            </button>
+          )}
+        />
       )}
 
       <DialogRoot
@@ -325,6 +218,6 @@ export function ExampleLibrary({
           </DialogFooter>
         </DialogContent>
       </DialogRoot>
-    </div>
+    </LibraryPanel>
   );
 }
