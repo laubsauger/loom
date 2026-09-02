@@ -59,12 +59,40 @@ function usableRange(spec: NumericSpec): { min: number; max: number } | null {
 }
 
 /**
- * The manifest step, or one derived from the declared range. A bounded parameter with
- * no step gets 1/100 of its range, so a full-range drag is a comfortable 200 px.
+ * The step the AUTHOR DECLARED, or null when the manifest declares none (T989, §V832).
+ *
+ * This is the only step that is a STATEMENT ABOUT THE VALUE — "this parameter moves in
+ * halves" — and therefore the only one allowed to snap a number on its way into the
+ * document. Everything else on this module derives a step from the declared RANGE, and a
+ * number derived from a range is a statement about a gesture, not about a value.
  */
-export function stepFor(spec: NumericSpec): number {
+export function declaredStep(spec: NumericSpec): number | null {
   const { step } = spec;
   if (step !== undefined && Number.isFinite(step) && step > 0) return step;
+  return null;
+}
+
+/**
+ * The GESTURE's granularity: how far `PIXELS_PER_STEP` of travel moves the value. The
+ * manifest step when there is one, else 1/100 of the declared range, so a full-range drag
+ * is a comfortable 200 px.
+ *
+ * NAMED FOR THE GESTURE ON PURPOSE (T989, §V832). This used to be `stepFor`, and one
+ * caller after another read it as "the parameter's step" and used it as a lattice: a
+ * screen-distance ergonomic became a grid the DOCUMENT had to lie on, applied to typed
+ * entry as well as to drags. `depthPoints.near` (0.01…10, no step) derives 0.0999, so its
+ * own default of 0.5 could not be written — it committed 0.5095; `depthPoints.far`
+ * (0.1…20) derives 0.199 and turned 4 into 4.08; and a parameter whose `min` is 0 with a
+ * derived step wider than its value rounded that value to nothing. 39 catalogue defaults
+ * were damaged this way and the damage was inventoried rather than fixed.
+ *
+ * A function that returns either the author's constraint or a fallback it invented, under
+ * one name, is the defect: the caller cannot tell which it got. `declaredStep` returns the
+ * constraint or null; this returns the ergonomic and says so in its name.
+ */
+export function dragStepFor(spec: NumericSpec): number {
+  const declared = declaredStep(spec);
+  if (declared !== null) return declared;
   const range = usableRange(spec);
   if (range !== null) return (range.max - range.min) / 100;
   return 0.01;
@@ -82,14 +110,42 @@ function decimalsOf(value: number): number {
   return dot < 0 ? 0 : text.length - dot - 1;
 }
 
-/** Decimals a value is displayed and stored with: the manifest's, or the step's. */
+/**
+ * The FLOOR on displayed decimals: the manifest's precision, or the drag step's own.
+ *
+ * A floor rather than a count (T989). Below the declared precision the readout jitters
+ * under a drag, which is what this number is for; above it, `formatNumber` widens to
+ * whatever the VALUE needs, because a field that shows fewer digits than the number it
+ * holds is hiding the user's own entry.
+ */
 export function decimalsFor(spec: NumericSpec): number {
   const { precision } = spec;
   if (precision !== undefined && Number.isInteger(precision) && precision >= 0) {
     return Math.min(precision, MAX_DECIMALS);
   }
   if (spec.scale === "log") return LOG_DECIMALS;
-  return Math.min(decimalsOf(stepFor(spec)), MAX_DECIMALS);
+  // The DERIVED step carries float noise — `(20 - 0.1) / 100` is `0.19900000000000004` —
+  // and counting its decimals literally printed six of them for a 0.1…20 parameter.
+  return Math.min(decimalsOf(roundToDecimals(dragStepFor(spec), MAX_DECIMALS)), MAX_DECIMALS);
+}
+
+/**
+ * Decimals a value KEEPS when it is written to the document (T989).
+ *
+ * The declared precision when there is one — an author who says `precision: 1` means it —
+ * and otherwise as many as this module can represent. Rounding at all is what stops
+ * `0.30000000000000004` reaching a saved file; rounding to anything NARROWER than the
+ * author asked for is the data loss this task exists to end. In particular it is NOT
+ * `decimalsFor`, whose fallback comes from the derived drag step: an unbounded-precision
+ * parameter on a wide range derived ZERO decimals, so every fraction a user typed into it
+ * was rounded to an integer on the way in.
+ */
+function storageDecimals(spec: NumericSpec): number {
+  const { precision } = spec;
+  if (precision !== undefined && Number.isInteger(precision) && precision >= 0) {
+    return Math.min(precision, MAX_DECIMALS);
+  }
+  return MAX_DECIMALS;
 }
 
 export function roundToDecimals(value: number, decimals: number): number {
@@ -149,26 +205,41 @@ export function resetValue(defaultValue: number, spec: NumericSpec): number {
 }
 
 /**
- * Snap to the step grid, anchored at `min` when there is one so a range like
+ * Snap to the AUTHOR'S step grid, anchored at `min` when there is one so a range like
  * [0.5, 2.5] with step 0.5 lands on the values the author actually meant.
+ *
+ * A spec that declares no step has NO GRID (T989, §V832), and this returns the value
+ * unsnapped. It used to fall back to `dragStepFor`, which is 1/100 of the declared range
+ * — a number chosen so that a full-range drag is 200 px of travel. Snapping to it made
+ * every bounded parameter discrete on a lattice derived from screen distance: 0.5 on
+ * `depthPoints.near` became 0.5095, 4 on `depthPoints.far` became 4.08, and 39 catalogue
+ * defaults could not survive being displayed and committed back.
  */
 export function quantize(value: number, spec: NumericSpec): number {
-  const step = stepFor(spec);
+  const decimals = storageDecimals(spec);
+  const step = declaredStep(spec);
+  if (step === null) return roundToDecimals(value, decimals);
   const anchor = spec.min !== undefined && Number.isFinite(spec.min) ? spec.min : 0;
   const snapped = anchor + Math.round((value - anchor) / step) * step;
-  return roundToDecimals(snapped, decimalsFor(spec));
+  return roundToDecimals(snapped, decimals);
 }
 
 /**
- * The single funnel every numeric value passes through before it reaches the
- * document: quantised to the step grid, clamped into the declared range, rounded to
- * the declared precision. A non-finite input collapses to the range minimum (or 0)
- * rather than poisoning the graph with NaN.
+ * The single funnel every numeric value passes through before it reaches the document:
+ * snapped to the DECLARED step grid if the author declared one, clamped into the declared
+ * range, rounded so a float artefact never reaches a saved file. A non-finite input
+ * collapses to the range minimum (or 0) rather than poisoning the graph with NaN.
+ *
+ * T989: quantising and clamping are different things and only one of them is negotiable.
+ * The clamp stays exactly as it was — a parameter must not hold a value outside its own
+ * limits — while the snap now happens only against a step somebody wrote down.
  */
 export function normalizeValue(value: number, spec: NumericSpec): number {
   if (!Number.isFinite(value)) return clampToRange(0, spec);
-  const quantized = spec.scale === "log" ? roundToDecimals(value, decimalsFor(spec)) : quantize(value, spec);
-  return roundToDecimals(clampToRange(quantized, spec), decimalsFor(spec));
+  const decimals = storageDecimals(spec);
+  // A log parameter moves by ratio, so a linear step grid means nothing on it.
+  const snapped = spec.scale === "log" ? roundToDecimals(value, decimals) : quantize(value, spec);
+  return roundToDecimals(clampToRange(snapped, spec), decimals);
 }
 
 /* ---- the magnitude ladder (T228, §V133, §V134) ------------------------------------ */
@@ -190,7 +261,7 @@ export const DECADE_LADDER: readonly number[] = [0.001, 0.01, 0.1, 1, 10, 100];
 
 /** The rung a field starts on: the manifest step snapped down onto the ladder. */
 export function defaultDecade(spec: NumericSpec): number {
-  const step = stepFor(spec);
+  const step = dragStepFor(spec);
   let chosen = DECADE_LADDER[0] as number;
   for (const rung of DECADE_LADDER) {
     if (rung <= step + Number.EPSILON) chosen = rung;
@@ -296,7 +367,7 @@ export function valueFromDrag({ startValue, deltaX, spec, modifier, decade }: Dr
     return normalizeAtDecade(startValue + (deltaX / PIXELS_PER_STEP) * effective, spec, effective);
   }
 
-  return normalizeValue(startValue + (deltaX / PIXELS_PER_STEP) * stepFor(spec) * factor, spec);
+  return normalizeValue(startValue + (deltaX / PIXELS_PER_STEP) * dragStepFor(spec) * factor, spec);
 }
 
 export interface NudgeInput {
@@ -331,17 +402,26 @@ export function nudge({ value, direction, spec, modifier, steps = 1, decade }: N
     const effective = decadeForModifier(decade, modifier);
     return normalizeAtDecade(value + direction * effective * Math.max(1, steps), spec, effective);
   }
-  return normalizeValue(value + direction * stepFor(spec) * count, spec);
+  return normalizeValue(value + direction * dragStepFor(spec) * count, spec);
 }
 
 /**
- * Display text for a value: fixed decimals, so digits do not jitter under a drag. A
- * chosen decade widens the display the same way it widens storage (§V134) — a field
- * dragging at 0.001 that still prints two decimals would look frozen.
+ * Display text for a value: at LEAST the spec's decimals, so digits do not jitter under a
+ * drag, and never fewer than the value itself needs (T989). A chosen decade widens the
+ * display the same way it widens storage (§V134) — a field dragging at 0.001 that still
+ * prints two decimals would look frozen.
+ *
+ * The floor used to be the whole answer, and it was derived from the drag step, so a
+ * parameter on -360…360 printed ONE decimal and showed a spin rate of 0.25°/frame as
+ * "0.3" — the user could not read back the number they had typed, and the field's own
+ * commit path then wrote that reading back. Float noise past `MAX_DECIMALS` is rounded
+ * off before the count, so a driven value of `0.30000000000000004` widens to nothing.
  */
 export function formatNumber(value: number, spec: NumericSpec, decade?: number): string {
   if (!Number.isFinite(value)) return "0";
-  return value.toFixed(decade === undefined ? decimalsFor(spec) : decimalsForDecade(spec, decade));
+  const floor = decade === undefined ? decimalsFor(spec) : decimalsForDecade(spec, decade);
+  const needed = decimalsOf(roundToDecimals(value, MAX_DECIMALS));
+  return value.toFixed(Math.min(MAX_DECIMALS, Math.max(floor, needed)));
 }
 
 /** A ladder rung as its label: "0.001", "1", "100" — never "1e-3". */

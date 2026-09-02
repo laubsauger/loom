@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { allNodeDefinitions } from "@nodes/definitions/index.ts";
 import { buildStarterComponents } from "../../examples/starter-components.ts";
 import { lfoNode } from "@nodes/definitions/values.ts";
-import { decimalsFor, formatNumber, normalizeValue, quantize, resetValue, stepFor } from "@ui/controls/drag-math.ts";
+import { declaredStep, decimalsFor, dragStepFor, formatNumber, normalizeValue, quantize, resetValue } from "@ui/controls/drag-math.ts";
 import { STARTER_COMPONENT_SPECS } from "../../examples/starter-components.ts";
 import type { NumericSpec } from "@ui/controls/types.ts";
 
@@ -12,10 +12,11 @@ import type { NumericSpec } from "@ui/controls/types.ts";
  * ## The bug
  *
  * `lfo.frequency` was declared `{ min: 0, max: 100, unit: "hz" }` with no `step` and no
- * `precision`. `stepFor` derives a step of 1/100 of the declared range when the author
- * gives none — a good default for a drag, and for THIS range it is exactly `1`. That one
- * number is then reused for three different jobs: the drag granularity, the DISPLAY
- * decimals (`decimalsFor` -> `0`), and the QUANTISATION grid (`quantize`). So E7's 0.25 Hz
+ * `precision`. `dragStepFor` (then `stepFor`) derives a step of 1/100 of the declared range
+ * when the author gives none — a good default for a drag, and for THIS range it is exactly
+ * `1`. That one number was then reused for three different jobs: the drag granularity, the
+ * DISPLAY decimals (`decimalsFor` -> `0`), and the QUANTISATION grid (`quantize`; T989 took
+ * that third job away, and this gate is what noticed it existed). So E7's 0.25 Hz
  * oscillator showed `0` in the inspector, and — the half that destroys work — clicking the
  * field and clicking away committed that `0` back into the document through `commitText`,
  * flattening the sine to a straight line. Measured in the running app, not inferred.
@@ -93,11 +94,19 @@ describe("B80 — a continuous parameter can show a fraction", () => {
  * hole shaped like every one-decimal parameter (§V461).
  *
  * Starter components are held to ZERO failures: they are the shipped surface a user
- * clicks first, and every published numeric now declares its step. The CATALOGUE holds
- * 39 known-lossy defaults (T653 added the vector components the first walk missed) — one number doing three jobs (drag rate, grid, decimals)
- * across the whole manifest is T567's design call, deliberately not folded in here — so
- * they are a RATCHET, §V541-style: each listed entry must STILL be lossy (fix one and
- * this gate makes you take it off the list), and nothing unlisted may join them.
+ * clicks first. The CATALOGUE held 39 known-lossy defaults (T653 added the vector
+ * components the first walk missed), frozen as a ratchet because the cause — one number
+ * doing three jobs (drag rate, grid, decimals) — was T567's open design call.
+ *
+ * T989 MADE THAT CALL AND THE INVENTORY IS EMPTY. `stepFor` returned either the author's
+ * declared step or 1/100 of the declared range, under one name, and `normalizeValue` used
+ * whichever it got as a lattice — so a number chosen to make a full-range drag 200 px long
+ * decided what the DOCUMENT was allowed to hold. Split into `declaredStep` (nullable, the
+ * author's constraint) and `dragStepFor` (the gesture's ergonomic), with only the former
+ * snapping and `formatNumber` widening to whatever digits the value actually has, all 39
+ * heal at once. So the ratchet is gone and this is a zero-tolerance gate over the whole
+ * catalogue: a lossy default is now a manifest that DECLARES a step its own default cannot
+ * sit on, which is a bug in that manifest and nothing for a list to absorb.
  */
 const roundTrips = (value: number, spec: NumericSpec): boolean =>
   normalizeValue(Number(formatNumber(value, spec)), spec) === value;
@@ -129,22 +138,21 @@ function numericSlots(
   return [];
 }
 
-/** T567's written inventory. Every entry is a default that display+commit damages. */
-const KNOWN_LOSSY_DEFAULTS: ReadonlySet<string> = new Set([
-  "noise.spread", "noise.exp", "noise.amp", "ramp.period", "circle.softness",
-  "rectangle.softness", "level.blacklevel", "level.gamma1", "level.contrast",
-  "level.brightness", "limit.high", "limit.steps", "lookup.scale", "blur.size",
-  "slope.angle", "cache.frames", "cache.scale", "renderPoints.sizePixels",
-  "text.size", "text.linespacing", "valueFilter.cutoff", "audioPattern.bpm",
-  "camera.fov", "render.aoRadius", "materialPhong.shininess",
-  "renderInstances.fov", "renderSurface.fov",
-  // T653: the vector components the number-only walk missed — same derivation, same
-  // T567 owner, found when the walk learned that a vector carries one spec for all
-  // of its components.
-  "checker.size[0]", "checker.size[1]", "circle.radius[0]", "circle.radius[1]",
-  "displace.weight[0]", "displace.weight[1]", "rectangle.size[0]", "rectangle.size[1]",
-  "tile.repeat[0]", "tile.repeat[1]", "transform.s[0]", "transform.s[1]",
-]);
+/**
+ * T567's written inventory, and it is EMPTY (T989).
+ *
+ * It held 39 entries — `noise.spread`, `blur.size`, `camera.fov`, `transform.s[0]`, the
+ * lot — every one of them damaged by the same single cause, and the list existed because
+ * the cause was an open design call rather than a bug anyone had agreed to fix. Splitting
+ * `stepFor` into `declaredStep` and `dragStepFor` healed all 39 in one change; not one of
+ * them needed a manifest edit, which is the strongest available evidence that they were
+ * one bug and never 39.
+ *
+ * Kept as an empty set rather than deleted so the shape of the gate below still says what
+ * it means: an entry here would be a parameter whose author DECLARED a step its own
+ * default cannot sit on, and that is a bug in that manifest — fix the manifest.
+ */
+const KNOWN_LOSSY_DEFAULTS: ReadonlySet<string> = new Set<string>([]);
 
 describe("T648 — display-then-commit preserves the default", () => {
   it("the reported instance, pinned: Spin's 0.25 degrees survives the field", async () => {
@@ -176,26 +184,70 @@ describe("T648 — display-then-commit preserves the default", () => {
     expect(lossy, lossy.join("\n")).toEqual([]);
   });
 
-  it("the catalogue ratchet: the 39 known-lossy stay listed, and nobody joins them", () => {
+  it("the whole catalogue survives display+commit — zero tolerance since T989", () => {
     const lossyNow = new Set<string>();
+    let walked = 0;
     for (const definition of allNodeDefinitions) {
       for (const [key, parameter] of Object.entries(definition.parameters ?? {})) {
         for (const slot of numericSlots(key, parameter as { type?: string })) {
+          walked += 1;
           if (!roundTrips(slot.value, slot.spec)) lossyNow.add(`${definition.type}.${slot.name}`);
         }
       }
     }
+    // NON-VACUITY. This walk reported 39 failures before T989 and reports none after; a
+    // refactor that renamed `parameters` would report none too, and mean nothing. 249 slots
+    // when the ratchet was retired.
+    expect(walked).toBeGreaterThan(200);
     const newcomers = [...lossyNow].filter((name) => !KNOWN_LOSSY_DEFAULTS.has(name)).sort();
     expect(
       newcomers,
-      `New parameters whose default does not survive display+commit — declare a step that ` +
-        `holds the default (T648): ${newcomers.join(", ")}`,
+      `Defaults that do not survive display+commit. Since T989 there is only one way to ` +
+        `reach this: the manifest DECLARES a step (or a precision) its own default cannot ` +
+        `sit on. Fix the manifest — do not list it here: ${newcomers.join(", ")}`,
     ).toEqual([]);
     const healed = [...KNOWN_LOSSY_DEFAULTS].filter((name) => !lossyNow.has(name)).sort();
     expect(
       healed,
-      `These are no longer lossy — take them off KNOWN_LOSSY_DEFAULTS so the ratchet holds (§V541): ${healed.join(", ")}`,
+      `These are no longer lossy — take them off KNOWN_LOSSY_DEFAULTS so the gate holds (§V541): ${healed.join(", ")}`,
     ).toEqual([]);
+  });
+
+  /**
+   * T989's PAIRED HALF, and the one that makes the gate above mean anything.
+   *
+   * "Nothing is lossy" is trivially achievable by never quantising at all, and that would
+   * be a different bug: `seed`, `count`, `substeps` and `harmonics` declare `step: 1`
+   * because they are genuinely discrete, and a field that let a user commit 1.4 into one
+   * would be as wrong as one that turned 0.5 into 0.5095. So the fix is asserted from both
+   * sides — the derived grid is gone, the DECLARED grid is intact.
+   */
+  it("still snaps every parameter whose author DECLARED a step", () => {
+    const unsnapped: string[] = [];
+    let checked = 0;
+    for (const definition of allNodeDefinitions) {
+      for (const [key, parameter] of Object.entries(definition.parameters ?? {})) {
+        const spec = parameter as NumericSpec;
+        if (parameter.type !== "number" && parameter.type !== "vector") continue;
+        const step = declaredStep(spec);
+        if (step === null) continue;
+        checked += 1;
+        // 0.4 of a step off the grid's anchor: unambiguously between two rungs, so it
+        // must come back ON one, and on the LOWER one.
+        const anchor = spec.min !== undefined && Number.isFinite(spec.min) ? spec.min : 0;
+        const between = anchor + step * 0.4;
+        const landed = normalizeValue(between, spec);
+        if (landed !== normalizeValue(anchor, spec)) {
+          unsnapped.push(
+            `${definition.type}.${key} declares step ${String(step)} but ${String(between)} ` +
+              `committed as ${String(landed)} instead of snapping back to ${String(anchor)}`,
+          );
+        }
+      }
+    }
+    // 70 of the catalogue's 266 numeric parameters declare a step when this was written.
+    expect(checked).toBeGreaterThan(50);
+    expect(unsnapped, unsnapped.join("\n")).toEqual([]);
   });
 });
 
@@ -287,7 +339,7 @@ describe("T652 — reset restores the author's number, on every shape", () => {
       if (after !== value) {
         destroyed.push(
           `${where}: default ${String(value)} resets to ${String(after)} — ` +
-            `min ${String(spec.min)}, max ${String(spec.max)}, step ${String(stepFor(spec))}. ` +
+            `min ${String(spec.min)}, max ${String(spec.max)}, drag step ${String(dragStepFor(spec))}. ` +
             `Double-clicking this field to "reset" changes it.`,
         );
       }
@@ -307,14 +359,22 @@ describe("T652 — reset restores the author's number, on every shape", () => {
     expect(all.some((entry) => entry.where.startsWith("Kaleidoscope."))).toBe(true);
   });
 
-  it("still refuses to quantise a default onto a grid nobody declared", () => {
-    // The mechanism, pinned on the measured instance so the gate above cannot pass by
-    // accident if `resetValue` ever grows a call to `quantize` again. `transform.s` is a
-    // 2-vector on -8..8 with no step: the derived grid is 0.16 anchored at -8, which
-    // lands on 0.96 and 1.12 and never on 1.
-    const scale: NumericSpec = { min: -8, max: 8, range: "soft" };
+  it("still refuses to quantise a default onto a grid, even a DECLARED one", () => {
+    // The mechanism, pinned so the gate above cannot pass by accident if `resetValue` ever
+    // grows a call to `quantize` again. The fixture is `transform.s`'s shape — a 2-vector
+    // on -8..8, whose 0.16 grid anchored at -8 lands on 0.96 and 1.12 and never on 1 —
+    // with that 0.16 now DECLARED, because since T989 an underived spec has no grid at all
+    // and `quantize(1, …)` would return 1 whether or not `resetValue` called it (§V461).
+    // `step: 0.16` with `default: 1` is the case T652 is about: the author wants 1 and
+    // drags in 0.16s, and reset restores what they wrote.
+    const scale: NumericSpec = { min: -8, max: 8, range: "soft", step: 0.16 };
     expect(quantize(1, scale)).not.toBe(1);
     expect(resetValue(1, scale)).toBe(1);
+    // And the pre-T989 half, which is now a statement about the fix: with nothing
+    // declared there is no grid, so quantise is the identity and reset agrees with it.
+    const underived: NumericSpec = { min: -8, max: 8, range: "soft" };
+    expect(quantize(1, underived)).toBe(1);
+    expect(resetValue(1, underived)).toBe(1);
     // Clamping is still real: a default outside its own range is a manifest bug, and the
     // field must not offer a value the parameter cannot hold.
     expect(resetValue(99, { min: 0, max: 1 })).toBe(1);

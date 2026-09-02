@@ -682,10 +682,21 @@ describe("T652 — an untouched numeric field commits nothing", () => {
     fireEvent.change(input, { target: { value: "2" } });
     fireEvent.keyDown(input, { key: "Enter" });
     expect(changes.at(-1)?.[1]).toBe("commit");
-    // 2.08, not 2: a TYPED value is still quantised onto the derived grid, and that is
-    // T567's open design call, deliberately untouched here. What this fixes is committing
-    // a number the user never entered — not what happens to one they did.
-    expect(changes.at(-1)?.[0]).toBeCloseTo(2.08, 5);
+    // 2, not 2.08. This assertion read 2.08 until T989, pinning the other half of the same
+    // bug: the derived 0.16 grid — a number chosen so a full-range drag is 200 px — was a
+    // lattice typed entry had to land on, so a user who typed "2" got 2.08. T652 stopped
+    // the field committing numbers nobody entered; T989 stops it altering the ones they do.
+    expect(changes.at(-1)?.[0]).toBe(2);
+  });
+
+  it("keeps a typed value finer than the drag granularity (T989)", () => {
+    // The owner's report, on this file's own off-grid fixture: entry precision must not be
+    // the drag's precision. 2.03 is inside one 0.16-wide rung and used to snap to 2.08.
+    const { field, input, changes } = renderNumber({ value: 1, defaultValue: 1, spec: offGrid });
+    openField(field);
+    fireEvent.change(input, { target: { value: "2.03" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(changes.at(-1)?.[0]).toBe(2.03);
   });
 
   it("resets to the number the author wrote, not to the nearest grid point", () => {

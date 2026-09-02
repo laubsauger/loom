@@ -10,7 +10,6 @@ import {
   dragModifierFrom,
   formatDecade,
   formatNumber,
-  normalizeAtDecade,
   normalizeValue,
   nudge,
   rangeFraction,
@@ -102,6 +101,24 @@ export interface NumberFieldProps {
   defaultValue: number;
   unit?: NumberParameter["unit"];
   disabled?: boolean;
+  /**
+   * §V830 (T988) — WHAT decides this value, when it is not the stored constant:
+   * "Expression", "Bind", "Channel", "Map". Presence means the field refuses edits.
+   *
+   * It is a CAPTION and not a boolean because the mark it draws has to be a positive
+   * statement. `disabled` was doing this job and `disabled` is the browser's word for
+   * inert and unimportant: it dims the number, drops the field out of tab order and
+   * tells a screen reader to skip it. A driven parameter is the opposite of unimportant
+   * — it is the one MOVING number on the panel, and "what is it right now" is the whole
+   * reason the panel is open. Grey is also the same pixel as broken, loading,
+   * unsupported and not-licensed, so the user would be disambiguating five states from
+   * one colour.
+   *
+   * So: the edit is still refused (a drag the resolver overwrites on the next frame is
+   * a lie), but the field stays legible, focusable and announced — `aria-readonly`, not
+   * `disabled` — and carries the driver's initial in `--signal`.
+   */
+  drivenBy?: string | undefined;
   id?: string;
   describedBy?: string;
   className?: string;
@@ -212,6 +229,26 @@ function LadderSwatch({ label, open, onOpen }: { label: string; open: boolean; o
   );
 }
 
+/**
+ * §V830 — the POSITIVE mark: this value comes from somewhere, and here is where.
+ *
+ * The initial of the driver, in `--signal` mono, in the field's left gutter — the same
+ * "value from elsewhere" vocabulary the inspector's `.driven` readout already uses, and
+ * the same letters the mode buttons show (E, B, D, M). It sits where `LadderSwatch`
+ * sits, and the two are mutually exclusive by construction: a field that refuses drags
+ * has no use for a drag magnitude.
+ *
+ * `aria-hidden` because the fact travels to assistive tech on the input itself
+ * (`aria-readonly`) rather than as a stray letter in the reading order.
+ */
+function DrivenMark({ label, drivenBy }: { label: string; drivenBy: string }) {
+  return (
+    <span className={styles.drivenMark} title={`${label} — ${drivenBy}`} aria-hidden>
+      {drivenBy.slice(0, 1)}
+    </span>
+  );
+}
+
 export function NumberField({
   label,
   value,
@@ -219,6 +256,7 @@ export function NumberField({
   defaultValue,
   unit,
   disabled = false,
+  drivenBy,
   id,
   describedBy,
   className,
@@ -256,6 +294,12 @@ export function NumberField({
   const [invalid, setInvalid] = useState(false);
 
   const editing = text !== null;
+  /**
+   * §V830 — every gesture that would WRITE is refused, for either reason: the control is
+   * genuinely unavailable, or its value is decided elsewhere. Only `disabled` reaches the
+   * DOM attribute; a driven field stays focusable and announced.
+   */
+  const locked = disabled || drivenBy !== undefined;
   const display = text ?? formatNumber(value, spec, decade ?? undefined);
   const fraction = rangeFraction(value, spec);
   /** What the ladder marks as current: the picked rung, or the one the manifest implies. */
@@ -327,17 +371,18 @@ export function NumberField({
         return true;
       }
       openedWith.current = null;
-      // Typed entry is unchanged on a field nobody has touched the ladder on — the
-      // manifest step still quantises it. Once a rung IS picked it quantises there
-      // instead, because a field that drags to 0.0001 and then rounds a TYPED 0.0001 to
-      // zero would be two controls wearing one box (§V134).
-      emit(
-        decade === null ? normalizeValue(parsed.value, spec) : normalizeAtDecade(parsed.value, spec, decade),
-        "commit",
-      );
+      // T989 — TYPED ENTRY IGNORES THE PICKED RUNG, and that is the point rather than a
+      // regression of §V134. The rung is the DRAG's granularity: how far the value moves
+      // per pixel of travel, chosen for the gesture. Sending typed text through
+      // `normalizeAtDecade` made it a lattice as well, so a field left on the `1` rung
+      // turned a typed 0.25 into 0 — "we can't enter a value with our chosen precision
+      // without first having to choose the input precision itself". Entry precision is
+      // now always the parameter's own (`normalizeValue`, which snaps only to a step the
+      // author DECLARED); the ladder controls the sliding, which is all it ever claimed.
+      emit(normalizeValue(parsed.value, spec), "commit");
       return true;
     },
-    [decade, emit, spec],
+    [emit, spec],
   );
 
   const cancelTextEntry = useCallback(() => {
@@ -350,7 +395,7 @@ export function NumberField({
 
   const onPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
-      if (disabled || event.button !== 0) return;
+      if (locked || event.button !== 0) return;
       // While typing the pointer belongs to the caret, not to the drag.
       if (editing) {
         event.stopPropagation();
@@ -383,7 +428,7 @@ export function NumberField({
         setLadderOpen(true);
       }, LADDER_HOLD_MS);
     },
-    [cancelHold, disabled, editing, value],
+    [cancelHold, editing, locked, value],
   );
 
   const onPointerMove = useCallback(
@@ -434,14 +479,14 @@ export function NumberField({
         return;
       }
       // A press that never moved is a click: hand the field to the keyboard.
-      if (!disabled) beginTextEntry();
+      if (!locked) beginTextEntry();
     },
-    [beginTextEntry, cancelHold, disabled, emit],
+    [beginTextEntry, cancelHold, emit, locked],
   );
 
   const onDoubleClick = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
-      if (disabled) return;
+      if (locked) return;
       event.stopPropagation();
       event.preventDefault();
       cancelTextEntry();
@@ -451,14 +496,14 @@ export function NumberField({
       // the derived step: double-clicking a Transform's Scale reset it to 0.96.
       emit(resetValue(defaultValue, spec), "commit");
     },
-    [cancelTextEntry, defaultValue, disabled, emit, spec],
+    [cancelTextEntry, defaultValue, emit, locked, spec],
   );
 
   // ---- keyboard (§V19) -----------------------------------------------
 
   const onKeyDown = useCallback(
     (event: KeyboardEvent<HTMLInputElement>) => {
-      if (disabled) return;
+      if (locked) return;
 
       if (editing) {
         // §V53: while typing, this is a text context — editing keys are swallowed here
@@ -554,8 +599,8 @@ export function NumberField({
       cancelTextEntry,
       commitText,
       decade,
-      disabled,
       editing,
+      locked,
       emit,
       shownDecade,
       spec,
@@ -604,6 +649,7 @@ export function NumberField({
       data-dragging={dragging}
       data-editing={editing}
       data-disabled={disabled}
+      data-driven={drivenBy !== undefined}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={endDrag}
@@ -630,7 +676,12 @@ export function NumberField({
         {...(id === undefined ? {} : { id })}
         {...(describedBy === undefined ? {} : { "aria-describedby": describedBy })}
         {...(invalid ? { "aria-invalid": true } : {})}
+        {...(drivenBy === undefined ? {} : { "aria-readonly": true })}
         onChange={(event) => {
+          // §V830: the refusal lives HERE too, not only on the `readOnly` attribute — a
+          // driven field that let a synthetic change through would emit a value the
+          // resolver overwrites on the next frame, which is the lie the mark denies.
+          if (locked) return;
           setText(event.target.value);
           setInvalid(false);
         }}
@@ -644,7 +695,10 @@ export function NumberField({
         </span>
       )}
     </div>
-    {disabled ? null : (
+    {drivenBy === undefined ? null : <DrivenMark label={label} drivenBy={drivenBy} />}
+    {/* A field that refuses drags has no use for a drag magnitude; the gutter carries
+        the driven mark instead, and the two can never collide. */}
+    {locked ? null : (
       <LadderSwatch
         label={label}
         open={ladderOpen}

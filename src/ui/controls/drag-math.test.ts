@@ -5,15 +5,16 @@ import {
   PIXELS_PER_DECADE,
   PIXELS_PER_STEP,
   clampToRange,
+  declaredStep,
   decimalsFor,
   describeRange,
   dragModifierFrom,
+  dragStepFor,
   formatNumber,
   normalizeValue,
   nudge,
   quantize,
   rangeFraction,
-  stepFor,
   valueFromDrag,
 } from "./drag-math.ts";
 import type { NumericSpec } from "./types.ts";
@@ -47,18 +48,109 @@ describe("modifier selection (doc §8.1)", () => {
 
 describe("step derivation", () => {
   it("uses the manifest step when it declares one", () => {
-    expect(stepFor({ step: 0.25 })).toBe(0.25);
+    expect(dragStepFor({ step: 0.25 })).toBe(0.25);
   });
 
   it("derives a step from a declared range so a full drag is a comfortable distance", () => {
     // 1/100 of the range: 200 px of travel covers the whole range at normal speed.
-    expect(stepFor({ min: 0, max: 100 })).toBe(1);
+    expect(dragStepFor({ min: 0, max: 100 })).toBe(1);
     expect(100 * PIXELS_PER_STEP).toBe(200);
   });
 
   it("ignores a nonsense step rather than dividing by zero", () => {
-    expect(stepFor({ step: 0 })).toBe(0.01);
-    expect(stepFor({ step: Number.NaN })).toBe(0.01);
+    expect(dragStepFor({ step: 0 })).toBe(0.01);
+    expect(dragStepFor({ step: Number.NaN })).toBe(0.01);
+  });
+});
+
+/**
+ * T989 / §V832 — THE AUTHOR'S CONSTRAINT AND THE GESTURE'S ERGONOMIC ARE TWO NUMBERS.
+ *
+ * `stepFor` returned either, under one name, and the caller could not tell which it got.
+ * `normalizeValue` — the write funnel — asked for "the step" and was handed 1/100 of the
+ * declared range, a number chosen so that a full-range drag is 200 px of travel. That
+ * screen-distance ergonomic then became a lattice the DOCUMENT had to lie on, and it was
+ * applied to typed entry as well as to drags: `depthPoints.near` (0.01…10) derives 0.0999,
+ * so the parameter could not hold its own default of 0.5 — 0.01 + 5×0.0999 = 0.5095. The
+ * damage was inventoried (39 catalogue defaults) rather than fixed.
+ *
+ * The split is the fix: `declaredStep` returns the author's constraint or NULL, and
+ * `dragStepFor` returns the ergonomic and says so in its name. Only the first may snap.
+ */
+describe("T989 — a derived step drives the gesture and never the document", () => {
+  /** `depthPoints.near`, the reported instance. No step: nobody declared a grid. */
+  const near: NumericSpec = { min: 0.01, max: 10 };
+  /** The same shape WITH a step, so every assertion below can tell the two apart (§V461). */
+  const stepped: NumericSpec = { min: 0.01, max: 10, step: 0.5 };
+
+  it("names the two numbers apart: one is null when nothing was declared", () => {
+    expect(declaredStep(near)).toBeNull();
+    expect(declaredStep(stepped)).toBe(0.5);
+    // The ergonomic exists for both, and for `near` it is the number that did the damage.
+    expect(dragStepFor(near)).toBeCloseTo(0.0999, 10);
+    expect(dragStepFor(stepped)).toBe(0.5);
+  });
+
+  it("lets a parameter hold the default its own author wrote", () => {
+    // 0.01 + 5 × 0.0999 = 0.5095 was what reached the document, and the field showed 0.5.
+    expect(normalizeValue(0.5, near)).toBe(0.5);
+    expect(normalizeValue(4, { min: 0.1, max: 20 })).toBe(4);
+  });
+
+  it("preserves a typed value finer than the drag granularity", () => {
+    // The whole complaint: entry precision must not be the drag's precision. 0.06103 is
+    // well inside one 0.0999-wide rung, and used to be flattened onto its edge.
+    expect(normalizeValue(0.06103, near)).toBe(0.06103);
+    expect(normalizeValue(1.2345, { min: 0, max: 100 })).toBe(1.2345);
+  });
+
+  it("still rounds a value it can no longer represent, so no float noise is stored", () => {
+    expect(normalizeValue(0.1 + 0.2, near)).toBe(0.3);
+    expect(String(normalizeValue(0.1 + 0.2, near))).toBe("0.3");
+  });
+
+  it("STILL SNAPS to a step the author declared — that is a statement about the value", () => {
+    // The paired half of the fix. `step: 0.5` anchored at 0.01 means 0.01, 0.51, 1.01…
+    expect(normalizeValue(0.4, stepped)).toBe(0.51);
+    expect(normalizeValue(0.06103, stepped)).toBe(0.01);
+    // And a real catalogue parameter that declares one: the LFO's 0.01 Hz frequency.
+    const frequency: NumericSpec = { min: 0, max: 100, range: "floor", step: 0.01 };
+    expect(normalizeValue(0.254, frequency)).toBe(0.25);
+    expect(normalizeValue(0.256, frequency)).toBe(0.26);
+  });
+
+  it("keeps clamping, which is a different thing from quantising", () => {
+    expect(normalizeValue(50, near)).toBe(10);
+    expect(normalizeValue(-50, near)).toBe(0.01);
+    // The clamp survives on a parameter with no grid at all, which is where it was
+    // previously entangled with the snap.
+    expect(normalizeValue(50, { min: 0, max: 1 })).toBe(1);
+  });
+
+  it("moves a drag EXACTLY as far as it did before the split", () => {
+    // §V832's other half: the ergonomic must still govern the gesture. 20 px at
+    // PIXELS_PER_STEP = 2 is ten rungs of the derived 0.0999, from a start on the grid.
+    const start = 0.01;
+    const dragged = valueFromDrag({ startValue: start, deltaX: 20, spec: near, modifier: "normal" });
+    expect(dragged).toBe(start + 10 * dragStepFor(near));
+    // ...and the modifiers still scale it a decade either side.
+    const fine = valueFromDrag({ startValue: start, deltaX: 20, spec: near, modifier: "fine" });
+    expect(fine).toBeCloseTo(start + 10 * dragStepFor(near) * 0.1, 9);
+  });
+
+  it("carries a typed offset THROUGH a drag instead of yanking it back onto the grid", () => {
+    // The user typed 0.5; ten rungs later they are still 0.5-plus-ten-rungs, not
+    // 0.5095-plus-ten. Dragging no longer destroys the precision typing preserved.
+    const dragged = valueFromDrag({ startValue: 0.5, deltaX: 20, spec: near, modifier: "normal" });
+    expect(dragged).toBeCloseTo(0.5 + 10 * dragStepFor(near), 9);
+  });
+
+  it("shows the digits the value actually has, so a readout is never a lie", () => {
+    // The other half of the loss: a -360…360 parameter derives a 7.2 step and printed ONE
+    // decimal, so a spin rate of 0.25°/frame read as "0.3".
+    expect(formatNumber(0.25, { min: -360, max: 360 })).toBe("0.25");
+    // The derived decimals are still a FLOOR, so a drag's digits do not jitter.
+    expect(formatNumber(720, { min: -360, max: 360 })).toBe("720.0");
   });
 });
 
@@ -198,7 +290,7 @@ describe("a NumberParameter is usable as a NumericSpec without translation", () 
       unit: "px",
       precision: 1,
     };
-    expect(stepFor(parameter)).toBe(0.5);
+    expect(dragStepFor(parameter)).toBe(0.5);
     expect(normalizeValue(70, parameter)).toBe(64);
     expect(formatNumber(4, parameter)).toBe("4.0");
   });
@@ -228,9 +320,9 @@ describe("§B111 — which ends of min/max actually clamp is declared, not assum
     unit: "degrees",
   };
 
-  // Values are chosen ON the step grid (a range 720 wide implies a 7.2 step, so 720 is
-  // exactly 100 rungs) so the assertions can be EXACT (§V218). Quantisation is a separate,
-  // pre-existing concern from clamping and must not be what these tests are measuring.
+  // Clamping and quantising are separate concerns and these tests measure the clamp only.
+  // They were written with values chosen ON the derived grid so the assertions could be
+  // exact (§V218); since T989 there is no derived grid, and they are exact anyway.
   it("a cyclic parameter commits the value the user typed, past the slider's end", () => {
     expect(normalizeValue(720, ROTATE)).toBe(720);
     expect(normalizeValue(-720, ROTATE)).toBe(-720);

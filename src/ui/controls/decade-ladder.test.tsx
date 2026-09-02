@@ -311,6 +311,54 @@ describe("T912 — the ladder opens from a visible affordance", () => {
     expect(swatch().getAttribute("aria-expanded")).toBe("true");
   });
 
+  /**
+   * T989 — THE RUNG IS THE SLIDING'S PRECISION, NOT THE FIELD'S.
+   *
+   * Typed text used to go through `normalizeAtDecade`, so the rung was a lattice for
+   * ENTRY as well: a field left on `1` turned a typed 0.25 into 0. Owner: *"we can't enter
+   * a value with our chosen precision without first having to choose the input precision
+   * itself — the input precision should always be reasonably high and we should be able to
+   * just control the precision of the SLIDING."* Same defect as §V832 one layer up — an
+   * ergonomic reaching the document — and the same fix.
+   */
+  it("does not quantise TYPED text onto the picked rung (T989)", () => {
+    const changes: Array<[number, EditPhase]> = [];
+    function Continuous() {
+      const [value, setValue] = useState(5);
+      return (
+        <NumberField
+          label="Radius"
+          value={value}
+          defaultValue={5}
+          spec={{ min: 0, max: 100 }}
+          onChange={(next, phase) => {
+            setValue(next);
+            changes.push([next, phase]);
+          }}
+        />
+      );
+    }
+    render(<Continuous />);
+    const input = screen.getByRole("spinbutton", { name: "Radius" });
+
+    // Slide in whole units...
+    fireEvent.click(swatch());
+    fireEvent.click(screen.getByRole("option", { name: "1" }));
+    const surface = input.parentElement as HTMLElement;
+    fireEvent.pointerDown(surface, { button: 0, pointerId: 8, clientX: 0 });
+    fireEvent.pointerMove(surface, { pointerId: 8, clientX: 4 });
+    fireEvent.pointerUp(surface, { pointerId: 8, clientX: 4 });
+    expect(changes.at(-1)?.[0]).toBe(7);
+
+    // ...and still TYPE a quarter. The rung governs the drag above and nothing else.
+    fireEvent.change(input, { target: { value: "0.25" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(changes.at(-1)).toEqual([0.25, "commit"]);
+    // And the readout SHOWS it rather than printing the rung's own decimals back: a field
+    // that commits 0.25 and displays "0" is the same loss one repaint later.
+    expect((screen.getByRole("spinbutton", { name: "Radius" }) as HTMLInputElement).value).toBe("0.25");
+  });
+
   it("is not offered on a parameter that cannot be edited", () => {
     render(
       <NumberField label="Radius" value={0} defaultValue={0} spec={{ step: 1 }} disabled onChange={() => {}} />,

@@ -17,11 +17,13 @@ export {
   clampToRange,
   decadeForModifier,
   decadeIndex,
+  declaredStep,
   decimalsFor,
   decimalsForDecade,
   defaultDecade,
   describeRange,
   dragModifierFrom,
+  dragStepFor,
   formatDecade,
   formatNumber,
   normalizeAtDecade,
@@ -31,7 +33,6 @@ export {
   rangeFraction,
   roundToDecimals,
   shiftDecade,
-  stepFor,
   valueFromDrag,
 } from "./drag-math.ts";
 export type { DragInput, DragModifier, ModifierState, NudgeInput } from "./drag-math.ts";
