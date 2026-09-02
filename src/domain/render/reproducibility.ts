@@ -207,6 +207,13 @@ export const NODE_REPRODUCIBILITY: Readonly<Record<string, Reproducibility>> = {
   renderInstances: "pure",
   renderSurface: "pure",
   pointTopology: "pure",
+  // T819. PURE: one compute pass that scans a pointset for each point's K nearest
+  // neighbours and writes them as links. It reads no clock and no channel, issues no
+  // async, and touches no RNG at all — the output is a function of the input positions
+  // and the two uniforms (radius, falloff) alone, so the same input renders the same
+  // links on any device and any frame. The brute-force scan and the §V788 zero-length
+  // parking are both deterministic by construction.
+  pointProximity: "pure",
   // Scene: a 3D pass is as deterministic as a 2D one.
   camera: "pure",
   // T704: a projector is geometry + a texture reference — a pure function of the
