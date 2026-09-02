@@ -6,6 +6,7 @@ import { DEFAULT_PREVIEW_ORBIT, orbitViewProjection } from "./orbit.ts";
 import type { PreviewOrbit } from "./orbit.ts";
 import { DEFAULT_PREVIEW_VIEW, previewKey } from "./types.ts";
 import type { PreviewFrameCommand, PreviewProgram, PreviewRequest, PreviewRuntimeHost } from "./types.ts";
+import { POINTS_PREVIEW_DIAMETER_PX } from "../../nodes/shaders/points-preview.wgsl.ts";
 
 const SURFACE = { x: 0, y: 0, width: 800, height: 600 };
 
@@ -306,6 +307,68 @@ describe("preview system", () => {
     );
     // dpr 2 on a 192px area is 384, snapped; the 16:9 source makes the short edge 216.
     expect(target?.size).toEqual([384, 216]);
+  });
+
+  /**
+   * T952 — the splat's disc is a DEVICE-PIXEL diameter, so the program has to restate it
+   * against the tile it just allocated.
+   *
+   * The compiler emits `pointSize` against its NOMINAL target (§V521: it owns WHAT is
+   * drawn, and a pixel is a fact about WHERE), so the value that arrives here is a
+   * placeholder. Without the restatement a boosted tile would draw the nominal fraction
+   * and the disc would grow with the tile again — which is the whole defect §T952 names.
+   *
+   * The fixture is deliberately the NON-SQUARE one above, and both halves of the expected
+   * pair are load-bearing (§V461):
+   *
+   *   - that they are DIFFERENT from each other is the roundness claim. One NDC unit is
+   *     width/2 texels across and height/2 down, so the scalar this replaced drew an
+   *     ELLIPSE — 5.8 x 3.2 texels in a 16:9 tile. Every Dawn gate renders square, so
+   *     nothing ever caught it; a square fixture here could not tell a round disc from a
+   *     squashed one either.
+   *   - that they are 4/384 and 4/216 rather than the incoming placeholder is the
+   *     restatement claim.
+   *
+   * The second pass carries no `pointSize` and must come through untouched: the rewrite
+   * is keyed on the uniform being declared, never on a list of pass ids the compiler
+   * publishes, so a pass that does not take one is out of scope by construction.
+   */
+  it("restates the splat's device-pixel disc against the GRANTED tile, and leaves other passes alone (T952)", () => {
+    const host = fakeHost();
+    const system = createPreviewSystem({ host, capacity: 8 });
+    const draw = (id: string, uniforms: Record<string, unknown>) => ({
+      kind: "draw",
+      id,
+      shader: "fn x() {}",
+      target: "preview:points:a:out",
+      topology: "triangle-list",
+      instances: 1,
+      vertexCount: 3,
+      uniformBinding: "params",
+      uniforms,
+    });
+    const synthesis = {
+      depth: false,
+      passes: [
+        // The compiler's nominal value: square, and derived from a size that is not the
+        // tile. Both wrongnesses have to be corrected here.
+        draw("a#pointsPreview:out", { viewProjection: [1], pointSize: [0.5, 0.5] }),
+        draw("a#backdrop:out", { viewProjection: [1] }),
+      ],
+    } as never as NonNullable<PreviewRequest["synthesis"]>;
+
+    run(system, [request("a", { synthesis, source: { ...request("a").source, resourceId: "preview:points:a:out" } })], 1);
+    const passes = host.programs[0]?.passes ?? [];
+    const splat = passes.find((pass) => pass.id === "a#pointsPreview:out");
+    const backdrop = passes.find((pass) => pass.id === "a#backdrop:out");
+
+    expect((splat as { uniforms?: Record<string, unknown> } | undefined)?.uniforms).toEqual({
+      viewProjection: [1],
+      pointSize: [POINTS_PREVIEW_DIAMETER_PX / 384, POINTS_PREVIEW_DIAMETER_PX / 216],
+    });
+    expect((backdrop as { uniforms?: Record<string, unknown> } | undefined)?.uniforms).toEqual({
+      viewProjection: [1],
+    });
   });
 
   it("composites every active tile every frame but refreshes only the due ones", () => {

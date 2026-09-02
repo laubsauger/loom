@@ -49,7 +49,11 @@ import {
   swapPassId,
   targetResourceId,
 } from "./resources.ts";
-import { POINTS_PREVIEW_VERTEX_COUNT, pointsPreviewWgsl } from "../nodes/shaders/points-preview.wgsl.ts";
+import {
+  POINTS_PREVIEW_VERTEX_COUNT,
+  pointSplatNdcExtent,
+  pointsPreviewWgsl,
+} from "../nodes/shaders/points-preview.wgsl.ts";
 // T532: the geometry preview draws through the scene Render's OWN shader builders, so
 // the preview and the render cannot drift about what a geometry looks like.
 import { sceneInstancesWgsl, sceneSurfaceWgsl } from "../nodes/shaders/scene-render.wgsl.ts";
@@ -135,8 +139,14 @@ const NODE_EMITTABLE_PASS_KINDS: ReadonlySet<string> = new Set(["effect", "dispa
 const pointsPreviewCamera = (aspect: number): Mat4 =>
   viewProjection(POINTS_PREVIEW_EYE, [0, 0, 0], { aspect });
 
-/** Clip-space disc half-extent — ~3px on a 192px tile, readable without occluding. */
-const POINTS_PREVIEW_POINT_SIZE = 0.03;
+/*
+ * T952: the splat's disc size lives in `points-preview.wgsl.ts` now, as a DEVICE-PIXEL
+ * diameter rather than the clip-space fraction that used to sit here. The value the two
+ * sites below emit is derived from the NOMINAL target size, exactly like every other
+ * number the compiler states about a synthesized preview (`previewTargetSize`): the
+ * preview program owns the real target and restates this against the GRANTED tile, which
+ * is the only size at which a pixel diameter means anything.
+ */
 
 /*
  * T462/T665: the stock rig every scene-payload preview shares lives in `preview-orbit.ts`
@@ -1503,7 +1513,7 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
                 // Fixed default framing for now; T379's viewer camera can drive this as a
                 // VALUE update — the uniform is data, never structure (§V5, §V330).
                 viewProjection: Array.from(pointsPreviewCamera(previewAspect)),
-                pointSize: POINTS_PREVIEW_POINT_SIZE,
+                pointSize: pointSplatNdcExtent(previewSize),
               },
               uniformBinding: "params",
               blend: "alpha",
@@ -1743,7 +1753,7 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
             ],
             uniforms: {
               viewProjection: Array.from(pointsPreviewCamera(previewAspect)),
-              pointSize: POINTS_PREVIEW_POINT_SIZE,
+              pointSize: pointSplatNdcExtent(previewSize),
             },
             blend: "alpha",
           });

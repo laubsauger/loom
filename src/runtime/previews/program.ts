@@ -12,6 +12,7 @@ import {
   previewShader,
   previewUniforms,
 } from "./debug-effects.ts";
+import { pointSplatNdcExtent } from "../../nodes/shaders/points-preview.wgsl.ts";
 import { createTileAtlas } from "./tile-atlas.ts";
 import type { TileAtlas } from "./tile-atlas.ts";
 import { previewKey } from "./types.ts";
@@ -83,15 +84,47 @@ export function buildPreviewProgram(
      */
     const synthesis = entry.request.synthesis;
     if (synthesis !== undefined) {
+      const size: [number, number] = [
+        Math.max(1, tile.size[0] ?? 1),
+        Math.max(1, tile.size[1] ?? 1),
+      ];
       synthesized.push({
         kind: "target",
         id: entry.request.source.resourceId,
-        size: [Math.max(1, tile.size[0] ?? 1), Math.max(1, tile.size[1] ?? 1)],
+        size,
         format: "rgba8unorm",
         ...(synthesis.depth ? { depth: true } : {}),
         label: `${key} synthesized preview`,
       });
-      passes.push(...synthesis.passes);
+      /*
+       * T952 — A DEVICE-PIXEL SIZE HAS TO BE RESTATED AGAINST THE TILE THAT EXISTS.
+       *
+       * The splat's disc is a fixed number of device pixels, and the shader takes that as
+       * an NDC extent, so the conversion needs the target's texel size — which is decided
+       * HERE and nowhere else. The compiler emits the same uniform against its NOMINAL
+       * size (§V521: the compiler owns WHAT is drawn, not WHERE it lives, and a pixel is a
+       * fact about where), so without this line a boosted tile would draw the nominal
+       * fraction and the disc would grow with the tile all over again.
+       *
+       * Rewriting the uniform WHERE IT IS ALREADY DECLARED, rather than against a list of
+       * pass ids the compiler publishes: a list is two places that must agree, and §T675
+       * is this file's own record of what that costs. A third splat site is covered by
+       * construction, and a pass that does not take `pointSize` is untouched by
+       * construction — the same "keyed on the thing itself, never on a list" the pointset
+       * synthesis is gated by (§V316, §V319).
+       *
+       * Values only, so §V5 holds: `passStructureKey` keys uniforms by NAME, so this
+       * cannot move the signature. It does not need a push path either (unlike B118's
+       * lens values) — it changes only when the tile does, and a tile change has already
+       * rewritten the target descriptor above and forced the reinstall that uploads it.
+       */
+      for (const pass of synthesis.passes) {
+        passes.push(
+          pass.uniforms?.["pointSize"] === undefined
+            ? pass
+            : { ...pass, uniforms: { ...pass.uniforms, pointSize: pointSplatNdcExtent(size) } },
+        );
+      }
     }
     passes.push({
       kind: "effect",

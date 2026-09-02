@@ -9,6 +9,7 @@ import { createVgpuBackend } from "./vgpu-backend.ts";
 import { probeDawn } from "./node-gpu-host.ts";
 import { capturingHost, drawSynthesizedPreview } from "./preview-synthesis-fixture.ts";
 import { orbitUniforms } from "../../previews/orbit.ts";
+import { POINTS_PREVIEW_DIAMETER_PX } from "../../../nodes/shaders/points-preview.wgsl.ts";
 
 /**
  * T373 on a REAL device: a watched point generator's synthesized splat pass actually
@@ -24,7 +25,13 @@ import { orbitUniforms } from "../../previews/orbit.ts";
 /** The tile edge this test grants — T563: the preview program sizes the target to it. */
 const EDGE = 384;
 const PREVIEW_LONG_EDGE = 192;
-const POINT_SIZE = 0.03; // must match POINTS_PREVIEW_POINT_SIZE in compile.ts — pinned below
+/**
+ * T952: the disc is a DEVICE-PIXEL diameter now, not a clip-space fraction — so this is
+ * the disc's size in texels at every tile size, rather than at this one. Restated as a
+ * literal and pinned against the shader's own constant below, so a change to the look
+ * reddens here with the number in the failure rather than silently re-baselining.
+ */
+const DIAMETER_PX = 4;
 
 describe("pointset preview splat on Dawn (T373)", () => {
   it("splats the single point exactly where the default camera projects it", async () => {
@@ -72,8 +79,16 @@ describe("pointset preview splat on Dawn (T373)", () => {
     const row = plan.outputs.find((entry) => entry.nodeId === "gen" && entry.portId === "out");
     const pass = row?.synthesis?.passes.find((entry) => entry.id === "gen#pointsPreview:out");
     expect(pass).toBeDefined();
-    // The constant this test's own projection uses must be the one the pass carries.
-    expect((pass as { uniforms?: { pointSize?: number } }).uniforms?.pointSize).toBe(POINT_SIZE);
+    // The constant this test's own projection uses must be the one the shader ships.
+    expect(POINTS_PREVIEW_DIAMETER_PX).toBe(DIAMETER_PX);
+    // T952: the compiler states the extent against its NOMINAL target (a square one
+    // here, since the project is 64x64), and the preview program restates it against the
+    // granted tile. Both are 384 in this test, so the pass carries the same pair either
+    // way — `preview-boost.gpu.test.ts` is where they deliberately differ.
+    expect((pass as { uniforms?: { pointSize?: readonly number[] } }).uniforms?.pointSize).toEqual([
+      DIAMETER_PX / EDGE,
+      DIAMETER_PX / EDGE,
+    ]);
 
     const { host, session } = capturingHost();
     const backend = createVgpuBackend({ host });
@@ -122,7 +137,8 @@ describe("pointset preview splat on Dawn (T373)", () => {
       // |texelCenter - splatCenter| / halfExtentPx, and the shader writes
       // (1, 0.62, 0.24) * alpha with alpha = 1 - distance, alpha-blended over a clear.
       const texel = [Math.floor(centerPx[0] ?? 0), Math.floor(centerPx[1] ?? 0)];
-      const halfExtentPx = (POINT_SIZE * EDGE) / 2;
+      // T952: half a disc of DIAMETER_PX texels — no longer a function of the tile.
+      const halfExtentPx = DIAMETER_PX / 2;
       const dx = (texel[0] ?? 0) + 0.5 - (centerPx[0] ?? 0);
       const dy = (texel[1] ?? 0) + 0.5 - (centerPx[1] ?? 0);
       const alpha = Math.max(0, 1 - Math.hypot(dx, dy) / halfExtentPx);
