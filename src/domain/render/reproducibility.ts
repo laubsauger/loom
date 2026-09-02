@@ -235,6 +235,16 @@ export const NODE_REPRODUCIBILITY: Readonly<Record<string, Reproducibility>> = {
   // links on any device and any frame. The brute-force scan and the §V788 zero-length
   // parking are both deterministic by construction.
   pointProximity: "pure",
+  // T983. PURE: one dispatch that keeps or parks each point by an attribute range —
+  // a function of the input buffers and the range uniforms, no clock, no RNG, no async.
+  pointRange: "pure",
+  // T947. PURE, and the frame clock is the reason that needs saying: the scan-window
+  // cursor reads the SHARED FRAME TIME (timeSeconds/deltaSeconds through the T172
+  // uniform merge), which is timeline state, not a wall clock — the same frame inputs
+  // replan the same samples and light the same window, which is exactly what the
+  // laser-path Dawn gates pin to exact values. The scan is deterministic by data order
+  // (no atomics), and every count is a pure function of positions and params.
+  laserPath: "pure",
   // Scene: a 3D pass is as deterministic as a 2D one.
   camera: "pure",
   // T704: a projector is geometry + a texture reference — a pure function of the
