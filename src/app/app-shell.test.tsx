@@ -869,7 +869,9 @@ describe("V340 — a pane can change what it shows without moving", () => {
     const rightLeaf = zoneElement("right");
     const before = rightLeaf.querySelector('[data-pane-tab]')?.getAttribute("data-pane-tab");
     await user.click(within(rightLeaf).getByRole("button", { name: "Move viewer" }));
-    await user.click(screen.getByRole("button", { name: /^problems$/ }));
+    // T837: the "show instead" role buttons announce their intent now, so a screen reader
+    // hears "Show problems here instead" rather than a bare "problems".
+    await user.click(screen.getByRole("button", { name: "Show problems here instead" }));
 
     // Same leaf, same KEY — a different face on the same pane.
     const after = zoneElement("right").querySelector('[data-pane-tab]');

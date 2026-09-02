@@ -323,6 +323,10 @@ function PaneTabMenu({ tab, targets, roleOptions, onMove, onFloat, onClose, onAs
                 key={option.role}
                 variant="outline"
                 size="md"
+                /* T837 — spelled out, the symmetry of T835's "add" labels: "viewer" alone
+                   appears under the add menu too, and a screen reader on a bare title cannot
+                   tell "show this here" from "add this beside". */
+                aria-label={`Show ${option.title} here instead`}
                 onClick={() => act(() => onAssignRole(tab.key, option.role))}
               >
                 {option.title}
