@@ -1,4 +1,4 @@
-import { settings, node, edge, graph, document, drivenSlot } from "./builders.ts";
+import { settings, node, edge, graph, document, drivenSlot, expressionSlot } from "./builders.ts";
 
 /**
  * E51 — Chorus (T956's component arc; slitScan T321, tile T242).
@@ -52,6 +52,14 @@ import { settings, node, edge, graph, document, drivenSlot } from "./builders.ts
  * cannot be animated today. Reported against the compiler track; nothing here works
  * around it, because a dead expression in a shipped example is a lie about the feature.
  */
+/**
+ * `low` mapped off its own floor. audioPattern's bands are calibrated against real music
+ * (see `audio.ts`): `low` rests at 0.713 and peaks at 0.975, so the raw channel spans a
+ * quarter of its nominal range and drives almost nothing. This affine puts the kick on the
+ * body's whole radius.
+ */
+const BODY_ON_THE_KICK = "0.085 + 0.075 * clamp((op('beat1').chan.low - 0.7) / 0.28, 0, 1)";
+
 export const chorusDocument = document(
   "e51-chorus",
   "E51 Chorus",
@@ -102,7 +110,7 @@ export const chorusDocument = document(
         {
           mode: "fill",
           center: [0.5, 0.5],
-          radius: [0.15, 0.15],
+          radius: [0.11, 0.11],
           softness: 0.22,
           fillcolor: [1, 0.9, 0.66, 1],
           bgcolor: [0, 0, 0, 0],
@@ -113,9 +121,31 @@ export const chorusDocument = document(
           parameters: {
             "center.x": drivenSlot("pathx1", 0.5),
             "center.y": drivenSlot("pathy1", 0.5),
+            /*
+             * THE ONE AUDIO MAPPING, and it is on the SOURCE rather than on a knob.
+             *
+             * Driving Spread or Rate or Blend from a band is what you would reach for
+             * first, and it cannot be done: a component's published page is resolved with
+             * no frame and no node reader, so a channel read there silently returns its
+             * retained value (see the note at the foot of this docblock). Putting the kick
+             * on the BODY is not a consolation prize — it is the mapping this instrument
+             * was waiting for. Every cell holds a different moment, so ONE kick reaches
+             * each cell at a different time and the pulse rolls across the wall as a wave.
+             * The tear rides the same signal for free, because a cell's own brightness is
+             * what arms its glitch.
+             *
+             * Enveloped before it touches anything visible: audioPattern's `low` sits at
+             * 0.71 at rest and peaks near 0.98, so a raw drive would be a body that never
+             * shrinks. The affine maps that band onto the whole radius range.
+             */
+            "radius.x": expressionSlot(BODY_ON_THE_KICK, 0.11),
+            "radius.y": expressionSlot(BODY_ON_THE_KICK, 0.11),
           },
         },
       ),
+      /* The deterministic fixture, not a live input: a shipped example must not open a
+         device, and every gate has to see the same performance twice (§V44, §V45). */
+      node("beat", "audioPattern", [-1980, 1340], { bpm: 124, amount: 1, beatsPerBar: 4 }, { label: "beat1" }),
       node(
         "mate",
         "circle",
@@ -167,10 +197,13 @@ export const chorusDocument = document(
           grid: [3, 3],
           spread: 1,
           mode: 1,
-          rate: 1,
+          // 2 Hz at 124 bpm is very nearly one tick per beat, so the tear re-deals with
+          // the music instead of drifting against it.
+          rate: 2,
           seed: 7,
-          colour: [1, 0.68, 0.36, 1],
-          blend: 0.42,
+          glitch: 0.4,
+          colour: [1, 0.87, 0.74, 1],
+          blend: 0.7,
         },
         {
           label: "wall1",

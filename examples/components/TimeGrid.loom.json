@@ -4,18 +4,29 @@
     "components": [
       {
         "componentId": "timeGrid",
-        "description": "A video wall of the same stream at different moments: Tile makes the grid, SlitScan gives each cell its own delay, and one duotone ties them together. 69.75 MiB of history at 512x288 x 61 frames.",
+        "description": "A VJ video wall: Tile makes the grid, SlitScan gives every cell its own moment, a seeded per-cell tear breaks the loud ones, and an evolving Ramp-into-Lookup palette ties them all together. 69.75 MiB of history at 512x288 x 61 frames.",
         "graph": {
           "edges": {
-            "e-grey-tint": {
-              "id": "e-grey-tint",
+            "e-cell-mix": {
+              "id": "e-cell-mix",
               "source": {
-                "nodeId": "grey",
+                "nodeId": "cell",
                 "portId": "out"
               },
               "target": {
-                "nodeId": "tint",
+                "nodeId": "mix",
                 "portId": "in1"
+              }
+            },
+            "e-cell-tone": {
+              "id": "e-cell-tone",
+              "source": {
+                "nodeId": "cell",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "tone",
+                "portId": "source"
               }
             },
             "e-grid-map": {
@@ -62,26 +73,26 @@
                 "portId": "in2"
               }
             },
-            "e-scan-grey": {
-              "id": "e-scan-grey",
+            "e-palette-tone": {
+              "id": "e-palette-tone",
               "source": {
-                "nodeId": "scan",
+                "nodeId": "palette",
                 "portId": "out"
               },
               "target": {
-                "nodeId": "grey",
-                "portId": "input"
+                "nodeId": "tone",
+                "portId": "lookup"
               }
             },
-            "e-scan-mix": {
-              "id": "e-scan-mix",
+            "e-scan-cell": {
+              "id": "e-scan-cell",
               "source": {
                 "nodeId": "scan",
                 "portId": "out"
               },
               "target": {
-                "nodeId": "mix",
-                "portId": "in1"
+                "nodeId": "cell",
+                "portId": "input"
               }
             },
             "e-tint-mix": {
@@ -93,6 +104,17 @@
               "target": {
                 "nodeId": "mix",
                 "portId": "in2"
+              }
+            },
+            "e-tone-tint": {
+              "id": "e-tone-tint",
+              "source": {
+                "nodeId": "tone",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "tint",
+                "portId": "in1"
               }
             },
             "in_input_feed_1": {
@@ -120,20 +142,25 @@
           },
           "groups": {},
           "nodes": {
-            "grey": {
+            "cell": {
               "definitionVersion": 1,
-              "id": "grey",
-              "label": "grey1",
+              "id": "cell",
+              "label": "cell1",
               "parameters": {
-                "hueoffset": 0,
-                "saturation": 0,
-                "value": 1
+                "amount": 0.35,
+                "grid": [
+                  3,
+                  3
+                ],
+                "rate": 1,
+                "seed": 7,
+                "source": "struct SharedFrame {\n  time: f32,\n  deltaTime: f32,\n  frameIndex: f32,\n  randomSeed: f32,\n  wallTime: f32,\n  wallDelta: f32,\n  absTime: f32,\n  absFrame: f32,\n  resolution: vec2f,\n  pointer: vec4f,\n};\nstruct Params {\n  grid: vec2f,\n  amount: f32,\n  rate: f32,\n  seed: f32,\n};\n\n@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n@group(0) @binding(2) var<uniform> frameU: SharedFrame;\n@group(0) @binding(3) var<uniform> params: Params;\n\nstruct Cell {\n  index: f32,\n  count: f32,\n  last: f32,\n  local: vec2f,\n  origin: vec2f,\n  size: vec2f,\n};\n\n/* The SAME partition Tile uses: floor(uv * repeat), offset zero. Both round the count the\n   same way (Tile's `repeat` is a \"floor\"-ranged vector), so a cell here is exactly a cell\n   there and no delay or tear ever straddles a seam. */\nfn cellAt(uv: vec2f, grid: vec2f) -> Cell {\n  let cols = max(1.0, floor(grid.x + 0.5));\n  let rows = max(1.0, floor(grid.y + 0.5));\n  let ij = clamp(floor(uv * vec2f(cols, rows)), vec2f(0.0), vec2f(cols - 1.0, rows - 1.0));\n  var cell: Cell;\n  cell.index = (ij.y * cols) + ij.x;\n  cell.count = cols * rows;\n  /* One cell is a legal wall, and it must not divide by zero on its way to \"now\". */\n  cell.last = max(1.0, cell.count - 1.0);\n  cell.size = vec2f(1.0 / cols, 1.0 / rows);\n  cell.origin = ij * cell.size;\n  cell.local = clamp((uv - cell.origin) / cell.size, vec2f(0.0), vec2f(1.0));\n  return cell;\n}\n\n/*\n * Integer avalanche (the \"lowbias32\" family), and INTEGER on purpose: a float hash built\n * on fract(sin(x)) is a different number on every driver, and §V44's sibling promise — a\n * seeded look replays identically — would be a per-machine accident. u32 shifts and\n * multiplies are exact everywhere WGSL runs.\n */\nfn hashU(value: u32) -> f32 {\n  var x = value;\n  x = x ^ (x >> 16u);\n  x = x * 0x7feb352du;\n  x = x ^ (x >> 15u);\n  x = x * 0x846ca68bu;\n  x = x ^ (x >> 16u);\n  return f32(x & 0x00ffffffu) / 16777216.0;\n}\n\n/* Sample this cell, displaced along x and WRAPPED INSIDE IT. The +4.0 is there because\n   fract() of a negative number is not the wrap we want and the shove is signed. */\nfn tap(cell: Cell, dx: f32) -> vec4f {\n  let local = vec2f(fract(cell.local.x + dx + 4.0), cell.local.y);\n  return textureSampleLevel(inputTexture, inputSampler, cell.origin + (local * cell.size), 0.0);\n}\n\n@fragment\nfn fs(@location(0) uv: vec2f) -> @location(0) vec4f {\n  let dims = vec2f(textureDimensions(inputTexture));\n  let texel = vec2i(clamp(uv * dims, vec2f(0.0), dims - vec2f(1.0)));\n  let here = textureLoad(inputTexture, texel, 0);\n  if (params.amount <= 0.0) { return here; }\n\n  let cell = cellAt(uv, params.grid);\n  let index = u32(cell.index);\n  let seed = u32(clamp(params.seed, 0.0, 65535.0));\n  /* max(0.25) so the deal still turns at Rate 0 — a knob at its floor must not freeze a\n     second knob's behaviour, which is how a control stops being reachable mid-show. */\n  let tick = u32(floor(frameU.absTime * max(0.25, params.rate)));\n\n  /* THE AUDIO GATE: this cell's own centre texel. Bright cells are dealt in first. */\n  let middle = vec2i(clamp((cell.origin + (0.5 * cell.size)) * dims, vec2f(0.0), dims - vec2f(1.0)));\n  let lit = clamp(dot(textureLoad(inputTexture, middle, 0).rgb, vec3f(0.2126, 0.7152, 0.0722)), 0.0, 1.0);\n\n  let deal = hashU((index * 2654u) + (seed * 40503u) + (tick * 7919u));\n  let armed = clamp(params.amount * (0.2 + (1.8 * lit)), 0.0, 1.0);\n  if (deal >= armed) { return here; }\n\n  /* Dealt in. How hard, how many bands, and which way each band shoves — all from the\n     same (cell, tick, seed) triple, so a tear HOLDS for a whole tick instead of boiling. */\n  let strength = params.amount * (0.35 + (0.65 * hashU((index * 337u) + (tick * 61u) + seed)));\n  let bands = 4.0 + floor(hashU((index * 977u) + (tick * 131u) + seed) * 12.0);\n  let band = u32(floor(cell.local.y * bands));\n  let shove = (hashU((band * 1471u) + (index * 29u) + (tick * 523u) + seed) - 0.5) * 0.7 * strength;\n  let split = 0.06 * strength;\n\n  /* The RGB split rides the same shove, so the fringe is part of the tear rather than a\n     separate effect layered on top of it. */\n  let mid = tap(cell, shove);\n  let red = tap(cell, shove + split);\n  let blue = tap(cell, shove - split);\n  return vec4f(red.r, mid.g, blue.b, here.a);\n}"
               },
               "position": {
                 "x": 1032,
                 "y": -74
               },
-              "type": "hsv"
+              "type": "customWgsl"
             },
             "grid": {
               "definitionVersion": 1,
@@ -169,7 +196,7 @@
               "parameters": {},
               "position": {
                 "x": 0,
-                "y": -168
+                "y": -262
               },
               "type": "componentIn"
             },
@@ -185,7 +212,7 @@
                 "mode": 1,
                 "rate": 1,
                 "seed": 7,
-                "source": "struct SharedFrame {\n  time: f32,\n  deltaTime: f32,\n  frameIndex: f32,\n  randomSeed: f32,\n  wallTime: f32,\n  wallDelta: f32,\n  absTime: f32,\n  absFrame: f32,\n  resolution: vec2f,\n  pointer: vec4f,\n};\nstruct Params {\n  grid: vec2f,\n  mode: f32,\n  rate: f32,\n  seed: f32,\n};\n\n@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n@group(0) @binding(2) var<uniform> frameU: SharedFrame;\n@group(0) @binding(3) var<uniform> params: Params;\n\n/* How many distinct moments SHOTS cuts between. Four reads as \"several camera angles\";\n   more and the cut stops being a cut and becomes the RANDOM mode with extra steps. */\nconst SHOT_ANGLES: f32 = 4.0;\n\n/*\n * Integer avalanche (Bret Mulvey's / \"lowbias32\" family), and INTEGER on purpose:\n * a float hash built on fract(sin(x)) is a different number on every driver, and §V44's\n * sibling promise — a seeded look replays identically — would be a per-machine accident.\n * u32 shifts and multiplies are exact everywhere WGSL runs.\n */\nfn hashU(value: u32) -> f32 {\n  var x = value;\n  x = x ^ (x >> 16u);\n  x = x * 0x7feb352du;\n  x = x ^ (x >> 15u);\n  x = x * 0x846ca68bu;\n  x = x ^ (x >> 16u);\n  return f32(x & 0x00ffffffu) / 16777216.0;\n}\n\n@fragment\nfn fs(@location(0) uv: vec2f) -> @location(0) vec4f {\n  /* The SAME partition Tile uses: floor(uv * repeat), offset zero. Both round the count\n     the same way (Tile's `repeat` is a \"floor\"-ranged vector), so a cell here is exactly\n     a cell there and no delay ever straddles a seam. */\n  let cols = max(1.0, floor(params.grid.x + 0.5));\n  let rows = max(1.0, floor(params.grid.y + 0.5));\n  let cell = clamp(floor(uv * vec2f(cols, rows)), vec2f(0.0), vec2f(cols - 1.0, rows - 1.0));\n  let index = cell.y * cols + cell.x;\n  let count = cols * rows;\n  /* One cell is a legal wall, and it must not divide by zero on its way to \"now\". */\n  let last = max(1.0, count - 1.0);\n  let seed = u32(clamp(params.seed, 0.0, 65535.0));\n  let mode = i32(params.mode + 0.5);\n\n  var delay = 0.0;\n  if (mode == 1) {\n    /* ORDERED — the cascade. Reading order, oldest at the bottom right. */\n    delay = index / last;\n  } else if (mode == 2) {\n    /* RANDOM — every cell its own moment, held. Seeded, so it is a LOOK, not noise. */\n    delay = hashU(u32(index) * 1973u + seed * 9277u);\n  } else if (mode == 3) {\n    /*\n     * SWEEP — the owner's \"freeze that wanders through\".\n     *\n     * Each cell's delay RAMPS, so it looks one frame further back every frame: at\n     * Rate 1.0 (with Spread 1) that is exactly one ring-frame per rendered frame, and\n     * the cell holds STILL while the world moves on. The phase offset per cell means\n     * they wrap at different times, so the wall refreshes as a rolling wave rather than\n     * all at once. Below 1.0 the held frame plays in slow motion; above it, backwards.\n     */\n    delay = fract(index / count + frameU.absTime * params.rate);\n  } else if (mode == 4) {\n    /*\n     * SHOTS — several angles of one scene, cut on a clock.\n     *\n     * Cells are dealt to SHOT_ANGLES groups by the seeded hash and every group holds one\n     * rung of the delay ladder; the ladder rotates one rung per tick, so the whole wall\n     * re-cuts at once and then holds. Distinct from RANDOM, which never re-cuts, and from\n     * SWEEP, which never holds a whole group together.\n     */\n    let angle = floor(hashU(u32(index) * 6151u + seed * 1543u) * SHOT_ANGLES);\n    let turn = floor(frameU.absTime * max(0.0, params.rate));\n    delay = ((angle + turn) % SHOT_ANGLES) / (SHOT_ANGLES - 1.0);\n  }\n  /* mode 0 — UNIFORM — falls through at 0.0: every cell reads the newest frame, so the\n     wall is the plain tiling and the scan is a no-op you can see (§V147's shape). */\n\n  return vec4f(delay, delay, delay, 1.0);\n}"
+                "source": "struct SharedFrame {\n  time: f32,\n  deltaTime: f32,\n  frameIndex: f32,\n  randomSeed: f32,\n  wallTime: f32,\n  wallDelta: f32,\n  absTime: f32,\n  absFrame: f32,\n  resolution: vec2f,\n  pointer: vec4f,\n};\nstruct Params {\n  grid: vec2f,\n  mode: f32,\n  rate: f32,\n  seed: f32,\n};\n\n@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n@group(0) @binding(2) var<uniform> frameU: SharedFrame;\n@group(0) @binding(3) var<uniform> params: Params;\n\nstruct Cell {\n  index: f32,\n  count: f32,\n  last: f32,\n  local: vec2f,\n  origin: vec2f,\n  size: vec2f,\n};\n\n/* The SAME partition Tile uses: floor(uv * repeat), offset zero. Both round the count the\n   same way (Tile's `repeat` is a \"floor\"-ranged vector), so a cell here is exactly a cell\n   there and no delay or tear ever straddles a seam. */\nfn cellAt(uv: vec2f, grid: vec2f) -> Cell {\n  let cols = max(1.0, floor(grid.x + 0.5));\n  let rows = max(1.0, floor(grid.y + 0.5));\n  let ij = clamp(floor(uv * vec2f(cols, rows)), vec2f(0.0), vec2f(cols - 1.0, rows - 1.0));\n  var cell: Cell;\n  cell.index = (ij.y * cols) + ij.x;\n  cell.count = cols * rows;\n  /* One cell is a legal wall, and it must not divide by zero on its way to \"now\". */\n  cell.last = max(1.0, cell.count - 1.0);\n  cell.size = vec2f(1.0 / cols, 1.0 / rows);\n  cell.origin = ij * cell.size;\n  cell.local = clamp((uv - cell.origin) / cell.size, vec2f(0.0), vec2f(1.0));\n  return cell;\n}\n\n/*\n * Integer avalanche (the \"lowbias32\" family), and INTEGER on purpose: a float hash built\n * on fract(sin(x)) is a different number on every driver, and §V44's sibling promise — a\n * seeded look replays identically — would be a per-machine accident. u32 shifts and\n * multiplies are exact everywhere WGSL runs.\n */\nfn hashU(value: u32) -> f32 {\n  var x = value;\n  x = x ^ (x >> 16u);\n  x = x * 0x7feb352du;\n  x = x ^ (x >> 15u);\n  x = x * 0x846ca68bu;\n  x = x ^ (x >> 16u);\n  return f32(x & 0x00ffffffu) / 16777216.0;\n}\n\nconst SHOT_ANGLES: f32 = 4.0;\n\n@fragment\nfn fs(@location(0) uv: vec2f) -> @location(0) vec4f {\n  let cell = cellAt(uv, params.grid);\n  let index = cell.index;\n  let seed = u32(clamp(params.seed, 0.0, 65535.0));\n  let mode = i32(params.mode + 0.5);\n\n  var delay = 0.0;\n  if (mode == 1) {\n    /* ORDERED — the cascade. Reading order, oldest at the bottom right. */\n    delay = index / cell.last;\n  } else if (mode == 2) {\n    /* RANDOM — every cell its own moment, held. Seeded, so it is a LOOK, not noise. */\n    delay = hashU((u32(index) * 1973u) + (seed * 9277u));\n  } else if (mode == 3) {\n    /*\n     * SWEEP — the owner's \"freeze that wanders through\".\n     *\n     * Each cell's delay RAMPS, so it looks one frame further back every frame: at\n     * Rate 1.0 (with Spread 1) that is exactly one ring-frame per rendered frame, and\n     * the cell holds STILL while the world moves on. The phase offset per cell means\n     * they wrap at different times, so the wall refreshes as a rolling wave rather than\n     * all at once. Below 1.0 the held frame plays in slow motion; above it, backwards.\n     */\n    delay = fract((index / cell.count) + (frameU.absTime * params.rate));\n  } else if (mode == 4) {\n    /*\n     * SHOTS — several angles of one scene, cut on a clock.\n     *\n     * Cells are dealt to SHOT_ANGLES groups by the seeded hash and every group holds one\n     * rung of the delay ladder; the ladder rotates one rung per tick, so the whole wall\n     * re-cuts at once and then holds. Distinct from RANDOM, which never re-cuts, and from\n     * SWEEP, which never holds a whole group together.\n     */\n    let angle = floor(hashU((u32(index) * 6151u) + (seed * 1543u)) * SHOT_ANGLES);\n    let turn = floor(frameU.absTime * max(0.0, params.rate));\n    delay = ((angle + turn) % SHOT_ANGLES) / (SHOT_ANGLES - 1.0);\n  }\n  /* mode 0 — UNIFORM — falls through at 0.0: every cell reads the newest recorded frame,\n     so the wall is the plain tiling and the scan is a no-op you can see (§V147's shape). */\n\n  return vec4f(delay, delay, delay, 1.0);\n}"
               },
               "position": {
                 "x": 516,
@@ -198,10 +225,10 @@
               "id": "mix",
               "label": "mix1",
               "parameters": {
-                "cross": 0.35
+                "cross": 0.55
               },
               "position": {
-                "x": 1548,
+                "x": 1806,
                 "y": -82
               },
               "type": "cross"
@@ -212,7 +239,7 @@
               "label": "out",
               "parameters": {},
               "position": {
-                "x": 1806,
+                "x": 2064,
                 "y": -74
               },
               "type": "componentOut"
@@ -224,14 +251,14 @@
               "parameters": {
                 "color": [
                   1,
-                  0.68,
-                  0.36,
+                  1,
+                  1,
                   1
                 ]
               },
               "position": {
                 "x": 0,
-                "y": 20
+                "y": -74
               },
               "resolution": {
                 "height": 288,
@@ -239,6 +266,95 @@
                 "width": 512
               },
               "type": "solid"
+            },
+            "palette": {
+              "definitionVersion": 2,
+              "id": "palette",
+              "label": "palette1",
+              "parameters": {
+                "interp": "smooth",
+                "period": 1,
+                "phase": {
+                  "bindings": {
+                    "expression": {
+                      "kind": "expression",
+                      "source": "abstime * 0.043 % 1"
+                    },
+                    "static": {
+                      "kind": "static",
+                      "value": 0
+                    }
+                  },
+                  "mode": "expression"
+                },
+                "stops": [
+                  {
+                    "color": [
+                      0.02,
+                      0.02,
+                      0.09,
+                      1
+                    ],
+                    "position": 0
+                  },
+                  {
+                    "color": [
+                      0.25,
+                      0.06,
+                      0.45,
+                      1
+                    ],
+                    "position": 0.2
+                  },
+                  {
+                    "color": [
+                      0.9,
+                      0.15,
+                      0.35,
+                      1
+                    ],
+                    "position": 0.45
+                  },
+                  {
+                    "color": [
+                      1,
+                      0.62,
+                      0.18,
+                      1
+                    ],
+                    "position": 0.68
+                  },
+                  {
+                    "color": [
+                      1,
+                      0.97,
+                      0.85,
+                      1
+                    ],
+                    "position": 0.85
+                  },
+                  {
+                    "color": [
+                      0.02,
+                      0.02,
+                      0.09,
+                      1
+                    ],
+                    "position": 1
+                  }
+                ],
+                "type": "horizontal"
+              },
+              "position": {
+                "x": 0,
+                "y": 114
+              },
+              "resolution": {
+                "height": 16,
+                "mode": "fixed",
+                "width": 256
+              },
+              "type": "ramp"
             },
             "scan": {
               "definitionVersion": 1,
@@ -262,10 +378,26 @@
                 "opacity": 1
               },
               "position": {
-                "x": 1290,
+                "x": 1548,
                 "y": -90
               },
               "type": "multiply"
+            },
+            "tone": {
+              "definitionVersion": 1,
+              "id": "tone",
+              "label": "tone1",
+              "parameters": {
+                "channel": "luminance",
+                "offset": 0.02,
+                "row": 0.5,
+                "scale": 0.85
+              },
+              "position": {
+                "x": 1290,
+                "y": -82
+              },
+              "type": "lookup"
             }
           },
           "revision": 1
@@ -311,6 +443,10 @@
               {
                 "key": "grid",
                 "nodeId": "map"
+              },
+              {
+                "key": "grid",
+                "nodeId": "cell"
               }
             ]
           },
@@ -353,9 +489,9 @@
           {
             "definition": {
               "default": 1,
-              "description": "Sweep and Shots only. In Sweep, 1.0 at 60 fps is an exact freeze (0.5 at 30 fps); below is slow motion, above runs backwards. In Shots it is cuts per second.",
+              "description": "The wall's clock. In Sweep, 1.0 at 60 fps is an exact freeze (0.5 at 30 fps); below is slow motion, above runs backwards. In Shots it is cuts per second. It also re-deals which cells tear, so a glitch holds for a whole tick instead of boiling.",
               "label": "Rate",
-              "max": 4,
+              "max": 8,
               "min": 0,
               "range": "bounded",
               "type": "number",
@@ -366,13 +502,17 @@
               {
                 "key": "rate",
                 "nodeId": "map"
+              },
+              {
+                "key": "rate",
+                "nodeId": "cell"
               }
             ]
           },
           {
             "definition": {
               "default": 7,
-              "description": "Deals the cells for Random and Shots. Integer hash, no clock (§V44) — the same seed is the same wall on every device and every replay.",
+              "description": "Deals the cells — which moment each holds in Random and Shots, and which of them tear. Integer hash, no clock (§V44): the same seed is the same wall on every device and every replay.",
               "label": "Seed",
               "max": 999,
               "min": 0,
@@ -384,6 +524,28 @@
               {
                 "key": "seed",
                 "nodeId": "map"
+              },
+              {
+                "key": "seed",
+                "nodeId": "cell"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": 0.35,
+              "description": "How many cells tear on each Rate tick, and how hard. SPARSE by construction — a cell is dealt in by a seeded hash, and the brighter a cell is the likelier it is dealt, so with a source that responds to the music the tears chase the beat across the wall. 0 is byte-identical passthrough.",
+              "label": "Glitch",
+              "max": 1,
+              "min": 0,
+              "range": "bounded",
+              "type": "number"
+            },
+            "key": "glitch",
+            "targets": [
+              {
+                "key": "amount",
+                "nodeId": "cell"
               }
             ]
           },
@@ -391,11 +553,11 @@
             "definition": {
               "default": [
                 1,
-                0.68,
-                0.36,
+                1,
+                1,
                 1
               ],
-              "description": "The duotone the wall is graded into before Blend dissolves it back in.",
+              "description": "A master tint over the palette. WHITE is a true identity, so the shipped look is the palette itself and this knob has its whole range to swing the wall warm or cold.",
               "label": "Colour",
               "space": "display",
               "type": "color"
@@ -410,8 +572,8 @@
           },
           {
             "definition": {
-              "default": 0.35,
-              "description": "Master dissolve for the colourizer. 0 is the untinted wall exactly, 1 is full duotone.",
+              "default": 0.55,
+              "description": "Master dissolve for the recolorizer. 0 is the raw wall exactly — tear and all — and 1 is the palette. The tear is on the dry side, so this dissolves colour without dissolving glitch.",
               "label": "Blend",
               "max": 1,
               "min": 0,
@@ -526,8 +688,8 @@
         "id": "nd_timeGrid1",
         "parameters": {},
         "position": {
-          "x": -380,
-          "y": 29
+          "x": -238,
+          "y": 62
         },
         "type": "component:timeGrid@1"
       },

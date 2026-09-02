@@ -20,7 +20,7 @@ import {
   kaleidoscopeDocument,
 } from "./documents.ts";
 import { DEPTH_CARVE_KERNEL, DEPTH_PAINT_KERNEL } from "./shaders/depth-points.wgsl.ts";
-import { TIME_GRID_MAP_WGSL } from "./shaders/time-grid.wgsl.ts";
+import { TIME_GRID_GLITCH_WGSL, TIME_GRID_MAP_WGSL } from "./shaders/time-grid.wgsl.ts";
 import { SHARED_UNIFORMS_WGSL } from "../runtime/backend/shared-uniforms.ts";
 import { SHADER_SOURCE_PARAMETER } from "../domain/commands/apply-patch.ts";
 
@@ -684,24 +684,98 @@ export const timeGridHost: ProjectDocument = {
         parameters: { frames: 61, depth: 1 },
         label: "scan1",
       },
-      /* The colourizer: desaturate, multiply by one colour — a DUOTONE, which is what
-         actually ties nine independently-lit moments together — then dissolve it back
-         over the untinted wall. `mix` at 0 is `mix(a, b, 0)`, exactly the wall, so Blend
-         has a true no-op end (§V147). */
-      grey: {
-        id: "grey",
-        type: "hsv",
+      /* THE TEAR. Cells are dealt in on a tick and each one breaks INSIDE ITSELF, so a
+         wall of sixteen reads as sixteen failing monitors rather than one broken tiling.
+         Its brightness gate is the audio hook: see the shader. */
+      cell: {
+        id: "cell",
+        type: "customWgsl",
         definitionVersion: 1,
-        position: { x: -300, y: 40 },
-        parameters: { hueoffset: 0, saturation: 0, value: 1 },
-        label: "grey1",
+        position: { x: -300, y: -180 },
+        parameters: {
+          [SHADER_SOURCE_PARAMETER]: TIME_GRID_GLITCH_WGSL,
+          grid: [3, 3],
+          amount: 0.35,
+          rate: 1,
+          seed: 7,
+        },
+        label: "cell1",
       },
+      /*
+       * THE RECOLORIZER — Ramp into Lookup, which is the standard way to put a whole wall
+       * on one palette (E11's pairing). Luminance is the index, so every cell's brightness
+       * becomes a hue and nine independently-lit moments land in one colour world.
+       *
+       * The phase is an EXPRESSION on the free-running clock, and that works where the
+       * published page does not: an internal node is flattened into the parent graph and
+       * then resolved like any other node, WITH the frame — only the instance's published
+       * values are frozen at flatten time. Measured: with the world held still, the frame
+       * changes across 40/55/70 from this one expression.
+       *
+       * 256x16 rather than the project resolution: a gradient is one dimensional and
+       * `lookup` reads a single row of it, so a full-frame palette texture would be
+       * megabytes spent on 256 useful texels.
+       */
+      palette: {
+        id: "palette",
+        type: "ramp",
+        definitionVersion: 2,
+        position: { x: -300, y: 300 },
+        parameters: {
+          type: "horizontal",
+          interp: "smooth",
+          period: 1,
+          phase: {
+            mode: "expression",
+            bindings: {
+              static: { kind: "static", value: 0 },
+              expression: { kind: "expression", source: "abstime * 0.043 % 1" },
+            },
+          },
+          /* CYCLIC — first stop and last are the same colour — because `phase` wraps the
+             gradient's axis, and a palette that did not close would sweep a hard seam
+             across the wall once a cycle. Hot at 0.85 rather than at 1.0 so the index can
+             be kept clear of the wrap: see `tone`'s scale below. */
+          stops: [
+            { position: 0, color: [0.02, 0.02, 0.09, 1] },
+            { position: 0.2, color: [0.25, 0.06, 0.45, 1] },
+            { position: 0.45, color: [0.9, 0.15, 0.35, 1] },
+            { position: 0.68, color: [1, 0.62, 0.18, 1] },
+            { position: 0.85, color: [1, 0.97, 0.85, 1] },
+            { position: 1, color: [0.02, 0.02, 0.09, 1] },
+          ],
+        },
+        resolution: { mode: "fixed", width: 256, height: 16 },
+        label: "palette1",
+      },
+      /*
+       * E11's lesson, and its inverse. E11 had to STRETCH its index because a noise field's
+       * luminance never left the middle third of the gradient. A wall's histogram is the
+       * opposite problem: it reaches black and it reaches white, and an index that reaches
+       * 1.0 lands on the cyclic palette's dark closing stop — so the brightest thing in the
+       * frame renders DARK and every hot core reads as a ring. Measured on the first build:
+       * the bodies came back as orange rings with dark centres.
+       *
+       * So the index is COMPRESSED into 0.02..0.87 instead: black stays black, white lands
+       * on the palette's hot stop, and nothing crosses the wrap.
+       */
+      tone: {
+        id: "tone",
+        type: "lookup",
+        definitionVersion: 1,
+        position: { x: -20, y: 120 },
+        parameters: { channel: "luminance", row: 0.5, offset: 0.02, scale: 0.85 },
+        label: "tone1",
+      },
+      /* Colour is a MASTER TINT over the palette, and its default is white — a true
+         identity, so the shipped look is the palette unmodified and the knob has its whole
+         range to move in rather than a band around a value that already means something. */
       paint: {
         id: "paint",
         type: "solid",
         definitionVersion: 1,
-        position: { x: -300, y: 300 },
-        parameters: { color: [1, 0.68, 0.36, 1] },
+        position: { x: -20, y: 380 },
+        parameters: { color: [1, 1, 1, 1] },
         resolution: TIME_GRID_INTERNAL,
         label: "paint1",
       },
@@ -709,16 +783,18 @@ export const timeGridHost: ProjectDocument = {
         id: "tint",
         type: "multiply",
         definitionVersion: 1,
-        position: { x: -20, y: 160 },
+        position: { x: 260, y: 240 },
         parameters: { opacity: 1 },
         label: "tint1",
       },
+      /* `mix` at 0 is `mix(a, b, 0)`, exactly the untinted wall, so Blend has a true
+         no-op end (§V147) and the whole recolorizer can be dissolved away live. */
       mix: {
         id: "mix",
         type: "cross",
         definitionVersion: 1,
-        position: { x: 260, y: -60 },
-        parameters: { cross: 0.35 },
+        position: { x: 540, y: -60 },
+        parameters: { cross: 0.55 },
         label: "mix1",
       },
       // ---- outside again ------------------------------------------------------------
@@ -737,10 +813,14 @@ export const timeGridHost: ProjectDocument = {
       "e-grid-map": { id: "e-grid-map", source: { nodeId: "grid", portId: "out" }, target: { nodeId: "map", portId: "input" } },
       "e-grid-scan": { id: "e-grid-scan", source: { nodeId: "grid", portId: "out" }, target: { nodeId: "scan", portId: "input" } },
       "e-map-scan": { id: "e-map-scan", source: { nodeId: "map", portId: "out" }, target: { nodeId: "scan", portId: "map" } },
-      "e-scan-grey": { id: "e-scan-grey", source: { nodeId: "scan", portId: "out" }, target: { nodeId: "grey", portId: "input" } },
-      "e-grey-tint": { id: "e-grey-tint", source: { nodeId: "grey", portId: "out" }, target: { nodeId: "tint", portId: "in1" } },
+      "e-scan-cell": { id: "e-scan-cell", source: { nodeId: "scan", portId: "out" }, target: { nodeId: "cell", portId: "input" } },
+      "e-cell-tone": { id: "e-cell-tone", source: { nodeId: "cell", portId: "out" }, target: { nodeId: "tone", portId: "source" } },
+      "e-palette-tone": { id: "e-palette-tone", source: { nodeId: "palette", portId: "out" }, target: { nodeId: "tone", portId: "lookup" } },
+      "e-tone-tint": { id: "e-tone-tint", source: { nodeId: "tone", portId: "out" }, target: { nodeId: "tint", portId: "in1" } },
       "e-paint-tint": { id: "e-paint-tint", source: { nodeId: "paint", portId: "out" }, target: { nodeId: "tint", portId: "in2" } },
-      "e-scan-mix": { id: "e-scan-mix", source: { nodeId: "scan", portId: "out" }, target: { nodeId: "mix", portId: "in1" } },
+      // The DRY side of the dissolve is the glitched wall, ungraded — so Blend 0 keeps the
+      // tear and drops only the colour, which is what makes them two independent knobs.
+      "e-cell-mix": { id: "e-cell-mix", source: { nodeId: "cell", portId: "out" }, target: { nodeId: "mix", portId: "in1" } },
       "e-tint-mix": { id: "e-tint-mix", source: { nodeId: "tint", portId: "out" }, target: { nodeId: "mix", portId: "in2" } },
       "e-mix-out": { id: "e-mix-out", source: { nodeId: "mix", portId: "out" }, target: { nodeId: "out", portId: "input" } },
     },
@@ -1203,12 +1283,12 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
     componentId: "timeGrid",
     name: "TimeGrid",
     description:
-      "A video wall of the same stream at different moments: Tile makes the grid, SlitScan gives each cell its own delay, and one duotone ties them together. 69.75 MiB of history at 512x288 x 61 frames.",
+      "A VJ video wall: Tile makes the grid, SlitScan gives every cell its own moment, a seeded per-cell tear breaks the loud ones, and an evolving Ramp-into-Lookup palette ties them all together. 69.75 MiB of history at 512x288 x 61 frames.",
     host: timeGridHost,
     /* The SOURCE stays outside. A webcam, a movie file and a synthetic generator are all
        just a texture at this boundary, which is the whole reason this is a component and
        not a document (T956's lesson, DepthPoints' precedent). */
-    selection: ["grid", "map", "scan", "grey", "paint", "tint", "mix"],
+    selection: ["grid", "map", "scan", "cell", "palette", "tone", "paint", "tint", "mix"],
     publish: [
       /*
        * THE PERFORMANCE PAGE. Eight knobs, and the ones that decide the LAYOUT are
@@ -1232,6 +1312,7 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
         targets: [
           { nodeId: "grid", key: "repeat" },
           { nodeId: "map", key: "grid" },
+          { nodeId: "cell", key: "grid" },
         ],
       },
       {
@@ -1267,12 +1348,15 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
           label: "Rate",
           default: 1,
           min: 0,
-          max: 4,
+          max: 8,
           range: "bounded",
           unit: "hz",
-          description: "Sweep and Shots only. In Sweep, 1.0 at 60 fps is an exact freeze (0.5 at 30 fps); below is slow motion, above runs backwards. In Shots it is cuts per second.",
+          description: "The wall's clock. In Sweep, 1.0 at 60 fps is an exact freeze (0.5 at 30 fps); below is slow motion, above runs backwards. In Shots it is cuts per second. It also re-deals which cells tear, so a glitch holds for a whole tick instead of boiling.",
         },
-        targets: [{ nodeId: "map", key: "rate" }],
+        targets: [
+          { nodeId: "map", key: "rate" },
+          { nodeId: "cell", key: "rate" },
+        ],
       },
       {
         key: "seed",
@@ -1283,18 +1367,34 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
           min: 0,
           max: 999,
           step: 1,
-          description: "Deals the cells for Random and Shots. Integer hash, no clock (§V44) — the same seed is the same wall on every device and every replay.",
+          description: "Deals the cells — which moment each holds in Random and Shots, and which of them tear. Integer hash, no clock (§V44): the same seed is the same wall on every device and every replay.",
         },
-        targets: [{ nodeId: "map", key: "seed" }],
+        targets: [
+          { nodeId: "map", key: "seed" },
+          { nodeId: "cell", key: "seed" },
+        ],
+      },
+      {
+        key: "glitch",
+        definition: {
+          type: "number",
+          label: "Glitch",
+          default: 0.35,
+          min: 0,
+          max: 1,
+          range: "bounded",
+          description: "How many cells tear on each Rate tick, and how hard. SPARSE by construction — a cell is dealt in by a seeded hash, and the brighter a cell is the likelier it is dealt, so with a source that responds to the music the tears chase the beat across the wall. 0 is byte-identical passthrough.",
+        },
+        targets: [{ nodeId: "cell", key: "amount" }],
       },
       {
         key: "colour",
         definition: {
           type: "color",
           label: "Colour",
-          default: [1, 0.68, 0.36, 1],
+          default: [1, 1, 1, 1],
           space: "display",
-          description: "The duotone the wall is graded into before Blend dissolves it back in.",
+          description: "A master tint over the palette. WHITE is a true identity, so the shipped look is the palette itself and this knob has its whole range to swing the wall warm or cold.",
         },
         targets: [{ nodeId: "paint", key: "color" }],
       },
@@ -1303,11 +1403,11 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
         definition: {
           type: "number",
           label: "Blend",
-          default: 0.35,
+          default: 0.55,
           min: 0,
           max: 1,
           range: "bounded",
-          description: "Master dissolve for the colourizer. 0 is the untinted wall exactly, 1 is full duotone.",
+          description: "Master dissolve for the recolorizer. 0 is the raw wall exactly — tear and all — and 1 is the palette. The tear is on the dry side, so this dissolves colour without dissolving glitch.",
         },
         targets: [{ nodeId: "mix", key: "cross" }],
       },

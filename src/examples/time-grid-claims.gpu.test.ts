@@ -58,6 +58,20 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   return vec4f(uv.x, uv.y, frameU.frameIndex / ${STAMP_SCALE}.0, 1.0);
 }`;
 
+/**
+ * The same card with the clock taken out of it. Every claim about something the component
+ * animates BY ITSELF — the palette walking, the tear re-dealing — needs a source that is
+ * not moving, or "the frame changed" says nothing about which thing changed it.
+ */
+const STILL_WGSL = `${SHARED_UNIFORMS_WGSL}
+@group(0) @binding(0) var inputSampler: sampler;
+@group(0) @binding(1) var inputTexture: texture_2d<f32>;
+@group(0) @binding(2) var<uniform> frameU: SharedFrame;
+@fragment
+fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
+  return vec4f(uv.x, uv.y, 0.5, 1.0);
+}`;
+
 const WIDTH = 512;
 const HEIGHT = 288;
 const COLS = 4;
@@ -92,11 +106,12 @@ interface WallParameters {
   readonly mode?: number;
   readonly rate?: number;
   readonly seed?: number;
+  readonly glitch?: number;
   readonly colour?: readonly [number, number, number, number];
   readonly blend?: number;
 }
 
-function probeGraph(wall: WallParameters): GraphDocument {
+function probeGraph(wall: WallParameters, still = false): GraphDocument {
   const node = (id: string, type: string, parameters: Record<string, unknown>, extra: Record<string, unknown> = {}) => [
     id,
     { id, type, definitionVersion: 1, position: { x: 0, y: 0 }, label: id, parameters, ...extra },
@@ -111,14 +126,15 @@ function probeGraph(wall: WallParameters): GraphDocument {
     nodes: Object.fromEntries([
       // customWgsl inherits its size from an input, so the stamp needs something to stand on.
       node("bed", "ramp", { type: "vertical" }, { definitionVersion: 2 }),
-      node("src", "customWgsl", { source: STAMP_WGSL }),
+      node("src", "customWgsl", { source: still ? STILL_WGSL : STAMP_WGSL }),
       node("wall", "component:timeGrid@1", {
         grid: [COLS, ROWS],
         spread: 1,
         mode: 1,
         rate: 1,
         seed: 7,
-        colour: [1, 0.68, 0.36, 1],
+        colour: [1, 1, 1, 1],
+        glitch: 0,
         blend: 0,
         ...wall,
       }),
@@ -135,10 +151,11 @@ function probeGraph(wall: WallParameters): GraphDocument {
 async function shoot(
   wall: WallParameters,
   capture: readonly number[] = [LAST],
+  still = false,
 ): Promise<{ frames: readonly RenderedFrame[]; plan: Awaited<ReturnType<typeof renderHeadless>>["plan"] }> {
   const result = await renderHeadless({
     host: nodeGpuHost(),
-    graph: probeGraph(wall),
+    graph: probeGraph(wall, still),
     settings: SETTINGS,
     components: await starterComponentsView(),
     frames: Math.max(...capture) + 1,
@@ -364,6 +381,110 @@ describe("TimeGrid — one stream, many moments", () => {
     expect(differingPixels(seven, sevenAgain)).toBe(0);
     expect(differingPixels(seven, eleven)).toBeGreaterThan(WIDTH * HEIGHT * 0.2);
   }, 180_000);
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════════
+   * THE TEAR — sparse, per-cell, and reproducible from a seed.
+   * ═══════════════════════════════════════════════════════════════════════════════
+   *
+   * THE PER-CELL CLAIM, and the reason it is run in UNIFORM mode. With every cell holding
+   * the same moment, the wall's sixteen blocks are byte-identical (asserted above), so the
+   * ONLY thing that can make them differ is the glitch reading its own cell index. A test
+   * run in Ordered mode would show cells differing whatever the glitch did.
+   */
+  it("Glitch breaks cells INDIVIDUALLY: identical moments, no longer identical cells", async () => {
+    const clean = (await shoot({ mode: 0, glitch: 0 })).frames[0] as RenderedFrame;
+    const torn = (await shoot({ mode: 0, glitch: 1 })).frames[0] as RenderedFrame;
+
+    const cleanBlocks = Array.from({ length: CELLS }, (_, cell) => cellBlock(clean, cell));
+    const tornBlocks = Array.from({ length: CELLS }, (_, cell) => cellBlock(torn, cell));
+
+    // The floor: without the glitch the sixteen are one block repeated.
+    expect(cleanBlocks.filter((block) => !identical(block, cleanBlocks[0] as Float64Array))).toHaveLength(0);
+    // With it, every one of them is its own — the index reached the shader.
+    const twins: string[] = [];
+    for (let a = 0; a < CELLS; a += 1) {
+      for (let b = a + 1; b < CELLS; b += 1) {
+        if (identical(tornBlocks[a] as Float64Array, tornBlocks[b] as Float64Array)) twins.push(`${a}=${b}`);
+      }
+    }
+    expect(twins, "cells the glitch treated identically").toEqual([]);
+  }, 180_000);
+
+  /**
+   * DETERMINISM (§V44's sibling promise). The tear is an integer hash of (cell, seed,
+   * tick) and nothing else, so the same seed is the same wall — twice, and on any device
+   * — and a different seed is a different wall. `Math.random` or a `fract(sin(x))` hash
+   * would pass neither half reliably.
+   *
+   * The third assertion is the knob's identity end: at Glitch 0 the shader returns a
+   * `textureLoad` at the fragment's own coordinate before it has looked at the seed, so
+   * Seed is INERT byte-for-byte rather than nearly so.
+   */
+  it("Glitch replays from its seed, and Glitch 0 makes the seed inert", async () => {
+    const seven = (await shoot({ mode: 0, glitch: 0.9, seed: 7 })).frames[0] as RenderedFrame;
+    const sevenAgain = (await shoot({ mode: 0, glitch: 0.9, seed: 7 })).frames[0] as RenderedFrame;
+    const eleven = (await shoot({ mode: 0, glitch: 0.9, seed: 11 })).frames[0] as RenderedFrame;
+    expect(differingPixels(seven, sevenAgain)).toBe(0);
+    expect(differingPixels(seven, eleven)).toBeGreaterThan(WIDTH * HEIGHT * 0.05);
+
+    const offSeven = (await shoot({ mode: 0, glitch: 0, seed: 7 })).frames[0] as RenderedFrame;
+    const offEleven = (await shoot({ mode: 0, glitch: 0, seed: 11 })).frames[0] as RenderedFrame;
+    expect(differingPixels(offSeven, offEleven)).toBe(0);
+  }, 240_000);
+
+  /**
+   * SPARSITY, which is the whole design constraint on this knob: a tear on every cell every
+   * frame is static, and static says nothing about the music. So the deal has to be a
+   * MIDDLE — some cells at 0.35, all of them at 1.
+   *
+   * Counted on the probe card, whose cells are all equally bright, so the count is the
+   * hash's doing and not the picture's. The bound is one-sided on purpose: which cells come
+   * up is the hash's business, and pinning the exact set would be asserting the hash rather
+   * than the property.
+   */
+  it("Glitch is SPARSE in the middle of its range and total at the top", async () => {
+    const count = async (glitch: number): Promise<number> => {
+      const clean = (await shoot({ mode: 0, glitch: 0 })).frames[0] as RenderedFrame;
+      const torn = (await shoot({ mode: 0, glitch })).frames[0] as RenderedFrame;
+      const reference = cellBlock(clean, 0);
+      let broken = 0;
+      for (let cell = 0; cell < CELLS; cell += 1) {
+        if (!identical(cellBlock(torn, cell), reference)) broken += 1;
+      }
+      return broken;
+    };
+    expect(await count(0)).toBe(0);
+    const some = await count(0.35);
+    expect(some).toBeGreaterThan(0);
+    expect(some).toBeLessThan(CELLS);
+    expect(await count(1)).toBe(CELLS);
+  }, 300_000);
+
+  /**
+   * THE RECOLORIZER EVOLVES ON ITS OWN — the Ramp's phase is an expression on the
+   * free-running clock, INSIDE the component.
+   *
+   * Rendered against a STILL card with the glitch off and the wall in Uniform mode, so
+   * after the ring has filled the only thing left in the graph that can change is the
+   * palette. Two frames five seconds apart therefore differ if and only if the phase moved
+   * — and at Blend 0 the same pair must be identical, because the dissolve's dry side is
+   * the ungraded wall and the whole recolorizer is bypassed.
+   *
+   * This is also the standing evidence for the one thing that DOES animate inside a
+   * component: an internal node is flattened into the parent graph and resolved with the
+   * frame like any other node. Only the instance's published page is frozen.
+   */
+  it("the palette walks by itself, and Blend 0 bypasses it entirely", async () => {
+    const graded = await shoot({ mode: 0, glitch: 0, blend: 1 }, [120, 420], true);
+    const [early, late] = graded.frames;
+    expect(differingPixels(early as RenderedFrame, late as RenderedFrame)).toBeGreaterThan(
+      WIDTH * HEIGHT * 0.5,
+    );
+
+    const raw = await shoot({ mode: 0, glitch: 0, blend: 0 }, [120, 420], true);
+    expect(differingPixels(raw.frames[0] as RenderedFrame, raw.frames[1] as RenderedFrame)).toBe(0);
+  }, 300_000);
 
   /**
    * E51 itself, on the shipped bytes: the wall in the file is a wall, not nine copies of
