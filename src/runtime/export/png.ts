@@ -15,7 +15,7 @@ import type { Rgba8Image } from "./image.ts";
  * subtly wrong, and every decoder in the world reads them.
  */
 
-const SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+export const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 
 const CRC_TABLE = (() => {
   const table = new Uint32Array(256);
@@ -51,7 +51,7 @@ function adler32(bytes: Uint8Array): number {
   return ((b << 16) | a) >>> 0;
 }
 
-function chunk(type: string, data: Uint8Array): Uint8Array {
+export function pngChunk(type: string, data: Uint8Array): Uint8Array {
   const out = new Uint8Array(12 + data.length);
   const view = new DataView(out.buffer);
   view.setUint32(0, data.length);
@@ -123,10 +123,10 @@ export function encodePng(image: Rgba8Image): PngImage {
   ihdr[12] = 0; // no interlace
 
   const parts = [
-    Uint8Array.from(SIGNATURE),
-    chunk("IHDR", ihdr),
-    chunk("IDAT", zlibStored(raw)),
-    chunk("IEND", new Uint8Array(0)),
+    Uint8Array.from(PNG_SIGNATURE),
+    pngChunk("IHDR", ihdr),
+    pngChunk("IDAT", zlibStored(raw)),
+    pngChunk("IEND", new Uint8Array(0)),
   ];
   const bytes = new Uint8Array(parts.reduce((total, part) => total + part.length, 0));
   let at = 0;
