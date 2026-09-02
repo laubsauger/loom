@@ -83,6 +83,8 @@ export interface GeometryPayload {
     readonly taper?: number;
     /** T917: soft edge falloff share (0 hard .. 1 from the centreline). Rides instance.w. */
     readonly soft?: number;
+    /** T940b: points mode — draw each billboard as a lit spherical splat. */
+    readonly spherical?: boolean;
   };
   /**
    * T721 — a PER-POINT size factor, as an f32 attribute (or one channel of a float

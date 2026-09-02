@@ -408,6 +408,15 @@ export const geometryNode: NodeDefinition = {
       description:
         "Beam mode: the name of a vec3f attribute holding the FAR end of each segment. The near end is `position`. A ray's `hitPosition`, a previous frame's position, `position + velocity` — whatever the data already knows.",
     },
+    spherical: {
+      type: "boolean",
+      label: "Spherical",
+      default: false,
+      compileTime: true,
+      description:
+        "T940b: points mode — each billboard reads as a tiny lit sphere: round soft splat plus a shaded side, lit from the azimuth the tint attribute's ALPHA carries (radians; a kernel writes the direction light arrives from). Squares become motes.",
+      inactiveWhen: (values) => (values["mode"] === "points" ? null : "Only points draw spherical splats."),
+    },
     taper: {
       type: "number",
       label: "Taper",
@@ -803,6 +812,8 @@ export const geometryNode: NodeDefinition = {
               ...(mode === "beam" ? { taper: Math.min(1, Math.max(0, readNumber(parameters, "taper", 1))) } : {}),
               /* T917: the soft profile rides the instance vec4's spare w — zero new plumbing. */
               soft: Math.min(1, Math.max(0, readNumber(parameters, "soft", 0))),
+              /* T940b: points-mode spherical splats. */
+              ...(mode === "points" && parameters["spherical"] === true ? { spherical: true } : {}),
             },
           }
         : {}),
@@ -1686,6 +1697,7 @@ export const renderNode: NodeDefinition = {
           shader: sceneInstancesWgsl({
             model,
             lightCount: lights.length,
+            ...(payload.instance?.spherical === true ? { sphericalPoints: true } : {}),
             ...(payload.colorAttribute === undefined ? {} : { pointColor: true }),
             /* T721: the per-point size factor, structural in the SAME way the tint is —
                a binding either exists or it does not, and the shader is generated for it. */

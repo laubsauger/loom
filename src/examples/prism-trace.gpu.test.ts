@@ -55,6 +55,11 @@ const interiorIndex = (t: number): number => CENTRE_BASE + Math.round(t * (BANDS
 /** Any slice's exit slot, for the aperture claims. */
 const sliceExitIndex = (s: number, t: number): number => 2 + s * BANDS * 3 + Math.round(t * (BANDS - 1)) * 3 + 2;
 const tirIndex = (t: number): number => interiorIndex(t) + 1;
+/* T941: leg 2 is the WEDGE SEGMENT between band k and k+1 — its geometry is the
+   MIDPOINT of the two bands' exit rays, so its analytic wavelength is the segment
+   centre. The last band's slot is deliberately dead (no partner). */
+const segIndex = (k: number): number => CENTRE_BASE + k * 3 + 2;
+const segT = (k: number): number => (k + 0.5) / (BANDS - 1);
 const RI = 0.38; // E13's PRISM_RC / 2, pinned as the same literal E13 interpolates
 const NR: readonly [number, number] = [Math.sqrt(3) / 2, 0.5];
 const NL: readonly [number, number] = [-Math.sqrt(3) / 2, 0.5];
@@ -65,8 +70,8 @@ const N_RED = 1.5;
    them from the kernel text could not notice the kernel changing them. */
 const LAMP_R = 3.3;
 const ARC_A = 185;
-const ARC_B = -55;
-const OFF_MAX = 0.9;
+const ARC_B = -175;
+const OFF_MAX = 1.9;
 
 const SETTINGS = {
   outputResolution: { width: 64, height: 64 },
@@ -255,9 +260,9 @@ describe("the prism is a traced ray (T718, §V683)", () => {
        this power), and all with |τ| inside the SDF's FLAT run — (RI−BEVEL)·√3 = 0.578,
        shorter than the sharp face (T920's finding: the bevel shrinks the usable span). */
     for (const [px, py] of [
-      [0, 0.3],
-      [0, 0.6],
-      [0, 0.7],
+      [0, 0.142],
+      [0, 0.284],
+      [0, 0.332],
     ] as const) {
       const aim = aimOf(px, py);
       expect(aim.face).toEqual(NL); // the sample lands where the comment says
@@ -276,24 +281,26 @@ describe("the prism is a traced ray (T718, §V683)", () => {
       const shaft = segments[0]!;
       expect(internal.origin[0]).toBeCloseTo(shaft.tip[0], 5);
       expect(internal.origin[1]).toBeCloseTo(shaft.tip[1], 5);
-      // And the central band's exit sits at the internal segment's far end — one
-      // connected path, entry to fan, at the shared wavelength.
-      const central = segments[bandIndex(0.5)]!;
-      expect(central.origin[0]).toBeCloseTo(internal.tip[0], 4);
-      expect(central.origin[1]).toBeCloseTo(internal.tip[1], 4);
+      // And the central SEGMENT's root sits at the midpoint of its two bands' interior
+      // far ends — one connected path, entry to fan (T941's wedge semantics).
+      const central = segments[segIndex(30)]!;
+      const int30 = segments[interiorIndex(30 / 60)]!;
+      const int31 = segments[CENTRE_BASE + 31 * 3]!;
+      expect(central.origin[0]).toBeCloseTo((int30.tip[0] + int31.tip[0]) / 2, 3);
+      expect(central.origin[1]).toBeCloseTo((int30.tip[1] + int31.tip[1]) / 2, 3);
 
-      // EXIT SNELL, per wavelength, against the exit face (NR — the internal ray from
-      // the left face crosses to the right one): θe = asin(n · sin(60° − θr)).
-      for (const tt of [0, 0.5, 1]) {
-        const n = bandN(tt, dispersion);
+      // EXIT SNELL, per segment wavelength, against the exit face (NR — the internal
+      // ray from the left face crosses to the right one): θe = asin(n · sin(60° − θr)).
+      for (const k of [0, 30, 59]) {
+        const n = bandN(segT(k), dispersion);
         const thetaR = Math.asin(Math.sin(thetaI) / n);
         const theta2 = APEX - thetaR;
         expect(n * Math.sin(theta2)).toBeLessThan(1); // no TIR at these aims
         const thetaE = Math.asin(n * Math.sin(theta2));
-        const band = segments[bandIndex(tt)]!;
+        const band = segments[segIndex(k)]!;
         expect(length(band)).toBeGreaterThan(0.5);
         expect(faceAngle(direction(band), NR)).toBeCloseTo(thetaE, 3);
-        // The band leaves through the EXIT FACE: its origin lies on dot(p, NR) = RI.
+        // The segment leaves through the EXIT FACE: its root lies on dot(p, NR) = RI.
         expect(dot(band.origin, NR)).toBeCloseTo(RI, 3);
       }
 
@@ -301,7 +308,7 @@ describe("the prism is a traced ray (T718, §V683)", () => {
       expect(length(segments[tirIndex(0.5)]!)).toBeLessThan(1e-4);
 
       const spread =
-        faceAngle(direction(segments[bandIndex(1)]!), NR) - faceAngle(direction(segments[bandIndex(0)]!), NR);
+        faceAngle(direction(segments[segIndex(59)]!), NR) - faceAngle(direction(segments[segIndex(0)]!), NR);
       spreads.push(spread);
     }
     // The fan NARROWS as θ1 climbs away from the critical regime — the same dδ/dn
@@ -309,12 +316,12 @@ describe("the prism is a traced ray (T718, §V683)", () => {
     expect(spreads[0]!).toBeGreaterThan(spreads[1]!);
     expect(spreads[1]!).toBeGreaterThan(spreads[2]!);
     // And the widest matches the analytic spread, not merely the trend.
-    const thetaI = aimOf(0, 0.3).thetaI;
+    const thetaI = aimOf(0, 0.142).thetaI;
     const exitOf = (tt: number): number => {
       const n = bandN(tt, dispersion);
       return Math.asin(n * Math.sin(APEX - Math.asin(Math.sin(thetaI) / n)));
     };
-    expect(spreads[0]!).toBeCloseTo(exitOf(1) - exitOf(0), 3);
+    expect(spreads[0]!).toBeCloseTo(exitOf(segT(59)) - exitOf(segT(0)), 3);
   }, 240_000);
 
   it("total internal reflection leaves through the BASE, and Snell holds there too", async () => {
@@ -330,17 +337,17 @@ describe("the prism is a traced ray (T718, §V683)", () => {
        curl the face plane away, so red's origin is pinned by membership, not to the
        plane's third decimal). */
     const dispersion = 0.3;
-    const aim = aimOf(0.3, 0.2);
+    const aim = aimOf(0.2, 0.095);
     expect(aim.face).toEqual(NL);
     const thetaI = aim.thetaI;
-    const segments = await runTrace({ value1: 0.2, value2: dispersion, value3: 0.3 });
+    const segments = await runTrace({ value1: 0.095, value2: dispersion, value3: 0.2 });
 
-    const nViolet = bandN(1, dispersion);
+    const nViolet = bandN(segT(59), dispersion);
     const thetaR = Math.asin(Math.sin(thetaI) / nViolet);
     const theta2 = APEX - thetaR;
     expect(nViolet * Math.sin(theta2)).toBeGreaterThan(1); // the domain says TIR
 
-    const violet = segments[bandIndex(1)]!;
+    const violet = segments[segIndex(59)]!;
     // Through the BASE: the origin lies on dot(p, ND) = RI, not on the exit face.
     expect(dot(violet.origin, ND)).toBeCloseTo(RI, 2);
     expect(dot(violet.origin, NR)).toBeLessThan(RI - 1e-3);
@@ -354,7 +361,7 @@ describe("the prism is a traced ray (T718, §V683)", () => {
     // The RED end still exits the right face in the same frame — one prism, two faces
     // in use at once, which no authored fan can express. Near the corner arc: membership
     // (ON the right side, NOT the base), not plane-exact (see the sample note above).
-    const red = segments[bandIndex(0)]!;
+    const red = segments[segIndex(0)]!;
     expect(dot(red.origin, NR)).toBeGreaterThan(0.36);
     expect(dot(red.origin, ND)).toBeLessThan(RI - 0.02);
   }, 240_000);
@@ -373,7 +380,7 @@ describe("the prism is a traced ray (T718, §V683)", () => {
     const dispersion = 0.085;
     const taus: number[] = [];
     const interiors: number[] = [];
-    for (const py of [0, 0.4, 0.7]) {
+    for (const py of [0, 0.19, 0.332]) {
       const aim = aimOf(0, py);
       expect(aim.face).toEqual(NL);
       const segments = await runTrace({ value1: py, value2: dispersion, value3: 0 });
@@ -389,9 +396,10 @@ describe("the prism is a traced ray (T718, §V683)", () => {
       );
       // Connected: shaft tip = internal origin; internal tip = the central band's exit.
       expect(internal.origin[0]).toBeCloseTo(entry[0], 5);
-      const central = segments[bandIndex(0.5)]!;
-      expect(central.origin[0]).toBeCloseTo(internal.tip[0], 4);
-      expect(central.origin[1]).toBeCloseTo(internal.tip[1], 4);
+      const central = segments[segIndex(30)]!;
+      const int31 = segments[CENTRE_BASE + 31 * 3]!;
+      expect(central.origin[0]).toBeCloseTo((internal.tip[0] + int31.tip[0]) / 2, 3);
+      expect(central.origin[1]).toBeCloseTo((internal.tip[1] + int31.tip[1]) / 2, 3);
       taus.push(tauOf(entry, NL));
       interiors.push(length(internal));
     }
@@ -414,13 +422,13 @@ describe("the prism is a traced ray (T718, §V683)", () => {
     if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
 
     const dispersion = 0.085;
-    for (const px of [0.1, 0.6]) {
+    for (const px of [0.067, 0.4]) {
       expect(aimOf(px, 0.98).face).toBeNull(); // the domain says: off the glass
       const segments = await runTrace({ value1: 0.98, value2: dispersion, value3: px });
 
       // Nothing refracts. Ghost, interior, TIR leg and all 61 bands are points.
       for (const index of [1, interiorIndex(0.5), tirIndex(0.5)]) expect(length(segments[index]!)).toBeLessThan(1e-4);
-      for (const tt of [0, 0.5, 1]) expect(length(segments[bandIndex(tt)]!)).toBeLessThan(1e-4);
+      for (const k of [0, 30, 59]) expect(length(segments[segIndex(k)]!)).toBeLessThan(1e-4);
 
       // The shaft goes THROUGH: the full MISS_LEN cast, off-frame to off-frame (T929).
       const shaft = segments[0]!;
@@ -452,14 +460,14 @@ describe("the prism is a traced ray (T718, §V683)", () => {
     const trapped = (thetaI: number, n: number): boolean => n * Math.sin(APEX - thetaR(thetaI, n)) > 1;
 
     // ---- the SPLIT ---------------------------------------------------------------
-    const splitAim = aimOf(0.05, 0.45);
+    const splitAim = aimOf(0.0333, 0.213);
     expect(splitAim.face).toEqual(NL);
-    expect(trapped(splitAim.thetaI, bandN(0, dispersion))).toBe(false); // red is not
-    expect(trapped(splitAim.thetaI, bandN(1, dispersion))).toBe(true); //  violet is
-    const split = await runTrace({ value1: 0.45, value2: dispersion, value3: 0.05 });
+    expect(trapped(splitAim.thetaI, bandN(segT(0), dispersion))).toBe(false); // red is not
+    expect(trapped(splitAim.thetaI, bandN(segT(59), dispersion))).toBe(true); //  violet is
+    const split = await runTrace({ value1: 0.213, value2: dispersion, value3: 0.0333 });
 
-    const red = split[bandIndex(0)]!;
-    const nRed = bandN(0, dispersion);
+    const red = split[segIndex(0)]!;
+    const nRed = bandN(segT(0), dispersion);
     expect(dot(red.origin, NR)).toBeCloseTo(RI, 3);
     // T937: the 3D march's f32 gradient normal costs ~1e-3 rad here, AMPLIFIED by the
     // steep exit (d asin/dx ≈ 4 at 74°) — 2 decimals is the claim the instrument affords.
@@ -467,20 +475,20 @@ describe("the prism is a traced ray (T718, §V683)", () => {
       Math.asin(nRed * Math.sin(APEX - thetaR(splitAim.thetaI, nRed))),
       2,
     );
-    const violet = split[bandIndex(1)]!;
+    const violet = split[segIndex(59)]!;
     expect(dot(violet.origin, ND)).toBeCloseTo(RI, 2);
     expect(dot(violet.origin, NR)).toBeLessThan(RI - 1e-3);
     expect(length(violet)).toBeGreaterThan(0.5);
     expect(faceAngle(direction(violet), ND)).toBeCloseTo(splitAim.thetaI, 2);
 
     // ---- the ALL-TIR SHEET -------------------------------------------------------
-    const baseAim = aimOf(0.05, 0);
+    const baseAim = aimOf(0.0333, 0);
     expect(baseAim.face).toEqual(NL);
-    const segments = await runTrace({ value1: 0, value2: dispersion, value3: 0.05 });
-    for (const tt of [0, 0.5, 1]) {
-      const n = bandN(tt, dispersion);
+    const segments = await runTrace({ value1: 0, value2: dispersion, value3: 0.0333 });
+    for (const k of [0, 30, 59]) {
+      const n = bandN(segT(k), dispersion);
       expect(trapped(baseAim.thetaI, n)).toBe(true);
-      const band = segments[bandIndex(tt)]!;
+      const band = segments[segIndex(k)]!;
       expect(dot(band.origin, ND)).toBeCloseTo(RI, 2);
       expect(length(band)).toBeGreaterThan(0.5);
       expect(faceAngle(direction(band), ND)).toBeCloseTo(baseAim.thetaI, 2);
@@ -512,11 +520,11 @@ describe("the prism is a traced ray (T718, §V683)", () => {
       return Math.max(...angles) - Math.min(...angles);
     };
 
-    expect(aimOf(1, 0.3).tau).toBeCloseTo(-0.034, 2);
-    const flat = await spreadAcrossSlices(1, 0.3);
+    expect(aimOf(0.6667, 0.142).tau).toBeCloseTo(-0.034, 2);
+    const flat = await spreadAcrossSlices(0.6667, 0.142);
     expect(flat).toBeLessThan(0.002);
-    expect(aimOf(0.9, 0).tau).toBeCloseTo(0.632, 2);
-    const bevel = await spreadAcrossSlices(0.9, 0);
+    expect(aimOf(0.6, 0).tau).toBeCloseTo(0.632, 2);
+    const bevel = await spreadAcrossSlices(0.6, 0);
     expect(bevel).toBeGreaterThan(0.04);
   }, 300_000);
 
@@ -559,8 +567,8 @@ describe("the prism is a traced ray (T718, §V683)", () => {
 
     const yaw = 0.25;
     const nod = 0.1;
-    const flat = await runTrace({ value1: 0.3, value2: 0.085, value3: 0 });
-    const tilted = await runTrace({ value1: 0.3, value2: 0.085, value3: 0, tiltYaw: yaw, tiltNod: nod });
+    const flat = await runTrace({ value1: 0.142, value2: 0.085, value3: 0 });
+    const tilted = await runTrace({ value1: 0.142, value2: 0.085, value3: 0, tiltYaw: yaw, tiltNod: nod });
 
     // world -> body: undo nod (about X), then yaw (about Y) — the kernel's own inverse.
     const toBody = ([x, y, z]: readonly [number, number, number]): [number, number, number] => {
@@ -608,6 +616,7 @@ describe("the prism is a traced ray (T718, §V683)", () => {
       trace.parameters["attributes"] = JSON.stringify([
         { name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] },
         { name: "tint", type: "vec4f", semantic: "color", qualifier: "color", default: [1, 1, 1, 1] },
+        { name: "size", type: "f32", default: [1] },
       ]);
       const plan = compileGraph({ graph, settings: SETTINGS, registry, capabilities: CAPABILITIES });
       expect(plan.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
@@ -658,16 +667,16 @@ describe("the prism is a traced ray (T718, §V683)", () => {
 
     const dispersion = 0.085;
     const STEPS = 24;
-    const py = 0.3;
+    const py = 0.142;
     let prevEntry: readonly [number, number] | null = null;
     let prevExit: readonly [number, number] | null = null;
     for (let i = 0; i <= STEPS; i += 1) {
-      const px = 0.0 + (0.32 * i) / STEPS; // NL entries into the NL->NR vertex crossing
+      const px = 0.0 + (0.213 * i) / STEPS; // NL entries into the NL->NR vertex crossing
       const aim = aimOf(px, py);
       if (aim.face === null) continue;
       const segments = await runTrace({ value1: py, value2: dispersion, value3: px });
       const entry = segments[0]!.tip;
-      const exit = segments[bandIndex(0.5)]!;
+      const exit = segments[segIndex(30)]!;
       if (prevEntry !== null) {
         const step = Math.hypot(entry[0] - prevEntry[0], entry[1] - prevEntry[1]);
         expect(step).toBeLessThan(0.35); // continuous walk, no entry teleport

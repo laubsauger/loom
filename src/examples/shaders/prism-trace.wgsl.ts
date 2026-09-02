@@ -98,10 +98,14 @@ const THETA_HI: f32 = 62.0;
    far end carries the beam clear off the glass: the miss is the top of the y travel. */
 const LAMP_R: f32 = 3.3;
 /* Rest (0,0) is phi 185: the lamp level-left, a hair below the axis, striking the left
-   face's centre at ~35 degrees — the classic left-in, spectrum-out-right card. */
+   face's centre at ~35 degrees — the classic left-in, spectrum-out-right card.
+   T929b (owner: "reach all across and even next to / off the prism horizontally
+   vertically"): the arc is a FULL TURN and the offset doubled — a one-sided offset from
+   a 360-degree orbit reaches EVERY line in the plane, so any face, any incidence, and a
+   genuine miss on any side are all under the cursor. The incenter rest is unchanged. */
 const ARC_A: f32 = 185.0;
-const ARC_B: f32 = -55.0;
-const OFF_MAX: f32 = 0.9;
+const ARC_B: f32 = -175.0;
+const OFF_MAX: f32 = 1.9;
 /* Speed² → authority. A cursor crossing a TWENTIETH of the frame in a second reads
    0.0025 here and clamps to 1: any deliberate move owns the aim outright, and a cursor
    that has never moved reads exactly 0. */
@@ -126,7 +130,9 @@ const SLICES: u32 = 9u;
 const BANDS: u32 = 61u;
 const APERTURE: f32 = 0.012;
 const INTERIOR_GAIN: f32 = 0.55;
-const EXIT_GAIN: f32 = 1.35;
+/* T941: the wedge is a partition of unity — the old 61 overlapping ribbons summed to
+   roughly 3x the energy at every pixel, and the gain absorbs that factor now. */
+const EXIT_GAIN: f32 = 4.5;
 
 /* CAUCHY DISPERSION (T913): n(λ) = A + B/λ², the real curve, replacing linear-in-t.
    λ runs 0.7µm (red, t = 0) → 0.4µm (violet, t = 1). B is derived from the SPREAD the
@@ -308,11 +314,6 @@ fn rotX(v: vec3f, a: f32) -> vec3f {
 }
 fn toBody(v: vec3f, yaw: f32, nod: f32) -> vec3f { return rotY(rotX(v, -nod), -yaw); }
 fn toWorld(v: vec3f, yaw: f32, nod: f32) -> vec3f { return rotX(rotY(v, yaw), nod); }
-
-struct Params {
-  tiltYaw: f32,
-  tiltNod: f32,
-}
 `;
 
 /**
@@ -323,6 +324,11 @@ struct Params {
 export function prismTraceKernel(ri: string): string {
   return `${PRISM_TRACE_KERNEL_HEAD}
 const RI: f32 = ${ri};
+
+struct Params {
+  tiltYaw: f32,
+  tiltNod: f32,
+}
 
 fn process(p: Point, ctx: PointCtx) -> Point {
   var q = p;
@@ -416,14 +422,48 @@ fn process(p: Point, ctx: PointCtx) -> Point {
     q.role = 0.0;
     return q;
   }
-  /* The exit ray: from ITS OWN exit point along ITS OWN direction, Fresnel-weighted at
-     both faces (T913), energy split across the slices. */
+  /* T941 — THE WEDGE SEGMENT. The reference draws ONE continuous fan; N constant-width
+     ribbons can never do that at arbitrary spread (a sampled fan shows its samples the
+     moment spacing exceeds width). So leg 2 is the SEGMENT between band b and b+1: its
+     edges ARE the two bands' physical rays, so adjacent segments share an edge exactly —
+     the fan tiles seamlessly at ANY spread. Where exit directions bunch (the bevel's
+     caustic, violet's Cauchy compression) segments narrow while carrying the same
+     energy: RAY DENSITY becomes brightness, from geometry, no analytic term needed.
+     A segment whose two bands leave through DIFFERENT faces (the TIR split) collapses:
+     the spectrum's split is a stated boundary, not a smeared band. */
+  if (b + 1u >= BANDS) {
+    q.position = toWorld(S, yaw, nod);
+    q.tip = q.position;
+    q.tint = vec4f(0.0);
+    q.role = 1.0;
+    return q;
+  }
+  let t2 = f32(b + 1u) / f32(BANDS - 1u);
+  let n2 = cauchyN(t2, ctx.value2);
+  let band2 = tracePrism(castFrom + perp * off, dIn, n2, RI);
+  let gone1 = live && dot(band.exitDirection, band.exitDirection) > 1.0e-9;
+  let gone2 = band2.ok > 0.5 && dot(band2.exitDirection, band2.exitDirection) > 1.0e-9;
+  let sameFace = distance(band.exitPoint, band2.exitPoint) < 0.35;
+  let alive = gone1 && gone2 && sameFace;
+  let tipA = band.exitPoint + band.exitDirection * FAN_LEN;
+  let tipB = band2.exitPoint + band2.exitDirection * FAN_LEN;
+  let root = (band.exitPoint + band2.exitPoint) * 0.5;
+  let tipM = (tipA + tipB) * 0.5;
+  /* The segment's width rides the TINT ALPHA (a fifth attribute would blow §V588's
+     binding budget): the FULL edge-to-edge distance, divided by 4 to live inside the
+     colour range, and the fan's scale map multiplies it back (node scale = 4). Each
+     segment overlaps its neighbours to their midlines, and the soft profile's triangle
+     falloff makes the overlapping set a PARTITION OF UNITY — linear crossfade between
+     adjacent bands, constant total energy, no seams and no strands at any spread. */
+  let segWidth = clamp(distance(tipA, tipB), 2.0e-4, 4.0) * 0.25;
+  let colourM = fieldAt(vec3f((t + t2) - 1.0, 0.0, 0.0)).rgb;
+  let frIn2 = schlick(band2.entryCos, n2);
   let frOut = schlick(band.exitCos, n);
-  let gone = live && dot(band.exitDirection, band.exitDirection) > 1.0e-9;
-  let root = select(S, band.exitPoint, live);
-  q.position = toWorld(root, yaw, nod);
-  q.tip = toWorld(select(root, band.exitPoint + band.exitDirection * FAN_LEN, gone), yaw, nod);
-  q.tint = vec4f(colour * ((1.0 - frIn) * (1.0 - frOut) * EXIT_GAIN / f32(SLICES)), 1.0);
+  let frOut2 = schlick(band2.exitCos, n2);
+  let weight = ((1.0 - frIn) * (1.0 - frOut) + (1.0 - frIn2) * (1.0 - frOut2)) * 0.5;
+  q.position = toWorld(select(S, root, alive), yaw, nod);
+  q.tip = toWorld(select(S, tipM, alive), yaw, nod);
+  q.tint = vec4f(colourM * (weight * EXIT_GAIN / f32(SLICES)), segWidth);
   q.role = 1.0;
   return q;
 }`;

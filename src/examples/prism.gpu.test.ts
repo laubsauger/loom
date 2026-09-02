@@ -331,12 +331,12 @@ describe("E13 Prism — the picture", () => {
          floor sits below it with the red-verified 1.00 of a muted aim underneath (§V751). */
       const wide = await shoot((graph) => {
         soloFan(graph);
-        param(graph, "optics", "value1", 0.05);
+        param(graph, "optics", "value1", 0.0237);
         param(graph, "optics", "value3", 0);
       });
       const narrow = await shoot((graph) => {
         soloFan(graph);
-        param(graph, "optics", "value1", 0.7);
+        param(graph, "optics", "value1", 0.332);
         param(graph, "optics", "value3", 0);
       });
 
@@ -369,17 +369,25 @@ describe("E13 Prism — the picture", () => {
     async () => {
       const dispersing = await shoot((graph) => {
         soloFan(graph);
-        param(graph, "optics", "value1", 0.3);
+        param(graph, "optics", "value1", 0.142);
         param(graph, "optics", "value3", 0);
       });
       const flat = await shoot((graph) => {
         soloFan(graph);
-        param(graph, "optics", "value1", 0.3);
+        param(graph, "optics", "value1", 0.142);
         param(graph, "optics", "value3", 0);
         param(graph, "optics", "value2", 0);
       });
       const spread = fanRun(dispersing, COLUMN, FAN_THRESHOLD).span;
-      const collapsed = fanRun(flat, COLUMN, FAN_THRESHOLD).span;
+      /* T941: at zero dispersion every band's ray is IDENTICAL, so the wedge segments
+         have zero width — the fan is not merely narrow, it can vanish below the pixel
+         at this column. No pixels IS the collapse. */
+      let collapsed = 0;
+      try {
+        collapsed = fanRun(flat, COLUMN, FAN_THRESHOLD).span;
+      } catch {
+        collapsed = 0;
+      }
       expect(collapsed / spread).toBeLessThan(0.25);
     },
     240_000,
@@ -404,7 +412,7 @@ describe("E13 Prism — the picture", () => {
     async () => {
       const fan = await shoot((graph) => {
         soloFan(graph);
-        param(graph, "optics", "value1", 0.3);
+        param(graph, "optics", "value1", 0.142);
         param(graph, "optics", "value3", 0);
       });
       const run = fanRun(fan, COLUMN, FAN_THRESHOLD);
@@ -462,13 +470,13 @@ describe("E13 Prism — the picture", () => {
       const shaft = await shoot((graph) => {
         soloShaft(graph);
         lockTilt(graph);
-        param(graph, "optics", "value1", 0.3);
+        param(graph, "optics", "value1", 0.142);
         param(graph, "optics", "value3", 0);
       });
       const fan = await shoot((graph) => {
         soloFan(graph);
         lockTilt(graph);
-        param(graph, "optics", "value1", 0.3);
+        param(graph, "optics", "value1", 0.142);
         param(graph, "optics", "value3", 0);
       });
 
@@ -622,9 +630,9 @@ describe("E13 Prism — the picture", () => {
       };
       /* T929: both runs keep the lamp at px 0 (level-left) where the fan reads at
          COLUMN; the sweep slides the strike down the face (py 0.3 -> 0.6). */
-      const parked = () => ({ x: 0, y: 0.3, buttons: 0 });
+      const parked = () => ({ x: 0, y: 0.142, buttons: 0 });
       /* A second of travel: an ordinary aiming move. It STOPS at frame 60 and stays. */
-      const sweep = (index: number) => ({ x: 0, y: 0.3 + 0.3 * Math.min(1, index / 60), buttons: 0 });
+      const sweep = (index: number) => ({ x: 0, y: 0.142 + 0.142 * Math.min(1, index / 60), buttons: 0 });
 
       /* 130 frames: the move ends at 60 and the 0.18s lag settles over the next 70 —
          comparing a just-stopped frame against a long-idle one would measure the lag's
@@ -680,7 +688,7 @@ describe("E13 Prism — the picture", () => {
           animate: true,
           outputNodeId: "out",
           // px 0 holds the lamp level-left while y slides the aim off the glass.
-          pointer: (index) => ({ x: 0, y: 0.3 + (toY - 0.3) * Math.min(1, index / 60), buttons: 0 }),
+          pointer: (index) => ({ x: 0, y: 0.142 + (toY - 0.142) * Math.min(1, index / 60), buttons: 0 }),
         });
         const frame = result.frames[0];
         if (frame === undefined) throw new Error("no frame captured");
@@ -700,9 +708,9 @@ describe("E13 Prism — the picture", () => {
         return { count: mask.reduce((a, b) => a + b, 0), frame: shot };
       };
 
-      // y 0.3 strikes the left face near its middle; y 0.98 carries the beam past the
+      // y 0.142 strikes the left face near its middle; y 0.98 carries the beam past the
       // base-left vertex — a real miss on the marched body.
-      const fanOn = await lit(soloFan, 0.3);
+      const fanOn = await lit(soloFan, 0.142);
       const fanApex = await lit(soloFan, 0.98);
       expect(fanOn.count).toBeGreaterThan(5000);
       // Zero-length beams draw zero AREA (T680), so the fan is not dim — it is absent.
@@ -713,7 +721,7 @@ describe("E13 Prism — the picture", () => {
       // the exact inversion of the T718 claim above, on the same instrument: a hit puts
       // more than 300 shaft-group pixels inside an 8px erosion of the glass (the drawn
       // internal segment), and a miss must put NONE inside even a 3px erosion.
-      const glassOn = await lit(soloPrism, 0.3);
+      const glassOn = await lit(soloPrism, 0.142);
       const glassApex = await lit(soloPrism, 0.98);
       const shaftApex = await lit(soloShaft, 0.98);
       const overlap = (a: Uint8Array, b: Uint8Array): number => {

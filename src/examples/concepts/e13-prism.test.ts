@@ -96,7 +96,7 @@ describe("E13 Prism", () => {
     const tapers = beams.map((beam) => (uniformsOf(beam)["instance"] as readonly number[])[2] as number);
     // One parallel-sided ribbon and one pinched at its origin — sorted, so this asserts
     // the two VALUES rather than the order `scenes` happens to list them in (§V656).
-    expect([...tapers].sort((a, b) => a - b)).toEqual([0.06, 1]);
+    expect([...tapers].sort((a, b) => a - b)).toEqual([0.02, 1]); // T941: the wedge pinches at the exit face
 
     // And the predicates really are complementary halves. This one IS a source claim,
     // deliberately: whether the two draws select DIFFERENT points cannot be seen in a

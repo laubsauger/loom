@@ -320,6 +320,14 @@ const PRISM_OPTICS_ATTRIBUTES = JSON.stringify([
 export const PRISM_DUST_KERNEL = `${PRISM_TRACE_KERNEL_HEAD}
 const RI: f32 = ${PRISM_RC} / 2.0;
 
+struct Params {
+  tiltYaw: f32,
+  tiltNod: f32,
+  /* T940c — the owner's knob: ONE number scales every mote's drift. 1 is the shipped
+     pace (a mote crosses the frame in ~20 minutes); 10 is a draught; 0 freezes the air. */
+  driftSpeed: f32,
+}
+
 fn scatterTo(p: vec3f, a: vec3f, b: vec3f, sigma: f32) -> f32 {
   let ab = b - a;
   let h = clamp(dot(p - a, ab) / max(dot(ab, ab), 1e-6), 0.0, 1.0);
@@ -329,19 +337,31 @@ fn scatterTo(p: vec3f, a: vec3f, b: vec3f, sigma: f32) -> f32 {
 
 fn process(p: Point, ctx: PointCtx) -> Point {
   var q = p;
-  /* A drifting mote: seeded box position plus a slow deterministic wander (absTime — it
-     keeps going through a timeline loop; a clock, not an RNG, §V74). */
+  /* A drifting mote: seeded box position plus a VERY slow deterministic wander (the
+     owner: "very very subtle" — a mote crosses the frame in minutes, not seconds), with
+     a faint sinusoidal float so nothing moves in straight lines. Deterministic: a
+     clock, not an RNG (§V74). */
   let r1 = pointRand(ctx.index, 11u);
   let r2 = pointRand(ctx.index, 23u);
   let r3 = pointRand(ctx.index, 37u);
   let r4 = pointRand(ctx.index, 51u);
-  let wander = ctx.absTime * (0.008 + 0.014 * r4);
+  let r5 = pointRand(ctx.index, 67u);
+  /* MIRRORED wrap (a triangle wave), not fract: a fract wrap TELEPORTS a mote across
+     the box, and 650 motes wrapping at mixed speeds read as a blizzard's shuffle —
+     the owner's exact report. A mirrored path just drifts back. And slower still:
+     a mote crosses the frame in ~20 minutes; the room is ALMOST undisturbed. */
+  let pace = ctx.params.driftSpeed;
+  let wander = ctx.absTime * pace * (0.0004 + 0.0007 * r4);
+  let bob = sin(ctx.absTime * pace * (0.03 + 0.06 * r5) + r1 * 6.2832) * 0.015;
   let mote = vec3f(
-    (fract(r1 + wander * 0.7) * 2.0 - 1.0) * 2.6,
-    (fract(r2 + wander) * 2.0 - 1.0) * 1.4,
-    (fract(r3 + wander * 0.4) * 2.0 - 1.0) * 0.8,
+    (abs(fract(r1 + wander * 0.7) * 2.0 - 1.0) * 2.0 - 1.0) * 2.6,
+    (abs(fract(r2 + wander) * 2.0 - 1.0) * 2.0 - 1.0) * 1.4 + bob,
+    (abs(fract(r3 + wander * 0.4) * 2.0 - 1.0) * 2.0 - 1.0) * 1.3,
   );
   q.position = mote;
+  /* Size: real spread — most motes tiny, a few larger (r5 squared skews small).
+     The BASE is tiny (the owner, twice): dust specks, not orbs. */
+  q.size = 0.25 + 0.9 * r5 * r5;
 
   /* The SAME beam the optics trace: lamp, aim, tilt — one set of expressions. */
   let px = clamp(ctx.value3, 0.0, 1.0);
@@ -363,21 +383,31 @@ fn process(p: Point, ctx: PointCtx) -> Point {
   let entryW = toWorld(select(S + dIn * MISS_LEN, mid.entry, hit), yaw, nod);
   /* Shaft scatter: a bright CORE plus a wide soft skirt — the owner: motes should catch
      the beam "within a reasonable area around" it, with falloff, not only inside it. */
-  var glow = 0.85 * scatterTo(mote, sW, entryW, 0.06)
-           + 0.22 * scatterTo(mote, sW, entryW, 0.28);
+  var glow = 1.5 * scatterTo(mote, sW, entryW, 0.06)
+           + 0.3 * scatterTo(mote, sW, entryW, 0.28);
   /* Exit scatter: the central band's ray, when it leaves. */
   let gone = hit && dot(mid.exitDirection, mid.exitDirection) > 1.0e-9;
   if (gone) {
     let rootW = toWorld(mid.exitPoint, yaw, nod);
     let tipW = toWorld(mid.exitPoint + mid.exitDirection * FAN_LEN, yaw, nod);
-    glow = glow + 0.5 * scatterTo(mote, rootW, tipW, 0.11)
-                + 0.18 * scatterTo(mote, rootW, tipW, 0.38);
+    glow = glow + 0.9 * scatterTo(mote, rootW, tipW, 0.11)
+                + 0.25 * scatterTo(mote, rootW, tipW, 0.38);
   }
   /* Barely-there ambient dust, so the room reads as air rather than void — and varied
      per mote, because uniform dust reads as a starfield (measured on the card). The
      tint attribute is colour-qualified, so these are LINEAR numbers (§V313). */
-  let b = (glow + 0.0035) * (0.35 + 0.65 * r4);
-  q.tint = vec4f(vec3f(b) * vec3f(0.95, 0.97, 1.05), 1.0);
+  /* The floor drops: an unlit mote is BARELY there — light is what reveals dust. */
+  let b = (glow + 0.0012) * (0.35 + 0.65 * r4);
+  /* T940b: the ALPHA carries the azimuth light ARRIVES from — the direction from the
+     beam's nearest point to this mote — so the spherical splat shades a lit and an
+     unlit side that genuinely face the ray. */
+  let ab = mote - sW;
+  let axis = entryW - sW;
+  let h = clamp(dot(ab, axis) / max(dot(axis, axis), 1e-6), 0.0, 1.0);
+  let fromBeam = mote - (sW + axis * h);
+  /* Normalized to [0,1] — the colour qualifier's range — and rescaled in the shader. */
+  let litFrom = (atan2(fromBeam.y, fromBeam.x) + PI) / 6.28318530717958647692;
+  q.tint = vec4f(vec3f(b) * vec3f(0.95, 0.97, 1.05), litFrom);
   return q;
 }`;
 
@@ -555,14 +585,22 @@ export const prismDocument = document(
            spectrum, no new primitive: exactly the reference's 128-wavelength additive
            accumulation, at our band count. The width comes up slightly so neighbours
            genuinely overlap; the soft edge is what keeps that from reading as a slab. */
-        mode: "beam", endpoint: "tip", scale: 0.011, taper: 0.06, soft: 1, blend: "additive", material: "flare1", group: "p.role > 0.5",
-      }, { label: "fan1", parameters: { tint: { mode: "map", bindings: { static: { kind: "static", value: [1, 1, 1, 1] }, map: { kind: "map", attribute: "tint" } } } } }),
+        /* T941: the WEDGE — the kernel writes each segment's true width into `size`
+           and the draw maps scale from it; taper pinches the near end at the exit
+           face. soft 1 + full-width overlap = the partition-of-unity crossfade. */
+        mode: "beam", endpoint: "tip", scale: 4, taper: 0.02, soft: 1, blend: "additive", material: "flare1", group: "p.role > 0.5",
+      }, { label: "fan1", parameters: {
+        tint: { mode: "map", bindings: { static: { kind: "static", value: [1, 1, 1, 1] }, map: { kind: "map", attribute: "tint" } } },
+        /* T941: width = 4 (node scale) x tint.a (the kernel's segment width / 4). */
+        scale: { mode: "map", bindings: { static: { kind: "static", value: 4 }, map: { kind: "map", attribute: "tint", channel: "w" } } },
+      } }),
       // T940 — the dust cloud (see PRISM_DUST_KERNEL above).
       node("dust", "pointKernel", [-1560, 260], {
         capacity: 650, seed: 7,
         attributes: JSON.stringify([
           { name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] },
           { name: "tint", type: "vec4f", semantic: "color", qualifier: "color", default: [1, 1, 1, 1] },
+          { name: "size", type: "f32", default: [1] },
         ]),
         kernel: PRISM_DUST_KERNEL,
         value2: 0.03,
@@ -573,12 +611,16 @@ export const prismDocument = document(
           value3: drivenSlot("follow1:x", 0),
           tiltYaw: expressionSlot(TILT_YAW_EXPR, -0.1),
           tiltNod: expressionSlot(TILT_NOD_EXPR, -0.05),
+          driftSpeed: 1,
         },
       }),
       node("motes", "geometry", [-1240, 260], {
-        /* Soft additive billboards: T917's light math on T647's markers. Tiny — dust. */
-        mode: "points", scale: 0.010, soft: 1, blend: "additive", material: "flare1", tint: [1, 1, 1, 1],
-      }, { label: "motes1", parameters: { tint: { mode: "map", bindings: { static: { kind: "static", value: [1, 1, 1, 1] }, map: { kind: "map", attribute: "tint" } } } } }),
+        /* T940b: spherical soft splats, per-mote sizes — dust, not confetti. */
+        mode: "points", scale: 0.004, soft: 1, spherical: true, blend: "additive", material: "flare1", tint: [1, 1, 1, 1],
+      }, { label: "motes1", parameters: {
+        tint: { mode: "map", bindings: { static: { kind: "static", value: [1, 1, 1, 1] }, map: { kind: "map", attribute: "tint" } } },
+        scale: { mode: "map", bindings: { static: { kind: "static", value: 0.004 }, map: { kind: "map", attribute: "size" } } },
+      } }),
 
       // ---- the studio: an equirect whose horizon IS the rim -----------------------
       // v = acos(R.y)/pi, so 0.5 is the horizon; u = atan2(R.x, -R.z)/2pi + 0.5. A normal

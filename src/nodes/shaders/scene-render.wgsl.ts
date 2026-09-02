@@ -704,9 +704,18 @@ export function sceneInstancesWgsl(options: {
    * this shader changes (§V309).
    */
   pointOrient?: boolean;
+  /**
+   * T940b: POINTS mode only — the billboard reads as a tiny SPHERE instead of a card:
+   * radial soft coverage (a round splat, not a square) and a lambert term over a sphere
+   * normal lit from the azimuth the point's tint ALPHA carries (the kernel writes the
+   * direction light actually arrives from — for E13's dust, the beam). Off, not one
+   * byte changes (§V309).
+   */
+  sphericalPoints?: boolean;
 }): string {
   const pointColor = options.pointColor === true;
   const billboard = options.billboard === true;
+  const spherical = options.sphericalPoints === true && billboard;
   const beam = options.beam === true;
   const pointOrient = options.pointOrient === true;
   /* T721: binding 4 is the other half of the hole T680 documented below — 3 took the
@@ -971,8 +980,21 @@ fn fs(input: VertexOut) -> @location(0) vec4f {
      over that share of the half-width, and the COLOUR carries the coverage (premultiplied)
      so an additive draw sums light and never fringes. */
   let soft = params.instance.w;
-  let cover = select(1.0, clamp((1.0 - abs(input.profile.x)) / max(soft, 1e-4), 0.0, 1.0), soft > 0.0);
-${shading}
+${
+    spherical
+      ? `  /* T940b: a round splat with a lit and an unlit side. */
+  let r2d = length(input.profile);
+  var cover = select(1.0, clamp((1.0 - r2d) / max(soft, 1e-4), 0.0, 1.0), soft > 0.0);
+  let sphereN = vec3f(input.profile, sqrt(max(0.0, 1.0 - dot(input.profile, input.profile))));
+  /* The alpha is a NORMALIZED azimuth (0..1 = -PI..PI) — the colour pipeline clamps
+     alpha to unit range, so the angle rides inside it and rescales here. */
+  let litFrom = input.tint.a * 6.28318530717958647692 - 3.14159265358979323846;
+  let sphereL = normalize(vec3f(cos(litFrom), sin(litFrom), 0.55));
+  cover = cover * (0.25 + 0.75 * max(dot(sphereN, sphereL), 0.0));
+`
+      : `  let cover = select(1.0, clamp((1.0 - abs(input.profile.x)) / max(soft, 1e-4), 0.0, 1.0), soft > 0.0);
+`
+  }${shading}
 }`;
 }
 
