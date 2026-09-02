@@ -29,3 +29,25 @@
   text-transform: lowercase;
   white-space: nowrap;
 }
+
+/*
+  T964 — a subtle tint on the type badge, keyed off the node's DECLARED category.
+
+  Subtle is the constraint the owner set, and it is load-bearing: the graph already
+  uses colour for run state and errors, so a saturated row would read as status. These
+  are dim and low-chroma — an orientation cue you notice when scanning a list and stop
+  noticing when reading one row. A category with no hue here simply keeps the default,
+  so a new one is untinted rather than wrong.
+*/
+.type[data-category="generator"] { color: #7fa6d9; }
+.type[data-category="filter"]    { color: #86b39a; }
+.type[data-category="composite"] { color: #9d93cc; }
+.type[data-category="color"]     { color: #cf9f7a; }
+.type[data-category="points"]    { color: #c98fa8; }
+.type[data-category="render"]    { color: #b6a06e; }
+.type[data-category="shader"]    { color: #8fb0b8; }
+.type[data-category="temporal"]  { color: #a58fc4; }
+.type[data-category="value"]     { color: #8aa6a0; }
+.type[data-category="input"]     { color: #6fae9c; }
+.type[data-category="output"]    { color: #c08a8a; }
+.type[data-category="utility"]   { color: #98a2b3; }

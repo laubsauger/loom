@@ -3,6 +3,12 @@ import styles from "./node-identity.module.css";
 
 export interface NodeIdentityProps {
   /**
+   * T964: the node's declared category, rendered as a subtle tint on the type badge.
+   * Derived from the definition rather than a hand-kept colour map, so a new category
+   * cannot drift out of sync — it simply gets the default until someone gives it a hue.
+   */
+  readonly category?: string | undefined;
+  /**
    * What the thing is CALLED — the node's label, or a definition's title. The
    * prominent half.
    */
@@ -44,6 +50,7 @@ export interface NodeIdentityProps {
 export function NodeIdentity({
   name,
   type,
+  category,
   nameClassName,
   typeClassName,
   nameTitle,
@@ -58,6 +65,7 @@ export function NodeIdentity({
         {name}
       </span>
       <span
+        {...(category === undefined ? {} : { "data-category": category })}
         className={cx(styles.type, typeClassName)}
         // The badge is the ADDRESSABLE name — marked in the DOM so a surface can be
         // asked "which of these words is the machine type?" without guessing at classes.

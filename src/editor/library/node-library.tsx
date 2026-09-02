@@ -174,6 +174,7 @@ export function NodeLibrary({
             <NodeIdentity
               name={definition.title}
               type={definition.type}
+              category={definition.category}
               nameClassName={styles.itemTitle}
               typeClassName={styles.itemType}
             />

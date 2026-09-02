@@ -29,10 +29,12 @@ export interface NodeSearchProps {
 
 /**
  * With no query there is nothing ranked to show, and dumping the whole catalogue into a
- * cursor popover would make it the library pane badly. A short alphabetical head is
- * enough to prove the surface is alive and to click straight through for common nodes.
+ * cursor popover would make it the library pane badly. That reasoning held while the
+ * list could not scroll: an uncapped list simply ran off the popover. T963 gave the list
+ * `nowheel` (React Flow was eating the wheel) and it has always had a max-height, so the
+ * cap now only hides rows a scroll would reach. The browser IS how people browse.
  */
-const IDLE_ROWS = 8;
+const IDLE_ROWS = Number.POSITIVE_INFINITY;
 
 /** The "no category filter" tab. A value, so the strip has no special-case first entry. */
 const ALL = "\u0000all";
@@ -393,6 +395,7 @@ export function NodeSearch({ definitions, anchor, onPick, onClose }: NodeSearchP
                   <NodeIdentity
                     name={definition.title}
                     type={definition.type}
+                    category={definition.category}
                     nameClassName={styles.itemTitle}
                     typeClassName={styles.itemMeta}
                   />
