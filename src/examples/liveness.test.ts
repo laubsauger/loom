@@ -110,7 +110,7 @@ import LOOK_BASELINES from "./look-baselines.json" with { type: "json" };
  *   E10 Instanced-Torus         0.01845   0.3710   0.3710
  *   E11 Gradient-Remap          0.11181   0.4466   0.4705
  *   E12 Fluid                   0.00000   0.0869   0.3868   <- declared, pointer-driven
- *   E13 Prism                   0.19303   1.0000   1.0000   <- re-measured, see below
+ *   E13 Prism                   0.19303   1.0000   1.0000   <- T934: live again (body drift)
  *   E16 Murmuration             0.05786   0.8003   0.3596
  *   E20 Gooeyball               0.01405   0.5957   0.6980
  *   E24 Audio-RD                0.03971   0.5074   0.0000   <- declared, seeds from black
@@ -209,15 +209,6 @@ interface Exemption {
  * and a stale one.
  */
 const DECLARED: Readonly<Record<string, Exemption>> = {
-  "E13-Prism.loom.json": {
-    liveness:
-      "T915: the owner asked for a STATIC prism — 'it should be static aside from user " +
-      "interaction' — so the swing LFO and the camera drift are gone and every motion " +
-      "source left is the pointer. Headless has no pointer, so the beam rests at the " +
-      "chosen default aim and motion is exactly zero. That is the example working: the " +
-      "physics answers the hand, not a clock.",
-    evidence: "Move the pointer and the aim follows; park it and the beam settles back",
-  },
   "E12-Fluid.loom.json": {
     liveness:
       "A fluid at rest IS at rest. Every force in this file comes from the pointer — the " +

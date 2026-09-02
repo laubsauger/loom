@@ -1,7 +1,7 @@
 # E13 — Prism
 
 A triangular block of glass in deep black, drawn entirely by the light caught on its edges.
-A white beam enters low from the right and a spectrum fans out to the left.
+A white beam enters from the left and a spectrum fans out to the right.
 
 The fan opens and closes as the beam's aim changes, because the fan is Snell's law and
 not a drawing.
@@ -15,14 +15,15 @@ since T758: it is transmissive, so the traced interior segment is seen *through*
 face, and its Schlick fresnel against the environment carries the same thin bright rim
 along every silhouette that the phong `envFresnel` used to — same physics, different name.
 
-The prism is **static aside from your interaction** (T915, the owner's ask). The default
-aim is a deliberately chosen rest pose — the steep end of the band, where the dispersion
-shows widest. A moving cursor **takes** the aim (T857), across a much wider range than the
-resting band, and hands it back a couple of seconds after you stop — including far enough
-to walk the beam off the end of the glass entirely. With no pointer the picture holds its
-rest frame exactly, which is why the headless liveness gate carries a declared
-pointer-driven exemption: the motion is yours.
-Move the pointer and the aim follows; park it and the beam settles back.
+**The cursor is a torch** (T929). Its x carries the lamp around the prism on a 240° arc —
+every face and every incidence, by walking around it, like holding the light. Its y slides
+the aim across the body: at 0 it points at the incenter, which strikes every face at its
+exact middle; at the top of the travel the beam clears the glass entirely — missing is a
+state, not a failure. Nothing decays and nothing resets (T915b): a parked cursor is a
+parked beam, forever. The BODY, meanwhile, both tilts with the same cursor (T928) and
+drifts on two slow sines at incommensurate frequencies (T934, 24.4s against 14.9s) — so
+the same mouse position keeps producing slightly new pictures while the ray stays exactly
+where you left it. The drift is a clock, not an RNG: every frame reproduces.
 
 ## Graph
 
@@ -42,10 +43,9 @@ key1(light), eye1(camera) ──── by name ───────────
 shot1 ─► cut1(level) ─► clip1(limit) ─► halo1(blur) ─► glow1.in2
 shot1 ────────────────────────────────────────────► glow1(add) ─► out1(output)
 
-optics1.value1 = 1 (static)                                         the aim, at rest (T915)
-mouse1 ─► follow1(valueLag) ┄drives┄► optics1.value3                the aim, by hand
-follow1 ─► stir1(valueSlope) ─► urge1(valueMath) ─► hold1(valueLag)
-                              ┄drives┄► optics1.value4              which one (T857)
+mouse1 ─► follow1(valueLag) ┄drives┄► optics1.value1 (y) + value3 (x)   the torch (T929)
+follow1 ┄drives┄► form1.value1 (x) + value2 (y)                     the body tilt (T928)
+driftyaw1(lfo 0.041Hz), driftnod1(lfo 0.067Hz) ┄drive┄► form1.value3/4  the drift (T934)
 fan1.tint ← the `tint` attribute                                    the map mode
 ```
 
@@ -57,7 +57,7 @@ fan1.tint ← the `tint` attribute                                    the map mo
 | `solid1` | `geometry` | `mode: surface` |
 | `spectrum1` | `ramp` | seven stops, red → violet. The kernel samples it at `u = t`, and `t` is also the refractive index |
 | `optics1` | `pointKernel` | Snell's law twice per band, 61 bands, plus the shaft and its reflected ghost |
-| `stir1`, `urge1`, `hold1` | `valueSlope`, `valueMath`, `valueLag` | the pointer's AUTHORITY (T857): how fast the cursor is moving, squared to make it unsigned, through an envelope that rises in 0.02 s and falls over 0.6 s |
+| `driftyaw1`, `driftnod1` | `lfo` | the body's passive drift (T934): two sines at incommensurate frequencies, riding on top of the cursor tilt, never touching the aim |
 | `shaft1` | `geometry` | `mode: beam`, taper 1 — a parallel-sided ribbon |
 | `fan1` | `geometry` | `mode: beam`, taper 0.06, **tint mapped per point** |
 | `sky1`, `band1` | `ramp`, `circle` | the equirect: near-black, with a bright band on its horizon at (0.5, 0.5) |
@@ -185,49 +185,29 @@ the same incidence the refraction uses gives the share the entry face sends back
 37°, rising to 8.3% at 62° — and that share *is* its tint, so the reflected streak
 brightens as the fan narrows, out of one number rather than a second knob.
 
-### One hand on the aim, over a chosen rest (T857, T915)
+### The cursor is a torch (T915b, T929)
 
-The auto swing is gone (T915): `value1` is a static default — the steep end of the band,
-where the fan shows widest — and the only thing that moves the aim is you.
+T857's blend and its velocity envelope are gone — `hold1` decayed when the cursor stopped,
+which was the owner's "reset after a time": the aim changed when the input didn't. The only
+motion filter left is `follow1`'s positional lag, which settles AT the pointer and stays.
 
-`mouse1 → follow1(valueLag) → value3` is the pointer. What changed in T857 is how the two
-*meet*. They used to be summed in the kernel — `clamp(value1 + 0.55·value3, 0, 1)` — and
-the owner's report reads straight off that line: *the mouse controls get overridden by the
-auto movement, the range of motion is too limited, and we can't miss the glass triangle.*
-Both halves are the one wiring. A **square** LFO visits two aims and slams between them, so
-the pointer was a small delta riding on a jump and never had the aim at all; and a sum of
-two 0…1 terms is bounded, so no cursor position could reach an extreme, let alone aim the
-beam past the glass.
+The mapping is direct manipulation rather than parameter mapping. `x` sets the lamp's
+place on a 240° arc of radius 3.3 around the prism (rest: level-left, the classic card);
+`y` offsets the aim perpendicular to the lamp's sightline — 0 aims at the incenter, whose
+rays meet every face at the middle, and the far end carries the beam past the body. Both
+axes reach the kernel as `value1`/`value3`; the shaft is cast FROM the lamp, so every beam
+end runs off-frame (T929) instead of cutting in mid-air.
 
-So the kernel **mixes** them, weighted by whether a hand is on the pointer at all:
-`mix(swingAngle, handAngle, hand)`, with `hand = clamp(400·value4, 0, 1)`. `value4` is the
-cursor's own motion — `follow1 → stir1(valueSlope) → urge1(× itself) → hold1(valueLag)`,
-i.e. speed, squared to make it unsigned, through an envelope that rises in 0.02 s and falls
-with a 0.6 s time constant. A cursor moving faster than a twentieth of the frame per second
-owns the aim outright; the hold lasts `0.6·ln(400·speed²)` seconds after it stops, so a
-decisive gesture keeps control longer than a nudge. And a cursor that has **never** moved
-reads exactly 0 through all three stages, so every gate and every fresh session still sees
-the LFO's picture bit for bit, exactly as the additive build promised.
-
-**The swing is not touched**, which is §T842's lesson rather than caution: the square, the
-slam and the two angles it visits are this example's character, so the fix is in how the
-terms *combine* and never in what the auto term is. The widening lives entirely on the
-pointer's own scale — 84° to 6° against the swing's 62° to 37° — and the same one knob
-walks the **entry point** along the face, from below the base vertex to past the apex,
-because a beam you aim does not pivot about a fixed spot on the glass. Pinning the entry
-point is exactly what made the old aim unable to miss.
-
-Measured at column 240, `value1` pinned so only the pointer moves: the fan's midpoint sits
-at y 289.5 with the cursor parked and y 123 with it moving — a **166px** swing, against the
-86px the additive build managed with the cursor *held* at the end of its travel. Five
-seconds after the cursor stops, the fan is back within **2.5px** of the parked frame.
+The gate that keeps it honest is the one that would have caught the envelope: hold the
+pointer still at a non-default position and the aim must not move — measured below 1e-6
+over five seconds, plan-level and picture-level both.
 
 ### And it can miss the glass
 
 The refracting face is a **segment**, not a plane: an equilateral cross-section's half side
-is its inradius times √3, which is 0.658 here — the same `RI` the mesh and the optics
-already share, so the bound is not a fourth number to keep in step. The pointer's reach
-runs to ±0.8, so the outer ninth of the travel at each end puts the entry past a vertex,
+is its inradius times √3, which is 0.658 here — though the usable span is shorter: the
+bevel rounds the corners away, and the marched trace (T920) says a ray aimed at the sharp
+triangle's last arc-width misses the real body. The top of the y travel aims past it all,
 and there the ray is travelling *away* from the body: the fan collapses to zero length
 (zero area, T680) and the shaft carries straight on past the glass instead of stopping at a
 face it never met. Missing is a **state**, not a failure — it is the diagnostic the owner
@@ -240,10 +220,9 @@ full missed frame rather than a solo render the beam never entered. The shaft ke
 pixels past the apex and 3,183 past the base, none of them inside a 3px erosion of the
 body: the exact inversion of the T718 claim above, on the same instrument.
 
-The camera holds still at 0.45 (T915 removed its drift with the swing — static aside from
-interaction). The cost is named rather than hidden: `envFresnel` reads `dot(N, viewDir)`,
-so a moving eye is what made the rim travel; at rest the rim sits where the pose puts it,
-and the motion budget belongs entirely to the pointer.
+The camera holds still, centered by measurement (T928/T930: body bbox centre within 9px of
+the frame's). The eye doesn't move; the BODY does — cursor tilt plus the T934 drift — so
+the rim travels with the glass rather than with a camera sway.
 
 ## What breaks here first
 

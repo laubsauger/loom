@@ -269,8 +269,10 @@ fn process(p: Point, ctx: PointCtx) -> Point {
      to follow. The cross-section the beam crosses keeps its silhouette. */
   /* Rest (0,0) sits at a GENTLE turn, not the band's edge — the never-moved card
      keeps its read while the swivel is still there to find. */
-  let yaw = clamp(ctx.value1, 0.0, 1.0) * 0.44 - 0.10;
-  let nod = clamp(ctx.value2, 0.0, 1.0) * 0.22 - 0.05;
+  /* T934: the LFO drift rides ON TOP of the cursor's tilt — the object breathes, the
+     hand still steers. Slight by the owner's word: ±0.05 / ±0.03 rad. */
+  let yaw = clamp(ctx.value1, 0.0, 1.0) * 0.44 - 0.10 + clamp(ctx.value3, -1.0, 1.0) * 0.05;
+  let nod = clamp(ctx.value2, 0.0, 1.0) * 0.22 - 0.05 + clamp(ctx.value4, -1.0, 1.0) * 0.03;
   let cy = cos(yaw); let sy = sin(yaw);
   pos = vec3f(pos.x * cy + pos.z * sy, pos.y, -pos.x * sy + pos.z * cy);
   let cx = cos(nod); let sx = sin(nod);
@@ -320,6 +322,15 @@ export const prismDocument = document(
       // the aim while it moves (T857) and the lag chain hands it back to the static.
       node("mouse", "mouse", [-1880, 840], {}, { label: "mouse1" }),
       node("follow", "valueLag", [-1560, 840], { lag: 0.18 }, { label: "follow1" }),
+      /* T934 — PASSIVE BODY DRIFT, on the OBJECT and never the aim. The owner: "slight
+         rotate, pivot, swivel … driven by lfos … different frequencies resp slight
+         offsets for the different axis". Two sines at mutually incommensurate
+         frequencies (0.041 Hz and 0.067 Hz — 24.4s against 14.9s, ratio 1.63…) with
+         different phases: the pair never visibly repeats, yet every frame reproduces
+         (§V74 — a clock, not an RNG). They feed form1's spare slots only; the pointer
+         still owns the ray, and the T915b gate now proves the SEPARATION. */
+      node("driftyaw", "lfo", [-1560, 1000], { shape: "sine", frequency: 0.041, phase: 0.13 }, { label: "driftyaw1" }),
+      node("driftnod", "lfo", [-1560, 1160], { shape: "sine", frequency: 0.067, phase: 0.71 }, { label: "driftnod1" }),
       // itself, which is the only absolute value the CHOP set has and is also the right
       // 0.6s to fall, so the hand keeps the aim for a second or two after it stops and
       // then gives it back. A cursor that has never moved reads EXACTLY zero through all
@@ -367,6 +378,8 @@ export const prismDocument = document(
         parameters: {
           value1: drivenSlot("follow1:x", 0),
           value2: drivenSlot("follow1:y", 0),
+          value3: drivenSlot("driftyaw1", 0),
+          value4: drivenSlot("driftnod1", 0),
         },
       }),
       // The environment term compiles for PHONG only, and nothing warns you otherwise: a

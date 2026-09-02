@@ -304,6 +304,34 @@ describe("E13 Prism", () => {
   });
 
   /**
+   * T934 — THE DRIFT AND THE AIM ARE SEPARATE CHANNELS, and the T915b property survives
+   * the body coming back to life. With the pointer PARKED: form1's drift slots genuinely
+   * oscillate (the owner's passive movement — two sines at incommensurate frequencies,
+   * a clock, not an RNG), while the aim does not move by a millionth. This is the gate
+   * that keeps T934 from quietly undoing T915.
+   */
+  it("drifts the body on a clock while the parked aim holds still (T934)", () => {
+    const slotOf = (source: CompiledGraph, node: string, slot: string): number => {
+      const dispatch = source.passes.find((entry) => entry.kind === "dispatch" && entry.nodeId === node);
+      return ((dispatch as { uniforms?: Record<string, number> }).uniforms ?? {})[slot] as number;
+    };
+    const run = valueGraphRun(document);
+    const parked: Pointer = { x: 0.4, y: 0.35, buttons: 0 };
+    run.hold(parked, 240); // settle the lag mid-frame, then watch
+    const yaws = new Set<number>();
+    const aims = new Set<string>();
+    for (let index = 0; index < 300; index += 1) {
+      const { plan: live } = run.step(parked);
+      yaws.add(Number(slotOf(live, "form", "value3").toFixed(4)));
+      aims.add(`${slotOf(live, "optics", "value1").toFixed(6)}/${slotOf(live, "optics", "value3").toFixed(6)}`);
+    }
+    // Five seconds of frames: the drift visited many distinct values …
+    expect(yaws.size).toBeGreaterThan(20);
+    // … and the aim visited exactly one.
+    expect(aims.size).toBe(1);
+  });
+
+  /**
    * HUE AND REFRACTIVE INDEX ARE ONE PARAMETER, which is the reason the spectrum is
    * ordered rather than merely colourful.
    *

@@ -301,6 +301,36 @@
         },
         "type": "level"
       },
+      "driftnod": {
+        "definitionVersion": 1,
+        "id": "driftnod",
+        "label": "driftnod1",
+        "parameters": {
+          "frequency": 0.067,
+          "phase": 0.71,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -1560,
+          "y": 1160
+        },
+        "type": "lfo"
+      },
+      "driftyaw": {
+        "definitionVersion": 1,
+        "id": "driftyaw",
+        "label": "driftyaw1",
+        "parameters": {
+          "frequency": 0.041,
+          "phase": 0.13,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -1560,
+          "y": 1000
+        },
+        "type": "lfo"
+      },
       "eye": {
         "definitionVersion": 1,
         "id": "eye",
@@ -403,7 +433,7 @@
         "parameters": {
           "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]}]",
           "capacity": 10800,
-          "kernel": "const PI: f32 = 3.14159265358979323846;\nconst TAU: f32 = 6.28318530717958647692;\nconst RC: f32 = 0.76;\n/** Corner radius. Small — the corners are where the normal sweeps FASTEST. */\nconst RHO: f32 = 0.046;\n/* T928: deeper — the owner asked for more depth; z runs to ±0.72 now. */\nconst HALF: f32 = 0.72;\n/** The quarter-round at the cap edge, radially and axially. This is the rim's WIDTH. */\nconst ER: f32 = 0.120;\nconst EZ: f32 = 0.120;\n\nfn contour(u: f32) -> vec2f {\n  let d = RC - 2.0 * RHO;\n  let seg = sqrt(3.0) * d;\n  let arc = RHO * TAU / 3.0;\n  let unit = seg + arc;\n  let s = u * 3.0 * unit;\n  let k = floor(s / unit);\n  let local = s - k * unit;\n  let phi = PI * 0.5 + k * TAU / 3.0;\n  let c = vec2f(cos(phi), sin(phi)) * d;\n  if (local < arc) {\n    let psi = phi - PI / 3.0 + local / RHO;\n    return c + vec2f(cos(psi), sin(psi)) * RHO;\n  }\n  let outward = vec2f(cos(phi + PI / 3.0), sin(phi + PI / 3.0));\n  let a = c + outward * RHO;\n  let b = vec2f(cos(phi + TAU / 3.0), sin(phi + TAU / 3.0)) * d + outward * RHO;\n  return mix(a, b, (local - arc) / seg);\n}\n\n/* Radius scale and z, along the axis: flat cap, quarter-round, barrel, and back again.\n   The cap collapses to the axis at a = 0 and a = 1, which closes the solid — a quad with\n   two coincident corners is a triangle, so the last ring is a fan. */\nfn profile(a: f32) -> vec2f {\n  if (a <= 0.10) { return vec2f((1.0 - ER) * (a / 0.10), HALF); }\n  if (a <= 0.36) {\n    let th = (a - 0.10) / 0.26 * (PI * 0.5);\n    return vec2f(1.0 - ER * (1.0 - sin(th)), HALF - EZ * (1.0 - cos(th)));\n  }\n  if (a <= 0.64) { return vec2f(1.0, mix(HALF - EZ, -(HALF - EZ), (a - 0.36) / 0.28)); }\n  if (a <= 0.90) {\n    let th = (0.90 - a) / 0.26 * (PI * 0.5);\n    return vec2f(1.0 - ER * (1.0 - sin(th)), -(HALF - EZ * (1.0 - cos(th))));\n  }\n  return vec2f((1.0 - ER) * ((1.0 - a) / 0.10), -HALF);\n}\n\nfn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  /* wrapU: the u parametrization is EXCLUSIVE, so i/cols closes the seam exactly. */\n  let u = f32(ctx.dim.i) / f32(ctx.dim.cols);\n  let a = f32(ctx.dim.j) / f32(ctx.dim.rows - 1u);\n  let pr = profile(a);\n  var pos = vec3f(contour(u) * pr.x, pr.y);\n  /* T928 — THE BODY TILTS WITH THE CURSOR (§T914 promised it; the reference reads as a\n     solid BECAUSE it swivels). Yaw about Y from the pointer's x, a nod about X from its\n     y — small on purpose: the traced beam lives in the z = 0 cross-section, and at these\n     angles the swept caps stay a depth cue rather than a geometry the trace would have\n     to follow. The cross-section the beam crosses keeps its silhouette. */\n  /* Rest (0,0) sits at a GENTLE turn, not the band's edge — the never-moved card\n     keeps its read while the swivel is still there to find. */\n  let yaw = clamp(ctx.value1, 0.0, 1.0) * 0.44 - 0.10;\n  let nod = clamp(ctx.value2, 0.0, 1.0) * 0.22 - 0.05;\n  let cy = cos(yaw); let sy = sin(yaw);\n  pos = vec3f(pos.x * cy + pos.z * sy, pos.y, -pos.x * sy + pos.z * cy);\n  let cx = cos(nod); let sx = sin(nod);\n  pos = vec3f(pos.x, pos.y * cx - pos.z * sx, pos.y * sx + pos.z * cx);\n  q.position = pos;\n  return q;\n}",
+          "kernel": "const PI: f32 = 3.14159265358979323846;\nconst TAU: f32 = 6.28318530717958647692;\nconst RC: f32 = 0.76;\n/** Corner radius. Small — the corners are where the normal sweeps FASTEST. */\nconst RHO: f32 = 0.046;\n/* T928: deeper — the owner asked for more depth; z runs to ±0.72 now. */\nconst HALF: f32 = 0.72;\n/** The quarter-round at the cap edge, radially and axially. This is the rim's WIDTH. */\nconst ER: f32 = 0.120;\nconst EZ: f32 = 0.120;\n\nfn contour(u: f32) -> vec2f {\n  let d = RC - 2.0 * RHO;\n  let seg = sqrt(3.0) * d;\n  let arc = RHO * TAU / 3.0;\n  let unit = seg + arc;\n  let s = u * 3.0 * unit;\n  let k = floor(s / unit);\n  let local = s - k * unit;\n  let phi = PI * 0.5 + k * TAU / 3.0;\n  let c = vec2f(cos(phi), sin(phi)) * d;\n  if (local < arc) {\n    let psi = phi - PI / 3.0 + local / RHO;\n    return c + vec2f(cos(psi), sin(psi)) * RHO;\n  }\n  let outward = vec2f(cos(phi + PI / 3.0), sin(phi + PI / 3.0));\n  let a = c + outward * RHO;\n  let b = vec2f(cos(phi + TAU / 3.0), sin(phi + TAU / 3.0)) * d + outward * RHO;\n  return mix(a, b, (local - arc) / seg);\n}\n\n/* Radius scale and z, along the axis: flat cap, quarter-round, barrel, and back again.\n   The cap collapses to the axis at a = 0 and a = 1, which closes the solid — a quad with\n   two coincident corners is a triangle, so the last ring is a fan. */\nfn profile(a: f32) -> vec2f {\n  if (a <= 0.10) { return vec2f((1.0 - ER) * (a / 0.10), HALF); }\n  if (a <= 0.36) {\n    let th = (a - 0.10) / 0.26 * (PI * 0.5);\n    return vec2f(1.0 - ER * (1.0 - sin(th)), HALF - EZ * (1.0 - cos(th)));\n  }\n  if (a <= 0.64) { return vec2f(1.0, mix(HALF - EZ, -(HALF - EZ), (a - 0.36) / 0.28)); }\n  if (a <= 0.90) {\n    let th = (0.90 - a) / 0.26 * (PI * 0.5);\n    return vec2f(1.0 - ER * (1.0 - sin(th)), -(HALF - EZ * (1.0 - cos(th))));\n  }\n  return vec2f((1.0 - ER) * ((1.0 - a) / 0.10), -HALF);\n}\n\nfn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  /* wrapU: the u parametrization is EXCLUSIVE, so i/cols closes the seam exactly. */\n  let u = f32(ctx.dim.i) / f32(ctx.dim.cols);\n  let a = f32(ctx.dim.j) / f32(ctx.dim.rows - 1u);\n  let pr = profile(a);\n  var pos = vec3f(contour(u) * pr.x, pr.y);\n  /* T928 — THE BODY TILTS WITH THE CURSOR (§T914 promised it; the reference reads as a\n     solid BECAUSE it swivels). Yaw about Y from the pointer's x, a nod about X from its\n     y — small on purpose: the traced beam lives in the z = 0 cross-section, and at these\n     angles the swept caps stay a depth cue rather than a geometry the trace would have\n     to follow. The cross-section the beam crosses keeps its silhouette. */\n  /* Rest (0,0) sits at a GENTLE turn, not the band's edge — the never-moved card\n     keeps its read while the swivel is still there to find. */\n  /* T934: the LFO drift rides ON TOP of the cursor's tilt — the object breathes, the\n     hand still steers. Slight by the owner's word: ±0.05 / ±0.03 rad. */\n  let yaw = clamp(ctx.value1, 0.0, 1.0) * 0.44 - 0.10 + clamp(ctx.value3, -1.0, 1.0) * 0.05;\n  let nod = clamp(ctx.value2, 0.0, 1.0) * 0.22 - 0.05 + clamp(ctx.value4, -1.0, 1.0) * 0.03;\n  let cy = cos(yaw); let sy = sin(yaw);\n  pos = vec3f(pos.x * cy + pos.z * sy, pos.y, -pos.x * sy + pos.z * cy);\n  let cx = cos(nod); let sx = sin(nod);\n  pos = vec3f(pos.x, pos.y * cx - pos.z * sx, pos.y * sx + pos.z * cx);\n  q.position = pos;\n  return q;\n}",
           "value1": {
             "bindings": {
               "expression": {
@@ -422,6 +452,32 @@
               "expression": {
                 "kind": "expression",
                 "source": "op('follow1').chan.y"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "expression"
+          },
+          "value3": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('driftyaw1').chan.value"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "expression"
+          },
+          "value4": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('driftnod1').chan.value"
               },
               "static": {
                 "kind": "static",
