@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath, URL } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   categoryOf,
@@ -212,5 +214,62 @@ describe("example search (T846) — the node library's ladder over a different r
     // The same `categoriesOf` the node pane calls (§V754/§V487) — one derivation, so a
     // new category appears in the filter the moment an example earns it.
     expect(categoriesOf(shipped)).toEqual([...new Set(shipped.map((e) => e.category))].sort());
+  });
+});
+
+const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
+
+/** Native pixel size, straight out of the PNG's IHDR — no image library needed. */
+function pngSize(file: string): { width: number; height: number } {
+  const header = readFileSync(file).subarray(0, 24);
+  expect(header.subarray(12, 16).toString("ascii"), file).toBe("IHDR");
+  return { width: header.readUInt32BE(16), height: header.readUInt32BE(20) };
+}
+
+describe("§T888 — the hover card is as wide as the thumbnail actually is", () => {
+  const thumbs = shipped
+    .map((entry) => entry.fileName.replace(/\.loom\.json$/, ""))
+    .map((stem) => `${ROOT}examples/thumbs/${stem}.png`)
+    .filter((file) => {
+      try {
+        readFileSync(file);
+        return true;
+      } catch {
+        // §T847's seam allows a loom to land before its thumb. That absence is that
+        // gate's business; this one only speaks about the thumbs that exist.
+        return false;
+      }
+    });
+
+  it("renders every thumbnail at ONE native size, and that size is 16:9", () => {
+    expect(thumbs.length).toBeGreaterThan(0);
+    const sizes = new Set(
+      thumbs.map((file) => {
+        const { width, height } = pngSize(file);
+        return `${width}x${height}`;
+      }),
+    );
+    // One size, or "the card is as wide as the thumbnail" has no single answer.
+    expect([...sizes]).toHaveLength(1);
+
+    const { width, height } = pngSize(thumbs[0] as string);
+    // This is what `aspect-ratio: 16 / 9` on `.cardThumb` is ASSERTING about the source.
+    // If the render ever stops being 16:9, `object-fit: cover` starts silently cropping.
+    expect(width * 9).toBe(height * 16);
+  });
+
+  it("derives the card's width from that size rather than picking one by eye", () => {
+    const { width } = pngSize(thumbs[0] as string);
+    const css = readFileSync(`${ROOT}src/editor/library/library.module.css`, "utf8");
+    const declared = /--card-thumb-width:\s*(\d+)px/.exec(css)?.[1];
+
+    /*
+     * The owner reported the card as "a bit wide", and the cause was a number that had
+     * drifted from its source: §T877 moved the card onto the popover primitive and it
+     * inherited a 420px cap, upscaling a 256px image ~1.5x. jsdom does no layout, so the
+     * rendered width is not observable here — what IS observable, and what actually went
+     * wrong, is the CSS quietly disagreeing with the asset it is sizing.
+     */
+    expect(declared, "`--card-thumb-width` in library.module.css").toBe(String(width));
   });
 });

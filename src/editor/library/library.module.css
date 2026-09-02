@@ -314,16 +314,39 @@
 }
 
 /*
- * The example hover card (T846). Layout only — the frame, ground and shadow are the
- * tooltip primitive's, so the card is the same object the rest of the app hovers (§V17)
- * rather than a second popup vocabulary. It inherits the tooltip's 280px cap on purpose:
- * that is a comfortable measure for one paragraph, and a card that grew to fit the
- * longest description would be a panel.
+ * The hover card (T846) — layout only. The frame, ground and shadow are the POPOVER
+ * primitive's, so the card is the same object the rest of the app hovers (§V17) rather
+ * than a second popup vocabulary.
+ *
+ * §T888 — THE WIDTH IS THE THUMBNAIL'S, AND THAT NUMBER IS 256.
+ *
+ * Every shipped thumbnail is natively 256x144 (§T847), so 256 is the one figure worth
+ * reasoning from: wider upscales the image, narrower wastes it. The width below is
+ * DERIVED from it rather than picked by eye — which is why it is a calc and not `274px`,
+ * so changing the render size moves the card with it.
+ *
+ * This is a regression §T877 introduced and the owner caught. The card used to be a
+ * TOOLTIP (`max-width: 280px`, 6px of side padding); moving it onto the popover for the
+ * virtual anchor silently handed it that primitive's `max-width: 420px` and `--space-4`
+ * padding, so the thumbnail stretched to fill ~386px — a 1.5x upscale of a 256px source,
+ * which is the "extra wide" softness reported. THE COMMENT THAT USED TO SIT HERE STILL
+ * SAID "it inherits the tooltip's 280px cap on purpose"; it had been false since T877,
+ * and a stale explanation is how a number nobody re-checked survives (§V780).
+ *
+ * On the SHARED card class, so any surface that grows a hover card inherits the cap
+ * rather than acquiring a width of its own (§T877).
  */
 .card {
+  --card-thumb-width: 256px;
+
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
+  /*
+   * Border-box, so this is the thumbnail's native width plus the popover's own padding
+   * and hairline: the image lands at 1:1 and stays sharp.
+   */
+  width: calc(var(--card-thumb-width) + 2 * var(--space-4) + 2 * var(--hairline));
 }
 
 /*
@@ -342,8 +365,15 @@
 .cardThumb {
   display: block;
   width: 100%;
-  /* Every example outputs 16:9, so the box is declared rather than measured — the card
-     does not reflow when the image arrives, and it holds its shape if one never does. */
+  /*
+   * Every example outputs 16:9, so the box is declared rather than measured — the card
+   * does not reflow when the image arrives, and it holds its shape if one never does.
+   *
+   * `aspect-ratio` with `object-fit: cover` is also what stops the picture DISTORTING
+   * whatever the card does to its width: the box is always 16:9 and the image is cropped
+   * to it, never stretched to it. The cap above keeps that box at 1:1 with the source;
+   * this pair keeps it undistorted if it ever is not.
+   */
   aspect-ratio: 16 / 9;
   margin-bottom: var(--space-1);
   border-radius: var(--radius);
