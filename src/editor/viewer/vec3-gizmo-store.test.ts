@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
+import type { GraphNode } from "@domain/types/graph.ts";
 import type { NodeId } from "@domain/types/ids.ts";
 import type { ParameterValue } from "@domain/types/parameters.ts";
+import { defaultParameters } from "@domain/parameters/index.ts";
+import { effectiveParameterSchema, resolveParameters } from "@domain/parameters/resolve.ts";
+import { allNodeDefinitions } from "@nodes/definitions/index.ts";
+import { createNodeRegistry } from "@nodes/registry/index.ts";
 import {
   GIZMO_LOCKED_REASON,
   createVec3GizmoStore,
@@ -264,5 +269,82 @@ describe("T935 — the drag writes the document, once per gesture", () => {
     store.drag(NODE, "position", [5, 5, 5]);
     store.end(NODE, "position");
     expect(editor.calls).toEqual([]);
+  });
+});
+
+/**
+ * THE WIRING GATE — the derivation runs against the REAL catalogue, not a fixture.
+ *
+ * "Built, tested, never wired" is this project's dominant bug class, and a predicate that
+ * matches nothing is its quietest form: every test above would stay green while no node in
+ * the shipped registry ever produced a handle. So these assert the two directions on real
+ * definitions — the nodes that MUST offer one, and the shapes that must not.
+ *
+ * They also pin the SCOPE honestly. `light` and `pointRay` are the whole of it today,
+ * because the gate is a published orbit basis and those are the 3D-payload nodes carrying
+ * world vectors. `camera` and `projector` own the other four (`eye`/`lookAt`) and are
+ * deliberately not orbitable — their tiles draw through their OWN matrix (T561/T614), so a
+ * point of theirs has no place on their own picture and T692's orbit gizmo is what edits
+ * them. That is a host problem, not a model problem, and it is stated here so the next
+ * person reads a decision rather than a gap.
+ */
+describe("T935 — the derivation against the shipped node catalogue", () => {
+  const registry = createNodeRegistry(allNodeDefinitions).view();
+
+  const nodeOf = (type: string, overrides: Record<string, ParameterValue> = {}): GraphNode => {
+    const definition = registry.get(type);
+    if (definition === undefined) throw new Error(`no definition for ${type}`);
+    return {
+      id: `${type}1` as NodeId,
+      type,
+      definitionVersion: definition.version,
+      position: { x: 0, y: 0 },
+      parameters: { ...defaultParameters(definition.parameters), ...overrides },
+    };
+  };
+
+  const handlesOf = (node: GraphNode) => {
+    const definition = registry.get(node.type);
+    if (definition === undefined) throw new Error("missing definition");
+    const resolved = resolveParameters(node, definition);
+    return gizmoHandlesFor({
+      schema: effectiveParameterSchema(definition, node.parameters),
+      resolved: resolved.entries,
+      values: resolved.values,
+    });
+  };
+
+  it("gives a DIRECTIONAL light exactly one handle: its Direction", () => {
+    // The shipped default. `position` is present in the manifest and §V146-inactive here,
+    // which is why the count matters as much as the name.
+    expect(handlesOf(nodeOf("light")).map((handle) => handle.key)).toEqual(["direction"]);
+  });
+
+  it("swaps to Position the moment the light becomes a POINT light", () => {
+    // The handle set follows the parameter that can actually affect the picture, with no
+    // second place where "which light kind uses which vector" is written down.
+    expect(handlesOf(nodeOf("light", { kind: "point" })).map((handle) => handle.key)).toEqual([
+      "position",
+    ]);
+  });
+
+  it("gives pointRay its world Direction", () => {
+    expect(handlesOf(nodeOf("pointRay")).map((handle) => handle.key)).toContain("direction");
+  });
+
+  it("gives a CONVOLVE no handles at all — a kernel row is not a place", () => {
+    /*
+     * The false positive a bare `vector`/3 predicate would produce. It is excluded in the
+     * app by WHERE the predicate is asked — a convolve tile is a texture and publishes no
+     * orbit basis, so `graph-pane.tsx` never calls this for it — but asserting the three
+     * rows here would fail loudly if that gate were ever widened without a `space: "world"`
+     * declaration to replace it. So this documents the CONDITION rather than the code:
+     * three handles is the right answer for this function and the wrong answer for the app.
+     */
+    expect(handlesOf(nodeOf("convolve")).map((handle) => handle.key)).toEqual([
+      "row0",
+      "row1",
+      "row2",
+    ]);
   });
 });
