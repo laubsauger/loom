@@ -9,7 +9,8 @@ import {
   validateParameters,
 } from "../domain/parameters/index.ts";
 import { numericRangeOf } from "../domain/parameters/expression-range.ts";
-import { COMPONENT_LIBRARY_KEY } from "../domain/project/index.ts";
+import { createComponentSystem } from "../domain/components/registry.ts";
+import { COMPONENT_LIBRARY_KEY, buildProjectFile, loadProject } from "../domain/project/index.ts";
 import type { GraphComponentDefinition } from "../domain/types/components.ts";
 import type { NumberParameter, ParameterDefinition } from "../domain/types/parameters.ts";
 import { projectDocumentSchema } from "../domain/types/schemas.ts";
@@ -40,7 +41,7 @@ import { listExamples, listStarterComponentFiles } from "./catalogue.ts";
  * travel, not a limit) and reachable only by TYPING, never by dragging. It shipped, and
  * the fix was to widen the travel — the example was right, the control was short.
  *
- * ## The three assertions, and why each is a different question
+ * ## The four assertions, and why each is a different question
  *
  *  (a) **REACHABLE NODE** — every node type used appears in the NODE BROWSER's list, or
  *      is a component instance whose definition ships beside it. The inverse of §T728's
@@ -57,6 +58,12 @@ import { listExamples, listStarterComponentFiles } from "./catalogue.ts";
  *      documents. Its check asks whether the schema ACCEPTS the definition; zod strips
  *      silently, so acceptance says nothing about what SURVIVES. This asks the stronger
  *      question: does every key in the shipped bytes come back out of a closed parse?
+ *  (d) **THE ROUND TRIP** (T856, §V802) — the consequence of (c), measured end to end:
+ *      open the file the way the app opens it, save it the way the app saves it, compare.
+ *      §T848 found (c) by reasoning about a schema and CONFIRMED it here, by measuring
+ *      `AudioLevel` losing `range: "floor"` on save while reporting `changed === false`.
+ *      Fixing the named key without this gate would leave the next unnamed one to repeat
+ *      it.
  *
  * ## Why the exceptions are lists with reasons rather than fixes
  *
@@ -189,17 +196,14 @@ describe("(a) every node type in a shipped example is reachable from a browser",
  * that the CONTROL is the defect, so the repair is a widened declaration — never a
  * retuned example. An entry leaves this list when the declaration moves, and the test
  * below fails if an entry is still listed after it stops being true.
+ *
+ * EMPTY, and struck rather than emptied by hand (T856). §T848 found one: E35's
+ * `renderpoints1.sizePixels` retained 0 against a `floor` of 0.5 — the fallback for a
+ * detached drive, which the author wanted to be INVISIBLE. Ruled ruling 1: the floor
+ * moved to 0, because "draw nothing" is a meaningful state and 0 is the only value that
+ * says it. The example was never touched.
  */
-const REFUSED_PENDING_RULING: Readonly<Record<string, string>> = {
-  'E35-Nova-Torus.loom.json/renderpoints1 (renderPoints) parameter.range: Parameter "sizePixels" is 0, below its minimum 0.5.':
-    "the RETAINED value of a driven size (§V108) — what the layer falls back to if the " +
-    "drive is detached, which the author wanted to be INVISIBLE. `sizePixels` declares " +
-    "min 0.5 with range 'floor', so the minimum CLAMPS and 0 is refused. The sibling " +
-    "layers retain 1.5 and 1.3, so this is not a typo, it is a size of zero meaning " +
-    "'draw nothing'. RULING NEEDED: lower `renderPoints.sizePixels`'s min to 0 (a zero " +
-    "sprite is a meaningful state, and it is the only value that expresses it), or say " +
-    "0.5 is the floor and the retained value must move.",
-};
+const REFUSED_PENDING_RULING: Readonly<Record<string, string>> = {};
 
 function describeRefusal(where: string, node: RawNode, code: string, message: string): string {
   return `${where}/${node.id} (${node.type}) ${code}: ${message}`;
@@ -267,16 +271,13 @@ describe("(b1) every stored value is one the command bus would accept", () => {
  * complains — while the slider stops short of it and dragging can never get there. The
  * declaration explains why the value need not fail; it does not explain why the control
  * cannot reach it, and those are different claims.
+ *
+ * EMPTY (T856). §T848 found one: `limit.high = 6` in E13-Prism, E33-Obol and E34-Lidar,
+ * each clamping HDR headroom before tone-mapping, against travel that stopped at 4.
+ * Ruled ruling 2: `limit.low`/`limit.high` travel widened to ±8. Same disposition as
+ * §T823's own — the value was right and the slider was short.
  */
-const TYPING_ONLY_PENDING_RULING: Readonly<Record<string, string>> = {
-  "limit.high = 6 (travel -4…4, range soft)":
-    "E13-Prism, E33-Obol and E34-Lidar each clamp their HDR headroom to [0, 6] before " +
-    "tone-mapping. `range: 'soft'` means neither end is a limit, so 6 resolves exactly as " +
-    "written — but the slider stops at 4, so the shipped value is typing-only, which is " +
-    "§T823's shape precisely. RULING NEEDED: widen `limit.low`/`limit.high` travel (8 " +
-    "covers every shipped use with headroom), or say 4 is the intended drag span and 6 " +
-    "is a deliberate typed value.",
-};
+const TYPING_ONLY_PENDING_RULING: Readonly<Record<string, string>> = {};
 
 interface Overshoot {
   readonly id: string;
@@ -409,22 +410,15 @@ describe("(b2) values past the end of their slider are censused, not assumed fin
  * everywhere, so a file from a future build keeps every byte it arrived with. That is
  * right for a USER's file and says nothing about OURS. A shipped example needing
  * forward-compat to survive its own loader is a file this build cannot fully read.
+ *
+ * EMPTY (T856). §T848 found two, both `range` on a published component parameter:
+ * `parameterDefinitionSchema` did not name it, so a closed parse dropped it and the
+ * loader installed the stripped copy. Ruled ruling 3: `range` is named on the number and
+ * vector arms. The round-trip gate below is what stops the NEXT unnamed key repeating it
+ * — this assertion catches a key the schema forgets, that one catches the consequence
+ * (§V802).
  */
-const UNNAMED_KEYS_PENDING_RULING: Readonly<Record<string, string>> = {
-  "AudioLevel.loom.json: componentLibrary.components[0].parameters[0].definition.range":
-    "§B111's `range` declaration on a PUBLISHED component parameter. " +
-    "`parameterDefinitionSchema` (components/schemas.ts) names min, max, step, scale, " +
-    "unit and precision — but not `range` — so a closed parse strips it, and `load.ts` " +
-    "installs `parsed.data`, the stripped copy. MEASURED: open AudioLevel and save it " +
-    "back and `range: \"floor\"` is GONE from the file, with `loaded.changed === false`. " +
-    "Absent means `bounded`, so the BPM knob's max would start clamping at 300 — §T823's " +
-    "defect returning through the load path rather than the slider. RULING NEEDED: add " +
-    "`range` to the number and vector arms of `parameterDefinitionSchema`.",
-  "AudioLevel.loom.json: componentLibrary.components[0].parameters[1].definition.range":
-    "the same missing schema key on the Amount knob. Its value is `bounded`, which is " +
-    "also what absent means, so this one is lossless TODAY — it is the same gap seen on a " +
-    "parameter where it happens not to bite yet.",
-};
+const UNNAMED_KEYS_PENDING_RULING: Readonly<Record<string, string>> = {};
 
 /** Every path present in `raw` but missing from `kept` — what a closed parse stripped. */
 function strippedPaths(raw: unknown, kept: unknown, path = ""): string[] {
@@ -496,5 +490,67 @@ describe("(c) a shipped file carries no key the closed schema does not name", ()
     expect(parsed.every((result) => result.success)).toBe(true);
     expect(SUBJECTS.filter((subject) => subject.raw[COMPONENT_LIBRARY_KEY] !== undefined).length)
       .toBeGreaterThan(0);
+  });
+});
+
+/* ------------------------------------------------------------------------------------
+ * (d) the round trip §V802 asks for: load → save → compare
+ * ---------------------------------------------------------------------------------- */
+
+/**
+ * The assertion (c) could not make, and the one that would have caught §T848's own bug
+ * on its own (T856, §V802).
+ *
+ * (c) asks whether the shipped bytes contain a key the closed schema forgets. That is the
+ * CAUSE. This asks the CONSEQUENCE, end to end and through the real code: open the file
+ * the way the app opens it, save it the way the app saves it, and compare. A key nobody
+ * named does not merely fail to validate — it is gone from the file the user gets back,
+ * and `changed === false` while it happens.
+ *
+ * Why both, rather than only this one: (c) names the offending KEY and its path, so a
+ * failure says `definition.range` rather than "these 40KB differ somewhere". This one
+ * cannot be fooled by a loss that (c) does not model — a migration that rewrites a value,
+ * a clamp applied on load, a serializer that reorders. Cause and consequence catch
+ * different mistakes, and §T848's bug happened to be visible to both only because zod's
+ * stripping is exactly the mechanism (c) models.
+ *
+ * `now` is pinned to the file's own `updatedAt`. The save path deliberately refreshes
+ * that stamp on every write, so leaving it live would make every file differ for the one
+ * reason that is not a defect — and would hide every reason that is.
+ */
+describe("(d) every shipped file survives its own load → save (§V802)", () => {
+  it.each(SUBJECTS.map((subject) => subject.fileName))("%s comes back byte-identical", (fileName) => {
+    const subject = SUBJECTS.find((entry) => entry.fileName === fileName);
+    if (subject === undefined) throw new Error(`no subject named ${fileName}`);
+
+    // A component-aware system, because the library rides at the file root and a
+    // node-only registry would drop it silently — which is the very shape being tested.
+    const { components, nodes } = createComponentSystem(createNodeRegistry(allNodeDefinitions).view());
+    const loaded = loadProject(subject.text, { nodes, components });
+    if (!loaded.ok) throw new Error(`${fileName} did not load: ${loaded.reason}`);
+
+    const resaved = buildProjectFile({
+      document: loaded.document,
+      components: components.view().all(),
+      now: () => loaded.document.updatedAt,
+    });
+
+    // The honest pair. `changed` is what the loader BELIEVES it did; the bytes are what
+    // happened. §T848 measured them disagreeing — `changed === false` while `range`
+    // vanished — so asserting only the flag would have passed through the whole defect.
+    expect(loaded.changed, `${fileName}: the loader reports it altered the document`).toBe(false);
+    expect(resaved.text, `${fileName}: opening and saving this file changes it`).toBe(subject.text);
+  });
+
+  it("the round trip is exercising the component library, not just plain documents", () => {
+    // Vacuity guard: every EXAMPLE has an empty library, so a round trip that only ever
+    // saw those would never re-serialize a component and could not have caught §T848's
+    // bug at all. The starter component files are what make this assertion load-bearing.
+    const withLibrary = SUBJECTS.filter((subject) => {
+      const { components, nodes } = createComponentSystem(createNodeRegistry(allNodeDefinitions).view());
+      const loaded = loadProject(subject.text, { nodes, components });
+      return loaded.ok && components.view().all().length > 0;
+    });
+    expect(withLibrary.length).toBeGreaterThanOrEqual(6);
   });
 });

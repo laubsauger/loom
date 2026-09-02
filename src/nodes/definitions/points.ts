@@ -800,12 +800,24 @@ export const renderPointsNode: NodeDefinition = {
     sizePixels: {
       type: "number",
       label: "Size",
+      /**
+       * T856 — the floor is 0, not 0.5 (§T848 ruling 1).
+       *
+       * 0.5 was a legible-sprite minimum, and it made "draw nothing" unsayable. That
+       * matters most exactly where E35 uses it: as a DRIVEN slot's retained value (§V108),
+       * which is what the layer falls back to when the drive is detached. Clamping that
+       * fallback to 0.5 would make a detached drive DRAW VISIBLE DOTS — the opposite of
+       * what the author meant, and a value the command bus refused, so no UI edit could
+       * have produced the shipped file (§T848 (b1)).
+       */
       default: 4,
-      min: 0.5,
+      min: 0,
       max: 256,
       range: "floor",
       unit: "px",
-      description: "Sprite diameter in output pixels.",
+      description:
+        "Sprite diameter in output pixels. 0 draws nothing — the honest fallback for a " +
+        "driven size whose channel is detached.",
     },
     color: { type: "color", label: "Color", default: [1, 1, 1, 1], space: "display" },
     blend: {

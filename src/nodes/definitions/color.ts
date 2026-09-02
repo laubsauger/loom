@@ -395,8 +395,34 @@ export const limitNode: NodeDefinition = {
   outputs: [{ id: "out", label: "Out", type: RGBA_TEXTURE }],
   parameters: {
     mode: { type: "enum", label: "Mode", default: "clamp", options: [...LIMIT_MODE_OPTIONS] },
-    low: { type: "number", label: "Minimum", default: 0, min: -4, max: 4, range: "soft" },
-    high: { type: "number", label: "Maximum", default: 1, min: -4, max: 4, range: "soft" },
+    /**
+     * T856 — travel is ±8, widened from ±4 (§T848 ruling 2).
+     *
+     * `soft` already means neither end is a limit, so the old span never REFUSED
+     * anything; it just stopped the slider short of values three shipped examples
+     * use. E13-Prism, E33-Obol and E34-Lidar each clamp HDR headroom to [0, 6]
+     * before tone-mapping, so the common use was reachable only by TYPING — §T823's
+     * shape exactly, found by §T848's census and ruled the same way: the travel was
+     * short, the examples were right.
+     */
+    low: {
+      type: "number",
+      label: "Minimum",
+      default: 0,
+      min: -8,
+      max: 8,
+      range: "soft",
+      description: "Lower bound. Travel is ±8 so HDR headroom is draggable; neither end is a limit.",
+    },
+    high: {
+      type: "number",
+      label: "Maximum",
+      default: 1,
+      min: -8,
+      max: 8,
+      range: "soft",
+      description: "Upper bound. Travel reaches 8 so the 6 an HDR clamp wants is a drag, not a typed value.",
+    },
     steps: {
       type: "number",
       label: "Steps",

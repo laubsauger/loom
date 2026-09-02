@@ -21,6 +21,25 @@ const parameterBase = {
   compileTime: z.boolean().optional(),
 };
 
+/**
+ * §B111's declaration, on the numeric arms (T856, §V802).
+ *
+ * It was MISSING, and the failure was invisible: zod strips an unnamed key silently, so
+ * `graphComponentDefinitionSchema.safeParse` ACCEPTED a definition carrying `range` and
+ * returned one without it. `load.ts` installs `parsed.data` — the stripped copy — and a
+ * save writes from the live catalogue, so opening `AudioLevel.loom.json` and saving it
+ * back DROPPED `range: "floor"` from the file while reporting `changed === false`.
+ *
+ * Absent means `bounded` (the documented default), so the loss is not inert: a published
+ * knob declared `floor` — max is travel, not a limit — silently became one that CLAMPS at
+ * its travel. That is §T823's defect returning through the load path instead of the
+ * slider, and §T848's assertion (c) is what found it.
+ *
+ * `component-sync` was asking whether the schema ACCEPTS the definition and passing.
+ * Acceptance is not survival, which is why §V802 gates the round trip instead.
+ */
+const numericRange = z.enum(["bounded", "cyclic", "floor", "soft"]).optional();
+
 export const parameterDefinitionSchema = z.discriminatedUnion("type", [
   z.object({
     ...parameterBase,
@@ -28,6 +47,7 @@ export const parameterDefinitionSchema = z.discriminatedUnion("type", [
     default: z.number(),
     min: z.number().optional(),
     max: z.number().optional(),
+    range: numericRange,
     step: z.number().optional(),
     scale: z.enum(["linear", "log"]).optional(),
     unit: z.enum(["px", "percent", "degrees", "radians", "seconds", "hz"]).optional(),
@@ -53,6 +73,7 @@ export const parameterDefinitionSchema = z.discriminatedUnion("type", [
     default: z.array(z.number()),
     min: z.number().optional(),
     max: z.number().optional(),
+    range: numericRange,
     step: z.number().optional(),
   }),
   z.object({
