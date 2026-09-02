@@ -1,0 +1,295 @@
+{
+  "assets": [],
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e-beam-draw": {
+        "id": "e-beam-draw",
+        "source": {
+          "nodeId": "beam",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "draw",
+          "portId": "points"
+        }
+      },
+      "e-draw-trace": {
+        "id": "e-draw-trace",
+        "source": {
+          "nodeId": "draw",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "trace",
+          "portId": "in1"
+        }
+      },
+      "e-echo-trace": {
+        "id": "e-echo-trace",
+        "source": {
+          "nodeId": "echo",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "trace",
+          "portId": "in2"
+        }
+      },
+      "e-gen-beam": {
+        "id": "e-gen-beam",
+        "source": {
+          "nodeId": "gen",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "beam",
+          "portId": "points"
+        }
+      },
+      "e-glow-out": {
+        "id": "e-glow-out",
+        "source": {
+          "nodeId": "glow",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      },
+      "e-halo-glow": {
+        "id": "e-halo-glow",
+        "source": {
+          "nodeId": "halo",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "glow",
+          "portId": "in2"
+        }
+      },
+      "e-hot-halo": {
+        "id": "e-hot-halo",
+        "source": {
+          "nodeId": "hot",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "halo",
+          "portId": "input"
+        }
+      },
+      "e-trace-glow": {
+        "id": "e-trace-glow",
+        "source": {
+          "nodeId": "trace",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "glow",
+          "portId": "in1"
+        }
+      },
+      "e-trace-hot": {
+        "id": "e-trace-hot",
+        "source": {
+          "nodeId": "trace",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "hot",
+          "portId": "input"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "beam": {
+        "definitionVersion": 1,
+        "id": "beam",
+        "label": "beam1",
+        "parameters": {
+          "closed": true,
+          "color": [
+            1,
+            0.16,
+            0.06,
+            1
+          ],
+          "holdMax": 14,
+          "holdMin": 1,
+          "maxStep": 0.016,
+          "pps": 30000,
+          "slots": 48
+        },
+        "position": {
+          "x": -1200,
+          "y": 0
+        },
+        "type": "laserPath"
+      },
+      "draw": {
+        "definitionVersion": 1,
+        "id": "draw",
+        "label": "draw1",
+        "parameters": {
+          "accumulate": false,
+          "blend": "additive",
+          "color": {
+            "bindings": {
+              "map": {
+                "attribute": "tint",
+                "kind": "map"
+              },
+              "static": {
+                "kind": "static",
+                "value": [
+                  1,
+                  1,
+                  1,
+                  1
+                ]
+              }
+            },
+            "mode": "map"
+          },
+          "count": 480,
+          "group": "",
+          "sizePixels": 2.4
+        },
+        "position": {
+          "x": -900,
+          "y": 0
+        },
+        "type": "renderPoints"
+      },
+      "echo": {
+        "definitionVersion": 1,
+        "id": "echo",
+        "label": "echo1",
+        "parameters": {
+          "clearColor": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "persistence": 0.55,
+          "source": "trace1"
+        },
+        "position": {
+          "x": -900,
+          "y": 280
+        },
+        "type": "feedback"
+      },
+      "gen": {
+        "definitionVersion": 1,
+        "id": "gen",
+        "label": "gen1",
+        "parameters": {
+          "attributes": "",
+          "capacity": 10,
+          "group": "",
+          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  let i = ctx.index % 10u;\n  let angle = f32(i) * 0.62831853072 - 1.57079632679 + ctx.time * 0.12;\n  let radius = select(0.74, 0.3, (i & 1u) == 1u);\n  q.position = vec3f(cos(angle) * radius, sin(angle) * radius, 0.0);\n  return q;\n}",
+          "seed": 50,
+          "value1": 0,
+          "value2": 0,
+          "value3": 0,
+          "value4": 0
+        },
+        "position": {
+          "x": -1500,
+          "y": 0
+        },
+        "type": "pointKernel"
+      },
+      "glow": {
+        "definitionVersion": 1,
+        "id": "glow",
+        "label": "glow1",
+        "parameters": {},
+        "position": {
+          "x": 300,
+          "y": 0
+        },
+        "type": "add"
+      },
+      "halo": {
+        "definitionVersion": 1,
+        "id": "halo",
+        "label": "halo1",
+        "parameters": {
+          "extend": "hold",
+          "filter": "gaussian",
+          "size": 34
+        },
+        "position": {
+          "x": 0,
+          "y": -160
+        },
+        "type": "blur"
+      },
+      "hot": {
+        "definitionVersion": 1,
+        "id": "hot",
+        "label": "hot1",
+        "parameters": {
+          "channel": "luminance",
+          "compare": "greater",
+          "softness": 0.35,
+          "threshold": 0.4
+        },
+        "position": {
+          "x": -300,
+          "y": -160
+        },
+        "type": "threshold"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "label": "out1",
+        "parameters": {},
+        "position": {
+          "x": 600,
+          "y": 0
+        },
+        "type": "output"
+      },
+      "trace": {
+        "definitionVersion": 1,
+        "id": "trace",
+        "label": "trace1",
+        "parameters": {},
+        "position": {
+          "x": -600,
+          "y": 0
+        },
+        "type": "add"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E50 Galvo",
+  "projectId": "example-e50-galvo",
+  "schemaVersion": 3,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 50,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}

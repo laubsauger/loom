@@ -39,6 +39,8 @@ export { spliceDocument } from "./documents/splice.ts";
 export { soundingDocument } from "./documents/sounding.ts";
 export { hologramDocument } from "./documents/hologram.ts";
 export { marionetteDocument } from "./documents/marionette.ts";
+export { lissajousDocument } from "./documents/lissajous.ts";
+export { galvoDocument } from "./documents/galvo.ts";
 export { pulseDocument } from "./documents/pulse.ts";
 export { lanternDocument } from "./documents/lantern.ts";
 import { feedbackEchoDocument } from "./documents/feedback-echo.ts";
@@ -80,6 +82,8 @@ import { spliceDocument } from "./documents/splice.ts";
 import { soundingDocument } from "./documents/sounding.ts";
 import { hologramDocument } from "./documents/hologram.ts";
 import { marionetteDocument } from "./documents/marionette.ts";
+import { lissajousDocument } from "./documents/lissajous.ts";
+import { galvoDocument } from "./documents/galvo.ts";
 import { pulseDocument } from "./documents/pulse.ts";
 import { lanternDocument } from "./documents/lantern.ts";
 
@@ -125,5 +129,7 @@ export const EXAMPLE_DOCUMENTS: readonly ProjectDocument[] = [
   marionetteDocument,
   pulseDocument,
   lanternDocument,
+  lissajousDocument,
+  galvoDocument,
 ];
 

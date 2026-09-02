@@ -189,10 +189,20 @@
     "range": 0.7321,
     "f0max": 1
   },
+  "E49-Lissajous.loom.json": {
+    "motion": 0.33283,
+    "range": 0.997,
+    "f0max": 0.7869
+  },
   "E5-Kaleidoscope.loom.json": {
     "motion": 0.12356,
     "range": 0.4489,
     "f0max": 0.3172
+  },
+  "E50-Galvo.loom.json": {
+    "motion": 0.02782,
+    "range": 0.6722,
+    "f0max": 0.2288
   },
   "E6-Displacement-Stack.loom.json": {
     "motion": 0.28359,
