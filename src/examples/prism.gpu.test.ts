@@ -183,8 +183,11 @@ const soloBackdropOff = (graph: GraphDocument): void => {
    kernel's own rest offsets — so where-things-land claims stay claims about the optics,
    not about where the swivel happened to be. The tilt has its own gate below. */
 const lockTilt = (graph: GraphDocument): void => {
-  param(graph, "form", "value1", 0.227);
-  param(graph, "form", "value2", 0.227);
+  // T937: the tilt is a named param pair now, shared by mesh AND trace — lock BOTH.
+  for (const id of ["form", "optics"]) {
+    param(graph, id, "tiltYaw", 0);
+    param(graph, id, "tiltNod", 0);
+  }
 };
 
 const soloPrism = (graph: GraphDocument): void => {
@@ -541,11 +544,11 @@ describe("E13 Prism — the picture", () => {
     async () => {
       const left = await shoot((graph) => {
         soloPrism(graph);
-        param(graph, "form", "value1", 0);
+        param(graph, "form", "tiltYaw", -0.15);
       });
       const right = await shoot((graph) => {
         soloPrism(graph);
-        param(graph, "form", "value1", 1);
+        param(graph, "form", "tiltYaw", 0.3);
       });
       const a = maskAbove(left, 4);
       const b = maskAbove(right, 4);

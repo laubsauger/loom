@@ -61,6 +61,8 @@
  *              TIR), leg 2 the exit ray. All role 1: soft additive light (T917), each
  *              1/SLICES bright so the sum is one beam.
  */
+import { PRISM_EDGE, PRISM_HALF } from "./prism-geometry.ts";
+
 export const PRISM_TRACE_KERNEL_HEAD = `const PI: f32 = 3.14159265358979323846;
 /* The three faces of the cross-section, as outward normals sharing one inradius. */
 const NR: vec2f = vec2f(0.86602540, 0.5);
@@ -71,7 +73,6 @@ const ND: vec2f = vec2f(0.0, -1.0);
    THROUGH the glass — absorption-tinted, edge-refracted. Before materialGlass this sat
    at 0.60, in front, so the opaque solid could not swallow the beams; a glass body
    inverts that reasoning: swallowing is the point. */
-const PLANE: f32 = 0.10;
 const ENTRY: f32 = -0.28;
 /* T929: every open end runs OFF-FRAME (frustum half-extents 2.71 x 1.52 at z = 0). */
 const SHAFT_LEN: f32 = 2.10;
@@ -110,6 +111,9 @@ const HAND_GAIN: f32 = 400.0;
    the owner asked for: the beam misses the glass. */
 
 const ROOT3: f32 = 1.7320508;
+/* T937 — from prism-geometry.ts, the ONE description (§V818). */
+const HALF: f32 = ${PRISM_HALF};
+const EDGE: f32 = ${PRISM_EDGE};
 /* A missed beam has to still be a beam: it carries straight on past where the glass
    isn't, instead of stopping at a face it never met. */
 const MISS_LEN: f32 = 7.0;
@@ -147,24 +151,22 @@ fn schlick(cosI: f32, n: f32) -> f32 {
 
 /* WGSL's own refract, in 2D. A zero return IS total internal reflection — and unlike
    the previous optics, TIR here selects the reflected path instead of deleting it. */
-fn refract2(i: vec2f, n: vec2f, eta: f32) -> vec2f {
+fn refract3(i: vec3f, n: vec3f, eta: f32) -> vec3f {
   let d = dot(n, i);
   let k = 1.0 - eta * eta * (1.0 - d * d);
-  if (k < 0.0) { return vec2f(0.0); }
+  if (k < 0.0) { return vec3f(0.0); }
   return i * eta - n * (eta * d + sqrt(k));
 }
 
-fn reflect2(i: vec2f, n: vec2f) -> vec2f {
+fn reflect3(i: vec3f, n: vec3f) -> vec3f {
   return i - n * (2.0 * dot(i, n));
 }
 
-/* T920 — THE BOUNDARY IS THE BODY'S OWN CROSS-SECTION, bevel included. The old optics
-   traced three analytic PLANES: parallel rays in, parallel rays out, and no number of
-   aperture slices could ever produce a caustic (T914's amendment — aperture AND curvature,
-   both, or nothing). form1's mesh has always carried a corner round-over; this SDF is that
-   same rounded triangle, so the trace finally sees the geometry the picture shows. Exact:
-   max-of-half-planes inside, nearest EDGE SEGMENT outside, vertices at -2r*N, then the
-   Minkowski round — shrink the sharp triangle by BEVEL and subtract BEVEL. */
+/* T920 — THE BOUNDARY IS THE BODY'S OWN CROSS-SECTION, bevel included; T937 lifts it to
+   the full solid. sdBody2 is the rounded-triangle cross-section the T920 gates march;
+   sdBody3 is form1's swept shape EXACTLY — the rounded extrusion whose edge radius is
+   the mesh's cap round — one description (prism-geometry.ts, §V818), gated by
+   prism-geometry.test.ts to 1e-6 at every mesh vertex. */
 const BEVEL: f32 = 0.046;
 
 fn sdSegment2(p: vec2f, a: vec2f, b: vec2f) -> f32 {
@@ -182,31 +184,36 @@ fn sdSharpTri(p: vec2f, r: f32) -> f32 {
   return min(min(sdSegment2(p, v0, v1), sdSegment2(p, v1, v2)), sdSegment2(p, v2, v0));
 }
 
-fn sdBody(p: vec2f) -> f32 {
+fn sdBody2(p: vec2f) -> f32 {
   return sdSharpTri(p, RI - BEVEL) - BEVEL;
 }
 
-/* The boundary's own normal — a GRADIENT now, which is the whole point: it sweeps
-   continuously through the bevel, so a finite-width beam meets a different normal at each
+fn sdBody(p: vec3f) -> f32 {
+  let q = vec2f(sdBody2(p.xy) + EDGE, abs(p.z) - (HALF - EDGE));
+  return min(max(q.x, q.y), 0.0) + length(max(q, vec2f(0.0))) - EDGE;
+}
+
+/* The boundary's own normal — a GRADIENT: it sweeps continuously through the corner
+   bevel AND the cap rounds, so a finite-width beam meets a different normal at each
    slice and its straight sub-rays fan into a curved envelope. A caustic, from geometry. */
-fn bodyNormal(p: vec2f) -> vec2f {
+fn bodyNormal(p: vec3f) -> vec3f {
   let e = vec2f(1.0e-4, 0.0);
-  return normalize(vec2f(
-    sdBody(p + e.xy) - sdBody(p - e.xy),
-    sdBody(p + e.yx) - sdBody(p - e.yx),
+  return normalize(vec3f(
+    sdBody(p + e.xyy) - sdBody(p - e.xyy),
+    sdBody(p + e.yxy) - sdBody(p - e.yxy),
+    sdBody(p + e.yyx) - sdBody(p - e.yyx),
   ));
 }
 
 struct Hit {
-  point: vec2f,
-  normal: vec2f,
+  point: vec3f,
+  normal: vec3f,
   ok: f32,
 };
 
 /* Sphere-march the SDF. inward = +1 marches OUTSIDE geometry toward the surface (entry),
-   -1 marches INSIDE it (the internal legs). Max-of-planes underestimates outside a corner,
-   which only shortens steps: marching stays safe. */
-fn marchBody(origin: vec2f, dir: vec2f, inward: f32, maxT: f32) -> Hit {
+   -1 marches INSIDE it (the internal legs). */
+fn marchBody(origin: vec3f, dir: vec3f, inward: f32, maxT: f32) -> Hit {
   var out: Hit;
   out.ok = 0.0;
   var t = 0.0;
@@ -223,16 +230,16 @@ fn marchBody(origin: vec2f, dir: vec2f, inward: f32, maxT: f32) -> Hit {
     if (t > maxT) { break; }
   }
   out.point = origin + dir * maxT;
-  out.normal = vec2f(0.0, 1.0);
+  out.normal = vec3f(0.0, 1.0, 0.0);
   return out;
 }
 
 struct Traced {
   /* Entry on the body, the first internal hit, and (TIR only) the second. */
-  entry: vec2f,
-  firstHit: vec2f,
-  exitPoint: vec2f,
-  exitDirection: vec2f,
+  entry: vec3f,
+  firstHit: vec3f,
+  exitPoint: vec3f,
+  exitDirection: vec3f,
   tir: f32,
   /* |cos| of incidence at entry and at the face the ray actually left through — the two
      Fresnel shares (T913). 1 when degenerate so a collapsed ray costs no brightness. */
@@ -241,51 +248,70 @@ struct Traced {
   ok: f32,
 };
 
-/* The whole path of ONE ray of ONE wavelength, against the BEVELED body: march to entry,
-   Snell in at the LOCAL normal, march the interior, Snell out — and on TIR, the reflected
-   leg and the exit there. A second TIR collapses the exit ray rather than inventing one. */
-fn tracePrism(origin: vec2f, dIn: vec2f, n: f32, ri: f32) -> Traced {
+/* The whole path of ONE ray of ONE wavelength, against the BEVELED solid (T937: in
+   BODY space — the caller rotates the ray in and the result out, so a swiveled body
+   refracts AS a swiveled body): march to entry, Snell in at the LOCAL normal, march the
+   interior, Snell out — and on TIR, the reflected leg and the exit there. A second TIR
+   collapses the exit ray rather than inventing one. */
+fn tracePrism(origin: vec3f, dIn: vec3f, n: f32, ri: f32) -> Traced {
   var out: Traced;
   out.ok = 0.0;
   out.tir = 0.0;
   out.entryCos = 1.0;
   out.exitCos = 1.0;
-  let enter = marchBody(origin, dIn, 1.0, 4.0);
+  let enter = marchBody(origin, dIn, 1.0, 4.5);
   out.entry = enter.point;
   out.firstHit = enter.point;
   out.exitPoint = enter.point;
-  out.exitDirection = vec2f(0.0);
+  out.exitDirection = vec3f(0.0);
   if (enter.ok < 0.5) { return out; }
   out.ok = 1.0;
   out.entryCos = abs(dot(dIn, enter.normal));
-  let d2 = refract2(dIn, enter.normal, 1.0 / n);
+  let d2 = refract3(dIn, enter.normal, 1.0 / n);
   if (dot(d2, d2) < 1.0e-9) { return out; }
   /* Step INSIDE past the surface before marching for the far wall. */
-  let inside1 = marchBody(enter.point + d2 * 2.0e-3, d2, -1.0, 4.0);
+  let inside1 = marchBody(enter.point + d2 * 2.0e-3, d2, -1.0, 4.5);
   out.firstHit = inside1.point;
   out.exitPoint = inside1.point;
   if (inside1.ok < 0.5) { return out; }
-  /* inside1.normal points INWARD (inward = -1 flips the gradient); Snell out wants the
-     OUTWARD one. */
   let n1 = -inside1.normal;
-  /* refract2 wants the normal on the INCIDENT side — inside the glass, that is the
+  /* refract3 wants the normal on the INCIDENT side — inside the glass, that is the
      inward one (the raw marched normal). */
-  let d3 = refract2(d2, inside1.normal, n);
+  let d3 = refract3(d2, inside1.normal, n);
   if (dot(d3, d3) > 1.0e-9) {
     out.exitDirection = d3;
     out.exitCos = abs(dot(d2, n1));
     return out;
   }
   out.tir = 1.0;
-  let dr = reflect2(d2, n1);
-  let inside2 = marchBody(inside1.point + dr * 2.0e-3, dr, -1.0, 4.0);
+  let dr = reflect3(d2, n1);
+  let inside2 = marchBody(inside1.point + dr * 2.0e-3, dr, -1.0, 4.5);
   out.exitPoint = inside2.point;
   if (inside2.ok < 0.5) { return out; }
   let n2 = -inside2.normal;
-  let d4 = refract2(dr, inside2.normal, n);
-  out.exitDirection = select(d4, vec2f(0.0), dot(d4, d4) < 1.0e-9);
+  let d4 = refract3(dr, inside2.normal, n);
+  out.exitDirection = select(d4, vec3f(0.0), dot(d4, d4) < 1.0e-9);
   out.exitCos = abs(dot(dr, n2));
   return out;
+}
+
+/* T937 — the body's pose. form1 applies rotY(yaw) then rotX(nod); the trace applies the
+   inverse to bring a WORLD ray into body space and the forward pose to carry traced
+   points back out. */
+fn rotY(v: vec3f, a: f32) -> vec3f {
+  let c = cos(a); let s = sin(a);
+  return vec3f(v.x * c + v.z * s, v.y, -v.x * s + v.z * c);
+}
+fn rotX(v: vec3f, a: f32) -> vec3f {
+  let c = cos(a); let s = sin(a);
+  return vec3f(v.x, v.y * c - v.z * s, v.y * s + v.z * c);
+}
+fn toBody(v: vec3f, yaw: f32, nod: f32) -> vec3f { return rotY(rotX(v, -nod), -yaw); }
+fn toWorld(v: vec3f, yaw: f32, nod: f32) -> vec3f { return rotX(rotY(v, yaw), nod); }
+
+struct Params {
+  tiltYaw: f32,
+  tiltNod: f32,
 }
 `;
 
@@ -300,30 +326,26 @@ const RI: f32 = ${ri};
 
 fn process(p: Point, ctx: PointCtx) -> Point {
   var q = p;
-  /* T857 — E13's aim idiom, and it is a BLEND: the pointer TAKES the aim while it is
-     moving and hands it back when it stops. 'hand' is the pointer's own activity, and
-     it is exactly 0 for a cursor that has never moved. */
-  /* T915b — EXCLUSIVE MOUSE CONTROL, the owner's second ask: "no resets no auto swing
-     and swivel". The old chain blended the pointer against a rest pose by a DECAYING
-     velocity signal (stir→urge→hold), so every gesture un-did itself — a reset wearing a
-     smoothing chain. Now the pointer OWNS both axes, through nothing but a position lag:
-     x walks the entry point up the face (past the apex = a real miss), y sets the angle
-     across the full 6°–84° band. A parked cursor is a parked beam, forever. (0,0) — the
-     never-moved pointer and every headless gate — is ENTRY at 6°: near-normal incidence,
-     the converged white line Snell owes it, which TIRs at the exit face into the clean
-     white V of the reference's near-perpendicular shot. */
+  /* T929 — the cursor is a TORCH: x orbits the lamp around the prism, y slides the aim
+     across the body (0 aims at the incenter: every face at its middle). A parked cursor
+     is a parked beam, forever (T915b). */
   let px = clamp(ctx.value3, 0.0, 1.0);
   let py = clamp(ctx.value1, 0.0, 1.0);
   let phi = mix(ARC_A, ARC_B, px) * PI / 180.0;
-  let S = vec2f(cos(phi), sin(phi)) * LAMP_R;
-  let ahead = normalize(-S);
+  let S2 = vec2f(cos(phi), sin(phi)) * LAMP_R;
+  let ahead = normalize(-S2);
   let aside = vec2f(-ahead.y, ahead.x);
-  let dIn = normalize(-S + aside * (py * OFF_MAX));
-  /* T920: the trace marches from OUTSIDE the body along the beam, so the entry point —
-     and its NORMAL — come from the boundary itself, bevel included. The march is the
-     only authority on hitting: there is no face arithmetic left to disagree with it. */
+  let dIn2 = normalize(-S2 + aside * (py * OFF_MAX));
+  /* T937 — the trace happens in BODY space: the same yaw/nod the mesh applies (one
+     expression pair, prism.ts) rotates the WORLD ray in and every traced point back
+     out. A swiveled body refracts AS a swiveled body — no per-view compensation, and
+     the camera can orbit without the beam detaching from the glass. */
+  let yaw = ctx.params.tiltYaw;
+  let nod = ctx.params.tiltNod;
+  let S = toBody(vec3f(S2, 0.0), yaw, nod);
+  let dIn = normalize(toBody(vec3f(dIn2, 0.0), yaw, nod));
   let castFrom = S;
-  let perp = vec2f(-dIn.y, dIn.x);
+  let perp = normalize(cross(dIn, vec3f(0.0, 0.0, 1.0)));
 
   /* The CENTRAL wavelength's path — the shaft's landing and the ghost's seat. */
   let nMid = cauchyN(0.5, ctx.value2);
@@ -332,9 +354,10 @@ fn process(p: Point, ctx: PointCtx) -> Point {
 
   if (ctx.index == 0u) {
     /* The shaft rides the whole cast: from the lamp (off-frame by LAMP_R's own size) to
-       the marched entry; a MISS carries straight through and leaves the far side. */
-    q.position = vec3f(S, PLANE);
-    q.tip = vec3f(select(S + dIn * MISS_LEN, mid.entry, hit), PLANE);
+       the marched entry; a MISS carries straight through and leaves the far side.
+       T937: traced in body space, DRAWN in world. */
+    q.position = toWorld(S, yaw, nod);
+    q.tip = toWorld(select(S + dIn * MISS_LEN, mid.entry, hit), yaw, nod);
     q.tint = vec4f(1.0, 1.0, 1.0, 1.0);
     q.role = 0.0;
     return q;
@@ -343,10 +366,10 @@ fn process(p: Point, ctx: PointCtx) -> Point {
     /* The GHOST — the entry face's Fresnel share, reflected off the MARCHED normal, with
        R0 from the central index (T913). Zero length on a miss. */
     let ne = bodyNormal(mid.entry);
-    let r = reflect2(dIn, ne);
+    let r = reflect3(dIn, ne);
     let fr = schlick(mid.entryCos, nMid);
-    q.position = vec3f(select(S, mid.entry, hit), PLANE);
-    q.tip = vec3f(select(S, mid.entry + r * GHOST_LEN, hit), PLANE);
+    q.position = toWorld(select(S, mid.entry, hit), yaw, nod);
+    q.tip = toWorld(select(S, mid.entry + r * GHOST_LEN, hit), yaw, nod);
     q.tint = vec4f(vec3f(fr), 1.0);
     q.role = 0.0;
     return q;
@@ -375,8 +398,8 @@ fn process(p: Point, ctx: PointCtx) -> Point {
 
   if (leg == 0u) {
     /* Interior 1: the in-glass spread, drawn per band per slice — dim, additive. */
-    q.position = vec3f(seat, PLANE);
-    q.tip = vec3f(select(seat, band.firstHit, live), PLANE);
+    q.position = toWorld(seat, yaw, nod);
+    q.tip = toWorld(select(seat, band.firstHit, live), yaw, nod);
     q.tint = vec4f(colour * ((1.0 - frIn) * INTERIOR_GAIN / f32(SLICES)), 1.0);
     /* Role 0: the interiors ride the SHAFT draw — the in-glass path, exactly where the
        old slot-2 segment lived — so the shaft/fan split keeps meaning path/exits. */
@@ -387,8 +410,8 @@ fn process(p: Point, ctx: PointCtx) -> Point {
     /* Interior 2: the TIR continuation. Zero length (zero area, T680) without TIR. */
     let seat2 = select(seat, band.firstHit, live);
     let alive = live && band.tir > 0.5;
-    q.position = vec3f(seat2, PLANE);
-    q.tip = vec3f(select(seat2, band.exitPoint, alive), PLANE);
+    q.position = toWorld(seat2, yaw, nod);
+    q.tip = toWorld(select(seat2, band.exitPoint, alive), yaw, nod);
     q.tint = vec4f(colour * ((1.0 - frIn) * INTERIOR_GAIN / f32(SLICES)), 1.0);
     q.role = 0.0;
     return q;
@@ -398,8 +421,8 @@ fn process(p: Point, ctx: PointCtx) -> Point {
   let frOut = schlick(band.exitCos, n);
   let gone = live && dot(band.exitDirection, band.exitDirection) > 1.0e-9;
   let root = select(S, band.exitPoint, live);
-  q.position = vec3f(root, PLANE);
-  q.tip = vec3f(select(root, band.exitPoint + band.exitDirection * FAN_LEN, gone), PLANE);
+  q.position = toWorld(root, yaw, nod);
+  q.tip = toWorld(select(root, band.exitPoint + band.exitDirection * FAN_LEN, gone), yaw, nod);
   q.tint = vec4f(colour * ((1.0 - frIn) * (1.0 - frOut) * EXIT_GAIN / f32(SLICES)), 1.0);
   q.role = 1.0;
   return q;

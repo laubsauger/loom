@@ -1,5 +1,6 @@
-import { settings, node, edge, graph, document, drivenSlot } from "./builders.ts";
+import { settings, node, edge, graph, document, drivenSlot, expressionSlot } from "./builders.ts";
 import { prismTraceKernel } from "../shaders/prism-trace.wgsl.ts";
+import { PRISM_EDGE, PRISM_HALF, PRISM_RC, PRISM_RHO } from "../shaders/prism-geometry.ts";
 
 /**
  * E13 — Prism (T710, rebuilt; was T363/T364).
@@ -161,8 +162,14 @@ const PRISM_COLS = 240;
 
 const PRISM_ROWS = 45;
 
-/** Circumradius of the triangular cross-section. Its faces sit at PRISM_RC/2 (see below). */
-const PRISM_RC = 0.76;
+/* T937: the geometry constants live in prism-geometry.ts — the one description the mesh
+   and the traced SDF both render (§V818). Faces sit at PRISM_RC/2. */
+
+/* T937 — THE ONE TILT. Cursor tilt (T928) plus LFO drift (T934), authored once and
+   handed BY NAME to both form1 (which rotates the mesh) and optics1 (which traces in
+   body space): the glass and the light cannot disagree about where the body points. */
+const TILT_YAW_EXPR = "clamp(op('follow1').chan.x, 0, 1) * 0.44 - 0.10 + clamp(op('driftyaw1').chan.value, -1, 1) * 0.05";
+const TILT_NOD_EXPR = "clamp(op('follow1').chan.y, 0, 1) * 0.22 - 0.05 + clamp(op('driftnod1').chan.value, -1, 1) * 0.03";
 
 /** The band the glass is drawn WITH: 61 refracted rays plus the shaft and its ghost. */
 const PRISM_BANDS = 61;
@@ -209,50 +216,70 @@ const WALL_PLACE_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
 
 const PRISM_FORM_KERNEL = `const PI: f32 = 3.14159265358979323846;
 const TAU: f32 = 6.28318530717958647692;
+/* T937 — the numbers come from prism-geometry.ts, the ONE description this mesh and the
+   optics' marched SDF both render (§V818). prism-geometry.test.ts holds every vertex of
+   this walk to |sd3| < 1e-6; change a constant here without the shared module and that
+   gate refuses. */
 const RC: f32 = ${PRISM_RC};
-/** Corner radius. Small — the corners are where the normal sweeps FASTEST. */
-const RHO: f32 = 0.046;
-/* T928: deeper — the owner asked for more depth; z runs to ±0.72 now. */
-const HALF: f32 = 0.72;
-/** The quarter-round at the cap edge, radially and axially. This is the rim's WIDTH. */
-const ER: f32 = 0.120;
-const EZ: f32 = 0.120;
+const RHO: f32 = ${PRISM_RHO};
+const HALF: f32 = ${PRISM_HALF};
+const EDGE: f32 = ${PRISM_EDGE};
 
-fn contour(u: f32) -> vec2f {
-  let d = RC - 2.0 * RHO;
-  let seg = sqrt(3.0) * d;
-  let arc = RHO * TAU / 3.0;
+/* The INSET CONTOUR — the level set sd2 = -pull, walked by arc length. T937 replaced the
+   old scale-pullback cap (whose world depth varied along the contour) with this, because
+   only the level set matches a constant-radius SDF rounding; a normal offset of the
+   outer contour self-intersects at the corners (EDGE > RHO). */
+fn insetContour(u: f32, pull: f32) -> vec2f {
+  let rc = max(RHO - pull, 0.0);
+  let D = RC - 2.0 * RHO - 2.0 * max(pull - RHO, 0.0);
+  let seg = sqrt(3.0) * D;
+  let arc = rc * TAU / 3.0;
   let unit = seg + arc;
   let s = u * 3.0 * unit;
-  let k = floor(s / unit);
+  let k = floor(min(s / unit, 2.999999));
   let local = s - k * unit;
   let phi = PI * 0.5 + k * TAU / 3.0;
-  let c = vec2f(cos(phi), sin(phi)) * d;
-  if (local < arc) {
-    let psi = phi - PI / 3.0 + local / RHO;
-    return c + vec2f(cos(psi), sin(psi)) * RHO;
+  let c = vec2f(cos(phi), sin(phi)) * D;
+  if (local < arc && rc > 0.0) {
+    let psi = phi - PI / 3.0 + local / rc;
+    return c + vec2f(cos(psi), sin(psi)) * rc;
   }
+  let t = select(0.0, max((local - arc) / seg, 0.0), seg > 0.0);
   let outward = vec2f(cos(phi + PI / 3.0), sin(phi + PI / 3.0));
-  let a = c + outward * RHO;
-  let b = vec2f(cos(phi + TAU / 3.0), sin(phi + TAU / 3.0)) * d + outward * RHO;
-  return mix(a, b, (local - arc) / seg);
+  let a2 = c + outward * rc;
+  let phi2 = phi + TAU / 3.0;
+  let b2 = vec2f(cos(phi2), sin(phi2)) * D + outward * rc;
+  return mix(a2, b2, t);
 }
 
-/* Radius scale and z, along the axis: flat cap, quarter-round, barrel, and back again.
-   The cap collapses to the axis at a = 0 and a = 1, which closes the solid — a quad with
-   two coincident corners is a triangle, so the last ring is a fan. */
-fn profile(a: f32) -> vec2f {
-  if (a <= 0.10) { return vec2f((1.0 - ER) * (a / 0.10), HALF); }
+/* Flat cap disc, quarter-round cap edge of radius EDGE on the inset level sets,
+   straight barrel, and back. The cap collapses to the axis at a = 0 and a = 1. */
+fn shell(u: f32, a: f32) -> vec3f {
+  if (a <= 0.10) {
+    let t = a / 0.10;
+    return vec3f(insetContour(u, EDGE) * t, HALF);
+  }
   if (a <= 0.36) {
     let th = (a - 0.10) / 0.26 * (PI * 0.5);
-    return vec2f(1.0 - ER * (1.0 - sin(th)), HALF - EZ * (1.0 - cos(th)));
+    let pull = EDGE * (1.0 - sin(th));
+    return vec3f(insetContour(u, pull), HALF - EDGE * (1.0 - cos(th)));
   }
-  if (a <= 0.64) { return vec2f(1.0, mix(HALF - EZ, -(HALF - EZ), (a - 0.36) / 0.28)); }
+  if (a <= 0.64) {
+    let t = (a - 0.36) / 0.28;
+    return vec3f(insetContour(u, 0.0), mix(HALF - EDGE, -(HALF - EDGE), t));
+  }
   if (a <= 0.90) {
     let th = (0.90 - a) / 0.26 * (PI * 0.5);
-    return vec2f(1.0 - ER * (1.0 - sin(th)), -(HALF - EZ * (1.0 - cos(th))));
+    let pull = EDGE * (1.0 - sin(th));
+    return vec3f(insetContour(u, pull), -(HALF - EDGE * (1.0 - cos(th))));
   }
-  return vec2f((1.0 - ER) * ((1.0 - a) / 0.10), -HALF);
+  let t = (1.0 - a) / 0.10;
+  return vec3f(insetContour(u, EDGE) * t, -HALF);
+}
+
+struct Params {
+  tiltYaw: f32,
+  tiltNod: f32,
 }
 
 fn process(p: Point, ctx: PointCtx) -> Point {
@@ -260,22 +287,13 @@ fn process(p: Point, ctx: PointCtx) -> Point {
   /* wrapU: the u parametrization is EXCLUSIVE, so i/cols closes the seam exactly. */
   let u = f32(ctx.dim.i) / f32(ctx.dim.cols);
   let a = f32(ctx.dim.j) / f32(ctx.dim.rows - 1u);
-  let pr = profile(a);
-  var pos = vec3f(contour(u) * pr.x, pr.y);
-  /* T928 — THE BODY TILTS WITH THE CURSOR (§T914 promised it; the reference reads as a
-     solid BECAUSE it swivels). Yaw about Y from the pointer's x, a nod about X from its
-     y — small on purpose: the traced beam lives in the z = 0 cross-section, and at these
-     angles the swept caps stay a depth cue rather than a geometry the trace would have
-     to follow. The cross-section the beam crosses keeps its silhouette. */
-  /* Rest (0,0) sits at a GENTLE turn, not the band's edge — the never-moved card
-     keeps its read while the swivel is still there to find. */
-  /* T934: the LFO drift rides ON TOP of the cursor's tilt — the object breathes, the
-     hand still steers. Slight by the owner's word: ±0.05 / ±0.03 rad. */
-  let yaw = clamp(ctx.value1, 0.0, 1.0) * 0.44 - 0.10 + clamp(ctx.value3, -1.0, 1.0) * 0.05;
-  let nod = clamp(ctx.value2, 0.0, 1.0) * 0.22 - 0.05 + clamp(ctx.value4, -1.0, 1.0) * 0.03;
-  let cy = cos(yaw); let sy = sin(yaw);
+  var pos = shell(u, a);
+  /* T928/T934/T937 — ONE tilt, computed once in the document's expressions (cursor tilt
+     plus LFO drift) and handed to BOTH this mesh and the optics kernel by name, so the
+     body and the light can never disagree about where the glass is pointing. */
+  let cy = cos(ctx.params.tiltYaw); let sy = sin(ctx.params.tiltYaw);
   pos = vec3f(pos.x * cy + pos.z * sy, pos.y, -pos.x * sy + pos.z * cy);
-  let cx = cos(nod); let sx = sin(nod);
+  let cx = cos(ctx.params.tiltNod); let sx = sin(ctx.params.tiltNod);
   pos = vec3f(pos.x, pos.y * cx - pos.z * sx, pos.y * sx + pos.z * cx);
   q.position = pos;
   return q;
@@ -373,13 +391,10 @@ export const prismDocument = document(
         kernel: PRISM_FORM_KERNEL,
       }, {
         label: "form1",
-        // T928: the same pointer that aims the beam swivels the body — one hand, two
-        // reads of it, both through follow1's positional lag (T915b: nothing decays).
+        // T937: the kernel's own struct Params (T900 reflection) — named, not numbered.
         parameters: {
-          value1: drivenSlot("follow1:x", 0),
-          value2: drivenSlot("follow1:y", 0),
-          value3: drivenSlot("driftyaw1", 0),
-          value4: drivenSlot("driftnod1", 0),
+          tiltYaw: expressionSlot(TILT_YAW_EXPR, -0.1),
+          tiltNod: expressionSlot(TILT_NOD_EXPR, -0.05),
         },
       }),
       // The environment term compiles for PHONG only, and nothing warns you otherwise: a
@@ -441,6 +456,9 @@ export const prismDocument = document(
              at — the frame that shows §T913's dispersion rather than a white line. */
           value1: drivenSlot("follow1:y", 0),
           value3: drivenSlot("follow1:x", 0),
+          // T937: the SAME tilt the mesh wears — the trace runs in body space.
+          tiltYaw: expressionSlot(TILT_YAW_EXPR, -0.1),
+          tiltNod: expressionSlot(TILT_NOD_EXPR, -0.05),
         },
       }),
       // UNLIT, and white: a beam is scattered light in the air, not a surface, and it

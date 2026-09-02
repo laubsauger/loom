@@ -295,12 +295,14 @@ describe("E13 Prism", () => {
     const run = valueGraphRun(document);
     run.step({ x: 0, y: 0, buttons: 0 });
     const settled = run.hold({ x: 0.8, y: 0.25, buttons: 0 }, 240).plan;
-    // The body's slots arrive AT the pointer, exactly as the aim's do …
-    expect(slotOf(settled, "form", "value1")).toBeCloseTo(0.8, 3);
-    expect(slotOf(settled, "form", "value2")).toBeCloseTo(0.25, 3);
-    // … and they are the SAME resolved numbers, not a second chain that could drift.
-    expect(slotOf(settled, "form", "value1")).toBeCloseTo(slotOf(settled, "optics", "value3"), 6);
-    expect(slotOf(settled, "form", "value2")).toBeCloseTo(slotOf(settled, "optics", "value1"), 6);
+    // T937: named tilt params. The cursor's share arrives AT the pointer (the T934 LFO
+    // rides within its own +-0.05/0.03 amplitude of it) …
+    expect(Math.abs(slotOf(settled, "form", "p_tiltYaw") - (0.8 * 0.44 - 0.1))).toBeLessThan(0.051);
+    expect(Math.abs(slotOf(settled, "form", "p_tiltNod") - (0.25 * 0.22 - 0.05))).toBeLessThan(0.031);
+    // … and the mesh and the TRACE wear the IDENTICAL pose — one expression pair, two
+    // kernels, zero drift between the glass and the light (§V818 at the value level).
+    expect(slotOf(settled, "form", "p_tiltYaw")).toBe(slotOf(settled, "optics", "p_tiltYaw"));
+    expect(slotOf(settled, "form", "p_tiltNod")).toBe(slotOf(settled, "optics", "p_tiltNod"));
   });
 
   /**
@@ -322,7 +324,7 @@ describe("E13 Prism", () => {
     const aims = new Set<string>();
     for (let index = 0; index < 300; index += 1) {
       const { plan: live } = run.step(parked);
-      yaws.add(Number(slotOf(live, "form", "value3").toFixed(4)));
+      yaws.add(Number(slotOf(live, "form", "p_tiltYaw").toFixed(4)));
       aims.add(`${slotOf(live, "optics", "value1").toFixed(6)}/${slotOf(live, "optics", "value3").toFixed(6)}`);
     }
     // Five seconds of frames: the drift visited many distinct values …

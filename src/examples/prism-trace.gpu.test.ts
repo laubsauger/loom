@@ -7,6 +7,7 @@ import { createVgpuBackend } from "../runtime/backend/vgpu/vgpu-backend.ts";
 import { nodeGpuHost, probeDawn } from "../runtime/backend/vgpu/node-gpu-host.ts";
 import type { GraphDocument } from "../domain/types/graph.ts";
 import { prismTraceKernel } from "./shaders/prism-trace.wgsl.ts";
+import { sd3 } from "./shaders/prism-geometry.ts";
 
 /**
  * T718, gated per §V683: THE TRACE AGAINST THE DOMAIN, never against its own text.
@@ -86,11 +87,14 @@ const CAPABILITIES = {
 const registry = createNodeRegistry(allNodeDefinitions).view();
 
 interface Values {
-  /** T915b: the pointer's Y — the incidence angle, 6° at 0 to 84° at 1. */
+  /** T929: the pointer's Y — slides the aim across the body. */
   readonly value1: number;
   readonly value2: number;
-  /** T915b: the pointer's X — the entry walk, τ = ENTRY + WALK·x. */
+  /** T929: the pointer's X — the lamp's place on the arc. */
   readonly value3?: number;
+  /** T937: the body's pose — the trace runs in body space. Defaults 0 (neutral). */
+  readonly tiltYaw?: number;
+  readonly tiltNod?: number;
 }
 
 function traceGraph(values: Values): GraphDocument {
@@ -122,6 +126,8 @@ function traceGraph(values: Values): GraphDocument {
             value1: values.value1,
             value2: values.value2,
             value3: values.value3 ?? 0,
+            tiltYaw: values.tiltYaw ?? 0,
+            tiltNod: values.tiltNod ?? 0,
           },
           "trace1",
         ),
@@ -141,6 +147,8 @@ function traceGraph(values: Values): GraphDocument {
 interface Segment {
   readonly origin: readonly [number, number];
   readonly tip: readonly [number, number];
+  readonly origin3: readonly [number, number, number];
+  readonly tip3: readonly [number, number, number];
 }
 
 async function runTrace(values: Values): Promise<Segment[]> {
@@ -163,6 +171,8 @@ async function runTrace(values: Values): Promise<Segment[]> {
       segments.push({
         origin: [positions[base] ?? 0, positions[base + 1] ?? 0],
         tip: [tips[base] ?? 0, tips[base + 1] ?? 0],
+        origin3: [positions[base] ?? 0, positions[base + 1] ?? 0, positions[base + 2] ?? 0],
+        tip3: [tips[base] ?? 0, tips[base + 1] ?? 0, tips[base + 2] ?? 0],
       });
     }
     return segments;
@@ -450,9 +460,11 @@ describe("the prism is a traced ray (T718, §V683)", () => {
     const red = split[bandIndex(0)]!;
     const nRed = bandN(0, dispersion);
     expect(dot(red.origin, NR)).toBeCloseTo(RI, 3);
+    // T937: the 3D march's f32 gradient normal costs ~1e-3 rad here, AMPLIFIED by the
+    // steep exit (d asin/dx ≈ 4 at 74°) — 2 decimals is the claim the instrument affords.
     expect(faceAngle(direction(red), NR)).toBeCloseTo(
       Math.asin(nRed * Math.sin(APEX - thetaR(splitAim.thetaI, nRed))),
-      3,
+      2,
     );
     const violet = split[bandIndex(1)]!;
     expect(dot(violet.origin, ND)).toBeCloseTo(RI, 2);
@@ -529,6 +541,51 @@ describe("the prism is a traced ray (T718, §V683)", () => {
     expect(parted).toBeLessThan(0.02);
     const landed = Math.hypot(red.tip[0] - violet.tip[0], red.tip[1] - violet.tip[1]);
     expect(landed).toBeGreaterThan(0.002);
+  }, 300_000);
+
+  /**
+   * T937 — THE BEAM STAYS ON THE SWIVELED BODY: the owner's disconnect ("the ray doesn't
+   * seem like it actually comes out of that surface"), measured. The trace runs in BODY
+   * space against the same solid the mesh renders (prism-geometry.ts, one description),
+   * so with the body yawed AND nodded the traced entry, far wall and exit root must all
+   * still lie ON that rotated surface — |sd3| of the inverse-rotated point within the
+   * march epsilon — and the entry must genuinely MOVE against the untilted trace (the
+   * pose is real, not absorbed).
+   */
+  it("keeps entry and exit ON the body across a swivel (T937)", async () => {
+    const probe = await probeDawn();
+    if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
+
+    const yaw = 0.25;
+    const nod = 0.1;
+    const flat = await runTrace({ value1: 0.3, value2: 0.085, value3: 0 });
+    const tilted = await runTrace({ value1: 0.3, value2: 0.085, value3: 0, tiltYaw: yaw, tiltNod: nod });
+
+    // world -> body: undo nod (about X), then yaw (about Y) — the kernel's own inverse.
+    const toBody = ([x, y, z]: readonly [number, number, number]): [number, number, number] => {
+      const cn = Math.cos(-nod);
+      const sn = Math.sin(-nod);
+      const [y1, z1] = [y * cn - z * sn, y * sn + z * cn];
+      const cy = Math.cos(-yaw);
+      const sy = Math.sin(-yaw);
+      return [x * cy + z1 * sy, y1, -x * sy + z1 * cy];
+    };
+
+    const entry = tilted[0]!.tip3;
+    const wall = tilted[interiorIndex(0.5)]!.tip3;
+    const root = tilted[bandIndex(0.5)]!.origin3;
+    for (const point of [entry, wall, root]) {
+      expect(Math.abs(sd3(...toBody(point)))).toBeLessThan(2e-3);
+    }
+    // The swivel is real: the entry moved by a visible amount, not a rounding
+    // (measured 0.018 world at yaw 0.25 / nod 0.1 — much of the yaw hides in the
+    // camera axis at this aim; the floor is an order above f32 march noise).
+    const moved = Math.hypot(
+      entry[0] - flat[0]!.tip3[0],
+      entry[1] - flat[0]!.tip3[1],
+      entry[2] - flat[0]!.tip3[2],
+    );
+    expect(moved).toBeGreaterThan(0.01);
   }, 300_000);
 
   /**
