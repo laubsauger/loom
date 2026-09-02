@@ -26,14 +26,14 @@
           "portId": "inputs"
         }
       },
-      "e-cloud-draw": {
-        "id": "e-cloud-draw",
+      "e-cloud-tint": {
+        "id": "e-cloud-tint",
         "source": {
           "nodeId": "cloud",
           "portId": "out"
         },
         "target": {
-          "nodeId": "draw",
+          "nodeId": "tint",
           "portId": "points"
         }
       },
@@ -103,6 +103,17 @@
           "portId": "input"
         }
       },
+      "e-pick-tint": {
+        "id": "e-pick-tint",
+        "source": {
+          "nodeId": "pick",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "tint",
+          "portId": "texture"
+        }
+      },
       "e-plate-out": {
         "id": "e-plate-out",
         "source": {
@@ -124,6 +135,17 @@
         "target": {
           "nodeId": "pick",
           "portId": "inputs"
+        }
+      },
+      "e-tint-draw": {
+        "id": "e-tint-draw",
+        "source": {
+          "nodeId": "tint",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "draw",
+          "portId": "points"
         }
       }
     },
@@ -180,8 +202,8 @@
           "depth": 1.9,
           "mode": "grid",
           "rows": 72,
-          "sizeX": 2.6,
-          "sizeY": 1.95,
+          "sizeX": 2,
+          "sizeY": 2,
           "threshold": 0.02
         },
         "position": {
@@ -227,12 +249,24 @@
         "id": "draw",
         "label": "draw1",
         "parameters": {
-          "color": [
-            0.92,
-            0.71,
-            0.45,
-            1
-          ],
+          "color": {
+            "bindings": {
+              "map": {
+                "attribute": "sample",
+                "kind": "map"
+              },
+              "static": {
+                "kind": "static",
+                "value": [
+                  1,
+                  1,
+                  1,
+                  1
+                ]
+              }
+            },
+            "mode": "map"
+          },
           "count": 6912,
           "eye": [
             0,
@@ -428,6 +462,19 @@
           "y": -280
         },
         "type": "add"
+      },
+      "tint": {
+        "definitionVersion": 1,
+        "id": "tint",
+        "label": "tint1",
+        "parameters": {
+          "count": 6912
+        },
+        "position": {
+          "x": -1170,
+          "y": -60
+        },
+        "type": "textureToAttribute"
       }
     },
     "revision": 1

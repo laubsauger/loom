@@ -8,16 +8,18 @@ import { settings, node, edge, graph, document, drivenSlot } from "./builders.ts
  *
  *   bed1(noise, nearly still) ─┐              pivot1(lfo) ┄drives┄► draw1.eye.x
  *   orb1(circle) ← 2 LFOs ─────┴─► stand1(add) ─┬─► pick1(switch) ─► depth1(depth)
- *   clip1(movieFileIn) ────────────── order 1 ─┘                        │
- *                                                                       ▼
- *   out1 ◄── draw1(renderInstances, 6912 boxes) ◄── cloud1(pointsFromTexture, GRID)
+ *   clip1(movieFileIn) ────────────── order 1 ─┘             │           │
+ *                                                pick1 ┄colour┄► tint1    ▼
+ *   out1 ◄── draw1(renderInstances, 6912 boxes ◄ tint1(textureToAttribute) ◄ cloud1(GRID)
  *
  * ## What the picture is
  *
  * A monocular depth model turns a flat image into a distance map; `pointsFromTexture` in
- * GRID mode reads that map on a 96x72 lattice and lifts each point by what it finds. So a
- * video becomes a relief you can look at from the side — the depth-camera look, from a
- * source that never carried depth.
+ * GRID mode reads that map on a 96x72 lattice and lifts each point by what it finds. Then
+ * `tint1` samples the SOURCE at each point (T830), so every box carries the video's own
+ * colour and the cloud is the video STANDING UP in depth — the depth-camera look, from a
+ * source that never carried depth. Without that tint the boxes were a grey lattice and the
+ * relief said nothing about the picture, which is what the owner reported.
  *
  * ## It opens FLAT, on purpose, and that is the design rather than a shortfall
  *
@@ -91,8 +93,19 @@ export const soundingDocument = document(
       // ---- the inference, and the lattice that reads it ----------------------------
       node("depth", "depth", [-1620, -60], { model: "accurate" }, { label: "depth1" }),
       node("cloud", "pointsFromTexture", [-1320, -60], {
-        mode: "grid", cols: 96, rows: 72, sizeX: 2.6, sizeY: 1.95, depth: 1.9, threshold: 0.02,
+        // T830: sizeX = sizeY = 2 puts each point's XY on the clip square [-1,1], which is
+        // the coordinate `textureToAttribute` reads back as a UV — so `tint1` below samples
+        // the SOURCE at the very texel that set this point's height, and the colour lands on
+        // the right box. At 2.6×1.95 the bridge (which assumes clip) squished the image into
+        // the middle columns and smeared the edges, so the cloud could not carry the picture.
+        mode: "grid", cols: 96, rows: 72, sizeX: 2.0, sizeY: 2.0, depth: 1.9, threshold: 0.02,
       }, { label: "cloud1" }),
+      // T830 — the fix the owner's report demanded: the boxes carried NOTHING from the video
+      // but their height, so the picture was a grey lattice in front of a dimmed plate. This
+      // bridge samples the source at each point (pointsFromTexture writes only position —
+      // colour is textureToAttribute's job by composition) and hands `draw1` a per-point
+      // colour, so the cloud IS the video standing up in depth — E27's lesson, its own path.
+      node("tint", "textureToAttribute", [-1170, -60], { count: 6912 }, { label: "tint1" }),
 
       // ---- the look: a dense box cloud, lit, seen from off-axis so relief reads -----
       node("draw", "renderInstances", [-1020, -60], {
@@ -103,9 +116,19 @@ export const soundingDocument = document(
          * to read as points for the depth to read at all.
          */
         count: 6912, shape: "box", scale: 0.006,
-        color: [0.92, 0.71, 0.45, 1],
+        // T830: the colour is MAPPED from the `sample` attribute tint1 wrote — the source's
+        // own colour per box (T369). The static [1,1,1,1] is the fallback a host with no
+        // attribute attached resolves to (§V108): white, so the lit box shows plain rather
+        // than the old tan slab, and the examples gate frames a legible cloud either way.
+        color: [1, 1, 1, 1],
         eye: [0, 1.35, 3.0], lookAt: [0, -0.05, 0], fov: 44,
-      }, { label: "draw1", parameters: { "eye.x": drivenSlot("pivot1", 0) } }),
+      }, {
+        label: "draw1",
+        parameters: {
+          "eye.x": drivenSlot("pivot1", 0),
+          color: { mode: "map", bindings: { static: { kind: "static", value: [1, 1, 1, 1] }, map: { kind: "map", attribute: "sample" } } },
+        },
+      }),
       // The retained value is 0 — the authored `eye.x` — so the structural compile in the
       // examples gate, which attaches no channels (§V108), frames exactly the shot this
       // document was tuned against. A retained value that was not a sane picture on its
@@ -137,7 +160,11 @@ export const soundingDocument = document(
       edge("e-clip-pick", ["clip", "out"], ["pick", "inputs"], 1),
       edge("e-pick-depth", ["pick", "out"], ["depth", "input"]),
       edge("e-depth-cloud", ["depth", "out"], ["cloud", "texture"]),
-      edge("e-cloud-draw", ["cloud", "out"], ["draw", "points"]),
+      // T830: the cloud's positions go through tint1, which also samples the SOURCE (pick1,
+      // the undimmed picture) to give each point the video's own colour before the draw.
+      edge("e-cloud-tint", ["cloud", "out"], ["tint", "points"]),
+      edge("e-pick-tint", ["pick", "out"], ["tint", "texture"]),
+      edge("e-tint-draw", ["tint", "out"], ["draw", "points"]),
       edge("e-pick-dim", ["pick", "out"], ["dim", "input"]),
       edge("e-draw-plate", ["draw", "out"], ["plate", "in1"]),
       edge("e-dim-plate", ["dim", "out"], ["plate", "in2"]),

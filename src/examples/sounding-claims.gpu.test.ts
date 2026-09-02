@@ -133,4 +133,48 @@ describe("E44 Sounding — the depth map IS the geometry", () => {
     const z = zOf(await positions(flat(128)));
     expect(z.length).toBe(96 * 72);
   });
+
+  /**
+   * T830 — the fix the owner's report demanded. The boxes used to carry a CONSTANT colour,
+   * so the cloud was a grey lattice that said nothing about the picture. `tint1`
+   * (textureToAttribute) now samples the SOURCE at each point, so every box carries the
+   * video's own colour and the cloud is the picture standing up in depth. The claim is
+   * §V681-shaped: the colour is a per-point CORRESPONDENCE to the source, so it is asserted
+   * on the attribute buffer, not on pixels. A depth map alone (a flat mid-grey) would give
+   * a constant tint; the real source (the moving orb over the perlin bed) does not.
+   */
+  const SAMPLE = pointPairId("tint", "sample");
+  async function tintSamples(map: Uint8Array): Promise<Float32Array> {
+    const result = await renderHeadless({
+      host: nodeGpuHost(),
+      graph: document!.graph as GraphDocument,
+      settings: { ...document!.settings, outputResolution: { width: SIZE, height: SIZE } },
+      frames: 2,
+      capture: [1],
+      animate: true,
+      inference: () => map,
+      probeBuffers: [SAMPLE],
+    } as never);
+    const raw = result.buffers?.[SAMPLE];
+    expect(raw, `no sample buffer for ${SAMPLE}`).toBeDefined();
+    return new Float32Array(raw!);
+  }
+
+  it("tints every box from the SOURCE, so the cloud carries the picture, not a constant", async () => {
+    if (dawnError !== undefined) return;
+    // A flat depth map parks nothing (its alpha is opaque), so all 6912 points are present
+    // and each one's COLOUR comes from the real source — the orb over the bed, which varies.
+    const data = await tintSamples(flat(128));
+    const reds: number[] = [];
+    for (let i = 0; i < data.length; i += 4) reds.push(data[i]!);
+    expect(reds.length).toBe(96 * 72);
+
+    // Valid linear colour, every point (§V313: the attribute is LINEAR by declaration).
+    for (const r of reds) expect(r).toBeGreaterThanOrEqual(0);
+    // The load-bearing claim: the tint VARIES across the cloud. A constant colour — the old
+    // bug, or a bridge sampling nothing — has zero spread; the source's own structure does
+    // not. The orb is a bright disc on a dim bed, so the spread is large and real.
+    const spread = Math.max(...reds) - Math.min(...reds);
+    expect(spread).toBeGreaterThan(0.1);
+  });
 });

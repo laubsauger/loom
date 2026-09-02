@@ -1,21 +1,21 @@
 # E44 — Sounding
 
 A monocular depth model turns a flat picture into a distance map. `pointsFromTexture`
-reads that map on a 96×72 lattice and lifts every point by what it finds, so a video
-stands up as a point cloud you can look at from the side — the depth-camera look, from a
-source that never carried depth.
+reads that map on a 96×72 lattice and lifts every point by what it finds, and `tint1`
+colours each point from the source, so a video stands up as a point cloud you can look at
+from the side — the depth-camera look, from a source that never carried depth.
 
 Named for the nautical sense: throwing a line to find how deep the water is. E27 already
 carries the sculptural word *Relief*; this is the measurement rather than the carving.
 
 ```
-bed1(noise, nearly still) ─┐              pivot1(lfo) ┄drives┄► draw1.eye.x
+bed1(noise, nearly still) ─┐          pivot1(lfo) ┄drives┄► draw1.eye.x
 orb1(circle) ← 2 LFOs ─────┴─► stand1(add) ─┬─► pick1(switch) ─► depth1(depth)
-clip1(movieFileIn) ────────────── order 1 ─┘         │                │
-                                                     ▼                ▼
-out1 ◄── plate1(add) ◄── dim1(level) ◄────────────────┘   cloud1(pointsFromTexture, GRID)
-             ▲                                                        │
-             └──────────── draw1(renderInstances, 6912 boxes) ◄────────┘
+clip1(movieFileIn) ──────────── order 1 ─┘      │ colour            │ height
+                                                ▼                   ▼
+out1 ◄─ plate1(add) ◄─ dim1(level) ◄────────────┘   tint1(textureToAttribute) ◄ cloud1(GRID)
+            ▲                                                │
+            └──────────── draw1(renderInstances, 6912 boxes) ◄┘
 ```
 
 ## It opens flat, and that is the design
@@ -58,6 +58,22 @@ luminance, anything with brightness in it.
 Its **Value** mode is the other half, and it is what body keypoints need: texel *i* is
 point *i*, read by index, because a model says where a wrist is and the texture's layout is
 irrelevant.
+
+## The boxes carry the picture, not a constant
+
+`pointsFromTexture` writes only *position* — height is its whole job. On its own that left
+the cloud a wall of identically coloured boxes, which said nothing about the source and read
+as a grey lattice standing in front of a dimmed plate. So `tint1` (`textureToAttribute`)
+samples the source at each point and hands `draw1` a per-point colour, exactly E27's lesson:
+the cloud has to *be* the picture, not a caricature of its silhouette. `draw1.color` maps
+that `sample` attribute, so every box wears the source's own colour and the relief you look
+at from the side is the video itself, lifted into depth.
+
+The lattice is a square (`sizeX = sizeY = 2`) on purpose: that puts each point on the clip
+square the bridge reads back as a UV, so the colour is sampled at the very texel that set
+the point's height — the colour and the shape come from the same pixel, never drift apart.
+`sounding-claims.gpu.test.ts` pins it: the tint varies across the cloud rather than sitting
+at a constant, which is what a bridge sampling nothing — or the old fixed colour — would give.
 
 ## The update rate is visible, and here is the number
 
