@@ -193,6 +193,19 @@
   font-size: var(--fs-micro);
 }
 
+/*
+  T954: a node row's machine type wears the shared name/type badge (`NodeIdentity`), so
+  the badge's own chrome — border, mono, micro, dim — is NOT restated here. What the row
+  owns is how it gives way: the secondary label truncates before the title does.
+  Distinct from `.itemMeta`, which carries prose metadata ("12 nodes", "2 in · 1 out")
+  and is not a badge.
+*/
+.itemType {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .itemDescription {
   grid-column: 1 / -1;
   color: var(--text-dim);

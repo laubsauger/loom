@@ -134,11 +134,14 @@ describe("T38 — manifest-driven inspector", () => {
     expect(within(screen.getByRole("region", { name: "Parameters" })).getByLabelText("Note")).toBeDefined();
   });
 
-  it("names the node and shows its type and id", async () => {
+  // T954 REPLACED THIS TEST'S CLAIM, deliberately: it used to assert the type's display
+  // name, the machine type AND the id all at once, which is precisely the header the
+  // owner reported — the type in both prominent slots and the identity last. The header
+  // now names the node and badges the type; the full gate is the T954 block below.
+  it("names the node, and addresses it by its machine type", async () => {
     const harness = await setup();
-    expect(screen.getByText("Everything")).toBeDefined();
+    expect(screen.getByText(harness.node()?.label as string)).toBeDefined();
     expect(screen.getByText("test.everything")).toBeDefined();
-    expect(screen.getByText(harness.nodeId)).toBeDefined();
   });
 
   it("writes an edit through the bus, not into the node object (§V29)", async () => {
@@ -385,5 +388,76 @@ describe("T269 — parameters first, Common on its own page (§V174)", () => {
       />,
     );
     expect(screen.getByText("No parameters")).toBeDefined();
+  });
+});
+
+/**
+ * T954 — the header says WHICH NODE, then what it is.
+ *
+ * It used to say the type twice and the identity once, quietly: `definition.title`
+ * ("Everything") bold, `node.type` ("test.everything") beside it — the same fact in
+ * machine form — and `node.id` dim and far right. So the one thing that says which node
+ * this is was the smallest, dimmest and furthest from the eye, and the panel was
+ * inverted from the graph node header the user had just clicked from.
+ *
+ * §B170 is why the name is `label ?? id` and not the id alone: ids are EDGE ADDRESSES
+ * and labels are NAMES. Reading the id when a label exists is the shape of the `sway1`
+ * bug that hid for months.
+ */
+describe("T954 — name first, machine type as a badge", () => {
+  it("names the node by its LABEL, and says the machine type exactly once", async () => {
+    const { node } = await setup();
+    const label = node()?.label;
+    expect(label).toBeDefined();
+
+    const header = document.querySelector("header");
+    expect(header).not.toBeNull();
+
+    // The badge — one of them, carrying the addressable machine name.
+    const badges = header?.querySelectorAll("[data-machine-type]") ?? [];
+    expect(badges.length).toBe(1);
+    expect(badges[0]?.textContent).toBe("test.everything");
+
+    // The NAME leads, and it is the node's, not the type's display name.
+    expect(header?.firstElementChild?.textContent).toBe(label);
+    expect(header?.textContent).not.toContain("Everything");
+
+    // Said once: the type occupied both prominent slots before this.
+    expect(header?.textContent?.split("test.everything").length).toBe(2);
+
+    // The id no longer takes a slot of its own — the label IS the name (§B170).
+    expect(header?.textContent).not.toContain(node()?.id);
+  });
+
+  it("falls back to the ID when a node carries no label (§B170's legacy shape)", () => {
+    // E14's `sway` node: `{ id, type }` with no label at all. The id is then the only
+    // thing that says which node this is, and it is what `op()` cannot address — so it
+    // is exactly what the header must show.
+    const nodeId = "sway" as NodeId;
+    const store = createGraphStore({
+      initialGraph: {
+        revision: 1,
+        nodes: {
+          [nodeId]: {
+            id: nodeId,
+            type: everythingNode.type,
+            definitionVersion: everythingNode.version,
+            position: { x: 0, y: 0 },
+            parameters: {},
+          },
+        },
+        edges: {},
+        groups: {},
+      },
+    });
+    const { bus } = createDomainBus({
+      store,
+      registry: createNodeRegistry([everythingNode]).view(),
+    });
+    render(<Inspector bus={bus} context={context} nodeId={nodeId} settings={settings} />);
+
+    const header = document.querySelector("header");
+    expect(header?.firstElementChild?.textContent).toBe("sway");
+    expect(header?.querySelector("[data-machine-type]")?.textContent).toBe("test.everything");
   });
 });

@@ -32,6 +32,9 @@ export {
 } from "./primitives/popover.tsx";
 export type { PopoverContentProps } from "./primitives/popover.tsx";
 
+export { NodeIdentity } from "./primitives/node-identity.tsx";
+export type { NodeIdentityProps } from "./primitives/node-identity.tsx";
+
 export { TabBadge, TabsContent, TabsList, TabsRoot, TabsTrigger } from "./primitives/tabs.tsx";
 export type {
   TabBadgeProps,

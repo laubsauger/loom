@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { NodeDefinition } from "@domain/types/node-definition.ts";
+import { NodeIdentity } from "@ui/primitives/node-identity.tsx";
 import { PopoverAnchor, PopoverContent, PopoverRoot } from "@ui/primitives/popover.tsx";
 import { categoriesOf, filterLibrary } from "./search.ts";
 import styles from "./node-search.module.css";
@@ -382,8 +383,19 @@ export function NodeSearch({ definitions, anchor, onPick, onClose }: NodeSearchP
                     onPick(definition.type);
                   }}
                 >
-                  <span className={styles.itemTitle}>{definition.title}</span>
-                  <span className={styles.itemMeta}>{definition.type}</span>
+                  {/*
+                    T954: same rows as the node library, so the same component renders
+                    them — title first, machine type as a quiet badge. This popover
+                    deliberately does not take §T877's panel (three escape hatches), but
+                    the ROW is identical, and a hand-built copy of it is exactly how the
+                    two lists drifted apart before.
+                  */}
+                  <NodeIdentity
+                    name={definition.title}
+                    type={definition.type}
+                    nameClassName={styles.itemTitle}
+                    typeClassName={styles.itemMeta}
+                  />
                 </button>
               ))
             )}

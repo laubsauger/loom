@@ -14,10 +14,13 @@ import type { TextureFormat } from "@domain/types/node-definition.ts";
 import { ParameterControl } from "@ui/controls/parameter-control.tsx";
 import { CodeField } from "@editor/shader-editor/index.ts";
 import type { ControlVariant } from "@ui/controls/control-row.tsx";
+import { NodeIdentity } from "@ui/primitives/node-identity.tsx";
 import { TabsContent, TabsList, TabsRoot, TabsTrigger } from "@ui/primitives/tabs.tsx";
 import { CommonReadout, CommonSection } from "./common-section.tsx";
 import { AudioSection } from "./audio-section.tsx";
 import { WebcamSection } from "./webcam-section.tsx";
+import { MidiSection } from "./midi-section.tsx";
+import type { MidiSectionSurface } from "./midi-section.tsx";
 import { DEFAULT_GROUP, groupParameters } from "./parameter-groups.ts";
 import { createParameterEditor } from "./parameter-editor.ts";
 import type { ParameterEditor } from "./parameter-editor.ts";
@@ -85,6 +88,13 @@ export interface InspectorProps {
    * audio nodes. Absent = no session capture wiring (tests, embeds) — section hidden.
    */
   audioStatus?: () => { kind: "idle" | "live" | "error"; message?: string };
+  /**
+   * T942: the session's ONE Web MIDI access, for the MIDI section shown on `midiIn`.
+   * Absent = no session MIDI wiring (tests, embeds) — section hidden, exactly as the
+   * Audio one is. NEVER a fabricated stand-in: a picker over an access nobody holds
+   * would learn nothing and say nothing about why.
+   */
+  midi?: MidiSectionSurface;
   variant?: ControlVariant;
   /**
    * The channel resolver a `driven` parameter reads through (B46, T374, §V61).
@@ -180,6 +190,7 @@ export function Inspector({
   channels,
   latestFrame,
   audioStatus,
+  midi,
   components,
 }: InspectorProps) {
   const graph = useSyncExternalStore<GraphDocument>(
@@ -406,6 +417,19 @@ export function Inspector({
       />
     ) : null;
 
+  /* T942: the controller gets its learn table and its ONE honest sentence about why there
+     is no MIDI — keyed on the node TYPE, as the mic and camera sections are. */
+  const midiSection =
+    midi !== undefined && node.type === "midiIn" ? (
+      <MidiSection
+        nodeId={node.id}
+        device={typeof resolved.values["device"] === "string" ? (resolved.values["device"] as string) : ""}
+        mapping={typeof resolved.values["mapping"] === "string" ? (resolved.values["mapping"] as string) : ""}
+        midi={midi}
+        editor={editor}
+      />
+    ) : null;
+
   const parameterSections =
     groups.length === 0 ? (
       // §V91: name the STATE, not the pane's purpose. A node with no parameters is a
@@ -479,10 +503,27 @@ export function Inspector({
 
   const header = (
     <>
+      {/*
+        T954 — the NAME is the prominent half, the machine type is a quiet badge, and
+        the type is said ONCE. This header used to read `definition.title` bold, then
+        `node.type` beside it (the same fact in machine form), then `node.id` dim and
+        far right: the one thing saying WHICH node this is was the smallest, dimmest
+        and furthest from the eye, and it was inverted from the graph node header the
+        user had just clicked from.
+
+        §B170: ids are EDGE ADDRESSES and labels are NAMES, so the name is `label ?? id`
+        — a node carrying a label shows it, and only a label-less legacy node (E14's
+        `sway`) falls back to the id it is addressed by.
+      */}
       <header className={styles.header}>
-        <span className={styles.title}>{definition?.title ?? node.type}</span>
-        <span className={styles.type}>{node.type}</span>
-        <span className={styles.identity}>{node.id}</span>
+        <NodeIdentity
+          name={node.label ?? node.id}
+          type={node.type}
+          nameClassName={styles.title}
+          typeClassName={styles.type}
+          nameTitle={node.label ?? node.id}
+          typeTitle={`${definition?.title ?? node.type} — this node's type`}
+        />
       </header>
       <CommonReadout size={resolvedSize} format={resolvedFormat} compact />
     </>
@@ -498,6 +539,7 @@ export function Inspector({
         {parameterSections}
         {audioSection}
         {webcamSection}
+        {midiSection}
         {commonSection}
       </div>
     );
@@ -516,6 +558,7 @@ export function Inspector({
           {parameterSections}
           {audioSection}
           {webcamSection}
+          {midiSection}
         </TabsContent>
         <TabsContent className={cx(styles.page, styles.page)} value="common">
           {commonSection}

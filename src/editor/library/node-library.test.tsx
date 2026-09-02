@@ -220,3 +220,36 @@ describe("§V13 — port-drag mode narrows the catalogue to what will actually c
     expect(onClearPortDrag).toHaveBeenCalled();
   });
 });
+
+/**
+ * T954 — the row NAMES the node type, then addresses it.
+ *
+ * The owner's complaint about the inspector applies here too: "we're doing the same
+ * weird thing in the node library where we're showing the lowercase machine readable one
+ * too… i'd much rather see a badge for the node type there". The machine type is not
+ * deleted — it is what an agent, the MCP tools and the docs address a node BY — it is
+ * demoted to a badge, said ONCE, after the title.
+ *
+ * The badge comes from the shared `NodeIdentity` (§T877's lesson at the row level), and
+ * `data-machine-type` is what marks it, so this asserts the ARRANGEMENT rather than a
+ * class name: a hand-rolled copy of the pair would leave the marker behind.
+ */
+describe("T954 — title first, machine type as a badge", () => {
+  it("says the machine type ONCE per row, after the title", () => {
+    render(<NodeLibrary definitions={testNodeDefinitions} />);
+    const row = screen.getByText("Blur").closest("button");
+    expect(row).not.toBeNull();
+
+    const badges = row?.querySelectorAll("[data-machine-type]") ?? [];
+    expect(badges.length).toBe(1);
+    expect(badges[0]?.textContent).toBe("test.blur");
+
+    // Once, not twice: the row's own text carries the type exactly one time.
+    expect(row?.textContent?.split("test.blur").length).toBe(2);
+
+    // And the TITLE leads — the same order the inspector header and the node header use.
+    const title = screen.getByText("Blur");
+    expect(title.compareDocumentPosition(badges[0] as Node) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .toBeTruthy();
+  });
+});

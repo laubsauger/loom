@@ -802,3 +802,41 @@ describe("T924 — a metric-only re-render costs no forced layout", () => {
     }
   });
 });
+
+/**
+ * T954 — the order this header established, pinned so the panels can match it.
+ *
+ * The inspector used to invert it (the type's display name bold, the type again in
+ * machine form, the node's own name dim and far right), which is what the owner saw:
+ * "kinda the opposite of what the node title shows". The fix made the inspector follow
+ * THIS surface, so this asserts the thing being followed — name first, type second —
+ * rather than leaving the claim resting on one panel's own test.
+ */
+describe("T954 — the graph header names the node BEFORE its type", () => {
+  it("puts the name first and the type after it", () => {
+    const graph: GraphDocument = {
+      revision: 1,
+      nodes: {
+        n1: {
+          id: "n1",
+          type: "test.blur",
+          definitionVersion: 1,
+          position: { x: 0, y: 0 },
+          parameters: {},
+          // A renamed node: T416 shows the type chip exactly when the name has stopped
+          // carrying it, so a rename is what puts BOTH slots on screen at once.
+          label: "Bloom pass",
+        },
+      },
+      edges: {},
+      groups: {},
+    };
+    const { container, nodeId } = mountNode("test.blur", { graph });
+    const name = container.querySelector(`[data-testid="node-name-${nodeId}"]`);
+    const type = container.querySelector(`[data-testid="node-type-${nodeId}"]`);
+    expect(name?.textContent).toBe("Bloom pass");
+    expect(type?.textContent).toBe("Blur");
+    expect((name as Node).compareDocumentPosition(type as Node) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .toBeTruthy();
+  });
+});

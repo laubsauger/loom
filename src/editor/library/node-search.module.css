@@ -142,11 +142,12 @@
   white-space: nowrap;
 }
 
+/*
+  T954: the machine type wears the shared `NodeIdentity` badge, so its chrome — border,
+  mono, micro, dim — is not restated here. The row keeps only the flex behaviour.
+*/
 .itemMeta {
   flex: 0 0 auto;
-  color: var(--text-dim);
-  font-family: var(--font-mono);
-  font-size: var(--fs-micro);
 }
 
 .empty {

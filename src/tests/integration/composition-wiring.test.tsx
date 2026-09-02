@@ -1228,7 +1228,10 @@ describe("a floated pane is on the same bus as the dock (§V97, T192)", () => {
     // The inspector is showing that node, in the dock.
     const inspector = document.querySelector<HTMLElement>('[data-pane-host^="inspector-"]');
     if (inspector === null) throw new Error("no inspector pane");
-    expect(inspector.textContent).toContain(nodeId);
+    // T954: the pane is asked WHICH NODE it is on through `data-node-id`, not through
+    // its header copy — the header now names the node (`solid1`) and badges the type,
+    // because the id is an EDGE ADDRESS and the label is the name (§B170).
+    expect(inspector.querySelector(`[data-node-id="${nodeId}"]`)).not.toBeNull();
 
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Move inspector" }));
@@ -1259,7 +1262,7 @@ describe("a floated pane is on the same bus as the dock (§V97, T192)", () => {
     await waitFor(() => {
       expect(inspector.textContent).toContain("No node selected");
     });
-    expect(inspector.textContent).not.toContain(nodeId);
+    expect(inspector.querySelector(`[data-node-id="${nodeId}"]`)).toBeNull();
     expect(doc.body.contains(inspector)).toBe(true);
   });
 });

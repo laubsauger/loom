@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import type { DragEvent as ReactDragEvent } from "react";
 import type { NodeDefinition } from "@domain/types/node-definition.ts";
 import { Button } from "@ui/primitives/button.tsx";
+import { NodeIdentity } from "@ui/primitives/node-identity.tsx";
 import { cx } from "@ui/cx.ts";
 import { portTypeColor } from "@ui/ports.ts";
 import { LibraryGroups, LibraryPanel, LibrarySearch } from "./library-panel.tsx";
@@ -165,8 +166,17 @@ export function NodeLibrary({
             }}
             title={definition.description ?? definition.type}
           >
-            <span className={styles.itemTitle}>{definition.title}</span>
-            <span className={styles.itemMeta}>{definition.type}</span>
+            {/*
+              T954: the title first, the machine type as a small badge after it — the
+              same arrangement the inspector header and the graph node header use, from
+              the same component, so the three cannot drift apart again (§T877).
+            */}
+            <NodeIdentity
+              name={definition.title}
+              type={definition.type}
+              nameClassName={styles.itemTitle}
+              typeClassName={styles.itemType}
+            />
           </button>
         )}
       />

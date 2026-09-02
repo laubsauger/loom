@@ -18,6 +18,11 @@
   padding-bottom: var(--chrome-half-beat);
 }
 
+/*
+  T954: the NAME wears the title weight and the machine type is the badge beside it.
+  Truncation and the badge's own chrome come from the shared `NodeIdentity` (the graph
+  node header's arrangement, not a third one); this is the inspector's type scale only.
+*/
 .title {
   color: var(--text);
   font-family: var(--font-ui);
@@ -25,22 +30,13 @@
   font-weight: var(--weight-header);
   font-stretch: var(--width-header);
   letter-spacing: var(--tracking-display);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .type {
-  color: var(--text-dim);
-  font-family: var(--font-mono);
-  font-size: var(--chrome-meta);
-}
-
-.identity {
-  margin-left: auto;
-  color: var(--line-hot);
-  font-family: var(--font-mono);
-  font-size: var(--chrome-meta);
+  /* The machine type is what an agent, the MCP tools and the docs address the node by,
+     so it stays copyable — including in the node-embedded variant, whose host node sets
+     `user-select: none` on the whole card. */
+  user-select: text;
 }
 
 /*

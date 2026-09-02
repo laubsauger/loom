@@ -1,0 +1,31 @@
+/**
+ * Name + type badge (T954). Colours are tokens only (§V17).
+ *
+ * The name keeps whatever type scale its surface gives it; what this file owns is the
+ * pair's shared behaviour — the name truncates, and the type is a small quiet badge
+ * that never competes with it (§V90: chrome stays quiet).
+ */
+
+.name {
+  /* A grid/flex item defaults to `min-width: auto` and refuses to shrink below its
+     content, so without this the ellipsis never engages and the name overlaps the
+     badge instead of truncating. */
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.type {
+  /* The badge gives way to nothing: it is the shorter of the two and the addressable
+     one, so the NAME truncates first. */
+  flex: 0 0 auto;
+  padding: 0 var(--space-1);
+  border: var(--border-hairline);
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  text-transform: lowercase;
+  white-space: nowrap;
+}
