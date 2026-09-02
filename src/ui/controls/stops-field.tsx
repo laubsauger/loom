@@ -2,6 +2,7 @@ import { PopoverContent, PopoverHeader, PopoverRoot, PopoverTrigger } from "../p
 import { cx } from "../cx.ts";
 import type { ColorStop, StopsParameter } from "@domain/types/parameters.ts";
 import { COLOR_CHANNEL_LABELS, convertColor, cssColorFor, toRgba, type Rgba } from "./color.ts";
+import { ColorPicker } from "./color-picker.tsx";
 import { NumberField } from "./number-field.tsx";
 import type { EditPhase, NumericSpec, ValueListener } from "./types.ts";
 import styles from "./controls.module.css";
@@ -177,6 +178,23 @@ export function StopsField({
               <PopoverContent align="start">
                 <PopoverHeader>{`${label} stop ${index + 1}`}</PopoverHeader>
                 <div className={styles.colorPanel}>
+                  {/*
+                    T896: the SAME picker the inspector's colour rows mount, not a
+                    second one — a stop is a colour, and a gradient authored through a
+                    different widget than every other colour is exactly the drift §T886
+                    named. §V113 does not reach here: a stop list is static as a whole
+                    (§V195), so there are no per-channel modes to clobber and `disabled`
+                    is the only availability question.
+                  */}
+                  <ColorPicker
+                    label={`${label} stop ${index + 1}`}
+                    value={stop.color as Rgba}
+                    space={space}
+                    disabled={disabled}
+                    onChange={(next, phase) =>
+                      emit(withStop(index, { position: stop.position, color: next }), phase)
+                    }
+                  />
                   {COLOR_CHANNEL_LABELS.map((channelLabel, channel) => (
                     <div className={styles.axis} key={channelLabel}>
                       <span className={styles.axisLabel} aria-hidden>

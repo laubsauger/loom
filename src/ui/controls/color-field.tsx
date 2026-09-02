@@ -12,6 +12,7 @@ import {
   type ColorSpace,
   type Rgba,
 } from "./color.ts";
+import { ColorPicker } from "./color-picker.tsx";
 import { NumberField } from "./number-field.tsx";
 import type { EditPhase, NumericSpec, ValueListener } from "./types.ts";
 import styles from "./controls.module.css";
@@ -115,6 +116,15 @@ export function ColorField({
         <PopoverContent align="start">
           <PopoverHeader>{label}</PopoverHeader>
           <div className={styles.colorPanel}>
+            {/* T896: the picker sits ABOVE the channels, never instead of them. */}
+            <ColorPicker
+              label={label}
+              value={stored}
+              space={space}
+              disabled={disabled}
+              {...(componentDisabled === undefined ? {} : { componentDisabled })}
+              onChange={emit}
+            />
             {COLOR_CHANNEL_LABELS.map((channelLabel, index) => (
               <div className={styles.axis} key={channelLabel}>
                 <span className={styles.axisLabel} aria-hidden>

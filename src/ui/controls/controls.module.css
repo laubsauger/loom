@@ -417,6 +417,38 @@
   text-transform: lowercase;
 }
 
+/* T896 — the picker. A native colour input styled to read as a wide swatch, so the
+   panel opens on the thing the user came for and the channels sit under it. */
+.pickerWrap {
+  display: block;
+  min-width: 0;
+}
+
+.picker {
+  display: block;
+  width: 100%;
+  height: var(--control-h-lg);
+  padding: 0;
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+  cursor: pointer;
+}
+
+.picker::-webkit-color-swatch-wrapper {
+  padding: 2px;
+}
+
+.picker::-webkit-color-swatch {
+  border: none;
+  border-radius: calc(var(--radius) - 1px);
+}
+
+.picker:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .colorPanel {
   display: flex;
   flex-direction: column;

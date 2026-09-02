@@ -79,6 +79,9 @@ export type { TextFieldProps } from "./text-field.tsx";
 export { VectorField, specForVector, AXIS_LABELS } from "./vector-field.tsx";
 export type { VectorFieldProps } from "./vector-field.tsx";
 
+export { ColorPicker, PICKER_LOCKED_REASON } from "./color-picker.tsx";
+export type { ColorPickerProps } from "./color-picker.tsx";
+
 export { ColorField } from "./color-field.tsx";
 export type { ColorFieldProps } from "./color-field.tsx";
 
