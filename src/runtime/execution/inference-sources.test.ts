@@ -44,6 +44,17 @@ function frameBuffer(byte: number): ArrayBuffer {
   return new Uint8Array([byte, 0, 0, 0]).buffer;
 }
 
+/**
+ * Drain the fire-and-forget runs `sample` issues.
+ *
+ * `runOnce` awaits a readback and then a model, so a single `await Promise.resolve()`
+ * lands mid-run and a test that used one would be asserting on a half-finished state —
+ * which is how a cadence test goes green while the cadence does nothing.
+ */
+async function settled(): Promise<void> {
+  for (let i = 0; i < 8; i += 1) await Promise.resolve();
+}
+
 describe("the fill-policy predicate", () => {
   /**
    * The subtle version of this branch is `mode === "offline"`, and it would leave the
@@ -344,6 +355,116 @@ describe("uploads and tracking", () => {
     await sources.settle(1);
     expect(sources.ready("depth1")).toBe(true);
     expect(sources.lastFailure("depth1")).toBeUndefined();
+  });
+
+  /**
+   * §T384'S FRESHNESS POLICY, AS A PARAMETER (T965).
+   *
+   * The rate limit and the hold were hidden constants — "run whenever a run is not in
+   * flight" — and §T384 says that is a decision rather than a detail. These assert the two
+   * things a cadence knob must get right, and the second is the one that is easy to miss:
+   * a cap belongs to LIVE playback, and a freeze belongs to the DOCUMENT, so `settle`
+   * honours one and ignores the other. Get that backwards and either an export renders a
+   * thinner animation than the screen showed, or a frozen depth map silently thaws in the
+   * take.
+   */
+  describe("§T384 — the rate limit and the hold", () => {
+    it("starts at most one run per interval, measured on the TIMELINE clock", async () => {
+      const runner = echoRunner();
+      const sources = createInferenceSources({ readBuffer: async () => frameBuffer(1), ...runner });
+      sources.track([entry("depth1", { minIntervalSeconds: 0.5 })]);
+
+      sources.sample(0, 0);
+      await settled();
+      sources.sample(1, 0.1);
+      sources.sample(2, 0.4);
+      await settled();
+      // Inside the gap: exactly the first run, and no silent second.
+      expect(runner.log).toEqual(["depth1"]);
+
+      sources.sample(3, 0.6);
+      await settled();
+      expect(runner.log).toEqual(["depth1", "depth1"]);
+    });
+
+    it("does not lock a node out when the timeline LOOPS backwards", async () => {
+      // A cap implemented as "now - last < gap" with no direction check would stop running
+      // entirely for one whole lap after a loop, which reads as the model dying.
+      const runner = echoRunner();
+      const sources = createInferenceSources({ readBuffer: async () => frameBuffer(1), ...runner });
+      sources.track([entry("depth1", { minIntervalSeconds: 5 })]);
+
+      sources.sample(0, 10);
+      await settled();
+      sources.sample(1, 0);
+      await settled();
+      expect(runner.log).toHaveLength(2);
+    });
+
+    it("leaves an UNCAPPED entry exactly as it was", async () => {
+      const runner = echoRunner();
+      const sources = createInferenceSources({ readBuffer: async () => frameBuffer(1), ...runner });
+      sources.track([entry("depth1")]);
+      sources.sample(0, 0);
+      await settled();
+      sources.sample(1, 0.001);
+      await settled();
+      expect(runner.log).toHaveLength(2);
+    });
+
+    it("HOLDS after the first result — and keeps publishing it, never blank", async () => {
+      let level = 1;
+      const sources = createInferenceSources({
+        readBuffer: async () => frameBuffer(level),
+        run: async () => new Uint8Array([level, level, level, 255]),
+      });
+      sources.track([entry("depth1", { hold: true })]);
+
+      sources.sample(0, 0);
+      await settled();
+      expect(sources.currentFrame("depth1")!.bytes[0]).toBe(1);
+
+      level = 9;
+      sources.sample(1, 1);
+      await settled();
+      // Frozen, not stopped: the node still publishes, and its age grows to say so.
+      expect(sources.currentFrame("depth1")!.bytes[0]).toBe(1);
+      expect(sources.resultAges(5)[0]?.ageFrames).toBe(5);
+    });
+
+    it("a HELD node still computes its FIRST result, so it is stale by choice not blank", async () => {
+      const runner = echoRunner();
+      const sources = createInferenceSources({ readBuffer: async () => frameBuffer(3), ...runner });
+      sources.track([entry("depth1", { hold: true })]);
+      await sources.settle(0);
+      expect(sources.ready("depth1")).toBe(true);
+      expect(sources.currentFrame("depth1")!.bytes[0]).toBe(3);
+    });
+
+    it("SETTLE ignores the rate limit and honours the hold — §V586's split", async () => {
+      // The cap is a comfort setting about this machine, so an export must not inherit it:
+      // a take renders every frame or it is not reproducible. The hold is part of the
+      // DOCUMENT, so an export that re-ran it would render a different document.
+      const capped = echoRunner();
+      const cappedSources = createInferenceSources({
+        readBuffer: async () => frameBuffer(1),
+        ...capped,
+      });
+      cappedSources.track([entry("depth1", { minIntervalSeconds: 60 })]);
+      await cappedSources.settle(0);
+      await cappedSources.settle(1);
+      expect(capped.log).toHaveLength(2);
+
+      const frozen = echoRunner();
+      const frozenSources = createInferenceSources({
+        readBuffer: async () => frameBuffer(1),
+        ...frozen,
+      });
+      frozenSources.track([entry("depth1", { hold: true })]);
+      await frozenSources.settle(0);
+      await frozenSources.settle(1);
+      expect(frozen.log).toHaveLength(1);
+    });
   });
 
   it("serves each tracked node its own result", async () => {

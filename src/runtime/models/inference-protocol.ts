@@ -21,16 +21,41 @@
 /** The model kinds the worker knows how to pack and encode for. */
 export type InferenceNodeType = "depth" | "pose";
 
+/**
+ * WHICH SESSION, and it is NOT the model id (§T965's backend picker).
+ *
+ * Two Depth nodes can hold the same weights and want different execution providers — one
+ * pinned to the CPU because a WebGPU driver misbehaves, one on the default ladder. A cache
+ * keyed by model alone would silently hand the second node the first node's session and
+ * the backend parameter would be a control that does nothing (§V146's family, one layer
+ * down). So the key is the model AND the ladder it was asked to try, built by
+ * `sessionKeyFor`, and every load/loaded pair carries it instead of the bare model id.
+ */
+export function sessionKeyFor(modelId: string, providers: readonly string[]): string {
+  return `${modelId}@${providers.join("+")}`;
+}
+
 export type InferenceRequest =
   /**
-   * Hand the worker a model's weights, once. It builds the session and keeps it, so a
-   * second node using the same model pays nothing and no weights cross again.
+   * Hand the worker a model's weights, once per session key. It builds the session and
+   * keeps it, so a second node on the same model AND ladder pays nothing and no weights
+   * cross again.
    */
-  | { readonly kind: "load"; readonly modelId: string; readonly weights: ArrayBuffer }
+  | {
+      readonly kind: "load";
+      readonly sessionKey: string;
+      readonly weights: ArrayBuffer;
+      /**
+       * The execution providers to try, IN ORDER. The worker tries them ONE AT A TIME so
+       * it can report which one actually produced a session — §T715/§V672: report what it
+       * GOT by measuring, never what it ASKED for.
+       */
+      readonly providers: readonly string[];
+    }
   | {
       readonly kind: "run";
       readonly requestId: number;
-      readonly modelId: string;
+      readonly sessionKey: string;
       readonly nodeType: InferenceNodeType;
       /** Raw `vec4f` texels straight from the readback. Transferred. */
       readonly texels: ArrayBuffer;
@@ -41,8 +66,27 @@ export type InferenceRequest =
     };
 
 export type InferenceResponse =
-  | { readonly kind: "loaded"; readonly modelId: string }
-  | { readonly kind: "result"; readonly requestId: number; readonly bytes: ArrayBuffer }
+  | {
+      readonly kind: "loaded";
+      readonly sessionKey: string;
+      /**
+       * The provider that ACTUALLY built the session — the one whose attempt returned,
+       * not the one at the head of the list. This is the only honest answer to "what is it
+       * running on", and it is measured rather than echoed.
+       */
+      readonly backend: string;
+      /** Wall time the successful attempt took, ms. Telemetry only; never a render clock. */
+      readonly millis: number;
+    }
+  | {
+      readonly kind: "result";
+      readonly requestId: number;
+      readonly bytes: ArrayBuffer;
+      /** The provider this result came off. Same measurement, carried per run. */
+      readonly backend: string;
+      /** Wall time this inference took, ms. Telemetry only; never a render clock. */
+      readonly millis: number;
+    }
   /**
    * A failure is a MESSAGE, never a thrown worker error.
    *

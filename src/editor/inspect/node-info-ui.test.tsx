@@ -205,7 +205,14 @@ describe("the popup renders every field from a fixture, with no GPU", () => {
 describe("T645 — the node info popup shows §V329's staleness and classification", () => {
   const realRegistry = createNodeRegistry(allNodeDefinitions);
 
-  const infoFor = (type: string, runtime?: Partial<{ resultAgeFrames: number | null }>) =>
+  const infoFor = (
+    type: string,
+    runtime?: Partial<{
+      resultAgeFrames: number | null;
+      inferenceBackend: string | null;
+      inferenceMs: number | null;
+    }>,
+  ) =>
     buildNodeInfo({
       nodeId: "n1",
       graph: graphOf([node("n1", type, { label: type })]),
@@ -215,6 +222,8 @@ describe("T645 — the node info popup shows §V329's staleness and classificati
         status: "valid",
         gpuMs: null,
         resultAgeFrames: null,
+        inferenceBackend: null,
+        inferenceMs: null,
         message: null,
         errorCount: 0,
         warningCount: 0,

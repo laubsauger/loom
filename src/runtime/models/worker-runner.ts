@@ -1,4 +1,10 @@
-import type { InferenceNodeType, InferenceRequest, InferenceResponse, WorkerLike } from "./inference-protocol.ts";
+import {
+  sessionKeyFor,
+  type InferenceNodeType,
+  type InferenceRequest,
+  type InferenceResponse,
+  type WorkerLike,
+} from "./inference-protocol.ts";
 
 /**
  * The main thread's half of the inference worker (T382).
@@ -27,6 +33,21 @@ export interface WorkerRunTarget {
   readonly width: number;
   readonly height: number;
   readonly side: number;
+  /**
+   * The execution providers this node asks the worker to try, in order (§T965's backend
+   * parameter). Part of the SESSION IDENTITY, not just a hint: two nodes on the same
+   * weights with different ladders get different sessions, or the second node's choice
+   * would be a control that silently does nothing.
+   */
+  readonly providers: readonly string[];
+}
+
+/** What a completed run turned out to have used. Measured, never echoed (§V672). */
+export interface InferenceMeasurement {
+  /** The execution provider that actually produced the session. */
+  readonly backend: string;
+  /** Wall time the inference took, ms. Telemetry only. */
+  readonly millis: number;
 }
 
 export interface WorkerRunnerOptions {
@@ -35,6 +56,14 @@ export interface WorkerRunnerOptions {
   describe(nodeId: string): WorkerRunTarget | undefined;
   /** The acquired weights. Called once per model; `undefined` means not available. */
   weightsFor(modelId: string): Promise<ArrayBuffer | undefined>;
+  /**
+   * Called with each completed run's measurement, so the node can REPORT what it ran on.
+   *
+   * A callback rather than a widened `run` return, because `InferenceRunner` — the seam
+   * both fill policies share — is deliberately "bytes in, bytes out": threading telemetry
+   * through it would put a reporting concern in the middle of the reproducibility path.
+   */
+  onMeasured?(nodeId: string, measurement: InferenceMeasurement): void;
 }
 
 export interface WorkerRunner {
@@ -44,20 +73,26 @@ export interface WorkerRunner {
 
 export function createWorkerRunner(options: WorkerRunnerOptions): WorkerRunner {
   let nextId = 1;
-  const pending = new Map<number, { resolve(bytes: Uint8Array): void; reject(error: Error): void }>();
+  const pending = new Map<
+    number,
+    { nodeId: string; resolve(bytes: Uint8Array): void; reject(error: Error): void }
+  >();
   const loads = new Map<string, Promise<void>>();
   const loadWaiters = new Map<string, { resolve(): void; reject(error: Error): void }>();
 
   options.worker.addEventListener("message", (event: { data: InferenceResponse }) => {
     const message = event.data;
     if (message.kind === "loaded") {
-      loadWaiters.get(message.modelId)?.resolve();
-      loadWaiters.delete(message.modelId);
+      loadWaiters.get(message.sessionKey)?.resolve();
+      loadWaiters.delete(message.sessionKey);
       return;
     }
     if (message.kind === "result") {
       const waiter = pending.get(message.requestId);
       pending.delete(message.requestId);
+      if (waiter !== undefined) {
+        options.onMeasured?.(waiter.nodeId, { backend: message.backend, millis: message.millis });
+      }
       waiter?.resolve(new Uint8Array(message.bytes));
       return;
     }
@@ -84,23 +119,23 @@ export function createWorkerRunner(options: WorkerRunnerOptions): WorkerRunner {
     loadWaiters.clear();
   });
 
-  const ensureLoaded = (modelId: string): Promise<void> => {
-    const existing = loads.get(modelId);
+  const ensureLoaded = (modelId: string, sessionKey: string, providers: readonly string[]): Promise<void> => {
+    const existing = loads.get(sessionKey);
     if (existing !== undefined) return existing;
     const started = (async () => {
       const weights = await options.weightsFor(modelId);
       if (weights === undefined) throw new Error(`${modelId} is not available`);
       const settled = new Promise<void>((resolve, reject) => {
-        loadWaiters.set(modelId, { resolve, reject });
+        loadWaiters.set(sessionKey, { resolve, reject });
       });
-      const request: InferenceRequest = { kind: "load", modelId, weights };
+      const request: InferenceRequest = { kind: "load", sessionKey, weights, providers };
       options.worker.postMessage(request, [weights]);
       await settled;
     })();
-    loads.set(modelId, started);
+    loads.set(sessionKey, started);
     // A failed load must not be remembered as done, or every later run fails with a stale
     // rejection and a retry can never happen.
-    void started.catch(() => loads.delete(modelId));
+    void started.catch(() => loads.delete(sessionKey));
     return started;
   };
 
@@ -108,15 +143,16 @@ export function createWorkerRunner(options: WorkerRunnerOptions): WorkerRunner {
     async run(nodeId, texels) {
       const target = options.describe(nodeId);
       if (target === undefined) throw new Error(`no inference target for "${nodeId}"`);
-      await ensureLoaded(target.modelId);
+      const sessionKey = sessionKeyFor(target.modelId, target.providers);
+      await ensureLoaded(target.modelId, sessionKey, target.providers);
       const requestId = nextId++;
       const settled = new Promise<Uint8Array>((resolve, reject) => {
-        pending.set(requestId, { resolve, reject });
+        pending.set(requestId, { nodeId, resolve, reject });
       });
       const request: InferenceRequest = {
         kind: "run",
         requestId,
-        modelId: target.modelId,
+        sessionKey,
         nodeType: target.nodeType,
         texels,
         width: target.width,

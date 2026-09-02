@@ -130,6 +130,16 @@ export interface NodeInfo {
    * telemetry channel, like every other number here: this collects nothing (§V85).
    */
   readonly resultAgeFrames: number | null;
+  /**
+   * T965 — the execution provider this node's model ACTUALLY ran on, and how long its last
+   * run took (ms). `null` until a result lands, and for every node that runs no model.
+   *
+   * Beside `resultAgeFrames` because it is the other half of the same question: what
+   * produced the picture, and how far behind it is. MEASURED, never the node's Backend
+   * parameter — see `NodeRuntimeSnapshot.inferenceBackend`.
+   */
+  readonly inferenceBackend: string | null;
+  readonly inferenceMs: number | null;
 }
 
 export interface NodeInfoRequest {
@@ -364,6 +374,8 @@ export function buildNodeInfo(request: NodeInfoRequest): NodeInfo {
     timingAvailable,
     reproducibility: NODE_REPRODUCIBILITY[type] ?? "pure",
     resultAgeFrames: runtime.resultAgeFrames,
+    inferenceBackend: runtime.inferenceBackend,
+    inferenceMs: runtime.inferenceMs,
   };
 }
 

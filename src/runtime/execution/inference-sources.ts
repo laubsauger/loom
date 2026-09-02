@@ -80,6 +80,31 @@ export interface InferenceEntry {
    * a node with no identity value cannot honour the contract that it always publishes.
    */
   readonly fallback: Uint8Array;
+  /**
+   * §T384's FRESHNESS POLICY, as a value rather than a hidden constant (§T965).
+   *
+   * The shortest gap, in TIMELINE seconds, between two runs of this node. `0` or absent
+   * is no cap and reproduces the behaviour every entry had before this existed. It only
+   * ever makes a node run LESS: a run is never started while one is in flight, so the
+   * cap is a floor on the gap and never a promise of a rate.
+   *
+   * It is deliberately confined to the LIVE fill policy. `settle` — the non-realtime one —
+   * ignores it, because §V586 makes a take's picture independent of when results happened
+   * to arrive, and a cadence knob that thinned an export would put a live-playback comfort
+   * setting inside the reproducibility path.
+   */
+  readonly minIntervalSeconds?: number;
+  /**
+   * Compute ONE result, then stop (§T384).
+   *
+   * Not "publish nothing": the entry still produces its first result, and from then on it
+   * keeps serving that one while its reported age grows — which is the honest reading of a
+   * frozen depth map and is why age is a number rather than a boolean. Unlike the rate
+   * limit this DOES bind `settle`, because a take of a document whose author froze the map
+   * must show the frozen map; an export that quietly re-ran it every frame would be
+   * rendering a different document from the one on screen.
+   */
+  readonly hold?: boolean;
 }
 
 /** What a node's model does. Injected, so a pseudo-inference and a real model both plug in. */
@@ -104,8 +129,12 @@ export interface InferenceSources {
    *
    * `frameIndex` is the frame that just closed, whose input the buffer now holds. It is
    * passed in rather than counted here because §V44 puts the clock in the caller.
+   *
+   * `timeSeconds` is that frame's TIMELINE time, and it is what `minIntervalSeconds` is
+   * measured against — never a wall reading, or the same document would run the model a
+   * different number of times on a slower machine. Absent, no entry is rate limited.
    */
-  sample(frameIndex: number): void;
+  sample(frameIndex: number, timeSeconds?: number): void;
   /**
    * NON-REALTIME fill policy. Resolves once every tracked entry holds a result computed
    * from THIS frame's input, so the picture a take renders does not depend on when a
@@ -172,12 +201,33 @@ export function createInferenceSources(options: {
   const inFlight = new Set<NodeId>();
   /** nodeId -> why the most recent run failed. Cleared by the next success (B156). */
   const failure = new Map<NodeId, string>();
+  /** nodeId -> the timeline time the last live run was ISSUED at (`minIntervalSeconds`). */
+  const issuedAt = new Map<NodeId, number>();
 
   const forget = (nodeId: NodeId): void => {
     latest.delete(nodeId);
     sourceFrame.delete(nodeId);
     generation.delete(nodeId);
     failure.delete(nodeId);
+    issuedAt.delete(nodeId);
+  };
+
+  /**
+   * Whether the LIVE policy is allowed to start a run for this entry right now.
+   *
+   * Two refusals, and they are different in kind. `hold` is a policy about the RESULT —
+   * one has landed and the author asked for that one — so it also binds `settle`. The rate
+   * limit is a policy about the MACHINE, so it does not.
+   */
+  const heldBack = (entry: InferenceEntry): boolean => entry.hold === true && latest.has(entry.nodeId);
+
+  const rateLimited = (entry: InferenceEntry, timeSeconds: number | undefined): boolean => {
+    const gap = entry.minIntervalSeconds ?? 0;
+    if (gap <= 0 || timeSeconds === undefined) return false;
+    const last = issuedAt.get(entry.nodeId);
+    // A timeline that jumped BACKWARDS (a loop, a scrub) must not lock the node out until
+    // it catches up again, so anything but "later by less than the gap" is allowed.
+    return last !== undefined && timeSeconds >= last && timeSeconds - last < gap;
   };
 
   /**
@@ -226,9 +276,11 @@ export function createInferenceSources(options: {
       }
     },
 
-    sample(frameIndex) {
+    sample(frameIndex, timeSeconds) {
       for (const entry of tracked) {
         if (inFlight.has(entry.nodeId)) continue;
+        if (heldBack(entry) || rateLimited(entry, timeSeconds)) continue;
+        if (timeSeconds !== undefined) issuedAt.set(entry.nodeId, timeSeconds);
         void runOnce(entry, frameIndex);
       }
     },
@@ -244,6 +296,10 @@ export function createInferenceSources(options: {
           // `inFlight` is cleared in a `finally`, so this cannot spin forever.
           while (inFlight.has(entry.nodeId)) await Promise.resolve();
         }
+        // A HELD entry that already has its result keeps it — the take must render the
+        // document the author froze. It still runs ONCE if nothing has landed yet, so a
+        // held node in an export is stale by choice rather than blank by accident.
+        if (heldBack(entry)) continue;
         await runOnce(entry, frameIndex);
       }
     },

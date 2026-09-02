@@ -147,7 +147,16 @@ export {
 } from "./composite.ts";
 export { feedbackNode, temporalNodes } from "./feedback.ts";
 export { cacheNode, CACHE_RING_KEY } from "./cache.ts";
-export { depthNode, DEPTH_INPUT_KEY, DEPTH_INPUT_SIDE, DEPTH_RESULT_KEY } from "./depth.ts";
+export {
+  depthNode,
+  depthModelChoiceFor,
+  depthProvidersFor,
+  depthSettingsFor,
+  DEPTH_INPUT_KEY,
+  DEPTH_INPUT_SIDE,
+  DEPTH_RESULT_KEY,
+} from "./depth.ts";
+export type { DepthNodeSettings } from "./depth.ts";
 export { pointsFromTextureNode } from "./points-from-texture.ts";
 export { poseNode, POSE_INPUT_KEY, POSE_RESULT_KEY } from "./pose.ts";
 export {

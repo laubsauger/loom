@@ -146,10 +146,19 @@ describe("a model that is held but does not run", () => {
     });
     expect(list).toHaveLength(1);
     expect(list[0]!.tone).toBe("error");
-    expect(list[0]!.message).toContain("has its model but the inference did not run");
-    // The reason is the point. Without it this row would be one more thing that says the
-    // picture is wrong and not why.
-    expect(list[0]!.detail).toContain("no ExecutionProvider bound");
+    // T965: THE REASON IS THE HEADLINE. It used to be the detail, under a banner
+    // announcing that the inference did not run — which the grey picture had already
+    // said. The only line carrying information was the demoted one, so it is promoted,
+    // and this asserts the promotion rather than merely that the reason appears
+    // somewhere: a test that accepted it in either slot would go green on the copy that
+    // buried it.
+    expect(list[0]!.message).toContain("no ExecutionProvider bound for depth-accurate");
+    expect(list[0]!.message).toContain("Depth");
+    // And the detail says what is on screen instead, in one line — no "the document
+    // still renders" clause, which tells someone looking at a rendered document that it
+    // renders.
+    expect(list[0]!.detail).toContain("flat grey");
+    expect(list[0]!.detail).not.toContain("still renders");
   });
 
   it("distinguishes 'still computing the first one' from 'failed'", () => {

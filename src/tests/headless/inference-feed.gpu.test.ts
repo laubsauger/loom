@@ -67,6 +67,22 @@ function inferenceGraph(): GraphDocument {
   } as never;
 }
 
+/**
+ * A flat result for the SHIPPED Depth node, whose result texture is `r32float` (T959).
+ *
+ * Separate from `flatResult` below, and the split is the bug this file was carrying: the
+ * shipped node's external texture stopped being RGBA bytes when T959 made it float, and
+ * the byte fixture kept being fed to it. 200,200,200,255 read as one float32 is a
+ * denormal — effectively zero — so the gate asserted a bright picture, got black, and
+ * said "expected 0 to be greater than 120" without ever naming the format. The stand-in
+ * node is still 8-bit, so it keeps the byte fixture; a fixture shared between two nodes
+ * with different formats is one that must disagree with one of them.
+ */
+function flatDepthResult(level: number): Uint8Array {
+  const floats = new Float32Array(SIZE * SIZE).fill(level);
+  return new Uint8Array(floats.buffer);
+}
+
 /** A flat result of one level, so a test can say exactly what the picture should become. */
 function flatResult(level: number): Uint8Array {
   const bytes = new Uint8Array(SIZE * SIZE * 4);
@@ -307,7 +323,7 @@ describe("the shipped Depth node renders offline", () => {
       settings: SETTINGS,
       frames: 1,
       capture: [0],
-      inference: () => flatResult(200),
+      inference: () => flatDepthResult(0.8),
     } as never);
 
     expect(result.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
@@ -323,6 +339,108 @@ describe("the shipped Depth node renders offline", () => {
       { space } as never,
     ).data;
     expect(meanLuma(rgba)).toBeGreaterThan(120);
+  });
+
+  /**
+   * T965 — THE OUTPUT PARAMETERS, ON REAL HARDWARE, BY EXACT VALUE.
+   *
+   * "Near Is Bright" and "Output Range" are uniform writes on the blit pass, which is the
+   * only reason they can be dialled at all — done in the worker's encoder they would cost
+   * a re-run of a multi-second model per drag. A uniform that is DECLARED and never bound
+   * reads as zero and produces a plausible picture, so this feeds ONE known depth and
+   * asserts the exact luma each setting must produce rather than "it changed".
+   */
+  /** Renders the shipped node with one flat fed depth, and reports the mean output byte. */
+  const drawDepth = async (parameters: GraphNode["parameters"], level: number) => {
+    const graph = {
+      ...depthGraph,
+      nodes: { ...depthGraph.nodes, depth: node("depth", "depth", parameters) },
+    } as never as GraphDocument;
+    const result = await renderHeadless({
+      host: nodeGpuHost(),
+      graph,
+      settings: SETTINGS,
+      frames: 1,
+      capture: [0],
+      inference: () => flatDepthResult(level),
+    } as never);
+    expect(result.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    const space = result.plan.outputs.find((o) => o.resourceId === result.outputResourceId)?.space ?? "display";
+    const frame = result.frames[0]!;
+    const rgba = toRgba8(
+      {
+        width: frame.width,
+        height: frame.height,
+        format: frame.format,
+        rowStride: frame.bytes.length / frame.height,
+        bytes: frame.bytes,
+      } as never,
+      { space } as never,
+    ).data;
+    return { mean: meanLuma(rgba), space: space as string };
+  };
+
+  /**
+   * The byte a given LINEAR value must land on once the output has been encoded.
+   *
+   * Computed rather than pasted, because the assertion has to survive the output space
+   * being either: a hard-coded 231 would silently start measuring the transfer function
+   * instead of the parameter the moment the working format changed.
+   */
+  const expectedByte = (linear: number, space: string): number => {
+    // `transferForSpace` (image.ts): every declared space but `data` is srgb-encoded on
+    // the way to bytes, so the exception is the one to test for, not the rule.
+    const encoded =
+      space === "data"
+        ? linear
+        : linear <= 0.0031308
+          ? 12.92 * linear
+          : 1.055 * linear ** (1 / 2.4) - 0.055;
+    return Math.round(encoded * 255);
+  };
+
+  it("publishes near-bright by default and FAR-bright when the flag is off", async () => {
+    if (dawnError !== undefined) return;
+    // The model emits INVERSE depth, so 0.8 is CLOSE. Default publishes it as 0.8; with
+    // the flag off it must publish 1 - 0.8 and nothing in between.
+    const near = await drawDepth({}, 0.8);
+    const far = await drawDepth({ nearIsBright: false }, 0.8);
+    expect(near.mean).toBeCloseTo(expectedByte(0.8, near.space), -0.5);
+    expect(far.mean).toBeCloseTo(expectedByte(0.2, far.space), -0.5);
+  });
+
+  it("stretches the published map into the Output Range, exactly", async () => {
+    if (dawnError !== undefined) return;
+    // 0.8 remapped into [0.25, 0.75] is 0.25 + 0.8 * 0.5 = 0.65, and nothing else.
+    const remapped = await drawDepth({ outputRange: [0.25, 0.75] }, 0.8);
+    expect(remapped.mean).toBeCloseTo(expectedByte(0.65, remapped.space), -0.5);
+    // A collapsed range publishes ONE value whatever the model said — the identity a
+    // Displace reads as no displacement, reachable as a setting rather than only as the
+    // accident of having no model.
+    const flat = await drawDepth({ outputRange: [0.5, 0.5] }, 0.8);
+    expect(flat.mean).toBeCloseTo(expectedByte(0.5, flat.space), -0.5);
+  });
+
+  it("sizes the model input buffer from the Input Size parameter (§V5 rebuild)", async () => {
+    if (dawnError !== undefined) return;
+    // The knob is structural — the scratch buffer and its dispatch are sized from it — so
+    // it must reach the PLAN, not just the schema. 266 = 19 patches of 14.
+    const smaller = {
+      ...depthGraph,
+      nodes: { ...depthGraph.nodes, depth: node("depth", "depth", { inputSide: "266" }) },
+    } as never as GraphDocument;
+    const result = await renderHeadless({
+      host: nodeGpuHost(),
+      graph: smaller,
+      settings: SETTINGS,
+      frames: 1,
+      capture: [0],
+      inference: () => flatDepthResult(0.8),
+    } as never);
+    const buffer = result.plan.resources.find(
+      (r) => r.id.includes("depth") && r.id.includes("modelInput"),
+    ) as { capacity?: number } | undefined;
+    expect(buffer?.capacity).toBe(266 * 266);
   });
 
   it("PRUNES an unwired Depth node, so placing one downloads nothing", async () => {
@@ -341,7 +459,7 @@ describe("the shipped Depth node renders offline", () => {
       settings: SETTINGS,
       frames: 1,
       capture: [0],
-      inference: () => flatResult(200),
+      inference: () => flatDepthResult(0.8),
     } as never);
 
     const orphanResources = result.plan.resources.filter((r) => r.id.includes("lonely"));

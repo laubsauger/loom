@@ -275,6 +275,19 @@ export function NodeInfoPopup({ info, lens, onLens, onLensReset }: NodeInfoPopup
                   ? "no result yet"
                   : `${info.resultAgeFrames} ${info.resultAgeFrames === 1 ? "frame" : "frames"} behind`}
               </Value>
+              {/* T965 — WHAT IT RAN ON, MEASURED. The owner asked to see the backend, and
+                  §T715 fixes the wording: an API name and a duration, never a chip. The
+                  worker walks the requested ladder one provider at a time, so this is the
+                  provider that returned rather than the one the node's Backend parameter
+                  asked for — echoing the request would name WebGPU while the CPU worked. */}
+              <dt>ran on</dt>
+              <Value absent={info.inferenceBackend === null}>
+                {info.inferenceBackend === null
+                  ? "no run yet"
+                  : info.inferenceMs === null
+                    ? info.inferenceBackend
+                    : `${info.inferenceBackend}, ${Math.round(info.inferenceMs)} ms`}
+              </Value>
             </>
           ) : null}
         </dl>

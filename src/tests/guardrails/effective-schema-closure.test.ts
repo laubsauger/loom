@@ -130,6 +130,14 @@ const RAW_SCHEMA_READS: Readonly<Record<string, { readonly reason: string; reado
       "customWgslNode.parametersFor",
     ],
   },
+  "src/nodes/definitions/depth.test.ts": {
+    reason:
+      `${TYPE_ONLY_UNIT_TEST} The one read is §T880's own rule under test (T965): the STATIC ` +
+      "schema must contain every key a fresh drop stores, so the assertion walks the declared " +
+      "block and checks each key survives into the computed one. Everything else in that file " +
+      "goes through the funnel, which is why there is exactly one.",
+    reads: ["depthNode.parameters"],
+  },
   "src/nodes/definitions/point-kernel-params.test.ts": {
     reason: HOOK_UNDER_TEST,
     reads: [

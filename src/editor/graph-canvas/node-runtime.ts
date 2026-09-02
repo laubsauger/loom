@@ -74,6 +74,25 @@ export interface NodeRuntimeSnapshot {
    * tick with `gpuMs` rather than forcing a flush (§V16).
    */
   resultAgeFrames: number | null;
+  /**
+   * T965 — WHAT AN INFERENCE NODE ACTUALLY RAN ON, and how long that took.
+   *
+   * The API name onnxruntime built the session with (`webgpu`, `wasm`, `webnn`), MEASURED:
+   * the worker walks the requested ladder one provider at a time, so the one that returned
+   * is the one that ran. It is never the node's Backend PARAMETER, which is only ever a
+   * request — a readout that echoed the request would name WebGPU while the CPU did the
+   * work (§T715/§V672).
+   *
+   * `null` for every node that runs no model, and until the first result lands. Rides the
+   * 100 ms metric tick with `gpuMs` for the same reason `resultAgeFrames` does (§V16), and
+   * `inferenceMs` is wall time on the worker — telemetry only, never a render clock.
+   *
+   * ⚠ NAMING: an API, never a chip. `Neural Engine`, `ANE`, `NPU` and
+   * `hardware-accelerated` are banned from every surface (§T715) — the WebNN spec defines
+   * no way to observe which device was chosen, so any of those would be unverifiable.
+   */
+  inferenceBackend: string | null;
+  inferenceMs: number | null;
   /** Highest-severity diagnostic text for this node, or null (§I.diag, §V27). */
   message: string | null;
   /** Diagnostic counts behind the node badge (§V27). */
@@ -104,6 +123,8 @@ export const IDLE_RUNTIME: NodeRuntimeSnapshot = Object.freeze({
   status: "idle",
   gpuMs: null,
   resultAgeFrames: null,
+  inferenceBackend: null,
+  inferenceMs: null,
   message: null,
   errorCount: 0,
   warningCount: 0,
@@ -182,6 +203,8 @@ function sameSnapshot(a: NodeRuntimeSnapshot, b: NodeRuntimeSnapshot): boolean {
     a.status === b.status &&
     a.gpuMs === b.gpuMs &&
     a.resultAgeFrames === b.resultAgeFrames &&
+    a.inferenceBackend === b.inferenceBackend &&
+    a.inferenceMs === b.inferenceMs &&
     a.message === b.message &&
     a.errorCount === b.errorCount &&
     a.warningCount === b.warningCount &&

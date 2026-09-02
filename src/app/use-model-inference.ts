@@ -10,6 +10,7 @@ import {
   DEPTH_RESULT_KEY,
   POSE_INPUT_KEY,
   POSE_RESULT_KEY,
+  depthSettingsFor,
 } from "@nodes/definitions/index.ts";
 import { scratchResourceId } from "@compiler/resources.ts";
 import {
@@ -87,28 +88,67 @@ interface InferenceKind {
   readonly neutralPicture: string;
   readonly inputKey: string;
   readonly resultKey: string;
-  readonly inputSide: number;
   /** ONNX tensor element type. Depth wants normalised float; MoveNet wants int32 bytes. */
   readonly tensorType: "float32" | "int32" | "uint8";
   /** NCHW for depth's ViT, NHWC for MoveNet. Getting this backwards runs and lies. */
   dims(side: number): readonly number[];
-  descriptor(parameters: Record<string, unknown>): ModelDescriptor;
+  /**
+   * HOW THIS NODE INSTANCE WANTS TO BE RUN, read from its own stored parameters (§T965).
+   *
+   * It used to be `descriptor(parameters)` and a constant `inputSide`, which was fine
+   * while the only per-node choice was which weights. It is not fine now: the model, the
+   * input size, the execution provider and the run cadence are all node parameters, and
+   * they are all read HERE because this is the only place that meets a node's stored bag.
+   *
+   * The reading itself lives with the node definition (`depthSettingsFor`), never here —
+   * a second copy of "what does an absent `rateLimit` mean" would be a second answer, and
+   * the schema that declares the defaults is the one that should own them.
+   */
+  settings(parameters: Readonly<Record<string, unknown>>): InferenceRunSettings;
   pack(texels: Float32Array, side: number): Float32Array | Int32Array | Uint8Array;
   encode(output: Float32Array, size: readonly [number, number]): Uint8Array;
   fallback(size: readonly [number, number]): Uint8Array;
+}
+
+/** What a node instance's parameters say about running it. */
+interface InferenceRunSettings {
+  readonly descriptor: ModelDescriptor;
+  readonly inputSide: number;
+  readonly providers: readonly string[];
+  readonly minIntervalSeconds: number;
+  readonly hold: boolean;
+}
+
+/** Pose has no backend or cadence controls yet — the §T715 ladder, uncapped. */
+function poseSettings(parameters: Readonly<Record<string, unknown>>): InferenceRunSettings {
+  return {
+    descriptor: parameters["model"] === "fast" ? POSE_LIVE : POSE_ACCURATE,
+    inputSide: POSE_INPUT_SIDE,
+    providers: ["webgpu", "wasm"],
+    minIntervalSeconds: 0,
+    hold: false,
+  };
 }
 
 const INFERENCE_KINDS: readonly InferenceKind[] = [
   {
     nodeType: "depth",
     label: "Depth",
-    neutralPicture: "flat grey — no relief at all, so anything reading it stays flat",
+    neutralPicture: "flat grey instead of relief",
     inputKey: DEPTH_INPUT_KEY,
     resultKey: DEPTH_RESULT_KEY,
-    inputSide: DEPTH_INPUT_SIDE,
     tensorType: "float32",
     dims: (side) => [1, 3, side, side],
-    descriptor: (parameters) => (parameters["model"] === "fast" ? DEPTH_LIVE : DEPTH_ACCURATE),
+    settings: (parameters) => {
+      const settings = depthSettingsFor(parameters);
+      return {
+        descriptor: settings.modelId === DEPTH_LIVE.id ? DEPTH_LIVE : DEPTH_ACCURATE,
+        inputSide: settings.inputSide,
+        providers: settings.providers,
+        minIntervalSeconds: settings.minIntervalSeconds,
+        hold: settings.hold,
+      };
+    },
     pack: (texels, side) => packModelInput(texels, side),
     encode: (output, size) => depthToRgba(output, DEPTH_INPUT_SIDE, size[0], size[1]),
     fallback: (size) => neutralDepth(size[0], size[1]),
@@ -116,15 +156,14 @@ const INFERENCE_KINDS: readonly InferenceKind[] = [
   {
     nodeType: "pose",
     label: "Pose",
-    neutralPicture: "an empty keypoint map — no joints at all, so anything reading it stays still",
+    neutralPicture: "an empty keypoint map",
     inputKey: POSE_INPUT_KEY,
     resultKey: POSE_RESULT_KEY,
-    inputSide: POSE_INPUT_SIDE,
     // uint8 and FOUR channels, read from the model itself (see POSE_INPUT_DTYPE): the
     // upstream card describes int32 x 3 and the web export is neither.
     tensorType: POSE_INPUT_DTYPE,
     dims: (side) => [1, side, side, POSE_INPUT_CHANNELS],
-    descriptor: (parameters) => (parameters["model"] === "fast" ? POSE_LIVE : POSE_ACCURATE),
+    settings: poseSettings,
     pack: (texels, side) => packPoseInput(texels, side),
     // The keypoint map is a fixed 17x1 whatever the source is, so the node's size is not
     // consulted — the joints are the data, not a picture of them.
@@ -143,6 +182,8 @@ interface DepthTarget {
   readonly kind: InferenceKind;
   readonly descriptor: ModelDescriptor;
   readonly size: readonly [number, number];
+  /** This node's own run settings, resolved from its parameters (§T965). */
+  readonly settings: InferenceRunSettings;
 }
 
 /**
@@ -214,6 +255,14 @@ export function useModelInference(
 ): ModelInferenceBinding {
   const backendRef = useRef(backend);
   backendRef.current = backend;
+  /*
+   * The metric sink through a REF, for the reason `backendRef` is one: `runnerFor` builds
+   * the worker and is memoised on `acquisition` alone. Putting `sink` in its dependency
+   * list would tear down and rebuild the inference thread — and every loaded session with
+   * it — whenever the composition root handed down a new sink identity.
+   */
+  const sinkRef = useRef(sink);
+  sinkRef.current = sink;
 
   const [states, setStates] = useState<Readonly<Record<string, AcquisitionState>>>({});
   const targetsRef = useRef<readonly DepthTarget[]>([]);
@@ -295,13 +344,29 @@ export function useModelInference(
           nodeType: found.kind.nodeType as "depth" | "pose",
           width: found.size[0],
           height: found.size[1],
-          side: found.kind.inputSide,
+          side: found.settings.inputSide,
+          providers: found.settings.providers,
         };
       },
       weightsFor: async (modelId) => {
         const descriptor = targetsRef.current.find((t) => t.descriptor.id === modelId)?.descriptor;
         if (descriptor === undefined) return undefined;
         return await acquisition.acquire(descriptor);
+      },
+      /*
+       * §T715/§V672 answered on the node itself: what it GOT, and how long that took.
+       *
+       * Onto the per-node runtime channel rather than a notice, for `resultAgeFrames`'
+       * reason exactly — it changes with every run, the channel already coalesces to
+       * 10 Hz (§V16), and a permanent banner about a thing that is working is noise. The
+       * backend NAME is the api onnxruntime actually built the session with; it is never
+       * the value of the node's Backend parameter, which is only ever a request.
+       */
+      onMeasured: (nodeId, measurement) => {
+        sinkRef.current?.publish(nodeId, {
+          inferenceBackend: measurement.backend,
+          inferenceMs: measurement.millis,
+        });
       },
     });
     workerRef.current = runner;
@@ -352,11 +417,15 @@ export function useModelInference(
         // pruning. It must not be tracked, must not acquire and must not download.
         const resultId = scratchResourceId(nodeId, kind.resultKey);
         if (!allocated.has(resultId)) continue;
+        // The node's OWN parameters, read from the stored bag: this seam sits outside the
+        // parameter resolver, so the node definition applies its own defaults (§T965).
+        const settings = kind.settings(node.parameters);
         targets.push({
           nodeId,
           kind,
-          descriptor: kind.descriptor(node.parameters),
+          descriptor: settings.descriptor,
           size: sized.get(resultId) ?? [1, 1],
+          settings,
         });
       }
       targetsRef.current = targets;
@@ -391,6 +460,10 @@ export function useModelInference(
         inputResourceId: scratchResourceId(target.nodeId, target.kind.inputKey),
         sourceId: inferenceSourceIdFor(target.nodeId),
         fallback: target.kind.fallback(target.size),
+        // §T384's freshness policy, carried per node rather than assumed: how often this
+        // one is allowed to start, and whether it stops after its first result.
+        minIntervalSeconds: target.settings.minIntervalSeconds,
+        hold: target.settings.hold,
       }));
       sources.track(entries);
 
@@ -438,7 +511,10 @@ export function useModelInference(
       );
       if (!ready) return;
       // Between frames, like analyze: `readBuffer` fails the frame guard from inside one.
-      queueMicrotask(() => sources.sample(frame.frameIndex));
+      // `timeSeconds` is the TIMELINE clock (§V44/§V172) — the rate limit is expressed in
+      // seconds and must not be measured against a wall reading, or the same document
+      // would re-run a different number of times on a slower machine.
+      queueMicrotask(() => sources.sample(frame.frameIndex, frame.timeSeconds));
     },
     [sink, sources, states],
   );
@@ -529,8 +605,8 @@ export function buildNotices(
       notices.push({
         id: `model-consent-${descriptor.id}`,
         tone: "warn",
-        message: `${label} has no model, so this document is showing ${target.kind.neutralPicture}.`,
-        detail: `${descriptor.label} is a ${formatBytes(descriptor.bytes)} download, made once per machine and kept for every project. The document renders without it — what you are looking at is the placeholder, not the result.`,
+        message: `${label} has no model — showing ${target.kind.neutralPicture}.`,
+        detail: `${descriptor.label}, ${formatBytes(descriptor.bytes)}. Downloaded once per machine, kept for every project.`,
         actions: [
           { label: "Download", onSelect: () => void acquisition.acquire(descriptor), variant: "outline" },
         ],
@@ -575,8 +651,22 @@ export function buildNotices(
       notices.push({
         id: `model-run-failed-${target.nodeId}`,
         tone: "error",
-        message: `${label} has its model but the inference did not run.`,
-        detail: `${run.reason}. The node is publishing ${neutralPicture}, so the document still renders — but nothing in it is responding to ${label.toLowerCase()}.`,
+        /*
+         * THE REASON IS THE HEADLINE, prefixed with what it belongs to.
+         *
+         * It used to be a banner announcing that the inference did not run — a fact the
+         * grey picture had already made — with the only load-bearing sentence demoted to
+         * the detail. And "the document still renders" was telling someone looking at a
+         * rendered document that it renders. Two lines: what went wrong, and what they
+         * are looking at instead.
+         *
+         * The reason arrives from the seam, and where the runtime's own wording named a
+         * symptom rather than a cause the worker has already rewritten it (§B171 —
+         * `runtime-load-failure.ts`), so putting it first is what makes that rewrite
+         * visible instead of buried.
+         */
+        message: `${label} could not run: ${run.reason}`,
+        detail: `Publishing ${neutralPicture}; nothing is responding to ${label.toLowerCase()}.`,
       });
     }
   }

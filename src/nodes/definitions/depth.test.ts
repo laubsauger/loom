@@ -1,0 +1,240 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { describe, expect, it } from "vitest";
+
+import { depthNode, depthProvidersFor, depthSettingsFor } from "./depth.ts";
+import { effectiveParameterSchema } from "../../domain/parameters/resolve.ts";
+import { DEPTH_ACCURATE, DEPTH_LIVE } from "../../runtime/models/model-catalogue.ts";
+import { formatBytes } from "../../runtime/models/model-acquisition.ts";
+import type { EnumParameter } from "../../domain/types/parameters.ts";
+
+/**
+ * T965 — THE DEPTH NODE'S PARAMETER SURFACE.
+ *
+ * Read through `effectiveParameterSchema` and never off `depthNode.parameters`, because
+ * §T903's funnel is the whole reason the hook works at all: §B166 and §B167 were both a
+ * surface reading the STATIC schema while the node had computed a different one, and both
+ * rendered correctly and behaved wrongly. A test that read the static field would be a
+ * fourth such surface.
+ */
+const schemaFor = (stored: Record<string, unknown>) =>
+  effectiveParameterSchema(depthNode, stored);
+
+const enumOf = (stored: Record<string, unknown>, key: string): EnumParameter => {
+  const found = schemaFor(stored)[key];
+  if (found === undefined || found.type !== "enum") throw new Error(`${key} is not an enum`);
+  return found;
+};
+
+describe("§T965(b) — the dropdown names the model and the size", () => {
+  it("labels each option with the catalogue's own name and byte count", () => {
+    const labels = enumOf({}, "model").options.map((option) => option.label);
+    // The owner's exact complaint was `fast` / `accurate`: which model, and how big?
+    expect(labels).toContain(`${DEPTH_ACCURATE.label} · ${formatBytes(DEPTH_ACCURATE.bytes)}`);
+    expect(labels).toContain(`${DEPTH_LIVE.label} · ${formatBytes(DEPTH_LIVE.bytes)}`);
+    // Said out loud, because a formatter change that quietly dropped the megabytes would
+    // still satisfy the composition above.
+    expect(labels.join(" ")).toContain("94 MB");
+    expect(labels.join(" ")).toContain("18 MB");
+  });
+
+  it("keeps the STORED values, so shipped documents still resolve (§V813)", () => {
+    // Parse forever, emit never: the label changed, the value never can.
+    expect(enumOf({}, "model").options.map((option) => option.value)).toEqual([
+      "accurate",
+      "fast",
+    ]);
+  });
+
+  it("says WHICH model and 94 MB at the moment of choosing, not in a notice afterwards", () => {
+    const chosen = enumOf({}, "model").options.find((option) => option.value === "accurate");
+    // Both halves, because the label this replaced — "Accurate (94 MB)" — already carried
+    // the size. What it hid was WHICH weights, which is half the owner's complaint, and a
+    // test asserting only the megabytes would go green on the copy being replaced.
+    expect(chosen?.label).toContain("94 MB");
+    expect(chosen?.label).toContain("Depth Anything V2");
+  });
+});
+
+describe("§T965(c) — the schema is COMPUTED FROM THE CHOSEN MODEL", () => {
+  it("is a different schema for a different model, not one schema with dead knobs", () => {
+    const accurate = schemaFor({ model: "accurate" });
+    const fast = schemaFor({ model: "fast" });
+    // §T965 rules OUT the union-behind-`inactiveWhen` shape, so the difference has to be
+    // in what the schema SAYS about the model that is actually selected.
+    expect(accurate["model"]?.description).toContain(DEPTH_ACCURATE.label);
+    expect(fast["model"]?.description).toContain(DEPTH_LIVE.label);
+    expect(accurate["model"]?.description).toContain("94 MB");
+    expect(fast["model"]?.description).toContain("18 MB");
+  });
+
+  it("carries the CHOSEN model's measured cost into the controls it is a choice about", () => {
+    // §T753's measurement: fp32 is 2.7 s a run and the 4-bit variant is 3.8 s — SLOWER,
+    // which is the fact that stops anyone picking it for speed. A description naming the
+    // other model's number would be worse than none.
+    expect(schemaFor({ model: "accurate" })["inputSide"]?.description).toContain("2.7 s");
+    expect(schemaFor({ model: "fast" })["inputSide"]?.description).toContain("3.8 s");
+    expect(schemaFor({ model: "accurate" })["rateLimit"]?.description).toContain("2.7 s");
+    expect(schemaFor({ model: "fast" })["rateLimit"]?.description).toContain("3.8 s");
+  });
+
+  it("offers Input Size only because the WEIGHTS leave height and width symbolic", () => {
+    // Read from `MODEL_SIGNATURES`, extracted from the real .onnx. A model whose graph
+    // pins its input must get NO such knob — a control that cannot take is worse than an
+    // absent one (§V146), and here it would be refused by the session at run time.
+    const options = enumOf({}, "inputSide").options.map((option) => Number(option.value));
+    expect(options).toContain(518);
+    // Every option is a multiple of the ViT's 14-pixel patch; anything else is refused.
+    for (const side of options) expect(side % 14).toBe(0);
+    // 518 is what it was exported at, so it is the default and says so.
+    expect(schemaFor({})["inputSide"]?.label).toBe("Input Size");
+    expect(
+      enumOf({}, "inputSide").options.find((option) => option.value === "518")?.label,
+    ).toContain("exported");
+  });
+
+  it("makes Input Size a REBUILD, never a uniform write (§V5)", () => {
+    // The scratch buffer and the dispatch are sized from it. Classified cheap, a change
+    // would resize nothing and the model would be fed a buffer of the wrong length.
+    expect(schemaFor({})["inputSide"]?.compileTime).toBe(true);
+    // And the knobs that are only uniform writes must NOT be marked structural, or every
+    // drag of the output range rebuilds a pipeline.
+    expect(schemaFor({})["nearIsBright"]?.compileTime).toBeUndefined();
+    expect(schemaFor({})["outputRange"]?.compileTime).toBeUndefined();
+  });
+
+  it("gives §T384's freshness a REAL control rather than a hidden constant", () => {
+    const schema = schemaFor({});
+    expect(schema["refresh"]?.type).toBe("enum");
+    expect(enumOf({}, "refresh").options.map((option) => option.value)).toEqual([
+      "continuous",
+      "held",
+    ]);
+    const rate = schema["rateLimit"];
+    expect(rate?.type).toBe("number");
+    // 0 is no cap, and below zero is not a rate: the floor CLAMPS, the ceiling is travel.
+    expect(rate?.type === "number" && rate.range).toBe("floor");
+    expect(rate?.type === "number" && rate.default).toBe(0);
+  });
+
+  it("keeps every static key reachable, so a fresh drop's values have a home (§T880)", () => {
+    // The static schema is the fallback for the palette and for type-only contexts. If it
+    // held a key the computed one does not, a stored value would have nowhere to resolve.
+    for (const key of Object.keys(depthNode.parameters)) {
+      expect(Object.keys(schemaFor({ model: "fast" }))).toContain(key);
+    }
+  });
+});
+
+describe("§T965 — the backend is SHOWN and PICKABLE, and worded honestly", () => {
+  it("offers what this machine reports, computed rather than hard-coded", () => {
+    const values = enumOf({}, "backend").options.map((option) => option.value);
+    // The CPU floor is always reachable and automatic is always meaningful.
+    expect(values).toContain("auto");
+    expect(values).toContain("wasm");
+    // WebGPU appears only where `navigator.gpu` does. Under vitest's node environment it
+    // does not, which is precisely the "differs per machine" property being asserted.
+    const probed = typeof navigator !== "undefined" && (navigator as { gpu?: unknown }).gpu !== undefined;
+    expect(values.includes("webgpu")).toBe(probed);
+  });
+
+  it("keeps an UNREACHABLE stored choice in the list rather than rewriting the document", () => {
+    // Dropping it would silently resolve the node to something its author did not pick.
+    const values = enumOf({ backend: "webgpu" }, "backend").options.map((o) => o.value);
+    expect(values).toContain("webgpu");
+    const label = enumOf({ backend: "webgpu" }, "backend").options.find(
+      (option) => option.value === "webgpu",
+    )?.label;
+    if (typeof navigator === "undefined" || (navigator as { gpu?: unknown }).gpu === undefined) {
+      expect(label).toContain("not available");
+    }
+  });
+
+  it("NEVER names a chip on any surface (§T715's banned vocabulary)", () => {
+    // The WebNN specification deliberately defines no device enumeration and no way to
+    // observe which device was chosen, so any of these would be an unverifiable claim.
+    const surface = JSON.stringify(schemaFor({ backend: "webgpu" })) + depthNode.description;
+    for (const banned of ["Neural Engine", "ANE", "NPU", "hardware-accelerated", "the browser chose the device"]) {
+      expect(surface).not.toContain(banned);
+    }
+  });
+
+  it("PINS when pinned — a picker that silently falls back has removed the choice", () => {
+    expect(depthProvidersFor({ backend: "wasm" })).toEqual(["wasm"]);
+    expect(depthProvidersFor({ backend: "webgpu" })).toEqual(["webgpu"]);
+    // Automatic is the ladder narrowed to what is reachable, and the CPU floor is last.
+    expect(depthProvidersFor({}).at(-1)).toBe("wasm");
+    expect(depthProvidersFor({ backend: "auto" }).at(-1)).toBe("wasm");
+  });
+});
+
+describe("the run settings the app reads are the schema's own defaults", () => {
+  it("resolves an empty bag to the export size, the ladder and no cap", () => {
+    const settings = depthSettingsFor({});
+    expect(settings.modelId).toBe(DEPTH_ACCURATE.id);
+    expect(settings.inputSide).toBe(518);
+    expect(settings.minIntervalSeconds).toBe(0);
+    expect(settings.hold).toBe(false);
+  });
+
+  it("turns a rate limit in HERTZ into the gap in SECONDS the seam actually applies", () => {
+    // The parameter is the number a person thinks in; the seam needs its reciprocal, and
+    // exactly one place may do that conversion or the two will disagree.
+    expect(depthSettingsFor({ rateLimit: 4 }).minIntervalSeconds).toBeCloseTo(0.25);
+    expect(depthSettingsFor({ rateLimit: 0.5 }).minIntervalSeconds).toBeCloseTo(2);
+    // 0 is no cap, not an infinite gap.
+    expect(depthSettingsFor({ rateLimit: 0 }).minIntervalSeconds).toBe(0);
+  });
+
+  it("REFUSES an input size the model would refuse, and falls back rather than failing", () => {
+    // §T715's degrade rule: an illegal stored value must leave a renderable document. 500
+    // is not a multiple of 14 and the session would reject the tensor outright.
+    expect(depthSettingsFor({ inputSide: "500" }).inputSide).toBe(518);
+    expect(depthSettingsFor({ inputSide: "266" }).inputSide).toBe(266);
+  });
+
+  it("reads Hold as the freshness policy the seam binds on", () => {
+    expect(depthSettingsFor({ refresh: "held" }).hold).toBe(true);
+    expect(depthSettingsFor({ refresh: "continuous" }).hold).toBe(false);
+  });
+});
+
+/**
+ * §B171 — THE WIRING GUARD.
+ *
+ * `inference.worker.ts` cannot be unit-tested: it is a worker entry that dynamically
+ * imports onnxruntime and compiles a 94 MB model. So the one line that made the feature
+ * run at all is guarded by reading the file, which is the same shape §T497's shipped-clock
+ * audit uses for text it cannot execute. §V220's dominant bug is "built, tested, never
+ * wired", and this fix is ONE assignment whose absence is invisible until a user tries it.
+ */
+describe("§B171 — the worker points onnxruntime at a wasm URL this build serves", () => {
+  const raw = readFileSync(
+    fileURLToPath(new URL("../../runtime/models/inference.worker.ts", import.meta.url)),
+    "utf8",
+  );
+  /*
+   * COMMENTS STRIPPED FIRST, and the strip is load-bearing rather than tidy: the docblock
+   * above this fix explains §B171 at length and therefore says `wasmPaths` several times.
+   * A scan of the whole file would go green on a version where the docblock survived and
+   * the ASSIGNMENT was deleted — which is a guard that passes over the exact bug it exists
+   * to catch, and is how a wiring test becomes decoration.
+   */
+  const source = raw.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+
+  it("sets `wasmPaths` at all — it was set NOWHERE, which is the whole bug", () => {
+    expect(source).toContain("wasm.wasmPaths =");
+  });
+
+  it("takes the URL from Vite's `?url` import rather than guessing a path", () => {
+    // A hard-coded "/ort/" would be right in dev, wrong under `--base=/loom/`, and wrong
+    // again for a content-hashed build asset. Asking the bundler is the only answer that
+    // is right in all three.
+    expect(source).toContain('onnxruntime-web/ort-wasm-simd-threaded.jsep.wasm?url');
+    expect(source).toMatch(/wasmPaths\s*=\s*\{\s*wasm:/);
+  });
+
+  it("absolutises it, because ORT re-resolves the path inside a blob-URL worker", () => {
+    expect(source).toContain("new URL(wasmUrl, self.location.href)");
+  });
+});

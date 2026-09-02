@@ -71,6 +71,17 @@ export interface NodeMetricSink {
        * problems pane, which would take sixty entries a second.
        */
       resultAgeFrames?: number | null;
+      /**
+       * T965 — the execution provider an inference node ACTUALLY ran on, and the wall time
+       * that run took, in ms.
+       *
+       * On this channel rather than in a notice for `resultAgeFrames`' reason: it changes
+       * with every run and a permanent banner about something that is working is noise.
+       * MEASURED in the worker by walking the requested ladder one provider at a time —
+       * never the node's Backend parameter, which is only ever a request (§T715/§V672).
+       */
+      inferenceBackend?: string | null;
+      inferenceMs?: number | null;
     },
   ): void;
 }
