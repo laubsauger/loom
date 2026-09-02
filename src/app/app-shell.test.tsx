@@ -15,6 +15,7 @@ import {
   zoneOf,
 } from "./layout-storage.ts";
 import { PANE_TREE_STORAGE_KEY, readPaneTreeStore } from "./pane-tree-storage.ts";
+import { findLeaf } from "./pane-tree.ts";
 import type { ShellLayout } from "./layout-storage.ts";
 
 beforeAll(installDomStubs);
@@ -878,6 +879,115 @@ describe("V340 — a pane can change what it shows without moving", () => {
     const instances = screen.getAllByText("problems slot");
     expect(instances).toHaveLength(2);
     expect(instances.some((element) => zoneElement("right").contains(element))).toBe(true);
+  });
+});
+
+/**
+ * T835 — the owner: "seems like we currently cant add a new tab to an existing pane,
+ * only show instead but not add."
+ *
+ * `addTab` always worked; it was reachable through ONE control, the EMPTY-pane picker,
+ * so a leaf that already had a tab could only SWAP (V340's `assignRole`, which keeps the
+ * key). These pin the second door and, just as importantly, that it stayed a SECOND one:
+ * adding must not quietly become a swap, and the swap must not start minting keys.
+ */
+describe("T835 — a pane that already has a tab can gain another", () => {
+  /** The minimum `openPaneWindow` contract: a document to move the pane's DOM into. */
+  function floatWindow(): PaneWindow {
+    return {
+      document: document.implementation.createHTMLDocument("floating pane"),
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      close: () => undefined,
+    };
+  }
+
+  it("adds a tab beside the existing one, whose key and role are untouched", async () => {
+    const user = userEvent.setup();
+    const storage = createMemoryStorage();
+    render(<AppShell storage={storage} viewer={<div>viewer slot</div>} problems={<div>problems slot</div>} />);
+
+    const before = [...zoneElement("right").querySelectorAll("[data-pane-tab]")].map((tab) =>
+      tab.getAttribute("data-pane-tab"),
+    );
+    expect(before).toHaveLength(1);
+
+    await user.click(within(zoneElement("right")).getByRole("button", { name: "Add a tab to this area" }));
+    await user.click(screen.getByRole("button", { name: "Add problems as a new tab" }));
+
+    const after = [...zoneElement("right").querySelectorAll("[data-pane-tab]")];
+    expect(after).toHaveLength(2);
+    // ADDED, not swapped: the tab that was here keeps its key AND its face (§V340).
+    expect(after[0]?.getAttribute("data-pane-tab")).toBe(before[0]);
+    expect(after[0]?.getAttribute("data-pane-role")).toBe("viewer");
+    expect(after[0]?.getAttribute("aria-selected")).toBe("false");
+    // The new one is a fresh key and it is the one you are looking at.
+    expect(after[1]?.getAttribute("data-pane-tab")).not.toBe(before[0]);
+    expect(after[1]?.getAttribute("data-pane-role")).toBe("problems");
+    expect(after[1]?.getAttribute("aria-selected")).toBe("true");
+    expect(zoneElement("right").contains(screen.getAllByText("problems slot")[1] ?? null)).toBe(true);
+
+    // And it survives the round trip through storage, not just this render.
+    const leaf = findLeaf(readPaneTreeStore(storage).current, "leaf-right");
+    expect(leaf?.tabs.map((tab) => tab.role)).toEqual(["viewer", "problems"]);
+    expect(leaf?.active).toBe(leaf?.tabs[1]?.key);
+  });
+
+  it("leaves the EMPTY-pane picker as the only add control on an empty leaf", async () => {
+    const user = userEvent.setup();
+    const storage = createMemoryStorage();
+    render(<AppShell storage={storage} viewer={<div>viewer slot</div>} />);
+
+    await user.click(
+      within(zoneElement("right")).getByRole("button", { name: "Split or close this pane area" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Split down" }));
+
+    const picker = screen.getByTestId(/^leaf-picker-/);
+    const emptyLeaf = picker.closest("[data-pane-leaf]") as HTMLElement;
+    // One question, asked once: the strip's + would be a second copy of the picker.
+    expect(within(emptyLeaf).queryByRole("button", { name: "Add a tab to this area" })).toBeNull();
+
+    await user.click(within(picker).getByRole("button", { name: /^viewer$/ }));
+
+    // The original path still assigns into the empty leaf — and now that it HAS a tab,
+    // the + is how it gains a second one.
+    const filled = screen.getAllByText("viewer slot")[1]?.closest("[data-pane-leaf]") as HTMLElement;
+    expect(filled.querySelectorAll("[data-pane-tab]")).toHaveLength(1);
+    expect(within(filled).getByRole("button", { name: "Add a tab to this area" })).toBeDefined();
+  });
+
+  it("adds a tab to a leaf whose pane is FLOATED, without unfloating it (§V97)", async () => {
+    const user = userEvent.setup();
+    const storage = createMemoryStorage();
+    const child = floatWindow();
+    render(
+      <AppShell
+        storage={storage}
+        viewer={<div>viewer slot</div>}
+        performance={<div>performance slot</div>}
+        openPaneWindow={() => child}
+      />,
+    );
+
+    const viewerSlot = screen.getByText("viewer slot");
+    await movePaneVia(user, "viewer", "Float in its own window");
+    expect(readPaneTreeStore(storage).current.floating.map((tab) => tab.role)).toEqual(["viewer"]);
+
+    // T705(b): the floated tab STAYS in its leaf, so the strip — and its + — are there.
+    const before = zoneElement("right").querySelector("[data-pane-tab]")?.getAttribute("data-pane-tab");
+    await user.click(within(zoneElement("right")).getByRole("button", { name: "Add a tab to this area" }));
+    await user.click(screen.getByRole("button", { name: "Add performance as a new tab" }));
+
+    const after = [...zoneElement("right").querySelectorAll("[data-pane-tab]")];
+    expect(after).toHaveLength(2);
+    expect(after[0]?.getAttribute("data-pane-tab")).toBe(before);
+    expect(after[1]?.getAttribute("data-pane-role")).toBe("performance");
+    // The floated pane is still floated, still the same live DOM in the child window.
+    // (Read from the TREE, not the v3 projection: a second tab in a leaf is exactly what
+    // makes the layout unprojectable, so the v3 record is cleared by design — §V385.)
+    expect(readPaneTreeStore(storage).current.floating.map((tab) => tab.role)).toEqual(["viewer"]);
+    expect(child.document.body.contains(viewerSlot)).toBe(true);
   });
 });
 

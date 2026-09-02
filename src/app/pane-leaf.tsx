@@ -80,6 +80,13 @@ export interface PaneLeafViewProps {
   readonly onAssignEmpty: (leafId: PaneKey, role: PaneRole) => void;
   /** V340: change what an existing tab SHOWS; its key — place, size, window — stays. */
   readonly onAssignRole: (key: PaneKey, role: PaneRole) => void;
+  /**
+   * T835: ADD a tab to this leaf — a NEW key beside the ones already here. The opposite
+   * intent from `onAssignRole`, which re-faces the tab you are standing on and keeps its
+   * key (§V340), and the reason the two are separate controls: an occupied leaf used to
+   * offer only the swap, so `addTab` was reachable from the empty-pane picker alone.
+   */
+  readonly onAddTab: (leafId: PaneKey, role: PaneRole) => void;
 }
 
 export function PaneLeafView({
@@ -103,6 +110,7 @@ export function PaneLeafView({
   onCloseLeaf,
   onAssignEmpty,
   onAssignRole,
+  onAddTab,
 }: PaneLeafViewProps) {
   const baseId = useId();
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -167,6 +175,12 @@ export function PaneLeafView({
           </button>
         ))}
         <div className={styles.stripTrailing}>
+          {/* T835: the ADD door. Only on an OCCUPIED strip — an empty leaf already asks
+              the question in its body, and offering it twice is the menu-that-grows the
+              owner has objected to. */}
+          {tabs.length === 0 ? null : (
+            <LeafAddTabMenu leafId={leafId} roleOptions={roleOptions} onAddTab={onAddTab} />
+          )}
           {activeTab === undefined ? null : (
             <PaneTabMenu
               tab={activeTab}
@@ -314,6 +328,66 @@ function PaneTabMenu({ tab, targets, roleOptions, onMove, onFloat, onClose, onAs
                 {option.title}
               </Button>
             ))}
+        </div>
+      </PopoverContent>
+    </PopoverRoot>
+  );
+}
+
+interface LeafAddTabMenuProps {
+  readonly leafId: PaneKey;
+  readonly roleOptions: ReadonlyArray<{ readonly role: PaneRole; readonly title: string }>;
+  readonly onAddTab: (leafId: PaneKey, role: PaneRole) => void;
+}
+
+/**
+ * T835 — "add X as a new tab", the counterpart to the move menu's "show instead".
+ *
+ * Two headers in two popovers behind two triggers, on purpose. Adding MINTS a key beside
+ * the tabs already here; showing instead keeps the key you are on and changes its face
+ * (§V340). Folding both into one role list would make which of the two happens depend on
+ * where in the list you clicked — the identity/role fusion V340 exists to forbid, wearing
+ * a menu.
+ *
+ * The list is the full possibility space (V423), roles already in the leaf included: any
+ * number of tabs may share a role, and two viewers is the case V340 was written for.
+ */
+function LeafAddTabMenu({ leafId, roleOptions, onAddTab }: LeafAddTabMenuProps) {
+  // Same close-first rule as the move menu: an action never leaves its popover sitting
+  // over what it just changed.
+  const [open, setOpen] = useState(false);
+  return (
+    <PopoverRoot open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          className={styles.menuTrigger}
+          aria-label="Add a tab to this area"
+          title="Add a tab to this area"
+        >
+          {/* A thin cross: told apart from ⇄ (arrows) and ▤ (a striped block) by
+              SILHOUETTE at 11px, the constraint the move menu's glyph note records. */}
+          +
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end">
+        <PopoverHeader>add a tab</PopoverHeader>
+        <div className={styles.menu}>
+          {roleOptions.map((option) => (
+            <Button
+              key={option.role}
+              variant="outline"
+              size="md"
+              /* Spelled out, because "viewer" alone appears under "show instead" too and
+                 the two do different things to the layout. */
+              aria-label={`Add ${option.title} as a new tab`}
+              onClick={() => {
+                setOpen(false);
+                onAddTab(leafId, option.role);
+              }}
+            >
+              {option.title}
+            </Button>
+          ))}
         </div>
       </PopoverContent>
     </PopoverRoot>

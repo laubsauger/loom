@@ -279,6 +279,13 @@ export function AppShell({
     (key: PaneKey, role: PaneRole) => applyLayout((layout) => assignRole(layout, key, role)),
     [applyLayout],
   );
+  /**
+   * T835: adding a tab to a leaf that ALREADY has one. The tree operation is the very
+   * one the empty-pane picker runs — `addTab` always minted a key and made it active —
+   * so this is the SECOND DOOR to it, not a second implementation. It is deliberately
+   * not `onAssignRole`: that re-faces an existing key, this mints a new one (§V340).
+   */
+  const onAddTab = onAssignEmpty;
   // T486 (V423): a closed role comes back through the menu — restored to the leaf it
   // left, or by re-splitting the area it lived in (the recipe stamped at close).
   const onRestoreRole = useCallback(
@@ -437,6 +444,7 @@ export function AppShell({
         onCloseLeaf={onCloseLeaf}
         onAssignEmpty={onAssignEmpty}
         onAssignRole={onAssignRole}
+        onAddTab={onAddTab}
       />
     );
   };
