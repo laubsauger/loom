@@ -354,7 +354,10 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   let lamp = vec3f(cos(params.lampPhi), sin(params.lampPhi), 0.0);
   let angle = acos(clamp(dot(d, lamp), -1.0, 1.0));
   /* A hot core and a soft halo — what a bare beam source looks like to a glossy face. */
-  let spot = exp(-(angle * angle) / (0.06 * 0.06)) + 0.25 * exp(-(angle * angle) / (0.30 * 0.30));
+  /* T975: the wide skirt was what flared blue at grazing incidence (Fresnel = 1 there,
+     so the skirt's tail is the FIRST thing the sides catch). Narrower and weaker: the
+     hot core stays for the facets, the grazing wash goes. */
+  let spot = exp(-(angle * angle) / (0.06 * 0.06)) + 0.12 * exp(-(angle * angle) / (0.16 * 0.16));
   return vec4f(color.rgb + vec3f(1.0, 0.98, 0.94) * spot * params.gain, color.a);
 }`;
 
@@ -396,30 +399,37 @@ fn scatterTo(p: vec3f, a: vec3f, b: vec3f, sigma: f32) -> f32 {
 
 fn process(p: Point, ctx: PointCtx) -> Point {
   var q = p;
-  /* A drifting mote: seeded box position plus a VERY slow deterministic wander (the
-     owner: "very very subtle" — a mote crosses the frame in minutes, not seconds), with
-     a faint sinusoidal float so nothing moves in straight lines. Deterministic: a
-     clock, not an RNG (§V74). */
-  let r1 = pointRand(ctx.index, 11u);
-  let r2 = pointRand(ctx.index, 23u);
-  let r3 = pointRand(ctx.index, 37u);
+  /* T975c — A MOTE HAS A LIFE, the owner's own description: "each dust particle exists
+     for a while, floats in one or the other direction, then dissipates or goes out of
+     range." Each mote lives one CYCLE: born at a seeded spot, drifting slowly in one
+     seeded direction, fading in and out on a smooth envelope, then reborn elsewhere on
+     the next cycle. Deterministic throughout — cycle index and phase come off the
+     absolute clock (§V74) — and driftSpeed scales the WHOLE life: 1 is a ~90-160s
+     life, 10 is a draught, 0 freezes the air mid-breath. The envelope is what kills the
+     'sparkling that goes way too nuts': nothing pops into existence at full brightness. */
   let r4 = pointRand(ctx.index, 51u);
-  let r5 = pointRand(ctx.index, 67u);
-  /* MIRRORED wrap (a triangle wave), not fract: a fract wrap TELEPORTS a mote across
-     the box, and 650 motes wrapping at mixed speeds read as a blizzard's shuffle —
-     the owner's exact report. A mirrored path just drifts back. And slower still:
-     a mote crosses the frame in ~20 minutes; the room is ALMOST undisturbed. */
-  let pace = ctx.params.driftSpeed;
-  let wander = ctx.absTime * pace * (0.0004 + 0.0007 * r4);
-  let bob = sin(ctx.absTime * pace * (0.03 + 0.06 * r5) + r1 * 6.2832) * 0.015;
-  let mote = vec3f(
-    (abs(fract(r1 + wander * 0.7) * 2.0 - 1.0) * 2.0 - 1.0) * 2.6,
-    (abs(fract(r2 + wander) * 2.0 - 1.0) * 2.0 - 1.0) * 1.4 + bob,
-    (abs(fract(r3 + wander * 0.4) * 2.0 - 1.0) * 2.0 - 1.0) * 1.3,
-  );
+  let pace = max(ctx.params.driftSpeed, 0.0);
+  let life = 90.0 + 70.0 * r4;
+  let clockRaw = ctx.absTime * pace / life + pointRand(ctx.index, 11u);
+  let cycle = floor(clockRaw);
+  let phase = fract(clockRaw);
+  /* Per-cycle seeds: a new anchor and a new heading every rebirth. */
+  let ci = ctx.index + u32(cycle) * 7919u;
+  let a1 = pointRand(ci, 13u);
+  let a2 = pointRand(ci, 29u);
+  let a3 = pointRand(ci, 43u);
+  let d1 = pointRand(ci, 59u);
+  let d2 = pointRand(ci, 71u);
+  let anchor = vec3f((a1 * 2.0 - 1.0) * 2.6, (a2 * 2.0 - 1.0) * 1.4, (a3 * 2.0 - 1.0) * 1.3);
+  let heading = normalize(vec3f(d1 * 2.0 - 1.0, d2 * 2.0 - 1.0, (pointRand(ci, 83u) * 2.0 - 1.0) * 0.5) + vec3f(1.0e-4));
+  /* One slow excursion per life — a few tenths of a unit, one direction, no wrap. */
+  let mote = anchor + heading * (phase - 0.5) * 0.35;
   q.position = mote;
-  /* Size: real spread — most motes tiny, a few larger (r5 squared skews small).
+  /* The life envelope: eased in and out, full through the middle of the life. */
+  let envelope = smoothstep(0.0, 0.18, phase) * (1.0 - smoothstep(0.82, 1.0, phase));
+  /* Size: real spread — most motes tiny, a few larger (skewed small).
      The BASE is tiny (the owner, twice): dust specks, not orbs. */
+  let r5 = pointRand(ci, 67u);
   q.size = 0.25 + 0.9 * r5 * r5;
 
   /* The SAME beam the optics trace: lamp, aim, tilt — one set of expressions. */
@@ -432,7 +442,8 @@ fn process(p: Point, ctx: PointCtx) -> Point {
   let dIn2 = normalize(-S2 + aside * (py * OFF_MAX));
   let yaw = ctx.params.tiltYaw;
   let nod = ctx.params.tiltNod;
-  let S = toBody(vec3f(S2, 0.0), yaw, nod);
+  /* T975: the dust rides the SAME ray plane the optics moved inward. */
+  let S = toBody(vec3f(S2, RAY_PLANE_Z), yaw, nod);
   let dIn = normalize(toBody(vec3f(dIn2, 0.0), yaw, nod));
   let nMid = cauchyN(0.5, ctx.value2);
   let mid = tracePrism(S, dIn, nMid, RI);
@@ -457,7 +468,7 @@ fn process(p: Point, ctx: PointCtx) -> Point {
      per mote, because uniform dust reads as a starfield (measured on the card). The
      tint attribute is colour-qualified, so these are LINEAR numbers (§V313). */
   /* The floor drops: an unlit mote is BARELY there — light is what reveals dust. */
-  let b = (glow + 0.0012) * (0.35 + 0.65 * r4);
+  let b = (glow + 0.0012) * (0.35 + 0.65 * r4) * envelope;
   /* T940b: the ALPHA carries the azimuth light ARRIVES from — the direction from the
      beam's nearest point to this mote — so the spherical splat shades a lit and an
      unlit side that genuinely face the ray. */

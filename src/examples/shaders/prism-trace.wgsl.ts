@@ -97,6 +97,14 @@ const THETA_HI: f32 = 62.0;
    at its exact middle (the rest strike the owner asked for, by construction), and the
    far end carries the beam clear off the glass: the miss is the top of the y travel. */
 const LAMP_R: f32 = 3.3;
+/* T975 — the owner, exactly: "we need to move the plane in which the ray is travelling
+   more inwards". The beam used to travel the body's mid-depth plane (z = 0), so the
+   interior was seen through the FULL front half of the transmissive glass and the
+   screen-space refraction displaced it toward the silhouette — physically accurate,
+   visually unreasonable. The ray plane now sits toward the viewer: still well inside
+   the flat run (|z| < HALF - EDGE = 0.6), so the traced cross-section is identical,
+   but the interior reads through less glass and lands where the eye expects. */
+const RAY_PLANE_Z: f32 = 0.3;
 /* Rest (0,0) is phi 185: the lamp level-left, a hair below the axis, striking the left
    face's centre at ~35 degrees — the classic left-in, spectrum-out-right card.
    T929b (owner: "reach all across and even next to / off the prism horizontally
@@ -344,7 +352,7 @@ fn process(p: Point, ctx: PointCtx) -> Point {
      the camera can orbit without the beam detaching from the glass. */
   let yaw = ctx.params.tiltYaw;
   let nod = ctx.params.tiltNod;
-  let S = toBody(vec3f(S2, 0.0), yaw, nod);
+  let S = toBody(vec3f(S2, RAY_PLANE_Z), yaw, nod);
   let dIn = normalize(toBody(vec3f(dIn2, 0.0), yaw, nod));
   let castFrom = S;
   let perp = normalize(cross(dIn, vec3f(0.0, 0.0, 1.0)));
