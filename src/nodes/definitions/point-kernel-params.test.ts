@@ -350,7 +350,8 @@ describe("T900 — migration: parse the legacy slots forever, emit them never (�
  *
  * Captured at `d7d9e26`, the commit before this work: a digest per shipped loom over every
  * pass belonging to a `pointKernel` or `pointKernelAdvanced` node — shader text, bindings,
- * workgroups and uniform VALUES. 19 looms carry 39 kernels between them. A single changed
+ * workgroups and uniform VALUES. 19 looms carry 40 kernels between them (T918 added
+ * E13's wall-placing kernel). A single changed
  * character in any generated module moves a digest, which is the point: the reflection had to
  * arrive as a pure ADDITION, costing a kernel that declares no `struct Params` exactly nothing.
  *
@@ -359,7 +360,9 @@ describe("T900 — migration: parse the legacy slots forever, emit them never (�
  */
 const FRAME_ZERO_DIGESTS: Readonly<Record<string, string>> = {
   "E9-Ember.loom.json": "f0a7e8f0752c7653",
-  "E13-Prism.loom.json": "0afaf660de2f0ec2",
+  // T915 (static aim: value1 0.5 → 1) and T918 (the wall kernel) both changed E13's
+  // resolved kernel state deliberately; re-pinned at those commits.
+  "E13-Prism.loom.json": "958d50adbfad0f65",
   "E16-Murmuration.loom.json": "74f35048da9b841e",
   "E20-Gooeyball.loom.json": "7d059f6ab538949e",
   "E25-Stage.loom.json": "8ef074cc584fae53",
@@ -399,7 +402,7 @@ describe("T900 — every shipped kernel resolves byte-equal at frame 0", () => {
 
   it("covers exactly the looms that carry kernels — a shrinking gate is a passing gate", () => {
     expect([...digests.keys()].sort()).toEqual(Object.keys(FRAME_ZERO_DIGESTS).sort());
-    expect(kernelCount).toBe(39);
+    expect(kernelCount).toBe(40);
   });
 
   it.each(Object.keys(FRAME_ZERO_DIGESTS))("%s is unchanged at frame 0", (fileName) => {

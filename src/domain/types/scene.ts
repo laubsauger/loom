@@ -81,6 +81,8 @@ export interface GeometryPayload {
      * beams sharing one origin from fusing into a solid opaque wedge around it.
      */
     readonly taper?: number;
+    /** T917: soft edge falloff share (0 hard .. 1 from the centreline). Rides instance.w. */
+    readonly soft?: number;
   };
   /**
    * T721 — a PER-POINT size factor, as an f32 attribute (or one channel of a float
@@ -91,6 +93,8 @@ export interface GeometryPayload {
    * know the object's world size. Same shape and same arithmetic as the mapped `tint`
    * one field up, which is the other map on this node.
    */
+  /** T917: additive light — the draw blends additively and stops writing depth. */
+  readonly blend?: "additive";
   readonly scaleAttribute?: {
     readonly pair: string;
     readonly half: "read" | "write";

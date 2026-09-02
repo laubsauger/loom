@@ -492,7 +492,7 @@ ${
     : "";
   const shading =
     options.model === "unlit"
-      ? `  return vec4f(albedo.rgb, albedo.a);`
+      ? `  return vec4f(albedo.rgb * cover, albedo.a * cover);`
       : `${aoLookup}  let ambient = params.ambientColor.rgb * params.ambientColor.a${aoTerm};
   var lit = albedo.rgb * ambient;
 ${
@@ -500,7 +500,7 @@ ${
     ? ""
     : `  let viewDir = normalize(params.eye.xyz - input.world);
 ${Array.from({ length: lightCount }, (_, index) => lightBlock(index)).join("")}`
-}${projectors.term}${envTerm}  return vec4f(lit, albedo.a);`;
+}${projectors.term}${envTerm}  return vec4f(lit * cover, albedo.a * cover);`;
 
   return `struct SceneParams {
   viewProjection: mat4x4f,
@@ -521,6 +521,9 @@ ${surfaceMeshWgsl(pointColor)}
 fn fs(input: VertexOut) -> @location(0) vec4f {
   let magnitude = length(input.normal);
   let normal = select(vec3f(0.0, 0.0, 1.0), input.normal / max(magnitude, 1e-6), magnitude > 1e-6);
+  /* T917: the soft profile lives on the point primitives; a SURFACE has no across axis,
+     so its coverage is the constant 1 and the shared shading tail multiplies by nothing. */
+  let cover = 1.0;
   let albedo = ${albedoExpr};
 ${options.model === "unlit" ? "" : `  let roughness = ${roughnessExpr};\n  _ = roughness;\n`}${shading}
 }`;
@@ -841,7 +844,7 @@ ${
     : "";
   const shading =
     options.model === "unlit"
-      ? `  return vec4f(albedo.rgb, albedo.a);`
+      ? `  return vec4f(albedo.rgb * cover, albedo.a * cover);`
       : `${aoLookup}  let ambient = params.ambientColor.rgb * params.ambientColor.a${aoTerm};
   var lit = albedo.rgb * ambient;
 ${
@@ -849,7 +852,7 @@ ${
     ? ""
     : `  let viewDir = normalize(params.eye.xyz - input.world);
 ${Array.from({ length: lightCount }, (_, index) => lightBlock(index)).join("")}`
-}${projectors.term}${envTerm}  return vec4f(lit, albedo.a);`;
+}${projectors.term}${envTerm}  return vec4f(lit * cover, albedo.a * cover);`;
 
   return `struct SceneParams {
   viewProjection: mat4x4f,
@@ -858,7 +861,7 @@ ${Array.from({ length: lightCount }, (_, index) => lightBlock(index)).join("")}`
   baseColor: vec4f,
   specular: vec4f,
   material: vec4f,
-  instance: vec4f,          // x = scale (beam: HALF-WIDTH), y = shape (0 quad, 1 box, 2 octahedron), z = beam taper
+  instance: vec4f,          // x = scale (beam: HALF-WIDTH), y = shape (0 quad, 1 box, 2 octahedron), z = beam taper, w = soft profile (T917)
 ${billboard ? "  billboardRight: vec4f,\n  billboardUp: vec4f,\n" : ""}${lightField}${shadowFields}${envField}${projectors.fields}};
 
 @group(0) @binding(0) var<uniform> params: SceneParams;
@@ -875,6 +878,10 @@ struct VertexOut {
   @location(0) normal: vec3f,
   @location(1) world: vec3f,
   @location(2) tint: vec4f,
+  /* T917: the primitive's own local coordinate — x is the ACROSS axis (−1..1, beam side /
+     billboard corner), y the ALONG one. What the soft profile falls off over; solid
+     shapes carry zero and are untouched. */
+  @location(3) profile: vec2f,
 };
 ${group.declarations}
 
@@ -912,6 +919,7 @@ ${group.gate}${
   out.normal = normalize(cross(side, axis));
   out.world = world;
   out.tint = ${pointColor ? "pointColors[instance]" : "vec4f(1.0)"};
+  out.profile = corner;
   return out;`
       : billboard
       ? `  let corner = quadCorner(min(vertex, 5u));
@@ -923,6 +931,7 @@ ${group.gate}${
   out.normal = normalize(cross(params.billboardRight.xyz, params.billboardUp.xyz));
   out.world = world;
   out.tint = ${pointColor ? "pointColors[instance]" : "vec4f(1.0)"};
+  out.profile = corner;
   return out;`
       : `  let shape = u32(params.instance.y);
   let count = shapeVertexCount(shape);
@@ -948,6 +957,7 @@ ${
         }
   out.world = world;
   out.tint = ${pointColor ? "pointColors[instance]" : "vec4f(1.0)"};
+  out.profile = vec2f(0.0);
   return out;`
   }
 }
@@ -956,6 +966,12 @@ ${
 fn fs(input: VertexOut) -> @location(0) vec4f {
   let normal = normalize(input.normal);
   let albedo = params.baseColor * input.tint;
+  /* T917: SOFT PROFILE — §T845's AA-disc formula on the ribbon's cross axis. soft = 0 is
+     coverage 1 everywhere: today's hard quad, bit-identical. Above 0 the edge falls off
+     over that share of the half-width, and the COLOUR carries the coverage (premultiplied)
+     so an additive draw sums light and never fringes. */
+  let soft = params.instance.w;
+  let cover = select(1.0, clamp((1.0 - abs(input.profile.x)) / max(soft, 1e-4), 0.0, 1.0), soft > 0.0);
 ${shading}
 }`;
 }

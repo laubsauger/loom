@@ -418,6 +418,45 @@ export const geometryNode: NodeDefinition = {
       description:
         "Beam mode: the share of the width the beam keeps at its ORIGIN. 1 is a parallel-sided ribbon; 0 pinches the near end to a point, which is what a divergent beam does — and what keeps many beams sharing one origin from fusing into a solid wedge there.",
     },
+    /**
+     * T917 — the SOFT PROFILE (§T845's gap, third sighting: E41 rounds quads with bloom,
+     * E45's stay hard, E44's boxes read as a wall). §T845's AA-disc formula on the
+     * primitive's own across axis: 0 is today's hard edge, bit-identical; above it the
+     * edge falls off over that share of the half-width. The colour carries the coverage
+     * (premultiplied), so an additive draw sums light without fringing.
+     */
+    soft: {
+      type: "number",
+      label: "Soft",
+      default: 0,
+      min: 0,
+      max: 1,
+      range: "bounded",
+      inactiveWhen: (values) =>
+        values["mode"] === "beam" || values["mode"] === "points"
+          ? null
+          : "The soft profile falls off across a beam's width or a point's billboard.",
+      description:
+        "Edge falloff, as a share of the half-width. 0 is a hard edge (unchanged); 1 falls off from the centreline. Pairs with Blend: Additive for beams that read as light.",
+    },
+    /**
+     * T917 — additive light. The plan and backend have carried per-draw blend since T295
+     * (\`pass.blend\`); this is the missing knob. Additive draws also stop WRITING depth
+     * (they still test it): light does not occlude light, and 61 fan beams at one depth
+     * must sum rather than fight the z-buffer.
+     */
+    blend: {
+      type: "enum",
+      label: "Blend",
+      default: "opaque",
+      compileTime: true,
+      options: [
+        { value: "opaque", label: "Opaque" },
+        { value: "additive", label: "Additive" },
+      ],
+      description:
+        "Additive adds this geometry's colour onto what is already drawn — light on light — and stops writing depth so overlapping light sums instead of occluding.",
+    },
     shape: {
       type: "enum",
       label: "Shape",
@@ -761,9 +800,12 @@ export const geometryNode: NodeDefinition = {
               shape: shapeParameter === "quad" ? "quad" : shapeParameter === "octahedron" ? "octahedron" : "box",
               scale: readNumber(parameters, "scale", 0.05),
               ...(mode === "beam" ? { taper: Math.min(1, Math.max(0, readNumber(parameters, "taper", 1))) } : {}),
+              /* T917: the soft profile rides the instance vec4's spare w — zero new plumbing. */
+              soft: Math.min(1, Math.max(0, readNumber(parameters, "soft", 0))),
             },
           }
         : {}),
+      ...(parameters["blend"] === "additive" ? { blend: "additive" as const } : {}),
       ...(endpointPair === undefined ? {} : { endpoint: endpointPair }),
       ...(tintMap === undefined ? {} : { colorAttribute: { pair: tintMap.pair, half: tintMap.half, type: "vec4f" } }),
       ...(scaleMap === undefined || !perPoint ? {} : { scaleAttribute: scaleMap }),
@@ -1612,6 +1654,9 @@ export const renderNode: NodeDefinition = {
           kind: "draw",
           id: `${nodeId}:scene:${index}`,
           nodeId,
+          /* T917: additive LIGHT — sums onto what is drawn and stops writing depth (it
+             still tests), so overlapping beams add instead of fighting the z-buffer. */
+          ...(payload.blend === "additive" ? { blend: "additive" as const, depthWrite: false } : {}),
           shader: sceneInstancesWgsl({
             model,
             lightCount: lights.length,
@@ -1700,7 +1745,9 @@ export const renderNode: NodeDefinition = {
                  leaves this slot at the 0 it has always held, so their uniform bytes are
                  unchanged and no golden reading moves (§V309). */
               instance.taper ?? 0,
-              0,
+              /* T917: w is the soft profile. 0 — the default — is coverage 1 in the
+                 fragment, so every shipped picture is bit-identical. */
+              instance.soft ?? 0,
             ],
             ...(billboard
               ? {

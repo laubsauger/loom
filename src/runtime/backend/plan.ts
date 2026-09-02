@@ -326,6 +326,12 @@ export interface DrawPassDescriptor {
   /** Blend applied to the color target. Sprites usually want "additive" or "alpha". */
   readonly blend?: "alpha" | "additive" | "premultiplied";
   /**
+   * T917: set false to stop this draw WRITING depth (it still tests against it). The
+   * additive-light case: light does not occlude light, so overlapping beams must sum
+   * instead of z-fighting. Default (absent) keeps vgpu's write-enabled depth state.
+   */
+  readonly depthWrite?: boolean;
+  /**
    * Clear the target before drawing (T180). Default true. `false` accumulates over the
    * target's existing contents — the trails pattern. Honored for literal-instance
    * draws; an INDIRECT draw currently always clears (vgpu's standalone draw pass has
@@ -701,6 +707,8 @@ function readDrawPass(id: string, value: Record<string, unknown>): DrawPassDescr
   if (sharedBinding !== undefined && typeof sharedBinding !== "string") return undefined;
   const blend = value["blend"];
   if (blend !== undefined && blend !== "alpha" && blend !== "additive" && blend !== "premultiplied") return undefined;
+  const depthWrite = value["depthWrite"];
+  if (depthWrite !== undefined && typeof depthWrite !== "boolean") return undefined;
   const clear = value["clear"];
   if (clear !== undefined && typeof clear !== "boolean") return undefined;
 
@@ -718,6 +726,7 @@ function readDrawPass(id: string, value: Record<string, unknown>): DrawPassDescr
     ...(uniforms === undefined ? {} : { uniforms, uniformBinding: uniformBinding as string }),
     ...(typeof sharedBinding === "string" ? { sharedBinding } : {}),
     ...(blend === undefined ? {} : { blend }),
+    ...(depthWrite === undefined ? {} : { depthWrite }),
     ...(clear === undefined ? {} : { clear }),
     ...(typeof nodeId === "string" ? { nodeId } : {}),
   };

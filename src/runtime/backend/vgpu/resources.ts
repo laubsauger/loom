@@ -700,6 +700,8 @@ export function buildResources(
           geometry: { topology: pass.topology, vertexCount: pass.vertexCount ?? 6 },
           ...(typeof pass.instances === "number" ? { instances: pass.instances } : {}),
           ...(pass.blend === undefined ? {} : { blend: pass.blend }),
+          /* T917: additive light draws stop writing depth; they still test against it. */
+          ...(pass.depthWrite === false ? { depth: { write: false } } : {}),
         });
         created.compileSync(resolveTarget());
         draws.set(pass.id, created);
