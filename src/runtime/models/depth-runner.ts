@@ -53,6 +53,44 @@ export function depthToRgba(
   width: number,
   height: number,
 ): Uint8Array {
+  /* T959 (owner): PRECISION. The model emits float32; rounding it to a byte quantised
+     the whole scene to 256 depth levels — ~14 mm terracing across a metric unprojection
+     (T958). The result texture is r32float now, and this returns the float texels as a
+     BYTE VIEW over their own buffer (the upload contract carries raw bytes in the
+     declared format), so nothing between the model and the GPU rounds anything. */
+  const floats = new Float32Array(width * height);
+  {
+    let low = Number.POSITIVE_INFINITY;
+    let high = Number.NEGATIVE_INFINITY;
+    for (const value of depth) {
+      if (!Number.isFinite(value)) continue;
+      if (value < low) low = value;
+      if (value > high) high = value;
+    }
+    const span = high - low;
+    const flat = !Number.isFinite(span) || span <= 0;
+    for (let y = 0; y < height; y += 1) {
+      const sy = Math.min(side - 1, Math.floor((y * side) / height));
+      for (let x = 0; x < width; x += 1) {
+        const sx = Math.min(side - 1, Math.floor((x * side) / width));
+        const raw = depth[sy * side + sx];
+        /* A NaN texel clamps to the near plane rather than poisoning the float texture —
+           the byte path got this accidentally (Uint8Array coerces NaN to 0). */
+        const value = raw !== undefined && Number.isFinite(raw) ? raw : low;
+        floats[y * width + x] = flat ? 0.5 : (value - low) / span;
+      }
+    }
+  }
+  return new Uint8Array(floats.buffer);
+}
+
+/** The pre-T959 8-bit encoder, kept only for its test to pin the CONTRAST against. */
+export function depthToRgbaBytes(
+  depth: Float32Array,
+  side: number,
+  width: number,
+  height: number,
+): Uint8Array {
   let low = Number.POSITIVE_INFINITY;
   let high = Number.NEGATIVE_INFINITY;
   for (const value of depth) {
@@ -85,8 +123,8 @@ export function depthToRgba(
 
 /** Flat mid-grey at a given size — the identity a Depth node publishes with no result. */
 export function neutralDepth(width: number, height: number): Uint8Array {
-  const out = new Uint8Array(width * height * 4);
-  out.fill(128);
-  for (let i = 3; i < out.length; i += 4) out[i] = 255;
-  return out;
+  /* T959: r32float texels — 0.5 exactly, the no-displacement identity. */
+  const floats = new Float32Array(width * height).fill(0.5);
+  return new Uint8Array(floats.buffer);
 }
+

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { depthToRgba, neutralDepth, packModelInput } from "./depth-runner.ts";
+import { depthToRgba, depthToRgbaBytes, neutralDepth, packModelInput } from "./depth-runner.ts";
 
 /**
  * The two conversions around the model (T385).
@@ -52,64 +52,56 @@ describe("packing the model's input", () => {
   });
 });
 
-describe("turning relative depth into a texture", () => {
-  it("stretches the frame's own range across 0..255", () => {
+describe("turning relative depth into a texture (T959: float texels, byte views)", () => {
+  const floatsOf = (bytes: Uint8Array): Float32Array =>
+    new Float32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4);
+
+  it("stretches the frame's own range across 0..1 — in FLOAT, no byte rounding", () => {
     const depth = new Float32Array([0, 1, 2, 3]);
-    const rgba = depthToRgba(depth, 2, 2, 2);
-
-    expect(rgba[0]).toBe(0);
-    expect(rgba[(3 * 4)]).toBe(255);
+    const floats = floatsOf(depthToRgba(depth, 2, 2, 2));
+    expect(floats[0]).toBe(0);
+    expect(floats[3]).toBe(1);
+    // The precision claim itself: a third of the range is a third, not the nearest of
+    // 256 steps — 1/3 is not representable in 8 bits (85/255 = 0.333333... rounds).
+    const third = floatsOf(depthToRgba(new Float32Array([0, 1, 2, 3]).map((v) => v / 3), 2, 2, 2));
+    expect(third[1]).toBeCloseTo(1 / 3, 7);
   });
 
-  it("writes grey — equal channels — with opaque alpha", () => {
-    const rgba = depthToRgba(new Float32Array([0, 1, 2, 3]), 2, 2, 2);
-    for (let i = 0; i < rgba.length; i += 4) {
-      expect(rgba[i]).toBe(rgba[i + 1]);
-      expect(rgba[i]).toBe(rgba[i + 2]);
-      expect(rgba[i + 3]).toBe(255);
-    }
+  it("quantised to 256 levels before T959 — pinned as the contrast, not the contract", () => {
+    const bytes = depthToRgbaBytes(new Float32Array([0, 1, 2, 3]), 2, 2, 2);
+    expect(bytes[0]).toBe(0);
+    expect(bytes[3 * 4]).toBe(255);
   });
 
-  /**
-   * The one that matters for the contract. A flat input has no range to stretch, and
-   * normalising it to 0 would read as "everything is at the far plane" — a downstream
-   * Displace would shove the entire image. 0.5 is the no-displacement value, so a flat
-   * input stays flat, exactly as the never-yet fallback does.
-   */
   it("normalises a degenerate frame to the IDENTITY, not to zero", () => {
-    const rgba = depthToRgba(new Float32Array([7, 7, 7, 7]), 2, 2, 2);
-    for (let i = 0; i < rgba.length; i += 4) expect(rgba[i]).toBe(128);
+    const floats = floatsOf(depthToRgba(new Float32Array([7, 7, 7, 7]), 2, 2, 2));
+    for (const v of floats) expect(v).toBe(0.5);
   });
 
-  it("survives a frame containing NaN rather than producing a black map", () => {
-    const rgba = depthToRgba(new Float32Array([0, Number.NaN, 1, 0.5]), 2, 2, 2);
-    expect([...rgba].every((v) => Number.isFinite(v))).toBe(true);
+  it("survives a frame containing NaN rather than producing a broken map", () => {
+    const floats = floatsOf(depthToRgba(new Float32Array([0, Number.NaN, 1, 0.5]), 2, 2, 2));
+    expect([...floats].every((v) => Number.isFinite(v))).toBe(true);
   });
 
   it("resamples to the node's resolution, not the model's", () => {
-    // The model works at a fixed side whatever the picture is. If this returned the
-    // model's size the upload would fail an extent assertion rather than scale.
-    const rgba = depthToRgba(new Float32Array([0, 1, 2, 3]), 2, 8, 5);
-    expect(rgba.length).toBe(8 * 5 * 4);
+    const bytes = depthToRgba(new Float32Array([0, 1, 2, 3]), 2, 8, 5);
+    expect(bytes.length).toBe(8 * 5 * 4); // r32float: 4 bytes per texel
   });
 
   it("keeps near bright and far dark across the resample", () => {
-    // A left-to-right ramp must still run left-to-right after scaling up.
     const depth = new Float32Array([0, 3, 0, 3]);
-    const rgba = depthToRgba(depth, 2, 4, 2);
-    expect(rgba[0]).toBeLessThan(rgba[3 * 4]!);
+    const floats = floatsOf(depthToRgba(depth, 2, 4, 2));
+    expect(floats[0]!).toBeLessThan(floats[3]!);
   });
 });
 
 describe("the identity a node publishes with no result", () => {
-  it("is the value Displace reads as no displacement", () => {
-    // 128/255 = 0.502. `displace`'s `offset` default is 0.5, so this composes to a no-op
-    // and a machine without the model renders the document as if the node were not there.
+  it("is EXACTLY the value Displace reads as no displacement", () => {
+    // T959: 0.5 exactly — the 8-bit encoder could only manage 128/255 = 0.502, which was
+    // a permanent 0.2% displacement bias on every model-less machine.
     const grey = neutralDepth(3, 2);
     expect(grey.length).toBe(3 * 2 * 4);
-    for (let i = 0; i < grey.length; i += 4) {
-      expect(grey[i]).toBe(128);
-      expect(grey[i + 3]).toBe(255);
-    }
+    const floats = new Float32Array(grey.buffer);
+    for (const v of floats) expect(v).toBe(0.5);
   });
 });

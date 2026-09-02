@@ -28,32 +28,25 @@ beforeAll(async () => {
   dawnError = (await probeDawn()).error;
 }, 60_000);
 
+/* T959: the result texture is r32float — one float per texel, fed as a byte view over
+   the float buffer, exactly as the model runner uploads. `level` keeps its 0..255
+   spelling so every measured number below keeps meaning (128 is still the mid-grey). */
+
 /** A depth map of one flat level. */
 function flat(level: number): Uint8Array {
-  const bytes = new Uint8Array(SIZE * SIZE * 4);
-  for (let i = 0; i < SIZE * SIZE; i += 1) {
-    bytes[i * 4] = level;
-    bytes[i * 4 + 1] = level;
-    bytes[i * 4 + 2] = level;
-    bytes[i * 4 + 3] = 255;
-  }
-  return bytes;
+  const floats = new Float32Array(SIZE * SIZE).fill(level / 255);
+  return new Uint8Array(floats.buffer);
 }
 
 /** Dark on the left, bright on the right — a known, monotonic ramp across x. */
 function rampX(): Uint8Array {
-  const bytes = new Uint8Array(SIZE * SIZE * 4);
+  const floats = new Float32Array(SIZE * SIZE);
   for (let y = 0; y < SIZE; y += 1) {
     for (let x = 0; x < SIZE; x += 1) {
-      const level = Math.round((x / (SIZE - 1)) * 255);
-      const at = (y * SIZE + x) * 4;
-      bytes[at] = level;
-      bytes[at + 1] = level;
-      bytes[at + 2] = level;
-      bytes[at + 3] = 255;
+      floats[y * SIZE + x] = x / (SIZE - 1);
     }
   }
-  return bytes;
+  return new Uint8Array(floats.buffer);
 }
 
 async function positions(map: Uint8Array): Promise<Float32Array> {

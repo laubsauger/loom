@@ -305,6 +305,27 @@ export function syntheticInferenceFrame(
 ): Uint8Array {
   const [width, height] = size;
   if (format === "rgba16float") return syntheticHalfFrame(width, height, frameIndex, sourceId);
+  /* T959: the depth result is r32float — one FLOAT per texel, handed as a byte view over
+     its own buffer exactly as the model runner uploads. Same banded radial picture, same
+     frame-index marker in texel 0 (as a plain 0..255-scaled float, so the assertions
+     keep their byte spelling). */
+  if (format === "r32float") {
+    const floats = new Float32Array(width * height);
+    let salt32 = 0;
+    for (const char of sourceId) salt32 = (salt32 * 31 + char.charCodeAt(0)) >>> 0;
+    const cx32 = width / 2;
+    const cy32 = height / 2;
+    const longest32 = Math.max(1, Math.hypot(cx32, cy32));
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const distance = Math.hypot(x - cx32, y - cy32) / longest32;
+        const band = Math.floor((1 - distance) * 8 + frameIndex + (salt32 % 8)) % 8;
+        floats[y * width + x] = (((band + 8) % 8) * 32) / 255;
+      }
+    }
+    floats[0] = (frameIndex & 255) / 255;
+    return new Uint8Array(floats.buffer);
+  }
   const bytes = new Uint8Array(width * height * 4);
   let salt = 0;
   for (const char of sourceId) salt = (salt * 31 + char.charCodeAt(0)) >>> 0;

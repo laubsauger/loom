@@ -74,7 +74,10 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     out_position[index] = PARKED;
     return;
   }
-  let height = dot(s.rgb, vec3f(0.2126, 0.7152, 0.0722));
+  /* T959: a SINGLE-CHANNEL map (the depth node's r32float) carries its value in .r with
+     g and b hard zero — luma-weighting it would read at 0.21x. A colour map keeps the
+     luma read; grey maps agree under both. */
+  let height = select(dot(s.rgb, vec3f(0.2126, 0.7152, 0.0722)), s.r, s.g + s.b < 1e-6);
   out_position[index] = vec3f(
     (u - 0.5) * params.sizeX,
     (0.5 - w) * params.sizeY,

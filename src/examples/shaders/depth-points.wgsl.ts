@@ -63,8 +63,9 @@ fn process(p: Point, ctx: PointCtx) -> Point {
   /* The grid generator laid points across the clip square; that xy IS the depth map's
      uv in fieldAt's own convention — one mapping, shared. */
   let sample = fieldAt(vec3f(p.position.xy, 0.0));
-  /* Luma, not .r: a colour depth visualisation (turbo, viridis) still carves. */
-  let value = dot(sample.rgb, vec3f(0.2126, 0.7152, 0.0722));
+  /* Single-channel maps (the depth node's r32float, T959) read .r; colour depth
+     visualisations (turbo, viridis) read luma; grey maps agree under both. */
+  let value = select(dot(sample.rgb, vec3f(0.2126, 0.7152, 0.0722)), sample.r, sample.g + sample.b < 1e-6);
   let metres = decodeDepth(value, near, far, ctx.params.inverseDepth);
 
   if (ctx.params.unproject < 0.5) {
