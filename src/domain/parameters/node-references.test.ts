@@ -209,7 +209,7 @@ describe("reading op('name').par.key (T316)", () => {
     const source = node("n1", "src", { gain: 2 });
     const subject = node("n2", "a", { gain: expression("op('src').ports.out") });
     expect(resolve(graphOf(source, subject), subject)?.diagnostic?.message).toContain(
-      "only .par is readable",
+      "only .par and .chan are readable",
     );
   });
 
@@ -219,5 +219,64 @@ describe("reading op('name').par.key (T316)", () => {
     const result = evaluateExpression("op('a').par.gain");
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toContain("need a graph");
+  });
+});
+
+/**
+ * T901 — `op('name').chan.<channel>`: a value node's OUTPUT, read through the channels
+ * resolver (the seam the retired `driven` mode used). The whole point of the collapse:
+ * inline maths over a live signal, which `driven` could not express at all.
+ */
+describe("reading op('name').chan.channel (T901)", () => {
+  /** A resolver publishing lfo1's bag the way the value graph does. */
+  const channels = (address: string) => {
+    const bags: Record<string, Record<string, number>> = { lfo1: { value: 0.5 }, beat1: { low: 0.7, high: 0.2 } };
+    const colon = address.indexOf(":");
+    const name = colon < 0 ? address : address.slice(0, colon);
+    const bag = bags[name];
+    if (bag === undefined) return undefined;
+    if (colon >= 0) return bag[address.slice(colon + 1)];
+    return bag["value"];
+  };
+
+  function resolveWith(graph: GraphDocument, subject: GraphNode) {
+    const reader = createNodeReferenceReader({ graph, schemaOf: () => SCHEMA, base: { channels } });
+    return resolveParameterSchema(subject, SCHEMA, { nodes: reader, channels }).get("gain");
+  }
+
+  it("reads a named channel and does inline maths over it", () => {
+    const source = node("n1", "beat1");
+    const subject = node("n2", "a", { gain: expression("op('beat1').chan.low * 2 + 1") });
+    expect(resolveWith(graphOf(source, subject), subject)?.value).toBeCloseTo(2.4, 10);
+  });
+
+  it(".chan.value answers a node's bare channel, exactly as the old bare driven address did", () => {
+    const source = node("n1", "lfo1");
+    const subject = node("n2", "a", { gain: expression("op('lfo1').chan.value") });
+    expect(resolveWith(graphOf(source, subject), subject)?.value).toBe(0.5);
+  });
+
+  it("mixes a channel and another node's parameter in one expression", () => {
+    const par = node("n1", "src", { gain: 3 });
+    const sig = node("n3", "beat1");
+    const subject = node("n2", "a", { gain: expression("op('beat1').chan.low * op('src').par.gain") });
+    expect(resolveWith(graphOf(par, sig, subject), subject)?.value).toBeCloseTo(2.1, 10);
+  });
+
+  it("a missing channel fails LOUDLY with the name in the message", () => {
+    const source = node("n1", "beat1");
+    const subject = node("n2", "a", { gain: expression("op('beat1').chan.nope") });
+    expect(resolveWith(graphOf(source, subject), subject)?.diagnostic?.message).toContain(
+      'publishes no channel "nope"',
+    );
+  });
+
+  it("no resolver degrades to the INFO tier the driven mode used (T897, §V815)", () => {
+    const source = node("n1", "lfo1");
+    const subject = node("n2", "a", { gain: expression("op('lfo1').chan.value") });
+    // Reader WITHOUT channels in base — the structural-compile state.
+    const resolved = resolve(graphOf(source, subject), subject);
+    expect(resolved?.diagnostic?.severity).toBe("info");
+    expect(resolved?.diagnostic?.code).toBe("parameter.channels.unavailable");
   });
 });

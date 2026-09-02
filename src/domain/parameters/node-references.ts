@@ -4,7 +4,7 @@ import type { GraphDocument, GraphNode } from "../types/graph.ts";
 import type { NodeId } from "../types/ids.ts";
 import type { ParameterSchema, ParameterValue } from "../types/parameters.ts";
 import { componentKey, componentNamesFor } from "./slots.ts";
-import { resolveParameterSchema, type ResolveParametersOptions } from "./resolve.ts";
+import { CHANNEL_RESOLVER_MISSING, resolveParameterSchema, type ResolveParametersOptions } from "./resolve.ts";
 
 /**
  * Reading `op('noise1').par.gain` — the cross-node value path (T316, §V148, §V127).
@@ -50,6 +50,9 @@ import { resolveParameterSchema, type ResolveParametersOptions } from "./resolve
  * component may follow the parameter (`par.color.r`, §V113/T332).
  */
 const PARAMETER_NAMESPACE = "par";
+/** T901: `op('lfo1').chan.value` — a value node's OUTPUT channel, TD's CHOP-read idiom. */
+const CHANNEL_NAMESPACE = "chan";
+
 
 export interface NodeReferenceOptions {
   readonly graph: GraphDocument;
@@ -107,10 +110,63 @@ function readerWithin(
     const reference = `op('${name}').${path.join(".")}`;
 
     const [namespace, key, component, ...rest] = path;
+
+    /**
+     * T901 — `op('name').chan.<channel>`: a value node's OUTPUT, read through the SAME
+     * channels resolver the old `driven` mode used, so an expression can do inline maths on
+     * a live signal (`op('lfo1').chan.value * 2 + 0.1`) — TD's model, where a channel read
+     * is just an expression term and no separate mode exists. `.chan.value` also answers a
+     * node's single/bare channel, exactly as the bare `driven` address did, so §T897's
+     * migration maps `name` → op('name').chan.value and `name:c` → op('name').chan.c with
+     * identical resolution by construction.
+     */
+    if (namespace === CHANNEL_NAMESPACE) {
+      if (key === undefined || component !== undefined || rest.length > 0) {
+        return {
+          ok: false,
+          reason: `${reference}: name one channel, as op('${name}').chan.value or op('${name}').chan.low`,
+        };
+      }
+      const channels = options.base?.channels;
+      if (channels === undefined) {
+        // §V338: name what would make it present, not accuse the graph — same contract as
+        // the old driven mode's missing-resolver case, and the same INFO tier: resolve.ts
+        // matches this marker to degrade the failure, because a headless caller with no
+        // resolver is a normal state, not a broken document.
+        return {
+          ok: false,
+          reason: `${reference}: ${CHANNEL_RESOLVER_MISSING}, so "${name}"'s channels cannot be read`,
+        };
+      }
+      const channelTarget = nodeByName(options.graph, name);
+      const channelNode = channelTarget === undefined ? undefined : options.graph.nodes[channelTarget];
+      if (channelNode === undefined) {
+        return { ok: false, reason: `${reference}: there is no node named "${name}"` };
+      }
+      // The resolvers in use (value graph, analyze) key on the ADDRESS; the context rides
+      // along for ones that want the frame. The definition is nominal — a channel is a
+      // number by contract (§V143).
+      const channelContext = {
+        node: channelNode,
+        key,
+        definition: { type: "number", label: key, default: 0 } as const,
+        ...(options.base?.frame === undefined ? {} : { frame: options.base.frame }),
+      };
+      const direct = channels(`${name}:${key}`, channelContext);
+      const supplied = direct ?? (key === "value" ? channels(name, channelContext) : undefined);
+      if (typeof supplied !== "number" || !Number.isFinite(supplied)) {
+        return {
+          ok: false,
+          reason: `${reference}: "${name}" publishes no channel "${key}" right now`,
+        };
+      }
+      return { ok: true, value: supplied };
+    }
+
     if (namespace !== PARAMETER_NAMESPACE) {
       return {
         ok: false,
-        reason: `${reference}: only .${PARAMETER_NAMESPACE} is readable (op('${name}').${PARAMETER_NAMESPACE}.<parameter>)`,
+        reason: `${reference}: only .${PARAMETER_NAMESPACE} and .${CHANNEL_NAMESPACE} are readable (op('${name}').par.<parameter>, op('${name}').chan.<channel>)`,
       };
     }
     if (key === undefined || rest.length > 0) {

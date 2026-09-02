@@ -125,6 +125,14 @@ export interface ParameterDriverContext {
 
 export type ParameterDriver = (context: ParameterDriverContext) => ParameterValue | undefined;
 
+/**
+ * T897/T901: the marker a chan read's no-resolver failure carries, matched above the
+ * expression fallback to give that state the INFO tier the old driven mode gave it. Lives
+ * here (the leaf both sides import) so the two spellings cannot drift and no import cycle
+ * forms — `node-references.ts` already imports this module.
+ */
+export const CHANNEL_RESOLVER_MISSING = "this context has no channel resolver";
+
 export type BindLookupResult =
   | { ok: true; value: ParameterValue }
   | { ok: false; message: string };
@@ -530,16 +538,27 @@ function resolveStored(
         context.options.nodes,
       );
       if (!evaluated.ok) {
+        /**
+         * T897: a chan read failing ONLY because this context has no channel resolver is
+         * the state the old driven mode called normal — a structural compile, a headless
+         * validate — and reported at INFO (§V338). The expression that carries the read
+         * inherits that tier, or the driven→expression migration would turn every clean
+         * example compile into a wall of warnings the driven form never produced.
+         */
+        const resolverless = evaluated.reason.includes(CHANNEL_RESOLVER_MISSING);
         return fallback(
           node,
           key,
           definition,
           slot,
           diag(
-            "warning",
-            "parameter.expression",
+            resolverless ? "info" : "warning",
+            resolverless ? "parameter.channels.unavailable" : "parameter.expression",
             `Parameter "${key}" expression "${binding.source}" failed: ${evaluated.reason}`,
             node.id,
+            resolverless
+              ? "Channels are published by the running app; a headless caller has none, so the retained value is in effect."
+              : undefined,
           ),
         );
       }
@@ -1006,13 +1025,43 @@ export function resolveParameterSchema(
 }
 
 /**
+ * Anything that can answer "what parameters does this node type have" — a `NodeDefinition`,
+ * or one of the duck-typed registries a module declares when all it needs is the schema
+ * (`pulse.ts`'s `SchemaSource`). Structural on purpose: §T903's funnel is only closed if the
+ * consumers that never named `NodeDefinition` can reach it too, and one of them (`pulse.ts`)
+ * was invisible to the first census FOR EXACTLY THAT REASON.
+ */
+export interface ParameterSchemaSource {
+  readonly parameters: ParameterSchema;
+  parametersFor?(stored: Readonly<Record<string, unknown>>): ParameterSchema;
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ * THE ONE WAY TO A NODE'S PARAMETER SCHEMA (§T903, §V814)
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ *
  * The schema THIS node instance carries (T880). For almost every node it is the type's
  * static `parameters`; a `customWgsl` derives it from its own stored `source` (its shader's
  * `struct Params`), so a node's controls follow its shader. The static schema is the fallback
  * for every node without the hook and for the type-only contexts (palette, a fresh drop).
+ *
+ * WHY THIS IS A FUNNEL AND NOT A CONVENIENCE. §T880 threaded the reflected schema into the
+ * paths it thought of (resolution). §B166 found the WRITE paths, still on the static schema,
+ * and every reflected control rendered correctly and refused every edit. §B167 found the
+ * ENUMERATING ones — the authorability gate and the agent's node description — and E46's
+ * seven knobs were reported as unknown parameters by the very test that certifies an example
+ * is reproducible. Three rounds, each one a list someone happened to think of.
+ *
+ * So the rule is now mechanical rather than remembered: **if you have a node in hand, its
+ * schema comes from here.** `src/tests/guardrails/effective-schema-closure.test.ts` reads the
+ * whole repo through the TypeScript checker and fails on any other read, so a fourth surface
+ * cannot be discovered by a user. A reader that legitimately wants the DECLARED schema (the
+ * catalogue, the palette, a manifest audit — contexts with no instance to reflect from) is
+ * named in that test's ledger with its reason.
  */
 export function effectiveParameterSchema(
-  definition: NodeDefinition | undefined,
+  definition: ParameterSchemaSource | undefined,
   stored: Readonly<Record<string, unknown>>,
 ): ParameterSchema {
   return definition?.parametersFor?.(stored) ?? definition?.parameters ?? {};
