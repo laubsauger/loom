@@ -78,3 +78,40 @@ for ordered reveals.
 Copy (that is `renderInstances`), GLSL/GLSL Advanced (that is our kernels), Grid/Circle/
 Sphere/Box/Torus/Rectangle (generators — check which we actually ship), File In/Out,
 Alembic, DMX, ZED, OAK, CPlusPlus, Script, DAT/CHOP/SOP/TOP-to.
+
+---
+
+## The GPU roundtrip question — answered from the code
+
+> *"i'm afraid our current setup would force GPU>CPU>GPU roundtrips wherever we use
+> something like math for points right?"*
+
+**No — and the reason is structural rather than lucky.**
+
+- `pointKernel` compiles to a **compute pass** (`points.ts:414`, `workgroups: [ceil(capacity /
+  workgroupSize), 1, 1]`). Point data lives in storage buffers.
+- **Nothing in the point family reads points back to the CPU.** No `readBuffer`, no readback,
+  anywhere in `points.ts`, `point-kernel-advanced.ts`, `point-proximity.ts` or
+  `point-generators.ts`.
+- The value graph is CPU, but it only ever carries **scalars** — a driven parameter becomes a
+  *uniform* on the pass. Per-point data never crosses.
+
+So a Math-for-points node would compile to another compute pass, exactly as `pointKernel`
+does. Chaining ten of them is ten passes on one buffer, not ten roundtrips. **The thing that
+keeps TouchDesigner GPU-side is the thing we already do** — the gap is ergonomic (you must
+write WGSL, §T868), not architectural.
+
+**The one place a roundtrip is real and unavoidable:** a point→scalar **reduce** (§T869's
+Analyze). Reading "the bounding radius" or "the live count" as a *channel* means one value
+crossing to the CPU, exactly as texture `analyze` does — and therefore **one frame late**
+(§V144). That is one number per frame, not N points, and the latency is already a documented
+property of the texture version.
+
+## Generators — what we have
+
+`pointGenerator` ships **line, circle, grid, sphere, tube, torus** (`point-generators.ts:28`).
+
+- **Sphere POP — we have it.**
+- **Box POP — genuinely missing**, and it is the cheapest addition on this page: one more
+  entry in `GENERATOR_SHAPES` plus its `SHAPE_USES` row (`sizeX/sizeY/sizeZ`) and the kernel
+  branch. The owner is right that it is simple and right that it should exist.
