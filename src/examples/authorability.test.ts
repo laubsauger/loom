@@ -9,6 +9,7 @@ import {
   validateParameters,
 } from "../domain/parameters/index.ts";
 import { numericRangeOf } from "../domain/parameters/expression-range.ts";
+import { effectiveParameterSchema } from "../domain/parameters/resolve.ts";
 import { createComponentSystem } from "../domain/components/registry.ts";
 import { COMPONENT_LIBRARY_KEY, buildProjectFile, loadProject } from "../domain/project/index.ts";
 import type { GraphComponentDefinition } from "../domain/types/components.ts";
@@ -225,7 +226,12 @@ describe("(b1) every stored value is one the command bus would accept", () => {
           const definition = registry.get(node.type);
           if (definition === undefined) continue; // (a) owns unknown types.
           for (const diagnostic of validateParameters(
-            definition.parameters,
+            // T903/§B167: the node's EFFECTIVE schema — the same one `apply-patch` validates
+            // an edit against. This test's whole claim is "the bus would accept this value",
+            // so reading a DIFFERENT schema than the bus reads makes the claim about nothing:
+            // it reported E46's seven reflected knobs as unknown parameters while every one
+            // of them was writable through the real command bus.
+            effectiveParameterSchema(definition, node.parameters ?? {}),
             (node.parameters ?? {}) as never,
             node.id,
           )) {
@@ -346,8 +352,11 @@ describe("(b2) values past the end of their slider are censused, not assumed fin
         for (const node of nodes) {
           const definition = registry.get(node.type);
           if (definition === undefined) continue;
+          // T903: the census reads the schema the node CARRIES, so a reflected number is
+          // censused for overshoot exactly like a declared one.
+          const schema = effectiveParameterSchema(definition, node.parameters ?? {});
           for (const [key, stored] of Object.entries(node.parameters ?? {})) {
-            const parameter = numericDefinitionFor(definition.parameters, key);
+            const parameter = numericDefinitionFor(schema, key);
             if (parameter === undefined) continue;
             for (const value of staticNumbersOf(stored)) {
               for (const overshoot of overshootsOf(parameter, `${node.type}.${key}`, value)) {
@@ -382,9 +391,10 @@ describe("(b2) values past the end of their slider are censused, not assumed fin
         for (const node of nodes) {
           const definition = registry.get(node.type);
           if (definition === undefined) continue;
+          const schema = effectiveParameterSchema(definition, node.parameters ?? {});
           for (const [key, stored] of Object.entries(node.parameters ?? {})) {
-            if (definition.parameters[key] === undefined) {
-              if (numericDefinitionFor(definition.parameters, key) !== undefined) compoundNumbers += 1;
+            if (schema[key] === undefined) {
+              if (numericDefinitionFor(schema, key) !== undefined) compoundNumbers += 1;
               continue;
             }
             if (typeof stored === "object" && stored !== null && !Array.isArray(stored)) {

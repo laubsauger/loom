@@ -1,5 +1,6 @@
 import { isPureValueSource } from "@domain/types/node-definition.ts";
 import type { NodeDefinition } from "@domain/types/node-definition.ts";
+import { effectiveParameterSchema } from "@domain/parameters/resolve.ts";
 import type { FrameEvaluationInput } from "@domain/types/frame.ts";
 import type { ParameterValue } from "@domain/types/parameters.ts";
 
@@ -138,7 +139,9 @@ export function plotValues(
   stored: Readonly<Record<string, unknown>>,
 ): Record<string, ParameterValue> {
   const values: Record<string, ParameterValue> = {};
-  for (const [key, spec] of Object.entries(definition.parameters ?? {})) {
+  // T903: the funnel — the plot's defaults come from the schema THIS node carries, which is
+  // the same schema its stored values were written against.
+  for (const [key, spec] of Object.entries(effectiveParameterSchema(definition, stored))) {
     const declared = (spec as { default?: unknown }).default;
     if (declared !== undefined) values[key] = declared as ParameterValue;
   }

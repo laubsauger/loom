@@ -10,6 +10,7 @@ import type { CookPolicyValue } from "@editor/inspect/index.ts";
 import { KEYMAP_CONTEXT_ATTRIBUTE } from "@editor/keymap/index.ts";
 import { ShaderEditor, commitShaderSource, diagnosticsToMarkers } from "@editor/shader-editor/index.ts";
 import { codeParametersOf } from "@domain/parameters/index.ts";
+import { effectiveParameterSchema } from "@domain/parameters/resolve.ts";
 import { isParameterSlot } from "@domain/parameters/slots.ts";
 import { useAppRuntime } from "./app-context.ts";
 import type { GpuStatus } from "./gpu-status.ts";
@@ -68,9 +69,11 @@ export function ShaderPane({ nodeId, graph, diagnostics, stale = false }: Shader
    */
   const codeParameters = useMemo(() => {
     const declared =
-      definition === undefined
+      definition === undefined || node === undefined
         ? []
-        : codeParametersOf(definition.parameters).map((entry) => ({
+        : // T903: the funnel — the pane's subjects are the SELECTED NODE's code parameters, so
+          // they come from the schema that node actually carries.
+          codeParametersOf(effectiveParameterSchema(definition, node.parameters)).map((entry) => ({
             key: entry.key,
             label: entry.definition.label,
             language: entry.definition.language as "wgsl" | "json" | "expression",

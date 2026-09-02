@@ -6,6 +6,7 @@ import { testCapabilities } from "../../compiler/test-support.ts";
 import { hasAnimatedParameters } from "../../domain/channels/graph-channels.ts";
 import { createValueGraphSession } from "../../domain/channels/value-graph.ts";
 import { createPulseWatcher, pulseCommandInput } from "../../domain/parameters/pulse.ts";
+import { effectiveParameterSchema } from "../../domain/parameters/resolve.ts";
 import { DEFAULT_PROJECT_SETTINGS } from "../../domain/types/graph.ts";
 import type { FrameEvaluationInput } from "../../domain/types/frame.ts";
 import { analyzeChannelEntries, createAnalyzeChannels } from "../../runtime/execution/index.ts";
@@ -273,7 +274,11 @@ describe("T615 — a component's own animation runs, per instance", () => {
     // id the plan's feedback table uses — so instance 1's reset cannot clear instance 2's
     // history (§V126). This is the "map back" half of the hazard.
     const inputs = fires.map((fire) => {
-      const definition = registry.get(flat.graph.nodes[fire.nodeId]?.type ?? "")?.parameters[fire.key];
+      // T903: through the funnel, like every other read of a PLACED node's schema.
+      const node = flat.graph.nodes[fire.nodeId];
+      const definition = effectiveParameterSchema(registry.get(node?.type ?? ""), node?.parameters ?? {})[
+        fire.key
+      ];
       if (definition === undefined || definition.type !== "pulse") throw new Error("not a pulse");
       return pulseCommandInput(definition, fire.nodeId);
     });

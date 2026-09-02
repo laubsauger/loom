@@ -7,8 +7,8 @@ import type {
   PulseParameter,
 } from "../types/parameters.ts";
 import { isParameterSlot } from "./slots.ts";
-import { resolveParameter } from "./resolve.ts";
-import type { ChannelResolver } from "./resolve.ts";
+import { effectiveParameterSchema, resolveParameter } from "./resolve.ts";
+import type { ChannelResolver, ParameterSchemaSource } from "./resolve.ts";
 
 /**
  * Pulse mechanics (T214, §V123, §V124, §V125).
@@ -113,8 +113,14 @@ export interface PulseWatcher {
   reset: () => void;
 }
 
+/**
+ * Just enough registry to answer "what parameters does this type have". Duck-typed so a test
+ * can hand over a literal; §T903 pins the return to `ParameterSchemaSource` so this reads a
+ * node's schema through the SAME funnel every other consumer does — a reflected pulse
+ * (§T880) fires like a declared one, and a structural type stops being a way around the rule.
+ */
 interface SchemaSource {
-  get: (type: string) => { parameters: ParameterSchema } | undefined;
+  get: (type: string) => ParameterSchemaSource | undefined;
 }
 
 /*
@@ -147,8 +153,9 @@ export function createPulseWatcher(registry: SchemaSource): PulseWatcher {
       for (const nodeId of Object.keys(graph.nodes).sort()) {
         const node = graph.nodes[nodeId];
         if (node === undefined) continue;
-        const schema = registry.get(node.type)?.parameters;
-        if (schema === undefined) continue;
+        const definition = registry.get(node.type);
+        if (definition === undefined) continue;
+        const schema = effectiveParameterSchema(definition, node.parameters);
         for (const { key, definition } of pulseParametersOf(schema)) {
           if (!isWatchable(node, key)) continue;
           /*

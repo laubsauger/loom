@@ -2,7 +2,7 @@ import type { GraphDocument } from "../types/graph.ts";
 import type { FrameEvaluationInput } from "../types/frame.ts";
 import type { ParameterValue } from "../types/parameters.ts";
 import type { NodeRegistryView } from "../../nodes/registry/registry.ts";
-import type { ChannelResolver } from "../parameters/resolve.ts";
+import { effectiveParameterSchema, type ChannelResolver } from "../parameters/resolve.ts";
 import { nodeByName } from "../graph/names.ts";
 import { storedStaticValue } from "../parameters/slots.ts";
 import { defaultParameterValue } from "../parameters/validate.ts";
@@ -40,7 +40,9 @@ export function graphChannelResolver(
     if (definition?.valueChannel === undefined) return undefined;
 
     const values: Record<string, ParameterValue> = {};
-    for (const [key, parameter] of Object.entries(definition.parameters)) {
+    // T903: through the funnel, so a value node that reflects its own schema publishes the
+    // controls it actually has. Every node with no hook returns its static schema unchanged.
+    for (const [key, parameter] of Object.entries(effectiveParameterSchema(definition, node.parameters))) {
       values[key] = storedStaticValue(node.parameters[key]) ?? defaultParameterValue(parameter);
     }
     const frame: FrameEvaluationInput = context.frame ?? ZERO_FRAME;

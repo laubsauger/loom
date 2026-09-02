@@ -3,6 +3,7 @@ import type { NodeId, Revision } from "@domain/types/ids.ts";
 import type { MenuTarget } from "@domain/types/menus.ts";
 import type { ParameterValue } from "@domain/types/parameters.ts";
 import { isComponentNodeType } from "@domain/components/component-type.ts";
+import { effectiveParameterSchema } from "@domain/parameters/resolve.ts";
 import { isParameterSlot, storedStaticValue } from "@domain/parameters/slots.ts";
 import type { NodeRegistryView } from "@nodes/registry/registry.ts";
 
@@ -83,7 +84,11 @@ export function parameterDefault(
 ): ParameterValue | undefined {
   const node = nodeForTarget(target, context);
   if (node === undefined || target.parameterKey === undefined) return undefined;
-  const definition = context.registry.get(node.type)?.parameters[target.parameterKey];
+  // T903: the funnel — "reset to default" on a REFLECTED control must find that control's
+  // declared default, not answer "no such parameter" and leave the menu item inert.
+  const definition = effectiveParameterSchema(context.registry.get(node.type), node.parameters)[
+    target.parameterKey
+  ];
   // An asset parameter declares no default — there is no "reset" for a texture slot.
   if (definition === undefined || !("default" in definition)) return undefined;
   return definition.default;

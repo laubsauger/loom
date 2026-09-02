@@ -2,6 +2,7 @@ import type { GraphPatchOperation, TempId } from "@domain/types/patch.ts";
 import type { StoredParameter } from "@domain/types/parameters.ts";
 import type { Revision } from "@domain/types/ids.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
+import { effectiveParameterSchema } from "@domain/parameters/resolve.ts";
 import { placeFree, placeRelative } from "@domain/graph/layout.ts";
 import { previewAspectOf } from "@domain/graph/node-box.ts";
 
@@ -283,7 +284,9 @@ export const attachAsset: AgentTool<AttachAssetInput, PatchToolData> = {
       );
     }
     const definition = runtime.bus.registry.get(node.type);
-    const assetParameters = Object.entries(definition?.parameters ?? {}).filter(
+    // T903: the funnel, because this reads the schema of a PLACED node — an agent attaching
+    // an asset must see the same parameters the inspector shows for it.
+    const assetParameters = Object.entries(effectiveParameterSchema(definition, node.parameters)).filter(
       (entry) => entry[1].type === "asset",
     );
     const chosen =

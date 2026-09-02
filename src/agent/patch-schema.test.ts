@@ -151,10 +151,31 @@ describe("the agent patch schema is the domain schema (T309)", () => {
       bindings: { expression: { kind: "expression", source: "time * 2" } },
     });
 
-    // A bare value still works — this widened the envelope, it did not replace it.
+    // A bare value still works — this widened the envelope, it did not replace it. What a
+    // bare value MEANS changed with §B166/§T895: over a slot it is a VALUE EDIT (the number
+    // a user types into the field), so it updates the retained STATIC binding and leaves
+    // every inactive payload standing (§V108). It used to overwrite the whole envelope,
+    // which is how a round trip through Constant destroyed a user's expression. The agent
+    // door and the inspector's door must not differ on that — this is the agent's copy of
+    // `slot-retention.test`'s promise, and asserting the bare `12` back would re-assert the
+    // exact defect §B166 fixed.
     const plain = await surface.callTool("set_parameters", { nodeId, parameters: { radius: 12 } });
     expect(plain.status).toBe("ok");
-    expect(store.view.getGraph().nodes[nodeId]?.parameters["radius"]).toBe(12);
+    expect(store.view.getGraph().nodes[nodeId]?.parameters["radius"]).toEqual({
+      mode: "expression",
+      bindings: {
+        expression: { kind: "expression", source: "time * 2" },
+        static: { kind: "static", value: 12 },
+      },
+    });
+
+    // …and onto a parameter with no envelope at all, a bare value is still just the value.
+    const second = await surface.callTool("add_node", { type: "test.blur" });
+    expect(second.status).toBe("ok");
+    const plainNodeId = Object.keys(store.view.getGraph().nodes).find((id) => id !== nodeId) as string;
+    const bare = await surface.callTool("set_parameters", { nodeId: plainNodeId, parameters: { radius: 7 } });
+    expect(bare.status).toBe("ok");
+    expect(store.view.getGraph().nodes[plainNodeId]?.parameters["radius"]).toBe(7);
   });
 
   it("cannot move the human's camera without a grant (T315, §V38)", async () => {

@@ -10,6 +10,7 @@ import type { NodeId, PortId } from "../domain/types/ids.ts";
 import type { ParameterSchema, ParameterValue, StoredParameter } from "../domain/types/parameters.ts";
 import { renumberedName, rewriteNodeNameReferences } from "../domain/graph/names.ts";
 import { isPreviewablePortKind } from "../domain/graph/previewable.ts";
+import { effectiveParameterSchema } from "../domain/parameters/resolve.ts";
 import { isParameterSlot, storedStaticValue } from "../domain/parameters/slots.ts";
 import { storedValues } from "../domain/parameters/stored-values.ts";
 import type { NodeRegistryView } from "../nodes/registry/registry.ts";
@@ -398,7 +399,10 @@ export function flattenComponents(request: FlattenRequest): FlattenedGraph {
 
       const schema =
         componentDefinition === undefined
-          ? request.registry.get(node.type)?.parameters
+          ? // T903: a reflecting node INSIDE a component keeps its reflected controls through
+            // the flattener — the static schema would drop every key its shader declares, so a
+            // published knob would resolve to nothing exactly where §T880 aims it.
+            effectiveParameterSchema(request.registry.get(node.type), node.parameters)
           : publishedSchema(componentDefinition);
       const parameters = effectiveParameters(node, schema, grouped.get(nodeId) ?? {}, scope, flatId);
       const resolved: GraphNode = { ...node, id: flatId, parameters };

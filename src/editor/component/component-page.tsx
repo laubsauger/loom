@@ -8,6 +8,7 @@ import type { ParameterDefinition, ParameterValue } from "@domain/types/paramete
 import { defaultValueOf } from "@domain/components/parameter-defaults.ts";
 import { readParentBindings } from "@domain/components/instance.ts";
 import { internalParameterOf } from "@domain/components/definition.ts";
+import { effectiveParameterSchema } from "@domain/parameters/resolve.ts";
 import type { ComponentRegistryView } from "@domain/components/registry.ts";
 import type { NodeRegistryView } from "@nodes/registry/registry.ts";
 import { ParameterControl } from "@ui/controls/parameter-control.tsx";
@@ -332,7 +333,10 @@ export function ComponentPage({
             context={context}
             definition={live}
             nodeId={selected.id}
-            parameters={selectedManifest.parameters}
+            /* T903: the publish list is the SELECTED NODE's schema, through the funnel — a
+               reflected control (§T880) is exactly the kind of knob a component publishes,
+               and the static schema does not know it exists. */
+            parameters={effectiveParameterSchema(selectedManifest, selected.parameters)}
             bindings={readParentBindings(selected)}
             parentKeys={parentKeys}
             onMessage={setMessage}

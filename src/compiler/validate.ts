@@ -185,7 +185,10 @@ export function validateGraph(
       options.nodes ??
       createNodeReferenceReader({
         graph,
-        schemaOf: (node) => registry.get(node.type)?.parameters,
+        // T903: through the funnel — `op('lantern').par.orbitSpeed` reads a key that only
+        // exists in the node's REFLECTED schema, and a static-schema reader would answer
+        // "no such parameter" for a control the inspector is showing.
+        schemaOf: (node) => effectiveParameterSchema(registry.get(node.type), node.parameters),
         base: { ...(options.frame === undefined ? {} : { frame: options.frame }),
                 ...(options.channels === undefined ? {} : { channels: options.channels }) },
       }),

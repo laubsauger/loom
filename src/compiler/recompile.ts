@@ -1,5 +1,6 @@
 import type { NodeId } from "../domain/types/ids.ts";
 import type { GraphDocument } from "../domain/types/graph.ts";
+import { effectiveParameterSchema } from "../domain/parameters/resolve.ts";
 import type { NodeRegistryView } from "../nodes/registry/registry.ts";
 import type { CompiledGraph } from "./types.ts";
 
@@ -140,9 +141,14 @@ export function classifyEdit(edit: GraphEdit, context: ClassifyContext): Recompi
       const definition = node === undefined ? undefined : context.registry.get(node.type);
       // §V5 has one documented exception: a parameter the manifest marks `compileTime`
       // changes shader STRUCTURE, so it cannot be a buffer write.
-      const compileTime = edit.parameters.filter(
-        (key) => definition?.parameters[key]?.compileTime === true,
-      );
+      //
+      // T903: read through the funnel. A reflecting node's keys exist only in its EFFECTIVE
+      // schema, and this is the classification that decides uniform-write vs rebuild — a
+      // static read answers `undefined` for every one of them, i.e. "not compile-time" by
+      // ACCIDENT rather than by declaration. §T900's kernels reflect both classes, so that
+      // accident becomes a silently-skipped rebuild the moment they land.
+      const schema = effectiveParameterSchema(definition, node?.parameters ?? {});
+      const compileTime = edit.parameters.filter((key) => schema[key]?.compileTime === true);
       if (compileTime.length > 0) {
         return {
           work: "recompile-region",

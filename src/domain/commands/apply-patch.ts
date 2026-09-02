@@ -711,7 +711,10 @@ function executeOperation(
     case "setShaderSource": {
       const node = requireNode(operation.nodeId);
       const definition = registry.get(node.type);
-      const parameter = definition?.parameters[SHADER_SOURCE_PARAMETER];
+      // T903: the funnel here too. A reflecting node's schema is derived FROM this very
+      // parameter, so it always carries it — reading the static schema instead would work
+      // today and break the first time a node reflects its own code parameter's declaration.
+      const parameter = effectiveParameterSchema(definition, node.parameters)[SHADER_SOURCE_PARAMETER];
       // T492: the source parameter is declared as CODE now; "string" stays accepted so
       // an out-of-tree definition predating the kind keeps its op.
       if (

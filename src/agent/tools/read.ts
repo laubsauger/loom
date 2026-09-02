@@ -5,6 +5,7 @@ import type { GraphDocument, GraphNode, NodeFormatOverride, NodeResolutionOverri
 import type { StoredParameter } from "@domain/types/parameters.ts";
 import type { PortDefinition, PortType } from "@domain/types/ports.ts";
 import type { NodeDefinition } from "@domain/types/node-definition.ts";
+import { effectiveParameterSchema } from "@domain/parameters/resolve.ts";
 
 import {
   emptyInput,
@@ -123,6 +124,15 @@ export interface NodeDefinitionDetail extends NodeDefinitionSummary {
 export interface NodeDetail {
   readonly node: AgentNodeView;
   readonly definition: NodeDefinitionSummary | null;
+  /**
+   * T903/§B167: the schema THIS node carries, not its type's. A node that reflects its own
+   * shader (`customWgsl`, §T880) has controls no type-level lookup can name — E46's lantern
+   * publishes seven — and an agent that cannot see them cannot set them, or knows them only
+   * by having watched a human do it. `get_node_definition` answers about a TYPE and stays
+   * static; this answers about an INSTANCE, which is the only place the question has an
+   * instance-shaped answer. Null when the type is unknown (§V10 placeholder).
+   */
+  readonly parameterSchema: Record<string, unknown> | null;
   readonly incoming: readonly AgentEdgeView[];
   readonly outgoing: readonly AgentEdgeView[];
 }
@@ -169,7 +179,16 @@ function edgeViews(graph: GraphDocument): AgentEdgeView[] {
     });
 }
 
-function definitionSummary(definition: NodeDefinition): NodeDefinitionSummary {
+/**
+ * `stored` present = the summary is about a PLACED node, so its parameter keys come from the
+ * funnel (§T903) and a reflected control is listed like any other. Absent = a TYPE-level
+ * listing (the catalogue, a fresh drop), where no instance exists to reflect from and the
+ * declared schema is the whole answer.
+ */
+function definitionSummary(
+  definition: NodeDefinition,
+  stored?: Readonly<Record<string, unknown>>,
+): NodeDefinitionSummary {
   return {
     type: definition.type,
     version: definition.version,
@@ -178,7 +197,9 @@ function definitionSummary(definition: NodeDefinition): NodeDefinitionSummary {
     description: definition.description ?? null,
     inputs: definition.inputs.map(portSummary),
     outputs: definition.outputs.map(portSummary),
-    parameterKeys: Object.keys(definition.parameters).sort(),
+    parameterKeys: Object.keys(
+      stored === undefined ? definition.parameters : effectiveParameterSchema(definition, stored),
+    ).sort(),
     sink: definition.sink === true,
   };
 }
@@ -302,7 +323,9 @@ export const getNode: AgentTool<GetNodeInput, NodeDetail> = {
     const definition = runtime.bus.registry.get(node.type);
     const detail: NodeDetail = {
       node: nodeView(node, input.includeParameters !== false),
-      definition: definition === undefined ? null : definitionSummary(definition),
+      definition: definition === undefined ? null : definitionSummary(definition, node.parameters),
+      parameterSchema:
+        definition === undefined ? null : { ...effectiveParameterSchema(definition, node.parameters) },
       incoming: edges.filter((edge) => edge.target.nodeId === node.id),
       outgoing: edges.filter((edge) => edge.source.nodeId === node.id),
     };
@@ -326,7 +349,11 @@ export const listNodeDefinitions: AgentTool<
     const all = runtime.bus.registry.list();
     const filtered = input.category === undefined ? all : all.filter((d) => d.category === input.category);
     return ok("list_node_definitions", {
-      definitions: [...filtered].sort((a, b) => a.type.localeCompare(b.type)).map(definitionSummary),
+      // Point-free `.map(definitionSummary)` would hand `map`'s INDEX to the optional second
+      // argument, so the catalogue would reflect against a number. Named lambda, deliberately.
+      definitions: [...filtered]
+        .sort((a, b) => a.type.localeCompare(b.type))
+        .map((definition) => definitionSummary(definition)),
       categories: [...runtime.bus.registry.categories()].sort(),
     });
   },

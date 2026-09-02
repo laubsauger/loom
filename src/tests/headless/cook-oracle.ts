@@ -8,6 +8,7 @@ import { createGraphStore } from "../../domain/graph/store.ts";
 import { createDomainBus } from "../../domain/commands/index.ts";
 import type { GraphPatchOperation } from "../../domain/types/patch.ts";
 import { createValueGraphSession } from "../../domain/channels/value-graph.ts";
+import { effectiveParameterSchema } from "../../domain/parameters/resolve.ts";
 import type { GraphDocument, ProjectSettings } from "../../domain/types/graph.ts";
 import type { FrameEvaluationInput } from "../../domain/types/frame.ts";
 import type { InvocationContext } from "../../domain/types/commands.ts";
@@ -70,7 +71,9 @@ export function scriptFor(graph: GraphDocument, registry: NodeRegistryView): Scr
     if (node === undefined) continue;
     const definition = registry.get(node.type);
     if (definition === undefined) continue;
-    for (const [key, parameter] of Object.entries(definition.parameters)) {
+    // T903: the funnel — the oracle animates a PLACED node's parameters, so a reflected
+    // control is as animatable as a declared one and must appear in the target list.
+    for (const [key, parameter] of Object.entries(effectiveParameterSchema(definition, node.parameters))) {
       if (parameter.type !== "number") continue;
       numberTargets.push({
         nodeId,
@@ -231,7 +234,8 @@ export function fuzzScript(
     const node = graph.nodes[nodeId];
     const definition = node === undefined ? undefined : registry.get(node.type);
     if (definition === undefined) continue;
-    for (const [key, parameter] of Object.entries(definition.parameters)) {
+    // T903: the funnel, for the same reason as `numberTargets` above.
+    for (const [key, parameter] of Object.entries(effectiveParameterSchema(definition, node?.parameters ?? {}))) {
       if (parameter.type !== "number") continue;
       targets.push({ nodeId, key, min: parameter.min ?? 0, max: parameter.max ?? 1 });
     }

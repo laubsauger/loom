@@ -5,6 +5,7 @@ import type { NodeDefinition } from "../types/node-definition.ts";
 import type { ParameterDefinition } from "../types/parameters.ts";
 import type { PortDefinition } from "../types/ports.ts";
 import type { NodeRegistryView } from "../../nodes/registry/registry.ts";
+import { effectiveParameterSchema } from "../parameters/resolve.ts";
 import { componentNodeType, isValidComponentId } from "./component-type.ts";
 
 /**
@@ -51,7 +52,10 @@ export function internalParameterOf(
 ): ParameterDefinition | undefined {
   const node = graph.nodes[target.nodeId];
   if (node === undefined) return undefined;
-  return nodes.get(node.type)?.parameters[target.key];
+  // T903: through the funnel — publishing a REFLECTED knob (a customWgsl's `orbitSpeed`) is
+  // exactly what §T880 built E46-as-a-component for, and a static read would make every one
+  // of those targets unresolvable, so the published parameter would be dropped as invalid.
+  return effectiveParameterSchema(nodes.get(node.type), node.parameters)[target.key];
 }
 
 function exposedPortDefinitions(

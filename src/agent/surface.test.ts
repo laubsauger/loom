@@ -453,3 +453,84 @@ describe("agent presence is observable (§V42)", () => {
     expect(outcome.diagnostics[0]?.code).toBe("transaction.unknown");
   });
 });
+
+/**
+ * §T903/§B167 — WHAT AN AGENT CAN SEE OF A NODE THAT DECLARES ITS OWN CONTROLS.
+ *
+ * §T880 let a node derive its parameters from its own stored source (`parametersFor`), and
+ * E46's lantern publishes seven that way. Everything that ENUMERATES a node's schema had to
+ * learn the difference, and this boundary is where it is most expensive to get wrong: an
+ * agent cannot ask a human what the knobs are. `get_node_definition` answers about a TYPE and
+ * is right to stay static; `get_node` answers about an INSTANCE.
+ */
+describe("the agent reads a reflecting node's own controls (T903)", () => {
+  const reflectingNode: NodeDefinition = {
+    ...solidNode,
+    type: "test.reflecting",
+    parameters: { ...solidNode.parameters, recipe: { type: "string", label: "Recipe", default: "" } },
+    parametersFor: (stored) => {
+      const recipe = typeof stored["recipe"] === "string" ? stored["recipe"] : "";
+      const reflected: NodeDefinition["parameters"] = {
+        ...solidNode.parameters,
+        recipe: { type: "string", label: "Recipe", default: "" },
+      };
+      for (const key of recipe.split(",").filter((entry) => entry !== "")) {
+        reflected[key] = { type: "number", label: key, default: 0 };
+      }
+      return reflected;
+    },
+  };
+
+  function reflectingFixture(): { store: GraphStore; surface: AgentToolSurface } {
+    const store = createGraphStore({
+      ids: createSequentialIdFactory("n"),
+      now: () => "2026-09-02T00:00:00.000Z",
+    });
+    const registry = createNodeRegistry([reflectingNode]).view();
+    const { bus } = createDomainBus({ store, registry });
+    const surface = createAgentToolSurface({
+      bus,
+      actor: agent,
+      projectId: "project-1",
+      now: () => 1_000,
+    });
+    return { store, surface };
+  }
+
+  it("lists the parameters the NODE has, not the ones its type declares", async () => {
+    const { surface } = reflectingFixture();
+    const added = await surface.callTool("add_node", { type: "test.reflecting" });
+    const nodeId = (added.data as { createdIds: Record<string, string> }).createdIds["$node"] as string;
+    const set = await surface.callTool("set_parameters", {
+      nodeId,
+      parameters: { recipe: "orbitSpeed,glowFalloff" },
+    });
+    expect(set.status).toBe("ok");
+
+    const detail = await surface.callTool("get_node", { nodeId });
+    const data = detail.data as {
+      definition: { parameterKeys: readonly string[] };
+      parameterSchema: Record<string, { label?: string }>;
+    };
+
+    // The knobs are describable: named, and carrying the definition an agent needs to write
+    // a legal value. Without this an agent can only discover them by being told.
+    expect(data.definition.parameterKeys).toContain("orbitSpeed");
+    expect(data.definition.parameterKeys).toContain("glowFalloff");
+    expect(data.parameterSchema["orbitSpeed"]?.label).toBe("orbitSpeed");
+
+    // And they are writable through the same door, which is §B166's half of this.
+    const wrote = await surface.callTool("set_parameters", { nodeId, parameters: { orbitSpeed: 3 } });
+    expect(wrote.status).toBe("ok");
+  });
+
+  it("keeps the TYPE-level tools type-level", async () => {
+    const { surface } = reflectingFixture();
+    const listed = await surface.callTool("list_node_definitions", {});
+    const summaries = (listed.data as { definitions: readonly { type: string; parameterKeys: readonly string[] }[] })
+      .definitions;
+    // Nothing is placed in the catalogue, so there is no instance to reflect from: a
+    // per-instance key here would be an invention, not a reading.
+    expect(summaries.find((entry) => entry.type === "test.reflecting")?.parameterKeys).not.toContain("orbitSpeed");
+  });
+});
