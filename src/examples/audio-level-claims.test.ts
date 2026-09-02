@@ -5,6 +5,7 @@ import type { FrameEvaluationInput } from "../domain/types/frame.ts";
 import { createNodeRegistry } from "../nodes/registry/registry.ts";
 import { allNodeDefinitions } from "../nodes/definitions/index.ts";
 import { createValueGraphSession } from "../domain/channels/value-graph.ts";
+import { valueLagNode } from "../nodes/definitions/value-graph-nodes.ts";
 import { audioLevelHost } from "./starter-components.ts";
 
 /**
@@ -31,6 +32,15 @@ function hostAtAmount(amount: number): GraphDocument {
   const beat = graph.nodes["beat"];
   if (beat === undefined) throw new Error("host has no `beat`");
   (beat.parameters as Record<string, unknown>)["amount"] = amount;
+  return graph;
+}
+
+/** The host with peak's release ratio (the Responsiveness knob) set — feel under test. */
+function hostAtRatio(ratio: number): GraphDocument {
+  const graph = structuredClone(audioLevelHost.graph) as GraphDocument;
+  const peak = graph.nodes["peak"];
+  if (peak === undefined) throw new Error("host has no `peak`");
+  (peak.parameters as Record<string, unknown>)["releaseRatio"] = ratio;
   return graph;
 }
 
@@ -99,5 +109,55 @@ describe("AudioLevel — the auto-level chain adapts every source level to 0..1 
     for (const { amount } of CASES) {
       expect(settledRange(traceLow(hostAtAmount(amount), "clamp", 400)).max).toBeGreaterThan(0.999);
     }
+  });
+});
+
+/**
+ * T844 (§V793, §V799) — gate the SAG, the property Responsiveness exists for.
+ *
+ * §V799 found that the range gate above is blind to the release ratio: a hit charges the
+ * 5 ms attack whatever the release, so the max always reaches 1. So the knob that exists
+ * SPECIFICALLY for the release — Responsiveness, whose own description argues 15.8% vs
+ * 26.8% — had no test at all, and someone could narrow §T823's travel back to 10 and
+ * nothing would notice, INCLUDING the sentence making the case for 100 (§V793: an identity
+ * claim proves the OFF state and says nothing about the ON one).
+ *
+ * The measured quantity is the peak-follower's droop — how far its reference falls below
+ * its own ceiling between hits (`1 - mean/max` over the settled window). A low ratio lets
+ * the reference sag, so the same raw level maps to a jumpier normalised output; a high
+ * ratio holds it. Per §V767 this is a RECORD WITH A DISCRIMINATING GAP, not a tight bound:
+ * the two ratios sit in loose bands and must differ by a clear margin — tight enough to
+ * catch a reverted travel, loose enough that a pattern change need not be chased.
+ */
+function peakSagAtRatio(ratio: number): number {
+  const peak = traceLow(hostAtRatio(ratio), "peak", 500).slice(200);
+  const mean = peak.reduce((sum, value) => sum + value, 0) / peak.length;
+  const max = Math.max(...peak);
+  return 1 - mean / max;
+}
+
+describe("AudioLevel — Responsiveness moves the sag, and its useful setting is reachable (T844)", () => {
+  it("a slow release (ratio 100) sags less than a fast one (ratio 10), by a clear margin", () => {
+    const sag100 = peakSagAtRatio(100); // measured 0.078
+    const sag10 = peakSagAtRatio(10); //  measured 0.184
+
+    // Loose bands around the measured values (§V767) — a record, not a bound.
+    expect(sag100).toBeGreaterThan(0.05);
+    expect(sag100).toBeLessThan(0.11);
+    expect(sag10).toBeGreaterThan(0.15);
+    expect(sag10).toBeLessThan(0.22);
+
+    // The discriminating gap: ratio 100 buys real stability over ratio 10. Measured 0.105;
+    // asserting > 0.05 catches a travel reverted to 10 without chasing the exact pattern.
+    expect(sag10 - sag100).toBeGreaterThan(0.05);
+  });
+
+  it("Release Ratio's drag travel reaches the setting the sag argument needs (T823)", () => {
+    // The sag above is the WHY; this is the AND — the published Responsiveness knob must be
+    // draggable to 100, or §T823's fix is silently gone even though the sag claim still holds.
+    const max = valueLagNode.parameters["releaseRatio"]?.type === "number"
+      ? valueLagNode.parameters["releaseRatio"].max
+      : undefined;
+    expect(max).toBeGreaterThanOrEqual(100);
   });
 });
