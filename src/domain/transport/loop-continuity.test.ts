@@ -285,6 +285,11 @@ const CLOCK_OWNERSHIP: Readonly<Record<string, "free-running" | "timeline-anchor
   // channelIn only through the picture it is measuring, which is §V144's contract,
   // not a phase this node owns. Same shape as valueStep: it inherits, it never ticks.
   channelIn: "clockless",
+  // T822: the value boundary FORWARDS its input bag and reads no clock of its own. Like
+  // valueSwitch and valueStep it INHERITS whatever clock the wired source owns, so a lap
+  // reaches it only through that source — the boundary itself owns no phase.
+  componentInValue: "clockless",
+  componentOutValue: "clockless",
 };
 
 function valueNodes(): readonly NodeDefinition[] {

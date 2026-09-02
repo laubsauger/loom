@@ -234,6 +234,8 @@ export const NODE_REPRODUCIBILITY: Readonly<Record<string, Reproducibility>> = {
   componentOut: "pure",
   componentInPoints: "pure",
   componentOutPoints: "pure",
+  componentInValue: "pure",
+  componentOutValue: "pure",
   // Value nodes: every one of them reads `FrameEvaluationInput` or its own inputs and
   // nothing else (§V44, and `CLOCK_OWNERSHIP` is the table that pins WHICH clock).
   lfo: "pure",

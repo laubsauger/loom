@@ -118,6 +118,8 @@ describe("core catalogue (T70, T40)", () => {
       "componentOut",
       "componentInPoints",
       "componentOutPoints",
+      "componentInValue",
+      "componentOutValue",
       "switch",
       "lfo",
       "constant",
@@ -311,6 +313,8 @@ describe("T438 (§V316) — the channel publishers are DECLARED, not a category"
         "audioIn",
         "audioPattern",
         "channelIn",
+        "componentInValue", // T822: the value boundary forwards a channel bag, so it publishes
+        "componentOutValue",
         "constant",
         "lfo",
         "mouse",

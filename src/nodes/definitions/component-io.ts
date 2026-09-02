@@ -1,6 +1,6 @@
 import type { CompiledNodeDescription, NodeDefinition } from "../../domain/types/node-definition.ts";
 import type { PortType } from "../../domain/types/ports.ts";
-import { RGBA_TEXTURE } from "./common-ports.ts";
+import { RGBA_TEXTURE, VALUE_PORT } from "./common-ports.ts";
 
 /**
  * Component boundary nodes (T607) — the TD / ComfyUI idiom the owner asked for:
@@ -92,8 +92,48 @@ export const componentOutputPoints: NodeDefinition = {
   compile: noPasses,
 };
 
-const INPUT_TYPES = new Set(["componentIn", "componentInPoints"]);
-const OUTPUT_TYPES = new Set(["componentOut", "componentOutPoints"]);
+/**
+ * The value kind (T822). A component can pass pictures and points across its boundary but
+ * not NUMBERS, which is the whole point of an analyser component: it hears the track inside
+ * and must publish its channels to the parent. Same passthrough splice as every boundary
+ * above — but a value node is one that declares `valueEvaluate`/`valueChannel`
+ * (`isValueSourceDefinition`), and without that the value-graph walk does not recognise the
+ * boundary and the chain breaks AT it, unspliced. So these two, alone among the boundary
+ * nodes, carry a one-line passthrough evaluator: forward the input bag unchanged. It reads
+ * no clock (CLOCKLESS): whatever clock the wired source owns, the boundary inherits.
+ */
+export const componentInputValue: NodeDefinition = {
+  type: "componentInValue",
+  version: 1,
+  title: "In (value)",
+  category: BOUNDARY_CATEGORY,
+  description:
+    "A component input socket for a value. Place inside a component: whatever value the parent wires into the matching socket flows out of this node.",
+  inputs: [{ id: "in", label: "From parent", type: VALUE_PORT, optional: true }],
+  outputs: [{ id: "out", label: "Out", type: VALUE_PORT }],
+  parameters: {},
+  passthrough: { input: "in", output: "out" },
+  valueEvaluate: ({ inputs }) => inputs["in"] ?? {},
+  compile: noPasses,
+};
+
+export const componentOutputValue: NodeDefinition = {
+  type: "componentOutValue",
+  version: 1,
+  title: "Out (value)",
+  category: BOUNDARY_CATEGORY,
+  description:
+    "A component output socket for a value. Place inside a component: the value wired into this node flows out of the matching socket on every instance — how a component publishes its channels to the parent.",
+  inputs: [{ id: "in", label: "In", type: VALUE_PORT, optional: true }],
+  outputs: [{ id: "out", label: "To parent", type: VALUE_PORT }],
+  parameters: {},
+  passthrough: { input: "in", output: "out" },
+  valueEvaluate: ({ inputs }) => inputs["in"] ?? {},
+  compile: noPasses,
+};
+
+const INPUT_TYPES = new Set(["componentIn", "componentInPoints", "componentInValue"]);
+const OUTPUT_TYPES = new Set(["componentOut", "componentOutPoints", "componentOutValue"]);
 
 /** Is this node type a component INPUT boundary (socket on the left of the instance)? */
 export function isComponentInputBoundary(type: string): boolean {
@@ -114,6 +154,7 @@ export function isComponentBoundary(type: string): boolean {
 export function boundaryTypeFor(kind: string, direction: "input" | "output"): string | undefined {
   if (kind === "texture2d") return direction === "input" ? "componentIn" : "componentOut";
   if (kind === "pointset") return direction === "input" ? "componentInPoints" : "componentOutPoints";
+  if (kind === "value") return direction === "input" ? "componentInValue" : "componentOutValue";
   return undefined;
 }
 
@@ -122,4 +163,6 @@ export const componentIoDefinitions: readonly NodeDefinition[] = [
   componentOutput,
   componentInputPoints,
   componentOutputPoints,
+  componentInputValue,
+  componentOutputValue,
 ];

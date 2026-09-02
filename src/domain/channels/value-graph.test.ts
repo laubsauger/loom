@@ -451,4 +451,37 @@ describe("T814 — asymmetric release and the high-pass tap", () => {
     // A fall is a transient too, and it reads negative — direction survives the tap.
     expect(high[17]).toBeLessThan(-0.7);
   });
+
+  it("T822 — a value boundary forwards its channel bag, so a number crosses the boundary", () => {
+    // The whole reason the value boundary exists: a component that hears the track inside
+    // must PUBLISH its channels to the parent, and a component can pass pictures and points
+    // but not numbers without this node. The boundary is a passthrough, so the walk sees a
+    // number arrive on `in` and leave on `out` UNCHANGED — and because it is a value node
+    // (valueEvaluate), the walk does not break AT it the way it would at a bare wire.
+    // src → In(value) → math(×3) → Out(value): the multiply on the far side of the input
+    // boundary proves the number truly flowed through and was not merely re-sourced.
+    const graph = graphOf(
+      [
+        node("src1", "constant", { parameters: { value: 0.5 } }),
+        node("in1", "componentInValue"),
+        node("math1", "valueMath", { parameters: { operation: "multiply", operand: 3 } }),
+        node("out1", "componentOutValue"),
+      ],
+      [
+        ["src1", "out", "in1", "in"],
+        ["in1", "out", "math1", "a"],
+        ["math1", "out", "out1", "in"],
+      ],
+    );
+    const session = createValueGraphSession(registry);
+    const result = session.evaluate(graph, frameAt(0), { pointer: { x: 0, y: 0, buttons: 0 } });
+
+    expect(result.diagnostics).toEqual([]);
+    // The input boundary hands the constant through untouched…
+    expect(result.byName.get("in1")).toEqual({ value: 0.5 });
+    // …the far side sees a real number to multiply…
+    expect(result.byName.get("math1")).toEqual({ value: 1.5 });
+    // …and the output boundary publishes it unchanged: the channel reached the parent.
+    expect(result.byName.get("out1")).toEqual({ value: 1.5 });
+  });
 });
