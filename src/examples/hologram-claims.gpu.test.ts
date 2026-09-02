@@ -61,6 +61,7 @@ async function renderE47(options?: { mutate?: (graph: GraphDocument) => void; pr
           probeBuffers: [
             "scratch:holo/paint:position",
             "scratch:holo/paint:depthN",
+            "scratch:holo/paint:tint",
             "scratch:zone:position",
             "scratch:holo2/paint:position",
             "scratch:holo2/paint:depthN",
@@ -186,4 +187,58 @@ describe("E47 Hologram — the zone and the wall (T983, §T979)", () => {
     const zonePixels = differingPixels(shippedImage.data, rgba(zoneOpen.frames[0]!, space).data);
     expect(zonePixels).toBeGreaterThan(500);
   }, 240_000);
+
+  /**
+   * §T977 — THE FRAMEBUFFER RED. The cut only works because the paint kernel honours
+   * the colour map's alpha as premultiplied coverage; before that fix the kernel wrote
+   * tint alpha as a literal 1.0 and a matte was invisible through this chain BY
+   * CONSTRUCTION — wired in name only, the §T715 family. Under that original defect
+   * both renders below are the SAME picture and this test fails (red-verified by
+   * restoring the literal), so the next kernel edit that re-discards alpha reds
+   * instead of shipping a silently dead cut.
+   */
+  it("the cut carries light: fully open vs fully closed changes the subject's picture", async () => {
+    if (dawnError !== undefined) throw new Error(`Dawn unavailable: ${dawnError}`);
+    const cutAt = (invert: number) => (graph: GraphDocument) => {
+      const cut = graph.nodes["cut"]!;
+      Object.assign(cut.parameters as Record<string, unknown>, { threshold: 0, feather: 0, invert });
+    };
+    // threshold 0, feather 0: the matte is a step at 0 — every luma passes, so invert 0
+    // is coverage 1 everywhere (fully open) and invert 1 is coverage 0 (fully closed).
+    const open = await renderE47({ probe: false, mutate: cutAt(0) });
+    const closed = await renderE47({ probe: false, mutate: cutAt(1) });
+    const cutPixels = differingPixels(rgba(open.frames[0]!, space2(open)).data, rgba(closed.frames[0]!, space2(closed)).data);
+    expect(cutPixels).toBeGreaterThan(500);
+  }, 240_000);
+
+  /**
+   * §V833's clamp, pinned on the live case: E47's colour map reaches the paint kernel
+   * through the mask, whose output alpha is source.a × coverage — and source.a is an
+   * ADDITIVE composite's sum, measured at 2 where the orb crosses the opaque bed.
+   * Coverage is [0, 1] by meaning, not by storage; without the kernel's clamp those
+   * slots publish tint.a = 2 (and doubled rgb), which is exactly the fixture a simple
+   * test would not contain. Removing the clamp reds here.
+   */
+  it("published tint alpha is coverage: never above 1, even where the composite's alpha reads 2", async () => {
+    if (dawnError !== undefined) throw new Error(`Dawn unavailable: ${dawnError}`);
+    const result = await renderE47();
+    const raw = (result as { buffers?: Record<string, ArrayBuffer> }).buffers?.["scratch:holo/paint:tint"];
+    expect(raw, "no tint probe").toBeDefined();
+    const tint = new Float32Array(raw!);
+    let atOne = 0;
+    for (let slot = 0; slot < tint.length / 4; slot += 1) {
+      const alpha = tint[slot * 4 + 3]!;
+      expect(alpha, `slot ${slot} alpha`).toBeGreaterThanOrEqual(0);
+      expect(alpha, `slot ${slot} alpha`).toBeLessThanOrEqual(1);
+      if (alpha === 1) atOne += 1;
+    }
+    // The bound must actually be exercised: a fully-cut frame would satisfy <= 1
+    // vacuously. Full coverage survives on a real cohort (the subject's bright core).
+    expect(atOne).toBeGreaterThan(100);
+  }, 240_000);
 });
+
+/** The output's colour space for a render result — shared by the diff helpers. */
+function space2(result: { plan: { outputs: ReadonlyArray<{ nodeId: string; space?: string }> } }): string {
+  return result.plan.outputs.find((output) => output.nodeId === "out")?.space ?? "linear";
+}

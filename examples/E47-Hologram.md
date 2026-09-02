@@ -41,12 +41,25 @@ srcpick1 ─┬─────────────────────�
           ├─► flat1(hsv) ─► soften1(blur) ─► pick1(switch)
           └─► depth1(depth) ── index 1 ────────┘   │
                                   pick1 ─► holo1 (depth map)
+srcpick1 ─► cut1(component:depthCut@1) ◄─ pick1 (the active depth map drives the matte)
+cut1 ─► holo1 (colour, background softly cut)
 holo1(component:depthPoints@1) ─► zone1(pointRange) ─► dots1(geometry) ─┐
 src1 ─┬─► holo2 (colour)                                                ├─► shot1(render) ─► out1
       └─► flat2(hsv) ─► soften2(blur) ─► holo2 (depth map)              │
 holo2(component:depthPoints@1) ─► wall1(pointRange) ─► wdots1(geometry) ┘
 orbit1(lfo) ┄drives┄► eye1.eye.x
 ```
+
+## The cut — the model-less 2D spelling
+
+`cut1` (DepthCut) mattes the subject's COLOUR by the active depth map before it becomes
+paint: far pixels lose their light softly (threshold 0.6, feather 0.1 over the
+understudy's luma), so the slab's far fringe dims before the zone parks it. It removes
+things further away, not "not-the-person" — a real matte knows the difference; this
+never needs to, and it costs no download. The chain carries light because the
+component's paint kernel honours the map's alpha as premultiplied, CLAMPED coverage —
+an additive composite's alpha reads 2 where the orb crosses the opaque bed, and
+coverage is [0, 1] by meaning, not by storage.
 
 ## The zone and the wall
 
@@ -77,6 +90,7 @@ REAL world depth under the orbit's parallax — the thing a 2D key cannot do.
 | `cam1` | `webcam` | the live source (T972) — your face as the cloud, permission only on activation |
 | `srcpick1` | `switch` | WHICH picture the cloud is made of: synthetic performer or webcam |
 | `pick1` | `switch` | WHICH depth map the component reads — the source-agnosticism, live |
+| `cut1` | `component:depthCut@1` | the model-less cut (§T977): the active depth map mattes the subject's colour |
 | `holo1` | `component:depthPoints@1` | the DepthPoints instance (T958): unprojection, declared encoding, retexture |
 | `zone1` | `pointRange` | the subject's zone (T983): keep depthN inside [0, 0.13], park the rest |
 | `flat2` | `hsv` | the backdrop's own luma — the wall never depends on the switch |

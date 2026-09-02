@@ -65,9 +65,18 @@ import { settings, node, edge, graph, document, drivenSlot } from "./builders.ts
  * clouds, far — and they separate by REAL depth under the orbit's parallax, which a 2D
  * key cannot do. holo2's published near/far place its stage behind holo1's (2.0–4.4
  * against 0.7–2.6), so the wall is behind the subject in world space, not merely
- * dimmer. (§T977's DepthCut — the 2D matte spelling — is deliberately NOT wired here
- * yet: the paint kernel discards field alpha and additive draws carry light in rgb, so
- * an alpha matte would be invisible through this chain; see the §T977 follow-up.)
+ * dimmer.
+ *
+ * ## The cut (§T977) — the model-less 2D spelling, riding the same picture
+ *
+ * `cut1` (DepthCut) mattes the subject's COLOUR by the active depth map before it
+ * becomes paint: far pixels lose their light softly (threshold 0.6, feather 0.1 over
+ * the understudy's luma), so the slab's far fringe dims before the zone parks it — a
+ * depth cue the geometric cut alone does not give, and the owner's "model-less bg cut
+ * … part of the hologram thing" made real. This chain only carries light because the
+ * paint kernel honours the map's alpha as premultiplied coverage (the §T977 follow-up
+ * fix); the claims test holds that open with a cut-open vs cut-closed render diff, so
+ * a kernel edit that re-discards alpha reds instead of going silently dark.
  */
 export const hologramDocument = document(
   "e47-hologram",
@@ -107,6 +116,16 @@ export const hologramDocument = document(
          visibly flat sheet in the orbit, never a failure. Flip pick1 to 1 to use it. */
       node("depth", "depth", [-1620, 280], { model: "accurate" }, { label: "depth1" }),
       node("pick", "switch", [-1020, 100], { index: 0 }, { label: "pick1" }),
+
+      /* §T977 — the model-less cut, on the COLOUR path: the active depth map mattes the
+         subject's picture (soft, luma-thresholded), and the paint kernel now honours
+         that alpha as premultiplied coverage. Removes things further away, not
+         "not-the-person" — the copy's own distinction. */
+      node("cut", "component:depthCut@1", [-1020, -280], {
+        threshold: 0.6,
+        feather: 0.1,
+        invert: 0,
+      }, { label: "cut1" }),
 
       // ---- the component, instanced -------------------------------------------------
       node("holo", "component:depthPoints@1", [-720, -60], {
@@ -205,7 +224,13 @@ export const hologramDocument = document(
       /* The component's two texture ports (boundary-derived): `field` is the PAINT
          kernel's colour, `field_2` the CARVE kernel's depth — verified against the
          flattened plan's texture bindings, not assumed from the names. */
-      edge("e-srcpick-holo", ["srcpick", "out"], ["holo", "field"]),
+      /* §T977: the cut's two texture ports (boundary-derived, verified against the
+         flattened plan's bindings): `input` is the MATTE's depth map, `input_2` the
+         picture being masked. The ACTIVE depth map drives the matte, so the cut follows
+         whichever source pick1 selects — understudy or ML. */
+      edge("e-pick-cut", ["pick", "out"], ["cut", "input"]),
+      edge("e-srcpick-cut", ["srcpick", "out"], ["cut", "input_2"]),
+      edge("e-cut-holo", ["cut", "out"], ["holo", "field"]),
       edge("e-pick-holo", ["pick", "out"], ["holo", "field_2"]),
       /* T983: the subject's cloud passes through its zone before it is drawn. */
       edge("e-holo-zone", ["holo", "out"], ["zone", "points"]),
