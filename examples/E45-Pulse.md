@@ -4,10 +4,29 @@ A VJ set, not a picture. Two complete shots trade the frame on musical structure
 **constellation** — six hundred drifting points webbed to their nearest neighbours, the
 web tightening on the beat — and a **scanline** — a rain of rays marching across an
 unseen terrain once per bar, drawing the ground as a moving ridge of embers. A value held
-for four bars decides how much of each is on screen; the crossfade lands on a phrase
-boundary, never on a timer. Between boundaries the mix **holds**. That hold-and-cut is
-the owner's own definition of evolution — "blend and swap between different shots in a
-single scene" — and it is a claim in the test suite, not a hope.
+for four bars decides which is on screen; the cut lands on a phrase boundary, never on a
+timer, and it **cuts hard** — the held pick is reshaped toward the poles, so most phrases
+are one shot alone and a blend is the exception. Between boundaries everything **holds**.
+That hold-and-cut is the owner's own definition of evolution — "blend and swap between
+different shots in a single scene" — and it is a claim in the test suite, not a hope.
+
+## Downtime is a state of the picture
+
+The pattern's own arrangement drops the top end in the last bar of every four, and the
+frame follows it down: the web exists only while the music does (silence holds zero
+links — that is the design, asserted both ways), the rain stops, the dots fall to a
+quarter of themselves, and the ember ridge cools to a trace. Quiet **looks** quiet — the
+same phrase's breakdown bar is measurably darker than its pattern bars, cross-frame in
+the suite — which is what gives loud something to be louder than.
+
+## The colour evolves on the same structure
+
+A second phrase-held value (its own seed, so palette and shot select independently)
+swings the whole frame's hue through ±160° in one `hsv` turn, snapping on the boundary
+so the cut and the colour land together. Hue rotation on purpose, not a lookup remap: a
+hue turn preserves luminance exactly, so the additive glow keeps reading while the
+palette becomes the thing that changes per phrase — one axis of evolution that adds no
+density at all.
 
 ## The constellation is the new node's sentence
 
@@ -40,14 +59,26 @@ poles read as clean cuts. The claim is exact and cross-frame: the held mix may c
 frames — a timer-based cut fails it on its first frame.
 
 The glitch is global, not a shot: E43's splice kernel reused byte-for-byte in a
-`customWgsl`, driven by the same enveloped high band — so the tears land on hits and the
-quiet passes untouched. Every band drive here goes through an envelope (fast attack, slow
-release) before it touches anything visible; a raw per-frame band is jitter, which is a
-lesson this catalogue has now paid for twice.
+`customWgsl`, driven by the enveloped high band through a threshold — so the tear is an
+**event**, a burst of chromatic-aberration and horizontal slicing on a strong hit, not an
+ambient strobe. Every band drive goes through an envelope (fast attack, slow release)
+before it touches anything visible; a raw per-frame band is jitter, which is a lesson this
+catalogue has now paid for twice.
+
+## One node exchanges the clock
+
+Every lane references `clock1`, never the audio pattern directly. `clock1` is a
+`valueSwitch` with the pattern on its first input, so the whole set's tempo source is one
+node to swap. This is the seam for a real track: a file publishes no bar or barPhase, so
+playing to one means an `audioPattern` beside it at the known BPM — wire that as the
+switch's second input and flip Index, and pattern↔track is a one-node change instead of
+rewiring every drive.
 
 ## What to drive
 
 - `prox1.radius` — THE knob. Wider = denser web; drive it from anything.
 - `step1.every` — phrase length in bars. 1 = cut every bar, frantic; 8 = long holds.
+- `paint1.hueoffset` — the palette. Already phrase-held; point it at anything else.
 - `spliceP1.amount` — the tear. Already on the high band; scale `hd1`'s operand.
-- `beat1.bpm` — the whole set's clock; every hold and sweep follows it.
+- `beat1.arrangement` — the downtime's depth. 0 flattens the breakdown away entirely.
+- `beat1.bpm` — the whole set's clock; every hold, sweep and breakdown follows it.

@@ -14,37 +14,15 @@
           "portId": "points"
         }
       },
-      "e-beat-hsub": {
-        "id": "e-beat-hsub",
+      "e-beat-clock": {
+        "id": "e-beat-clock",
         "source": {
           "nodeId": "beat",
           "portId": "out"
         },
         "target": {
-          "nodeId": "hsub",
-          "portId": "a"
-        }
-      },
-      "e-beat-lsub": {
-        "id": "e-beat-lsub",
-        "source": {
-          "nodeId": "beat",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "lsub",
-          "portId": "a"
-        }
-      },
-      "e-beat-step": {
-        "id": "e-beat-step",
-        "source": {
-          "nodeId": "beat",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "step",
-          "portId": "in"
+          "nodeId": "clock",
+          "portId": "in1"
         }
       },
       "e-castb-hitsb": {
@@ -69,6 +47,50 @@
           "portId": "in"
         }
       },
+      "e-clock-hsub": {
+        "id": "e-clock-hsub",
+        "source": {
+          "nodeId": "clock",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "hsub",
+          "portId": "a"
+        }
+      },
+      "e-clock-lsub": {
+        "id": "e-clock-lsub",
+        "source": {
+          "nodeId": "clock",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "lsub",
+          "portId": "a"
+        }
+      },
+      "e-clock-pstep": {
+        "id": "e-clock-pstep",
+        "source": {
+          "nodeId": "clock",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "pstep",
+          "portId": "in"
+        }
+      },
+      "e-clock-step": {
+        "id": "e-clock-step",
+        "source": {
+          "nodeId": "clock",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "step",
+          "portId": "in"
+        }
+      },
       "e-fanb-aimb": {
         "id": "e-fanb-aimb",
         "source": {
@@ -80,14 +102,25 @@
           "portId": "in"
         }
       },
-      "e-henv-hglitch": {
-        "id": "e-henv-hglitch",
+      "e-gth-hglitch": {
+        "id": "e-gth-hglitch",
+        "source": {
+          "nodeId": "gth",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "hglitch",
+          "portId": "a"
+        }
+      },
+      "e-henv-gth": {
+        "id": "e-henv-gth",
         "source": {
           "nodeId": "henv",
           "portId": "out"
         },
         "target": {
-          "nodeId": "hglitch",
+          "nodeId": "gth",
           "portId": "a"
         }
       },
@@ -100,6 +133,17 @@
         "target": {
           "nodeId": "hrad",
           "portId": "a"
+        }
+      },
+      "e-hglitch-glim": {
+        "id": "e-hglitch-glim",
+        "source": {
+          "nodeId": "hglitch",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "glim",
+          "portId": "in"
         }
       },
       "e-hitsb-impactsb": {
@@ -157,15 +201,37 @@
           "portId": "in"
         }
       },
-      "e-mix-splice": {
-        "id": "e-mix-splice",
+      "e-mix-paint": {
+        "id": "e-mix-paint",
         "source": {
           "nodeId": "mix",
           "portId": "out"
         },
         "target": {
+          "nodeId": "paint",
+          "portId": "input"
+        }
+      },
+      "e-paint-splice": {
+        "id": "e-paint-splice",
+        "source": {
+          "nodeId": "paint",
+          "portId": "out"
+        },
+        "target": {
           "nodeId": "splice",
           "portId": "input"
+        }
+      },
+      "e-pmul-padd": {
+        "id": "e-pmul-padd",
+        "source": {
+          "nodeId": "pmul",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "padd",
+          "portId": "a"
         }
       },
       "e-prox-links": {
@@ -177,6 +243,17 @@
         "target": {
           "nodeId": "links",
           "portId": "points"
+        }
+      },
+      "e-pstep-pmul": {
+        "id": "e-pstep-pmul",
+        "source": {
+          "nodeId": "pstep",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "pmul",
+          "portId": "a"
         }
       },
       "e-seeda-swarm": {
@@ -223,6 +300,28 @@
           "portId": "points"
         }
       },
+      "e-slim-lag": {
+        "id": "e-slim-lag",
+        "source": {
+          "nodeId": "slim",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "lag",
+          "portId": "in"
+        }
+      },
+      "e-smul-ssub": {
+        "id": "e-smul-ssub",
+        "source": {
+          "nodeId": "smul",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "ssub",
+          "portId": "a"
+        }
+      },
       "e-splice-out": {
         "id": "e-splice-out",
         "source": {
@@ -234,15 +333,26 @@
           "portId": "input"
         }
       },
-      "e-step-lag": {
-        "id": "e-step-lag",
+      "e-ssub-slim": {
+        "id": "e-ssub-slim",
+        "source": {
+          "nodeId": "ssub",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "slim",
+          "portId": "in"
+        }
+      },
+      "e-step-smul": {
+        "id": "e-step-smul",
         "source": {
           "nodeId": "step",
           "portId": "out"
         },
         "target": {
-          "nodeId": "lag",
-          "portId": "in"
+          "nodeId": "smul",
+          "portId": "a"
         }
       },
       "e-swarm-dots": {
@@ -292,7 +402,7 @@
           "value1": {
             "bindings": {
               "driven": {
-                "channel": "beat1:barPhase",
+                "channel": "clock1:barPhase",
                 "kind": "driven"
               },
               "static": {
@@ -318,7 +428,7 @@
           "bpm": 122
         },
         "position": {
-          "x": -2600,
+          "x": -2900,
           "y": 900
         },
         "type": "audioPattern"
@@ -415,6 +525,19 @@
         },
         "type": "pointRay"
       },
+      "clock": {
+        "definitionVersion": 1,
+        "id": "clock",
+        "label": "clock1",
+        "parameters": {
+          "index": 0
+        },
+        "position": {
+          "x": -2600,
+          "y": 900
+        },
+        "type": "valueSwitch"
+      },
       "dots": {
         "definitionVersion": 1,
         "id": "dots",
@@ -463,13 +586,41 @@
         },
         "type": "pointLine"
       },
+      "glim": {
+        "definitionVersion": 1,
+        "id": "glim",
+        "label": "glim1",
+        "parameters": {
+          "maximum": 1,
+          "minimum": 0
+        },
+        "position": {
+          "x": -1100,
+          "y": 820
+        },
+        "type": "valueLimit"
+      },
+      "gth": {
+        "definitionVersion": 1,
+        "id": "gth",
+        "label": "gth1",
+        "parameters": {
+          "operand": -0.03,
+          "operation": "add"
+        },
+        "position": {
+          "x": -1400,
+          "y": 820
+        },
+        "type": "valueMath"
+      },
       "henv": {
         "definitionVersion": 1,
         "id": "henv",
         "label": "henv1",
         "parameters": {
           "lag": 0.03,
-          "releaseRatio": 6
+          "releaseRatio": 10
         },
         "position": {
           "x": -2000,
@@ -482,7 +633,7 @@
         "id": "hglitch",
         "label": "hd1",
         "parameters": {
-          "operand": 2.4,
+          "operand": 8,
           "operation": "multiply"
         },
         "position": {
@@ -498,7 +649,20 @@
         "parameters": {
           "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"tint\",\"type\":\"vec4f\",\"semantic\":\"color\",\"qualifier\":\"color\",\"default\":[1,1,1,1]},{\"name\":\"hitPosition\",\"type\":\"vec3f\",\"default\":[0,0,0]}]",
           "capacity": 180,
-          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  let slant = length(p.hitPosition - p.position);\n  let landed = select(0.0, 1.0, slant < 3.99);\n  let near = clamp(1.0 - slant / 4.0, 0.0, 1.0);\n  q.position = p.hitPosition + vec3f(0.0, 0.02, 0.0);\n  let ret = vec4f(1.0, 0.42 + 0.50 * near, 0.20, 1.0) * (0.4 + 1.8 * near);\n  q.tint = mix(vec4f(0.0), ret, landed);\n  return q;\n}"
+          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  let slant = length(p.hitPosition - p.position);\n  let landed = select(0.0, 1.0, slant < 3.99);\n  let near = clamp(1.0 - slant / 4.0, 0.0, 1.0);\n  q.position = p.hitPosition + vec3f(0.0, 0.02, 0.0);\n  /* T828 — the breakdown leaves EMBERS: value1 (enveloped high) scales the ridge to a\n     0.3 floor in the quiet bar, so downtime is a glow, not a blackout. */\n  let presence = 0.30 + 0.70 * clamp(ctx.value1 * 1.6, 0.0, 1.0);\n  let ret = vec4f(1.0, 0.42 + 0.50 * near, 0.20, 1.0) * (0.4 + 1.8 * near) * presence;\n  q.tint = mix(vec4f(0.0), ret, landed);\n  return q;\n}",
+          "value1": {
+            "bindings": {
+              "driven": {
+                "channel": "henv1:high",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "driven"
+          }
         },
         "position": {
           "x": -1700,
@@ -511,7 +675,7 @@
         "id": "hrad",
         "label": "hm1",
         "parameters": {
-          "operand": 0.25,
+          "operand": 0.32,
           "operation": "multiply"
         },
         "position": {
@@ -576,7 +740,7 @@
           "lag": 0.4
         },
         "position": {
-          "x": -2000,
+          "x": -1100,
           "y": 1510
         },
         "type": "valueLag"
@@ -617,7 +781,7 @@
           "endpoint": "tip",
           "material": "sparkA1",
           "mode": "beam",
-          "scale": 0.0045,
+          "scale": 0.003,
           "taper": 0,
           "tint": {
             "bindings": {
@@ -724,9 +888,64 @@
         "parameters": {},
         "position": {
           "x": -200,
-          "y": 60
+          "y": 300
         },
         "type": "output"
+      },
+      "padd": {
+        "definitionVersion": 1,
+        "id": "padd",
+        "label": "pal1",
+        "parameters": {
+          "operand": -160,
+          "operation": "add"
+        },
+        "position": {
+          "x": -1700,
+          "y": 1730
+        },
+        "type": "valueMath"
+      },
+      "paint": {
+        "definitionVersion": 1,
+        "id": "paint",
+        "label": "paint1",
+        "parameters": {
+          "hueoffset": {
+            "bindings": {
+              "driven": {
+                "channel": "pal1:bar",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "driven"
+          },
+          "saturation": 1.15,
+          "value": 1
+        },
+        "position": {
+          "x": -800,
+          "y": 300
+        },
+        "type": "hsv"
+      },
+      "pmul": {
+        "definitionVersion": 1,
+        "id": "pmul",
+        "label": "pm1",
+        "parameters": {
+          "operand": 320,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -2000,
+          "y": 1730
+        },
+        "type": "valueMath"
       },
       "prox": {
         "definitionVersion": 1,
@@ -734,7 +953,7 @@
         "label": "prox1",
         "parameters": {
           "falloff": 2,
-          "neighbors": 3,
+          "neighbors": 2,
           "radius": {
             "bindings": {
               "driven": {
@@ -755,12 +974,28 @@
         },
         "type": "pointProximity"
       },
+      "pstep": {
+        "definitionVersion": 1,
+        "id": "pstep",
+        "label": "pstep1",
+        "parameters": {
+          "every": 4,
+          "maximum": 1,
+          "minimum": 0,
+          "seed": 9
+        },
+        "position": {
+          "x": -2300,
+          "y": 1730
+        },
+        "type": "valueStep"
+      },
       "radd": {
         "definitionVersion": 1,
         "id": "radd",
         "label": "rad1",
         "parameters": {
-          "operand": 0.3,
+          "operand": 0.12,
           "operation": "add"
         },
         "position": {
@@ -855,13 +1090,54 @@
         "parameters": {
           "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"tint\",\"type\":\"vec4f\",\"semantic\":\"color\",\"qualifier\":\"color\",\"default\":[1,1,1,1]},{\"name\":\"hitPosition\",\"type\":\"vec3f\",\"default\":[0,0,0]}]",
           "capacity": 180,
-          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  let slant = length(p.hitPosition - p.position);\n  let near = clamp(1.0 - slant / 4.0, 0.0, 1.0);\n  if (ctx.index % 6u != 0u) {\n    q.hitPosition = p.position;\n    q.tint = vec4f(0.0);\n    return q;\n  }\n  q.tint = vec4f(0.55, 0.75, 1.0, 1.0) * (0.30 + 0.85 * near);\n  return q;\n}"
+          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  let slant = length(p.hitPosition - p.position);\n  let near = clamp(1.0 - slant / 4.0, 0.0, 1.0);\n  if (ctx.index % 6u != 0u) {\n    q.hitPosition = p.position;\n    q.tint = vec4f(0.0);\n    return q;\n  }\n  /* T828 — the rain STOPS in the breakdown: value1 (enveloped high) gates the beams\n     to zero-length in the quiet bar, the same §V788 park the sparse gate uses. */\n  if (ctx.value1 < 0.06) {\n    q.hitPosition = p.position;\n    q.tint = vec4f(0.0);\n    return q;\n  }\n  q.tint = vec4f(0.55, 0.75, 1.0, 1.0) * (0.30 + 0.85 * near) * clamp(ctx.value1 * 2.0, 0.0, 1.0);\n  return q;\n}",
+          "value1": {
+            "bindings": {
+              "driven": {
+                "channel": "henv1:high",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "driven"
+          }
         },
         "position": {
           "x": -1700,
           "y": 620
         },
         "type": "pointKernel"
+      },
+      "slim": {
+        "definitionVersion": 1,
+        "id": "slim",
+        "label": "sl1",
+        "parameters": {
+          "maximum": 1,
+          "minimum": 0
+        },
+        "position": {
+          "x": -1400,
+          "y": 1510
+        },
+        "type": "valueLimit"
+      },
+      "smul": {
+        "definitionVersion": 1,
+        "id": "smul",
+        "label": "sm1",
+        "parameters": {
+          "operand": 12,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -2000,
+          "y": 1510
+        },
+        "type": "valueMath"
       },
       "sparkA": {
         "definitionVersion": 1,
@@ -907,7 +1183,7 @@
           "amount": {
             "bindings": {
               "driven": {
-                "channel": "hd1:high",
+                "channel": "glim1:high",
                 "kind": "driven"
               },
               "static": {
@@ -921,9 +1197,23 @@
         },
         "position": {
           "x": -500,
-          "y": 60
+          "y": 300
         },
         "type": "customWgsl"
+      },
+      "ssub": {
+        "definitionVersion": 1,
+        "id": "ssub",
+        "label": "ss1",
+        "parameters": {
+          "operand": -5.5,
+          "operation": "add"
+        },
+        "position": {
+          "x": -1700,
+          "y": 1510
+        },
+        "type": "valueMath"
       },
       "step": {
         "definitionVersion": 1,
@@ -948,11 +1238,24 @@
         "parameters": {
           "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"tint\",\"type\":\"vec4f\",\"semantic\":\"color\",\"qualifier\":\"color\",\"default\":[1,1,1,1]}]",
           "capacity": 600,
-          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  let i = f32(ctx.index);\n  let a = pointRand(ctx.index, 1u) * 6.2831853;\n  let b = acos(2.0 * pointRand(ctx.index, 2u) - 1.0);\n  let w = 0.35 + 0.65 * pointRand(ctx.index, 3u);\n  let breath = 1.0 + 0.24 * clamp(ctx.value1, 0.0, 1.5);\n  let r = (0.72 + 0.38 * pointRand(ctx.index, 4u)) * breath;\n  let theta = a + ctx.absTime * (0.10 + 0.05 * w);\n  let wob = 0.08 * sin(ctx.absTime * (0.7 + w) + i);\n  q.position = vec3f(\n    (r + wob) * sin(b) * cos(theta),\n    (r + wob) * cos(b) * 0.86,\n    (r + wob) * sin(b) * sin(theta),\n  );\n  let warmth = pointRand(ctx.index, 5u);\n  q.tint = vec4f(0.62 + 0.30 * warmth, 0.72, 1.0 - 0.25 * warmth, 1.0);\n  return q;\n}",
+          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  let i = f32(ctx.index);\n  let a = pointRand(ctx.index, 1u) * 6.2831853;\n  let b = acos(2.0 * pointRand(ctx.index, 2u) - 1.0);\n  let w = 0.35 + 0.65 * pointRand(ctx.index, 3u);\n  let breath = 1.0 + 0.24 * clamp(ctx.value1, 0.0, 1.5);\n  let r = (0.72 + 0.38 * pointRand(ctx.index, 4u)) * breath;\n  let theta = a + ctx.absTime * (0.10 + 0.05 * w);\n  let wob = 0.06 * sin(ctx.absTime * (0.35 + 0.4 * w) + i);\n  q.position = vec3f(\n    (r + wob) * sin(b) * cos(theta),\n    (r + wob) * cos(b) * 0.86,\n    (r + wob) * sin(b) * sin(theta),\n  );\n  /* T828 — DOWNTIME: value2 is the enveloped high band, and it gates EXISTENCE, not\n     just size. In the arrangement's breakdown bar the dots fall to a quarter of\n     themselves — the trace that remains — so quiet is a state of the picture, not\n     just of the numbers. */\n  let presence = 0.25 + 0.75 * clamp(ctx.value2 * 1.6, 0.0, 1.0);\n  let warmth = pointRand(ctx.index, 5u);\n  q.tint = vec4f(0.62 + 0.30 * warmth, 0.72, 1.0 - 0.25 * warmth, 1.0) * presence;\n  return q;\n}",
           "value1": {
             "bindings": {
               "driven": {
                 "channel": "ld1:low",
+                "kind": "driven"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "driven"
+          },
+          "value2": {
+            "bindings": {
+              "driven": {
+                "channel": "henv1:high",
                 "kind": "driven"
               },
               "static": {

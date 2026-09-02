@@ -169,10 +169,10 @@
     "f0max": 0.4796
   },
   "E45-Pulse.loom.json": {
-    "motion": 0.03876,
-    "range": 0.7326,
-    "f0max": 0.8638,
-    "phrase": 0.04685
+    "motion": 0.01293,
+    "range": 0.807,
+    "f0max": 0.807,
+    "phrase": 0.00969
   },
   "E5-Kaleidoscope.loom.json": {
     "motion": 0.12356,
