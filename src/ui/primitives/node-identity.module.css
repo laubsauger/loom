@@ -39,15 +39,15 @@
   noticing when reading one row. A category with no hue here simply keeps the default,
   so a new one is untinted rather than wrong.
 */
-.type[data-category="generator"] { color: #7fa6d9; }
-.type[data-category="filter"]    { color: #86b39a; }
-.type[data-category="composite"] { color: #9d93cc; }
-.type[data-category="color"]     { color: #cf9f7a; }
-.type[data-category="points"]    { color: #c98fa8; }
-.type[data-category="render"]    { color: #b6a06e; }
-.type[data-category="shader"]    { color: #8fb0b8; }
-.type[data-category="temporal"]  { color: #a58fc4; }
-.type[data-category="value"]     { color: #8aa6a0; }
-.type[data-category="input"]     { color: #6fae9c; }
-.type[data-category="output"]    { color: #c08a8a; }
-.type[data-category="utility"]   { color: #98a2b3; }
+.type[data-category="generator"] { color: var(--category-generator); }
+.type[data-category="filter"] { color: var(--category-filter); }
+.type[data-category="composite"] { color: var(--category-composite); }
+.type[data-category="color"] { color: var(--category-color); }
+.type[data-category="points"] { color: var(--category-points); }
+.type[data-category="render"] { color: var(--category-render); }
+.type[data-category="shader"] { color: var(--category-shader); }
+.type[data-category="temporal"] { color: var(--category-temporal); }
+.type[data-category="value"] { color: var(--category-value); }
+.type[data-category="input"] { color: var(--category-input); }
+.type[data-category="output"] { color: var(--category-output); }
+.type[data-category="utility"] { color: var(--category-utility); }

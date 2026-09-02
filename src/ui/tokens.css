@@ -295,6 +295,22 @@
      live: everything inside a node is sealed in `.react-flow__viewport`'s context at
      z-index 2 and cannot cross. Still below popovers, tooltips and toasts. */
   --z-canvas-chrome: 31;
+  /* T964 — category tints for the node type badge. Dim and low-chroma on purpose:
+     the graph already spends colour on run state, so these must read as orientation,
+     never as status. One token per declared node category; a category with no token
+     falls back to the badge's own colour rather than to something wrong. */
+  --category-generator: #7fa6d9;
+  --category-filter: #86b39a;
+  --category-composite: #9d93cc;
+  --category-color: #cf9f7a;
+  --category-points: #c98fa8;
+  --category-render: #b6a06e;
+  --category-shader: #8fb0b8;
+  --category-temporal: #a58fc4;
+  --category-value: #8aa6a0;
+  --category-input: #6fae9c;
+  --category-output: #c08a8a;
+  --category-utility: #98a2b3;
   --z-toast: 90;
 }
 
