@@ -64,6 +64,12 @@ export interface WebcamSectionProps {
   editor: ParameterEditor;
 }
 
+/** T994 — the keys this section presents the control for; see audioSectionParameters. */
+// eslint-disable-next-line react-refresh/only-export-components -- T994: the claim lives WITH the section it mirrors; a separate module would let the two drift.
+export function webcamSectionParameters(): readonly string[] {
+  return ["device"];
+}
+
 export function WebcamSection({ nodeId, device, editor }: WebcamSectionProps) {
   const { devices, unlabelled } = useVideoDevices();
 

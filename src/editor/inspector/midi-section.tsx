@@ -92,6 +92,17 @@ function nextChannelName(existing: readonly MidiBinding[]): string {
   }
 }
 
+/**
+ * T994 — the keys this section presents the control for; see audioSectionParameters.
+ * Deliberately NOT `mapping`: the learn table is the control and the generic group's
+ * JSON is the readable RESULT it writes — the inspector's own "controls above the
+ * result" comment is the standing intent, so that pair is not a duplicate.
+ */
+// eslint-disable-next-line react-refresh/only-export-components -- T994: the claim lives WITH the section it mirrors; a separate module would let the two drift.
+export function midiSectionParameters(): readonly string[] {
+  return ["device"];
+}
+
 export function MidiSection({ nodeId, device, mapping, midi, editor }: MidiSectionProps) {
   const parsed = parseMidiMapping(mapping);
   const [learning, setLearning] = useState<string | null>(null);

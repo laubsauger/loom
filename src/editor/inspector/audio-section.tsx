@@ -76,6 +76,22 @@ const STATUS_TEXT: Readonly<Record<AudioCaptureStatus["kind"], string>> = {
   error: "Capture failed",
 };
 
+/**
+ * T994 — THE CLAIM: which parameter keys this section PRESENTS THE CONTROL FOR, as a
+ * function of the same input the render branches on, so the two cannot drift. The
+ * inspector filters these keys out of the generic parameter groups WHILE this section
+ * renders — two controls writing one document field is how a typed device id and the
+ * picker silently disagree. A hide-list in the inspector would leave the next
+ * section's duplicate behind; the section itself is the only party that knows what it
+ * presents.
+ */
+// eslint-disable-next-line react-refresh/only-export-components -- T994: the claim lives WITH the section it mirrors; a separate module would let the two drift.
+export function audioSectionParameters(nodeType: "audioIn" | "audioFileIn"): readonly string[] {
+  // The device picker renders for the microphone only (the gate below mirrors this);
+  // audioFileIn gets status alone, so it claims nothing.
+  return nodeType === "audioIn" ? ["device"] : [];
+}
+
 export function AudioSection({ nodeId, nodeType, device, status, editor }: AudioSectionProps) {
   const { devices, unlabelled } = useAudioDevices(nodeType === "audioIn");
 

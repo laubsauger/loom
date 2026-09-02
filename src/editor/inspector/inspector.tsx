@@ -17,9 +17,9 @@ import type { ControlVariant } from "@ui/controls/control-row.tsx";
 import { NodeIdentity } from "@ui/primitives/node-identity.tsx";
 import { TabsContent, TabsList, TabsRoot, TabsTrigger } from "@ui/primitives/tabs.tsx";
 import { CommonReadout, CommonSection } from "./common-section.tsx";
-import { AudioSection } from "./audio-section.tsx";
-import { WebcamSection } from "./webcam-section.tsx";
-import { MidiSection } from "./midi-section.tsx";
+import { AudioSection, audioSectionParameters } from "./audio-section.tsx";
+import { WebcamSection, webcamSectionParameters } from "./webcam-section.tsx";
+import { MidiSection, midiSectionParameters } from "./midi-section.tsx";
 import type { MidiSectionSurface } from "./midi-section.tsx";
 import { DEFAULT_GROUP, groupParameters } from "./parameter-groups.ts";
 import { createParameterEditor } from "./parameter-editor.ts";
@@ -334,7 +334,30 @@ export function Inspector({
    * B8 recorded, and this is deliberately not one.
    */
   const live = liveFrame === null ? null : resolveParameters(node, definition, readOptionsAt(liveFrame));
-  const groups = groupParameters(resolved.entries);
+
+  /*
+   * T994 — the device sections and the generic groups were TWO CONTROLS ON ONE
+   * DOCUMENT FIELD: the styled picker, and a raw id text box directly below it that
+   * the picker would silently disagree with. Each section now CLAIMS the keys it
+   * presents (a claim, not a hide-list here — the next section added carries its own
+   * claim or leaves its duplicate visible, which is the failure that gets noticed),
+   * and the claim applies only while the section actually renders: with the section's
+   * surface absent (an embed, a test), the generic control comes back rather than
+   * leaving the field uneditable. The booleans are shared with the JSX below so the
+   * claim and the render cannot drift.
+   */
+  const showsAudioSection =
+    audioStatus !== undefined && (node.type === "audioIn" || node.type === "audioFileIn");
+  const showsWebcamSection = node.type === "webcam";
+  const showsMidiSection = midi !== undefined && node.type === "midiIn";
+  const presentedBySections = new Set<string>([
+    ...(showsAudioSection ? audioSectionParameters(node.type as "audioIn" | "audioFileIn") : []),
+    ...(showsWebcamSection ? webcamSectionParameters() : []),
+    ...(showsMidiSection ? midiSectionParameters() : []),
+  ]);
+  const groups = groupParameters(
+    resolved.entries.filter((entry) => !presentedBySections.has(entry.key)),
+  );
 
   const inputs: readonly InputResolution[] =
     inputResolutions ??
@@ -418,7 +441,7 @@ export function Inspector({
    * node, the device picker. Keyed on the node TYPE the capture hook itself keys on.
    */
   const audioSection =
-    audioStatus !== undefined && (node.type === "audioIn" || node.type === "audioFileIn") ? (
+    showsAudioSection && (node.type === "audioIn" || node.type === "audioFileIn") ? (
       <AudioSection
         nodeId={node.id}
         nodeType={node.type}
@@ -431,7 +454,7 @@ export function Inspector({
   /* T810: the webcam gets its camera picker the way the mic got its device picker —
      keyed on the node TYPE the media hook itself keys on. */
   const webcamSection =
-    node.type === "webcam" ? (
+    showsWebcamSection && node.type === "webcam" ? (
       <WebcamSection
         nodeId={node.id}
         device={typeof resolved.values["device"] === "string" ? (resolved.values["device"] as string) : ""}
@@ -442,7 +465,7 @@ export function Inspector({
   /* T942: the controller gets its learn table and its ONE honest sentence about why there
      is no MIDI — keyed on the node TYPE, as the mic and camera sections are. */
   const midiSection =
-    midi !== undefined && node.type === "midiIn" ? (
+    showsMidiSection && node.type === "midiIn" ? (
       <MidiSection
         nodeId={node.id}
         device={typeof resolved.values["device"] === "string" ? (resolved.values["device"] as string) : ""}
