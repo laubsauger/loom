@@ -15,8 +15,8 @@ import { SPLICE_WGSL } from "../shaders/splice.wgsl.ts";
  *   bed1/orb1 (the moving understudy) ─► stand1 ─┐ order 0
  *   clip1(movieFileIn) ────────────────────────── ┴─► pick1(switch)
  *   pick1 ─► splice1(customWgsl: the glitch) ─► fold1(mirror ┄ spin1) ─┬─► slam1(crop ┄ onset)
- *   beat1(audioPattern) ┄ gsub1·gd1 ┄► splice1.amount                  │        │
- *          ┄ esub1·ed1 ┄► punch1.opacity                               └► echo1(transform, ×1.28)
+ *   beat1(audioPattern) ┄ gsub1·gd1·genv1 ┄► splice1.amount            │        │
+ *          ┄ esub1·ed1·lenv1 ┄► punch1.opacity                         └► echo1(transform, ×1.28)
  *                                                                                │
  *                                                    punch1(composite: echo over slam) ─► out1
  *
@@ -64,9 +64,18 @@ export const spliceDocument = document(
          EXACTLY zero and the §V147 identity is the rack's own resting state. */
       node("gsub", "valueMath", [-1620, 420], { operation: "add", operand: -0.381 }, { label: "gsub1" }),
       node("gmul", "valueMath", [-1320, 420], { operation: "multiply", operand: 5.5 }, { label: "gd1" }),
+      /* T824 — envelope the tear MAGNITUDE. The deal timing is the shader's own
+         floor(absTime·DEALS) clock, so the §T749 hold-and-slam is untouched; this only
+         stops the per-frame band wobble the shader's own §V681 warns is noise. Fast
+         attack, slow release — a hit blooms and decays like a hit, not a jitter. At
+         silence the rest-subtracted band is 0 and the lag of 0 is 0, so §V147 holds. */
+      node("genv", "valueLag", [-1020, 420], { lag: 0.02, releaseRatio: 6 }, { label: "genv1" }),
       /* LOW band → the echo. Rest 0.7119 (T701). */
       node("esub", "valueMath", [-1620, 660], { operation: "add", operand: -0.712 }, { label: "esub1" }),
       node("emul", "valueMath", [-1320, 660], { operation: "multiply", operand: 1.7 }, { label: "ed1" }),
+      /* T824 — envelope the echo opacity so it blooms on the kick and decays, instead
+         of flickering per frame. Slower than the glitch: the echo is a sustain. */
+      node("lenv", "valueLag", [-1020, 660], { lag: 0.05, releaseRatio: 5 }, { label: "lenv1" }),
       /* ONSETS → the letterbox slam, through a lag so the bar decays like a hit. */
       node("slag", "valueLag", [-1620, 900], { lag: 0.14 }, { label: "slag1" }),
       node("smul", "valueMath", [-1320, 900], { operation: "multiply", operand: 0.24 }, { label: "sl1" }),
@@ -76,7 +85,7 @@ export const spliceDocument = document(
       // ---- the rack -----------------------------------------------------------------
       node("splice", "customWgsl", [-1620, -60], { source: SPLICE_WGSL }, {
         label: "splice1",
-        parameters: { amount: drivenSlot("gd1:high", 0) },
+        parameters: { amount: drivenSlot("genv1:high", 0) },
       }),
       node("fold", "mirror", [-1320, -60], {
         mirrorx: true, mirrory: false, pivot: [0.5, 0.5], keephigh: false, extend: "mirror",
@@ -90,7 +99,7 @@ export const spliceDocument = document(
       }, { label: "echo1" }),
       node("punch", "composite", [-720, -60], { operation: "over" }, {
         label: "punch1",
-        parameters: { opacity: drivenSlot("ed1:low", 0) },
+        parameters: { opacity: drivenSlot("lenv1:low", 0) },
       }),
       node("out", "output", [-420, -60], {}, { label: "out1" }),
     ],
@@ -101,8 +110,10 @@ export const spliceDocument = document(
       edge("e-clip-pick", ["clip", "out"], ["pick", "inputs"], 1),
       edge("e-beat-gsub", ["beat", "out"], ["gsub", "a"]),
       edge("e-gsub-gmul", ["gsub", "out"], ["gmul", "a"]),
+      edge("e-gmul-genv", ["gmul", "out"], ["genv", "in"]),
       edge("e-beat-esub", ["beat", "out"], ["esub", "a"]),
       edge("e-esub-emul", ["esub", "out"], ["emul", "a"]),
+      edge("e-emul-lenv", ["emul", "out"], ["lenv", "in"]),
       edge("e-beat-slag", ["beat", "out"], ["slag", "in"]),
       edge("e-slag-smul", ["slag", "out"], ["smul", "a"]),
       edge("e-pick-splice", ["pick", "out"], ["splice", "input"]),

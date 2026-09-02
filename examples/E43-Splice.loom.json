@@ -70,6 +70,17 @@
           "portId": "in1"
         }
       },
+      "e-emul-lenv": {
+        "id": "e-emul-lenv",
+        "source": {
+          "nodeId": "emul",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "lenv",
+          "portId": "in"
+        }
+      },
       "e-esub-emul": {
         "id": "e-esub-emul",
         "source": {
@@ -101,6 +112,17 @@
         "target": {
           "nodeId": "slam",
           "portId": "input"
+        }
+      },
+      "e-gmul-genv": {
+        "id": "e-gmul-genv",
+        "source": {
+          "nodeId": "gmul",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "genv",
+          "portId": "in"
         }
       },
       "e-gsub-gmul": {
@@ -340,6 +362,20 @@
         },
         "type": "mirror"
       },
+      "genv": {
+        "definitionVersion": 1,
+        "id": "genv",
+        "label": "genv1",
+        "parameters": {
+          "lag": 0.02,
+          "releaseRatio": 6
+        },
+        "position": {
+          "x": -1020,
+          "y": 420
+        },
+        "type": "valueLag"
+      },
       "gmul": {
         "definitionVersion": 1,
         "id": "gmul",
@@ -367,6 +403,20 @@
           "y": 420
         },
         "type": "valueMath"
+      },
+      "lenv": {
+        "definitionVersion": 1,
+        "id": "lenv",
+        "label": "lenv1",
+        "parameters": {
+          "lag": 0.05,
+          "releaseRatio": 5
+        },
+        "position": {
+          "x": -1020,
+          "y": 660
+        },
+        "type": "valueLag"
       },
       "orb": {
         "definitionVersion": 1,
@@ -495,7 +545,7 @@
           "opacity": {
             "bindings": {
               "driven": {
-                "channel": "ed1:low",
+                "channel": "lenv1:low",
                 "kind": "driven"
               },
               "static": {
@@ -593,7 +643,7 @@
           "amount": {
             "bindings": {
               "driven": {
-                "channel": "gd1:high",
+                "channel": "genv1:high",
                 "kind": "driven"
               },
               "static": {
