@@ -83,7 +83,7 @@ describe.each(listExamples())("$fileName on Dawn", (file) => {
 /**
  * E12's ONE PIXEL ASSERTION, and the only one in the example suite (T362).
  *
- * Everything else here and in `concepts.test.ts` is structural: which resource is bound to
+ * Everything else here and in `concepts/*.test.ts` is structural: which resource is bound to
  * which input, what a uniform holds, which passes exist. All of that can be true of a fluid
  * that does not move. §V147/B15 is explicit that a test over shader SOURCE or plan SHAPE is
  * not evidence a pixel moved, and "it flows" is precisely a claim about pixels.
@@ -305,7 +305,7 @@ describe("E2 is alive, and its chemistry map is doing the work", () => {
     const [at300, at310] = await simulate((graph) => graph, [300, 310]);
 
     // IT MOVES. §V147/B15: a frozen simulation renders a perfectly plausible picture, and
-    // every structural assertion in `concepts.test.ts` would still pass on one. Measured:
+    // every structural assertion in `concepts/*.test.ts` would still pass on one. Measured:
     // 14,035 pixels of 262,144 changed across ten displayed frames.
     expect(moved(at300 as Float32Array, at310 as Float32Array)).toBeGreaterThan(5_000);
 
@@ -356,7 +356,7 @@ describe("E2 is alive, and its chemistry map is doing the work", () => {
    *
    * The control is `flow1`'s weight set to zero. That is a graph with the same nodes, the
    * same passes, the same twenty substeps and the same wire — it renders a plausible
-   * picture, and every structural assertion in `concepts.test.ts` still passes on it. Only
+   * picture, and every structural assertion in `concepts/*.test.ts` still passes on it. Only
    * these two numbers see the difference.
    *
    * Measured on Dawn while writing this, at frame 900 of a 512x512 simulation:
@@ -426,7 +426,7 @@ describe("E2 is alive, and its chemistry map is doing the work", () => {
  *
  * Two claims, both about pixels, both of which E26 fails silently without.
  *
- * MOTION. Every structural assertion in `concepts.test.ts` — the fan-out, the driven
+ * MOTION. Every structural assertion in `concepts/*.test.ts` — the fan-out, the driven
  * slots, the two LFO rates — is equally true of a graph whose drift never reaches the
  * Transform's uniform. §V147 says a claim about the picture is tested on the picture, so
  * this renders through the real value graph (`animate`) and counts pixels that CHANGED

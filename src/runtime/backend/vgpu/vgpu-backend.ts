@@ -219,7 +219,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
   let consecutiveFrameErrors = 0;
   let lastBuildStats: BuildStats | undefined;
   const presentations = new Map<string, PresentationState>();
-  /** §V157: the permanent bisect switch. Read by encode() once T254's gating exists. */
+  /** §V157: the permanent bisect switch. Read by the render loop's T254 idle gate (§V156). */
   let cookPolicy: CookPolicy = "always";
   /** sourceId → frame producer (T229, §V135). Backend-lifetime: survives recompiles and device loss. */
   const mediaSources = new Map<string, MediaSource>();

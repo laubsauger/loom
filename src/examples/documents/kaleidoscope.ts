@@ -39,7 +39,7 @@ import { settings, node, edge, graph, document, drivenSlot, expressionSlot } fro
  * Note where the override stops: it does not, currently. The Output node declares no
  * `resolutionPolicy`, so its target falls back to its input's size and the presented target
  * is 2048x2048 too, not the project's 1280x720. That is the compiler's current default
- * rather than something this example asks for — `concepts.test.ts` therefore pins the
+ * rather than something this example asks for — `concepts/*.test.ts` therefore pins the
  * CHAIN's resolution and deliberately says nothing about the sink's.
  */
 export const kaleidoscopeDocument = document(

@@ -16,7 +16,7 @@ import LOOK_BASELINES from "./look-baselines.json" with { type: "json" };
  *
  * ## Why this exists
  *
- * T402 already said every example animates, and `concepts.test.ts` says so per example in
+ * T402 already said every example animates, and `concepts/*.test.ts` says so per example in
  * the only way a structural test can: by naming a parameter. That is §V147 exactly — a test
  * passes on a picture that never moves, because the parameter is set and the picture is
  * still. Six shipped examples were completely static and every suite in the tree was green

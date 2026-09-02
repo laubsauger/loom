@@ -28,7 +28,7 @@ import { FLUID_VELOCITY_WGSL } from "../shaders/fluid-velocity.wgsl.ts";
  * THE NEGATIVE WEIGHT IS THE EXAMPLE. `weight: [-1, -1]` with `offset: [0, 0]` reads the
  * velocity as a SIGNED per-step displacement and samples AGAINST it. Flip the sign and
  * the dye still moves, still looks like a fluid, and is running the unstable forward
- * scheme — plausible-wrong, which is why `concepts.test.ts` pins the sign rather than the
+ * scheme — plausible-wrong, which is why `concepts/*.test.ts` pins the sign rather than the
  * presence of the node.
  *
  * ONE POINTER, TWO READERS (§V182). The stirring vortex is in the shader, reading

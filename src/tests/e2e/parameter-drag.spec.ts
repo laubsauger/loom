@@ -18,31 +18,16 @@ import { APP_VIEWPORT, addNode, dragNumber, focusGraph, modKey, openApp, selectN
  * §V20: the same gesture must not pan the graph, drag the node, or change the selection.
  * That is asserted by the things that must NOT have moved.
  *
- * ## FAILING GATE — the live half is not met, and the test is left red
+ * History: the live half was once a deliberately red FAILING GATE — during a drag the
+ * field's value never changed, it jumped once on pointer-up, so the document received only
+ * the commit and the second half of §V15 was not happening. The break was between the
+ * control and the editor instance in the composed app (the inspector's `useMemo` editor
+ * disposed its coalescer in an effect cleanup, cancelling the pending live frame), not
+ * inside `parameter-editor.ts` or `coalesce.ts`, which were unit-tested doing the right
+ * thing. Fixed and confirmed passing (§T798); kept as the regression gate for both halves.
  *
- * Measured, in the running app, on this machine: during a drag the field's value never
- * changes. It jumps once, to the final value, when the pointer comes up. The same is true
- * of a held arrow key, which takes the same `"live"` → `"commit"` path. So the document
- * receives ONLY the commit, and the second half of §V15 is not happening.
- *
- * What that costs: a slider drag shows no feedback until it is released, which is the
- * single most important interaction in a compositor. Everything downstream that §V5 exists
- * to make cheap — the uniform-only update path, the live preview — is unreachable from the
- * UI, because nothing asks for it until the gesture is over.
- *
- * Where it is NOT: `src/editor/inspector/parameter-editor.ts` and
- * `src/ui/controls/coalesce.ts` both do the right thing in isolation and are unit-tested
- * doing it (`parameter-editor.test.ts` drives `"live"` values straight in and sees the
- * patches). `NumberField` calls `emit(next, "live")` on every pointer move — proven by the
- * final value, which is read off the drag state that only `onPointerMove` writes. So the
- * break is between the control and the editor instance in the composed app, not inside
- * either piece. `src/editor/inspector/inspector.tsx` builds its own editor in a `useMemo`
- * and disposes it in an effect cleanup; a disposed coalescer cancels its pending frame,
- * which would swallow exactly the live values and leave the commit path (which sends
- * immediately) working. That is the first place to look.
- *
- * Do not relax this to "the value changed by the end". That assertion passes against the
- * behaviour described above.
+ * Do not relax the live assertion to "the value changed by the end" — that passes against
+ * the old broken behaviour, where the only change arrived on release.
  */
 
 test.use({ viewport: APP_VIEWPORT });

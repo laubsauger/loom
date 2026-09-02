@@ -207,7 +207,7 @@ describe.each(examples)("example $fileName", (file) => {
     // Being explicit about what this does NOT say: the digest carries `frameIndex`, so it
     // varies frame to frame for every example, animated or not. That variation is not
     // evidence of anything. The claim here is CROSS-RUN identity. Whether an example
-    // actually consumes the frame block is E3's question, asserted in `concepts.test.ts`.
+    // actually consumes the frame block is E3's question, asserted in `concepts/*.test.ts`.
     expect(new Set(firstRun).size).toBe(FRAME_COUNT);
   });
 

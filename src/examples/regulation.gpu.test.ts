@@ -13,7 +13,7 @@ function e14() {
 /**
  * T408 — E14 REGULATES, ON DAWN, THROUGH THE SHIPPED FILE.
  *
- * The structural claims live in concepts.test.ts; this is the behavioural one, and it
+ * The structural claims live in concepts/*.test.ts; this is the behavioural one, and it
  * only became possible with T655 (the harness analyze seam): before it, a document
  * that measures itself rendered FROZEN in every offline gate. The trajectory below is
  * the md's own opening numbers — alternating overshoot decaying toward a settled band
@@ -79,7 +79,7 @@ describe("E14 — the loop settles with damped overshoot (T408, §V144)", () => 
 
   /**
    * §V616/§B124, REPRODUCED ON PURPOSE — the wrap flips the sign. The shipped floor
-   * (0.005) is gated structurally in concepts.test.ts; this is the picture of what
+   * (0.005) is gated structurally in concepts/*.test.ts; this is the picture of what
    * that floor is holding back. Lower the floor past zero and strengthen the tap to
    * where the shipped error can reach it, and the ramp wraps the background into its
    * white stops: the meter locks high and STAYS — a correct local loop gain and a

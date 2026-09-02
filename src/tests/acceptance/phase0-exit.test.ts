@@ -460,8 +460,7 @@ describe("T23 Phase 0 exit — invalid WGSL keeps the last valid output and show
 
       expect(
         rejection,
-        "compile() accepted a shader Dawn refuses to build, and installed it as the live " +
-          "program (see the FAILING GATE note above this describe block)",
+        "compile() accepted a shader Dawn refuses to build, and installed it as the live program",
       ).toBeDefined();
       expect(installed).toBeUndefined();
 

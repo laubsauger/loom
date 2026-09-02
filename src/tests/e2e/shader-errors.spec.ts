@@ -17,8 +17,8 @@ import { APP_VIEWPORT, addNode, connect, fitAll, focusGraph, modKey, moveNode, o
  * that never ran the code path.
  *
  * That half is gated in `src/tests/acceptance/phase0-exit.test.ts`, on Dawn, where a real
- * device really refuses a real shader — see the FAILING GATE note there, which is where
- * the §V9 defect this criterion depends on is recorded.
+ * device really refuses a real shader — the §V9 recovery this criterion depends on is
+ * asserted there (it was once a red FAILING GATE; now a passing regression gate).
  *
  * The `test.fixme` at the bottom names the blocker in the runner's own output, so
  * `npx playwright test` reports the gap instead of a clean green tick that has quietly
