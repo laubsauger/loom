@@ -1,5 +1,5 @@
-import { useCallback, useId, useRef , useState } from "react";
-import type { KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
+import type { DragEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Button } from "@ui/primitives/button.tsx";
 import { PopoverContent, PopoverHeader, PopoverRoot, PopoverTrigger } from "@ui/primitives/popover.tsx";
 import { TabBadge } from "@ui/primitives/tabs.tsx";
@@ -79,7 +79,12 @@ export interface PaneLeafViewProps {
   readonly onFloat: (key: PaneKey) => void;
   readonly onCloseTab: (key: PaneKey) => void;
   readonly onDragTab: (key: PaneKey | null) => void;
-  readonly onDropTab: (key: PaneKey, leafId: PaneKey) => void;
+  /**
+   * T931: a dropped tab lands at `index` in THIS leaf's visible tab order — the gap the
+   * caret was drawn in. Omitted from the whole-leaf overlay, which means "somewhere in
+   * here" and appends.
+   */
+  readonly onDropTab: (key: PaneKey, leafId: PaneKey, index?: number) => void;
   readonly onSplit: (leafId: PaneKey, direction: "row" | "column") => void;
   readonly onCloseLeaf: (leafId: PaneKey) => void;
   readonly onAssignEmpty: (leafId: PaneKey, role: PaneRole) => void;
@@ -149,6 +154,39 @@ export function PaneLeafView({
   // The dragged tab's own leaf is not a target for itself — unless it has company.
   const droppable = dragging !== null && (tabs.length !== 1 || tabs[0]?.key !== dragging);
 
+  /*
+   * T931 — the owner: "would be neat if we could actually drop different tabs from one
+   * pane into another." The whole-leaf overlay below already accepted a drop; what it
+   * could not do is say WHERE in the strip, so every drag appended and the tab order was
+   * not something you could arrange. These are the N+1 gaps between tabs, live only
+   * while a drag is in flight.
+   *
+   * The gap is chosen by the pointer against each tab's own midpoint rather than by thin
+   * strips between them: the hit area is then the full width of a tab, which is what you
+   * are actually aiming at.
+   */
+  const [dropAt, setDropAt] = useState<number | null>(null);
+  useEffect(() => {
+    if (dragging === null) setDropAt(null);
+  }, [dragging]);
+
+  const gapAt = (event: DragEvent<HTMLElement>, index: number): number => {
+    const box = event.currentTarget.getBoundingClientRect();
+    return event.clientX > box.left + box.width / 2 ? index + 1 : index;
+  };
+
+  const acceptDrop = (event: DragEvent<HTMLElement>, index: number) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setDropAt(null);
+    const key = event.dataTransfer.getData("text/x-loom-pane") || dragging;
+    if (key !== null && key !== "") onDropTab(key, leafId, index);
+  };
+
+  /** The insertion caret. Decorative: the keyboard route to the same edit is the move menu. */
+  const caret = (index: number) =>
+    dropAt === index ? <span className={styles.dropCaret} data-drop-caret={index} aria-hidden="true" /> : null;
+
   return (
     <section className={styles.leaf} data-pane-leaf={leafId} aria-label={label}>
       <div className={cx(tabStyles.list, styles.strip)} role="tablist" ref={listRef} aria-label={label}>
@@ -157,7 +195,23 @@ export function PaneLeafView({
              HTML, and nesting would also fold the close into the tab's accessible name.
              `role="presentation"` keeps the wrapper out of the a11y tree so the tablist
              still owns its tabs directly. */
-          <div key={tab.key} role="presentation" className={styles.tabSlot}>
+          <div
+            key={tab.key}
+            role="presentation"
+            className={styles.tabSlot}
+            data-drop-slot={droppable ? index : undefined}
+            onDragOver={
+              droppable
+                ? (event) => {
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = "move";
+                    setDropAt(gapAt(event, index));
+                  }
+                : undefined
+            }
+            onDrop={droppable ? (event) => acceptDrop(event, gapAt(event, index)) : undefined}
+          >
+            {caret(index)}
             <button
               type="button"
               role="tab"
@@ -202,7 +256,21 @@ export function PaneLeafView({
             </button>
           </div>
         ))}
-        <div className={styles.stripTrailing}>
+        <div
+          className={styles.stripTrailing}
+          data-drop-slot={droppable ? tabs.length : undefined}
+          onDragOver={
+            droppable
+              ? (event) => {
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = "move";
+                  setDropAt(tabs.length);
+                }
+              : undefined
+          }
+          onDrop={droppable ? (event) => acceptDrop(event, tabs.length) : undefined}
+        >
+          {caret(tabs.length)}
           {/* T835: the ADD door. Only on an OCCUPIED strip — an empty leaf already asks
               the question in its body, and offering it twice is the menu-that-grows the
               owner has objected to. */}

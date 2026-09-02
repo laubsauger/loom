@@ -276,10 +276,12 @@ export function AppShell({
     (leafId: PaneKey, key: PaneKey) => applyLayout((layout) => selectTab(layout, leafId, key)),
     [applyLayout],
   );
+  /** T931: `index` is the gap in the target strip the caret was drawn in; the move menu
+   *  and the whole-leaf drop overlay pass none, which appends. */
   const onMoveTab = useCallback(
-    (key: PaneKey, leafId: PaneKey) => {
+    (key: PaneKey, leafId: PaneKey, index?: number) => {
       setDragging(null);
-      applyLayout((layout) => moveTab(layout, key, leafId));
+      applyLayout((layout) => moveTab(layout, key, leafId, index));
     },
     [applyLayout],
   );

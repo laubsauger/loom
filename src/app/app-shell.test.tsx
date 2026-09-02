@@ -298,6 +298,132 @@ describe("V95 — relocatable panes", () => {
 });
 
 /**
+ * T931 — the owner: "would be neat if we could actually drop different tabs from one
+ * pane into another."
+ *
+ * Dropping onto a leaf already worked (above). What did not was saying WHERE: every
+ * drop appended, so tab order was not something a drag could arrange. Same shape as
+ * §T835/§T854 — `moveTab` already took an index and nothing on screen could supply one.
+ *
+ * These assert through the DOM the strip actually renders, because the model half is
+ * pinned in `pane-tree.test.ts` and a second copy of it here would prove nothing about
+ * the affordance.
+ */
+describe("T931 — dropping a tab into another pane's tab strip", () => {
+  function dragTransfer() {
+    let carried = "";
+    return {
+      setData: (_type: string, value: string) => {
+        carried = value;
+      },
+      getData: () => carried,
+      effectAllowed: "",
+      dropEffect: "",
+    };
+  }
+
+  /**
+   * A gap in ONE named strip. Scoped to the leaf on purpose: every droppable leaf
+   * renders a gap 0, so an unscoped query answers with whichever leaf happens to come
+   * first in the DOM and the test would pass while asserting about the wrong pane.
+   *
+   * In jsdom every box is zero-sized and `clientX` defaults to 0, so the midpoint test
+   * resolves to "before this tab" — which makes the slot's own index the drop index.
+   */
+  function slot(leafId: string, index: number): HTMLElement {
+    const element = document.querySelector<HTMLElement>(
+      `[data-pane-leaf="${leafId}"] [data-drop-slot="${index}"]`,
+    );
+    if (element === null) throw new Error(`no drop slot ${index} in ${leafId} while dragging`);
+    return element;
+  }
+
+  it("lands the tab AT the gap it was dropped in, not appended to the end", () => {
+    const storage = createMemoryStorage();
+    render(<AppShell storage={storage} inspector={<div>inspector slot</div>} />);
+
+    const transfer = dragTransfer();
+    fireEvent.dragStart(screen.getByRole("tab", { name: "inspector" }), { dataTransfer: transfer });
+    // Gap 2 of the bottom dock: shader | problems | HERE | performance | examples | agent.
+    fireEvent.dragOver(slot("leaf-bottom", 2), { dataTransfer: transfer });
+    fireEvent.drop(slot("leaf-bottom", 2), { dataTransfer: transfer });
+
+    const bottom = findLeaf(readPaneTreeStore(storage).current, "leaf-bottom");
+    expect(bottom?.tabs.map((tab) => tab.role)).toEqual([
+      "shader",
+      "problems",
+      "inspector",
+      "performance",
+      "examples",
+      "agent",
+    ]);
+    // And it is the tab you are now looking at — a drop that lands behind another tab
+    // looks like nothing happened.
+    expect(bottom?.tabs.find((tab) => tab.key === bottom.active)?.role).toBe("inspector");
+  });
+
+  it("shows an insertion caret in the gap under the pointer, and only while dragging", () => {
+    render(<AppShell storage={createMemoryStorage()} />);
+    // Drag-only chrome: nothing on screen before the gesture starts.
+    expect(document.querySelector("[data-drop-caret]")).toBeNull();
+    expect(document.querySelector("[data-drop-slot]")).toBeNull();
+
+    const transfer = dragTransfer();
+    fireEvent.dragStart(screen.getByRole("tab", { name: "viewer" }), { dataTransfer: transfer });
+    fireEvent.dragOver(slot("leaf-bottom", 1), { dataTransfer: transfer });
+
+    const carets = document.querySelectorAll("[data-drop-caret]");
+    expect(carets, "the drop position must be VISIBLE, not guessed at").toHaveLength(1);
+    expect(carets[0]?.getAttribute("data-drop-caret")).toBe("1");
+    // In the strip the pointer is over, not somewhere else on screen.
+    expect(carets[0]?.closest("[data-pane-leaf]")?.getAttribute("data-pane-leaf")).toBe("leaf-bottom");
+
+    fireEvent.dragEnd(screen.getByRole("tab", { name: "viewer" }));
+    expect(document.querySelector("[data-drop-caret]")).toBeNull();
+  });
+
+  it("reorders WITHIN one strip — the tab lands in the gap, not one past it", () => {
+    const storage = createMemoryStorage();
+    render(<AppShell storage={storage} />);
+
+    const transfer = dragTransfer();
+    fireEvent.dragStart(screen.getByRole("tab", { name: "shader editor" }), { dataTransfer: transfer });
+    // Dragging RIGHTWARDS: the strip the user is aiming at still contains the dragged
+    // tab, so an unadjusted index would land it one slot too far right.
+    fireEvent.drop(slot("leaf-bottom", 3), { dataTransfer: transfer });
+
+    expect(findLeaf(readPaneTreeStore(storage).current, "leaf-bottom")?.tabs.map((tab) => tab.role)).toEqual([
+      "problems",
+      "performance",
+      "shader",
+      "examples",
+      "agent",
+    ]);
+  });
+
+  it("COLLAPSES the leaf the move emptied, rather than leaving an empty picker behind", () => {
+    const storage = createMemoryStorage();
+    render(<AppShell storage={storage} viewer={<div>viewer slot</div>} />);
+
+    const transfer = dragTransfer();
+    fireEvent.dragStart(screen.getByRole("tab", { name: "viewer" }), { dataTransfer: transfer });
+    fireEvent.drop(slot("leaf-bottom", 0), { dataTransfer: transfer });
+
+    // The sidebar's top half held only the viewer; dragging it out takes the area with
+    // it and the inspector below takes the whole column. Leaving it behind would hand
+    // the user a "What should this pane show?" picker to close by hand, per drag.
+    expect(document.querySelector('[data-pane-leaf="leaf-right"]')).toBeNull();
+    expect(document.querySelector('[data-pane-leaf="leaf-rightBottom"]')).not.toBeNull();
+    expect(screen.queryByTestId("leaf-picker-leaf-right")).toBeNull();
+    // The pane itself moved, it was not destroyed.
+    expect(zoneElement("bottom").contains(screen.getByText("viewer slot"))).toBe(true);
+    // A tab of the dragged pane's OWN leaf is never a drop target for itself: leaf-right
+    // held only the viewer, so it offered no gaps at all.
+    expect(document.querySelector('[data-pane-leaf="leaf-rightBottom"] [data-drop-slot]')).toBeNull();
+  });
+});
+
+/**
  * V96 — relocating a pane does NOT remount its content.
  *
  * The assertions here are on IDENTITY and on state the content owns, never on "it still

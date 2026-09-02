@@ -202,15 +202,16 @@ describe("the projection goes NULL the moment the tree stops being flat (V385)",
   });
 
   it("a second tab of a NEW role stays projectable — v3 can say that much", () => {
-    // The flat model tabs zones already; only structure and duplicates exceed it.
-    const moved = moveTab(
-      flat,
-      allTabs(flat).find((tab) => tab.role === "inspector")!.key,
-      "leaf-right",
-    );
+    /*
+     * The flat model tabs zones already; only structure and duplicates exceed it. The
+     * moved role comes from the BOTTOM dock, which has five tabs and keeps four: since
+     * T931 a move that EMPTIES its source leaf collapses that leaf, which is a structural
+     * change and would make this assert the wrong thing for the wrong reason.
+     */
+    const moved = moveTab(flat, allTabs(flat).find((tab) => tab.role === "problems")!.key, "leaf-right");
     const projected = shellLayoutFromTree(moved);
-    expect(projected?.zones.right).toEqual(["viewer", "inspector"]);
-    expect(projected?.zones.rightBottom).toEqual([]);
+    expect(projected?.zones.right).toEqual(["viewer", "problems"]);
+    expect(projected?.zones.bottom).toEqual(["shader", "performance", "examples", "agent"]);
   });
 
   it("the T927 default is structural, so v3 cannot hold it at all", () => {
@@ -307,9 +308,136 @@ describe("the split/close algebra", () => {
     const bottom = findLeaf(moved, "leaf-bottom")!;
     expect(bottom.tabs[1]?.key).toBe(inspector.key);
     expect(bottom.active).toBe(inspector.key);
-    expect(findLeaf(moved, "leaf-rightBottom")?.tabs).toEqual([]);
     // A move to nowhere leaves the layout untouched — never a dropped tab.
     expect(moveTab(tree, inspector.key, "leaf-ghost")).toBe(tree);
+  });
+
+  /**
+   * T931 — the leaf a dragged tab LEAVES. Everything below is one rule with three
+   * boundaries, and the rule is not `closeTab`'s: closing a TAB keeps the area (T854,
+   * the × must never strand a user in a vanished pane), while MOVING the last tab out
+   * takes the area with it, because the pane still exists — it is somewhere else — and
+   * nobody asked to keep the hole it left.
+   */
+  describe("a leaf emptied by a MOVE collapses (T931)", () => {
+    it("collapses the source leaf and its split promotes the sibling", () => {
+      const tree = DEFAULT_PANE_TREE;
+      const inspector = allTabs(tree).find((tab) => tab.role === "inspector")!;
+      const moved = moveTab(tree, inspector.key, "leaf-bottom");
+      // Gone, not left behind empty — the difference between this and closeTab.
+      expect(findLeaf(moved, "leaf-rightBottom")).toBeUndefined();
+      // …and the sibling took the whole sidebar rather than half of it.
+      const leaves = leavesOf(moved.root).map((leaf) => leaf.id);
+      expect(leaves).toContain("leaf-right");
+      expect(leaves).toHaveLength(4);
+      // The tab itself is intact where it landed. A collapse that ate the pane would be
+      // a far worse bug than a leftover leaf, so it is asserted, not assumed.
+      expect(findTab(moved, inspector.key)?.role).toBe("inspector");
+    });
+
+    it("leaves the source ALONE while any tab remains — including a floated one (§V97)", () => {
+      const tree = DEFAULT_PANE_TREE;
+      const shader = findLeaf(tree, "leaf-bottom")!.tabs[0]!;
+      const moved = moveTab(tree, shader.key, "leaf-center");
+      expect(findLeaf(moved, "leaf-bottom")?.tabs.map((tab) => tab.role)).toEqual([
+        "problems",
+        "performance",
+        "examples",
+        "agent",
+      ]);
+
+      /*
+       * The §V97 boundary: since T705(b) a floated tab STAYS in its leaf holding its
+       * place, so a leaf whose only remaining tab is floating is NOT empty. Collapsing
+       * it would delete the slot its window comes home to while the window is open.
+       */
+      const viewer = allTabs(tree).find((tab) => tab.role === "viewer")!;
+      const twoTabs = addTab(tree, "leaf-right", "problems");
+      const extra = findLeaf(twoTabs, "leaf-right")!.tabs.find((tab) => tab.role === "problems")!;
+      const floated = floatTab(twoTabs, viewer.key);
+      const afterMove = moveTab(floated, extra.key, "leaf-center");
+      expect(findLeaf(afterMove, "leaf-right")?.tabs.map((tab) => tab.key)).toEqual([viewer.key]);
+    });
+
+    it("never strands a FLOATING pane whose home leaf the collapse took (§V97)", () => {
+      /*
+       * The fixture is a PRE-T705(b) shape on purpose — a floating tab that is NOT also
+       * in its leaf — because that is the only way a home leaf can empty at all. Since
+       * T705(b) a floated tab holds its place in its leaf, so a leaf containing one is
+       * never empty and this collapse cannot reach it; a layout stored before that
+       * change can still be read back, and it is the case that would strand a pane.
+       */
+      const legacy: PaneTreeLayout = {
+        root: {
+          kind: "split",
+          id: "split-1",
+          direction: "row",
+          ratio: 50,
+          first: { kind: "leaf", id: "leaf-a", tabs: [{ key: "graph-1", role: "graph" }], active: "graph-1" },
+          second: { kind: "leaf", id: "leaf-b", tabs: [{ key: "problems-2", role: "problems" }], active: "problems-2" },
+        },
+        floating: [{ key: "viewer-3", role: "viewer", home: "leaf-b" }],
+        nextKey: 4,
+      };
+      const moved = moveTab(legacy, "problems-2", "leaf-a");
+      expect(findLeaf(moved, "leaf-b")).toBeUndefined(); // the home is gone
+
+      // Docking must still land it SOMEWHERE — restored somewhere beats restored nowhere.
+      const docked = dockTab(moved, "viewer-3");
+      expect(docked.floating).toEqual([]);
+      expect(allTabs(docked).some((tab) => tab.key === "viewer-3")).toBe(true);
+    });
+
+    it("never collapses the LAST leaf — the shell always has somewhere to stand", () => {
+      const solo: PaneTreeLayout = {
+        root: {
+          kind: "leaf",
+          id: "leaf-1",
+          tabs: [{ key: "graph-1", role: "graph" }],
+          active: "graph-1",
+        },
+        floating: [],
+        nextKey: 2,
+      };
+      const moved = moveTab(solo, "graph-1", "leaf-1", 0);
+      expect(leavesOf(moved.root).map((leaf) => leaf.id)).toEqual(["leaf-1"]);
+      expect(findLeaf(moved, "leaf-1")?.tabs.map((tab) => tab.key)).toEqual(["graph-1"]);
+    });
+  });
+
+  /**
+   * T931 — dropping a tab back into its OWN strip is a reorder, and the index the user
+   * aimed at counted the tab they are dragging. Off by one here means every drag lands
+   * one slot right of the gap the caret was drawn in.
+   */
+  describe("reordering inside one leaf (T931)", () => {
+    it("lands where the caret was, not one past it, when dragging RIGHTWARDS", () => {
+      const tree = DEFAULT_PANE_TREE;
+      const bottom = findLeaf(tree, "leaf-bottom")!;
+      const shader = bottom.tabs[0]!; // shader | problems | performance | examples | agent
+      // Aimed at the gap before "examples", which is index 3 in the strip on screen.
+      const moved = moveTab(tree, shader.key, "leaf-bottom", 3);
+      expect(findLeaf(moved, "leaf-bottom")?.tabs.map((tab) => tab.role)).toEqual([
+        "problems",
+        "performance",
+        "shader",
+        "examples",
+        "agent",
+      ]);
+    });
+
+    it("needs no adjustment dragging LEFTWARDS — the shift is only for tabs before it", () => {
+      const tree = DEFAULT_PANE_TREE;
+      const agent = findLeaf(tree, "leaf-bottom")!.tabs[4]!;
+      const moved = moveTab(tree, agent.key, "leaf-bottom", 1);
+      expect(findLeaf(moved, "leaf-bottom")?.tabs.map((tab) => tab.role)).toEqual([
+        "shader",
+        "agent",
+        "problems",
+        "performance",
+        "examples",
+      ]);
+    });
   });
 
   it("revealRole fronts the problems tab, restores it when closed, leaves a float alone (T599)", () => {

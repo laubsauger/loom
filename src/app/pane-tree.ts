@@ -277,7 +277,33 @@ export function closeLeaf(layout: PaneTreeLayout, leafId: PaneKey): PaneTreeLayo
   return { ...layout, root: collapse(layout.root), ...(homes === undefined ? {} : { homes }) };
 }
 
-/** Moves a tab into a leaf (at `index`, default last); it becomes that leaf's active. */
+/**
+ * Moves a tab into a leaf (at `index`, default last); it becomes that leaf's active.
+ *
+ * ## T931 — `index` is measured in the TARGET's own tab order, after the removal
+ *
+ * Which matters for exactly one case: dropping a tab back into the leaf it came from,
+ * i.e. a REORDER. The user points at a gap in the strip they can see, and that strip
+ * still contains the tab being dragged — so an index taken from what they are looking at
+ * is one too many once the tab leaves. Adjusting here rather than at the drop handler is
+ * deliberate: both doors (the strip and the whole-leaf overlay) speak the same
+ * "position in the list you can see" and neither has to know about the shift.
+ *
+ * ## T931 — a leaf the move EMPTIES collapses, and that is not `closeTab`'s rule
+ *
+ * `closeTab` keeps an emptied leaf on purpose (T854: closing a TAB and closing an AREA
+ * are different acts, and the × must never strand a user in a vanished pane). A move is
+ * the other case. The tab is not gone, it is somewhere else, and nobody asked for the
+ * area it vacated — leaving it behind hands the user a half-width empty picker they now
+ * have to close by hand, one per drag. So the two verbs differ, and they differ because
+ * the user's intent differs, not because the implementations drifted.
+ *
+ * The last leaf still survives: `closeLeaf` refuses to collapse a root leaf, so the
+ * shell always has somewhere to stand. §V97 survives too, from two directions: since
+ * T705(b) a FLOATED tab still occupies its leaf, so a leaf holding one is never empty
+ * and cannot be collapsed out from under an open window; and a `home` left stale by a
+ * collapse is `dockTab`'s existing degrade-never-strand path, which is gated.
+ */
 export function moveTab(
   layout: PaneTreeLayout,
   key: PaneKey,
@@ -286,17 +312,25 @@ export function moveTab(
 ): PaneTreeLayout {
   const tab = findTab(layout, key);
   if (tab === undefined) return layout;
+  const source = leavesOf(layout.root).find((leaf) => leaf.tabs.some((entry) => entry.key === key));
   const removed = closeTab(layout, key);
+  // A reorder inside one leaf: the index the user aimed at counted the dragged tab.
+  const from = source?.id === targetLeafId ? source.tabs.findIndex((entry) => entry.key === key) : -1;
+  const aimed = index === undefined ? undefined : from >= 0 && index > from ? index - 1 : index;
   let placed = false;
   const root = mapNode(removed.root, (node) => {
     if (node.kind !== "leaf" || node.id !== targetLeafId || placed) return node;
     placed = true;
     const tabs = [...node.tabs];
-    const at = index === undefined ? tabs.length : Math.max(0, Math.min(index, tabs.length));
+    const at = aimed === undefined ? tabs.length : Math.max(0, Math.min(aimed, tabs.length));
     tabs.splice(at, 0, tab);
     return { ...node, tabs, active: key };
   });
-  return placed ? { ...removed, root } : layout;
+  if (!placed) return layout;
+  const next = { ...removed, root };
+  if (source === undefined || source.id === targetLeafId) return next;
+  const emptied = findLeaf(next, source.id);
+  return emptied !== undefined && emptied.tabs.length === 0 ? closeLeaf(next, source.id) : next;
 }
 
 /**

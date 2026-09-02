@@ -211,3 +211,26 @@
   color: var(--fg-muted);
   font-size: var(--fs-ui);
 }
+
+/* ---- T931: the insertion caret between tabs ------------------------------------- */
+
+/* Absolute so appearing costs no reflow: a caret that shoves the strip sideways makes
+   the gap you are aiming at move out from under the pointer, mid-drag. */
+.dropCaret {
+  position: absolute;
+  top: var(--space-1);
+  bottom: var(--space-1);
+  left: 0;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--signal);
+  pointer-events: none;
+  z-index: var(--z-canvas-overlay);
+}
+
+/* The trailing group holds the last gap — after every tab — so its caret sits on the
+   leading edge of the controls rather than the trailing edge of a tab that may have
+   been squeezed to nothing. */
+.stripTrailing {
+  position: relative;
+}
