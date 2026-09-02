@@ -108,6 +108,14 @@ export interface GraphPaneProps {
    * root, innermost last). Only its TRANSITIONS matter here — see the effect below.
    */
   componentPath?: readonly NodeId[];
+  /**
+   * T969(b): the bus the app's DOORS dispatch on — the keymap, the command palette, the
+   * menubar — which is the ROOT bus even while this pane is editing a component's
+   * internals through a session bus. View-state commands the canvas owns register on both,
+   * so `mod+a` reaches the mounted canvas from either side. Defaults to the pane's own bus,
+   * which is the same object whenever nobody is inside a component.
+   */
+  rootBus?: LoomBus;
 }
 
 const EMPTY_GRAPH: GraphDocument = { revision: 0, nodes: {}, edges: {}, groups: {} };
@@ -172,11 +180,14 @@ function GraphPaneInner({
   componentPath,
   orbits,
   interest,
+  rootBus: rootBusProp,
 }: GraphPaneProps) {
   // T519: `documentIdentity` — which DOCUMENT the previews below are showing. Taken
   // from the runtime rather than threaded as a prop, because the runtime IS the loaded
   // document: `adoptDocument` builds a new one per open (`app.tsx`, `app-runtime.ts`).
   const { bus, components, documentIdentity, invocation, nodeRuntime, registry, settings } = useAppRuntime();
+  // T969(b): the same object as `bus` unless the caller is showing a component's internals.
+  const rootBus = rootBusProp ?? bus;
   // T601: the component catalogue view, for resolving an instance's preview target.
   const componentsView = useMemo(() => components.view(), [components]);
   const flow = useReactFlow();
@@ -574,21 +585,41 @@ function GraphPaneInner({
     };
   }, [actionsRef, addNodeAt, portDrag, viewportCentre]);
 
-  // `mod+a` is a bus command like everything else (§V52); the canvas is what can
-  // actually perform it, so it attaches the handler while it is mounted.
+  /**
+   * `mod+a` is a bus command like everything else (§V52); the canvas is what can
+   * actually perform it, so it attaches the handler while it is mounted.
+   *
+   * ON BOTH BUSES, AND THAT IS THE WHOLE OF T969(b). Inside a component `bus` is the
+   * SESSION bus — the canvas edits the component's internals through it, and the canvas
+   * right-click menu dispatches on it — while the keymap, the palette and the menubar all
+   * keep dispatching on the ROOT bus (`app.tsx` hands `KeymapProvider` `runtime.bus`,
+   * because the transport and the project commands live there and keep running while you
+   * walk around inside a document). Registering on `bus` alone meant that diving into
+   * `holo1` VACATED the root bus's holder, so `mod+a` reported `selection.noCanvas` — an
+   * `info` rejection nothing surfaces — and looked like a dead key. There is one canvas, so
+   * every door that can reach it gets the same handlers.
+   *
+   * MEASURED, before and after: at the root `graph.selectAll` was `applied`; one
+   * `graph.diveIn` later the same call on the same bus was `rejected`.
+   */
   useEffect(() => {
-    const holder = registerSelectionCommands(bus);
     const handlers = {
+      // What React Flow is holding IS what the user is looking at — the component's
+      // internals inside a dive, the document at the root. See `SelectionHandlers`.
+      nodeIds: () => flow.getNodes().map((node) => node.id as NodeId),
       selectAll: (nodeIds: readonly NodeId[]) => {
         const wanted = new Set(nodeIds);
         flow.setNodes((nodes) => nodes.map((node) => ({ ...node, selected: wanted.has(node.id) })));
       },
     };
-    holder.current = handlers;
+    // `commandHolder` is one object per bus, so this is one holder at the root and two
+    // inside a component; registration itself is idempotent on each.
+    const holders = new Set([registerSelectionCommands(bus), registerSelectionCommands(rootBus)]);
+    for (const holder of holders) holder.current = handlers;
     return () => {
-      if (holder.current === handlers) holder.current = null;
+      for (const holder of holders) if (holder.current === handlers) holder.current = null;
     };
-  }, [bus, flow]);
+  }, [bus, flow, rootBus]);
 
   /**
    * `F` and `f` (T430/§V354). Same shape as select-all above and for the same reason: the
