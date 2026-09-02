@@ -38,6 +38,7 @@ export { currentDocument } from "./documents/current.ts";
 export { spliceDocument } from "./documents/splice.ts";
 export { soundingDocument } from "./documents/sounding.ts";
 export { pulseDocument } from "./documents/pulse.ts";
+export { lanternDocument } from "./documents/lantern.ts";
 import { feedbackEchoDocument } from "./documents/feedback-echo.ts";
 import { reactionDiffusionDocument } from "./documents/reaction-diffusion.ts";
 import { animatedNoiseFieldDocument } from "./documents/animated-noise-field.ts";
@@ -76,6 +77,7 @@ import { currentDocument } from "./documents/current.ts";
 import { spliceDocument } from "./documents/splice.ts";
 import { soundingDocument } from "./documents/sounding.ts";
 import { pulseDocument } from "./documents/pulse.ts";
+import { lanternDocument } from "./documents/lantern.ts";
 
 export const EXAMPLE_DOCUMENTS: readonly ProjectDocument[] = [
   feedbackEchoDocument,
@@ -116,5 +118,6 @@ export const EXAMPLE_DOCUMENTS: readonly ProjectDocument[] = [
   spliceDocument,
   soundingDocument,
   pulseDocument,
+  lanternDocument,
 ];
 
