@@ -383,8 +383,9 @@ fn process(p: Point, ctx: PointCtx) -> Point {
   let entryW = toWorld(select(S + dIn * MISS_LEN, mid.entry, hit), yaw, nod);
   /* Shaft scatter: a bright CORE plus a wide soft skirt — the owner: motes should catch
      the beam "within a reasonable area around" it, with falloff, not only inside it. */
-  var glow = 1.5 * scatterTo(mote, sW, entryW, 0.06)
-           + 0.3 * scatterTo(mote, sW, entryW, 0.28);
+  /* Wider core: a slower fade in/out as the beam's sweep crosses a mote. */
+  var glow = 1.2 * scatterTo(mote, sW, entryW, 0.09)
+           + 0.3 * scatterTo(mote, sW, entryW, 0.32);
   /* Exit scatter: the central band's ray, when it leaves. */
   let gone = hit && dot(mid.exitDirection, mid.exitDirection) > 1.0e-9;
   if (gone) {
@@ -450,8 +451,12 @@ export const prismDocument = document(
          different phases: the pair never visibly repeats, yet every frame reproduces
          (§V74 — a clock, not an RNG). They feed form1's spare slots only; the pointer
          still owns the ray, and the T915b gate now proves the SEPARATION. */
-      node("driftyaw", "lfo", [-1560, 1000], { shape: "sine", frequency: 0.041, phase: 0.13 }, { label: "driftyaw1" }),
-      node("driftnod", "lfo", [-1560, 1160], { shape: "sine", frequency: 0.067, phase: 0.71 }, { label: "driftnod1" }),
+      /* T940d: these two ALSO set how fast the beam sweeps the dust — the lit subset of
+         motes churns at the body's drift rate, which read as dust "movement" no matter
+         what the motes themselves did. Slowed 3x; both frequencies are ordinary node
+         params, tune them in the inspector. */
+      node("driftyaw", "lfo", [-1560, 1000], { shape: "sine", frequency: 0.013, phase: 0.13 }, { label: "driftyaw1" }),
+      node("driftnod", "lfo", [-1560, 1160], { shape: "sine", frequency: 0.021, phase: 0.71 }, { label: "driftnod1" }),
       // itself, which is the only absolute value the CHOP set has and is also the right
       // 0.6s to fall, so the hand keeps the aim for a second or two after it stops and
       // then gives it back. A cursor that has never moved reads EXACTLY zero through all

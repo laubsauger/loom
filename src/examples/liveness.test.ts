@@ -110,7 +110,7 @@ import LOOK_BASELINES from "./look-baselines.json" with { type: "json" };
  *   E10 Instanced-Torus         0.01845   0.3710   0.3710
  *   E11 Gradient-Remap          0.11181   0.4466   0.4705
  *   E12 Fluid                   0.00000   0.0869   0.3868   <- declared, pointer-driven
- *   E13 Prism                   0.19303   1.0000   1.0000   <- T934: live again (body drift)
+ *   E13 Prism                   0.00142   1.0000   1.0000   <- T940d: drift slower than the probe window; declared
  *   E16 Murmuration             0.05786   0.8003   0.3596
  *   E20 Gooeyball               0.01405   0.5957   0.6980
  *   E24 Audio-RD                0.03971   0.5074   0.0000   <- declared, seeds from black
@@ -209,6 +209,16 @@ interface Exemption {
  * and a stale one.
  */
 const DECLARED: Readonly<Record<string, Exemption>> = {
+  "E13-Prism.loom.json": {
+    liveness:
+      "T940d: the owner asked for BARELY-perceptible motion — body-drift LFOs at 0.013 " +
+      "and 0.021 Hz (50-77s periods) and dust that crosses the frame in ~20 minutes. " +
+      "The liveness probe compares frames 60 and 180, a 2-second window that " +
+      "undersamples those periods by design of the LOOK, not absence of motion: the " +
+      "same instrument measured 0.00142 here against 0.00639 at the pre-T940d 3x " +
+      "faster drift — the motion is real and continuous, merely slower than the window.",
+    evidence: "Watch 30 seconds: the body swivels, the lit dust churns, nothing is a still",
+  },
   "E12-Fluid.loom.json": {
     liveness:
       "A fluid at rest IS at rest. Every force in this file comes from the pointer — the " +

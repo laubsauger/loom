@@ -23,7 +23,10 @@ state, not a failure. Nothing decays and nothing resets (T915b): a parked cursor
 parked beam, forever. The BODY, meanwhile, both tilts with the same cursor (T928) and
 drifts on two slow sines at incommensurate frequencies (T934, 24.4s against 14.9s) — so
 the same mouse position keeps producing slightly new pictures while the ray stays exactly
-where you left it. The drift is a clock, not an RNG: every frame reproduces.
+where you left it. The drift is a clock, not an RNG: every frame reproduces — and it is
+deliberately slower than the headless liveness probe's 2-second window (50–77s periods,
+T940d), which is why the example carries a declared exemption.
+Watch 30 seconds: the body swivels, the lit dust churns, nothing is a still.
 
 ## Graph
 
