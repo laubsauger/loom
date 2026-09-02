@@ -210,11 +210,10 @@ describe("tile sizing", () => {
     expect(at2.active[0]?.tileSize[0]).toBe(384);
   });
 
-  it("a huge preview area sharpens WITHIN the budget, never past the boost cap (T490)", () => {
+  it("a huge preview area sharpens WITHIN the budget, never past what the pool affords (T891)", () => {
     // The old contract capped everyone at 2× previewLongEdge; the owner resizes nodes to
     // inspect. A lone huge preview may now take what the pixel pool affords — here a
-    // 4-tile pool grants 576, one rung up — and a pool large enough grants up to the
-    // stated boost ceiling, never beyond it.
+    // 4-tile pool grants 576, one rung up.
     const scheduler = createPreviewScheduler({ capacity: 4 });
     const schedule = scheduler.select(
       [request("a", { area: { width: 480, height: 270 } })],
@@ -226,8 +225,13 @@ describe("tile sizing", () => {
       [request("a", { area: { width: 2000, height: 1100 } })],
       input(0, { devicePixelRatio: 2 }),
     );
-    // 2000 CSS × dpr2 asks 4000; the honest ceiling is 6 × previewLongEdge = 1152 (V328).
-    expect(roomy.active[0]?.tileSize[0]).toBe(1152);
+    // T891: 2000 CSS × dpr2 asks 4000 and the SUM is what says no. A 48-tile pool holds
+    // 48 × 384² = 7 077 888 long-edge squares, so one preview alone on screen can afford
+    // a 2660-px edge — 2592 on the ladder. The number that used to answer here was 1152,
+    // and it was a PER-NODE cap (6 × previewLongEdge) that said no with five sixths of
+    // the pool unspent, which is the whole of §T891.
+    expect(roomy.active[0]?.tileSize[0]).toBe(2592);
+    expect(2592 * 2592).toBeLessThanOrEqual(48 * 384 * 384);
   });
 
   it("forty on screen: everyone gets the guaranteed base, nobody is suspended for sharpness (T490)", () => {
@@ -279,5 +283,162 @@ describe("tile sizing", () => {
       input(0, { devicePixelRatio: 1 }),
     );
     expect(schedule.active[0]?.tileSize).toEqual([96, 192]);
+  });
+});
+
+/**
+ * T891 — THE ZOOMED-IN PICTURE, AND WHAT IT IS ALLOWED TO COST.
+ *
+ * The owner, with a screenshot: *preview for points nodes is still very low res even when
+ * we zoom in*. A POINTS node is the sharpest case in the catalogue because its preview is
+ * SYNTHESIZED — the compiler nominates a size and the preview program renders the splat at
+ * the GRANTED TILE (T563/§V521), so the tile IS the content resolution. A texture node has
+ * its own output to fall back on; a points node has exactly what the scheduler gave it.
+ *
+ * The three properties below are the ones that can regress independently, so they are
+ * gated independently: zoom BUYS pixels, the SUM stays inside the pool, and neither of
+ * those is allowed to reallocate on a per-frame basis (B13, §V142).
+ */
+describe("T891 — zoom buys resolution, the SUM is what says no", () => {
+  const SLOT = { width: 192, height: 108 };
+  /** A points node: synthesized source, one node-body slot, drawn at `zoom`. */
+  function points(id: string, zoom: number, at = { x: 20, y: 20 }): PreviewRequest {
+    return request(id, {
+      source: {
+        resourceId: `preview/points/${id}`,
+        size: [384, 216],
+        format: "rgba8unorm",
+        space: "linear",
+      },
+      area: SLOT,
+      rect: {
+        x: at.x,
+        y: at.y,
+        width: SLOT.width * zoom,
+        height: SLOT.height * zoom,
+      },
+      synthesis: { passes: [], depth: false },
+    });
+  }
+  const longEdges = (schedule: PreviewSchedule): number[] =>
+    [...schedule.active, ...schedule.suspended].map((entry) => Math.max(...entry.tileSize));
+
+  it("(a) a zoomed points preview renders from MORE device pixels than an unzoomed one", () => {
+    // The bug as the owner sees it. At rest the tile is the slot at dpr — 192 × 2 = 384,
+    // exactly 1:1, no upscale. Zoomed to 8× the slot covers 1536 CSS px and the splat must
+    // be rendered from more than 384 texels or the picture is a 4× magnification of a
+    // thumbnail. Exact values, because "bigger" would pass on one rung of improvement.
+    const scheduler = createPreviewScheduler({ capacity: 48 });
+    const rest = scheduler.select([points("gen", 1)], input(0, { devicePixelRatio: 2 }));
+    expect(rest.active[0]?.tileSize).toEqual([384, 216]);
+    scheduler.reset();
+    const zoomed = scheduler.select([points("gen", 8)], input(0, { devicePixelRatio: 2 }));
+    // 1536 CSS × dpr 2 asks 3072; the pool affords 2592 (see the ceiling test above).
+    expect(zoomed.active[0]?.tileSize).toEqual([2592, 1458]);
+    // The point of the row, as a ratio: 45× the texels, not 1×.
+    expect((2592 * 1458) / (384 * 216)).toBeCloseTo(45.56, 2);
+  });
+
+  it("(b) the SUM of every allocated tile stays inside the pool at every zoom", () => {
+    // The budget is the cost ceiling and it is a TOTAL, so it has to hold while the camera
+    // moves — including for the tiles suspended previews are still HOLDING, which is where
+    // a boost would otherwise accumulate: pan across a zoomed graph and every node visited
+    // would leave a 27 MB tile behind. A holder is charged the area it holds ABOVE its own
+    // base and surrenders it to whatever is on screen (§V455 keeps the tile; it does not
+    // promise the boost is free).
+    const capacity = 48;
+    const budget = capacity * 384 * 384;
+    const scheduler = createPreviewScheduler({ capacity });
+    const nodes = Array.from({ length: 12 }, (_unused, index) => `n${index}`);
+    /**
+     * Two numbers per frame, because the pool guarantees two different things.
+     *
+     * `boost` is what the budget RATIONS: every kept preview's grant, plus the area a
+     * suspended preview is holding ABOVE its own base. That is the one the allocator
+     * enforces exactly, and it is what stops a boost accumulating across a pan.
+     *
+     * `total` is every tile that physically exists. It can exceed the pool by the bases
+     * of the previews that are only HOLDING — §V455's deliberate cost, one base per
+     * slot — so its honest bound is TWO pools, and stating it is what keeps the holder
+     * set from quietly becoming the expensive half.
+     */
+    const measure = (schedule: PreviewSchedule): { boost: number; total: number } => {
+      let boost = 0;
+      let total = 0;
+      for (const entry of [...schedule.active, ...schedule.suspended]) {
+        const edge = Math.max(...entry.tileSize);
+        const base = Math.min(Math.max(entry.request.area.width, entry.request.area.height) * 2, 384);
+        const kept = schedule.active.some((other) => previewKey(other.ref) === previewKey(entry.ref));
+        boost += kept ? edge * edge : Math.max(0, edge * edge - base * base);
+        total += edge * edge;
+      }
+      return { boost, total };
+    };
+    let worst = 0;
+    for (const zoom of [1, 1.5, 2, 3, 4, 6, 8, 6, 4, 2, 1]) {
+      // Zooming in walks nodes off the surface: only the first stays under the camera.
+      const requests = nodes.map((id, index) =>
+        points(id, zoom, { x: 20 + index * 300 * zoom, y: 20 }),
+      );
+      const { boost, total } = measure(scheduler.select(requests, input(0, { devicePixelRatio: 2 })));
+      worst = Math.max(worst, boost);
+      expect(boost).toBeLessThanOrEqual(budget);
+      expect(total).toBeLessThanOrEqual(2 * budget);
+    }
+    // And the budget is actually being SPENT, or "within budget" would be trivially true
+    // of a scheduler that granted everyone 64 px.
+    expect(worst).toBeGreaterThan(budget / 2);
+
+    // THE ACCUMULATION CASE, which is what the holder charge exists for: pan across a
+    // zoomed-in graph, stopping on each node in turn. Every node visited is boosted and
+    // then left behind holding its tile, so without the charge the pool would carry one
+    // deep boost per node visited — twelve 2592² tiles, 322 MB of them.
+    for (let index = 0; index < nodes.length; index += 1) {
+      const requests = nodes.map((id, other) =>
+        points(id, 8, { x: 20 + (other - index) * 300 * 8, y: 20 }),
+      );
+      const { boost, total } = measure(scheduler.select(requests, input(0, { devicePixelRatio: 2 })));
+      expect(boost).toBeLessThanOrEqual(budget);
+      expect(total).toBeLessThanOrEqual(2 * budget);
+    }
+  });
+
+  it("(c) B13 — a zoom sweep reallocates on RUNG CROSSINGS, never once per frame", () => {
+    /*
+     * The regression this row is most able to cause, and the one §V142 exists for: a tile
+     * sized from the on-screen rect follows the camera CONTINUOUSLY, so every frame of a
+     * zoom gesture resizes every tile and the host reinstalls the preview program. B13 is
+     * what that looks like from the outside — all previews blinking together while you
+     * move the camera.
+     *
+     * The guard is the ladder plus §V310's hysteresis, and it is stated as a RATE: over a
+     * 41-frame sweep from 1× to 8× the sizes may change on at most a handful of frames
+     * (the rungs between 384 and 2592 — 576, 864, 1152, 1728, 2592 — is five), and a pure
+     * PAN at fixed zoom must change nothing at all.
+     */
+    const scheduler = createPreviewScheduler({ capacity: 48 });
+    const nodes = Array.from({ length: 8 }, (_unused, index) => `n${index}`);
+    const frameOf = (zoom: number, pan = 0): number[] =>
+      longEdges(
+        scheduler.select(
+          nodes.map((id, index) => points(id, zoom, { x: 20 + pan + index * 24, y: 20 })),
+          input(0, { devicePixelRatio: 2 }),
+        ),
+      );
+
+    let previous = frameOf(1);
+    let framesThatResized = 0;
+    for (let step = 1; step <= 40; step += 1) {
+      const next = frameOf(1 + (7 * step) / 40);
+      if (next.join() !== previous.join()) framesThatResized += 1;
+      previous = next;
+    }
+    // Five rungs above the base are reachable; a continuous resize would be 40.
+    expect(framesThatResized).toBeLessThanOrEqual(5);
+    expect(framesThatResized).toBeGreaterThan(0);
+
+    // A pan is FREE — the camera translating changes the rect and nothing else (§V142).
+    const held = frameOf(8);
+    for (const pan of [7, 19, 40, 96]) expect(frameOf(8, pan)).toEqual(held);
   });
 });

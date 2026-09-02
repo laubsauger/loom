@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { TILE_SIZE_LADDER } from "@runtime/previews/index.ts";
 import { fitInsideRegion } from "./preview-fit.ts";
 
 /**
@@ -81,8 +82,10 @@ describe("fitInsideRegion (§V118)", () => {
     const slot = { width: 176, height: 99 };
     expect(slot.width / slot.height).toBeCloseTo(16 / 9, 12);
     expect(fitInsideRegion(slot, [1280, 720])).toEqual({ x: 0, y: 0, width: 176, height: 99 });
-    // Every ladder rung a budgeted tile can land on, for the same source.
-    for (const rung of [64, 96, 128, 192, 256, 384, 576, 864, 1152]) {
+    // Every ladder rung a budgeted tile can land on, for the same source — read from
+    // the ladder itself, because T891 added two rungs above 1152 and a copied list is
+    // how a test quietly stops covering what it names (§V723).
+    for (const rung of TILE_SIZE_LADDER) {
       const tile: readonly [number, number] = [rung, Math.round((rung * 720) / 1280)];
       expect([rung, fitInsideRegion(slot, tile)]).toEqual([
         rung,

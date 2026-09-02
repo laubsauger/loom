@@ -1,6 +1,6 @@
 import type { FrameEvaluationInput } from "../../domain/types/frame.ts";
 import {
-  MAX_TILE_BOOST_SCALE,
+  MAX_TILE_LONG_EDGE,
   MAX_TILE_SCALE,
   MIN_ONSCREEN_LONG_EDGE_CSS,
   ladderSnap,
@@ -121,7 +121,6 @@ export function createPreviewScheduler(options: PreviewSchedulerOptions): Previe
 
     select(requests: ReadonlyArray<PreviewRequest>, input: ScheduleInput): PreviewSchedule {
       const baseCap = Math.max(1, input.previewLongEdge) * MAX_TILE_SCALE;
-      const boostCap = Math.max(1, input.previewLongEdge) * MAX_TILE_BOOST_SCALE;
       const dpr = Math.max(input.devicePixelRatio, 1);
       /**
        * T490's budget: the pixel pool the base cap always implied — capacity tiles at the
@@ -149,39 +148,94 @@ export function createPreviewScheduler(options: PreviewSchedulerOptions): Previe
         });
       };
 
-      const suspended: SuspendedPreview[] = [];
+      /**
+       * Suspensions are decided here and SIZED at the very end (T891).
+       *
+       * A suspended preview's tile size depends on the step it is still holding, and the
+       * allocation below may RECLAIM a holder's boost to pay for a preview that is on
+       * screen — so reading `baseTileFor` before that ran reported a size the pool no
+       * longer holds. The reason is settled here; the number is settled once.
+       */
+      const suspensions: Array<{ request: PreviewRequest; reason: SuspendReason }> = [];
       const eligible: PreviewRequest[] = [];
 
       for (const request of requests) {
         const reason = suspensionReason(request, input);
         if (reason === null) eligible.push(request);
-        else suspended.push({ ref: request.ref, request, tileSize: baseTileFor(request), reason });
+        else suspensions.push({ request, reason });
       }
 
       eligible.sort(budgetOrder);
       const kept = eligible.slice(0, capacity);
       for (const overflow of eligible.slice(capacity)) {
-        suspended.push({
-          ref: overflow.ref,
-          request: overflow,
-          tileSize: baseTileFor(overflow),
-          reason: "budget",
-        });
+        suspensions.push({ request: overflow, reason: "budget" });
       }
+
+      /** The node's own preview area, ladder-quantised — what every preview is guaranteed. */
+      const baseFor = (request: PreviewRequest): number =>
+        ladderSnap(Math.min(Math.max(request.area.width, request.area.height) * dpr, baseCap));
 
       // ---- T490: allocate the pixel budget over the kept set, in the SAME priority order —
       // the atlas keeps the head of the list, so the head gets first claim on sharpness too.
       const stepFor = (request: PreviewRequest): number => {
         const key = previewKey(request.ref);
         const areaAsk = Math.max(request.area.width, request.area.height) * dpr;
-        // What the SCREEN asks: the on-screen rect carries the zoom. Never above the stated
-        // boost ceiling, never below the area floor.
-        const ask = Math.min(Math.max(areaAsk, rectLongEdge(request.rect) * dpr), boostCap);
-        const snapped = ladderSnap(Math.min(ask, boostCap));
+        // What the SCREEN asks: the on-screen rect carries the zoom. Never above the
+        // absolute ceiling (T891 — the budget below is what actually rations this),
+        // never below the area floor.
+        const ask = Math.min(Math.max(areaAsk, rectLongEdge(request.rect) * dpr), MAX_TILE_LONG_EDGE);
+        const snapped = ladderSnap(ask);
         const previous = grantedStep.get(key);
         // Hysteresis: keep a bigger granted step until the ask falls a full rung below it.
         if (previous !== undefined && previous > snapped && previous <= snapped * 1.55) return previous;
         return snapped;
+      };
+
+      /**
+       * T891 — WHAT A HOLDER OWES THE POOL, and why it is only the EXCESS.
+       *
+       * A suspended preview keeps its tile at the step it was granted (§V455), so those
+       * tiles are real pixels the pool is carrying. Charging them at FULL size would hand
+       * the owner's own case the wrong answer: zoom into one node of a forty-node graph
+       * and the thirty-nine that scrolled off hold BASE tiles, which is exactly what the
+       * pool was sized for — they are not what makes the zoomed node soft, and taking the
+       * headroom away for them puts it straight back at 1152.
+       *
+       * What must not accumulate is the BOOST. A deep-boosted tile is up to 27 MB, and
+       * panning across a zoomed graph would otherwise leave one behind on every node
+       * until the whole 48-slot pool held them. So a holder is charged the area it holds
+       * ABOVE its own base, and the charge is RECLAIMABLE: when a preview that is on
+       * screen needs those pixels, the holder surrenders its remembered step (its tile
+       * falls back to base) rather than the on-screen preview going soft. That ordering
+       * is the atlas's own — "active previews come first: they win a slot under pressure"
+       * — applied to area instead of slots, and it is why the reclaim is not §V455 in
+       * reverse: §V455 forbids resizing a holder for NO reason, on the way out. This
+       * resizes one only when something visible is asking for the pixels.
+       */
+      const holderExcess = new Map<string, number>();
+      for (const { request, reason } of suspensions) {
+        if (reason === "collapsed") continue;
+        const key = previewKey(request.ref);
+        const held = grantedStep.get(key);
+        if (held === undefined) continue;
+        const base = baseFor(request);
+        if (held > base) holderExcess.set(key, held * held - base * base);
+      }
+      let spent = 0;
+      for (const excess of holderExcess.values()) spent += excess;
+      /** Frees the biggest held boost. Returns what it recovered, or 0 when none is left. */
+      const reclaimHolder = (): number => {
+        let victim: string | undefined;
+        let biggest = 0;
+        for (const [key, excess] of holderExcess) {
+          if (excess <= biggest) continue;
+          biggest = excess;
+          victim = key;
+        }
+        if (victim === undefined) return 0;
+        holderExcess.delete(victim);
+        grantedStep.delete(victim);
+        return biggest;
       };
 
       // Every kept preview's BASE is reserved first — that is the guarantee, and it is
@@ -190,9 +244,8 @@ export function createPreviewScheduler(options: PreviewSchedulerOptions): Previe
       // absent previews left behind, in priority order, degrading a rung at a time; a
       // preview is never suspended for wanting to be sharp.
       const baseByKey = new Map<string, number>();
-      let spent = 0;
       for (const request of kept) {
-        const base = ladderSnap(Math.min(Math.max(request.area.width, request.area.height) * dpr, baseCap));
+        const base = baseFor(request);
         baseByKey.set(previewKey(request.ref), base);
         spent += base * base;
       }
@@ -203,6 +256,12 @@ export function createPreviewScheduler(options: PreviewSchedulerOptions): Previe
         const desired = stepFor(request);
         let granted = Math.max(desired, base);
         while (granted > base && spent - base * base + granted * granted > pixelBudget) {
+          // Take the pixels off a holder before taking them off the picture on screen.
+          const reclaimed = reclaimHolder();
+          if (reclaimed > 0) {
+            spent -= reclaimed;
+            continue;
+          }
           granted = ladderSnap(granted / 1.55);
         }
         granted = Math.max(granted, base);
@@ -254,6 +313,15 @@ export function createPreviewScheduler(options: PreviewSchedulerOptions): Previe
         if (due) lastRefresh.set(key, time);
         return { ref: request.ref, request, tileSize: boostedTileFor(request), due };
       });
+
+      // Sized only now: a holder that paid for an on-screen boost above has already
+      // forgotten its step, so `baseTileFor` reports the tile the pool actually holds.
+      const suspended: SuspendedPreview[] = suspensions.map(({ request, reason }) => ({
+        ref: request.ref,
+        request,
+        tileSize: baseTileFor(request),
+        reason,
+      }));
 
       return { active, suspended };
     },

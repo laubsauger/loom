@@ -18,7 +18,9 @@ import type { PreviewRect } from "./types.ts";
  * handful of them, and the worst-case sharpness error inside a step is invisible at
  * thumbnail scale. Zoom is not in that input at all — see `TileSizeInput.areaLongEdge`.
  */
-export const TILE_SIZE_LADDER: ReadonlyArray<number> = [64, 96, 128, 192, 256, 384, 576, 864, 1152];
+export const TILE_SIZE_LADDER: ReadonlyArray<number> = [
+  64, 96, 128, 192, 256, 384, 576, 864, 1152, 1728, 2592,
+];
 
 /** Below this on-screen size a preview shows nothing a person can read (§V28 `too-small`). */
 export const MIN_ONSCREEN_LONG_EDGE_CSS = 24;
@@ -33,16 +35,23 @@ export const MIN_ONSCREEN_LONG_EDGE_CSS = 24;
 export const MAX_TILE_SCALE = 2;
 
 /**
- * BOOST cap, as a multiple of `previewLongEdge` — the honest ceiling of the T490 budget.
+ * ABSOLUTE tile ceiling in device px — the ladder's top rung (T891).
  *
- * "Past the cap it goes soft; the honest answer is the viewer pane" was sound while
- * previews were badges and the zoom stopped at 2.5×. The owner zooms in TO INSPECT and the
- * range now reaches 8×, so an on-screen preview may take a bigger tile — but only while
- * the shared pixel budget has room (`createPreviewScheduler`), and never past this. At the
- * default 192 that is 1152 device px; beyond it the viewer pane remains the answer, and
- * saying so beats implying unlimited (V328).
+ * T490 stated the boost ceiling as a MULTIPLE of `previewLongEdge` (`MAX_TILE_BOOST_SCALE
+ * = 6`, 1152 at the default 192) and that multiple, not the shared pixel budget, is what
+ * the owner hit: measured on one points node alone on screen at dpr 2, the budget affords
+ * a 2660-px long edge and the per-node cap granted 1152 — a 2.7× upscale at 8× zoom with
+ * five sixths of the pool unspent. §T891's own words for that shape: a per-node cap
+ * "spends it worst exactly when the user is looking closest". So the ceiling is now the
+ * TOTAL-AREA budget (`createPreviewScheduler`), and this is only the absolute stop the
+ * ladder has to end somewhere at.
+ *
+ * It is stated in DEVICE PIXELS rather than as a multiple, because it answers a question
+ * about the machine (a 2592² rgba8 tile is 27 MB) and not about the preview default.
+ * Beyond it the viewer pane remains the honest answer, and saying so beats implying
+ * unlimited (V328).
  */
-export const MAX_TILE_BOOST_SCALE = 6;
+export const MAX_TILE_LONG_EDGE = 2592;
 
 /**
  * First ladder step at or above `value`.
