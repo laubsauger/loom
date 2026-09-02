@@ -59,7 +59,19 @@ export const lanternDocument = document(
         shape: "sine", frequency: 0.11, amplitude: 0.2, offset: 0.8, phase: 0,
       }, { label: "pulse1" }),
 
-      node("lantern", "customWgsl", [-420, 0], { source: LANTERN_WGSL }, {
+      node("lantern", "customWgsl", [-420, 0], {
+        source: LANTERN_WGSL,
+        // T880: the shader's own `struct Params` reflects into these controls — drag any of
+        // them to retune the scene without touching WGSL. The colours are RGBA pickers, the
+        // rest are numbers, named by the shader's fields.
+        lightColor1: [1, 0.62, 0.24, 1],
+        lightColor2: [0.24, 0.7, 1, 1],
+        lightColor3: [0.95, 0.32, 0.78, 1],
+        orbitSpeed: 1,
+        glowFalloff: 12,
+        shadowSoftness: 11,
+        floorLevel: 1,
+      }, {
         label: "lantern1",
         parameters: { amount: drivenSlot("pulse1", 0.8) },
       }),

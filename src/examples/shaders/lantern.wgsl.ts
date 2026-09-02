@@ -26,7 +26,14 @@ import { SHARED_UNIFORMS_WGSL } from "../../runtime/backend/shared-uniforms.ts";
  */
 export const LANTERN_WGSL = `${SHARED_UNIFORMS_WGSL}
 struct Params {
-  amount: f32,
+  amount: f32,          // the breath — master light gain, driven by a slow LFO
+  lightColor1: vec4f,   // the three lanterns' colours — RGBA pickers, reflected by name
+  lightColor2: vec4f,
+  lightColor3: vec4f,
+  orbitSpeed: f32,      // how fast the lanterns sweep
+  glowFalloff: f32,     // distance falloff — higher is tighter, moodier
+  shadowSoftness: f32,  // the penumbra constant — higher is a harder edge
+  floorLevel: f32,      // how much the lit floor shows (contrast of the dark room)
 };
 
 @group(0) @binding(0) var inputSampler: sampler;
@@ -88,7 +95,7 @@ fn softShadow(origin: vec2f, dir: vec2f, maxT: f32) -> f32 {
     if (t >= maxT) { break; }
     let h = scene(origin + dir * t);
     if (h < 0.0006) { return 0.0; }
-    res = min(res, 11.0 * h / t);
+    res = min(res, params.shadowSoftness * h / t);
     t = t + clamp(h, 0.006, 0.06);
   }
   return clamp(res, 0.0, 1.0);
@@ -128,9 +135,9 @@ fn lanternPos(i: u32, t: f32) -> vec2f {
 }
 
 fn lanternColour(i: u32) -> vec3f {
-  if (i == 0u) { return vec3f(1.0, 0.62, 0.24); }
-  if (i == 1u) { return vec3f(0.24, 0.7, 1.0); }
-  return vec3f(0.95, 0.32, 0.78);
+  if (i == 0u) { return params.lightColor1.rgb; }
+  if (i == 1u) { return params.lightColor2.rgb; }
+  return params.lightColor3.rgb;
 }
 
 const OBSTACLE_ALBEDO = vec3f(0.56, 0.58, 0.68);
@@ -156,7 +163,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   var light = vec3f(0.0);
   var cores = vec3f(0.0);
   for (var i = 0u; i < 3u; i = i + 1u) {
-    let lp = lanternPos(i, t);
+    let lp = lanternPos(i, t * params.orbitSpeed);
     let colour = lanternColour(i);
     let toLight = lp - p;
     let dist = length(toLight);
@@ -164,7 +171,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
 
     /* Distance falloff — light, not a blur — gated by the soft shadow the obstacles cast.
        The march starts a hair off the surface so a lit face does not shadow itself. */
-    let atten = gain / (1.0 + dist * dist * 12.0);
+    let atten = gain / (1.0 + dist * dist * params.glowFalloff);
     let sh = softShadow(p + n * 0.02, dir, max(dist - 0.06, 0.0));
     /* Floor takes the light flat; an obstacle takes it by its facing (the field's normal). */
     let facing = select(1.0, clamp(dot(n, dir), 0.0, 1.0) * 0.9 + 0.12, inside);
@@ -192,7 +199,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
        contact-darkening at obstacle edges seats them on the floor. Unlit floor falls to near
        black, so the beams read as light in a dark room rather than a wash. */
     let contact = smoothstep(0.0, 0.05, objD);
-    col = ground * 0.05 * contact + FLOOR_ALBEDO * light * contact + cores;
+    col = ground * 0.05 * contact + FLOOR_ALBEDO * light * contact * params.floorLevel + cores;
   }
 
   return vec4f(col, 1.0);
