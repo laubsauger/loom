@@ -32,11 +32,12 @@ describe("E47 Hologram", () => {
     const paint = dispatches.find((pass) => pass.id.startsWith("holo/paint"));
     expect(carve).toBeDefined();
     expect(paint).toBeDefined();
-    // The depth map arrives through the switch (so the ML path is one index away); the
-    // colour comes straight from the source. Swapping these compiles fine and renders
-    // nonsense — which is exactly why it is pinned (§V655's family).
+    // T972: BOTH kernels read the switched SOURCE family — the colour follows the
+    // source switch (webcam colour lands on the webcam cloud), while the depth passes
+    // through its own second switch (understudy vs ML). Crossing either pair compiles
+    // fine and renders nonsense — which is exactly why they are pinned (§V655's family).
     expect(carve?.textures?.map((texture) => texture.resourceId)).toContain("target:pick:out");
-    expect(paint?.textures?.map((texture) => texture.resourceId)).toContain("target:src:out");
+    expect(paint?.textures?.map((texture) => texture.resourceId)).toContain("target:srcpick:out");
   });
 
   it("draws the cloud with the component's per-point tint mapped", () => {
@@ -56,7 +57,10 @@ describe("E47 Hologram", () => {
     // depth1 is in the plan (the switch keeps BOTH branches compiled), and its result
     // texture is the T959 float format — no 8-bit quantisation between model and cloud.
     expect([...plan.order]).toContain("depth");
-    const external = plan.resources.find((resource) => resource.kind === "externalTexture");
+    // T972 added the webcam's own external texture; the claim is about the DEPTH one.
+    const external = plan.resources.find(
+      (resource) => resource.kind === "externalTexture" && resource.id.includes("depth"),
+    );
     expect(external).toBeDefined();
     expect((external as { format?: string }).format).toBe("r32float");
   });

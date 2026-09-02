@@ -47,6 +47,7 @@ const CAPABILITIES = {
 const ATTRIBUTES = JSON.stringify([
   { name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] },
   { name: "tint", type: "vec4f", semantic: "color", qualifier: "color", default: [1, 1, 1, 1] },
+  { name: "depthN", type: "f32", default: [0] },
 ]);
 
 interface CarveParams {
@@ -110,7 +111,7 @@ async function runCloud(
         type: "pointKernel",
         definitionVersion: 1,
         position: { x: 0, y: 0 },
-        parameters: { capacity: CAPACITY, seed: 7, attributes: ATTRIBUTES, kernel: DEPTH_PAINT_KERNEL, gain: 1 },
+        parameters: { capacity: CAPACITY, seed: 7, attributes: ATTRIBUTES, kernel: DEPTH_PAINT_KERNEL, gain: 1, heat: 0 },
         label: "paint1",
       },
       draw: { id: "draw", type: "renderPoints", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: {}, label: "draw1" },

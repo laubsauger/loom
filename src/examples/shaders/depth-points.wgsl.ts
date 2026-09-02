@@ -57,6 +57,7 @@ fn process(p: Point, ctx: PointCtx) -> Point {
   if (ctx.index >= cells) {
     q.position = vec3f(0.0, -10000.0, 0.0);
     q.tint = vec4f(0.0);
+    q.depthN = 0.0;
     return q;
   }
 
@@ -67,6 +68,9 @@ fn process(p: Point, ctx: PointCtx) -> Point {
      visualisations (turbo, viridis) read luma; grey maps agree under both. */
   let value = select(dot(sample.rgb, vec3f(0.2126, 0.7152, 0.0722)), sample.r, sample.g + sample.b < 1e-6);
   let metres = decodeDepth(value, near, far, ctx.params.inverseDepth);
+  /* T973: the decoded depth rides its own attribute to the paint kernel — the heatmap
+     is a second READOUT of the axis a 2D projection hides, not a decoration. 0 = near. */
+  q.depthN = clamp((metres - near) / (far - near), 0.0, 1.0);
 
   if (ctx.params.unproject < 0.5) {
     /* HEIGHTFIELD: near pops toward the viewer, scaled by displace. */
@@ -93,6 +97,19 @@ fn process(p: Point, ctx: PointCtx) -> Point {
  */
 export const DEPTH_PAINT_KERNEL = `struct Params {
   gain: f32,
+  heat: f32,
+}
+
+/* T973 — a thermal readout of depth: near burns white-hot through orange, far cools
+   through magenta into deep blue. Analytic, so no second texture is needed (a point
+   kernel has ONE field input, and it is carrying the colour map). */
+fn thermal(t: f32) -> vec3f {
+  let n = clamp(1.0 - t, 0.0, 1.0);
+  return vec3f(
+    smoothstep(0.0, 0.45, n),
+    smoothstep(0.5, 0.9, n) * 0.8,
+    smoothstep(0.0, 0.2, n) * (1.0 - smoothstep(0.25, 0.6, n)) + smoothstep(0.85, 1.0, n),
+  );
 }
 
 fn process(p: Point, ctx: PointCtx) -> Point {
@@ -108,6 +125,9 @@ fn process(p: Point, ctx: PointCtx) -> Point {
   /* fieldAt speaks clip coordinates; the grid generator's layout inverted nothing, so
      the same mapping the carve kernel rode puts the colour texel under its point. */
   let colour = fieldAt(vec3f(u * 2.0 - 1.0, v * 2.0 - 1.0, 0.0));
-  q.tint = vec4f(colour.rgb * ctx.params.gain, 1.0);
+  /* T973: photographic at heat 0, thermal at 1 — and the middle is the point: the
+     source's own colour with depth bleeding through, one knob rather than a mode. */
+  let blended = mix(colour.rgb, thermal(p.depthN), clamp(ctx.params.heat, 0.0, 1.0));
+  q.tint = vec4f(blended * ctx.params.gain, 1.0);
   return q;
 }`;

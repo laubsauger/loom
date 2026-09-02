@@ -320,6 +320,8 @@ const DEPTH_POINTS_SETTINGS: ProjectSettings = {
 const DEPTH_POINT_ATTRIBUTES = JSON.stringify([
   { name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] },
   { name: "tint", type: "vec4f", semantic: "color", qualifier: "color", default: [1, 1, 1, 1] },
+  /* T973: decoded depth (0 near, 1 far), carved once, read by the paint's heatmap. */
+  { name: "depthN", type: "f32", default: [0] },
 ]);
 
 const depthPointsHost: ProjectDocument = {
@@ -390,6 +392,7 @@ const depthPointsHost: ProjectDocument = {
           attributes: DEPTH_POINT_ATTRIBUTES,
           kernel: DEPTH_PAINT_KERNEL,
           gain: 1,
+          heat: 0,
         },
         label: "paint1",
       },
@@ -835,6 +838,18 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
         key: "gain",
         definition: { type: "number", label: "Tint Gain", default: 1, min: 0, max: 4, description: "Brightness of the sampled colour." },
         targets: [{ nodeId: "paint", key: "gain" }],
+      },
+      {
+        key: "heat",
+        definition: {
+          type: "number",
+          label: "Heat",
+          default: 0,
+          min: 0,
+          max: 1,
+          description: "T973: blends the photographic tint toward a thermal readout of DEPTH — near burns hot, far cools blue. The middle keeps the picture with depth bleeding through.",
+        },
+        targets: [{ nodeId: "paint", key: "heat" }],
       },
     ],
   },

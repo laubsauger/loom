@@ -70,13 +70,13 @@
               "id": "carve",
               "label": "carve1",
               "parameters": {
-                "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"tint\",\"type\":\"vec4f\",\"semantic\":\"color\",\"qualifier\":\"color\",\"default\":[1,1,1,1]}]",
+                "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"tint\",\"type\":\"vec4f\",\"semantic\":\"color\",\"qualifier\":\"color\",\"default\":[1,1,1,1]},{\"name\":\"depthN\",\"type\":\"f32\",\"default\":[0]}]",
                 "capacity": 36864,
                 "displace": 1,
                 "far": 4,
                 "fov": 60,
                 "inverseDepth": 1,
-                "kernel": "struct Params {\n  unproject: f32,\n  fov: f32,\n  inverseDepth: f32,\n  near: f32,\n  far: f32,\n  displace: f32,\n}\n\nfn decodeDepth(sample: f32, near: f32, far: f32, inverse: f32) -> f32 {\n  /* inverse (ML disparity-like): bright = close; metres via the harmonic mix.\n     linear: metres via the plain mix. Both span [near, far]. */\n  let s = clamp(sample, 0.0, 1.0);\n  let inv = 1.0 / mix(1.0 / far, 1.0 / near, s);\n  let lin = mix(near, far, s);\n  return select(lin, inv, inverse > 0.5);\n}\n\nfn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  let near = max(ctx.params.near, 1.0e-3);\n  let far = max(ctx.params.far, near + 1.0e-3);\n\n  /* The generator may carry more capacity than the grid (a published resolution knob\n     moves cols/rows under a fixed count): every index past the grid parks far outside\n     the frustum and draws nothing. */\n  let cells = ctx.dim.cols * ctx.dim.rows;\n  if (ctx.index >= cells) {\n    q.position = vec3f(0.0, -10000.0, 0.0);\n    q.tint = vec4f(0.0);\n    return q;\n  }\n\n  /* The grid generator laid points across the clip square; that xy IS the depth map's\n     uv in fieldAt's own convention — one mapping, shared. */\n  let sample = fieldAt(vec3f(p.position.xy, 0.0));\n  /* Single-channel maps (the depth node's r32float, T959) read .r; colour depth\n     visualisations (turbo, viridis) read luma; grey maps agree under both. */\n  let value = select(dot(sample.rgb, vec3f(0.2126, 0.7152, 0.0722)), sample.r, sample.g + sample.b < 1e-6);\n  let metres = decodeDepth(value, near, far, ctx.params.inverseDepth);\n\n  if (ctx.params.unproject < 0.5) {\n    /* HEIGHTFIELD: near pops toward the viewer, scaled by displace. */\n    let relief = (1.0 - (metres - near) / (far - near)) * ctx.params.displace;\n    q.position = vec3f(p.position.xy, relief);\n    return q;\n  }\n\n  /* UNPROJECTION: ray through the pixel, scaled by metres, recentred about origin. */\n  let dims = vec2f(textureDimensions(fieldTexture, 0));\n  let aspect = dims.x / max(dims.y, 1.0);\n  let ty = tan(ctx.params.fov * 0.00872664626);  /* radians(fov) / 2 */\n  let ray = vec3f(p.position.x * ty * aspect, p.position.y * ty, -1.0);\n  let mid = (near + far) * 0.5;\n  let scaled = ray * metres * ctx.params.displace;\n  q.position = vec3f(scaled.xy, scaled.z + mid * ctx.params.displace);\n  return q;\n}",
+                "kernel": "struct Params {\n  unproject: f32,\n  fov: f32,\n  inverseDepth: f32,\n  near: f32,\n  far: f32,\n  displace: f32,\n}\n\nfn decodeDepth(sample: f32, near: f32, far: f32, inverse: f32) -> f32 {\n  /* inverse (ML disparity-like): bright = close; metres via the harmonic mix.\n     linear: metres via the plain mix. Both span [near, far]. */\n  let s = clamp(sample, 0.0, 1.0);\n  let inv = 1.0 / mix(1.0 / far, 1.0 / near, s);\n  let lin = mix(near, far, s);\n  return select(lin, inv, inverse > 0.5);\n}\n\nfn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  let near = max(ctx.params.near, 1.0e-3);\n  let far = max(ctx.params.far, near + 1.0e-3);\n\n  /* The generator may carry more capacity than the grid (a published resolution knob\n     moves cols/rows under a fixed count): every index past the grid parks far outside\n     the frustum and draws nothing. */\n  let cells = ctx.dim.cols * ctx.dim.rows;\n  if (ctx.index >= cells) {\n    q.position = vec3f(0.0, -10000.0, 0.0);\n    q.tint = vec4f(0.0);\n    q.depthN = 0.0;\n    return q;\n  }\n\n  /* The grid generator laid points across the clip square; that xy IS the depth map's\n     uv in fieldAt's own convention — one mapping, shared. */\n  let sample = fieldAt(vec3f(p.position.xy, 0.0));\n  /* Single-channel maps (the depth node's r32float, T959) read .r; colour depth\n     visualisations (turbo, viridis) read luma; grey maps agree under both. */\n  let value = select(dot(sample.rgb, vec3f(0.2126, 0.7152, 0.0722)), sample.r, sample.g + sample.b < 1e-6);\n  let metres = decodeDepth(value, near, far, ctx.params.inverseDepth);\n  /* T973: the decoded depth rides its own attribute to the paint kernel — the heatmap\n     is a second READOUT of the axis a 2D projection hides, not a decoration. 0 = near. */\n  q.depthN = clamp((metres - near) / (far - near), 0.0, 1.0);\n\n  if (ctx.params.unproject < 0.5) {\n    /* HEIGHTFIELD: near pops toward the viewer, scaled by displace. */\n    let relief = (1.0 - (metres - near) / (far - near)) * ctx.params.displace;\n    q.position = vec3f(p.position.xy, relief);\n    return q;\n  }\n\n  /* UNPROJECTION: ray through the pixel, scaled by metres, recentred about origin. */\n  let dims = vec2f(textureDimensions(fieldTexture, 0));\n  let aspect = dims.x / max(dims.y, 1.0);\n  let ty = tan(ctx.params.fov * 0.00872664626);  /* radians(fov) / 2 */\n  let ray = vec3f(p.position.x * ty * aspect, p.position.y * ty, -1.0);\n  let mid = (near + far) * 0.5;\n  let scaled = ray * metres * ctx.params.displace;\n  q.position = vec3f(scaled.xy, scaled.z + mid * ctx.params.displace);\n  return q;\n}",
                 "near": 0.5,
                 "seed": 7,
                 "unproject": 1
@@ -142,10 +142,11 @@
               "id": "paint",
               "label": "paint1",
               "parameters": {
-                "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"tint\",\"type\":\"vec4f\",\"semantic\":\"color\",\"qualifier\":\"color\",\"default\":[1,1,1,1]}]",
+                "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"tint\",\"type\":\"vec4f\",\"semantic\":\"color\",\"qualifier\":\"color\",\"default\":[1,1,1,1]},{\"name\":\"depthN\",\"type\":\"f32\",\"default\":[0]}]",
                 "capacity": 36864,
                 "gain": 1,
-                "kernel": "struct Params {\n  gain: f32,\n}\n\nfn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  let cols = max(ctx.dim.cols, 2u);\n  let rows = max(ctx.dim.rows, 2u);\n  if (ctx.index >= cols * rows) {\n    q.tint = vec4f(0.0);\n    return q;\n  }\n  let u = f32(ctx.dim.i) / f32(cols - 1u);\n  let v = f32(ctx.dim.j) / f32(rows - 1u);\n  /* fieldAt speaks clip coordinates; the grid generator's layout inverted nothing, so\n     the same mapping the carve kernel rode puts the colour texel under its point. */\n  let colour = fieldAt(vec3f(u * 2.0 - 1.0, v * 2.0 - 1.0, 0.0));\n  q.tint = vec4f(colour.rgb * ctx.params.gain, 1.0);\n  return q;\n}",
+                "heat": 0,
+                "kernel": "struct Params {\n  gain: f32,\n  heat: f32,\n}\n\n/* T973 — a thermal readout of depth: near burns white-hot through orange, far cools\n   through magenta into deep blue. Analytic, so no second texture is needed (a point\n   kernel has ONE field input, and it is carrying the colour map). */\nfn thermal(t: f32) -> vec3f {\n  let n = clamp(1.0 - t, 0.0, 1.0);\n  return vec3f(\n    smoothstep(0.0, 0.45, n),\n    smoothstep(0.5, 0.9, n) * 0.8,\n    smoothstep(0.0, 0.2, n) * (1.0 - smoothstep(0.25, 0.6, n)) + smoothstep(0.85, 1.0, n),\n  );\n}\n\nfn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  let cols = max(ctx.dim.cols, 2u);\n  let rows = max(ctx.dim.rows, 2u);\n  if (ctx.index >= cols * rows) {\n    q.tint = vec4f(0.0);\n    return q;\n  }\n  let u = f32(ctx.dim.i) / f32(cols - 1u);\n  let v = f32(ctx.dim.j) / f32(rows - 1u);\n  /* fieldAt speaks clip coordinates; the grid generator's layout inverted nothing, so\n     the same mapping the carve kernel rode puts the colour texel under its point. */\n  let colour = fieldAt(vec3f(u * 2.0 - 1.0, v * 2.0 - 1.0, 0.0));\n  /* T973: photographic at heat 0, thermal at 1 — and the middle is the point: the\n     source's own colour with depth bleeding through, one knob rather than a mode. */\n  let blended = mix(colour.rgb, thermal(p.depthN), clamp(ctx.params.heat, 0.0, 1.0));\n  q.tint = vec4f(blended * ctx.params.gain, 1.0);\n  return q;\n}",
                 "seed": 7
               },
               "position": {
@@ -321,6 +322,23 @@
             "targets": [
               {
                 "key": "gain",
+                "nodeId": "paint"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": 0,
+              "description": "T973: blends the photographic tint toward a thermal readout of DEPTH — near burns hot, far cools blue. The middle keeps the picture with depth bleeding through.",
+              "label": "Heat",
+              "max": 1,
+              "min": 0,
+              "type": "number"
+            },
+            "key": "heat",
+            "targets": [
+              {
+                "key": "heat",
                 "nodeId": "paint"
               }
             ]

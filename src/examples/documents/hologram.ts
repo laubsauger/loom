@@ -65,6 +65,14 @@ export const hologramDocument = document(
       node("swayx", "lfo", [-2220, 260], { shape: "sine", frequency: 0.29, amplitude: 0.28, offset: 0.5, phase: 0 }, { label: "swayx1" }),
       node("swayy", "lfo", [-2220, 540], { shape: "sine", frequency: 0.19, amplitude: 0.22, offset: 0.5, phase: 0.25 }, { label: "swayy1" }),
       node("src", "add", [-1920, -160], { opacity: 1 }, { label: "src1" }),
+      /* T972 — the SOURCE switch: flip to 1 and the cloud is WHOEVER IS AT THE CAMERA.
+         The shipped default stays the deterministic synthetic performer (a webcam
+         cannot gate headlessly, §T715's family), and permission is only ever requested
+         when the webcam node actually activates — never on load (E27's precedent). With
+         the understudy depth this degrades beautifully: webcam + no model still carves
+         a moving cloud of your face from its own luma. */
+      node("cam", "webcam", [-1920, 140], {}, { label: "cam1" }),
+      node("srcpick", "switch", [-1620, -280], { index: 0 }, { label: "srcpick1" }),
 
       // ---- two depth sources, one switch -------------------------------------------
       /* The understudy: the source's own luma as inverse depth (bright = close), blurred
@@ -89,6 +97,8 @@ export const hologramDocument = document(
         far: 2.6,
         displace: 1.0,
         gain: 0.55,
+        /* T973: mid-blend — the face in its own colour with depth bleeding through. */
+        heat: 0.45,
       }, { label: "holo1" }),
 
       // ---- styling and the stage ----------------------------------------------------
@@ -118,15 +128,17 @@ export const hologramDocument = document(
     [
       edge("e-bed-src", ["bed", "out"], ["src", "in1"]),
       edge("e-orb-src", ["orb", "out"], ["src", "in2"]),
-      edge("e-src-flat", ["src", "out"], ["flat", "input"]),
+      edge("e-src-srcpick", ["src", "out"], ["srcpick", "inputs"], 0),
+      edge("e-cam-srcpick", ["cam", "out"], ["srcpick", "inputs"], 1),
+      edge("e-srcpick-flat", ["srcpick", "out"], ["flat", "input"]),
       edge("e-flat-soften", ["flat", "out"], ["soften", "input"]),
       edge("e-soften-pick", ["soften", "out"], ["pick", "inputs"], 0),
-      edge("e-src-depth", ["src", "out"], ["depth", "input"]),
+      edge("e-srcpick-depth", ["srcpick", "out"], ["depth", "input"]),
       edge("e-depth-pick", ["depth", "out"], ["pick", "inputs"], 1),
       /* The component's two texture ports (boundary-derived): `field` is the PAINT
          kernel's colour, `field_2` the CARVE kernel's depth — verified against the
          flattened plan's texture bindings, not assumed from the names. */
-      edge("e-src-holo", ["src", "out"], ["holo", "field"]),
+      edge("e-srcpick-holo", ["srcpick", "out"], ["holo", "field"]),
       edge("e-pick-holo", ["pick", "out"], ["holo", "field_2"]),
       edge("e-holo-dots", ["holo", "out"], ["dots", "points"]),
       edge("e-shot-out", ["shot", "out"], ["out", "input"]),
