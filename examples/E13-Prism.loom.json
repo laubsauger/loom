@@ -922,8 +922,8 @@
       "memoryBudgetBytes": 1073741824
     },
     "outputResolution": {
-      "height": 720,
-      "width": 1280
+      "height": 1080,
+      "width": 1920
     },
     "previewFps": 30,
     "previewLongEdge": 192,

@@ -558,9 +558,11 @@ describe("E13 Prism — the picture", () => {
       const longIdle = await run(360, sweep);
       const parkedLong = await run(360, parked);
       // Five seconds after the cursor stopped, the swing has it back. The envelope's
-      // release is 0.6s, so this is eight time constants; measured residue, 2.5px of 166.
-      expect(Math.abs(longIdle.mid - parkedLong.mid)).toBeLessThan(4);
-      expect(Math.abs(longIdle.span - parkedLong.span)).toBeLessThan(4);
+      // release is 0.6s, so this is eight time constants; measured residue was 2.5px of
+      // 166 at 720p — T914's 1080p render scales every pixel measure by 1.5, so the
+      // tolerance scales with it (the ratio to the journey below stays what it was).
+      expect(Math.abs(longIdle.mid - parkedLong.mid)).toBeLessThan(6);
+      expect(Math.abs(longIdle.span - parkedLong.span)).toBeLessThan(6);
       // ... and it really came BACK: the fan is nowhere near where the hand had it, so
       // "within 4px of parked" is a journey rather than a picture that never moved.
       expect(Math.abs(longIdle.mid - stillMoving.mid)).toBeGreaterThan(150);

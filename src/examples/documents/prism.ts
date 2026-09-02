@@ -278,7 +278,13 @@ const PRISM_OPTICS_ATTRIBUTES = JSON.stringify([
 export const prismDocument = document(
   "e13-prism",
   "E13 Prism",
-  settings({ randomSeed: 23 }),
+  settings({
+    randomSeed: 23,
+    // T914: the owner asked for 1080p — 720p was part of the pixelation they reported.
+    // Within limits.maxResolution (4096); the look baseline and card move with it, both
+    // re-measured in this commit (§V642).
+    outputResolution: { width: 1920, height: 1080 },
+  }),
   graph(
     [
       // ---- the aim: two chains, added in the kernel -------------------------------
