@@ -19,6 +19,7 @@ import {
   feedbackEchoDocument,
   kaleidoscopeDocument,
 } from "./documents.ts";
+import { DEPTH_CARVE_KERNEL, DEPTH_PAINT_KERNEL } from "./shaders/depth-points.wgsl.ts";
 
 /**
  * The starter component set (T190, §V94, §V79).
@@ -293,6 +294,153 @@ export const audioLevelHost: ProjectDocument = {
       "e-clamp-probe": { id: "e-clamp-probe", source: { nodeId: "clamp", portId: "out" }, target: { nodeId: "probe", portId: "in" } },
       "e-swatch-glow": { id: "e-swatch-glow", source: { nodeId: "swatch", portId: "out" }, target: { nodeId: "glow", portId: "input" } },
       "e-glow-out": { id: "e-glow-out", source: { nodeId: "glow", portId: "out" }, target: { nodeId: "out", portId: "input" } },
+    },
+    groups: {},
+  },
+};
+
+/**
+ * DepthPoints' host (T958): a depth map from ANYWHERE — here a hand-authored radial
+ * gradient, which is the point (the component takes a depth TEXTURE, not "the depth
+ * node", so our ML `depth`, a depth camera, a rendered depth buffer and this gradient
+ * are all the same to it) — carved into a real 3D point cloud and retextured from a
+ * second map. The chain inside the selection is grid → carve → paint; the sources, the
+ * styling and the camera stay OUTSIDE, because what makes this reusable is the
+ * unprojection, not any particular picture.
+ */
+const DEPTH_POINTS_SETTINGS: ProjectSettings = {
+  outputResolution: { width: 1280, height: 720 },
+  workingFormat: "rgba16float",
+  randomSeed: 7,
+  previewLongEdge: 192,
+  previewFps: 30,
+  limits: LIMITS,
+};
+
+const DEPTH_POINT_ATTRIBUTES = JSON.stringify([
+  { name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] },
+  { name: "tint", type: "vec4f", semantic: "color", qualifier: "color", default: [1, 1, 1, 1] },
+]);
+
+const depthPointsHost: ProjectDocument = {
+  schemaVersion: SCHEMA_VERSION,
+  projectId: "component-depth-points",
+  name: "DepthPoints",
+  settings: DEPTH_POINTS_SETTINGS,
+  assets: [],
+  createdAt: STARTER_COMPONENT_TIMESTAMP,
+  updatedAt: STARTER_COMPONENT_TIMESTAMP,
+  graph: {
+    revision: 1,
+    nodes: {
+      depthsrc: {
+        id: "depthsrc",
+        type: "circle",
+        definitionVersion: 1,
+        position: { x: -780, y: -120 },
+        // A soft radial gradient reads as an inverse depth map: bright centre = close.
+        parameters: { mode: "fill", center: [0.5, 0.5], radius: [0.42, 0.42], softness: 0.42, fillcolor: [1, 1, 1, 1] },
+        label: "depthsrc1",
+      },
+      colorsrc: {
+        id: "colorsrc",
+        type: "ramp",
+        definitionVersion: 2,
+        position: { x: -780, y: 140 },
+        parameters: { type: "horizontal", interp: "smooth", phase: 0, period: 1 },
+        label: "colorsrc1",
+      },
+      grid: {
+        id: "grid",
+        type: "pointGrid",
+        definitionVersion: 1,
+        position: { x: -520, y: 0 },
+        // Count pinned at the 192x192 ceiling so the published resolution knob can move
+        // cols/rows underneath it; the carve kernel parks every index past the grid.
+        parameters: { count: 36864, cols: 128, rows: 128, sizeX: 2, sizeY: 2 },
+        label: "grid1",
+      },
+      carve: {
+        id: "carve",
+        type: "pointKernel",
+        definitionVersion: 1,
+        position: { x: -260, y: 0 },
+        parameters: {
+          capacity: 36864,
+          seed: 7,
+          attributes: DEPTH_POINT_ATTRIBUTES,
+          kernel: DEPTH_CARVE_KERNEL,
+          unproject: 1,
+          fov: 60,
+          inverseDepth: 1,
+          near: 0.5,
+          far: 4,
+          displace: 1,
+        },
+        label: "carve1",
+      },
+      paint: {
+        id: "paint",
+        type: "pointKernel",
+        definitionVersion: 1,
+        position: { x: 0, y: 0 },
+        parameters: {
+          capacity: 36864,
+          seed: 7,
+          attributes: DEPTH_POINT_ATTRIBUTES,
+          kernel: DEPTH_PAINT_KERNEL,
+          gain: 1,
+        },
+        label: "paint1",
+      },
+      dots: {
+        id: "dots",
+        type: "geometry",
+        definitionVersion: 1,
+        position: { x: 260, y: 0 },
+        parameters: { mode: "points", scale: 0.008, soft: 1, blend: "additive", material: "glowm1", tint: [1, 1, 1, 1] },
+        label: "dots1",
+      },
+      glowm: {
+        id: "glowm",
+        type: "materialUnlit",
+        definitionVersion: 1,
+        position: { x: 260, y: -180 },
+        parameters: { color: [1, 1, 1, 1] },
+        label: "glowm1",
+      },
+      eye: {
+        id: "eye",
+        type: "camera",
+        definitionVersion: 1,
+        position: { x: 260, y: 180 },
+        parameters: { eye: [0.9, 0.5, 3.4], lookAt: [0, 0, 0], fov: 45, near: 0.1, far: 40, ortho: false },
+        label: "eye1",
+      },
+      shot: {
+        id: "shot",
+        type: "render",
+        definitionVersion: 1,
+        position: { x: 520, y: 0 },
+        parameters: {
+          scenes: "dots1",
+          camera: "eye1",
+          lights: "",
+          ambientColor: [0, 0, 0, 1],
+          ambientIntensity: 0,
+          background: [0.01, 0.012, 0.02, 1],
+        },
+        label: "shot1",
+      },
+      out: { id: "out", type: "output", definitionVersion: 1, position: { x: 780, y: 0 }, parameters: {}, label: "out1" },
+    },
+    edges: {
+      "e-depth-carve": { id: "e-depth-carve", source: { nodeId: "depthsrc", portId: "out" }, target: { nodeId: "carve", portId: "field" } },
+      "e-color-paint": { id: "e-color-paint", source: { nodeId: "colorsrc", portId: "out" }, target: { nodeId: "paint", portId: "field" } },
+      "e-grid-carve": { id: "e-grid-carve", source: { nodeId: "grid", portId: "out" }, target: { nodeId: "carve", portId: "in" } },
+      "e-carve-paint": { id: "e-carve-paint", source: { nodeId: "carve", portId: "out" }, target: { nodeId: "paint", portId: "in" } },
+      "e-paint-dots": { id: "e-paint-dots", source: { nodeId: "paint", portId: "out" }, target: { nodeId: "dots", portId: "points" } },
+      "e-shot-out": { id: "e-shot-out", source: { nodeId: "shot", portId: "out" }, target: { nodeId: "out", portId: "input" } },
     },
     groups: {},
   },
@@ -599,6 +747,94 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
             "How slowly the peak-follower forgets a loud hit (its release ratio). 100 is a 500 ms tail; lower makes the normaliser chase level faster and sag harder between hits. T823 widened the travel to reach it.",
         },
         targets: [{ nodeId: "peak", key: "releaseRatio" }],
+      },
+    ],
+  },
+  {
+    componentId: "depthPoints",
+    name: "DepthPoints",
+    description:
+      "Depth map in, retextured 3D point cloud out — perspective unprojection with a declared depth encoding, heightfield as the cheap mode.",
+    host: depthPointsHost,
+    // The sources stay OUTSIDE: the component takes a depth TEXTURE and a colour
+    // TEXTURE, which is what lets the ML depth node, a depth camera, a rendered depth
+    // buffer or a hand-drawn gradient all feed the same unit (T958).
+    selection: ["grid", "carve", "paint"],
+    publish: [
+      {
+        key: "resolution",
+        definition: {
+          type: "number",
+          label: "Resolution",
+          default: 128,
+          min: 16,
+          max: 192,
+          step: 1,
+          description: "Grid cells per side. The generator's capacity is pinned at the ceiling; the carve kernel parks the surplus.",
+        },
+        targets: [
+          { nodeId: "grid", key: "cols" },
+          { nodeId: "grid", key: "rows" },
+        ],
+      },
+      {
+        key: "unproject",
+        definition: {
+          type: "number",
+          label: "Unproject",
+          default: 1,
+          min: 0,
+          max: 1,
+          step: 1,
+          description: "1: perspective unprojection — a ray through each pixel scaled by depth, real 3D. 0: heightfield relief on a plane (the cheap mode).",
+        },
+        targets: [{ nodeId: "carve", key: "unproject" }],
+      },
+      {
+        key: "fov",
+        definition: {
+          type: "number",
+          label: "FOV",
+          default: 60,
+          min: 20,
+          max: 120,
+          unit: "degrees",
+          description: "Vertical field of view the depth map was captured with. A depth map alone is geometrically ambiguous — this is the missing half.",
+        },
+        targets: [{ nodeId: "carve", key: "fov" }],
+      },
+      {
+        key: "inverseDepth",
+        definition: {
+          type: "number",
+          label: "Inverse Depth",
+          default: 1,
+          min: 0,
+          max: 1,
+          step: 1,
+          description: "1: the map is inverse/disparity-like (monocular ML depth — bright is CLOSE). 0: linear (a depth camera or rendered depth buffer). Wrong setting = a scene turned inside out.",
+        },
+        targets: [{ nodeId: "carve", key: "inverseDepth" }],
+      },
+      {
+        key: "near",
+        definition: { type: "number", label: "Near", default: 0.5, min: 0.01, max: 10, description: "Metres the map's closest value maps to." },
+        targets: [{ nodeId: "carve", key: "near" }],
+      },
+      {
+        key: "far",
+        definition: { type: "number", label: "Far", default: 4, min: 0.1, max: 20, description: "Metres the map's farthest value maps to." },
+        targets: [{ nodeId: "carve", key: "far" }],
+      },
+      {
+        key: "displace",
+        definition: { type: "number", label: "Displace", default: 1, min: 0, max: 5, description: "Overall scale — relief height in heightfield mode, world scale of the unprojected cloud." },
+        targets: [{ nodeId: "carve", key: "displace" }],
+      },
+      {
+        key: "gain",
+        definition: { type: "number", label: "Tint Gain", default: 1, min: 0, max: 4, description: "Brightness of the sampled colour." },
+        targets: [{ nodeId: "paint", key: "gain" }],
       },
     ],
   },

@@ -1,0 +1,567 @@
+{
+  "assets": [],
+  "componentLibrary": {
+    "components": [
+      {
+        "componentId": "depthPoints",
+        "description": "Depth map in, retextured 3D point cloud out — perspective unprojection with a declared depth encoding, heightfield as the cheap mode.",
+        "graph": {
+          "edges": {
+            "e-carve-paint": {
+              "id": "e-carve-paint",
+              "source": {
+                "nodeId": "carve",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "paint",
+                "portId": "in"
+              }
+            },
+            "e-grid-carve": {
+              "id": "e-grid-carve",
+              "source": {
+                "nodeId": "grid",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "carve",
+                "portId": "in"
+              }
+            },
+            "in_field_2_feed_1": {
+              "id": "in_field_2_feed_1",
+              "source": {
+                "nodeId": "in_field_2",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "carve",
+                "portId": "field"
+              }
+            },
+            "in_field_feed_1": {
+              "id": "in_field_feed_1",
+              "source": {
+                "nodeId": "in_field",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "paint",
+                "portId": "field"
+              }
+            },
+            "out_out_feed": {
+              "id": "out_out_feed",
+              "source": {
+                "nodeId": "paint",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "out_out",
+                "portId": "in"
+              }
+            }
+          },
+          "groups": {},
+          "nodes": {
+            "carve": {
+              "definitionVersion": 1,
+              "id": "carve",
+              "label": "carve1",
+              "parameters": {
+                "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"tint\",\"type\":\"vec4f\",\"semantic\":\"color\",\"qualifier\":\"color\",\"default\":[1,1,1,1]}]",
+                "capacity": 36864,
+                "displace": 1,
+                "far": 4,
+                "fov": 60,
+                "inverseDepth": 1,
+                "kernel": "struct Params {\n  unproject: f32,\n  fov: f32,\n  inverseDepth: f32,\n  near: f32,\n  far: f32,\n  displace: f32,\n}\n\nfn decodeDepth(sample: f32, near: f32, far: f32, inverse: f32) -> f32 {\n  /* inverse (ML disparity-like): bright = close; metres via the harmonic mix.\n     linear: metres via the plain mix. Both span [near, far]. */\n  let s = clamp(sample, 0.0, 1.0);\n  let inv = 1.0 / mix(1.0 / far, 1.0 / near, s);\n  let lin = mix(near, far, s);\n  return select(lin, inv, inverse > 0.5);\n}\n\nfn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  let near = max(ctx.params.near, 1.0e-3);\n  let far = max(ctx.params.far, near + 1.0e-3);\n\n  /* The generator may carry more capacity than the grid (a published resolution knob\n     moves cols/rows under a fixed count): every index past the grid parks far outside\n     the frustum and draws nothing. */\n  let cells = ctx.dim.cols * ctx.dim.rows;\n  if (ctx.index >= cells) {\n    q.position = vec3f(0.0, -10000.0, 0.0);\n    q.tint = vec4f(0.0);\n    return q;\n  }\n\n  /* The grid generator laid points across the clip square; that xy IS the depth map's\n     uv in fieldAt's own convention — one mapping, shared. */\n  let sample = fieldAt(vec3f(p.position.xy, 0.0));\n  /* Luma, not .r: a colour depth visualisation (turbo, viridis) still carves. */\n  let value = dot(sample.rgb, vec3f(0.2126, 0.7152, 0.0722));\n  let metres = decodeDepth(value, near, far, ctx.params.inverseDepth);\n\n  if (ctx.params.unproject < 0.5) {\n    /* HEIGHTFIELD: near pops toward the viewer, scaled by displace. */\n    let relief = (1.0 - (metres - near) / (far - near)) * ctx.params.displace;\n    q.position = vec3f(p.position.xy, relief);\n    return q;\n  }\n\n  /* UNPROJECTION: ray through the pixel, scaled by metres, recentred about origin. */\n  let dims = vec2f(textureDimensions(fieldTexture, 0));\n  let aspect = dims.x / max(dims.y, 1.0);\n  let ty = tan(ctx.params.fov * 0.00872664626);  /* radians(fov) / 2 */\n  let ray = vec3f(p.position.x * ty * aspect, p.position.y * ty, -1.0);\n  let mid = (near + far) * 0.5;\n  let scaled = ray * metres * ctx.params.displace;\n  q.position = vec3f(scaled.xy, scaled.z + mid * ctx.params.displace);\n  return q;\n}",
+                "near": 0.5,
+                "seed": 7,
+                "unproject": 1
+              },
+              "position": {
+                "x": -260,
+                "y": 0
+              },
+              "type": "pointKernel"
+            },
+            "grid": {
+              "definitionVersion": 1,
+              "id": "grid",
+              "label": "grid1",
+              "parameters": {
+                "cols": 128,
+                "count": 36864,
+                "rows": 128,
+                "sizeX": 2,
+                "sizeY": 2
+              },
+              "position": {
+                "x": -520,
+                "y": 0
+              },
+              "type": "pointGrid"
+            },
+            "in_field": {
+              "definitionVersion": 1,
+              "id": "in_field",
+              "label": "field",
+              "parameters": {},
+              "position": {
+                "x": -240,
+                "y": 0
+              },
+              "type": "componentIn"
+            },
+            "in_field_2": {
+              "definitionVersion": 1,
+              "id": "in_field_2",
+              "label": "field_2",
+              "parameters": {},
+              "position": {
+                "x": -500,
+                "y": 8
+              },
+              "type": "componentIn"
+            },
+            "out_out": {
+              "definitionVersion": 1,
+              "id": "out_out",
+              "label": "out",
+              "parameters": {},
+              "position": {
+                "x": 240,
+                "y": 0
+              },
+              "type": "componentOutPoints"
+            },
+            "paint": {
+              "definitionVersion": 1,
+              "id": "paint",
+              "label": "paint1",
+              "parameters": {
+                "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"tint\",\"type\":\"vec4f\",\"semantic\":\"color\",\"qualifier\":\"color\",\"default\":[1,1,1,1]}]",
+                "capacity": 36864,
+                "gain": 1,
+                "kernel": "struct Params {\n  gain: f32,\n}\n\nfn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  let cols = max(ctx.dim.cols, 2u);\n  let rows = max(ctx.dim.rows, 2u);\n  if (ctx.index >= cols * rows) {\n    q.tint = vec4f(0.0);\n    return q;\n  }\n  let u = f32(ctx.dim.i) / f32(cols - 1u);\n  let v = f32(ctx.dim.j) / f32(rows - 1u);\n  /* fieldAt speaks clip coordinates; the grid generator's layout inverted nothing, so\n     the same mapping the carve kernel rode puts the colour texel under its point. */\n  let colour = fieldAt(vec3f(u * 2.0 - 1.0, v * 2.0 - 1.0, 0.0));\n  q.tint = vec4f(colour.rgb * ctx.params.gain, 1.0);\n  return q;\n}",
+                "seed": 7
+              },
+              "position": {
+                "x": 0,
+                "y": 0
+              },
+              "type": "pointKernel"
+            }
+          },
+          "revision": 0
+        },
+        "inputs": [
+          {
+            "externalId": "field",
+            "label": "field",
+            "nodeId": "in_field",
+            "portId": "in"
+          },
+          {
+            "externalId": "field_2",
+            "label": "field_2",
+            "nodeId": "in_field_2",
+            "portId": "in"
+          }
+        ],
+        "name": "DepthPoints",
+        "outputs": [
+          {
+            "externalId": "out",
+            "label": "out",
+            "nodeId": "out_out",
+            "portId": "out"
+          }
+        ],
+        "parameters": [
+          {
+            "definition": {
+              "default": 128,
+              "description": "Grid cells per side. The generator's capacity is pinned at the ceiling; the carve kernel parks the surplus.",
+              "label": "Resolution",
+              "max": 192,
+              "min": 16,
+              "step": 1,
+              "type": "number"
+            },
+            "key": "resolution",
+            "targets": [
+              {
+                "key": "cols",
+                "nodeId": "grid"
+              },
+              {
+                "key": "rows",
+                "nodeId": "grid"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": 1,
+              "description": "1: perspective unprojection — a ray through each pixel scaled by depth, real 3D. 0: heightfield relief on a plane (the cheap mode).",
+              "label": "Unproject",
+              "max": 1,
+              "min": 0,
+              "step": 1,
+              "type": "number"
+            },
+            "key": "unproject",
+            "targets": [
+              {
+                "key": "unproject",
+                "nodeId": "carve"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": 60,
+              "description": "Vertical field of view the depth map was captured with. A depth map alone is geometrically ambiguous — this is the missing half.",
+              "label": "FOV",
+              "max": 120,
+              "min": 20,
+              "type": "number",
+              "unit": "degrees"
+            },
+            "key": "fov",
+            "targets": [
+              {
+                "key": "fov",
+                "nodeId": "carve"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": 1,
+              "description": "1: the map is inverse/disparity-like (monocular ML depth — bright is CLOSE). 0: linear (a depth camera or rendered depth buffer). Wrong setting = a scene turned inside out.",
+              "label": "Inverse Depth",
+              "max": 1,
+              "min": 0,
+              "step": 1,
+              "type": "number"
+            },
+            "key": "inverseDepth",
+            "targets": [
+              {
+                "key": "inverseDepth",
+                "nodeId": "carve"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": 0.5,
+              "description": "Metres the map's closest value maps to.",
+              "label": "Near",
+              "max": 10,
+              "min": 0.01,
+              "type": "number"
+            },
+            "key": "near",
+            "targets": [
+              {
+                "key": "near",
+                "nodeId": "carve"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": 4,
+              "description": "Metres the map's farthest value maps to.",
+              "label": "Far",
+              "max": 20,
+              "min": 0.1,
+              "type": "number"
+            },
+            "key": "far",
+            "targets": [
+              {
+                "key": "far",
+                "nodeId": "carve"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": 1,
+              "description": "Overall scale — relief height in heightfield mode, world scale of the unprojected cloud.",
+              "label": "Displace",
+              "max": 5,
+              "min": 0,
+              "type": "number"
+            },
+            "key": "displace",
+            "targets": [
+              {
+                "key": "displace",
+                "nodeId": "carve"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": 1,
+              "description": "Brightness of the sampled colour.",
+              "label": "Tint Gain",
+              "max": 4,
+              "min": 0,
+              "type": "number"
+            },
+            "key": "gain",
+            "targets": [
+              {
+                "key": "gain",
+                "nodeId": "paint"
+              }
+            ]
+          }
+        ],
+        "version": 1
+      }
+    ],
+    "schemaVersion": 1
+  },
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e-shot-out": {
+        "id": "e-shot-out",
+        "source": {
+          "nodeId": "shot",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      },
+      "ed_depthPoints2": {
+        "id": "ed_depthPoints2",
+        "source": {
+          "nodeId": "colorsrc",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_depthPoints1",
+          "portId": "field"
+        }
+      },
+      "ed_depthPoints3": {
+        "id": "ed_depthPoints3",
+        "source": {
+          "nodeId": "depthsrc",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_depthPoints1",
+          "portId": "field_2"
+        }
+      },
+      "ed_depthPoints4": {
+        "id": "ed_depthPoints4",
+        "source": {
+          "nodeId": "nd_depthPoints1",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "dots",
+          "portId": "points"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "colorsrc": {
+        "definitionVersion": 2,
+        "id": "colorsrc",
+        "label": "colorsrc1",
+        "parameters": {
+          "interp": "smooth",
+          "period": 1,
+          "phase": 0,
+          "type": "horizontal"
+        },
+        "position": {
+          "x": -780,
+          "y": 140
+        },
+        "type": "ramp"
+      },
+      "depthsrc": {
+        "definitionVersion": 1,
+        "id": "depthsrc",
+        "label": "depthsrc1",
+        "parameters": {
+          "center": [
+            0.5,
+            0.5
+          ],
+          "fillcolor": [
+            1,
+            1,
+            1,
+            1
+          ],
+          "mode": "fill",
+          "radius": [
+            0.42,
+            0.42
+          ],
+          "softness": 0.42
+        },
+        "position": {
+          "x": -780,
+          "y": -120
+        },
+        "type": "circle"
+      },
+      "dots": {
+        "definitionVersion": 1,
+        "id": "dots",
+        "label": "dots1",
+        "parameters": {
+          "blend": "additive",
+          "material": "glowm1",
+          "mode": "points",
+          "scale": 0.008,
+          "soft": 1,
+          "tint": [
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "position": {
+          "x": 260,
+          "y": 0
+        },
+        "type": "geometry"
+      },
+      "eye": {
+        "definitionVersion": 1,
+        "id": "eye",
+        "label": "eye1",
+        "parameters": {
+          "eye": [
+            0.9,
+            0.5,
+            3.4
+          ],
+          "far": 40,
+          "fov": 45,
+          "lookAt": [
+            0,
+            0,
+            0
+          ],
+          "near": 0.1,
+          "ortho": false
+        },
+        "position": {
+          "x": 260,
+          "y": 180
+        },
+        "type": "camera"
+      },
+      "glowm": {
+        "definitionVersion": 1,
+        "id": "glowm",
+        "label": "glowm1",
+        "parameters": {
+          "color": [
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "position": {
+          "x": 260,
+          "y": -180
+        },
+        "type": "materialUnlit"
+      },
+      "nd_depthPoints1": {
+        "definitionVersion": 1,
+        "id": "nd_depthPoints1",
+        "parameters": {},
+        "position": {
+          "x": -260,
+          "y": 0
+        },
+        "type": "component:depthPoints@1"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "label": "out1",
+        "parameters": {},
+        "position": {
+          "x": 780,
+          "y": 0
+        },
+        "type": "output"
+      },
+      "shot": {
+        "definitionVersion": 1,
+        "id": "shot",
+        "label": "shot1",
+        "parameters": {
+          "ambientColor": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "ambientIntensity": 0,
+          "background": [
+            0.01,
+            0.012,
+            0.02,
+            1
+          ],
+          "camera": "eye1",
+          "lights": "",
+          "scenes": "dots1"
+        },
+        "position": {
+          "x": 520,
+          "y": 0
+        },
+        "type": "render"
+      }
+    },
+    "revision": 2
+  },
+  "name": "DepthPoints",
+  "projectId": "component-depthPoints",
+  "schemaVersion": 3,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 7,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}
