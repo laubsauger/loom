@@ -362,6 +362,10 @@ export function buildResources(
             // T295: depth24plus attachment; draws into this target depth-test by
             // vgpu's default (write, less-equal) with no per-pass plumbing.
             ...(resource.depth === true ? { depth: true } : {}),
+            // T939: 4x MSAA — the patched vgpu stores samples across preserve passes
+            // and resolves into `.color` every pass, so mid-chain readers (the glass
+            // pyramid) always see the current resolved image.
+            ...(resource.msaa === true ? { msaa: 4 as const } : {}),
             label: resource.label ?? resource.id,
           }),
         );

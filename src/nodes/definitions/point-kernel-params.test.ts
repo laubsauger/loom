@@ -365,7 +365,7 @@ const FRAME_ZERO_DIGESTS: Readonly<Record<string, string>> = {
   // resolved kernel state deliberately, then T920 rebuilt the optics kernel as a
   // marched BEAM (SDF bevel boundary, 9x61x3 slots) and T915b handed the aim to the
   // pointer exclusively (y angle / x walk, no authority blend); re-pinned at each.
-  "E13-Prism.loom.json": "300897b5d4fd4d3c",
+  "E13-Prism.loom.json": "0cc5428c95953342",
   "E16-Murmuration.loom.json": "74f35048da9b841e",
   "E20-Gooeyball.loom.json": "7d059f6ab538949e",
   "E25-Stage.loom.json": "8ef074cc584fae53",

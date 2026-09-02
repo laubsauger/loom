@@ -361,14 +361,17 @@ fn process(p: Point, ctx: PointCtx) -> Point {
 
   let sW = toWorld(S, yaw, nod);
   let entryW = toWorld(select(S + dIn * MISS_LEN, mid.entry, hit), yaw, nod);
-  /* Shaft scatter: strongest, the beam crossing the room. */
-  var glow = 0.85 * scatterTo(mote, sW, entryW, 0.055);
+  /* Shaft scatter: a bright CORE plus a wide soft skirt — the owner: motes should catch
+     the beam "within a reasonable area around" it, with falloff, not only inside it. */
+  var glow = 0.85 * scatterTo(mote, sW, entryW, 0.06)
+           + 0.22 * scatterTo(mote, sW, entryW, 0.28);
   /* Exit scatter: the central band's ray, when it leaves. */
   let gone = hit && dot(mid.exitDirection, mid.exitDirection) > 1.0e-9;
   if (gone) {
     let rootW = toWorld(mid.exitPoint, yaw, nod);
     let tipW = toWorld(mid.exitPoint + mid.exitDirection * FAN_LEN, yaw, nod);
-    glow = glow + 0.5 * scatterTo(mote, rootW, tipW, 0.10);
+    glow = glow + 0.5 * scatterTo(mote, rootW, tipW, 0.11)
+                + 0.18 * scatterTo(mote, rootW, tipW, 0.38);
   }
   /* Barely-there ambient dust, so the room reads as air rather than void — and varied
      per mote, because uniform dust reads as a starfield (measured on the card). The
@@ -630,6 +633,9 @@ export const prismDocument = document(
            a whisper. Asked three times; done with the dust in the same change so it
            reads as a dark ROOM, not a dead one. */
         background: [0, 0, 0, 1], environmentIntensity: 0.7, showEnvironment: false,
+        /* T939: SSAA over MSAA here deliberately — the fan is shader-thin additive
+           ribbons, and supersampling SHADES its four samples where MSAA only covers. */
+        antialias: "ssaa",
       }, { label: "shot1" }),
 
       // ---- the bloom, and the clamp that is load-bearing --------------------------

@@ -1,0 +1,54 @@
+diff --git a/dist/frame.js b/dist/frame.js
+index 21e3d41add2578fee9198c44260cba69b7867c82..3b4ac37fdfa159b02d792a8378fefa55f3a1a4bd 100644
+--- a/dist/frame.js
++++ b/dist/frame.js
+@@ -103,8 +103,8 @@ export class Frame {
+             throw surfaceNotInFrameError("Frame.pass");
+         const clear = targetOnly ? undefined : target.clear;
+         const preserve = clear === false;
+-        if (preserve && resolvedTarget.sampleCount === 4)
+-            throw passPreserveMsaaError();
++        // shaderloom patch (T939): preserve into MSAA is supported now — the msaa
++        // attachment stores every pass and loads on preserve (see colorAttachment).
+         const clearDepth = targetOnly ? undefined : target.clearDepth;
+         if (clearDepth !== undefined) {
+             if (typeof clearDepth !== "number" || !(clearDepth >= 0 && clearDepth <= 1))
+diff --git a/dist/target-utils.js b/dist/target-utils.js
+index ec39e15a23d7dfdf7172e74d7c7305b34670a3e6..f9f04834e0554f53331cdb50872d04f6ef5cf94c 100644
+--- a/dist/target-utils.js
++++ b/dist/target-utils.js
+@@ -53,11 +53,15 @@ function validateMsaaFormat(format, caps) {
+     throw unsupportedError("target", "Dawn compatibility mode does not support rgba16float+msaa.", "Use rgba8unorm for MSAA here, or disable msaa.");
+ }
+ export function colorAttachment(resolved, msaa, clear, preserve) {
++    // shaderloom patch (T939): multi-pass MSAA. The multisampled texture persists on the
++    // target, so preserve is legal WebGPU: load it, store it, and resolve every pass so
++    // the resolved color stays current for mid-chain readers. Non-preserve passes keep
++    // the cheaper discard.
+     const attachment = {
+         view: (msaa ?? resolved).createView(),
+         resolveTarget: msaa ? resolved.createView() : undefined,
+         loadOp: preserve ? "load" : "clear",
+-        storeOp: msaa ? "discard" : "store",
++        storeOp: "store",
+     };
+     if (!preserve)
+         attachment.clearValue = colorValue(clear);
+@@ -74,13 +78,15 @@ export function depthAttachment(depth, preserve, clearDepth, clearStencil, readO
+             attachment.stencilReadOnly = true;
+         return attachment;
+     }
+-    const attachment = { view: depth.createView(), depthLoadOp: preserve ? "load" : "clear", depthStoreOp: depth.sampleCount > 1 ? "discard" : "store" };
++    // shaderloom patch (T939): multisampled depth STORES too — a later preserve pass
++    // depth-tests against it, and a discarded depth would load garbage.
++    const attachment = { view: depth.createView(), depthLoadOp: preserve ? "load" : "clear", depthStoreOp: "store" };
+     if (!preserve)
+         attachment.depthClearValue = clearDepth ?? 1;
+     // WebGPU requires stencilLoadOp/stencilStoreOp whenever the format has a stencil aspect and stencilReadOnly is not set.
+     if (depth.format && hasStencilAspect(depth.format)) {
+         attachment.stencilLoadOp = preserve ? "load" : "clear";
+-        attachment.stencilStoreOp = depth.sampleCount > 1 ? "discard" : "store";
++        attachment.stencilStoreOp = "store";
+         if (!preserve)
+             attachment.stencilClearValue = clearStencil ?? 0;
+     }

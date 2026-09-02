@@ -30,6 +30,9 @@ export interface TargetResourceDescriptor {
    * default depth state (write, less-equal); passes into a plain target are unchanged.
    */
   readonly depth?: boolean;
+  /** T939: allocate 4x multisampled attachments; samples persist across preserve passes
+   *  and resolve into the sampleable color every pass (patched vgpu). */
+  readonly msaa?: boolean;
   readonly label?: string;
 }
 
@@ -454,7 +457,13 @@ function readResource(value: unknown): ResourceDescriptor | undefined {
     const withLabel = typeof label === "string" ? { ...base, label } : base;
     if (kind === "target") {
       const depth = value["depth"];
-      return { kind: "target", ...withLabel, ...(depth === true ? { depth: true } : {}) };
+      const msaa = value["msaa"];
+      return {
+        kind: "target",
+        ...withLabel,
+        ...(depth === true ? { depth: true } : {}),
+        ...(msaa === true ? { msaa: true } : {}),
+      };
     }
     return { kind: "pingPong", ...withLabel };
   }

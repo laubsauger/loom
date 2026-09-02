@@ -119,6 +119,8 @@ export interface ResolvedOutput {
   readonly temporal: boolean;
   /** True when the definition declares this target output carries a depth attachment (T299, T295). */
   readonly depth?: boolean;
+  /** T939: this output materializes 4x multisampled (see node-definition msaaWhen). */
+  readonly msaa?: boolean;
   /**
    * T563: a SYNTHESIZED preview — the pointset splat or a scene payload's stock scene.
    *

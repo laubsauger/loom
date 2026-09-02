@@ -281,6 +281,13 @@ export interface NodeDefinition {
    */
   depthOutputs?: ReadonlyArray<PortId>;
   /**
+   * T939: texture outputs whose target materializes MULTISAMPLED (4x; the backend keeps
+   * the samples across preserve passes and resolves into the sampleable color every
+   * pass — the patched vgpu contract). Predicate over the node's parameters so a render
+   * offers it as an opt-in mode; structural like depth, hence declared not inferred.
+   */
+  msaaWhen?: Readonly<Record<PortId, (parameters: Readonly<Record<string, unknown>>) => boolean>>;
+  /**
    * T722: an output port that EXISTS only when a compile-time parameter enables it.
    * The compiler skips allocating the port's target when the predicate answers false,
    * so an off-by-default auxiliary output (the render's camera-depth read) costs zero

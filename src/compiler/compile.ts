@@ -461,6 +461,10 @@ function propagate(args: PropagationArgs): PropagationResult {
         ...(slot.resourceKind === "target" && definition.depthOutputs?.includes(slot.portId) === true
           ? { depth: true }
           : {}),
+        // T939: multisampling, declared like depth (structural) but parameter-gated.
+        ...(slot.resourceKind === "target" && definition.msaaWhen?.[slot.portId]?.(node.parameters ?? {}) === true
+          ? { msaa: true }
+          : {}),
       });
     }
   }
@@ -534,6 +538,7 @@ function describeResource(output: ResolvedOutput): Record<string, unknown> {
         format: output.format,
         label: `${output.nodeId}.${output.portId}`,
         ...(output.depth === true ? { depth: true } : {}),
+        ...(output.msaa === true ? { msaa: true } : {}),
       };
     case "pointset":
       // The caller filters markers out before this point; reaching here is a bug.

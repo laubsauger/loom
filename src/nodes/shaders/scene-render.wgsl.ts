@@ -1249,6 +1249,30 @@ export const GLASS_PYRAMID_LEVELS = 5;
 export const GLASS_SPECTRAL_SAMPLES = 7;
 
 /** Level 0: the rendered opaques, copied so the glass draw never reads its own target. */
+/**
+ * T939 — the SSAA resolve: each output pixel averages its 2x2 supersampled block. Box on
+ * purpose: the samples ARE the coverage, and any wider kernel would blur detail the
+ * supersampling paid to keep.
+ */
+export const SSAA_RESOLVE_WGSL = `@group(0) @binding(0) var sourceTex: texture_2d<f32>;
+@vertex
+fn vs(@builtin(vertex_index) v: u32) -> @builtin(position) vec4f {
+  var corners = array<vec2f, 6>(
+    vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0, 1.0),
+    vec2f(-1.0, 1.0), vec2f(1.0, -1.0), vec2f(1.0, 1.0),
+  );
+  return vec4f(corners[v], 0.0, 1.0);
+}
+@fragment
+fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
+  let base = vec2i(position.xy) * 2;
+  let a = textureLoad(sourceTex, base, 0);
+  let b = textureLoad(sourceTex, base + vec2i(1, 0), 0);
+  let c = textureLoad(sourceTex, base + vec2i(0, 1), 0);
+  let d = textureLoad(sourceTex, base + vec2i(1, 1), 0);
+  return (a + b + c + d) * 0.25;
+}`;
+
 export const GLASS_BLIT_WGSL = `@group(0) @binding(0) var sourceTex: texture_2d<f32>;
 @vertex
 fn vs(@builtin(vertex_index) v: u32) -> @builtin(position) vec4f {

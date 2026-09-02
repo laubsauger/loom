@@ -12,6 +12,7 @@ import { readColor, readNumber, readVector } from "./parameter-readers.ts";
 import { countedDrawSupport, resolveColorMap, resolveScalarMap } from "./points.ts";
 import {
   GLASS_BLIT_WGSL,
+  SSAA_RESOLVE_WGSL,
   GLASS_DOWN_WGSL,
   GLASS_PYRAMID_LEVELS,
   GLASS_VBLUR_WGSL,
@@ -881,6 +882,9 @@ export const renderNode: NodeDefinition = {
     },
   ],
   depthOutputs: ["out", "depth"],
+  /* T939: MSAA is structural (a different render signature), so it is declared like
+     depth — and the backend's patched vgpu keeps samples across the multi-pass chain. */
+  msaaWhen: { out: (parameters) => parameters["antialias"] === "msaa" },
   outputWhen: { depth: (parameters) => parameters["depthOutput"] === true },
   sourceReferences: [
     { parameter: "scenes", input: "scenes", list: true },
@@ -956,6 +960,19 @@ export const renderNode: NodeDefinition = {
     },
     /* T722 — the switch pricing the depth read: one extra depth-only scene pass and a
        full-res data target, stated here rather than discovered (the T481/T624 idiom). */
+    antialias: {
+      type: "enum",
+      label: "Antialias",
+      default: "none",
+      compileTime: true,
+      options: [
+        { value: "none", label: "None" },
+        { value: "msaa", label: "MSAA 4x" },
+        { value: "ssaa", label: "SSAA 2x" },
+      ],
+      description:
+        "T939: smooths geometry edges BEFORE bloom amplifies them, on the scene pass where the aliasing is made. MSAA 4x: hardware multisampling on this target — 4 coverage samples per pixel, shading cost unchanged (the usual choice). SSAA 2x: the whole scene renders at double resolution and box-resolves — 4 SHADED samples per pixel, heavier but also antialiases shader-thin detail inside surfaces. Both cost roughly 4x this pass's fill.",
+    },
     depthOutput: {
       type: "boolean",
       label: "Depth Output",
@@ -982,10 +999,16 @@ export const renderNode: NodeDefinition = {
   formatPolicy: { kind: "project" },
   compile(context): CompiledNodeDescription {
     const { nodeId, outputs, parameters, resolution } = readCompileInputs(context);
-    const target = outputs["out"];
-    if (target === undefined) {
+    const outTarget = outputs["out"];
+    if (outTarget === undefined) {
       return { passes: [], diagnostics: [missingCompileResource(nodeId, 'output port "out"')] };
     }
+    /* T939 — SSAA: with antialias on, EVERY scene pass renders into a 2x scratch (the
+       glass pyramid reads it too, so transmission sees the supersampled scene), and one
+       box resolve at the end writes the real output. `target` below IS the scene
+       surface; only the resolve and the depth-output pass touch `outTarget`. */
+    const ssaa = parameters["antialias"] === "ssaa";
+    const target = ssaa ? `scratch:${nodeId}:ss` : outTarget;
     const refuse = (code: string, message: string, suggestion?: string): CompiledNodeDescription => ({
       passes: [],
       diagnostics: [
@@ -1110,7 +1133,10 @@ export const renderNode: NodeDefinition = {
       | { key: string; scale: number; format: "r32float"; depth?: true }
       // T725: the glass pyramid levels — the node's own working format, no depth.
       | { key: string; scale: number }
+      // T939: the SSAA surface — 2x, with depth (it IS the scene target while on).
+      | { key: string; scale: number; depth: true }
     > = [];
+    if (ssaa) scratch.push({ key: "ss", scale: 2, depth: true });
     /** T481: counted draw support emitted once (in the shadow phase when one exists),
      *  shared by the shadow and the lit draw of the same geometry. */
     const countedByIndex = new Map<number, NonNullable<ReturnType<typeof countedDrawSupport>>>();
@@ -1967,7 +1993,11 @@ export const renderNode: NodeDefinition = {
       .filter(({ payload }) => payload.material.model === "glass");
     if (transmissive.length > 0) {
       const pyrTargetOf = (level: number): string => `scratch:${nodeId}:glassPyr${level}`;
-      scratch.push({ key: "glassPyr0", scale: 1 });
+      /* T939: under SSAA the scene surface is 2x, and the pyramid mirrors it level for
+         level — the blit's textureLoad is 1:1 again and the glass fragment's normalized
+         UVs never knew the difference. */
+      const pyrScale = ssaa ? 2 : 1;
+      scratch.push({ key: "glassPyr0", scale: pyrScale });
       passes.push({
         kind: "draw",
         id: `${nodeId}:glass:pyramid:0`,
@@ -1981,7 +2011,7 @@ export const renderNode: NodeDefinition = {
         clear: true,
       } as DrawPassDescriptor);
       for (let level = 1; level < GLASS_PYRAMID_LEVELS; level += 1) {
-        const scale = 1 / 2 ** level;
+        const scale = pyrScale / 2 ** level;
         scratch.push({ key: `glassPyrH${level}`, scale });
         scratch.push({ key: `glassPyr${level}`, scale });
         passes.push({
@@ -2127,6 +2157,24 @@ export const renderNode: NodeDefinition = {
           clear: false,
         });
       }
+    }
+
+    if (ssaa) {
+      /* T939 — the resolve: the LAST pass, averaging each 2x2 supersampled block into
+         the real output. Everything upstream (backdrop, groups, glass pyramid) already
+         rendered into the 2x surface through `target`. */
+      passes.push({
+        kind: "draw",
+        id: `${nodeId}:ssaa:resolve`,
+        nodeId,
+        shader: SSAA_RESOLVE_WGSL,
+        target: outTarget,
+        topology: "triangle-list",
+        instances: 1,
+        vertexCount: 6,
+        textures: [{ binding: "sourceTex", resourceId: target, sampled: "unfiltered" }],
+        clear: true,
+      } as DrawPassDescriptor);
     }
 
     if (diagnostics.some((diagnostic) => diagnostic.severity === "error")) {
