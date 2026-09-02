@@ -167,6 +167,17 @@ export interface TextureBindingDescriptor {
    * key: array vs single-layer is a different pipeline.
    */
   readonly array?: boolean;
+  /**
+   * B160: bind the ring's WRITE TARGET — the frame being composed RIGHT NOW, already
+   * rendered by this node's own earlier write pass. This is what makes §V229's "never
+   * black" true on FRAME 0, where the history holds nothing at all: the shader branches
+   * to this binding while `ringWritten` is zero, so an empty cache is a zero-delay
+   * passthrough instead of a flash of a never-written layer. NOT tap 0 — a tap indexes
+   * the HISTORY, and slice 0 of the history mid-rotation is the hazard the tap floor
+   * exists for; the write target after its own pass has completed is ordered and whole.
+   * Mutually exclusive with `tap` and `array`, enforced by the reader.
+   */
+  readonly live?: boolean;
 }
 
 export interface SamplerBindingDescriptor {
@@ -401,7 +412,7 @@ function readBindings(value: unknown): ReadonlyArray<TextureBindingDescriptor> |
   const out: TextureBindingDescriptor[] = [];
   for (const entry of value) {
     if (!isRecord(entry)) return undefined;
-    const { binding, resourceId, sampled, tap, array } = entry;
+    const { binding, resourceId, sampled, tap, array, live } = entry;
     if (typeof binding !== "string" || typeof resourceId !== "string") return undefined;
     if (sampled !== undefined && sampled !== "filtered" && sampled !== "unfiltered") return undefined;
     // T237: a tap is a whole number of frames back, and there is no tap 0 — slice 0 is
@@ -410,12 +421,16 @@ function readBindings(value: unknown): ReadonlyArray<TextureBindingDescriptor> |
     // T321: array and tap are one binding claiming two WGSL types.
     if (array !== undefined && typeof array !== "boolean") return undefined;
     if (array === true && tap !== undefined) return undefined;
+    // B160: `live` is the ring's write target — a third thing, not a history read.
+    if (live !== undefined && typeof live !== "boolean") return undefined;
+    if (live === true && (tap !== undefined || array === true)) return undefined;
     out.push({
       binding,
       resourceId,
       ...(sampled === undefined ? {} : { sampled }),
       ...(tap === undefined ? {} : { tap: tap as number }),
       ...(array === true ? { array: true } : {}),
+      ...(live === true ? { live: true } : {}),
     });
   }
   return out;

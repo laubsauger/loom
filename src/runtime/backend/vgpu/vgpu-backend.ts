@@ -971,8 +971,13 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         for (const binding of matching) {
           if (pair) values[binding.binding] = pair.read.color;
           else if (ring) {
+            // B160: `live` is the write target — one stable object, re-set harmlessly.
             values[binding.binding] =
-              binding.array === true ? ring.arrayView() : ring.tapView(binding.tap ?? 1);
+              binding.live === true
+                ? ring.current()
+                : binding.array === true
+                  ? ring.arrayView()
+                  : ring.tapView(binding.tap ?? 1);
           }
         }
         drawable.set(values);
@@ -1012,9 +1017,14 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         const ring = active.resources.rings.get(binding.resourceId);
         if (ring) {
           // T321: the whole-array view is ONE stable object and never needs
-          // re-pointing; only fixed taps chase the head per frame.
+          // re-pointing; only fixed taps chase the head per frame. B160: `live` is the
+          // write target, equally stable.
           values[binding.binding] =
-            binding.array === true ? ring.arrayView() : ring.tapView(binding.tap ?? 1);
+            binding.live === true
+              ? ring.current()
+              : binding.array === true
+                ? ring.arrayView()
+                : ring.tapView(binding.tap ?? 1);
         }
       }
       drawable.set(values);

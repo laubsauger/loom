@@ -469,11 +469,13 @@ describe("T521 — the measurement can tell moving from still, before it judges 
 
     const slitScan = await measure(historicalSlitScan(), fixtureSettings, "out");
     expect(slitScan.range).toBeLessThan(CONTRAST_FLOOR);
-    // And its FIRST frame was black, which is the separate property (§V346). Kept as the
-    // historical record of what E8 shipped; it is no longer what the card floor reads,
-    // because T794 moved the card to frame 60 — see the black fixture below for the
-    // §V461 proof that the card floor itself can still fail.
-    expect(slitScan.firstFrameMax).toBeLessThan(CARD_FLOOR);
+    // B160 retired the OTHER half of this control. E8's first frame USED to be black —
+    // the ring held nothing on frame 0, so the slit read a never-written layer — and
+    // this line asserted that blackness. B160 made an empty cache/slit read its own
+    // write target instead (§V229's "never black" made true on frame 0), so the slit's
+    // frame 0 is now its noise input, well above CARD_FLOOR. The blackness this asserted
+    // no longer exists to assert; the CONTRAST floor above is the live half of E8's §V461
+    // proof, and the black fixture below proves the card floor itself can still redden.
   }, 180_000);
 
   /**

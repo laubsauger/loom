@@ -32,6 +32,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
  */
 export const CACHE_READ_WGSL = `@group(0) @binding(0) var inputSampler: sampler;
 @group(0) @binding(1) var ringTexture: texture_2d_array<f32>;
+@group(0) @binding(3) var liveTexture: texture_2d<f32>;
 
 struct CacheTap {
   tap: f32,
@@ -43,6 +44,14 @@ struct CacheTap {
 
 @fragment
 fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
+  /* B160 \u2014 \u00a7V229's "never black" was FALSE on frame 0: with nothing archived yet,
+     the clamp below still indexed a never-written layer. An empty cache now reads the
+     ring's WRITE TARGET \u2014 the frame this node's own write pass just composed \u2014 so
+     frame 0 (and the first frame after a reset) is a zero-delay passthrough. E40, E41
+     and E27 each carried a private workaround for this; the node owns it now. */
+  if (cacheTap.ringWritten < 0.5) {
+    return textureSampleLevel(liveTexture, inputSampler, uv, 0.0);
+  }
   let frames = max(cacheTap.ringFrames, 1.0);
   /* \u00a7V229: while filling, the deepest available layer stands in for a deeper tap. */
   let back = clamp(cacheTap.tap, 1.0, max(cacheTap.ringWritten, 1.0));

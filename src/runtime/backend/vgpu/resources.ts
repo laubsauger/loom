@@ -504,16 +504,26 @@ export function buildResources(
    * The slice a binding reads (T237). A tap is resolved per FRAME, not once: the ring
    * rotates under it, which is why ring bindings join the dynamic set below.
    */
-  const readRingSlice = (resourceId: string, tap: number | undefined, array?: boolean): unknown => {
+  const readRingSlice = (
+    resourceId: string,
+    tap: number | undefined,
+    array?: boolean,
+    live?: boolean,
+  ): unknown => {
     const ring = rings.get(resourceId);
     if (ring === undefined) return undefined;
+    // B160: `live` binds the ring's WRITE TARGET — the frame being composed now, so an
+    // empty history (frame 0, post-reset) can pass the input through instead of
+    // flashing a never-written layer (§V229). The Target itself, per T94's rule, so a
+    // resize re-wires the binding.
+    if (live === true) return ring.current();
     // T321: the whole-array view for per-pixel time; a single-layer view for a fixed
     // tap — an ordinary texture_2d at the WGSL level, T237's shaders untouched.
     return array === true ? ring.arrayView() : ring.tapView(Math.max(1, tap ?? 1));
   };
 
-  const readTexture = (resourceId: string, tap?: number, array?: boolean): unknown => {
-    const slice = readRingSlice(resourceId, tap, array);
+  const readTexture = (resourceId: string, tap?: number, array?: boolean, live?: boolean): unknown => {
+    const slice = readRingSlice(resourceId, tap, array, live);
     if (slice !== undefined) return slice;
     // T94: bind the Target itself, never its .color texture. vgpu wires
     // onTexturesRecreated only for Target values, and Target.resize() destroys and
@@ -571,7 +581,7 @@ export function buildResources(
       bag[binding.binding] = value;
     }
     for (const binding of textureBindings) {
-      const value = readTexture(binding.resourceId, binding.tap, binding.array);
+      const value = readTexture(binding.resourceId, binding.tap, binding.array, binding.live);
       if (value === undefined) {
         diagnostics.push(
           backendDiagnostic(
@@ -812,7 +822,7 @@ export function buildResources(
 
 interface SetBagContext {
   readonly gpu: Gpu;
-  readonly readTexture: (resourceId: string, tap?: number, array?: boolean) => unknown;
+  readonly readTexture: (resourceId: string, tap?: number, array?: boolean, live?: boolean) => unknown;
   readonly samplers: ReadonlyMap<string, GPUSampler>;
   readonly externals: ExternalResources;
   readonly shared: SharedUniforms<SharedUniformValues>;
@@ -827,7 +837,7 @@ function buildSetBag(
   const bag: Record<string, unknown> = {};
 
   for (const binding of pass.textures ?? []) {
-    const texture = ctx.readTexture(binding.resourceId, binding.tap, binding.array);
+    const texture = ctx.readTexture(binding.resourceId, binding.tap, binding.array, binding.live);
     if (texture === undefined) {
       ctx.diagnostics.push(
         backendDiagnostic(

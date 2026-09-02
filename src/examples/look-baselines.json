@@ -47,7 +47,7 @@
   "E24-Audio-Reaction-Diffusion.loom.json": {
     "motion": 0.01809,
     "range": 0.9794,
-    "f0max": 0,
+    "f0max": 1,
     "phrase": 0.01685
   },
   "E25-Stage.loom.json": {
@@ -142,10 +142,10 @@
     "f0max": 1
   },
   "E40-Wake.loom.json": {
-    "motion": 0.10244,
+    "motion": 0.10186,
     "range": 0.9757,
-    "f0max": 1,
-    "phrase": 0.12914
+    "f0max": 0.3064,
+    "phrase": 0.12913
   },
   "E41-Cinder.loom.json": {
     "motion": 0.05,
@@ -155,7 +155,7 @@
   "E42-Current.loom.json": {
     "motion": 0.0551,
     "range": 0.988,
-    "f0max": 1
+    "f0max": 0.6982
   },
   "E43-Splice.loom.json": {
     "motion": 0.02606,
@@ -192,7 +192,7 @@
   "E8-Slit-Scan.loom.json": {
     "motion": 0.11307,
     "range": 0.6484,
-    "f0max": 0.3609
+    "f0max": 0.9003
   },
   "E9-Ember.loom.json": {
     "motion": 0.13639,

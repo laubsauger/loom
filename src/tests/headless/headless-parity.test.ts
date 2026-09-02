@@ -311,3 +311,56 @@ describe("T69 — browser vs Dawn", () => {
     expect(TOLERANCE_CROSS_GPU).toBeCloseTo(1 / 255, 10);
   });
 });
+
+/**
+ * B161 — a frame's pixels must not depend on WHICH frames were captured (§V732).
+ *
+ * The harness capturing frame 0 must not change frame N. A readback is a copy, never a
+ * mutation, and if two capture lists produce different bytes for the same frame then a
+ * capture — an observation — is perturbing the thing observed, and every cross-run
+ * baseline comparison is quietly comparing apples that were measured differently. The
+ * defect was found on E27 (~0.5% divergence) and named `analyze`'s one-frame readback or
+ * the cache ring perturbed by a frame-0 readback as suspects.
+ *
+ * A cache graph is the fixture because it is the stateful path that carries pixels across
+ * frames — exactly where a stray frame-0 readback could leave a fingerprint. The same
+ * frame is captured under two different lists and its bytes must hash identically.
+ */
+describe("B161 — captures are observations, not mutations", () => {
+  const cacheGraph = () =>
+    ({
+      revision: 1,
+      groups: {},
+      nodes: {
+        src: { id: "src", type: "noise", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: { type: "perlin4d", speed: 1.5, period: 0.35 } },
+        hold: { id: "hold", type: "cache", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: { frames: 4, index: 2, scale: 1 } },
+        out: { id: "out", type: "output", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: {} },
+      },
+      edges: {
+        e0: { id: "e0", source: { nodeId: "src", portId: "out" }, target: { nodeId: "hold", portId: "input" } },
+        e1: { id: "e1", source: { nodeId: "hold", portId: "out" }, target: { nodeId: "out", portId: "input" } },
+      },
+    }) as never;
+
+  it("the same frame hashes identically under two different capture lists", async () => {
+    requireDawn();
+    const frameUnder = async (capture: number[]) => {
+      const result = await renderHeadless({
+        host: dawnGpuHost(),
+        graph: cacheGraph(),
+        frames: 9,
+        capture,
+        animate: true,
+        outputNodeId: "out",
+      });
+      const frame = result.frames.find((entry) => entry.frameIndex === 8);
+      if (frame === undefined) throw new Error("frame 8 not captured");
+      return frame;
+    };
+    // Bare: frame 8 alone. Perturbed: frame 0 (the empty-ring frame, the suspect) and
+    // frame 8. If capturing frame 0 leaves any fingerprint on the ring, frame 8 diverges.
+    const bare = await frameUnder([8]);
+    const perturbed = await frameUnder([0, 8]);
+    expect(imageDigest(perturbed)).toBe(imageDigest(bare));
+  }, 90_000);
+});

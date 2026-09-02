@@ -121,6 +121,9 @@ export const slitScanNode: NodeDefinition = {
         // T321: the WHOLE history as texture_2d_array; the fragment picks the layer.
         { binding: "history", resourceId: ring, array: true, sampled: "unfiltered" },
         { binding: "displaceMap", resourceId: map.resource, sampled: "unfiltered" },
+        // B160: what an EMPTY history reads — the write target, so frame 0 is the
+        // undisplaced input rather than black (§V229; see cache.ts, same fix).
+        { binding: "liveTexture", resourceId: ring, live: true, sampled: "unfiltered" },
       ],
       uniforms: {
         depth: readNumber(parameters, "depth", 1),

@@ -176,7 +176,12 @@ export const cacheNode: NodeDefinition = {
       // T425: the ring as ONE stable array view; the tap is a NUMBER in the uniform
       // block, so nothing rebinds per frame. The backend's T321 head loop merges
       // ringLatest/ringWritten/ringFrames into `cacheTap` every frame by name.
-      textures: [{ binding: "ringTexture", resourceId: ring, array: true }],
+      // B160: the `live` binding is the ring's write target — what the shader reads
+      // while `ringWritten` is zero, so frame 0 passes the input through (§V229).
+      textures: [
+        { binding: "ringTexture", resourceId: ring, array: true },
+        { binding: "liveTexture", resourceId: ring, live: true },
+      ],
       samplers: [{ binding: "inputSampler", resourceId: source.sampler }],
       // The ring head trio is RESERVED here at zero — vgpu matches uniforms by name,
       // and the backend overwrites all three every frame from the ring's own counters

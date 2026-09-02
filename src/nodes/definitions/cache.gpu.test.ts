@@ -89,6 +89,59 @@ function delayGraph(index: number): GraphDocument {
   };
 }
 
+/**
+ * B160 — a Cache tapped against its own SOURCE, differenced and metered. On frame 0 the
+ * ring holds nothing, so §V229's "never black" can only be true if the tap reads the
+ * write target (the frame just composed): an empty cache must be a zero-delay
+ * passthrough, so `cache − source` is zero. Before B160 it was `black − source` = the
+ * whole picture, and frame 0 is the gallery thumbnail (§V769).
+ */
+function passthroughGraph(): GraphDocument {
+  return {
+    revision: 1,
+    nodes: {
+      src: node("src", "noise", { type: "perlin4d", speed: 1.5, period: 0.35 }),
+      cache: node("cache", "cache", { frames: 4, index: 1, scale: 1 }),
+      diff: node("diff", "difference"),
+      meter: node("meter", "analyze", { channel: "luminance", operation: "maximum" }),
+    },
+    edges: {
+      e1: edge("e1", ["src", "out"], ["cache", "input"]),
+      e3: edge("e3", ["cache", "out"], ["diff", "in1"]),
+      e4: edge("e4", ["src", "out"], ["diff", "in2"]),
+      e5: edge("e5", ["diff", "out"], ["meter", "input"]),
+    },
+    groups: {},
+  };
+}
+
+/** The metered value after rendering exactly `frames` frames (reads the last). */
+async function passthroughDiffAt(frames: number): Promise<number> {
+  const backend = createVgpuBackend({ host: nodeGpuHost() });
+  try {
+    await backend.initialize({});
+    const plan = compileGraph({
+      graph: passthroughGraph(),
+      settings,
+      registry: createNodeRegistry(allNodeDefinitions).view(),
+      capabilities,
+    });
+    expect(plan.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    const compiled = await backend.compile(plan);
+    for (let frameIndex = 0; frameIndex < frames; frameIndex += 1) {
+      backend.render(compiled, {
+        frame: { timeSeconds: frameIndex / 60, deltaSeconds: 1 / 60, frameIndex, mode: "offline", randomSeed: 1 },
+        pointer: { x: 0, y: 0, buttons: 0 },
+        resolution: [64, 64],
+      });
+    }
+    const raw = await backend.readBuffer(scratchResourceId("meter", ANALYZE_RESULT_KEY));
+    return new Float32Array(raw, 0, 4)[2] ?? Number.NaN;
+  } finally {
+    backend.dispose();
+  }
+}
+
 /** Renders `frames` frames of advancing time and returns the last measured difference. */
 async function maxDifference(index: number, frames: number): Promise<number> {
   const backend = createVgpuBackend({ host: nodeGpuHost() });
@@ -140,5 +193,21 @@ describe("Cache holds frames on a real device (T237)", () => {
     // come back large. Without this, a Cache that returned its input unchanged — or a ring
     // that never rotated — would pass the assertion above on a slow-moving source.
     expect(await maxDifference(3, 6)).toBeGreaterThan(0.02);
+  }, 120_000);
+
+  it("is a PASSTHROUGH on frame 0, never black — §V229 made true where the ring is empty (B160)", async () => {
+    const probe = await probeDawn();
+    if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
+
+    // Frame 0: the ring holds nothing, so a correct cache reads its write target and the
+    // difference against the source is zero. This is the exact frame every existing cache
+    // gate skipped (they read from frame 1), which is why the black-frame-0 defect
+    // survived — three examples carried private workarounds for it.
+    expect(await passthroughDiffAt(1)).toBeLessThan(0.01);
+
+    // The control: by frame 3 the ring has archived real history, so tap 1 is genuinely
+    // the PREVIOUS frame and differs from the live source on an animated noise. Without
+    // this, a cache that always returned its input would pass the line above.
+    expect(await passthroughDiffAt(3)).toBeGreaterThan(0.02);
   }, 120_000);
 });

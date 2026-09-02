@@ -50,7 +50,12 @@ describe("Cache (T237)", () => {
     // T425: the ring binds as ONE stable ARRAY view and the tap rides the uniform block
     // — a per-layer view would rebuild the pass's bind group every rotation, which the
     // settled-frame allocation gate refuses (found the day a cache entered an example).
-    expect(read?.textures).toEqual([{ binding: "ringTexture", resourceId: ring, array: true }]);
+    // B160: the second binding is the ring's WRITE TARGET — what an empty history
+    // reads, so frame 0 passes the input through instead of flashing black (§V229).
+    expect(read?.textures).toEqual([
+      { binding: "ringTexture", resourceId: ring, array: true },
+      { binding: "liveTexture", resourceId: ring, live: true },
+    ]);
     expect(read?.uniforms).toEqual({ tap: 3, ringLatest: 0, ringWritten: 0, ringFrames: 8 });
     expect(read?.uniformBinding).toBe("cacheTap");
   });

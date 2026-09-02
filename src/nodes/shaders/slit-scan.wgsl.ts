@@ -26,6 +26,7 @@ export const SLIT_SCAN_WGSL = `struct ScanParams {
 @group(0) @binding(0) var<uniform> params: ScanParams;
 @group(0) @binding(1) var history: texture_2d_array<f32>;
 @group(0) @binding(2) var displaceMap: texture_2d<f32>;
+@group(0) @binding(3) var liveTexture: texture_2d<f32>;
 
 @fragment
 fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
@@ -35,6 +36,12 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   let mapTexel = vec2i(clamp(uv * mapDims, vec2f(0.0), mapDims - vec2f(1.0)));
 
   let displacement = clamp(textureLoad(displaceMap, mapTexel, 0).r, 0.0, 1.0);
+  /* B160, the cache's frame-0 fix, same ring, same hole: with nothing archived, every
+     layer is unwritten, so an empty history reads the ring's write target instead —
+     frame 0 is the undisplaced input, not black (§V229). */
+  if (params.ringWritten == 0u) {
+    return textureLoad(liveTexture, texel, 0);
+  }
   let usable = max(min(params.ringWritten, params.ringFrames), 1u);
   /* 0 = the most recent recorded frame; usable-1 = the oldest one actually written. */
   let back = min(u32(displacement * params.depth * f32(params.ringFrames - 1u) + 0.5), usable - 1u);
