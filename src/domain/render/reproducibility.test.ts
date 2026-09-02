@@ -80,6 +80,10 @@ describe("T645 — every registered node type is classified, or this fails (§V4
       "channelIn:async-cached",
       // T385/T715: inference, whose latency is unbounded rather than one frame.
       "depth:async-cached",
+      // T957: the person matte. Async-cached with the strongest claim of the three model
+      // nodes — MODNet is smoothed by a temporal EMA held in the WORKER, so what it
+      // publishes depends on the sequence of frames that reached it, not on this one.
+      "matte:async-cached",
       // T942: a MIDI controller. Live hardware in exactly the sense the mic is, and
       // deliberately NOT async-cached despite sharing analyze's `channels` seam — a MIDI
       // message is at most one frame old by construction, so there is no age to show.

@@ -1,8 +1,12 @@
 import type { CompiledNodeDescription, NodeDefinition } from "../../domain/types/node-definition.ts";
+import type { ParameterSchema } from "../../domain/types/parameters.ts";
 import type { DispatchPassDescriptor, EffectPassDescriptor } from "../../runtime/backend/plan.ts";
 import { inferenceSourceIdFor } from "../../runtime/execution/inference-sources.ts";
 import { POSE_INPUT_SIDE, POSE_KEYPOINT_COUNT } from "../../runtime/models/pose-runner.ts";
 import { SHARED_SAMPLER_ID, scratchResourceId } from "../../compiler/resources.ts";
+import type { ModelDescriptor } from "../../runtime/models/model-acquisition.ts";
+import { POSE_ACCURATE, POSE_LIVE, POSE_MODELS } from "../../runtime/models/model-catalogue.ts";
+import { inferenceModelSchema, inferenceResetSchema } from "./inference-node.ts";
 import { RGBA_TEXTURE } from "./common-ports.ts";
 import { readCompileInputs } from "./compile-context.ts";
 
@@ -45,6 +49,28 @@ import { readCompileInputs } from "./compile-context.ts";
 export const POSE_INPUT_KEY = "modelInput";
 export const POSE_RESULT_KEY = "modelResult";
 
+/*
+ * ⚠ STILL A SQUEEZE, AND NOT AN OVERSIGHT — the reason is written here so the next
+ * session does not have to rediscover it (T974, §V827).
+ *
+ * Depth letterboxes: uniform scale, centred, edges replicated, because a non-uniformly
+ * squeezed frame degrades a monocular estimator plausibly and silently. The same is true
+ * of MoveNet, and `letterboxPreprocessWgsl()` from §V827's seam is right there.
+ *
+ * It is NOT adopted here because the letterbox is HALF a change. Depth's other half is
+ * `depthToRgba` reading back only the occupied band (`occOf` is the WGSL's float64 twin);
+ * pose's other half would be un-letterboxing the keypoints — a joint at model uv `m` is
+ * at frame uv `(m - 0.5) / occ + 0.5` — and `keypointsToTexture` CANNOT DO IT: the source
+ * aspect never reaches it. The worker's encoder is handed `request.width`/`height`, which
+ * for pose is the 17x1 KEYPOINT MAP (`resolutionPolicy` is fixed), not the picture. So
+ * adopting the letterbox without a new protocol field would letterbox the input and read
+ * the joints back as if it had not — every joint off by the bar width, plausibly.
+ *
+ * The fix is a source-size field on the run request, which lands with whoever owns the
+ * protocol next. Until then the squeeze is the honest state: wrong in a KNOWN way that
+ * affects both halves consistently, rather than wrong in a way that only shows on
+ * non-square input.
+ */
 const POSE_PREPROCESS_WGSL = `struct PoseParams { side: f32 };
 
 @group(0) @binding(0) var<uniform> params: PoseParams;
@@ -71,6 +97,41 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
 
 const WORKGROUPS = Math.ceil(POSE_INPUT_SIDE / 8);
 
+const POSE_MODEL_SCHEMA = inferenceModelSchema(POSE_MODELS, {
+  what:
+    "Which MoveNet build runs. The 8-bit variant is a quarter of the download and is NOT " +
+    "faster — measured on the CPU path it is roughly three times slower — so pick it to " +
+    "save the download, never to save time.",
+});
+
+/** The pre-§V827 stored spellings, and the descriptor each one still means (§V813). */
+const POSE_LEGACY_MODEL_VALUES: ReadonlyArray<{ value: string; descriptor: ModelDescriptor }> = [
+  { value: "accurate", descriptor: POSE_ACCURATE },
+  { value: "fast", descriptor: POSE_LIVE },
+];
+
+/**
+ * The chooser, plus the legacy row the DOCUMENT IN HAND is standing on — and only that
+ * one (depth's shape exactly).
+ *
+ * Offering both legacy values to everyone would show four rows for two models, at two
+ * different sizes, because the old labels were hand-written and the new ones are measured.
+ * A migration shim must be invisible to everyone it is not migrating.
+ */
+function poseModelParameter(stored: Readonly<Record<string, unknown>>): ParameterSchema[string] {
+  const legacy = POSE_LEGACY_MODEL_VALUES.filter((entry) => entry.value === stored["model"]).map(
+    (entry) => {
+      const twin = POSE_MODEL_SCHEMA.options.find((option) => option.value === entry.descriptor.id);
+      return { value: entry.value, label: `${twin?.label ?? entry.descriptor.label} — as saved` };
+    },
+  );
+  return { ...POSE_MODEL_SCHEMA, options: [...POSE_MODEL_SCHEMA.options, ...legacy] };
+}
+
+function poseParameters(stored: Readonly<Record<string, unknown>>): ParameterSchema {
+  return { model: poseModelParameter(stored), reset: inferenceResetSchema() };
+}
+
 export const poseNode: NodeDefinition = {
   type: "pose",
   version: 1,
@@ -81,18 +142,25 @@ export const poseNode: NodeDefinition = {
   tags: ["pose", "ml", "inference", "keypoints", "points", "body"],
   inputs: [{ id: "input", label: "Input", type: RGBA_TEXTURE }],
   outputs: [{ id: "out", label: "Keypoints", type: RGBA_TEXTURE }],
-  parameters: {
-    model: {
-      type: "enum",
-      label: "Model",
-      default: "accurate",
-      options: [
-        { value: "accurate", label: "Accurate (9 MB)" },
-        { value: "fast", label: "Small download (2.5 MB)" },
-      ],
-      description:
-        "Both are MoveNet SinglePose Lightning; the 8-bit variant is a quarter of the download and is NOT faster — measured on the CPU path it is roughly three times slower. Pick it to save the download, not to save time. Separate downloads, so switching asks before it spends anything.",
-    },
+  /**
+   * §V827's OBLIGATIONS (1) AND (5), taken from the shared seam (T957, §T985).
+   *
+   * Pose shipped with depth's omissions and earned §T985 for it: an opaque chooser
+   * (`Accurate (9 MB)` named neither the model nor the licence, and the megabytes were
+   * hand-written beside a byte count the catalogue already measures) and no recovery
+   * gesture at all. Both are now one function call each, so the next model node inherits
+   * them rather than repeating the omission a third time.
+   *
+   * §V813, exactly as depth: `accurate`/`fast` are what documents written before the
+   * chooser hold, so they stay in the OPTION LIST and not merely in the parser — an enum
+   * whose stored value is missing from its own options resolves to the default, which
+   * would silently move a document onto the 9 MB model it did not choose.
+   */
+  /** The STATIC fallback: the palette and a fresh drop, on the default model. */
+  parameters: poseParameters({}),
+  /** PER-INSTANCE, for the one thing that varies: which legacy spelling this node holds. */
+  parametersFor(stored) {
+    return poseParameters(stored);
   },
   /**
    * FIXED, and deliberately not `inherit`. The output is a data map with one texel per

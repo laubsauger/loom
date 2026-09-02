@@ -53,12 +53,23 @@ export const DEPTH_ACCURATE: ModelDescriptor = {
  */
 export const DEPTH_LIVE: ModelDescriptor = {
   id: "depth-anything-v2-small-q4f16",
-  label: "Depth Anything V2 Small (small download)",
+  label: "Depth Anything V2 Small 4-bit",
   url: weights("model_q4f16.onnx"),
   bytes: 19_126_267,
   license: "Apache-2.0",
 };
 
+/*
+ * §V827/§T965: A LABEL NAMES THE ARTEFACT, NEVER ITS SIZE.
+ *
+ * These read "(small download)" until T957's chooser landed, and the reason to change
+ * them is not tidiness. The chooser composes `<label> (<measured MB>)` from
+ * `descriptor.bytes`, so a size in the label is a SECOND, hand-written copy of a number
+ * the file already measures — the shape that lets an option say 18 MB while it downloads
+ * 19. And "small download" said the one thing §T753 measured as false: it is a fifth of
+ * the bytes and 1.44x SLOWER. The quantisation IS the difference, so the label names it
+ * and the size comes from the bytes.
+ */
 export const DEPTH_MODELS: readonly ModelDescriptor[] = [DEPTH_ACCURATE, DEPTH_LIVE];
 
 /**
@@ -93,7 +104,7 @@ export const POSE_ACCURATE: ModelDescriptor = {
  */
 export const POSE_LIVE: ModelDescriptor = {
   id: "movenet-lightning-int8",
-  label: "MoveNet SinglePose Lightning (small download)",
+  label: "MoveNet SinglePose Lightning 8-bit",
   url: poseWeights("model_int8.onnx"),
   bytes: 2_598_245,
   license: "Apache-2.0",

@@ -9,6 +9,8 @@ import {
   DEPTH_INPUT_KEY,
   DEPTH_INPUT_SIDE,
   DEPTH_RESULT_KEY,
+  MATTE_INPUT_KEY,
+  MATTE_RESULT_KEY,
   POSE_INPUT_KEY,
   POSE_RESULT_KEY,
   depthSettingsFor,
@@ -28,8 +30,21 @@ import {
 } from "@runtime/models/model-acquisition.ts";
 import { cacheModelStore } from "@runtime/models/cache-model-store.ts";
 import { createWorkerRunner, type WorkerRunner } from "@runtime/models/worker-runner.ts";
-import type { WorkerLike } from "@runtime/models/inference-protocol.ts";
-import { DEPTH_ACCURATE, DEPTH_LIVE, POSE_ACCURATE, POSE_LIVE } from "@runtime/models/model-catalogue.ts";
+import type { InferenceNodeType, WorkerLike } from "@runtime/models/inference-protocol.ts";
+import {
+  DEPTH_ACCURATE,
+  DEPTH_LIVE,
+  MATTE_ACCURATE,
+  MATTE_FAST,
+  POSE_ACCURATE,
+  POSE_LIVE,
+} from "@runtime/models/model-catalogue.ts";
+import {
+  MATTE_INPUT_SIDE,
+  matteToFloats,
+  neutralMatte,
+  packMatteInput,
+} from "@runtime/models/matte-runner.ts";
 import { depthToRgba, neutralDepth, packModelInput } from "@runtime/models/depth-runner.ts";
 import {
   POSE_INPUT_CHANNELS,
@@ -130,10 +145,44 @@ interface InferenceRunSettings {
   readonly hold: boolean;
 }
 
-/** Pose has no backend or cadence controls yet — the §T715 ladder, uncapped. */
-function poseSettings(parameters: Readonly<Record<string, unknown>>): InferenceRunSettings {
+/**
+ * §T957's HANDOFF, taken (the matte session's ~15 lines in this file).
+ *
+ * The whole entry is a table row, which is the claim §T736 has been making since pose:
+ * a third model node needs no new resource kind, no new upload route and no change to
+ * the async semantics — the acquisition, the session cache, the staleness reporting, the
+ * timing channels and the notices all applied unchanged.
+ *
+ * ⚠ The handoff was FAILURE-FREE BY CONSTRUCTION and that is §T715's degrade rule paying
+ * out rather than a happy accident: until this row existed the Matte node compiled,
+ * published its neutral (zero everywhere — "nobody is here") and downloaded nothing. A
+ * missing construction site degraded the RATE to zero and never the CONTRACT, so the
+ * cross-session dependency could sit unlanded without breaking a document.
+ *
+ * The model id is the STORED VALUE here — the matte shipped on §V827's chooser from day
+ * one, so there is no legacy string to keep parsing (contrast depth and pose below).
+ */
+function matteSettings(parameters: Readonly<Record<string, unknown>>): InferenceRunSettings {
   return {
-    descriptor: parameters["model"] === "fast" ? POSE_LIVE : POSE_ACCURATE,
+    descriptor: parameters["model"] === MATTE_FAST.id ? MATTE_FAST : MATTE_ACCURATE,
+    inputSide: MATTE_INPUT_SIDE,
+    providers: ["webgpu", "wasm"],
+    minIntervalSeconds: 0,
+    hold: false,
+  };
+}
+
+/**
+ * Pose has no backend or cadence controls yet — the §T715 ladder, uncapped.
+ *
+ * ⚠ BOTH SPELLINGS, for depth's reason (§V813): `fast` is what documents written before
+ * §V827's chooser hold, the model id is what a new choice writes, and reading only one of
+ * them would mean picking the cheap model and downloading the expensive one.
+ */
+function poseSettings(parameters: Readonly<Record<string, unknown>>): InferenceRunSettings {
+  const wanted = parameters["model"];
+  return {
+    descriptor: wanted === "fast" || wanted === POSE_LIVE.id ? POSE_LIVE : POSE_ACCURATE,
     inputSide: POSE_INPUT_SIDE,
     providers: ["webgpu", "wasm"],
     minIntervalSeconds: 0,
@@ -180,6 +229,20 @@ const INFERENCE_KINDS: readonly InferenceKind[] = [
     // consulted — the joints are the data, not a picture of them.
     encode: (output) => keypointsToTexture(output),
     fallback: () => neutralPose(),
+  },
+  {
+    nodeType: "matte",
+    label: "Matte",
+    neutralPicture: "zero everywhere — nobody is here",
+    inputKey: MATTE_INPUT_KEY,
+    resultKey: MATTE_RESULT_KEY,
+    tensorType: "float32",
+    // NCHW, like depth's ViT: MODNet takes normalised planar RGB.
+    dims: (side) => [1, 3, side, side],
+    settings: matteSettings,
+    pack: (texels, side) => packMatteInput(texels, side),
+    encode: (output, size) => matteToFloats(output, MATTE_INPUT_SIDE, size[0], size[1]),
+    fallback: (size) => neutralMatte(size[0], size[1]),
   },
 ];
 
@@ -368,7 +431,10 @@ export function useModelInference(
         if (found === undefined) return undefined;
         return {
           modelId: found.descriptor.id,
-          nodeType: found.kind.nodeType as "depth" | "pose",
+          // Widened by hand because `InferenceKind.nodeType` is a plain string; the
+          // protocol's union is the authority, and a row naming a type it does not
+          // declare fails here rather than reaching the worker as an unknown packing.
+          nodeType: found.kind.nodeType as InferenceNodeType,
           width: found.size[0],
           height: found.size[1],
           side: found.settings.inputSide,

@@ -148,6 +148,12 @@ export const NODE_REPRODUCIBILITY: Readonly<Record<string, Reproducibility>> = {
   // the frame's. Its unbounded latency is if anything more visible — a stale skeleton
   // lags a moving body, where a stale depth map merely lags a moving scene.
   pose: "async-cached",
+  // T957. The third model node, the same class for the same reason — and the one with the
+  // strongest claim to it: MODNet is per-frame, so the matte is additionally smoothed by a
+  // temporal EMA held in the WORKER, which makes what it publishes depend on the sequence
+  // of frames that reached it rather than on this frame alone. A take must replay a
+  // recorded result, exactly as depth's and pose's gates do.
+  matte: "async-cached",
 
   /*
    * PURE — a function of the frame and the document, and the reason the other four are

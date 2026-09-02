@@ -3,9 +3,10 @@ import type { ParameterSchema } from "../../domain/types/parameters.ts";
 import type { DispatchPassDescriptor, EffectPassDescriptor } from "../../runtime/backend/plan.ts";
 import { inferenceSourceIdFor } from "../../runtime/execution/inference-sources.ts";
 import { scratchResourceId } from "../../compiler/resources.ts";
-import { formatBytes, type ModelDescriptor } from "../../runtime/models/model-acquisition.ts";
-import { DEPTH_ACCURATE, DEPTH_LIVE } from "../../runtime/models/model-catalogue.ts";
+import type { ModelDescriptor } from "../../runtime/models/model-acquisition.ts";
+import { DEPTH_ACCURATE, DEPTH_LIVE, DEPTH_MODELS } from "../../runtime/models/model-catalogue.ts";
 import { signatureFor } from "../../runtime/models/model-signatures.ts";
+import { inferenceModelSchema, inferenceResetSchema, letterboxPreprocessWgsl } from "./inference-node.ts";
 import { RGBA_TEXTURE } from "./common-ports.ts";
 import { readCompileInputs } from "./compile-context.ts";
 
@@ -121,10 +122,26 @@ const DEPTH_MODEL_CHOICES: readonly DepthModelChoice[] = [
 
 const DEFAULT_CHOICE: DepthModelChoice = DEPTH_MODEL_CHOICES[0] as DepthModelChoice;
 
-/** The model a node's stored parameters select. Unknown or absent resolves to the default. */
+/**
+ * The model a node's stored parameters select, in EITHER spelling.
+ *
+ * `accurate`/`fast` are what every loom written before §V827's chooser holds; the model
+ * id is what a new choice writes. Both resolve here and always will (§V813).
+ *
+ * ⚠ This read matched only the legacy value for one commit of the migration, which meant
+ * a NEW choice of the 4-bit variant resolved to the 94 MB one — the chooser stored an id
+ * nothing could read back, so picking the cheap model downloaded the expensive one. The
+ * options list and the parser are two halves of one contract and both have to move.
+ *
+ * Unknown or absent resolves to the default.
+ */
 export function depthModelChoiceFor(stored: Readonly<Record<string, unknown>>): DepthModelChoice {
   const raw = stored["model"];
-  return DEPTH_MODEL_CHOICES.find((choice) => choice.value === raw) ?? DEFAULT_CHOICE;
+  return (
+    DEPTH_MODEL_CHOICES.find(
+      (choice) => choice.value === raw || choice.descriptor.id === raw,
+    ) ?? DEFAULT_CHOICE
+  );
 }
 
 /** Seconds a run of this model measured at 518, as a sentence fragment. */
@@ -301,28 +318,71 @@ export function depthSettingsFor(stored: Readonly<Record<string, unknown>>): Dep
  *    model standing under it.
  *  - `model`'s own description names the chosen descriptor's size and licence.
  */
+/**
+ * §V813 — PARSE FOREVER, EMIT NEVER, and the migration is where it bites.
+ *
+ * The seam's chooser stores a MODEL ID; every loom shipped before it stores `accurate` or
+ * `fast` — E44 Sounding and E47 Hologram both hold `"model": "accurate"` on disk right
+ * now. Those strings stay legal for good, and a document holding one is never rewritten:
+ * a save emits what was stored. Only a NEW choice writes an id.
+ *
+ * ⚠ THEY ARE KEPT IN `options`, NOT MERELY PARSED, and that is the load-bearing half. An
+ * enum whose stored value is absent from its own option list resolves to the DEFAULT, so
+ * a document that had chosen the 4-bit variant would silently switch to the 94 MB one the
+ * moment it was opened — a download the author never asked for, from a migration that
+ * looked complete.
+ */
+const LEGACY_MODEL_VALUES: ReadonlyArray<{ value: string; choice: DepthModelChoice }> =
+  DEPTH_MODEL_CHOICES.map((choice) => ({ value: choice.value, choice }));
+
+function modelParameter(
+  choice: DepthModelChoice,
+  stored: Readonly<Record<string, unknown>>,
+): ParameterSchema[string] {
+  const base = inferenceModelSchema(DEPTH_MODELS, {
+    what:
+      `Which weights to use — currently ${choice.descriptor.label}, ${measuredCost(choice)}. ` +
+      `Both produce a depth map and differ in download size and detail. The 4-bit variant ` +
+      `is a fifth of the bytes and is NOT faster: unpacking 4-bit weights costs more than ` +
+      `the memory it saves, so pick it to save the download, never to save time.`,
+  });
+  /*
+   * The legacy row is offered ONLY to the document that is standing on it, and it wears
+   * the SAME label as its modern twin plus a marker.
+   *
+   * Two mistakes were live in the built app before this: the list showed four rows where
+   * there are two models, and the legacy pair carried `formatBytes` (94 MB) against the
+   * seam's `megabytes` (94.5 MB) — so one model appeared twice at two different sizes,
+   * which reads as two different downloads. A migration shim must be INVISIBLE to everyone
+   * it is not migrating; §V827's dynamic-enum shape (the backend picker keeps an
+   * unreachable option only while it is the stored one) is the same answer.
+   */
+  const legacy = LEGACY_MODEL_VALUES.filter((entry) => entry.value === stored["model"]).map(
+    (entry) => {
+      const twin = base.options.find((option) => option.value === entry.choice.descriptor.id);
+      return { value: entry.value, label: `${twin?.label ?? entry.choice.descriptor.label} — as saved` };
+    },
+  );
+  return { ...base, group: "Model", options: [...base.options, ...legacy] };
+}
+
 function depthParameters(stored: Readonly<Record<string, unknown>>): ParameterSchema {
   const choice = depthModelChoiceFor(stored);
   const schema: Record<string, ParameterSchema[string]> = {
-    model: {
-      type: "enum",
-      label: "Model",
-      group: "Model",
-      default: DEFAULT_CHOICE.value,
-      options: DEPTH_MODEL_CHOICES.map((candidate) => ({
-        value: candidate.value,
-        // §T965(b): the model BY NAME and the download BY SIZE, in the option itself.
-        label: `${candidate.descriptor.label} · ${formatBytes(candidate.descriptor.bytes)}`,
-      })),
-      description:
-        `Which weights to use. Currently ${choice.descriptor.label} — ` +
-        `${formatBytes(choice.descriptor.bytes)}, ${choice.descriptor.license}, ` +
-        `${measuredCost(choice)}. Both produce a depth map and differ in download size and ` +
-        `detail. The 4-bit variant is a fifth of the bytes and is NOT faster — unpacking ` +
-        `4-bit weights costs more than the memory it saves — so pick it to save the ` +
-        `download, never to save time. They are separate downloads, and switching asks ` +
-        `before it spends anything.`,
-    },
+    /*
+     * §V827's OBLIGATION (1), now SHARED rather than hand-built (T957's seam).
+     *
+     * This node built the chooser by hand in §T965 and the matte repeated the shape; the
+     * seam is where the third instance turned it into one function. What it adds that the
+     * hand-built version did not have is the LICENCE, and it belongs beside the size for
+     * the same reason the size does: a 94 MB artefact under an unstated licence is a
+     * decision made with half the information.
+     *
+     * The per-model sentence stays this node's — the seam takes `what`, composed from the
+     * CHOSEN model's own measurement, so §T753's "smaller is 1.44x SLOWER" is stated
+     * exactly where someone is about to pick the smaller one.
+     */
+    model: modelParameter(choice, stored),
     backend: {
       type: "enum",
       label: "Backend",
@@ -367,40 +427,19 @@ function depthParameters(stored: Readonly<Record<string, unknown>>): ParameterSc
   }
 
   /*
-   * §T978 — THE RECOVERY GESTURE, AND IT IS A PARAMETER (owner: "a reset button / reset
-   * pulse like TD has it in case it gets stuck or whatever. let's get that on the
-   * parameter page").
+   * §V827's OBLIGATION (5), now SHARED (T957's seam).
    *
-   * No new control kind and no pane (§T960): `pulse` is already a parameter type that is a
-   * GESTURE rather than a value, so this lands on the parameter page by BEING a parameter
-   * — and it takes every parameter mode like anything else, so an expression crossing zero
-   * fires it too. A trigger you can only click is a button.
+   * §T978 built this pulse here, word for word, and the matte copied the words. Two
+   * copies of a SCOPE STATEMENT is the thing to be afraid of: the sentence that matters
+   * is "THE DOWNLOADED MODEL IS KEPT", and a second copy is a place for it to drift into
+   * saying something else. One function, one promise.
    *
-   * THE CASE IS NOT HYPOTHETICAL. §B171's own arc produced one: a failed session load
-   * stayed in the worker's cache as a rejected promise, so no retry could ever succeed.
-   * That instance is fixed; the CLASS is not. An inference runtime has a download, a
-   * worker thread, a session and a provider ladder — four things that can wedge — and
-   * "reload the tab" is not a recovery for any of them.
-   *
-   * ⚠ SCOPE, AND THE COPY SAYS THE SCOPE. It resets the SESSION: the thread, the ladder,
-   * the published result and any run in flight. It does NOT touch the cached weights.
-   * 94 MB re-downloaded by a misread button is worse than the stuck state it was meant to
-   * clear, and §B175 records the model already re-downloading per origin more than anyone
-   * expects. Forgetting the model is a different control and would want a confirmation.
+   * The case it recovers is not hypothetical — §B171's own arc produced one: a failed
+   * session load stayed cached as a rejected promise, so no retry could ever succeed.
+   * That instance is fixed; a download, a worker, a session and a provider ladder are
+   * four things that can wedge, and "reload the tab" recovers none of them.
    */
-  schema["reset"] = {
-    type: "pulse",
-    label: "Reset",
-    group: "Model",
-    fires: "runtime.resetInference",
-    input: { nodeIds: ["$node"] },
-    description:
-      "Restarts inference from a clean state: the worker thread, the model session, the " +
-      "execution-provider ladder, the published result and any run in flight. The node " +
-      "goes back to publishing its neutral output and computes a fresh first result. " +
-      "THE DOWNLOADED MODEL IS KEPT — this never re-downloads, and never spends anything. " +
-      "The thread is shared, so any other model node in the document restarts with it.",
-  };
+  schema["reset"] = inferenceResetSchema();
 
   schema["refresh"] = {
     type: "enum",
@@ -474,44 +513,17 @@ function depthParameters(stored: Readonly<Record<string, unknown>>): ParameterSc
 }
 
 /**
- * Resample into the model's input, on the GPU.
+ * The preprocess, from §V827's seam (T957).
  *
- * Doing this here rather than on the CPU is the reason we need no image library: the
- * expensive part of preprocessing is the resize, the GPU is already holding the pixels,
- * and what crosses to the CPU is the model's actual input rather than a full-resolution
- * frame. `vec4f` per texel so the runner receives floats and converts nothing.
+ * This node's own letterbox WGSL was the ORIGINAL — §T974 wrote it here and `occOf` in
+ * `depth-runner.ts` is its float64 twin. It moved to the seam when the matte needed the
+ * same square, and the reason to take the shared copy rather than keep a local one is the
+ * pairing: the aspect rule is stated in two languages that must agree, and a third copy
+ * in WGSL is a third chance for them to disagree silently. A squeezed frame degrades a
+ * monocular estimator plausibly, which is the failure no pixel gate catches.
  */
-const DEPTH_PREPROCESS_WGSL = `struct DepthParams { side: f32 };
+const DEPTH_PREPROCESS_WGSL = letterboxPreprocessWgsl();
 
-@group(0) @binding(0) var<uniform> params: DepthParams;
-@group(0) @binding(1) var sourceTexture: texture_2d<f32>;
-@group(0) @binding(2) var<storage, read_write> modelInput: array<vec4f>;
-
-@compute @workgroup_size(8, 8)
-fn main(@builtin(global_invocation_id) gid: vec3u) {
-  let side = u32(params.side);
-  if (gid.x >= side || gid.y >= side) { return; }
-  let dims = vec2i(textureDimensions(sourceTexture, 0));
-  let uv = (vec2f(f32(gid.x), f32(gid.y)) + 0.5) / params.side;
-  /* T974 — LETTERBOX, not squeeze. A monocular estimator is trained on natural
-     perspective; a non-uniformly squeezed frame degrades its output silently and
-     plausibly, and §T958's single published fov becomes geometrically wrong (fx != fy).
-     The source occupies the largest CENTERED aspect-true region of the model square;
-     outside it the edge replicates (the model sees continuation, and depthToRgba never
-     reads those rows back). occOf() in depth-runner.ts is this formula's float64 twin —
-     the two must move together or the result texture shifts against the picture. */
-  let dimsF = vec2f(dims);
-  let aspect = dimsF.x / max(dimsF.y, 1.0);
-  let occ = select(vec2f(aspect, 1.0), vec2f(1.0, 1.0 / aspect), aspect >= 1.0);
-  let sourceUv = (uv - vec2f(0.5)) / occ + vec2f(0.5);
-  let texel = clamp(vec2i(sourceUv * dimsF), vec2i(0), dims - vec2i(1));
-  modelInput[gid.y * side + gid.x] = textureLoad(sourceTexture, texel, 0);
-}`;
-
-/* T959: the result texture is r32float, which no filtering sampler may touch without a
-   feature gate — and a depth map should not be bilinearly blended anyway (a filtered
-   edge between near and far invents a depth BETWEEN them that nothing occupies). Nearest
-   textureLoad, scaled by hand: precise, feature-free, and honest about edges. */
 /* T965: the ENCODING half of the node's parameters lives here rather than in the worker,
    and that placement is the point. Flipping near/far or narrowing the published range is a
    UNIFORM WRITE on a pass that is already running (§V5) — done in the encoder it would mean

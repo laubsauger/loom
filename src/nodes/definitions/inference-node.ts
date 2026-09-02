@@ -1,4 +1,4 @@
-import type { ParameterSchema } from "../../domain/types/parameters.ts";
+import type { EnumParameter, ParameterSchema } from "../../domain/types/parameters.ts";
 import type { ModelDescriptor } from "../../runtime/models/model-acquisition.ts";
 
 /**
@@ -38,7 +38,17 @@ function megabytes(bytes: number): string {
 export function inferenceModelSchema(
   models: readonly ModelDescriptor[],
   options: { readonly label?: string; readonly what: string },
-): ParameterSchema[string] {
+): EnumParameter {
+  /*
+   * Returns `EnumParameter`, not the `ParameterSchema[string]` union, and the narrowing
+   * is what the FIRST MIGRATION needed rather than a preference (T965's depth node).
+   *
+   * Depth carries §V813 legacy stored values — looms shipped holding `accurate`/`fast`
+   * before the chooser stored model ids — so its adoption has to EXTEND the option list
+   * rather than take it whole. Through the union that read is impossible: `.options`
+   * exists on one member. A seam a second adopter has to cast its way into is a seam that
+   * will be forked instead of reused, which is the outcome §V827 exists to prevent.
+   */
   const first = models[0];
   return {
     type: "enum",

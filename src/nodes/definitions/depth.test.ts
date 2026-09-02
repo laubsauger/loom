@@ -5,7 +5,6 @@ import { describe, expect, it } from "vitest";
 import { depthNode, depthProvidersFor, depthSettingsFor } from "./depth.ts";
 import { effectiveParameterSchema } from "../../domain/parameters/resolve.ts";
 import { DEPTH_ACCURATE, DEPTH_LIVE } from "../../runtime/models/model-catalogue.ts";
-import { formatBytes } from "../../runtime/models/model-acquisition.ts";
 import type { EnumParameter } from "../../domain/types/parameters.ts";
 
 /**
@@ -26,33 +25,63 @@ const enumOf = (stored: Record<string, unknown>, key: string): EnumParameter => 
   return found;
 };
 
-describe("§T965(b) — the dropdown names the model and the size", () => {
-  it("labels each option with the catalogue's own name and byte count", () => {
+describe("§T965(b)/§V827(1) — the chooser names the model, the size AND the licence", () => {
+  it("labels each option with the catalogue's own name and its MEASURED megabytes", () => {
     const labels = enumOf({}, "model").options.map((option) => option.label);
-    // The owner's exact complaint was `fast` / `accurate`: which model, and how big?
-    expect(labels).toContain(`${DEPTH_ACCURATE.label} · ${formatBytes(DEPTH_ACCURATE.bytes)}`);
-    expect(labels).toContain(`${DEPTH_LIVE.label} · ${formatBytes(DEPTH_LIVE.bytes)}`);
-    // Said out loud, because a formatter change that quietly dropped the megabytes would
-    // still satisfy the composition above.
-    expect(labels.join(" ")).toContain("94 MB");
-    expect(labels.join(" ")).toContain("18 MB");
+    // The owner's complaint was `fast` / `accurate`: which model, and how big? Composed
+    // from `descriptor.bytes` by §V827's shared chooser, so the number in the option is
+    // the number that will be downloaded and cannot be a stale hand-written copy.
+    expect(labels).toContain("Depth Anything V2 Small (94.5 MB)");
+    // And the 4-bit variant is named by its QUANTISATION, not by "small download" —
+    // §T753 measured it 1.44x SLOWER, so "small" was the one word that could mislead.
+    expect(labels).toContain("Depth Anything V2 Small 4-bit (18.2 MB)");
   });
 
-  it("keeps the STORED values, so shipped documents still resolve (§V813)", () => {
-    // Parse forever, emit never: the label changed, the value never can.
-    expect(enumOf({}, "model").options.map((option) => option.value)).toEqual([
-      "accurate",
-      "fast",
-    ]);
+  it("states the LICENCE, which the hand-built chooser did not", () => {
+    // A 94 MB artefact under an unstated licence is a decision made with half the
+    // information. The seam puts it in the description of the control that chooses it.
+    expect(schemaFor({})["model"]?.description).toContain("Apache-2.0");
+    expect(schemaFor({})["model"]?.description).toContain("Licence:");
   });
 
-  it("says WHICH model and 94 MB at the moment of choosing, not in a notice afterwards", () => {
-    const chosen = enumOf({}, "model").options.find((option) => option.value === "accurate");
-    // Both halves, because the label this replaced — "Accurate (94 MB)" — already carried
-    // the size. What it hid was WHICH weights, which is half the owner's complaint, and a
-    // test asserting only the megabytes would go green on the copy being replaced.
-    expect(chosen?.label).toContain("94 MB");
+  it("says WHICH model and its size at the moment of choosing, not in a notice after", () => {
+    const chosen = enumOf({}, "model").options.find(
+      (option) => option.value === DEPTH_ACCURATE.id,
+    );
+    // Both halves. The label this replaced — "Accurate (94 MB)" — already carried a size;
+    // what it hid was WHICH weights, which is half the owner's complaint.
+    expect(chosen?.label).toContain("94.5 MB");
     expect(chosen?.label).toContain("Depth Anything V2");
+  });
+
+  it("⚠ KEEPS the legacy value as an OPTION for the document standing on it (§V813)", () => {
+    // E44 Sounding and E47 Hologram hold `"model": "accurate"` on disk right now. An enum
+    // whose stored value is missing from its own options resolves to the DEFAULT — so
+    // dropping it would silently switch a document that chose the 4-bit variant onto the
+    // 94 MB one the moment it opened: a migration that looks complete and spends 94 MB of
+    // someone else's bandwidth.
+    expect(enumOf({ model: "accurate" }, "model").options.map((o) => o.value)).toContain("accurate");
+    expect(enumOf({ model: "fast" }, "model").options.map((o) => o.value)).toContain("fast");
+  });
+
+  it("...and shows it to NOBODY ELSE — a shim is invisible to whoever it is not migrating", () => {
+    // Offering both legacy rows to everyone showed FOUR options for TWO models, and the
+    // old pair carried hand-written megabytes (94) against the seam's measured ones
+    // (94.5), so one model appeared twice at two different sizes. That reads as two
+    // different downloads.
+    const fresh = enumOf({}, "model").options;
+    expect(fresh.map((option) => option.value)).toEqual([DEPTH_ACCURATE.id, DEPTH_LIVE.id]);
+    // And where it IS shown it wears its twin's label, so the sizes cannot disagree.
+    const shown = enumOf({ model: "accurate" }, "model").options.find((o) => o.value === "accurate");
+    expect(shown?.label).toContain("94.5 MB");
+    expect(shown?.label).toContain("as saved");
+  });
+
+  it("resolves BOTH spellings to the same weights, so nothing changed under a document", () => {
+    expect(depthSettingsFor({ model: "accurate" }).modelId).toBe(DEPTH_ACCURATE.id);
+    expect(depthSettingsFor({ model: DEPTH_ACCURATE.id }).modelId).toBe(DEPTH_ACCURATE.id);
+    expect(depthSettingsFor({ model: "fast" }).modelId).toBe(DEPTH_LIVE.id);
+    expect(depthSettingsFor({ model: DEPTH_LIVE.id }).modelId).toBe(DEPTH_LIVE.id);
   });
 });
 
@@ -64,8 +93,10 @@ describe("§T965(c) — the schema is COMPUTED FROM THE CHOSEN MODEL", () => {
     // in what the schema SAYS about the model that is actually selected.
     expect(accurate["model"]?.description).toContain(DEPTH_ACCURATE.label);
     expect(fast["model"]?.description).toContain(DEPTH_LIVE.label);
-    expect(accurate["model"]?.description).toContain("94 MB");
-    expect(fast["model"]?.description).toContain("18 MB");
+    // The MEASURED cost of the model that is actually selected — a number belonging to
+    // the other model standing under this control would be worse than none.
+    expect(accurate["model"]?.description).toContain("2.7 s");
+    expect(fast["model"]?.description).toContain("3.8 s");
   });
 
   it("carries the CHOSEN model's measured cost into the controls it is a choice about", () => {
