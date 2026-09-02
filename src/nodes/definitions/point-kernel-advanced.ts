@@ -4,6 +4,7 @@ import type { PointAttributeSchema } from "../../points/attributes.ts";
 import { ATTRIBUTE_STRIDES } from "../../points/attributes.ts";
 import {
   ADVANCED_KERNEL_CONTRACT_VERSION,
+  KERNEL_PARAM_PREFIX,
   generateKernelModule,
   generateSpawnHookModule,
 } from "../../points/codegen.ts";
@@ -19,12 +20,19 @@ import { readCompileInputs } from "./compile-context.ts";
 import { RGBA_TEXTURE } from "./common-ports.ts";
 import { readNumber } from "./parameter-readers.ts";
 import {
+  kernelBodyOf,
+  kernelParamCollisions,
+  kernelParamSchema,
+  kernelParamsFor,
+  legacyValueParametersFor,
   parseAttributes,
   pointKernelNoticeDiagnostics,
   pointKernelValueParameters,
   pointKernelValueUniforms,
   pointPairId,
+  structuralParameters,
 } from "./points.ts";
+import { reflectedUniforms } from "./params-reflection.ts";
 
 /**
  * The ADVANCED kernel (T322/T323): a per-point kernel that may CHANGE COUNTS — the
@@ -119,7 +127,7 @@ export const pointKernelAdvancedNode: NodeDefinition = {
       default: DEFAULT_POINT_KERNEL,
       compileTime: true,
       description:
-        "fn process(p: Point, ctx: PointCtx) -> Point. q.alive = 0u kills; q.spawnCount = n emits n children this frame (capped per parent). Clocks first: ctx.absTime (f32 seconds) and ctx.absFrame (u32 — a texture shader's frameU.absFrame is f32) keep counting across a timeline loop, so reach for these for anything that should simply keep going. ctx.time and ctx.frameIndex are timeline readings and reset to the in point at every lap — take them only when where you are IN the piece is the point, and write \"timeline-anchored\" in a comment when you do. ctx.pointer (vec4f: x, y, buttons) and ctx.value1..value4 (this node's drivable Value parameters, T479) are available to a kernel that names them. pointRand(pointId, salt) is available, and fieldAt(position) samples the field input when one is wired (T744) — which is what lets a kernel SPAWN where a video moves.",
+        "fn process(p: Point, ctx: PointCtx) -> Point. q.alive = 0u kills; q.spawnCount = n emits n children this frame (capped per parent). Clocks first: ctx.absTime (f32 seconds) and ctx.absFrame (u32 — a texture shader's frameU.absFrame is f32) keep counting across a timeline loop, so reach for these for anything that should simply keep going. ctx.time and ctx.frameIndex are timeline readings and reset to the in point at every lap — take them only when where you are IN the piece is the point, and write \"timeline-anchored\" in a comment when you do. ctx.pointer (vec4f: x, y, buttons) is available to a kernel that names it. YOUR OWN KNOBS (T900): declare a `struct Params { … }` in this text and each field becomes a named, typed, drivable control on this node, read as ctx.params.<name> here AND in the spawn hook — a uniform write, never a rebuild. That replaces ctx.value1..value4, which still work for kernels that already read them. pointRand(pointId, salt) is available, and fieldAt(position) samples the field input when one is wired (T744) — which is what lets a kernel SPAWN where a video moves.",
     },
     group: {
       type: "code",
@@ -137,11 +145,25 @@ export const pointKernelAdvancedNode: NodeDefinition = {
       default: "",
       compileTime: true,
       description:
-        "T339: fn spawn(child: Point, ctx: PointCtx) -> Point. Runs once on each NEWBORN, which arrives as its parent's copy — shape its attributes here. No alive/spawnCount: lifecycle belongs to the kernel. Empty = children stay copies. Same ctx as the kernel: ctx.absTime is the clock that does not restart at a loop, so newborns after a lap do not repeat the phases of the ones before it (T489).",
+        "T339: fn spawn(child: Point, ctx: PointCtx) -> Point. Runs once on each NEWBORN, which arrives as its parent's copy — shape its attributes here. No alive/spawnCount: lifecycle belongs to the kernel. Empty = children stay copies. Same ctx as the kernel: ctx.absTime is the clock that does not restart at a loop, so newborns after a lap do not repeat the phases of the ones before it (T489), and ctx.params carries the kernel's declared struct Params (T900) — one declaration, both passes.",
     },
-    // T479: all three texts are scanned — kernel, group predicate and spawn hook read the
-    // SAME ctx on the SAME node, so a slot is active if any of them names it.
+    // T479/T900: the legacy slots stay in the STATIC schema for type-only contexts; a placed
+    // node's slots come from `parametersFor` below — parse forever, emit never.
     ...pointKernelValueParameters(["kernel", "group", "spawn"]),
+  },
+  /**
+   * T900: same reflection, same reflector, same split as the plain kernel — this node's
+   * controls are its kernel's own `struct Params`, and the spawn hook reads them through the
+   * SAME declaration (one declaration site, two generated modules). Reflected fields are
+   * uniform writes (§V5); `kernel`, `attributes`, `group` and `spawn` stay `compileTime`.
+   */
+  parametersFor(stored) {
+    const own = structuralParameters(pointKernelAdvancedNode.parameters);
+    return {
+      ...own,
+      ...kernelParamSchema(kernelParamsFor(stored).fields, new Set(Object.keys(own))),
+      ...legacyValueParametersFor(["kernel", "group", "spawn"], stored),
+    };
   },
   stateful: { reset: true, deterministicReplay: true, checkpoint: false, randomAccess: false },
   contractVersion: ADVANCED_KERNEL_CONTRACT_VERSION,
@@ -192,27 +214,23 @@ export const pointKernelAdvancedNode: NodeDefinition = {
       };
     }
     const attributes = withFlags(parsed.attributes);
-    // Baseline WebGPU allows 8 storage buffers per stage (§V24). The kernel binds an
-    // in/out pair per attribute, the packed flags word out-only, and the counts
-    // buffer: 2·(n−1) + 1 + 1. Beyond that the pipeline FAILS SILENTLY (B33) —
-    // refuse loudly instead. The named ways past 8 are documented on
-    // ADVANCED_KERNEL_CONTRACT_VERSION.
-    const storageBindings = (attributes.length - 1) * 2 + 2;
-    if (storageBindings > 8) {
-      return {
-        passes: [],
-        diagnostics: [
-          {
-            severity: "error",
-            code: "node.points.attributes",
-            message: `Node "${nodeId}": ${parsed.attributes.length} attributes need ${storageBindings} storage bindings; the baseline limit is 8. The advanced kernel fits at most 3 attributes.`,
-            nodeId,
-          },
-        ],
-      };
-    }
+    /* T900/§V588: the 8-storage-buffer budget used to be checked HERE, by an arithmetic copy
+       of what codegen was about to build — and the PLAIN kernel had no check at all, so a
+       five-attribute schema there built ten bindings and the pipeline failed silently (B33).
+       The check now lives once, in `generateKernelModule`, against the binding list it
+       actually emits (§V349), and reaches this node as a `node.points.kernel` diagnostic. */
 
     const kernelSource = typeof parameters["kernel"] === "string" ? parameters["kernel"] : DEFAULT_POINT_KERNEL;
+    /* T900: the kernel's `struct Params`, reflected once and shared by BOTH generated modules
+       (the kernel and the spawn hook) — one declaration site, so "spawn with the speed the
+       slider says" reads the same knob the kernel does. */
+    const params = kernelParamsFor({ kernel: kernelSource });
+    const collisions = kernelParamCollisions(
+      nodeId,
+      params.fields,
+      new Set(Object.keys(structuralParameters(pointKernelAdvancedNode.parameters))),
+    );
+    if (collisions.length > 0) return { passes: [], diagnostics: collisions };
     const names = attributes.map((attribute) => attribute.name);
     const groupSource = typeof parameters["group"] === "string" ? parameters["group"] : "";
     /* T744: the SAME field path the plain kernel rides — one route into the point
@@ -222,10 +240,11 @@ export const pointKernelAdvancedNode: NodeDefinition = {
       attributes,
       reads: names,
       writes: names,
-      kernel: kernelSource,
+      kernel: kernelBodyOf(kernelSource),
       lifecycle: { flagsAttribute: FLAGS },
       ...(groupSource.trim() === "" ? {} : { group: groupSource }),
       ...(fieldTexture === undefined ? {} : { field: true }),
+      ...(params.fields.length === 0 ? {} : { params }),
     });
     if (!module.ok) {
       return {
@@ -262,7 +281,12 @@ export const pointKernelAdvancedNode: NodeDefinition = {
     const hookSource = typeof parameters["spawn"] === "string" ? parameters["spawn"].trim() : "";
     let hookModule: ReturnType<typeof generateSpawnHookModule> | undefined;
     if (hookSource !== "") {
-      hookModule = generateSpawnHookModule({ attributes, flagsAttribute: FLAGS, hook: hookSource });
+      hookModule = generateSpawnHookModule({
+        attributes,
+        flagsAttribute: FLAGS,
+        hook: hookSource,
+        ...(params.fields.length === 0 ? {} : { params }),
+      });
       if (!hookModule.ok) {
         return {
           passes: [],
@@ -371,6 +395,8 @@ export const pointKernelAdvancedNode: NodeDefinition = {
         ...(module.usesFirstRun ? { firstRun: 0 } : {}),
           // T479: mirrored per declared slot, same hazard as the pointer above.
           ...pointKernelValueUniforms(module.usesValues, parameters),
+          // T900: the reflected params, mirrored by name exactly as the module declared them.
+          ...reflectedUniforms(module.usesParams, parameters, KERNEL_PARAM_PREFIX),
           // T489 (B97): the absolute pair, same mirroring rule as the pointer above.
           ...(module.usesAbsClock ? { absTimeSeconds: 0, absFrameIndex: 0 } : {}),
         },
@@ -430,6 +456,7 @@ export const pointKernelAdvancedNode: NodeDefinition = {
                 ...(hookModule.usesPointer ? { pointer: [0, 0, 0, 0] } : {}),
                 // T479: the hook's own slots, mirrored from the same parameters.
                 ...pointKernelValueUniforms(hookModule.usesValues, parameters),
+                ...reflectedUniforms(hookModule.usesParams, parameters, KERNEL_PARAM_PREFIX),
                 // T489 (B97): the hook's own absolute pair, mirrored the same way.
                 ...(hookModule.usesAbsClock ? { absTimeSeconds: 0, absFrameIndex: 0 } : {}),
               },

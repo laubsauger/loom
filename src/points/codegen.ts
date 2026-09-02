@@ -142,6 +142,58 @@ export interface KernelModuleRequest {
    * field an incurious kernel never samples costs nothing (§V309).
    */
   readonly field?: boolean;
+  /**
+   * T900: the kernel's OWN `struct Params`, reflected by the shared reflector the
+   * `customWgsl` node uses (`params-reflection.ts`) and handed here as data.
+   *
+   * The direction matters: codegen stays a pure WGSL unit that knows nothing about node
+   * manifests or parameter schemas, so the NODE reflects and this emits. `declaration` is
+   * the author's own `struct Params { … }` text, lifted out of the kernel body because WGSL
+   * requires declaration before use and the generated `PointCtx` carries a `params: Params`
+   * member; `fields` is the same struct's members in declaration order, which is what makes
+   * the positional `Params(…)` construction below correct.
+   *
+   * ⚠ THE INVALIDATION SPLIT (§V5 vs §V588): every field here becomes a UNIFORM member, so
+   * turning one of these knobs is a buffer write and never a rebuild. The kernel TEXT that
+   * declared them is `compileTime` — editing the struct is a structural change and does
+   * rebuild. One reflection pass, two classes, and the class is decided by WHERE the value
+   * lives (a parameter value vs. the shader text), not by what it looks like.
+   */
+  readonly params?: {
+    readonly declaration: string;
+    readonly fields: ReadonlyArray<{ readonly name: string; readonly wgsl: string }>;
+  };
+}
+
+/**
+ * §V588, enforced where the arithmetic is. Baseline WebGPU guarantees 8 storage buffers per
+ * compute STAGE, and B33 is what happens when a kernel walks past it: the pipeline fails
+ * SILENTLY. Every kernel — plain and lifecycle alike — spends exactly 2n bindings for n
+ * attributes (the lifecycle variant trades the flags word's read binding for the live-count
+ * read), so the ceiling is four attributes for a plain kernel and three plus the injected
+ * flags for the advanced one.
+ *
+ * Checked HERE rather than in the two node manifests because the count is the length of the
+ * binding list this function just built — an arithmetic copy in a node is a second answer
+ * that can drift from the bindings actually emitted (§V349), and the plain kernel proved it
+ * by having no check at all while the advanced one did.
+ */
+export const MAX_KERNEL_STORAGE_BINDINGS = 8;
+
+/** WGSL types a reflected `struct Params` field may declare (mirrors the reflector's controls). */
+const PARAM_FIELD_TYPES = new Set(["f32", "i32", "u32", "vec2f", "vec3f", "vec4f"]);
+
+/**
+ * The `KernelFrame` member a reflected param rides in. PREFIXED on purpose: the params share
+ * the ONE uniform block a dispatch pass is allowed, beside members the generator owns
+ * (`seed`, `count`, `firstRun`, `value1`…), and an author's `struct Params { count: u32 }`
+ * must not be able to collide with one of them — now or after the generator gains its next
+ * member. The node's PARAMETER key stays the author's bare name; this is the wire name.
+ */
+export const KERNEL_PARAM_PREFIX = "p_";
+
+export function kernelParamUniformKey(name: string): string {
+  return `${KERNEL_PARAM_PREFIX}${name}`;
 }
 
 export interface KernelModule {
@@ -181,6 +233,13 @@ export interface KernelModule {
    * by name, and a declared texture with no binding fails loudly at pass build.
    */
   readonly usesField: boolean;
+  /**
+   * T900: the reflected `struct Params` members this module declared, in declaration order.
+   * The emitting node MUST mirror exactly these into the pass's `uniforms` record under
+   * `kernelParamUniformKey` — the same by-name hazard as `usesPointer`: a declared member
+   * with no value reads zero in silence (§V288).
+   */
+  readonly usesParams: ReadonlyArray<{ readonly name: string; readonly wgsl: string }>;
   /**
    * T587: advisories the emitting node turns into `info` diagnostics. NOT refusals — a
    * module carrying notices is a module that compiled. Today there is one: the kernel
@@ -544,6 +603,21 @@ export function generateKernelModule(request: KernelModuleRequest): KernelModule
     );
   }
 
+  /* T900: a reflected param must be constructible POSITIONALLY (`Params(a, b, c)` below), so
+     every declared field needs a type this generator can pull out of the uniform block. A
+     field it cannot — a matrix, an array, a nested struct — is refused BY NAME rather than
+     left to arrive as Dawn's "no matching constructor", and rather than silently skipped:
+     a skipped member is a knob that is not there and a uniform that reads zero (§V288). */
+  const paramFields = request.params?.fields ?? [];
+  for (const field of paramFields) {
+    if (!PARAM_FIELD_TYPES.has(field.wgsl)) {
+      errors.push(
+        `struct Params field "${field.name}" is ${field.wgsl}, which cannot become a node control — ` +
+          `a kernel's Params may declare ${[...PARAM_FIELD_TYPES].join(", ")} (T900).`,
+      );
+    }
+  }
+
   if (errors.length > 0) return { ok: false, errors };
 
   // The Point struct carries every attribute the kernel touches — reads, plus writes
@@ -591,6 +665,26 @@ export function generateKernelModule(request: KernelModuleRequest): KernelModule
       role: "live",
     });
     nextBinding += 1;
+  }
+
+  /* §V588/B33, T900: the budget, checked against the bindings actually built. Six attributes
+     were refused and five were refused when this arithmetic lived in the advanced node; the
+     PLAIN kernel had no check at all, so a five-attribute schema built ten bindings and the
+     pipeline failed with nothing said. Loud, by name, with the ceiling stated. */
+  if (bindings.length > MAX_KERNEL_STORAGE_BINDINGS) {
+    const declared = lifecycle === undefined ? attributes.length : attributes.length - 1;
+    const ceiling = lifecycle === undefined ? MAX_KERNEL_STORAGE_BINDINGS / 2 : MAX_KERNEL_STORAGE_BINDINGS / 2 - 1;
+    return {
+      ok: false,
+      errors: [
+        `${declared} attributes need ${bindings.length} storage bindings; the baseline limit is ` +
+          `${MAX_KERNEL_STORAGE_BINDINGS} (§V588). ` +
+          (lifecycle === undefined
+            ? `A point kernel fits at most ${ceiling} attributes.`
+            : `The advanced kernel fits at most ${ceiling} attributes — the injected lifecycle flags ` +
+              `word and the live count take the rest.`),
+      ],
+    };
   }
 
   /* T477: the field texture takes the next slot AFTER every storage binding, and the
@@ -748,6 +842,24 @@ fn groupMatch(p: Point, ctx: PointCtx) -> bool {
     ? "\n  /* T510: 1u on exactly the dispatches whose storage was just created or cleared —\n     the seeding signal. A LAP is not this (frameIndex wraps, buffers keep); a seek and\n     a document load are (both clear, §V170/T519). */\n  firstRun: u32,"
     : "";
   const firstRunArgument = usesFirstRun ? ", kernelFrame.firstRun" : "";
+  /* T900: the reflected params, appended LAST of all — after the absolute pair and firstRun —
+     for the reason every member before them was: a member that moved would move every kernel
+     already reading the one in front of it. The struct is the AUTHOR'S OWN TEXT, hoisted; the
+     uniform members are prefixed (`kernelParamUniformKey`) so an author's field name can never
+     collide with one this generator owns. */
+  const paramsDeclaration = paramFields.length === 0 ? "" : `${request.params?.declaration ?? ""}\n\n`;
+  const frameParams = paramFields
+    .map((field) => `\n  ${kernelParamUniformKey(field.name)}: ${field.wgsl},`)
+    .join("");
+  const ctxParams =
+    paramFields.length === 0
+      ? ""
+      : "\n  /* T900: this node's OWN `struct Params`, reflected into named typed controls — each\n     field is a real drivable parameter on this node, so `ctx.params.orbitSpeed` is a knob\n     with a name rather than `ctx.value2` with a comment. A uniform write, never a rebuild\n     (§V5); the STRUCT is compileTime, because editing it changes the module. */\n  params: Params,";
+  const paramsArgument =
+    paramFields.length === 0
+      ? ""
+      : `, Params(${paramFields.map((field) => `kernelFrame.${kernelParamUniformKey(field.name)}`).join(", ")})`;
+
   const frameAbs = usesAbsClock ? "\n  absTimeSeconds: f32,\n  absFrameIndex: u32," : "";
   const ctxAbs = usesAbsClock
     ? "\n  /* T489: the clock that does NOT wrap at a timeline lap — `time` above restarts at\n     the in point, this keeps counting (T461). A frame COUNT at the timeline rate, never\n     a wall reading, so an offline take reproduces (§V44, T467).\n\n     B119 — THE ONE ASYMMETRY, said here because this is where it bites. `absFrame` is\n     u32 in THIS struct and f32 in a texture shader's `frameU` block. Each matches the\n     `frameIndex` beside it (u32 here, f32 there — that block is f32 throughout), so\n     neither side is wrong on its own and the two do not agree with each other. Float\n     maths on it wants `f32(ctx.absFrame)`; shader arithmetic pasted in unconverted is\n     what Dawn answers with \"no matching overload\". `absTime` is f32 on both sides. */\n  absTime: f32,\n  absFrame: u32,"
@@ -765,14 +877,14 @@ struct KernelFrame {
   deltaSeconds: f32,
   frameIndex: u32,
   seed: u32,
-  count: u32,${framePointer}${frameValues}${frameAbs}${frameFirstRun}
+  count: u32,${framePointer}${frameValues}${frameAbs}${frameFirstRun}${frameParams}
 };
 
 @group(0) @binding(0) var<uniform> kernelFrame: KernelFrame;
 
 ${bufferDeclarations}
 
-struct Point {
+${paramsDeclaration}struct Point {
 ${structFields}
 };
 
@@ -782,7 +894,7 @@ ${dimStruct}struct PointCtx {
   count: u32,
   time: f32,
   delta: f32,
-  frameIndex: u32,${ctxPointer}${ctxDim}${ctxValues}${ctxAbs}${ctxFirstRun}
+  frameIndex: u32,${ctxPointer}${ctxDim}${ctxValues}${ctxAbs}${ctxFirstRun}${ctxParams}
 };
 
 ${RNG_WGSL}
@@ -795,7 +907,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 ${guard}
   var p: Point;
 ${loads}
-  let ctx = PointCtx(index, ${lifecycle === undefined ? "kernelFrame.count" : "live"}, kernelFrame.timeSeconds, kernelFrame.deltaSeconds, kernelFrame.frameIndex${usesPointer ? ", kernelFrame.pointer" : ""}${dimArgument}${valueArguments}${absArguments}${firstRunArgument});
+  let ctx = PointCtx(index, ${lifecycle === undefined ? "kernelFrame.count" : "live"}, kernelFrame.timeSeconds, kernelFrame.deltaSeconds, kernelFrame.frameIndex${usesPointer ? ", kernelFrame.pointer" : ""}${dimArgument}${valueArguments}${absArguments}${firstRunArgument}${paramsArgument});
 ${invoke}
 ${stores}
 }
@@ -812,6 +924,7 @@ ${stores}
     usesAbsClock,
     usesField: usesField && request.field === true,
     usesFirstRun,
+    usesParams: paramFields,
     /* T587: the GROUP predicate is scanned with the kernel because it compiles against the
        same `PointCtx` — a predicate gating on `ctx.time` wraps exactly as loudly. */
     notices: noticesOf(wrappingClockNotice("kernel", kernel, groupSource)),
@@ -849,6 +962,13 @@ export interface SpawnHookRequest {
   /** WGSL text containing `fn spawn(child: Point, ctx: PointCtx) -> Point`. */
   readonly hook: string;
   readonly workgroupSize?: number;
+  /**
+   * T900: the SAME reflected `struct Params` the kernel on this node declared. The hook is a
+   * second pass on one node, so it reaches the same knobs — which is what makes "spawn with
+   * the speed the slider says" expressible. ONE declaration site (the kernel text), two
+   * modules, exactly as the value slots already work.
+   */
+  readonly params?: KernelModuleRequest["params"];
 }
 
 export function generateSpawnHookModule(request: SpawnHookRequest): KernelModuleResult {
@@ -904,6 +1024,21 @@ export function generateSpawnHookModule(request: SpawnHookRequest): KernelModule
     : "";
   const hookAbsArguments = usesAbsClock ? ", kernelFrame.absTimeSeconds, kernelFrame.absFrameIndex" : "";
 
+  /* T900: the kernel's params, on the hook's ctx too — one declaration, both passes. */
+  const hookParamFields = request.params?.fields ?? [];
+  const hookParamsDeclaration = hookParamFields.length === 0 ? "" : `${request.params?.declaration ?? ""}\n\n`;
+  const hookFrameParams = hookParamFields
+    .map((field) => `\n  ${kernelParamUniformKey(field.name)}: ${field.wgsl},`)
+    .join("");
+  const hookCtxParams =
+    hookParamFields.length === 0
+      ? ""
+      : "\n  /* T900: the same reflected `struct Params` the kernel on this node reads. */\n  params: Params,";
+  const hookParamsArgument =
+    hookParamFields.length === 0
+      ? ""
+      : `, Params(${hookParamFields.map((field) => `kernelFrame.${kernelParamUniformKey(field.name)}`).join(", ")})`;
+
   const shaped = request.attributes.filter((attribute) => attribute.name !== request.flagsAttribute);
   const bindings: PointBufferBinding[] = [
     // In place: the read halves, where the copy passes left the newborns.
@@ -923,7 +1058,7 @@ struct KernelFrame {
   deltaSeconds: f32,
   frameIndex: u32,
   seed: u32,
-  count: u32,${usesPointer ? "\n  pointer: vec4f," : ""}${hookValueSlots.map((slot) => `\n  value${slot}: f32,`).join("")}${hookFrameAbs}
+  count: u32,${usesPointer ? "\n  pointer: vec4f," : ""}${hookValueSlots.map((slot) => `\n  value${slot}: f32,`).join("")}${hookFrameAbs}${hookFrameParams}
 };
 
 @group(0) @binding(0) var<uniform> kernelFrame: KernelFrame;
@@ -936,7 +1071,7 @@ ${shaped
   .join("\n")}
 @group(0) @binding(${shaped.length + 1}) var<storage, read> counts: array<u32>;
 
-struct Point {
+${hookParamsDeclaration}struct Point {
 ${shaped.map((attribute) => `  ${attribute.name}: ${attribute.type},`).join("\n")}
 };
 
@@ -946,7 +1081,7 @@ struct PointCtx {
   count: u32,
   time: f32,
   delta: f32,
-  frameIndex: u32,${usesPointer ? "\n  /* T367: the same four numbers the shared frame block carries (§V182). */\n  pointer: vec4f," : ""}${hookValueSlots.length === 0 ? "" : `\n  /* T479: the same live value slots the kernel reads, on the same node. */${hookValueSlots.map((slot) => `\n  value${slot}: f32,`).join("")}`}${hookCtxAbs}
+  frameIndex: u32,${usesPointer ? "\n  /* T367: the same four numbers the shared frame block carries (§V182). */\n  pointer: vec4f," : ""}${hookValueSlots.length === 0 ? "" : `\n  /* T479: the same live value slots the kernel reads, on the same node. */${hookValueSlots.map((slot) => `\n  value${slot}: f32,`).join("")}`}${hookCtxAbs}${hookCtxParams}
 };
 
 ${RNG_WGSL}
@@ -965,7 +1100,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   }
   var p: Point;
 ${shaped.map((attribute) => `  p.${attribute.name} = io_${attribute.name}[index];`).join("\n")}
-  let ctx = PointCtx(index, live, kernelFrame.timeSeconds, kernelFrame.deltaSeconds, kernelFrame.frameIndex${usesPointer ? ", kernelFrame.pointer" : ""}${hookValueSlots.map((slot) => `, kernelFrame.value${slot}`).join("")}${hookAbsArguments});
+  let ctx = PointCtx(index, live, kernelFrame.timeSeconds, kernelFrame.deltaSeconds, kernelFrame.frameIndex${usesPointer ? ", kernelFrame.pointer" : ""}${hookValueSlots.map((slot) => `, kernelFrame.value${slot}`).join("")}${hookAbsArguments}${hookParamsArgument});
   let q = spawn(p, ctx);
 ${shaped.map((attribute) => `  io_${attribute.name}[index] = q.${attribute.name};`).join("\n")}
 }
@@ -984,6 +1119,7 @@ ${shaped.map((attribute) => `  io_${attribute.name}[index] = q.${attribute.name}
     usesAbsClock,
     usesField: false,
     usesFirstRun: false,
+    usesParams: hookParamFields,
     /* T587: the hook is the surface where this matters MOST — "born with a phase off the
        clock" is the natural thing to write there, and on the wrapping one every generation
        born after a lap repeats the phases of the generation born before it. */

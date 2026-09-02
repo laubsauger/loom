@@ -11,6 +11,7 @@ import {
   POINT_KERNEL_CONTRACT_VERSION,
   POINT_KERNEL_VALUE_SLOTS,
   generateKernelModule,
+  KERNEL_PARAM_PREFIX,
   kernelReadsValueSlot,
   pointKernelValueKey,
   type KernelNotice,
@@ -21,6 +22,13 @@ import { DEFAULT_POINT_KERNEL, SPRITE_RENDER_WGSL, TEXTURE_TO_ATTRIBUTE_WGSL, po
 import { RGBA_TEXTURE } from "./common-ports.ts";
 import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
 import { readColor, readNumber } from "./parameter-readers.ts";
+import {
+  extractParamsStruct,
+  paramForField,
+  reflectParamsStruct,
+  reflectedUniforms,
+  type ReflectedField,
+} from "./params-reflection.ts";
 
 /**
  * The point family (T121, T122): Point Kernel simulates, Render Points draws.
@@ -167,6 +175,125 @@ export function pointKernelValueParameters(sourceKeys: ReadonlyArray<string>): P
 }
 
 /**
+ * T900 — the LEGACY value slots, per instance: PARSE FOREVER, EMIT NEVER (§V813's shape).
+ *
+ * `value1`…`value4` were four generic numbered slots named for their INDEX rather than their
+ * meaning, with a hard ceiling of four — the fixed-slot design §T880 rejected for `customWgsl`
+ * and then left standing here. The replacement is `struct Params` reflection below. Shipped
+ * documents hold these values and shipped kernels read `ctx.value1`, so they keep working
+ * exactly as they did; what stops is EMITTING them onto a node that has neither.
+ *
+ * A slot appears when this kernel READS it (active, driving something) or when this node
+ * already STORES it (a shipped loom's value keeps its home — a parameter whose schema entry
+ * vanished is a value with nowhere to land). A fresh kernel that names neither gets neither,
+ * so the inspector stops opening with four numbered knobs that mean nothing.
+ *
+ * The definitions themselves come from `pointKernelValueParameters` unchanged — including its
+ * `inactiveWhen`, so a stored-but-unread slot still NAMES why it is inactive (§V220/§V360).
+ */
+const VALUE_SLOT_KEYS: ReadonlySet<string> = new Set(
+  Array.from({ length: POINT_KERNEL_VALUE_SLOTS }, (_unused, index) => pointKernelValueKey(index + 1)),
+);
+
+/** A kernel node's own, type-fixed parameters: everything in its manifest but the legacy slots. */
+export function structuralParameters(schema: ParameterSchema): ParameterSchema {
+  return Object.fromEntries(Object.entries(schema).filter(([key]) => !VALUE_SLOT_KEYS.has(key)));
+}
+
+export function legacyValueParametersFor(
+  sourceKeys: ReadonlyArray<string>,
+  stored: Readonly<Record<string, unknown>>,
+): ParameterSchema {
+  const all = pointKernelValueParameters(sourceKeys);
+  const sources = sourceKeys.map((key) => String(storedStaticValue(stored[key] as never) ?? ""));
+  const schema: ParameterSchema = {};
+  for (let slot = 1; slot <= POINT_KERNEL_VALUE_SLOTS; slot += 1) {
+    const key = pointKernelValueKey(slot);
+    const definition = all[key];
+    if (definition === undefined) continue;
+    if (kernelReadsValueSlot(slot, ...sources) || stored[key] !== undefined) schema[key] = definition;
+  }
+  return schema;
+}
+
+/**
+ * T900 — the kernel's OWN `struct Params`, through the SAME reflector `customWgsl` uses.
+ *
+ * This is the whole of "parity by reuse": `extractParamsStruct` and `reflectParamsStruct` are
+ * the ones in `params-reflection.ts`, node-agnostic and shared, so `orbitSpeed: f32` becomes an
+ * *Orbit Speed* number and `lightColor: vec4f` an RGBA picker on a point kernel for exactly the
+ * reason it does on a custom shader — and the ceiling of four dies, because a struct has no
+ * ceiling. The declaration is lifted out of the kernel body: WGSL needs it above the generated
+ * `PointCtx` that carries it, and hoisting the author's own bytes beats re-emitting them.
+ *
+ * ⚠ THE INVALIDATION SPLIT (§V5 / §T900). One reflection pass, two classes:
+ *   - the FIELDS become ordinary parameters, NOT `compileTime` — turning `orbitSpeed` is a
+ *     uniform write into `kernelFrame`, and the pipeline is never rebuilt.
+ *   - the TEXT they were read from (`kernel`) and the ATTRIBUTE schema (`attributes`) are
+ *     `compileTime`, so changing the struct — or the point layout — rebuilds the region.
+ * The classifier decides this off the node's EFFECTIVE schema (`classifyEdit`), which is what
+ * makes the split a property of the manifest rather than of a key happening to be missing.
+ */
+export function kernelParamsFor(stored: Readonly<Record<string, unknown>>): {
+  declaration: string;
+  fields: ReadonlyArray<ReflectedField>;
+} {
+  const source = storedStaticValue(stored["kernel"] as never);
+  const { declaration } = extractParamsStruct(typeof source === "string" ? source : "");
+  return { declaration, fields: declaration === "" ? [] : reflectParamsStruct(declaration) };
+}
+
+/**
+ * The kernel text with its `struct Params` removed — what the generated module pastes.
+ * Same extraction as `kernelParamsFor`, so the declaration hoisted above and the body pasted
+ * below can never be two different readings of one text.
+ */
+export function kernelBodyOf(source: string): string {
+  return extractParamsStruct(source).rest;
+}
+
+/**
+ * Reflected fields that collide with a parameter key the NODE owns are dropped from the schema
+ * (they would otherwise overwrite `Capacity` or `Seed` with a knob of the same name) and named
+ * loudly by `kernelParamCollisions` at compile. Skipping a control silently is the §V288 bug
+ * this pair exists to avoid: the schema stays sane and the compiler says why.
+ */
+export function kernelParamSchema(
+  fields: ReadonlyArray<ReflectedField>,
+  ownKeys: ReadonlySet<string>,
+): ParameterSchema {
+  const schema: ParameterSchema = {};
+  for (const field of fields) {
+    if (ownKeys.has(field.name)) continue;
+    const definition = paramForField(
+      field,
+      `Reaches the kernel as \`ctx.params.${field.name}\` (${field.wgsl}). A uniform write, never a rebuild (§V5).`,
+    );
+    if (definition !== undefined) schema[field.name] = definition;
+  }
+  return schema;
+}
+
+/** The refusal half of the pair above: reflected names this node cannot give away. */
+export function kernelParamCollisions(
+  nodeId: string,
+  fields: ReadonlyArray<ReflectedField>,
+  ownKeys: ReadonlySet<string>,
+): RuntimeDiagnostic[] {
+  return fields
+    .filter((field) => ownKeys.has(field.name))
+    .map((field) => ({
+      severity: "error" as const,
+      code: "node.points.params",
+      message:
+        `Node "${nodeId}": struct Params declares "${field.name}", which is already a parameter of this ` +
+        `node — the reflected control would have no name of its own.`,
+      nodeId,
+      suggestion: `Rename the field, e.g. "${field.name}Param".`,
+    }));
+}
+
+/**
  * T479: the uniform mirror, defined beside the schema it must match. vgpu writes uniform
  * values BY NAME into the reflected layout, so a member with no value silently reads zero
  * and a value with no member is silently dropped — the hazard `KernelModule.usesPointer`
@@ -283,7 +410,7 @@ export const pointKernelNode: NodeDefinition = {
       default: DEFAULT_POINT_KERNEL,
       compileTime: true,
       description:
-        "fn process(p: Point, ctx: PointCtx) -> Point. Clocks first: ctx.absTime (f32 seconds) and ctx.absFrame (u32 — a texture shader's frameU.absFrame is f32) keep counting across a timeline loop, so reach for these for anything that should simply keep going. ctx.time and ctx.frameIndex are timeline readings and reset to the in point at every lap — take them only when where you are IN the piece is the point (a sweep, a scrubbed envelope), and write \"timeline-anchored\" in a comment when you do. ctx also carries index, count and delta — plus pointer (vec4f: x, y, buttons), dim (cols, rows, i, j — the grid off the incoming edge, T472) and value1..value4 (this node's drivable Value parameters, T479) for a kernel that names them. pointRand(pointId, salt) is available, and fieldAt(position) samples the field input when one is wired (T477).",
+        "fn process(p: Point, ctx: PointCtx) -> Point. Clocks first: ctx.absTime (f32 seconds) and ctx.absFrame (u32 — a texture shader's frameU.absFrame is f32) keep counting across a timeline loop, so reach for these for anything that should simply keep going. ctx.time and ctx.frameIndex are timeline readings and reset to the in point at every lap — take them only when where you are IN the piece is the point (a sweep, a scrubbed envelope), and write \"timeline-anchored\" in a comment when you do. ctx also carries index, count and delta — plus pointer (vec4f: x, y, buttons) and dim (cols, rows, i, j — the grid off the incoming edge, T472) for a kernel that names them. YOUR OWN KNOBS (T900): declare a `struct Params { orbitSpeed: f32, tint: vec4f }` in this text and each field becomes a named, typed, drivable control on this node, read as ctx.params.orbitSpeed — a uniform write, never a rebuild. That replaces ctx.value1..value4, which still work for kernels that already read them. pointRand(pointId, salt) is available, and fieldAt(position) samples the field input when one is wired (T477).",
     },
     group: {
       type: "code",
@@ -294,9 +421,30 @@ export const pointKernelNode: NodeDefinition = {
       description:
         "T300: WGSL predicate over (p, ctx) — e.g. p.position.y > 0.0. Only matching points run the kernel; the rest pass through unchanged. Empty = all.",
     },
-    // T479: the live channel. Both texts are scanned, because a group predicate reads the
-    // same ctx the kernel does.
+    // T479/T900: the legacy live channel, kept in the STATIC schema so a type-only context
+    // (palette, help) still documents `ctx.value1`. A placed node's slots come from
+    // `parametersFor` below and appear only when read or already stored — parse forever,
+    // emit never.
     ...pointKernelValueParameters(["kernel", "group"]),
+  },
+  /**
+   * T900 (§V805, §T880's design rather than its shortcut): this node's controls ARE its
+   * kernel's own `struct Params`, reflected by the shared reflector `customWgsl` uses. Declare
+   * `orbitSpeed: f32` or `lightColor: vec4f` in the kernel and the knob appears — named, typed,
+   * drivable, publishable — instead of `value2` with a comment saying what it means.
+   *
+   * The two classes this one pass produces have DIFFERENT invalidation, which is the whole
+   * hazard §T900 named: a reflected field is a plain parameter, so turning it writes a uniform
+   * (§V5); `kernel` and `attributes` stay `compileTime`, so changing the struct or the point
+   * layout rebuilds. Nothing here may be marked `compileTime`, and nothing above may lose it.
+   */
+  parametersFor(stored) {
+    const own = structuralParameters(pointKernelNode.parameters);
+    return {
+      ...own,
+      ...kernelParamSchema(kernelParamsFor(stored).fields, new Set(Object.keys(own))),
+      ...legacyValueParametersFor(["kernel", "group"], stored),
+    };
   },
   stateful: { reset: true, deterministicReplay: true, checkpoint: false, randomAccess: false },
   contractVersion: POINT_KERNEL_CONTRACT_VERSION,
@@ -373,6 +521,18 @@ export const pointKernelNode: NodeDefinition = {
     }
 
     const kernelSource = typeof parameters["kernel"] === "string" ? parameters["kernel"] : DEFAULT_POINT_KERNEL;
+    /* T900: the kernel's own `struct Params`, reflected ONCE and used three ways — hoisted
+       above the generated `PointCtx`, mirrored into `kernelFrame` as uniform members, and
+       already resolved into `parameters` by the compiler through `parametersFor`, so a driven
+       or bound control lands here exactly as a `customWgsl`'s does. A field that would shadow
+       one of this node's own parameters is refused BY NAME rather than dropped in silence. */
+    const params = kernelParamsFor({ kernel: kernelSource });
+    const collisions = kernelParamCollisions(
+      nodeId,
+      params.fields,
+      new Set(Object.keys(structuralParameters(pointKernelNode.parameters))),
+    );
+    if (collisions.length > 0) return { passes: [], diagnostics: collisions };
     const names = attributes.map((attribute) => attribute.name);
     const groupSource = typeof parameters["group"] === "string" ? parameters["group"] : "";
     /* T472 (B85): `ctx.dim` comes off the EDGE, never off a parameter of this node. The
@@ -387,12 +547,13 @@ export const pointKernelNode: NodeDefinition = {
       attributes,
       reads: names,
       writes: names,
-      kernel: kernelSource,
+      kernel: kernelBodyOf(kernelSource),
       ...(groupSource.trim() === "" ? {} : { group: groupSource }),
       ...(incomingTopology?.kind === "grid"
         ? { dim: { cols: incomingTopology.cols, rows: incomingTopology.rows } }
         : {}),
       ...(fieldTexture === undefined ? {} : { field: true }),
+      ...(params.fields.length === 0 ? {} : { params }),
     });
     if (!module.ok) {
       return {
@@ -449,6 +610,12 @@ export const pointKernelNode: NodeDefinition = {
         // recompile-and-diff path (T259/§V5) pushes it like any other uniform, with no
         // new machinery at all.
         ...pointKernelValueUniforms(module.usesValues, parameters),
+        // T900: one member per reflected `struct Params` field the module declared, shaped by
+        // the SAME reflector that built the control (§V288's by-name mirror hazard — a member
+        // with no value reads zero in silence). The values are the RESOLVED parameters, so a
+        // driven colour or a bound number rides the per-frame uniform diff (§V5) with no new
+        // machinery, exactly as the value slots above do.
+        ...reflectedUniforms(module.usesParams, parameters, KERNEL_PARAM_PREFIX),
         // T489 (B97): the absolute pair, reserved exactly when the module declared it —
         // same by-name mirroring hazard as the pointer above. The backend overwrites both
         // every frame from the numbers the shared block gets, so a kernel and a shader
