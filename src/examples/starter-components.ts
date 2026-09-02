@@ -254,7 +254,7 @@ export const audioLevelHost: ProjectDocument = {
       norm: { id: "norm", type: "valueMath", definitionVersion: 1, position: { x: 0, y: 280 }, parameters: { operation: "divide" } },
       clamp: { id: "clamp", type: "valueLimit", definitionVersion: 1, position: { x: 240, y: 280 }, parameters: { minimum: 0, maximum: 1 } },
       // Outside: the probe that reads the normalised value and drives the demo.
-      probe: { id: "probe", type: "valueLimit", definitionVersion: 1, position: { x: 480, y: 280 }, parameters: { minimum: 0, maximum: 1 } },
+      probe: { id: "probe", type: "valueLimit", definitionVersion: 1, position: { x: 480, y: 280 }, parameters: { minimum: 0, maximum: 1 }, label: "probe" },
       // The demonstration picture: a plate whose brightness rides the normalised low band.
       swatch: {
         id: "swatch",

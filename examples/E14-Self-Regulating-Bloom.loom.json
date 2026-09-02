@@ -590,6 +590,7 @@
       "sway": {
         "definitionVersion": 1,
         "id": "sway",
+        "label": "sway1",
         "parameters": {
           "amplitude": 0.35,
           "frequency": 0.013,

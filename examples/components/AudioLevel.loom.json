@@ -384,6 +384,7 @@
       "probe": {
         "definitionVersion": 1,
         "id": "probe",
+        "label": "probe",
         "parameters": {
           "maximum": 1,
           "minimum": 0

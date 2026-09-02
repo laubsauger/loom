@@ -45,7 +45,7 @@ export const selfRegulatingBloomDocument = document(
         amplitude: 0.35,
         offset: 1,
         phase: 0,
-      }),
+      }, { label: "sway1" }),
       node("field", "noise", [-1040, 0], {
         type: "perlin4d",
         seed: 5,
