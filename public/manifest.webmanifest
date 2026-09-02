@@ -5,13 +5,19 @@
   "start_url": "/",
   "display": "standalone",
   "orientation": "landscape",
-  "background_color": "#0b0e14",
-  "theme_color": "#0b0e14",
+  "background_color": "#10141d",
+  "theme_color": "#10141d",
   "icons": [
     {
       "src": "/icon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/logo-1024.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
       "purpose": "any"
     }
   ]

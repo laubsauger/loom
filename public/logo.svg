@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Shaderloom logo</title>
+  <desc id="desc">Two signals weave through a compositor and resolve into one output.</desc>
+  <rect width="1024" height="1024" rx="192" fill="#10141d"/>
+  <path
+    d="M548 340h90c122 0 184 62 184 184v128c0 122-62 184-184 184h-90c-122 0-184-62-184-184V524c0-122 62-184 184-184Z"
+    fill="none"
+    stroke="#384356"
+    stroke-width="68"
+  />
+  <path
+    d="M208 316h108c186 0 182 272 370 272"
+    fill="none"
+    stroke="#f2a03d"
+    stroke-width="76"
+    stroke-linecap="round"
+  />
+  <path
+    d="M208 708h108c186 0 182-120 370-120h150"
+    fill="none"
+    stroke="#d6dce8"
+    stroke-width="76"
+    stroke-linecap="round"
+  />
+  <circle cx="208" cy="316" r="58" fill="#f2a03d"/>
+  <circle cx="208" cy="708" r="58" fill="#d6dce8"/>
+  <circle cx="686" cy="588" r="76" fill="#f2a03d"/>
+  <circle cx="852" cy="588" r="58" fill="#d6dce8"/>
+</svg>

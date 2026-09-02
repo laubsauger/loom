@@ -1,15 +1,33 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
-  <!-- Colors mirror src/ui/tokens.css (--bg-void, --bg-raise, --signal, --text). -->
-  <rect width="512" height="512" rx="96" fill="#0b0e14"/>
-  <g fill="none" stroke="#384356" stroke-width="14">
-    <path d="M156 186 C 226 186, 226 256, 296 256"/>
-    <path d="M156 326 C 226 326, 226 256, 296 256"/>
-    <path d="M356 256 L 402 256"/>
-  </g>
-  <g>
-    <rect x="86" y="151" width="70" height="70" rx="16" fill="#1a202c" stroke="#f2a03d" stroke-width="10"/>
-    <rect x="86" y="291" width="70" height="70" rx="16" fill="#1a202c" stroke="#d6dce8" stroke-width="10"/>
-    <rect x="296" y="221" width="70" height="70" rx="16" fill="#f2a03d"/>
-    <circle cx="424" cy="256" r="26" fill="#d6dce8"/>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Shaderloom woven signal mark</title>
+  <rect width="512" height="512" rx="96" fill="#10141d"/>
+
+  <!-- The loom: a structural loop behind two signals being woven together. -->
+  <path
+    d="M274 170h45c61 0 92 31 92 92v64c0 61-31 92-92 92h-45c-61 0-92-31-92-92v-64c0-61 31-92 92-92Z"
+    fill="none"
+    stroke="#384356"
+    stroke-width="34"
+  />
+
+  <!-- Two inputs cross, then leave the compositor as one output. -->
+  <path
+    d="M104 158h54c93 0 91 136 185 136"
+    fill="none"
+    stroke="#f2a03d"
+    stroke-width="38"
+    stroke-linecap="round"
+  />
+  <path
+    d="M104 354h54c93 0 91-60 185-60h75"
+    fill="none"
+    stroke="#d6dce8"
+    stroke-width="38"
+    stroke-linecap="round"
+  />
+
+  <circle cx="104" cy="158" r="29" fill="#f2a03d"/>
+  <circle cx="104" cy="354" r="29" fill="#d6dce8"/>
+  <circle cx="343" cy="294" r="38" fill="#f2a03d"/>
+  <circle cx="426" cy="294" r="29" fill="#d6dce8"/>
 </svg>
