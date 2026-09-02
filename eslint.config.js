@@ -208,6 +208,10 @@ export default tseslint.config(
     // CONVENTION IT SERVES — if probes move again, this line moves with them.
     ignores: [
       "dist/**",
+      // Build output, like dist/. Ignored here as well as in .gitignore: a stray
+      // `pnpm build:pages` otherwise reds the shared lint gate with 5000+ errors
+      // from minified bundles nobody wrote.
+      "dist-pages/**",
       "node_modules/**",
       "coverage/**",
       "playwright-report/**",

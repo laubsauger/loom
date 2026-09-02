@@ -390,7 +390,8 @@ describe("E13 Prism — the picture", () => {
       /* T941: at zero dispersion every band's ray is IDENTICAL, so the wedge segments
          have zero width — the fan is not merely narrow, it can vanish below the pixel
          at this column. No pixels IS the collapse. */
-      let collapsed = 0;
+      // Both branches assign; the declaration carries no initial value on purpose.
+      let collapsed: number;
       try {
         collapsed = fanRun(flat, COLUMN, FAN_THRESHOLD).span;
       } catch {

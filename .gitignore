@@ -9,6 +9,7 @@ node_modules/
 # build output
 dist/
 dist-ssr/
+dist-pages/
 build/
 out/
 *.tsbuildinfo

@@ -199,7 +199,20 @@ export function createModelAcquisition(options: {
 
     async refresh(descriptor) {
       const held = await options.store.get(descriptor.id);
-      return set(descriptor.id, held === undefined ? { kind: "absent" } : { kind: "ready" });
+      if (held !== undefined) return set(descriptor.id, { kind: "ready" });
+      /*
+       * A cache MISS must never contradict a transfer that is already running.
+       *
+       * `refresh` is called on every compile (it is free and it is what turns "unknown"
+       * into a consent prompt), so an unguarded miss overwrote `downloading` with
+       * `absent` between progress events — the notice alternated between "no model" and
+       * the progress bar once per frame. The bytes were arriving the whole time; only
+       * the story about them flickered. A cache read answers "is it on disk yet", which
+       * during a download is always "not yet" and never news.
+       */
+      const current = states.get(descriptor.id);
+      if (current?.kind === "downloading") return current;
+      return set(descriptor.id, { kind: "absent" });
     },
 
     async acquire(descriptor) {
