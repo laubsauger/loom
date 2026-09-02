@@ -377,11 +377,13 @@
         "id": "fan",
         "label": "fan1",
         "parameters": {
+          "blend": "additive",
           "endpoint": "tip",
           "group": "p.role > 0.5",
           "material": "flare1",
           "mode": "beam",
-          "scale": 0.0075,
+          "scale": 0.011,
+          "soft": 1,
           "taper": 0.06,
           "tint": {
             "bindings": {
@@ -612,11 +614,13 @@
         "id": "shaft",
         "label": "shaft1",
         "parameters": {
+          "blend": "additive",
           "endpoint": "tip",
           "group": "p.role < 0.5",
           "material": "flare1",
           "mode": "beam",
           "scale": 0.006,
+          "soft": 0.85,
           "taper": 1,
           "tint": {
             "bindings": {

@@ -422,10 +422,17 @@ export const prismDocument = document(
       // ribbon, and 61 beams leaving the same face within 0.03 of each other fuse into
       // an opaque wedge at any taper above about zero (T680).
       node("shaft", "geometry", [-1240, -140], {
-        mode: "beam", endpoint: "tip", scale: 0.006, taper: 1, material: "flare1", group: "p.role < 0.5",
+        /* T917: SOFT + ADDITIVE — the beams are light now, not ribbons of paint. The soft
+           profile falls off across the width; additive lets the ghost, interior and shaft
+           sum where they cross instead of z-fighting. */
+        mode: "beam", endpoint: "tip", scale: 0.006, taper: 1, soft: 0.85, blend: "additive", material: "flare1", group: "p.role < 0.5",
       }, { label: "shaft1", parameters: { tint: { mode: "map", bindings: { static: { kind: "static", value: [1, 1, 1, 1] }, map: { kind: "map", attribute: "tint" } } } } }),
       node("fan", "geometry", [-1240, 100], {
-        mode: "beam", endpoint: "tip", scale: 0.0075, taper: 0.06, material: "flare1", group: "p.role > 0.5",
+        /* T917: the CONTINUUM — 61 soft bands overlapping ADDITIVELY blend into one
+           spectrum, no new primitive: exactly the reference's 128-wavelength additive
+           accumulation, at our band count. The width comes up slightly so neighbours
+           genuinely overlap; the soft edge is what keeps that from reading as a slab. */
+        mode: "beam", endpoint: "tip", scale: 0.011, taper: 0.06, soft: 1, blend: "additive", material: "flare1", group: "p.role > 0.5",
       }, { label: "fan1", parameters: { tint: { mode: "map", bindings: { static: { kind: "static", value: [1, 1, 1, 1] }, map: { kind: "map", attribute: "tint" } } } } }),
 
       // ---- the studio: an equirect whose horizon IS the rim -----------------------

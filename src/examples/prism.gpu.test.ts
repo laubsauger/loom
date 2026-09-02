@@ -182,15 +182,25 @@ const soloPrism = (graph: GraphDocument): void => {
   muteBloom(graph);
   soloBackdropOff(graph);
 };
+/* T917: the shipped beams are SOFT and ADDITIVE — light, whose 61 overlapping skirts
+ * saturate any threshold. The claims in this file are about WHERE Snell puts the rays, so
+ * the solo clones measure the same geometry as hard opaque ribbons, exactly as every span
+ * and mask below was derived. The light's own claims live in scene-soft-beam.gpu.test. */
+const soloHard = (graph: GraphDocument, id: string): void => {
+  param(graph, id, "soft", 0);
+  param(graph, id, "blend", "opaque");
+};
 const soloFan = (graph: GraphDocument): void => {
   param(graph, "shot", "scenes", "fan1");
   muteBloom(graph);
   soloBackdropOff(graph);
+  soloHard(graph, "fan");
 };
 const soloShaft = (graph: GraphDocument): void => {
   param(graph, "shot", "scenes", "shaft1");
   muteBloom(graph);
   soloBackdropOff(graph);
+  soloHard(graph, "shaft");
 };
 
 /* Dawn is REQUIRED, never skipped: a pixel claim that quietly does not run is §V461's
