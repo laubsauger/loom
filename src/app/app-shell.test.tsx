@@ -63,7 +63,7 @@ function floatingRoles(storage: LayoutStorage): string[] {
  * has a bottom bar.
  */
 async function closeBottomRegion(user: ReturnType<typeof userEvent.setup>) {
-  for (const leafId of ["leaf-bottom", "leaf-library", "leaf-components"]) {
+  for (const leafId of ["leaf-bottom", "leaf-libraries"]) {
     const leaf = document.querySelector<HTMLElement>(`[data-pane-leaf="${leafId}"]`);
     if (leaf === null) continue;
     await user.click(within(leaf).getByRole("button", { name: "Split or close this pane area" }));
@@ -110,9 +110,10 @@ describe("app shell layout (§I.ui)", () => {
   it("gives every divider a focusable separator with a name", () => {
     render(<AppShell storage={createMemoryStorage()} />);
     const separators = screen.getAllByRole("separator");
-    // T927: graph | bottom, work | sidebar, the sidebar's own split (T426), and the
-    // bottom region's own two — dock | library column, and node library | components.
-    expect(separators.length).toBe(5);
+    // T932: graph | bottom, work | sidebar, the sidebar's own split (T426), and the
+    // bottom region's own — tab dock | library column. (T927 had a fifth, splitting the
+    // libraries vertically; they share a leaf now.)
+    expect(separators.length).toBe(4);
     for (const separator of separators) {
       expect(separator.getAttribute("tabindex")).toBe("0");
       expect(separator.getAttribute("aria-label")).toBeTruthy();
@@ -150,8 +151,9 @@ describe("V18 — layout persistence", () => {
     // Not an omission: writing a five-zone projection of a two-column bottom region
     // would be a lie with a version number on it, and V385 says remove rather than lie.
     expect(storage.keys()).toEqual([PANE_TREE_STORAGE_KEY]);
-    expect(leafHolding(storage, "library")).toBe("leaf-library");
-    expect(leafHolding(storage, "components")).toBe("leaf-components");
+    // T932: one leaf, two tabs — see `pane-tree.test.ts` for why the split was reversed.
+    expect(leafHolding(storage, "library")).toBe("leaf-libraries");
+    expect(leafHolding(storage, "components")).toBe("leaf-libraries");
   });
 
   it("restores stored pane sizes on mount", () => {
@@ -284,14 +286,14 @@ describe("V95 — relocatable panes", () => {
     };
     fireEvent.dragStart(tab, { dataTransfer: transfer });
 
-    const target = document.querySelector<HTMLElement>('[data-drop-leaf="leaf-library"]');
+    const target = document.querySelector<HTMLElement>('[data-drop-leaf="leaf-libraries"]');
     expect(target, "no drop target while a tab is being dragged").not.toBeNull();
     fireEvent.drop(target as HTMLElement, { dataTransfer: transfer });
 
-    expect(leafHolding(storage, "inspector")).toBe("leaf-library");
-    expect(zoneElement("library").contains(screen.getByText("inspector slot"))).toBe(true);
+    expect(leafHolding(storage, "inspector")).toBe("leaf-libraries");
+    expect(zoneElement("libraries").contains(screen.getByText("inspector slot"))).toBe(true);
     // The targets are drag-only chrome and must not linger.
-    expect(document.querySelector('[data-drop-leaf="leaf-library"]')).toBeNull();
+    expect(document.querySelector('[data-drop-leaf="leaf-libraries"]')).toBeNull();
   });
 });
 
@@ -351,7 +353,7 @@ describe("V96 — moving a pane never remounts it", () => {
     // The move menu takes focus while it is open and Radix restores it to the trigger,
     // so this asserts what the pane machinery is responsible for: the element the pane
     // had focused is refocused, with its selection, once it lands.
-    await movePaneVia(user, "shader editor", "Node library dock");
+    await movePaneVia(user, "shader editor", "Library dock");
 
     expect(input.value).toBe("abcdef");
     expect(input.selectionStart).toBe(2);
@@ -665,8 +667,7 @@ describe("T426 — the right sidebar is a full-height column", () => {
      */
     const work = panel("panel-split-columns-a");
     expect(work.contains(zoneElement("bottom"))).toBe(true);
-    expect(work.contains(zoneElement("library"))).toBe(true);
-    expect(work.contains(zoneElement("components"))).toBe(true);
+    expect(work.contains(zoneElement("libraries"))).toBe(true);
     expect(work.contains(panel("panel-split-columns-b"))).toBe(false);
   });
 
@@ -734,7 +735,7 @@ describe("T436 — named layouts", () => {
     await openMenu(user);
     await saveAs(user, "Mine");
     // Rearrange, then update: the entry changes, the list does not grow.
-    await movePaneVia(user, "shader editor", "Node library dock");
+    await movePaneVia(user, "shader editor", "Library dock");
     await openMenu(user);
     await user.click(screen.getByRole("button", { name: "Update" }));
 
@@ -742,7 +743,7 @@ describe("T436 — named layouts", () => {
     expect(saved, "Update appended instead of overwriting").toHaveLength(1);
     expect(
       leavesOf(saved[0]!.layout.root)
-        .find((leaf) => leaf.id === "leaf-library")
+        .find((leaf) => leaf.id === "leaf-libraries")
         ?.tabs.map((tab) => tab.role),
     ).toContain("shader");
   });
@@ -758,7 +759,7 @@ describe("T436 — named layouts", () => {
     expect(screen.getByRole("button", { name: "Update" }).hasAttribute("disabled")).toBe(true);
 
     await user.keyboard("{Escape}");
-    await movePaneVia(user, "shader editor", "Node library dock");
+    await movePaneVia(user, "shader editor", "Library dock");
     await openMenu(user);
     expect(screen.getByRole("button", { name: "Update" }).hasAttribute("disabled")).toBe(false);
   });
@@ -801,7 +802,7 @@ describe("T436 — named layouts", () => {
     const storage = createMemoryStorage();
     render(<AppShell storage={storage} shaderEditor={<div>editor slot</div>} />);
 
-    await movePaneVia(user, "shader editor", "Node library dock");
+    await movePaneVia(user, "shader editor", "Library dock");
     await openMenu(user);
     await saveAs(user, "Doomed");
     await openMenu(user);
@@ -809,14 +810,14 @@ describe("T436 — named layouts", () => {
 
     expect(readPaneTreeStore(storage).layouts).toEqual([]);
     // The room is unchanged; only the bookmark went.
-    expect(zoneElement("library").contains(screen.getByText("editor slot"))).toBe(true);
+    expect(zoneElement("libraries").contains(screen.getByText("editor slot"))).toBe(true);
   });
 
   it("restores a saved layout, putting the panes back where that layout had them", async () => {
     const user = userEvent.setup();
     render(<AppShell storage={createMemoryStorage()} shaderEditor={<div>editor slot</div>} />);
 
-    await movePaneVia(user, "shader editor", "Node library dock");
+    await movePaneVia(user, "shader editor", "Library dock");
     await openMenu(user);
     await saveAs(user, "Editor left");
     await movePaneVia(user, "shader editor", "Centre dock");
@@ -825,7 +826,7 @@ describe("T436 — named layouts", () => {
     await openMenu(user);
     await user.click(screen.getByRole("button", { name: /^Editor left/ }));
 
-    expect(zoneElement("library").contains(screen.getByText("editor slot"))).toBe(true);
+    expect(zoneElement("libraries").contains(screen.getByText("editor slot"))).toBe(true);
   });
 
 });

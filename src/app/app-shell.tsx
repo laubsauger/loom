@@ -71,16 +71,15 @@ const SKELETON_TREE = treeFromShellLayout(DEFAULT_SHELL_LAYOUT);
  * not wrong ones.
  */
 const CANONICAL_LEAF_NAMES: Readonly<Record<string, string>> = {
-  // T927 moved the two libraries out of the left dock into their own leaves in the
-  // bottom region. `leaf-left` stays named: a stored layout from before still has it,
-  // and a dock the user is looking at must not lose its name on upgrade.
+  // T927/T932 moved the two libraries out of the left dock and into one leaf in the
+  // bottom region's second column. `leaf-left` stays named: a stored layout from before
+  // still has it, and a dock the user is looking at must not lose its name on upgrade.
   "leaf-left": "Left dock",
   "leaf-center": "Centre dock",
   "leaf-right": "Right dock top",
   "leaf-rightBottom": "Right dock bottom",
   "leaf-bottom": "Bottom dock",
-  "leaf-library": "Node library dock",
-  "leaf-components": "Components dock",
+  "leaf-libraries": "Library dock",
 };
 
 /** Panel ids the layout menu can collapse, when the current tree still has them. */
@@ -91,8 +90,8 @@ const TOGGLE_TARGETS: ReadonlyArray<{ readonly id: string; readonly label: strin
   // T927 (§V399: every shell panel is collapsible): the libraries' own column. It is
   // what the left dock's toggle used to be for — get them out of the way in one gesture
   // — and without it the new arrangement would be the first one to ship a panel with no
-  // way to close it.
-  { id: "split-libraries", label: "Library column" },
+  // way to close it. T932 made that column a single LEAF, so the toggle targets the leaf.
+  { id: "leaf-libraries", label: "Library column" },
 ];
 const COLLAPSIBLE_IDS = new Set(TOGGLE_TARGETS.map((target) => target.id));
 
@@ -102,10 +101,9 @@ const SPLIT_HANDLE_NAMES: Readonly<Record<string, string>> = {
   "split-rows": "Resize bottom dock",
   "split-main": "Resize left dock",
   "split-right": "Resize sidebar split",
-  // T927's two new dividers: the bottom region's two columns, and the split between the
-  // node library and the components inside the second one.
+  // T927's new divider: the bottom region's two columns. (T932 removed the second one —
+  // the libraries share a leaf now, so there is nothing inside that column to resize.)
   "split-bottom": "Resize library column",
-  "split-libraries": "Resize library split",
 };
 
 export interface AppShellProps {
