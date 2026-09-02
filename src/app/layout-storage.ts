@@ -110,7 +110,14 @@ export interface ShellLayout {
 }
 
 /**
- * T426 — the default arrangement.
+ * T426 — the default arrangement, IN THE FLAT MODEL.
+ *
+ * ⚠ T927: this is NO LONGER what a fresh shell mounts with. The live default is
+ * `DEFAULT_PANE_TREE` (`pane-tree.ts`), authored as a tree because the arrangement it
+ * describes — the node library and components as a vertically-split second column
+ * inside the bottom region, with no left dock — has no flat spelling. What survives
+ * here is v3's own default: the fallback a stored flat layout is repaired against and
+ * the shape `migrateLegacyLayout` produces, both of which must keep speaking v3.
  *
  * The right sidebar is a full-height column split horizontally: the viewer on top, the
  * inspector under it. Before this, both were TABS in a right dock that stopped where the

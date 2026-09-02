@@ -13,8 +13,8 @@ import {
   DEFAULT_PANE_TREE,
   addTab,
   allTabs,
+  leavesOf,
   setSplitRatio,
-  shellLayoutFromTree,
   splitLeaf,
   treeFromShellLayout,
 } from "./pane-tree.ts";
@@ -80,9 +80,17 @@ describe("the read chain: v4 → v3 → default (V311)", () => {
 });
 
 describe("write keeps BOTH versions honest (V385)", () => {
+  /*
+   * T927: "flat-expressible" is measured against the FIVE-ZONE SKELETON, not against
+   * `DEFAULT_PANE_TREE`. The default is authored as a tree now and its bottom region is
+   * a split, so it is structural by construction — using it here would assert the
+   * projection is faithful about a tree v3 cannot hold at all.
+   */
+  const FLAT_TREE = treeFromShellLayout(DEFAULT_SHELL_LAYOUT);
+
   it("a flat-expressible tree round-trips v4 AND writes a v3 the old reader accepts", () => {
     const storage = memoryStorage();
-    const current = setSplitRatio(DEFAULT_PANE_TREE, "split-columns", 61);
+    const current = setSplitRatio(FLAT_TREE, "split-columns", 61);
     writePaneTreeStore({ current, currentId: null, layouts: [] }, storage);
 
     // v4 round-trip by content.
@@ -96,10 +104,10 @@ describe("write keeps BOTH versions honest (V385)", () => {
 
   it("CLEARS the v3 record the moment the tree stops being flat-expressible", () => {
     const storage = memoryStorage();
-    writePaneTreeStore({ current: DEFAULT_PANE_TREE, currentId: null, layouts: [] }, storage);
+    writePaneTreeStore({ current: FLAT_TREE, currentId: null, layouts: [] }, storage);
     expect(storage.map.has(LAYOUT_STORAGE_KEY)).toBe(true);
 
-    const split = splitLeaf(DEFAULT_PANE_TREE, "leaf-center", "row");
+    const split = splitLeaf(FLAT_TREE, "leaf-center", "row");
     writePaneTreeStore({ current: split, currentId: null, layouts: [] }, storage);
     // V385: removed, not left stale — an old build now falls back to a default it can
     // SEE instead of silently restoring the arrangement the user left behind.
@@ -108,15 +116,28 @@ describe("write keeps BOTH versions honest (V385)", () => {
     expect(readPaneTreeStore(storage).current).toEqual(split);
   });
 
+  it("T927: the DEFAULT arrangement itself is one of those — no v3 record is written", () => {
+    /*
+     * Not a regression, and worth pinning so it is not read as one: the new default is
+     * structural, so a FRESH profile has no v3 projection at all. An old build opening
+     * the same browser falls back to ITS default rather than to a lie about ours — the
+     * V385 rule, arriving at the stock arrangement for the first time.
+     */
+    const storage = memoryStorage();
+    writePaneTreeStore({ current: DEFAULT_PANE_TREE, currentId: null, layouts: [] }, storage);
+    expect(storage.map.has(LAYOUT_STORAGE_KEY)).toBe(false);
+    expect(readPaneTreeStore(storage).current).toEqual(DEFAULT_PANE_TREE);
+  });
+
   it("projects the faithful named layouts and simply omits the tree-only ones", () => {
     const storage = memoryStorage();
-    const treeOnly = addTab(DEFAULT_PANE_TREE, "leaf-right", "viewer");
+    const treeOnly = addTab(FLAT_TREE, "leaf-right", "viewer");
     writePaneTreeStore(
       {
-        current: DEFAULT_PANE_TREE,
+        current: FLAT_TREE,
         currentId: null,
         layouts: [
-          { id: "layout-a", name: "flat rig", layout: DEFAULT_PANE_TREE },
+          { id: "layout-a", name: "flat rig", layout: FLAT_TREE },
           { id: "layout-b", name: "twin viewers", layout: treeOnly },
         ],
       },
@@ -199,13 +220,19 @@ describe("T466 — a profile parked on the migration's own row is unpinned, once
   it("opens on the DEFAULT arrangement, not the migrated one", () => {
     const store = readPaneTreeStore(pinnedV4());
     expect(store.currentId).toBe(DEFAULT_LAYOUT_ID);
-    // The property the owner actually reported: viewer over inspector, in a sidebar
-    // split in two. Asserted on the RENDERED arrangement, because a selection that
-    // says "Default" over a Classic tree is the exact lie this repair exists to end.
-    const flat = shellLayoutFromTree(store.current);
-    expect(flat?.zones.right).toEqual(["viewer"]);
-    expect(flat?.zones.rightBottom).toEqual(["inspector"]);
-    expect(flat?.rightRows).toEqual(DEFAULT_SHELL_LAYOUT.rightRows);
+    /*
+     * The property the owner actually reported: viewer over inspector, in a sidebar
+     * split in two. Asserted on the RENDERED arrangement, because a selection that says
+     * "Default" over a Classic tree is the exact lie this repair exists to end. T927
+     * reads it off the TREE — the default no longer projects to v3, and going through
+     * the projection would answer null here for a reason that has nothing to do with
+     * this repair.
+     */
+    const rightColumn = (id: string) =>
+      leavesOf(store.current.root).find((leaf) => leaf.id === id)?.tabs.map((tab) => tab.role);
+    expect(rightColumn("leaf-right")).toEqual(["viewer"]);
+    expect(rightColumn("leaf-rightBottom")).toEqual(["inspector"]);
+    expect(store.current).toEqual(DEFAULT_PANE_TREE);
   });
 
   it("KEEPS their arrangement as a row — nothing is seized, it is one click away", () => {
@@ -260,7 +287,9 @@ describe("T466 — a profile parked on the migration's own row is unpinned, once
     );
     const store = readPaneTreeStore(storage);
     expect(store.currentId).toBe(DEFAULT_LAYOUT_ID);
-    expect(shellLayoutFromTree(store.current)?.zones.rightBottom).toEqual(["inspector"]);
+    expect(
+      leavesOf(store.current.root).find((leaf) => leaf.id === "leaf-rightBottom")?.tabs.map((tab) => tab.role),
+    ).toEqual(["inspector"]);
     expect(store.layouts.map((entry) => entry.name)).toEqual(["Saved layout"]);
   });
 });

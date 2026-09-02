@@ -1175,22 +1175,36 @@ describe("help, and the two libraries that had no host", () => {
     expect(panel).toBeDefined();
   });
 
+  /**
+   * T927 moved the pair out of the left dock into the bottom region's second column, so
+   * "beside" is now LITERAL: two leaves stacked vertically, both on screen at once,
+   * where before they were two tabs of one dock and only one could ever be seen.
+   */
+  function libraryColumn(): { readonly library: Element; readonly components: Element } {
+    const library = document.querySelector('[data-pane-leaf="leaf-library"]');
+    const components = document.querySelector('[data-pane-leaf="leaf-components"]');
+    if (library === null || components === null) throw new Error("no library column");
+    return { library, components };
+  }
+
   it("mounts the component library beside the node library, both additive (§V93)", async () => {
     await mountApp({ status: READY });
-    const left = document.querySelector('[data-pane-leaf="leaf-left"]');
-    if (left === null) throw new Error("no left dock");
-    expect(left.querySelector('[data-pane-role="library"]')).not.toBeNull();
-    expect(left.querySelector('[data-pane-role="components"]')).not.toBeNull();
+    const { library, components } = libraryColumn();
+    expect(library.querySelector('[data-pane-role="library"]')).not.toBeNull();
+    expect(components.querySelector('[data-pane-role="components"]')).not.toBeNull();
+    // Both VISIBLE, not one behind the other: neither is a hidden tab of the other's leaf.
+    expect(library.querySelector('[data-pane-role="components"]')).toBeNull();
+    expect(components.querySelector('[data-pane-role="library"]')).toBeNull();
   });
 
   it("keeps the example library out of that pair — OPEN is the destructive verb (§V93)", async () => {
     await mountApp({ status: READY });
-    const left = document.querySelector('[data-pane-leaf="leaf-left"]');
-    if (left === null) throw new Error("no left dock");
+    const { library, components } = libraryColumn();
     // Mounted, and reachable…
     expect(document.querySelector('[data-pane-role="examples"]')).not.toBeNull();
-    // …but never a third tab one click from two harmless ones.
-    expect(left.querySelector('[data-pane-role="examples"]')).toBeNull();
+    // …but never one click from either of the two harmless ones.
+    expect(library.querySelector('[data-pane-role="examples"]')).toBeNull();
+    expect(components.querySelector('[data-pane-role="examples"]')).toBeNull();
   });
 });
 

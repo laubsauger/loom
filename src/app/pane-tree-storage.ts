@@ -1,5 +1,6 @@
 import {
   DEFAULT_LAYOUT_ID,
+  DEFAULT_SHELL_LAYOUT,
   LAYOUT_PRESETS,
   isPresetLayoutId,
   LAYOUT_STORAGE_KEY,
@@ -8,7 +9,7 @@ import {
   readJson,
   readLayoutStore,
 } from "./layout-storage.ts";
-import type { LayoutStorage } from "./layout-storage.ts";
+import type { LayoutStorage, ShellLayout } from "./layout-storage.ts";
 import {
   DEFAULT_PANE_TREE,
   repairPaneTree,
@@ -66,11 +67,20 @@ export interface PaneTreeStore {
   readonly layouts: readonly NamedPaneTree[];
 }
 
-/** The stock presets, lifted from the flat model's own list (T436). */
+/**
+ * The stock presets, lifted from the flat model's own list (T436).
+ *
+ * T927: "Default" is the one preset whose arrangement is NOT expressible flat — the
+ * bottom region is two columns and the second is split vertically — so it is taken
+ * from `DEFAULT_PANE_TREE`, which is authored as a tree, instead of being derived from
+ * the flat entry. Deriving it would quietly hand back the old five-zone skeleton, and
+ * this list is what `layout.reset` and the layout menu's "Default" row restore: the one
+ * door a person with a stored layout has to the new arrangement.
+ */
 export const PANE_TREE_PRESETS: readonly NamedPaneTree[] = LAYOUT_PRESETS.map((preset) => ({
   id: preset.id,
   name: preset.name,
-  layout: treeFromShellLayout(preset.layout),
+  layout: preset.id === DEFAULT_LAYOUT_ID ? DEFAULT_PANE_TREE : treeFromShellLayout(preset.layout),
 }));
 
 export const DEFAULT_PANE_TREE_STORE: PaneTreeStore = {
@@ -126,6 +136,36 @@ function storeFromRecord(source: Record<string, unknown>): PaneTreeStore {
 /** The id `migrateLegacyLayout` mints for a user's own pre-T426 arrangement. */
 const MIGRATED_LAYOUT_ID = "user:saved-layout";
 
+/** The stock v3 default, derived — the value an untouched flat record reads back as. */
+const STOCK_FLAT_TREE = JSON.stringify(treeFromShellLayout(DEFAULT_SHELL_LAYOUT));
+
+/**
+ * T927: the LIVE arrangement of a profile coming up the v3 chain.
+ *
+ * A stored flat layout is migrated verbatim — that is V311, and it is why this change is
+ * not a migration. The one exception is a record that is the STOCK v3 default byte for
+ * byte, and it covers two populations at once:
+ *
+ *  - a NEW profile. `readLayoutStore` answers with its own stock flat store when nothing
+ *    is stored at all, which is indistinguishable from a stored stock v3 — so without
+ *    this a first-time user would be handed the OLD arrangement, rebuilt as a tree.
+ *  - every v2 profile. The v2 migration keeps their own arrangement as a NAMED ROW and
+ *    puts them on the default (T466), so `current` is the stock flat layout for all of
+ *    them. Rebuilding it would park them on the old arrangement while the menu says
+ *    "Default" — the selection-says-one-thing-furniture-says-another lie T470/T589 exist
+ *    to end.
+ *
+ * Both were invisible until now only because the two defaults were the same value.
+ *
+ * The comparison is byte equality against the derived stock tree, not a heuristic: one
+ * dragged divider or one moved tab and the record is theirs, and it comes through
+ * untouched.
+ */
+function currentTreeFromFlat(flat: ShellLayout): PaneTreeLayout {
+  const tree = treeFromShellLayout(flat);
+  return JSON.stringify(tree) === STOCK_FLAT_TREE ? DEFAULT_PANE_TREE : tree;
+}
+
 /**
  * T466, second half (§V437). The first half changed the v2 migration to keep a user's
  * arrangement as a named row WITHOUT selecting it — a default nobody is shown is not a
@@ -173,7 +213,7 @@ export function readPaneTreeStore(
 
   const flat = readLayoutStore(storage);
   return unpinMigratedSelection({
-    current: treeFromShellLayout(flat.current),
+    current: currentTreeFromFlat(flat.current),
     currentId: flat.currentId,
     layouts: flat.layouts.map((entry) => ({
       id: entry.id,

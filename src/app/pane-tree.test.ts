@@ -71,27 +71,134 @@ describe("v3 → tree migration reproduces the flat arrangement (T404)", () => {
   });
 });
 
+/**
+ * T927 — the default arrangement itself, which is now a value in this module rather
+ * than a derivation of the flat one. Every assertion here is a thing the owner asked
+ * for, so a change that quietly walks one back is a failure and not a diff.
+ */
+describe("the T927 default: the libraries live in the bottom region, side by side (T927)", () => {
+  const bottomRegion = () => {
+    const root = DEFAULT_PANE_TREE.root;
+    if (root.kind !== "split") throw new Error("root is a leaf");
+    const work = root.first;
+    if (work.kind !== "split") throw new Error("work area is a leaf");
+    return work.second;
+  };
+
+  it("has NO left dock — the graph is the whole work area above the bottom", () => {
+    const root = DEFAULT_PANE_TREE.root as Extract<typeof DEFAULT_PANE_TREE.root, { kind: "split" }>;
+    const work = root.first as Extract<typeof root, { kind: "split" }>;
+    expect(work.first).toEqual(
+      expect.objectContaining({ kind: "leaf", id: "leaf-center", tabs: [{ key: "graph-1", role: "graph" }] }),
+    );
+    // Nothing anywhere is the old left dock.
+    expect(leavesOf(DEFAULT_PANE_TREE.root).map((leaf) => leaf.id)).not.toContain("leaf-left");
+  });
+
+  it("the graph is WIDER than it was: it takes the 23% the left dock held", () => {
+    // Measured, not asserted by shape. Widths are fractions of the window.
+    const widthOf = (layout: PaneTreeLayout, role: string): number => {
+      let width = 0;
+      const walk = (node: PaneTreeLayout["root"], w: number): void => {
+        if (node.kind === "leaf") {
+          if (node.tabs.some((tab) => tab.role === role)) width = w;
+          return;
+        }
+        const share = node.ratio / 100;
+        const first = node.direction === "row" ? w * share : w;
+        const second = node.direction === "row" ? w * (1 - share) : w;
+        walk(node.first, first);
+        walk(node.second, second);
+      };
+      walk(layout.root, 1);
+      return width;
+    };
+    const before = widthOf(treeFromShellLayout(DEFAULT_SHELL_LAYOUT), "graph");
+    const after = widthOf(DEFAULT_PANE_TREE, "graph");
+    expect(after).toBeGreaterThan(before);
+    expect(after).toBeCloseTo(0.74, 5); // the whole work area, where it held 77% of it
+  });
+
+  it("the bottom region is TWO COLUMNS, the second split vertically", () => {
+    const bottom = bottomRegion();
+    expect(bottom.kind).toBe("split");
+    const region = bottom as Extract<typeof bottom, { kind: "split" }>;
+    expect(region.direction).toBe("row"); // two columns
+    expect((region.first as { id: string }).id).toBe("leaf-bottom");
+    const libraries = region.second;
+    expect(libraries.kind).toBe("split");
+    expect((libraries as { direction: string }).direction).toBe("column"); // split vertically
+  });
+
+  it("library and components are SIMULTANEOUSLY VISIBLE — two leaves, never two tabs", () => {
+    /*
+     * This is the gain the owner did not ask for and gets anyway. In the old default
+     * both roles were tabs of ONE leaf, so exactly one of them could ever be on screen.
+     * Reproducing them as tabs here would move them without buying anything, which is
+     * why this asserts DISTINCT LEAVES and not merely "both are present".
+     */
+    const leaves = leavesOf(DEFAULT_PANE_TREE.root);
+    const libraryLeaf = leaves.find((leaf) => leaf.tabs.some((tab) => tab.role === "library"))!;
+    const componentsLeaf = leaves.find((leaf) => leaf.tabs.some((tab) => tab.role === "components"))!;
+    expect(libraryLeaf.id).not.toBe(componentsLeaf.id);
+    // And each is the ACTIVE tab of its own leaf: neither is hidden behind a sibling.
+    expect(libraryLeaf.tabs.find((tab) => tab.key === libraryLeaf.active)?.role).toBe("library");
+    expect(componentsLeaf.tabs.find((tab) => tab.key === componentsLeaf.active)?.role).toBe("components");
+  });
+
+  it("every key is unique and the mint counter clears them all", () => {
+    const keys = allTabs(DEFAULT_PANE_TREE).map((tab) => tab.key);
+    expect(new Set(keys).size).toBe(keys.length);
+    // A hand-authored tree can get this wrong in a way a derived one could not.
+    const minted = addTab(DEFAULT_PANE_TREE, "leaf-center", "viewer");
+    const mintedKeys = allTabs(minted).map((tab) => tab.key);
+    expect(new Set(mintedKeys).size).toBe(mintedKeys.length);
+  });
+
+  it("still holds all ten roles — moving two panes must not lose one", () => {
+    expect(new Set(allTabs(DEFAULT_PANE_TREE).map((tab) => tab.role)).size).toBe(10);
+  });
+});
+
 describe("the projection goes NULL the moment the tree stops being flat (V385)", () => {
+  /*
+   * T927: these gates run on the FLAT-DERIVED tree, not on `DEFAULT_PANE_TREE`. The
+   * default is now authored as a tree and is structural by construction — its bottom
+   * region is a split — so it projects to null before any of these cases is applied,
+   * and a gate asserting null against it could not fail. The five-zone skeleton is what
+   * "still flat-expressible" MEANS, so it is what the trigger is measured against.
+   */
+  const flat = treeFromShellLayout(DEFAULT_SHELL_LAYOUT);
+
   it("splitting any leaf makes the tree unprojectable", () => {
-    const split = splitLeaf(DEFAULT_PANE_TREE, "leaf-center", "row");
+    // The precondition is the whole point: it is projectable UNTIL the split.
+    expect(shellLayoutFromTree(flat)).not.toBeNull();
+    const split = splitLeaf(flat, "leaf-center", "row");
     expect(shellLayoutFromTree(split)).toBeNull();
   });
 
   it("a second tab of the SAME role makes the tree unprojectable", () => {
-    const doubled = addTab(DEFAULT_PANE_TREE, "leaf-right", "viewer");
+    const doubled = addTab(flat, "leaf-right", "viewer");
     expect(shellLayoutFromTree(doubled)).toBeNull();
   });
 
   it("a second tab of a NEW role stays projectable — v3 can say that much", () => {
     // The flat model tabs zones already; only structure and duplicates exceed it.
     const moved = moveTab(
-      DEFAULT_PANE_TREE,
-      allTabs(DEFAULT_PANE_TREE).find((tab) => tab.role === "inspector")!.key,
+      flat,
+      allTabs(flat).find((tab) => tab.role === "inspector")!.key,
       "leaf-right",
     );
     const projected = shellLayoutFromTree(moved);
     expect(projected?.zones.right).toEqual(["viewer", "inspector"]);
     expect(projected?.zones.rightBottom).toEqual([]);
+  });
+
+  it("the T927 default is structural, so v3 cannot hold it at all", () => {
+    // Not incidental: the bottom region is two columns and the second is split
+    // vertically, which the five fixed zones have no spelling for. V385 therefore
+    // CLEARS the v3 record for a fresh profile rather than writing a lie into it.
+    expect(shellLayoutFromTree(DEFAULT_PANE_TREE)).toBeNull();
   });
 });
 
@@ -111,7 +218,7 @@ describe("identity survives role change (V340, applied twice)", () => {
 
 describe("two viewers are REPRESENTABLE — the point of the model (T405)", () => {
   it("mints distinct keys for two tabs of one role, enumerable together", () => {
-    const doubled = addTab(DEFAULT_PANE_TREE, "leaf-left", "viewer");
+    const doubled = addTab(DEFAULT_PANE_TREE, "leaf-center", "viewer");
     const viewers = allTabs(doubled).filter((tab) => tab.role === "viewer");
     expect(viewers).toHaveLength(2);
     expect(viewers[0]!.key).not.toBe(viewers[1]!.key);
@@ -142,16 +249,18 @@ describe("the split/close algebra", () => {
 
   it("closeTab removes the tab, hands active to a neighbour, and keeps the emptied leaf", () => {
     const tree = DEFAULT_PANE_TREE;
-    const left = findLeaf(tree, "leaf-left")!;
-    const [library, components] = left.tabs;
-    const closed = closeTab(tree, library!.key);
-    const after = findLeaf(closed, "leaf-left")!;
-    expect(after.tabs.map((tab) => tab.key)).toEqual([components!.key]);
-    expect(after.active).toBe(components!.key);
+    // T927: the multi-tab leaf of the default is the bottom dock — the left dock this
+    // used to read is gone, and its two roles are leaves of their own now.
+    const bottom = findLeaf(tree, "leaf-bottom")!;
+    const [shader, problems] = bottom.tabs;
+    const closed = closeTab(tree, shader!.key);
+    const after = findLeaf(closed, "leaf-bottom")!;
+    expect(after.tabs.map((tab) => tab.key)).toEqual(bottom.tabs.slice(1).map((tab) => tab.key));
+    expect(after.active).toBe(problems!.key);
     // Empty the leaf entirely: it STAYS — closing the leaf is a separate, explicit act.
-    const emptied = closeTab(closed, components!.key);
-    expect(findLeaf(emptied, "leaf-left")?.tabs).toEqual([]);
-    expect(findLeaf(emptied, "leaf-left")?.active).toBeNull();
+    const emptied = after.tabs.reduce((layout, tab) => closeTab(layout, tab.key), closed);
+    expect(findLeaf(emptied, "leaf-bottom")?.tabs).toEqual([]);
+    expect(findLeaf(emptied, "leaf-bottom")?.active).toBeNull();
   });
 
   it("closeLeaf collapses its split and the sibling takes the whole area", () => {
@@ -160,12 +269,12 @@ describe("the split/close algebra", () => {
     expect(leaves.some((leaf) => leaf.id === "leaf-right")).toBe(false);
     // The sibling (rightBottom) absorbed the right column; everything else intact.
     expect(leaves.some((leaf) => leaf.id === "leaf-rightBottom")).toBe(true);
-    expect(leaves).toHaveLength(4);
+    expect(leaves).toHaveLength(5); // T927: six leaves in the default, one closed
   });
 
   it("the LAST leaf never closes — the shell always has somewhere to stand", () => {
     let tree: PaneTreeLayout = DEFAULT_PANE_TREE;
-    for (const id of ["leaf-left", "leaf-bottom", "leaf-right", "leaf-rightBottom"]) {
+    for (const id of ["leaf-bottom", "leaf-library", "leaf-components", "leaf-right", "leaf-rightBottom"]) {
       tree = closeLeaf(tree, id);
     }
     expect(leavesOf(tree.root).map((leaf) => leaf.id)).toEqual(["leaf-center"]);
@@ -212,12 +321,12 @@ describe("the split/close algebra", () => {
 
   it("selectTab activates only a tab the leaf actually holds", () => {
     const tree = DEFAULT_PANE_TREE;
-    const left = findLeaf(tree, "leaf-left")!;
-    const components = left.tabs[1]!;
-    const selected = selectTab(tree, "leaf-left", components.key);
-    expect(findLeaf(selected, "leaf-left")?.active).toBe(components.key);
+    const bottom = findLeaf(tree, "leaf-bottom")!;
+    const problems = bottom.tabs[1]!;
+    const selected = selectTab(tree, "leaf-bottom", problems.key);
+    expect(findLeaf(selected, "leaf-bottom")?.active).toBe(problems.key);
     const viewer = allTabs(tree).find((tab) => tab.role === "viewer")!;
-    expect(findLeaf(selectTab(tree, "leaf-left", viewer.key), "leaf-left")?.active).toBe(left.active);
+    expect(findLeaf(selectTab(tree, "leaf-bottom", viewer.key), "leaf-bottom")?.active).toBe(bottom.active);
   });
 });
 
@@ -339,11 +448,14 @@ describe("floating (§V97) and docking home", () => {
 
   it("homeLeafFor answers by ROLE — the first leaf carrying it, else the first leaf", () => {
     expect(homeLeafFor(DEFAULT_PANE_TREE, "graph")).toBe("leaf-center");
-    const noGraph = closeTab(
-      DEFAULT_PANE_TREE,
-      allTabs(DEFAULT_PANE_TREE).find((tab) => tab.role === "graph")!.key,
-    );
-    expect(homeLeafFor(noGraph, "graph")).toBe("leaf-left");
+    /*
+     * T927: the fallback branch needs the leaf that CARRIED the role to be gone, not
+     * merely emptied — the graph's own leaf is the first leaf of the default now, so
+     * closing the tab alone would answer "leaf-center" through the FIRST branch and the
+     * two answers would stop being distinguishable.
+     */
+    const noGraph = closeLeaf(DEFAULT_PANE_TREE, "leaf-center");
+    expect(homeLeafFor(noGraph, "graph")).toBe("leaf-bottom");
   });
 });
 
@@ -372,12 +484,12 @@ describe("repair degrades to the default, never a throw (V385's cousin)", () => 
   });
 
   it("accepts a valid tree and repairs a missing mint counter past every key", () => {
-    const valid = addTab(splitLeaf(DEFAULT_PANE_TREE, "leaf-center", "row"), "leaf-left", "viewer");
+    const valid = addTab(splitLeaf(DEFAULT_PANE_TREE, "leaf-center", "row"), "leaf-library", "viewer");
     const repaired = repairPaneTree({ root: valid.root, floating: valid.floating });
     expect(repaired.root).toBe(valid.root);
     expect(repaired.nextKey).toBeGreaterThan(0);
     // Minting from the repaired counter must not collide with any existing key.
-    const minted = addTab(repaired, "leaf-left", "graph");
+    const minted = addTab(repaired, "leaf-library", "graph");
     const keys = allTabs(minted).map((tab) => tab.key);
     expect(new Set(keys).size).toBe(keys.length);
   });
@@ -404,10 +516,12 @@ describe("a closed role comes BACK (T486, V423)", () => {
     expect(findLeaf(closed, "leaf-bottom")).toBeUndefined();
 
     const restored = restoreRole(closed, "shader");
-    // Not a tab wedged into a surviving dock: a fresh BOTTOM area, below the work
-    // area, at the ratio the closed split held.
+    // Not a tab wedged into a surviving dock: a fresh area with the SHAPE the closed
+    // one had. T927 moved where that is — the bottom dock is now the FIRST column of a
+    // two-column bottom region, so it comes back as a row split beside the libraries at
+    // the region's own 74/26, not as a tab inside them.
     const leaves = leavesOf(restored.root);
-    expect(leaves.length).toBe(5);
+    expect(leaves.length).toBe(6);
     const fresh = leaves.find((leaf) => leaf.tabs.some((tab) => tab.role === "shader"))!;
     expect(fresh).toBeDefined();
     const parent = ((): { direction: string; ratio: number; secondIsFresh: boolean } | null => {
@@ -428,10 +542,10 @@ describe("a closed role comes BACK (T486, V423)", () => {
       walk(restored.root);
       return found;
     })();
-    // A COLUMN split with the new area on the second (bottom) side, at the old 72/28.
-    expect(parent?.direction).toBe("column");
-    expect(parent?.secondIsFresh).toBe(true);
-    expect(parent?.ratio).toBe(72);
+    // A ROW split with the new area on the FIRST (left) side, at the old 74/26.
+    expect(parent?.direction).toBe("row");
+    expect(parent?.secondIsFresh).toBe(false);
+    expect(parent?.ratio).toBe(74);
   });
 
   it("a stale recipe degrades to the first leaf — restored somewhere beats nowhere", () => {

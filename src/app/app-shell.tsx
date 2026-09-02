@@ -36,6 +36,7 @@ import {
   revealRole,
   setSplitRatio,
   splitLeaf,
+  treeFromShellLayout,
   DEFAULT_PANE_TREE,
 } from "./pane-tree.ts";
 import type { ShellEdge, LayoutNode, PaneKey, PaneRole, PaneTreeLayout } from "./pane-tree.ts";
@@ -51,22 +52,35 @@ import {
   writePaneTreeStore,
 } from "./pane-tree-storage.ts";
 import type { NamedPaneTree, PaneTreeStore } from "./pane-tree-storage.ts";
-import { DEFAULT_LAYOUT_ID } from "./layout-storage.ts";
+import { DEFAULT_LAYOUT_ID, DEFAULT_SHELL_LAYOUT } from "./layout-storage.ts";
 import styles from "./app-shell.module.css";
 
 const HIT_AREA = { coarse: 12, fine: 6 } as const;
 
 /**
+ * The five-zone migration skeleton — the shape every layout stored before T404 comes up
+ * as, and the only place `split-main` and its stock ratios still exist now that the
+ * default (T927) has no left dock. Used for naming and for divider reset fallbacks.
+ */
+const SKELETON_TREE = treeFromShellLayout(DEFAULT_SHELL_LAYOUT);
+
+/**
  * The canonical leaves keep their human names; anything the user split is named by what
- * it currently shows. The three ids the layout menu's dock toggles collapse are the
- * migration skeleton's own — a rearranged shell simply has fewer toggles, not wrong ones.
+ * it currently shows. The ids the layout menu's dock toggles collapse are the default
+ * tree's and the migration skeleton's — a rearranged shell simply has fewer toggles,
+ * not wrong ones.
  */
 const CANONICAL_LEAF_NAMES: Readonly<Record<string, string>> = {
+  // T927 moved the two libraries out of the left dock into their own leaves in the
+  // bottom region. `leaf-left` stays named: a stored layout from before still has it,
+  // and a dock the user is looking at must not lose its name on upgrade.
   "leaf-left": "Left dock",
   "leaf-center": "Centre dock",
   "leaf-right": "Right dock top",
   "leaf-rightBottom": "Right dock bottom",
   "leaf-bottom": "Bottom dock",
+  "leaf-library": "Node library dock",
+  "leaf-components": "Components dock",
 };
 
 /** Panel ids the layout menu can collapse, when the current tree still has them. */
@@ -74,6 +88,11 @@ const TOGGLE_TARGETS: ReadonlyArray<{ readonly id: string; readonly label: strin
   { id: "leaf-left", label: "Left dock" },
   { id: "split-right", label: "Right dock" },
   { id: "leaf-bottom", label: "Bottom dock" },
+  // T927 (§V399: every shell panel is collapsible): the libraries' own column. It is
+  // what the left dock's toggle used to be for — get them out of the way in one gesture
+  // — and without it the new arrangement would be the first one to ship a panel with no
+  // way to close it.
+  { id: "split-libraries", label: "Library column" },
 ];
 const COLLAPSIBLE_IDS = new Set(TOGGLE_TARGETS.map((target) => target.id));
 
@@ -83,6 +102,10 @@ const SPLIT_HANDLE_NAMES: Readonly<Record<string, string>> = {
   "split-rows": "Resize bottom dock",
   "split-main": "Resize left dock",
   "split-right": "Resize sidebar split",
+  // T927's two new dividers: the bottom region's two columns, and the split between the
+  // node library and the components inside the second one.
+  "split-bottom": "Resize library column",
+  "split-libraries": "Resize library split",
 };
 
 export interface AppShellProps {
@@ -95,7 +118,12 @@ export interface AppShellProps {
    */
   notices?: ReactNode;
   nodeLibrary?: ReactNode;
-  /** Component catalogue. Shares a leaf with the node library — both ADD (§V93). */
+  /**
+   * Component catalogue. T927: its OWN leaf, stacked under the node library in the
+   * bottom region's second column — §V93's "they may share a zone" became "they sit one
+   * above the other", which keeps both additive surfaces visible at once instead of one
+   * of them hidden behind the other's tab.
+   */
   componentLibrary?: ReactNode;
   graphCanvas?: ReactNode;
   inspector?: ReactNode;
@@ -231,7 +259,14 @@ export function AppShell({
           if (node.id === splitId) return node.ratio;
           return walk(node.first) ?? walk(node.second);
         };
-        return walk(DEFAULT_PANE_TREE.root) ?? 50;
+        /*
+         * T927: the default tree first, then the FIVE-ZONE SKELETON. The default no
+         * longer contains `split-main` — a user still sitting on a stored flat layout
+         * has that divider on screen, and answering 50/50 for it would turn a
+         * double-click from "put it back" into "resize it to something it never was".
+         * The skeleton is where those ids and their stock ratios still live.
+         */
+        return walk(DEFAULT_PANE_TREE.root) ?? walk(SKELETON_TREE.root) ?? 50;
       })();
       applyLayout((layout) => setSplitRatio(layout, splitId, fallback));
       setGeneration((current) => current + 1);

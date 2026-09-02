@@ -13,6 +13,8 @@ import {
   LAYOUT_STORAGE_KEY,
   readLayoutStore,
 } from "./layout-storage.ts";
+import { readPaneTreeStore } from "./pane-tree-storage.ts";
+import { DEFAULT_PANE_TREE, leavesOf } from "./pane-tree.ts";
 import { OPEN_LAYOUTS_COMMAND, RESET_LAYOUT_COMMAND } from "./layout-commands.ts";
 
 /**
@@ -95,9 +97,19 @@ describe("T436 — the layout menu's bus commands", () => {
       await runtime.bus.execute(RESET_LAYOUT_COMMAND, {}, runtime.invocation);
     });
 
-    const after = readLayoutStore(storage);
-    expect(after.current.zones).toEqual(DEFAULT_SHELL_LAYOUT.zones);
-    expect(after.current.rows).toEqual(DEFAULT_SHELL_LAYOUT.rows);
+    /*
+     * T927: asserted on the v5 TREE store. `layout.reset` restores the Default PRESET,
+     * which is now the tree default — and that arrangement has no faithful v3
+     * projection, so the v3 key is removed (V385) and `readLayoutStore` would answer
+     * with its own stock fallback. That fallback happens to equal the old expectation,
+     * i.e. this gate would have gone green whether or not the reset ran at all.
+     */
+    const after = readPaneTreeStore(storage);
+    expect(after.current).toEqual(DEFAULT_PANE_TREE);
     expect(after.currentId).toBe(DEFAULT_LAYOUT_ID);
+    // The rearrangement the shell booted on is genuinely gone.
+    expect(
+      leavesOf(after.current.root).find((leaf) => leaf.tabs.some((tab) => tab.role === "shader"))?.id,
+    ).toBe("leaf-bottom");
   });
 });

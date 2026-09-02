@@ -1,5 +1,4 @@
 import type { DockZone, PaneId, ShellLayout } from "./layout-storage.ts";
-import { DEFAULT_SHELL_LAYOUT } from "./layout-storage.ts";
 
 /**
  * The pane TREE (T404, V340): identity split from role.
@@ -581,7 +580,110 @@ export function shellLayoutFromTree(layout: PaneTreeLayout): ShellLayout | null 
   };
 }
 
-export const DEFAULT_PANE_TREE: PaneTreeLayout = treeFromShellLayout(DEFAULT_SHELL_LAYOUT);
+/**
+ * T927 — the default arrangement, AUTHORED AS A TREE.
+ *
+ * It used to be `treeFromShellLayout(DEFAULT_SHELL_LAYOUT)`, and it could not stay that
+ * way: the flat model has five fixed zones and no way to say "the bottom region is two
+ * columns, and the second one is split vertically". Deriving this shape would silently
+ * flatten it back to the five-zone skeleton, so the default is written here, in the
+ * model that can express it. `treeFromShellLayout` stays — it is the v3 MIGRATION, and
+ * a stored flat layout is still exactly five zones.
+ *
+ * What changed and why:
+ *
+ *  - the LEFT zone is gone. `library` and `components` move into the bottom region as a
+ *    second column, split vertically, so BOTH ARE VISIBLE AT ONCE. As tabs in the old
+ *    left dock only one of them ever was — the arrangement could not show you the node
+ *    library and your components together, which is the pairing you actually work in.
+ *  - the graph takes the whole work-area width the left dock used to hold (23% of it).
+ *  - the bottom region's own split gives the library column 26% of the bottom's width,
+ *    which is within a point of the absolute width the left dock had (23% of 74%), so
+ *    the lists are as wide as they were — what they lose is height, and that is the
+ *    trade this arrangement makes on purpose (T886's search and categories are what
+ *    pay for it).
+ *
+ * This is NOT a migration. Only a profile with no stored layout — or one that runs
+ * `layout.reset` / picks "Default" in the layout menu — ever sees it; everyone else
+ * keeps the arrangement they are sitting in (V813, and see `pane-tree-storage.ts`).
+ */
+export const DEFAULT_PANE_TREE: PaneTreeLayout = {
+  root: {
+    kind: "split",
+    id: "split-columns",
+    direction: "row",
+    ratio: 74,
+    first: {
+      kind: "split",
+      id: "split-rows",
+      direction: "column",
+      // T927: 66/34, where the flat default was 72/28. A library is a SCAN-AND-DRAG
+      // surface and height is what serves it; at 28% the node library showed ONE row
+      // under its search box, which is a worse pane than the tab it replaced. The graph
+      // still comes out ahead — it gained the left dock's 23% of the WIDTH, so its area
+      // goes from 41% of the window to 49% even after giving six points of height back.
+      ratio: 66,
+      // No left dock: the graph IS the work area above the bottom region.
+      first: { kind: "leaf", id: "leaf-center", tabs: [{ key: "graph-1", role: "graph" }], active: "graph-1" },
+      second: {
+        kind: "split",
+        id: "split-bottom",
+        direction: "row",
+        ratio: 74,
+        first: {
+          kind: "leaf",
+          id: "leaf-bottom",
+          tabs: [
+            { key: "shader-2", role: "shader" },
+            { key: "problems-3", role: "problems" },
+            { key: "performance-4", role: "performance" },
+            { key: "examples-5", role: "examples" },
+            { key: "agent-6", role: "agent" },
+          ],
+          active: "shader-2",
+        },
+        // Two leaves, not one leaf with two tabs: a vertical SPLIT is what makes both
+        // libraries visible at the same time. Tabbing them here would move them without
+        // buying anything.
+        second: {
+          kind: "split",
+          id: "split-libraries",
+          direction: "column",
+          // Not even: the node library is the one you SCAN, and the components pane is
+          // mostly a save-selection form plus a short list.
+          ratio: 60,
+          first: {
+            kind: "leaf",
+            id: "leaf-library",
+            tabs: [{ key: "library-7", role: "library" }],
+            active: "library-7",
+          },
+          second: {
+            kind: "leaf",
+            id: "leaf-components",
+            tabs: [{ key: "components-8", role: "components" }],
+            active: "components-8",
+          },
+        },
+      },
+    },
+    second: {
+      kind: "split",
+      id: "split-right",
+      direction: "column",
+      ratio: 50,
+      first: { kind: "leaf", id: "leaf-right", tabs: [{ key: "viewer-9", role: "viewer" }], active: "viewer-9" },
+      second: {
+        kind: "leaf",
+        id: "leaf-rightBottom",
+        tabs: [{ key: "inspector-10", role: "inspector" }],
+        active: "inspector-10",
+      },
+    },
+  },
+  floating: [],
+  nextKey: 11,
+};
 
 /**
  * T486 (V423): bring a CLOSED role back. The layout menu enumerates the POSSIBILITY
