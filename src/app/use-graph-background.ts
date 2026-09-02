@@ -64,6 +64,17 @@ export function graphBackgroundMarks(
     .filter((nodeId) => graph.nodes[nodeId]?.ui?.background === true)
     .map((nodeId) => ({
       nodeId,
+      /*
+       * The `pointset` exclusion is LOAD-BEARING, and it is not a refusal to draw point
+       * nodes — it is what makes them draw. A pointset MARKER is not bindable (T121):
+       * it is the row a point output has BEFORE a preview sink makes the compiler
+       * synthesize its splat target (T373). Skipping it leaves `output` undefined, which
+       * routes the mark through the not-yet-materialized branch below — the branch that
+       * registers the sink that triggers the recompile that replaces the marker with a
+       * real `target` row carrying `synthesis`. Take the marker instead and the tile
+       * binds a resource no plan has, which is the same black background by a different
+       * road. Same filter, same reason, as `use-node-previews.ts`.
+       */
       output: outputs.find(
         (entry) => entry.nodeId === nodeId && entry.resourceKind !== "pointset",
       ),
@@ -254,6 +265,27 @@ export function useGraphBackground(inputs: GraphBackgroundInputs): void {
           occluded: false,
           view: DEFAULT_PREVIEW_VIEW,
           fps: current.previewFps,
+          /*
+           * T563/§V521 — a SYNTHESIZED background draws itself, and this is the only
+           * thing that lets it.
+           *
+           * A pointset (and a camera, light, geometry, material or projector) has no
+           * texture anywhere in it: the compiler hands the row a `synthesis` block, and
+           * the PREVIEW PROGRAM — not the main plan — owns the target those passes
+           * render into, sized to the granted tile. Drop it here and the lens pass below
+           * samples a resource that exists in neither the plan nor the program: one true
+           * `backend/unknown-resource` per marked node, and a background that stays black
+           * while every texture node beside it works. That is exactly what the owner met
+           * on the laser path and the point generators.
+           *
+           * The tile keeps the SOURCE's aspect (`tileSizeFor` derives it from
+           * `source.size`, which T663 already nominates at the project's shape), so the
+           * splat is drawn at the same aspect it is letterboxed into (§V118) and the pane
+           * being square, wide or tall cannot stretch it. Nothing new is decided here:
+           * this is the same spread `use-node-previews.ts` has carried since T563 — the
+           * background was the one caller that never got it.
+           */
+          ...(output.synthesis === undefined ? {} : { synthesis: output.synthesis }),
         });
       }
 

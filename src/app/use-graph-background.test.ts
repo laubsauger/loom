@@ -57,6 +57,36 @@ describe("graphBackgroundMarks (T463)", () => {
   it("an unmarked document yields nothing — zero cost when nothing is flagged (V309)", () => {
     expect(graphBackgroundMarks(doc({ a: {}, b: {} }), [row("a")])).toEqual([]);
   });
+
+  /**
+   * T373/T563 — the two rows a POINT output has, and why the marker is skipped.
+   *
+   * A pointset MARKER is not bindable (T121): it names no texture. It is what a point
+   * output resolves to BEFORE a preview sink makes the compiler synthesize the splat. So
+   * a marked point node has to come back with NO output — which is what sends it down the
+   * caller's not-yet-materialized branch, the branch that registers the sink that triggers
+   * the recompile that mints the real row. Take the marker and the tile binds a resource
+   * no plan carries, and the background is black for a different reason.
+   *
+   * Once that row exists it is an ordinary `target` and MUST be taken, `synthesis` and
+   * all — the whole point of the skip is to reach it. Both halves are asserted because
+   * they fail in opposite directions: dropping the filter reddens the first, and a filter
+   * that also excluded synthesized rows would redden the second.
+   */
+  it("skips the unbindable pointset MARKER, and takes the synthesized target that replaces it", () => {
+    const graph = doc({ p: { background: true } });
+    const marker = { ...row("p"), resourceKind: "pointset", resourceId: "points:p:out" } as never;
+    expect(graphBackgroundMarks(graph, [marker])).toEqual([{ nodeId: "p", output: undefined }]);
+
+    const synthesized = {
+      ...row("p"),
+      resourceId: "preview:points:p:out",
+      synthesis: { kind: "pointset", depth: false, passes: [] },
+    } as never;
+    const marks = graphBackgroundMarks(graph, [synthesized]);
+    expect(marks[0]?.output?.resourceId).toBe("preview:points:p:out");
+    expect(marks[0]?.output?.synthesis).toBeDefined();
+  });
 });
 
 describe("backgroundRect letterboxes, never stretches (§V118)", () => {
