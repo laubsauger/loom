@@ -347,8 +347,36 @@ export type NonReproducibleCause =
  * these nodes has not changed — they are still async-cached, still stale live, still on
  * the telemetry channel. What changed is only what the export path does about it, which is
  * a property of the render loop and not of the node.
+ *
+ * ⚠ IT HELD TWO AND THE EXPORT PATH SETTLED FOUR. `NODE_REPRODUCIBILITY` above is pinned
+ * to the registry in both directions; this DERIVED SUBSET had no gate at all, so `matte`
+ * (T828) and `personMask` (T1029) each landed without anyone being asked to update it and
+ * each showed a take the WRONG caveat — "depends on when a result arrived", about a result
+ * the take waits for. `ASYNC_NOT_SETTLED` below is the missing half, and the gate in
+ * `reproducibility.test.ts` now forces every async-cached node into one list or the other.
+ *
+ * The truth this mirrors is `app.tsx`'s `onFrameRendered`, which awaits `depth.settle`
+ * (every node type in `INFERENCE_KINDS` — depth, pose and matte) and `vision.settle`
+ * (personMask). Four settle; the two below do not.
  */
-const SETTLED_BY_EXPORT: ReadonlySet<string> = new Set(["depth", "pose"]);
+export const SETTLED_BY_EXPORT: ReadonlySet<string> = new Set([
+  "depth",
+  "pose",
+  "matte",
+  "personMask",
+]);
+
+/**
+ * The other half of the same question, so neither list can go stale quietly (§V855).
+ *
+ * An async-cached node belongs in exactly one of these two sets, and the gate fails when a
+ * new one belongs to neither. The reason is recorded per node because "not settled" is a
+ * claim about the export path, not a default.
+ */
+export const ASYNC_NOT_SETTLED: Readonly<Record<string, string>> = {
+  analyze: "A readback published latest-wins; renderFrameRange never waits for one.",
+  channelIn: "Reads whatever the external channel last delivered; nothing to settle.",
+};
 
 /** One node a take cannot promise to reproduce, and enough to name it to the user. */
 export interface NonReproducibleNode {

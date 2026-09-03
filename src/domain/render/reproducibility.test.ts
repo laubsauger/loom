@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  ASYNC_NOT_SETTLED,
   NODE_REPRODUCIBILITY,
+  SETTLED_BY_EXPORT,
   nonReproducibleNodes,
   nonReproducibleRenderWarning,
   type Reproducibility,
@@ -110,6 +112,79 @@ describe("T645 — every registered node type is classified, or this fails (§V4
     expect(asType).toBe("pure");
     expect(NODE_REPRODUCIBILITY["audioFileIn"]).toBe("pure");
     expect(nonReproducibleNodes(graphWith({ clip1: node("movieFileIn", "clip1", { playMode: "timeline" }) }), registry)).toEqual([]);
+  });
+});
+
+/**
+ * The DERIVED SUBSET, gated in both directions — the half T747 left open.
+ *
+ * `NODE_REPRODUCIBILITY` is pinned to the registry above, so a node cannot ship
+ * unclassified. `SETTLED_BY_EXPORT` is a second, finer question asked of the same nodes —
+ * does the export path WAIT for this one's result — and it had no gate at all, so it
+ * silently held two entries while `onFrameRendered` settled four. `matte` and then
+ * `personMask` each landed async-cached and each got the wrong caveat in a take: "depends
+ * on when a result arrived", about a result the take demonstrably waits for.
+ *
+ * §V855: exhaustiveness over the registry is not coverage of THIS axis. So every
+ * async-cached node must appear in exactly one of the two lists, and adding a new one
+ * fails here until someone answers for it.
+ */
+describe("SETTLED_BY_EXPORT is answered for every async-cached node, in both directions (§V855)", () => {
+  const asyncCached = Object.entries(NODE_REPRODUCIBILITY)
+    .filter(([, value]) => value === "async-cached")
+    .map(([type]) => type)
+    .sort();
+
+  it("holds the four the export path actually settles, named not counted", () => {
+    expect([...SETTLED_BY_EXPORT].sort()).toEqual(["depth", "matte", "personMask", "pose"]);
+  });
+
+  it("leaves no async-cached node unanswered", () => {
+    const unanswered = asyncCached.filter(
+      (type) => !SETTLED_BY_EXPORT.has(type) && ASYNC_NOT_SETTLED[type] === undefined,
+    );
+    expect(
+      unanswered,
+      "An async-cached node must either be settled by the export path (SETTLED_BY_EXPORT) " +
+        "or say why it is not (ASYNC_NOT_SETTLED). Neither list is derivable from the " +
+        "registry, which is how `matte` and `personMask` each shipped showing a take the " +
+        "stale-arrival caveat for a result `onFrameRendered` waits for.",
+    ).toEqual([]);
+  });
+
+  it("puts no node in both lists, and none in neither", () => {
+    const both = asyncCached.filter(
+      (type) => SETTLED_BY_EXPORT.has(type) && ASYNC_NOT_SETTLED[type] !== undefined,
+    );
+    expect(both, "A node cannot both be settled and documented as unsettled.").toEqual([]);
+    expect([...SETTLED_BY_EXPORT, ...Object.keys(ASYNC_NOT_SETTLED)].sort()).toEqual(asyncCached);
+  });
+
+  it("names no node that is not async-cached — an entry here is inert otherwise", () => {
+    // `nonReproducibleNodes` only consults the set on the async-cached branch, so a `pure`
+    // or `external-live` type listed here would look like coverage and do nothing.
+    const misfiled = [...SETTLED_BY_EXPORT, ...Object.keys(ASYNC_NOT_SETTLED)].filter(
+      (type) => NODE_REPRODUCIBILITY[type] !== "async-cached",
+    );
+    expect(misfiled).toEqual([]);
+  });
+
+  it("reports the settled ones as model-inference and the rest as async-cached", () => {
+    // The CONSEQUENCE half: the lists above are only worth something if the cause the user
+    // is shown follows them. Cut `matte` out of the set and this is what changes.
+    const causes = nonReproducibleNodes(
+      graphWith({
+        m1: node("matte", "m1"),
+        d1: node("depth", "d1"),
+        a1: node("analyze", "a1"),
+      }),
+      registry,
+    ).map((entry) => `${entry.nodeId}:${entry.cause}`);
+    expect(causes.sort()).toEqual([
+      "a1:async-cached",
+      "d1:model-inference",
+      "m1:model-inference",
+    ]);
   });
 });
 
