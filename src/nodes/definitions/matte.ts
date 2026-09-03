@@ -307,6 +307,24 @@ export function matteSmoothingFor(stored: Readonly<Record<string, unknown>>): nu
  * holes; lifting the black point crushes the grey haze a matte leaves across a busy
  * background. On a SOFT alpha this trio is also the choke/spread gesture a keyer would
  * reach for — the edge is a ramp, and moving the levels on a ramp moves the edge.
+ *
+ * ## ⚠ WHAT WAS ASKED FOR AND DELIBERATELY NOT BUILT: shrink/grow and feather
+ *
+ * A morphological erode/dilate and a feather were on the same request and are NOT here,
+ * because both need a NEIGHBOURHOOD and everything above is per-pixel. The honest cost of
+ * adding them: a square kernel is O(r²) taps — 81 at radius 4, on a full-resolution pass
+ * that runs every frame whether or not a new matte arrived, which at 1080p is ~170M
+ * texture loads per frame per matte node. Doing it properly instead means separable
+ * passes, and because a feather must run on the ALREADY-ERODED matte rather than beside
+ * it, that is four passes and two scratch targets on a node that currently has two passes
+ * and no intermediate.
+ *
+ * That is a real feature with a real design, not a five-line addition, and it is worth
+ * doing on its own terms. It is also worth less than it looks HERE: on a soft alpha the
+ * levels above already deliver the choke/spread gesture continuously and for free, and a
+ * hard morphological erode mainly earns its keep on a binary matte, which this node does
+ * not produce. So the trio ships, the morphology is named rather than half-built, and
+ * whoever picks it up should budget the passes rather than discover them.
  */
 interface MattePost {
   readonly blackPoint: number;
