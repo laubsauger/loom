@@ -9,6 +9,18 @@ export type { MidiSectionProps, MidiSectionSurface } from "./midi-section.tsx";
 export { CommonReadout, CommonSection } from "./common-section.tsx";
 export type { CommonReadoutProps, CommonSectionProps } from "./common-section.tsx";
 
+export { ConnectionsSection } from "./connections-section.tsx";
+export type { ConnectionsSectionProps } from "./connections-section.tsx";
+
+export { connectionModel, movedOrder } from "./connections.ts";
+export type {
+  ConnectionInputGroup,
+  ConnectionModel,
+  ConnectionOutputGroup,
+  ConnectionRow,
+  ConnectionsRegistry,
+} from "./connections.ts";
+
 export { createParameterEditor } from "./parameter-editor.ts";
 export type { ParameterEditor, ParameterEditorOptions } from "./parameter-editor.ts";
 

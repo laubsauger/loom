@@ -1,0 +1,150 @@
+/**
+ * The Connections list on the node Common page (T1049).
+ * Colours are tokens only (§V17).
+ */
+
+.side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.side + .side {
+  margin-top: var(--chrome-beat);
+}
+
+/* "In" / "Out". Quieter than the section header above it: it labels a half, not a page. */
+.sideHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+  font-weight: var(--weight-header);
+  letter-spacing: var(--tracking-display);
+  text-transform: uppercase;
+  user-select: none;
+}
+
+.sideRule {
+  flex: 1 1 auto;
+  height: var(--hairline);
+  background: linear-gradient(to right, var(--line), transparent);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hairline);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-h);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-ui);
+  font-size: var(--fs-meta);
+}
+
+.row:hover {
+  background: var(--bg-hover);
+}
+
+/*
+  The row being dragged over is marked while a reorder gesture is live. Order is the
+  operation, so the target has to be visible before the pointer is released.
+*/
+.rowTarget {
+  background: var(--bg-active);
+}
+
+.grip {
+  flex: 0 0 auto;
+  width: var(--space-4);
+  height: var(--control-h);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-dim);
+  cursor: grab;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  line-height: 1;
+}
+
+.grip:hover {
+  color: var(--text);
+  background: var(--bg-raise);
+}
+
+.grip:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* Keeps the socket column aligned when a group offers no grip (an ordinary port, Out). */
+.gripSpacer {
+  flex: 0 0 auto;
+  width: var(--space-4);
+}
+
+.socket {
+  flex: 0 0 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-dim);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.arrow {
+  flex: 0 0 auto;
+  color: var(--line-hot);
+  font-family: var(--font-mono);
+}
+
+.peer {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.peerPort {
+  color: var(--text-dim);
+}
+
+.drop {
+  flex: 0 0 auto;
+  width: var(--space-4);
+  height: var(--control-h);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: var(--fs-meta);
+  line-height: 1;
+}
+
+.drop:hover {
+  color: var(--error);
+  background: var(--bg-raise);
+}
+
+.drop:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}

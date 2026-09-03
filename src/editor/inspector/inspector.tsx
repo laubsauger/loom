@@ -17,6 +17,8 @@ import type { ControlVariant } from "@ui/controls/control-row.tsx";
 import { NodeIdentity } from "@ui/primitives/node-identity.tsx";
 import { TabsContent, TabsList, TabsRoot, TabsTrigger } from "@ui/primitives/tabs.tsx";
 import { CommonReadout, CommonSection } from "./common-section.tsx";
+import { ConnectionsSection } from "./connections-section.tsx";
+import { connectionModel } from "./connections.ts";
 import { AudioSection, audioSectionParameters } from "./audio-section.tsx";
 import { WebcamSection, webcamSectionParameters } from "./webcam-section.tsx";
 import { MidiSection, midiSectionParameters } from "./midi-section.tsx";
@@ -435,6 +437,20 @@ export function Inspector({
     };
   })();
 
+  /*
+   * T1049 — TD's connections overview, on the Common page at the owner's instruction
+   * ("to keep Parameters clean"). ABOVE the resolution and format rows: those are set once
+   * and revisited almost never, while "what is wired to this" is the glance — the same
+   * argument T269 used to put the parameters above Common in the first place.
+   */
+  const connectionsSection = (
+    <ConnectionsSection
+      nodeId={node.id}
+      model={connectionModel(graph, bus.registry, node.id)}
+      editor={editor}
+    />
+  );
+
   const commonSection = (
     <CommonSection
       nodeId={node.id}
@@ -615,6 +631,7 @@ export function Inspector({
         {midiSection}
         {laserSection}
         {parameterSections}
+        {connectionsSection}
         {commonSection}
       </div>
     );
@@ -638,6 +655,7 @@ export function Inspector({
           {parameterSections}
         </TabsContent>
         <TabsContent className={cx(styles.page, styles.page)} value="common">
+          {connectionsSection}
           {commonSection}
         </TabsContent>
       </TabsRoot>

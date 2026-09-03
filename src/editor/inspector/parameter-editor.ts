@@ -2,7 +2,7 @@ import type { LoomBus } from "@domain/commands/bus.ts";
 import type { InvocationContext } from "@domain/types/commands.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { NodeFormatOverride, NodeResolutionOverride } from "@domain/types/graph.ts";
-import type { NodeId } from "@domain/types/ids.ts";
+import type { EdgeId, NodeId, PortId } from "@domain/types/ids.ts";
 import type { ParameterValue, StoredParameter } from "@domain/types/parameters.ts";
 import type { GraphPatchResult } from "@domain/types/patch.ts";
 import { createFrameCoalescer, rafScheduler } from "@ui/controls/coalesce.ts";
@@ -68,6 +68,29 @@ export interface ParameterEditor {
     nodeId: NodeId,
     resolution: NodeResolutionOverride | null,
   ) => Promise<GraphPatchResult>;
+  /**
+   * T1049 — one variadic input port's edges, in the order the user has just arranged
+   * them. Every call inside one gesture shares a transaction, so a drag across three
+   * positions is ONE undo entry (§V15) that lands on the order the drag started from.
+   *
+   * Sent per position crossed rather than once on release, because for Over and Composite
+   * the layer order IS the operation: the point of the gesture is watching the picture
+   * restack. Nothing is coalesced to a frame — a crossing is a discrete event a few times
+   * per drag, not a value stream.
+   */
+  reorderPortEdges: (
+    nodeId: NodeId,
+    portId: PortId,
+    edgeIds: readonly EdgeId[],
+  ) => Promise<GraphPatchResult>;
+  /**
+   * T1049 — closes the reorder gesture on that port. Writes NOTHING: the last
+   * `reorderPortEdges` already carries the final order, and a commit patch restating it
+   * would be a second revision saying the same thing.
+   */
+  endReorderGesture: (nodeId: NodeId, portId: PortId) => void;
+  /** T1049 — drop wires from the connections list. One patch, one undo entry (§V32). */
+  disconnectEdges: (edgeIds: readonly EdgeId[]) => Promise<GraphPatchResult>;
   setFormat: (nodeId: NodeId, format: NodeFormatOverride | null) => Promise<GraphPatchResult>;
   /**
    * Fires a momentary pulse (T214, §V124).
@@ -102,6 +125,13 @@ interface PendingValue {
  */
 const editKey = (nodeId: NodeId, keys: readonly string[]): string =>
   `${nodeId} ${[...keys].sort().join(",")}`;
+
+/**
+ * Gesture identity for a reorder, kept in the SAME transaction map as parameter edits and
+ * therefore prefixed: a port and a parameter can share a name (`in2`), and two gestures
+ * sharing a key would merge two unrelated undo groups.
+ */
+const reorderKey = (nodeId: NodeId, portId: PortId): string => `reorder ${nodeId} ${portId}`;
 
 function createTransactionIds(): () => string {
   let counter = 0;
@@ -227,6 +257,51 @@ export function createParameterEditor(options: ParameterEditorOptions): Paramete
     setFormat(nodeId, format) {
       return enqueue(async () => {
         const result = await bus.execute("node.setFormat", { nodeId, format }, context);
+        return report(result.output);
+      });
+    },
+
+    reorderPortEdges(nodeId, portId, edgeIds) {
+      // Read and opened SYNCHRONOUSLY, before the queue: the gesture's identity must not
+      // depend on when its patch happens to be sent.
+      const identity = reorderKey(nodeId, portId);
+      let transactionId = transactions.get(identity);
+      if (transactionId === undefined) {
+        transactionId = newTransactionId();
+        transactions.set(identity, transactionId);
+      }
+      const gesture = transactionId;
+      const order = [...edgeIds];
+      return enqueue(async () => {
+        const result = await bus.execute(
+          "graph.applyPatch",
+          {
+            baseRevision: bus.store.getRevision(),
+            label: "Reorder connections",
+            operations: [{ op: "reorderEdges", nodeId, portId, edgeIds: order }],
+          },
+          { ...context, transactionId: gesture },
+        );
+        return report(result.output);
+      });
+    },
+
+    endReorderGesture(nodeId, portId) {
+      transactions.delete(reorderKey(nodeId, portId));
+    },
+
+    disconnectEdges(edgeIds) {
+      const removed = [...edgeIds];
+      return enqueue(async () => {
+        const result = await bus.execute(
+          "graph.applyPatch",
+          {
+            baseRevision: bus.store.getRevision(),
+            label: "Disconnect",
+            operations: [{ op: "disconnect", edgeIds: removed }],
+          },
+          context,
+        );
         return report(result.output);
       });
     },
