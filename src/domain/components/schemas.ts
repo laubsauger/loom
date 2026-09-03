@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { GraphComponentDefinition } from "../types/components.ts";
+import type { ParameterDefinition } from "../types/parameters.ts";
 import { graphDocumentSchema, parameterValueSchema } from "../types/schemas.ts";
 
 /**
@@ -82,6 +83,18 @@ export const parameterDefinitionSchema = z.discriminatedUnion("type", [
     default: z.string(),
     multiline: z.boolean().optional(),
   }),
+  // T856 follow-up. The arm was MISSING, and unlike §B111's stripped `range` this one
+  // was not a lost key but a lost COMPONENT: a discriminated union with no arm for
+  // `code` fails the whole parse, so `parseComponentDefinition` refused the definition
+  // outright and `load.ts` dropped it from the library. Nine code parameters ship today
+  // (customWgsl, midiIn, the point kernels), and `component.publishParameter` takes any
+  // `ParameterDefinition`, so publishing one produced a component that would not load.
+  z.object({
+    ...parameterBase,
+    type: z.literal("code"),
+    language: z.enum(["wgsl", "json"]),
+    default: z.string(),
+  }),
   z.object({
     ...parameterBase,
     type: z.literal("asset"),
@@ -113,6 +126,29 @@ export const parameterDefinitionSchema = z.discriminatedUnion("type", [
     input: z.record(z.unknown()).optional(),
   }),
 ]);
+
+/**
+ * §V316 PIN — the arm list against the TS union, so the `code` hole cannot come back.
+ *
+ * The one-arm fix above only resets the clock: nothing in the language ties a
+ * `z.discriminatedUnion` to the type it stands for, which is why ten arms sat against an
+ * eleven-member union with a green `tsc`. `satisfies z.ZodType<ParameterDefinition>` is
+ * not the pin — zod widens optionals to `T | undefined` and `exactOptionalPropertyTypes`
+ * rejects that, the same friction `parseComponentDefinition` documents below — so the
+ * pin is on the DISCRIMINATOR SET, which is the axis the bug was on.
+ *
+ * Adding a twelfth `ParameterDefinition` member makes `_armsAreExhaustive` an object
+ * type and `= true` stops compiling, naming the missing arm in the error text.
+ */
+type SchemaArmType = z.infer<typeof parameterDefinitionSchema>["type"];
+type ArmCoverage =
+  [Exclude<ParameterDefinition["type"], SchemaArmType>] extends [never]
+    ? [Exclude<SchemaArmType, ParameterDefinition["type"]>] extends [never]
+      ? true
+      : { armWithNoParameterDefinitionMember: Exclude<SchemaArmType, ParameterDefinition["type"]> }
+    : { parameterDefinitionMemberWithNoArm: Exclude<ParameterDefinition["type"], SchemaArmType> };
+const _armsAreExhaustive: ArmCoverage = true;
+void _armsAreExhaustive;
 
 export const exposedPortSchema = z.object({
   externalId: z.string().min(1),

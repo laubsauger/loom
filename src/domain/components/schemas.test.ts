@@ -95,6 +95,57 @@ describe("component definition round trip", () => {
   });
 });
 
+/**
+ * T856 follow-up — the missing `code` arm, as the LIBRARY LOSS it actually was.
+ *
+ * Not a stripped key like §B111's `range`: a `z.discriminatedUnion` with no arm for the
+ * discriminator it is handed REFUSES, and `componentLibrarySchema` wraps the definitions
+ * in an array, so one published code parameter failed the parse of the whole file. The
+ * observable in `starter-set.ts` is "no readable component library" — every component in
+ * that document gone, including the ones with nothing wrong with them.
+ *
+ * The `source` definition below is `customWgsl`'s, copied rather than imported so this
+ * gate keeps asserting the shape a component can carry even if that node moves. Eight
+ * more ship beside it (midiIn, the four point-kernel slots, three on points).
+ */
+const codeKnob = {
+  key: "source",
+  definition: {
+    type: "code",
+    language: "wgsl",
+    label: "Source",
+    default: "fn main() -> vec4f { return vec4f(1.0); }",
+    compileTime: true,
+  },
+  targets: [{ nodeId: "blurA", key: "source" }],
+} as const satisfies GraphComponentDefinition["parameters"][number];
+
+describe("a published code parameter (T856 follow-up)", () => {
+  it("survives the round trip with its language and default intact", () => {
+    const withCode: GraphComponentDefinition = bloomComponent("wgsl-fx", 1, [codeKnob]);
+    const parsed = parseComponentDefinition(JSON.parse(JSON.stringify(withCode)) as unknown);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) throw new Error(parsed.issues.join("; "));
+    expect(parsed.definition).toEqual(withCode);
+  });
+
+  it("does not take the rest of the library down with it (starter-set's whole-file refusal)", () => {
+    const library = serializeComponentLibrary([
+      bloomComponent("wgsl-fx", 1, [codeKnob]),
+      bloomComponent("plain", 1, [blurKnob]),
+    ]);
+    const parsed = componentLibrarySchema.safeParse(JSON.parse(JSON.stringify(library)));
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) throw new Error(parsed.error.issues.map((i) => i.message).join("; "));
+    // The innocent neighbour is the point: an unnamed arm refuses the ARRAY, so "plain"
+    // disappeared from the catalogue because a sibling used a code parameter.
+    expect(parsed.data.components.map((component) => component.componentId)).toEqual([
+      "plain",
+      "wgsl-fx",
+    ]);
+  });
+});
+
 describe("instance state round trip (§V79, §V84)", () => {
   it("keeps identity, pinned version, published values and overrides", () => {
     const state = {
