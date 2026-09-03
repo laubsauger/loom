@@ -45,7 +45,7 @@ describe("cook oracle (T249, §V157)", () => {
       if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
 
       /*
-       * §V854 (T-number owed — the orchestrator assigns): the example's OWN component
+       * §V854 (T1066 — the orchestrator assigns): the example's OWN component
        * system. `runExample` already built one, and taking `document` while re-deriving
        * a bare registry threw away the half that draws the picture.
        *

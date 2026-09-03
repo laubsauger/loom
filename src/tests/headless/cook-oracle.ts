@@ -265,7 +265,7 @@ export interface OracleRunRequest {
   readonly settings: ProjectSettings;
   readonly registry: NodeRegistryView;
   /**
-   * §V854 (T-number owed): the example's own component library, and `registry` must be the
+   * §V854 (T1066): the example's own component library, and `registry` must be the
    * COMPONENT-AWARE view that goes with it. Omitting the pair does not fail loudly —
    * `component:...` degrades to `compiler/unknown-node-type`, the edge into the output
    * is severed, and the oracle then renders and digests an untouched black target,

@@ -64,7 +64,7 @@ export interface RunExampleResult {
    * only `document` and re-derives a bare `exampleRegistry()` compiles a DIFFERENT
    * graph than the one this function validated.
    *
-   * §V854 (T-number owed — the orchestrator assigns): the cook oracle did exactly
+   * §V854 (T1066 — the orchestrator assigns): the cook oracle did exactly
    * that. E47 and E51 instantiate library components, the bare registry has no
    * `component:...` type, so both examples
    * compiled to `compiler/unknown-node-type` + a severed output edge — E51 to ZERO
