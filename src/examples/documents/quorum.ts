@@ -107,6 +107,15 @@ import { settings, node, edge, graph, document, drivenSlot } from "./builders.ts
  * collapses to a single dot; Diffusion 0 → the seed dust never agrees on anything; Anchor 0
  * → every community melts into one colour.
  *
+ * And every one of them, plus the whole published Coupling envelope, is SURVIVABLE rather
+ * than merely documented, because the layout step carries a Courant bound — no point
+ * travels more than 3 % of `reach` in a frame. Without it this file shipped a knob whose
+ * usable range ended at Coupling ≈ 0.3 while its own four-bar envelope struck to 0.95: the
+ * first strike put the assembly into a period-2 explosion it could never leave, and every
+ * gate passed because every gate stopped at frame 180 and the first strike lands at 497.
+ * The measurements are at the clamp, in the kernel. A knob that goes to 11 and blows up is
+ * worse than one that goes to 11 and holds.
+ *
  * ## Why the colour is normalised, and why that is not a look choice
  *
  * What survives the smoothing is a per-community MEAN of the seed field, whose spread is a
@@ -266,7 +275,67 @@ fn process(p: Point, ctx: PointCtx) -> Point {
   /* THE LAYOUT: one descent step on ½·xᵀLx, plus the push. Divided by the degree, so the
      attraction is the random-walk Laplacian and a hub does not travel further per frame
      than a leaf. */
-  var pos = p.position + (pull / norm) * ctx.params.coupling + push * ctx.params.repulsion;
+  var advance = (pull / norm) * ctx.params.coupling + push * ctx.params.repulsion;
+
+  /* ⚑ THE COURANT BOUND, AND IT IS WHAT MAKES THE STRIKE SURVIVABLE.
+
+     Everything above is an EXPLICIT step, so it is only meaningful while a point stays
+     inside the neighbourhood it just measured: a point that crosses reach in one frame
+     has been moved by a set of neighbours it no longer has. pull respects that on its
+     own — it is a weighted MEAN of neighbour offsets, bounded by the cluster's own width.
+     push does not, and cannot: it is a raw SUM over every in-range pair with a 1/r²
+     singularity, so its size is set by how many pairs are close rather than by any
+     distance in the picture, and a pull-in is precisely the event that drives r small for
+     hundreds of pairs at once.
+
+     MEASURED, through the real plan on Dawn, over E54's own four-bar envelope. Without
+     this clamp the step has a fixed point only up to Coupling ≈ 0.3; the document RESTS at
+     0.449 and STRIKES to 0.95. Pinned at each value, mean displacement per point per frame
+     and the assembly's radius over the last 12 frames of 400:
+
+        Coupling  0.20 → 0.001 / radius 0.848..0.857     (settles)
+        Coupling  0.30 → 0.005 / radius 0.771..0.781     (settles)
+        Coupling  0.45 → 0.079 / radius 0.689..0.746     (a period-2 breath begins)
+        Coupling  0.70 → 0.231 / radius 0.521..0.941
+        Coupling  0.95 → 0.819 / radius 0.433..2.497     (the whole field, every frame)
+
+     That last row is the bug the owner saw: the assembly inhales and explodes on
+     ALTERNATING FRAMES — push fires hardest exactly when the pull has just collapsed the
+     spacing, throws everything outward past the soft safety at 1.75, and the pull hauls it
+     back in for the next one. It never recovers because there is nothing to recover TO: an
+     explicit step past its stability limit has no fixed point to fall into. Nothing jumped
+     — Coupling eases over 140 frames through clag1 — the smooth ramp simply walks the
+     step across its own stability boundary.
+
+     WHY A TRAVEL LIMIT AND NOT A SMALLER KNOB (the four cuts, all measured at 0.95):
+       - shrink Repulsion / cap Coupling at the last stable value: that is a knob that goes
+         to 3 instead of 11, and this is a VJ file (§V471);
+       - a bigger soft core (0.0015 → 0.0035, → 0.02): still 0.106 / radius 0.413..0.624.
+         It buys a constant factor and Repulsion is a knob, so any fixed core has a dial
+         setting that outruns it;
+       - clamp each PAIR to a fraction of its own separation: still 0.30 / radius
+         0.494..1.324. The aggregate is the problem, not any one pair;
+       - divide push by its own weight sum, making it an average exactly as pull is:
+         still 0.15..0.25 at every Repulsion that keeps the clusters open, and it re-scales
+         a published knob by 60× to say the same thing;
+       - clamp only the push: settles, and the communities implode to radius 0.07..0.19,
+         because holding a settled cluster open IS the push's magnitude.
+
+     So the bound is on the TRAVEL, stated in the one length this operator owns. Three
+     percent of reach is a factor of ~1.5 under the measured knee (0.05 leaves a residue,
+     0.04 and below converge) and ~60× ABOVE the step a settled field actually takes, so it
+     shapes nothing at rest and only ever refuses a blow-up. It holds the knobs at 11:
+     Coupling 2.0 → 0.004, Repulsion ×10 → 0.001, Repulsion ×62 → 0.001, all settling.
+     Unclamped, Repulsion ×10 at Coupling 0.95 reaches radius 16.9 and mean displacement
+     10.1 — the field is off the frame.
+
+     This is the same class as the unbounded push recorded above and one layer deeper: that
+     cut bounded the push's RANGE and left its MAGNITUDE free. */
+  let travel = length(advance);
+  let limit = reach * 0.03;
+  if (travel > limit) { advance = advance * (limit / travel); }
+
+  var pos = p.position + advance;
   /* The assembly re-centres on its own centroid — no arbitrary spring to the origin, and
      nothing that would pull a community off its own found position. The weak background tie
      already keeps the field bounded, so what is left here is a SAFETY, soft and far out: an

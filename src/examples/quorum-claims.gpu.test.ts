@@ -43,6 +43,17 @@ beforeAll(async () => {
 const SIZE = { width: 320, height: 180 };
 /** Long enough for the descent to have settled — never frame 0, where nothing has moved yet (§V876). */
 const SETTLE = 180;
+/**
+ * T1074 — the two ends of E54's own Coupling envelope, in frames, at the shipped 116 bpm
+ * (one bar = 124.1 frames, so `cstep1`'s four-bar hold steps at 497).
+ *
+ * RESTED is the last frame of the opening phrase, where Coupling still sits on its
+ * retained 0.449; STRUCK is deep inside the first struck phrase, Coupling eased to 0.95.
+ * Both are past the layout's own relaxation, so what is compared is two settled states
+ * rather than two points on one transient.
+ */
+const RESTED = 480;
+const STRUCK = 900;
 
 /** The population and the floor, read off the shipped document rather than retyped. */
 const CAPACITY = 480;
@@ -103,6 +114,8 @@ async function renderQuorum(options?: {
   seed?: number;
   mutate?: (graph: GraphDocument) => void;
   probe?: boolean;
+  /** The frame to stop and read at. Defaults to SETTLE; the strike claims pass their own. */
+  at?: number;
 }): Promise<Field> {
   const { document } = e54();
   const graph = structuredClone(document.graph) as GraphDocument;
@@ -110,12 +123,13 @@ async function renderQuorum(options?: {
   if (mesh === undefined) throw new Error("E54 has no mesh node");
   if (options?.seed !== undefined) mesh.parameters = { ...mesh.parameters, seed: options.seed };
   options?.mutate?.(graph);
+  const at = options?.at ?? SETTLE;
   const result = (await renderHeadless({
     host: nodeGpuHost(),
     graph,
     settings: { ...document.settings, outputResolution: SIZE },
-    frames: SETTLE + 1,
-    capture: [SETTLE],
+    frames: at + 1,
+    capture: [at],
     fps: 60,
     animate: true,
     ...(options?.probe === false
@@ -130,8 +144,8 @@ async function renderQuorum(options?: {
     buffers?: Record<string, ArrayBuffer>;
   };
 
-  const frame = result.frames.find((entry) => entry.frameIndex === SETTLE);
-  if (frame === undefined) throw new Error(`no captured frame at ${SETTLE}`);
+  const frame = result.frames.find((entry) => entry.frameIndex === at);
+  if (frame === undefined) throw new Error(`no captured frame at ${at}`);
   const space = result.plan.outputs.find((output) => output.nodeId === "out")?.space ?? "linear";
   const image = toRgba8(
     {
@@ -391,6 +405,81 @@ describe("E54 Quorum — the operator does both jobs (T1070)", () => {
       expect(differingPixels(shipped, noHaze), "cutting bed1 changed nothing — the haze is not compositing").toBeGreaterThan(0);
     },
     480_000,
+  );
+
+  /**
+   * ⚑ T1074 — THE STRIKE, GATED WHERE IT ACTUALLY HAPPENS.
+   *
+   * Every claim above stops at frame 180 and E54's first strike lands at 497, so the whole
+   * suite — plus the cook oracle's 80 frames and the thumbnail's single capture — passed a
+   * document whose four-bar envelope drove the layout step clean past its own stability
+   * limit the moment it fired. The owner's report was "looks okay at first and then
+   * suddenly starts to freak out on the first pull-in, and just ends up jittering around
+   * like crazy". §V876: pin where the motion has ACCUMULATED, not at frame 0.
+   *
+   * MEASURED, unclamped, through this same harness on Dawn — mean displacement per point
+   * per frame / assembly radius:
+   *
+   *     frame  180 (rest, coupling 0.449)   0.066 / 0.72
+   *     frame  480 (rest, last frame)       0.086 / 0.69
+   *     frame  700 (strike, coupling 0.94)  0.562 / 1.83
+   *     frame 1200 (strike, coupling 0.95)  0.680 / 2.37
+   *
+   * With the kernel's Courant bound: 0.003 / 0.76 and 0.0005 / 0.63 respectively — settled
+   * at both ends of the envelope.
+   *
+   * THE TWO CLAIMS ARE A SET (§V884), because either alone passes for the wrong reason. A
+   * bound on the motion passes trivially for a kernel that never moves at all; a claim that
+   * the strike CHANGES the picture passes just as happily for the explosion. So the strike
+   * is asserted to have done something AND to have stayed bounded doing it.
+   */
+  it(
+    "THE STRIKE IS SURVIVABLE: after the four-bar envelope fires, the assembly is still bounded and still moving as one",
+    async () => {
+      // Frame 900 sits ~400 frames past the first strike (497), with Coupling eased to its
+      // 0.95 ceiling — the state every existing gate stopped short of.
+      const struck = await renderQuorum({ at: STRUCK });
+      const next = await renderQuorum({ at: STRUCK + 1 });
+
+      // ONE — THE COURANT BOUND, which is the kernel's own stated invariant rather than a
+      // number chosen to pass: no point may travel further in a frame than 3 % of `reach`,
+      // and `reach` is itself bounded above by reach1's own arithmetic (0.85 + 0.3 x the
+      // high-band envelope, which cannot exceed 1). So the derived ceiling is exact.
+      const travelled = struck.position.map((p, slot) => distance(p, next.position[slot] ?? [0, 0, 0]));
+      const worst = Math.max(...travelled);
+      const ceiling = (0.85 + 0.3) * 0.03;
+      expect(
+        worst,
+        `a point moved ${worst.toFixed(4)} in one frame at the strike, past the kernel's own ${ceiling.toFixed(4)} Courant bound — the layout step is running past its stability limit`,
+      ).toBeLessThan(ceiling);
+
+      // TWO — AND IT IS STILL ONE ASSEMBLY. 1.75 is the kernel's own soft safety radius,
+      // quoted from the same source; unclamped this reaches 2.37 and the field is off the
+      // frame. Nothing here is a tolerance band: both numbers are read off the kernel.
+      const centre = meanOf(struck.position);
+      const radius = Math.max(...struck.position.map((p) => distance(p, centre)));
+      expect(
+        radius,
+        `the assembly reached ${radius.toFixed(3)} after the strike, past its own 1.75 safety radius — it has been blown off the frame`,
+      ).toBeLessThan(1.75);
+
+      // THREE — AND THE STRIKE ACTUALLY DID SOMETHING, or the two bounds above are just
+      // measuring a still life. Comparative and derived, no bound named: raising Coupling
+      // tightens each community about its own centre, so every community must be narrower
+      // at the strike than at rest. Cut the clag1 -> mesh drive and this is an equality.
+      const rested = await renderQuorum({ at: RESTED });
+      const wideAtRest = layout(rested).map((entry) => entry.radius);
+      const tightAtStrike = layout(struck).map((entry) => entry.radius);
+      for (const community of COMMUNITIES) {
+        const before = wideAtRest[community] ?? 0;
+        const after = tightAtStrike[community] ?? 0;
+        expect(
+          after,
+          `community ${community} measured ${after.toFixed(4)} wide at the strike against ${before.toFixed(4)} at rest — Coupling's envelope is not reaching the layout`,
+        ).toBeLessThan(before);
+      }
+    },
+    900_000,
   );
 
   it(

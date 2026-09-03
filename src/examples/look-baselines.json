@@ -223,10 +223,11 @@
     "cardFloor": 0.1412
   },
   "E54-Quorum.loom.json": {
-    "motion": 0.02864,
-    "range": 0.9981,
+    "motion": 0.03393,
+    "range": 0.9443,
     "f0max": 0.9492,
-    "phrase": 0.03436
+    "cardFloor": 0,
+    "phrase": 0.03473
   },
   "E6-Displacement-Stack.loom.json": {
     "motion": 0.28359,
