@@ -20,7 +20,7 @@ import { OSC_CHANNEL_PREFIX } from "../domain/osc/osc-address.ts";
  */
 import type { OscBridgeState } from "../domain/osc/osc-status.ts";
 import type { OscMessage } from "./osc-codec.ts";
-import type { LaserCommand, LaserOutcome } from "./device-protocol.ts";
+import type { LaserCommand, LaserOutcome, VisionOutcome, VisionSegmentRequest } from "./device-protocol.ts";
 
 /**
  * THE PAGE HALF OF THE DEVICE ROLE (T942 tier 3) — TRANSPORT ONLY (§V192).
@@ -109,6 +109,12 @@ export interface DeviceClient {
   laser(command: LaserCommand): Promise<LaserOutcome>;
   /** T950: unsolicited laser state changes — the dead-man firing, a device e-stop. */
   onLaserState(listener: (detail: string) => void): void;
+  /**
+   * T1029 — one picture to the helper's vision door, one owed mask (or refusal) back.
+   * Rejects only when no helper is attached; a door refusal arrives as an outcome so
+   * the caller can surface its sentence per node rather than as a thrown mystery.
+   */
+  vision(request: VisionSegmentRequest): Promise<VisionOutcome>;
   dispose(): void;
 }
 
@@ -132,6 +138,8 @@ export function createDeviceClient(options: DeviceClientOptions): DeviceClient {
   const pending = new Map<number, (outcome: OscSendOutcome) => void>();
   /** T950: laser commands awaiting their one owed reply, and their push listeners. */
   const laserPending = new Map<number, (outcome: LaserOutcome) => void>();
+  /** T1029: segmentations awaiting their one owed mask. */
+  const visionPending = new Map<number, (outcome: VisionOutcome) => void>();
   const laserStateListeners = new Set<(detail: string) => void>();
   let disposed = false;
 
@@ -274,6 +282,15 @@ export function createDeviceClient(options: DeviceClientOptions): DeviceClient {
         resolve(message["outcome"] as LaserOutcome);
         return;
       }
+      case "deviceVisionResult": {
+        const id = message["id"];
+        if (typeof id !== "number") return;
+        const resolve = visionPending.get(id);
+        if (resolve === undefined) return;
+        visionPending.delete(id);
+        resolve(message["outcome"] as VisionOutcome);
+        return;
+      }
       default:
         return;
     }
@@ -395,6 +412,19 @@ export function createDeviceClient(options: DeviceClientOptions): DeviceClient {
     },
     onLaserState(listener) {
       laserStateListeners.add(listener);
+    },
+    vision(request: VisionSegmentRequest): Promise<VisionOutcome> {
+      if (socket === null || !attached) {
+        return Promise.reject(
+          new Error("no helper is attached — pair this tab in the Connections section first (pnpm mcp:serve)."),
+        );
+      }
+      const id = nextId++;
+      const settled = new Promise<VisionOutcome>((resolve) => {
+        visionPending.set(id, resolve);
+      });
+      send({ type: "deviceVision", id, request });
+      return settled;
     },
     reconnectRemembered() {
       if (wanted || attached || disposed) return;

@@ -154,6 +154,13 @@ export const NODE_REPRODUCIBILITY: Readonly<Record<string, Reproducibility>> = {
   // of frames that reached it rather than on this frame alone. A take must replay a
   // recorded result, exactly as depth's and pose's gates do.
   matte: "async-cached",
+  // T1029. The OS's Vision framework, reached over the device bridge — async-cached for
+  // matte's reason (a result on its own schedule, published latest-wins, aged) with one
+  // HONESTY CAVEAT stated here because this axis is where it belongs: the model is
+  // whatever the OS shipped, so a take replays the RECORDED masks bit-for-bit, but two
+  // MACHINES (or two OS versions) given the same input may cut differently. That is a
+  // portability fact, not a scheduling one, and the node's own description carries it.
+  personMask: "async-cached",
 
   /*
    * PURE — a function of the frame and the document, and the reason the other four are

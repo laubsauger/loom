@@ -20,6 +20,7 @@ import { depthNode } from "./depth.ts";
 import { pointsFromTextureNode } from "./points-from-texture.ts";
 import { poseNode } from "./pose.ts";
 import { matteNode } from "./matte.ts";
+import { personMaskNode } from "./person-mask.ts";
 import { mediaNodeDefinitions } from "./media.ts";
 import { valueGraphNodeDefinitions } from "./value-graph-nodes.ts";
 export { audioFileInNode, audioInNode, audioPatternNode } from "./audio.ts";
@@ -168,6 +169,12 @@ export type { DepthNodeSettings } from "./depth.ts";
 export { pointsFromTextureNode } from "./points-from-texture.ts";
 export { poseNode, POSE_INPUT_KEY, POSE_RESULT_KEY } from "./pose.ts";
 export {
+  personMaskNode,
+  PERSON_MASK_INPUT_KEY,
+  PERSON_MASK_RESULT_KEY,
+  PERSON_MASK_INPUT_SIDE,
+} from "./person-mask.ts";
+export {
   matteNode,
   matteDescriptorFor,
   matteInputSideFor,
@@ -213,6 +220,7 @@ export const coreNodeDefinitions: readonly NodeDefinition[] = [
   depthNode,
   poseNode,
   matteNode,
+  personMaskNode,
   ...mediaNodeDefinitions,
   ...valueGraphNodeDefinitions,
   audioInNode,

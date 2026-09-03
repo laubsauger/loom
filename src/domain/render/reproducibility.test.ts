@@ -95,6 +95,9 @@ describe("T645 — every registered node type is classified, or this fails (§V4
       // reproduces, and its transmission is a live-session side effect that an offline
       // render never performs. See the table's entry for the argument.
       "oscIn:external-live",
+      // T1029: the OS's Vision segmentation, over the bridge — matte's schedule, with the
+      // per-machine portability caveat carried on the table row and the node description.
+      "personMask:async-cached",
       "pose:async-cached",
       "webcam:external-live",
     ]);

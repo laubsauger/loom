@@ -210,6 +210,11 @@
     "f0max": 0.5535,
     "phrase": 0.04257
   },
+  "E52-Presence.loom.json": {
+    "motion": 0.00485,
+    "range": 0.4986,
+    "f0max": 0.9906
+  },
   "E6-Displacement-Stack.loom.json": {
     "motion": 0.28359,
     "range": 0.7293,

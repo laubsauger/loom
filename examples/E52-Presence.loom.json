@@ -1,0 +1,287 @@
+{
+  "assets": [],
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e1": {
+        "id": "e1",
+        "order": 0,
+        "source": {
+          "nodeId": "bed",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "src",
+          "portId": "inputs"
+        }
+      },
+      "e2": {
+        "id": "e2",
+        "order": 1,
+        "source": {
+          "nodeId": "cam",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "src",
+          "portId": "inputs"
+        }
+      },
+      "e3": {
+        "id": "e3",
+        "source": {
+          "nodeId": "src",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "mask",
+          "portId": "input"
+        }
+      },
+      "e4": {
+        "id": "e4",
+        "source": {
+          "nodeId": "src",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "key",
+          "portId": "in1"
+        }
+      },
+      "e5": {
+        "id": "e5",
+        "source": {
+          "nodeId": "mask",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "key",
+          "portId": "in2"
+        }
+      },
+      "e6": {
+        "id": "e6",
+        "source": {
+          "nodeId": "haze",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "wash",
+          "portId": "input"
+        }
+      },
+      "e7": {
+        "id": "e7",
+        "source": {
+          "nodeId": "key",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "room",
+          "portId": "in1"
+        }
+      },
+      "e8": {
+        "id": "e8",
+        "source": {
+          "nodeId": "wash",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "room",
+          "portId": "in2"
+        }
+      },
+      "e9": {
+        "id": "e9",
+        "source": {
+          "nodeId": "room",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "bed": {
+        "definitionVersion": 1,
+        "id": "bed",
+        "label": "bed1",
+        "parameters": {
+          "amp": 1,
+          "aspectcorrect": true,
+          "exp": 1.3,
+          "gain": 0.45,
+          "harmon": 3,
+          "mono": false,
+          "offset": 0.1,
+          "period": 0.35,
+          "rough": 0.5,
+          "s4d": 1,
+          "seed": 5,
+          "speed": 0.04,
+          "spread": 2,
+          "t4d": 0.2,
+          "type": "perlin4d"
+        },
+        "position": {
+          "x": -1920,
+          "y": -140
+        },
+        "type": "noise"
+      },
+      "cam": {
+        "definitionVersion": 1,
+        "id": "cam",
+        "label": "cam1",
+        "parameters": {},
+        "position": {
+          "x": -1920,
+          "y": 140
+        },
+        "type": "webcam"
+      },
+      "haze": {
+        "definitionVersion": 1,
+        "id": "haze",
+        "label": "haze1",
+        "parameters": {
+          "amp": 1,
+          "aspectcorrect": true,
+          "exp": 1,
+          "gain": 0.5,
+          "harmon": 2,
+          "mono": false,
+          "offset": 0.25,
+          "period": 0.9,
+          "rough": 0.5,
+          "seed": 12,
+          "speed": 0.02,
+          "spread": 2,
+          "type": "simplex3d"
+        },
+        "position": {
+          "x": -1320,
+          "y": 320
+        },
+        "type": "noise"
+      },
+      "key": {
+        "definitionVersion": 1,
+        "id": "key",
+        "label": "key1",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": -1020,
+          "y": 0
+        },
+        "type": "multiply"
+      },
+      "mask": {
+        "definitionVersion": 1,
+        "id": "mask",
+        "label": "mask1",
+        "parameters": {
+          "invert": false,
+          "rateLimit": 0.1
+        },
+        "position": {
+          "x": -1320,
+          "y": -140
+        },
+        "type": "personMask"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "label": "out1",
+        "parameters": {},
+        "position": {
+          "x": -420,
+          "y": 80
+        },
+        "type": "output"
+      },
+      "room": {
+        "definitionVersion": 1,
+        "id": "room",
+        "label": "room1",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": -720,
+          "y": 80
+        },
+        "type": "over"
+      },
+      "src": {
+        "definitionVersion": 1,
+        "id": "src",
+        "label": "src1",
+        "parameters": {
+          "index": 0
+        },
+        "position": {
+          "x": -1620,
+          "y": 0
+        },
+        "type": "switch"
+      },
+      "wash": {
+        "definitionVersion": 1,
+        "id": "wash",
+        "label": "wash1",
+        "parameters": {
+          "hueoffset": 0.05,
+          "saturation": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('mask1').chan.coverage * 8"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.15
+              }
+            },
+            "mode": "expression"
+          },
+          "value": 1
+        },
+        "position": {
+          "x": -1020,
+          "y": 320
+        },
+        "type": "hsv"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E52 Presence",
+  "projectId": "example-e52-presence",
+  "schemaVersion": 3,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 52,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}

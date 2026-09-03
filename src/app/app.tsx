@@ -71,6 +71,7 @@ import { useValueGraph } from "./use-value-graph.ts";
 import { useMidiInput } from "./use-midi-input.ts";
 import { useOscBridge } from "./use-osc-bridge.ts";
 import { useLaserBridge } from "./use-laser-bridge.ts";
+import { useVisionBridge } from "./use-vision-bridge.ts";
 import type { LoomBackend } from "@runtime/backend/index.ts";
 import { useMediaSources } from "./use-media-sources.ts";
 import { createMediaControlRegistry, useMediaCommands } from "./media-commands.ts";
@@ -362,6 +363,11 @@ export function App({
     backend: () => backendRef.current,
     bus: runtime.bus,
   });
+  // T1029: the Person Mask's CPU half — Apple Vision over the same shared client.
+  const vision = useVisionBridge({
+    deviceClient: osc.deviceClient,
+    backend: () => backendRef.current,
+  });
 
   /**
    * The value graph's external channels are a MERGE of FOUR now (§T976), and the order
@@ -543,7 +549,8 @@ export function App({
     // half present, and no diagnostic anywhere.
     analyze.track(compile.flatGraph, compile.compiled);
     depth.track(compile.flatGraph, compile.compiled);
-  }, [analyze, depth, compile.flatGraph, compile.compiled]);
+    vision.track(compile.flatGraph, compile.compiled);
+  }, [analyze, depth, vision, compile.flatGraph, compile.compiled]);
 
   /**
    * `BackendStatus.lastBuild` → the hub (T41, T143).
@@ -663,6 +670,7 @@ export function App({
       pulses.observe(frame);
       analyze.observe(frame);
       depth.observe(frame);
+      vision.observe(frame);
       // T619: the hub's frame counters. `noteFrame` existed since T41 with ZERO product
       // callers (§V220's shape again) — so `get_runtime_metrics` told every agent
       // framesRendered: 0 while the header showed 30fps, and the per-node "frames"
@@ -670,7 +678,7 @@ export function App({
       // ("from FrameDriver.onFrame", telemetry/index.ts).
       runtime.telemetry.noteFrame(frame.frameIndex);
     },
-    [analyze, depth, pulses, runtime],
+    [analyze, depth, vision, pulses, runtime],
   );
   // T414: the session's one audio capture, driven by audioIn nodes in the document.
   const audioInput = useAudioInput(
@@ -976,7 +984,11 @@ export function App({
     name: () => project.fileName ?? runtime.project.name,
     // T747: a take waits for each frame's inference instead of picking up whatever the
     // model happened to have finished.
-    onFrameRendered: depth.settle,
+    // T1029: the mask settles beside the models, so a take's mask belongs to its frame.
+    onFrameRendered: async (frameIndex: number) => {
+      await depth.settle(frameIndex);
+      await vision.settle(frameIndex);
+    },
   });
 
   /**
@@ -1009,6 +1021,7 @@ export function App({
       ...osc.diagnostics,
       // T950 — the laser pump's honest state, on the same one-list rule as OSC's.
       ...laser.diagnostics,
+      ...vision.diagnostics,
       ...rejection,
       ...autosave.diagnostics,
       ...project.diagnostics,
@@ -1031,6 +1044,7 @@ export function App({
     media.diagnostics,
     osc.diagnostics,
     laser.diagnostics,
+    vision.diagnostics,
     project.diagnostics,
     recovery.diagnostics,
     rejection,
@@ -1417,6 +1431,11 @@ export function App({
                 // a subscription (§V16) — the panel pulls at <=10 Hz and nothing here
                 // re-renders because a frame advanced.
                 latestFrame={frameLoop.latestFrame}
+                // T990: the value graph's own bags, enumerated by NAME, so
+                // `op('lfo1').chan.` offers the channels that node is actually
+                // publishing. THE supply the completion menu spent its life without
+                // (§V272) — `expression-references.test.tsx` fails if it stops.
+                channelNames={valueGraph.channelNames}
                 status={status}
                 unknownParameters={runtime.unknownParameters}
                 audioStatus={audioInput.status}
