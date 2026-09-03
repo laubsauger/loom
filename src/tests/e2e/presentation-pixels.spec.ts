@@ -117,21 +117,19 @@ test("a checker built through the UI reaches the glass with exact values", async
   // The viewer mounts its canvas once a declared sink exists and the runtime presents
   // into it (§V64). `loomViewerProbe` (T739) separates "nothing attached" from "the
   // picture is wrong": presentedFrames > 0 with a bound source means blits are landing.
-  // Its luma/alpha readback — and so the full "presenting" verdict — is NOT trusted
-  // here: that readback measures zero on this Chromium (see the file docblock).
   await expect(page.getByTestId("viewer-canvas")).toBeVisible();
   await expect
     .poll(
       () =>
-        page.evaluate(() => {
+        page.evaluate(async () => {
           const probe = (
             window as unknown as {
-              loomViewerProbe?: () => {
+              loomViewerProbe?: () => Promise<{
                 presentation: { presentedFrames: number; sourceBound: boolean } | null;
-              };
+              }>;
             }
           ).loomViewerProbe;
-          const presentation = probe?.().presentation ?? null;
+          const presentation = (await probe?.())?.presentation ?? null;
           return presentation !== null && presentation.sourceBound && presentation.presentedFrames > 0;
         }),
       { message: "the runtime never presented a frame into the viewer canvas" },
@@ -207,4 +205,65 @@ test("a checker built through the UI reaches the glass with exact values", async
     }
   });
   expect(failures, failures.join("; ")).toEqual([]);
+
+  // T1093 regression: with this exact picture on the glass, the probe used to report
+  // `presenting-black` — drawImage of a WebGPU canvas reads [0,0,0,0] on this Chromium,
+  // and the old verdict took the blind read for a black frame. §V897's control now
+  // routes a zero-alpha read through the encode fallback, so a canvas showing a checker
+  // must read as PRESENTING, with a readback that passed the opaque-alpha control.
+  const verdict = await page.evaluate(async () => {
+    const probe = (
+      window as unknown as {
+        loomViewerProbe?: () => Promise<{
+          verdict: string;
+          readback: { luma: number; alpha: number; mechanism: string } | null;
+        }>;
+      }
+    ).loomViewerProbe;
+    return (await probe?.()) ?? null;
+  });
+  expect(verdict?.verdict).toBe("presenting");
+  expect(verdict?.readback?.alpha).toBe(1);
+});
+
+test("a genuinely black frame still reads presenting-black (§V897's legitimate case)", async ({
+  page,
+}) => {
+  // The failure mode a positive control invites is a probe that stops reporting the
+  // fault at all. Solid's default colour is opaque black, so this canvas is genuinely,
+  // correctly black — and the probe must still say so, through whichever mechanism
+  // passed the alpha control.
+  await openApp(page);
+  const solid = await addNode(page, "generator", "Solid");
+  const output = await addNode(page, "output", "Output");
+  await fitAll(page);
+  await moveNode(page, output, 260, 240);
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await connect(page, { nodeId: solid, portId: "out" }, { nodeId: output, portId: "input" });
+      await expect(page.locator(".react-flow__edge")).toHaveCount(1, { timeout: 2000 });
+      break;
+    } catch (error) {
+      if (attempt >= 2) throw error;
+    }
+  }
+  await expect(page.getByTestId("viewer-canvas")).toBeVisible();
+  await expect
+    .poll(
+      () =>
+        page.evaluate(async () => {
+          const probe = (
+            window as unknown as {
+              loomViewerProbe?: () => Promise<{
+                verdict: string;
+                readback: { alpha: number } | null;
+              }>;
+            }
+          ).loomViewerProbe;
+          const reading = (await probe?.()) ?? null;
+          return reading === null ? "no-probe" : `${reading.verdict}:alpha=${reading.readback?.alpha}`;
+        }),
+      { message: "a black frame must still be reported black, with the alpha control passed" },
+    )
+    .toBe("presenting-black:alpha=1");
 });

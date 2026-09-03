@@ -31,23 +31,41 @@ import type { PresentationHandle, PresentationReport } from "@runtime/backend/ba
  * them apart would be the ninth reader-that-cannot-see, so `verdict` below is written to
  * name the fork explicitly and never to average across it.
  *
- * ## Why the readback is a `drawImage`, not a GPU copy
+ * ## Why the readback is a DOM snapshot, not a GPU copy
  *
  * §V7 says presenting is a blit encoded with the frame, with no readback ever — so this
- * must not touch the present path. Scaling the canvas into a 1×1 2D context is a pure
+ * must not touch the present path. Averaging the canvas into a 1×1 2D context is a pure
  * consumer: it costs nothing per frame (it runs on an interval, never in the loop), it
  * needs no `COPY_SRC` usage on the surface, and it reads the DISPLAY-ENCODED pixels the
  * human is looking at rather than the linear target (§V618 — the raw target lies about
  * brightness by roughly a stop and a half, and this number is meant to be read by a
  * person deciding whether their screen is black).
+ *
+ * ## The read carries its own positive control (§V897, T1093)
+ *
+ * `drawImage` of a WEBGPU canvas returns `[0,0,0,0]` on Chromium 151 — both alpha modes,
+ * before and after present, measured in isolation — so this probe once reported
+ * `presenting-black` while the owner's screen showed a correct picture. A probe whose
+ * "black" is an ABSENCE of pixels cannot tell *broken* from *unreadable* unless the read
+ * proves it can see at all. The control is in-band: the viewer surface is configured
+ * `alphaMode: "opaque"` (`vgpu-backend.ts`, `ensurePresentation`, T674), so the
+ * COMPOSITED alpha is 1.0 by construction — a read that comes back alpha 0 has measured
+ * its own blindness, never the picture. On a blind read the probe retries through a PNG
+ * encode round-trip (`toDataURL`, measured working on the same Chromium), and when no
+ * mechanism can see, the verdict is `presenting-unreadable`, never `presenting-black`.
+ * If the surface ever stops being opaque-configured, this control reads false blindness
+ * — the two facts are one design and must move together.
  */
 
 /** A 1-texel average of what is actually on the canvas, in display-encoded sRGB. */
 export interface CanvasReadback {
   /** Rec.709 luma of the whole-canvas average, 0..1. */
   readonly luma: number;
-  /** Average alpha, 0..1. An opaque-configured surface that reads 0 was never composited. */
+  /** Average alpha, 0..1. Opaque-configured surfaces composite 1.0, which is the control. */
   readonly alpha: number;
+  /** Which snapshot mechanism produced the pixels (T1093): `drawImage` is the cheap
+   *  direct copy; `encode` is the PNG round-trip used when `drawImage` proves blind. */
+  readonly mechanism: "drawImage" | "encode";
 }
 
 /**
@@ -59,6 +77,15 @@ export interface CanvasReadback {
  * pair this whole module exists to keep apart.
  */
 export function readCanvasTexel(canvas: HTMLCanvasElement): CanvasReadback | null {
+  return meanTexelOf(canvas, canvas, "drawImage");
+}
+
+/** The shared 1×1 mean: `source` is the element handed to `drawImage`. */
+function meanTexelOf(
+  canvas: HTMLCanvasElement,
+  source: CanvasImageSource,
+  mechanism: CanvasReadback["mechanism"],
+): CanvasReadback | null {
   if (canvas.width === 0 || canvas.height === 0) return null;
   const probe = canvas.ownerDocument.createElement("canvas");
   probe.width = 1;
@@ -69,16 +96,57 @@ export function readCanvasTexel(canvas: HTMLCanvasElement): CanvasReadback | nul
     ctx.clearRect(0, 0, 1, 1);
     // Scaling W×H into 1×1 is a box filter: this is the MEAN, which is the number T705
     // measured when it found a floated canvas reading 0.0 forever.
-    ctx.drawImage(canvas, 0, 0, 1, 1);
+    ctx.drawImage(source, 0, 0, 1, 1);
     const [r = 0, g = 0, b = 0, a = 0] = ctx.getImageData(0, 0, 1, 1).data;
     return {
       luma: (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255,
       alpha: a / 255,
+      mechanism,
     };
   } catch {
     // A tainted or zero-sized source. Unreadable, not black.
     return null;
   }
+}
+
+/**
+ * The fallback mechanism for a blind `drawImage` (T1093): `toDataURL` PNG-encodes the
+ * canvas's presented pixels — measured seeing exactly what `drawImage` returns zeros for,
+ * on the same Chromium 151 — and the decoded image goes through the same 1×1 mean.
+ * Costs a full-canvas PNG encode, which is why it runs only after the cheap read has
+ * proven itself blind, and never in the frame loop.
+ */
+async function readCanvasTexelEncoded(canvas: HTMLCanvasElement): Promise<CanvasReadback | null> {
+  if (canvas.width === 0 || canvas.height === 0) return null;
+  try {
+    const url = canvas.toDataURL();
+    const view = canvas.ownerDocument.defaultView;
+    if (view === null) return null;
+    const image = new view.Image();
+    image.src = url;
+    // A data: URL decode never touches the network; it fails only when the snapshot
+    // mechanism itself is unsupported — which is exactly "unreadable".
+    await image.decode();
+    return meanTexelOf(canvas, image, "encode");
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The §V897 read: cheap mechanism first, its own control checked, fallback when blind.
+ *
+ * The control: an opaque-configured surface composites alpha 1.0 always (see the module
+ * doc), so `alpha === 0` convicts the READ PATH, not the picture. A reading only leaves
+ * this function with `alpha > 0` — proof the mechanism saw the surface — or as `null`,
+ * which the verdict reports as unreadable rather than black.
+ */
+export async function readCanvasPixels(canvas: HTMLCanvasElement): Promise<CanvasReadback | null> {
+  const direct = readCanvasTexel(canvas);
+  if (direct !== null && direct.alpha > 0) return direct;
+  const encoded = await readCanvasTexelEncoded(canvas);
+  if (encoded !== null && encoded.alpha > 0) return encoded;
+  return null;
 }
 
 /**
@@ -157,7 +225,7 @@ export interface ViewerProbeInput {
  */
 const RECENT_PRESENT_MS = 1000;
 
-export function readViewer(input: ViewerProbeInput): ViewerReading {
+export async function readViewer(input: ViewerProbeInput): Promise<ViewerReading> {
   const { canvas, handle, deviceGeneration, appDocument, now } = input;
   const view = canvas.ownerDocument.defaultView;
   const presentation = handle?.describe?.() ?? null;
@@ -165,7 +233,7 @@ export function readViewer(input: ViewerProbeInput): ViewerReading {
     presentation === null || presentation.lastPresentTime === null
       ? null
       : now - presentation.lastPresentTime;
-  const readback = readCanvasTexel(canvas);
+  const readback = await readCanvasPixels(canvas);
   const base = {
     placement: (canvas.ownerDocument === appDocument ? "docked" : "floated") as "docked" | "floated",
     cssWidth: canvas.clientWidth,
@@ -207,8 +275,9 @@ function verdictOf(
     }
   }
   if (reading.readback === null) return "presenting-unreadable";
-  // Black is black: an opaque surface reading alpha 0 was never composited either, and
-  // both land the reader on the same half of the fork.
+  // A readback only arrives here with alpha > 0 (`readCanvasPixels`, §V897): the black
+  // verdict below is therefore backed by a mechanism that has proven it can see the
+  // surface — an all-zero blind read never reaches this line.
   if (reading.readback.luma === 0) return "presenting-black";
   return "presenting";
 }
@@ -231,6 +300,7 @@ export function formatViewerReading(reading: ViewerReading): string {
   const pixels =
     reading.readback === null
       ? "pixels=unreadable"
-      : `luma=${reading.readback.luma.toFixed(4)} alpha=${reading.readback.alpha.toFixed(2)}`;
+      : `luma=${reading.readback.luma.toFixed(4)} alpha=${reading.readback.alpha.toFixed(2)}` +
+        ` via=${reading.readback.mechanism}`;
   return `viewer[${reading.placement}]: ${box} ${runtime} ${pixels} -> ${reading.verdict}`;
 }

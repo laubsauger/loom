@@ -162,7 +162,7 @@ describe("floating a LIVE viewer — the order that broke it (T705, T739)", () =
     expect(attaches[1]?.disposed).toBe(true);
   });
 
-  it("says so in the console the moment the viewer is floated (T739)", () => {
+  it("says so in the console the moment the viewer is floated (T739)", async () => {
     const info = vi.spyOn(console, "info").mockImplementation(() => {});
     const { backend } = fakeBackend();
     render(<Harness backend={backend} />);
@@ -172,6 +172,9 @@ describe("floating a LIVE viewer — the order that broke it (T705, T739)", () =
 
     const child = childWindow();
     act(() => adoptPaneHost(child.root, currentCanvas().closest("[data-pane-host]") as HTMLElement));
+    // The reading is async since T1093 (a blind read retries through a PNG encode), so
+    // the console line lands a microtask after the float, not inside it.
+    await act(async () => {});
 
     const said = info.mock.calls.flat().join("\n");
     expect(said).toContain("viewer[floated]");
@@ -180,18 +183,21 @@ describe("floating a LIVE viewer — the order that broke it (T705, T739)", () =
     expect(said).toMatch(/-> (no-handle|no-css-box|store-collapsed|not-configured|stale-device|no-source|not-presenting|presenting-black|presenting|presenting-unreadable)/);
   });
 
-  it("exposes an on-demand reading on the window the canvas is actually in", () => {
+  it("exposes an on-demand reading on the window the canvas is actually in", async () => {
     vi.spyOn(console, "info").mockImplementation(() => {});
     const { backend } = fakeBackend();
     render(<Harness backend={backend} />);
     const child = childWindow();
     const frameWindow = (document.querySelector("iframe") as HTMLIFrameElement | null)
-      ?.contentWindow as (Window & { loomViewerProbe?: () => unknown }) | null;
+      ?.contentWindow as (Window & { loomViewerProbe?: () => Promise<unknown> }) | null;
     act(() => adoptPaneHost(child.root, currentCanvas().closest("[data-pane-host]") as HTMLElement));
 
     // The owner will have the POPUP's devtools open as often as the parent's, so the
-    // function has to be callable from there too.
+    // function has to be callable from there too. Async since T1093; devtools prints
+    // the resolved reading, and the console line still arrives either way.
     expect(typeof frameWindow?.loomViewerProbe).toBe("function");
-    expect(frameWindow?.loomViewerProbe?.()).toMatchObject({ placement: "floated" });
+    await expect(frameWindow?.loomViewerProbe?.()).resolves.toMatchObject({
+      placement: "floated",
+    });
   });
 });

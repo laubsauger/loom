@@ -169,7 +169,7 @@ export function useOutputPresentation(
     if (canvas === null) return;
     const view = canvas.ownerDocument.defaultView;
 
-    const read = (): ViewerReading =>
+    const read = (): Promise<ViewerReading> =>
       readViewer({
         canvas,
         handle: handleRef.current,
@@ -180,14 +180,17 @@ export function useOutputPresentation(
         now: performance.now(),
       });
 
-    const probe = () => {
-      const reading = read();
+    // Async since T1093: a blind `drawImage` makes the probe retry through a PNG
+    // encode (§V897), so the reading is a promise and the console line lands when it
+    // resolves — still one line, still on demand.
+    const probe = async (): Promise<ViewerReading> => {
+      const reading = await read();
       console.info(formatViewerReading(reading));
       return reading;
     };
 
     const floated = canvas.ownerDocument !== document;
-    const holder = view as (Window & { loomViewerProbe?: () => ViewerReading }) | null;
+    const holder = view as (Window & { loomViewerProbe?: () => Promise<ViewerReading> }) | null;
     if (holder !== null) holder.loomViewerProbe = probe;
 
     if (!floated) {
@@ -201,8 +204,8 @@ export function useOutputPresentation(
     );
     // The parent's timer on purpose: a child window that is throttled or mid-teardown
     // still gets reported on, and the interval dies with this effect either way.
-    const timer = window.setInterval(probe, 2000);
-    probe();
+    const timer = window.setInterval(() => void probe(), 2000);
+    void probe();
     return () => {
       window.clearInterval(timer);
       if (holder?.loomViewerProbe === probe) delete holder.loomViewerProbe;
