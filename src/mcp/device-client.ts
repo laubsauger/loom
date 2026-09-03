@@ -20,6 +20,7 @@ import { OSC_CHANNEL_PREFIX } from "../domain/osc/osc-address.ts";
  */
 import type { OscBridgeState } from "../domain/osc/osc-status.ts";
 import type { OscMessage } from "./osc-codec.ts";
+import type { LaserCommand, LaserOutcome } from "./device-protocol.ts";
 
 /**
  * THE PAGE HALF OF THE DEVICE ROLE (T942 tier 3) — TRANSPORT ONLY (§V192).
@@ -100,6 +101,14 @@ export interface DeviceClient {
    * attempt is in flight and when nothing is remembered.
    */
   reconnectRemembered(): void;
+  /**
+   * T950 — one laser command to the helper's laser door. Resolves with the door's own
+   * outcome (the vet's or the device's sentence on refusal, the measured state either
+   * way); rejects only when no helper is attached, which the caller words for the user.
+   */
+  laser(command: LaserCommand): Promise<LaserOutcome>;
+  /** T950: unsolicited laser state changes — the dead-man firing, a device e-stop. */
+  onLaserState(listener: (detail: string) => void): void;
   dispose(): void;
 }
 
@@ -121,6 +130,9 @@ export function createDeviceClient(options: DeviceClientOptions): DeviceClient {
   let flow: DeviceFlowMode = "coalesce";
   /** Sends awaiting their one reply. `id` means exactly one answer is owed (§T950 gap 1). */
   const pending = new Map<number, (outcome: OscSendOutcome) => void>();
+  /** T950: laser commands awaiting their one owed reply, and their push listeners. */
+  const laserPending = new Map<number, (outcome: LaserOutcome) => void>();
+  const laserStateListeners = new Set<(detail: string) => void>();
   let disposed = false;
 
   const publish = (state: OscBridgeState): void => {
@@ -191,6 +203,13 @@ export function createDeviceClient(options: DeviceClientOptions): DeviceClient {
         return;
       }
       case "deviceStreamState": {
+        // T950: the laser's pushes ride the shared state channel under stream "laser" —
+        // routed to their own listeners, never into the OSC status machine below.
+        if (message["stream"] === "laser") {
+          const said = message["detail"];
+          if (typeof said === "string") for (const listener of [...laserStateListeners]) listener(said);
+          return;
+        }
         const state = message["state"];
         const detail = message["detail"];
         const said = typeof detail === "string" ? detail : "no reason given";
@@ -244,6 +263,15 @@ export function createDeviceClient(options: DeviceClientOptions): DeviceClient {
         pending.delete(id);
         const outcome = message["outcome"];
         resolve(readOutcome(outcome));
+        return;
+      }
+      case "deviceLaserResult": {
+        const id = message["id"];
+        if (typeof id !== "number") return;
+        const resolve = laserPending.get(id);
+        if (resolve === undefined) return;
+        laserPending.delete(id);
+        resolve(message["outcome"] as LaserOutcome);
         return;
       }
       default:
@@ -352,6 +380,22 @@ export function createDeviceClient(options: DeviceClientOptions): DeviceClient {
       return await answered;
     },
 
+    laser(command: LaserCommand): Promise<LaserOutcome> {
+      if (socket === null || !attached) {
+        return Promise.reject(
+          new Error("no helper is attached — pair this tab in the Connections section first (pnpm mcp:serve)."),
+        );
+      }
+      const id = nextId++;
+      const settled = new Promise<LaserOutcome>((resolve) => {
+        laserPending.set(id, resolve);
+      });
+      send({ type: "deviceLaser", id, command });
+      return settled;
+    },
+    onLaserState(listener) {
+      laserStateListeners.add(listener);
+    },
     reconnectRemembered() {
       if (wanted || attached || disposed) return;
       const code = memory.read();

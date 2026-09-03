@@ -131,6 +131,8 @@ export interface InspectorPaneProps {
    * wiring (tests, embeds), and the section is then hidden the way the Audio one is.
    */
   midi?: MidiSectionSurface;
+  /** T950: the laser SESSION surface, for the Inspector's Laser section on laserOut. */
+  laser?: import("@editor/inspector/laser-section.tsx").LaserSectionSurface;
 }
 
 /**
@@ -182,6 +184,7 @@ export function InspectorPane({
   unknownParameters = [],
   audioStatus,
   midi,
+  laser,
 }: InspectorPaneProps) {
   const { bus, invocation, registry, settings } = useAppRuntime();
   // §V351/B67: the pane that declares a context must be able to hold focus, or clicking
@@ -252,6 +255,7 @@ export function InspectorPane({
           {...(latestFrame === undefined ? {} : { latestFrame })}
           {...(audioStatus === undefined ? {} : { audioStatus })}
           {...(midi === undefined ? {} : { midi })}
+          {...(laser === undefined ? {} : { laser })}
         />
       </div>
     </ContextMenuHost>

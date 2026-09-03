@@ -315,6 +315,16 @@ const APP_BINDINGS: readonly KeyBinding[] = [
     description: "Resolution, format, estimated bytes, GPU time and pass count for a node.",
   },
   {
+    // T950/G7 — the laser's emergency stop, from the keyboard, in every context. A
+    // bus command, so it does not depend on the render loop; harmless when no laser
+    // session exists (the command reports fired and the session does nothing).
+    id: "laser.estop",
+    keys: "shift+escape",
+    context: "global",
+    command: "laser.estop",
+    label: "Laser E-stop",
+  },
+  {
     id: "ui.cancel",
     keys: "escape",
     context: "global",

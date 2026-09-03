@@ -1,36 +1,56 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
+import type { NodeId } from "@domain/types/ids.ts";
 import { EMISSION_PUMPS } from "@domain/render/emission-pumps.ts";
 import { emissionRefusal, type SideEffectPolicy } from "@domain/render/side-effects.ts";
 import type { NodeRegistryView } from "@nodes/registry/registry.ts";
+import { pointPairId } from "@nodes/definitions/index.ts";
+import type { LoomBackend } from "@runtime/backend/index.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
+import type { DeviceClient } from "@/mcp/device-client.ts";
+import type { LaserStateReport } from "@/mcp/device-protocol.ts";
+
+declare module "@domain/types/commands.ts" {
+  interface CommandMap {
+    "laser.estop": { input: Record<string, never>; output: { fired: boolean } };
+  }
+}
 
 /**
  * T950 — the LASER pump: the one registered emission site for `laserOut`
- * (`EMISSION_PUMPS`, §T1005's gates), consulting `emissionRefusal` per node.
+ * (`EMISSION_PUMPS`, §T1005's gates), now CARRYING ITS TRANSPORT. The owner's go
+ * replaced the no-transport build; the docblock therefore names the no-fire MECHANISM
+ * PER PATH, as §V840 demands of exactly this moment:
  *
- * ## No transport exists in this build, and that is a MECHANISM, not a policy (§V840)
+ *  - a headless render, an export, every Dawn gate: constructs no React tree, so this
+ *    hook — the only module that can reach `DeviceClient.laser` — never exists;
+ *  - an in-app TAKE: `sync` receives policy `"blocked"` (the same holder-checked
+ *    argument the OSC pump reads, per frame, no state flag) and `emissionRefusal`
+ *    refuses per node before any client call;
+ *  - a live session with no helper: `deviceClient()` is null — there is no socket;
+ *  - a live session, helper attached, NOT ARMED: the helper's own state machine
+ *    refuses ("arming is a deliberate session action and never a document state"),
+ *    and this pump does not even send: it checks its session's armed flag first;
+ *  - armed and streaming, page dies or stalls: the HELPER's dead-man blanks, stops
+ *    and e-stops on its own clock — the failsafe on the far side of this file.
  *
- * §V840's rule is that every no-fire path names its mechanism, because "is an export"
- * is a category three paths can share while only one was verified. Here every path
- * shares ONE mechanism and it is checkable by reading this file: THIS MODULE CONSTRUCTS
- * NO SENDER OF ANY KIND — no device client, no socket factory, no bridge attachment.
- * The wire protocol is already built and emulator-gated (`src/mcp/ether-dream.ts`,
- * G2/G3/G4/G9 enforced at the byte encoders); until the bridge helper grows its laser
- * driver — with the dead-man timer on the helper side of the page boundary, where a
- * page crash cannot take it down — there is nothing here a byte could leave through.
- * When that driver lands, the send goes HERE and nowhere else: §T1005's tripwire pins
- * this file as the registered site, and its refusal gate already demands the
- * `emissionRefusal` call this module makes.
+ * ## Arming is SESSION state (G1), and the session lives here
  *
- * ## What it does today
+ * `armed` is a `useState` in a hook: it cannot be saved, cannot arrive in a document,
+ * and does not survive a reload — by construction, not by convention. The surface
+ * that flips it is the laserOut node's inspector section plus the always-visible
+ * E-stop (G7) the app shows while armed.
  *
- * Enumerates the document's `laserOut` nodes — the set derived from `EMISSION_PUMPS`
- * (the entries this file is registered for), never a hand-list (§T1006/§B45) — and
- * publishes one diagnostic per node into the problems pane's list (the OSC pump's
- * no-new-chrome shape): under a blocked policy, `emissionRefusal`'s own sentence;
- * live, the honest state of this build — simulation only, driver not yet available.
+ * ## What a frame sends
+ *
+ * The planner's OWN stream: the pump reads the laserPath buffers feeding the armed
+ * `laserOut` (position + tint pairs, last completed frame, through the metered
+ * readback — §V185) and hands the samples to the helper flat. Unlit samples cross as
+ * blanked moves — the galvo path is the plan's path, dark where the plan is dark —
+ * and the parked tail is trimmed at the park marker. G3/G4/G9 are enforced again on
+ * the helper side at the byte encoders; this pump cannot bypass them by existing.
  */
 
 /** The ledger path THIS module is registered under; the derivation key, not a display string. */
@@ -44,66 +64,235 @@ export function laserPumpNodeTypes(): readonly string[] {
     .sort();
 }
 
-/**
- * The pump's per-sync assessment, pure so the headless gate can drive it without React:
- * one diagnostic per world-acting laser node, refusal-first.
- */
-export function laserPumpDiagnostics(
-  graph: GraphDocument,
-  registry: NodeRegistryView,
-  policy: SideEffectPolicy,
-): RuntimeDiagnostic[] {
-  const types = new Set(laserPumpNodeTypes());
-  const diagnostics: RuntimeDiagnostic[] = [];
-  for (const nodeId of Object.keys(graph.nodes).sort()) {
-    const node = graph.nodes[nodeId];
-    if (node === undefined || !types.has(node.type)) continue;
-    const definition = registry.get(node.type);
-    const refusal = emissionRefusal(definition, policy);
-    if (refusal !== null) {
-      // §V365: the refusal reaches a surface — a rig dark with no explanation reads as
-      // a rig that is broken.
-      diagnostics.push({
-        severity: "info",
-        code: "laser.emission.blocked",
-        message: refusal,
-        nodeId,
-      });
-      continue;
+const PARKED_Z = -1.0e6;
+
+/** The laserPath node feeding a laserOut's points input, or null when unwired. */
+export function laserSourceOf(graph: GraphDocument, laserOutId: NodeId): NodeId | null {
+  for (const edge of Object.values(graph.edges)) {
+    if (edge.target.nodeId === laserOutId && edge.target.portId === "points") {
+      return edge.source.nodeId;
     }
-    diagnostics.push({
-      severity: "info",
-      code: "laser.driver.absent",
-      message:
-        "Laser Out is simulation-only in this build: the local helper has no laser driver yet, " +
-        "and this session constructs no transport, so nothing is transmitted. The preview IS the " +
-        "planned stream — what you see is what a DAC would receive.",
-      nodeId,
-    });
   }
-  return diagnostics;
+  return null;
 }
 
 /**
- * The session hook — the OSC pump's diagnostics-only shape: renders nothing, owns no
- * panel, feeds `app.tsx`'s one diagnostics list.
+ * Planner buffers → the wire's flat (x, y, r, g, b) array. Pure, so the gate feeds it
+ * bytes directly. Stops at the park marker (the plan's tail); unlit samples keep their
+ * position with zero colour — blanked travel is still the galvo's path.
  */
-export function useLaserBridge(): {
+export function samplesFromBuffers(position: Float32Array, tint: Float32Array): number[] {
+  const flat: number[] = [];
+  const slots = Math.min(Math.floor(position.length / 4), Math.floor(tint.length / 4));
+  for (let slot = 0; slot < slots; slot += 1) {
+    const base = slot * 4;
+    if (position[base + 2] === PARKED_Z) break;
+    // Unlit = a blanked MOVE: the position still crosses (the galvo's path is the
+    // plan's path), the colour does not.
+    const lit = (tint[base + 3] ?? 0) > 0;
+    flat.push(
+      position[base] ?? 0,
+      position[base + 1] ?? 0,
+      lit ? (tint[base] ?? 0) : 0,
+      lit ? (tint[base + 1] ?? 0) : 0,
+      lit ? (tint[base + 2] ?? 0) : 0,
+    );
+  }
+  return flat;
+}
+
+export interface LaserSessionSurface {
+  readonly report: LaserStateReport | null;
+  readonly armed: boolean;
+  readonly detail: string;
+  connect(host: string, maxPps: number): Promise<string | null>;
+  arm(): Promise<string | null>;
+  disarm(): Promise<void>;
+  estop(): Promise<void>;
+  clearEstop(): Promise<string | null>;
+}
+
+export function useLaserBridge(options: {
+  /** The OSC hook's shared device client — one device attachment per tab. */
+  deviceClient: () => DeviceClient | null;
+  backend?: () => LoomBackend | null;
+  /** For G7's key binding: `laser.estop` registers as a bus command, so the keymap
+   *  reaches it without the render loop — a hung graph is exactly when it is needed. */
+  bus?: LoomBus;
+}): {
   readonly diagnostics: readonly RuntimeDiagnostic[];
-  sync(graph: GraphDocument, registry: NodeRegistryView, policy: SideEffectPolicy): void;
+  readonly session: LaserSessionSurface;
+  sync(graph: GraphDocument, registry: NodeRegistryView, policy: SideEffectPolicy, pointRate?: number): void;
 } {
   const [diagnostics, setDiagnostics] = useState<readonly RuntimeDiagnostic[]>([]);
-  const sync = useCallback((graph: GraphDocument, registry: NodeRegistryView, policy: SideEffectPolicy) => {
-    const next = laserPumpDiagnostics(graph, registry, policy);
-    setDiagnostics((prior) => {
-      if (
-        prior.length === next.length &&
-        prior.every((entry, at) => entry.code === next[at]?.code && entry.nodeId === next[at]?.nodeId)
-      ) {
-        return prior;
+  const [report, setReport] = useState<LaserStateReport | null>(null);
+  const [armed, setArmed] = useState(false);
+  const [detail, setDetail] = useState("");
+  const armedRef = useRef(false);
+  armedRef.current = armed;
+  const inFlight = useRef(false);
+  const pushHooked = useRef(false);
+
+  const client = options.deviceClient;
+
+  const run = useCallback(
+    async (command: Parameters<DeviceClient["laser"]>[0]): Promise<string | null> => {
+      const live = client();
+      if (live === null) return "no helper is attached — pair this tab first (pnpm mcp:serve)";
+      if (!pushHooked.current) {
+        pushHooked.current = true;
+        live.onLaserState((said) => {
+          setDetail(said);
+          // The dead-man or a device e-stop disarms the SESSION too: light does not
+          // come back until a person re-arms, which is the whole point of the gesture.
+          if (said.includes("e-stop") || said.includes("dead-man") || said.includes("estopped")) {
+            setArmed(false);
+          }
+        });
       }
-      return next;
+      try {
+        const outcome = await live.laser(command);
+        setReport(outcome.state);
+        return outcome.ok ? null : outcome.reason;
+      } catch (error) {
+        return error instanceof Error ? error.message : String(error);
+      }
+    },
+    [client],
+  );
+
+  const estopRef = useRef<() => Promise<void>>(async () => {});
+  useEffect(() => {
+    const bus = options.bus;
+    if (bus === undefined || bus.hasCommand("laser.estop")) return;
+    bus.registerCommand({
+      name: "laser.estop",
+      description:
+        "EMERGENCY STOP the laser output: blank, stop, e-stop the DAC and disarm this session. Safe to fire at any time; does nothing when no laser is connected.",
+      handler: () => {
+        void estopRef.current();
+        return { status: "applied", output: { fired: true }, diagnostics: [] };
+      },
     });
-  }, []);
-  return { diagnostics, sync };
+  }, [options.bus]);
+
+  const session = useMemo<LaserSessionSurface>(
+    () => ({
+      report,
+      armed,
+      detail,
+      async connect(host, maxPps) {
+        return run({ kind: "connect", host, ...(maxPps > 0 ? { maxPps } : {}) });
+      },
+      async arm() {
+        const refusal = await run({ kind: "arm" });
+        if (refusal === null) setArmed(true);
+        return refusal;
+      },
+      async disarm() {
+        setArmed(false);
+        await run({ kind: "disarm" });
+      },
+      async estop() {
+        setArmed(false);
+        await run({ kind: "estop" });
+      },
+      async clearEstop() {
+        return run({ kind: "clearEstop" });
+      },
+    }),
+    [armed, detail, report, run],
+  );
+  estopRef.current = session.estop;
+
+  const sync = useCallback(
+    (graph: GraphDocument, registry: NodeRegistryView, policy: SideEffectPolicy, pointRate = 30000) => {
+      const types = new Set(laserPumpNodeTypes());
+      const next: RuntimeDiagnostic[] = [];
+      for (const nodeId of Object.keys(graph.nodes).sort()) {
+        const node = graph.nodes[nodeId];
+        if (node === undefined || !types.has(node.type)) continue;
+        const definition = registry.get(node.type);
+        const refusal = emissionRefusal(definition, policy);
+        if (refusal !== null) {
+          // §V365: the refusal reaches a surface — a rig dark with no explanation
+          // reads as a rig that is broken.
+          next.push({ severity: "info", code: "laser.emission.blocked", message: refusal, nodeId });
+          continue;
+        }
+        if (client() === null) {
+          next.push({
+            severity: "info",
+            code: "laser.helper.absent",
+            message:
+              "Laser Out needs the local helper (pnpm mcp:serve) — a page cannot open TCP. Pair this tab in the Connections section and connect from the node's Laser section.",
+            nodeId,
+          });
+          continue;
+        }
+        if (!armedRef.current) {
+          next.push({
+            severity: "info",
+            code: "laser.disarmed",
+            message:
+              "Laser Out is DISARMED — nothing is transmitted. Arming is a deliberate action in the node's Laser section, once per session, never saved with the document (G1).",
+            nodeId,
+          });
+          continue;
+        }
+        // ARMED AND LIVE: this frame's planned stream goes out. One laser session per
+        // tab (the device itself is single-host), so the first armed target streams.
+        const source = laserSourceOf(graph, nodeId as NodeId);
+        const backend = options.backend?.() ?? null;
+        if (source === null || backend === null) {
+          next.push({
+            severity: "warning",
+            code: "laser.source.missing",
+            message:
+              source === null
+                ? "Laser Out has no planned stream — wire a Laser Path node into its Samples input."
+                : "No live backend to read the planned stream from.",
+            nodeId,
+          });
+          continue;
+        }
+        if (!inFlight.current) {
+          inFlight.current = true;
+          void (async () => {
+            try {
+              const [position, tint] = await Promise.all([
+                backend.readBuffer(pointPairId(source, "position")),
+                backend.readBuffer(pointPairId(source, "tint")),
+              ]);
+              const samples = samplesFromBuffers(new Float32Array(position), new Float32Array(tint));
+              if (samples.length > 0) await run({ kind: "stream", samples, pointRate });
+            } catch {
+              // A readback refusal (outside-frame, halted) skips the frame; the DAC
+              // plays the previous block's blanked tail — darkness, not garbage (G3).
+            } finally {
+              inFlight.current = false;
+            }
+          })();
+        }
+        next.push({
+          severity: "info",
+          code: "laser.armed",
+          message: "Laser Out is ARMED and streaming the planned samples to the DAC.",
+          nodeId,
+        });
+      }
+      setDiagnostics((prior) => {
+        if (
+          prior.length === next.length &&
+          prior.every((entry, at) => entry.code === next[at]?.code && entry.nodeId === next[at]?.nodeId)
+        ) {
+          return prior;
+        }
+        return next;
+      });
+    },
+    [client, options, run],
+  );
+
+  return { diagnostics, session, sync };
 }

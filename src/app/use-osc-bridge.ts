@@ -120,6 +120,14 @@ export interface OscBridgeBinding {
    * re-renders the problems pane exactly never.
    */
   readonly diagnostics: readonly RuntimeDiagnostic[];
+  /**
+   * T950 — the ONE device client, shared with the laser pump. The bridge accepts one
+   * device client per tab (its own exclusivity rule), so a second attachment from the
+   * laser hook would be refused by the helper; the laser rides this session instead.
+   * A function, not the object: the client is rebuilt on reconnect and a captured
+   * reference would go stale.
+   */
+  readonly deviceClient: () => DeviceClient | null;
 }
 
 export interface OscBridgeOptions {
@@ -385,7 +393,11 @@ export function useOscBridge(options: OscBridgeOptions = {}): OscBridgeBinding {
     [options.retryMs],
   );
 
-  return useMemo(() => ({ state, resolver, sync, diagnostics }), [state, resolver, sync, diagnostics]);
+  const deviceClient = useCallback(() => client.current, []);
+  return useMemo(
+    () => ({ state, resolver, sync, diagnostics, deviceClient }),
+    [state, resolver, sync, diagnostics, deviceClient],
+  );
 }
 
 /**

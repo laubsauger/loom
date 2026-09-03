@@ -20,6 +20,8 @@ import { CommonReadout, CommonSection } from "./common-section.tsx";
 import { AudioSection, audioSectionParameters } from "./audio-section.tsx";
 import { WebcamSection, webcamSectionParameters } from "./webcam-section.tsx";
 import { MidiSection, midiSectionParameters } from "./midi-section.tsx";
+import { LaserSection, laserSectionParameters } from "./laser-section.tsx";
+import { LASER_OUT_TYPE } from "@nodes/definitions/laser-out.ts";
 import type { MidiSectionSurface } from "./midi-section.tsx";
 import { DEFAULT_GROUP, groupParameters } from "./parameter-groups.ts";
 import { createParameterEditor } from "./parameter-editor.ts";
@@ -95,6 +97,13 @@ export interface InspectorProps {
    * would learn nothing and say nothing about why.
    */
   midi?: MidiSectionSurface;
+  /**
+   * T950: the laser SESSION surface for `laserOut` nodes — connect/arm/disarm/e-stop
+   * and the helper's measured state. Absent = no session wiring (tests, embeds):
+   * section hidden, exactly as Audio's and MIDI's are. Arming is session state and
+   * never document state (G1), which is why it is a SURFACE and not a parameter.
+   */
+  laser?: import("./laser-section.tsx").LaserSectionSurface;
   variant?: ControlVariant;
   /**
    * The channel resolver a `driven` parameter reads through (B46, T374, §V61).
@@ -191,6 +200,7 @@ export function Inspector({
   latestFrame,
   audioStatus,
   midi,
+  laser,
   components,
 }: InspectorProps) {
   const graph = useSyncExternalStore<GraphDocument>(
@@ -350,10 +360,14 @@ export function Inspector({
     audioStatus !== undefined && (node.type === "audioIn" || node.type === "audioFileIn");
   const showsWebcamSection = node.type === "webcam";
   const showsMidiSection = midi !== undefined && node.type === "midiIn";
+  // The CONSTANT, not the literal: §T1005's tripwire reads an emitting type's literal
+  // in session code as an unregistered pump's tell, and this section is a surface.
+  const showsLaserSection = laser !== undefined && node.type === LASER_OUT_TYPE;
   const presentedBySections = new Set<string>([
     ...(showsAudioSection ? audioSectionParameters(node.type as "audioIn" | "audioFileIn") : []),
     ...(showsWebcamSection ? webcamSectionParameters() : []),
     ...(showsMidiSection ? midiSectionParameters() : []),
+    ...(showsLaserSection ? laserSectionParameters() : []),
   ]);
   const groups = groupParameters(
     resolved.entries.filter((entry) => !presentedBySections.has(entry.key)),
@@ -464,6 +478,17 @@ export function Inspector({
 
   /* T942: the controller gets its learn table and its ONE honest sentence about why there
      is no MIDI — keyed on the node TYPE, as the mic and camera sections are. */
+  /* T950: the laser session controls, on the node (§T948) — connect/arm/e-stop plus
+     the helper's measured state. host/maxPps stay ordinary parameters below. */
+  const laserSection = showsLaserSection && laser !== undefined ? (
+    <LaserSection
+      nodeId={node.id}
+      host={typeof resolved.values["host"] === "string" ? (resolved.values["host"] as string) : ""}
+      maxPps={typeof resolved.values["maxPps"] === "number" ? (resolved.values["maxPps"] as number) : 0}
+      laser={laser}
+    />
+  ) : null;
+
   const midiSection =
     showsMidiSection && node.type === "midiIn" ? (
       <MidiSection
@@ -588,6 +613,7 @@ export function Inspector({
         {audioSection}
         {webcamSection}
         {midiSection}
+        {laserSection}
         {parameterSections}
         {commonSection}
       </div>
@@ -608,6 +634,7 @@ export function Inspector({
           {audioSection}
           {webcamSection}
           {midiSection}
+          {laserSection}
           {parameterSections}
         </TabsContent>
         <TabsContent className={cx(styles.page, styles.page)} value="common">

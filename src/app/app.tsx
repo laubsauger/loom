@@ -71,6 +71,7 @@ import { useValueGraph } from "./use-value-graph.ts";
 import { useMidiInput } from "./use-midi-input.ts";
 import { useOscBridge } from "./use-osc-bridge.ts";
 import { useLaserBridge } from "./use-laser-bridge.ts";
+import type { LoomBackend } from "@runtime/backend/index.ts";
 import { useMediaSources } from "./use-media-sources.ts";
 import { createMediaControlRegistry, useMediaCommands } from "./media-commands.ts";
 import { useProject } from "./use-project.ts";
@@ -352,7 +353,15 @@ export function App({
    * refusal sentence when a take blocks emission, "simulation only, no driver yet"
    * when live.
    */
-  const laser = useLaserBridge();
+  const backendRef = useRef<LoomBackend | null>(null);
+  backendRef.current = backend ?? null;
+  const laser = useLaserBridge({
+    // ONE device attachment per tab (the bridge's own exclusivity): the laser rides
+    // the OSC hook's client rather than dialing a second, refused connection.
+    deviceClient: osc.deviceClient,
+    backend: () => backendRef.current,
+    bus: runtime.bus,
+  });
 
   /**
    * The value graph's external channels are a MERGE of FOUR now (§T976), and the order
@@ -1166,6 +1175,34 @@ export function App({
         environment={environment}
         onDispatch={onKeyDispatch}
       >
+        {/* T950/G7 — THE ALWAYS-VISIBLE E-STOP, present exactly while the laser session
+            is armed. Deliberately OUTSIDE the shell's pane tree so no layout, scroll or
+            pane float can hide it, and wired straight to the session (the same call the
+            `laser.estop` bus command and its key binding reach) — none of which depend
+            on the render loop, because a hung graph is precisely when this is needed. */}
+        {laser.session.armed ? (
+          <button
+            type="button"
+            onClick={() => void laser.session.estop()}
+            style={{
+              position: "fixed",
+              top: 8,
+              right: 8,
+              zIndex: 10000,
+              background: "#c81e1e",
+              color: "#fff",
+              border: "2px solid #fff",
+              borderRadius: 6,
+              font: "700 13px system-ui",
+              padding: "10px 16px",
+              cursor: "pointer",
+              boxShadow: "0 2px 10px rgba(0,0,0,0.5)",
+            }}
+            aria-label="Emergency stop the laser output"
+          >
+            ■ LASER E-STOP
+          </button>
+        ) : null}
         <AppShell
           {...(storage === undefined ? {} : { storage })}
           {...(openPaneWindow === undefined ? {} : { openPaneWindow })}
@@ -1369,6 +1406,7 @@ export function App({
                 unknownParameters={runtime.unknownParameters}
                 audioStatus={audioInput.status}
                 midi={midi}
+                laser={laser.session}
               />
               </AppRuntimeContext.Provider>
             </ErrorBoundary>

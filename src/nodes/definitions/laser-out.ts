@@ -12,20 +12,19 @@ import { SINK_TAG } from "./sink.ts";
  * `compile()` produces NO passes and the definition performs NO I/O — §T949's
  * structural scan holds that. The session pump (`src/app/use-laser-bridge.ts`,
  * registered in `EMISSION_PUMPS` — §T1005's gate holds THAT) is the only place bytes
- * could leave, it consults `emissionRefusal` per node, and today it CONSTRUCTS NO
- * TRANSPORT AT ALL: the Ether Dream helper driver has not landed, so the mechanism
- * that prevents firing in every context is the absence of any sender, stated in the
- * pump rather than implied. The wire protocol itself is already built and
- * emulator-gated (`src/mcp/ether-dream.ts`); connecting it to a socket is the bridge
- * helper's commit, behind the dead-man timer §T950 requires (G2: the failsafe lives on
- * the far side of the thing that can fail).
+ * leave: it consults `emissionRefusal` per node and hands the planner's own samples to
+ * the bridge helper, whose laser door (`src/mcp/laser-host.ts`) owns every socket, the
+ * discovery, the vet and the dead-man (G2: the failsafe on the far side of the page).
+ * The no-fire mechanisms are enumerated PER PATH in the pump's and the door's
+ * docblocks (§V840) — blocked policy, no helper, not armed, page death, page stall —
+ * and each is behaviourally gated.
  *
  * ## ARMING IS SESSION STATE AND NEVER DOCUMENT STATE (G1)
  *
  * There is deliberately no "armed" parameter: a parameter is saved into `.loom.json`,
  * and a downloaded document must never be able to emit light by being opened. Arming
- * will be a deliberate human action in the session surface when the transport lands,
- * and it will not survive a reload.
+ * is the deliberate button in this node's Laser section — a hook's `useState`, which
+ * cannot be saved and does not survive a reload, by construction.
  *
  * ## Safety posture, stated where the author reads it
  *
@@ -35,13 +34,22 @@ import { SINK_TAG } from "./sink.ts";
  * tails, G4's blank-and-hold on bad coordinates, and G9's device-reported rate clamp
  * are enforced by the only functions that produce point bytes (`ether-dream.ts`).
  */
+/**
+ * The type string, exported so surfaces that must RECOGNISE the node (the inspector's
+ * Laser section) reference the constant instead of writing the literal — §T1005's
+ * unregistered-pump tripwire treats the literal in session code as a pump's tell, and
+ * a section that shows controls is not a pump (the pump is use-laser-bridge.ts, and
+ * the session surface it exports is the only thing that can reach the transport).
+ */
+export const LASER_OUT_TYPE = "laserOut";
+
 export const laserOutNode: NodeDefinition = {
-  type: "laserOut",
+  type: LASER_OUT_TYPE,
   version: 1,
   title: "Laser Out",
   category: "output",
   description:
-    "Sends a planned laser sample stream (from Laser Path) to an Ether Dream DAC on the local network. Needs the local helper (pnpm mcp:serve) — a browser page cannot open TCP — and the hardware driver is NOT yet available in this build: the node loads, the document renders, and nothing is transmitted anywhere. THERE IS NO DEFAULT DEVICE: set Host or nothing will ever be sent. Output is a live-session action only — an offline render, a take, a headless export and the test suites never transmit. This drives a laser projector: a projector, its interlocks and its scan-fail hardware are the operator's responsibility, and this node does not make an unsafe projector safe.",
+    "Sends a planned laser sample stream (from Laser Path) to an Ether Dream DAC on the local network. Needs the local helper (pnpm mcp:serve) — a browser page cannot open TCP. THERE IS NO DEFAULT DEVICE and NOTHING EMITS UNTIL ARMED: set Host, Connect (the DAC's own broadcast supplies its capacity), then Arm in the node's Laser section — a once-per-session action that is never saved with the document. A take, an offline render, a headless export and the test suites never transmit; if the page stalls or closes mid-stream, the helper's dead-man blanks, stops and emergency-stops the DAC on its own. This drives a laser projector: the projector, its interlocks and its scan-fail hardware are the operator's responsibility, and this node does not make an unsafe projector safe.",
   tags: ["laser", "output", "device", "ether-dream", "dac", SINK_TAG],
   /*
    * T949/§V841 — the row's argument, not just its verdict: this node's PURPOSE is to

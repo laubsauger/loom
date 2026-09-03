@@ -72,7 +72,7 @@ export { pointTopologyNode } from "./point-topology.ts";
 export { pointProximityNode } from "./point-proximity.ts";
 export { pointRangeNode } from "./point-range.ts";
 export { laserPathNode } from "./laser-path.ts";
-export { laserOutNode } from "./laser-out.ts";
+export { laserOutNode, LASER_OUT_TYPE } from "./laser-out.ts";
 export { pointKernelAdvancedNode, liveCountBufferId } from "./point-kernel-advanced.ts";
 export { slitScanNode } from "./slit-scan.ts";
 export { midiInNode } from "./midi.ts";
