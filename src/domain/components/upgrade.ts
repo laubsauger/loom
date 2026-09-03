@@ -3,8 +3,7 @@ import type { RuntimeDiagnostic } from "../types/diagnostics.ts";
 import type { GraphNode } from "../types/graph.ts";
 import type { PortId } from "../types/ids.ts";
 import type { StoredParameter } from "../types/parameters.ts";
-import { validateStoredParameter } from "../parameters/validate.ts";
-import { defaultValueOf } from "./parameter-defaults.ts";
+import { defaultParameterValue, validateStoredParameter } from "../parameters/validate.ts";
 import { readComponentInstance } from "./instance.ts";
 import type { ComponentRegistryView } from "./registry.ts";
 
@@ -94,7 +93,7 @@ export function planComponentUpgrade(input: UpgradePlanInput): ComponentUpgradeP
     const previous = stored[published.key];
     if (previous === undefined) {
       added.push(published.key);
-      parameters[published.key] = defaultValueOf(published.definition);
+      parameters[published.key] = defaultParameterValue(published.definition);
       continue;
     }
     // A value that no longer fits the re-authored control — a narrowed range, a changed
@@ -103,7 +102,7 @@ export function planComponentUpgrade(input: UpgradePlanInput): ComponentUpgradeP
     const invalid = validateStoredParameter(published.key, published.definition, previous, input.instance.id);
     if (invalid !== null) {
       reset.push(published.key);
-      parameters[published.key] = defaultValueOf(published.definition);
+      parameters[published.key] = defaultParameterValue(published.definition);
       diagnostics.push({
         ...invalid,
         severity: "warning",

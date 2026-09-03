@@ -3,7 +3,7 @@ import { compileGraph } from "../compiler/index.ts";
 import { createComponentSystem } from "../domain/components/registry.ts";
 import { graphComponentDefinitionSchema } from "../domain/components/schemas.ts";
 import { readComponentInstance } from "../domain/components/instance.ts";
-import { defaultValueOf } from "../domain/components/parameter-defaults.ts";
+import { defaultParameterValue } from "../domain/parameters/validate.ts";
 import {
   PROJECT_FILE_EXTENSION,
   loadProject,
@@ -203,8 +203,8 @@ describe("a published default matches the internal value it drives (§V80)", () 
           node?.parameters[target.key] as ParameterValue | ParameterSlot | undefined,
           `${spec.name}.${target.nodeId}.${target.key}`,
         );
-        // Through `defaultValueOf`, which is what a fresh instance actually gets.
-        const fallback = defaultValueOf(published.definition);
+        // Through `defaultParameterValue`, which is what a fresh instance actually gets.
+        const fallback = defaultParameterValue(published.definition);
         if (JSON.stringify(authored) !== JSON.stringify(fallback)) {
           mismatches.push(
             `${published.key} defaults to ${JSON.stringify(fallback)} but ${target.nodeId}.${target.key} is ${JSON.stringify(authored)}`,

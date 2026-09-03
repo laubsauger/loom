@@ -6,7 +6,7 @@ import type {
 import type { NodeId, PortId } from "../types/ids.ts";
 import type { ParameterValue } from "../types/parameters.ts";
 import type { GraphPatchOperation } from "../types/patch.ts";
-import { defaultValueOf } from "./parameter-defaults.ts";
+import { defaultParameterValue } from "../parameters/validate.ts";
 
 /**
  * Publishing (T131, T132) — the component's parameter page and its boundary ports.
@@ -56,7 +56,7 @@ export function defaultPublishedValues(
 ): Record<string, ParameterValue> {
   const values: Record<string, ParameterValue> = {};
   for (const published of definition.parameters) {
-    values[published.key] = defaultValueOf(published.definition);
+    values[published.key] = defaultParameterValue(published.definition);
   }
   return values;
 }

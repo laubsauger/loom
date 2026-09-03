@@ -101,7 +101,6 @@ export {
   unpublishParameter,
 } from "./published-parameter.ts";
 
-export { defaultValueOf } from "./parameter-defaults.ts";
 
 export {
   componentSourcePath,

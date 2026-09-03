@@ -5,7 +5,7 @@ import type { InvocationContext } from "@domain/types/commands.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
 import type { NodeId } from "@domain/types/ids.ts";
 import type { ParameterDefinition, ParameterValue } from "@domain/types/parameters.ts";
-import { defaultValueOf } from "@domain/components/parameter-defaults.ts";
+import { defaultParameterValue } from "@domain/parameters/validate.ts";
 import { readParentBindings } from "@domain/components/instance.ts";
 import { internalParameterOf } from "@domain/components/definition.ts";
 import { effectiveParameterSchema } from "@domain/parameters/resolve.ts";
@@ -228,7 +228,7 @@ export function ComponentPage({
                 <ParameterControl
                   parameterKey={published.key}
                   definition={published.definition}
-                  value={defaultValueOf(published.definition)}
+                  value={defaultParameterValue(published.definition)}
                   variant="inspector"
                   onChange={(value: ParameterValue) =>
                     run(

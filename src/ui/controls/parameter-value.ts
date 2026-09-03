@@ -1,4 +1,5 @@
 import type { ParameterDefinition, ParameterValue } from "@domain/types/parameters.ts";
+import { defaultParameterValue } from "@domain/parameters/validate.ts";
 
 /**
  * Reading a stored value through its manifest definition.
@@ -10,27 +11,18 @@ import type { ParameterDefinition, ParameterValue } from "@domain/types/paramete
  * layer is what refuses bad values on the way *in*; this is the read side.
  */
 
-export function defaultValueFor(definition: ParameterDefinition): ParameterValue {
-  switch (definition.type) {
-    case "asset":
-      return null;
-    /** §V124: a pulse is never armed by default and never stored. */
-    case "pulse":
-      return false;
-    case "color":
-    case "vector":
-      return [...definition.default];
-    case "curve":
-      return definition.default.map((point) => ({ x: point.x, y: point.y }));
-    case "stops":
-      return definition.default.map((stop) => ({
-        position: stop.position,
-        color: [...stop.color] as [number, number, number, number],
-      }));
-    default:
-      return definition.default;
-  }
-}
+/**
+ * The manifest default — the domain's one implementation, under the control kit's name.
+ *
+ * This was a THIRD byte-identical copy of `defaultParameterValue`, beside the domain's
+ * and a second in `domain/components/parameter-defaults.ts` whose docblock justified
+ * itself against THIS file while not knowing the headless domain copy it was duplicating
+ * already existed. Nothing here needs `src/ui` isolation: the function reads a manifest
+ * definition and returns a value, both of which are domain types this module already
+ * imports. Three copies of a `switch` over a union that grows is how an arm goes missing
+ * from one of them.
+ */
+export { defaultParameterValue as defaultValueFor };
 
 function isFiniteNumberArray(value: unknown, size: number): value is readonly number[] {
   return (
@@ -102,6 +94,6 @@ export function valueForDefinition(
   definition: ParameterDefinition,
   value: ParameterValue | undefined,
 ): ParameterValue {
-  if (value === undefined) return defaultValueFor(definition);
-  return matchesDefinition(definition, value) ? value : defaultValueFor(definition);
+  if (value === undefined) return defaultParameterValue(definition);
+  return matchesDefinition(definition, value) ? value : defaultParameterValue(definition);
 }

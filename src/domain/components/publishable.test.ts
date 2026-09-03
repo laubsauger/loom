@@ -211,12 +211,12 @@ describe("every parameter type can be published (T132, §V80, §V437)", () => {
      * as unset the moment it is placed.
      *
      * The KEY alone is not enough to assert, and finding that out is why this line reads
-     * the way it does: `defaultValueOf` falls through to `definition.default` for most
+     * the way it does: `defaultParameterValue` falls through to `definition.default` for most
      * types, and `asset` and `pulse` DECLARE NO `default` FIELD — they are special-cased.
      * Deleting those two cases left the key present with an `undefined` value, and an
      * assertion on `Object.keys` alone stayed green over it (§V461, §V500). So the value
      * has to be real, and it has to be a value the parameter would ACCEPT — checked
-     * against the validator the store uses on the way in, not against `defaultValueOf`'s
+     * against the validator the store uses on the way in, not against `defaultParameterValue`'s
      * own answer, which would only prove the function agrees with itself.
      */
     const defaults = defaultPublishedValues(definition);
