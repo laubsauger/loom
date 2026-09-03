@@ -63,7 +63,7 @@ The bare `node --experimental-strip-types src/...` form is dead and has been "fi
 
 ## Architecture
 
-Path aliases: `@domain @compiler @runtime @editor @nodes @ui @agent` → `src/<name>`, plus `@` → `src`.
+Path aliases: `@domain @compiler @runtime @editor @nodes @ui @agent @devices` → `src/<name>`, plus `@` → `src`.
 
 **Data flow:** `GraphDocument` (zustand store, `src/domain/graph/store.ts`) → `compileGraph` (`src/compiler/`, pure, headless: flatten components → validate → order → prune to active sinks → resolve resolution/format/color space → emit `LogicalExecutionPlan`) → `RenderBackend` (`src/runtime/backend/vgpu/vgpu-backend.ts`, the ONLY place that imports `vgpu`) → frame driver (`src/runtime/execution/`) → presentation surfaces / previews (`src/runtime/previews/`, `src/editor/viewer/`) → export/readback (`src/runtime/export/`, the only readback path).
 
@@ -78,6 +78,8 @@ Path aliases: `@domain @compiler @runtime @editor @nodes @ui @agent` → `src/<n
 **Editor:** `src/editor/*` feature folders (graph-canvas, nodes, edges, inspector, library, keymap-as-data, menus-as-data, palette, shader-editor, viewer, component, agent, help, inspect). `src/ui/` = tokens (`tokens.css`), primitives, controls. All colors come from CSS var tokens; no literal hex in components.
 
 **Agent surface:** `src/agent/` = bus adapters + zod tool schemas only, no app logic. `src/mcp/` = stdio MCP server, loopback bridge so a browser tab can serve tools against the live document, WebMCP adapter.
+
+**Devices:** `src/devices/` = the LOCAL DEVICE BRIDGE, and it is not an agent surface (T1103). OSC (`osc-codec`, `device-hub`), the Ether Dream laser path (`ether-dream`, `laser-service`, `laser-host`), the Apple Vision worker (`vision-host`), and the page-side `device-client`. `src/devices/transport/` holds what both roles on the one loopback socket share — the wire constants and pairing rules (`bridge-wire.ts`), the browser socket and pairing memory (`bridge-socket.ts`), the RFC 6455 server (`loopback-ws.ts`). **The dependency runs `src/mcp/` → `src/devices/` and `src/app/use-*-bridge.ts` → `src/devices/`; nothing under `src/devices/` may import `src/mcp/`.** One helper process serves both halves, which is why `pnpm mcp:serve` starts the device bridge too; every user-facing sentence naming that command comes from `src/devices/helper.ts`.
 
 ## Lint-enforced invariants (eslint.config.js)
 

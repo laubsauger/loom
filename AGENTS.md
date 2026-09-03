@@ -19,6 +19,7 @@ These instructions apply to the entire repository. `SPEC.md` is the authoritativ
 
 - All graph and project mutations go through `src/domain/commands`; do not create a second mutation path.
 - Keep direct `vgpu` access inside `src/runtime/backend`.
+- Keep the local device bridge in `src/devices` (OSC, laser, Apple Vision, and the loopback transport they share). It is not an agent surface: `src/mcp` and `src/app/use-*-bridge.ts` import it, and nothing under `src/devices` may import `src/mcp`.
 - Keep domain, compiler, and runtime code independent of the DOM except at an existing documented adapter boundary.
 - Pass time through `FrameEvaluationInput`; do not read wall-clock time in nodes or shaders.
 - Keep persisted projects versioned and validated. Use the existing serializer and migration paths.
