@@ -15,10 +15,28 @@ import type { MenuTarget } from "@domain/types/menus.ts";
  *   edge    `.react-flow__edge[data-id="<edgeId>"]`
  *   port    `.react-flow__handle[data-nodeid="…"][data-handleid="…"]`
  *
- * The parameter surface is the one exception: the inspector renders no per-parameter
- * marker today, so the two attributes below are a REQUEST to the inspector track, not
- * something it already sets. Until it does, a right-click in the inspector resolves to
- * nothing and no menu opens — it does not throw and it does not guess a parameter.
+ * The parameter surface is the one exception, because a parameter row is OURS: the
+ * control carries `data-parameter-key` and something above it says which node owns it.
+ * The inspector sets both (its pane root carries `data-node-id`), which is how reset and
+ * publish reach the bus from a right-click there.
+ *
+ * ## The owner of a parameter ON THE CANVAS (T1034)
+ *
+ * A control rendered INSIDE a graph node has no `data-node-id` above it — React Flow's
+ * wrapper says `data-id`, and `node-view.tsx` adds no second spelling of the same fact.
+ * The owner lookup therefore accepts either marker, nearest wins. Without that, such a
+ * row fell out of the parameter branch entirely and the walk carried on to the node
+ * wrapper, so a right-click on a control opened the NODE menu: the wrong menu, silently,
+ * with no `parameter.reset` on it. §T1033 had just removed double-click-to-reset on the
+ * correct argument that the menu already carried it — true where it was checked (the
+ * inspector) and never checked here (§V840).
+ *
+ * WHAT THIS DOES NOT DO, so nobody reads it as more than it is: nothing in the product
+ * renders a parameter control inside a graph node today. `GraphCanvas`'s `renderControls`
+ * slot has no caller (`node-box.ts` measured the same thing for its own reasons), and
+ * `Inspector`'s `variant="node"` is never asked for. This closes the resolution half so
+ * that the first caller to fill that slot gets a working parameter menu instead of
+ * rediscovering this; it does not by itself put a reset back on screen.
  */
 
 /** React Flow's own markers. Changing these means React Flow changed, not us. */
@@ -65,8 +83,12 @@ function surfaceOf(element: Element): MenuTarget | null {
 
   const parameterKey = attribute(element, PARAMETER_KEY_ATTRIBUTE);
   if (parameterKey !== null) {
-    const owner = element.closest(`[${PARAMETER_NODE_ATTRIBUTE}]`);
-    const nodeId = owner === null ? null : attribute(owner, PARAMETER_NODE_ATTRIBUTE);
+    // Either spelling of "this is whose parameter it is", NEAREST WINS — ours in a panel,
+    // React Flow's own on the canvas (T1034). One `closest` rather than two lookups is
+    // what makes it nearest: an embedded panel inside a node must win over the node.
+    const owner = element.closest(`[${PARAMETER_NODE_ATTRIBUTE}], .${NODE_CLASS}[${RF_ID}]`);
+    const nodeId =
+      owner === null ? null : (attribute(owner, PARAMETER_NODE_ATTRIBUTE) ?? attribute(owner, RF_ID));
     // A parameter with no owning node is not addressable: the reset/publish commands
     // need the node id, so resolving without one would build a half-formed command.
     if (nodeId !== null) return { surface: "parameter", nodeId, parameterKey };
