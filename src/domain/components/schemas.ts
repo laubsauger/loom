@@ -198,8 +198,16 @@ export function parseComponentDefinition(value: unknown): ComponentParseResult {
 export function serializeComponentLibrary(
   definitions: readonly GraphComponentDefinition[],
 ): ParsedComponentLibrary {
+  // T977 follow-up — CANONICAL ORDER AT THE FUNNEL, because two callers disagreed:
+  // the example generator hands this its registration order while the app's save hands
+  // it `components.all()` (sorted), and §V802's load→save byte gate caught the drift
+  // the moment a document carried two components. Sorting HERE makes every writer
+  // agree, whatever order its caller collected in.
+  const ordered = [...definitions].sort(
+    (a, b) => a.componentId.localeCompare(b.componentId) || a.version - b.version,
+  );
   return {
     schemaVersion: COMPONENT_SCHEMA_VERSION,
-    components: definitions as ParsedComponentLibrary["components"],
+    components: ordered as ParsedComponentLibrary["components"],
   };
 }

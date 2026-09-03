@@ -12,45 +12,65 @@ describe("E47 Hologram", () => {
   if (file === undefined) throw new Error("E47-Hologram.loom.json is not shipped");
   const { plan, document } = requireExample(file);
 
-  it("instances the DepthPoints component and flattens it into the plan", () => {
-    // The document holds ONE component node; the plan holds its expansion and no
-    // component types at all — the boundary is real, not a doc comment.
-    const instances = Object.values(document.graph.nodes).filter((node) =>
+  it("instances DepthPoints twice (zone + wall) plus the DepthCut, all flattened into the plan", () => {
+    // T979/T983's v2: the ZONE cloud (`holo`) and the WALL cloud (`holo2`) are two
+    // instances of ONE DepthPoints definition — the reuse claim §V79 makes — and the
+    // background cut is a third component. The plan holds their expansions and no
+    // component types at all: the boundary is real, not a doc comment.
+    const clouds = Object.values(document.graph.nodes).filter((node) =>
       node.type.startsWith("component:depthPoints"),
     );
-    expect(instances).toHaveLength(1);
-    const flattened = [...plan.order].filter((id) => id.startsWith("holo/"));
-    expect(flattened.sort()).toEqual(["holo/carve", "holo/grid", "holo/paint"]);
-    expect([...plan.order].includes("holo")).toBe(false);
+    expect(clouds).toHaveLength(2);
+    const cuts = Object.values(document.graph.nodes).filter((node) =>
+      node.type.startsWith("component:depthCut"),
+    );
+    expect(cuts).toHaveLength(1);
+    const flattened = [...plan.order].filter(
+      (id) => id.startsWith("holo/") || id.startsWith("holo2/") || id.startsWith("cut/"),
+    );
+    expect(flattened.sort()).toEqual([
+      "cut/cut", "cut/matte",
+      "holo/carve", "holo/grid", "holo/paint",
+      "holo2/carve", "holo2/grid", "holo2/paint",
+    ]);
+    for (const instanceId of ["holo", "holo2", "cut"]) {
+      expect([...plan.order].includes(instanceId), instanceId).toBe(false);
+    }
   });
 
-  it("feeds the carve kernel the SWITCHED depth and the paint kernel the source — never crossed", () => {
+  it("feeds each carve its depth and each paint its source — never crossed, and the cut sits only on the zone's paint", () => {
     const dispatches = plan.passes.filter(
       (pass): pass is DispatchPassDescriptor => pass.kind === "dispatch",
     );
-    const carve = dispatches.find((pass) => pass.id.startsWith("holo/carve"));
-    const paint = dispatches.find((pass) => pass.id.startsWith("holo/paint"));
-    expect(carve).toBeDefined();
-    expect(paint).toBeDefined();
-    // T972: BOTH kernels read the switched SOURCE family — the colour follows the
-    // source switch (webcam colour lands on the webcam cloud), while the depth passes
-    // through its own second switch (understudy vs ML). Crossing either pair compiles
-    // fine and renders nonsense — which is exactly why they are pinned (§V655's family).
-    expect(carve?.textures?.map((texture) => texture.resourceId)).toContain("target:pick:out");
-    expect(paint?.textures?.map((texture) => texture.resourceId)).toContain("target:srcpick:out");
+    const texturesOf = (prefix: string) =>
+      dispatches.find((pass) => pass.id.startsWith(prefix))?.textures?.map((t) => t.resourceId);
+    // T972: carve reads the switched DEPTH family, paint the SOURCE family; crossing
+    // either pair compiles fine and renders nonsense (§V655's family). T977 threads the
+    // zone's colour THROUGH the DepthCut component — the zone paints the background-cut
+    // picture — while the wall deliberately paints the RAW source: the cut on the wall
+    // would carve holes in the thing whose job is to be behind everything.
+    expect(texturesOf("holo/carve")).toContain("target:pick:out");
+    expect(texturesOf("holo/paint")).toContain("target:cut/cut:out");
+    expect(texturesOf("holo2/carve")).toContain("target:soften2:out");
+    expect(texturesOf("holo2/paint")).toContain("target:src:out");
   });
 
-  it("draws the cloud with the component's per-point tint mapped", () => {
-    const draw = plan.passes.find(
-      (pass): pass is DrawPassDescriptor =>
-        pass.kind === "draw" && pass.id.includes(":scene:"),
+  it("draws both clouds, each pairing ITS range's positions with ITS paint's tints", () => {
+    const draws = plan.passes.filter(
+      (pass): pass is DrawPassDescriptor => pass.kind === "draw" && pass.id.includes(":scene:"),
     );
-    expect(draw).toBeDefined();
-    const buffers = new Map((draw?.buffers ?? []).map((entry) => [entry.binding, entry.resourceId]));
-    // The retexturing is visible only through this binding — without it every mote is
-    // static white (measured: the first card was exactly that).
-    expect(buffers.get("pointColors")).toBe("scratch:holo/paint:tint");
-    expect(buffers.get("positions")).toBe("scratch:holo/paint:position");
+    expect(draws).toHaveLength(2);
+    const buffersOf = (draw: DrawPassDescriptor | undefined) =>
+      new Map((draw?.buffers ?? []).map((entry) => [entry.binding, entry.resourceId]));
+    // T983: the pointRange nodes (`zone`, `wall`) sit BETWEEN paint and scene, so the
+    // positions come from the range's scratch while the colours still come from the
+    // matching paint. Pairing zone positions with holo2 tints (or vice versa) compiles
+    // fine and puts the wall's colours on the person — which is why the PAIRING is the
+    // claim, not the mere presence of two draws.
+    const zone = buffersOf(draws.find((d) => buffersOf(d).get("positions") === "scratch:zone:position"));
+    const wall = buffersOf(draws.find((d) => buffersOf(d).get("positions") === "scratch:wall:position"));
+    expect(zone.get("pointColors")).toBe("scratch:holo/paint:tint");
+    expect(wall.get("pointColors")).toBe("scratch:holo2/paint:tint");
   });
 
   it("keeps the ML depth path wired and stale-tolerant (§T715)", () => {
