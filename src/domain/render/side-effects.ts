@@ -198,6 +198,7 @@ export const NODE_SIDE_EFFECTS: Readonly<Record<string, SideEffect>> = {
   renderSurface: "none",
   pointTopology: "none",
   pointProximity: "none",
+  pointGather: "none",
   pointRange: "none",
   /*
    * T947. THE PLANNER, NOT THE TRANSPORT — and this row is the first real exercise of the

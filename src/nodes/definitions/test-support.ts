@@ -186,7 +186,10 @@ export function readNodePlan(
 export function minimalGraphFor(
   definition: {
     readonly type: string;
-    readonly inputs: ReadonlyArray<{ id: string; type: { kind: string } }>;
+    readonly inputs: ReadonlyArray<{
+      id: string;
+      type: { kind: string; requires?: ReadonlyArray<{ name: string }> };
+    }>;
     readonly outputs: ReadonlyArray<{ id: string; type: { kind: string } }>;
     readonly sourceReferences?: ReadonlyArray<{ parameter: string; input: string }>;
   },
@@ -218,7 +221,20 @@ export function minimalGraphFor(
   definition.inputs.forEach((port, index) => {
     if (referenceInputs.has(port.id)) return;
     const feedId = `feed${index}`;
-    nodes[feedId] = mk(feedId, port.type.kind === "pointset" ? "pointGrid" : "checker");
+    /* T1071: the stand-in has to satisfy what the port ASKS FOR, not merely its kind. A
+       pointset port requiring `neighbor` is asking for an ADJACENCY, which a bare grid does
+       not carry — feeding one anyway made the port-compat refusal look like a broken node
+       (§V886: one stand-in serving several node types is how a sweep stops sweeping). The
+       catalogue's producer of an adjacency is Proximity, over a grid. */
+    const wantsAdjacency =
+      port.type.kind === "pointset" && (port.type.requires ?? []).some((entry) => entry.name === "neighbor");
+    if (wantsAdjacency) {
+      nodes[`${feedId}src`] = mk(`${feedId}src`, "pointGrid");
+      nodes[feedId] = mk(feedId, "pointProximity", { neighbors: 2, radius: 1 });
+      edges[`${feedId}link`] = mkEdge(`${feedId}link`, [`${feedId}src`, "out"], [feedId, "points"]);
+    } else {
+      nodes[feedId] = mk(feedId, port.type.kind === "pointset" ? "pointGrid" : "checker");
+    }
     edges[`in${index}`] = mkEdge(`in${index}`, [feedId, "out"], ["subject", port.id]);
   });
   for (const spec of definition.sourceReferences ?? []) {

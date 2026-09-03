@@ -31,6 +31,7 @@ import { pointGeneratorDefinitions } from "./point-generators.ts";
 import { renderInstancesNode } from "./render-instances.ts";
 import { renderSurfaceNode } from "./render-surface.ts";
 import { pointTopologyNode } from "./point-topology.ts";
+import { pointGatherNode } from "./point-gather.ts";
 import { pointProximityNode } from "./point-proximity.ts";
 import { pointRangeNode } from "./point-range.ts";
 import { laserPathNode } from "./laser-path.ts";
@@ -71,6 +72,7 @@ export {
 export { renderInstancesNode, INSTANCE_SHAPES } from "./render-instances.ts";
 export { renderSurfaceNode } from "./render-surface.ts";
 export { pointTopologyNode } from "./point-topology.ts";
+export { pointGatherNode } from "./point-gather.ts";
 export { pointProximityNode } from "./point-proximity.ts";
 export { pointRangeNode } from "./point-range.ts";
 export { laserPathNode } from "./laser-path.ts";
@@ -239,6 +241,7 @@ export const coreNodeDefinitions: readonly NodeDefinition[] = [
   renderInstancesNode,
   renderSurfaceNode,
   pointTopologyNode,
+  pointGatherNode,
   pointProximityNode,
   pointRangeNode,
   laserPathNode,

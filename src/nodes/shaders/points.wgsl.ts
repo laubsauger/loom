@@ -311,6 +311,11 @@ export function pointProximityWgsl(options: { neighbors: number; counted: boolea
   const liveExpression = options.counted
     ? "min(params.count, in_count[0])"
     : "params.count";
+  /* T1071: the neighbour's SLOT, written beside its position. Without it a link says
+     WHERE the neighbour is and never WHO it is, so nothing downstream can look up that
+     neighbour's colour, degree or any other attribute — which is why every consumer that
+     wanted an adjacency had to rebuild the scan. §V73's word: a slot is ADDRESSING, and
+     the address is the one thing `tip` cannot carry. */
   return `struct ProximityParams {
   count: u32,
   radius: f32,
@@ -322,6 +327,7 @@ export function pointProximityWgsl(options: { neighbors: number; counted: boolea
 ${countDeclaration}@group(0) @binding(${outBase}) var<storage, read_write> out_position: array<vec3f>;
 @group(0) @binding(${outBase + 1}) var<storage, read_write> out_tip: array<vec3f>;
 @group(0) @binding(${outBase + 2}) var<storage, read_write> out_tint: array<vec4f>;
+@group(0) @binding(${outBase + 3}) var<storage, read_write> out_neighbor: array<u32>;
 
 const K: u32 = ${k}u;
 const FAR: f32 = 1.0e30;
@@ -378,11 +384,16 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
       out_position[base] = origin;
       out_tip[base] = in_position[bestJ[s]];
       out_tint[base] = vec4f(1.0, 1.0, 1.0, alpha);
+      out_neighbor[base] = bestJ[s];
     } else {
       /* §V788: the absent link is a zero-length beam — position == tip, zero area. */
       out_position[base] = origin;
       out_tip[base] = origin;
       out_tint[base] = vec4f(0.0);
+      /* T1071: the absent link addresses ITSELF. The scan never selects j == index, so
+         neighbor == index is an EXACT, float-free presence test for a consumer — and it is
+         in range by construction, which a sentinel like 0xffffffff would not be. */
+      out_neighbor[base] = index;
     }
   }
 }`;
@@ -461,5 +472,150 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   let inside = value >= params.lo && value <= params.hi;
   let keep = inside == (params.keepInside == 1u);
   out_position[index] = select(PARKED, in_position[index], keep);
+}`;
+}
+
+/**
+ * Gather (T1071) — a REDUCTION OVER AN ADJACENCY, and it needs no scan machinery at all.
+ *
+ * ⚑ THE ARITHMETIC THAT MAKES THIS CHEAP. A link set is SOURCE-MAJOR at a FIXED stride —
+ * `pointProximity` writes point `i`'s links to slots `i*K … i*K+K-1` and nothing else ever
+ * lands there. So a point's neighbourhood is a CONTIGUOUS RUN AT A COMPUTED OFFSET, not a
+ * run that has to be FOUND. §T983's segmented-reduction machinery (Hillis-Steele scan plus
+ * serial blocks) exists for runs whose boundaries are data; here the boundary is
+ * multiplication. One thread per point, K serial steps, no atomics, no scan, no scratch,
+ * and no workgroup barrier — O(N·K) with K ≤ 8 against the O(N²) an in-kernel predicate
+ * costs. Reaching for the scan would have been a heavier answer to an easier question.
+ *
+ * ⚑ THE ABSENT LINK IS GATED BY AN INTEGER COMPARE. Proximity parks a link it did not find
+ * by pointing it at its own source (`neighbor == index`, §V788's zero-length collapse in
+ * the address domain), so `slot == index` removes it from the reduction before any load of
+ * its value: it contributes nothing AND costs nothing, which is the promise the fixed
+ * capacity is only worth keeping if this honours. Testing the STRENGTH instead would have
+ * been the plausible-wrong version (§V288) — a real link sitting exactly on the radius has
+ * alpha 0 under any falloff, and would have been dropped from an unweighted mean.
+ *
+ * ⚑ §V887, AND IT IS FREE HERE. Every output slot is written by exactly one invocation and
+ * every read is from an INPUT buffer — the source pointset's half as the edge names it, the
+ * link set's as proximity wrote it. Nothing reads what this pass writes, so there is no
+ * before/after to straddle and the answer cannot depend on the scheduler.
+ *
+ * THE EMPTY NEIGHBOURHOOD, decided rather than defaulted. `sum` and `degree` return ZERO,
+ * because an empty sum IS zero and that is exact — an unaffiliated point lands on it bit
+ * for bit. `mean`, `min` and `max` return THE POINT'S OWN VALUE, because the mean of no
+ * numbers is not zero, it is undefined, and zero is the plausible-wrong answer that reads
+ * as black. A point with no neighbours is its own neighbourhood.
+ */
+export function pointGatherWgsl(options: {
+  /** WGSL element type of the gathered source attribute. Unused when reducing to degree. */
+  attributeType: string;
+  /** WGSL element type of the emitted aggregate. */
+  outputType: string;
+  reduce: "sum" | "mean" | "min" | "max" | "degree";
+  /** Weight each link by its strength (proximity's tint alpha) rather than uniformly. */
+  weighted: boolean;
+  /** Links per point — the link set's fixed source-major stride. */
+  k: number;
+}): string {
+  const { attributeType, outputType, reduce, weighted, k } = options;
+  const degree = reduce === "degree";
+  /* The strength buffer is bound when a weight is actually read. Degree IS the weight sum,
+     so it needs it too; an unweighted min/max never touches it (§V309). */
+  const needsStrength = weighted || degree;
+  const needsAttribute = !degree;
+  let binding = 1;
+  const neighborDeclaration = `@group(0) @binding(${binding++}) var<storage, read> in_link_neighbor: array<u32>;\n`;
+  const strengthDeclaration = needsStrength
+    ? `@group(0) @binding(${binding++}) var<storage, read> in_link_strength: array<vec4f>;\n`
+    : "";
+  const attributeDeclaration = needsAttribute
+    ? `@group(0) @binding(${binding++}) var<storage, read> in_attr: array<${attributeType}>;\n`
+    : "";
+
+  const zero = ((): string => {
+    switch (outputType) {
+      case "f32":
+        return "0.0";
+      case "u32":
+        return "0u";
+      case "vec4u":
+        return "vec4u(0u)";
+      default:
+        return `${outputType}(0.0)`;
+    }
+  })();
+
+  const weightExpression = weighted ? "in_link_strength[link].a" : "1.0";
+  /* The accumulate/finish pair is the ONLY thing the reduction changes. Written as two
+     strings rather than five shader bodies so a new reduction cannot quietly diverge in
+     how it gates the absent link or how it reads a slot. */
+  const accumulate = ((): string => {
+    switch (reduce) {
+      case "degree":
+        return "";
+      case "sum":
+      case "mean":
+        return `    acc = acc + in_attr[slot] * w;`;
+      case "min":
+        return `    acc = select(min(acc, in_attr[slot]), in_attr[slot], found == 1u);`;
+      case "max":
+        return `    acc = select(max(acc, in_attr[slot]), in_attr[slot], found == 1u);`;
+    }
+  })();
+  const finish = ((): string => {
+    switch (reduce) {
+      case "degree":
+        return "  let result = wsum;";
+      case "sum":
+        return "  let result = acc;";
+      case "mean":
+        /* Divided by the WEIGHT, not by the count: a weighted mean whose normaliser is the
+           count is not a mean of anything. An all-zero weight sum falls back with the empty
+           case, because dividing by it would be a NaN wearing a value's clothes. */
+        return `  let result = select(in_attr[index], acc / wsum, found > 0u && wsum > 0.0);`;
+      case "min":
+      case "max":
+        return `  let result = select(in_attr[index], acc, found > 0u);`;
+    }
+  })();
+
+  return `struct GatherParams {
+  count: u32,
+};
+
+@group(0) @binding(0) var<uniform> params: GatherParams;
+${neighborDeclaration}${strengthDeclaration}${attributeDeclaration}@group(0) @binding(${binding}) var<storage, read_write> out_value: array<${outputType}>;
+
+/* Links per point. COMPILE-TIME, because it is the link set's stride and a different K is
+   a different program (§V62b) — reading it from a uniform would let a plan whose link set
+   was rebuilt at another K read the wrong run entirely. */
+const K: u32 = ${k}u;
+
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid: vec3u) {
+  let index = gid.x;
+  if (index >= params.count) {
+    return;
+  }
+  /* SOURCE-MAJOR, FIXED STRIDE: this point's links are the run at index * K. No search. */
+  let base = index * K;
+
+  var acc = ${zero};
+  var wsum = 0.0;
+  var found = 0u;
+  for (var s = 0u; s < K; s += 1u) {
+    let link = base + s;
+    let slot = in_link_neighbor[link];
+    /* The absent link addresses its own source (T1071). Gated here, before any load. */
+    if (slot == index) {
+      continue;
+    }
+    let w = ${weightExpression};
+    wsum = wsum + w;
+    found = found + 1u;
+${accumulate}
+  }
+${finish}
+  out_value[index] = result;
 }`;
 }

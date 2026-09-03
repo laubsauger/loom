@@ -48,6 +48,8 @@ interface Link {
   readonly x: number;
   readonly tipX: number;
   readonly alpha: number;
+  /** T1071: WHO the neighbour is, not just where — the source slot for an absent link. */
+  readonly neighbor: number;
 }
 
 async function renderLinks(
@@ -92,6 +94,7 @@ async function renderLinks(
     const positions = new Float32Array(await backend.readBuffer("scratch:prox:position"));
     const tips = new Float32Array(await backend.readBuffer("scratch:prox:tip"));
     const tints = new Float32Array(await backend.readBuffer("scratch:prox:tint"));
+    const neighbors = new Uint32Array(await backend.readBuffer("scratch:prox:neighbor"));
     const links: Link[] = [];
     // vec3f is 16-byte aligned (§V720): 4 floats per element, x in lane 0.
     for (let at = 0; at * 4 < positions.length; at += 1) {
@@ -99,6 +102,8 @@ async function renderLinks(
         x: positions[at * 4] ?? Number.NaN,
         tipX: tips[at * 4] ?? Number.NaN,
         alpha: tints[at * 4 + 3] ?? Number.NaN,
+        // u32 strides at 4 bytes, so the link index IS the element index here.
+        neighbor: neighbors[at] ?? Number.NaN,
       });
     }
     return links;
@@ -118,20 +123,36 @@ describe("Proximity links, by value (T819)", () => {
     const links = await renderLinks(line, { neighbors: 2, radius: 1.5, falloff: 0 });
     expect(links).toHaveLength(10);
 
-    const expected: Array<[number, number, number]> = [
-      // [source x, tip x, alpha] — two slots per point, scan-order ties, parked = self.
-      [-2, -1, 1], [-2, -2, 0],
-      [-1, -2, 1], [-1, 0, 1],
-      [0, -1, 1], [0, 1, 1],
-      [1, 0, 1], [1, 2, 1],
-      [2, 1, 1], [2, 2, 0],
+    // The line runs x = −2 … 2 in slot order, so the SLOT expected in each link is a fact
+    // about the fixture rather than a reading of the answer: slot = tip x + 2.
+    const expected: Array<[number, number, number, number]> = [
+      // [source x, tip x, alpha, neighbour slot] — two slots per point, scan-order ties,
+      // parked = self in BOTH senses (tip == position, neighbour == the source's own slot).
+      [-2, -1, 1, 1], [-2, -2, 0, 0],
+      [-1, -2, 1, 0], [-1, 0, 1, 2],
+      [0, -1, 1, 1], [0, 1, 1, 3],
+      [1, 0, 1, 2], [1, 2, 1, 4],
+      [2, 1, 1, 3], [2, 2, 0, 4],
     ];
-    expected.forEach(([x, tipX, alpha], at) => {
+    expected.forEach(([x, tipX, alpha, neighbor], at) => {
       const link = links[at]!;
       expect(link.x, `link ${at} source`).toBeCloseTo(x, 5);
       expect(link.tipX, `link ${at} tip`).toBeCloseTo(tipX, 5);
       expect(link.alpha, `link ${at} alpha`).toBeCloseTo(alpha, 5);
+      // T1071: exact, not close — a slot is an integer address (§V73) and "nearly slot 3"
+      // is not a thing. This is the claim that turns a picture of a graph into the graph.
+      expect(link.neighbor, `link ${at} neighbour slot`).toBe(neighbor);
     });
+
+    // AND THE SLOT AGREES WITH THE TIP, link for link — the property every gather stands
+    // on. If these two ever disagreed, a consumer following the slot would weight the
+    // right neighbour's attribute by the wrong link, silently.
+    for (const [at, link] of links.entries()) {
+      expect(link.tipX, `link ${at}: tip must be the position of slot ${link.neighbor}`).toBeCloseTo(
+        link.neighbor - 2,
+        5,
+      );
+    }
   });
 
   it("ranks two found neighbours by distance and fades by the falloff curve", async () => {
@@ -157,6 +178,10 @@ describe("Proximity links, by value (T819)", () => {
     for (const [at, link] of links.entries()) {
       expect(link.tipX, `link ${at} must be zero-length`).toBeCloseTo(link.x, 6);
       expect(link.alpha, `link ${at} must be invisible`).toBeCloseTo(0, 6);
+      // T1071: and it must address ITSELF — an absent link's slot is the SOURCE's, which
+      // is what makes `neighbor != index` an exact presence test and keeps every address a
+      // gather can follow inside the buffer. Two links per point, so slot = at / 2.
+      expect(link.neighbor, `link ${at} must address its own source slot`).toBe(Math.floor(at / 2));
     }
   });
 

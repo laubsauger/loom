@@ -243,6 +243,12 @@ export const NODE_REPRODUCIBILITY: Readonly<Record<string, Reproducibility>> = {
   // links on any device and any frame. The brute-force scan and the §V788 zero-length
   // parking are both deterministic by construction.
   pointProximity: "pure",
+  // T1071. PURE: one dispatch per point that walks its K links at a fixed source-major
+  // stride and reduces. It reads no clock, no channel and no RNG; every read is from an
+  // input buffer and every output slot is written by exactly one invocation, so the answer
+  // is order- and device-independent by construction (§V887 — nothing here can straddle a
+  // before and an after, because nothing reads what this pass writes).
+  pointGather: "pure",
   // T983. PURE: one dispatch that keeps or parks each point by an attribute range —
   // a function of the input buffers and the range uniforms, no clock, no RNG, no async.
   pointRange: "pure",

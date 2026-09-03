@@ -27,6 +27,20 @@ import { pointPairId } from "./points.ts";
  * nearer links are brighter with zero downstream work — and `radius` is the performance
  * knob: drive it from an audio band and connection density IS the music made visible.
  *
+ * T1071 — `neighbor: u32`, THE NEIGHBOUR'S SLOT, and it is why this is now an ADJACENCY
+ * rather than a drawing of one. `tip` says WHERE the neighbour is; nothing downstream could
+ * say WHO it is, so no consumer could look up that neighbour's colour, degree, or any other
+ * attribute, and every operator that wanted the graph rebuilt the scan in its own kernel —
+ * §V865's shape, two answers to one question. With the slot on the link, `pointGather`
+ * follows it into the source pointset and the drawn filaments and the computed edges are
+ * ONE set. §V73: a slot is ADDRESSING, never identity — a consumer must read the pointset
+ * that produced these links, not one that merely has the same capacity.
+ *
+ * ⚠ THE ABSENT LINK ADDRESSES ITSELF (`neighbor == source slot`). The scan never selects
+ * `j == index`, so that is an EXACT presence test with no float compare — and unlike a
+ * sentinel it is in range by construction, so a consumer that forgets to test it reads a
+ * real point rather than off the end of a buffer.
+ *
  * The algorithm and its refused alternative are documented on the shader
  * (`pointProximityWgsl`): brute force to the supported envelope of 4096 points, spatial
  * hash declined by name until a measured need.
@@ -41,10 +55,11 @@ const PROXIMITY_OUT = {
       { name: "position", type: "vec3f" as const },
       { name: "tip", type: "vec3f" as const },
       { name: "tint", type: "vec4f" as const },
+      { name: "neighbor", type: "u32" as const },
     ],
   },
   description:
-    "One link per (point, neighbour) slot: position = the source, tip = the neighbour, tint.a = strength (1 at contact, 0 at the radius). Absent links are zero-length and invisible. Draw with geometry mode Beam, endpoint tip, and render tint in Map mode.",
+    "One link per (point, neighbour) slot: position = the source, tip = the neighbour, tint.a = strength (1 at contact, 0 at the radius), neighbor = the neighbour's SLOT. Absent links are zero-length, invisible, and address themselves. Draw with geometry mode Beam, endpoint tip, and render tint in Map mode; gather over it with Gather.",
 };
 
 export const pointProximityNode: NodeDefinition = {
@@ -140,6 +155,7 @@ export const pointProximityNode: NodeDefinition = {
         { binding: "out_position", resourceId: pointPairId(nodeId, "position"), half: "write" },
         { binding: "out_tip", resourceId: pointPairId(nodeId, "tip"), half: "write" },
         { binding: "out_tint", resourceId: pointPairId(nodeId, "tint"), half: "write" },
+        { binding: "out_neighbor", resourceId: pointPairId(nodeId, "neighbor"), half: "write" },
       ],
       uniforms: {
         count,
@@ -156,6 +172,7 @@ export const pointProximityNode: NodeDefinition = {
         { key: "position", kind: "bufferPair", stride: ATTRIBUTE_STRIDES["vec3f"], capacity },
         { key: "tip", kind: "bufferPair", stride: ATTRIBUTE_STRIDES["vec3f"], capacity },
         { key: "tint", kind: "bufferPair", stride: ATTRIBUTE_STRIDES["vec4f"], capacity },
+        { key: "neighbor", kind: "bufferPair", stride: ATTRIBUTE_STRIDES["u32"], capacity },
       ],
       pointsets: {
         out: {
@@ -163,6 +180,7 @@ export const pointProximityNode: NodeDefinition = {
             position: { pair: pointPairId(nodeId, "position"), half: "write" as const, type: "vec3f" },
             tip: { pair: pointPairId(nodeId, "tip"), half: "write" as const, type: "vec3f" },
             tint: { pair: pointPairId(nodeId, "tint"), half: "write" as const, type: "vec4f" },
+            neighbor: { pair: pointPairId(nodeId, "neighbor"), half: "write" as const, type: "u32" },
           },
           capacity,
           // Links are a bag of segments; claiming a grid would let a mesh span them.
