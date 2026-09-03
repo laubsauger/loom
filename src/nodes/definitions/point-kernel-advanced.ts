@@ -18,6 +18,7 @@ import {
 import { DEFAULT_POINT_KERNEL } from "../shaders/points.wgsl.ts";
 import { readCompileInputs } from "./compile-context.ts";
 import { RGBA_TEXTURE } from "./common-ports.ts";
+import { codeParametersLast } from "../../domain/parameters/code.ts";
 import { readNumber } from "./parameter-readers.ts";
 import {
   kernelBodyOf,
@@ -98,7 +99,8 @@ export const pointKernelAdvancedNode: NodeDefinition = {
       type: { kind: "pointset", requires: [{ name: "position", type: "vec3f" }] },
     },
   ],
-  parameters: {
+  /** T1052: code LAST — see `codeParametersLast`. Order within each half is as declared. */
+  parameters: codeParametersLast({
     capacity: {
       type: "number",
       label: "Capacity",
@@ -150,7 +152,7 @@ export const pointKernelAdvancedNode: NodeDefinition = {
     // T479/T900: the legacy slots stay in the STATIC schema for type-only contexts; a placed
     // node's slots come from `parametersFor` below — parse forever, emit never.
     ...pointKernelValueParameters(["kernel", "group", "spawn"]),
-  },
+  }),
   /**
    * T900: same reflection, same reflector, same split as the plain kernel — this node's
    * controls are its kernel's own `struct Params`, and the spawn hook reads them through the
@@ -159,11 +161,12 @@ export const pointKernelAdvancedNode: NodeDefinition = {
    */
   parametersFor(stored) {
     const own = structuralParameters(pointKernelAdvancedNode.parameters);
-    return {
+    // T1052: code LAST — kernel, group, spawn and the attribute schema sort below the knobs.
+    return codeParametersLast({
       ...own,
       ...kernelParamSchema(kernelParamsFor(stored).fields, new Set(Object.keys(own))),
       ...legacyValueParametersFor(["kernel", "group", "spawn"], stored),
-    };
+    });
   },
   stateful: { reset: true, deterministicReplay: true, checkpoint: false, randomAccess: false },
   contractVersion: ADVANCED_KERNEL_CONTRACT_VERSION,

@@ -21,6 +21,7 @@ import { drawArgsWgsl } from "../../points/lifecycle.ts";
 import { DEFAULT_POINT_KERNEL, SPRITE_RENDER_WGSL, TEXTURE_TO_ATTRIBUTE_WGSL, pointRayWgsl, spriteRenderWgsl } from "../shaders/points.wgsl.ts";
 import { RGBA_TEXTURE } from "./common-ports.ts";
 import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
+import { codeParametersLast } from "../../domain/parameters/code.ts";
 import { readColor, readNumber } from "./parameter-readers.ts";
 import {
   extractParamsStruct,
@@ -376,7 +377,12 @@ export const pointKernelNode: NodeDefinition = {
       description: "The simulated point set. position:vec3f is guaranteed; other attributes follow the schema.",
     },
   ],
-  parameters: {
+  /**
+   * T1052: `codeParametersLast` is the manifest declaring that the text editors sort BELOW
+   * everything else — the same rule the reflected schema below applies to the knobs read out
+   * of the kernel. Declaration order is preserved within each half.
+   */
+  parameters: codeParametersLast({
     capacity: {
       type: "number",
       label: "Capacity",
@@ -426,7 +432,7 @@ export const pointKernelNode: NodeDefinition = {
     // `parametersFor` below and appear only when read or already stored — parse forever,
     // emit never.
     ...pointKernelValueParameters(["kernel", "group"]),
-  },
+  }),
   /**
    * T900 (§V805, §T880's design rather than its shortcut): this node's controls ARE its
    * kernel's own `struct Params`, reflected by the shared reflector `customWgsl` uses. Declare
@@ -440,11 +446,13 @@ export const pointKernelNode: NodeDefinition = {
    */
   parametersFor(stored) {
     const own = structuralParameters(pointKernelNode.parameters);
-    return {
+    // T1052: code LAST — the reflected knobs and the legacy slots sit above the kernel text
+    // they were read out of, so nothing worth turning is below a screenful of WGSL.
+    return codeParametersLast({
       ...own,
       ...kernelParamSchema(kernelParamsFor(stored).fields, new Set(Object.keys(own))),
       ...legacyValueParametersFor(["kernel", "group"], stored),
-    };
+    });
   },
   stateful: { reset: true, deterministicReplay: true, checkpoint: false, randomAccess: false },
   contractVersion: POINT_KERNEL_CONTRACT_VERSION,

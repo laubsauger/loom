@@ -1,6 +1,7 @@
 import type { NodeDefinition, CompiledNodeDescription } from "../../domain/types/node-definition.ts";
 import type { EffectPassDescriptor } from "../../runtime/backend/plan.ts";
 import { SHADER_SOURCE_PARAMETER } from "../../domain/commands/apply-patch.ts";
+import { codeParametersLast } from "../../domain/parameters/code.ts";
 import { RGBA_TEXTURE } from "./common-ports.ts";
 import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
 import {
@@ -69,7 +70,14 @@ const SOURCE_PARAM: ParameterDefinition = {
   compileTime: true,
 };
 
-/** The schema a customWgsl node carries, reflected from its own `source` (T880). */
+/**
+ * The schema a customWgsl node carries, reflected from its own `source` (T880).
+ *
+ * T1052: the reflected knobs sort ABOVE the editor they were read out of — the source pane
+ * is the last thing on the node, so the controls the reflection exists to give you are not
+ * below a screenful of WGSL. `codeParametersLast` is the manifest saying so; the inspector
+ * still renders plain manifest order.
+ */
 function reflectedSchema(source: string): ParameterSchema {
   const schema: ParameterSchema = { [SHADER_SOURCE_PARAMETER]: SOURCE_PARAM };
   if (declaresUniformBlock(source, CUSTOM_WGSL_UNIFORM_BINDING)) {
@@ -78,7 +86,7 @@ function reflectedSchema(source: string): ParameterSchema {
       if (param !== undefined) schema[field.name] = param;
     }
   }
-  return schema;
+  return codeParametersLast(schema);
 }
 
 export const customWgslNode: NodeDefinition = {
@@ -94,7 +102,7 @@ export const customWgslNode: NodeDefinition = {
    * see — the source editor and the historical `amount`. A placed node's real controls come
    * from `parametersFor` below, reflected from its own shader.
    */
-  parameters: {
+  parameters: codeParametersLast({
     [SHADER_SOURCE_PARAMETER]: SOURCE_PARAM,
     amount: {
       type: "number",
@@ -105,7 +113,7 @@ export const customWgslNode: NodeDefinition = {
       range: "bounded",
       description: "Reaches the kernel as `params.amount`. Whatever your shader makes of it.",
     },
-  },
+  }),
   /**
    * PER-INSTANCE reflection (T880, §V805): the node's controls ARE its shader's `struct
    * Params`. Declare `orbitSpeed: f32` or `lightColor: vec4f` and the knob appears — named,

@@ -160,6 +160,22 @@ const RAW_SCHEMA_READS: Readonly<Record<string, { readonly reason: string; reado
     reason: CATALOGUE_AUDIT,
     reads: ["definition.parameters", "definition.parameters", "definition.parameters", "lfoNode.parameters"],
   },
+  "src/tests/guardrails/code-parameter-order.test.ts": {
+    reason:
+      `${CATALOGUE_AUDIT} §T1052 derives the set of node types that DECLARE a code parameter ` +
+      "from `allNodeDefinitions` rather than listing the two anybody would name (§V316), so " +
+      "the subject of the audit is a property of the manifests. It then reads `parametersFor` " +
+      `directly for the reflected half — ${HOOK_UNDER_TEST}`,
+    reads: [
+      "definition.parameters",
+      "definition.parameters",
+      "definition.parameters",
+      "definition.parameters",
+      "definition.parameters",
+      "definition.parameters",
+      "definition.parametersFor",
+    ],
+  },
   "src/nodes/definitions/index.test.ts": {
     reason: CATALOGUE_AUDIT,
     reads: ["definition.parameters", "definition.parameters", "definition.parameters", "text.parameters"],

@@ -64,4 +64,4 @@ export type {
 } from "./resolve.ts";
 export { createNodeReferenceReader } from "./node-references.ts";
 export type { NodeReferenceOptions } from "./node-references.ts";
-export { codeParametersOf } from "./code.ts";
+export { codeParametersLast, codeParametersOf } from "./code.ts";
