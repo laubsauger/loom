@@ -7,7 +7,7 @@ import type { ParameterValue } from "@domain/types/parameters.ts";
 import type { ChannelResolver } from "@domain/parameters/resolve.ts";
 import { isSilencedSource } from "@domain/graph/bypass.ts";
 import { resolveParameters } from "@domain/parameters/index.ts";
-import { mediaSourceIdFor } from "@nodes/definitions/index.ts";
+import { mediaNodeDefinitions, mediaSourceIdFor } from "@nodes/definitions/index.ts";
 import type { NodeRegistryView } from "@nodes/registry/registry.ts";
 import type { LoomBackend } from "@runtime/backend/index.ts";
 import type { AppRuntime } from "./app-runtime.ts";
@@ -80,7 +80,16 @@ export interface MediaEnvironment {
   createTextSource?(): TextMediaSource;
 }
 
-const MEDIA_TYPES = new Set(["movieFileIn", "webcam", "text"]);
+/**
+ * §V453/§V316, as a DERIVATION rather than a hand list — `hasMediaTransport`'s rule,
+ * applied to the set that names the nodes rather than the one that classifies them.
+ *
+ * It read `["movieFileIn", "webcam", "text"]`, which was the same three by coincidence of
+ * nobody having added a fourth. Media node N+1 is now a capture candidate by construction,
+ * or it fails the mute gate in `media-mute.test.tsx`, instead of rendering nothing while
+ * this hook silently skips a type it was never told about.
+ */
+const MEDIA_TYPES = new Set(mediaNodeDefinitions.map((definition) => definition.type));
 
 interface MediaRequest {
   readonly nodeId: NodeId;
