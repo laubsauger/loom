@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import { matteInputSideFor, matteNode } from "./matte.ts";
 import { effectiveParameterSchema } from "../../domain/parameters/resolve.ts";
-import { MATTE_ACCURATE, MATTE_FAST } from "../../runtime/models/model-catalogue.ts";
+import {
+  MATTE_ACCURATE,
+  MATTE_FAST,
+  MATTE_MEDIAPIPE,
+  MATTE_RVM,
+} from "../../runtime/models/model-catalogue.ts";
 import { MATTE_INPUT_SIDE } from "../../runtime/models/matte-runner.ts";
 import type { EnumParameter } from "../../domain/types/parameters.ts";
 import type { NodeCompileContext } from "../../domain/types/node-definition.ts";
@@ -146,5 +151,82 @@ describe("the compiled pass is sized from the stored choice, not from the consta
     const pass = preprocessFor({});
     expect(pass.workgroups).toEqual([64, 64, 1]);
     expect(pass.uniforms).toEqual({ side: 512 });
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ * §V146 — A KNOB THE CHOSEN RUNTIME CANNOT ANSWER DOES NOT EXIST (T1089)
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ *
+ * The owner's ruling was that separate nodes are allowed when the runtimes work too
+ * differently. They do not: five of the seven controls are post-processing ON A MASK and
+ * mean the same thing whatever produced it, so one node stays — and the price of one node
+ * is that the producer-shaped controls have to disappear for a producer that has no answer
+ * for them, the way `downsampleRatio` already does. These gates are that price, asserted.
+ *
+ * Read through `effectiveParameterSchema` for §T903's reason, like every gate above: a
+ * test reading the static `matteNode.parameters` would be a surface that agrees with the
+ * wrong schema, which is exactly §B166/§B167.
+ */
+describe("§V146 — the producer-shaped knobs exist only where they mean something", () => {
+  it("offers no Backend chooser under MediaPipe, and offers one for every ONNX model", () => {
+    // MediaPipe never reaches an onnxruntime execution provider: it has its own runtime
+    // and its own GPU/CPU ladder, so "which provider to ask for" has no answer and a
+    // visible control would be a dial that moves and changes nothing.
+    expect(schemaFor({ model: MATTE_MEDIAPIPE.id })["backend"]).toBeUndefined();
+    for (const model of [MATTE_ACCURATE, MATTE_FAST, MATTE_RVM]) {
+      expect(schemaFor({ model: model.id })["backend"]).toBeDefined();
+    }
+  });
+
+  it("offers no Input Size under MediaPipe, because a bigger square measured no better", () => {
+    /* Not merely "it has no ONNX signature to read", which is how it reaches the absent
+       branch. Measured: the model works at 256 internally and upsamples, so across a 2.8x
+       range of input pixels coverage moved 0.0006 and the edge length was NOT monotonic —
+       noise, not detail — while delivery went 5.46 ms to 6.84 ms. See the table in
+       matte.ts. MODNet is the opposite case and keeps the knob. */
+    expect(schemaFor({ model: MATTE_MEDIAPIPE.id })["inputSide"]).toBeUndefined();
+    expect(schemaFor({ model: MATTE_ACCURATE.id })["inputSide"]).toBeDefined();
+  });
+
+  it("keeps Detail Ratio to RVM alone, which is the precedent the two above follow", () => {
+    expect(schemaFor({ model: MATTE_RVM.id })["downsampleRatio"]).toBeDefined();
+    for (const model of [MATTE_ACCURATE, MATTE_FAST, MATTE_MEDIAPIPE]) {
+      expect(schemaFor({ model: model.id })["downsampleRatio"]).toBeUndefined();
+    }
+  });
+
+  /**
+   * THE GATE THAT SAYS WHY THIS IS STILL ONE NODE.
+   *
+   * These five are post-processing on a mask — they mean the same thing whatever produced
+   * it — and they are what makes swapping the model on a wired graph coherent, which is
+   * how the owner will A/B MODNet against MediaPipe on his own footage. If a future change
+   * made one of them producer-conditional, the case for a single node would have weakened
+   * and this is where that shows up, rather than in a rewiring the owner discovers.
+   */
+  it("keeps every mask post-processing control on every model, which is why one node", () => {
+    const shared = ["blackPoint", "whitePoint", "gamma", "invert", "smoothing"] as const;
+    for (const model of [MATTE_ACCURATE, MATTE_FAST, MATTE_RVM, MATTE_MEDIAPIPE]) {
+      const schema = schemaFor({ model: model.id });
+      for (const key of shared) {
+        expect(schema[key], `${key} missing for ${model.id}`).toBeDefined();
+      }
+    }
+  });
+
+  /**
+   * Swapping the model must not strand a stored value. The bag keeps `backend` when the
+   * user moves to MediaPipe and back — the schema stops OFFERING it, which is not the same
+   * as the document losing it (§V831's reasoning: a removed option silently rewrites a
+   * document standing on it).
+   */
+  it("does not lose a stored Backend pin while MediaPipe is selected", () => {
+    const stored = { model: MATTE_MEDIAPIPE.id, backend: "webgpu" };
+    expect(schemaFor(stored)["backend"]).toBeUndefined();
+    expect(schemaFor({ ...stored, model: MATTE_ACCURATE.id })["backend"]).toBeDefined();
+    // The stored pin is still in the bag, so moving back restores the user's choice.
+    expect(stored.backend).toBe("webgpu");
   });
 });

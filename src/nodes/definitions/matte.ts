@@ -4,7 +4,13 @@ import { RGBA_TEXTURE } from "./common-ports.ts";
 import { readCompileInputs } from "./compile-context.ts";
 import { scratchResourceId } from "../../compiler/resources.ts";
 import { inferenceSourceIdFor } from "../../runtime/execution/inference-sources.ts";
-import { MATTE_ACCURATE, MATTE_FAST, MATTE_MODELS, MATTE_RVM } from "../../runtime/models/model-catalogue.ts";
+import {
+  isMediaPipeMatte,
+  MATTE_ACCURATE,
+  MATTE_FAST,
+  MATTE_MODELS,
+  MATTE_RVM,
+} from "../../runtime/models/model-catalogue.ts";
 import type { ModelDescriptor } from "../../runtime/models/model-acquisition.ts";
 import { MATTE_INPUT_SIDE } from "../../runtime/models/matte-runner.ts";
 import {
@@ -449,6 +455,28 @@ function matteParameters(stored: Readonly<Record<string, unknown>>) {
    * signature rather than from an assumption. Both MODNet builds leave height and width
    * symbolic today; a future matte model that pins them gets no control instead of one
    * that fails at run time.
+   *
+   * T1089 — MediaPipe lands on the "does not" side, and it earns that by MEASUREMENT
+   * rather than by having no ONNX signature to read (which is how it gets here).
+   * The table at the top of this file makes the MODNet case for the knob: its detail is
+   * really computed and really paid for, and "a 512 matte resampled down to 256 is not
+   * the 256 matte (mean |Δα| 0.048)". MediaPipe is the opposite — it works at 256²
+   * INTERNALLY and upsamples to whatever square it was fed. Measured 2026-09-03, one
+   * frame fed at four sides, every mask resampled to a common 512² output the way
+   * `matteToFloats` does:
+   *
+   *   fed    coverage   intermediate   edge length   vs fed 512² (IoU@0.5)
+   *   256²   0.15465    0.01756        1780          0.98878
+   *   384²   0.15502    0.02299        1744          0.98675
+   *   512²   0.15491    0.02324        1727          reference
+   *   720²   0.15442    0.02161        1761          0.98339
+   *
+   * Coverage is flat across a 2.8x range of input pixels (spread 0.0006), and the edge
+   * length — a detail proxy — is NOT MONOTONIC: it falls to 512 and rises again at 720,
+   * which is resampling noise rather than detail appearing. The delivered mattes differ
+   * by mean |Δ| ~0.003. So a bigger square buys nothing and costs delivery (measured
+   * 5.46 ms at 256² against 6.84 ms at 720²) — a control that only takes, which is the
+   * same §V146 shape as the Backend chooser below.
    */
   const inputSide = inferenceAcceptsInputSize(modelId)
     ? {
@@ -478,6 +506,24 @@ function matteParameters(stored: Readonly<Record<string, unknown>>) {
         },
       }
     : {};
+  /*
+   * §V146/§T965(c) again, on the BACKEND chooser — the same rule as `downsampleRatio`
+   * above, applied to the knob T1088 left behind (T1089).
+   *
+   * "Which execution provider to ask onnxruntime for" is a question with no answer under
+   * MediaPipe: it is a different runtime that never reaches an execution provider, picks
+   * GPU-then-CPU on its own ladder, and would ignore a pin. Leaving it visible made it
+   * exactly the control-that-does-nothing this rule exists for, and the first version of
+   * this shipped a SENTENCE saying so instead — which is the greyed-out option wearing
+   * prose, and still leaves the user a dial that moves and changes nothing.
+   *
+   * What it ACTUALLY ran on is unaffected and still answered: the node's info popup reads
+   * the delegate that really opened (`mediapipe-gpu` / `mediapipe-cpu`), which is the
+   * readout half this control was never the request half of.
+   */
+  const backend = isMediaPipeMatte(modelId)
+    ? {}
+    : { backend: inferenceBackendSchema(stored, descriptor) };
   return {
     ...inputSide,
     ...downsampleRatio,
@@ -486,17 +532,19 @@ function matteParameters(stored: Readonly<Record<string, unknown>>) {
         "Which matting model runs. Three of them are ONNX models that differ in kind " +
         "rather than in degree; the fourth, MediaPipe, is a different runtime and is " +
         "described last. MODNet full precision is the reliable default: measured, it finds the " +
-        "same subject in the same place from a bright frame down to a very dark one, and " +
-        "it is the only one of the three the GPU provider can execute at all, measured at 30 ms there. " +
+        "same subject in the same place from a bright frame down to a very dark one, and the " +
+        "GPU provider executes it at a measured 30 ms. " +
         "MODNet quantized is a quarter of the download and NOT faster, and below about a " +
         "fifth brightness it collapses to a fortieth of the coverage in the wrong part of " +
         "the frame — pictures reach this node in linear light, which is dimmer than it " +
         "looks, so prefer full precision unless the download is the binding constraint. " +
         "Robust Video Matting is the one built for VIDEO: it carries what it saw last " +
         "frame in a recurrent state, which measured 1.75x steadier than the same model " +
-        "run frame-by-frame, and it needs no temporal smoothing of its own. It is not the " +
-        "fast one — the GPU provider cannot execute it at all, so the CPU is its floor: 172 ms " +
-        "on a single wasm thread against MODNet's 30 ms on the GPU provider — and its " +
+        "run frame-by-frame, and it needs no temporal smoothing of its own. It reaches the GPU " +
+        "provider too, where its five Detail Ratio settings measured 12-36 ms, so against " +
+        "MODNet there it is roughly a wash and the choice between them is about character " +
+        "rather than speed; 172 ms on a single wasm thread is the floor a machine without " +
+        "WebGPU pays. Its " +
         "weights are " +
         "GPL-3.0, downloaded by your " +
         "browser rather than shipped with the app. " +
@@ -504,8 +552,9 @@ function matteParameters(stored: Readonly<Record<string, unknown>>) {
         "model doing a smaller job: measured on this machine it is 3.7 ms of inference and " +
         "about 6 ms by the time the matte is on the GPU, flat from a 256 to a 720 square, " +
         "against 30 ms for MODNet and 20 ms for Robust Video Matting. It runs on its own " +
-        "runtime rather than the one the Backend setting selects, so that setting does not " +
-        "apply to it; it picks its own GPU path and falls back on its own. What you trade " +
+        "runtime rather than an onnxruntime execution provider, so this node offers no Backend " +
+        "chooser while it is selected — it picks its own GPU path and falls back on its own, " +
+        "and the node's info popup reports which one actually opened. What you trade " +
         "is not softness — measured on the same frame it leaves MORE of a gradient at the " +
         "edge than MODNet does, not less — but FINE DETAIL: MODNet resolves individual " +
         "hair strands that this rounds off. What you gain besides speed is REJECTION: on " +
@@ -609,7 +658,7 @@ function matteParameters(stored: Readonly<Record<string, unknown>>) {
         "background replacement wants about as often as the subject itself. Applied last, " +
         "after the levels, so the points still mean what they say about the subject.",
     },
-    backend: inferenceBackendSchema(stored, descriptor),
+    ...backend,
     reset: inferenceResetSchema(),
   };
 }

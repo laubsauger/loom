@@ -728,6 +728,15 @@ export function useModelInference(
     // would leave the one state nothing else can clear.
     workerRef.current?.dispose();
     workerRef.current = null;
+    /* T1089 — the OTHER runtime's session, dropped for the same reason and on the same
+       terms. This command's own description promises "model sessions", and MediaPipe's
+       segmenter is one: a wasm instance holding a GL context, which can be wedged by a
+       lost context exactly the way a wedged worker can, and which nothing else clears.
+       Leaving it would have made Reset a button that half-lies — §V123's shape, in the
+       command that exists to recover from wedged state. Unconditional for the worker's
+       reason verbatim: it is shared, so it is not a per-node fact. */
+    mediaPipeRef.current?.dispose();
+    mediaPipeRef.current = null;
     for (const target of hit) {
       sources.reset(target.nodeId);
       // Re-READ the cache (never the network): a failed download whose bytes are actually
