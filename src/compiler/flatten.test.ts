@@ -869,3 +869,52 @@ describe("published colour space through a flattening (§V56, B8)", () => {
     expect(filledWith(compiled)?.[0]).not.toBeCloseTo(MID_GREY_TWICE, 4);
   });
 });
+
+/**
+ * T1030 — MUTE AND BYPASS ON AN INSTANCE SURVIVE FLATTENING. Inlining dissolves the
+ * instance node, and its ui flags dissolved with it — so muting a whole component
+ * changed nothing (owner-reported against E51's TimeGrid). A flagged instance is now
+ * NOT inlined: the node stays, carrying its flags, and the compiler's ONE mute/bypass
+ * splice treats it as it treats every node — no component-shaped second copy of that
+ * rule to drift (§V109).
+ */
+describe("mute and bypass on a component instance (T1030)", () => {
+  it("a MUTED instance contributes nothing: no interior, and downstream reads unconnected", () => {
+    const compiled = compileWith(
+      [bloom()],
+      chain([instance("c1", "bloom", 1, { ui: { muted: true } } as never)]),
+    );
+    // The interior never entered the plan — not compiled-and-discarded, never minted.
+    expect(compiled.order.filter((id) => id.startsWith("c1/"))).toEqual([]);
+    expect(compiled.order).not.toContain("c1");
+    // Downstream honestly reads its port as unconnected — the same consequence muting
+    // any other mid-chain producer has (§V504's rule, reached through the same splice).
+    expect(
+      compiled.diagnostics.some(
+        (d) => d.nodeId === "out" || d.message.includes('"out"'),
+      ),
+    ).toBe(true);
+    // And the synthesized manifest's "notFlattened" tripwire never fires: the splice
+    // removed the node before anything tried to compile it.
+    expect(compiled.diagnostics.map((d) => d.code)).not.toContain("component.notFlattened");
+  });
+
+  it("a BYPASSED instance passes its input through — downstream reads the outer source", () => {
+    const compiled = compileWith(
+      [bloom()],
+      chain([instance("c1", "bloom", 1, { ui: { bypassed: true } } as never)]),
+    );
+    expect(compiled.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    expect(compiled.order.filter((id) => id.startsWith("c1/"))).toEqual([]);
+    // The splice's passthrough: out consumes gen directly, the whole interior skipped.
+    const output = passFor(compiled, "out");
+    expect(output?.textures?.[0]?.resourceId).toBe("target:gen:out");
+  });
+
+  it("an UNFLAGGED instance still inlines exactly as before — the guard is inert at rest", () => {
+    const compiled = compileWith([bloom()], chain([instance("c1", "bloom", 1)]));
+    expect(compiled.order).toContain("c1/blurA");
+    expect(compiled.order).not.toContain("c1");
+    expect(compiled.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+  });
+});

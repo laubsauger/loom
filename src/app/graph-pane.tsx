@@ -216,6 +216,11 @@ function GraphPaneInner({
 
   // T463: nodes flagged as GRAPH BACKGROUND render behind the patch, dimmed — the
   // preview machinery on a second canvas one z-layer down (see use-graph-background).
+  /* T1019/T1029 — ONE spelling of the pane's flat prefix, shared by the texture
+     preview hook and the value plots: the canvas speaks inner ids, everything keyed
+     off the compiled/flattened document speaks prefixed ones. */
+  const flatPrefix = (componentPath ?? []).join("/");
+
   useGraphBackground({
     backend: previewBackend,
     canvasRef: backgroundCanvasRef,
@@ -236,7 +241,7 @@ function GraphPaneInner({
     /* T1019 — inside a component the canvas shows INNER ids while the compiled plan
        holds FLATTENED ones; the dived instance chain is exactly flatten's prefix, so
        the preview hook can address the rows the compiler actually minted. */
-    flatPrefix: (componentPath ?? []).join("/"),
+    flatPrefix,
     registry,
     compiledOutputs,
     nodeRuntime,
@@ -481,8 +486,18 @@ function GraphPaneInner({
             : node?.ui?.bypassed === true && bypassPassthroughPorts(definition) === undefined
               ? "bypassed"
               : null;
+        /*
+         * T1029 — the history is keyed by FLAT id (T615 pushes `wall/churnx`; its own
+         * comment says "the flat document is what brings a value node inside a
+         * component into the window at all") but this read used the CANVAS id, so
+         * every value plot inside a dived component subscribed to a ring nobody
+         * writes — "VALUE —" over an empty plot while the signal ran. The write half
+         * shipped without its read half: the value-system twin of T1019's texture fix,
+         * same seam, same identity-at-root property (prefix "" changes nothing).
+         */
+        const historyId = (flatPrefix === "" ? nodeId : `${flatPrefix}/${nodeId}`) as NodeId;
         return (
-          <ValuePlot nodeId={nodeId} history={valueHistory} source={source} silence={silence} />
+          <ValuePlot nodeId={historyId} history={valueHistory} source={source} silence={silence} />
         );
       }
       const orbitable = orbitableNodes.has(nodeId);
@@ -498,7 +513,7 @@ function GraphPaneInner({
         />
       );
     },
-    [cameraGizmoNodes, cameraGizmos, nodeRuntime, orbitableNodes, previewBounds, previewOrbits, previewViews, readCameraPose, registry, settings, valueHistory],
+    [cameraGizmoNodes, cameraGizmos, flatPrefix, nodeRuntime, orbitableNodes, previewBounds, previewOrbits, previewViews, readCameraPose, registry, settings, valueHistory],
   );
 
   const dispatch = useCallback(

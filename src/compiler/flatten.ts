@@ -122,7 +122,9 @@ export interface FlattenRequest {
 }
 
 export interface FlattenedGraph {
-  /** The parent logical graph with every instance inlined. No component types remain. */
+  /** The parent logical graph with every instance inlined. No component types remain —
+   *  except a MUTED or BYPASSED instance, kept whole so the compiler's splice can see
+   *  its flags (T1030); the splice removes it before any node compiles. */
   readonly graph: GraphDocument;
   /** Flattened node id -> where it came from, sorted by id. */
   readonly sources: ReadonlyMap<NodeId, ComponentSource>;
@@ -550,6 +552,27 @@ export function flattenComponents(request: FlattenRequest): FlattenedGraph {
           ),
           flatId,
         );
+        addNode(resolved, flatId);
+        recordSource(flatId, input.path, node, node.label ?? nodeId);
+        continue;
+      }
+
+      if (node.ui?.muted === true || node.ui?.bypassed === true) {
+        /*
+         * T1030 — MUTE AND BYPASS ON AN INSTANCE MUST SURVIVE FLATTENING. Inlining
+         * dissolves the instance node, and its ui flags dissolved with it — so muting
+         * a component changed nothing (owner-reported: "if I bypass and mute that
+         * whole component, that somehow doesn't change the output"). A muted or
+         * bypassed instance is therefore NOT inlined: the node stays, carrying its
+         * flags, and the compiler's ONE mute/bypass splice treats it exactly as any
+         * other node (§V109 — a second component-shaped copy of that rule here would
+         * drift). A muted instance's whole interior then costs nothing (the splice
+         * removes the node before compile, so the synthesized manifest's
+         * "notFlattened" error can never fire); a bypassed one passes its input
+         * through when the boundary types are coherent, by the same
+         * bypassPassthroughPorts rule every node answers to — and an incoherent
+         * bypass mutes, exactly as it does on a plain node.
+         */
         addNode(resolved, flatId);
         recordSource(flatId, input.path, node, node.label ?? nodeId);
         continue;
