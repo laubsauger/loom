@@ -229,6 +229,35 @@ export type LaserOutcome =
   /** Refused or failed, with the sentence a human acts on (§V288/§V365). */
   | { readonly ok: false; readonly reason: string; readonly state: LaserStateReport };
 
+/**
+ * T1029 — one segmentation request: the page's picture, the helper's mask.
+ *
+ * Pixels cross as BASE64, not a number array: a 640×360 RGBA frame is ~900 KB raw and a
+ * JSON number array multiplies that ~5×, while base64 costs 4/3 — measured against the
+ * laser's flat-array precedent, whose frames are three orders smaller (~5 KB). The mask
+ * comes back the same way. Vision picks its own mask size (aspect-preserving, ~512 on
+ * the long side), so the reply carries the dimensions it chose rather than echoing the
+ * request's.
+ */
+export interface VisionSegmentRequest {
+  readonly width: number;
+  readonly height: number;
+  /** RGBA8, row-major, base64. */
+  readonly rgbaBase64: string;
+}
+
+export type VisionOutcome =
+  | {
+      readonly ok: true;
+      readonly maskWidth: number;
+      readonly maskHeight: number;
+      /** One byte per pixel, 0..255 person confidence, base64. */
+      readonly maskBase64: string;
+      /** Helper-side wall time for the segmentation, ms. Telemetry only. */
+      readonly millis: number;
+    }
+  | { readonly ok: false; readonly reason: string };
+
 /** PAGE → HOST, device role. Requests carry `id`; `deviceAck` is not a request. */
 export type DeviceClientMessage =
   | { readonly type: "deviceAttach"; readonly code: string; readonly client: string }
@@ -242,6 +271,9 @@ export type DeviceClientMessage =
     }
   /** T950: one laser command, one owed reply. The helper vets and executes. */
   | { readonly type: "deviceLaser"; readonly id: number; readonly command: LaserCommand }
+  /** T1029: one picture in, one owed mask (or refusal) back. Request/response fits —
+   *  every ask has exactly one answer and nothing about a mask is unsolicited. */
+  | { readonly type: "deviceVision"; readonly id: number; readonly request: VisionSegmentRequest }
   /** Flow control. No `id`, no reply; a `coalesce` stream accepts and ignores it. */
   | { readonly type: "deviceAck"; readonly stream: string; readonly seq: number };
 
@@ -259,6 +291,7 @@ export type DeviceHostMessage =
   | { readonly type: "deviceRefused"; readonly id: number; readonly reason: string }
   | { readonly type: "deviceSendResult"; readonly id: number; readonly outcome: OscSendOutcome }
   | { readonly type: "deviceLaserResult"; readonly id: number; readonly outcome: LaserOutcome }
+  | { readonly type: "deviceVisionResult"; readonly id: number; readonly outcome: VisionOutcome }
   /** PUSH. Unsolicited, no `id`, nothing waits for it. */
   | {
       readonly type: "deviceEvents";

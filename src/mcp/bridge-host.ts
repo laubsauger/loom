@@ -211,6 +211,13 @@ export interface BridgeHostOptions {
    * e-stops the DAC on the helper's own clock before anything else happens.
    */
   readonly laser?: import("./laser-host.ts").LaserHost;
+  /**
+   * T1029 — the vision door, present only when the helper was built with one. One
+   * picture in, one owed mask back; absent, the refusal names what is missing. Disposed
+   * with the device client (`releaseDevice`), so a dead page never keeps a child
+   * process warm for nobody.
+   */
+  readonly vision?: import("./vision-host.ts").VisionHost;
 }
 
 /**
@@ -436,6 +443,9 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
     // was live, so a closed tab never leaves a beam. Unconditional and first-class,
     // not an afterthought of socket cleanup.
     options.laser?.dispose();
+    // T1029 — same posture, no hazard: just a child process that should not outlive
+    // the one page it served. The next attach re-spawns from the compiled cache.
+    options.vision?.dispose();
     notice({ severity: "info", message: `Device bridge released: ${reason}.` });
   };
 
@@ -524,6 +534,35 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
                 reason: error instanceof Error ? error.message : String(error),
                 state: { phase: "disconnected", clearRefused: false, underflowed: false, bufferFullness: 0 },
               },
+            });
+          },
+        );
+        return;
+      }
+      case "deviceVision": {
+        const id = message["id"];
+        if (typeof id !== "number") return;
+        const vision = options.vision;
+        if (vision === undefined) {
+          send(socket, {
+            type: "deviceVisionResult",
+            id,
+            outcome: {
+              ok: false,
+              reason: "this helper was built without a vision driver — nothing here can segment.",
+            },
+          });
+          return;
+        }
+        void vision.segment(message["request"] as never).then(
+          (outcome) => {
+            send(socket, { type: "deviceVisionResult", id, outcome });
+          },
+          (error: unknown) => {
+            send(socket, {
+              type: "deviceVisionResult",
+              id,
+              outcome: { ok: false, reason: error instanceof Error ? error.message : String(error) },
             });
           },
         );

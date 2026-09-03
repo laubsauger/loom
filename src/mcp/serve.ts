@@ -17,6 +17,7 @@ import { createMcpConnection, type McpConnection } from "./server.ts";
 import { createBridgeHost, type BridgeStatus } from "./bridge-host.ts";
 import { createDeviceHub, nodeUdpSocketFactory, type UdpSocketFactory } from "./device-hub.ts";
 import { createLaserHost, nodeLaserDiscovery, nodeTcpSocketFactory } from "./laser-host.ts";
+import { createVisionHost, nodeVisionStart } from "./vision-host.ts";
 
 /**
  * The out-of-process MCP server (T290, T294): a HEADLESS Loom on stdio — store,
@@ -126,6 +127,8 @@ export interface HeadlessMcpServerOptions {
      * message path with no network and no timers of its own.
      */
     readonly laser?: import("./laser-host.ts").LaserHost;
+    /** T1029 — the vision door. Defaults to the REAL one (swiftc-compiled worker). */
+    readonly vision?: import("./vision-host.ts").VisionHost;
     /**
      * How the DEVICE role opens UDP sockets (T942 tier 3). Injected ONLY by tests.
      *
@@ -263,6 +266,16 @@ export function createHeadlessMcpServer(options: HeadlessMcpServerOptions): Head
             },
           },
         }));
+  /*
+   * T1029 — the vision door: person segmentation through the OS's own Vision framework.
+   * Same posture as the laser host: NOTHING runs on construction — the Swift worker is
+   * compiled (once per machine, cached by source hash) and spawned only when an attached
+   * page asks for its first mask, and `releaseDevice` disposes it with the client.
+   */
+  const vision =
+    options.bridge === undefined
+      ? null
+      : (options.bridge.vision ?? createVisionHost({ start: nodeVisionStart() }));
   const bridge =
     options.bridge === undefined
       ? null
@@ -270,6 +283,7 @@ export function createHeadlessMcpServer(options: HeadlessMcpServerOptions): Head
           headless: surface,
           ...(devices === null ? {} : { devices }),
           ...(laser === null ? {} : { laser }),
+          ...(vision === null ? {} : { vision }),
           ...(options.bridge.port === undefined ? {} : { port: options.bridge.port }),
           ...(options.bridge.handoffDir === undefined ? {} : { handoffDir: options.bridge.handoffDir }),
           ...(options.bridge.proxyRetryMs === undefined ? {} : { proxyRetryMs: options.bridge.proxyRetryMs }),
