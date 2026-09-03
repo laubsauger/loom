@@ -92,14 +92,6 @@ const ALLOWLIST: ReadonlyArray<{ file: string; text: string }> = [
     text: "Expressions are checked as you commit; an unparseable one refuses with its reason.",
   },
   {
-    file: "src/editor/component/component-inspector.tsx",
-    text: "This component is not installed. Its values are preserved and will work again once the package that defines it is available.",
-  },
-  {
-    file: "src/editor/component/component-inspector.tsx",
-    text: "is available. This instance stays on v",
-  },
-  {
     file: "src/editor/inspect/node-info-popup.tsx",
     text: "This node materializes no texture in the current plan, so it has no resolution, format or memory of its own.",
   },
