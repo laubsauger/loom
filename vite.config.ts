@@ -33,11 +33,15 @@ const alias = (segment: string) => fileURLToPath(new URL(`./src/${segment}`, imp
  *
  * `require-corp` (not `credentialless`, which Safari lacks): every cross-origin
  * resource must now arrive via CORS. The app's only cross-origin fetches are the
- * Hugging Face model downloads, which send `access-control-allow-origin: *`.
+ * Hugging Face model downloads, which send `access-control-allow-origin: *` — verified
+ * 2026-09-03 to be sufficient on its own under `require-corp`, with no CORP header
+ * anywhere in the chain (T1048).
  *
- * GitHub Pages serves no custom headers, so the HOSTED build is NOT isolated by
- * these lines; the page must measure `crossOriginIsolated` and say which regime it
- * is in rather than assume this config reached it (§V827).
+ * GitHub Pages serves no custom headers, so these lines never reach the HOSTED build.
+ * T1048 puts the same two headers back there with a service worker (`public/coi-sw.js`,
+ * armed by `src/app/cross-origin-isolation.ts`) — which is a shim that can fail, so the
+ * page still MEASURES `crossOriginIsolated` and says which regime it is in rather than
+ * assume either this config or that worker reached it (§V827).
  */
 const isolationHeaders = {
   "Cross-Origin-Opener-Policy": "same-origin",

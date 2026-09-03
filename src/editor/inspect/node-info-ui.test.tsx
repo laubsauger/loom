@@ -259,9 +259,11 @@ describe("T645 — the node info popup shows §V329's staleness and classificati
   });
 
   it("T1041 — a wasm run on a non-isolated page SAYS it ran single-threaded (§V827)", () => {
-    // The same model is ~4× slower without SharedArrayBuffer; a hosted page (GitHub
-    // Pages serves no COOP/COEP) must say which regime its number came from, or the
-    // in-app and isolated figures look like a mystery instead of a measured fact.
+    // The same model is several times slower without SharedArrayBuffer, so a page must
+    // say which regime its number came from or the in-app and isolated figures look like
+    // a mystery instead of a measured fact. T1048's shim usually wins that back on
+    // GitHub Pages — usually, not always, which is exactly why this claim is reported
+    // from the worker's measurement rather than from the deployment it was built for.
     render(
       <NodeInfoPopup
         info={infoFor("depth", { inferenceBackend: "wasm", inferenceMs: 1030, inferenceIsolated: false })}

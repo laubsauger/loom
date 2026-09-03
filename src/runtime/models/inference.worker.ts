@@ -95,8 +95,11 @@ const core = createWorkerCore({
   },
   /* T1041 — measured HERE, in the worker that runs the wasm, because isolation is a
      property of the environment the threads would live in. Workers inherit it from
-     the page; the page gets it from COOP/COEP headers dev serves and GitHub Pages
-     does not. */
+     the page; the page gets it from COOP/COEP headers, which dev serves directly and
+     which T1048's service worker puts back on GitHub Pages. STILL measured, and it
+     has to stay that way: the shim can fail (no service worker, storage blocked, an
+     unregistered registration) and the number this reports must be the regime that
+     actually ran, never the one the build intended. */
   isolated: globalThis.crossOriginIsolated === true,
 });
 

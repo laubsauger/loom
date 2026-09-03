@@ -315,6 +315,17 @@ export default tseslint.config(
     },
   },
   {
+    // T1048: `public/coi-sw.js` is the cross-origin isolation service worker. It is copied
+    // to the site root verbatim — no bundling, no TypeScript — so it is plain JS with
+    // `self`, `clients` and `Response` in scope. Linted rather than ignored: it is the
+    // only code in the tree that sits in front of a navigation, which is the last place a
+    // silent typo should be allowed to live.
+    files: ["public/**/*.js"],
+    languageOptions: {
+      globals: { ...globals.serviceworker },
+    },
+  },
+  {
     files: ["src/**/*.{ts,tsx}"],
     languageOptions: {
       globals: { ...globals.browser },

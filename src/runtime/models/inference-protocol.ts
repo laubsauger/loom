@@ -135,9 +135,11 @@ export type InferenceResponse =
        * itself (`globalThis.crossOriginIsolated`), never assumed from config. Without
        * isolation there is no SharedArrayBuffer and wasm inference runs on ONE thread
        * (measured: MODNet 512² 1030 ms vs 250 ms on 14 cores). GitHub Pages serves no
-       * COOP/COEP headers, so a hosted document lands in the slow regime while dev is
-       * in the fast one — a fact the node must SAY (§V827) rather than leave as "the
-       * same model is mysteriously 4× slower in prod".
+       * COOP/COEP headers of its own, so until T1048 a hosted document always landed in
+       * the slow regime; the isolation shim now puts the headers back and a hosted page
+       * measures 260 ms on the same model. It can still fail, and then this reports
+       * false — a fact the node must SAY (§V827) rather than leave as "the same model is
+       * mysteriously 4× slower in prod".
        */
       readonly isolated: boolean;
     }

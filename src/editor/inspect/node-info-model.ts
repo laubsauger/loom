@@ -152,10 +152,12 @@ export interface NodeInfo {
   readonly inferenceBackend: string | null;
   readonly inferenceMs: number | null;
   /** T1041 — worker-measured `crossOriginIsolated`. False = wasm on ONE thread (no
-   *  SharedArrayBuffer; the page was served without COOP/COEP — GitHub Pages always
-   *  is), and the same model runs ~4× slower than the isolated number (measured,
-   *  MODNet 512²: 1030 ms vs 250 ms). Reported so a hosted document SAYS which regime
-   *  its numbers come from (§V827) instead of looking mysteriously slow. */
+   *  SharedArrayBuffer; the page was served without COOP/COEP), and the same model runs
+   *  several times slower than the isolated number (measured, MODNet 512²: 1030 ms vs
+   *  250 ms). T1048 gave the hosted build a service worker that supplies those headers,
+   *  so a Pages document normally reads true now — but the shim can fail and this stays
+   *  the WORKER's own measurement either way, so a hosted document SAYS which regime its
+   *  numbers come from (§V827) instead of looking mysteriously slow. */
   readonly inferenceIsolated: boolean | null;
 }
 
