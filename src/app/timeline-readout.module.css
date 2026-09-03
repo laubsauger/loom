@@ -23,12 +23,22 @@
   text-transform: lowercase;
 }
 
+/*
+ * T1010/B — a reserved box, not merely tabular digits.
+ *
+ * `time` is `${seconds.toFixed(2)}s`, so it GAINS A CHARACTER at 10 s and again at 100 s
+ * and 1000 s. Under `5ch` the field grew as the timeline ran and everything to its right
+ * slid over, which is half of the owner's "the timeline is now jumping around like crazy"
+ * — `tabular-nums` cannot help with a string that got longer. 8ch holds `3600.00s`, an
+ * hour of timeline, and `readout-stability.test.ts` derives that from the same format
+ * string this renders.
+ */
 .value {
   color: var(--text);
   font-family: var(--font-mono);
   font-size: var(--fs-meta);
   font-variant-numeric: tabular-nums;
-  min-width: 5ch;
+  min-width: 8ch;
   text-align: right;
 }
 

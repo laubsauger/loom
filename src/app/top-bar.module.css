@@ -125,10 +125,26 @@
   letter-spacing: var(--tracking-display);
 }
 
-/* Every numeric in the app is monospace and tabular so it stops jittering
-   while it updates (§C type rules, V16 caps the update rate at 10 Hz). */
+/*
+ * Every numeric in the app is monospace and tabular so it stops jittering
+ * while it updates (§C type rules, V16 caps the update rate at 10 Hz).
+ *
+ * T1010/B — AND THE BOX IS RESERVED FOR THE WIDEST STRING THE FIELD CAN HOLD.
+ *
+ * `tabular-nums` equalises DIGITS; it does nothing about a string that gains a character.
+ * `5ch` was wide enough for everything this bar had ever shown, because it had never
+ * shown anything: `gpuMs` was an em dash on every machine until T1011 gave
+ * `attachTimingSource` a product call site. The moment real spans arrived, `8.06 ms`
+ * (7ch) and `12.34 ms` (8ch) started overflowing the reservation, the field's width
+ * tracked the number, and the tier chip beside it moved ten times a second — the owner's
+ * "jumping around like crazy".
+ *
+ * 9ch is `formatMs` at its widest plausible reading (`999.99 ms`), and
+ * `readout-stability.test.ts` derives that number from the formatter rather than trusting
+ * this comment: change the format and the gate fails.
+ */
 .metricValue {
-  min-width: 5ch;
+  min-width: 9ch;
   font-family: var(--font-mono);
   font-size: var(--fs-meta);
   font-variant-numeric: tabular-nums;
