@@ -351,5 +351,63 @@ struct Params { ${fields} };
       const four = firstPass(contextFor({ parameters: { [SHADER_SOURCE_PARAMETER]: withParams("tint: vec4f,"), tint: [0.1, 0.2, 0.3, 0.4] } }));
       expect(four.uniforms).toEqual({ tint: [0.1, 0.2, 0.3, 0.4] });
     });
+
+    /**
+     * §T1059 — THE SHADER THAT ATE ITS OWN EDITOR.
+     *
+     * `struct Params { source: f32 }` is a perfectly ordinary thing to write, and it used to
+     * overwrite `SOURCE_PARAM` in the reflected schema. The KEY survived and its code-ness did
+     * not, so the shader editor disappeared off the node — no error, nothing to click, and no
+     * way back short of editing the `.loom.json` by hand. The one control that could have
+     * repaired the shader was the one the shader deleted.
+     *
+     * The point kernels have refused this since T900 and `customWgsl` did not, so the fix is
+     * that same pair applied here rather than a second answer to the same question (§V349): the
+     * node's own key wins, the reflected field is dropped, and the compiler says which field and
+     * what to rename it to (§V288).
+     *
+     * The first test reads the CODE-NESS of the surviving parameter, not merely its presence —
+     * the key was never the thing that was lost, so an assertion on `!== undefined` would have
+     * passed against the bug (§V870). The second proves the drop is not the silent kind.
+     */
+    it("keeps its shader editor when a field is named after the source parameter", () => {
+      const schema = customWgslNode.parametersFor!({
+        [SHADER_SOURCE_PARAMETER]: withParams("source: f32, orbitSpeed: f32,"),
+      });
+      const editor = schema[SHADER_SOURCE_PARAMETER];
+      // `type: "code"` is what mounts the WGSL editor; a `number` here IS the vanished editor.
+      expect(editor?.type).toBe("code");
+      expect(editor).toMatchObject({
+        language: "wgsl",
+        compileTime: true,
+        default: CUSTOM_WGSL_DEFAULT_SOURCE,
+      });
+      // The collision costs the colliding field only — everything else still reflects.
+      expect(schema["orbitSpeed"]?.type).toBe("number");
+    });
+
+    it("refuses the colliding field by name instead of dropping it in silence (§V288)", () => {
+      const compiled = customWgslNode.compile(
+        contextFor({ parameters: { [SHADER_SOURCE_PARAMETER]: withParams("source: f32,") } }),
+      );
+      expect(compiled.passes).toEqual([]);
+      const said = (compiled.diagnostics ?? []).find((entry) => entry.code === "node.customWgsl.params");
+      expect(said?.severity).toBe("error");
+      expect(said?.message).toContain('"source"');
+      expect(said?.suggestion).toContain("sourceParam");
+    });
+
+    it("says nothing and compiles normally when no field takes an owned name", () => {
+      const compiled = customWgslNode.compile(
+        contextFor({ parameters: { [SHADER_SOURCE_PARAMETER]: withParams("orbitSpeed: f32,") } }),
+      );
+      // The legitimate case the guard could swallow: `ownKeys` is one name, not "anything the
+      // static manifest happens to list" — `amount` in particular must still reflect, because
+      // E43/E45 are shaders whose only control IS a declared `amount`.
+      expect(compiled.diagnostics ?? []).toEqual([]);
+      expect(compiled.passes).toHaveLength(1);
+      const amountOnly = customWgslNode.parametersFor!({ [SHADER_SOURCE_PARAMETER]: withParams("amount: f32,") });
+      expect(amountOnly["amount"]?.type).toBe("number");
+    });
   });
 });

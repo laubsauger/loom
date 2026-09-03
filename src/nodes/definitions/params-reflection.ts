@@ -1,4 +1,5 @@
-import type { ParameterDefinition, ParameterValue } from "../../domain/types/parameters.ts";
+import type { RuntimeDiagnostic } from "../../domain/types/diagnostics.ts";
+import type { ParameterDefinition, ParameterSchema, ParameterValue } from "../../domain/types/parameters.ts";
 import { readColor, readNumber, readVector } from "./parameter-readers.ts";
 
 /**
@@ -221,6 +222,62 @@ export function paramForField(field: ReflectedField, description?: string): Para
     default:
       return undefined;
   }
+}
+
+/**
+ * THE COLLISION PAIR (T900, generalised by T1059) — a reflected field may not take a name the
+ * NODE already owns.
+ *
+ * Reflection turns a shader's `struct Params` into node controls, so a field named after one of
+ * the node's own parameters would overwrite that parameter's DEFINITION while keeping its key.
+ * The key survives and its meaning does not, which is the worst shape a bug can take: for a
+ * point kernel it replaced `Capacity` with a knob of the same name; for a `customWgsl` a field
+ * named `source` replaced the CODE parameter, and the shader editor vanished off the node with
+ * no error and no way back short of editing the file by hand (§T1059).
+ *
+ * The node's own parameter wins and the reflected one is dropped from the schema — so the
+ * editor is always still there to fix the shader in — and the compiler refuses BY NAME rather
+ * than rendering something that quietly means less than it says (§V288). Both halves take the
+ * same `ownKeys`, so what is dropped and what is reported cannot come apart.
+ *
+ * THIS PAIR LIVES HERE, not in `points.ts` where T900 first wrote it, for the reason the whole
+ * module exists: `customWgsl` needed the identical guard, and the alternative was a second copy
+ * of "is this name already taken" that would drift the first time one of them learned a new case
+ * (§V349). Only two things differ per caller and both are arguments: the per-field help text and
+ * the diagnostic code the node reports under.
+ */
+export function reflectedParamSchema(
+  fields: ReadonlyArray<ReflectedField>,
+  ownKeys: ReadonlySet<string>,
+  describe?: (field: ReflectedField) => string,
+): ParameterSchema {
+  const schema: ParameterSchema = {};
+  for (const field of fields) {
+    if (ownKeys.has(field.name)) continue;
+    const definition = paramForField(field, describe?.(field));
+    if (definition !== undefined) schema[field.name] = definition;
+  }
+  return schema;
+}
+
+/** The refusal half of the pair above: reflected names this node cannot give away. */
+export function reflectedParamCollisions(
+  nodeId: string,
+  fields: ReadonlyArray<ReflectedField>,
+  ownKeys: ReadonlySet<string>,
+  code: string,
+): RuntimeDiagnostic[] {
+  return fields
+    .filter((field) => ownKeys.has(field.name))
+    .map((field) => ({
+      severity: "error" as const,
+      code,
+      message:
+        `Node "${nodeId}": struct Params declares "${field.name}", which is already a parameter of this ` +
+        `node — the reflected control would have no name of its own.`,
+      nodeId,
+      suggestion: `Rename the field, e.g. "${field.name}Param".`,
+    }));
 }
 
 /**

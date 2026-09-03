@@ -6,9 +6,11 @@ import { RGBA_TEXTURE } from "./common-ports.ts";
 import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
 import {
   declaresUniformBlock,
-  paramForField,
   reflectParamsStruct,
+  reflectedParamCollisions,
+  reflectedParamSchema,
   reflectedUniforms,
+  type ReflectedField,
 } from "./params-reflection.ts";
 import type { ParameterDefinition, ParameterSchema } from "../../domain/types/parameters.ts";
 import {
@@ -71,22 +73,47 @@ const SOURCE_PARAM: ParameterDefinition = {
 };
 
 /**
+ * The keys this node owns outright, which reflection may not take (T1059).
+ *
+ * `source` is the whole node: it is the CODE parameter the shader editor is mounted on. A
+ * shader declaring `source: f32` in its own `struct Params` used to overwrite `SOURCE_PARAM`
+ * with a number — the key survived and its code-ness did not, so the editor DISAPPEARED off
+ * the node, with no error and no way back short of editing the file by hand. Somebody writing
+ * a perfectly ordinary shader lost the box they wrote it in.
+ *
+ * `amount` is deliberately NOT here. It is the historical static fallback, not something this
+ * node owns per-instance: E43/E45's §V147 identity is that a shader declaring `amount: f32`
+ * reflects one control named Amount, and taking that name away would change what those
+ * examples render.
+ */
+const CUSTOM_WGSL_OWN_KEYS: ReadonlySet<string> = new Set([SHADER_SOURCE_PARAMETER]);
+
+/** The diagnostic this node refuses a name-stealing field under (§V288). */
+const CUSTOM_WGSL_PARAM_CODE = "node.customWgsl.params";
+
+/** The fields a source declares as controls — none at all unless it asks for the block. */
+function reflectedFields(source: string): readonly ReflectedField[] {
+  return declaresUniformBlock(source, CUSTOM_WGSL_UNIFORM_BINDING) ? reflectParamsStruct(source) : [];
+}
+
+/**
  * The schema a customWgsl node carries, reflected from its own `source` (T880).
  *
  * T1052: the reflected knobs sort ABOVE the editor they were read out of — the source pane
  * is the last thing on the node, so the controls the reflection exists to give you are not
  * below a screenful of WGSL. `codeParametersLast` is the manifest saying so; the inspector
  * still renders plain manifest order.
+ *
+ * T1059: `reflectedParamSchema` is the SAME guard the point kernels have had since T900, not a
+ * second one — a field named after a key this node owns is dropped here and refused by name at
+ * compile. The editor is seeded first and the reflection cannot reach it either way, so the way
+ * out of a colliding shader is always still on the node.
  */
 function reflectedSchema(source: string): ParameterSchema {
-  const schema: ParameterSchema = { [SHADER_SOURCE_PARAMETER]: SOURCE_PARAM };
-  if (declaresUniformBlock(source, CUSTOM_WGSL_UNIFORM_BINDING)) {
-    for (const field of reflectParamsStruct(source)) {
-      const param = paramForField(field);
-      if (param !== undefined) schema[field.name] = param;
-    }
-  }
-  return codeParametersLast(schema);
+  return codeParametersLast({
+    [SHADER_SOURCE_PARAMETER]: SOURCE_PARAM,
+    ...reflectedParamSchema(reflectedFields(source), CUSTOM_WGSL_OWN_KEYS),
+  });
 }
 
 export const customWgslNode: NodeDefinition = {
@@ -137,6 +164,15 @@ export const customWgslNode: NodeDefinition = {
 
     const sourceValue = parameters[SHADER_SOURCE_PARAMETER];
     const shader = typeof sourceValue === "string" ? sourceValue : CUSTOM_WGSL_DEFAULT_SOURCE;
+    const fields = reflectedFields(shader);
+
+    /* T1059: a field that would take one of this node's own keys is refused BY NAME, the same
+       way the point kernels refuse one (§V349). `parametersFor` has already dropped it from the
+       schema so the editor survives — but a control that is silently absent is exactly the
+       §V288 bug, and the shader is not going to do what its author wrote either way, because
+       `source` in `params` would be handed the default 0 rather than their WGSL text. */
+    const collisions = reflectedParamCollisions(nodeId, fields, CUSTOM_WGSL_OWN_KEYS, CUSTOM_WGSL_PARAM_CODE);
+    if (collisions.length > 0) return { passes: [], diagnostics: collisions };
 
     // Bind EXACTLY the fields the shader's own `struct Params` declares (T880), each shaped to
     // its WGSL type. vgpu refuses a value with no matching field, and E43/E45's §V147 identity
@@ -144,12 +180,7 @@ export const customWgslNode: NodeDefinition = {
     // the source, never assumed. The values come from `parameters`, resolved against the SAME
     // reflected schema (the compiler resolves through `parametersFor`), so a driven or bound
     // control lands here.
-    const uniforms: Record<string, number | readonly number[]> = declaresUniformBlock(
-      shader,
-      CUSTOM_WGSL_UNIFORM_BINDING,
-    )
-      ? reflectedUniforms(reflectParamsStruct(shader), parameters)
-      : {};
+    const uniforms: Record<string, number | readonly number[]> = reflectedUniforms(fields, parameters);
 
     const pass: EffectPassDescriptor = {
       kind: "effect",

@@ -25,8 +25,9 @@ import { codeParametersLast } from "../../domain/parameters/code.ts";
 import { readColor, readNumber } from "./parameter-readers.ts";
 import {
   extractParamsStruct,
-  paramForField,
   reflectParamsStruct,
+  reflectedParamCollisions,
+  reflectedParamSchema,
   reflectedUniforms,
   type ReflectedField,
 } from "./params-reflection.ts";
@@ -254,44 +255,33 @@ export function kernelBodyOf(source: string): string {
 }
 
 /**
- * Reflected fields that collide with a parameter key the NODE owns are dropped from the schema
- * (they would otherwise overwrite `Capacity` or `Seed` with a knob of the same name) and named
- * loudly by `kernelParamCollisions` at compile. Skipping a control silently is the §V288 bug
- * this pair exists to avoid: the schema stays sane and the compiler says why.
+ * T900's collision pair, now shared — see `reflectedParamSchema` / `reflectedParamCollisions` in
+ * `params-reflection.ts`. A reflected field may not take a name this node already owns (it would
+ * overwrite `Capacity` or `Seed` with a knob of the same name); the node's parameter wins, the
+ * reflected one is dropped, and the compiler refuses by name rather than skipping it in silence
+ * (§V288). T1059 moved the pair beside the reflector when `customWgsl` needed the same guard
+ * (§V349) — these two keep the point family's help text and diagnostic code in one place.
  */
+export const POINT_KERNEL_PARAM_CODE = "node.points.params";
+
 export function kernelParamSchema(
   fields: ReadonlyArray<ReflectedField>,
   ownKeys: ReadonlySet<string>,
 ): ParameterSchema {
-  const schema: ParameterSchema = {};
-  for (const field of fields) {
-    if (ownKeys.has(field.name)) continue;
-    const definition = paramForField(
-      field,
+  return reflectedParamSchema(
+    fields,
+    ownKeys,
+    (field) =>
       `Reaches the kernel as \`ctx.params.${field.name}\` (${field.wgsl}). A uniform write, never a rebuild (§V5).`,
-    );
-    if (definition !== undefined) schema[field.name] = definition;
-  }
-  return schema;
+  );
 }
 
-/** The refusal half of the pair above: reflected names this node cannot give away. */
 export function kernelParamCollisions(
   nodeId: string,
   fields: ReadonlyArray<ReflectedField>,
   ownKeys: ReadonlySet<string>,
 ): RuntimeDiagnostic[] {
-  return fields
-    .filter((field) => ownKeys.has(field.name))
-    .map((field) => ({
-      severity: "error" as const,
-      code: "node.points.params",
-      message:
-        `Node "${nodeId}": struct Params declares "${field.name}", which is already a parameter of this ` +
-        `node — the reflected control would have no name of its own.`,
-      nodeId,
-      suggestion: `Rename the field, e.g. "${field.name}Param".`,
-    }));
+  return reflectedParamCollisions(nodeId, fields, ownKeys, POINT_KERNEL_PARAM_CODE);
 }
 
 /**
