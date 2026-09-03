@@ -483,8 +483,9 @@ function matteParameters(stored: Readonly<Record<string, unknown>>) {
     ...downsampleRatio,
     model: inferenceModelSchema(MATTE_MODELS, {
       what:
-        "Which matting model runs, and the three are different in kind rather than in " +
-        "degree. MODNet full precision is the reliable default: measured, it finds the " +
+        "Which matting model runs. Three of them are ONNX models that differ in kind " +
+        "rather than in degree; the fourth, MediaPipe, is a different runtime and is " +
+        "described last. MODNet full precision is the reliable default: measured, it finds the " +
         "same subject in the same place from a bright frame down to a very dark one, and " +
         "it is the only one of the three the GPU provider can execute at all, measured at 30 ms there. " +
         "MODNet quantized is a quarter of the download and NOT faster, and below about a " +
@@ -498,7 +499,20 @@ function matteParameters(stored: Readonly<Record<string, unknown>>) {
         "on a single wasm thread against MODNet's 30 ms on the GPU provider — and its " +
         "weights are " +
         "GPL-3.0, downloaded by your " +
-        "browser rather than shipped with the app.",
+        "browser rather than shipped with the app. " +
+        "MediaPipe SelfieSegmenter is the FAST one, and it is fast because it is a 250 KB " +
+        "model doing a smaller job: measured on this machine it is 3.7 ms of inference and " +
+        "about 6 ms by the time the matte is on the GPU, flat from a 256 to a 720 square, " +
+        "against 30 ms for MODNet and 20 ms for Robust Video Matting. It runs on its own " +
+        "runtime rather than the one the Backend setting selects, so that setting does not " +
+        "apply to it; it picks its own GPU path and falls back on its own. What you trade " +
+        "is not softness — measured on the same frame it leaves MORE of a gradient at the " +
+        "edge than MODNet does, not less — but FINE DETAIL: MODNet resolves individual " +
+        "hair strands that this rounds off. What you gain besides speed is REJECTION: on " +
+        "the same test frame MODNet read a painting of a figure as a person and this did " +
+        "not. Neither is better than the other, so pick it by watching the picture on your " +
+        "own footage. It always runs at the default square — the model works at 256 " +
+        "internally and upsamples, so a bigger input buys no detail and only costs time.",
     }),
     /*
      * §T957's constant, promoted to a knob because the right value is per MODEL (§T1040)

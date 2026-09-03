@@ -245,7 +245,95 @@ export const MATTE_RVM: ModelDescriptor = {
    */
 };
 
-export const MATTE_MODELS: readonly ModelDescriptor[] = [MATTE_ACCURATE, MATTE_FAST, MATTE_RVM];
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ * T1088 — MediaPipe SelfieSegmenter, and it is a SECOND RUNTIME, not a fourth ONNX file
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ *
+ * The owner's complaint was that MATTE_FAST measures 400 ms on WebGPU against 311 ms on
+ * threaded wasm, and that his own `muse-eeg-web` mattes far quicker without Electron.
+ * Measured on this machine (M3 Max, Chrome, the app's own COOP+COEP regime, 120 timed
+ * iterations after 20 warm), this artefact answers that directly:
+ *
+ *   fed    inference only   inference + mask read   DELIVERED to a WebGPU texture
+ *   256²   3.73 ms          5.01 ms                 5.46 ms
+ *   512²   3.71 ms          5.35 ms                 6.05 ms
+ *   720²   3.60 ms          5.65 ms                 6.84 ms
+ *
+ * The middle column is the region the ONNX numbers time (`session.run` plus downloading
+ * the output), so it is the one that compares: against MODNet's 30 ms and RVM's 20 ms on
+ * WebGPU and MATTE_FAST's 400 ms, this is ~6x, ~4x and ~75x. The right-hand column is the
+ * one that DECIDES, because MediaPipe's GPU delegate is WebGL and this app is WebGPU:
+ * crossing costs 1.3-2.4 ms and the total still lands under 7 ms. The win survives the
+ * crossing, which was the open question and is why this row exists.
+ *
+ * ⚠ INFERENCE IS FLAT IN THE INPUT SIZE — 3.7 ms at every side above. The model works at
+ * 256² internally and UPSAMPLES its mask to whatever it was fed, so feeding it a bigger
+ * square buys no detail and costs only delivery. That is why this row is absent from the
+ * input-size table (`inferenceAcceptsInputSize` reads ONNX signatures and finds none) and
+ * always runs at the node's default square.
+ *
+ * ⚠ IT IS NOT BETTER THAN MODNet, AND THE NAIVE READING OF WHY IS BACKWARDS. The
+ * expectation was "MediaPipe coarse, MODNet a soft alpha matte with hair detail".
+ * Measured on one frame, both at 512²: MODNet leaves 1.08% of pixels strictly between 0.1
+ * and 0.9, this leaves 2.23% — MODNet is the HARDER of the two here, not the softer.
+ * Their IoU above half is 0.90. What MODNet genuinely buys is fine detail: it resolves
+ * hair strands this does not. What this buys is REJECTION: on the test frame MODNet
+ * segments a painting of a figure as a person and this correctly ignores it. Neither is
+ * strictly better, so this is an added option and the default is untouched (§V831).
+ *
+ * LICENCE — Apache-2.0, verified from Google's own model card rather than assumed
+ * ("LICENSED UNDER: Apache License, Version 2.0"; Hou, Pisarchyk, Raveendran, 2021-05-06).
+ * That is a materially different footing from MATTE_RVM's GPL-3.0: Apache-2.0 permits
+ * REDISTRIBUTION, so shipping these bytes would be legitimate where shipping RVM's is
+ * not. We still fetch at run time — not because we must, but so this row inherits the one
+ * consent, progress, failure and cache surface every other artefact uses, and so the repo
+ * carries no weights. The retained notice for what we do ship — the Apache-2.0 runtime in
+ * `node_modules/@mediapipe/tasks-vision` — is that package's own header, and this comment
+ * is the attribution for the model.
+ *
+ * ⚠ THE URL IS MUTABLE AND THE HASH IS WHAT PINS IT. Every other row here is
+ * revision-pinned; Google publishes this under `/latest/`, and there is no tagged
+ * alternative. So the pin is the SHA-256 below, read off the downloaded file, and a
+ * republish upstream fails the acquisition loudly rather than silently changing the bytes
+ * under a document. That is a supply-chain property and holds regardless of the licence.
+ */
+export const MATTE_MEDIAPIPE: ModelDescriptor = {
+  id: "mediapipe-selfie-segmenter",
+  label: "MediaPipe SelfieSegmenter",
+  url: "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite",
+  bytes: 249_537,
+  /* Read off the downloaded file 2026-09-03; identical to the copy in the owner's
+     `muse-eeg-web`, which is where this artefact was first identified. */
+  sha256: "191ac9529ae506ee0beefa6b2c945a172dab9d07d1e802a290a4e4038226658b",
+  license: "Apache-2.0",
+  /* No `cannotRun` row, and its absence is not an oversight: that field names ONNX
+     execution providers, and this artefact never reaches one. It is a TFLite file run by
+     MediaPipe's own wasm with its own GPU delegate, which is exactly why it needs the
+     second runner rather than a fourth entry in the worker's ladder. */
+};
+
+export const MATTE_MODELS: readonly ModelDescriptor[] = [
+  MATTE_ACCURATE,
+  MATTE_FAST,
+  MATTE_RVM,
+  MATTE_MEDIAPIPE,
+];
+
+/**
+ * WHICH RUNTIME a matte model needs — the ONE place that partition is decided (T1088).
+ *
+ * `matteDescriptorFor` above exists because the same `=== MATTE_FAST.id` ternary was
+ * written twice and silently resolved a stored RVM id to MODNet. This is the same hazard
+ * one level up and it bites harder: the ORT hook tracks every matte node and this one
+ * tracks its own, so a partition that is not exactly complementary makes a node run
+ * TWICE (two runners racing to fill one media source) or NEVER (a node that compiles,
+ * allocates and publishes its fallback forever). Both callers read this function, and
+ * `mediapipe-matte.test.ts` asserts the two sides are disjoint and cover `MATTE_MODELS`.
+ */
+export function isMediaPipeMatte(modelId: string): boolean {
+  return modelId === MATTE_MEDIAPIPE.id;
+}
 
 export const ALL_MODELS: readonly ModelDescriptor[] = [...DEPTH_MODELS, ...POSE_MODELS, ...MATTE_MODELS];
 

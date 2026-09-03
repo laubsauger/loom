@@ -39,9 +39,14 @@ import type { InferenceNodeType, WorkerLike } from "@runtime/models/inference-pr
 import {
   DEPTH_ACCURATE,
   DEPTH_LIVE,
+  isMediaPipeMatte,
   POSE_ACCURATE,
   POSE_LIVE,
 } from "@runtime/models/model-catalogue.ts";
+import {
+  createMediaPipeMatteRunner,
+  type MediaPipeMatteRunner,
+} from "@runtime/models/mediapipe-matte.ts";
 import {
   MATTE_INPUT_SIDE,
   matteCoverage,
@@ -573,6 +578,75 @@ export function useModelInference(
     [],
   );
 
+  /**
+   * T1088 — the MediaPipe half of the runner seam above.
+   *
+   * ON THE MAIN THREAD, and unlike the ORT path that is a decision rather than an
+   * omission. The worker exists because MODNet spends seconds per frame and packing walks
+   * every pixel twice; this model is 3.7 ms of inference on a 250 KB artefact, and the
+   * measured DELIVERED cost — mask readable as a WebGPU texture — is 6.05 ms at 512².
+   * Moving that to a worker would need MediaPipe's wasm and GL context instantiated
+   * there, a second 11 MB runtime load, and the mask copied back across, to hide a cost
+   * smaller than the copy. It is still off the frame loop: the seam's `sample` is
+   * fire-and-forget from a microtask (§V184) and never awaited inside a frame.
+   *
+   * The segmenter is opened ONCE and reused — it carries a wasm instance and a GL
+   * context. The import is dynamic so a document with no MediaPipe matte in it never
+   * loads the runtime, matching the worker's own laziness (§V585: a disconnected model
+   * node costs zero).
+   */
+  const mediaPipeRef = useRef<MediaPipeMatteRunner | null>(null);
+  const runMediaPipe = useCallback(
+    async (target: DepthTarget, input: ArrayBuffer): Promise<Uint8Array> => {
+      const weights = await acquisition.acquire(target.descriptor);
+      if (weights === undefined) {
+        /* The acquisition already published WHY (not yet consented, download failed,
+           hash mismatch) and `buildNotices` shows it with its own action. Throwing here
+           keeps the previous value standing and lets the seam report the node as not
+           ready, rather than inventing a second, quieter version of that story. */
+        throw new Error(`${target.descriptor.label} is not downloaded yet.`);
+      }
+      let runner = mediaPipeRef.current;
+      if (runner === null) {
+        const bytes = new Uint8Array(weights);
+        runner = createMediaPipeMatteRunner({
+          side: target.settings.inputSide,
+          openSegmenter: async () => {
+            const module = await import("@runtime/models/mediapipe-segmenter.ts");
+            const segmenter = await module.openTasksVisionSegmenter(bytes);
+            delegateRef.current = segmenter.delegate;
+            return segmenter;
+          },
+        });
+        mediaPipeRef.current = runner;
+      }
+      const started = performance.now();
+      const result = await runner.run(input, target.size[0], target.size[1]);
+      /* §T715/§V672 on the node itself, the same three fields the worker publishes: what
+         actually ran, and how long it took. `delegate` is what OPENED, never what was
+         asked for — the ladder falls to CPU on a machine whose WebGL delegate refuses,
+         and a node that fell must be able to say so. `isolated` is false because this
+         model never touches the cross-origin-isolated wasm-threads question the ORT
+         measurement reports on: it is one wasm instance on this thread either way. */
+      sinkRef.current?.publish(target.nodeId, {
+        inferenceBackend: delegateRef.current ?? "mediapipe",
+        inferenceMs: performance.now() - started,
+        inferenceIsolated: false,
+      });
+      return result;
+    },
+    [acquisition],
+  );
+  const delegateRef = useRef<string | null>(null);
+
+  useEffect(
+    () => () => {
+      mediaPipeRef.current?.dispose();
+      mediaPipeRef.current = null;
+    },
+    [],
+  );
+
   const sources = useMemo(
     () =>
       createInferenceSources({
@@ -585,9 +659,34 @@ export function useModelInference(
         },
         // Packing, inference and encoding ALL happen on the worker: the two loops that
         // walk every pixel are the ones worth moving, not just the model call.
-        run: async (nodeId, input) => runnerFor().run(nodeId, input),
+        /*
+         * T1088 — WHICH RUNTIME, decided here and only here.
+         *
+         * MediaPipe is a second runtime, not a fourth ONNX file: TFLite bytes, its own
+         * wasm, its own delegate ladder, a mask rather than a tensor. It rides this seam
+         * — `createInferenceSources`' `run` — because that is where a producer plugs in
+         * (Apple Vision already rides it from `use-vision-bridge.ts`), and it rides it
+         * from INSIDE this hook rather than from a second hook of its own. That was the
+         * one real design choice here and it is worth stating: a parallel hook would
+         * have needed its own tracking loop over the same matte nodes, and two loops
+         * partitioning one node set is how a node ends up run TWICE (two producers
+         * racing to fill one media source) or NEVER. One loop tracks each node exactly
+         * once; only the execution branches, on `isMediaPipeMatte` and nowhere else.
+         *
+         * Everything around it is therefore shared rather than reimplemented: the one
+         * acquisition (so this artefact gets the same consent prompt, progress, hash
+         * check and cache), the notices, the coverage channel, the staleness ages, the
+         * media-source registration and the fill policies.
+         */
+        run: async (nodeId, input) => {
+          const target = targetsRef.current.find((candidate) => candidate.nodeId === nodeId);
+          if (target !== undefined && isMediaPipeMatte(target.descriptor.id)) {
+            return await runMediaPipe(target, input);
+          }
+          return runnerFor().run(nodeId, input);
+        },
       }),
-    [runnerFor],
+    [runMediaPipe, runnerFor],
   );
 
   /**

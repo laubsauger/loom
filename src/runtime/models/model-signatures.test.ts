@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { ALL_MODELS } from "./model-catalogue.ts";
+import { ALL_MODELS, isMediaPipeMatte } from "./model-catalogue.ts";
 import { MODEL_SIGNATURES, declaredChannels, signatureFor } from "./model-signatures.ts";
 import { packModelInput } from "./depth-runner.ts";
 import { POSE_INPUT_CHANNELS, POSE_INPUT_DTYPE, POSE_INPUT_SIDE, packPoseInput } from "./pose-runner.ts";
@@ -20,9 +20,23 @@ import { POSE_INPUT_CHANNELS, POSE_INPUT_DTYPE, POSE_INPUT_SIDE, packPoseInput }
  */
 
 describe("§V742 — every packer conforms to the model's own declared input", () => {
-  it("has a signature for every shipped model, and no orphans", () => {
-    // §V461: if these lists drift apart the assertions below quietly stop covering things.
-    expect(MODEL_SIGNATURES.map((s) => s.modelId).sort()).toEqual(ALL_MODELS.map((m) => m.id).sort());
+  it("has a signature for every shipped ONNX model, and no orphans", () => {
+    /*
+     * §V461: if these lists drift apart the assertions below quietly stop covering things.
+     *
+     * T1088 narrowed this from "every shipped model" to "every shipped ONNX model", and
+     * the narrowing is derived rather than listed. A signature is a tensor contract read
+     * out of a real `.onnx` by `extract-model-signatures.ts`; MediaPipe's artefact is
+     * TFLite, run by its own wasm, and has no ONNX signature to record — so requiring one
+     * would force a hand-written row, which is precisely the fabricated fixture §B148 was
+     * about. The exclusion comes from `isMediaPipeMatte`, the same predicate that routes
+     * execution, so it cannot drift from the runtime split, and the second assertion below
+     * pins its SIZE: a new ONNX model that somehow landed on the excluded side would fail
+     * here rather than quietly lose its conformance check.
+     */
+    const onnxModels = ALL_MODELS.filter((model) => !isMediaPipeMatte(model.id));
+    expect(MODEL_SIGNATURES.map((s) => s.modelId).sort()).toEqual(onnxModels.map((m) => m.id).sort());
+    expect(ALL_MODELS.length - onnxModels.length).toBe(1);
   });
 
   it("packs POSE as uint8 with four channels, which is what the WEB export takes", () => {
