@@ -427,6 +427,24 @@ export function useModelInference(
   const healthRef = useRef<Readonly<Record<string, RunHealth>>>({});
   const [health, setHealth] = useState<Readonly<Record<string, RunHealth>>>({});
   const unregisterRef = useRef<Map<string, () => void>>(new Map());
+  /**
+   * WHICH backend the entries in `unregisterRef` were registered on (T1044).
+   *
+   * The map is keyed by source id, and a source id does not change when the DEVICE does —
+   * so without this the "already registered, skip it" test above was true of a backend
+   * that no longer exists, and a replaced backend never received the `infer:` source at
+   * all. An external texture with no registered source is never uploaded, so the node
+   * rendered zero everywhere: pixel-for-pixel the no-model picture, the no-result picture
+   * and the empty-room picture, while `ready` read 1, the coverage channel reported a real
+   * number and the info popup named a provider and a millisecond figure. Nothing said
+   * anything, which is §V856's four-states-one-picture arriving through the one seam that
+   * had no way to notice.
+   *
+   * `use-media-sources.ts` cannot have this bug because its whole open-and-register effect
+   * is keyed on `[backend, ...]` and tears down with it. This one registers from a
+   * callback, so the backend identity has to be carried by hand.
+   */
+  const registeredOnRef = useRef<LoomBackend | null>(null);
 
   const store = useMemo(() => cacheModelStore(), []);
 
@@ -664,6 +682,17 @@ export function useModelInference(
       // Only when the SET changed: a values-only recompile re-derives the same targets
       // sixty times a second and must not re-render the notice strip (§V16).
       setTracked((prior) => (sameTargets(prior, targets) ? prior : targets));
+
+      // T1044: a DIFFERENT backend holds none of these registrations, so the whole map is
+      // dropped rather than consulted — every source below then re-registers on the live
+      // device. Dropping is unconditional on identity and not on `null`: a rebuilt device
+      // is a new object with an empty media registry whether or not one existed before.
+      const attached = backendRef.current ?? null;
+      if (attached !== registeredOnRef.current) {
+        for (const off of unregisterRef.current.values()) off();
+        unregisterRef.current.clear();
+        registeredOnRef.current = attached;
+      }
 
       // Re-register only what changed, so a recompile does not drop and rebuild every
       // source and lose the picture for a frame.

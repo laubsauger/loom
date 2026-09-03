@@ -300,3 +300,103 @@ describe("a matte that runs and finds nothing", () => {
     expect(notices({ cut: { kind: "running", claimsNothing: false } })).toEqual([]);
   });
 });
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ * A REPLACED BACKEND GETS THE INFERENCE RESULT REGISTERED ON IT (T1044)
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ *
+ * The owner's matte was intermittent across one page: nothing, nothing, a clean silhouette
+ * after a refresh, then nothing again — same document, same weights, same machine. A stale
+ * build is stable, so intermittence on one page is a lifecycle fault, and this is the one
+ * in this file.
+ *
+ * `track` remembers its media-source registrations in a map keyed by SOURCE ID ALONE and
+ * skips any id already in it. The id does not change when the BACKEND does, so a second
+ * backend never receives the `infer:` registration the first one got — and an external
+ * texture with no registered source is never uploaded (`uploadExternalTextures` skips it),
+ * which renders as a matte of zero everywhere. That is pixel-for-pixel the no-model
+ * picture, the no-result picture and the empty-room picture, so nothing anywhere says it
+ * happened: `ready` is 1, the coverage channel reports a real number, the node info popup
+ * reports a backend and a millisecond figure, and the picture is black.
+ *
+ * `use-media-sources.ts` cannot have this bug because its whole open-and-register effect
+ * is keyed on `[backend, ...]` and tears down with it. This seam registers from a callback
+ * and observes backend identity nowhere, and that asymmetry is the defect.
+ *
+ * WHEN A BACKEND IS REPLACED, in a build the owner is actually running: `sharedGpuProbe`
+ * memoises the device in a MODULE-level variable, so a Vite HMR update that replaces
+ * `gpu-status.ts` — or any module it re-exports through — resets that memo and the next
+ * render gets a new backend object. The owner watches a live dev page while several
+ * sessions commit, which makes this a routine event rather than an exotic one.
+ *
+ * Asserted as WHAT THE SECOND BACKEND WAS TOLD, not as the shape of the map: the consumer
+ * of this seam is the backend's media registry, and what it needs is a source it can pull
+ * frames from.
+ */
+describe("T1044 — the inference result is registered on whichever backend is live", () => {
+  function matteGraph(): GraphDocument {
+    return {
+      revision: 1,
+      nodes: {
+        src: { id: "src", type: "noise", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: {}, label: "src" },
+        cut: { id: "cut", type: "matte", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: {}, label: "cut1" },
+        out: { id: "out", type: "output", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: {}, label: "out" },
+      },
+      edges: {
+        e1: { id: "e1", source: { nodeId: "src", portId: "out" }, target: { nodeId: "cut", portId: "input" } },
+        e2: { id: "e2", source: { nodeId: "cut", portId: "out" }, target: { nodeId: "out", portId: "input" } },
+      },
+      groups: {},
+    } as never;
+  }
+
+  /** Records what it was asked to serve. Only the two methods this seam ever calls. */
+  function recordingBackend() {
+    const registered: string[] = [];
+    return {
+      registered,
+      backend: {
+        registerMediaSource: (sourceId: string) => {
+          registered.push(sourceId);
+          return () => {};
+        },
+        readBuffer: () => Promise.reject(new Error("not asked for in this test")),
+      } as never,
+    };
+  }
+
+  it("registers `infer:cut` on a second backend that replaced the first", async () => {
+    const graph = matteGraph();
+    const plan = planFor(graph);
+    const first = recordingBackend();
+    const second = recordingBackend();
+
+    let live = first.backend;
+    const view = renderHook(() => useModelInference(live));
+    act(() => {
+      view.result.current.track(graph, plan);
+    });
+    await settleRefresh();
+    // The premise: backend one really did get it, so a failure below is the SWAP and not
+    // a graph that never tracked anything.
+    expect(first.registered, "the first backend was never given the matte's result source").toContain(
+      "infer:cut",
+    );
+
+    // The device is replaced and the document recompiles against it — the ordering an HMR
+    // update or a rebuilt device produces.
+    live = second.backend;
+    view.rerender();
+    act(() => {
+      view.result.current.track(graph, planFor(graph));
+    });
+    await settleRefresh();
+
+    expect(
+      second.registered,
+      "the live backend has no source for the matte's result texture, so it will never be " +
+        "uploaded and the node renders zero everywhere while reporting itself healthy",
+    ).toContain("infer:cut");
+  });
+});
