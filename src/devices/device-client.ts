@@ -18,6 +18,7 @@ import {
   type OscDestination,
   type OscSendOutcome,
 } from "./device-protocol.ts";
+import { DEVICE_HELPER_START } from "./helper.ts";
 import { OSC_CHANNEL_PREFIX } from "../domain/osc/osc-address.ts";
 /*
  * The state union lives in DOMAIN, beside the copy that renders it (§V359) — so a domain
@@ -391,7 +392,7 @@ export function createDeviceClient(options: DeviceClientOptions): DeviceClient {
       if (!attached || socket === null) {
         return {
           delivery: "refused",
-          reason: "No device bridge is attached, so nothing was sent. Run `pnpm mcp:serve` and enter its pairing code.",
+          reason: `No device bridge is attached, so nothing was sent — ${DEVICE_HELPER_START}.`,
         };
       }
       if (packets.length === 0) return { delivery: "refused", reason: "Nothing to send." };
@@ -406,7 +407,7 @@ export function createDeviceClient(options: DeviceClientOptions): DeviceClient {
     laser(command: LaserCommand): Promise<LaserOutcome> {
       if (socket === null || !attached) {
         return Promise.reject(
-          new Error("no helper is attached — pair this tab in the Connections section first (pnpm mcp:serve)."),
+          new Error(`no device bridge is attached — ${DEVICE_HELPER_START}.`),
         );
       }
       const id = nextId++;
@@ -422,7 +423,7 @@ export function createDeviceClient(options: DeviceClientOptions): DeviceClient {
     vision(request: VisionSegmentRequest): Promise<VisionOutcome> {
       if (socket === null || !attached) {
         return Promise.reject(
-          new Error("no helper is attached — pair this tab in the Connections section first (pnpm mcp:serve)."),
+          new Error(`no device bridge is attached — ${DEVICE_HELPER_START}.`),
         );
       }
       const id = nextId++;

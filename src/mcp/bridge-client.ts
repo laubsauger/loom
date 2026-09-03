@@ -13,6 +13,7 @@ import {
   type BridgeSocketFactory,
   type PairingMemory,
 } from "@devices/transport/bridge-socket.ts";
+import { DEVICE_HELPER_COMMAND } from "@devices/helper.ts";
 import { TRANSPORT_LABEL, type McpTransportRegistry } from "./connections.ts";
 import { toolListings } from "./published-tools.ts";
 
@@ -69,9 +70,15 @@ import { toolListings } from "./published-tools.ts";
  * how that is supposed to work" — because the only place that named the door was a
  * terminal log. This row is the signpost now: the command, the code, and the §V338
  * honesty that an unattached stdio agent is editing a HEADLESS copy, not this tab.
+ *
+ * T1103 added the second clause. This row is the ONLY pairing surface in the product, and
+ * the device bridge rides the same code — so a row that named only the agent half was the
+ * surface telling the owner that a laser needs an agent protocol. It does not; the two
+ * halves are one process and one pairing, and saying so here is cheaper than a second row
+ * that would pair nothing new.
  */
 const BRIDGE_IDLE_DETAIL =
-  `Not attached — a desktop client (Claude Desktop, any stdio MCP client) drives THIS tab through the bridge: run \`pnpm mcp:serve\` in the project, read the pairing code it prints, and enter it here. Until a tab attaches, that server answers from a headless copy of the project — an agent can build a graph there that this tab never shows. Bridge expected on ${BRIDGE_HOST}:${BRIDGE_PORT}.`;
+  `Not attached — a desktop client (Claude Desktop, any stdio MCP client) drives THIS tab through the bridge: run \`${DEVICE_HELPER_COMMAND}\` in the project, read the pairing code it prints, and enter it here. That one process is also Loom's DEVICE bridge, so this same pairing is what lets this tab reach OSC, a laser DAC or the Vision worker — those need no agent and no MCP client (T1103). Until a tab attaches, the server answers from a headless copy of the project — an agent can build a graph there that this tab never shows. Bridge expected on ${BRIDGE_HOST}:${BRIDGE_PORT}.`;
 
 export interface BridgeClientOptions {
   /**
@@ -266,7 +273,7 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
       const code = normalisePairingCode(pairingCode);
       if (code === "") {
         // Refused before a byte leaves the page: nothing opened, nothing published (§V288).
-        publish("error", "No pairing code entered. The Loom MCP server prints one at startup; the agent connected to it can read it out.");
+        publish("error", `No pairing code entered. The local helper (\`${DEVICE_HELPER_COMMAND}\`) prints one at startup; an agent connected to it can also read it out.`);
         return;
       }
       wanted = true;
@@ -314,7 +321,7 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
       };
       live.onerror = () => {
         if (socket !== live) return;
-        publish("error", `The bridge connection failed. Check that the Loom MCP server is running on ${url}.`);
+        publish("error", `The bridge connection failed. Check that the local helper (\`${DEVICE_HELPER_COMMAND}\`) is running on ${url}.`);
       };
     },
 

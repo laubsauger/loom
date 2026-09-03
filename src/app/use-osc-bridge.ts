@@ -15,6 +15,7 @@ import { createDeviceClient, type DeviceClient } from "@devices/device-client.ts
 import type { OscSendOutcome } from "@devices/device-protocol.ts";
 import type { BridgeSocketFactory } from "@devices/transport/bridge-socket.ts";
 import type { OscMessage } from "@devices/osc-codec.ts";
+import { DEVICE_HELPER_NAME, DEVICE_HELPER_START } from "@devices/helper.ts";
 
 /**
  * T942 tier 3 — the session's ONE device attachment, and the OSC pump (§V182 with a wire).
@@ -369,7 +370,7 @@ export function useOscBridge(options: OscBridgeOptions = {}): OscBridgeBinding {
             // the one place that is tested for it.
             message: `${status.headline}. ${status.hint ?? ""}`.trim(),
             suggestion:
-              "Run `pnpm mcp:serve`, then enter its pairing code in the agent panel's Connections section. The helper listens on 127.0.0.1 only, so an OSC sender must be on this machine.",
+              `A page cannot open a UDP socket, so OSC arrives through ${DEVICE_HELPER_NAME}: ${DEVICE_HELPER_START}. It listens on 127.0.0.1 only, so an OSC sender must be on this machine.`,
           });
         }
         // Retry from the code this tab already paired with, so pairing MID-SESSION lights

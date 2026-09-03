@@ -20,6 +20,7 @@ import {
   PERSON_MASK_RESULT_KEY,
 } from "@nodes/definitions/index.ts";
 import type { DeviceClient } from "@devices/device-client.ts";
+import { DEVICE_HELPER_COMMAND, DEVICE_HELPER_NAME, DEVICE_HELPER_START } from "@devices/helper.ts";
 
 /**
  * T1029 — the Person Mask node's CPU half: Apple Vision over the device bridge,
@@ -171,7 +172,7 @@ export function useVisionBridge(options: {
           const live = client();
           if (live === null) {
             throw new Error(
-              "no helper is attached — pair this tab in the Connections section first (pnpm mcp:serve)",
+              `no device bridge is attached — ${DEVICE_HELPER_START}`,
             );
           }
           const outcome = await live.vision({
@@ -225,7 +226,7 @@ export function useVisionBridge(options: {
             severity: "warning",
             code: "vision.helper.absent",
             message:
-              "Person Mask is NOT RUNNING — it needs the local helper (pnpm mcp:serve) paired in the Connections section, on macOS. Until then it publishes an empty mask (nobody) and coverage reads 0.",
+              `Person Mask is NOT RUNNING — it needs ${DEVICE_HELPER_NAME} (\`${DEVICE_HELPER_COMMAND}\`) paired in the Connections section, on macOS. That helper spawns the Apple Vision worker because a page cannot; it is not an agent connection. Until then it publishes an empty mask (nobody) and coverage reads 0.`,
             nodeId,
           });
         } else {

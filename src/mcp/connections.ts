@@ -107,7 +107,11 @@ export interface McpTransportRegistry {
  */
 export const TRANSPORT_LABEL: Readonly<Record<McpTransportKind, string>> = {
   webmcp: "In-page (WebMCP)",
-  bridge: "Loom bridge (stdio MCP server)",
+  // T1103 — the row used to read "(stdio MCP server)", which is only half of what this one
+  // connection is. The SAME process is the device bridge, and the SAME pairing is what lets
+  // this tab reach OSC, a laser DAC or the Vision worker. Labelling it for the agent half
+  // alone is what made a person-mask node look like it depended on an agent protocol.
+  bridge: "Loom bridge (local helper: agents + devices)",
 };
 
 /** Row order in the panel, and the set §V338 insists always has a row. */

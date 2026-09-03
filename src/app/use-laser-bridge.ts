@@ -12,6 +12,7 @@ import type { LoomBackend } from "@runtime/backend/index.ts";
 import type { LoomBus } from "@domain/commands/bus.ts";
 import type { DeviceClient } from "@devices/device-client.ts";
 import type { LaserStateReport } from "@devices/device-protocol.ts";
+import { DEVICE_HELPER_COMMAND, DEVICE_HELPER_NAME, DEVICE_HELPER_START } from "@devices/helper.ts";
 
 declare module "@domain/types/commands.ts" {
   interface CommandMap {
@@ -153,7 +154,7 @@ export function useLaserBridge(options: {
   const run = useCallback(
     async (command: Parameters<DeviceClient["laser"]>[0]): Promise<string | null> => {
       const live = client();
-      if (live === null) return "no helper is attached — pair this tab first (pnpm mcp:serve)";
+      if (live === null) return `no device bridge is attached — ${DEVICE_HELPER_START}`;
       if (!pushHooked.current) {
         pushHooked.current = true;
         live.onLaserState((said) => {
@@ -246,7 +247,7 @@ export function useLaserBridge(options: {
             severity: "info",
             code: "laser.helper.absent",
             message:
-              "Laser Out needs the local helper (pnpm mcp:serve) — a page cannot open TCP. Pair this tab in the Connections section and connect from the node's Laser section.",
+              `Laser Out needs ${DEVICE_HELPER_NAME} (\`${DEVICE_HELPER_COMMAND}\`) — a page cannot open TCP, and this is not an agent connection. Pair this tab in the Connections section and connect from the node's Laser section.`,
             nodeId,
           });
           continue;
