@@ -296,7 +296,14 @@ export const chorusDocument = document(
         channel: "luminance",
         compare: "greater",
       }, { label: "key1" }),
-      node("cut", "matte", [-580, 660], { model: "modnet-photographic-quantized" }, { label: "cut1" }),
+      /* T1024/T1036: NOT the quantized build. It is not faster (928 ms vs 818 ms on the
+         same input) and it collapses below ~0.2 mean input — measured coverage 0.037 at
+         0.095 and 0.007 at 0.046, with the surviving fragment no longer on the subject.
+         Pictures reach this node in LINEAR working space, ~1.5 stops under display-
+         referred, so a normally-lit room lands squarely in that collapse zone: the app's
+         own input buffer measured 0.049 and 0.103. The accurate build is flat across five
+         stops, centroid stable to a texel. The default is the accurate one. */
+      node("cut", "matte", [-580, 660], {}, { label: "cut1" }),
       node("mpick", "switch", [-300, 540], { index: 0 }, { label: "mpick1" }),
 
       // ── the wall ────────────────────────────────────────────────────────────

@@ -1330,9 +1330,7 @@
         "definitionVersion": 1,
         "id": "cut",
         "label": "cut1",
-        "parameters": {
-          "model": "modnet-photographic-quantized"
-        },
+        "parameters": {},
         "position": {
           "x": -580,
           "y": 660
