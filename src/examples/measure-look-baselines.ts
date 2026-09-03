@@ -7,7 +7,7 @@ import { starterComponentsView } from "./component-files.ts";
 /**
  * Regenerates `look-baselines.json` (T690, §V643).
  *
- *   node --import ./src/mcp/alias-hooks.ts src/examples/measure-look-baselines.ts
+ *   node --import ./src/tooling/alias-hooks.ts src/examples/measure-look-baselines.ts
  *
  * Run this ONLY in the same commit as work that deliberately changes how an example
  * looks, and state the delta in that commit's message (§V642: reverting a parameter is

@@ -51,8 +51,8 @@ Vitest workspace: `*.test.ts` â†’ project `headless` (node env); `*.test.tsx` â†
 Running plain `node` against `src/**` requires the alias loader (path aliases come from `tsconfig.app.json`):
 
 ```bash
-node --import ./src/mcp/alias-hooks.ts src/examples/build-examples.ts --only E13   # regenerate ONE example
-node --import ./src/mcp/alias-hooks.ts src/examples/build-thumbnails.ts --only E13
+node --import ./src/tooling/alias-hooks.ts src/examples/build-examples.ts --only E13   # regenerate ONE example
+node --import ./src/tooling/alias-hooks.ts src/examples/build-thumbnails.ts --only E13
 ```
 
 The bare `node --experimental-strip-types src/...` form is dead and has been "fixed" in docblocks three times; run a command before trusting it.

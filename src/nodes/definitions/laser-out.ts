@@ -13,7 +13,7 @@ import { SINK_TAG } from "./sink.ts";
  * structural scan holds that. The session pump (`src/app/use-laser-bridge.ts`,
  * registered in `EMISSION_PUMPS` — §T1005's gate holds THAT) is the only place bytes
  * leave: it consults `emissionRefusal` per node and hands the planner's own samples to
- * the bridge helper, whose laser door (`src/mcp/laser-host.ts`) owns every socket, the
+ * the bridge helper, whose laser door (`src/devices/laser-host.ts`) owns every socket, the
  * discovery, the vet and the dead-man (G2: the failsafe on the far side of the page).
  * The no-fire mechanisms are enumerated PER PATH in the pump's and the door's
  * docblocks (§V840) — blocked policy, no helper, not armed, page death, page stall —

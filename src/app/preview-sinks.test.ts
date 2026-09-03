@@ -79,7 +79,7 @@ describe("T620 — sink removal grace is wall-clock", () => {
  * its picture (§V455), and the compile that drops it only releases (T143 carry).
  *
  * Reproduce the real thing (the numbers below are derived from it):
- *   node --import ./src/mcp/alias-hooks.ts scratchpad/t919/preview-profile.ts \
+ *   node --import ./src/tooling/alias-hooks.ts scratchpad/t919/preview-profile.ts \
  *     --example=E34-Lidar --gesture=pan --frames=300 --settle=0     # 13, what shipped
  *   ...                                                --settle=200 # 10
  *   ...                                                --settle=400 # 4, the shipped window

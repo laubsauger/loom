@@ -1,10 +1,6 @@
-import type { BridgeSocket } from "./bridge-client.ts";
-import {
-  bridgeFailureResult,
-  bridgeUrl,
-  parseBridgeMessage,
-  type BridgeToolListing,
-} from "./bridge-protocol.ts";
+import type { BridgeSocket } from "@devices/transport/bridge-socket.ts";
+import { bridgeFailureResult, type BridgeToolListing } from "./bridge-protocol.ts";
+import { bridgeUrl, parseBridgeMessage } from "@devices/transport/bridge-wire.ts";
 import { readHandoff } from "./bridge-handoff.ts";
 
 /**

@@ -188,6 +188,12 @@ const ALIASES: ReadonlyArray<readonly [string, string]> = [
   ["@nodes/", "src/nodes/"],
   ["@ui/", "src/ui/"],
   ["@agent/", "src/agent/"],
+  // T1103 — the device bridge, lifted out of `src/mcp/`. Missing from this table, the walk
+  // could not follow `serve.ts` → `@devices/laser-host.ts` and this gate reported the laser
+  // service and the Ether Dream client as unwired the moment they moved. That red was
+  // correct behaviour from a table that had gone stale, and it is why the table lives here
+  // rather than being inferred: it must be updated with `tsconfig.app.json`'s `paths`.
+  ["@devices/", "src/devices/"],
   ["@/", "src/"],
 ];
 

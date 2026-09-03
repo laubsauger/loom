@@ -19,7 +19,7 @@ import {
   PERSON_MASK_INPUT_SIDE,
   PERSON_MASK_RESULT_KEY,
 } from "@nodes/definitions/index.ts";
-import type { DeviceClient } from "@/mcp/device-client.ts";
+import type { DeviceClient } from "@devices/device-client.ts";
 
 /**
  * T1029 — the Person Mask node's CPU half: Apple Vision over the device bridge,

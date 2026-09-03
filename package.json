@@ -18,7 +18,7 @@
     "test:watch": "vitest",
     "test:headless": "vitest run --project headless",
     "test:e2e": "playwright test --pass-with-no-tests",
-    "mcp:serve": "node --import ./src/mcp/alias-hooks.ts ./src/mcp/serve.ts"
+    "mcp:serve": "node --import ./src/tooling/alias-hooks.ts ./src/mcp/serve.ts"
   },
   "dependencies": {
     "@codemirror/commands": "^6.11.0",

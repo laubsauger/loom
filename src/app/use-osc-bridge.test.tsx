@@ -6,7 +6,7 @@ import { allNodeDefinitions } from "@nodes/definitions/index.ts";
 import type { FrameEvaluationInput } from "@domain/types/frame.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
 import type { NodeId } from "@domain/types/ids.ts";
-import type { BridgeSocket } from "@/mcp/bridge-client.ts";
+import type { BridgeSocket } from "@devices/transport/bridge-socket.ts";
 import type { ChannelResolver } from "@domain/parameters/resolve.ts";
 import type { SideEffectPolicy } from "@domain/render/side-effects.ts";
 import { messagesFor, useOscBridge } from "./use-osc-bridge.ts";

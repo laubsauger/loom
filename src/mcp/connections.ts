@@ -191,8 +191,8 @@ export function createMcpTransportRegistry(options: { now?: () => number } = {})
  *  2. **T458 measured what it does.** It binds the WILDCARD address (`lsof`: `TCP *:4797`),
  *     not loopback; it does not isolate channels, so any second page on the same relay can
  *     invoke Loom's document-mutating tools by `<channel>-<name>`; and its session
- *     token travels in the socket URL, which is the specific mistake `bridge-protocol.ts`
- *     is built not to repeat.
+ *     token travels in the socket URL, which is the specific mistake
+ *     `@devices/transport/bridge-wire.ts` is built not to repeat.
  *
  * `bridge` replaces it with strictly less trust: our own process, loopback-bound, a pairing
  * code the page cannot guess, one attachment at a time, and no third party in the path. The

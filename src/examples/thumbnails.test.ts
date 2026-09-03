@@ -13,7 +13,7 @@ import { THUMBNAIL_RESOLUTION, thumbnailStem } from "./thumbnail.ts";
  * per-instance fix leaves the class open.
  *
  * Regenerate after a look change in the same commit:
- *   node --import ./src/mcp/alias-hooks.ts src/examples/build-thumbnails.ts [--only <name>]
+ *   node --import ./src/tooling/alias-hooks.ts src/examples/build-thumbnails.ts [--only <name>]
  */
 
 const thumbsDir = join(EXAMPLES_DIR, "thumbs");

@@ -17,7 +17,7 @@ import { requireExample } from "./runner.ts";
  *
  * Fix a failure by editing `documents.ts` and re-running:
  *
- *   node --import ./src/mcp/alias-hooks.ts src/examples/build-examples.ts
+ *   node --import ./src/tooling/alias-hooks.ts src/examples/build-examples.ts
  */
 
 describe("shipped examples match the save path", async () => {

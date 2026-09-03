@@ -4,8 +4,8 @@ import { describe, expect, it } from "vitest";
 
 import type { GraphDocument } from "../domain/types/graph.ts";
 import type { CompiledGraph } from "../compiler/index.ts";
-import type { DeviceClient } from "../mcp/device-client.ts";
-import type { VisionOutcome } from "../mcp/device-protocol.ts";
+import type { DeviceClient } from "@devices/device-client.ts";
+import type { VisionOutcome } from "@devices/device-protocol.ts";
 import type { LoomBackend } from "../runtime/backend/index.ts";
 import {
   maskCoverage,

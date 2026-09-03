@@ -1,16 +1,18 @@
 import {
+  bridgeFailureResult,
+  headlessNote,
+  proxyTokenMatches,
+  type BridgeToolListing,
+} from "./bridge-protocol.ts";
+import {
   BRIDGE_ATTACH_TIMEOUT_MS,
   BRIDGE_HOST,
   BRIDGE_PORT,
-  bridgeFailureResult,
-  headlessNote,
   isPermittedOrigin,
   mintPairingCode,
   pairingCodeMatches,
   parseBridgeMessage,
-  proxyTokenMatches,
-  type BridgeToolListing,
-} from "./bridge-protocol.ts";
+} from "@devices/transport/bridge-wire.ts";
 import {
   clearHandoff,
   defaultHandoffDir,
@@ -18,13 +20,13 @@ import {
   writeHandoff,
 } from "./bridge-handoff.ts";
 import { createBridgeProxy, type BridgeProxy } from "./bridge-proxy.ts";
-import type { DeviceHub, DeviceSession } from "./device-hub.ts";
-import type { BridgeSocket } from "./bridge-client.ts";
+import type { DeviceHub, DeviceSession } from "@devices/device-hub.ts";
+import type { BridgeSocket } from "@devices/transport/bridge-socket.ts";
 import {
   createLoopbackWebSocketServer,
   type LoopbackConnection,
   type LoopbackWebSocketServer,
-} from "./loopback-ws.ts";
+} from "@devices/transport/loopback-ws.ts";
 import type { McpToolListing, McpToolSource } from "./server.ts";
 
 /**
@@ -109,8 +111,8 @@ import type { McpToolListing, McpToolSource } from "./server.ts";
  * merely VISITED could attach and drive twenty-eight document-mutating tools. The host mints
  * a code per process, publishes it only through its own channels (stderr, MCP instructions,
  * headless tool results, `bridge_status`), and the human types it into the panel. See
- * `bridge-protocol.ts` for the full posture, including why the code never travels in a URL
- * (T398).
+ * `@devices/transport/bridge-wire.ts` for the full posture, including why the code never
+ * travels in a URL (T398).
  */
 
 /** What a human is told about the bridge, by whoever is rendering (§V338). */
@@ -210,14 +212,14 @@ export interface BridgeHostOptions {
    * which is G2's page-death case: a session that ends mid-stream blanks, stops and
    * e-stops the DAC on the helper's own clock before anything else happens.
    */
-  readonly laser?: import("./laser-host.ts").LaserHost;
+  readonly laser?: import("@devices/laser-host.ts").LaserHost;
   /**
    * T1029 — the vision door, present only when the helper was built with one. One
    * picture in, one owed mask back; absent, the refusal names what is missing. Disposed
    * with the device client (`releaseDevice`), so a dead page never keeps a child
    * process warm for nobody.
    */
-  readonly vision?: import("./vision-host.ts").VisionHost;
+  readonly vision?: import("@devices/vision-host.ts").VisionHost;
 }
 
 /**

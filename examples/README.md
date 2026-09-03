@@ -111,7 +111,7 @@ installs and compiles every file the way §V89 gates an example.
 Do not hand-edit the JSON. Edit `src/examples/documents.ts` and regenerate:
 
 ```
-node --import ./src/mcp/alias-hooks.ts src/examples/build-examples.ts
+node --import ./src/tooling/alias-hooks.ts src/examples/build-examples.ts
 ```
 
 The bare `--experimental-strip-types` form does not work: the build script and everything
@@ -122,7 +122,7 @@ second worker lost time to it a week later.
 Five workers share this checkout, so regenerate only what your change touched:
 
 ```
-node --import ./src/mcp/alias-hooks.ts src/examples/build-examples.ts --only Cinder
+node --import ./src/tooling/alias-hooks.ts src/examples/build-examples.ts --only Cinder
 ```
 
 The files are written by `buildProjectFile`, the app's real save path, so a shipped example

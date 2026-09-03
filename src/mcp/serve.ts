@@ -15,9 +15,9 @@ import { nodeGpuHost, probeDawn } from "../runtime/backend/vgpu/node-gpu-host.ts
 import { createAgentPorts } from "../runtime/export/agent-ports.ts";
 import { createMcpConnection, type McpConnection } from "./server.ts";
 import { createBridgeHost, type BridgeStatus } from "./bridge-host.ts";
-import { createDeviceHub, nodeUdpSocketFactory, type UdpSocketFactory } from "./device-hub.ts";
-import { createLaserHost, nodeLaserDiscovery, nodeTcpSocketFactory } from "./laser-host.ts";
-import { createVisionHost, nodeVisionStart } from "./vision-host.ts";
+import { createDeviceHub, nodeUdpSocketFactory, type UdpSocketFactory } from "@devices/device-hub.ts";
+import { createLaserHost, nodeLaserDiscovery, nodeTcpSocketFactory } from "@devices/laser-host.ts";
+import { createVisionHost, nodeVisionStart } from "@devices/vision-host.ts";
 
 /**
  * The out-of-process MCP server (T290, T294): a HEADLESS Loom on stdio — store,
@@ -126,9 +126,9 @@ export interface HeadlessMcpServerOptions {
      * clock for the dead-man); injectable so the emulator-backed test drives the whole
      * message path with no network and no timers of its own.
      */
-    readonly laser?: import("./laser-host.ts").LaserHost;
+    readonly laser?: import("@devices/laser-host.ts").LaserHost;
     /** T1029 — the vision door. Defaults to the REAL one (swiftc-compiled worker). */
-    readonly vision?: import("./vision-host.ts").VisionHost;
+    readonly vision?: import("@devices/vision-host.ts").VisionHost;
     /**
      * How the DEVICE role opens UDP sockets (T942 tier 3). Injected ONLY by tests.
      *

@@ -3,14 +3,14 @@ import {
   normalisePairingCode,
   parseBridgeMessage,
   BRIDGE_PORT,
-} from "./bridge-protocol.ts";
+} from "./transport/bridge-wire.ts";
 import {
   browserSocket,
   sessionPairingMemory,
   type BridgeSocket,
   type BridgeSocketFactory,
   type PairingMemory,
-} from "./bridge-client.ts";
+} from "./transport/bridge-socket.ts";
 import {
   oscPortOfStream,
   vetOscDestination,
@@ -36,7 +36,7 @@ import type { LaserCommand, LaserOutcome, VisionOutcome, VisionSegmentRequest } 
  * A second socket to the SAME bridge on the SAME port, declaring the role `device` in its
  * first message. It moves bytes: readings in, sends out, state changes both ways. It holds
  * no mapping, no node, no React and no policy — `use-osc-bridge.ts` is where those live,
- * exactly as `bridge-client.ts` holds no tool definitions.
+ * exactly as the agent client (`@/mcp/bridge-client.ts`) holds no tool definitions.
  *
  * ## Why a SECOND socket rather than a second message type on the page's
  *

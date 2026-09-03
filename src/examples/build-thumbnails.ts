@@ -10,7 +10,7 @@ import { starterComponentsView } from "./component-files.ts";
  * Regenerates `examples/thumbs/<ExampleFileStem>.png` (T847), one still per example at
  * §T794's CARD_FRAME.
  *
- *   node --import ./src/mcp/alias-hooks.ts src/examples/build-thumbnails.ts [--only <name>]
+ *   node --import ./src/tooling/alias-hooks.ts src/examples/build-thumbnails.ts [--only <name>]
  *
  * A thumbnail is a §V642 baseline in disguise: run this in the SAME commit as work that
  * changes how an example looks, and `thumbnails.test.ts` fails if a shipped loom has no

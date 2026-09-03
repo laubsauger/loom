@@ -10,8 +10,8 @@ import { laserStreamRegions } from "@nodes/definitions/laser-path.ts";
 import type { PassDescriptor } from "@runtime/backend/plan.ts";
 import type { LoomBackend } from "@runtime/backend/index.ts";
 import type { LoomBus } from "@domain/commands/bus.ts";
-import type { DeviceClient } from "@/mcp/device-client.ts";
-import type { LaserStateReport } from "@/mcp/device-protocol.ts";
+import type { DeviceClient } from "@devices/device-client.ts";
+import type { LaserStateReport } from "@devices/device-protocol.ts";
 
 declare module "@domain/types/commands.ts" {
   interface CommandMap {

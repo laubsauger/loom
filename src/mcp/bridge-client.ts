@@ -5,7 +5,14 @@ import {
   parseBridgeMessage,
   BRIDGE_HOST,
   BRIDGE_PORT,
-} from "./bridge-protocol.ts";
+} from "@devices/transport/bridge-wire.ts";
+import {
+  browserSocket,
+  sessionPairingMemory,
+  type BridgeSocket,
+  type BridgeSocketFactory,
+  type PairingMemory,
+} from "@devices/transport/bridge-socket.ts";
 import { TRANSPORT_LABEL, type McpTransportRegistry } from "./connections.ts";
 import { toolListings } from "./published-tools.ts";
 
@@ -38,7 +45,9 @@ import { toolListings } from "./published-tools.ts";
  *    from opening `ws://127.0.0.1` and driving this document. It travels as the first
  *    MESSAGE on the socket, never in the URL: T398's finding about the deprecated relay,
  *    whose session token rode the query string into every log that touched it. It is never
- *    logged, and never written anywhere that survives the tab — see `PAIRING_STORAGE_KEY`.
+ *    logged, and never written anywhere that survives the tab — see `PAIRING_STORAGE_KEY` in
+ *    `@devices/transport/bridge-socket.ts`, which holds the socket and the memory both
+ *    roles on this port share (T1103).
  *  - **Explicit connect, explicit disconnect, visible state.** Every transition publishes a
  *    row with a reason (§V288/§V338); `McpConnectionPanel` renders it and the Disconnect
  *    beside it. Unmount disconnects, so a closed tab leaves no live attachment.
@@ -63,128 +72,6 @@ import { toolListings } from "./published-tools.ts";
  */
 const BRIDGE_IDLE_DETAIL =
   `Not attached — a desktop client (Claude Desktop, any stdio MCP client) drives THIS tab through the bridge: run \`pnpm mcp:serve\` in the project, read the pairing code it prints, and enter it here. Until a tab attaches, that server answers from a headless copy of the project — an agent can build a graph there that this tab never shows. Bridge expected on ${BRIDGE_HOST}:${BRIDGE_PORT}.`;
-
-/**
- * WHERE THE PAIRING CODE IS REMEMBERED, AND FOR EXACTLY HOW LONG (T925).
- *
- * ## The pain, in the owner's words
- *
- * *"maybe we should try to reconnect to the last known mcp code on hot reload… its super
- * painful right now with any edit from an agent reloading the page and killing the link and
- * having me to repaste the code."* Note the shape of that: the agent's OWN edit triggers the
- * HMR reload that drops the attachment, so the tool stops working because of the work it
- * enables. Every such edit cost a hand-carried six-character secret between two windows.
- *
- * ## `sessionStorage`, and why not `localStorage`
- *
- * This code gates control of the user's open document. `sessionStorage` survives a reload
- * and dies with the tab — exactly the lifetime of the pain, and no longer. `localStorage`
- * would outlive the bridge PROCESS that minted the code and leave a stale control secret on
- * disk for days, buying nothing: the code is minted per process, so a value that outlives
- * the process is guaranteed worthless and merely dangerous.
- *
- * ## Why this key does not carry the legacy prefix (§V813)
- *
- * §V813 keeps the thirteen existing storage keys on the OLD prefix because MOVING a key
- * orphans data the user already has. A brand-new address has nothing to orphan, so it takes
- * the current name. Two prefixes is the honest state of a renamed product mid-flight; it is
- * a decision, not an oversight.
- */
-const PAIRING_STORAGE_KEY = "loom.bridge.pairing.v1";
-
-/** The three things this module does with a remembered code. Injectable for tests. */
-export interface PairingMemory {
-  read(): string | null;
-  write(code: string): void;
-  forget(): void;
-}
-
-/**
- * The real thing, and every call is wrapped.
- *
- * Reaching `sessionStorage` THROWS rather than returning null in a browser configured to
- * block site data, and `setItem` throws on quota. Remembering a code is a convenience; it
- * must never be able to stop a tab from attaching by hand.
- */
-export function sessionPairingMemory(): PairingMemory {
-  const store = (): Storage | null => {
-    try {
-      return globalThis.sessionStorage as Storage | undefined ?? null;
-    } catch {
-      return null;
-    }
-  };
-  return {
-    read() {
-      try {
-        return store()?.getItem(PAIRING_STORAGE_KEY) ?? null;
-      } catch {
-        return null;
-      }
-    },
-    write(code) {
-      try {
-        store()?.setItem(PAIRING_STORAGE_KEY, code);
-      } catch {
-        // Nothing to say and nothing to do: the next reload asks the human, as before.
-      }
-    },
-    forget() {
-      try {
-        store()?.removeItem(PAIRING_STORAGE_KEY);
-      } catch {
-        // Same.
-      }
-    },
-  };
-}
-
-/**
- * The socket shape this module needs.
- *
- * Narrow on purpose: the browser adapter below is the only place a DOM `WebSocket` appears,
- * and a test can hand in a real client or a fake with equal ease. Note that a test which
- * fakes this proves the CALLBACKS, not the bytes (§V382) — `bridge-e2e.test.ts` runs both
- * halves over a real socket for the claim that matters.
- */
-export interface BridgeSocket {
-  send(data: string): void;
-  close(): void;
-  onopen: (() => void) | null;
-  onmessage: ((event: { data: unknown }) => void) | null;
-  onclose: (() => void) | null;
-  onerror: (() => void) | null;
-}
-
-export type BridgeSocketFactory = (url: string) => BridgeSocket;
-
-/**
- * The real thing, adapted field by field so no cast is needed anywhere.
- *
- * Exported for `device-client.ts`, which held a byte-identical copy while ALREADY
- * importing `BridgeSocket` from this module — the type crossed the seam and the one
- * adapter that produces it did not.
- */
-export function browserSocket(url: string): BridgeSocket {
-  const socket = new WebSocket(url);
-  const bridge: BridgeSocket = {
-    send: (data) => {
-      socket.send(data);
-    },
-    close: () => {
-      socket.close();
-    },
-    onopen: null,
-    onmessage: null,
-    onclose: null,
-    onerror: null,
-  };
-  socket.onopen = () => bridge.onopen?.();
-  socket.onmessage = (event: MessageEvent) => bridge.onmessage?.({ data: event.data });
-  socket.onclose = () => bridge.onclose?.();
-  socket.onerror = () => bridge.onerror?.();
-  return bridge;
-}
 
 export interface BridgeClientOptions {
   /**

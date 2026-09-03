@@ -658,7 +658,7 @@ On the `webkitglib/2.52` stable branch — what WebKitGTK 2.52.x ships from — 
 
 Run on this machine (darwin 25.3.0, Node v24.11.1), 2026-09-02. **These are the only numbers in this document I produced myself; everything else labelled `[doc]` is read, not run.**
 
-**What was measured:** this repo's own `createLoopbackWebSocketServer` (`src/mcp/loopback-ws.ts`) — the exact server a device bridge would generalise — echoing messages to Node's built-in `WebSocket` client over `127.0.0.1`. Round trip means send→echo→receive, so it carries the payload **twice** and includes the JS-side string encode/decode on both ends. Warm-up iterations discarded. Scripts are in this session's scratchpad, not in the repo.
+**What was measured:** this repo's own `createLoopbackWebSocketServer` (`src/devices/transport/loopback-ws.ts`) — the exact server a device bridge would generalise — echoing messages to Node's built-in `WebSocket` client over `127.0.0.1`. Round trip means send→echo→receive, so it carries the payload **twice** and includes the JS-side string encode/decode on both ends. Warm-up iterations discarded. Scripts are in this session's scratchpad, not in the repo.
 
 ```
 CONTROL (one MIDI CC as JSON, echoed)

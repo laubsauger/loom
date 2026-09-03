@@ -37,7 +37,7 @@ export const MCP_SERVER_KEY = "loom";
 export const MCP_ENTRY_PATH = "src/mcp/serve.ts";
 
 /** The path-alias loader the entry point needs (see `alias-hooks.ts`). */
-export const MCP_LOADER_PATH = "src/mcp/alias-hooks.ts";
+export const MCP_LOADER_PATH = "src/tooling/alias-hooks.ts";
 
 /** The `package.json` script that starts the same server for a human at a terminal. */
 export const MCP_SERVE_SCRIPT = "mcp:serve";

@@ -31,7 +31,8 @@
       "@editor/*": ["./src/editor/*"],
       "@nodes/*": ["./src/nodes/*"],
       "@ui/*": ["./src/ui/*"],
-      "@agent/*": ["./src/agent/*"]
+      "@agent/*": ["./src/agent/*"],
+      "@devices/*": ["./src/devices/*"]
     }
   },
   "include": ["src"]

@@ -3,12 +3,13 @@
  *
  * ## There is no second server here, and that is the whole design
  *
- * `bridge-host.ts` is already a loopback WebSocket host with an origin allowlist, a
- * CSPRNG pairing code, one-page-at-a-time, EADDRINUSE→proxy and retry-on-free (T921).
+ * The helper's listener (`@/mcp/bridge-host.ts`) is already a loopback WebSocket host with an
+ * origin allowlist, a CSPRNG pairing code, one-page-at-a-time, EADDRINUSE→proxy and
+ * retry-on-free (T921).
  * Everything below is a THIRD ROLE on that socket, alongside `page` and `proxy`. Nothing
  * about the listener changes: same process, same `BRIDGE_HOST = "127.0.0.1"`, same port,
- * same `isPermittedOrigin`, same code. See `bridge-protocol.ts` for the posture; this file
- * only adds messages.
+ * same `isPermittedOrigin`, same code — all of them from `./transport/bridge-wire.ts`, which
+ * is where the posture is argued. This file only adds messages.
  *
  * **§T458's three measured findings, and where each is already answered:**
  *
@@ -16,7 +17,7 @@
  *    role adds no listener, so it inherits `BRIDGE_HOST` verbatim — and the ONE new
  *    listener OSC needs (a UDP socket) is bound to the same constant by
  *    `vetOscListenPort`, which takes no host at all. There is no parameter anywhere in
- *    this feature that could be set to `0.0.0.0`, which is `bridge-protocol.ts`'s own
+ *    this feature that could be set to `0.0.0.0`, which is `./transport/bridge-wire.ts`'s own
  *    argument applied to a second protocol.
  *  - **(b) it did not isolate channels — any connected client could invoke another's
  *    tools.** One `device` client at a time, refused BY NAME, exactly as `page` is. A
@@ -408,8 +409,8 @@ export function deviceStreamId(source: DeviceSourceSpec): string {
  *
  * The inverse of `deviceStreamId`, here rather than spelled out at the page's end: the two
  * halves are in different runtimes and the one thing that must not drift is the wire
- * (`bridge-protocol.ts`'s own rule). The page reads the port back OUT of the id the helper
- * chose rather than assuming its request was answered with the port it asked for.
+ * (`./transport/bridge-wire.ts`'s own rule). The page reads the port back OUT of the id the
+ * helper chose rather than assuming its request was answered with the port it asked for.
  */
 export function oscPortOfStream(stream: unknown): number | null {
   if (typeof stream !== "string" || !stream.startsWith("osc:")) return null;

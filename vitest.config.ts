@@ -14,6 +14,7 @@ export default defineConfig({
       "@nodes": alias("nodes"),
       "@ui": alias("ui"),
       "@agent": alias("agent"),
+      "@devices": alias("devices"),
     },
   },
   test: {

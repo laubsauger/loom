@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import { registerHooks } from "node:module";
 
 /**
- * Path-alias resolution for plain `node`, so `serve.ts` can be STARTED (T399).
+ * Path-alias resolution for plain `node` — the loader EVERY script in this repo runs under
+ * (T399; moved out of `src/mcp/` by T1103).
  *
  * ## Why this file exists
  *
@@ -12,6 +13,14 @@ import { registerHooks } from "node:module";
  * so the one path that already talks to Claude Desktop today had no invocation and
  * nobody would have found it. Node 24 strips the types on its own; the aliases are the
  * only thing missing.
+ *
+ * ## Why it is not in `src/mcp/`
+ *
+ * It was, and it is not an MCP thing: the examples build (`src/examples/build-examples.ts`,
+ * `build-thumbnails.ts`, `measure-look-baselines.ts`) and the model-signature extractor all
+ * start with `node --import ./src/tooling/alias-hooks.ts`, and none of them has anything to do
+ * with an agent protocol. Living under `mcp/` made the one loader every script needs look
+ * like a detail of the one script that happened to need it first (T1103).
  *
  * ## Why not a loader dependency
  *
@@ -27,7 +36,7 @@ import { registerHooks } from "node:module";
  * this hook did not know about fails as "Cannot find package '@thing/x'" — an error
  * that reads like a missing npm install, not like a stale table.
  *
- * Usage: `node --import ./src/mcp/alias-hooks.ts src/mcp/serve.ts` (`pnpm mcp:serve`).
+ * Usage: `node --import ./src/tooling/alias-hooks.ts src/mcp/serve.ts` (`pnpm mcp:serve`).
  */
 
 const repoRoot = new URL("../../", import.meta.url);

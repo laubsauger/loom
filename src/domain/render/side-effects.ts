@@ -129,7 +129,7 @@ export const NODE_SIDE_EFFECTS: Readonly<Record<string, SideEffect>> = {
    * consults `emissionRefusal` per node, and in this build it constructs NO TRANSPORT
    * AT ALL — the Ether Dream helper driver has not landed, so today the mechanism on
    * every path is the absence of any sender, and the protocol that will carry it is
-   * already emulator-gated (`src/mcp/ether-dream.ts`) with G3/G4/G9 enforced at the
+   * already emulator-gated (`src/devices/ether-dream.ts`) with G3/G4/G9 enforced at the
    * only functions that produce point bytes.
    */
   laserOut: "emits",

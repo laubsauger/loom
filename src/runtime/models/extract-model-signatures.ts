@@ -1,7 +1,7 @@
 /**
  * Regenerates `model-signatures.ts` from the REAL weight files (T382, §V742).
  *
- *   node --import ./src/mcp/alias-hooks.ts src/runtime/models/extract-model-signatures.ts <dir>
+ *   node --import ./src/tooling/alias-hooks.ts src/runtime/models/extract-model-signatures.ts <dir>
  *
  * where <dir> holds the pinned .onnx files named as `FILES` below.
  *

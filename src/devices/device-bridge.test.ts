@@ -11,7 +11,7 @@ import { effectiveParameterSchema } from "../domain/parameters/resolve.ts";
 import type { GraphDocument, GraphNode } from "../domain/types/graph.ts";
 import type { NodeId } from "../domain/types/ids.ts";
 import type { FrameEvaluationInput } from "../domain/types/frame.ts";
-import { createHeadlessMcpServer } from "./serve.ts";
+import { createHeadlessMcpServer } from "../mcp/serve.ts";
 import { createDeviceClient } from "./device-client.ts";
 import type { UdpSocket, UdpSocketFactory } from "./device-hub.ts";
 import { encodeOscMessage } from "./osc-codec.ts";
@@ -447,7 +447,7 @@ describe("GATE 3 — an unreachable bridge degrades with a STATED reason (§V359
   it("names a helper with no device support distinctly from a wrong code", async () => {
     // The bridge exists, the code is right, and it serves no devices. Collapsing this into
     // "refused" would send the reader hunting for a code that was never the problem.
-    const { createBridgeHost } = await import("./bridge-host.ts");
+    const { createBridgeHost } = await import("../mcp/bridge-host.ts");
     const host = createBridgeHost({
       headless: { listTools: () => [], callTool: () => Promise.resolve({}) },
       port: 0,

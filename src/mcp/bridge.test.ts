@@ -19,7 +19,7 @@ import {
   mintPairingCode,
   normalisePairingCode,
   pairingCodeMatches,
-} from "./bridge-protocol.ts";
+} from "@devices/transport/bridge-wire.ts";
 
 /**
  * THE BRIDGE, OVER A REAL SOCKET (T451, §V382).
@@ -201,7 +201,7 @@ describe("bridge pairing code (T451)", () => {
   it("permits a loopback page and a non-browser peer, and refuses everything else", () => {
     expect(isPermittedOrigin("http://localhost:5173")).toBe(true);
     expect(isPermittedOrigin("http://127.0.0.1:4173")).toBe(true);
-    // Absent: not a browser. Documented in bridge-protocol.ts, and the reason it is safe.
+    // Absent: not a browser. Documented in bridge-wire.ts, and the reason it is safe.
     expect(isPermittedOrigin(undefined)).toBe(true);
     expect(isPermittedOrigin("https://evil.example")).toBe(false);
     expect(isPermittedOrigin("null")).toBe(false);

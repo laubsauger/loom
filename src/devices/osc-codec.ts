@@ -3,10 +3,10 @@
  *
  * ## Why this is a file and not a dependency
  *
- * Same argument `loopback-ws.ts` made for RFC 6455: this codec runs inside the process an
- * MCP client spawns on the user's behalf, and OSC 1.0 is a hundred lines of big-endian
- * reads with 4-byte padding. Adding a package to widen what runs there, for that, is the
- * trade the bridge already refused once.
+ * Same argument `./transport/loopback-ws.ts` made for RFC 6455: this codec runs inside the
+ * local helper process, and OSC 1.0 is a hundred lines of big-endian reads with 4-byte
+ * padding. Adding a package to widen what runs there, for that, is the trade the bridge
+ * already refused once.
  *
  * ## WHERE THIS RUNS, AND WHY THE PAGE NEVER SEES A BYTE OF IT
  *

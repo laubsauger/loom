@@ -1,6 +1,6 @@
 import { createSocket } from "node:dgram";
 
-import { BRIDGE_HOST } from "./bridge-protocol.ts";
+import { BRIDGE_HOST } from "./transport/bridge-wire.ts";
 import {
   deviceStreamId,
   vetOscDestination,

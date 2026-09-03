@@ -32,8 +32,9 @@ import { join } from "node:path";
  * this file: never to stderr, never into `instructions`, never onto a tool result. Holding
  * it proves exactly one thing — that the holder can read a `0600` file in the user's own
  * home directory. That actor is already out of scope by the posture stated in
- * `bridge-protocol.ts`: a local process running as the user could read the pairing code out
- * of the same log the user does, and needs no browser bug to do anything it wants. A PAGE,
+ * `@devices/transport/bridge-wire.ts`: a local process running as the user could read the
+ * pairing code out of the same log the user does, and needs no browser bug to do anything it
+ * wants. A PAGE,
  * which is the attacker that posture is actually defending against, cannot read a file at
  * all — so the page-facing gate is not widened by one bit.
  *

@@ -9,8 +9,8 @@ import { describe, expect, it } from "vitest";
 import { createNodeRegistry } from "../nodes/registry/registry.ts";
 import { allNodeDefinitions } from "../nodes/definitions/index.ts";
 import type { GraphDocument } from "../domain/types/graph.ts";
-import type { DeviceClient } from "../mcp/device-client.ts";
-import type { LaserOutcome, LaserStateReport } from "../mcp/device-protocol.ts";
+import type { DeviceClient } from "@devices/device-client.ts";
+import type { LaserOutcome, LaserStateReport } from "@devices/device-protocol.ts";
 import type { LoomBackend } from "../runtime/backend/index.ts";
 import { laserPumpNodeTypes, samplesFromBuffers, useLaserBridge } from "./use-laser-bridge.ts";
 

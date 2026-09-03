@@ -26,7 +26,7 @@ These instructions apply to the entire repository. `SPEC.md` is the authoritativ
 - Treat `examples/*.loom.json` and `examples/components/*.loom.json` as generated executable specifications. Never hand-edit them. For an example, edit its TypeScript source under `src/examples/documents/`, then regenerate only that example with:
 
 ```bash
-node --import ./src/mcp/alias-hooks.ts src/examples/build-examples.ts --only <Name>
+node --import ./src/tooling/alias-hooks.ts src/examples/build-examples.ts --only <Name>
 ```
 
 Starter components are authored in `src/examples/starter-components.ts`. Their generator currently rewrites the complete generated set, so inspect the shared worktree before running it without `--only`.

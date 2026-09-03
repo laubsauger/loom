@@ -11,10 +11,10 @@ import { OSC_CHANNEL_PREFIX } from "@domain/osc/osc-address.ts";
 import type { OscBridgeState } from "@domain/osc/osc-status.ts";
 import { describeSendOutcome, oscStatusLine } from "@domain/osc/osc-status.ts";
 import { emissionRefusal, type SideEffectPolicy } from "@domain/render/side-effects.ts";
-import { createDeviceClient, type DeviceClient } from "@/mcp/device-client.ts";
-import type { OscSendOutcome } from "@/mcp/device-protocol.ts";
-import type { BridgeSocketFactory } from "@/mcp/bridge-client.ts";
-import type { OscMessage } from "@/mcp/osc-codec.ts";
+import { createDeviceClient, type DeviceClient } from "@devices/device-client.ts";
+import type { OscSendOutcome } from "@devices/device-protocol.ts";
+import type { BridgeSocketFactory } from "@devices/transport/bridge-socket.ts";
+import type { OscMessage } from "@devices/osc-codec.ts";
 
 /**
  * T942 tier 3 — the session's ONE device attachment, and the OSC pump (§V182 with a wire).
