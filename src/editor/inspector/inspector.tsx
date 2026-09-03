@@ -81,8 +81,16 @@ export interface InspectorProps {
   settings: InspectorProjectSettings;
   /** Compiler diagnostics; the Common section surfaces the format ones (§V51). */
   diagnostics?: readonly RuntimeDiagnostic[];
-  /** Device capability report (§V12), used to flag unsupported formats. */
-  capabilities?: { formats: readonly TextureFormat[] } | undefined;
+  /**
+   * Device capability report (§V12), used to flag unsupported formats and to CLAMP the
+   * size readout the way the compiler does.
+   *
+   * `maxTextureDimension2D` is `capabilities.limits["maxTextureDimension2D"]` — the
+   * device's own ceiling. Absent means "no device report yet", not "unlimited".
+   */
+  capabilities?:
+    | { formats: readonly TextureFormat[]; maxTextureDimension2D?: number | undefined }
+    | undefined;
   /**
    * Resolved size/format per input port, when the compiler has reported them. Without
    * it the Common section falls back to the project size and says so.
@@ -478,12 +486,39 @@ export function Inspector({
       ),
     }));
 
+  /**
+   * ⚠ STOPGAP, not the design. The real fix is DELETING `./resolution.ts`'s arithmetic.
+   *
+   * The panel ran its own copy of the compiler's precedence ladder and was handed the
+   * PROJECT cap alone, while `compiler/resolution.ts`'s `effectiveMaxResolution` clamps to
+   * `min(project, capabilities.maxTextureDimension2D)`. So on any device whose
+   * `maxTextureDimension2D` is below the project cap — which is most of them at 4096 or
+   * 8192 against a 16384 project — the readout showed a size the node NEVER HAS.
+   *
+   * This restores the second half of the min so the panel stops lying today. It does not
+   * make the mirror right: it is still a second implementation that can drift again, and
+   * `editor/inspect/node-info-model.ts` — the OTHER panel on the same screen — already
+   * reads `output.size` straight off the compiler's `ResolvedOutput`. That is where this
+   * belongs, and `side-panes.tsx` already has `compiled` in scope at this call site.
+   *
+   * Deliberately NOT calling `effectiveMaxResolution`: its signature takes a full
+   * `ProjectSettings` and this pane holds the narrowed `InspectorProjectSettings`, so
+   * reusing it means widening a compiler export to serve code that is scheduled to be
+   * deleted. The two-line min dies with the mirror.
+   */
+  const projectCap = settings.limits?.maxResolution;
+  const deviceCap = capabilities?.maxTextureDimension2D;
+  const effectiveCap =
+    deviceCap === undefined || deviceCap <= 0
+      ? projectCap
+      : projectCap === undefined
+        ? deviceCap
+        : Math.min(projectCap, deviceCap);
+
   const resolutionContext: ResolutionContext = {
     project: settings.outputResolution,
     inputs,
-    ...(settings.limits?.maxResolution === undefined
-      ? {}
-      : { maxResolution: settings.limits.maxResolution }),
+    ...(effectiveCap === undefined ? {} : { maxResolution: effectiveCap }),
   };
   const formatContext: FormatContext = {
     projectFormat: settings.workingFormat,

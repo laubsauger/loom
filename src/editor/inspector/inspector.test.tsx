@@ -461,3 +461,98 @@ describe("T954 — name first, machine type as a badge", () => {
     expect(header?.querySelector("[data-machine-type]")?.textContent).toBe("test.everything");
   });
 });
+
+/**
+ * The size readout must clamp the way the PLAN does, not the way the project alone does.
+ *
+ * The panel runs its own copy of the compiler's precedence ladder (`./resolution.ts`) and
+ * was handed the project cap ALONE, while `compiler/resolution.ts` clamps to
+ * `min(project, capabilities.maxTextureDimension2D)`. Every device whose
+ * `maxTextureDimension2D` sits below the project cap — most of them, at 4096 or 8192
+ * against a 16384 project — therefore read a size the node never has. The user is told the
+ * output is 4000 wide; it is 2048.
+ *
+ * The fixture is chosen so the two answers DIFFER (§V870): 4000 custom is UNDER the 4096
+ * project cap, so the project cap alone changes nothing and only the device cap can
+ * produce 2048. A fixture over both caps would go green against the bug.
+ *
+ * ⚠ This gates a STOPGAP. The real fix is deleting the mirrored arithmetic and reading the
+ * compiler's `ResolvedOutput`, as `editor/inspect/node-info-model.ts` already does; these
+ * assertions are about the ANSWER, so they survive that change.
+ */
+describe("the resolved-size readout clamps to the device, not just the project", () => {
+  async function renderWithCap(
+    deviceCap: number | undefined,
+  ): Promise<{ readout: () => string }> {
+    const store = createGraphStore({ ids: createSequentialIdFactory("i") });
+    const { bus } = createDomainBus({
+      store,
+      registry: createNodeRegistry([everythingNode]).view(),
+    });
+    const created = await bus.execute(
+      "graph.applyPatch",
+      {
+        baseRevision: 0,
+        operations: [
+          { op: "addNode", ref: "$n", type: everythingNode.type, position: { x: 0, y: 0 } },
+        ],
+      },
+      context,
+    );
+    const nodeId = created.output.createdIds["$n"] as NodeId;
+    await bus.execute(
+      "graph.applyPatch",
+      {
+        baseRevision: bus.store.getGraph().revision,
+        operations: [
+          {
+            op: "setNodeResolution",
+            nodeId,
+            resolution: { mode: "fixed", width: 4000, height: 4000 },
+          },
+        ],
+      },
+      context,
+    );
+
+    render(
+      <Inspector
+        bus={bus}
+        context={context}
+        nodeId={nodeId}
+        settings={settings}
+        capabilities={{
+          formats: ["rgba8unorm", "rgba16float"],
+          ...(deviceCap === undefined ? {} : { maxTextureDimension2D: deviceCap }),
+        }}
+      />,
+    );
+    return {
+      readout: () => screen.getByLabelText("Resolved output").textContent ?? "",
+    };
+  }
+
+  it("shows the DEVICE ceiling when it is lower than the project cap", async () => {
+    const { readout } = await renderWithCap(2048);
+    // 2048, not 4000: the node cannot have 4000 on this device, so the panel must not
+    // claim it does.
+    expect(readout()).toContain("2048 × 2048");
+    expect(readout()).not.toContain("4000");
+    expect(readout()).toContain("clamped");
+  });
+
+  it("shows the requested size when the device can allocate it — both directions", async () => {
+    // The same 4000, on a device that can take it. Without this, an implementation that
+    // clamped everything to a constant would pass the assertion above.
+    const { readout } = await renderWithCap(16384);
+    expect(readout()).toContain("4000 × 4000");
+    expect(readout()).not.toContain("clamped");
+  });
+
+  it("falls back to the project cap when no device has reported yet", async () => {
+    // Absent means "no report", not "unlimited": 4000 is under the 4096 project cap, so it
+    // stands. This is the pre-device state the panel renders before the backend attaches.
+    const { readout } = await renderWithCap(undefined);
+    expect(readout()).toContain("4000 × 4000");
+  });
+});

@@ -256,7 +256,16 @@ export function InspectorPane({
           nodeId={nodeId}
           settings={settings}
           diagnostics={diagnostics}
-          capabilities={status.kind === "ready" ? { formats: status.capabilities.formats } : undefined}
+          capabilities={
+            status.kind === "ready"
+              ? {
+                  formats: status.capabilities.formats,
+                  // The device ceiling, so the size readout clamps the way the plan does.
+                  // Was omitted, and the panel showed sizes no node on this device has.
+                  maxTextureDimension2D: status.capabilities.limits["maxTextureDimension2D"],
+                }
+              : undefined
+          }
           inputResolutions={inputResolutions}
           {...(channels === undefined ? {} : { channels })}
           {...(latestFrame === undefined ? {} : { latestFrame })}
