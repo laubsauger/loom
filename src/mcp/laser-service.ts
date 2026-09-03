@@ -11,8 +11,11 @@ import {
   blankedTail,
   parseResponse,
   samplesToPoints,
+  applyScanFail,
+  SCAN_FAIL_START,
   RESPONSE_BYTES,
   type PlannedSample,
+  type ScanFailState,
 } from "./ether-dream.ts";
 
 /**
@@ -27,7 +30,9 @@ import {
  * clock when point blocks stop arriving FOR ANY REASON, including reasons the page
  * cannot report. What fires is fixed by the protocol module (`deadManPayloads`:
  * darkness at the last position, Stop, Emergency Stop, in that order) so this file
- * decides only WHEN, never WHAT.
+ * decides only WHEN, never WHAT. G5's software scan-fail sits beside it because the
+ * two split one hazard class: the dead-man covers blocks that STOP arriving, the
+ * scan-fail covers blocks that KEEP arriving carrying a beam that stopped moving.
  *
  * ## The lifecycle, and what each transition refuses
  *
@@ -100,6 +105,14 @@ export interface LaserServiceOptions {
 
 const DEFAULT_DEAD_MAN_MS = 250;
 const TAIL_POINTS = 8;
+/**
+ * G5 — the lit-dwell ceiling, in TIME so the point budget scales with the rate. 50 ms
+ * clears any planner corner dwell by orders of magnitude while staying in the range
+ * hardware scan-fail circuits act in. A CONSTANT, not an option: like G9's clamp it
+ * must not be raisable from the page, and unlike G9 there is no device-reported number
+ * to defer to.
+ */
+const SCAN_FAIL_MAX_DWELL_MS = 50;
 
 export function createLaserService(options: LaserServiceOptions): {
   connect(host: string, port: number, device: LaserDeviceInfo): void;
@@ -122,6 +135,8 @@ export function createLaserService(options: LaserServiceOptions): {
   let sessionOpen = false; // prepare+begin sent
   let lastPosition = { x: 0, y: 0 };
   let lastStreamAt = 0;
+  let scanFail: ScanFailState = SCAN_FAIL_START;
+  let scanFailBlanking = false;
   let cancelWatchdog: (() => void) | null = null;
   let received = new Uint8Array(0);
 
@@ -246,15 +261,45 @@ export function createLaserService(options: LaserServiceOptions): {
         socket.write(encodePrepare());
         socket.write(encodeBegin(0, rate));
         sessionOpen = true;
+        // A fresh session is a fresh galvo history — every reopen path (arm after
+        // disarm, after an e-stop clear, after the dead-man) funnels through here.
+        scanFail = SCAN_FAIL_START;
+        scanFailBlanking = false;
       }
       const converted = samplesToPoints(samples, lastPosition);
       lastPosition = converted.last;
-      const block = [...converted.points, ...blankedTail(lastPosition, TAIL_POINTS)];
+      /*
+       * G5 — software scan-fail, BESIDE the dead-man because they split one hazard
+       * class: the dead-man covers blocks that STOP arriving, this covers blocks that
+       * keep arriving with a beam that has stopped moving — the stuck plan the credit
+       * model reads as perfectly healthy. The G3 tail below deliberately does NOT pass
+       * through the tracker: it is unlit and would reset the dwell at every frame
+       * boundary, amnestying exactly the frame-after-frame stationary beam this exists
+       * to catch.
+       */
+      const guarded = applyScanFail(
+        converted.points,
+        scanFail,
+        Math.max(1, Math.ceil((rate * SCAN_FAIL_MAX_DWELL_MS) / 1000)),
+      );
+      const block = [...guarded.points, ...blankedTail(lastPosition, TAIL_POINTS)];
       if (client.writable() < block.length) {
         // The credit model withholds rather than risking NAK-Full; the frame is simply
         // not written and the caller may retry next frame — the DAC still holds the
         // previous blanked-tailed block, so what plays out is darkness, not garbage.
+        // The dwell state is NOT committed for a withheld frame: only points that
+        // actually cross the wire count toward the beam's time at one spot.
         return `the device buffer has no room for ${String(block.length)} points`;
+      }
+      scanFail = guarded.state;
+      if (guarded.blanked > 0 && !scanFailBlanking) {
+        scanFailBlanking = true;
+        announce(
+          `scan-fail: the beam sat lit and stationary past ${String(SCAN_FAIL_MAX_DWELL_MS)} ms — the stationary run is blanked until it moves (G5)`,
+        );
+      } else if (guarded.blanked === 0 && scanFailBlanking) {
+        scanFailBlanking = false;
+        announce("scan-fail cleared — the beam is moving again");
       }
       socket.write(encodeData(block));
       client.wrote(block.length);

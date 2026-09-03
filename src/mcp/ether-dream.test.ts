@@ -16,6 +16,9 @@ import {
   parseBroadcast,
   parseResponse,
   samplesToPoints,
+  applyScanFail,
+  SCAN_FAIL_START,
+  type DacPoint,
 } from "./ether-dream.ts";
 import { createEtherDreamEmulator } from "./ether-dream-emulator.ts";
 
@@ -263,5 +266,52 @@ describe("T950 — client against emulator: the conversation is the contract", (
     expect(rest.length).toBe(22);
     expect(parseResponse(rest).response).toBe(RESPONSE.ack);
     expect(emulator.status().playbackState).toBe(2);
+  });
+});
+
+describe("T950 — G5's software scan-fail, the pure dwell tracker", () => {
+  const lit = (x: number, y = 0): DacPoint => ({ control: 0, x, y, r: 65535, g: 0, b: 0, i: 65535, u1: 0, u2: 0 });
+  const dark = (x: number): DacPoint => ({ ...lit(x), r: 0, g: 0, b: 0, i: 0 });
+  const blankedCopy = (point: DacPoint): DacPoint => ({ ...point, r: 0, g: 0, b: 0, i: 0 });
+
+  it("blanks EXACTLY beyond the dwell budget — position kept, light cut (G4's shape)", () => {
+    const run = Array.from({ length: 10 }, () => lit(1000, -2000));
+    const out = applyScanFail(run, SCAN_FAIL_START, 6);
+    expect(out.blanked).toBe(4);
+    expect(out.points.slice(0, 6)).toEqual(run.slice(0, 6)); // the budget itself passes lit
+    expect(out.points.slice(6)).toEqual(run.slice(6).map(blankedCopy));
+    expect(out.state).toEqual({ x: 1000, y: -2000, dwell: 10 }); // still counting: no re-light while stuck
+  });
+
+  it("a MOVING beam is never falsely blanked — the legitimate case the guard could swallow", () => {
+    // 40-unit steps: every step is within epsilon of its NEIGHBOUR, but displacement is
+    // measured from the run's ANCHOR, so the crawl escapes at 80 units and the run
+    // resets. Successive-difference comparison would label this beam permanently
+    // stationary and blank a beam that is, in fact, moving.
+    const crawl = [lit(0), lit(40), lit(80), lit(120), lit(160), lit(200)];
+    const out = applyScanFail(crawl, SCAN_FAIL_START, 2);
+    expect(out.blanked).toBe(0);
+    expect(out.points).toEqual(crawl);
+  });
+
+  it("darkness resets the dwell — a blanked move is the galvo travelling, not the beam dwelling", () => {
+    const withRest = [lit(500), lit(500), dark(500), lit(500), lit(500)];
+    const rested = applyScanFail(withRest, SCAN_FAIL_START, 3);
+    expect(rested.blanked).toBe(0);
+    // Cut the dark point and the same lit points DO exceed the budget: the reset is
+    // load-bearing, not incidental.
+    const without = [lit(500), lit(500), lit(500), lit(500)];
+    expect(applyScanFail(without, SCAN_FAIL_START, 3).blanked).toBe(1);
+    expect(rested.points).toEqual(withRest);
+  });
+
+  it("the state crosses blocks — a frame boundary is not an amnesty", () => {
+    const frame = Array.from({ length: 4 }, () => lit(-3000, 3000));
+    const first = applyScanFail(frame, SCAN_FAIL_START, 6);
+    expect(first.blanked).toBe(0);
+    const second = applyScanFail(frame, first.state, 6);
+    expect(second.blanked).toBe(2); // dwell 5,6 pass; 7,8 blank
+    expect(second.points.slice(0, 2)).toEqual(frame.slice(0, 2));
+    expect(second.points.slice(2)).toEqual(frame.slice(2).map(blankedCopy));
   });
 });

@@ -172,3 +172,38 @@ describe("T950 — the e-stop arc against a device that argues back (G7)", () =>
     expect(emulator.status().lightEngineState).toBe(0); // ready again
   });
 });
+
+describe("T950 — G5's software scan-fail, through the service and read off the device", () => {
+  /** One frame that would hold the beam at one lit spot; 30 points per block. */
+  const STUCK = Array.from({ length: 30 }, () => ({ x: 0.5, y: 0.5, r: 1, g: 0, b: 0 }));
+
+  it("a stationary lit plan crosses EXACTLY the dwell budget and then goes dark — across frames — while a moving plan is untouched", () => {
+    const { emulator, service, states, device } = rig();
+    service.connect("192.168.1.50", 7765, device);
+    service.arm();
+    // 1000 pps × 50 ms = a 50-point budget. Three 30-point stationary frames offer 90
+    // lit points; the DEVICE receives 50 — the frame boundary is not an amnesty.
+    for (let frame = 0; frame < 3; frame += 1) expect(service.stream(STUCK, 1000)).toBeNull();
+    expect(emulator.litPointsReceived()).toBe(50);
+    expect(states.some((entry) => entry.includes("scan-fail"))).toBe(true);
+
+    // The legitimate case the guard could swallow: the same amount of MOVING light
+    // all reaches the aperture. (SAMPLES sweeps x; every step far exceeds epsilon.)
+    service.disarm();
+    service.arm();
+    for (let frame = 0; frame < 3; frame += 1) expect(service.stream(SAMPLES, 1000)).toBeNull();
+    expect(emulator.litPointsReceived()).toBe(50 + 60);
+  });
+
+  it("a fresh session is a fresh dwell budget — re-arming after the blanking does not stay dark", () => {
+    const { emulator, service, device } = rig();
+    service.connect("192.168.1.50", 7765, device);
+    service.arm();
+    for (let frame = 0; frame < 3; frame += 1) service.stream(STUCK, 1000);
+    expect(emulator.litPointsReceived()).toBe(50); // budget spent
+    service.disarm();
+    service.arm();
+    service.stream(STUCK, 1000);
+    expect(emulator.litPointsReceived()).toBe(50 + 30); // spent budget did not carry over
+  });
+});

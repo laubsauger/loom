@@ -272,6 +272,71 @@ export function blankedTail(last: { x: number; y: number }, count: number): DacP
   return Array.from({ length: Math.max(1, count) }, () => point);
 }
 
+/* ------------------------------------------------------- G5: software scan-fail */
+
+/**
+ * The lit-dwell tracker's cross-block state: the ANCHOR of the current lit run (DAC
+ * units) and how many lit points have sat within epsilon of it. Held by the service
+ * across blocks, because a stationary beam streamed frame after frame is exactly the
+ * case a per-block check would amnesty at every frame boundary.
+ */
+export interface ScanFailState {
+  readonly x: number;
+  readonly y: number;
+  readonly dwell: number;
+}
+
+export const SCAN_FAIL_START: ScanFailState = { x: 0, y: 0, dwell: 0 };
+
+/**
+ * "Stationary" epsilon in DAC units (~0.2% of the ±32767 field). Displacement is
+ * measured from the RUN'S ANCHOR, not the previous point: a slow crawl of sub-epsilon
+ * steps accumulates displacement from the anchor and eventually resets the run, while
+ * successive-difference comparison would never see it move at all.
+ */
+const SCAN_FAIL_EPSILON = 64;
+
+/**
+ * G5 — software scan-fail: a lit run that stays within epsilon of its anchor for more
+ * than `maxDwellPoints` is BLANKED from that point until it moves or goes dark. The
+ * position still crosses (a blanked hold, exactly G4's shape), only the light is cut —
+ * this guards the hazard the credit model cannot see, a protocol-valid buffer full of
+ * one bright spot. Pure and stateless-in, so the gates feed it points directly; the
+ * service owns the state and the threshold-in-points arithmetic. The projector's own
+ * scan-fail hardware remains the operator's responsibility; this only keeps OUR stuck
+ * plan from being the cause.
+ */
+export function applyScanFail(
+  points: readonly DacPoint[],
+  state: ScanFailState,
+  maxDwellPoints: number,
+): { points: DacPoint[]; state: ScanFailState; blanked: number } {
+  let { x, y, dwell } = state;
+  let blanked = 0;
+  const out = points.map((point) => {
+    const lit = point.i > 0 && (point.r > 0 || point.g > 0 || point.b > 0);
+    if (!lit) {
+      x = point.x;
+      y = point.y;
+      dwell = 0;
+      return point;
+    }
+    if (dwell > 0 && Math.abs(point.x - x) <= SCAN_FAIL_EPSILON && Math.abs(point.y - y) <= SCAN_FAIL_EPSILON) {
+      dwell += 1;
+    } else {
+      x = point.x;
+      y = point.y;
+      dwell = 1;
+    }
+    if (dwell > maxDwellPoints) {
+      blanked += 1;
+      return { ...point, r: 0, g: 0, b: 0, i: 0 };
+    }
+    return point;
+  });
+  return { points: out, state: { x, y, dwell }, blanked };
+}
+
 /**
  * G9: a rate change is a request to move mirrors faster. The ceiling is the DEVICE'S
  * OWN `max_point_rate` from the broadcast, optionally lowered by an author-set

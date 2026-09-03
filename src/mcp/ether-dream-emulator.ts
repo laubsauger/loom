@@ -44,6 +44,9 @@ export function createEtherDreamEmulator(options: EmulatorOptions = {}): {
   holdEmergencyStop(held: boolean): void;
   status(): DacStatus;
   bufferCapacity(): number;
+  /** Points received with the intensity channel up and any colour lit — what would
+   *  have LEFT THE APERTURE. The device-side number G5's gates read (§V847). */
+  litPointsReceived(): number;
 } {
   const capacity = options.bufferCapacity ?? 1799;
   const maxPointRate = options.maxPointRate ?? 30000;
@@ -55,6 +58,7 @@ export function createEtherDreamEmulator(options: EmulatorOptions = {}): {
   let pointCount = 0;
   let estopHeld = false;
   let underflowed = false;
+  let litPoints = 0;
   /** Partial command bytes across receive() calls — TCP has no message boundaries. */
   let pending = new Uint8Array(0);
 
@@ -162,6 +166,14 @@ export function createEtherDreamEmulator(options: EmulatorOptions = {}): {
         if (buffered + npoints > capacity) return respond(RESPONSE.nakFull, command);
         buffered += npoints;
         pointCount += npoints;
+        for (let p = 0; p < npoints; p += 1) {
+          const point = at + 3 + p * POINT_BYTES;
+          const r = view.getUint16(point + 6, true);
+          const g = view.getUint16(point + 8, true);
+          const b = view.getUint16(point + 10, true);
+          const i = view.getUint16(point + 12, true);
+          if (i > 0 && (r > 0 || g > 0 || b > 0)) litPoints += 1;
+        }
         return respond(RESPONSE.ack, command);
       }
       case COMMAND.stop:
@@ -220,5 +232,6 @@ export function createEtherDreamEmulator(options: EmulatorOptions = {}): {
     },
     status,
     bufferCapacity: () => capacity,
+    litPointsReceived: () => litPoints,
   };
 }

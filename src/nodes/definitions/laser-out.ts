@@ -31,8 +31,10 @@ import { SINK_TAG } from "./sink.ts";
  * Loom is not a safety device and never describes itself as one. Compliance with
  * IEC 60825-1 is a property of the projector and its operator. What this path
  * guarantees is narrower and total: OUR bugs do not create a hazard — G3's blanked
- * tails, G4's blank-and-hold on bad coordinates, and G9's device-reported rate clamp
- * are enforced by the only functions that produce point bytes (`ether-dream.ts`).
+ * tails, G4's blank-and-hold on bad coordinates, G5's software scan-fail (a lit beam
+ * stationary past 50 ms is blanked until it moves) and G9's device-reported rate
+ * clamp are enforced by the only functions that produce point bytes (`ether-dream.ts`)
+ * and the helper service that streams them.
  */
 /**
  * The type string, exported so surfaces that must RECOGNISE the node (the inspector's
