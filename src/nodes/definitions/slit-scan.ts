@@ -18,9 +18,11 @@ import { SLIT_SCAN_WGSL } from "../shaders/slit-scan.wgsl.ts";
  * `texture_2d_array` and picks layers per fragment.
  *
  * COSTS, both stated where they are chosen (§V228):
- *  - memory: width × height × bytesPerPixel × (frames + 1) — the history layers plus
- *    the write target. 60 frames at 1080p rgba16float is ~965 MiB; the default 16 is
- *    ~264 MiB at full scale.
+ *  - memory: (width × scale) × (height × scale) × bytesPerPixel × (frames + 1) — the
+ *    history layers plus the write target. 60 frames at 1080p rgba16float is ~965 MiB
+ *    at full scale; the default 16 is ~264 MiB; `scale` (T1019a, Cache's knob) buys
+ *    span for softness — each halving quarters the bytes, so the same budget reaches
+ *    four times further back.
  *  - per frame: ONE full-frame GPU copy (the rotate that archives the write target
  *    into the history). This scales with RING COUNT across the project — five
  *    ring-backed nodes is five copies a frame.
@@ -72,6 +74,17 @@ export const slitScanNode: NodeDefinition = {
       range: "bounded",
       description: "Scales the map: 1 uses the whole history, 0 freezes everything at now.",
     },
+    scale: {
+      type: "number",
+      label: "Scale",
+      default: 1,
+      min: 0.125,
+      max: 1,
+      range: "bounded",
+      compileTime: true,
+      description:
+        "Ring resolution as a fraction of the input (Cache's knob, same arithmetic). Halving it QUARTERS the memory — 60 frames at 1080p rgba16float is ~965 MiB at 1, ~241 MiB at 0.5, ~60 MiB at 0.25 — so the same budget holds four times the span per halving. The history is displaced per OUTPUT pixel either way; a scaled ring costs softness, never geometry. Default 1: existing documents keep their exact pixels.",
+    },
     resetPulse: {
       type: "pulse",
       label: "Reset Pulse",
@@ -98,6 +111,7 @@ export const slitScanNode: NodeDefinition = {
     }
 
     const frames = Math.max(2, Math.round(readNumber(parameters, "frames", SLIT_DEFAULT_FRAMES)));
+    const scale = readNumber(parameters, "scale", 1);
     const ring = scratchResourceId(nodeId, SLIT_RING_KEY);
 
     // The write half IS Cache's: sample the input into the ring's write target.
@@ -119,12 +133,15 @@ export const slitScanNode: NodeDefinition = {
       target,
       textures: [
         // T321: the WHOLE history as texture_2d_array; the fragment picks the layer.
-        { binding: "history", resourceId: ring, array: true, sampled: "unfiltered" },
+        // T1019a: SAMPLED now (Cache's read path) so a scaled ring upsamples smoothly;
+        // at scale 1 the sample lands on the exact texel the old load read.
+        { binding: "history", resourceId: ring, array: true },
         { binding: "displaceMap", resourceId: map.resource, sampled: "unfiltered" },
         // B160: what an EMPTY history reads — the write target, so frame 0 is the
         // undisplaced input rather than black (§V229; see cache.ts, same fix).
-        { binding: "liveTexture", resourceId: ring, live: true, sampled: "unfiltered" },
+        { binding: "liveTexture", resourceId: ring, live: true },
       ],
+      samplers: [{ binding: "historySampler", resourceId: source.sampler }],
       uniforms: {
         depth: readNumber(parameters, "depth", 1),
         // Merged per frame by the backend (ring head is a VALUE, §V5); the statics
@@ -140,7 +157,7 @@ export const slitScanNode: NodeDefinition = {
 
     return {
       passes: [record, scan],
-      scratch: [{ kind: "ring", key: SLIT_RING_KEY, frames }],
+      scratch: [{ kind: "ring", key: SLIT_RING_KEY, frames, scale }],
     };
   },
 };

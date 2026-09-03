@@ -27,24 +27,29 @@ export const SLIT_SCAN_WGSL = `struct ScanParams {
 @group(0) @binding(1) var history: texture_2d_array<f32>;
 @group(0) @binding(2) var displaceMap: texture_2d<f32>;
 @group(0) @binding(3) var liveTexture: texture_2d<f32>;
+@group(0) @binding(4) var historySampler: sampler;
 
 @fragment
 fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
-  let dims = vec2f(textureDimensions(history));
-  let texel = vec2i(clamp(uv * dims, vec2f(0.0), dims - vec2f(1.0)));
   let mapDims = vec2f(textureDimensions(displaceMap));
   let mapTexel = vec2i(clamp(uv * mapDims, vec2f(0.0), mapDims - vec2f(1.0)));
 
   let displacement = clamp(textureLoad(displaceMap, mapTexel, 0).r, 0.0, 1.0);
   /* B160, the cache's frame-0 fix, same ring, same hole: with nothing archived, every
      layer is unwritten, so an empty history reads the ring's write target instead —
-     frame 0 is the undisplaced input, not black (§V229). */
+     frame 0 is the undisplaced input, not black (§V229).
+
+     T1019a: history and live are SAMPLED by uv (Cache's read, verbatim) rather than
+     loaded by texel, so a scaled ring upsamples bilinearly instead of blocking into
+     nearest 2x2 (§V627's family). At scale 1 the ring's texel centres coincide with
+     the fragment grid, so bilinear IS the old nearest load, bit for bit — the map
+     stays a textureLoad because it is DATA, and filtering data invents moments. */
   if (params.ringWritten == 0u) {
-    return textureLoad(liveTexture, texel, 0);
+    return textureSampleLevel(liveTexture, historySampler, uv, 0.0);
   }
   let usable = max(min(params.ringWritten, params.ringFrames), 1u);
   /* 0 = the most recent recorded frame; usable-1 = the oldest one actually written. */
   let back = min(u32(displacement * params.depth * f32(params.ringFrames - 1u) + 0.5), usable - 1u);
   let layer = (params.ringLatest + params.ringFrames - back) % params.ringFrames;
-  return textureLoad(history, texel, i32(layer), 0);
+  return textureSampleLevel(history, historySampler, uv, i32(layer), 0.0);
 }`;

@@ -18,19 +18,23 @@ describe("slitScan — manifest and emission (T321)", () => {
     }>;
     expect(record?.id).toBe("slit:record");
     expect(record?.target).toBe("scratch:slit:history");
-    // T321: the array binding — no tap, the fragment picks the layer.
+    // T321: the array binding — no tap, the fragment picks the layer. T1019a: SAMPLED
+    // (no `unfiltered`), Cache's read path — a scaled ring upsamples smoothly, and at
+    // scale 1 the sample lands on the exact texel the old load read (the Dawn gate's
+    // per-column exactness held unchanged through the switch, which is the proof).
     const history = scan?.textures?.find((binding) => binding.binding === "history");
     expect(history).toEqual({
       binding: "history",
       resourceId: "scratch:slit:history",
       array: true,
-      sampled: "unfiltered",
     });
     expect(history?.tap).toBeUndefined();
     // The statics keep the block matching its struct; the backend merges the live
     // head per frame.
     expect(scan?.uniforms).toEqual({ depth: 0.5, ringLatest: 0, ringWritten: 0, ringFrames: 24 });
-    expect(result.scratch).toEqual([{ kind: "ring", key: "history", frames: 24 }]);
+    // T1019a: the ring carries the scale — default 1, so existing documents keep
+    // their exact bytes; halving it quarters the memory (the parameter's own line).
+    expect(result.scratch).toEqual([{ kind: "ring", key: "history", frames: 24, scale: 1 }]);
   });
 
   it("declares reset honestly: a pulse wired to the ring, not a listed gap", () => {

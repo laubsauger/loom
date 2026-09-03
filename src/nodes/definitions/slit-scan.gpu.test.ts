@@ -42,7 +42,7 @@ const SIZE = 64;
 const RING_FRAMES = 4;
 
 describe("slit-scan end to end on Dawn (T321)", () => {
-  it("every column reads exactly the frame its map value names", async () => {
+  async function columnsReadExactFrames(scale: number): Promise<number> {
     const probe = await probeDawn();
     if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
 
@@ -67,7 +67,7 @@ describe("slit-scan end to end on Dawn (T321)", () => {
           feed: node("feed", "solid", { color: [0, 0, 0, 1] }),
           src: node("src", "customWgsl", { source: FRAME_SOURCE }),
           map: node("map", "customWgsl", { source: GRADIENT_MAP }),
-          slit: node("slit", "slitScan", { frames: RING_FRAMES, depth: 1 }),
+          slit: node("slit", "slitScan", { frames: RING_FRAMES, depth: 1, scale }),
           out: node("out", "output", {}),
         },
         edges: {
@@ -135,8 +135,30 @@ describe("slit-scan end to end on Dawn (T321)", () => {
         const actual = image.bytes[(row * SIZE + x) * 4];
         expect(actual, `column ${x}: back ${back}`).toBe(expected);
       }
+      return backend.status.estimatedResourceBytes;
     } finally {
       backend.dispose();
     }
+  }
+
+  it("every column reads exactly the frame its map value names", async () => {
+    await columnsReadExactFrames(1);
+  });
+
+  /**
+   * T1019a — the SCALED ring must never cost a MOMENT, only softness. The fixture is
+   * solid-per-frame (the source encodes the frame index as one flat colour), so
+   * bilinear filtering over any layer is the identity and every spatial artifact a
+   * half-resolution ring could introduce is invisible — which leaves exactly one thing
+   * able to fail: the LAYER arithmetic. The same per-column byte-exact assertions as
+   * full scale therefore hold at 0.5, or a wrong moment leaked in through the scale.
+   */
+  it("at half scale the columns still read exactly their frames — softness, never a wrong moment", async () => {
+    const fullBytes = await columnsReadExactFrames(1);
+    const halfBytes = await columnsReadExactFrames(0.5);
+    // The solid fixture cannot SEE a ring that silently stayed full-resolution, so the
+    // memory claim is pinned on the backend's own byte estimate: the scaled plan must
+    // be smaller — the ring dominates this graph, and halving its edge quarters it.
+    expect(halfBytes).toBeLessThan(fullBytes);
   });
 });
