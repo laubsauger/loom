@@ -70,8 +70,8 @@ Eight knobs reach the parent, and nothing else does:
 
 | Knob | Shipped | What it does |
 | --- | --- | --- |
-| Columns / Rows | 4 / 5 | The grid, and the centre the Churn swings about. |
-| Churn | 3.5 | How far the wall re-cuts itself, on two sample-and-hold clocks. |
+| Columns / Rows | 5 / 6 | The grid, and the centre the Churn swings about. |
+| Churn | 3 | How far the wall re-cuts itself, on two sample-and-hold clocks. |
 | Span | 90 | History depth in frames. 90 is 1.5 s; the cost is stated at the knob. |
 | Spread | 1 | How much of the Span the wall distributes across its cells. |
 | Mode | 1 | Which distribution deals the delays. |
@@ -79,7 +79,7 @@ Eight knobs reach the parent, and nothing else does:
 | Seed | 7 | Deals which moment each cell holds and which of them break. |
 | Glitch | 0.4 | How much damage: tears, snow and dropouts, in bursts. |
 | Chroma | 0.55 | The aberration front that travels across the wall and passes. |
-| Crush | 1.2 | Contrast, applied before the palette, so it changes which colours are reachable. |
+| Crush | 1.5 | Contrast, applied before the palette, so it changes which colours are reachable. |
 | Colour | warm white | A master tint over the palette. White is a true identity. |
 | Blend | 0.82 | Master dissolve for the recolorizer. 0 is the raw wall, damage and all. |
 
@@ -187,6 +187,42 @@ so it is what ties the cells together rather than separating them, and it has it
 so it can run across a clean wall or a broken one. Its fringe is displaced cell-locally, so
 it never smears one moment into its neighbour.
 
+## Aspect: every grid, not just the square ones
+
+Tile repeats the source into the *same* frame, so a cell measures `W/cols` by `H/rows` and
+its aspect is `(W/H) x (rows/cols)`. That equals the source's aspect **if and only if rows
+equals cols**. Every non-square grid was stretching the picture to fill a slot of the wrong
+shape, and the rendered aspect *was* `rows/cols`, exactly. Measured on a true screen circle
+through this component, before the fix:
+
+| grid | 3x3 | 4x2 | 2x4 | 8x12 | 4x5 |
+| --- | --- | --- | --- | --- | --- |
+| rendered aspect | 1.000 | 0.500 | 2.000 | 1.333 | 1.200 |
+
+The wall shipped 4x5. It went unseen because the grid was square for the whole of the
+component's first life — and it was about to get much worse, because Churn drives the grid
+through its most non-square states on purpose.
+
+The fix is a **fit inside the cell**, not a change to the grid (§V118: *letterbox the
+output inside the surface, centred — never stretched*). It is a pre-scale of the source
+before Tile, which works because the distortion depends only on `cols/rows` and is
+therefore identical for every cell: scale by `(sx, sy)` and a feature lands at
+`(sx/sy) x (rows/cols)`, so `sx/sy = cols/rows` restores it exactly.
+
+**Crop, not letterbox**, and deliberately. Bars between every cell would fragment the grid
+and eat the density the effect lives on — a wall of faces wants faces, not mattes. And crop
+keeps both scale factors at or above 1, so nothing ever samples outside the source: there
+are **no bar regions**, which means the delay map's cell identity still matches the visible
+content everywhere and §V849 has nothing to catch. A letterbox would have put pixels
+belonging to no picture inside cells the map addresses by index.
+
+The internal resolution pin is `fit`, not `fixed`, for the same reason one layer up: a hard
+512x288 would force 16:9 on whatever arrives, so a 4:3 camera or a portrait clip would be
+stretched before the wall had done anything at all.
+
+The gate is **non-square only** — 4x4 is deliberately absent, because a square-grid test
+cannot fail here.
+
 ## The wall re-cuts itself
 
 `Churn` sweeps rows and columns. On this instrument that is not a layout change: every cell
@@ -196,7 +232,7 @@ shader's grid, so a sweep recompiles nothing and reallocates nothing.
 
 Two sample-and-hold oscillators at unrelated slow rates (16 s and 24 s) *hold* a grid and
 then jump, so the wall rests and then strikes rather than wobbling. Rows and columns move
-independently, so it goes non-square — 8 × 12 and back. `repeat`'s `range: "floor"` lands
+independently, so it goes non-square — 2 × 3 to 8 × 9 and back. `repeat`'s `range: "floor"` lands
 every value on an integer, so the jump is a hard re-cut rather than a smear; that snap is
 the effect and is not smoothed away. The floor is 2, measured: at 1 a hold parked the wall
 at 1 × 1 for sixteen seconds, which is a video wall with one cell in it.
@@ -286,6 +322,9 @@ a calm continuous element for the cells to differ by, and a striking one to watc
 - A per-cell effect that is deterministic from a seed: the same seed is the same wall
   twice, a different seed is a different wall, and at Glitch 0 the seed is inert
   byte-for-byte.
+- Aspect preserved at NON-SQUARE grids, which is the case the rest of this file's claims
+  were all blind to — every one of them ran at 4x4, the one shape where the fault does not
+  show.
 - Damage that comes in BURSTS rather than held states — asserted across consecutive frames,
   which is the only place an envelope is visible.
 - A degradation that cannot reach the clip, asserted as a property (no pixel is pushed onto

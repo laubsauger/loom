@@ -586,8 +586,16 @@ const TIME_GRID_SETTINGS: ProjectSettings = {
   limits: LIMITS,
 };
 
-/** The internal working size, and the one number the memory line above is computed from. */
-const TIME_GRID_INTERNAL = { mode: "fixed", width: 512, height: 288 } as const;
+/**
+ * The internal working size, and the ceiling every memory line here is computed from.
+ *
+ * `fit`, not `fixed`, and for the same reason the cell fit exists: a hard 512x288 forces
+ * 16:9 on whatever arrives, so a 4:3 camera or a portrait phone clip would be stretched
+ * before the wall had done anything at all. TD's "Fit Resolution" preserves the input's
+ * aspect and fits it inside the box, so 16:9 gets 512x288, 4:3 gets 384x288, and the ring
+ * can only ever be smaller than the number the Span knob quotes.
+ */
+const TIME_GRID_INTERNAL = { mode: "fit", width: 512, height: 288 } as const;
 
 /**
  * The effective grid, read by all four consumers so they cannot disagree about where a
@@ -607,6 +615,49 @@ const churnedAxis = (channel: string) => ({
 });
 const CHURNED_COLUMNS = churnedAxis("churnx1");
 const CHURNED_ROWS = churnedAxis("churny1");
+
+/**
+ * ── THE CELL FIT, and it is a correctness fix rather than a look ───────────────────────
+ *
+ * Tile repeats the source into the SAME frame, so a cell measures W/cols by H/rows and its
+ * aspect is (W/H) x (rows/cols). That equals the source's aspect if and ONLY IF rows equals
+ * cols — so a square grid is perfect and every other grid stretches the picture to fill a
+ * slot of the wrong shape. Measured on a true screen circle through this component:
+ *
+ *     3x3   -> 1.000   (correct)
+ *     4x2   -> 0.500      2x4  -> 2.000
+ *     8x12  -> 1.333      4x5  -> 1.200   <- what E51 was shipping
+ *
+ * The rendered aspect IS rows/cols, exactly. It went unseen because the wall was square
+ * for its whole first life, and it was about to get much worse: Churn drives the grid
+ * through its most non-square states on purpose.
+ *
+ * THE FIX IS A FIT INSIDE THE CELL, not a change to the grid (§V118: "letterbox the output
+ * inside the surface, centred — NEVER stretched"). It is a PRE-SCALE of the source, and
+ * that works because the distortion factor depends only on cols/rows and is therefore the
+ * SAME for every cell: scale the picture by (sx, sy) before Tile and a feature lands on
+ * screen at (sx/sy) x (rows/cols) — so sx/sy = cols/rows restores it exactly.
+ *
+ * CROP, NOT LETTERBOX, and the choice is deliberate twice over. Bars between every cell
+ * would fragment the grid and eat the density the whole effect lives on — a wall of faces
+ * wants faces, not mattes. And crop keeps BOTH scale factors at or above 1, so no fragment
+ * ever samples outside the source: there are no bar regions, which means the delay map's
+ * cell identity still matches the visible content everywhere and §V849 has nothing to
+ * catch. A letterbox would have introduced pixels belonging to no picture, inside cells the
+ * map is addressing by index.
+ */
+const cellFit = (numerator: string, denominator: string) => ({
+  mode: "expression" as const,
+  bindings: {
+    static: { kind: "static" as const, value: 1 },
+    expression: {
+      kind: "expression" as const,
+      source: `max(1, max(2, op('${numerator}').chan.value) / max(2, op('${denominator}').chan.value))`,
+    },
+  },
+});
+const CELL_FIT_X = cellFit("churnx1", "churny1");
+const CELL_FIT_Y = cellFit("churny1", "churnx1");
 
 export const timeGridHost: ProjectDocument = {
   schemaVersion: SCHEMA_VERSION,
@@ -734,6 +785,28 @@ export const timeGridHost: ProjectDocument = {
         parameters: { outr: "in1r", outg: "in1g", outb: "in1b", outa: "in2lum" },
         resolution: TIME_GRID_INTERNAL,
         label: "pack1",
+      },
+      /* Aspect, restored before anything is tiled or recorded — see CELL_FIT_X above for
+         the arithmetic and the measurements. Scale only: no translate, no rotate, and the
+         pivot is the frame centre, so this crops symmetrically and cannot move the
+         picture. Both factors are >= 1, so `extend` is never reached. */
+      fit: {
+        id: "fit",
+        type: "transform",
+        definitionVersion: 1,
+        position: { x: -580, y: -180 },
+        parameters: {
+          t: [0, 0],
+          r: 0,
+          s: [1, 1],
+          "s.x": CELL_FIT_X,
+          "s.y": CELL_FIT_Y,
+          p: [0, 0],
+          xord: "srt",
+          extend: "hold",
+          aspectcorrect: false,
+        },
+        label: "fit1",
       },
       /* The grid, and the resolution pin the ring's whole cost depends on. `repeat` is
          ONE vec2 and the published Grid knob drives it whole: a component publishes onto a
@@ -986,7 +1059,7 @@ export const timeGridHost: ProjectDocument = {
         definitionVersion: 1,
         position: { x: -20, y: 380 },
         parameters: { color: [1, 1, 1, 1] },
-        resolution: TIME_GRID_INTERNAL,
+        resolution: { mode: "fixed", width: 512, height: 288 },
         label: "paint1",
       },
       tint: {
@@ -1022,7 +1095,8 @@ export const timeGridHost: ProjectDocument = {
       // The two boundary-crossing edges: the picture, and the matte that isolates it.
       "e-feed-pack": { id: "e-feed-pack", source: { nodeId: "feed", portId: "out" }, target: { nodeId: "pack", portId: "in1" } },
       "e-key-pack": { id: "e-key-pack", source: { nodeId: "key", portId: "out" }, target: { nodeId: "pack", portId: "in2" } },
-      "e-pack-grid": { id: "e-pack-grid", source: { nodeId: "pack", portId: "out" }, target: { nodeId: "grid", portId: "input" } },
+      "e-pack-fit": { id: "e-pack-fit", source: { nodeId: "pack", portId: "out" }, target: { nodeId: "fit", portId: "input" } },
+      "e-fit-grid": { id: "e-fit-grid", source: { nodeId: "fit", portId: "out" }, target: { nodeId: "grid", portId: "input" } },
       // ONE tiling, TWO consumers (§V6): the map only wants the size, the ring wants the pixels.
       "e-grid-map": { id: "e-grid-map", source: { nodeId: "grid", portId: "out" }, target: { nodeId: "map", portId: "input" } },
       "e-grid-scan": { id: "e-grid-scan", source: { nodeId: "grid", portId: "out" }, target: { nodeId: "scan", portId: "input" } },
@@ -1505,7 +1579,7 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
     /* The SOURCE stays outside. A webcam, a movie file and a synthetic generator are all
        just a texture at this boundary, which is the whole reason this is a component and
        not a document (T956's lesson, DepthPoints' precedent). */
-    selection: ["churnx", "churny", "pack", "grid", "map", "scan", "break", "sweep", "crush", "guard", "palette", "tone", "paint", "tint", "mix"],
+    selection: ["churnx", "churny", "pack", "fit", "grid", "map", "scan", "break", "sweep", "crush", "guard", "palette", "tone", "paint", "tint", "mix"],
     publish: [
       /*
        * THE PERFORMANCE PAGE. Eight knobs, and the ones that decide the LAYOUT are

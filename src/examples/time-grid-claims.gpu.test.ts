@@ -72,6 +72,23 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   return vec4f(uv.x, uv.y, 0.5, 1.0);
 }`;
 
+/**
+ * A TRUE CIRCLE, measured in the frame's own pixel geometry rather than in uv — so it is
+ * round on screen, and any departure from round downstream is the wall's doing. Hard-edged
+ * on purpose: a soft disc has no bounding box to measure.
+ */
+const DISC_WGSL = `${SHARED_UNIFORMS_WGSL}
+@group(0) @binding(0) var inputSampler: sampler;
+@group(0) @binding(1) var inputTexture: texture_2d<f32>;
+@group(0) @binding(2) var<uniform> frameU: SharedFrame;
+@fragment
+fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
+  let aspect = frameU.resolution.x / frameU.resolution.y;
+  let d = length((uv - vec2f(0.5)) * vec2f(aspect, 1.0));
+  let v = select(0.0, 1.0, d < 0.2);
+  return vec4f(v, v, v, 1.0);
+}`;
+
 const WIDTH = 512;
 const HEIGHT = 288;
 const COLS = 4;
@@ -119,11 +136,15 @@ interface WallParameters {
   readonly rate?: number;
   readonly seed?: number;
   readonly glitch?: number;
+  readonly chroma?: number;
+  readonly crush?: number;
   readonly colour?: readonly [number, number, number, number];
   readonly blend?: number;
 }
 
-function probeGraph(wall: WallParameters, still = false): GraphDocument {
+type Card = "stamp" | "still" | "disc";
+
+function probeGraph(wall: WallParameters, card: Card = "stamp"): GraphDocument {
   const node = (id: string, type: string, parameters: Record<string, unknown>, extra: Record<string, unknown> = {}) => [
     id,
     { id, type, definitionVersion: 1, position: { x: 0, y: 0 }, label: id, parameters, ...extra },
@@ -138,7 +159,7 @@ function probeGraph(wall: WallParameters, still = false): GraphDocument {
     nodes: Object.fromEntries([
       // customWgsl inherits its size from an input, so the stamp needs something to stand on.
       node("bed", "ramp", { type: "vertical" }, { definitionVersion: 2 }),
-      node("src", "customWgsl", { source: still ? STILL_WGSL : STAMP_WGSL }),
+      node("src", "customWgsl", { source: card === "disc" ? DISC_WGSL : card === "still" ? STILL_WGSL : STAMP_WGSL }),
       node("wall", "component:timeGrid@1", {
         columns: COLS,
         rows: ROWS,
@@ -176,11 +197,11 @@ function probeGraph(wall: WallParameters, still = false): GraphDocument {
 async function shoot(
   wall: WallParameters,
   capture: readonly number[] = [LAST],
-  still = false,
+  card: Card = "stamp",
 ): Promise<{ frames: readonly RenderedFrame[]; plan: Awaited<ReturnType<typeof renderHeadless>>["plan"] }> {
   const result = await renderHeadless({
     host: nodeGpuHost(),
-    graph: probeGraph(wall, still),
+    graph: probeGraph(wall, card),
     settings: SETTINGS,
     components: await starterComponentsView(),
     frames: Math.max(...capture) + 1,
@@ -663,14 +684,85 @@ describe("TimeGrid — one stream, many moments", () => {
    * frame like any other node. Only the instance's published page is frozen.
    */
   it("the palette walks by itself, and Blend 0 bypasses it entirely", async () => {
-    const graded = await shoot({ mode: 0, glitch: 0, blend: 1 }, [120, 420], true);
+    const graded = await shoot({ mode: 0, glitch: 0, blend: 1 }, [120, 420], "still");
     const [early, late] = graded.frames;
     expect(differingPixels(early as RenderedFrame, late as RenderedFrame)).toBeGreaterThan(
       WIDTH * HEIGHT * 0.5,
     );
 
-    const raw = await shoot({ mode: 0, glitch: 0, blend: 0 }, [120, 420], true);
+    const raw = await shoot({ mode: 0, glitch: 0, blend: 0 }, [120, 420], "still");
     expect(differingPixels(raw.frames[0] as RenderedFrame, raw.frames[1] as RenderedFrame)).toBe(0);
+  }, 300_000);
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════════
+   * ASPECT — and a square-grid-only test could not have caught this (§V854).
+   * ═══════════════════════════════════════════════════════════════════════════════
+   *
+   * Tile repeats the source into the SAME frame, so a cell is W/cols by H/rows and its
+   * aspect is (W/H) x (rows/cols) — equal to the source's if and ONLY IF rows equals cols.
+   * Every non-square grid was therefore stretching the picture to fill a slot of the wrong
+   * shape, and the rendered aspect WAS rows/cols exactly. Measured before the fix, on this
+   * card, through this component:
+   *
+   *     3x3 -> 1.000 | 4x2 -> 0.500 | 2x4 -> 2.000 | 8x12 -> 1.333 | 4x5 -> 1.200
+   *
+   * The wall shipped 4x5. It went unseen because the grid was square for the whole of the
+   * component's first life, and every claim in this file above was written at 4x4 — the one
+   * shape where the fault is invisible. That is §V854's shape exactly, so this test is
+   * NON-SQUARE ONLY: 4x4 is deliberately absent, because including it would let a
+   * regression pass on one of the cases.
+   *
+   * The bound is one pixel and it is derived, not chosen: the measurement is a hard-edged
+   * disc's bounding box in whole texels, so where the boundary falls relative to a texel
+   * centre can move an edge by one. The fault it detects is 30 pixels wide at 4x2 (a 30x60
+   * blob where a 60x60 belongs), so the bound is thirty times clear of it.
+   */
+  it("preserves the source's aspect at every grid, square or not", async () => {
+    /* The extremes of Churn's own range, plus what the example ships. */
+    const grids = [
+      [4, 2],
+      [2, 4],
+      [8, 12],
+      [12, 8],
+      [4, 5],
+      [3, 7],
+    ] as const;
+
+    const wrong: string[] = [];
+    for (const [columns, rows] of grids) {
+      const frame = (
+        await shoot({ columns, rows, mode: 0, spread: 0, glitch: 0, chroma: 0, crush: 1 }, [79], "disc")
+      ).frames[0] as RenderedFrame;
+      const values = decodeComponents(frame.bytes, frame.format);
+      const cellW = Math.floor(WIDTH / columns);
+      const cellH = Math.floor(HEIGHT / rows);
+      let minX = Infinity;
+      let maxX = -1;
+      let minY = Infinity;
+      let maxY = -1;
+      for (let y = 0; y < cellH; y += 1) {
+        for (let x = 0; x < cellW; x += 1) {
+          if ((values[(y * frame.width + x) * 4] ?? 0) > 0.5) {
+            minX = Math.min(minX, x);
+            maxX = Math.max(maxX, x);
+            minY = Math.min(minY, y);
+            maxY = Math.max(maxY, y);
+          }
+        }
+      }
+      const width = maxX - minX + 1;
+      const height = maxY - minY + 1;
+      // NON-VACUITY: the disc has to be IN the cell before its shape means anything.
+      if (maxX < 0 || width < 4 || height < 4) {
+        wrong.push(`${columns}x${rows}: no disc found in the cell (${width}x${height})`);
+        continue;
+      }
+      if (Math.abs(width - height) > 1) {
+        wrong.push(`${columns}x${rows}: disc rendered ${width}x${height}, aspect ${(width / height).toFixed(3)}`);
+      }
+    }
+    expect(wrong, "grids that stretched the picture").toEqual([]);
   }, 300_000);
 
   /**

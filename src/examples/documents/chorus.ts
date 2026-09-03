@@ -114,7 +114,7 @@ export const chorusDocument = document(
           // black and leaves only the wisps — measured flat at 0.47 linear before it.
           exp: 2.1,
           amp: 1.9,
-          offset: -0.5,
+          offset: -0.36,
           mono: true,
           aspectcorrect: true,
           speed: 0.05,
@@ -309,11 +309,18 @@ export const chorusDocument = document(
         "component:timeGrid@1",
         [-20, 160],
         {
-          columns: 4,
-          rows: 5,
-          // Occasional, not constant: the wall holds a grid for 16-24 s and then re-cuts
-          // to something as far off as 8 x 12 before coming back.
-          churn: 3.5,
+          columns: 5,
+          rows: 6,
+          /* Occasional, not constant: the wall holds a grid for 16-24 s and then re-cuts.
+             At 5 this reaches roughly 2x2 at one end and 10x11 at the other, and the two
+             axes hold independently — so most of the states it visits are NON-SQUARE,
+             which is exactly the range that was stretching the picture until the cell fit
+             landed. 3 rather than 5: at 5 the sample-and-hold reached its floor often
+             enough to park the wall at 2x2, where four copies of a sparse frame is not a
+             wall. This spans 2x3 to 8x9 and spends most of its time in the middle. Past
+             ~61 cells they start sharing moments; that is the ring's depth, stated at the
+             Span knob. */
+          churn: 3,
           span: 90,
           spread: 1,
           mode: 1,
