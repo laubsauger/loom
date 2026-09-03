@@ -407,7 +407,15 @@ const FRAME_ZERO_DIGESTS: Readonly<Record<string, string>> = {
    */
   "E49-Lissajous.loom.json": "27a1135a06dbcbdd",
   "E50-Galvo.loom.json": "f99d88756fc859a9",
-  "E54-Quorum.loom.json": "b2529bf4ac57d584",
+  /* RE-STAMPED at c4e7483 (T1074), which put a Courant bound on the layout step: `push` is a
+     raw sum over in-range pairs with a 1/r² singularity, so an unclamped step had a fixed
+     point only up to Coupling ≈ 0.3 while the document rests at 0.449 and strikes to 0.95.
+     That commit changed the kernel and did not re-stamp here, so this row was red on every
+     tree from c4e7483 until now — §B150's shape a second time, in the same table that
+     already records it. The example's own claims (`quorum-claims.gpu.test.ts`, 9 of them)
+     and the §V885 look baseline both stayed green across that change and are what say the
+     picture is intact; this digest only ever said "frame 0 is what it was". */
+  "E54-Quorum.loom.json": "e6147984c385915e",
 };
 
 const POINT_KERNEL_TYPES = new Set(["pointKernel", "pointKernelAdvanced"]);
