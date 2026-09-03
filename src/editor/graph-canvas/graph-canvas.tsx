@@ -41,6 +41,8 @@ import {
 import { replaceEdgeOperations, spliceNodeOperations } from "@editor/edges/edge-drop.ts";
 import { ReferenceLines } from "@editor/edges/reference-lines.tsx";
 import { registerReferenceLinesCommand } from "@editor/edges/reference-lines-command.ts";
+import { registerTimingOverlayCommand } from "@editor/nodes/timing-overlay-command.ts";
+import { createNodeTimingScaleStore } from "@editor/nodes/node-timing.ts";
 import { NodeSearch } from "@editor/library/node-search.tsx";
 import {
   OPEN_NODE_SEARCH_COMMAND,
@@ -139,6 +141,18 @@ export function GraphCanvas({
   const fallbackRuntime = useMemo(() => createNodeRuntimeStore(), []);
   useEffect(() => () => fallbackRuntime.dispose(), [fallbackRuntime]);
   const runtimeSource = runtime ?? fallbackRuntime;
+
+  /**
+   * T1010 — the timing overlay's toggle and its denominator.
+   *
+   * The toggle is per BUS, like the reference lines: two canvases on one document must
+   * agree about what they are drawing (§V97). The scale store is per CANVAS, because it is
+   * a sum over the overlays that are actually mounted, and a second canvas showing a
+   * different part of the graph has a different set of them.
+   */
+  const timingOverlay = useMemo(() => registerTimingOverlayCommand(bus), [bus]);
+  const timingScale = useMemo(() => createNodeTimingScaleStore(), []);
+  useEffect(() => () => timingScale.dispose(), [timingScale]);
 
   /**
    * §V151/§V153 — the reference lines are DERIVED here and drawn as a picture.
@@ -649,6 +663,8 @@ export function GraphCanvas({
       showProblems,
       diveIn,
       components,
+      timingOverlay,
+      timingScale,
     }),
     [
       bus.store,
@@ -667,6 +683,8 @@ export function GraphCanvas({
       showProblems,
       diveIn,
       components,
+      timingOverlay,
+      timingScale,
     ],
   );
 

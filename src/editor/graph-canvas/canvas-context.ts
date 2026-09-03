@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useSyncExternalStore } from "react";
+import { createContext, useCallback, useContext, useRef, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 import type { CommandResult } from "@domain/types/commands.ts";
 import type { NodeId } from "@domain/types/ids.ts";
@@ -8,7 +8,14 @@ import type { EdgeGeometryStore } from "@editor/edges/edge-geometry.ts";
 import type { RenameSessionStore } from "@editor/nodes/rename-session.ts";
 import type { NodeRegistryView } from "@nodes/registry/registry.ts";
 import type { ComponentRegistryView } from "@domain/components/index.ts";
-import type { NodeRuntimeSnapshot, NodeRuntimeSource } from "./node-runtime.ts";
+import type { NodeTimingScaleSource } from "@editor/nodes/node-timing.ts";
+import type { TimingOverlayStore } from "@editor/nodes/timing-overlay-command.ts";
+import type {
+  AgentActivity,
+  NodeRunStatus,
+  NodeRuntimeSnapshot,
+  NodeRuntimeSource,
+} from "./node-runtime.ts";
 
 /**
  * What a node or an edge component needs, handed down once by the canvas instead of
@@ -126,6 +133,19 @@ export interface GraphCanvasContextValue {
    * close a cycle.
    */
   previewLens?: ((nodeId: NodeId) => PreviewLensSource | null) | undefined;
+  /**
+   * T1010 — is the per-node timing overlay drawn? `ui.toggleTimingOverlay`'s store, OFF by
+   * default. A node reads it to decide whether to MOUNT the overlay at all: off has to
+   * mean unmounted, because a mounted component that renders nothing still wakes on every
+   * 10 Hz sample (§V836).
+   */
+  timingOverlay: TimingOverlayStore;
+  /**
+   * T1010 — the graph-wide GPU-ms denominator the overlay's bar is a share OF. Read only
+   * by the overlay leaf, which also feeds it; nothing above a node subscribes, which is
+   * what keeps a sample from committing the canvas (§V836).
+   */
+  timingScale: NodeTimingScaleSource;
 }
 
 /** T685: the marker text for this node's lens, and a subscription to changes in it. */
@@ -157,5 +177,69 @@ export function useNodeRuntime(source: NodeRuntimeSource, nodeId: NodeId): NodeR
     [source, nodeId],
   );
   const snapshot = useCallback(() => source.get(nodeId), [source, nodeId]);
+  return useSyncExternalStore(subscribe, snapshot, snapshot);
+}
+
+/**
+ * The half of a node's runtime slice that changes when something MOVED, not when a number
+ * ticked — status, diagnostics, agent presence.
+ *
+ * These are exactly the fields `createNodeRuntimeStore`'s own `isStructural` flushes
+ * immediately rather than coalescing behind the 100 ms metric tick, and that is not a
+ * coincidence: they are the ones a person must see at once, while `gpuMs`,
+ * `resultAgeFrames` and the inference numbers are readouts.
+ *
+ * T1010/§V836 — WHY THE DISTINCTION IS A HOOK. `useNodeRuntime` hands back the whole
+ * snapshot, so a subscriber wakes when ANY field moves. `NodeView` used it to draw a
+ * `gpuMs` label in its header, which meant every node on the canvas re-rendered ten times
+ * a second, forever, re-measuring all of its handles each time — the shape §V836 measured
+ * in the inspector, spread across the whole graph. Moving the number into a leaf
+ * (`NodeTimingOverlay`) only pays off if the parent stops listening for it, so this hook
+ * is the other half of that fix and not an optimisation on its own.
+ *
+ * The cached projection is what makes it work: `useSyncExternalStore` bails out of the
+ * re-render when `getSnapshot` returns the value it already has, so a tick that moved only
+ * a number returns the identical object and the node does not render.
+ */
+export interface NodeStructuralState {
+  status: NodeRunStatus;
+  message: string | null;
+  errorCount: number;
+  warningCount: number;
+  agent: AgentActivity | null;
+}
+
+export function useNodeStructuralState(
+  source: NodeRuntimeSource,
+  nodeId: NodeId,
+): NodeStructuralState {
+  const cache = useRef<NodeStructuralState | null>(null);
+  const subscribe = useCallback(
+    (listener: () => void) => source.subscribe(nodeId, listener),
+    [source, nodeId],
+  );
+  const snapshot = useCallback((): NodeStructuralState => {
+    const next = source.get(nodeId);
+    const previous = cache.current;
+    if (
+      previous !== null &&
+      previous.status === next.status &&
+      previous.message === next.message &&
+      previous.errorCount === next.errorCount &&
+      previous.warningCount === next.warningCount &&
+      previous.agent === next.agent
+    ) {
+      return previous;
+    }
+    const projected: NodeStructuralState = {
+      status: next.status,
+      message: next.message,
+      errorCount: next.errorCount,
+      warningCount: next.warningCount,
+      agent: next.agent,
+    };
+    cache.current = projected;
+    return projected;
+  }, [source, nodeId]);
   return useSyncExternalStore(subscribe, snapshot, snapshot);
 }

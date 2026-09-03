@@ -1,0 +1,67 @@
+/*
+ * The per-node timing overlay (T1010). Every colour is a token (§V17); this file names
+ * none of its own.
+ *
+ * PLACEMENT IS THE REQUIREMENT, not a detail. The owner asked three times for the number
+ * to leave the header — *"not squeezed into the header of the node, but floating outside,
+ * next to but still attached to the node, otherwise it's gonna get too crunchy"* — and
+ * then corrected the bar's place specifically: *"the proportional render time bar next to
+ * it — ABOVE it, not ON TOP of it, above it."*
+ *
+ * So: `bottom: 100%` anchors the whole block OUTSIDE the node box, sitting on top of it;
+ * a small margin makes it float rather than fuse; and the column order is bar, then
+ * number, then the node — three stacked things, none of them overlapping.
+ *
+ * `position: absolute` inside `.node`'s existing stacking context means the overlay adds
+ * ZERO height to the node: turning it on cannot reflow the graph, so a node does not move
+ * under the pointer when the debug row is switched on mid-drag.
+ */
+
+.overlay {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-bottom: var(--space-1);
+  /* An instrument is never a target: clicks belong to the canvas underneath it. */
+  pointer-events: none;
+}
+
+/* The track is the whole frame; the fill is this node's share of it. */
+.track {
+  height: 3px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-sunken);
+  overflow: hidden;
+}
+
+.fill {
+  width: var(--timing-share);
+  height: 100%;
+  background: var(--text-dim);
+  transition: width var(--dur-fast) var(--ease-out);
+}
+
+/*
+ * The one tint, at §V836's threshold: this node IS the frame. Below it, length alone
+ * carries the reading — a five-stop ramp would give five names to a single number and
+ * none of them would be readable at graph zoom.
+ */
+.fill[data-hot="true"] {
+  background: var(--signal);
+}
+
+.value {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  color: var(--text-dim);
+  text-align: right;
+  /* The node is 178px and a graph is read at low zoom: never wrap, never widen. */
+  white-space: nowrap;
+  overflow: hidden;
+}

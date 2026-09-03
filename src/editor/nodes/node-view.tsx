@@ -31,7 +31,7 @@ import type { GraphDocument } from "@domain/types/graph.ts";
 import { publishesValueChannels } from "@domain/types/node-definition.ts";
 import { nodeFamilyOf } from "./node-family.ts";
 import type { PortDefinition } from "@domain/types/ports.ts";
-import { useGraphCanvas, useNodeRuntime } from "@editor/graph-canvas/canvas-context.ts";
+import { useGraphCanvas, useNodeStructuralState } from "@editor/graph-canvas/canvas-context.ts";
 import type {
   NodeToggleCommand,
   PreviewLensSource,
@@ -39,8 +39,8 @@ import type {
 import { cssVars } from "@editor/graph-canvas/css-vars.ts";
 import type { LoomNode } from "@editor/graph-canvas/derive.ts";
 import type { NodeRunStatus } from "@editor/graph-canvas/node-runtime.ts";
-import { formatGpuMs } from "@editor/edges/flow.ts";
 import { ShaderStatusBadge } from "@editor/shader-editor/shader-status-badge.tsx";
+import { NodeTimingOverlay } from "./node-timing-overlay.tsx";
 import { nodeTypeLabelStore } from "./node-type-labels.ts";
 import { AGENT_LABEL, AGENT_TOKEN, STATUS_LABEL, STATUS_TOKEN } from "./status.ts";
 import styles from "./node-view.module.css";
@@ -81,10 +81,24 @@ export const NodeView = memo(function NodeView({ id, selected }: NodeProps<LoomN
     showProblems,
     diveIn,
     components,
+    timingOverlay,
   } = useGraphCanvas();
   // Own slice only (§V16): another node's edit does not re-render this one.
   const node = useStore(store, (state) => state.graph.nodes[id]);
-  const snapshot = useNodeRuntime(runtime, id);
+  /**
+   * T1010/§V836 — the STRUCTURAL half of the runtime slice, and the narrowing is the
+   * point. This component used to take the whole snapshot so it could draw `gpuMs` in its
+   * header, which woke every node on the canvas ten times a second forever. The number
+   * moved out to `NodeTimingOverlay`, a leaf with its own subscription; this hook is what
+   * makes that move pay off, by leaving the node deaf to the ticks it no longer draws.
+   */
+  const snapshot = useNodeStructuralState(runtime, id);
+  /**
+   * T1010 — OFF by default, so the common case mounts nothing and subscribes to nothing.
+   * This store changes when a person picks the Debug ▸ Node timings row and at no other
+   * time, so subscribing to it here costs one boolean rather than a sample.
+   */
+  const showTimingOverlay = useSyncExternalStore(timingOverlay.subscribe, timingOverlay.get);
 
   /**
    * Is THIS node's title in edit mode (T415)?
@@ -296,6 +310,12 @@ export const NodeView = memo(function NodeView({ id, selected }: NodeProps<LoomN
             : undefined
         }
       >
+        {/*
+          T1010 — the timing readout, OUTSIDE the node and above it. Mounted only when the
+          Debug ▸ Node timings row is on: off means unmounted, because a mounted overlay
+          still wakes on every 10 Hz sample even while it draws nothing (§V836).
+        */}
+        {showTimingOverlay ? <NodeTimingOverlay nodeId={id as NodeId} /> : null}
         <header className={styles.title}>
           <span
             className={styles.dot}
@@ -375,13 +395,25 @@ export const NodeView = memo(function NodeView({ id, selected }: NodeProps<LoomN
             warningCount={snapshot.warningCount}
             compiling={status === "compiling"}
           />
-          <span
-            className={styles.timing}
-            aria-label="GPU time for this pass"
-            title="GPU time for this pass"
-          >
-            {formatGpuMs(snapshot.gpuMs)}
-          </span>
+          {/*
+            T1010 — THE GPU MILLISECONDS ARE NOT IN THIS ROW, and their absence is the fix.
+
+            A `.timing` span sat here, between the badges and `P`, and the owner asked
+            three times for it to go: *"we're still seeing the milliseconds in the top
+            header bar of each node instead of moving it outside… it's still annoying
+            there"*, and before that *"NOT squeezed into the header of the node, but
+            floating outside, next to but still attached to the node, otherwise it's gonna
+            get too crunchy."*
+
+            It is the same argument T892 made about the camera toggle one row below: this
+            header is 178px wide and every member of it competes with the node's NAME. A
+            monospace `12.34 ms` is wider than any badge here and it changes ten times a
+            second, so it was both the widest and the twitchiest thing next to the one
+            piece of text a person actually reads.
+
+            It is drawn by `NodeTimingOverlay` now, floating above the node — see that
+            file for why it is a leaf and not a field (§V836).
+          */}
           <NodeToggle
             label="Preview"
             title="Preview — off costs no GPU work"

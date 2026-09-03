@@ -140,6 +140,11 @@ const NOT_CONSTRUCTED: ReadonlyArray<{ name: string; reason: string }> = [
       "Composed by `referenceLinesStoreFor` in the SAME module — the bus-keyed accessor, so two canvases on one document (the floated graph pane, \u00a7V97) agree about what they are drawing (T248). The product path is `registerReferenceLinesCommand` in `graph-canvas.tsx`; `graph-canvas/reference-lines.test.tsx` toggles it through the bus command and asserts the lines leave the DOM.",
   },
   {
+    name: "createTimingOverlayStore",
+    reason:
+      "Composed by `timingOverlayStoreFor` in the SAME module — the bus-keyed accessor, so two canvases on one document (§V97) agree about whether the timing overlay is drawn (T1010). The product path is `registerTimingOverlayCommand` in `graph-canvas.tsx`; `nodes/node-timing-overlay.test.tsx` mounts nodes with it off, turns it on, and asserts the readout appears and that a sample re-renders no node (§V836).",
+  },
+  {
     name: "createRenameSessionStore",
     reason:
       "Composed by `renameSessionStoreFor` in the SAME module — the bus-keyed accessor, so two canvases on one document (§V97) do not open two editors on one node title (T415). The product path is `registerRenameSessionCommand` in `graph-canvas.tsx`; `tests/integration/node-rename.test.tsx` opens the editor through the composed app and types a name into the document.",
@@ -1269,11 +1274,16 @@ function attachCallsIn(path: string): Set<string> {
  * `NOT_CONSTRUCTED`: an entry that stops being true fails as loudly as a missing one.
  */
 const NOT_ATTACHED: ReadonlyArray<{ name: string; reason: string }> = [
-  {
-    name: "attachCpuTimingSource",
-    reason:
-      "T256's CPU half has no PRODUCER yet: nothing in the tree implements `CpuTimingSource`, so there is no source to attach and every `cpu` bucket honestly reads “unavailable” (§V86). This entry is the record that the GPU half's B172 twin is still open on the CPU side — the moment someone measures per-pass encode time, wiring it here is the last step, and this line must go.",
-  },
+  /*
+   * DELIBERATELY EMPTY, and worth keeping empty.
+   *
+   * `attachCpuTimingSource` sat here for the length of one commit, with a reason that read
+   * "T256's CPU half has no producer yet". That reason was true and it was still the wrong
+   * answer: the seam had been unfed since T256 shipped, `cost by category` read
+   * `cpu  unavailable` on every row, and nobody had looked because the GPU half beside it
+   * was the one being reported. THE LESSON — WHEN A GATE CATCHES ONE UNFED SEAM, ENUMERATE
+   * ITS SIBLINGS IMMEDIATELY — is why this list is empty rather than one line long.
+   */
 ];
 
 const attachMethods = attachMethodsOnExportedInterfaces();

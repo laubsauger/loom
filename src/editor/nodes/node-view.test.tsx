@@ -64,7 +64,7 @@ function mountNode(type: string, options: Options = {}) {
   const seeded = Object.keys(bus.store.getGraph().nodes)[0];
   const nodeId = seeded ?? "pending";
 
-  const { value, runtime } = fixtureContext({
+  const { value, runtime, timingOverlay, timingScale } = fixtureContext({
     store: bus.store,
     registry: bus.registry,
     dispatch: (operations, label) => {
@@ -95,7 +95,7 @@ function mountNode(type: string, options: Options = {}) {
     </CanvasFixture>,
   );
 
-  return { ...view, bus, runtime, nodeId, dispatched, toggled, type };
+  return { ...view, bus, runtime, nodeId, dispatched, toggled, type, timingOverlay, timingScale };
 }
 
 function graphWith(type: string, ui?: Record<string, boolean>): GraphDocument {
@@ -271,14 +271,28 @@ describe("V42 — agent activity is visible on the node it is changing", () => {
 });
 
 describe("V16 — metrics reach the node without touching the document", () => {
+  /**
+   * T1010 — the number is no longer IN the header, so this asks the node for it the way a
+   * user now does: switch the overlay on, then read the floating readout. The half that
+   * matters to §V16 is unchanged and is the second assertion — a per-frame number reaches
+   * the view without bumping the document revision, so a metric tick is not an undo entry.
+   */
   it("shows per-pass GPU time and leaves the graph revision alone", async () => {
-    const { bus, runtime, nodeId } = mountNode("test.blur", { graph: graphWith("test.blur") });
+    const { bus, runtime, nodeId, timingOverlay } = mountNode("test.blur", {
+      graph: graphWith("test.blur"),
+    });
     const before = bus.store.getRevision();
 
-    expect(screen.getByLabelText("GPU time for this pass").textContent).toBe("—");
+    // Off by default: the readout is not merely empty, it is not mounted at all (§V836).
+    expect(screen.queryByTestId(`node-timing-value-${nodeId}`)).toBeNull();
+    await act(async () => {
+      timingOverlay.set(true);
+    });
+
+    expect(screen.getByTestId(`node-timing-value-${nodeId}`).textContent).toBe("—");
     await publish(runtime, nodeId, { gpuMs: 3.25 });
 
-    expect(screen.getByLabelText("GPU time for this pass").textContent).toBe("3.25 ms");
+    expect(screen.getByTestId(`node-timing-value-${nodeId}`).textContent).toBe("3.25 ms");
     expect(bus.store.getRevision()).toBe(before);
   });
 });
@@ -735,7 +749,13 @@ describe("T924 — a metric-only re-render costs no forced layout", () => {
       initialGraph: graphWith(type),
     });
     const { bus } = createDomainBus({ store, registry: createTestRegistry().view() });
-    const { value, runtime } = fixtureContext({ store: bus.store, registry: bus.registry });
+    const { value, runtime, timingOverlay } = fixtureContext({
+      store: bus.store,
+      registry: bus.registry,
+    });
+    // T1010: the overlay ON, because the readout it draws is what makes the `gpuMs` half
+    // of this gate visible at all now that the header no longer carries the number.
+    timingOverlay.set(true);
     const view = render(
       <CanvasFixture value={value}>
         <div className="react-flow__node" data-id="n1">
@@ -787,7 +807,10 @@ describe("T924 — a metric-only re-render costs no forced layout", () => {
 
       reads.reset();
       await publish(runtime, nodeId, { gpuMs: 1.25 });
-      // The render really happened: the header is showing the new number.
+      // The render really happened: the overlay is showing the new number. T1010 SMOOTHS
+      // it, so the first sample of a run is the one that lands whole — later ones are an
+      // average and asserting the raw figure would be asserting the absence of the
+      // smoothing the owner asked for.
       expect(container.textContent).toContain("1.25 ms");
       expect(reads.count).toBe(0);
 
@@ -795,7 +818,23 @@ describe("T924 — a metric-only re-render costs no forced layout", () => {
       for (const gpuMs of [1.5, 1.75, 2, 2.25, 2.5]) {
         await publish(runtime, nodeId, { gpuMs });
       }
-      expect(container.textContent).toContain("2.50 ms");
+      const readout = container.querySelector("[data-testid^='node-timing-value-']")?.textContent ?? "";
+      expect(Number.parseFloat(readout)).toBeGreaterThan(1.25);
+      expect(Number.parseFloat(readout)).toBeLessThan(2.5);
+      expect(reads.count).toBe(0);
+
+      /*
+       * T1010 — AND THE SAME HOLDS FOR A RE-RENDER OF THE NODE ITSELF, which is what this
+       * gate is really about. Since the timing readout left the header, a `gpuMs` tick no
+       * longer re-renders `NodeView` at all (`useNodeStructuralState`), so the run above
+       * would pass even if `useHandleBoundsInSync` were back to measuring on every render.
+       * A STATUS change is structural, so it does re-render the node — and the layout reads
+       * must still be zero.
+       */
+      await publish(runtime, nodeId, { status: "warning", warningCount: 1 });
+      expect(container.querySelector("[data-testid^='node-status-']")?.getAttribute("data-status")).toBe(
+        "warning",
+      );
       expect(reads.count).toBe(0);
     } finally {
       reads.restore();

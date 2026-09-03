@@ -101,6 +101,11 @@ const APP_REGISTERED = [
   // bus does not own it. Live, not planned: this row is the FIRST door the command has
   // ever had (§V153, §V356).
   "ui.toggleReferenceLines",
+  // T1010: registered by the mounted graph canvas too — `registerTimingOverlayCommand`
+  // returns the store every node subscribes to, and the command comes with it. Whether a
+  // debug readout is DRAWN is a property of a look at the graph, not of the graph, so the
+  // domain bus does not own it. Live, not planned: the Debug ▸ Node timings row is its door.
+  "ui.toggleTimingOverlay",
   // T430/§V354: registered by the mounted graph pane (`src/app/view-commands.ts`) — only
   // the canvas can move its own camera, and framing is view state that writes no patch.
   // Live, not planned: `F` and this row both fit the graph in the window.

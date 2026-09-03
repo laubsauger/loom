@@ -3,6 +3,10 @@ import { Position, ReactFlowProvider } from "@xyflow/react";
 import type { EdgeProps, NodeProps } from "@xyflow/react";
 import { createEdgeGeometry } from "@editor/edges/edge-geometry.ts";
 import { createRenameSessionStore } from "@editor/nodes/rename-session.ts";
+import { createTimingOverlayStore } from "@editor/nodes/timing-overlay-command.ts";
+import { createNodeTimingScaleStore } from "@editor/nodes/node-timing.ts";
+import type { NodeTimingScaleStore } from "@editor/nodes/node-timing.ts";
+import type { TimingOverlayStore } from "@editor/nodes/timing-overlay-command.ts";
 import type { CommandResult } from "@domain/types/commands.ts";
 import { GraphCanvasContext } from "./canvas-context.ts";
 import type { GraphCanvasContextValue, GraphDispatch } from "./canvas-context.ts";
@@ -190,16 +194,25 @@ export interface FixtureContextOptions {
   renderPreview?: GraphCanvasContextValue["renderPreview"];
   renderControls?: GraphCanvasContextValue["renderControls"];
   previewLens?: GraphCanvasContextValue["previewLens"];
+  /** T1010: OFF by default here too, so a fixture sees what a user sees. */
+  timingOverlay?: TimingOverlayStore;
+  timingScale?: NodeTimingScaleStore;
 }
 
 export function fixtureContext(options: FixtureContextOptions): {
   value: GraphCanvasContextValue;
   runtime: NodeRuntimeStore;
+  timingOverlay: TimingOverlayStore;
+  timingScale: NodeTimingScaleStore;
 } {
   // Zero interval: tests drive time themselves rather than waiting on the 10 Hz tick.
   const runtime = options.runtime ?? createNodeRuntimeStore({ intervalMs: 0 });
+  const timingOverlay = options.timingOverlay ?? createTimingOverlayStore();
+  const timingScale = options.timingScale ?? createNodeTimingScaleStore({ intervalMs: 0 });
   return {
     runtime,
+    timingOverlay,
+    timingScale,
     value: {
       store: options.store,
       registry: options.registry,
@@ -219,6 +232,8 @@ export function fixtureContext(options: FixtureContextOptions): {
       renderPreview: options.renderPreview,
       renderControls: options.renderControls,
       previewLens: options.previewLens,
+      timingOverlay,
+      timingScale,
     },
   };
 }

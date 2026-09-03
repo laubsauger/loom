@@ -275,18 +275,18 @@
   letter-spacing: normal;
 }
 
-.timing {
-  flex: 0 0 auto;
-  font-family: var(--font-mono);
-  font-size: var(--fs-micro);
-  font-variant-numeric: tabular-nums;
-  color: var(--text-dim);
-}
+/*
+ * T1010 — THERE IS NO `.timing` RULE ANY MORE. The GPU milliseconds left this header at
+ * the owner's third asking; they float above the node now, styled by
+ * `node-timing-overlay.module.css`. The rhythm the mark below borrows from it (mono,
+ * micro, tabular) went with them and is restated there.
+ */
 
 /*
  * T685 — the preview LENS mark, in the header (§V633: nothing inside the tile is legible
- * over it). Same rhythm as `.timing` beside it — mono, micro, tabular — because they are
- * the same kind of thing: a small true statement about the picture. It is toned
+ * over it). Mono, micro, tabular — the rhythm the timing readout used to set beside it,
+ * because they are the same kind of thing: a small true statement about the picture. It is
+ * toned
  * `--signal` rather than `--text-dim` because it is a WARNING, not a readout: the picture
  * this node is showing is not the node's output (§V70a).
  */

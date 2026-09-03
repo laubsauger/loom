@@ -15,6 +15,9 @@ import { BEGIN_RENAME_COMMAND } from "@editor/nodes/rename-session.ts";
 // Same reason again (B68, §V356): the constant, from the module rather than the
 // `@editor/edges` barrel.
 import { TOGGLE_REFERENCE_LINES_COMMAND } from "@editor/edges/reference-lines-command.ts";
+// Same reason again (T1010): the constant, from the module rather than the
+// `@editor/nodes` barrel, which exports React surfaces.
+import { TOGGLE_TIMING_OVERLAY_COMMAND } from "@editor/nodes/timing-overlay-command.ts";
 import type { MenuGuardName } from "./guards.ts";
 
 /**
@@ -102,6 +105,22 @@ export function canvasMenu(registry: NodeRegistryView): MenuSchema {
       // binding, no menu row and no button. A plain row, like `node.toggleBypass`: the
       // command flips when `show` is omitted, which is what a menu item means.
       { command: TOGGLE_REFERENCE_LINES_COMMAND, label: "Reference lines" },
+      { separator: true },
+      /**
+       * T1010 — the DEBUG submenu, and the owner asked for it by that name: *"it's not
+       * supposed to be there all the time. I want to turn it off and on — right-click,
+       * debug submenu."*
+       *
+       * A submenu rather than a flat row for the reason the Component rows are nested: a
+       * canvas menu that lists every instrument alongside "Paste" is a list, not a menu,
+       * and everything under here is something you reach for while diagnosing and put down
+       * afterwards. It loses no door by being nested (§V78) — the command is on the bus,
+       * so the palette and any later keybinding reach the same one.
+       */
+      {
+        label: "Debug",
+        submenu: [{ command: TOGGLE_TIMING_OVERLAY_COMMAND, label: "Node timings" }],
+      },
     ],
   };
 }
