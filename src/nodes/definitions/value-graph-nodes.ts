@@ -5,9 +5,9 @@ import type {
   ValueChannels,
   ValueEvaluateContext,
 } from "../../domain/types/node-definition.ts";
-import type { NumberParameter } from "../../domain/types/parameters.ts";
+import type { NumberParameter, ParameterSchema } from "../../domain/types/parameters.ts";
 import { VALUE_PORT } from "./common-ports.ts";
-import { resolveSwitchIndex } from "./switch.ts";
+import { resolveSwitchBlend, resolveSwitchIndex, switchParametersFor } from "./switch.ts";
 import { cycleHash } from "./values.ts";
 
 /**
@@ -422,7 +422,58 @@ export const valueFilterNode: NodeDefinition = {
  * so a timeline lap cannot reach it — whatever the selected input does across a loop, this
  * does. Stated here because §V453 makes the classification a decision the author owes,
  * and "it obviously reads nothing" is how `lfo` ended up on the wrong clock (B98).
+ *
+ * ## CROSSFADE (T1054): a lerp per channel, and what happens when the bags differ
+ *
+ * With the toggle on, a fractional index LERPS the two neighbouring bags instead of cutting
+ * — the same rule as the texture Switch, over the same wrap, so a ramp off the end fades
+ * LAST→FIRST. A number blend is the least ambiguous crossfade there is, and a driven index
+ * sweeping a parameter between two sources is the case a fractional index is most obviously
+ * for.
+ *
+ * PER CHANNEL, over the UNION of the two bags, because §T982 made a value input carry a BAG
+ * and not a scalar. A channel present on both sides is `a*(1-t) + b*t`. A channel present on
+ * only ONE side is that side's value scaled by its own weight — it fades out as the other
+ * source takes over, which is what a crossfader does with a channel the other input does not
+ * have. The alternative, passing an orphan channel through unweighted, was rejected because
+ * it breaks the endpoints: at `t = 0` the output must be source A's bag EXACTLY, and a
+ * union that carried B's orphans at full strength would not be. Both endpoints are exact —
+ * the fraction is 0 at every integer index, and the code returns the chosen bag itself
+ * there — so crossfade at an integer and a hard select are the same bag, not merely close.
+ *
+ * ⚠ COST: NONE, and this corrects the record rather than restating it. §T1014/§T1022 wrote
+ * that "`valueSwitch` IS exclusive" and read that as an unselected branch not cooking. What
+ * is exclusive is the OUTPUT BAG. `value-graph.ts` evaluates EVERY value node in the
+ * document in topological order with no reachability filter, so all four branches already
+ * cook at every index — measured directly by counting evaluations of three constants feeding
+ * one switch: `{11:1, 22:1, 33:1}` at index 0, 1 and 2 alike. So crossfade here buys nothing
+ * and costs nothing, and the parameter's description does not claim a price that a profiler
+ * would not find. What IS true, and is a fact about MEANING rather than about today's
+ * scheduler: crossfade makes both neighbours genuinely live, so if the pull-based cooking
+ * §T1014 left unruled ever lands, these two branches are the ones it must not prune.
  */
+/** Hoisted for the same reason the texture Switch's is (T1054): `parametersFor` rebuilds it. */
+const VALUE_SWITCH_PARAMETERS: ParameterSchema = {
+  index: {
+    type: "number",
+    label: "Index",
+    // T1054: conditional on crossfade, see `switchParametersFor`.
+    step: 1,
+    default: 0,
+    // No min/max, for the texture Switch's reason (T235): out of range is the NORMAL
+    // case for a driven index, and the node's answer is to wrap it. A declared range
+    // would make §V66 reject a static 3 while an expression producing 3 wrapped happily.
+    description: "Which connected input to pass, 0-based. Out of range wraps, so -1 is the last.",
+  },
+  crossfade: {
+    type: "boolean",
+    label: "Crossfade",
+    // §V831: OFF, so a document written before T1054 evaluates to the same numbers.
+    default: false,
+    description: "Blend the two inputs the index sits between, channel by channel, instead of cutting.",
+  },
+};
+
 export const valueSwitchNode: NodeDefinition = {
   type: "valueSwitch",
   version: 1,
@@ -438,17 +489,10 @@ export const valueSwitchNode: NodeDefinition = {
     { id: "in4", label: "In 4", type: VALUE_PORT, optional: true },
   ],
   outputs: [{ id: "out", label: "Out", type: VALUE_PORT }],
-  parameters: {
-    index: {
-      type: "number",
-      label: "Index",
-      default: 0,
-      step: 1,
-      // No min/max, for the texture Switch's reason (T235): out of range is the NORMAL
-      // case for a driven index, and the node's answer is to wrap it. A declared range
-      // would make §V66 reject a static 3 while an expression producing 3 wrapped happily.
-      description: "Which connected input to pass, 0-based. Out of range wraps, so -1 is the last.",
-    },
+  parameters: VALUE_SWITCH_PARAMETERS,
+  /** Crossfade frees the index's step, exactly as on the texture Switch (T1054). */
+  parametersFor(stored) {
+    return switchParametersFor(VALUE_SWITCH_PARAMETERS, stored);
   },
   valueEvaluate: ({ inputs, values }) => {
     // Port order is the branch order, and only CONNECTED ports are branches: an absent
@@ -456,10 +500,31 @@ export const valueSwitchNode: NodeDefinition = {
     const connected = (["in1", "in2", "in3", "in4"] as const)
       .map((port) => inputs[port])
       .filter((bag): bag is ValueChannels => bag !== undefined);
-    const chosen = connected[resolveSwitchIndex(num(values["index"], 0), connected.length)];
-    // A copy, never the input object: the evaluator caches bags by node id and a shared
-    // reference would let a downstream stage's mutation reach back into its source.
-    return chosen === undefined ? {} : { ...chosen };
+    const raw = num(values["index"], 0);
+
+    if (values["crossfade"] !== true) {
+      const chosen = connected[resolveSwitchIndex(raw, connected.length)];
+      // A copy, never the input object: the evaluator caches bags by node id and a shared
+      // reference would let a downstream stage's mutation reach back into its source.
+      return chosen === undefined ? {} : { ...chosen };
+    }
+
+    // T1054. Same wrap as the hard select, so the two agree at every integer index.
+    const { index, next, fraction } = resolveSwitchBlend(raw, connected.length);
+    const from = connected[index];
+    if (from === undefined) return {};
+    // Sitting exactly on an input: the bag ITSELF, not a lerp weighted to nothing. That is
+    // what makes "crossfade at an integer index" and "hard select" the same bag rather than
+    // the same number, which is what `toEqual` on the whole bag can actually check.
+    if (fraction <= 0) return { ...from };
+    const to = connected[next] ?? {};
+    const blended: Record<string, number> = {};
+    // The UNION: a channel only one side publishes fades with its own side's weight rather
+    // than being carried at full strength, which is what keeps t=0 and t→1 honest.
+    for (const name of new Set([...Object.keys(from), ...Object.keys(to)])) {
+      blended[name] = (from[name] ?? 0) * (1 - fraction) + (to[name] ?? 0) * fraction;
+    }
+    return blended;
   },
   compile: noPasses,
 };

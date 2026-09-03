@@ -15,6 +15,13 @@
  *
  * The LAST input is the `default` branch rather than a case of its own: the CPU guarantees
  * the index is in range, so `default` is not an error path, and WGSL requires one anyway.
+ *
+ * T1054 put the selection in `sampleInput` so CROSSFADE can call it twice. The `blend <= 0`
+ * early return is what keeps the promise made above: with the toggle off the CPU sends 0 and
+ * exactly one `textureSampleLevel` runs, so the argument against "sample all N and mix"
+ * still holds — this samples at most TWO, and only while a fraction is actually being
+ * crossfaded. `next` arrives as a uniform rather than being derived here as
+ * `(index + 1) % count`, keeping the CPU the single author of what wrapping means (T235).
  */
 export function switchFragmentWgsl(inputs: number): string {
   const count = Math.max(1, Math.floor(inputs));
@@ -31,16 +38,32 @@ export function switchFragmentWgsl(inputs: number): string {
 
   return `struct Params {
   index: f32,
+  next: f32,
+  blend: f32,
 };
 @group(0) @binding(0) var<uniform> params: Params;
 @group(0) @binding(1) var inputSampler: sampler;
 ${declarations}
 
-@fragment
-fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
-  switch (u32(params.index + 0.5)) {
+fn sampleInput(which: u32, uv: vec2f) -> vec4f {
+  switch (which) {
 ${cases}
     default: { return ${sample(count - 1)}; }
   }
+}
+
+@fragment
+fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
+  let base = sampleInput(u32(params.index + 0.5), uv);
+  // Crossfade off, or a fractional index that landed exactly on an input: ONE sample, and
+  // bit-for-bit the picture this node produced before T1054 existed. The branch is uniform
+  // across the draw (every fragment reads the same uniform), so it is the cheap kind.
+  if (params.blend <= 0.0) {
+    return base;
+  }
+  // Linear, on all four channels, straight alpha — TD's Switch TOP. mix is convex, so it
+  // cannot push alpha past whichever input was already highest; see the node's docblock for
+  // why a clamp here would be a behaviour change rather than a safety net (V833/V838).
+  return mix(base, sampleInput(u32(params.next + 0.5), uv), params.blend);
 }`;
 }
