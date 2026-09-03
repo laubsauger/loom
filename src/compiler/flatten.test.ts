@@ -871,14 +871,14 @@ describe("published colour space through a flattening (§V56, B8)", () => {
 });
 
 /**
- * T1030 — MUTE AND BYPASS ON AN INSTANCE SURVIVE FLATTENING. Inlining dissolves the
+ * T1032 — MUTE AND BYPASS ON AN INSTANCE SURVIVE FLATTENING. Inlining dissolves the
  * instance node, and its ui flags dissolved with it — so muting a whole component
  * changed nothing (owner-reported against E51's TimeGrid). A flagged instance is now
  * NOT inlined: the node stays, carrying its flags, and the compiler's ONE mute/bypass
  * splice treats it as it treats every node — no component-shaped second copy of that
  * rule to drift (§V109).
  */
-describe("mute and bypass on a component instance (T1030)", () => {
+describe("mute and bypass on a component instance (T1032)", () => {
   it("a MUTED instance contributes nothing: no interior, and downstream reads unconnected", () => {
     const compiled = compileWith(
       [bloom()],

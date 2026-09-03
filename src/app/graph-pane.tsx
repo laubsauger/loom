@@ -216,7 +216,7 @@ function GraphPaneInner({
 
   // T463: nodes flagged as GRAPH BACKGROUND render behind the patch, dimmed — the
   // preview machinery on a second canvas one z-layer down (see use-graph-background).
-  /* T1019/T1029 — ONE spelling of the pane's flat prefix, shared by the texture
+  /* T1019/T1031 — ONE spelling of the pane's flat prefix, shared by the texture
      preview hook and the value plots: the canvas speaks inner ids, everything keyed
      off the compiled/flattened document speaks prefixed ones. */
   const flatPrefix = (componentPath ?? []).join("/");
@@ -487,7 +487,7 @@ function GraphPaneInner({
               ? "bypassed"
               : null;
         /*
-         * T1029 — the history is keyed by FLAT id (T615 pushes `wall/churnx`; its own
+         * T1031 — the history is keyed by FLAT id (T615 pushes `wall/churnx`; its own
          * comment says "the flat document is what brings a value node inside a
          * component into the window at all") but this read used the CANVAS id, so
          * every value plot inside a dived component subscribed to a ring nobody

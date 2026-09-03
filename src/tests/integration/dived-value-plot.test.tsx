@@ -15,7 +15,7 @@ import { GraphPane } from "../../app/graph-pane.tsx";
 import type { GraphActions } from "../../app/graph-pane.tsx";
 
 /**
- * T1029 — A VALUE PLOT INSIDE A COMPONENT READS THE RING THE FRAME LOOP WRITES.
+ * T1031 — A VALUE PLOT INSIDE A COMPONENT READS THE RING THE FRAME LOOP WRITES.
  *
  * T615 keys the history by FLAT id on purpose ("the flat document is what brings a
  * value node inside a component into the window at all" — its own comment), but the
@@ -96,7 +96,7 @@ function paneAt(runtime: AppRuntime, path: readonly NodeId[], reads: string[]) {
   );
 }
 
-describe("T1029 — the dived value plot reads the flat ring", () => {
+describe("T1031 — the dived value plot reads the flat ring", () => {
   it("inside an instance, the plot subscribes under the FLAT id the frame loop pushes", async () => {
     const runtime = newRuntime();
     const lfo = await addLfo(runtime);
