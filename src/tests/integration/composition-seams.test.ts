@@ -82,33 +82,17 @@ const ENTRY_POINTS = [
  * stops being true fails just as loudly as a missing one.
  */
 const NOT_CONSTRUCTED: ReadonlyArray<{ name: string; reason: string }> = [
-  {
-    name: "createEtherDreamClient",
-    reason:
-      "T950, deliberately sequenced: the transport's pure state machine, emulator-gated in " +
-      "ether-dream.test.ts. Its product caller is the bridge helper's laser driver, which must " +
-      "not exist before the helper-side dead-man timer does (G2: the failsafe lives on the far " +
-      "side of the thing that can fail) — so wiring this early would be wiring the hazard. The " +
-      "laser pump (use-laser-bridge.ts, EMISSION_PUMPS-registered) constructs no transport in " +
-      "this build and says so; the driver commit replaces both statements together.",
-  },
+  /* T950's createEtherDreamClient / createLaserService entries left this list the day
+     serve.ts wired the laser door (the owner's go): the dead-man they were sequenced
+     behind now runs in that same wiring, so the excuses stopped being true and this
+     gate's both-directions rule demanded their removal — exactly what it is for. */
   {
     name: "createEtherDreamEmulator",
     reason:
       "T950: the DAC's own state machines as a test counterparty — a client gated against a " +
-      "device that argues back. Its second life is the helper's loopback dev-DAC when the driver " +
-      "lands; until then a product path constructing an emulated laser would be a product path " +
+      "device that argues back. Its second life is the helper's loopback dev-DAC; until someone " +
+      "asks for that, a product path constructing an emulated laser would be a product path " +
       "pretending to have hardware.",
-  },
-  {
-    name: "createLaserService",
-    reason:
-      "T950: the helper-side armed lifecycle with the dead-man (G2), gated against the DAC " +
-      "emulator on a fake clock. Its product caller is the device-role laser message family in " +
-      "serve.ts, which needs the arming and E-stop SESSION SURFACE first (G7: an always-visible " +
-      "E-stop that does not depend on the render loop) — a UX decision the owner rules on, not " +
-      "an implementer default. Until then no product path can reach a laser: the pump " +
-      "constructs no transport and says so per node.",
   },
   {
     name: "createHeadlessMcpServer",

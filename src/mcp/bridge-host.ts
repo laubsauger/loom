@@ -202,6 +202,15 @@ export interface BridgeHostOptions {
    * sentence from "wrong code", and a caller needs to know which (§V359).
    */
   readonly devices?: DeviceHub;
+  /**
+   * T950 — the laser door, present only when the helper was built with one. Commands
+   * dispatch through `handleDeviceMessage` exactly as OSC's do; its unsolicited state
+   * changes (the dead-man firing, a device e-stop) ride `deviceStreamState` under the
+   * stream name "laser". When the device client dies, `releaseDevice` DISPOSES it —
+   * which is G2's page-death case: a session that ends mid-stream blanks, stops and
+   * e-stops the DAC on the helper's own clock before anything else happens.
+   */
+  readonly laser?: import("./laser-host.ts").LaserHost;
 }
 
 /**
@@ -423,6 +432,10 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
     deviceClient = null;
     deviceSession?.close();
     deviceSession = null;
+    // T950/G2 — the page-death case: dispose fires the dead-man sequence if a stream
+    // was live, so a closed tab never leaves a beam. Unconditional and first-class,
+    // not an afterthought of socket cleanup.
+    options.laser?.dispose();
     notice({ severity: "info", message: `Device bridge released: ${reason}.` });
   };
 
@@ -476,6 +489,40 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
               outcome: {
                 delivery: "failed",
                 reason: error instanceof Error ? error.message : String(error),
+              },
+            });
+          },
+        );
+        return;
+      }
+      case "deviceLaser": {
+        const id = message["id"];
+        if (typeof id !== "number") return;
+        const laser = options.laser;
+        if (laser === undefined) {
+          send(socket, {
+            type: "deviceLaserResult",
+            id,
+            outcome: {
+              ok: false,
+              reason: "this helper was built without a laser driver — nothing here can reach a DAC.",
+              state: { phase: "disconnected", clearRefused: false, underflowed: false, bufferFullness: 0 },
+            },
+          });
+          return;
+        }
+        void laser.command(message["command"] as never).then(
+          (outcome) => {
+            send(socket, { type: "deviceLaserResult", id, outcome });
+          },
+          (error: unknown) => {
+            send(socket, {
+              type: "deviceLaserResult",
+              id,
+              outcome: {
+                ok: false,
+                reason: error instanceof Error ? error.message : String(error),
+                state: { phase: "disconnected", clearRefused: false, underflowed: false, bufferFullness: 0 },
               },
             });
           },
@@ -591,6 +638,16 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
               if (device !== socket) return;
               send(socket, { type: "deviceStreamState", stream, state, detail });
             },
+          });
+          // T950: the laser's unsolicited state changes ride the same push channel.
+          options.laser?.onState((state, detail) => {
+            if (device !== socket) return;
+            send(socket, {
+              type: "deviceStreamState",
+              stream: "laser",
+              state: state.phase === "estopped" ? "error" : "open",
+              detail: `${detail} [laser:${state.phase}]`,
+            });
           });
           send(socket, { type: "deviceAttached", sources: devices.sources });
           notice({

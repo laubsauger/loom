@@ -92,8 +92,10 @@ export interface LaserServiceOptions {
   /** Dead-man timeout — a small multiple of the frame interval, far below any device watchdog. */
   readonly deadManMs?: number;
   readonly onState?: (state: LaserServiceState, reason: string) => void;
-  /** An author-set projector ceiling for G9; lowers the device max, never raises it. */
-  readonly projectorMaxPps?: number;
+  /** An author-set projector ceiling for G9; lowers the device max, never raises it.
+   *  Read PER STREAM, so a host may supply a live getter; undefined defers to the
+   *  device's own reported maximum. */
+  readonly projectorMaxPps?: number | undefined;
 }
 
 const DEFAULT_DEAD_MAN_MS = 250;

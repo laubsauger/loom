@@ -176,6 +176,59 @@ export type OscSendOutcome =
       readonly at: number;
     };
 
+/* ------------------------------------------------------------------- laser (T950) */
+
+/**
+ * T950 — the LASER command family, request/response on the device role.
+ *
+ * Request/response FITS this device: the Ether Dream itself answers every command with a
+ * full status, so the reply channel carries the device's own state and no server-push
+ * stream is needed for the streaming path (gap 1's shape, resolved by the protocol being
+ * command-shaped all the way down). The pushes that DO exist ride `deviceStreamState`
+ * with stream `"laser"`: the dead-man firing, a device-initiated e-stop — things that
+ * happen when the page is NOT asking, which is exactly what the push rule is for.
+ *
+ * Samples travel as a flat number array, five per sample (x, y in clip space, r, g, b in
+ * 0..1): 500 samples ≈ 5 KB of JSON, three orders of magnitude inside the measured
+ * budget (the plan's §12 arithmetic) — the laser path must never be used to justify
+ * binary transport.
+ */
+export type LaserCommand =
+  | {
+      readonly kind: "connect";
+      /** The DAC's LAN address. Vetted by `vetOscDestination` — an IPv4 literal, never
+       *  broadcast, never multicast, never a name (a laser network is a network). */
+      readonly host: string;
+      /** An author-set projector ceiling for G9; lowers the device max, never raises. */
+      readonly maxPps?: number;
+    }
+  | { readonly kind: "arm" }
+  | { readonly kind: "disarm" }
+  | {
+      readonly kind: "stream";
+      /** Flat (x, y, r, g, b) per sample. */
+      readonly samples: readonly number[];
+      readonly pointRate: number;
+    }
+  | { readonly kind: "estop" }
+  | { readonly kind: "clearEstop" }
+  | { readonly kind: "status" };
+
+/** The laser session's state, as the HELPER reports it — measured, never echoed. */
+export interface LaserStateReport {
+  readonly phase: "disconnected" | "connected" | "armed" | "streaming" | "estopped";
+  readonly clearRefused: boolean;
+  readonly underflowed: boolean;
+  readonly bufferFullness: number;
+  /** Device-reported via discovery; absent until connected. Never hardcoded. */
+  readonly device?: { readonly bufferCapacity: number; readonly maxPointRate: number };
+}
+
+export type LaserOutcome =
+  | { readonly ok: true; readonly state: LaserStateReport }
+  /** Refused or failed, with the sentence a human acts on (§V288/§V365). */
+  | { readonly ok: false; readonly reason: string; readonly state: LaserStateReport };
+
 /** PAGE → HOST, device role. Requests carry `id`; `deviceAck` is not a request. */
 export type DeviceClientMessage =
   | { readonly type: "deviceAttach"; readonly code: string; readonly client: string }
@@ -187,6 +240,8 @@ export type DeviceClientMessage =
       readonly to: OscDestination;
       readonly packets: readonly OscMessage[];
     }
+  /** T950: one laser command, one owed reply. The helper vets and executes. */
+  | { readonly type: "deviceLaser"; readonly id: number; readonly command: LaserCommand }
   /** Flow control. No `id`, no reply; a `coalesce` stream accepts and ignores it. */
   | { readonly type: "deviceAck"; readonly stream: string; readonly seq: number };
 
@@ -203,6 +258,7 @@ export type DeviceHostMessage =
     }
   | { readonly type: "deviceRefused"; readonly id: number; readonly reason: string }
   | { readonly type: "deviceSendResult"; readonly id: number; readonly outcome: OscSendOutcome }
+  | { readonly type: "deviceLaserResult"; readonly id: number; readonly outcome: LaserOutcome }
   /** PUSH. Unsolicited, no `id`, nothing waits for it. */
   | {
       readonly type: "deviceEvents";

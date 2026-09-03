@@ -16,6 +16,7 @@ import { createAgentPorts } from "../runtime/export/agent-ports.ts";
 import { createMcpConnection, type McpConnection } from "./server.ts";
 import { createBridgeHost, type BridgeStatus } from "./bridge-host.ts";
 import { createDeviceHub, nodeUdpSocketFactory, type UdpSocketFactory } from "./device-hub.ts";
+import { createLaserHost, nodeLaserDiscovery, nodeTcpSocketFactory } from "./laser-host.ts";
 
 /**
  * The out-of-process MCP server (T290, T294): a HEADLESS Loom on stdio — store,
@@ -119,6 +120,12 @@ export interface HeadlessMcpServerOptions {
      * a check with no reachable grant path is a permanent denial in a costume).
      */
     readonly announce?: (message: string) => void;
+    /**
+     * T950 — the laser door. Defaults to the REAL one (node TCP + UDP discovery + wall
+     * clock for the dead-man); injectable so the emulator-backed test drives the whole
+     * message path with no network and no timers of its own.
+     */
+    readonly laser?: import("./laser-host.ts").LaserHost;
     /**
      * How the DEVICE role opens UDP sockets (T942 tier 3). Injected ONLY by tests.
      *
@@ -233,12 +240,36 @@ export function createHeadlessMcpServer(options: HeadlessMcpServerOptions): Head
           ...(options.bridge.deviceFlushMs === undefined ? {} : { flushMs: options.bridge.deviceFlushMs }),
           ...(options.bridge.deviceNow === undefined ? {} : { now: options.bridge.deviceNow }),
         });
+  /*
+   * T950 — the laser host, built beside the device hub with the same posture: it binds
+   * and dials NOTHING on construction. A TCP connection to a DAC opens only when an
+   * attached page names a host and the vet passes; the discovery socket exists only for
+   * the seconds of a connect attempt. The dead-man runs on THIS process's clock — the
+   * failsafe on the far side of the page (G2) — and the bridge disposes the whole thing
+   * when the device client goes away, which is the page-death blanking path.
+   */
+  const laser =
+    options.bridge === undefined
+      ? null
+      : (options.bridge.laser ??
+        createLaserHost({
+          sockets: nodeTcpSocketFactory(),
+          discovery: nodeLaserDiscovery(),
+          clock: {
+            now: () => Date.now(),
+            every: (ms, tick) => {
+              const handle = setInterval(tick, ms);
+              return () => clearInterval(handle);
+            },
+          },
+        }));
   const bridge =
     options.bridge === undefined
       ? null
       : createBridgeHost({
           headless: surface,
           ...(devices === null ? {} : { devices }),
+          ...(laser === null ? {} : { laser }),
           ...(options.bridge.port === undefined ? {} : { port: options.bridge.port }),
           ...(options.bridge.handoffDir === undefined ? {} : { handoffDir: options.bridge.handoffDir }),
           ...(options.bridge.proxyRetryMs === undefined ? {} : { proxyRetryMs: options.bridge.proxyRetryMs }),
