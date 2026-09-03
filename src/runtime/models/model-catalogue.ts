@@ -177,8 +177,9 @@ export const MATTE_FAST: ModelDescriptor = {
  * safe, a removed one silently rewrites documents standing on it).
  *
  * ⚠ IT IS NOT THE FAST ONE, AND THE MEASUREMENT IS EMPHATIC. MODNet's `session.run` at
- * 512² on the WebGPU provider is 30 ms (§T1044). RVM cannot use that provider at all
- * (see `cannotRun` below), so its floor is the CPU: measured 2026-09-03, wasm, one
+ * 512² on the WebGPU provider is 30 ms (§T1044). RVM AS SHIPPED cannot use that provider
+ * at all (see `cannotRun` below — and read it, because the reason is not the one this
+ * block used to give), so its floor is the CPU: measured 2026-09-03, wasm, one
  * thread, this artefact, the app's own 512² letterbox, median of five warm runs with the
  * recurrent state fed back —
  *
@@ -216,26 +217,78 @@ export const MATTE_RVM: ModelDescriptor = {
   sha256: "88d4531297118f595bf2fd60f6f566aec2e559393802d1f436c380f0cbbd2828",
   license: "GPL-3.0",
   /*
-   * ⚠ MEASURED 2026-09-03, Chromium on the Metal adapter, onnxruntime-web 1.29.0: the
-   * session CREATES on WebGPU in 533 ms and reports its outputs, and then the first
-   * `run` throws. The refusal is quoted rather than paraphrased because it names a
-   * missing KERNEL, which is a version fact that could stop being true:
+   * ⚠ MEASURED 2026-09-03, Chromium on the Metal adapter (`apple` / `metal-3`),
+   * onnxruntime-web 1.29.0: the session CREATES on WebGPU in 366 ms and reports its
+   * outputs, and then the first `run` throws. The refusal is quoted rather than
+   * paraphrased because it names a missing KERNEL, which is a version fact:
    *
    *   "ceil_mode output-shape is computed, but ceil_mode kernel execution
    *    (padding/divisor) is not yet implemented in the WebGPU AveragePool kernel"
    *
-   * MobileNetV3's average pools carry `ceil_mode`, so this is structural to the backbone
-   * rather than an artefact of one input size — reproduced at ratio 1.0 and 0.5. The same
-   * weights on the same page run on `wasm` (create 56 ms, run 313 ms threaded). That
-   * split is exactly why this is declared: create-succeeds/run-fails is invisible to a
-   * ladder that walks providers by creating sessions.
+   * The same weights on the same page run on `wasm`. That split is exactly why this is
+   * declared: create-succeeds/run-fails is invisible to a ladder that walks providers by
+   * creating sessions.
+   *
+   * ## THREE CORRECTIONS TO WHAT THIS BLOCK USED TO SAY
+   *
+   * It read "MobileNetV3's average pools carry ceil_mode, so this is structural to the
+   * backbone". That was wrong on both halves, and the artefact was read rather than
+   * reasoned about to find out:
+   *
+   *  1. NOT THE BACKBONE. The backbone's pooling is 9x `GlobalAveragePool`, which has no
+   *     `ceil_mode` attribute at all. Exactly THREE nodes in the 353-node graph carry it
+   *     — `AveragePool_169/170/171`, a straight chain off `Resize_3` that halves the
+   *     downsampled `src` three times into the recurrent decoder's source pyramid. All
+   *     three are identical and unremarkable: kernel 2x2, strides 2x2, pads all zero.
+   *  2. NOT A MISSING KERNEL SO MUCH AS A REFUSED ATTRIBUTE. The guard in the bundle is
+   *     `if (ceilMode !== 0) throw` — taken before any shape is looked at. For kernel 2 /
+   *     stride 2 / pads 0 the two rounding modes differ ONLY on an odd extent, and every
+   *     extent this node can produce is even (see below), so the EP is refusing a flag
+   *     that provably changes nothing about the work it would have to do. `MaxPool` in the
+   *     same file carries the identical guard.
+   *  3. NOT FIXED IN THE DEV LINE. Retested against onnxruntime-web
+   *     1.30.0-dev.20260901-a6e96aa798, the newest dev build: same throw, verbatim.
+   *
+   * ## WHAT WOULD CHANGE IT, MEASURED RATHER THAN GUESSED
+   *
+   * Clearing `ceil_mode` on those three nodes is a 3-byte edit to the artefact (three
+   * `0x01` -> `0x00` at fixed offsets; the file's length does not change) and it was
+   * measured EXACT, not close: original-on-wasm against patched-on-wasm, `pha` and `r4o`
+   * compared bitwise through a Uint32 view, over all 20 combinations of the node's four
+   * input sides and five ratios — 0 differing bits in every one.
+   *
+   * That equivalence is conditional on even pooled extents, and the condition holds by
+   * construction: the offered sides {256,320,384,512} are multiples of 64, the offered
+   * ratios {0.25,0.375,0.5,0.75,1.0} are multiples of 1/8 and exactly representable in
+   * f32, and ONNX Resize floors — so the internal extent is 64m * k/8 = 8mk, a multiple
+   * of 8, hence even at all three pool inputs (N, N/2, N/4).
+   *
+   * Off that menu the patched graph does not go quietly wrong — it REFUSES. Measured at
+   * sides 501, 502 and 500 (odd at the first, second and third pool respectively): every
+   * one dies at `Concat_199` with "Non concat axis dimensions must match: Axis 2 has
+   * mismatched dimensions of 63 and 62", because the pyramid it feeds is concatenated
+   * with a backbone feature map whose shape is fixed. Side 504 (off-menu but a multiple
+   * of 8) is bit-identical, as the rule says it must be.
+   *
+   * And it is worth having: patched, on WebGPU, same page, same input, median of six warm
+   * runs with the state fed back — 12 / 12 / 16 / 24 / 36 ms across the five ratios,
+   * against 41 / 76 / 126 / 263 / 465 ms on one wasm thread. Its `pha` differs from the
+   * wasm answer by at most 3.1e-5, which is SMALLER than the 4.3e-5 the shipped
+   * MODNet build differs from itself across the same two providers.
+   *
+   * None of that is wired here: the descriptor still points at the author's unpatched
+   * release asset, and this row is true of the bytes that URL serves.
    */
   cannotRun: [
     {
       provider: "webgpu",
       reason:
-        "onnxruntime-web 1.29.0 has no ceil_mode AveragePool kernel for WebGPU, which " +
-        "MobileNetV3 needs — the session starts and then every run throws.",
+        "onnxruntime-web rejects the ceil_mode attribute on AveragePool for WebGPU " +
+        "unconditionally, before looking at whether it changes any shape — the session " +
+        "starts and then every run throws. Still rejected in 1.30.0-dev.20260901. " +
+        "Unblocked by that kernel landing, or by clearing ceil_mode on the three decoder " +
+        "pools that carry it, measured bit-identical on all 20 input-size/ratio pairs " +
+        "this node can ask for.",
     },
   ],
 };

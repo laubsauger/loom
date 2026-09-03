@@ -91,3 +91,55 @@ describe("the declared provider set (T736)", () => {
     expect(DEPTH_PROVIDERS.filter((p) => p.reachable).length).toBeGreaterThan(0);
   });
 });
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ * THE SAME RULE, ONE LEVEL DOWN — a refused ARTEFACT must also say what would change it
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ *
+ * `unreachableWithoutRemedy` above covers `DEPTH_PROVIDERS`, where the slot is a
+ * platform. `cannotRun` is the other kind of unreachable: the platform is fine and one
+ * artefact will not run on it. It had exactly the rot that rule exists to stop — RVM's
+ * row said "onnxruntime-web 1.29.0 has no ceil_mode AveragePool kernel", which named a
+ * version and nothing a reader could do about it, and the docblock beside it explained
+ * the cause with a claim about the MobileNetV3 backbone that turned out to be false when
+ * the artefact was finally read. A row nobody can act on is a row nobody re-checks.
+ *
+ * So: same requirement, same word, and it applies to every artefact rather than to the
+ * one that happens to have a row today.
+ */
+describe("an artefact refused on a provider", () => {
+  const refusals = ALL_MODELS.flatMap((model) =>
+    (model.cannotRun ?? []).map((row) => ({ model, row })),
+  );
+
+  it("names what would unblock it, not just which version broke", () => {
+    const silent = refusals
+      .filter(({ row }) => !row.reason.toLowerCase().includes("unblocked"))
+      .map(({ model, row }) => `${model.id}/${row.provider}`);
+    expect(silent).toEqual([]);
+  });
+
+  it("names a provider this catalogue declares, or the row can never fire", () => {
+    // A refusal against a provider id nothing offers is dead text: `refusalFor` is keyed
+    // by the same string the backend chooser and the ladder use, so a typo here reads as
+    // "this model runs everywhere".
+    for (const { row } of refusals) {
+      expect(DEPTH_PROVIDERS.map((p) => p.id)).toContain(row.provider);
+    }
+  });
+
+  it("keeps RVM's row about the attribute it measured, not the backbone it does not use", () => {
+    const row = (MATTE_RVM.cannotRun ?? []).find((r) => r.provider === "webgpu");
+    expect(row).toBeDefined();
+    // The kernel name is the version fact; without it the row cannot be re-tested.
+    expect(row?.reason).toContain("ceil_mode");
+    // The correction: the three pools are in the decoder, and the claim that the
+    // MobileNetV3 backbone needs ceil_mode was measured false (its pooling is
+    // GlobalAveragePool, which has no such attribute). The row must not resurrect it.
+    expect(row?.reason).not.toContain("MobileNetV3");
+    // The dev line was tested too, and a reader has to be able to see WHICH build, or
+    // "we already checked" decays into a rumour.
+    expect(row?.reason).toContain("1.30.0-dev.20260901");
+  });
+});
