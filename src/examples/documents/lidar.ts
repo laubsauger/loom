@@ -134,6 +134,31 @@ import { settings, node, edge, graph, document, drivenSlot } from "./builders.ts
  *
  * Free-running throughout (§V436): the sweep, the tilt and the orbit read absolute
  * clocks, so a timeline lap never snaps the scan.
+ *
+ * ## What T1053 exposed, and what it deliberately did not
+ *
+ * The owner, on this file: *"a bunch of magic numbers that we don't expose… we should at
+ * least expose ARTISTIC DIRECTION as params."* Twelve constants moved out of the WGSL and
+ * into four `struct Params` blocks, which §T900's reflection turns into named, typed,
+ * drivable, publishable controls for nothing: the ring's `sweepRate` and its `tiltMin` /
+ * `tiltSpan`; the beams' brightness ramp; the returns' ramp, their out-of-range level and
+ * the two persistence rates that decide how much a moving return smears; the echoes' ramp.
+ * Every one keeps the value it had, so the picture is exactly the picture — the promoted
+ * uniforms were diffed pass by pass against the file this replaced and each carries the f32
+ * its literal was.
+ *
+ * THE REFUSALS ARE THE INTERESTING HALF, and they all fail the same test: a knob you can
+ * turn to make the file WRONG is not a control. `LIDAR_EXTENT`, `LIDAR_HEIGHT_SCALE` and
+ * `LIDAR_HEIGHT_OFFSET` appear in `unfold1`, `raise1` AND on both Ray nodes, and the whole
+ * teaching above is that those readings AGREE; `LIDAR_MAST` is written in `aim1`,
+ * `ricochet1`, `mark2a` and `lamp1`'s position. `LIDAR_RANGE` and its `- 0.01` epsilon are
+ * the frontier `sight1` and `mark1` must cross on the SAME frame. §V638's `wake.w < 0.06`
+ * gate and its 0.94 decay are the fix for a defect measured across frame PAIRS. The park
+ * depth `-80.0` must stay below `mark2a`'s `> -10.0` sentinel, `0.03` and `0.0001` are
+ * epsilons, `6.28318530718` is 2π, and `LIDAR_SPOKE_EVERY` is a modulus that divides by
+ * zero if you drag it there. The terrain's amplitude and roughness and both lights' colour
+ * and intensity were never hidden: they are ordinary parameters on `relief1`, `carve1`,
+ * `moon1` and `lamp1` already.
  */
 const LIDAR_EXTENT = 4.8;
 
@@ -164,6 +189,11 @@ const LIDAR_RANGE = 3.9;
 const LIDAR_TILT_MIN = 0.6;
 
 const LIDAR_TILT_SPAN = 0.62;
+
+/* T1053 — the ring's own turn, in radians a second. It was a bare `* 0.22` inside the aim
+   kernel, which made the one thing an operator of a real instrument would reach for the one
+   thing this file could not be asked to change without editing WGSL. */
+const LIDAR_SWEEP_RATE = 0.22;
 
 /* T658: the terrain GRID, sized so a cell stays 0.05 world units after the plate grew
    — 2·4.8/192 = 0.05, the exact spacing the 3.2/128 sheet had. */
@@ -239,14 +269,19 @@ const LIDAR_AIM_ATTRIBUTES = JSON.stringify([
    whole ring turns on the absolute clock. maxDistance is chosen against these angles —
 
    see the ray node's comment. */
-const LIDAR_AIM_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
+const LIDAR_AIM_KERNEL = `struct Params {
+  sweepRate: f32,  // How fast the ring of rays turns, in radians a second.
+  tiltMin: f32,    // The shallowest tilt below horizontal the ring reaches, in radians.
+  tiltSpan: f32,   // How much steeper the ring breathes from there, capped by the cast's Max Distance.
+}
+fn process(p: Point, ctx: PointCtx) -> Point {
   var q = p;
-  let azimuth = (f32(ctx.index) / f32(ctx.count)) * 6.28318530718 + ctx.absTime * 0.22;
+  let azimuth = (f32(ctx.index) / f32(ctx.count)) * 6.28318530718 + ctx.absTime * ctx.params.sweepRate;
   /* 0.60..1.22 rad (34°..70° below horizontal): the steep end lands well inside range,
      the shallow end's slant exceeds it and the outer ring goes dark — and shallow
      strikes reflect FORWARD off back-slopes, which is where the echoes come from.
      The steep end is capped by LIDAR_RANGE, not by taste — see that constant. */
-  let tilt = ${LIDAR_TILT_MIN} + ctx.value1 * ${LIDAR_TILT_SPAN};
+  let tilt = ctx.params.tiltMin + ctx.value1 * ctx.params.tiltSpan;
   q.position = vec3f(0.0, ${LIDAR_MAST}, 0.0);
   q.direction = normalize(vec3f(
     sin(azimuth) * cos(tilt),
@@ -291,11 +326,15 @@ const LIDAR_SIGHT_ATTRIBUTES = JSON.stringify([
    hard-flip rate is unchanged at 0.4% with the drop alone, and the 0.4% → 1.9% this
 
    rework does spend is attributable entirely to the BRIGHTNESS, measured separately. */
-const LIDAR_SIGHT_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
+const LIDAR_SIGHT_KERNEL = `struct Params {
+  beamBase: f32,  // How bright a beam is when its return sits at the far edge of range.
+  beamGain: f32,  // How much brighter a beam gets as its return comes closer.
+}
+fn process(p: Point, ctx: PointCtx) -> Point {
   var q = p;
   let slant = length(p.hitPosition - p.position);
   let near = clamp(1.0 - slant / ${LIDAR_RANGE}, 0.0, 1.0);
-  q.tint = vec4f(1.0, 0.62 + 0.30 * near, 0.18, 1.0) * (0.35 + 0.90 * near);
+  q.tint = vec4f(1.0, 0.62 + 0.30 * near, 0.18, 1.0) * (ctx.params.beamBase + ctx.params.beamGain * near);
   q.hitPosition = select(p.position, p.hitPosition, slant < ${LIDAR_RANGE} - 0.01);
   return q;
 }`;
@@ -342,17 +381,24 @@ const LIDAR_MARK_ATTRIBUTES = JSON.stringify([
    the colour mixes on `level²` rather than `level` so the transit passes through the
 
    dark end instead of through khaki — a fade-out, not a hue rotation. */
-const LIDAR_MARK_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
+const LIDAR_MARK_KERNEL = `struct Params {
+  returnBase: f32,  // How bright a return is when it sits at the far edge of range.
+  returnGain: f32,  // How much brighter a return gets as it comes closer to the mast.
+  lostLevel: f32,   // How brightly the out-of-range markers hang in the air.
+  holdRate: f32,    // How fast a marker slides to a new reading: 0 freezes it, 1 snaps to it.
+  fadeRate: f32,    // How fast a marker crosses between the return colour and the out-of-range one.
+}
+fn process(p: Point, ctx: PointCtx) -> Point {
   var q = p;
   let slant = length(p.hitPosition - p.position);
   let landed = select(0.0, 1.0, slant < ${LIDAR_RANGE} - 0.01);
   let near = clamp(1.0 - slant / ${LIDAR_RANGE}, 0.0, 1.0);
-  let pos = mix(p.wake.xyz, p.hitPosition, 0.22);
-  let level = mix(p.wake.w, landed, 0.10);
+  let pos = mix(p.wake.xyz, p.hitPosition, ctx.params.holdRate);
+  let level = mix(p.wake.w, landed, ctx.params.fadeRate);
   q.wake = vec4f(pos, level);
   q.position = pos;
-  let ret = vec4f(1.0, 0.60 + 0.30 * near, 0.16, 1.0) * (0.5 + 1.6 * near);
-  let lost = vec4f(0.16, 0.30, 0.52, 1.0) * 0.32;
+  let ret = vec4f(1.0, 0.60 + 0.30 * near, 0.16, 1.0) * (ctx.params.returnBase + ctx.params.returnGain * near);
+  let lost = vec4f(0.16, 0.30, 0.52, 1.0) * ctx.params.lostLevel;
   q.tint = mix(lost, ret, level * level);
   return q;
 }`;
@@ -420,7 +466,11 @@ const LIDAR_MARK2_ATTRIBUTES = JSON.stringify([
    ray's origin arrives as `position` from upstream. A parked first-leg miss re-casts
 
    from y = −80 and hits instantly below the field, so its hit y still betrays it. */
-const LIDAR_MARK2_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
+const LIDAR_MARK2_KERNEL = `struct Params {
+  echoBase: f32,  // How bright the faintest echo is, so far scatter stays scatter and does not read as confetti.
+  echoGain: f32,  // How much brighter an echo gets as its round trip shortens.
+}
+fn process(p: Point, ctx: PointCtx) -> Point {
   var q = p;
   let leg2 = length(p.hitPosition - p.position);
   let landed = leg2 < ${LIDAR_RANGE} - 0.02 && p.hitPosition.y > -10.0;
@@ -445,7 +495,7 @@ const LIDAR_MARK2_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
      floor is LOW (0.15) so the far scatter stays a scatter and the near returns are
      the ones that read — depth, rather than confetti at one brightness. */
   let near = clamp(1.0 - length(pos - vec3f(0.0, ${LIDAR_MAST}, 0.0)) / (${LIDAR_RANGE} * 1.8), 0.0, 1.0);
-  q.tint = vec4f(0.30, 0.95, 0.85, 1.0) * (0.15 + 1.35 * near) * level;
+  q.tint = vec4f(0.30, 0.95, 0.85, 1.0) * (ctx.params.echoBase + ctx.params.echoGain * near) * level;
   return q;
 }`;
 
@@ -514,8 +564,14 @@ export const lidarDocument = document(
         shape: "sine", frequency: 0.045, amplitude: 0.5, offset: 0.5, phase: 0,
       }, { label: "tiltwave1" }),
       node("fan", "pointLine", [-2560, 40], { count: 240 }, { label: "fan1" }),
+      /* T1053 — THE INSTRUMENT'S AIM, AS KNOBS. The kernel's `struct Params` reflects into
+         real controls (T900), so these three are the same numbers they always were and are
+         now drivable, expressible and publishable instead of frozen in WGSL. The mast height
+         and the 240-ray azimuth wrap deliberately stayed constants: the mast must agree with
+         `lamp1`'s position and `ricochet1`'s slant, and 2π is arithmetic, not direction. */
       node("aim", "pointKernel", [-2240, 40], {
         capacity: 240, attributes: LIDAR_AIM_ATTRIBUTES, kernel: LIDAR_AIM_KERNEL,
+        sweepRate: LIDAR_SWEEP_RATE, tiltMin: LIDAR_TILT_MIN, tiltSpan: LIDAR_TILT_SPAN,
       }, { label: "aim1", parameters: { value1: drivenSlot("tiltwave1", 0.5) } }),
       /* RANGE 3.4 against a 2.7 m mast and 41°..73° tilts: the steep ring's slant
          (~2.8) is inside range, the shallow ring's (~4.1) is not — the breathing ring
@@ -525,8 +581,14 @@ export const lidarDocument = document(
         steps: 64, maxDistance: LIDAR_RANGE, direction: [0, -1, 0],
         extent: LIDAR_EXTENT, heightScale: LIDAR_HEIGHT_SCALE, heightOffset: LIDAR_HEIGHT_OFFSET,
       }, { label: "cast1" }),
+      /* T1053 — the return's LOOK and its PERSISTENCE, exposed. The two rates were the
+         file's most carefully argued numbers and the least reachable; they are now the two
+         knobs that decide how much a moving return smears. The range frontier and its
+         epsilon stayed in the kernel: `slant < RANGE - 0.01` has to be the SAME frontier
+         `sight1` uses or a beam draws to an impact that has already gone steel. */
       node("mark", "pointKernel", [-1600, 40], {
         capacity: 240, attributes: LIDAR_MARK_ATTRIBUTES, kernel: LIDAR_MARK_KERNEL,
+        returnBase: 0.5, returnGain: 1.6, lostLevel: 0.32, holdRate: 0.22, fadeRate: 0.10,
       }, { label: "mark1" }),
       node("spark", "materialUnlit", [-1600, 520], { color: [1, 1, 1, 1] }, { label: "spark1" }),
       node("impacts", "geometry", [-1280, 40], {
@@ -542,6 +604,10 @@ export const lidarDocument = document(
       /* ---- the beams: the cause, drawn (T672/T680), coloured by it (T711) ------- */
       node("sight", "pointKernel", [-1920, 900], {
         capacity: 240, attributes: LIDAR_SIGHT_ATTRIBUTES, kernel: LIDAR_SIGHT_KERNEL,
+        /* T1053: the beam's brightness ramp. The HUE stayed in the kernel — it is `mark1`'s
+           own return colour at a lower gain, and the point of T711 was that the two are ONE
+           colour; a picker that can break that agreement is not a control, it is a trap. */
+        beamBase: 0.35, beamGain: 0.90,
       }, { label: "sight1" }),
       /* WHITE, and UNLIT on purpose: a beam is scattered light in the air, not a surface —
          and an unlit primitive takes no part in shadowing either (§V617). T711 moved the
@@ -617,6 +683,11 @@ export const lidarDocument = document(
       }, { label: "rebound1" }),
       node("mark2", "pointKernel", [-960, 520], {
         capacity: 240, attributes: LIDAR_MARK2_ATTRIBUTES, kernel: LIDAR_MARK2_KERNEL,
+        /* T1053: the echo's brightness ramp only. §V638's sample-and-hold — the `wake.w <
+           0.06` gate and the 0.94 decay — stayed constants on purpose: they are the fix for
+           a defect measured across FRAME PAIRS, invisible in any still, and this example's
+           own claims pin them as the thing that must not move. */
+        echoBase: 0.15, echoGain: 1.35,
       }, { label: "mark2a" }),
       node("echoes", "geometry", [-640, 520], {
         mode: "instances", shape: "octahedron", scale: 0.030, material: "spark1",

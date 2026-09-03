@@ -276,6 +276,55 @@ struct Params { ${fields} };
       expect(schema["scalar9"]).toBeUndefined();
     });
 
+    /**
+     * T1053 — THE AUTHOR'S SENTENCE, AND THE PROOF IT IS NOT A SECOND PLACE TO KEEP IT.
+     *
+     * A reflected label comes from the field NAME, which says what a knob is called and
+     * nothing about what turning it does — so every promoted constant arrived documented as
+     * "reaches the kernel as `params.x`", which the user could already read off the struct.
+     * The trailing `//` comment is where that sentence already is in any shader anybody
+     * writes, so it is read rather than re-declared: there is no annotation key that can
+     * come to disagree with the field it annotates.
+     *
+     * The three cases that matter are the three asserted: a note wins over the caller's
+     * generic help, a field WITHOUT one is untouched (which is what keeps every shipped
+     * shader reflecting exactly as it did), and a note is found through a block comment —
+     * `maskComments` blanks a `/* … *\/` to spaces of the same LENGTH but not the same LINE
+     * COUNT, so the note is located by INDEX in the masked text and read from the original.
+     */
+    it("takes a field's trailing // comment as the control's description", () => {
+      const source = withParams("\n  orbitSpeed: f32, // How fast the lanterns swing.\n  glow: f32,\n");
+      const schema = customWgslNode.parametersFor!({ [SHADER_SOURCE_PARAMETER]: source });
+      expect(schema["orbitSpeed"]?.description).toBe("How fast the lanterns swing.");
+      // ...and a field that says nothing keeps the generic help, unchanged from before T1053.
+      expect(schema["glow"]?.description).toBe("Reaches the kernel as `params.glow` (f32).");
+    });
+
+    /**
+     * The two ways the wrong pair of copies gets this wrong, and both were live for one
+     * revision of §T1053 before this test existed.
+     *
+     * READING THE LINE END OFF THE COMMENT-MASKED COPY. `maskComments` blanks a `/* … *\/`
+     * to spaces of the same LENGTH, which deletes the newlines inside it — so a field whose
+     * line is ended by an opening block comment appears, in that copy, to run on into the
+     * NEXT field's line and to steal the note that belongs there. `a` below has nothing to
+     * say and must be reported as saying nothing.
+     *
+     * SEARCHING FOR `//` IN THE RAW SOURCE. A block comment that happens to contain a slash
+     * pair is not a line comment, and reading it as one turns the tail of somebody's prose
+     * into a control's description. Hence the block-masked copy: it leaves exactly the real
+     * line comments visible, at their original indices.
+     */
+    it("gives a line-ending block comment's note to the field after it, not the one before", () => {
+      const fields = reflectParamsStruct(withParams("\n  a: f32, /* spans\n  lines */ b: f32, // b's own\n"));
+      expect(fields).toEqual([{ name: "a", wgsl: "f32" }, { name: "b", wgsl: "f32", note: "b's own" }]);
+    });
+
+    it("does not read a slash pair inside a block comment as a note", () => {
+      const fields = reflectParamsStruct(withParams("\n  a: f32, /* holds // slashes */\n  b: f32,\n"));
+      expect(fields).toEqual([{ name: "a", wgsl: "f32" }, { name: "b", wgsl: "f32" }]);
+    });
+
     it("a vec4f NOT named as a colour stays a vector, not a picker (the vec3f/vec4f fork)", () => {
       const schema = customWgslNode.parametersFor!({ [SHADER_SOURCE_PARAMETER]: withParams("offset: vec4f,") });
       expect(schema["offset"]?.type).toBe("vector");

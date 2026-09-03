@@ -21,10 +21,30 @@ import { readColor, readNumber, readVector } from "./parameter-readers.ts";
  * `compileTime`; every control reflected out of them is not — §V5).
  */
 
-/** One field of a shader's `struct Params`: its name and its WGSL type. */
+/** One field of a shader's `struct Params`: its name, its WGSL type, and what it is FOR. */
 export interface ReflectedField {
   readonly name: string;
   readonly wgsl: string;
+  /**
+   * T1053 — THE AUTHOR'S OWN SENTENCE ABOUT THE KNOB, taken from the trailing `//` comment on
+   * the field's line.
+   *
+   * A name reflects into a label (`sweepRate` → *Sweep Rate*), and a label says WHAT a control
+   * is called and nothing about what turning it does. Promoting a shader's magic numbers into
+   * `Params` is only half the owner's ask — *"we should at least expose artistic direction as
+   * params"* — if every one of them arrives documented as "reaches the kernel as
+   * `ctx.params.sweepRate`", which the user could already see by reading the struct.
+   *
+   * The comment is where the explanation ALREADY IS in every shader anybody writes, so this
+   * reads what is there rather than inventing a second place to put it: no annotation syntax,
+   * no key that has to agree with the field name, nothing to keep in step. It is strictly
+   * opt-in — a field with no trailing comment reflects exactly as it did before — and it costs
+   * the generated module nothing, because `extractParamsStruct` already hoists the author's
+   * own bytes, comments included.
+   *
+   * §V852 applies: this becomes the parameter's description, so it is ONE SENTENCE.
+   */
+  readonly note?: string;
 }
 
 /**
@@ -37,8 +57,20 @@ export interface ReflectedField {
  * after this change. A line comment never contained its own newline to begin with.
  */
 function maskComments(source: string): string {
-  const blank = (match: string): string => " ".repeat(match.length);
-  return source.replace(/\/\*[\s\S]*?\*\//g, blank).replace(/\/\/[^\n]*/g, blank);
+  return maskBlockComments(source).replace(/\/\/[^\n]*/g, (match) => " ".repeat(match.length));
+}
+
+/**
+ * T1053 — BLOCK comments alone, blanked the same way: the copy a `//` is looked for in.
+ *
+ * `maskComments` blanks both kinds, so it cannot be used to FIND a line comment. The raw
+ * source cannot either: `/* holds // slashes *\/` contains a slash pair that was never a
+ * comment, and reading it as one turns the tail of somebody's prose into a control's
+ * description. Blanking only the block form leaves exactly the real line comments visible,
+ * at their original indices.
+ */
+function maskBlockComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, (match) => " ".repeat(match.length));
 }
 
 /**
@@ -60,14 +92,57 @@ const PARAMS_STRUCT = /struct\s+Params\s*\{([^}]*)\}/;
  * it), reflects to exactly that and no more.
  */
 export function reflectParamsStruct(source: string): readonly ReflectedField[] {
-  const match = PARAMS_STRUCT.exec(maskComments(source));
+  const masked = maskComments(source);
+  const match = PARAMS_STRUCT.exec(masked);
   if (match === null) return [];
+  const body = match[1] ?? "";
+  /*
+   * Where the body starts in the ORIGINAL bytes. The mask is character-for-character the same
+   * length as the source (that is the whole reason it blanks rather than deletes), so an index
+   * into one is an index into the other — which is what lets the field be FOUND in the masked
+   * text, where a `//` cannot lie about a declaration, and its note READ from the original,
+   * where the comment still exists. `match[0]` is `struct Params {` + body + `}`, so the body
+   * ends exactly one character before the match does.
+   */
+  const bodyStart = match.index + match[0].length - 1 - body.length;
+  const visible = maskBlockComments(source);
   const fields: ReflectedField[] = [];
-  for (const line of (match[1] ?? "").split(/[,;\n]/)) {
+  let offset = 0;
+  for (const line of body.split(/[,;\n]/)) {
     const field = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([A-Za-z0-9_]+)/.exec(line);
-    if (field?.[1] !== undefined && field[2] !== undefined) fields.push({ name: field[1], wgsl: field[2] });
+    if (field?.[1] !== undefined && field[2] !== undefined) {
+      // The note is looked for after the DECLARATION ENDS, not from the segment's start: the
+      // masked split puts a preceding block comment inside this segment, and a note is by
+      // definition something written after the `name: type` it is about.
+      const note = noteAt(source, visible, bodyStart + offset + field[0].length, bodyStart + body.length);
+      fields.push({ name: field[1], wgsl: field[2], ...(note === undefined ? {} : { note }) });
+    }
+    // Every delimiter this splits on is one character wide, so the running offset stays exact.
+    offset += line.length + 1;
   }
   return fields;
+}
+
+/**
+ * The trailing `//` note on the PHYSICAL line a field was declared on, or nothing.
+ *
+ * `from` is where the DECLARATION ENDED, and the scan runs to the next newline in the
+ * ORIGINAL — so a block comment that opens after a field and runs on to the next line ENDS
+ * that field's line, and whatever note follows the comment belongs to what is declared after
+ * it rather than to this one. The `//` is then located in the BLOCK-MASKED copy, where a
+ * `/* holds // slashes *\/` no longer offers a slash pair that was never a comment. Both
+ * copies are exactly as long as the source, so one index addresses all three.
+ *
+ * Two fields written on one line share that line's note, which is the honest reading of one
+ * comment about two things — write one field a line to say two things.
+ */
+function noteAt(source: string, visible: string, from: number, bodyEnd: number): string | undefined {
+  const newline = source.indexOf("\n", from);
+  const end = newline < 0 ? bodyEnd : Math.min(newline, bodyEnd);
+  const comment = visible.slice(from, end).indexOf("//");
+  if (comment < 0) return undefined;
+  const note = source.slice(from + comment + 2, end).trim();
+  return note === "" ? undefined : note;
 }
 
 /**
@@ -117,7 +192,12 @@ export const REFLECTABLE_WGSL_TYPES = ["f32", "i32", "u32", "vec2f", "vec3f", "v
  */
 export function paramForField(field: ReflectedField, description?: string): ParameterDefinition | undefined {
   const label = labelOf(field.name);
-  const help = description ?? `Reaches the kernel as \`params.${field.name}\` (${field.wgsl}).`;
+  /*
+   * T1053: the AUTHOR'S sentence wins over the caller's generic one. The caller's text says
+   * where the value lands and how it invalidates — true for every field, and therefore worth
+   * nothing to somebody who wants to know what this particular knob does.
+   */
+  const help = field.note ?? description ?? `Reaches the kernel as \`params.${field.name}\` (${field.wgsl}).`;
   // `amount` keeps its historical 0..1 slider so E43/E45 read exactly as they always have.
   if (field.name === "amount" && field.wgsl === "f32") {
     return { type: "number", label: "Amount", default: 1, min: 0, max: 1, range: "bounded", description: "Reaches the kernel as `params.amount`. Whatever your shader makes of it." };

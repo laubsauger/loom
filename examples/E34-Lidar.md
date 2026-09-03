@@ -114,6 +114,17 @@ shot ─┬─► hot(threshold) ─┐                                         
   solid opaque cone that hides the terrain completely. The `taper` is the other half of
   the same problem: beams sharing one origin fuse *at the origin* whatever their number,
   and pinching the near end to a point is both the cure and what a divergent beam does.
+- **The artistic direction is on the nodes, not buried in the WGSL** (T1053). Four of this
+  graph's kernels declare a `struct Params`, which the point kernel reflects into named,
+  typed, drivable controls: `aim1` carries the ring's *Sweep Rate* and the two ends of its
+  tilt, `sight1` and `mark1` and `mark2a` carry the brightness ramps of the beams, the
+  returns and the echoes, and `mark1` also carries the two persistence rates that decide
+  how far a moving return smears. Turn any of them, or drive it from an LFO, without
+  opening a shader. What stayed a constant is the interesting half: the extent, the height
+  scale, the mast and the range are each written in three or four places that must AGREE —
+  the whole lesson of the two mappings below — and the sample-and-hold gate is the fix for
+  a defect no still frame can see. A knob you can turn to make the picture wrong is not a
+  control.
 - **The ground is lit by its own returns, through the albedo map** — and the mapping is
   the same agreement, stated a second time. `pool1` parks each return at clip
   `(X/extent, −Z/extent)`, `poolmap1` splats it additively, and `poolbase1` — a Level with

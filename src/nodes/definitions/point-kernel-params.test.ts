@@ -375,7 +375,13 @@ const FRAME_ZERO_DIGESTS: Readonly<Record<string, string>> = {
   "E31-Corona.loom.json": "c05b011af924a64a",
   "E32-Pasture.loom.json": "002d6556e7b4ad55",
   "E33-Obol.loom.json": "14656c8f2ff68456",
-  "E34-Lidar.loom.json": "f141b86c9c184175",
+  /* T1053 re-pinned this one, and the module's gain is enumerable: `aim1`, `sight1`,
+     `mark1` and `mark2a` each grew a `struct Params` and its uniform members, and twelve
+     literals became `ctx.params.<name>` reads. NO PICTURE MOVED — every promoted uniform
+     carries the exact f32 the literal it replaced was, checked pass by pass against the
+     HEAD file, and E34's other four kernels (unfold1, raise1, pool1, ricochet1) are
+     byte-identical because nothing in them was artistic direction. */
+  "E34-Lidar.loom.json": "7440e94c7ba2e607",
   "E35-Nova-Torus.loom.json": "baac3790d7cf1e5f",
   "E36-Facade.loom.json": "7eedb60eaa117c0c",
   "E37-Sirocco.loom.json": "2a0f435d5f185759",
