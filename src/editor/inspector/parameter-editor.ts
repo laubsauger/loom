@@ -4,7 +4,7 @@ import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { NodeFormatOverride, NodeResolutionOverride } from "@domain/types/graph.ts";
 import type { EdgeId, NodeId, PortId } from "@domain/types/ids.ts";
 import type { ParameterValue, StoredParameter } from "@domain/types/parameters.ts";
-import type { GraphPatchResult } from "@domain/types/patch.ts";
+import type { GraphPatchOperation, GraphPatchResult } from "@domain/types/patch.ts";
 import { createFrameCoalescer, rafScheduler } from "@ui/controls/coalesce.ts";
 import type { FrameScheduler } from "@ui/controls/coalesce.ts";
 import type { EditPhase } from "@ui/controls/types.ts";
@@ -91,6 +91,18 @@ export interface ParameterEditor {
   endReorderGesture: (nodeId: NodeId, portId: PortId) => void;
   /** T1049 — drop wires from the connections list. One patch, one undo entry (§V32). */
   disconnectEdges: (edgeIds: readonly EdgeId[]) => Promise<GraphPatchResult>;
+  /**
+   * T1049 — RE-TARGET: move a wire to a different socket, from the connections list.
+   *
+   * The operations are computed by `connect-drop.ts`, which is the one place that decides
+   * what a drop on a socket means — the canvas calls it for the same gesture. This method
+   * exists so the panel does not need its own bus access to apply them; it deliberately
+   * does not decide anything itself, so there is nothing here to drift from the canvas.
+   */
+  retargetConnection: (
+    operations: readonly GraphPatchOperation[],
+    label: string,
+  ) => Promise<GraphPatchResult>;
   setFormat: (nodeId: NodeId, format: NodeFormatOverride | null) => Promise<GraphPatchResult>;
   /**
    * Fires a momentary pulse (T214, §V124).
@@ -288,6 +300,18 @@ export function createParameterEditor(options: ParameterEditorOptions): Paramete
 
     endReorderGesture(nodeId, portId) {
       transactions.delete(reorderKey(nodeId, portId));
+    },
+
+    retargetConnection(operations, label) {
+      const patch = [...operations];
+      return enqueue(async () => {
+        const result = await bus.execute(
+          "graph.applyPatch",
+          { baseRevision: bus.store.getRevision(), label, operations: patch },
+          context,
+        );
+        return report(result.output);
+      });
     },
 
     disconnectEdges(edgeIds) {

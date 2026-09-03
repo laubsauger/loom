@@ -21,3 +21,5 @@ export {
   formatGpuMs,
 } from "./flow.ts";
 export type { FlowDescription, FlowOptions } from "./flow.ts";
+export { connectDropOperations } from "./connect-drop.ts";
+export type { ConnectDrop, ConnectDropGraph, ConnectDropRequest, SocketTarget } from "./connect-drop.ts";

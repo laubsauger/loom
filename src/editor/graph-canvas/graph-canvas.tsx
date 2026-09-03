@@ -24,7 +24,7 @@ import type {
 } from "@xyflow/react";
 import { useStore } from "zustand";
 import { arePortsCompatible } from "@domain/graph/port-compat.ts";
-import { incomingEdgesInOrder, parseHandleId } from "@domain/graph/edge-order.ts";
+import { parseHandleId } from "@domain/graph/edge-order.ts";
 import type { CommandResult, InvocationContext } from "@domain/types/commands.ts";
 import type { ComponentRegistryView } from "@domain/components/index.ts";
 import type { NodeId } from "@domain/types/ids.ts";
@@ -38,6 +38,7 @@ import {
   SPLICE_BAND_FRACTION,
   createEdgeGeometry,
 } from "@editor/edges/edge-geometry.ts";
+import { connectDropOperations } from "@editor/edges/connect-drop.ts";
 import { replaceEdgeOperations, spliceNodeOperations } from "@editor/edges/edge-drop.ts";
 import { ReferenceLines } from "@editor/edges/reference-lines.tsx";
 import { registerReferenceLinesCommand } from "@editor/edges/reference-lines-command.ts";
@@ -377,48 +378,23 @@ export function GraphCanvas({
       const { portId: targetPortId, slot } = parseHandleId(targetHandle);
       const { portId: sourcePortId } = parseHandleId(sourceHandle);
 
-      // §V14a: dropping onto an input that already holds a non-variadic edge REPLACES
-      // it rather than being refused — the drop itself is the user's intent, and making
-      // them hunt down the old edge to delete first is the wrong answer to that. Both
-      // ops leave as one patch, so it is one atomic change and one undo entry (§V32, §V34).
-      const targetNode = domainNodes[target];
-      const targetPort =
-        targetNode === undefined ? undefined : registry.port(targetNode.type, targetPortId, "input");
-      const operations: GraphPatchOperation[] = [];
-      let order: number | undefined;
-      if (targetPort?.variadic !== true) {
-        const displaced = Object.entries(domainEdges)
-          .filter(([, edge]) => edge.target.nodeId === target && edge.target.portId === targetPortId)
-          .map(([edgeId]) => edgeId);
-        if (displaced.length > 0) operations.push({ op: "disconnect", edgeIds: displaced });
-      } else if (slot !== undefined) {
-        /*
-         * T695 — the gesture the one-socket port could not express: a drop on an OCCUPIED
-         * socket replaces the wire in it, in place.
-         *
-         * `incomingEdgesInOrder` and not a filter of my own: this has to resolve "slot 2"
-         * to the same edge the node drew at slot 2 and the projection drew the wire to
-         * (§V487). The `order` on the connect is what puts the newcomer where the old one
-         * was — without it the disconnect would compact the survivors and the replacement
-         * would append, which counts right and wires wrong.
-         *
-         * A drop on the SPARE socket (slot === count) resolves to nothing here and falls
-         * through to a plain append, which is what it means.
-         */
-        const occupant = incomingEdgesInOrder({ edges: domainEdges }, target, targetPortId)[slot];
-        if (occupant !== undefined) {
-          if (occupant.source.nodeId === source && occupant.source.portId === sourcePortId) return;
-          operations.push({ op: "disconnect", edgeIds: [occupant.id] });
-          order = slot;
-        }
-      }
-      operations.push({
-        op: "connect",
+      /*
+       * T1049 — what the drop MEANS is decided in `connect-drop.ts`, not here.
+       *
+       * This used to be forty lines of §V14a displacement and T695 slot resolution inline.
+       * The Connections panel aims wires at exactly the same sockets, and the owner ruled
+       * on the shape rather than letting a second copy appear: "definitely don't
+       * duplicate it". A refusal cannot reach us — `isValidConnection` already declined an
+       * incompatible drop under the cursor — so the canvas dispatches or does nothing.
+       */
+      const drop = connectDropOperations({
+        graph: { nodes: domainNodes, edges: domainEdges },
+        registry,
         source: { nodeId: source, portId: sourcePortId },
-        target: { nodeId: target, portId: targetPortId },
-        ...(order === undefined ? {} : { order }),
+        target: { nodeId: target, portId: targetPortId, ...(slot === undefined ? {} : { slot }) },
       });
-      dispatch(operations, order === undefined ? "Connect ports" : "Replace connection");
+      if (drop.kind !== "connect") return;
+      dispatch(drop.operations, drop.label);
     },
     [dispatch, domainEdges, domainNodes, registry],
   );

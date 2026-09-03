@@ -65,6 +65,41 @@
   background: var(--bg-active);
 }
 
+/*
+  The PORT FAMILY, as a colour (§V26). The same token the wire on the canvas uses — via
+  `edgeFamilyColor`, not a palette of this panel's own — so a texture connection reads the
+  same here as it does out there. A second vocabulary would be worse than no colour.
+*/
+.family {
+  flex: 0 0 auto;
+  width: var(--hairline);
+  align-self: stretch;
+  margin: var(--space-1) 0;
+  border-radius: var(--radius-pill);
+  background: var(--row-color, var(--port-unknown));
+}
+
+/* A socket with nothing in it: a destination during a drag, and absent the rest of the time. */
+.rowEmpty {
+  border: var(--hairline) dashed var(--line);
+}
+
+.socketEmpty {
+  color: var(--text-disabled);
+  font-style: italic;
+}
+
+/* The picker sizes itself to the row, not to the widest socket name in the document. */
+.socketPicker {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 45%;
+}
+
+.socketPicker select {
+  width: 100%;
+}
+
 .grip {
   flex: 0 0 auto;
   width: var(--space-4);

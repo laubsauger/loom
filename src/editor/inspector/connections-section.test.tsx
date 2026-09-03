@@ -11,7 +11,10 @@ import type { LoomBus } from "@domain/commands/bus.ts";
 import type { NodeId } from "@domain/types/ids.ts";
 import { overNode } from "@nodes/definitions/composite.ts";
 import { solidNode } from "@nodes/definitions/solid.ts";
+import { pointGridNode } from "@nodes/definitions/point-generators.ts";
+import { textureToAttributeNode } from "@nodes/definitions/points.ts";
 import { createNodeRegistry } from "@nodes/registry/registry.ts";
+import { edgeFamilyColor } from "@editor/edges/flow.ts";
 import { installDomStubs } from "@ui/testing/install-dom-stubs.ts";
 import { Inspector } from "./inspector.tsx";
 import type { InspectorProjectSettings } from "./inspector.tsx";
@@ -60,10 +63,14 @@ interface Harness {
   comp: NodeId;
   /** Edge ids of the three layers, in the order they were wired: red, green, blue. */
   layers: [string, string, string];
+  /** The single wire on the ordinary `Front` input. */
+  frontEdge: string;
   /** The `in2` edge ids as the DOCUMENT orders them right now. */
   order: () => string[];
   /** The peer node NAMES behind those edges, in document order. */
   names: () => string[];
+  /** The peer NAMES wired into one port of the inspected node, in document order. */
+  wiredTo: (portId: string) => string[];
   undoDepth: () => number;
 }
 
@@ -135,14 +142,81 @@ async function setup(): Promise<Harness> {
   );
   openCommon();
 
+  const wiredTo = (portId: string): string[] => {
+    const graph = bus.store.getGraph();
+    return incomingEdgesInOrder(graph, comp, portId).map(
+      (edge) => graph.nodes[edge.source.nodeId]?.label ?? "?",
+    );
+  };
+
   return {
     bus,
     comp,
+    wiredTo,
     layers: [ids["$er"] as string, ids["$eg"] as string, ids["$eb"] as string],
+    frontEdge: ids["$ef"] as string,
     order,
     names,
     undoDepth: () => bus.store.getHistory(alice).undo.length,
   };
+}
+
+/**
+ * A node whose input ports are DIFFERENT KINDS — `textureToAttribute` takes a pointset and
+ * a texture — so "can this wire go here" has a real answer to get wrong. A fixture whose
+ * ports are all one type can never exercise a refusal (§V854's rule: the fixture must not
+ * sit at the degenerate point of whatever the fault scales with).
+ */
+async function setupMixedTypes(): Promise<{
+  bus: LoomBus;
+  textureEdge: string;
+  pointsEdge: string;
+}> {
+  const store = createGraphStore({ ids: createSequentialIdFactory("t1049-mixed") });
+  const { bus } = createDomainBus({
+    store,
+    registry: createNodeRegistry([solidNode, pointGridNode, textureToAttributeNode]).view(),
+  });
+  const created = await bus.execute(
+    "graph.applyPatch",
+    {
+      baseRevision: 0,
+      operations: [
+        { op: "addNode", ref: "$tex", type: solidNode.type, position: { x: 0, y: 0 } },
+        { op: "addNode", ref: "$pts", type: pointGridNode.type, position: { x: 0, y: 100 } },
+        { op: "addNode", ref: "$mix", type: textureToAttributeNode.type, position: { x: 300, y: 0 } },
+        { op: "setNodeLabel", nodeId: "$tex", label: "solid1" },
+        { op: "setNodeLabel", nodeId: "$pts", label: "grid1" },
+        {
+          op: "connect",
+          ref: "$et",
+          source: { nodeId: "$tex", portId: "out" },
+          target: { nodeId: "$mix", portId: "texture" },
+        },
+        {
+          op: "connect",
+          ref: "$ep",
+          source: { nodeId: "$pts", portId: "out" },
+          target: { nodeId: "$mix", portId: "points" },
+        },
+      ],
+    },
+    context,
+  );
+  expect(created.status).toBe("applied");
+  const ids = created.output.createdIds as Record<string, string>;
+  render(
+    <StrictMode>
+      <Inspector
+        bus={bus}
+        context={context}
+        nodeId={ids["$mix"] as NodeId}
+        settings={settings}
+      />
+    </StrictMode>,
+  );
+  openCommon();
+  return { bus, textureEdge: ids["$et"] as string, pointsEdge: ids["$ep"] as string };
 }
 
 const connections = (): HTMLElement => screen.getByRole("region", { name: "Connections" });
@@ -150,6 +224,11 @@ const rowFor = (edgeId: string): HTMLElement => {
   const row = connections().querySelector(`[data-edge-id="${edgeId}"]`);
   if (row === null) throw new Error(`no row for edge ${edgeId}`);
   return row as HTMLElement;
+};
+const socketSelect = (edgeId: string): HTMLSelectElement => {
+  const select = rowFor(edgeId).querySelector("select");
+  if (select === null) throw new Error(`no socket picker on edge ${edgeId}`);
+  return select as HTMLSelectElement;
 };
 const gripIn = (edgeId: string): HTMLElement => {
   const grip = rowFor(edgeId).querySelector("button[draggable]");
@@ -165,14 +244,16 @@ describe("T1049 — the Common page lists what is connected to this node", () =>
   it("names both ends by NAME, and says which socket each wire lands in (§B170)", async () => {
     const harness = await setup();
     const list = connections();
-    // The layers, in document order, each against the socket the node itself draws.
+    // The layers, in document order, each sitting in the socket the node itself draws.
     for (const [index, name] of ["red1", "green1", "blue1"].entries()) {
-      const row = rowFor(harness.layers[index] as string);
-      expect(within(row).getByText(`Behind ${String(index + 1)}`)).toBeDefined();
-      expect(row.textContent).toContain(name);
+      const edgeId = harness.layers[index] as string;
+      expect(socketSelect(edgeId).value).toBe(`in2#${String(index)}`);
+      const selected = socketSelect(edgeId).selectedOptions[0]?.textContent;
+      expect(selected).toBe(`Behind ${String(index + 1)}`);
+      expect(rowFor(edgeId).textContent).toContain(name);
     }
-    // The ordinary input is here too, and carries no slot number: there is no choice.
-    expect(within(list).getByText("Front")).toBeDefined();
+    // The ordinary input is here too, addressed by its bare port id: it has no slots.
+    expect(socketSelect(harness.frontEdge).value).toBe("in1");
     // An id is an address, not a name — none of them appears in the list.
     expect(list.textContent).not.toContain(harness.comp);
   });
@@ -331,17 +412,25 @@ describe("T1049 — reordering a layer, through the bus (§V29)", () => {
     expect(harness.bus.store.getRevision()).toBe(revision);
   });
 
-  it("offers no reorder where the document has no order — an ordinary input, and every output", async () => {
-    // §V830's shape, taken seriously: this is not a greyed-out grip, it is the absence of a
-    // control for a question that does not exist. `Front` takes one wire; an output's edges
-    // fan out to consumers that each decide their own order.
+  it("moves nothing with the arrow keys where the document has no ORDER to change", async () => {
+    // `Front` takes one wire, so "which is first" is not a question it has an answer to —
+    // `reorderEdges` rejects the port outright. The row is still DRAGGABLE, because moving
+    // this wire to another socket is a different question and one this port can answer.
     const harness = await setup();
-    const front = harness.bus.store
-      .getGraph()
-      .edges;
-    const frontEdge = Object.values(front).find((edge) => edge.target.portId === "in1");
-    expect(rowFor(frontEdge?.id as string).querySelector("button[draggable]")).toBeNull();
+    const revision = harness.bus.store.getRevision();
+    const grip = gripIn(harness.frontEdge);
+    grip.focus();
+    fireEvent.keyDown(grip, { key: "ArrowUp" });
+    fireEvent.keyDown(grip, { key: "ArrowDown" });
+    await settle();
+    expect(harness.bus.store.getRevision()).toBe(revision);
+  });
 
+  it("offers nothing to arrange on the OUT side, and not a disabled control either (§V830)", async () => {
+    // An output's edges fan out to consumers that each decide their own order and their own
+    // socket, so there is no arrangement at this end. That is the absence of a control, not
+    // a greyed-out one — and the row still names the consumer's slot, where the order lives.
+    const harness = await setup();
     cleanup();
     const red = harness.bus.store.getGraph().edges[harness.layers[0]]?.source.nodeId as NodeId;
     render(
@@ -351,9 +440,137 @@ describe("T1049 — reordering a layer, through the bus (§V29)", () => {
     );
     openCommon();
     expect(connections().querySelectorAll("button[draggable]")).toHaveLength(0);
-    // …and the row still says which socket of the consumer this wire feeds, which is where
-    // that order actually lives.
+    expect(connections().querySelectorAll("select")).toHaveLength(0);
     expect(connections().textContent).toContain("Behind 1");
+  });
+});
+
+describe("T1049 — the rows carry the PORT FAMILY colour (§V26, §V17)", () => {
+  it("paints each row from the same function the canvas paints its wires with", () => {
+    // Owner: "we can easily also use the colour coding on these ins and outputs, because we
+    // know all of these colours". The point of asserting against `edgeFamilyColor` rather
+    // than against a token name is that a panel with its own palette would still look
+    // plausible while teaching a second vocabulary — a texture wire has to read the same
+    // here as it does on the canvas.
+    return setupMixedTypes().then((harness) => {
+      const colorOf = (edgeId: string): string =>
+        (rowFor(edgeId) as HTMLElement).style.getPropertyValue("--row-color");
+      expect(colorOf(harness.textureEdge)).toBe(edgeFamilyColor("texture2d"));
+      expect(colorOf(harness.pointsEdge)).toBe(edgeFamilyColor("pointset"));
+      // Two families, two colours: a constant would satisfy either line on its own.
+      expect(colorOf(harness.textureEdge)).not.toBe(colorOf(harness.pointsEdge));
+    });
+  });
+});
+
+describe("T1049 — REASSIGNING a wire to another socket, from the list", () => {
+  /*
+   * The half the first pass deferred and the owner overruled: "reordering AND reassigning…
+   * the whole exercise here was that we can also from here quickly shuffle this around.
+   * That was like 50 percent of the request."
+   *
+   * Both paths below go through `connectDropOperations` — the canvas's own function,
+   * extracted rather than copied — so what a drop MEANS here cannot drift from what it
+   * means out there.
+   */
+
+  it("moves the wire to the socket it was dropped on, and replaces what was there", async () => {
+    // Blue, dragged from the third layer onto `Front`. Two things must both be true, and a
+    // patch that got either alone would look plausible: blue now feeds Front, and the wire
+    // that WAS on Front is gone rather than sitting alongside it on a one-wire port.
+    const harness = await setup();
+    const [red, green, blue] = harness.layers;
+    const transfer = dataTransfer();
+
+    fireEvent.dragStart(gripIn(blue), { dataTransfer: transfer });
+    fireEvent.dragOver(rowFor(harness.frontEdge), { dataTransfer: transfer });
+    fireEvent.drop(rowFor(harness.frontEdge), { dataTransfer: transfer });
+    await settle();
+
+    const graph = harness.bus.store.getGraph();
+    expect(graph.edges[harness.frontEdge]).toBeUndefined();
+    expect(graph.edges[blue]).toBeUndefined();
+    expect(harness.wiredTo("in1")).toEqual(["blue1"]);
+    // The layers it left behind closed up, so the sockets still count 1, 2 (T225).
+    expect(harness.order()).toEqual([red, green]);
+    expect(harness.order().map((id) => graph.edges[id]?.order)).toEqual([0, 1]);
+  });
+
+  it("does NOT rewire on the way past — only the socket actually dropped on (§V32)", async () => {
+    // A destructive gesture must not fire per row the pointer crosses. Reorder is live
+    // because it is reversible and non-destructive; a re-target replaces a connection, and
+    // dragging over four rows must not delete four of them.
+    const harness = await setup();
+    const transfer = dataTransfer();
+    const [, , blue] = harness.layers;
+
+    fireEvent.dragStart(gripIn(blue), { dataTransfer: transfer });
+    fireEvent.dragOver(rowFor(harness.frontEdge), { dataTransfer: transfer });
+    await settle();
+    // Still on Front, still three layers: crossing is not dropping.
+    expect(harness.bus.store.getGraph().edges[harness.frontEdge]).toBeDefined();
+    expect(harness.order()).toHaveLength(3);
+  });
+
+  it("reassigns from the KEYBOARD through the socket picker (§V19)", async () => {
+    // A drag-only reassign would be half a feature. The picker is a native <select>, so it
+    // is keyboard- and screen-reader-operable without this panel inventing a widget.
+    const harness = await setup();
+    const [, , blue] = harness.layers;
+
+    fireEvent.change(socketSelect(blue), { target: { value: "in1" } });
+    await settle();
+
+    expect(harness.wiredTo("in1")).toEqual(["blue1"]);
+    expect(harness.bus.store.getGraph().edges[harness.frontEdge]).toBeUndefined();
+  });
+
+  it("offers only sockets that would ACCEPT the wire, rather than listing refusals (§V830)", async () => {
+    // `textureToAttribute` takes a pointset and a texture. A texture wire can only go in
+    // one of them, so the picker has one entry — and a control with no choice in it is not
+    // rendered at all rather than rendered inert.
+    const harness = await setupMixedTypes();
+    expect(rowFor(harness.textureEdge).querySelector("select")).toBeNull();
+    expect(rowFor(harness.textureEdge).textContent).toContain("Texture");
+  });
+
+  it("REFUSES an incompatible drop, says why, and leaves the graph alone (§V288, §V13)", async () => {
+    // The owner's bar: "just reverse it, or just error, or whatever". Silence is the one
+    // answer that is not allowed — the drop was aimed at a named row, so nothing happening
+    // reads as a broken panel rather than as a refusal.
+    const harness = await setupMixedTypes();
+    const transfer = dataTransfer();
+    const before = harness.bus.store.getRevision();
+
+    fireEvent.dragStart(gripIn(harness.textureEdge), { dataTransfer: transfer });
+    fireEvent.drop(rowFor(harness.pointsEdge), { dataTransfer: transfer });
+    await settle();
+
+    // §V32: a refused gesture leaves the document byte-identical.
+    expect(harness.bus.store.getRevision()).toBe(before);
+    expect(harness.bus.store.getGraph().edges[harness.textureEdge]).toBeDefined();
+    expect(harness.bus.store.getGraph().edges[harness.pointsEdge]).toBeDefined();
+    // And it NAMES the two types rather than saying "invalid" (§V288).
+    const alert = screen.getByRole("alert");
+    expect(alert.textContent).toContain("texture2d");
+    expect(alert.textContent).toContain("pointset");
+  });
+
+  it("shows an empty socket only while a wire is actually being moved", async () => {
+    // At rest the list answers "what is connected"; during a drag it answers "where can
+    // this go". A spare socket sitting there permanently is chrome on every node.
+    const harness = await setup();
+    const [, , blue] = harness.layers;
+    const transfer = dataTransfer();
+    const spare = (): Element | null => connections().querySelector('[data-socket="in2#spare"]');
+
+    expect(spare()).toBeNull();
+    fireEvent.dragStart(gripIn(blue), { dataTransfer: transfer });
+    await settle();
+    expect(spare()).not.toBeNull();
+    fireEvent.dragEnd(gripIn(blue));
+    await settle();
+    expect(spare()).toBeNull();
   });
 });
 

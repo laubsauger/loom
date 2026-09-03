@@ -1,8 +1,10 @@
-import { incomingEdgesInOrder } from "@domain/graph/edge-order.ts";
+import { incomingEdgesInOrder, variadicHandleId } from "@domain/graph/edge-order.ts";
 import { nodeDisplayName } from "@domain/graph/diagnostic-names.ts";
+import { arePortsCompatible } from "@domain/graph/port-compat.ts";
 import type { GraphDocument, GraphEdge } from "@domain/types/graph.ts";
 import type { EdgeId, NodeId, PortId } from "@domain/types/ids.ts";
 import type { NodeDefinition } from "@domain/types/node-definition.ts";
+import type { PortKind } from "@domain/types/ports.ts";
 
 /**
  * The CONNECTIONS row model (T1049) — TouchDesigner's connections overview, as data.
@@ -75,6 +77,18 @@ export interface ConnectionInputGroup {
   readonly portId: PortId;
   readonly portLabel: string;
   /**
+   * The port family, for the row's colour (§V26). `null` when no installed definition
+   * declares the port — `edgeFamilyColor` already paints that `--port-unknown`, which is
+   * the same answer the canvas gives an unresolvable wire.
+   */
+  readonly kind: PortKind | null;
+  /**
+   * T695: a variadic port draws one socket per edge PLUS a spare at the end, so the panel
+   * offers that spare as a drop target the way the node does. An ordinary port has exactly
+   * the socket it has.
+   */
+  readonly variadic: boolean;
+  /**
    * True only when this port ORDERS its edges and there are at least two to arrange.
    * A single wire has no arrangement, and an ordinary port has no order at all —
    * `reorderEdges` rejects both (`port.notVariadic`), so offering the gesture would be
@@ -88,10 +102,24 @@ export interface ConnectionInputGroup {
 export interface ConnectionOutputGroup {
   readonly portId: PortId;
   readonly portLabel: string;
+  readonly kind: PortKind | null;
   readonly rows: readonly ConnectionRow[];
 }
 
+/** One socket this wire could be moved to, addressed the way every handle id is (T695). */
+export interface ConnectionSocketChoice {
+  /** `variadicHandleId(portId, slot)`, or a bare port id. `parseHandleId` decodes it. */
+  readonly value: string;
+  readonly label: string;
+}
+
 export interface ConnectionModel {
+  /**
+   * Every DECLARED input port, including ones with no wire on them — those carry no rows
+   * and exist so a drag has somewhere to land. The panel hides them at rest, so the list
+   * still answers "what is connected" and only answers "where can this go" while a wire is
+   * actually being moved.
+   */
   readonly inputs: readonly ConnectionInputGroup[];
   readonly outputs: readonly ConnectionOutputGroup[];
   /** Wires in total, so a caller can say "nothing is connected" without re-counting. */
@@ -191,10 +219,11 @@ export function connectionModel(
   for (const port of definition?.inputs ?? []) {
     claimedInputPorts.add(port.id);
     const edges = arrival(nodeId, port.id);
-    if (edges.length === 0) continue;
     inputs.push({
       portId: port.id,
       portLabel: port.label,
+      kind: port.type.kind,
+      variadic: port.variadic === true,
       orderable: port.variadic === true && edges.length > 1,
       rows: edges.map((edge, slot) =>
         inputRow(edge, port.variadic === true ? `${port.label} ${String(slot + 1)}` : port.label),
@@ -229,6 +258,8 @@ export function connectionModel(
     inputs.push({
       portId,
       portLabel: portId,
+      kind: null,
+      variadic: false,
       orderable: false,
       rows: [...edges]
         .sort((a, b) => a.id.localeCompare(b.id))
@@ -261,15 +292,68 @@ export function connectionModel(
     outputs.push({
       portId: port.id,
       portLabel: port.label,
+      kind: port.type.kind,
       rows: outputRows(port.label, edges),
     });
   }
   for (const [portId, edges] of [...strayOutputs].sort(([a], [b]) => a.localeCompare(b))) {
-    outputs.push({ portId, portLabel: portId, rows: outputRows(portId, edges) });
+    outputs.push({ portId, portLabel: portId, kind: null, rows: outputRows(portId, edges) });
   }
 
   const total =
     inputs.reduce((sum, group) => sum + group.rows.length, 0) +
     outputs.reduce((sum, group) => sum + group.rows.length, 0);
   return { inputs, outputs, total };
+}
+
+/**
+ * WHERE ELSE THIS WIRE COULD LAND — every socket on this node that would accept it.
+ *
+ * The keyboard half of re-targeting (§V19). The owner asked to "reassign… who's connected
+ * to which socket", and a drag alone would make that a pointer-only capability; this backs
+ * the row's socket picker, which is a native `<select>` and therefore keyboard- and
+ * screen-reader-operable for free.
+ *
+ * INCOMPATIBLE SOCKETS ARE ABSENT, not listed-and-disabled (§V830): "greyed out" is the
+ * same pixel as broken, unsupported and not-licensed, and the honest statement here is
+ * that this list IS where the wire can go. A drag can still be aimed at a socket that
+ * cannot take it, and THAT is refused out loud with the reason — the two paths differ
+ * because one is a choice from a list and the other is an aim that can miss.
+ *
+ * §V13's predicate, not a private one: the same `arePortsCompatible` the canvas checks
+ * under the cursor and `connect-drop.ts` enforces on apply.
+ */
+export function socketChoicesFor(
+  graph: GraphDocument,
+  registry: ConnectionsRegistry,
+  nodeId: NodeId,
+  edgeId: EdgeId,
+): readonly ConnectionSocketChoice[] {
+  const edge = graph.edges[edgeId];
+  const node = graph.nodes[nodeId];
+  if (edge === undefined || node === undefined) return [];
+  const sourceNode = graph.nodes[edge.source.nodeId];
+  const sourcePort = (
+    sourceNode === undefined ? undefined : registry.get(sourceNode.type)
+  )?.outputs.find((port) => port.id === edge.source.portId);
+  if (sourcePort === undefined) return [];
+
+  const choices: ConnectionSocketChoice[] = [];
+  for (const port of registry.get(node.type)?.inputs ?? []) {
+    if (!arePortsCompatible(sourcePort.type, port.type)) continue;
+    if (port.variadic !== true) {
+      choices.push({ value: port.id, label: port.label });
+      continue;
+    }
+    // One entry per socket the node draws, INCLUDING the spare at the end — that is the
+    // append, and leaving it out would make the picker unable to express "put it last".
+    const occupied = incomingEdgesInOrder(graph, nodeId, port.id);
+    for (let slot = 0; slot <= occupied.length; slot += 1) {
+      choices.push({
+        value: variadicHandleId(port.id, slot),
+        label: `${port.label} ${String(slot + 1)}`,
+      });
+    }
+  }
+  return choices;
 }

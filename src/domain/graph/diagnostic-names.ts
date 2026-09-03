@@ -24,8 +24,14 @@ import type { RuntimeDiagnostic } from "../types/diagnostics.ts";
  * agents address nodes BY id, and rewriting their receipts would break the round-trip.
  */
 
-/** The name every user-facing surface shows: the label, else the id itself. */
-export function nodeDisplayName(graph: GraphDocument, nodeId: NodeId): string {
+/**
+ * The name every user-facing surface shows: the label, else the id itself.
+ *
+ * Takes only `nodes`, so a caller holding a projection rather than a whole document still
+ * asks THIS rather than writing `label ?? id` again. §B170 is exactly the bug that comes
+ * of the rule existing in two places.
+ */
+export function nodeDisplayName(graph: Pick<GraphDocument, "nodes">, nodeId: NodeId): string {
   return graph.nodes[nodeId]?.label ?? nodeId;
 }
 

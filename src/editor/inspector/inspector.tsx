@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { cx } from "@ui/cx.ts";
 import type { LoomBus } from "@domain/commands/bus.ts";
 import type { InvocationContext } from "@domain/types/commands.ts";
@@ -231,21 +231,55 @@ export function Inspector({
   const ownedRef = useRef<ParameterEditor | null>(null);
   const [, revive] = useState(0);
 
+  /**
+   * §T1056 — A REFUSED EDIT SAYS SO.
+   *
+   * `createParameterEditor` has always taken an `onDiagnostics`, and this pane has never
+   * passed one: every rejected patch it sent — a stale revision, a refused resolution —
+   * was dropped on the floor and the panel simply did not change. That was survivable
+   * while every write here was a value the user could see snap back. T1049 made it not:
+   * a re-target aimed at an incompatible socket is REFUSED as the ordinary case, and a
+   * refusal nobody is shown is indistinguishable from a panel that does not work.
+   *
+   * Held with the revision it was reported AT, so it clears itself the moment the document
+   * moves again rather than needing a dismissal or an `onDiagnostics([])` on every
+   * successful write — which would cost a state update per patch on the drag path (§V16).
+   */
+  const [notice, setNotice] = useState<{
+    readonly diagnostics: readonly RuntimeDiagnostic[];
+    readonly atRevision: number;
+  } | null>(null);
+  const reportEditorDiagnostics = useMemo(() => {
+    const many = (entries: readonly RuntimeDiagnostic[]): void => {
+      if (entries.length === 0) return;
+      setNotice({ diagnostics: entries, atRevision: bus.store.getRevision() });
+    };
+    return { many, one: (entry: RuntimeDiagnostic) => many([entry]) };
+  }, [bus]);
+
   if (providedEditor === undefined && ownedRef.current === null) {
-    ownedRef.current = createParameterEditor({ bus, context });
+    ownedRef.current = createParameterEditor({
+      bus,
+      context,
+      onDiagnostics: reportEditorDiagnostics.many,
+    });
   }
 
   useEffect(() => {
     if (providedEditor !== undefined) return;
     if (ownedRef.current === null) {
-      ownedRef.current = createParameterEditor({ bus, context });
+      ownedRef.current = createParameterEditor({
+        bus,
+        context,
+        onDiagnostics: reportEditorDiagnostics.many,
+      });
       revive((generation) => generation + 1);
     }
     return () => {
       ownedRef.current?.dispose();
       ownedRef.current = null;
     };
-  }, [bus, context, providedEditor]);
+  }, [bus, context, providedEditor, reportEditorDiagnostics]);
 
   const editor = providedEditor ?? ownedRef.current;
 
@@ -446,8 +480,11 @@ export function Inspector({
   const connectionsSection = (
     <ConnectionsSection
       nodeId={node.id}
+      graph={graph}
+      registry={bus.registry}
       model={connectionModel(graph, bus.registry, node.id)}
       editor={editor}
+      onRefused={reportEditorDiagnostics.one}
     />
   );
 
@@ -612,6 +649,23 @@ export function Inspector({
         />
       </header>
       <CommonReadout size={resolvedSize} format={resolvedFormat} compact />
+      {/*
+        §T1056 — what the bus (or a refused drop) said, until the document moves again.
+        §V852: the message only. A diagnostic's `suggestion` is the second question and
+        rides the hover, exactly as the Common section's own notices do.
+      */}
+      {notice === null || notice.atRevision !== graph.revision
+        ? null
+        : notice.diagnostics.map((entry, index) => (
+            <div
+              key={`${entry.code}-${String(index)}`}
+              role="alert"
+              className={cx(styles.diagnostic, entry.severity === "error" && styles.diagnosticError)}
+              {...(entry.suggestion === undefined ? {} : { title: entry.suggestion })}
+            >
+              <span>{entry.message}</span>
+            </div>
+          ))}
     </>
   );
 
@@ -631,8 +685,8 @@ export function Inspector({
         {midiSection}
         {laserSection}
         {parameterSections}
-        {connectionsSection}
         {commonSection}
+        {connectionsSection}
       </div>
     );
   }
@@ -655,8 +709,10 @@ export function Inspector({
           {parameterSections}
         </TabsContent>
         <TabsContent className={cx(styles.page, styles.page)} value="common">
-          {connectionsSection}
+          {/* Resolution and format FIRST: they are the facts a user checks, they are set
+              once, and they must not sit below a list that grows with the graph. */}
           {commonSection}
+          {connectionsSection}
         </TabsContent>
       </TabsRoot>
     </div>
