@@ -1189,14 +1189,14 @@ export function App({
               top: 8,
               right: 8,
               zIndex: 10000,
-              background: "#c81e1e",
-              color: "#fff",
-              border: "2px solid #fff",
+              background: "var(--estop)",
+              color: "var(--estop-fg)",
+              border: "2px solid var(--estop-fg)",
               borderRadius: 6,
               font: "700 13px system-ui",
               padding: "10px 16px",
               cursor: "pointer",
-              boxShadow: "0 2px 10px rgba(0,0,0,0.5)",
+              boxShadow: "var(--shadow-raise)",
             }}
             aria-label="Emergency stop the laser output"
           >

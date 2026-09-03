@@ -68,6 +68,12 @@
   --warn: #fbbf24;
   --error: #ff5c57;
   --ok: #34d399;
+  /* T950/G7 — the laser E-stop control. Its own pair rather than reusing --error,
+     deliberately: --error is free to drift with theme work, and a hardware-style
+     emergency stop's look is a safety decision stated ONCE. Unthemeable by being a
+     token nothing else repurposes — not by a literal hiding in one component. */
+  --estop: #c81e1e;
+  --estop-fg: #ffffff;
   --component: #9a86e8; /* component-instance identity (T639c) — violet, no status hue */
 
   /* ---- derived surfaces --------------------------------------------
