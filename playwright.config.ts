@@ -37,7 +37,7 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
       // The pixel suite needs the headed lane's GPU; running it here would only ever
       // fail on "requestAdapter() resolved null". Everything else stays headless.
-      testIgnore: /presentation-pixels\.spec\.ts$/,
+      testIgnore: /(presentation-pixels|example-parity)\.spec\.ts$/,
     },
     {
       /*
@@ -57,13 +57,31 @@ export default defineConfig({
        * skips itself green.
        */
       name: "chromium-headed-gpu",
-      use: { ...devices["Desktop Chrome"], headless: false },
-      testMatch: /presentation-pixels\.spec\.ts$/,
+      /*
+       * T1096: the headed lane runs against ITS OWN dev server, never a shared one.
+       * `reuseExistingServer: true` on 5173 means a developer's live tab and the suite
+       * share one vite process — the suite's runs ride the developer's HMR channel and
+       * the developer's half-edited working tree hot-reloads into the suite's runs,
+       * in both directions. The pixel gates drive the real UI (open an example, edit
+       * the project resolution, seek), so they get a port nobody's browser is parked
+       * on and a server that is always their own.
+       */
+      use: { ...devices["Desktop Chrome"], headless: false, baseURL: "http://localhost:5199" },
+      testMatch: /(presentation-pixels|example-parity)\.spec\.ts$/,
     },
   ],
-  webServer: {
-    command: "pnpm dev",
-    url: "http://localhost:5173",
-    reuseExistingServer: !process.env.CI,
-  },
+  webServer: [
+    {
+      command: "pnpm dev",
+      url: "http://localhost:5173",
+      reuseExistingServer: !process.env.CI,
+    },
+    {
+      command: "pnpm dev --port 5199 --strictPort",
+      url: "http://localhost:5199",
+      // Never reuse: whatever answers on 5199 is not guaranteed to be this tree, and
+      // the headed lane's whole point is pixels from THIS working copy.
+      reuseExistingServer: false,
+    },
+  ],
 });
