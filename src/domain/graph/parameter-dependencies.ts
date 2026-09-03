@@ -67,7 +67,13 @@ export interface ParameterDependency {
   readonly to: NodeId;
 }
 
-/** `op('name')` targets in one expression source. Parse-based; regex fallback for legacy text. */
+/**
+ * `op('name')` targets in one expression source. Parse-based; regex fallback for legacy text.
+ *
+ * The switch is EXHAUSTIVE over `ExpressionAst` on purpose — no `default` — so a seventh
+ * node kind fails the typecheck here instead of silently dropping every reference nested
+ * inside it. That is exactly how `call` was missed.
+ */
 export function opReferenceNames(source: string): string[] {
   const parsed = parseExpression(source);
   if (parsed.ok) {
@@ -84,7 +90,23 @@ export function opReferenceNames(source: string): string[] {
           walk(ast.left);
           walk(ast.right);
           return;
-        default:
+        /*
+         * A CALL'S ARGUMENTS ARE WHERE REAL REFERENCES LIVE. Missing this case cost the
+         * owner a working example that read as dead: `clamp((op('beat1').chan.low - 0.7)
+         * / 0.28, 0, 1)` drove a radius every frame while the canvas drew no reference
+         * line, because the only `opRef` in it sits inside `clamp`'s arguments and the
+         * walk returned at `default`. An audio node that visibly drives nothing is
+         * indistinguishable from one wired to nothing.
+         *
+         * The consequence beyond the drawing is worse and is why this is not cosmetic:
+         * `reference-cycles.ts` walks the SAME function, so a reference cycle routed
+         * through any whitelisted call was undetectable.
+         */
+        case "call":
+          for (const arg of ast.args) walk(arg);
+          return;
+        case "number":
+        case "variable":
           return;
       }
     };

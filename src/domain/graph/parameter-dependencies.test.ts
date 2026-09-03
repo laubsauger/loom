@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { GraphDocument, GraphNode } from "../types/graph.ts";
-import { channelTargetName, parameterDependencies } from "./parameter-dependencies.ts";
+import { channelTargetName, opReferenceNames, parameterDependencies } from "./parameter-dependencies.ts";
 
 /**
  * The ONE traversal behind the cycle gate, liveness, and the reference lines (T248).
@@ -143,5 +143,38 @@ describe("the feedback kind (T350/§V285)", () => {
       groups: {},
     } as never;
     expect([...parameterDependencies(graph).values()].flat()).toEqual([]);
+  });
+});
+
+describe("a reference nested inside a call is still a reference (T1021)", () => {
+  /*
+   * E51 Chorus drove a radius every frame through
+   * `clamp((op('beat1').chan.low - 0.7) / 0.28, 0, 1)` and the canvas drew NO reference
+   * line, because the walk handled `opRef`/`unary`/`binary` and returned at `default` —
+   * so the only `opRef` in the source, sitting in `clamp`'s arguments, was never seen.
+   * The owner read the audio node as wired to nothing.
+   *
+   * Asserted at three depths because one level of nesting is the case a careless fix
+   * covers; a reference inside a call inside a call is the one that proves recursion.
+   */
+  it("finds an op() reference inside call arguments, at any depth", () => {
+    expect(opReferenceNames("clamp(op('beat1').chan.low, 0, 1)")).toEqual(["beat1"]);
+    expect(opReferenceNames("0.085 + 0.075 * clamp((op('beat1').chan.low - 0.7) / 0.28, 0, 1)")).toEqual(["beat1"]);
+    expect(opReferenceNames("max(0, min(1, op('lfo1').chan.value))")).toEqual(["lfo1"]);
+  });
+
+  it("finds EVERY reference in a call, not just the first", () => {
+    expect(opReferenceNames("mix(op('a1').chan.value, op('b1').chan.value, 0.5)")).toEqual(["a1", "b1"]);
+  });
+
+  /*
+   * The consequence that makes this more than a drawing bug: `reference-cycles.ts` walks
+   * this same function, so a cycle routed through a call was undetectable.
+   */
+  it("a cycle routed through a call is visible to the same walk", () => {
+    const a = node("n1", "a1", { gain: expression("clamp(op('b1').par.gain, 0, 1)") });
+    const b = node("n2", "b1", { gain: expression("clamp(op('a1').par.gain, 0, 1)") });
+    const found = [...parameterDependencies(graphOf(a, b)).values()].flat();
+    expect(found.map((entry) => entry.address).sort()).toEqual(["a1", "b1"]);
   });
 });
