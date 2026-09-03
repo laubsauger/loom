@@ -22,15 +22,15 @@ import { previewCandidates, useNodePreviews } from "./use-node-previews.ts";
  * channel `NodeView` reads (§V16).
  */
 
-function graphWith(type: string): GraphDocument {
+function graphWith(type: string, id = "n1"): GraphDocument {
   return {
     revision: 1,
     nodes: {
-      n1: { id: "n1", type, definitionVersion: 1, position: { x: 0, y: 0 }, parameters: {} },
+      [id]: { id, type, definitionVersion: 1, position: { x: 0, y: 0 }, parameters: {} },
     },
     edges: {},
     groups: {},
-  };
+  } as GraphDocument;
 }
 
 function fakeBackend(): LoomBackend {
@@ -656,9 +656,12 @@ describe("componentPreviewTarget resolves an instance's preview to an inner node
     const { componentPreviewTarget } = await import("./use-node-previews.ts");
     const { system, type } = await makeSystem();
     const target = componentPreviewTarget(inputsFor(system, type), "c1" as never);
-    // The Out node itself is a wire; its previewable port resolves and the flat id is
-    // the §V82 path the compiler mints for it.
-    expect(target).toEqual({ nodeId: "c1/exit", portId: "out" });
+    // T1019/§B177: the Out node is a WIRE, and its flattened row is a bare alias —
+    // for a pointset, a marker with no synthesis, so a sink aimed at it registered
+    // forever and materialized never. The default therefore resolves THROUGH the
+    // boundary to the node that produces the signal; the flat id is still the §V82
+    // path the compiler mints, now for a row that actually draws.
+    expect(target).toEqual({ nodeId: "c1/blurA", portId: "out" });
   });
 
   it("ui.componentPreview points the preview at ANY inner node — TD's debug view", async () => {
@@ -678,7 +681,8 @@ describe("componentPreviewTarget resolves an instance's preview to an inner node
       inputsFor(system, type, { componentPreview: "gone" }),
       "c1" as never,
     );
-    expect(target?.nodeId).toBe("c1/exit");
+    // The default, which now resolves through the Out boundary (see above).
+    expect(target?.nodeId).toBe("c1/blurA");
   });
 
   it("a non-instance resolves to nothing — the ordinary path is untouched", async () => {
@@ -895,6 +899,147 @@ describe("the viewer's interest pins a hidden tile (T756)", () => {
     vi.advanceTimersByTime(150);
 
     expect(nodeRuntime.get("n1").preview?.state.kind ?? "idle").toBe("idle");
+    nodeRuntime.dispose();
+  });
+});
+
+/**
+ * T1019 — INSIDE A COMPONENT, THE PLAN SPEAKS FLATTENED IDS AND THE CANVAS SPEAKS
+ * INNER ONES. Every interior preview asked the plan for un-prefixed ids that resolve
+ * to nothing, so every node in a dived pane read "no signal" while the component
+ * demonstrably worked (the owner's report). These pin the two halves of the fix: the
+ * SINK goes through the pane's flat prefix, and the STATE publishes under the canvas
+ * ref — the id the node on screen actually reads (the old idle loop published under
+ * the sink id, which is also §B177's instance-side miss).
+ *
+ * Fixtures are WIRED where wiring matters (the previous worker's caution on this exact
+ * ground: an unwired instance looks like a much broader bug and is not).
+ */
+describe("useNodePreviews inside a component (T1019)", () => {
+  function tick(): void {
+    vi.advanceTimersToNextFrame();
+    vi.advanceTimersByTime(150);
+  }
+
+  function mount(options: {
+    graph: GraphDocument;
+    registry: ReturnType<typeof createTestRegistry> extends { view(): infer V } ? V : never;
+    compiledOutputs: readonly unknown[];
+    flatPrefix?: string;
+    nodeRuntime: ReturnType<typeof createNodeRuntimeStore>;
+    bounds: ReturnType<typeof createPreviewSlotBounds>;
+    sinks?: { set(next: readonly { nodeId: string; portId: string }[]): void };
+  }): void {
+    const canvas = document.createElement("canvas");
+    canvas.getBoundingClientRect = () =>
+      ({ x: 0, y: 0, top: 0, left: 0, right: 400, bottom: 300, width: 400, height: 300 }) as DOMRect;
+    renderHook(() =>
+      useNodePreviews({
+        backend: fakeBackend(),
+        canvasRef: { current: canvas },
+        bounds: options.bounds,
+        graph: options.graph,
+        registry: options.registry,
+        compiledOutputs: options.compiledOutputs as never,
+        nodeRuntime: options.nodeRuntime,
+        ...(options.flatPrefix === undefined ? {} : { flatPrefix: options.flatPrefix }),
+        ...(options.sinks === undefined ? {} : { previewSinks: options.sinks as never }),
+        getViewport: () => ({ x: 0, y: 0, zoom: 1 }),
+        getNodePosition: () => ({ x: 0, y: 0 }),
+        previewFps: 20,
+        previewLongEdge: 192,
+        documentIdentity: "document-under-test",
+      }),
+    );
+  }
+
+  const row = (nodeId: string, portId = "out") => ({
+    nodeId,
+    portId,
+    resourceId: `res:${nodeId}:${portId}`,
+    resourceKind: "target" as const,
+    size: [64, 64] as const,
+    format: "rgba8unorm" as const,
+    space: "linear" as const,
+    temporal: false,
+  });
+
+  it("addresses the compiled row under the pane's flat prefix, and publishes under the canvas id", () => {
+    const registry = createTestRegistry().view();
+    const nodeRuntime = createNodeRuntimeStore();
+    const bounds = createPreviewSlotBounds();
+    bounds.publish("grid", { x: 0, y: 0, width: 200, height: 120 });
+    // The plan holds ONLY the flattened row — exactly the dived situation.
+    mount({
+      graph: graphWith("test.blur", "grid"),
+      registry,
+      compiledOutputs: [row("c1/grid")],
+      flatPrefix: "c1",
+      nodeRuntime,
+      bounds,
+    });
+    tick();
+    const snapshot = nodeRuntime.get("grid");
+    expect(snapshot.preview?.state.kind).toBe("live");
+    // The FACTS are the flat row's — the plan the picture actually comes from.
+    expect(snapshot.preview?.facts).toEqual({ width: 64, height: 64, format: "rgba8unorm" });
+    nodeRuntime.dispose();
+  });
+
+  it("an unmaterialized interior node publishes IDLE under the canvas id and sinks the FLAT id", () => {
+    const registry = createTestRegistry().view();
+    const nodeRuntime = createNodeRuntimeStore();
+    const bounds = createPreviewSlotBounds();
+    bounds.publish("grid", { x: 0, y: 0, width: 200, height: 120 });
+    const sunk: Array<readonly { nodeId: string; portId: string }[]> = [];
+    mount({
+      graph: graphWith("test.blur", "grid"),
+      registry,
+      compiledOutputs: [], // nothing materialized yet: the sink triggers the recompile
+      flatPrefix: "c1",
+      nodeRuntime,
+      bounds,
+      sinks: { set: (next) => sunk.push(next) },
+    });
+    tick();
+    // The canvas node hears about its own state (the old code published this under
+    // "c1/grid", which nothing on the canvas reads — the visible "no signal").
+    expect(nodeRuntime.get("grid").preview?.state.kind).toBe("idle");
+    // And the compiler is asked to materialize the row it can actually mint.
+    expect(sunk.at(-1)).toEqual([{ nodeId: "c1/grid", portId: "out" }]);
+    nodeRuntime.dispose();
+  });
+
+  it("an Out boundary previews THROUGH to its wired producer (§B177's shape, seen from inside)", () => {
+    const registry = createNodeRegistry(allNodeDefinitions).view();
+    const nodeRuntime = createNodeRuntimeStore();
+    const bounds = createPreviewSlotBounds();
+    bounds.publish("exit", { x: 0, y: 0, width: 200, height: 120 });
+    const graph: GraphDocument = {
+      revision: 1,
+      nodes: {
+        src: { id: "src", type: "circle", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: {} },
+        exit: { id: "exit", type: "componentOut", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: {} },
+      },
+      edges: {
+        e1: { id: "e1", source: { nodeId: "src", portId: "out" }, target: { nodeId: "exit", portId: "in" } },
+      },
+      groups: {},
+    } as never;
+    mount({
+      graph,
+      registry: registry as never,
+      // The boundary's own row is a bare alias the compiler never draws; the producer's
+      // row is what exists — the preview must find IT.
+      compiledOutputs: [row("c1/src")],
+      flatPrefix: "c1",
+      nodeRuntime,
+      bounds,
+    });
+    tick();
+    const snapshot = nodeRuntime.get("exit");
+    expect(snapshot.preview?.state.kind).toBe("live");
+    expect(snapshot.preview?.facts).toEqual({ width: 64, height: 64, format: "rgba8unorm" });
     nodeRuntime.dispose();
   });
 });

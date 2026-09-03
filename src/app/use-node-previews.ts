@@ -21,6 +21,7 @@ import type { NodeRegistryView } from "@nodes/registry/registry.ts";
 // layout model — see `previewable.ts` on why four private copies is how B65 happened.
 import { previewablePort } from "@domain/graph/previewable.ts";
 import { parseComponentNodeType } from "@domain/components/component-type.ts";
+import { isComponentOutputBoundary } from "@nodes/definitions/index.ts";
 import type { ComponentRegistryView } from "@domain/components/index.ts";
 
 /**
@@ -85,6 +86,15 @@ export interface NodePreviewInputs {
   readonly interest?: import("@editor/viewer/index.ts").PreviewInterestStore | undefined;
   /** T601: resolves a component instance's preview to an INNER node's flat output row. */
   readonly components?: ComponentRegistryView | undefined;
+  /**
+   * T1019 — the FLAT id prefix of the graph this pane is SHOWING. Empty/absent at the
+   * root; inside a component it is the dived instance chain joined by "/" (exactly the
+   * accumulation `flattenedNodeId` mints), so a canvas node "grid" three levels down
+   * addresses the compiled row "c1/c2/grid". Without it every interior preview asked
+   * the plan for un-prefixed ids that resolve to nothing — the owner's "everything
+   * says NO SIGNAL inside a component".
+   */
+  readonly flatPrefix?: string | undefined;
   readonly graph: GraphDocument;
   readonly registry: NodeRegistryView;
   readonly compiledOutputs: ReadonlyArray<ResolvedOutput>;
@@ -179,6 +189,31 @@ export function previewCandidates(
 }
 
 /**
+ * T1019 — a preview aimed at a component OUT boundary resolves THROUGH it to the node
+ * that actually produces the signal. The boundary flattens to a bare alias row (for a
+ * pointset, a MARKER with no synthesis — §B177's measured detail: the sink `c1/out_out`
+ * has nothing to draw while the synthesis lands on `c1/paint:out`), so a sink aimed at
+ * the boundary registers forever and materializes never. Following the wire inside the
+ * SAME graph lands on the row the compiler really mints. Bounded walk: boundaries do
+ * not legally chain, but a malformed graph must not hang the preview tick.
+ */
+function throughOutputBoundary(
+  graph: GraphDocument,
+  nodeId: NodeId,
+  portId: string,
+): { nodeId: NodeId; portId: string } {
+  let at = { nodeId, portId };
+  for (let hops = 0; hops < 4; hops += 1) {
+    const node = graph.nodes[at.nodeId];
+    if (node === undefined || !isComponentOutputBoundary(node.type)) return at;
+    const feeding = Object.values(graph.edges).find((edge) => edge.target.nodeId === at.nodeId);
+    if (feeding === undefined) return at; // an unwired boundary stays itself: honest idle
+    at = { nodeId: feeding.source.nodeId, portId: feeding.source.portId };
+  }
+  return at;
+}
+
+/**
  * T601: the inner node a component instance's preview shows, as a FLAT node id — or
  * undefined for a non-instance (or an unresolvable choice, which falls back to the
  * instance id and the ordinary not-materialized path).
@@ -204,12 +239,19 @@ export function componentPreviewTarget(
       ? (chosen as NodeId)
       : undefined) ?? definition.outputs[0]?.nodeId;
   if (inner === undefined) return undefined;
-  const innerNode = definition.graph.nodes[inner];
+  // T1019/§B177: the default target is the Out BOUNDARY, whose flattened row is a bare
+  // alias (a pointset marker with no synthesis) — resolve through it to the producer.
+  const innerNodeDef = definition.graph.nodes[inner];
+  const produced =
+    innerNodeDef === undefined
+      ? { nodeId: inner, portId: "out" }
+      : throughOutputBoundary(definition.graph, inner, "out");
+  const innerNode = definition.graph.nodes[produced.nodeId];
   const innerDefinition = innerNode === undefined ? undefined : current.registry.get(innerNode.type);
   const port = innerDefinition === undefined ? undefined : previewablePort(innerDefinition.outputs);
   if (port === undefined) return undefined;
   // The flat id flatten mints: `${instanceId}/${innerId}` (§V82's path shape).
-  return { nodeId: `${nodeId}/${inner}` as NodeId, portId: port.id };
+  return { nodeId: `${nodeId}/${produced.nodeId}` as NodeId, portId: port.id };
 }
 
 export function useNodePreviews(inputs: NodePreviewInputs): void {
@@ -328,13 +370,27 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
       const ungated = new Set<string>(
         candidates.filter((candidate) => !candidate.gated).map((candidate) => candidate.nodeId),
       );
+      /*
+       * T1019 — the pane's flat prefix: inside a component, the canvas shows INNER ids
+       * while the plan holds FLATTENED ones. Every plan-facing lookup below goes
+       * through `flatOf`; every publish stays on the CANVAS ref, because that is the
+       * id the node on screen reads its state under. Conflating the two was both this
+       * bug (interior previews asking the plan for ids it never minted) and §B177's
+       * (instance idle state published under the flat id no canvas node listens to).
+       */
+      const prefix = current.flatPrefix ?? "";
+      const flatOf = (id: string): NodeId => (prefix === "" ? id : `${prefix}/${id}`) as NodeId;
       const requests: PreviewRequest[] = [];
-      const idle: Array<{ nodeId: NodeId; portId: string }> = [];
-      /** T601: instance ref -> the FLAT sink its preview actually needs materialized. */
+      const idle: Array<{ ref: { nodeId: NodeId; portId: string }; sink: { nodeId: NodeId; portId: string } }> = [];
+      /** Canvas ref key -> the FLAT sink its preview actually needs materialized (T601/T1019). */
       const flatSinkOf = new Map<string, { nodeId: NodeId; portId: string }>();
       /** T501: on-screen area travels, so the idle queue is ordered by the SAME rule the
        *  scheduler ranks tiles by (largest on screen first) rather than by map order. */
-      const visibleIdle: Array<{ nodeId: NodeId; portId: string; area: number }> = [];
+      const visibleIdle: Array<{
+        ref: { nodeId: NodeId; portId: string };
+        sink: { nodeId: NodeId; portId: string };
+        area: number;
+      }> = [];
       /** Switched off (§V297): reported to the body, and nowhere else. */
       const off: Array<{ nodeId: NodeId; portId: string }> = [];
       // §V100/T197 — a slot that is not live still shows what the compiler resolved for
@@ -373,9 +429,18 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
          * flat id, so the chosen node is what materializes (§V487: all four sites agree).
          */
         const previewTarget = componentPreviewTarget(current, nodeId);
-        const sinkNodeId = previewTarget?.nodeId ?? nodeId;
-        const sinkPortId = previewTarget?.portId ?? portId;
-        if (previewTarget !== undefined) flatSinkOf.set(nodeId, previewTarget);
+        // T1019: BOTH halves go through the pane's prefix — an instance's inner target,
+        // a plain node, and an Out boundary (resolved through to its producer, §B177's
+        // shape seen from the inside) all live under the dived chain in the plan.
+        const canvasSink =
+          previewTarget ?? throughOutputBoundary(current.graph, nodeId, portId);
+        const sinkNodeId = flatOf(canvasSink.nodeId);
+        const sinkPortId = canvasSink.portId;
+        if (sinkNodeId !== nodeId || sinkPortId !== portId) {
+          // Keyed by ref's node AND port (T527's lesson): one node can carry two
+          // previewable outputs, and a node-scoped map would hand both the last sink.
+          flatSinkOf.set(`${nodeId}:${portId}`, { nodeId: sinkNodeId, portId: sinkPortId });
+        }
         // T527: an output's identity is PORT-scoped, never node-scoped — the row this
         // slot wants is exactly `sinkNodeId:sinkPortId`. Matching on the node alone took
         // whichever row happened to come first and then bound the tile under THAT row's
@@ -454,13 +519,13 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
               (onScreen || current.graph.nodes[nodeId]?.ui?.previewPinned === true)
             ) {
               visibleIdle.push({
-                nodeId: sinkNodeId,
-                portId: sinkPortId,
+                ref: { nodeId, portId },
+                sink: { nodeId: sinkNodeId, portId: sinkPortId },
                 area: Math.max(0, screen.width) * Math.max(0, screen.height),
               });
             }
           }
-          idle.push({ nodeId: sinkNodeId, portId: sinkPortId });
+          idle.push({ ref: { nodeId, portId }, sink: { nodeId: sinkNodeId, portId: sinkPortId } });
           continue;
         }
         // T501: this node HAS a materialized output, so it is a request from here on and
@@ -534,9 +599,9 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
       const activeSinks = result.schedule.active
         .filter((entry) => !ungated.has(entry.ref.nodeId as string))
         .map((entry) => {
-          // T601: an instance's tile stays keyed to the instance, but the SINK names
-          // the flat inner node — that is what the compiler can materialize.
-          const flat = flatSinkOf.get(entry.ref.nodeId as string);
+          // T601/T1019: the tile stays keyed to the CANVAS node, but the SINK names
+          // the flat plan row — that is what the compiler can materialize.
+          const flat = flatSinkOf.get(`${entry.ref.nodeId}:${entry.ref.portId}`);
           return flat === undefined
             ? { nodeId: entry.ref.nodeId as string, portId: entry.ref.portId }
             : { nodeId: flat.nodeId as string, portId: flat.portId };
@@ -565,8 +630,10 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
        * `suspended`. Both are answers; black-and-silent was not.
        */
       visibleIdle.sort((a, b) => b.area - a.area);
+      // First-paint bookkeeping runs on the CANVAS ref (that is what `everMaterialized`
+      // records); what goes to the COMPILER is each entry's flat sink (T1019).
       const unpainted = visibleIdle.filter(
-        (entry) => !everMaterialized.has(`${entry.nodeId}:${entry.portId}`),
+        (entry) => !everMaterialized.has(`${entry.ref.nodeId}:${entry.ref.portId}`),
       );
       const reserved = unpainted.slice(0, Math.min(FIRST_PAINT_RESERVE, system.capacity));
       const room = Math.max(0, system.capacity - reserved.length);
@@ -574,14 +641,14 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
       const returning = visibleIdle
         .filter((entry) => !reserved.includes(entry))
         .slice(0, Math.max(0, room - drawing.length));
-      const asRef = (entry: { nodeId: NodeId; portId: string }) => ({
-        nodeId: entry.nodeId as string,
-        portId: entry.portId,
+      const asSink = (entry: { sink: { nodeId: NodeId; portId: string } }) => ({
+        nodeId: entry.sink.nodeId as string,
+        portId: entry.sink.portId,
       });
       current.previewSinks?.set([
-        ...reserved.map(asRef),
+        ...reserved.map(asSink),
         ...drawing,
-        ...returning.map(asRef),
+        ...returning.map(asSink),
       ]);
 
       // Keys that left the graph entirely forget they ever painted; a node that is merely
@@ -592,8 +659,19 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
         if (!candidateKeys.has(key)) everMaterialized.delete(key);
       }
 
+      // T1019 — the state PUBLISHES under the CANVAS ref (the id the node on screen
+      // reads), while the FACTS come from the flat plan row the sink resolved to. The
+      // old idle loop published under the sink id, which no canvas node listens to —
+      // inside a component that was every node, and on an instance it was §B177.
+      const factsFor = (ref: { nodeId: string; portId: string }) =>
+        facts.get(
+          (() => {
+            const flat = flatSinkOf.get(`${ref.nodeId}:${ref.portId}`);
+            return flat === undefined ? `${ref.nodeId}:${ref.portId}` : `${flat.nodeId}:${flat.portId}`;
+          })(),
+        );
       for (const entry of result.schedule.active) {
-        const found = facts.get(`${entry.ref.nodeId}:${entry.ref.portId}`);
+        const found = factsFor(entry.ref);
         current.nodeRuntime.publish(entry.ref.nodeId, {
           preview: {
             output: entry.ref,
@@ -603,7 +681,7 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
         });
       }
       for (const entry of result.schedule.suspended) {
-        const found = facts.get(`${entry.ref.nodeId}:${entry.ref.portId}`);
+        const found = factsFor(entry.ref);
         current.nodeRuntime.publish(entry.ref.nodeId, {
           preview: {
             output: entry.ref,
@@ -612,11 +690,11 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
           },
         });
       }
-      for (const { nodeId, portId } of idle) {
-        const found = facts.get(`${nodeId}:${portId}`);
-        current.nodeRuntime.publish(nodeId, {
+      for (const { ref } of idle) {
+        const found = factsFor(ref);
+        current.nodeRuntime.publish(ref.nodeId, {
           preview: {
-            output: { nodeId, portId },
+            output: ref,
             state: { kind: "idle" },
             ...(found === undefined ? {} : { facts: found }),
           },
@@ -626,7 +704,7 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
       // still shows what the compiler resolved when the node renders for something else.
       // Off with no facts is the honest picture of a node that is now costing nothing.
       for (const { nodeId, portId } of off) {
-        const found = facts.get(`${nodeId}:${portId}`);
+        const found = factsFor({ nodeId, portId });
         current.nodeRuntime.publish(nodeId, {
           preview: {
             output: { nodeId, portId },

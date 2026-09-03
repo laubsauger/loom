@@ -233,6 +233,10 @@ function GraphPaneInner({
     canvasRef: previewCanvasRef,
     bounds: previewBounds,
     graph,
+    /* T1019 — inside a component the canvas shows INNER ids while the compiled plan
+       holds FLATTENED ones; the dived instance chain is exactly flatten's prefix, so
+       the preview hook can address the rows the compiler actually minted. */
+    flatPrefix: (componentPath ?? []).join("/"),
     registry,
     compiledOutputs,
     nodeRuntime,
