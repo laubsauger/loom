@@ -396,3 +396,83 @@ describe("T546 — the camera preview follows the renderer that names it", () =>
     expect(rowFor(compiled, "cam")?.resourceId).toBe("preview:scene:cam:out");
   });
 });
+
+/**
+ * T1020 — EVERY GEOMETRY MODE SYNTHESIZES (OR REFUSES WITH A FRAME), swept from the
+ * definition's own enum so mode N+1 fails here the way payload kind N+1 fails the kind
+ * sweep above (§V437/§V316's shape, applied to the axis it missed). The gap this
+ * closes: T532 shipped points/instances/surface and `beam` (T680) fell into the
+ * surface `else`, failed the grid parse and `continue`d — so E13's shaft, fan and
+ * core, cooking and visibly rendering in the shot, showed NO SIGNAL on their own
+ * tiles. The owner reasoned "they're still cooking obviously"; they were, and the
+ * preview machinery was the half that lied.
+ */
+describe("every geometry mode previews (T1020)", () => {
+  const geometryDefinition = allNodeDefinitions.find((definition) => definition.type === "geometry");
+  const modeParameter = geometryDefinition?.parameters["mode"];
+  const modes =
+    modeParameter?.type === "enum" ? modeParameter.options.map((option) => option.value) : [];
+
+  /** A pointset with position+tip+tint (proximity's links), enough for every mode. */
+  function modeGraph(mode: string): GraphDocument {
+    return graphOf(
+      [
+        node("grid", "pointGrid", { cols: 8, rows: 8 }),
+        node("links", "pointProximity", { neighbors: 2, radius: 10 }),
+        node("subject", "geometry", {
+          mode,
+          scale: 0.05,
+          ...(mode === "beam" ? { endpoint: "tip", taper: 0.5, soft: 0.5, blend: "additive" } : {}),
+        }, "subject1"),
+      ],
+      {
+        e1: { id: "e1", source: { nodeId: "grid", portId: "out" }, target: { nodeId: "links", portId: "points" } },
+        e2: { id: "e2", source: { nodeId: "links", portId: "out" }, target: { nodeId: "subject", portId: "points" } },
+      },
+    );
+  }
+
+  it("derives the sweep from the manifest, and the manifest has the four modes", () => {
+    // The floor that keeps the sweep from asserting over an empty list (§T985's rule).
+    expect(modes).toContain("beam");
+    expect(modes.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it.each([...new Set(["beam", "points", "instances"])])(
+    "mode %s produces a preview row WITH an object draw",
+    (mode) => {
+      const compiled = compile(modeGraph(mode), [{ nodeId: "subject", portId: "out" }]);
+      expect(compiled.diagnostics.filter((entry) => entry.severity === "error")).toEqual([]);
+      const row = rowById(compiled, "preview:scene:subject:out");
+      expect(row?.synthesis).toBeDefined();
+      // Backdrop plus at least one OBJECT pass: a backdrop-only frame here would be the
+      // refusal case wearing a working mode's name.
+      const draws = row?.synthesis?.passes ?? [];
+      expect([mode, draws.length]).toEqual([mode, 2]);
+    },
+  );
+
+  it("a surface whose topology is not a grid gets the HONEST EMPTY FRAME — a row with the backdrop", () => {
+    // Proximity's links claim `points` topology, which surface mode refuses by name at
+    // the Render. The old code `continue`d past the row entirely, so the promised
+    // "honest empty frame" was actually NO SIGNAL — indistinguishable from the beam
+    // hole this task closed.
+    const compiled = compile(modeGraph("surface"), [{ nodeId: "subject", portId: "out" }]);
+    const row = rowById(compiled, "preview:scene:subject:out");
+    expect(row?.synthesis).toBeDefined();
+    const draws = row?.synthesis?.passes ?? [];
+    expect(draws.length).toBe(1); // the backdrop, and only the backdrop
+  });
+
+  it("the beam preview mirrors the Render's own draw: endpoints bound, additive kept", () => {
+    const compiled = compile(modeGraph("beam"), [{ nodeId: "subject", portId: "out" }]);
+    const row = rowById(compiled, "preview:scene:subject:out");
+    const object = (row?.synthesis?.passes ?? []).find((pass) =>
+      pass.id.includes("#scenePreview:"),
+    ) as { buffers?: Array<{ binding: string }>; blend?: string; depthWrite?: boolean } | undefined;
+    expect(object?.buffers?.some((buffer) => buffer.binding === "endpoints")).toBe(true);
+    // T917 exactly as the Render: additive light sums and stops writing depth.
+    expect(object?.blend).toBe("additive");
+    expect(object?.depthWrite).toBe(false);
+  });
+});

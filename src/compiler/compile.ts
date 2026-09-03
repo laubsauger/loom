@@ -1778,27 +1778,105 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
               ],
             },
           });
+        } else if (payload.mode === "beam") {
+          /*
+           * T1020 — BEAM, the fourth mode, previously a silent hole: T532 shipped
+           * points/instances/surface and beam (T680) fell into the surface `else`,
+           * failed the grid parse and `continue`d — so E13's shaft/fan/core, cooking
+           * and rendering in the shot, showed NO SIGNAL on their own tiles (the owner:
+           * "they're still cooking obviously"; they were). §V316's shape at the MODE
+           * axis — the kind sweep guarded payload kinds while modes had no sweep;
+           * scene-preview.test.ts now iterates the mode enum so mode N+1 fails there.
+           *
+           * The pass mirrors the Render's own beam draw (same builder, same bindings,
+           * same instance-uniform packing) so the preview and the render cannot drift
+           * about what a beam looks like — including the per-point tint and width maps
+           * (E13's spectrum IS its colour attribute; a white-beam preview would answer
+           * a different question) and the group predicate (shaft draws its OWN role
+           * band, not every segment in the cloud). Additive beams keep their blend and
+           * stop writing depth, exactly as the Render's do (T917).
+           */
+          const endpoint = payload.endpoint;
+          if (endpoint !== undefined) {
+            synthPasses.push({
+              ...passBase,
+              clear: false,
+              ...(payload.blend === "additive" ? { blend: "additive" as const, depthWrite: false } : {}),
+              shader: sceneInstancesWgsl({
+                model: geometryModel,
+                lightCount: 2,
+                beam: true,
+                ...(payload.colorAttribute === undefined ? {} : { pointColor: true }),
+                ...(payload.scaleAttribute === undefined
+                  ? {}
+                  : {
+                      pointScale: {
+                        type: payload.scaleAttribute.type,
+                        ...(payload.scaleAttribute.channel === undefined
+                          ? {}
+                          : { channel: payload.scaleAttribute.channel }),
+                      },
+                    }),
+                ...(payload.group === undefined ? {} : { group: payload.group }),
+              }),
+              vertexCount: 6,
+              instances: Math.max(1, payload.capacity),
+              buffers: [
+                ...geometryBuffers,
+                { binding: "endpoints", resourceId: endpoint.pair, half: endpoint.half },
+                ...(payload.colorAttribute === undefined
+                  ? []
+                  : [{ binding: "pointColors", resourceId: payload.colorAttribute.pair, half: payload.colorAttribute.half }]),
+                ...(payload.scaleAttribute === undefined
+                  ? []
+                  : [{ binding: "pointScales", resourceId: payload.scaleAttribute.pair, half: payload.scaleAttribute.half }]),
+                ...(payload.group === undefined
+                  ? []
+                  : payload.group.binds.map((bind) => ({
+                      binding: `group_${bind.attribute}`,
+                      resourceId: bind.pair,
+                      half: bind.half,
+                    }))),
+              ],
+              uniforms: {
+                ...geometryUniforms,
+                instance: [
+                  payload.instance?.scale ?? 0.05,
+                  0,
+                  payload.instance?.taper ?? 0,
+                  payload.instance?.soft ?? 0,
+                ],
+              },
+            });
+          }
+          // No endpoint = the Render's own refusal-by-name case: backdrop only, an
+          // honest empty frame rather than a missing row that reads as NO SIGNAL.
         } else {
           // Surface: the same grid the Render addresses. A payload whose topology is not
           // a grid, or whose grid overruns its capacity, is what the Render refuses by
           // name — so it gets the backdrop and no object, never a plausible wrong shape.
+          //
+          // T1020: the refusal FALLS THROUGH to the row-set now instead of `continue`ing
+          // past it — the old code skipped the row entirely, so the "honest empty frame"
+          // this comment promised was actually NO SIGNAL, indistinguishable from the
+          // beam hole above. The backdrop pass is already in synthPasses.
           const parsed =
             typeof payload.topology === "string" ? parseTopology(payload.topology) : null;
-          if (parsed === null || parsed.kind !== "grid") continue;
-          if (gridPointCount(parsed) > payload.capacity) continue;
-          const topology = parsed;
-          const cells = gridCellCounts(topology);
-          synthPasses.push({
-            ...passBase,
-            clear: false,
-            shader: sceneSurfaceWgsl({ model: geometryModel, lightCount: 2 }),
-            vertexCount: cells.cellsU * cells.cellsV * 6,
-            buffers: geometryBuffers,
-            uniforms: {
-              ...geometryUniforms,
-              grid: [topology.cols, topology.rows, topology.wrapU ? 1 : 0, topology.wrapV ? 1 : 0],
-            },
-          });
+          if (parsed !== null && parsed.kind === "grid" && gridPointCount(parsed) <= payload.capacity) {
+            const topology = parsed;
+            const cells = gridCellCounts(topology);
+            synthPasses.push({
+              ...passBase,
+              clear: false,
+              shader: sceneSurfaceWgsl({ model: geometryModel, lightCount: 2 }),
+              vertexCount: cells.cellsU * cells.cellsV * 6,
+              buffers: geometryBuffers,
+              uniforms: {
+                ...geometryUniforms,
+                grid: [topology.cols, topology.rows, topology.wrapU ? 1 : 0, topology.wrapV ? 1 : 0],
+              },
+            });
+          }
         }
       } else if (payload.kind === "projector") {
         // T704: the stock reference scene THROUGH THE THROW — the camera tile's own
