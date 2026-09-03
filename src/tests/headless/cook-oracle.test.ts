@@ -33,8 +33,6 @@ function oracleSettings(settings: Parameters<typeof renderUnderPolicy>[0]["setti
 const starterDefinitions = (await buildStarterComponents()).map((built) => built.definition);
 
 describe("cook oracle (T249, §V157)", () => {
-  const registry = exampleRegistry();
-
   const files: ExampleFile[] = buildExampleFiles(starterDefinitions).map((file) => ({
     fileName: file.fileName,
     path: file.fileName,
@@ -46,12 +44,41 @@ describe("cook oracle (T249, §V157)", () => {
       const probe = await probeDawn();
       if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
 
-      const { document } = requireExample(file);
+      /*
+       * §V854 (T-number owed — the orchestrator assigns): the example's OWN component
+       * system. `runExample` already built one, and taking `document` while re-deriving
+       * a bare registry threw away the half that draws the picture.
+       *
+       * E47 and E51 instantiate library components. Without `components`, compile does
+       * not throw — it DEGRADES: `compiler/unknown-node-type` on the instance, the edge
+       * into `out1` severed as endpoint-missing, E51 down to ZERO passes and E47 to one,
+       * and the oracle then rendered and digested a target nothing had written. Both
+       * policies agreed perfectly about a black rectangle for 80 frames — a vacuous pass
+       * of the exact kind this suite exists to refuse, and ONLY the non-vacuity guard at
+       * the foot of this test could see it. Measured with the pair restored: E51 and E47
+       * both reach 80 distinct frames, E47 with zero diagnostics and 45 passes.
+       *
+       * §V870, red-verified: `components` is the load-bearing half — dropping it alone
+       * reds exactly these two at the guard below. Swapping the registry back to a bare
+       * `exampleRegistry()` moved NO digest, so it is kept for a different, measured
+       * reason: the aware view is what lets `scriptFor` see a component instance as a
+       * node at all (E47's bypass step retargets from `depth` onto the `cut` instance),
+       * and a published page is an invalidation class the bare view hid from the script.
+       */
+      const { document, result } = requireExample(file);
+      const registry = result.nodes ?? exampleRegistry();
       const settings = oracleSettings(document.settings);
       const script = scriptFor(document.graph, registry);
       expect(script.length).toBeGreaterThan(3); // the session actually edits things
 
-      const base = { graph: document.graph, settings, registry, script, frames: FRAMES };
+      const base = {
+        graph: document.graph,
+        settings,
+        registry,
+        ...(result.components === undefined ? {} : { components: result.components }),
+        script,
+        frames: FRAMES,
+      };
       const always = await renderUnderPolicy({ ...base, policy: "always" });
       const auto = await renderUnderPolicy({ ...base, policy: "auto" });
 
@@ -71,12 +98,20 @@ describe("cook oracle (T249, §V157)", () => {
 
     const file = files[0];
     if (file === undefined) throw new Error("no examples shipped");
-    const { document } = requireExample(file);
+    const { document, result } = requireExample(file);
+    const registry = result.nodes ?? exampleRegistry(); // §V854, as above
     const settings = oracleSettings(document.settings);
     const script = fuzzScript(document.graph, registry, 1337, 24, FRAMES);
     expect(script.length).toBeGreaterThan(0);
 
-    const base = { graph: document.graph, settings, registry, script, frames: FRAMES };
+    const base = {
+      graph: document.graph,
+      settings,
+      registry,
+      ...(result.components === undefined ? {} : { components: result.components }),
+      script,
+      frames: FRAMES,
+    };
     const always = await renderUnderPolicy({ ...base, policy: "always" });
     const auto = await renderUnderPolicy({ ...base, policy: "auto" });
     for (let frame = 0; frame < FRAMES; frame += 1) {

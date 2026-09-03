@@ -8,6 +8,7 @@ import { createGraphStore } from "../../domain/graph/store.ts";
 import { createDomainBus } from "../../domain/commands/index.ts";
 import type { GraphPatchOperation } from "../../domain/types/patch.ts";
 import { createValueGraphSession } from "../../domain/channels/value-graph.ts";
+import type { ComponentRegistryView } from "../../domain/components/index.ts";
 import { effectiveParameterSchema } from "../../domain/parameters/resolve.ts";
 import type { GraphDocument, ProjectSettings } from "../../domain/types/graph.ts";
 import type { FrameEvaluationInput } from "../../domain/types/frame.ts";
@@ -263,6 +264,15 @@ export interface OracleRunRequest {
   readonly graph: GraphDocument;
   readonly settings: ProjectSettings;
   readonly registry: NodeRegistryView;
+  /**
+   * §V854 (T-number owed): the example's own component library, and `registry` must be the
+   * COMPONENT-AWARE view that goes with it. Omitting the pair does not fail loudly —
+   * `component:...` degrades to `compiler/unknown-node-type`, the edge into the output
+   * is severed, and the oracle then renders and digests an untouched black target,
+   * byte-identical at every frame. E47 and E51 sat like that: a policy comparison over
+   * a picture neither policy had drawn. Only the non-vacuity guard could see it.
+   */
+  readonly components?: ComponentRegistryView;
   readonly policy: CookPolicy;
   readonly script: ReadonlyArray<ScriptedEdit>;
   readonly frames: number;
@@ -305,6 +315,7 @@ export async function renderUnderPolicy(request: OracleRunRequest): Promise<stri
           timestampQuery: false,
           limits: { maxTextureDimension2D: 8192 },
         },
+        ...(request.components === undefined ? {} : { components: request.components }),
         ...(resolution === undefined ? {} : { resolution }),
       });
 

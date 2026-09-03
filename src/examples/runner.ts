@@ -58,6 +58,25 @@ export interface RunExampleResult {
   readonly read: PlanReadResult | undefined;
   /** T956: the file's own embedded component library, for harness renders. */
   readonly components?: ComponentRegistryView;
+  /**
+   * The COMPONENT-AWARE node registry this example was compiled with — handed back
+   * together with `components` because the two are one object and a caller that takes
+   * only `document` and re-derives a bare `exampleRegistry()` compiles a DIFFERENT
+   * graph than the one this function validated.
+   *
+   * §V854 (T-number owed — the orchestrator assigns): the cook oracle did exactly
+   * that. E47 and E51 instantiate library components, the bare registry has no
+   * `component:...` type, so both examples
+   * compiled to `compiler/unknown-node-type` + a severed output edge — E51 to ZERO
+   * passes, E47 to one — and the oracle digested an untouched black target, identical
+   * at every frame. Its policy claim was vacuous for those two; only the non-vacuity
+   * guard could see it, and it did.
+   *
+   * `components` is the half the COMPILE needs; this `nodes` view is the half every
+   * OTHER reader needs — enumerate a graph's parameters or ports through a bare view
+   * and a component instance is simply not a node. Both, or neither.
+   */
+  readonly nodes?: NodeRegistryView;
 }
 
 /** Load + compile one example. Never throws: a failure is a result the gate can name. */
@@ -100,6 +119,7 @@ export function runExample(file: ExampleFile): RunExampleResult {
     plan,
     read: readExecutionPlan(plan),
     components: components.view(),
+    nodes: registry,
   };
 }
 
