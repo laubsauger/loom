@@ -23,7 +23,6 @@ function renderNumber(overrides: Partial<Parameters<typeof NumberField>[0]> = {}
     <NumberField
       label="Radius"
       value={0.5}
-      defaultValue={0.25}
       spec={spec}
       onChange={onChange}
       {...overrides}
@@ -47,7 +46,7 @@ describe("§V20 — a control drag never becomes a node drag", () => {
     const nodeSelect = vi.fn();
     render(
       <div onPointerDown={nodeDrag} onMouseDown={nodeSelect}>
-        <NumberField label="Radius" value={0.5} defaultValue={0.25} spec={spec} onChange={vi.fn()} />
+        <NumberField label="Radius" value={0.5} spec={spec} onChange={vi.fn()} />
       </div>,
     );
 
@@ -115,17 +114,45 @@ describe("dragging a number (doc §8.1)", () => {
   });
 });
 
-describe("double-click resets to the manifest default (doc §8.1)", () => {
-  it("commits the default value", () => {
+/**
+ * T1033 — the double-click writes NOTHING, and reset lives on the parameter menu.
+ *
+ * The owner: *"the double-click to reset is weird — I'd rather have that in a right-click
+ * menu."* `parameter.reset` had been on `PARAMETER_MENU` since T246, gated on
+ * `isOverridden`, so the gesture was a duplicate route to a command that already had one.
+ * It was also wired against the universal meaning of the gesture: a single click here opens
+ * text entry, so the second click of a double landed INSIDE an open editor, where every
+ * other application on the machine would have selected the value under it.
+ *
+ * Asserted as "the document is not written", not as "no handler is attached": the consumer
+ * of this control is a bus that turns emissions into patches, and what had to stop is the
+ * patch. `changes` is the same array every other test in this file reads.
+ */
+describe("T1033 — double-click no longer resets", () => {
+  it("emits nothing when the field is double-clicked", () => {
     const { field, changes } = renderNumber();
     fireEvent.doubleClick(field);
-    expect(changes).toEqual([[0.25, "commit"]]);
+    expect(changes, "double-click still wrote to the document").toEqual([]);
   });
 
-  it("normalises the default through the same range rules", () => {
-    const { field, changes } = renderNumber({ defaultValue: 99 });
+  it("does not reset a value that has been dragged away from the default", () => {
+    // The case the old gesture existed for, and the one a user would trip on by accident:
+    // move the value, then double-click to select it. That must leave 0.8 alone.
+    const { field, changes } = renderNumber({ value: 0.8 });
     fireEvent.doubleClick(field);
-    expect(changes).toEqual([[1, "commit"]]);
+    expect(changes).toEqual([]);
+  });
+
+  it("leaves the ordinary edits it could have swallowed working (non-vacuity)", () => {
+    // A guard that killed the whole pointer path would pass both cases above. The click
+    // that OPENS text entry is the gesture that shares the first half of a double-click,
+    // so it is the one that has to be shown still alive.
+    const { field, input, changes } = renderNumber();
+    fireEvent.pointerDown(field, { pointerId: 1, clientX: 5, button: 0 });
+    fireEvent.pointerUp(field, { pointerId: 1, clientX: 5 });
+    fireEvent.change(input, { target: { value: "0.3" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(changes.at(-1)).toEqual([0.3, "commit"]);
   });
 });
 
@@ -168,7 +195,7 @@ describe("§V19 — keyboard operation", () => {
     const graphKeys = vi.fn();
     render(
       <div onKeyDown={graphKeys}>
-        <NumberField label="Radius" value={0.5} defaultValue={0.25} spec={spec} onChange={vi.fn()} />
+        <NumberField label="Radius" value={0.5} spec={spec} onChange={vi.fn()} />
       </div>,
     );
     const input = screen.getByRole("spinbutton", { name: "Radius" });
@@ -291,7 +318,7 @@ describe("§B159 — a focused field accepts the first keystroke (§V776)", () =
     const graphKeys = vi.fn();
     render(
       <div onKeyDown={graphKeys}>
-        <NumberField label="Radius" value={0.5} defaultValue={0.25} spec={spec} onChange={vi.fn()} />
+        <NumberField label="Radius" value={0.5} spec={spec} onChange={vi.fn()} />
       </div>,
     );
     const input = screen.getByRole("spinbutton", { name: "Radius" }) as HTMLInputElement;
@@ -655,7 +682,7 @@ describe("T652 — an untouched numeric field commits nothing", () => {
   };
 
   it("survives a click and a click away", () => {
-    const { field, input, onChange } = renderNumber({ value: 1, defaultValue: 1, spec: offGrid });
+    const { field, input, onChange } = renderNumber({ value: 1, spec: offGrid });
     openField(field);
     fireEvent.blur(input);
     // Not "emitted 1" — emitted NOTHING. A field that re-commits its own value on every
@@ -668,7 +695,7 @@ describe("T652 — an untouched numeric field commits nothing", () => {
     // Guarded in `commitText` rather than in the blur handler precisely so these two
     // cannot disagree: Enter on an untouched field destroyed the value too, just less
     // accidentally, and a fix that only covered blur would be a gate with a hole in it.
-    const { field, input, onChange } = renderNumber({ value: 1, defaultValue: 1, spec: offGrid });
+    const { field, input, onChange } = renderNumber({ value: 1, spec: offGrid });
     openField(field);
     fireEvent.keyDown(input, { key: "Enter" });
     expect(onChange).not.toHaveBeenCalled();
@@ -677,7 +704,7 @@ describe("T652 — an untouched numeric field commits nothing", () => {
   it("still commits when the user actually types something", () => {
     // NON-VACUITY for both cases above: the same fixture, one keystroke different, does
     // all the work. A guard that swallowed real entries would pass them and fail here.
-    const { field, input, changes } = renderNumber({ value: 1, defaultValue: 1, spec: offGrid });
+    const { field, input, changes } = renderNumber({ value: 1, spec: offGrid });
     openField(field);
     fireEvent.change(input, { target: { value: "2" } });
     fireEvent.keyDown(input, { key: "Enter" });
@@ -692,18 +719,20 @@ describe("T652 — an untouched numeric field commits nothing", () => {
   it("keeps a typed value finer than the drag granularity (T989)", () => {
     // The owner's report, on this file's own off-grid fixture: entry precision must not be
     // the drag's precision. 2.03 is inside one 0.16-wide rung and used to snap to 2.08.
-    const { field, input, changes } = renderNumber({ value: 1, defaultValue: 1, spec: offGrid });
+    const { field, input, changes } = renderNumber({ value: 1, spec: offGrid });
     openField(field);
     fireEvent.change(input, { target: { value: "2.03" } });
     fireEvent.keyDown(input, { key: "Enter" });
     expect(changes.at(-1)?.[0]).toBe(2.03);
   });
 
-  it("resets to the number the author wrote, not to the nearest grid point", () => {
-    // The other half: `onDoubleClick` ran the DEFAULT through `normalizeValue`, so
-    // double-clicking a Transform's Scale to reset it committed 0.96.
-    const { field, changes } = renderNumber({ value: 3, defaultValue: 1, spec: offGrid });
-    fireEvent.doubleClick(field);
-    expect(changes.at(-1)).toEqual([1, "commit"]);
-  });
+  /*
+    T652's third case — "reset commits the author's number, not the nearest grid point" —
+    was asserted here through `onDoubleClick`, and T1033 removed that gesture. The FACT is
+    unchanged and still gated: `resetValue`'s own behaviour in
+    `tests/guardrails/parameter-precision.test.ts`, and the reset a user can actually reach
+    in `domain/commands/parameter-commands.test.ts`, which writes `defaultParameterValue`
+    with no quantisation at all. Nothing was dropped; the assertion moved to where the
+    behaviour now lives, rather than being kept alive against a handler that is gone.
+  */
 });

@@ -118,8 +118,6 @@ export function ColorField({
     return representation === "linear" ? LINEAR_CHANNEL_SPEC : DISPLAY_CHANNEL_SPEC;
   };
 
-  const defaults = convertColor(toRgba(definition.default), space, representation);
-
   return (
     <div className={styles.colorRow}>
       <PopoverRoot>
@@ -159,7 +157,6 @@ export function ColorField({
                 <NumberField
                   label={`${label} ${channelLabel}`}
                   value={shown[index] ?? 0}
-                  defaultValue={defaults[index] ?? 0}
                   spec={channelSpec(index)}
                   disabled={disabled}
                   {...(driverFor(index) === undefined ? {} : { drivenBy: driverFor(index) })}

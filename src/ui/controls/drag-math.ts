@@ -199,6 +199,17 @@ export function clampToRange(value: number, spec: NumericSpec): number {
  *
  * `parameter-precision.test.ts` gates it over the whole catalogue.
  */
+/*
+ * T1033 — NO PRODUCTION CALLER SINCE THE DOUBLE-CLICK WENT.
+ *
+ * `NumberField.onDoubleClick` was the one thing that called this; reset is now reached only
+ * through `parameter.reset` on the bus, which writes `defaultParameterValue(definition)`
+ * with no clamping and no quantisation. Left in place rather than deleted because
+ * `tests/guardrails/parameter-precision.test.ts` is built on it and that file belongs to
+ * another track — but it is a helper with tests and no consumer, which is exactly the shape
+ * the composition gate exists to catch. Flagged, not hidden: either the guardrail moves onto
+ * the bus path or this goes.
+ */
 export function resetValue(defaultValue: number, spec: NumericSpec): number {
   if (!Number.isFinite(defaultValue)) return clampToRange(0, spec);
   return clampToRange(defaultValue, spec);

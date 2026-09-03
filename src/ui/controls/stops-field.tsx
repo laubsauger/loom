@@ -203,7 +203,6 @@ export function StopsField({
                       <NumberField
                         label={`${label} stop ${index + 1} ${channelLabel}`}
                         value={stop.color[channel] ?? 0}
-                        defaultValue={channel === 3 ? 1 : 0}
                         spec={channelSpec(channel)}
                         disabled={disabled}
                         onChange={(next, phase) => {
@@ -226,7 +225,6 @@ export function StopsField({
             <NumberField
               label={`${label} stop ${index + 1} position`}
               value={stop.position}
-              defaultValue={stop.position}
               spec={POSITION_SPEC}
               disabled={disabled}
               onChange={(next, phase) => emit(withStop(index, { position: next, color: stop.color }), phase)}

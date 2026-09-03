@@ -1,3 +1,4 @@
+import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 
 import { APP_VIEWPORT, addNode, dragNumber, focusGraph, modKey, openApp, selectNode } from "./app.ts";
@@ -162,4 +163,98 @@ test("a focused field takes the digit that opened it, and appends the next (§B1
   await field.focus();
   await page.keyboard.press("q");
   await expect(field).toHaveAttribute("readonly", /.*/);
+});
+
+/**
+ * T1033 — the two halves of "grabbing the slider is awkward. It's a bit weak".
+ *
+ * Both need a REAL pointer, which is why they are here and not in jsdom. The first is a
+ * gesture whose failure is invisible to every synthetic test that fires pointerdown and
+ * pointermove in the same tick: the drag only broke when the press PAUSED, and pausing is
+ * what a deliberate user does. The second is a hit target, and jsdom lays nothing out, so
+ * "is this pixel inside the grab surface" is a question only a browser can answer.
+ */
+/**
+ * Selection, WITHOUT `selectNode` from `app.ts` — deliberately, and this note is the
+ * reason rather than a preference.
+ *
+ * That helper asserts the inspector's tab panel CONTAINS the node id as text, and the
+ * inspector renders the node's NAME ("noise1") while ids are opaque ("nd_97b8d77dc4ae1").
+ * The assertion cannot pass, and it fails ahead of every test that calls it — six in this
+ * file and this spec's neighbours before T1033 touched anything. Not this task's to fix:
+ * `app.ts` is shared, the repair is the owning track's call, and the durable contract it
+ * should be reading is the `data-node-id` attribute the inspector has always set
+ * (`PARAMETER_NODE_ATTRIBUTE`). That is what this reads, so these two gates can run.
+ */
+async function showInInspector(page: Page, nodeId: string): Promise<void> {
+  await page.getByTestId(`node-name-${nodeId}`).click();
+  await expect(page.locator(`[data-node-id="${nodeId}"]`).first()).toBeVisible();
+}
+
+test("a press that pauses before it moves still drags (T1033)", async ({ page }) => {
+  await openApp(page);
+
+  const noise = await addNode(page, "generator", "Noise");
+  await showInInspector(page, noise);
+
+  const field = page.locator('input[aria-label="Amplitude"]').last();
+  await field.scrollIntoViewIfNeeded();
+  const box = await field.boundingBox();
+  if (box === null) throw new Error("Amplitude has no box on screen");
+  const before = await field.inputValue();
+
+  const y = box.y + box.height / 2;
+  await page.mouse.move(box.x + 30, y);
+  await page.mouse.down();
+  // Longer than LADDER_HOLD_MS. Before T1033 the hold nulled the drag ref, so everything
+  // after this line landed on nothing and the value came back exactly `before` — measured
+  // in the running app at 500 ms and 80 px of travel.
+  await page.waitForTimeout(700);
+  for (let step = 1; step <= 10; step += 1) {
+    await page.mouse.move(box.x + 30 + step * 8, y);
+    await page.waitForTimeout(20);
+  }
+  await page.mouse.up();
+
+  expect(
+    await field.inputValue(),
+    "the press sat still for 700 ms and then dragged 80 px, and the value did not move",
+  ).not.toBe(before);
+
+  // And the popout the pause opened is gone: a drag must not leave chrome over the rows
+  // below it (§V90).
+  await expect(page.getByRole("listbox", { name: /drag magnitude/ })).toHaveCount(0);
+});
+
+test("the grab surface reaches past the field's painted box (T1033)", async ({ page }) => {
+  await openApp(page);
+
+  const noise = await addNode(page, "generator", "Noise");
+  await showInInspector(page, noise);
+
+  const field = page.locator('input[aria-label="Amplitude"]').last();
+  await field.scrollIntoViewIfNeeded();
+  // The PAINTED field, not the input inside it: the input is a centred flex child and is
+  // shorter than the box whose edge this test is about.
+  const painted = field.locator("xpath=..");
+  const box = await painted.boundingBox();
+  if (box === null) throw new Error("Amplitude's field has no box on screen");
+  const before = await field.inputValue();
+
+  // One pixel ABOVE the paint — dead space until T1033 gave the row's own padding to the
+  // host as hit area. A press here used to land on nothing at all.
+  const y = box.y - 1;
+  await page.mouse.move(box.x + 30, y);
+  await page.mouse.down();
+  for (let step = 1; step <= 10; step += 1) {
+    await page.mouse.move(box.x + 30 + step * 8, y);
+    await page.waitForTimeout(20);
+  }
+  await page.mouse.up();
+
+  expect(
+    await field.inputValue(),
+    "a press 1px above the field's border did not start its drag, so the target is still " +
+      "only as tall as the paint",
+  ).not.toBe(before);
 });

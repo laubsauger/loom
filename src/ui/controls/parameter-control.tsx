@@ -459,7 +459,6 @@ export function ParameterControl({
           {...shared}
           id={controlId}
           value={typeof shown === "number" ? shown : definition.default}
-          defaultValue={definition.default}
           spec={definition}
           {...(drivenBy === null ? {} : { drivenBy })}
           {...(definition.unit === undefined ? {} : { unit: definition.unit })}

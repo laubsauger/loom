@@ -131,27 +131,94 @@
   border: var(--hairline) solid var(--line);
   border-radius: var(--radius);
   background: var(--bg-sunken);
-  /* The whole field is the drag surface — the pointer never has to find a handle. */
-  cursor: ew-resize;
+  /* The whole field is the drag surface — the pointer never has to find a handle. The
+     CURSOR comes from `.numberHost`, which is the drag surface's real extent (T1033). */
+  cursor: inherit;
   overflow: hidden;
   touch-action: none;
+  /*
+    T1033 — the same transition `Button` has had since T37. A hover that snaps on and off
+    reads as a repaint; a hover that fades in reads as the control answering the pointer,
+    which is the whole content of "can I touch this". `--dur-instant` is zeroed under
+    prefers-reduced-motion (§V19).
+  */
+  transition:
+    background var(--dur-instant) var(--ease-out),
+    border-color var(--dur-instant) var(--ease-out);
 }
 
-.number:hover {
+/*
+  T1033 — STATE 1 OF 3: an ordinary, editable field, under the pointer.
+  The ground lifts to `--bg-hover` and the border to `--line-hot`, which is EXACTLY what
+  `.outline` in `button.module.css` has always done. Before this the only answer to "can I
+  edit here" was a 1px border going from L* 21 to L* 29 — a change the owner could not see,
+  which is why the complaint was "we never know if we can edit or not". No new colour, no
+  new geometry: the kit adopts the hover the rest of the app already uses.
+
+  Excluded on the two fields that refuse the edit, because a control that lights up under
+  the pointer and then declines the gesture is worse than one that never lit (§V830).
+*/
+.number:hover:not([data-disabled="true"]):not([data-driven="true"]) {
   border-color: var(--line-hot);
+  background: var(--bg-hover);
+}
+
+/*
+  The press, ACKNOWLEDGED — the other half of "grabbing the slider is awkward. It's a bit
+  weak" (T1033). `DRAG_THRESHOLD_PX` means the first 3px of a press produce no value change
+  by design; before this they produced no FEEDBACK either, so a deliberate press — aim,
+  then move — began in silence and the gesture felt like it had not been picked up.
+  `:active` covers the whole press including that dead zone; `data-dragging` then takes
+  over with the amber border once the drag is real.
+*/
+.number:active:not([data-disabled="true"]):not([data-driven="true"]) {
+  background: var(--bg-hover);
 }
 
 .number[data-dragging="true"] {
   border-color: var(--signal);
+  background: var(--bg-hover);
 }
 
-.number[data-editing="true"] {
-  cursor: text;
+/*
+  The focus ring, MOVED OFF THE INPUT (T1033). base.css draws `:focus-visible` on the
+  focused element — which here is the `<input>`, inside a box with `overflow: hidden`, so
+  the ring was clipped to two amber slivers at the field's left and right edges. Clicking a
+  field to type it therefore looked almost identical to not having clicked it. The ring
+  belongs on the FIELD, whose box is the thing a user is aiming at, and an outline is drawn
+  outside the border box so this element's own `overflow` cannot cut it.
+
+  `:focus-within` rather than `:focus-visible`: the pointer path into this field is a click
+  that opens text entry, and a field being typed into must look focused whether the focus
+  arrived by Tab or by click.
+*/
+.numberInput:focus,
+.numberInput:focus-visible {
+  outline: none;
 }
 
+.number:focus-within {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/*
+  T1033 — STATE 3 OF 3: genuinely unavailable, and it must not wear the frame of a control.
+  It used to keep `--line` — the same border an editable field rests at — and change only
+  the text colour, so an editable field and an unavailable one were one hairline apart in
+  tone and identical in shape.
+
+  THE WELL IS THE AFFORDANCE. A field you can edit is a sunken, framed box you can put a
+  value into; a field you cannot is flat text on the panel. That is the same distinction
+  `.button:disabled` draws by dropping to a colour with no ground under it.
+
+  Deliberately NOT the opacity treatment: `.rowInactive` already spends opacity on §V146's
+  "this cannot affect the output right now", and those parameters ARE editable. One dimming
+  for "not applicable", one de-framing for "not available" (§V90 — one signal, one meaning).
+*/
 .number[data-disabled="true"] {
-  cursor: default;
-  border-color: var(--line);
+  border-color: transparent;
+  background: none;
   color: var(--text-disabled);
 }
 
@@ -176,7 +243,6 @@
   more, so it must not advertise itself as one.
 */
 .number[data-driven="true"] {
-  cursor: default;
   border-color: var(--signal);
 }
 
@@ -235,7 +301,10 @@
   pointer-events: none;
 }
 
+/* No ground under an unavailable field, so no filled region either — only the marker,
+   dimmed, because "where in its range this sits" is still true and still worth reading. */
 .number[data-disabled="true"] .numberFill {
+  background: none;
   border-right-color: var(--line-hot);
 }
 
@@ -286,10 +355,22 @@
   font-family: var(--font-mono);
   font-size: var(--fs-micro);
   cursor: default;
+  transition:
+    background var(--dur-instant) var(--ease-out),
+    border-color var(--dur-instant) var(--ease-out);
 }
 
+/* T1033 — the same three-state vocabulary the numeric field now speaks, applied to every
+   other control in the kit. The owner's "we never know if we can edit" was partly that
+   each control type answered the question differently; from here they all answer it the
+   same way, in the app's existing hover colour. */
 .switch:hover:not(:disabled) {
   border-color: var(--line-hot);
+  background: var(--bg-hover);
+}
+
+.switch:active:not(:disabled) {
+  background: var(--bg-active);
 }
 
 .switch[aria-checked="true"] {
@@ -307,6 +388,24 @@
 .switch[aria-checked="true"] .switchDot {
   border-color: var(--signal);
   background: var(--signal);
+}
+
+/*
+  Unavailable: no well, no frame — see the note on `.number[data-disabled]`.
+
+  LAST, on purpose: it has to outrank `[aria-checked="true"]`, which it ties with on
+  specificity. A switch that is both on and unavailable must not be amber — `--signal`
+  means live, and a control the user cannot reach is the one thing it is not.
+*/
+.switch:disabled {
+  border-color: transparent;
+  background: none;
+  color: var(--text-disabled);
+}
+
+.switch:disabled .switchDot {
+  border-color: var(--text-disabled);
+  background: none;
 }
 
 /* ---- pulse (T214) ----------------------------------------------------
@@ -329,14 +428,29 @@
   font-family: var(--font-mono);
   font-size: var(--fs-micro);
   cursor: default;
+  transition:
+    background var(--dur-instant) var(--ease-out),
+    border-color var(--dur-instant) var(--ease-out);
 }
 
 .pulse:hover:not(:disabled) {
   border-color: var(--line-hot);
+  background: var(--bg-hover);
 }
 
 .pulse:active:not(:disabled) {
   background: var(--bg-active);
+}
+
+/* Unavailable: no well, no frame (T1033) — see `.number[data-disabled]`. */
+.pulse:disabled {
+  border-color: transparent;
+  background: none;
+  color: var(--text-disabled);
+}
+
+.pulse:disabled .pulseDot {
+  border-color: var(--text-disabled);
 }
 
 .pulseDot {
@@ -370,13 +484,20 @@
   font-family: var(--font-ui);
   font-size: var(--fs-meta);
   cursor: default;
+  transition:
+    background var(--dur-instant) var(--ease-out),
+    border-color var(--dur-instant) var(--ease-out);
 }
 
 .select:hover:not(:disabled) {
   border-color: var(--line-hot);
+  background: var(--bg-hover);
 }
 
+/* Unavailable: no well, no frame (T1033) — see `.number[data-disabled]`. */
 .select:disabled {
+  border-color: transparent;
+  background: none;
   color: var(--text-disabled);
 }
 
@@ -392,6 +513,26 @@
   color: var(--text);
   font-family: var(--font-mono);
   font-size: var(--fs-ui);
+  transition:
+    background var(--dur-instant) var(--ease-out),
+    border-color var(--dur-instant) var(--ease-out);
+}
+
+/*
+  T1033 — `:not(:read-only)` is load-bearing, not decoration. A read-only text field is
+  §V830's driven state (amber seam, live value, refused edit); lifting it under the pointer
+  would promise the edit the next click is about to decline.
+*/
+.text:hover:not(:disabled):not(:read-only) {
+  border-color: var(--line-hot);
+  background: var(--bg-hover);
+}
+
+/* Unavailable: no well, no frame (T1033) — see `.number[data-disabled]`. */
+.text:disabled {
+  border-color: transparent;
+  background: none;
+  color: var(--text-disabled);
 }
 
 .textarea {
@@ -457,6 +598,17 @@
   background-color: var(--bg-sunken);
   cursor: default;
   overflow: hidden;
+  transition: border-color var(--dur-instant) var(--ease-out);
+}
+
+/* T1033 — the swatch's ground is the user's own colour, so the hover cue has to be the
+   FRAME. Lifting the ground here would misreport the value the swatch exists to show. */
+.swatch:hover:not(:disabled) {
+  border-color: var(--line-hot);
+}
+
+.swatch:disabled {
+  border-color: transparent;
 }
 
 .swatchFill {
@@ -477,15 +629,36 @@
   font-family: var(--font-mono);
   font-size: var(--fs-ui);
   text-transform: lowercase;
+  transition:
+    background var(--dur-instant) var(--ease-out),
+    border-color var(--dur-instant) var(--ease-out);
+}
+
+.hex:hover:not(:disabled):not(:read-only) {
+  border-color: var(--line-hot);
+  background: var(--bg-hover);
+}
+
+/* Unavailable: no well, no frame (T1033) — see `.number[data-disabled]`. */
+.hex:disabled {
+  border-color: transparent;
+  background: none;
+  color: var(--text-disabled);
 }
 
 /*
   §V830 — a text-shaped field whose value is decided elsewhere. Same amber seam the
   numeric field gets, same reason: the value stays fully legible and focusable, and the
   colour says "live", not "broken".
+
+  `:not(:disabled)` is a FIX, not a flourish (T1033). CSS `:read-only` matches any input
+  that is not user-alterable, and a DISABLED input is not user-alterable — so this rule was
+  painting the amber "live, decided elsewhere" seam onto every disabled text and hex field
+  in the kit. Amber is the one colour §V830 reserves for a value that is moving; a control
+  nobody can reach is the one state it certainly is not.
 */
-.hex:read-only,
-.text:read-only {
+.hex:read-only:not(:disabled),
+.text:read-only:not(:disabled) {
   border-color: var(--signal);
   cursor: default;
 }
@@ -506,6 +679,12 @@
   border-radius: var(--radius);
   background: var(--bg-sunken);
   cursor: pointer;
+  transition: border-color var(--dur-instant) var(--ease-out);
+}
+
+/* Same reasoning as `.swatch`: the fill is the value, so the frame carries the hover. */
+.picker:hover:not(:disabled) {
+  border-color: var(--line-hot);
 }
 
 .picker::-webkit-color-swatch-wrapper {
@@ -614,14 +793,25 @@
   font-family: var(--font-mono);
   font-size: var(--fs-micro);
   cursor: default;
+  transition:
+    background var(--dur-instant) var(--ease-out),
+    border-color var(--dur-instant) var(--ease-out);
 }
 
 .stopButton:hover:not(:disabled) {
   border-color: var(--line-hot);
+  background: var(--bg-hover);
   color: var(--text);
 }
 
+.stopButton:active:not(:disabled) {
+  background: var(--bg-active);
+}
+
+/* Unavailable: no well, no frame (T1033) — see `.number[data-disabled]`. */
 .stopButton:disabled {
+  border-color: transparent;
+  background: none;
   color: var(--text-disabled);
 }
 
@@ -745,6 +935,7 @@
 
 .modeButton:hover:not(:disabled) {
   border-color: var(--line-hot);
+  background: var(--bg-hover);
   color: var(--text);
 }
 
@@ -860,6 +1051,22 @@
   color: var(--text);
   font-family: var(--font-mono);
   font-size: var(--fs-ui);
+  transition:
+    background var(--dur-instant) var(--ease-out),
+    border-color var(--dur-instant) var(--ease-out);
+}
+
+/* T1033 — the expression/bind payload is the most editable field on the panel and read
+   exactly as inert as the rest of them. Same hover as every other well in the kit. */
+.modePayloadInput:hover:not(:disabled):not(:read-only) {
+  border-color: var(--line-hot);
+  background: var(--bg-hover);
+}
+
+.modePayloadInput:disabled {
+  border-color: transparent;
+  background: none;
+  color: var(--text-disabled);
 }
 
 .modeDiagnostic {
@@ -896,9 +1103,35 @@
 
 /* ---- magnitude ladder (T228, §V133) ---------------------------------- */
 
+/*
+  T1033 — THE GRAB SURFACE, and it is deliberately taller than the field it draws.
+
+  `.number` is `--control-h` (20px) inside a row that is 24px: `--space-1` of the row's own
+  padding sits above the field and 2px below it, dead. Those 4px were the difference between
+  a target you land on and one you clip the edge of, and the owner's word for the latter was
+  "awkward". So the HOST carries the pointer handlers and eats the row's padding back as its
+  own — 20px of paint, 24px of hit, +20% target for zero visual change and zero layout
+  change (the negative margin returns exactly what the padding took, and the bands stop at
+  the row's edge so no two rows' targets overlap).
+
+  The cursor moves here with the handlers, keyed off `data-grab`, so the extra 4px never
+  advertise a gesture the field would refuse: a driven or unavailable field reads `none` and
+  the band is inert with it (§V830).
+*/
 .numberHost {
   position: relative;
   min-width: 0;
+  padding-block: var(--space-1);
+  margin-block: calc(-1 * var(--space-1));
+}
+
+.numberHost[data-grab="drag"] {
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.numberHost[data-grab="text"] {
+  cursor: text;
 }
 
 /*

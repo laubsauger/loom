@@ -110,7 +110,6 @@ function Harness({ onEmit }: { onEmit: (value: number, phase: EditPhase) => void
     <NumberField
       label="Radius"
       value={value}
-      defaultValue={0}
       spec={{ step: 1 }}
       onChange={(next, phase) => {
         setValue(next);
@@ -329,7 +328,6 @@ describe("T912 — the ladder opens from a visible affordance", () => {
         <NumberField
           label="Radius"
           value={value}
-          defaultValue={5}
           spec={{ min: 0, max: 100 }}
           onChange={(next, phase) => {
             setValue(next);
@@ -361,7 +359,7 @@ describe("T912 — the ladder opens from a visible affordance", () => {
 
   it("is not offered on a parameter that cannot be edited", () => {
     render(
-      <NumberField label="Radius" value={0} defaultValue={0} spec={{ step: 1 }} disabled onChange={() => {}} />,
+      <NumberField label="Radius" value={0} spec={{ step: 1 }} disabled onChange={() => {}} />,
     );
     expect(screen.queryByRole("button", { name: "Radius drag magnitude" })).toBeNull();
   });

@@ -85,7 +85,6 @@ describe("§V830 — NumberField refuses the edit without going inert", () => {
       <NumberField
         label="Radius"
         value={0.5}
-        defaultValue={0.25}
         spec={{ min: 0, max: 1, step: 0.01 }}
         {...props}
         onChange={(value, phase) => changes.push([value, phase])}

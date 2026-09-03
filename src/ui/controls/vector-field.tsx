@@ -80,7 +80,6 @@ export function VectorField({
           <NumberField
             label={`${label} ${AXIS_LABELS[index] ?? index}`}
             value={value[index] ?? definition.default[index] ?? 0}
-            defaultValue={definition.default[index] ?? 0}
             spec={spec}
             disabled={disabled}
             {...(driverFor(index) === undefined ? {} : { drivenBy: driverFor(index) })}

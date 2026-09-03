@@ -6,7 +6,6 @@ import {
   DECADE_LADDER,
   DRAG_THRESHOLD_PX,
   defaultDecade,
-  resetValue,
   dragModifierFrom,
   formatDecade,
   formatNumber,
@@ -27,10 +26,26 @@ import styles from "./controls.module.css";
  *   drag left/right   change the value, absolute from where the press started
  *   shift / alt       fine (×0.1) / coarse (×10)
  *   click             start typing; the field accepts arithmetic
- *   double-click      reset to the manifest default
  *   Tab, then ↑ ↓     nudge one step; PageUp/PageDown ten; Home/End the range ends
  *   0-9 - . +         start typing, WITH that key as the first character (§V776)
  *   Enter             start typing (or commit what was typed); Escape cancels
+ *
+ * ## Reset is on the MENU, not on the double-click (T1033)
+ *
+ * Double-click used to reset the parameter to its manifest default. It was removed, on the
+ * owner's report that it "is weird — I'd rather have that in a right-click menu". Two things
+ * were wrong with it and only one was discoverability:
+ *
+ *  - `parameter.reset` has been on the parameter context menu since T246, gated on
+ *    `isOverridden`, so the gesture was a SECOND route to a command that already had one —
+ *    and the silent one, which is the route nobody finds and everybody triggers by accident.
+ *  - double-click on a value field means SELECT THE VALUE, everywhere, in every application.
+ *    Since a single click here opens text entry, the second click of a double landed inside
+ *    an open editor and destroyed the number instead of selecting a word in it. That is not
+ *    an unfamiliar gesture; it is a familiar gesture wired to the opposite outcome.
+ *
+ * The field therefore has no reset of its own, and no `defaultValue`: it is not this
+ * control's fact any more. Reset travels the bus like every other command (§V78).
  *
  * §V20 is why the pointer handling looks so deliberate. A parameter drag must never
  * become a graph pan, a node drag or a selection: the press is stopped from
@@ -97,8 +112,6 @@ export interface NumberFieldProps {
   label: string;
   value: number;
   spec: NumericSpec;
-  /** Value a double-click restores (doc §8.1). */
-  defaultValue: number;
   unit?: NumberParameter["unit"];
   disabled?: boolean;
   /**
@@ -131,6 +144,12 @@ interface DragState {
   startValue: number;
   moved: boolean;
   last: number;
+  /**
+   * T1033 — this press has already opened the ladder by sitting still, so its release is
+   * not a click. Without it the release would fall through to `beginTextEntry`, which
+   * focuses the input and blurs the popout the same press just asked for.
+   */
+  heldOpen: boolean;
 }
 
 interface LadderProps {
@@ -196,13 +215,16 @@ function DecadeLadder({ label, current, onPick, onDismiss }: LadderProps) {
  * permanently empty: the value is right-aligned and the unit suffix is right of that, so
  * nothing here crowds the label, the value or the unit.
  *
- * Rendered outside `.number` on purpose. The drag surface's `onPointerDown` opens a drag
- * and arms the hold, and its `onDoubleClick` resets the parameter to the manifest
- * default — a button INSIDE it would have to remember to stop both, forever, and one
- * missed handler means clicking the swatch destroys the user's value. As a sibling that
- * is structurally impossible. `nodrag` is then not belt-and-braces but load-bearing:
- * being outside `.number` means it is outside the class that opts the field out of React
- * Flow's node drag, so it carries its own (§V20, §T228). `stopPropagation` is the braces.
+ * Rendered outside `.number` on purpose, and the reason has changed shape since T912
+ * (T1033). It was: the drag surface's press opened a drag AND its double-click reset the
+ * parameter, so a button inside it had to stop two handlers forever and one miss destroyed
+ * the user's value. The double-click is gone, and the pointer handlers moved up to
+ * `.numberHost`, which means this button now sits INSIDE the element that carries them and
+ * `stopPropagation` on its press is load-bearing rather than braces. What that press can
+ * now cost if it ever escapes is one drag that starts and commits the value it started at —
+ * recoverable, and nothing like the reset it used to risk. It stays outside `.number` so
+ * `overflow: hidden` cannot clip it and so the field's own paint is never its business.
+ * `nodrag` is carried by the host it sits in (§V20, §T228).
  *
  * The mark is a three-step stair, not a `▾`: a caret promises a dropdown, and reading the
  * popout as a full-width `<select>` is half of what T912 is about.
@@ -253,7 +275,6 @@ export function NumberField({
   label,
   value,
   spec,
-  defaultValue,
   unit,
   disabled = false,
   drivenBy,
@@ -415,16 +436,24 @@ export function NumberField({
         startValue: value,
         moved: false,
         last: value,
+        heldOpen: false,
       };
-      // A press that sits still is asking for the reach, not for a value (§V133). The
-      // drag is dropped when the ladder opens, so the release that follows neither
-      // commits a value nor falls through to click-to-type.
+      // A press that sits still is asking for the reach, not for a value (§V133).
+      //
+      // T1033 — AND IT KEEPS THE PRESS. This used to null `dragRef` when the timer fired,
+      // which made 400 ms of stillness destroy the gesture: press, aim, then drag, and the
+      // value did not move at all — the moves landed on a dead ref while a popout nobody
+      // asked for took the focus. Measured in the running app: press, wait 500 ms, drag
+      // 80 px, value unchanged. That is the whole of "grabbing the slider is awkward",
+      // and it punished exactly the deliberate press the owner wants to feel deliberate.
+      // The ladder still opens; the drag stays armed underneath it and the first move
+      // past the threshold takes the gesture back (see `onPointerMove`).
       cancelHold();
       holdRef.current = setTimeout(() => {
         holdRef.current = null;
-        if (dragRef.current?.moved === true) return;
-        dragRef.current = null;
-        setDragging(false);
+        const drag = dragRef.current;
+        if (drag === null || drag.moved) return;
+        drag.heldOpen = true;
         setLadderOpen(true);
       }, LADDER_HOLD_MS);
     },
@@ -441,6 +470,14 @@ export function NumberField({
         if (Math.abs(deltaX) < DRAG_THRESHOLD_PX) return;
         drag.moved = true;
         cancelHold();
+        // T1033 — the press turned out to be a drag after all, so the ladder its stillness
+        // opened gets out of the way. The drag continues from the ORIGINAL press point, not
+        // from here: absolute travel is what makes dragging out and back land where it
+        // started, and restarting the gesture at the ladder's dismissal would jump.
+        if (drag.heldOpen) {
+          drag.heldOpen = false;
+          setLadderOpen(false);
+        }
         setDragging(true);
       }
       const next = valueFromDrag({
@@ -478,25 +515,13 @@ export function NumberField({
         emit(drag.last, "commit");
         return;
       }
+      // T1033: a press that opened the ladder by sitting still already did its job. Opening
+      // text entry on top of it would steal the focus the popout needs to stay open.
+      if (drag.heldOpen) return;
       // A press that never moved is a click: hand the field to the keyboard.
       if (!locked) beginTextEntry();
     },
     [beginTextEntry, cancelHold, emit, locked],
-  );
-
-  const onDoubleClick = useCallback(
-    (event: ReactPointerEvent<HTMLDivElement>) => {
-      if (locked) return;
-      event.stopPropagation();
-      event.preventDefault();
-      cancelTextEntry();
-      inputRef.current?.blur();
-      // T652: the AUTHOR'S number, clamped into range — never snapped onto a grid they
-      // did not declare. `normalizeValue` here made "reset" a lie for every default off
-      // the derived step: double-clicking a Transform's Scale reset it to 0.96.
-      emit(resetValue(defaultValue, spec), "commit");
-    },
-    [cancelTextEntry, defaultValue, emit, locked, spec],
   );
 
   // ---- keyboard (§V19) -----------------------------------------------
@@ -642,19 +667,37 @@ export function NumberField({
   const valueText = unitSuffix(unit) === null ? display : `${display} ${unitSuffix(unit)}`;
 
   return (
-    <div className={styles.numberHost}>
-    {/* `nodrag` is React Flow's opt-out class; the handlers below are the real guarantee. */}
+    /*
+      T1033 — the POINTER HANDLERS LIVE ON THE HOST, and that is the whole of the target
+      change. `.number` paints 20px inside a 24px row; the 4px of row padding around it were
+      unreachable, and clipping the edge of a 20px band is what "grabbing the slider is
+      awkward" feels like from the outside. The host claims those 4px back as padding (its
+      CSS cancels the margin so nothing moves) and captures the pointer, so the grab is 24px
+      tall and the paint is unchanged.
+
+      Every event still reaches here from `.number` by bubbling, so a press dispatched on the
+      field behaves identically — only `setPointerCapture` moved, and it moved onto the
+      element that now defines the gesture's extent. `data-grab` gives the cursor the same
+      three answers the field's own styling gives: drag it, type in it, or neither (§V830).
+
+      `nodrag` is React Flow's opt-out class and it moves WITH the handlers: it is read as
+      `target.closest('.nodrag')` on the press, so it has to be on (or above) the element the
+      press lands on. `.number` keeps its copy — a press inside the field must opt out too.
+    */
+    <div
+      className={cx(styles.numberHost, "nodrag")}
+      data-grab={locked ? "none" : editing ? "text" : "drag"}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={endDrag}
+      onPointerCancel={endDrag}
+    >
     <div
       className={cx(styles.number, invalid && styles.numberInvalid, "nodrag", className)}
       data-dragging={dragging}
       data-editing={editing}
       data-disabled={disabled}
       data-driven={drivenBy !== undefined}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={endDrag}
-      onPointerCancel={endDrag}
-      onDoubleClick={onDoubleClick}
     >
       {fraction === null ? null : (
         <span className={styles.numberFill} style={{ width: `${fraction * 100}%` }} aria-hidden />
