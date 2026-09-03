@@ -307,3 +307,103 @@ describe("selection-save synthesizes boundary nodes (T607) — the fan-in fix at
     expect(built.outputWiring[0]?.externalId).toBe(effective.outputs[0]?.externalId);
   });
 });
+
+/**
+ * T1046/§B170 — the label is a NAME, the externalId is an ADDRESS.
+ *
+ * The owner's ask: name the In/Out nodes with speaking names and have the instance's
+ * sockets say those names "automatically". The label half always worked; what these
+ * gates pin is the half that made renaming UNSAFE: the externalId used to be re-derived
+ * from the label on every registration, and a component edit session re-registers the
+ * SAME version in place — so renaming `in1` re-addressed the socket and every parent
+ * edge wired to it dangled. Now the definition's stored rows are the address book:
+ * matched by nodeId (the identity a rename cannot touch), the externalId survives and
+ * only the label follows the name.
+ */
+describe("T1046/§B170 — renaming a boundary node moves its NAME, never its ADDRESS", () => {
+  it("re-registering after a rename keeps the externalId and refreshes the label everywhere", () => {
+    const system = createComponentSystem(registry, [fanComponent()]);
+    const stored = system.components.get("fan", 1)!;
+    const entry = stored.graph.nodes["entry" as NodeId]!;
+    // What the edit session's writeback does on every commit: same id, same VERSION.
+    system.components.register({
+      ...stored,
+      graph: {
+        ...stored.graph,
+        nodes: { ...stored.graph.nodes, entry: { ...entry, label: "Source Picture" } },
+      },
+    });
+    const after = system.components.get("fan", 1)!;
+    expect(after.inputs).toEqual([
+      { externalId: "feed", label: "Source Picture", nodeId: "entry", portId: "in" },
+    ]);
+    // The owner's "automatically ... on the outside": the instance's port SAYS the name.
+    const manifest = system.nodes.get(componentNodeType("fan", 1))!;
+    expect(manifest.inputs.map((port) => ({ id: port.id, label: port.label }))).toEqual([
+      { id: "feed", label: "Source Picture" },
+    ]);
+  });
+
+  it("a parent edge wired before the rename still feeds the fan after it — the real compiler", () => {
+    const system = createComponentSystem(registry, [fanComponent()]);
+    const stored = system.components.get("fan", 1)!;
+    const entry = stored.graph.nodes["entry" as NodeId]!;
+    system.components.register({
+      ...stored,
+      graph: {
+        ...stored.graph,
+        nodes: { ...stored.graph.nodes, entry: { ...entry, label: "Source Picture" } },
+      },
+    });
+    // The parent was wired BEFORE the rename — its edge targets "feed". Cut this edge
+    // (what the old derivation did by re-addressing) and blurA loses the producer.
+    const parent = graphOf(
+      [
+        node("gen", "noise", { x: 0, y: 0 }),
+        node("c1", componentNodeType("fan", 1), { x: 240, y: 0 }),
+        node("sink", "output", { x: 480, y: 0 }),
+      ],
+      [
+        ["gen", "out", "c1", "feed"],
+        ["c1", "result", "sink", "input"],
+      ],
+    );
+    const compiled = compileGraph({
+      graph: parent,
+      settings: SETTINGS,
+      registry: system.nodes,
+      capabilities: CAPABILITIES,
+      components: system.components.view(),
+    });
+    expect(compiled.diagnostics.filter((entry) => entry.severity === "error")).toEqual([]);
+    const pass = compiled.passes.find(
+      (each) => each.kind === "effect" && each.nodeId === "c1/blurA",
+    ) as { textures?: ReadonlyArray<{ resourceId: string }> } | undefined;
+    expect(
+      pass?.textures?.some((binding) => binding.resourceId.includes("gen")),
+      "the renamed socket still carries the parent's picture",
+    ).toBe(true);
+  });
+
+  it("a NEW In named like an existing socket suffixes itself instead of stealing the address", () => {
+    const system = createComponentSystem(registry, [fanComponent()]);
+    const stored = system.components.get("fan", 1)!;
+    system.components.register({
+      ...stored,
+      graph: {
+        ...stored.graph,
+        nodes: {
+          ...stored.graph.nodes,
+          // Below the existing In in canvas order, deliberately NAMED "feed": were the
+          // newcomer allowed the id, the parent's existing edge would silently feed it.
+          late: { id: "late" as NodeId, type: "componentIn", definitionVersion: 1, position: { x: 0, y: 400 }, parameters: {}, label: "feed" },
+        },
+      },
+    } as never);
+    const after = system.components.get("fan", 1)!;
+    expect(after.inputs.map((port) => ({ id: port.externalId, node: port.nodeId }))).toEqual([
+      { id: "feed", node: "entry" },
+      { id: "feed_2", node: "late" },
+    ]);
+  });
+});

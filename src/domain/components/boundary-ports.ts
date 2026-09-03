@@ -20,12 +20,26 @@ import {
  * Notch independently derives order from node position too. A stored order field would
  * touch three frozen contracts for a property the canvas already expresses.
  *
- * The socket's id and label come from the node's NAME (label, else id): naming the In
- * names the socket, which is how every other reference in the product works (§V129).
+ * The socket's LABEL comes from the node's NAME (label, else id): naming the In names
+ * the socket, which is how every other reference in the product works (§V129), and it
+ * is what makes the owner's T1046 ask automatic — a speaking name inside IS the
+ * speaking name outside.
+ *
+ * ## T1046/§B170 — the label is a NAME; the externalId is an ADDRESS, and it must not move
+ *
+ * The externalId is what the PARENT's edges are wired to. Deriving it from the label on
+ * every registration meant renaming an In re-addressed the socket, and — because a
+ * component edit session writes back to the SAME version in place — every parent edge
+ * wired to the old id dangled the moment the rename landed. So derivation now
+ * RECONCILES against the definition's stored rows: a boundary node that already has a
+ * row (matched by nodeId — the one identity a rename cannot touch) KEEPS its
+ * externalId and only refreshes its label; only a NEW boundary node derives its
+ * externalId from its name, once, at birth. Renaming changes what the socket says,
+ * never what it is wired by.
  *
  * Legacy exposures (rows stored by the selection-save flow before boundary nodes
  * existed, or hand-authored) are kept, AFTER the derived rows; a stored row that names
- * a boundary node is dropped as a duplicate of the derivation.
+ * a boundary node is consumed by the reconciliation above instead of duplicating it.
  */
 
 const positionOrder = (
@@ -51,18 +65,39 @@ export interface BoundaryPorts {
   readonly outputs: readonly ExposedPort[];
 }
 
-/** The sockets a graph's In/Out nodes declare, in canvas order. */
-export function deriveBoundaryPorts(graph: GraphDocument): BoundaryPorts {
+/**
+ * The sockets a graph's In/Out nodes declare, in canvas order.
+ *
+ * `stored` is the definition's existing rows — the ADDRESS BOOK (§B170/T1046): a
+ * boundary node found there by nodeId keeps its externalId across renames. Omitting it
+ * derives every address from the current name, which is only correct for a graph that
+ * has never been registered (the selection-save synthesis).
+ */
+export function deriveBoundaryPorts(
+  graph: GraphDocument,
+  stored?: { inputs?: readonly ExposedPort[]; outputs?: readonly ExposedPort[] },
+): BoundaryPorts {
   const inputs: ExposedPort[] = [];
   const outputs: ExposedPort[] = [];
-  const takenInputs = new Set<PortId>();
-  const takenOutputs = new Set<PortId>();
+  const addressOf = (rows: readonly ExposedPort[] | undefined): Map<string, PortId> => {
+    const byNode = new Map<string, PortId>();
+    for (const row of rows ?? []) {
+      if (!byNode.has(row.nodeId)) byNode.set(row.nodeId, row.externalId);
+    }
+    return byNode;
+  };
+  const storedInputs = addressOf(stored?.inputs);
+  const storedOutputs = addressOf(stored?.outputs);
+  // Every kept address is reserved BEFORE any new node derives one, so a newcomer named
+  // like an existing socket suffixes itself instead of stealing the wired id.
+  const takenInputs = new Set<PortId>(storedInputs.values());
+  const takenOutputs = new Set<PortId>(storedOutputs.values());
   const nodes = Object.values(graph.nodes).sort(positionOrder);
   for (const node of nodes) {
     if (isComponentInputBoundary(node.type)) {
       const name = node.label ?? node.id;
       inputs.push({
-        externalId: uniqueId(takenInputs, name),
+        externalId: storedInputs.get(node.id) ?? uniqueId(takenInputs, name),
         label: name,
         nodeId: node.id,
         // The PASSTHROUGH INPUT: the outer edge lands on `In.in`, flows through, and
@@ -73,7 +108,7 @@ export function deriveBoundaryPorts(graph: GraphDocument): BoundaryPorts {
     } else if (isComponentOutputBoundary(node.type)) {
       const name = node.label ?? node.id;
       outputs.push({
-        externalId: uniqueId(takenOutputs, name),
+        externalId: storedOutputs.get(node.id) ?? uniqueId(takenOutputs, name),
         label: name,
         nodeId: node.id,
         portId: "out",
@@ -96,7 +131,9 @@ function coveredByBoundary(graph: GraphDocument, exposed: ExposedPort): boolean 
  * graph holds no boundary nodes and nothing needed dropping.
  */
 export function withBoundaryPorts(definition: GraphComponentDefinition): GraphComponentDefinition {
-  const derived = deriveBoundaryPorts(definition.graph);
+  // The definition's own rows are the address book: re-registering after a rename keeps
+  // every externalId a parent may be wired to (§B170/T1046).
+  const derived = deriveBoundaryPorts(definition.graph, definition);
   const keptInputs = definition.inputs.filter((port) => !coveredByBoundary(definition.graph, port));
   const keptOutputs = definition.outputs.filter((port) => !coveredByBoundary(definition.graph, port));
   if (

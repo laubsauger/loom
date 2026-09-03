@@ -38,7 +38,7 @@ export const componentInput: NodeDefinition = {
   title: "In",
   category: BOUNDARY_CATEGORY,
   description:
-    "A component input socket. Place inside a component: whatever the parent wires into the matching socket flows out of this node. Socket order follows canvas position, top to bottom.",
+    "A component input socket. Place inside a component: whatever the parent wires into the matching socket flows out of this node. RENAME THIS NODE to name the socket — a speaking name here is the name every instance shows, and renaming never rewires anything. Socket order follows canvas position, top to bottom.",
   inputs: [{ id: "in", label: "From parent", type: RGBA_TEXTURE, optional: true }],
   outputs: [{ id: "out", label: "Out", type: RGBA_TEXTURE }],
   parameters: {},
@@ -54,7 +54,7 @@ export const componentOutput: NodeDefinition = {
   title: "Out",
   category: BOUNDARY_CATEGORY,
   description:
-    "A component output socket. Place inside a component: whatever is wired into this node flows out of the matching socket on every instance. Socket order follows canvas position, top to bottom.",
+    "A component output socket. Place inside a component: whatever is wired into this node flows out of the matching socket on every instance. RENAME THIS NODE to name the socket — a speaking name here is the name every instance shows, and renaming never rewires anything. Socket order follows canvas position, top to bottom.",
   inputs: [{ id: "in", label: "In", type: RGBA_TEXTURE, optional: true }],
   outputs: [{ id: "out", label: "To parent", type: RGBA_TEXTURE }],
   parameters: {},
@@ -70,7 +70,7 @@ export const componentInputPoints: NodeDefinition = {
   title: "In (points)",
   category: BOUNDARY_CATEGORY,
   description:
-    "A component input socket for a pointset. Place inside a component: the parent's points flow out of this node.",
+    "A component input socket for a pointset. Place inside a component: the parent's points flow out of this node. Rename this node to name the socket on every instance.",
   inputs: [{ id: "in", label: "From parent", type: POINTSET, optional: true }],
   outputs: [{ id: "out", label: "Out", type: POINTSET }],
   parameters: {},
@@ -84,7 +84,7 @@ export const componentOutputPoints: NodeDefinition = {
   title: "Out (points)",
   category: BOUNDARY_CATEGORY,
   description:
-    "A component output socket for a pointset. Place inside a component: the points wired into this node flow out of the matching socket.",
+    "A component output socket for a pointset. Place inside a component: the points wired into this node flow out of the matching socket. Rename this node to name the socket on every instance.",
   inputs: [{ id: "in", label: "In", type: POINTSET, optional: true }],
   outputs: [{ id: "out", label: "To parent", type: POINTSET }],
   parameters: {},
@@ -108,7 +108,7 @@ export const componentInputValue: NodeDefinition = {
   title: "In (value)",
   category: BOUNDARY_CATEGORY,
   description:
-    "A component input socket for a value. Place inside a component: whatever value the parent wires into the matching socket flows out of this node.",
+    "A component input socket for a value. Place inside a component: whatever value the parent wires into the matching socket flows out of this node. Rename this node to name the socket on every instance.",
   inputs: [{ id: "in", label: "From parent", type: VALUE_PORT, optional: true }],
   outputs: [{ id: "out", label: "Out", type: VALUE_PORT }],
   parameters: {},
@@ -123,7 +123,7 @@ export const componentOutputValue: NodeDefinition = {
   title: "Out (value)",
   category: BOUNDARY_CATEGORY,
   description:
-    "A component output socket for a value. Place inside a component: the value wired into this node flows out of the matching socket on every instance — how a component publishes its channels to the parent.",
+    "A component output socket for a value. Place inside a component: the value wired into this node flows out of the matching socket on every instance — how a component publishes its channels to the parent. Rename this node to name the socket.",
   inputs: [{ id: "in", label: "In", type: VALUE_PORT, optional: true }],
   outputs: [{ id: "out", label: "To parent", type: VALUE_PORT }],
   parameters: {},
