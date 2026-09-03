@@ -263,6 +263,53 @@ const v29RestrictedSyntax = [
   },
 ];
 
+// §V901 / T1103: the local DEVICE BRIDGE is not an agent surface, and the
+// dependency runs ONE way — src/mcp/** imports src/devices/**, src/app's
+// use-*-bridge hooks import src/devices/**, and neither consumer reaches the
+// other through it.
+//
+// This rule exists because the inversion T1103 spent a session undoing was
+// never forbidden — only never intended. `src/app/use-{osc,laser,vision}-bridge.ts`
+// imported `@/mcp/device-client.ts` for years, so a laser DAC, an OSC socket and
+// an Apple Vision worker all appeared to depend on an agent protocol, and the
+// owner read the refusal text and correctly said it made no sense. A boundary
+// defended by a paragraph in CLAUDE.md decays; that is observably this repo's
+// history (§B153 is the same shape for an ignore list).
+const V901_MESSAGE =
+  "§V901: src/devices/** is the local device bridge and may not import src/mcp/** — " +
+  "the dependency runs MCP → devices, never the reverse. If devices needs something that " +
+  "lives under src/mcp/, it is either MCP-shaped (so devices should not need it) or shared " +
+  "(so lift it into src/devices/transport/, the way T1103 lifted the wire and the socket).";
+// Unanchored on purpose: `../mcp/serve.ts`, `@/mcp/serve.ts` and any depth of
+// relative climb all carry an `mcp` path segment, and NOTHING legitimate under
+// src/devices/ has one. `patterns` uses gitignore-style semantics, which is the
+// hazard the §V3 comment above documents — here that looseness is the feature.
+const v901RestrictedMcpPattern = {
+  group: ["**/mcp", "**/mcp/**"],
+  message: V901_MESSAGE,
+};
+// MEASURED, not assumed (eslint 10.9.1): `no-restricted-imports` with `patterns` catches
+// a static ImportDeclaration and NOTHING ELSE — a red-verify probe carrying all four
+// spellings at once showed `import("@/mcp/bridge-host.ts")` passing clean while the two
+// static forms failed. That is the §V3 hole in this repo's own history repeating, and here
+// it mattered more: `await import("../mcp/bridge-host.ts")` is the spelling already written
+// in `device-bridge.test.ts`, so it is the one a future non-test file would copy. Without
+// these selectors the rule would have been half-vacuous on landing.
+//
+// `require` is included because src/devices/** is Node-side in part (the laser and vision
+// hosts, the UDP hub), so the CommonJS spelling is reachable there as it is not in the
+// browser half. Both regexes require `mcp` as a whole path segment.
+const v901RestrictedSyntax = [
+  {
+    selector: "ImportExpression[source.value=/(^|\\/)mcp\\//]",
+    message: `${V901_MESSAGE} (dynamic import)`,
+  },
+  {
+    selector: "CallExpression[callee.name='require'][arguments.0.value=/(^|\\/)mcp\\//]",
+    message: `${V901_MESSAGE} (require)`,
+  },
+];
+
 export default tseslint.config(
   {
     // scratchpad/** is scratch API-exploration and probe scripts (plain Node, not
@@ -410,6 +457,31 @@ export default tseslint.config(
     ignores: ["src/runtime/backend/vgpu/**", "**/*.test.{ts,tsx}"],
     rules: {
       "no-restricted-syntax": ["error", ...vgpuRestrictedSyntax, ...v29RestrictedSyntax],
+    },
+  },
+  {
+    // T1103 / §V901 — the device bridge may not import the MCP folder.
+    //
+    // These files already receive vgpuRestrictedPaths and vgpuRestrictedSyntax from the
+    // base §V3 config; flat config REPLACES a rule's value on overlap rather than merging,
+    // so both must be repeated here or this config would silently drop §V3 for src/devices/**.
+    //
+    // WHY THE TESTS ARE EXEMPT, so it is not rediscovered as an oversight: the boundary is
+    // about what PRODUCTION code may reach. `device-bridge.test.ts` drives the device bridge
+    // through the REAL helper composition (`mcp/serve.ts`, `mcp/bridge-host.ts`) on purpose —
+    // that is the evidence the two halves still meet over one socket. A layering rule that
+    // forbade the test from composing the real product would force it to compose a fake one,
+    // and a fake counterparty proves the callbacks, not the bytes (§V382). The exemption is
+    // narrow: a NON-test file under src/devices/** reaching into src/mcp/** is the inversion
+    // this rule exists to stop.
+    files: ["src/devices/**/*.{ts,tsx}"],
+    ignores: ["**/*.test.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        { paths: vgpuRestrictedPaths, patterns: [v901RestrictedMcpPattern] },
+      ],
+      "no-restricted-syntax": ["error", ...vgpuRestrictedSyntax, ...v901RestrictedSyntax],
     },
   },
   {
