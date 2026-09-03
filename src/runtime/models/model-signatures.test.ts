@@ -84,8 +84,14 @@ const MODEL_DIR = process.env["SHADERLOOM_MODEL_DIR"];
 const FILES: Readonly<Record<string, string>> = {
   "depth-anything-v2-small": "depth.onnx",
   "depth-anything-v2-small-q4f16": "depth-q4f16.onnx",
+  "modnet-photographic": "matte.onnx",
+  "modnet-photographic-quantized": "matte-quantized.onnx",
   "movenet-lightning": "pose.onnx",
   "movenet-lightning-int8": "pose-int8.onnx",
+  // T1040 — the artefact §V861 is about. Its row is the one where `outputs[0]` and the
+  // useful output are DIFFERENT names, so re-reading it is what keeps that recorded fact
+  // honest across a version bump.
+  "rvm-mobilenetv3": "matte-rvm.onnx",
 };
 
 describe.skipIf(MODEL_DIR === undefined)("the recorded signatures still match the real weights", () => {
@@ -93,7 +99,14 @@ describe.skipIf(MODEL_DIR === undefined)("the recorded signatures still match th
     const ort = (await import("onnxruntime-web")).default;
     ort.env.logLevel = "error";
     for (const signature of MODEL_SIGNATURES) {
-      const file = join(MODEL_DIR!, FILES[signature.modelId]!);
+      const name = FILES[signature.modelId];
+      // A model with no file mapping is not silently skipped — that is how a row stops
+      // being checked without anyone noticing (§V461's shape).
+      expect({ id: signature.modelId, mapped: name !== undefined }).toEqual({
+        id: signature.modelId,
+        mapped: true,
+      });
+      const file = join(MODEL_DIR!, name!);
       if (!existsSync(file)) continue;
       const session = await ort.InferenceSession.create(readFileSync(file), {
         executionProviders: ["wasm"],
@@ -105,6 +118,13 @@ describe.skipIf(MODEL_DIR === undefined)("the recorded signatures still match th
         type: signature.input.type,
       });
       expect(input.shape.map(String)).toEqual(signature.input.shape);
+      /* §V861 — the NAME LISTS, re-read from the file. The matte's picture is selected by
+         name out of `outputs`, so a stale list here would let a plan point at a name the
+         artefact no longer declares and the gate that checks the two would agree with
+         itself. Both directions, in declaration order. */
+      expect(session.inputNames).toEqual(signature.inputs);
+      expect(session.outputNames).toEqual(signature.outputs);
+      expect(signature.output.name).toBe(session.outputNames[0]);
     }
   }, 300_000);
 });
