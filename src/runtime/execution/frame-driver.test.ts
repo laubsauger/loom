@@ -83,6 +83,7 @@ function recordingBackend(): LoomBackend & {
       dispose() {},
     }),
     onGpuTimings: () => () => {},
+    onCpuTimings: () => () => {},
     compileShader: () => Promise.resolve({ ok: false, validated: false, diagnostics: [] }),
     readBuffer: () => Promise.resolve(new ArrayBuffer(0)),
     registerMediaSource: () => () => {},

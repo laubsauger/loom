@@ -158,6 +158,7 @@ function fixtureBackend(): LoomBackend {
     present: (_canvas, options) => ({ id: "p", outputId: options.outputId, setOutput() {}, dispose() {} }),
     previewHost: () => ({ setPreviewProgram() {}, presentPreviews() {}, dispose() {} }),
     onGpuTimings: () => () => {},
+    onCpuTimings: () => () => {},
     compileShader: () => Promise.resolve({ ok: false, validated: false, diagnostics: [] }),
     readBuffer: noGpu,
     registerMediaSource: () => () => {},
@@ -420,6 +421,61 @@ describe("the performance panel renders from the hub (T41)", () => {
     expect(gpuBlock).toContain("timestamp query");
     expect(gpuBlock).not.toContain("does not offer");
     expect(gpuBlock).not.toContain("No per-pass timing");
+  });
+
+  /**
+   * T256's SIBLING SEAM (§V86, §V844) — CPU encode time reaches the cost table.
+   *
+   * `attachCpuTimingSource` was unfed exactly the way `attachTimingSource` was, forty
+   * lines away in the same interface, and `cost by category` read `cpu  unavailable` on
+   * every row for the life of the feature. It was found only because the GPU one was
+   * fixed first and somebody then enumerated the siblings — which is the whole lesson, and
+   * the reason this test exists beside its twin rather than in some later commit.
+   *
+   * Same construction, same reason: nothing here attaches a source. The spans are emitted
+   * through the listener the composed `App` registered on the BACKEND, and the assertion
+   * is on the millisecond in the rendered table.
+   */
+  it("routes the backend's CPU encode spans into the cost table — nothing here attaches (T256)", async () => {
+    const listeners = new Set<(spans: Readonly<Record<string, number>>) => void>();
+    const backend: LoomBackend = {
+      ...fixtureBackend(),
+      onCpuTimings: (listener) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+    };
+    const runtime = newRuntime();
+    await seedRenderable(runtime);
+    await mountApp({
+      status: { kind: "ready", capabilities: CAPABILITIES, baseline: true, backend },
+      runtime,
+    });
+
+    await waitFor(() => {
+      expect(runtime.telemetry.snapshot().plan).not.toBeNull();
+    });
+    expect(
+      listeners.size,
+      "nothing in the composed app subscribed to backend.onCpuTimings (T256)",
+    ).toBeGreaterThan(0);
+    expect(runtime.telemetry.snapshot().cpuTimingAvailable).toBe(true);
+
+    const first = (runtime.telemetry.snapshot().plan?.passes ?? [])[0];
+    if (first === undefined) throw new Error("expected at least one pass in the plan");
+
+    await act(async () => {
+      for (const listener of listeners) listener({ [first.id]: 0.125 });
+    });
+
+    // §V86: this device has NO timestamp-query (CAPABILITIES), so the gpu column stays
+    // absent while the cpu column carries a real number. The two halves degrade
+    // independently, which is the property the pair is worth showing for.
+    const panel = await screen.findByTestId("performance-panel");
+    await waitFor(() => {
+      expect(panel.textContent).toContain("0.125 ms");
+    });
+    expect(runtime.telemetry.snapshot().timingAvailable).toBe(false);
   });
 });
 
@@ -877,6 +933,7 @@ function haltedBackend() {
       dispose: () => {},
     }),
     onGpuTimings: () => () => {},
+    onCpuTimings: () => () => {},
     compile: () => Promise.reject(new Error("the halted-backend stub compiles nothing")),
     render: () => {},
     resize: () => {},

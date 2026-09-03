@@ -179,6 +179,7 @@ function deferredBackend(): Deferred {
     }),
     present: () => ({ id: "present", outputId: "", setOutput: () => {}, dispose: () => {} }),
     onGpuTimings: () => () => {},
+    onCpuTimings: () => () => {},
     compile: () => {
       journal.calls.push("compile");
       planCount += 1;

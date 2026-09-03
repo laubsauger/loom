@@ -303,24 +303,21 @@ function CookPolicyControl({
   onChange: (policy: CookPolicyValue) => void;
 }) {
   return (
-    <section aria-label="Cooking">
-      <h3 className={styles.blockTitle}>cooking</h3>
-      <div className={styles.bar}>
-        <label className={styles.summary} htmlFor="cook-policy">
-          policy
-        </label>
-        <select
-          id="cook-policy"
-          data-testid="cook-policy"
-          className={styles.policySelect}
-          value={policy}
-          onChange={(event) => onChange(event.target.value as CookPolicyValue)}
-        >
-          <option value="always">always</option>
-          <option value="auto">auto</option>
-        </select>
-      </div>
-    </section>
+    <div className={styles.stat} aria-label="Cooking">
+      <label className={styles.statLabel} htmlFor="cook-policy">
+        cooking
+      </label>
+      <select
+        id="cook-policy"
+        data-testid="cook-policy"
+        className={styles.policySelect}
+        value={policy}
+        onChange={(event) => onChange(event.target.value as CookPolicyValue)}
+      >
+        <option value="always">always</option>
+        <option value="auto">auto</option>
+      </select>
+    </div>
   );
 }
 
@@ -337,6 +334,13 @@ export function PerformanceView({
     <div className={styles.performance} data-testid="performance-panel">
       <section aria-label="Frame">
         <h3 className={styles.blockTitle}>frame</h3>
+        {/*
+          §T1012 — cook policy rides the FRAME row rather than owning a section.
+          It is one short value, it belongs to the frame (it says whether every pass cooks
+          every frame), and a heading plus a row of its own was most of a screenful of dead
+          space for a two-option select. The control itself is unchanged, including its
+          `cook-policy` test id and its label association.
+        */}
         <div className={styles.statRow}>
           <Stat label="gpu time" value={frame.text} />
           <Stat label="frames" value={String(snapshot.framesRendered)} />
@@ -344,12 +348,11 @@ export function PerformanceView({
             label="frame index"
             value={snapshot.lastFrameIndex === null ? "—" : String(snapshot.lastFrameIndex)}
           />
+          {cookPolicy === undefined || onCookPolicyChange === undefined ? null : (
+            <CookPolicyControl policy={cookPolicy} onChange={onCookPolicyChange} />
+          )}
         </div>
       </section>
-
-      {cookPolicy === undefined || onCookPolicyChange === undefined ? null : (
-        <CookPolicyControl policy={cookPolicy} onChange={onCookPolicyChange} />
-      )}
 
       <CostSection snapshot={snapshot} />
 

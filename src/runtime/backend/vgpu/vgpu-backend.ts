@@ -232,6 +232,17 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
   /** GPU pass timer (T163). Exists only when the device has timestamp-query (§V12). */
   let gpuTimer: Timer | undefined;
   const timingListeners = new Set<(spans: Readonly<Record<string, number>>) => void>();
+  /**
+   * T256 (§V86, §V844) — the CPU half of a node's cost: how long ENCODING each pass took.
+   *
+   * `CpuTimingSource` and the whole `cpu ms` column shipped with no producer anywhere in
+   * the tree, so every node read "unavailable" forever — the same shape as B172's GPU half
+   * and forty lines away from it in `hub.ts`. This is the producer. It is a DIFFERENT
+   * measurement from the GPU span and never substitutes for one (§V86): writing the
+   * commands and executing them differ by orders of magnitude, which is exactly why the
+   * pair is worth showing.
+   */
+  const cpuTimingListeners = new Set<(spans: Readonly<Record<string, number>>) => void>();
   let unsubscribeTimer: (() => void) | undefined;
   /**
    * T327 (B33): the PERSISTENT device-error net. B9's listener only lives for the
@@ -840,6 +851,27 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         iterations.set(passId, seen + 1);
         return gpuTimer.span(iterationSpanName(passId, seen));
       };
+      /*
+       * T256: the CPU span, keyed exactly like the GPU one — same `iterationSpanName`, so
+       * a substepped pass sums back onto its node through the same `spanBasePassId` path
+       * and the two columns can never disagree about which pass they are describing.
+       *
+       * Costs nothing when nobody is listening: no object, no clock reads, no wrapper.
+       */
+      const cpuSpans: Record<string, number> | undefined =
+        cpuTimingListeners.size === 0 ? undefined : {};
+      const cpuIterations = new Map<string, number>();
+      const timed = (passId: string, run: () => void): void => {
+        if (cpuSpans === undefined) {
+          run();
+          return;
+        }
+        const seen = cpuIterations.get(passId) ?? 0;
+        cpuIterations.set(passId, seen + 1);
+        const started = performance.now();
+        run();
+        cpuSpans[iterationSpanName(passId, seen)] = performance.now() - started;
+      };
       for (const pass of passes) {
         if (pass.kind === "loop") continue; // expanded away before we get here
         if (pass.kind === "swap") {
@@ -865,7 +897,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
           // (Analyze, the TOP→POP bridge) sees the PREVIOUS frame's texture — one
           // frame of latency, which §V144 embraces. The no-open-frame path
           // (`encodeSegmented`) honours plan order exactly.
-          encodeDispatch(active, pass);
+          timed(pass.id, () => encodeDispatch(active, pass));
           continue;
         }
         if (pass.kind === "draw") {
@@ -879,19 +911,21 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
           if (indirect) {
             // Indirect counts come from the GPU-written args buffer through the draw's
             // own pass. No clear/timer hook exists on that path yet (T180/T181 note).
-            drawable.draw({ target: resolve(), indirect });
+            timed(pass.id, () => drawable.draw({ target: resolve(), indirect }));
           } else {
             // Literal draws encode through f.pass, which is what gives them a clear
             // knob (T180 - clear:false is the trails pattern) and a GPU timer span
             // (T181 - span name = pass id, like effects).
             const span = spanFor(pass.id);
-            f.pass(
-              {
-                target: resolve(),
-                clear: pass.clear ?? true,
-                ...(span === undefined ? {} : { timer: span }),
-              },
-              drawable,
+            timed(pass.id, () =>
+              f.pass(
+                {
+                  target: resolve(),
+                  clear: pass.clear ?? true,
+                  ...(span === undefined ? {} : { timer: span }),
+                },
+                drawable,
+              ),
             );
           }
           continue;
@@ -907,15 +941,22 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         // T387: plus an iteration suffix from the second substep on, because vgpu allows
         // one span per name per frame.
         const span = spanFor(pass.id);
-        f.pass(
-          span === undefined
-            ? { target: renderTarget, clear: pass.clear ?? true }
-            : { target: renderTarget, clear: pass.clear ?? true, timer: span },
-          drawable,
+        timed(pass.id, () =>
+          f.pass(
+            span === undefined
+              ? { target: renderTarget, clear: pass.clear ?? true }
+              : { target: renderTarget, clear: pass.clear ?? true, timer: span },
+            drawable,
+          ),
         );
       }
 
       if (withPresentations) encodePresentations(f);
+      // Presentations are not a plan pass and get no row; publishing after them keeps the
+      // emission on the same edge as the frame rather than mid-encode.
+      if (cpuSpans !== undefined) {
+        for (const listener of cpuTimingListeners) listener(cpuSpans);
+      }
     });
   }
 
@@ -1891,6 +1932,13 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       };
     },
 
+    onCpuTimings(listener) {
+      cpuTimingListeners.add(listener);
+      return () => {
+        cpuTimingListeners.delete(listener);
+      };
+    },
+
     loop(onFrame, settings = {}) {
       // R9: during the recovery window there is no session yet, but registering is
       // still valid — restartLoops() starts every registration once the device is back.
@@ -2301,6 +2349,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       unsubscribeTimer = undefined;
       gpuTimer = undefined;
       timingListeners.clear();
+      cpuTimingListeners.clear();
       for (const h of previewHosts) {
         h.disposed = true;
         try {

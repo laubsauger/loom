@@ -162,10 +162,46 @@ export function App({
   const runtimeRef = useRef(runtime);
   runtimeRef.current = runtime;
 
+  /**
+   * B172 follow-up — THE RUNTIME MUST SURVIVE `StrictMode`'s REHEARSAL TEARDOWN.
+   *
+   * `main.tsx` renders inside `<StrictMode>`, which in development mounts, tears down and
+   * remounts every effect once. The runtime is a `useState` value, so React KEEPS it
+   * across that rehearsal — and this cleanup used to dispose it on the way through. The
+   * app then ran the rest of the session on a runtime whose `telemetry`, `flattened` and
+   * `nodeRuntime` were already disposed: the hub's `schedule()` early-returns once
+   * `disposed`, so its snapshot froze at the mount value and never flushed again.
+   *
+   * Measured, not inferred: on a fresh dev load `hub.noteFrame(999)` left
+   * `framesRendered` at 0. The whole performance pane read `frames 0`, `No plan is
+   * compiled` and `no GPU timer is attached` until a New/Open built a fresh runtime —
+   * which is why per-pass GPU timing looked dead on first load even once it was wired.
+   * Production is unaffected (StrictMode only double-invokes in development), but
+   * development is where every session and the owner actually look.
+   *
+   * The disposal is DEFERRED by one task and cancelled only when the effect re-runs for
+   * THE SAME runtime, which is exactly the rehearsal. A replacement runtime (New/Open)
+   * re-runs with a different object, does not cancel, and the old one is still disposed;
+   * a real unmount has nothing to cancel it. So nothing leaks a device to buy this.
+   */
+  const pendingDispose = useRef<{ target: AppRuntime; handle: ReturnType<typeof setTimeout> } | null>(
+    null,
+  );
   useEffect(() => {
+    const pending = pendingDispose.current;
+    if (pending !== null && pending.target === runtime) {
+      clearTimeout(pending.handle);
+      pendingDispose.current = null;
+    }
     const disposeOnTeardown = owned.current;
+    const target = runtime;
     return () => {
-      if (disposeOnTeardown) runtime.dispose();
+      if (!disposeOnTeardown) return;
+      const handle = setTimeout(() => {
+        if (pendingDispose.current?.handle === handle) pendingDispose.current = null;
+        target.dispose();
+      }, 0);
+      pendingDispose.current = { target, handle };
     };
   }, [runtime]);
 
@@ -542,6 +578,28 @@ export function App({
       onPassTimings: (listener) => backend.onGpuTimings(listener),
     });
   }, [backend, capabilities, runtime]);
+
+  /**
+   * T256 (§V86, §V844) — THE CPU HALF, WIRED THE SAME DAY AS THE GPU HALF.
+   *
+   * `attachCpuTimingSource` had no product call site either, forty lines from
+   * `attachTimingSource` in the same interface, and `cost by category` read
+   * `cpu  unavailable` on every row for the life of T256. The lesson this pair cost:
+   * WHEN A GATE CATCHES ONE UNFED SEAM, ENUMERATE ITS SIBLINGS IMMEDIATELY — the GPU one
+   * was found and fixed without anyone looking up the file.
+   *
+   * `available` is true because a backend exists and encodes: this measurement is CPU
+   * encode time and needs no device feature, unlike the GPU half (§V12). Its numbers are
+   * small and that is the point — a pass that is cheap to encode and expensive to run is
+   * exactly what the pair exists to show, and §V86 keeps them in separate columns.
+   */
+  useEffect(() => {
+    if (backend === undefined) return;
+    return runtime.telemetry.attachCpuTimingSource({
+      available: true,
+      onCpuTimings: (listener) => backend.onCpuTimings(listener),
+    });
+  }, [backend, runtime]);
 
   // The frame loop (T184): the only caller of `backend.loop()` in the app. Without it
   // the compiler, the backend and the renderer each pass their own suite while zero

@@ -14,6 +14,7 @@ import { ShaderEditor, commitShaderSource, diagnosticsToMarkers } from "@editor/
 import { codeParametersOf } from "@domain/parameters/index.ts";
 import { effectiveParameterSchema } from "@domain/parameters/resolve.ts";
 import { isParameterSlot } from "@domain/parameters/slots.ts";
+import { Tooltip } from "@ui/primitives/tooltip.tsx";
 import { useAppRuntime } from "./app-context.ts";
 import type { GpuStatus } from "./gpu-status.ts";
 import type { McpTransportsView } from "./use-mcp-transports.ts";
@@ -418,7 +419,7 @@ function GpuStatusCard({
 
   const { capabilities, baseline } = status;
   return (
-    <section className={styles.block} aria-label="GPU status">
+    <section className={`${styles.block} ${styles.blockInline}`} aria-label="GPU status">
       <h3 className={styles.blockTitle}>gpu</h3>
       <dl className={styles.facts}>
         <div className={styles.fact}>
@@ -445,11 +446,23 @@ function GpuStatusCard({
           <dt>timestamp query</dt>
           <dd>{capabilities.timestampQuery ? "yes" : "no"}</dd>
         </div>
-        {/* §T1012: the one list-valued fact, on its own full-width row so it wraps. */}
-        <div className={`${styles.fact} ${styles.factWide}`}>
-          <dt>formats</dt>
-          <dd>{capabilities.formats.join(", ")}</dd>
-        </div>
+        {/*
+          §T1012 — the format LIST is a count with the names on demand.
+
+          Five format names is the widest thing in the block and the least often read:
+          nobody checks `rgba8unorm-srgb` while performing, and the one question that gets
+          asked here — "does this device do float targets" — is answered by the tier row
+          above. So the row keeps the fact that the list exists and how long it is, and
+          §V90's rule applies to the rest: the explanation is on demand, carried by the
+          value. The format a node actually renders in stays where it matters — the node
+          info popup's OUTPUT row, per node.
+        */}
+        <Tooltip label={capabilities.formats.join(", ")}>
+          <div className={styles.fact} tabIndex={0}>
+            <dt>formats</dt>
+            <dd>{capabilities.formats.length}</dd>
+          </div>
+        </Tooltip>
       </dl>
       {/*
         B172/§T1012 — the timing STATE belongs beside the capability it qualifies. It used

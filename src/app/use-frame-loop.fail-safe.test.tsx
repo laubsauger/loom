@@ -62,6 +62,7 @@ function countingBackend(): { backend: LoomBackend; seen: Seen } {
     }),
     present: () => ({ id: "p", outputId: "", setOutput: () => {}, dispose: () => {} }),
     onGpuTimings: () => () => {},
+    onCpuTimings: () => () => {},
     compile: async (plan: CompiledGraph) => {
       seen.compiles.push(plan);
       return { id: "plan", passes: [] };

@@ -100,6 +100,7 @@ function stubBackend(): { backend: LoomBackend; compiles: () => number } {
     }),
     present: () => ({ id: "present-stub", outputId: "", setOutput: () => {}, dispose: () => {} }),
     onGpuTimings: () => () => {},
+    onCpuTimings: () => () => {},
     compile: async () => {
       compiles += 1;
       return { id: "plan", passes: [] };

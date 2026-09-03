@@ -76,6 +76,7 @@ function capturingBackend(): { backend: LoomBackend; plans: CompiledGraph[] } {
     }),
     present: () => ({ id: "p", outputId: "", setOutput: () => {}, dispose: () => {} }),
     onGpuTimings: () => () => {},
+    onCpuTimings: () => () => {},
     compile: async (plan: CompiledGraph) => {
       plans.push(plan);
       return { id: "plan", passes: [] };

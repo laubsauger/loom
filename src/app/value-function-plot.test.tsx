@@ -93,6 +93,7 @@ function fixture() {
     }),
     previewHost: () => ({ setPreviewProgram() {}, presentPreviews() {}, dispose() {} }),
     onGpuTimings: () => () => {},
+    onCpuTimings: () => () => {},
     compileShader: () => Promise.resolve({ ok: false, validated: false, diagnostics: [] }),
     readBuffer: () => Promise.reject(new Error("no GPU")),
     registerMediaSource: () => () => {},

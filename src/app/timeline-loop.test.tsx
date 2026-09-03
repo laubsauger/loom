@@ -95,6 +95,7 @@ function drivableBackend(): {
     }),
     present: () => ({ id: "p", outputId: "", setOutput: () => {}, dispose: () => {} }),
     onGpuTimings: () => () => {},
+    onCpuTimings: () => () => {},
     compile: async () => ({ id: "plan", passes: [] }),
     render: (_plan: unknown, inputs: { frame: { frameIndex: number } }) => {
       seen.rendered.push(inputs.frame.frameIndex);

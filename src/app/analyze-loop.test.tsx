@@ -454,6 +454,7 @@ describe("T305 — a frame in the COMPOSED app produces a readback", () => {
       }),
       previewHost: () => ({ setPreviewProgram() {}, presentPreviews() {}, dispose() {} }),
       onGpuTimings: () => () => {},
+    onCpuTimings: () => () => {},
       compileShader: () => Promise.resolve({ ok: false, validated: false, diagnostics: [] }),
       readBuffer: (resourceId: string) => {
         reads.push(resourceId);

@@ -96,6 +96,7 @@ function recordingBackend(): { backend: LoomBackend; recorder: Recorder } {
     }),
     present: () => ({ id: "present-stub", outputId: "", setOutput: () => {}, dispose: () => {} }),
     onGpuTimings: () => () => {},
+    onCpuTimings: () => () => {},
     compile: async () => {
       compileCount += 1;
       const id = `plan-${compileCount}`;

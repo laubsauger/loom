@@ -76,6 +76,7 @@ function capturingBackend(): { backend: LoomBackend; captured: Captured } {
     }),
     present: () => ({ id: "present-stub", outputId: "", setOutput: () => {}, dispose: () => {} }),
     onGpuTimings: () => () => {},
+    onCpuTimings: () => () => {},
     compile: async () => ({ id: "plan", passes: [] }),
     render: () => {},
     resize: () => {},

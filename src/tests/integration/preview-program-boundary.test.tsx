@@ -243,6 +243,7 @@ function journallingBackend(): { backend: LoomBackend; journal: Journal } {
     },
     present: () => ({ id: "present-stub", outputId: "", setOutput: () => {}, dispose: () => {} }),
     onGpuTimings: () => () => {},
+    onCpuTimings: () => () => {},
     compile: async (plan: unknown) => {
       journal.calls.push("compile");
       if (journal.parking) {

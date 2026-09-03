@@ -217,6 +217,24 @@ export interface LoomBackend extends RenderBackend {
   onGpuTimings(listener: (spans: Readonly<Record<string, number>>) => void): () => void;
 
   /**
+   * Per-pass CPU ENCODE time in milliseconds, keyed by PASS ID (T256, §V86, §V844).
+   *
+   * The other half of a node's cost, and a DIFFERENT measurement: this is how long it
+   * took to WRITE the commands, which on a real workload differs from how long the GPU
+   * spent EXECUTING them by more than an order of magnitude. The two never mix and a CPU
+   * number never appears under a GPU label — the PAIR is what says which machine the
+   * frame is waiting on, which neither number says alone.
+   *
+   * Required, not optional, and for the reason the `cpu ms` column read "unavailable" on
+   * every machine for the whole life of T256: nothing implemented `CpuTimingSource`, so
+   * there was nothing to attach. An optional method is how that happens again.
+   *
+   * Emitted once per encoded frame, synchronously — unlike the GPU spans, which come back
+   * a few frames later. Costs nothing while no listener is registered.
+   */
+  onCpuTimings(listener: (spans: Readonly<Record<string, number>>) => void): () => void;
+
+  /**
    * Re-attempts device recovery after automatic rebuilds gave up (§V23). Resolves when
    * the attempt settles; check `status.halted` for the outcome. No-op while healthy.
    */

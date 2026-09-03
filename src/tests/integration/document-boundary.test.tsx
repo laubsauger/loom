@@ -169,6 +169,7 @@ function journallingBackend(): {
     }),
     present: () => ({ id: "present-stub", outputId: "", setOutput: () => {}, dispose: () => {} }),
     onGpuTimings: () => () => {},
+    onCpuTimings: () => () => {},
     compile: async (plan: { passes?: ReadonlyArray<{ uniforms?: Record<string, unknown> }> }) => {
       journal.calls.push("compile");
       const uniforms: Record<string, unknown> = {};

@@ -172,6 +172,7 @@ function stubBackend(): LoomBackend {
     resize() {},
     onDiagnostic: () => () => {},
     onGpuTimings: () => () => {},
+    onCpuTimings: () => () => {},
     loop: () => ({ stop() {} }),
     previewHost: () => ({ setPreviewProgram() {}, presentPreviews() {}, dispose() {} }),
     present: (_canvas: unknown, options: { outputId: string }) => ({

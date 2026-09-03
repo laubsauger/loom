@@ -90,6 +90,7 @@ function countingBackend(): { backend: LoomBackend; counters: Counters } {
     },
     present: () => ({ id: "present-stub", outputId: "", setOutput: () => {}, dispose: () => {} }),
     onGpuTimings: () => () => {},
+    onCpuTimings: () => () => {},
     compile: async () => {
       counters.compiles += 1;
       return { id: "plan", passes: [] };

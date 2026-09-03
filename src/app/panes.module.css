@@ -95,6 +95,22 @@
   border-color: var(--error);
 }
 
+/*
+ * §T1012 — the device header on ONE line, title included.
+ *
+ * Four full-width rows of two-character values is a lot of pane for facts nobody reads
+ * while performing: the whole block is a header, so it is laid out as one. `wrap` is what
+ * makes it survive a narrow dock — the title stays put and the facts fall onto following
+ * lines rather than being clipped.
+ */
+.blockInline {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--space-6);
+  row-gap: var(--space-2);
+}
+
 .blockTitle {
   margin: 0;
   font-size: var(--fs-meta);
@@ -148,21 +164,6 @@
   overflow-wrap: anywhere;
 }
 
-/*
- * A fact whose VALUE is a list, not a token (`formats`). It takes the whole row and
- * stacks under its own label so the list wraps and stays readable — truncating it would
- * turn the one row somebody actually reads into a mystery.
- */
-.factWide {
-  flex-basis: 100%;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-1);
-}
-
-.factWide dd {
-  text-align: left;
-}
 
 .list {
   display: flex;
