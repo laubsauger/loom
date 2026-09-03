@@ -26,6 +26,35 @@ export function isDeclaredSink(definition: NodeDefinition): boolean {
   return definition.sink === true;
 }
 
+/**
+ * A declared sink whose `$target` is THE PICTURE — what the viewer presents and what
+ * "render out" writes.
+ *
+ * `sink` says "never prune me". It does not say "I draw". `outputSlots` (compile.ts)
+ * synthesizes a `$target` for EVERY port-less sink so an Output has somewhere to render,
+ * and three node types declare `sink: true`: Output, which renders into it; Analyze,
+ * whose only pass is a compute dispatch writing a BUFFER (`measuredChannel`); and Laser
+ * Out, which drives a DAC (`sideEffect: "emits"`). The last two get a full-size colour
+ * target that no pass ever touches.
+ *
+ * The owner's report on E14-Self-Regulating-Bloom: a black frame and every node reading
+ * NO SIGNAL, with no diagnostic anywhere. `plan.outputs` is ordered by node id, E14's
+ * Analyze is named `meter` and its Output is `out`, so "the first declared sink" — the
+ * rule the viewer and the render range both used — resolved to `meter:$target`: a
+ * 1280×720 rgba16float texture, allocated, published, and written by nothing. The
+ * example's own Dawn gate reads `out` and has always been green.
+ *
+ * Keyed on the DECLARATIONS, never a type list — the rule `publishesValueChannels`
+ * states in `node-definition.ts`, applied to the other half of "what is a sink for".
+ */
+export function presentsPicture(definition: NodeDefinition): boolean {
+  return (
+    isDeclaredSink(definition) &&
+    definition.measuredChannel !== true &&
+    definition.sideEffect !== "emits"
+  );
+}
+
 export interface SinkResolution {
   /** Sinks that name a node the compiler can actually see, sorted for determinism. */
   readonly sinks: ReadonlyArray<ActiveSink>;

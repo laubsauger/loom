@@ -88,6 +88,24 @@ export interface PreviewView {
   readonly signedScale: number;
 }
 
+/**
+ * Where a PINNED tile that has no place on screen is parked (T756).
+ *
+ * A tile is pinned when something OTHER than the canvas wants it kept alive — the viewer
+ * presenting a node whose slot is not measured, most of all. The scheduler keeps a pinned
+ * tile ACTIVE by design, so it still arrives at the compositor with a destination, and
+ * this is the destination that means "composite nowhere".
+ *
+ * Stated ONCE, here, because both ends have to agree about it: the requester parks a tile
+ * at this rect and the backend's composite loop recognises it as off-surface and skips it
+ * (`vgpu-backend.ts`). It used to be a literal in the requester only, and the backend
+ * multiplied it by the device pixel ratio and handed it to vgpu as a viewport — outside
+ * vgpu's ±(2·maxTextureDimension2D) bound at every dpr, so `f.pass` threw and took the
+ * whole preview update with it. Anything far enough outside a surface will do; what must
+ * not drift is that one side's "nowhere" is the other side's "nowhere".
+ */
+export const OFF_SURFACE_TILE_RECT = Object.freeze({ x: -100000, y: -100000, width: 1, height: 1 });
+
 export const DEFAULT_PREVIEW_VIEW: PreviewView = Object.freeze({
   mode: "color",
   channel: "r",

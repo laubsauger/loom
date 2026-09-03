@@ -2121,6 +2121,27 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
           }
 
           const dpr = command.surface.dpr;
+          /**
+           * A tile whose rect lies wholly OFF the surface composites nowhere — and must
+           * never reach `f.pass` as a viewport.
+           *
+           * T756 parks an interest-pinned tile at `{ x: -100000, y: -100000, w: 1, h: 1 }`
+           * ("an off-surface rect so the tile composites nowhere"), and the scheduler
+           * keeps a pinned tile ACTIVE, so that rect arrives here every tick. vgpu bounds
+           * a viewport to ±16384: −100000 (×dpr) is outside it at every dpr, so `f.pass`
+           * THREW — aborting the whole `PreviewSystem.update()` before a single preview
+           * state was published. Owner's report on E14: every texture node reading NO
+           * SIGNAL, no error anywhere, the graph pane finally dying into its boundary.
+           * The parking rect was never wrong; honouring it as "draw nothing" is this
+           * loop's job, and clipping the encoder cannot do it — a partially visible tile
+           * still needs its full rect to place the picture.
+           */
+          const [surfaceWidth, surfaceHeight] = command.surface.size;
+          const compositesNowhere = (dest: { x: number; y: number; width: number; height: number }): boolean =>
+            dest.x + dest.width <= 0 ||
+            dest.y + dest.height <= 0 ||
+            dest.x >= surfaceWidth ||
+            dest.y >= surfaceHeight;
           const clearFor = (passId: string): boolean => {
             const pass = h.program?.passes.find((entry) => entry.id === passId);
             return pass === undefined || !("clear" in pass) || pass.clear !== false;
@@ -2184,6 +2205,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
               for (const tile of command.composite) {
                 const tileTarget = set.targets.get(tile.resourceId);
                 if (tileTarget === undefined) continue;
+                if (compositesNowhere(tile.dest)) continue;
                 h.blit.set({ blitSource: tileTarget });
                 f.pass(
                   {

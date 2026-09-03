@@ -363,3 +363,78 @@ describe("a preview-off node gets a sentence, not a blank pane (T763)", () => {
     runtime.dispose();
   });
 });
+
+/**
+ * THE VIEWER SHOWS THE PICTURE, NOT A MEASUREMENT TAP.
+ *
+ * The owner, on E14-Self-Regulating-Bloom: "still doesn't produce output… NO SIGNAL on all
+ * the video texture things… I don't see an error." The document, the plan and the render
+ * were all correct — E14's Dawn gate stayed green throughout. What was wrong was WHICH row
+ * this pane picked.
+ *
+ * `sink: true` is §V25's "never prune me", and THREE node types declare it: Output, which
+ * renders into the `$target` the compiler synthesizes for it; Analyze, whose only pass is a
+ * compute dispatch into a buffer; and Laser Out, which drives a DAC. The last two get a
+ * full-size colour target that nothing ever writes. This pane's rule was "the first row
+ * whose definition is a declared sink", `plan.outputs` is ordered by node id, and E14 names
+ * its Analyze `meter` and its Output `out` — so the viewer presented an unwritten texture
+ * and showed black with no diagnostic anywhere.
+ *
+ * It did worse than that, which is why the whole graph went dark: the pane's selection is
+ * also the preview system's `interest`, an Analyze node draws no preview slot on the
+ * canvas, and an interest with no slot is PINNED off-surface (T756) — a rect the compositor
+ * then threw on, out of `PreviewSystem.update()`, before it published a single preview
+ * state. That half is gated on Dawn in `runtime/backend/vgpu/preview-offsurface.gpu.test.ts`.
+ */
+describe("the viewer's default output is the one that draws (E14, §V25)", () => {
+  it("skips an Analyze sink that sorts ahead of the Output in the row order", async () => {
+    const runtime = newRuntime();
+    // The Analyze goes in FIRST so its minted id sorts ahead of the Output's — E14's
+    // `meter` before `out`, reproduced without depending on E14's spelling.
+    await act(async () => {
+      const result = await seed(runtime, [
+        { op: "addNode", ref: "$noise", type: "noise", position: { x: 0, y: 0 } },
+        { op: "addNode", ref: "$meter", type: "analyze", position: { x: 240, y: 120 } },
+        { op: "addNode", ref: "$out", type: "output", position: { x: 240, y: 0 } },
+        {
+          op: "connect",
+          source: { nodeId: "$noise", portId: "out" },
+          target: { nodeId: "$meter", portId: "input" },
+        },
+        {
+          op: "connect",
+          source: { nodeId: "$noise", portId: "out" },
+          target: { nodeId: "$out", portId: "input" },
+        },
+      ]);
+      expect(result.status).toBe("applied");
+    });
+    const gpu = fixture();
+    await mountViewer(runtime, gpu.backend);
+
+    const graph = runtime.bus.store.getGraph();
+    const idOf = (type: string) =>
+      Object.keys(graph.nodes).find((id) => graph.nodes[id]?.type === type) ?? "";
+    const meterId = idOf("analyze");
+    const outId = idOf("output");
+    expect(meterId).not.toBe("");
+    expect(outId).not.toBe("");
+
+    const select = screen.getByTestId("viewer-output-select") as HTMLSelectElement;
+    const keys = [...select.options].map((option) => option.value);
+    // §V854's premise, asserted rather than hoped for: the tap really does come first in
+    // the row order the pane walks. Without this the test passes on a build that never
+    // had to choose, and the next change to that ordering makes it vacuous in silence.
+    expect(keys).toContain(`${meterId}:$target`);
+    expect(keys).toContain(`${outId}:$target`);
+    expect(keys.indexOf(`${meterId}:$target`)).toBeLessThan(keys.indexOf(`${outId}:$target`));
+
+    // The selection, and what the BACKEND was actually told to present — the pane could
+    // agree with itself and still hand the surface the wrong resource.
+    expect(select.value).toBe(`${outId}:$target`);
+    expect(gpu.presented.length).toBeGreaterThan(0);
+    expect(gpu.presented.every((entry) => !entry.includes(meterId))).toBe(true);
+    expect(gpu.presented.some((entry) => entry.includes(outId))).toBe(true);
+    runtime.dispose();
+  });
+});

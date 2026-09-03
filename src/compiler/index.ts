@@ -33,7 +33,7 @@ export type { ParameterResolution, ResolvedNode, ValidatedGraph } from "./valida
 export { orderNodes } from "./topology.ts";
 export type { TopologyResult } from "./topology.ts";
 
-export { isDeclaredSink, pruneToActiveSinks, resolveSinks } from "./prune.ts";
+export { isDeclaredSink, presentsPicture, pruneToActiveSinks, resolveSinks } from "./prune.ts";
 export type { PruneResult, SinkResolution } from "./prune.ts";
 
 export { effectiveMaxResolution, resolveNodeResolution } from "./resolution.ts";

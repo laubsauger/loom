@@ -11,6 +11,7 @@ import type { PreviewOrbitStore, PreviewSlotBoundsStore, PreviewViewSource } fro
 import {
   DEFAULT_PREVIEW_VIEW,
   EMPTY_PREVIEW_PROGRAM,
+  OFF_SURFACE_TILE_RECT,
   createPreviewSystem,
   slotScreenRect,
 } from "@runtime/previews/index.ts";
@@ -482,7 +483,9 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
                 format: output.format,
                 space: output.space,
               },
-              rect: { x: -100000, y: -100000, width: 1, height: 1 },
+              // "Composite nowhere", stated once and shared with the backend's composite
+              // loop, which must recognise it rather than hand it to vgpu as a viewport.
+              rect: { ...OFF_SURFACE_TILE_RECT },
               area: {
                 width: Math.max(1, Math.round(output.size[0] * areaScale)),
                 height: Math.max(1, Math.round(output.size[1] * areaScale)),

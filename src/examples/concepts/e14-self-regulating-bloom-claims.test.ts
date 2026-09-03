@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { presentsPicture } from "../../compiler/index.ts";
 import type { GraphNode } from "../../domain/types/graph.ts";
 import type { ParameterSlot } from "../../domain/types/parameters.ts";
+import { exampleRegistry } from "../runner.ts";
 import { example } from "./helpers.ts";
 
 describe("E14 Self-Regulating Bloom claims", () => {
-  const { document } = example("E14-Self-Regulating-Bloom.loom.json");
+  const { document, plan } = example("E14-Self-Regulating-Bloom.loom.json");
   const nodes = document.graph.nodes as Record<string, GraphNode>;
   const edges = Object.values(document.graph.edges);
   const into = (nodeId: string) => edges.filter((edge) => edge.target.nodeId === nodeId).map((edge) => edge.source.nodeId);
@@ -91,5 +93,41 @@ describe("E14 Self-Regulating Bloom claims", () => {
    */
   it("sets the fallback to the setpoint, so frame 0 is the base picture", () => {
     expect(nodes["probe"]?.parameters["fallback"]).toBe(nodes["err"]?.parameters["operand"]);
+  });
+  /**
+   * THE PICTURE IS THE OUTPUT NODE'S, AND E14 IS THE EXAMPLE THAT PROVES IT MATTERS.
+   *
+   * This example is the only shipped one whose ANALYZE node sorts ahead of its Output in
+   * `plan.outputs` (`meter` before `out`), and `sink: true` is declared by both — §V25's
+   * "never prune me", which says nothing about drawing. `outputSlots` therefore hands the
+   * Analyze a full-size `$target` that its compute dispatch never writes, and every
+   * consumer that asked for "the first declared sink" — the viewer, and the render range
+   * behind it — pointed at that unwritten texture. The owner's report was a black frame
+   * with no error, on an example whose own Dawn gate (`examples/regulation.gpu.test.ts`)
+   * was green the whole time.
+   *
+   * So the ordering trap is pinned HERE, on the shipped file, where it lives.
+   */
+  it("puts the Output node's target on the viewer, past the Analyze that sorts first", () => {
+    const registry = exampleRegistry();
+    const definitionOf = (nodeId: string) => {
+      const type = nodes[nodeId]?.type;
+      return type === undefined ? undefined : registry.get(type);
+    };
+    const keys = plan.outputs.map((output) => `${output.nodeId}:${output.portId}`);
+    // The premise (§V854): the tap really is ahead of the Output. If a future ordering
+    // change makes this false, the claim below stops testing anything and must be redone.
+    expect(keys).toContain("meter:$target");
+    expect(keys).toContain("out:$target");
+    expect(keys.indexOf("meter:$target")).toBeLessThan(keys.indexOf("out:$target"));
+    // Both DECLARE themselves sinks — that is the fact the old rule could not tell apart.
+    expect(definitionOf("meter")?.sink).toBe(true);
+    expect(definitionOf("out")?.sink).toBe(true);
+    // The rule the viewer and the render range share (`side-panes.tsx`, `use-render-range.ts`).
+    const shown = plan.outputs.find((output) => {
+      const definition = definitionOf(output.nodeId);
+      return definition !== undefined && presentsPicture(definition);
+    });
+    expect(`${shown?.nodeId}:${shown?.portId}`).toBe("out:$target");
   });
 });

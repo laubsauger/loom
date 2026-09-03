@@ -9,7 +9,7 @@ import type { NodeRegistryView } from "@nodes/registry/registry.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
 import { nonReproducibleRenderWarning } from "@domain/render/reproducibility.ts";
 import type { CompiledGraph } from "@compiler/index.ts";
-import { isDeclaredSink } from "@compiler/index.ts";
+import { presentsPicture } from "@compiler/index.ts";
 import type { ExportInterface, OutputRef } from "@runtime/export/index.ts";
 import { loadVideoEncoder } from "@runtime/export/index.ts";
 import { transportHolderFor } from "./transport-commands.ts";
@@ -250,6 +250,11 @@ export function useRenderRange(inputs: UseRenderRangeInputs): RenderRangeSession
  *
  * Same rule the viewer applies, and deliberately the same answer: what you render out is
  * what the viewer shows. Two ways of choosing "the output" would be two products.
+ *
+ * `presentsPicture` and not `isDeclaredSink` for the reason `prune.ts` records: Analyze
+ * and Laser Out declare `sink: true` as well, and the `$target` synthesized for them is
+ * a full-size texture nothing ever writes. E14 would have exported it — its Analyze is
+ * named `meter`, its Output `out`, and `plan.outputs` is ordered by node id.
  */
 function declaredSink(
   compiled: CompiledGraph | null,
@@ -259,7 +264,7 @@ function declaredSink(
   for (const output of compiled?.outputs ?? []) {
     const type = graph.nodes[output.nodeId]?.type;
     const definition = type === undefined ? undefined : registry.get(type);
-    if (definition !== undefined && isDeclaredSink(definition)) {
+    if (definition !== undefined && presentsPicture(definition)) {
       return { nodeId: output.nodeId, portId: output.portId };
     }
   }

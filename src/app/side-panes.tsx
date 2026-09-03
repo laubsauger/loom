@@ -6,7 +6,7 @@ import type {
   PointerEvent as ReactPointerEvent,
 } from "react";
 import { DRAG_THRESHOLD_PX } from "@ui/controls/drag-math.ts";
-import { isDeclaredSink } from "@compiler/index.ts";
+import { presentsPicture } from "@compiler/index.ts";
 import type { CompiledGraph } from "@compiler/index.ts";
 import type { UnknownParameter } from "@domain/project/index.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
@@ -379,6 +379,13 @@ export interface ViewerPaneProps {
  * visible texture node is a preview sink (§V28b), so `compiled.outputs` is the whole
  * graph; showing its first entry would put an arbitrary intermediate node on the viewer.
  * With no Output node there is nothing to show, and the pane says so.
+ *
+ * `presentsPicture`, not `isDeclaredSink`: Analyze and Laser Out are declared sinks too,
+ * and the `$target` the compiler synthesizes for them is written by nothing. E14 names
+ * its Analyze `meter` and its Output `out`, `plan.outputs` is ordered by node id, and
+ * this loop therefore put an unwritten texture on the viewer — a black frame with no
+ * diagnostic, and (through `interest`, below) the preview crash that read as NO SIGNAL
+ * on every node in the graph.
  */
 export function ViewerPane({
   compiled,
@@ -399,7 +406,7 @@ export function ViewerPane({
     for (const output of outputs) {
       const type = graph.nodes[output.nodeId]?.type;
       const definition = type === undefined ? undefined : registry.get(type);
-      if (definition !== undefined && isDeclaredSink(definition)) return output;
+      if (definition !== undefined && presentsPicture(definition)) return output;
     }
     return null;
   }, [graph, outputs, registry]);
