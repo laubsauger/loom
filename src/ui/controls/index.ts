@@ -59,6 +59,20 @@ export type { FrameCoalescer, FrameScheduler } from "./coalesce.ts";
 
 export { defaultValueFor, matchesDefinition, valueForDefinition } from "./parameter-value.ts";
 
+export {
+  describeLabelDrag,
+  movableMask,
+  valuesFromLabelDrag,
+  valuesFromLabelNudge,
+} from "./label-drag.ts";
+export type {
+  LabelDragChannel,
+  LabelDragHandlers,
+  LabelDragInput,
+  LabelGesturePhase,
+  LabelNudgeInput,
+} from "./label-drag.ts";
+
 export { ControlRow } from "./control-row.tsx";
 export type { ControlRowProps, ControlVariant } from "./control-row.tsx";
 

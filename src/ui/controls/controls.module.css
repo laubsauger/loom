@@ -96,6 +96,20 @@
   text-decoration-color: var(--text-dim);
 }
 
+/*
+  T1026 — the name of a compound is a drag surface: it moves every channel at once. The
+  cursor is the whole affordance, exactly as it is on a numeric field; a handle or an icon
+  beside the name would be a second element competing with the value (§V90). It comes
+  AFTER `.labelDescribed` so the horizontal-resize cursor wins over the help cursor — the
+  gesture is the more useful of the two things the hover offers.
+  `touch-action: none` is load-bearing: without it the browser claims the drag as a scroll
+  and the pointer capture never sees the moves.
+*/
+.labelDraggable {
+  cursor: ew-resize;
+  touch-action: none;
+}
+
 .descriptionLegacy {
   grid-column: 1 / -1;
   margin: 0;

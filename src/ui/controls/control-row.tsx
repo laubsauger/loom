@@ -1,5 +1,8 @@
-import type { ReactNode } from "react";
+import { useRef } from "react";
+import type { KeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { cx } from "../cx.ts";
+import { DRAG_THRESHOLD_PX, dragModifierFrom } from "./drag-math.ts";
+import type { LabelDragHandlers } from "./label-drag.ts";
 import styles from "./controls.module.css";
 
 /**
@@ -52,6 +55,23 @@ export interface ControlRowProps {
    * the Common section are untouched.
    */
   onToggleModes?: (() => void) | undefined;
+  /**
+   * T1026 — what dragging the NAME does, in the same hover text the description uses (§V90).
+   *
+   * Separate from `labelDrag` on purpose: the sentence is written even when the gesture is
+   * NOT offered, because "this name cannot drag its channels, and here is which mode owns
+   * each of them" is the honest refusal §V830 asks for, and an inert label that says
+   * nothing is the failure it names.
+   */
+  labelHint?: string | null;
+  /**
+   * T1026 — the label as a drag surface for a compound (§V113, §V114).
+   *
+   * Present = the name adjusts every eligible channel at once; the click that toggles the
+   * mode panel still works, because a press that never travels `DRAG_THRESHOLD_PX` is a
+   * click exactly as it is in `NumberField`. Absent = the label is what it always was.
+   */
+  labelDrag?: LabelDragHandlers | undefined;
   expanded?: boolean;
   /** Rendered full width beneath the row when `expanded` — the mode panel. */
   expansion?: ReactNode;
@@ -80,6 +100,102 @@ function LabelBox({
   return <div className={className}>{children}</div>;
 }
 
+interface LabelDragState {
+  pointerId: number;
+  startX: number;
+  moved: boolean;
+  lastDelta: number;
+}
+
+/**
+ * The pointer/keyboard plumbing for a label drag (T1026). Deliberately shaped like
+ * `NumberField`'s: absolute travel from the press (accumulating per-move deltas would make
+ * the result depend on event granularity, so dragging out and back would not return to the
+ * start), a `DRAG_THRESHOLD_PX` dead zone so a click stays a click, and pointer capture so
+ * the gesture survives leaving the 60px-wide label.
+ *
+ * §V20: the press is the control's. Nothing above may read it as a pan, a node drag or a
+ * selection — hence `stopPropagation` and the `nodrag` class the label already carries.
+ */
+function useLabelDragGesture(labelDrag: LabelDragHandlers | undefined) {
+  const dragRef = useRef<LabelDragState | null>(null);
+  /** Set by a drag that actually moved, so the click it is followed by does not toggle. */
+  const suppressClickRef = useRef(false);
+  /** True while an arrow key is held, so key-up knows there is an undo group to close. */
+  const nudgingRef = useRef(false);
+
+  const consumeClick = (): boolean => {
+    if (!suppressClickRef.current) return false;
+    suppressClickRef.current = false;
+    return true;
+  };
+
+  if (labelDrag === undefined) return { props: {}, consumeClick };
+
+  const end = (event: ReactPointerEvent<HTMLElement>): void => {
+    const drag = dragRef.current;
+    if (drag === null || drag.pointerId !== event.pointerId) return;
+    dragRef.current = null;
+    const target = event.currentTarget;
+    if (
+      typeof target.hasPointerCapture === "function" &&
+      target.hasPointerCapture(event.pointerId) &&
+      typeof target.releasePointerCapture === "function"
+    ) {
+      target.releasePointerCapture(event.pointerId);
+    }
+    if (!drag.moved) return;
+    // One commit closes the gesture, and with it the undo group (§V15).
+    suppressClickRef.current = true;
+    labelDrag.onDrag(drag.lastDelta, dragModifierFrom(event), "commit");
+  };
+
+  const props = {
+    onPointerDown: (event: ReactPointerEvent<HTMLElement>): void => {
+      event.stopPropagation();
+      if (event.button !== 0) return;
+      const target = event.currentTarget;
+      if (typeof target.setPointerCapture === "function") {
+        target.setPointerCapture(event.pointerId);
+      }
+      dragRef.current = { pointerId: event.pointerId, startX: event.clientX, moved: false, lastDelta: 0 };
+    },
+    onPointerMove: (event: ReactPointerEvent<HTMLElement>): void => {
+      const drag = dragRef.current;
+      if (drag === null || drag.pointerId !== event.pointerId) return;
+      event.stopPropagation();
+      const deltaX = event.clientX - drag.startX;
+      if (!drag.moved) {
+        if (Math.abs(deltaX) < DRAG_THRESHOLD_PX) return;
+        drag.moved = true;
+        // The snapshot has to be taken before the first value is emitted, or the second
+        // move would read a value the first one wrote and the drag would accelerate.
+        labelDrag.onDrag(0, dragModifierFrom(event), "start");
+      }
+      drag.lastDelta = deltaX;
+      labelDrag.onDrag(deltaX, dragModifierFrom(event), "live");
+    },
+    onPointerUp: end,
+    onPointerCancel: end,
+    onKeyDown: (event: KeyboardEvent<HTMLElement>): void => {
+      if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+      event.preventDefault();
+      // Only the keys this handles are withheld; mod+z must still reach the graph keymap.
+      event.stopPropagation();
+      nudgingRef.current = true;
+      labelDrag.onNudge(event.key === "ArrowUp" ? 1 : -1, dragModifierFrom(event), "live");
+    },
+    onKeyUp: (event: KeyboardEvent<HTMLElement>): void => {
+      if (!nudgingRef.current) return;
+      if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+      nudgingRef.current = false;
+      labelDrag.onNudge(event.key === "ArrowUp" ? 1 : -1, dragModifierFrom(event), "commit");
+    },
+  };
+
+  return { props, consumeClick };
+}
+
 export function ControlRow({
   label,
   hint,
@@ -93,16 +209,21 @@ export function ControlRow({
   controlId,
   descriptionId,
   onToggleModes,
+  labelHint = null,
+  labelDrag,
   expanded = false,
   expansion,
   children,
 }: ControlRowProps) {
+  const { props: dragProps, consumeClick } = useLabelDragGesture(labelDrag);
   const compact = variant === "node";
   // Node-embedded controls stay bare: the inspector is where the full set lives.
   const hasDescription = !compact && description !== undefined && description !== "";
   // One string on the label carries both (§V90): a parameter that is inactive AND
   // documented must not sprout a second hover target.
-  const help = [description, inactive].filter((part) => part !== undefined && part !== null && part !== "");
+  const help = [description, inactive, labelHint].filter(
+    (part) => part !== undefined && part !== null && part !== "",
+  );
   const hasHelp = !compact && help.length > 0;
   const describedProps = {
     ...(hasHelp ? { title: help.join(" — ") } : {}),
@@ -140,17 +261,37 @@ export function ControlRow({
           affordance is added to the label, not put beside it (§V90).
         */}
         {onToggleModes === undefined ? (
-          <span className={cx(styles.labelText, hasHelp && styles.labelDescribed)} {...describedProps}>
+          <span
+            className={cx(
+              styles.labelText,
+              hasHelp && styles.labelDescribed,
+              labelDrag !== undefined && styles.labelDraggable,
+              labelDrag !== undefined && "nodrag",
+            )}
+            {...describedProps}
+            {...dragProps}
+          >
             {label}
           </span>
         ) : (
           <button
             type="button"
-            className={cx(styles.labelText, styles.labelToggle, hasHelp && styles.labelDescribed, "nodrag")}
+            className={cx(
+              styles.labelText,
+              styles.labelToggle,
+              hasHelp && styles.labelDescribed,
+              labelDrag !== undefined && styles.labelDraggable,
+              "nodrag",
+            )}
             aria-expanded={expanded}
             {...describedProps}
             onPointerDown={(event) => event.stopPropagation()}
-            onClick={onToggleModes}
+            {...dragProps}
+            onClick={() => {
+              // A drag that moved is not a click, so it must not also toggle the panel.
+              if (consumeClick()) return;
+              onToggleModes();
+            }}
           >
             {label}
           </button>

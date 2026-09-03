@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { ResolvedComponent } from "@domain/parameters/resolve.ts";
@@ -11,6 +11,7 @@ import type {
   ParameterSlot,
   ParameterValue,
   StoredParameter,
+  VectorParameter,
 } from "@domain/types/parameters.ts";
 import { BooleanField } from "./boolean-field.tsx";
 import { ColorField } from "./color-field.tsx";
@@ -19,6 +20,14 @@ import { ControlRow, type ControlVariant } from "./control-row.tsx";
 import { CurveField, AssetField, type CurvePoint } from "./curve-field.tsx";
 import { describeRange } from "./drag-math.ts";
 import { EnumField } from "./enum-field.tsx";
+import {
+  describeLabelDrag,
+  movableMask,
+  valuesFromLabelDrag,
+  valuesFromLabelNudge,
+  type LabelDragChannel,
+  type LabelDragHandlers,
+} from "./label-drag.ts";
 import { NumberField } from "./number-field.tsx";
 import { PulseField } from "./pulse-field.tsx";
 import { StopsField } from "./stops-field.tsx";
@@ -26,7 +35,7 @@ import { ParameterModePanel } from "./parameter-mode.tsx";
 import { valueForDefinition } from "./parameter-value.ts";
 import { MODE_BADGES, MODE_LABELS, slotOf, withMode, withStaticValue } from "./parameter-slot.ts";
 import { TextField } from "./text-field.tsx";
-import { VectorField, specForVector } from "./vector-field.tsx";
+import { AXIS_LABELS, VectorField, specForVector } from "./vector-field.tsx";
 import type { EditPhase, ValueListener } from "./types.ts";
 import styles from "./controls.module.css";
 
@@ -170,6 +179,14 @@ export function ParameterControl({
   const [expanded, setExpanded] = useState(false);
   /** Set only when ctrl/cmd+E opened the panel, so the payload field takes focus. */
   const [focusExpression, setFocusExpression] = useState(false);
+  /**
+   * T1026 — the tuple a label drag started from. Snapshotted at the press, because the
+   * gesture is absolute: reading the CURRENT tuple on every move would feed each emitted
+   * value back into the next one and the drag would accelerate away from the pointer.
+   */
+  const labelDragStart = useRef<readonly number[] | null>(null);
+  /** The tuple an in-flight keyboard repeat has reached, awaiting its commit on key-up. */
+  const labelNudgePending = useRef<readonly number[] | null>(null);
 
   /**
    * The mode UI needs somewhere to write. Node-embedded rows pass no writer and stay
@@ -224,13 +241,34 @@ export function ParameterControl({
    * entry, never four.
    */
   const componentsWithSlots = (components ?? []).filter((component) => component.slot !== undefined);
-  const emitCompound = (next: readonly number[], phase: EditPhase): void => {
-    if (onStoredChange === undefined || componentsWithSlots.length === 0 || components === undefined) {
+  /**
+   * `movable` (T1026) names the channels this write is ALLOWED to touch, and exists for the
+   * label drag: a channel decided by its own mode must not be written at all, not even
+   * back to the value it already shows, because that value is the resolver's live sample
+   * and the seat it would land in is the retained constant a flip to Constant restores
+   * (§V108). Omitted — every existing caller — means every channel, unchanged behaviour.
+   *
+   * A mask can only mask something out when a channel is driven, and a driven channel
+   * always carries its own slot (a compound-level driver is refused before it gets here),
+   * so the bare-key fallback below stays reachable only when the mask is vacuous.
+   */
+  const emitCompound = (
+    next: readonly number[],
+    phase: EditPhase,
+    movable?: readonly boolean[],
+  ): void => {
+    const masked = movable !== undefined && movable.some((can) => !can);
+    if (
+      onStoredChange === undefined ||
+      components === undefined ||
+      (componentsWithSlots.length === 0 && !masked)
+    ) {
       emit(next, phase);
       return;
     }
     const entries: Record<string, StoredParameter> = {};
     components.forEach((component, index) => {
+      if (movable !== undefined && movable[index] !== true) return;
       const channel = next[index] ?? component.value;
       entries[componentKey(parameterKey, component.name)] = withStaticValue(
         slotOf(component.slot, component.value),
@@ -238,6 +276,78 @@ export function ParameterControl({
       );
     });
     onStoredChange(entries, phase);
+  };
+
+  /**
+   * T1026 — the parameter NAME as one drag surface for every channel of a compound.
+   *
+   * TouchDesigner's affordance, and the owner's ask: "if we have a parameter grid and it
+   * has an X and a Y, we need some way where we can move them in sync… we drag and slide
+   * over the LABEL instead of over one of the inputs."
+   *
+   * Everything about the maths — additive rather than proportional, and why — is in
+   * `label-drag.ts`. What lives here is the wiring, and the wiring is the invariant: the
+   * whole gesture goes through `emitCompound`, so a drag that moves three channels is ONE
+   * patch per emitted value and ONE undo entry for the gesture (§V114, §V15), never three
+   * patches; and it goes through `movable`, so a channel decided by its own mode is never
+   * written (§V113, §V830).
+   */
+  const buildLabelDrag = (
+    vectorDefinition: VectorParameter,
+  ): { hint: string; drag: LabelDragHandlers | undefined } => {
+    const spec = specForVector(vectorDefinition);
+    const channels: readonly LabelDragChannel[] = Array.from(
+      { length: vectorDefinition.size },
+      (_unused, index) => ({
+        name: AXIS_LABELS[index] ?? String(index),
+        // The axis's own driver, else the compound's — the same precedence the fields use.
+        drivenBy: componentDriven?.[index] ?? drivenBy,
+      }),
+    );
+    const movable = movableMask(channels);
+    const hint = describeLabelDrag(channels);
+    // §V830: nothing to move is stated in words, not by an inert label. The sentence still
+    // goes out; only the handlers do not.
+    if (!movable.some((can) => can)) return { hint, drag: undefined };
+    const current = (): readonly number[] =>
+      Array.isArray(shown) ? (shown as readonly number[]) : vectorDefinition.default;
+    return {
+      hint,
+      drag: {
+        onDrag: (deltaX, modifier, phase) => {
+          if (phase === "start") {
+            labelDragStart.current = current();
+            return;
+          }
+          const next = valuesFromLabelDrag({
+            startValues: labelDragStart.current ?? current(),
+            channels,
+            deltaX,
+            spec,
+            modifier,
+          });
+          emitCompound(next, phase === "commit" ? "commit" : "live", movable);
+          if (phase === "commit") labelDragStart.current = null;
+        },
+        onNudge: (direction, modifier, phase) => {
+          if (phase === "commit") {
+            const pending = labelNudgePending.current;
+            labelNudgePending.current = null;
+            if (pending !== null) emitCompound(pending, "commit", movable);
+            return;
+          }
+          const next = valuesFromLabelNudge({
+            values: labelNudgePending.current ?? current(),
+            channels,
+            direction,
+            spec,
+            modifier,
+          });
+          labelNudgePending.current = next;
+          emitCompound(next, "live", movable);
+        },
+      },
+    };
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
@@ -302,7 +412,15 @@ export function ParameterControl({
    */
   const sharedLocked = { ...shared, disabled: disabled || drivenBy !== null };
 
-  const row = (children: ReactNode, options?: { hint?: string | null; stacked?: boolean }) => (
+  const row = (
+    children: ReactNode,
+    options?: {
+      hint?: string | null;
+      stacked?: boolean;
+      labelHint?: string | null;
+      labelDrag?: LabelDragHandlers | undefined;
+    },
+  ) => (
     <div className={styles.rowHost} onKeyDown={onKeyDown}>
       <ControlRow
         label={label}
@@ -314,6 +432,8 @@ export function ParameterControl({
         description={definition.description}
         hint={options?.hint ?? null}
         stacked={options?.stacked ?? false}
+        labelHint={options?.labelHint ?? null}
+        {...(options?.labelDrag === undefined ? {} : { labelDrag: options.labelDrag })}
         controlId={controlId}
         descriptionId={descriptionId}
         expanded={expanded}
@@ -382,7 +502,11 @@ export function ParameterControl({
         { hint: definition.space },
       );
 
-    case "vector":
+    case "vector": {
+      // T1026: the name is the shared drag surface. Offered only where the label is already
+      // the mode disclosure — a real, focusable button — so the gesture cannot be
+      // pointer-only (§V19) and cannot be mistaken for a node drag on the canvas (§V20).
+      const compound = modesAvailable ? buildLabelDrag(definition) : null;
       return row(
         <VectorField
           {...shared}
@@ -392,8 +516,18 @@ export function ParameterControl({
           {...(componentDriven === undefined ? {} : { componentDriven })}
           onChange={(next, phase) => emitCompound(next, phase)}
         />,
-        { hint: describeRange(specForVector(definition)), stacked: definition.size > 2 },
+        {
+          hint: describeRange(specForVector(definition)),
+          stacked: definition.size > 2,
+          ...(compound === null
+            ? {}
+            : {
+                labelHint: compound.hint,
+                ...(compound.drag === undefined ? {} : { labelDrag: compound.drag }),
+              }),
+        },
       );
+    }
 
     case "string":
       return row(
