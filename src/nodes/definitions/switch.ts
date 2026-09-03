@@ -70,6 +70,12 @@ export const switchNode: NodeDefinition = {
       type: "number",
       label: "Index",
       default: 0,
+      // T1047: an index counts, so its step is 1 — a DECLARED step, which is the only
+      // kind that snaps since T989 split `declaredStep` from the drag ergonomic. Without
+      // it a drag lands on 0.37 of an input, which the node then floors, so the readout
+      // and the picture disagree about what is selected. `valueSwitch` has always
+      // declared it; this node and Cache did not.
+      step: 1,
       // NO min or max, on purpose. Out-of-range is the normal case here — a driven index
       // ramps past the end — and the node's answer is to wrap it. A declared range would
       // REJECT a static 9 (§V66 validates against it) while an expression producing 9

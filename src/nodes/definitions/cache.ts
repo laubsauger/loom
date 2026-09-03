@@ -89,6 +89,8 @@ export const cacheNode: NodeDefinition = {
       min: 1,
       max: 63,
       range: "bounded",
+      // T1047: frames back is a count, so the step is 1. See the note on Switch's index.
+      step: 1,
       // Structural: `index` picks which slice the read pass BINDS (T237). Animating time
       // is T321's job, and needs a different binding.
       compileTime: true,
