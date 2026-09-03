@@ -466,7 +466,7 @@ function matteParameters(stored: Readonly<Record<string, unknown>>) {
         "Which matting model runs, and the three are different in kind rather than in " +
         "degree. MODNet full precision is the reliable default: measured, it finds the " +
         "same subject in the same place from a bright frame down to a very dark one, and " +
-        "it is the only one of the three that runs on the GPU, where it costs 30 ms. " +
+        "it is the only one of the three the GPU provider can execute at all, measured at 30 ms there. " +
         "MODNet quantized is a quarter of the download and NOT faster, and below about a " +
         "fifth brightness it collapses to a fortieth of the coverage in the wrong part of " +
         "the frame — pictures reach this node in linear light, which is dimmer than it " +
@@ -474,8 +474,9 @@ function matteParameters(stored: Readonly<Record<string, unknown>>) {
         "Robust Video Matting is the one built for VIDEO: it carries what it saw last " +
         "frame in a recurrent state, which measured 1.75x steadier than the same model " +
         "run frame-by-frame, and it needs no temporal smoothing of its own. It is not the " +
-        "fast one — it cannot use the GPU provider at all, so it runs on the CPU at 172 ms " +
-        "on a single wasm thread against MODNet's 30 ms on a GPU — and its weights are " +
+        "fast one — the GPU provider cannot execute it at all, so the CPU is its floor: 172 ms " +
+        "on a single wasm thread against MODNet's 30 ms on the GPU provider — and its " +
+        "weights are " +
         "GPL-3.0, downloaded by your " +
         "browser rather than shipped with the app.",
     }),
@@ -491,6 +492,9 @@ function matteParameters(stored: Readonly<Record<string, unknown>>) {
       default: matteSmoothingFor({ model: modelId }),
       min: 0.05,
       max: 1,
+      // §B111: these ARE limits, not slider travel — `mattePostFor`/`matteSmoothingFor`
+      // clamp to them, so a value outside is refused rather than merely off-slider.
+      range: "bounded" as const,
       step: 0.05,
       description:
         "How much of each new result is taken, averaged with the last one in the worker: " +
@@ -516,6 +520,9 @@ function matteParameters(stored: Readonly<Record<string, unknown>>) {
       default: 0,
       min: 0,
       max: 0.999,
+      // §B111: these ARE limits, not slider travel — `mattePostFor`/`matteSmoothingFor`
+      // clamp to them, so a value outside is refused rather than merely off-slider.
+      range: "bounded" as const,
       step: 0.01,
       description:
         "Alpha at or below this is forced to fully transparent, which is how you clear the " +
@@ -530,6 +537,9 @@ function matteParameters(stored: Readonly<Record<string, unknown>>) {
       default: 1,
       min: 0.001,
       max: 1,
+      // §B111: these ARE limits, not slider travel — `mattePostFor`/`matteSmoothingFor`
+      // clamp to them, so a value outside is refused rather than merely off-slider.
+      range: "bounded" as const,
       step: 0.01,
       description:
         "Alpha at or above this is forced to fully opaque, which is the direct remedy for " +
@@ -545,6 +555,9 @@ function matteParameters(stored: Readonly<Record<string, unknown>>) {
       default: 1,
       min: 0.05,
       max: 8,
+      // §B111: these ARE limits, not slider travel — `mattePostFor`/`matteSmoothingFor`
+      // clamp to them, so a value outside is refused rather than merely off-slider.
+      range: "bounded" as const,
       step: 0.05,
       description:
         "Bends the alpha ramp between the black and white points without moving either: " +
