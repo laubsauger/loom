@@ -33,7 +33,11 @@ const frameAt = (timeSeconds: number): FrameEvaluationInput => ({
 });
 
 /** Two constants with DELIBERATELY DIFFERENT values, plus a switch, in one graph. */
-function switchGraph(index: number, wired: readonly string[]): GraphDocument {
+function switchGraph(
+  index: number,
+  wired: readonly string[],
+  extra: Record<string, unknown> = {},
+): GraphDocument {
   const nodes: Record<string, unknown> = {
     pickN: {
       id: "pickN",
@@ -41,7 +45,7 @@ function switchGraph(index: number, wired: readonly string[]): GraphDocument {
       definitionVersion: 1,
       position: { x: 0, y: 0 },
       label: "pick1",
-      parameters: { index },
+      parameters: { index, ...extra },
     },
   };
   const edges: Record<string, unknown> = {};
@@ -66,16 +70,24 @@ function switchGraph(index: number, wired: readonly string[]): GraphDocument {
   return { revision: 1, groups: {}, nodes, edges } as unknown as GraphDocument;
 }
 
-function evaluated(index: number, wired: readonly string[]) {
+function evaluated(index: number, wired: readonly string[], extra: Record<string, unknown> = {}) {
   const session = createValueGraphSession(registry);
-  return session.evaluate(switchGraph(index, wired), frameAt(0));
+  return session.evaluate(switchGraph(index, wired, extra), frameAt(0));
 }
 
-function pickedBag(index: number, wired: readonly string[]): Record<string, number> {
-  const result = evaluated(index, wired);
+function pickedBag(
+  index: number,
+  wired: readonly string[],
+  extra: Record<string, unknown> = {},
+): Record<string, number> {
+  const result = evaluated(index, wired, extra);
   expect(result.diagnostics).toEqual([]);
   return { ...(result.byName.get("pick1") ?? {}) };
 }
+
+/** The same graph with crossfade ON — T1054's path, through the real session. */
+const blended = (index: number, wired: readonly string[]): Record<string, number> =>
+  pickedBag(index, wired, { crossfade: true });
 
 describe("valueSwitch — one source, exactly (T508, §V457)", () => {
   it("index 0 is source A's bag EXACTLY, carrying nothing of B", () => {
@@ -117,6 +129,13 @@ describe("valueSwitch — one source, exactly (T508, §V457)", () => {
     expect(pickedBag(0, [])).toEqual({});
   });
 
+  it("a fractional index still CUTS while crossfade is off, whatever the fraction", () => {
+    // §V831's promise on the value side: a document written before T1054 evaluates to the
+    // same numbers. 0.75 of the way to source B still reads source A exactly — floored,
+    // not blended, and not 19.25 (which is what a blend would give).
+    expect(pickedBag(0.75, ["in1", "in2"])).toEqual({ value: 11 });
+  });
+
   it("the index is a plain drivable number — no declared range to reject a wrapped one", () => {
     // T235's argument, inherited: a driven index ramps past the end on purpose, so §V66
     // must not reject a static value an expression would have wrapped happily.
@@ -124,5 +143,101 @@ describe("valueSwitch — one source, exactly (T508, §V457)", () => {
     expect(index?.type).toBe("number");
     expect(index && "min" in index ? index.min : undefined).toBeUndefined();
     expect(index && "max" in index ? index.max : undefined).toBeUndefined();
+  });
+});
+
+/**
+ * T1054 — CROSSFADE on the value Switch: a per-channel lerp between the two neighbours.
+ *
+ * THREE sources and a fraction that is not 0.5, deliberately (§V854). With two inputs
+ * "blends with the next" and "blends with the last" are the same claim, and at 0.5 a
+ * blend is symmetric, so an INVERTED lerp would pass. Every expected number below is a
+ * different value under all four hypotheses — hard select, inverted blend, blend with the
+ * wrong neighbour, and the right one.
+ *
+ * The sources publish 11, 22 and 33, so the arithmetic is checkable by reading it, and
+ * every fraction used is a negative power of two, so the expectations are EXACT rather
+ * than a tolerance (§V147). Driven through the real session, like the rest of this file.
+ */
+describe("valueSwitch crossfade (T1054)", () => {
+  const three = ["in1", "in2", "in3"];
+
+  it("lerps the two neighbouring bags at a fractional index", () => {
+    // 11·0.75 + 22·0.25 = 13.75. A hard select reads 11, an inverted lerp 19.25, and a
+    // blend with the LAST input 16.5 — so this one number rules out all three.
+    expect(blended(0.25, three)).toEqual({ value: 13.75 });
+  });
+
+  it("is EXACTLY the selected bag at every integer index, not a lerp weighted to nothing", () => {
+    // The endpoints are what make crossfade safe to leave on: at a whole index it is the
+    // same bag a hard select produces, so the two agree wherever both are defined.
+    expect(blended(0, three)).toEqual({ value: 11 });
+    expect(blended(1, three)).toEqual({ value: 22 });
+    expect(blended(2, three)).toEqual({ value: 33 });
+    expect(blended(3, three)).toEqual({ value: 11 }); // wrapped, still exact
+  });
+
+  it("fades the LAST source into the FIRST across the seam", () => {
+    // 33·0.75 + 11·0.25 = 27.5. Clamping at the last input would read 33; blending toward
+    // in2 would read 30.25. T235's wrap is what crossfade inherits here.
+    expect(blended(2.25, three)).toEqual({ value: 27.5 });
+  });
+
+  it("is continuous through the seam", () => {
+    // Walking up to index 3 the value must approach source A's 11, and AT 3 it is 11. The
+    // gap is 33·2^-8 + 11·(1 − 2^-8) − 11 = 22·2^-8 = 0.0859375 exactly — a discontinuity
+    // would leave the whole 22 between the two readings instead.
+    expect(blended(2.99609375, three)).toEqual({ value: 11.0859375 });
+    expect(blended(3, three)).toEqual({ value: 11 });
+    expect(blended(2.99609375, three)["value"]! - blended(3, three)["value"]!).toBe(22 * 2 ** -8);
+  });
+
+  it("still cuts, exactly, when the toggle is off", () => {
+    // The §V831 anchor beside its own blend: same graph, same fractional index, toggle the
+    // one parameter. If this ever read 13.75 the default would have moved.
+    expect(pickedBag(0.25, three)).toEqual({ value: 11 });
+    expect(blended(0.25, three)).toEqual({ value: 13.75 });
+  });
+
+  it("counts CONNECTED inputs, so a gap is not a branch to fade into", () => {
+    // Two wired ports out of four is a two-input switch: 11·0.75 + 22·0.25, where in2's
+    // absence must not become a third branch reading zero.
+    expect(blended(0.25, ["in1", "in3"])).toEqual({ value: 13.75 });
+  });
+
+  it("fades a channel the other source does not publish, rather than holding it", () => {
+    // §T982 made a value input carry a BAG, so the two sides can carry different channel
+    // NAMES. An orphan channel has no counterpart, and carrying it through unweighted
+    // would break the endpoint identity above — at t=0 the output must be source A's bag
+    // exactly, which a union carrying B's channels at full strength would not be. So it
+    // fades with its own side's weight, which is what a crossfader does.
+    const session = createValueGraphSession(registry);
+    const graph = {
+      revision: 1,
+      groups: {},
+      nodes: {
+        num: { id: "num", type: "constant", definitionVersion: 1, position: { x: 0, y: 0 }, label: "num", parameters: { value: 8 } },
+        ptr: { id: "ptr", type: "mouse", definitionVersion: 1, position: { x: 0, y: 0 }, label: "ptr", parameters: {} },
+        pick: {
+          id: "pick", type: "valueSwitch", definitionVersion: 1, position: { x: 0, y: 0 },
+          label: "pick1", parameters: { index: 0.25, crossfade: true },
+        },
+      },
+      edges: {
+        e0: { id: "e0", source: { nodeId: "num", portId: "out" }, target: { nodeId: "pick", portId: "in1" } },
+        e1: { id: "e1", source: { nodeId: "ptr", portId: "out" }, target: { nodeId: "pick", portId: "in2" } },
+      },
+    } as unknown as GraphDocument;
+
+    // `constant` publishes {value}; `mouse` publishes {x, y, buttons}. No channel is shared,
+    // so EVERY channel here is an orphan and each one carries its own side's weight.
+    const result = session.evaluate(graph, frameAt(0), { pointer: { x: 0.5, y: 0.25, buttons: 1 } });
+    expect(result.diagnostics).toEqual([]);
+    expect({ ...(result.byName.get("pick1") ?? {}) }).toEqual({
+      value: 8 * 0.75, // 6 — source A's channel, three quarters of the way out
+      x: 0.5 * 0.25, // 0.125 — source B's channels, a quarter of the way in
+      y: 0.25 * 0.25, // 0.0625
+      buttons: 1 * 0.25, // 0.25
+    });
   });
 });
