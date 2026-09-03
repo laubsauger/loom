@@ -123,7 +123,7 @@
           "rough": 0.5,
           "s4d": 1,
           "seed": 5,
-          "speed": 0.04,
+          "speed": 0.35,
           "spread": 2,
           "t4d": 0.2,
           "type": "perlin4d"
@@ -159,10 +159,12 @@
           "offset": 0.25,
           "period": 0.9,
           "rough": 0.5,
+          "s4d": 1,
           "seed": 12,
-          "speed": 0.02,
+          "speed": 0.14,
           "spread": 2,
-          "type": "simplex3d"
+          "t4d": 0.37,
+          "type": "perlin4d"
         },
         "position": {
           "x": -1320,

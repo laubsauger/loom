@@ -92,7 +92,7 @@ fn planPoint(index: u32) -> PointPlan {
 }
 
 const PARAMS_WGSL = `struct LaserParams {
-  timeSeconds: f32,
+  absTimeSeconds: f32,
   deltaSeconds: f32,
   count: u32,
   closed: u32,
@@ -261,7 +261,10 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   /* The scan window (honest refresh): cursor sweeps the plan at pps; this frame lights
      only the slice it covers. An over-budget plan takes several frames to draw. */
   let window = max(u32(params.pps * params.deltaSeconds), 1u);
-  let cursor = u32(params.timeSeconds * params.pps) % planTotal;
+  /* ABSOLUTE, not timeline (§V436): the scanner's clock is the instrument's, and a
+     galvo does not rewind when a bounded piece laps — a timeline read here snapped
+     the drawing head to the plan's start once per loop. */
+  let cursor = u32(params.absTimeSeconds * params.pps) % planTotal;
   let lit = ((slot + planTotal - cursor) % planTotal) < window;
 
   out_position[slot] = position;

@@ -47,7 +47,7 @@ export const lissajousDocument = document(
         kernel: `fn process(p: Point, ctx: PointCtx) -> Point {
   var q = p;
   let theta = f32(ctx.index) / 1200.0 * 6.28318530718;
-  let phase = ctx.time * 0.7;
+  let phase = ctx.absTime * 0.7;
   q.position = vec3f(0.78 * sin(3.0 * theta + phase), 0.78 * sin(2.0 * theta), 0.0);
   return q;
 }`,

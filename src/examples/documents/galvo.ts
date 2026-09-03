@@ -52,7 +52,7 @@ export const galvoDocument = document(
         kernel: `fn process(p: Point, ctx: PointCtx) -> Point {
   var q = p;
   let i = ctx.index % 10u;
-  let angle = f32(i) * 0.62831853072 - 1.57079632679 + ctx.time * 0.12;
+  let angle = f32(i) * 0.62831853072 - 1.57079632679 + ctx.absTime * 0.12;
   let radius = select(0.74, 0.3, (i & 1u) == 1u);
   q.position = vec3f(cos(angle) * radius, sin(angle) * radius, 0.0);
   return q;

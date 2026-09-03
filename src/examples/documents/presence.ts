@@ -35,11 +35,14 @@ export const presenceDocument = document(
   settings({ randomSeed: 52 }),
   graph(
     [
-      // ---- the performer's stand-in (deterministic; contains nobody, on purpose) ----
+      // ---- the performer's stand-in (deterministic; contains nobody, on purpose).
+      //      Speeds are set where the cook oracle can SEE them: at its 128x72, 80-frame
+      //      scale a 0.04 drift changed no byte and the example read as a static poster
+      //      — a picture that moves must move at every scale a gate watches it at. ----
       node("bed", "noise", [-1920, -140], {
         type: "perlin4d", seed: 5, period: 0.35, harmon: 3, spread: 2, gain: 0.45,
         rough: 0.5, exp: 1.3, amp: 1, offset: 0.1, mono: false, aspectcorrect: true,
-        speed: 0.04, t4d: 0.2, s4d: 1,
+        speed: 0.35, t4d: 0.2, s4d: 1,
       }, { label: "bed1" }),
       /* The live half (E47's precedent): permission is requested only when the webcam
          node activates, never on load. */
@@ -55,10 +58,14 @@ export const presenceDocument = document(
       node("key", "multiply", [-1020, 0], { opacity: 1 }, { label: "key1" }),
 
       // ---- the room that knows ------------------------------------------------------
+      /* perlin4d, NOT a 3d type: the fourth dimension is what `speed` advances, and a
+         3d haze with a speed knob is a static picture wearing a motion parameter — the
+         cook oracle read the whole example as a poster because this layer (the only
+         one visible without a helper) had no time axis at all. */
       node("haze", "noise", [-1320, 320], {
-        type: "simplex3d", seed: 12, period: 0.9, harmon: 2, spread: 2, gain: 0.5,
+        type: "perlin4d", seed: 12, period: 0.9, harmon: 2, spread: 2, gain: 0.5,
         rough: 0.5, exp: 1, amp: 1, offset: 0.25, mono: false, aspectcorrect: true,
-        speed: 0.02,
+        speed: 0.14, t4d: 0.37, s4d: 1,
       }, { label: "haze1" }),
       /* §V856 made visible: saturation FOLLOWS COVERAGE. Empty room ≈ grey; a person
          filling a tenth of the frame pulls the haze toward full colour. The channel is

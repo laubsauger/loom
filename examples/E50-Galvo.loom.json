@@ -192,7 +192,7 @@
           "attributes": "",
           "capacity": 10,
           "group": "",
-          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  let i = ctx.index % 10u;\n  let angle = f32(i) * 0.62831853072 - 1.57079632679 + ctx.time * 0.12;\n  let radius = select(0.74, 0.3, (i & 1u) == 1u);\n  q.position = vec3f(cos(angle) * radius, sin(angle) * radius, 0.0);\n  return q;\n}",
+          "kernel": "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  let i = ctx.index % 10u;\n  let angle = f32(i) * 0.62831853072 - 1.57079632679 + ctx.absTime * 0.12;\n  let radius = select(0.74, 0.3, (i & 1u) == 1u);\n  q.position = vec3f(cos(angle) * radius, sin(angle) * radius, 0.0);\n  return q;\n}",
           "seed": 50,
           "value1": 0,
           "value2": 0,

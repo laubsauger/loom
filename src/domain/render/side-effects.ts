@@ -268,4 +268,13 @@ export const NODE_SIDE_EFFECTS: Readonly<Record<string, SideEffect>> = {
   depth: "none",
   pose: "none",
   matte: "none",
+  /* T1029 — the argument, per §V841: the pixels LEAVE the process (a picture crosses
+     the bridge to the helper, which shows it to the OS's Vision framework), but nothing
+     on the far side ACTS ON THE WORLD — the helper computes a mask and hands it back.
+     Sending a frame to a local analyser is the OSC-in shape, not the laser-out shape:
+     `emits` is reserved for bytes something may turn into light, sound or motion. The
+     PRIVACY dimension (a webcam frame leaving the page) is real but is the webcam
+     node's consent surface, not a side-effect class — the mask path adds no new exit
+     the user did not already open by activating the camera. */
+  personMask: "none",
 };
