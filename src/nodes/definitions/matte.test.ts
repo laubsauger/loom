@@ -61,10 +61,13 @@ describe("§V827 — the Input Size names its own MEASURED cost, per option", ()
     const labels = Object.fromEntries(
       enumOf({}, "inputSide").options.map((option) => [option.value, option.label]),
     );
-    expect(labels["512"]).toContain("30 ms on a GPU");
-    expect(labels["512"]).toContain("3.3 s on the CPU");
-    expect(labels["256"]).toContain("12 ms on a GPU");
-    expect(labels["256"]).toContain("0.7 s on the CPU");
+    // §V899/§T1095 — these read "on a GPU" until T1095, which was a claim about GPUs from
+    // a sample of one. The label names the PROVIDER each number came off; the machine is
+    // stated once in the description, and `inference-node.test.ts` gates that it is.
+    expect(labels["512"]).toContain("30 ms on the GPU provider");
+    expect(labels["512"]).toContain("3.3 s on the CPU provider");
+    expect(labels["256"]).toContain("12 ms on the GPU provider");
+    expect(labels["256"]).toContain("0.7 s on the CPU provider");
   });
 
   it("⚠ says what the CHEAP options cost the PICTURE, which no published number does", () => {

@@ -4,7 +4,7 @@ import type { DispatchPassDescriptor, EffectPassDescriptor } from "../../runtime
 import { inferenceSourceIdFor } from "../../runtime/execution/inference-sources.ts";
 import { scratchResourceId } from "../../compiler/resources.ts";
 import type { ModelDescriptor } from "../../runtime/models/model-acquisition.ts";
-import { DEPTH_ACCURATE, DEPTH_LIVE, DEPTH_MODELS } from "../../runtime/models/model-catalogue.ts";
+import { DEPTH_ACCURATE, DEPTH_LIVE, DEPTH_MODELS, measuredOn } from "../../runtime/models/model-catalogue.ts";
 import { signatureFor } from "../../runtime/models/model-signatures.ts";
 import {
   inferenceAcceptsInputSize,
@@ -149,9 +149,16 @@ export function depthModelChoiceFor(stored: Readonly<Record<string, unknown>>): 
   );
 }
 
-/** Seconds a run of this model measured at 518, as a sentence fragment. */
+/**
+ * Seconds a run of this model measured at 518, as a sentence fragment.
+ *
+ * §V899/§T1095 — THE MACHINE TRAVELS WITH THE NUMBER. This fragment is the only place
+ * depth's copy states a cost, and it reaches three parameter descriptions, so naming the
+ * measuring machine here is what stops all three of them reading as a claim about every
+ * machine. `inference-node.test.ts` gates it.
+ */
 function measuredCost(choice: DepthModelChoice): string {
-  return `${(choice.cpuMillisAt518 / 1000).toFixed(1)} s per run measured on the CPU path at ${DEPTH_INPUT_SIDE} px`;
+  return `${(choice.cpuMillisAt518 / 1000).toFixed(1)} s per run on the CPU path at ${DEPTH_INPUT_SIDE} px, ${measuredOn("2026-09-01")}`;
 }
 
 /**

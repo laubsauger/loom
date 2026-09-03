@@ -1,5 +1,6 @@
 import type { EnumParameter, ParameterSchema } from "../../domain/types/parameters.ts";
 import { refusalFor, type ModelDescriptor } from "../../runtime/models/model-acquisition.ts";
+import { measuredOn } from "../../runtime/models/model-catalogue.ts";
 import { signatureFor } from "../../runtime/models/model-signatures.ts";
 
 /**
@@ -81,9 +82,16 @@ export function inferenceModelSchema(
  * times faster than the WASM implementation, so let's make sure that we prefer the WebGPU
  * implementation. But yeah, obviously make it selectable."
  *
- * MEASURED 2026-09-03, MODNet at 512² in Chrome on this machine, same weights, same
+ * MEASURED 2026-09-03 on `MEASUREMENT_MACHINE`, MODNet at 512², same weights, same
  * packed input, output identical to eight significant figures: **wasm 6323 ms, webgpu
  * 658 ms** — 9.6×. That is the number the default encodes.
+ *
+ * ⚠ §V899 — AND THAT IS WHY THIS IS A CONTROL RATHER THAN A LADDER NOBODY CAN REACH. The
+ * ordering above is one GPU's, and the same sweep found `MATTE_FAST` inverting it there
+ * (400 ms on the GPU provider against 311 ms on threaded wasm). A default chosen from one
+ * machine's numbers bakes that machine into the product; this chooser is the escape hatch
+ * for every architecture nobody here has measured, and its copy has to say so rather than
+ * present the ordering as settled.
  *
  * Two rules bind every word here, and both are easy to break by accident:
  *
@@ -165,8 +173,14 @@ export function inferenceBackendSchema(
     description:
       "Which execution provider to ask onnxruntime for. The list is what this browser " +
       "reports it can reach, so it differs between machines. Automatic prefers the GPU — " +
-      "measured 9.6x faster than the CPU for this model on the machine this default was " +
-      "set on — and falls back to the CPU when the GPU provider will not start. Pinning " +
+      `9.6x faster than the CPU for the model this default was set on, ` +
+      `${measuredOn("2026-09-03")} — and falls back to the CPU when the GPU provider ` +
+      "will not start. THAT ORDER IS NOT UNIVERSAL, and this control is why it does not " +
+      "have to be: a quantized build can lose on a GPU that does not suit it — one in " +
+      "this catalogue measured 400 ms on the GPU provider against 311 ms on threaded CPU " +
+      "on that same machine — and 8-bit paths differ between vendors, so on unfamiliar " +
+      "hardware pin each provider in turn and read the times off the node's info popup. " +
+      "Pinning " +
       "one means exactly that one, and a pinned provider that cannot start fails with a " +
       "reason rather than quietly running somewhere else. What it ACTUALLY ran on is " +
       "measured after the fact and shown on the node's info popup with the time it took — " +

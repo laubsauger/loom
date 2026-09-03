@@ -10,6 +10,7 @@ import {
   MATTE_FAST,
   MATTE_MODELS,
   MATTE_RVM,
+  measuredOn,
 } from "../../runtime/models/model-catalogue.ts";
 import type { ModelDescriptor } from "../../runtime/models/model-acquisition.ts";
 import { MATTE_INPUT_SIDE } from "../../runtime/models/matte-runner.ts";
@@ -41,7 +42,8 @@ import {
  * Results arrive when the model finishes, not per frame; live playback shows the most
  * recent matte and reports its age. MODNet is per-frame and its edges flicker, so the
  * worker applies a temporal EMA to the matte (T957): stability bought with edge lag on a
- * moving subject. MEASURED in the app 2026-09-03, quantized MODNet on the WebGPU provider
+ * moving subject. MEASURED in the app 2026-09-03 on `MEASUREMENT_MACHINE`, quantized
+ * MODNet on the WebGPU provider
  * at 1280x720: 997-1606 ms per inference, 19-25 frames behind. So the lag the EMA adds is
  * a SECOND, not "a few frames" — see `smoothMatte` for why that number is a design
  * question rather than a bug. §T957 recorded the properly-recurrent models as blocked;
@@ -56,8 +58,11 @@ import {
  *
  * The model chooser names each artefact's measured download and licence in the control
  * itself; the Backend chooser names the providers THIS browser can reach and defaults to
- * trying the GPU first (measured 2026-09-03: wasm 6323 ms, webgpu 658 ms for the same
- * input and a byte-identical matte); the reset pulse is §T978's, session-scoped, weights
+ * trying the GPU first (measured 2026-09-03 on `MEASUREMENT_MACHINE`: wasm 6323 ms,
+ * webgpu 658 ms for the same
+ * input and a byte-identical matte — and §V899: that ORDER is what this machine measured,
+ * which is why the chooser exists rather than a hard-coded ladder); the reset pulse is
+ * §T978's, session-scoped, weights
  * kept. What-ran and what-it-cost are published by the runtime's readouts, never echoed
  * from here.
  *
@@ -94,9 +99,11 @@ export const MATTE_RESULT_KEY = "modelResult";
  * theory that a 25.9 MB model at 512² is why results land about a second apart. THE
  * MEASUREMENT SAYS THE PREMISE IS WRONG, and that is the finding rather than the knob.
  *
- * Measured 2026-09-03, Chrome on macOS (Apple GPU), MODNet FULL PRECISION, one 772x435
+ * Measured 2026-09-03 on `MEASUREMENT_MACHINE`, MODNet FULL PRECISION, one 772x435
  * portrait through this node's own letterbox and MODNet's own (x-0.5)/0.5, isolated
- * `session.run` only, median of five warm runs after a discarded warm-up:
+ * `session.run` only, median of five warm runs after a discarded warm-up. §V899 binds
+ * the GPU column hardest: it is one vendor's Metal path, and the ratio between the two
+ * columns is the part of this table least likely to hold elsewhere:
  *
  *   side   webgpu   wasm     coverage   centroid        vs 512 (IoU@0.5)
  *   512      30 ms  3304 ms  0.2750     (0.508, 0.685)  1.000   reference
@@ -209,7 +216,8 @@ export function matteInputSideFor(stored: Readonly<Record<string, unknown>>): nu
  * DOWNSAMPLE of the input, and this dial is that fraction — so unlike Input Size above,
  * it changes what the expensive half costs without changing what the output is.
  *
- * Measured 2026-09-03, this artefact, the app's own 512² letterbox, wasm on ONE THREAD,
+ * Measured 2026-09-03 on `MEASUREMENT_MACHINE`, this artefact, the app's own 512²
+ * letterbox, wasm on ONE THREAD,
  * median of five warm runs with the recurrent state fed back. `internal` is `512 × ratio`,
  * which is what the cost actually tracks. The thread count is stated because it is worth
  * 5x on its own (MODNet fp32 512²: 814-842 ms on one thread, 136-165 ms on eight), and an
@@ -395,11 +403,17 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
  * this browser reports it can reach, and keeps an unreachable stored pin in the list
  * rather than silently rewriting the document to something the author did not pick.
  */
-/** One option's label: the size, then what it MEASURED, then what it costs the picture. */
+/**
+ * One option's label: the size, then what it MEASURED, then what it costs the picture.
+ *
+ * §V899 — "on a GPU" until T1095, which was a claim about GPUs from a sample of one. The
+ * label names the PROVIDER the number came off, which is what a reader can act on here,
+ * and the machine is stated once in the description these labels hang under.
+ */
 function inputSideLabel(option: MatteInputSideCost): string {
   const cpu = `${(option.cpuMillis / 1000).toFixed(1)} s`;
   const damage = option.costsYou === undefined ? "" : ` — ${option.costsYou}`;
-  return `${option.side} px — ${option.gpuMillis} ms on a GPU, ${cpu} on the CPU${damage}`;
+  return `${option.side} px — ${option.gpuMillis} ms on the GPU provider, ${cpu} on the CPU provider${damage}`;
 }
 
 /** One ratio option: the fraction, what it MEASURED, and what it costs the picture. */
@@ -436,10 +450,12 @@ function matteParameters(stored: Readonly<Record<string, unknown>>) {
               "The fraction of the input square RVM's encoder actually runs on before it " +
               "refines the matte back up to full resolution — this model's own cost dial, " +
               "and the one that matters, because the time tracks this rather than the " +
-              "output size. The times in the labels are measured runs of this artefact on " +
+              "output size. The times in the labels are runs of this artefact on " +
               "one portrait at the default 512 px input, on the CPU with ONE wasm thread, " +
-              "which is the floor: a cross-origin-isolated page gets several threads and " +
-              "measured about 2.3x faster, and this model reaches WebGPU as well, where the " +
+              `${measuredOn("2026-09-03")}. ` +
+              "One thread is the floor: a cross-origin-isolated page gets several and " +
+              "measured about 2.3x faster there, and this model reaches WebGPU as well, " +
+              "where the " +
               "same five settings measured 12, 12, 16, 24 and 36 ms. RVM's own guidance " +
               "is that the downsampled side wants " +
               "to land between 256 and 512 px, so 0.5 sits at the bottom of the trained " +
@@ -461,7 +477,8 @@ function matteParameters(stored: Readonly<Record<string, unknown>>) {
    * The table at the top of this file makes the MODNet case for the knob: its detail is
    * really computed and really paid for, and "a 512 matte resampled down to 256 is not
    * the 256 matte (mean |Δα| 0.048)". MediaPipe is the opposite — it works at 256²
-   * INTERNALLY and upsamples to whatever square it was fed. Measured 2026-09-03, one
+   * INTERNALLY and upsamples to whatever square it was fed. Measured 2026-09-03 on
+   * `MEASUREMENT_MACHINE`, one
    * frame fed at four sides, every mask resampled to a common 512² output the way
    * `matteToFloats` does:
    *
@@ -495,8 +512,9 @@ function matteParameters(stored: Readonly<Record<string, unknown>>) {
           description:
             "The square the picture is resampled to before the model sees it, every " +
             "option a multiple of 32 because MODNet's graph is built on one. The times " +
-            "in the labels are measured runs of the full-precision build on one portrait, " +
-            "and the two columns are the point: on a GPU the whole range is 12-30 ms, so " +
+            "in the labels are runs of the full-precision build on one portrait, " +
+            `${measuredOn("2026-09-03")}, ` +
+            "and the two columns are the point: on that GPU the whole range is 12-30 ms, so " +
             "there is nothing to buy by going smaller, while on the CPU fallback the same " +
             "step is 3.3 s against 0.7 s. What smaller costs is the subject — below 384 " +
             "the matte starts punching holes through a torso that matches its background, " +
@@ -531,13 +549,27 @@ function matteParameters(stored: Readonly<Record<string, unknown>>) {
       what:
         "Which matting model runs. Three of them are ONNX models that differ in kind " +
         "rather than in degree; the fourth, MediaPipe, is a different runtime and is " +
-        "described last. MODNet full precision is the reliable default: measured, it finds the " +
+        "described last. EVERY TIME BELOW WAS " +
+        `${measuredOn("2026-09-03")}: they are an ordering that held there, not a promise ` +
+        "about your hardware — the Backend control and the node's info popup are how you " +
+        "get your own numbers. " +
+        "MODNet full precision is the reliable default: measured, it finds the " +
         "same subject in the same place from a bright frame down to a very dark one, and the " +
         "GPU provider executes it at a measured 30 ms. " +
-        "MODNet quantized is a quarter of the download and NOT faster, and below about a " +
-        "fifth brightness it collapses to a fortieth of the coverage in the wrong part of " +
-        "the frame — pictures reach this node in linear light, which is dimmer than it " +
-        "looks, so prefer full precision unless the download is the binding constraint. " +
+        "MODNet quantized is the same network at a quarter of the download, and what it " +
+        "trades for those bytes is not detail but the RANGE OF PICTURES it can take, so " +
+        "GIVE IT A BRIGHT ONE. Below about 0.2 mean input brightness its coverage " +
+        "collapses to a fortieth and lands in the wrong part of the frame, where full " +
+        "precision stays flat across that whole range — and that threshold sits inside " +
+        "the working range, because pictures reach this node in LINEAR light: over seven " +
+        "measured frames the square this node actually builds read 0.10 to 0.56 mean, " +
+        "either side of the cliff, and brightening those same frames moved this model's " +
+        "matte further than any of the other three (they agree with themselves at IoU " +
+        "0.86-0.99 across the two, this one at 0.278-0.695). It also measured slower on " +
+        "the GPU provider than on threaded CPU there — 400 ms against 311 ms, on a " +
+        "provider where full precision measured 30 ms — and that is ONE GPU's result on " +
+        "a quantized build, the kind that differs between vendors, so pin the Backend " +
+        "control below and read the info popup rather than inheriting it. " +
         "Robust Video Matting is the one built for VIDEO: it carries what it saw last " +
         "frame in a recurrent state, which measured 1.75x steadier than the same model " +
         "run frame-by-frame, and it needs no temporal smoothing of its own. It reaches the GPU " +
@@ -548,8 +580,9 @@ function matteParameters(stored: Readonly<Record<string, unknown>>) {
         "weights are " +
         "GPL-3.0, downloaded by your " +
         "browser rather than shipped with the app. " +
-        "MediaPipe SelfieSegmenter is the FAST one, and it is fast because it is a 250 KB " +
-        "model doing a smaller job: measured on this machine it is 3.7 ms of inference and " +
+        "MediaPipe SelfieSegmenter measured the fastest of the four, and it is quick " +
+        "because it is a 250 KB " +
+        "model doing a smaller job: 3.7 ms of inference and " +
         "about 6 ms by the time the matte is on the GPU, flat from a 256 to a 720 square, " +
         "against 30 ms for MODNet and 20 ms for Robust Video Matting. It runs on its own " +
         "runtime rather than an onnxruntime execution provider, so this node offers no Backend " +
@@ -669,7 +702,9 @@ export const matteNode: NodeDefinition = {
   title: "Matte",
   category: "generator",
   description:
-    "Extracts a person MATTE — a soft alpha, high on the subject, zero elsewhere — using MODNet running in the browser. Feed it to the compositing Mask node's mask input to cut a subject out (the Mask node applies a matte; this node makes one). The model downloads once per machine on first use, with your consent; until then the node publishes zero everywhere — 'nobody is here' — and the document still renders. Results arrive at the model's own rate — around one per second on a GPU provider at 1280x720 — and the matte is temporally smoothed in the worker, which steadies flickering edges at the cost of about a second of lag on fast motion. How much of the frame the current result claims is published on the node's `coverage` channel — zero there means the model ran and found nobody, which is not the same as the model being unavailable.",
+    "Extracts a person MATTE — a soft alpha, high on the subject, zero elsewhere — using MODNet running in the browser. Feed it to the compositing Mask node's mask input to cut a subject out (the Mask node applies a matte; this node makes one). The model downloads once per machine on first use, with your consent; until then the node publishes zero everywhere — 'nobody is here' — and the document still renders. Results arrive at the model's own rate rather than once per frame — " +
+    `${measuredOn("2026-09-03")} at around one per second on the GPU provider at 1280x720, and your machine will differ — ` +
+    "and the matte is temporally smoothed in the worker, which steadies flickering edges at the cost of about a second of lag on fast motion. How much of the frame the current result claims is published on the node's `coverage` channel — zero there means the model ran and found nobody, which is not the same as the model being unavailable.",
   tags: ["matte", "matting", "segmentation", "person", "ml", "inference", "alpha"],
   inputs: [{ id: "input", label: "Input", type: RGBA_TEXTURE }],
   outputs: [{ id: "out", label: "Out", type: RGBA_TEXTURE }],

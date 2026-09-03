@@ -5,7 +5,7 @@ import { inferenceSourceIdFor } from "../../runtime/execution/inference-sources.
 import { POSE_INPUT_SIDE, POSE_KEYPOINT_COUNT } from "../../runtime/models/pose-runner.ts";
 import { SHARED_SAMPLER_ID, scratchResourceId } from "../../compiler/resources.ts";
 import type { ModelDescriptor } from "../../runtime/models/model-acquisition.ts";
-import { POSE_ACCURATE, POSE_LIVE, POSE_MODELS } from "../../runtime/models/model-catalogue.ts";
+import { POSE_ACCURATE, POSE_LIVE, POSE_MODELS, measuredOn } from "../../runtime/models/model-catalogue.ts";
 import { inferenceModelSchema, inferenceResetSchema, letterboxPreprocessWgsl } from "./inference-node.ts";
 import { RGBA_TEXTURE } from "./common-ports.ts";
 import { readCompileInputs } from "./compile-context.ts";
@@ -73,9 +73,11 @@ const WORKGROUPS = Math.ceil(POSE_INPUT_SIDE / 8);
 
 const POSE_MODEL_SCHEMA = inferenceModelSchema(POSE_MODELS, {
   what:
-    "Which MoveNet build runs. The 8-bit variant is a quarter of the download and is NOT " +
-    "faster — measured on the CPU path it is roughly three times slower — so pick it to " +
-    "save the download, never to save time.",
+    "Which MoveNet build runs. The 8-bit variant is a quarter of the download and did NOT " +
+    "measure faster — on the CPU path it was roughly three times slower, 67 ms against " +
+    `18 ms, ${measuredOn("2026-09-01")} — so pick it to ` +
+    "save the download, never to save time. That ordering is one machine's, and 8-bit " +
+    "paths differ between vendors, so measure before assuming it holds on yours.",
 });
 
 /** The pre-§V827 stored spellings, and the descriptor each one still means (§V813). */

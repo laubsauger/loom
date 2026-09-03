@@ -21,6 +21,35 @@ import type { ModelDescriptor } from "./model-acquisition.ts";
  * the model card, and the acquisition path refuses anything that does not match.
  */
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ * §V899 — THE ONE MACHINE, NAMED ONCE, SO EVERY NUMBER CAN CITE IT
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ *
+ * Every performance figure this project has recorded — depth, pose, all four matte models,
+ * every provider comparison — was measured here. That is not a disclaimer, it is the fact
+ * that decides how the numbers may be WORDED: a model that measured slower on this GPU
+ * measured slower ON THIS GPU, and a quantized build losing on Apple's Metal path is
+ * exactly the result that can invert on NVIDIA or AMD, where the int8 kernels are not the
+ * same silicon. So the tell §V899 names is a sentence saying a model IS fast or slow
+ * rather than WAS, on what, when — and the remedy is that a number and its machine travel
+ * together, in the copy the user reads as well as in these comments.
+ *
+ * `DEPTH_PROVIDERS` below wrote this out by hand first and stays the house style; this
+ * constant is that discipline made cheap enough that the next row cannot drift from it.
+ * `inference-node.test.ts` gates it: a time or a speed ratio in any model node's parameter
+ * copy must carry this string.
+ *
+ * The DATE stays per measurement, because the numbers were taken on different days and a
+ * shared date would be a second thing to get wrong.
+ */
+export const MEASUREMENT_MACHINE = "one machine (Apple M3 Max, macOS, Chrome 151, Metal)";
+
+/** "measured 2026-09-03 on one machine (…)" — the phrase every recorded number carries. */
+export function measuredOn(date: string): string {
+  return `measured ${date} on ${MEASUREMENT_MACHINE}`;
+}
+
 const REPO = "onnx-community/depth-anything-v2-small";
 /** Verified 2026-09-01 against the HF model API. */
 const REVISION = "4472b7362082ad9968fee890ca0f1e5aca36b93d";
@@ -43,13 +72,14 @@ export const DEPTH_ACCURATE: ModelDescriptor = {
 /**
  * The SMALL variant: 4-bit weights with fp16 activations, a fifth of the download.
  *
- * ⚠ SMALLER IS NOT FASTER, measured 2026-09-01 (§T753). On the CPU path this is
- * **3833 ms against fp32's 2670 ms** — 1.44x SLOWER, because dequantising 4-bit weights
- * costs more than the memory traffic it saves. It was labelled "fast" and described as
- * "quicker per frame" on the strength of its size alone, which was never measured and is
- * false. The honest offer is a smaller DOWNLOAD at some cost in quality and, on CPU, in
- * speed. Whether a GPU execution provider reverses that is a separate unmeasured question
- * and must not be assumed here either.
+ * ⚠ SMALLER WAS NOT FASTER, measured 2026-09-01 on `MEASUREMENT_MACHINE` (§T753). On the
+ * CPU path this measured **3833 ms against fp32's 2670 ms** — 1.44x slower there, because
+ * dequantising 4-bit weights costs more than the memory traffic it saves. It was labelled
+ * "fast" and described as "quicker per frame" on the strength of its size alone, which was
+ * never measured and is false. The honest offer is a smaller DOWNLOAD at some cost in
+ * quality and, on that CPU, in speed. Whether a GPU execution provider or a different
+ * architecture reverses it is a separate unmeasured question (§V899) and must not be
+ * assumed here either.
  */
 export const DEPTH_LIVE: ModelDescriptor = {
   id: "depth-anything-v2-small-q4f16",
@@ -99,8 +129,9 @@ export const POSE_ACCURATE: ModelDescriptor = {
 /**
  * The 8-bit variant: a quarter of the download.
  *
- * ⚠ Also SLOWER, and by more: **67 ms against fp32's 18 ms** on the CPU path (§T753).
- * Same lesson as the depth pair — a size ratio is not a speed ratio.
+ * ⚠ Also MEASURED SLOWER, and by more: **67 ms against fp32's 18 ms** on the CPU path,
+ * 2026-09-01 on `MEASUREMENT_MACHINE` (§T753). Same lesson as the depth pair — a size
+ * ratio is not a speed ratio — and the same §V899 caveat: that ordering is one machine's.
  */
 export const POSE_LIVE: ModelDescriptor = {
   id: "movenet-lightning-int8",
@@ -135,11 +166,17 @@ export const MATTE_ACCURATE: ModelDescriptor = {
 };
 
 /**
- * ⚠ THE QUANTIZED BUILD TRADES ROBUSTNESS, NOT SPEED, AND IT BREAKS ON A DIM PICTURE.
+ * ⚠ THE QUANTIZED BUILD BUYS DOWNLOAD, NOT SPEED, AND IT WANTS A BRIGHT INPUT.
  *
- * Measured 2026-09-03, both builds, same portrait, same letterboxed 512² packing, wasm.
- * The number that matters is the MEAN INPUT LEVEL, and coverage is the fraction of the
- * frame each one claims (the subject occupies about 0.28 of it):
+ * It is a KEPT option and the ruling is the owner's (§T1095): *"keep viable options. Never
+ * know if it may be different on Windows or different GPU architecture so options are
+ * good."* Everything below is what it costs to pick it WELL — a narrower input range that
+ * is measured, and a speed result that belongs to one GPU.
+ *
+ * Measured 2026-09-03 on `MEASUREMENT_MACHINE`, both builds, same portrait, same
+ * letterboxed 512² packing, wasm. The number that matters is the MEAN INPUT LEVEL, and
+ * coverage is the fraction of the frame each one claims (the subject occupies about 0.28
+ * of it):
  *
  *   mean in   accurate            quantized
  *   0.651     0.281  (0.50,0.70)  0.288  (0.50,0.70)   both correct
@@ -156,8 +193,34 @@ export const MATTE_ACCURATE: ModelDescriptor = {
  * collapse zone. That is the whole of "we see something in the matte, but it is not
  * correct", and it is why this build's copy names the trade instead of implying speed.
  *
- * It is not faster, either: 928 ms against the accurate build's 818 ms on the same input
- * under wasm. What it buys is 19 MB of download and nothing else.
+ * §T1091 MEASURED THE SAME CLIFF FROM THE OTHER SIDE, ON THE FEED THIS APP ACTUALLY
+ * BUILDS. Seven frames, all four matte models, the shipped linear feed against the
+ * display-referred source bytes: the other three agree with themselves across the two
+ * feeds (IoU 0.864 – 0.997), and this build reads **IoU 0.278 – 0.695 on every frame, the
+ * easy ones included — not one reached 0.70**. That is this table restated as a
+ * sensitivity: the linear feed measured 0.10 – 0.56 mean over those frames, straddling the
+ * ~0.2 where this build falls apart, so which side of it a given picture lands on is what
+ * decides the matte. BRIGHTNESS is the axis and the curve's shape is incidental — the
+ * display-referred feed lifts the same frames to 0.26 – 0.73 and the result is still holed
+ * and fragmented, merely less so, which is why §T1091 refused to bend the shared preprocess
+ * for it. A frame-derived LEVEL NORMALISATION is the option that would address the domain
+ * directly; it is named, unbuilt and open (§T1095).
+ *
+ * ⚠ AND THE SPEED RESULT IS ONE GPU'S — §V899, and this row is where that invariant came
+ * from. On `MEASUREMENT_MACHINE`, 2026-09-03: **400 ms on the WebGPU provider against
+ * 311 ms on threaded wasm**, beside the accurate build's 30 ms on that same provider; and
+ * on one wasm thread, 928 ms against the accurate build's 818 ms. So HERE the GPU is the
+ * wrong rung for this artefact and `auto`, which tries WebGPU first, takes it. That is a
+ * MEASUREMENT AND NOT A PROPERTY: an int8 path on Apple's Metal is not the same silicon as
+ * one on NVIDIA or AMD, and a quantized build losing on this GPU is exactly the result that
+ * can invert. Hence the node's Backend chooser is not a legacy knob — it is the escape
+ * hatch for every architecture nobody here has measured, and pinning `wasm` is what makes
+ * this artefact behave on THIS machine.
+ *
+ * WHAT IT BUYS: 19 MB of download. WHERE IT IS AT ITS BEST: a bright, well-exposed subject,
+ * on a machine where the download is the binding constraint. (Cutting it was the other
+ * option and was refused twice over — the owner's ruling above, and because removing a
+ * shipped model rewrites every saved document that names it, §V831.)
  */
 export const MATTE_FAST: ModelDescriptor = {
   id: "modnet-photographic-quantized",
@@ -181,8 +244,9 @@ export const MATTE_FAST: ModelDescriptor = {
  * blaming a kernel MobileNetV3 needs. Both halves were wrong: the backbone's pooling is
  * 9x `GlobalAveragePool` and carries no `ceil_mode`, and the three nodes that do carry it
  * are the recurrent decoder's source pyramid. `model-patch.ts` clears them in memory
- * after the download's hash is checked, and RVM runs on WebGPU — 16 ms at the default
- * ratio, against 126 ms on one wasm thread.
+ * after the download's hash is checked, and the WebGPU provider then executes it — 16 ms
+ * at the default ratio against 126 ms on one wasm thread, measured 2026-09-03 on
+ * `MEASUREMENT_MACHINE`.
  *
  * The CPU table below is kept because it is still the floor a machine without WebGPU
  * pays, and because it was measured on a different machine and day than the T1084
@@ -191,6 +255,15 @@ export const MATTE_FAST: ModelDescriptor = {
  * the app's own 512² letterbox, median of five warm runs with the recurrent state fed
  * back —
  *
+ * ⚠ T1095/§V899 LEFT THAT SENTENCE STANDING AND FLAGS IT INSTEAD. "A different machine"
+ * is the ONE claim in this file that a second machine was ever used, and §V899 records the
+ * opposite — that this project's whole performance picture came off `MEASUREMENT_MACHINE`.
+ * One of the two is wrong and neither is safe to overwrite from a chair: the wasm figures
+ * here may have come off a genuinely different box, or "machine" may have meant a
+ * different browser session (the thread-count note below is exactly that kind of
+ * difference, and is worth 2.3x on its own). So the table keeps its stated provenance,
+ * this note keeps the doubt visible, and whoever re-measures resolves it —
+ *
  *   downsample_ratio   internal   ms     state/frame
  *   0.25               128 px      61    0.38 MB     speckle below the subject
  *   0.375              192 px     100    0.86 MB     clean
@@ -198,9 +271,10 @@ export const MATTE_FAST: ModelDescriptor = {
  *   0.75               384 px     409    3.45 MB     clean
  *   1.0                512 px     724    6.13 MB     clean
  *
- * On WebGPU, patched, the same five ratios measured 12 / 12 / 16 / 24 / 36 ms — so
- * against MODNet's 30 ms on the same provider it is now roughly a WASH, and the choice
- * between them is back to being the character choice this block calls it. What RVM buys:
+ * On WebGPU, patched, the same five ratios measured 12 / 12 / 16 / 24 / 36 ms, 2026-09-03
+ * on `MEASUREMENT_MACHINE` — so against MODNet's 30 ms on that same provider and that
+ * same machine it is roughly a WASH, and the choice between them is back to being the
+ * character choice this block calls it. What RVM buys:
  *
  *  - TEMPORAL COHERENCE THAT IS LEARNED, carried in four recurrent tensors rather than
  *    bolted on as an average over frames. Measured on a subject moving ~6 source px per
@@ -250,10 +324,11 @@ export const MATTE_RVM: ModelDescriptor = {
  * T1088 — MediaPipe SelfieSegmenter, and it is a SECOND RUNTIME, not a fourth ONNX file
  * ═══════════════════════════════════════════════════════════════════════════════════
  *
- * The owner's complaint was that MATTE_FAST measures 400 ms on WebGPU against 311 ms on
- * threaded wasm, and that his own `muse-eeg-web` mattes far quicker without Electron.
- * Measured on this machine (M3 Max, Chrome, the app's own COOP+COEP regime, 120 timed
- * iterations after 20 warm), this artefact answers that directly:
+ * The owner's complaint was that MATTE_FAST measured 400 ms on WebGPU against 311 ms on
+ * threaded wasm HERE (§V899: on this GPU, and see `MATTE_FAST` for why that is not a
+ * property of the model), and that his own `muse-eeg-web` mattes far quicker without
+ * Electron. Measured 2026-09-03 on `MEASUREMENT_MACHINE`, in the app's own COOP+COEP
+ * regime, 120 timed iterations after 20 warm, this artefact answers that directly:
  *
  *   fed    inference only   inference + mask read   DELIVERED to a WebGPU texture
  *   256²   3.73 ms          5.01 ms                 5.46 ms

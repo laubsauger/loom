@@ -3,8 +3,9 @@ import { describe, expect, it } from "vitest";
 import { allNodeDefinitions } from "./index.ts";
 import { inferenceModelSchema, letterboxPreprocessWgsl } from "./inference-node.ts";
 import { effectiveParameterSchema } from "../../domain/parameters/resolve.ts";
-import { ALL_MODELS } from "../../runtime/models/model-catalogue.ts";
+import { ALL_MODELS, MEASUREMENT_MACHINE } from "../../runtime/models/model-catalogue.ts";
 import type { NodeDefinition } from "../../domain/types/node-definition.ts";
+import type { ParameterSchema } from "../../domain/types/parameters.ts";
 
 /**
  * §V827 — WHAT EVERY MODEL-RUNNING NODE OWES, AS A PROPERTY RATHER THAN THREE HABITS.
@@ -130,6 +131,106 @@ describe("§V827 — every model-running node meets the seam's obligations", () 
         expect(surface, `${definition.type} names ${banned}`).not.toContain(banned);
       }
     }
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ * §V899 — A PERFORMANCE NUMBER TRAVELS WITH THE MACHINE IT CAME OFF
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ *
+ * The owner, ruling that `MATTE_FAST` stays: "keep viable options. Never know if it may be
+ * different on Windows or different GPU architecture so options are good." He was
+ * correcting a framing the coordinator had written — §T1085 recorded that the quantized
+ * MODNet **IS** slower on WebGPU (400 ms against 311 ms on threaded wasm), and the true
+ * sentence is that it MEASURED slower on ONE GPU, on one day. A quantized build losing on
+ * Apple's Metal path is exactly the result that can invert on NVIDIA or AMD, where the
+ * 8-bit kernels are not the same silicon.
+ *
+ * Every performance figure in this repository came off that one machine, so the drift is
+ * not one row's: `DEPTH_PROVIDERS` wrote its provenance out by hand and the newer rows
+ * stopped doing it. This gate is the discipline made non-optional — a time or a speed
+ * ratio anywhere a USER reads it must carry `MEASUREMENT_MACHINE`.
+ *
+ * It is deliberately about the copy rather than about the comments: a doc block is read by
+ * whoever is already editing the file, and a parameter description is read by the person
+ * deciding what to run on hardware nobody here has ever touched. That person is the one
+ * who inherits the wrong conclusion.
+ */
+/*
+ * A duration, a rate, or a speed ratio — the three shapes a cost is written in here.
+ *
+ * `per second` is in the list because the FIRST version of this gate missed the matte
+ * node's own description ("around one per second on the GPU provider"), which spells its
+ * number as a word: the gate passed that sentence with the machine deleted, so it was
+ * proving nothing about the surface it exists for. `times|x faster` carries no digit
+ * requirement for the same reason — pose wrote "roughly three times slower".
+ *
+ * It over-reaches slightly: "runs per second" as a bare UNIT is not a claim. That is the
+ * safe direction, because naming the machine beside a number is never wrong.
+ */
+const PERFORMANCE_CLAIM =
+  /\b\d+(?:\.\d+)?\s*(?:ms|milliseconds|seconds)\b|\b\d+(?:\.\d+)?\s+s\b|\bper second\b|\b(?:x|times)\s+(?:faster|slower)\b/i;
+
+/**
+ * Every schema this node can show, one per model it offers — because the numbers live on
+ * the PER-ARTEFACT knobs (`downsampleRatio` exists only under RVM, and the Backend chooser
+ * does not exist under MediaPipe at all), and a scan of the default bag alone would walk
+ * past them.
+ */
+function everySchemaOf(definition: NodeDefinition): readonly ParameterSchema[] {
+  const model = effectiveParameterSchema(definition, {})["model"];
+  const bags: Array<Record<string, unknown>> =
+    model?.type === "enum" ? model.options.map((option) => ({ model: option.value })) : [];
+  return [{}, ...bags].map((stored) => effectiveParameterSchema(definition, stored));
+}
+
+describe("§V899 — a time or a speed ratio in a model node's copy names its machine", () => {
+  it("holds for every parameter of every model node, under every model it offers", () => {
+    for (const definition of inferenceNodes) {
+      for (const schema of everySchemaOf(definition)) {
+        for (const [key, parameter] of Object.entries(schema)) {
+          const said = [
+            parameter.label,
+            parameter.description ?? "",
+            ...(parameter.type === "enum" ? parameter.options.map((option) => option.label) : []),
+          ].join(" ");
+          if (!PERFORMANCE_CLAIM.test(said)) continue;
+          expect(
+            said,
+            `${definition.type}.${key} states a measured cost without naming the machine ` +
+              `it came off — §V899. Compose it with measuredOn(date).`,
+          ).toContain(MEASUREMENT_MACHINE);
+        }
+      }
+    }
+  });
+
+  it("holds for the node's own description, which the library and help both show", () => {
+    for (const definition of inferenceNodes) {
+      const said = definition.description ?? "";
+      if (!PERFORMANCE_CLAIM.test(said)) continue;
+      expect(said, `${definition.type}'s description states a cost with no machine`).toContain(
+        MEASUREMENT_MACHINE,
+      );
+    }
+  });
+
+  it("is looking at copy that really does quote numbers, or it proves nothing", () => {
+    // A regex that matched nothing would pass this file forever. The matte node is the
+    // reason the invariant exists and its copy is dense with milliseconds; if a rewrite
+    // ever strips every number out of it, this fails and someone re-reads the rule rather
+    // than inheriting a gate that stopped gating.
+    const matte = inferenceNodes.find((definition) => definition.type === "matte");
+    const quoted = everySchemaOf(matte as NodeDefinition)
+      .flatMap((schema) => Object.values(schema))
+      .filter((parameter) =>
+        PERFORMANCE_CLAIM.test(
+          `${parameter.description ?? ""} ` +
+            (parameter.type === "enum" ? parameter.options.map((o) => o.label).join(" ") : ""),
+        ),
+      );
+    expect(quoted.length).toBeGreaterThan(0);
   });
 });
 
