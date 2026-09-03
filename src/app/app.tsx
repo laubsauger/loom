@@ -1351,16 +1351,31 @@ export function App({
                 onPortDragChange={onPortDragChange}
                 onPatchResult={onPatchResult}
                 actionsRef={actionsRef}
-                previewBackend={insideComponent ? null : (backend ?? null)}
+                /*
+                 * T1051 — the SAME backend inside a component: this was `null` inside,
+                 * and since the preview hook's loop is keyed on its backend, DIVING
+                 * KILLED THE LOOP — the second of the two starvations behind "no signal
+                 * inside a component" (the first was the emptied compiledOutputs below).
+                 * Both guards predate T1019's flatOf translation, which is what makes
+                 * flat plan rows addressable from a dived pane and both guards obsolete.
+                 */
+                previewBackend={backend ?? null}
                 graph={editing.graph}
                 /*
-                 * Empty inside a component, deliberately. `flattenComponents` prefixes an
-                 * internal node's id with its instance chain (`c1/blurA`), so the root
-                 * plan's outputs are keyed on names the internal graph never uses — and
-                 * an unprefixed id that DID match would be another node's picture on this
-                 * node's slot, which is worse than no preview (§V8, B41's shape).
+                 * T1051 — the SAME outputs inside a component as outside, and the pane's
+                 * `flatPrefix` is what makes that safe. This used to be [] inside, from a
+                 * real fear: flatten prefixes inner ids (`c1/blurA`), so an UNPREFIXED
+                 * inner id that happened to match a root row would put another node's
+                 * picture on this node's slot (§V8, B41's shape). T1019 answered that
+                 * fear — every plan-facing lookup in the preview hook goes through
+                 * `flatOf`, which prepends the dived chain — but this guard survived it,
+                 * so the dived pane matched NOTHING: `facts` empty, every tile in the
+                 * no-output branch, seventeen of nineteen TimeGrid interiors reading
+                 * "no signal" on a live GPU (measured, the owner's third report). The
+                 * fix that translates ids is worthless while the feed is cut upstream
+                 * of it: starving the pane was the bug wearing the fear's old clothes.
                  */
-                compiledOutputs={insideComponent ? [] : (compile.compiled?.outputs ?? [])}
+                compiledOutputs={compile.compiled?.outputs ?? []}
                 previewFps={runtime.settings.previewFps}
                 previewLongEdge={runtime.settings.previewLongEdge}
                 previewSinks={previewSinks}
