@@ -5,7 +5,7 @@ import type {
   ValueChannels,
   ValueEvaluateContext,
 } from "../../domain/types/node-definition.ts";
-import type { NumberParameter, ParameterSchema } from "../../domain/types/parameters.ts";
+import type { NumberParameter, ParameterSchema, ParameterValue } from "../../domain/types/parameters.ts";
 import { VALUE_PORT } from "./common-ports.ts";
 import { resolveSwitchBlend, resolveSwitchIndex, switchParametersFor } from "./switch.ts";
 import { cycleHash } from "./values.ts";
@@ -43,6 +43,15 @@ function mapChannels(bag: ValueChannels, map: (value: number, name: string) => n
   return out;
 }
 
+/**
+ * §V146 for T991's range bounds: they are live controls in every operation and mean
+ * something in exactly one, and a control that silently does nothing is worse than one
+ * that is not there. Inactive is not disabled — the value stays editable, so setting a
+ * range before switching the operation on stays a normal way to work.
+ */
+const rangeOnly = (values: Readonly<Record<string, ParameterValue>>): string | null =>
+  values["operation"] === "range" ? null : "Only the Range operation reads this.";
+
 /** T275 — Mouse (§V182): the SAME pointer the shaders read, never a second listener. */
 export const mouseNode: NodeDefinition = {
   type: "mouse",
@@ -62,14 +71,48 @@ export const mouseNode: NodeDefinition = {
   compile: noPasses,
 };
 
-/** T276 — Math: per-channel arithmetic against a second input (or the constant). */
+/**
+ * T991 — RE-RANGE, the join between an external signal and a manifest.
+ *
+ * A MIDI CC arrives 0..1, an OSC value arrives in whatever the sender chose, a Lag's
+ * output is in whatever unit its input was — and every one of them lands on a parameter
+ * with its own declared bounds. Written with the operations that already existed, that
+ * is `(x - inLow) / (inHigh - inLow) * (outHigh - outLow) + outLow`: four chained nodes
+ * for the single most reached-for value operation there is. TD's Math CHOP has it as a
+ * section of the same node, and so does this one.
+ *
+ * ## Outside the input range is a CHOICE, never a guess
+ *
+ * A value past `From High` is a real case, not a hypothetical: that is exactly what an
+ * external signal does the first time someone turns the knob past where they turned it
+ * while calibrating. Clamping loses it silently; extrapolating amplifies it silently.
+ * Both are defensible and neither is safe to assume, so `outside` names which is
+ * happening and the parameter's own description says it in the panel.
+ *
+ * EXTRAPOLATE is the default, for three reasons and not for symmetry: it is TD's Math
+ * CHOP behaviour, so the idiom carries over unaltered; it is the only one of the two
+ * that loses nothing, and `valueLimit` already exists to clamp AFTER a re-range whereas
+ * nothing can un-clamp; and a clamping default would make this node quietly do
+ * `valueLimit`'s job, which is the two-nodes-one-behaviour shape §V316 warns about.
+ *
+ * ## A degenerate input range
+ *
+ * `From Low == From High` is a divide by zero, and it is a REAL input — it is what an
+ * un-calibrated range looks like before the user has touched it, and it is what
+ * `From High` passes through on its way from 1 to 0 while being dragged. An input span
+ * of zero carries NO information: every possible input maps to the same output, so the
+ * only question is which one. It answers `To Low` — a finite, deterministic number at
+ * the named end of the declared output range — rather than `Infinity`, `NaN`, or the
+ * input passed through unchanged. The last is the tempting one and it is the worst: it
+ * would make a mis-set range look like a working wire.
+ */
 export const valueMathNode: NodeDefinition = {
   type: "valueMath",
   version: 1,
   title: "Math",
   category: "value",
-  description: "Per-channel arithmetic: input (op) operand. The operand is the b input's matching channel, else its value, else the constant. CLOCKLESS (§V436): it reads no clock, so whatever its inputs do across a timeline loop, it does.",
-  tags: ["value", "math", "chop"],
+  description: "Per-channel arithmetic: input (op) operand, or Range to re-map each channel from one span onto another. The operand is the b input's matching channel, else its value, else the constant. CLOCKLESS (§V436): it reads no clock, so whatever its inputs do across a timeline loop, it does.",
+  tags: ["value", "math", "chop", "range", "remap"],
   inputs: [
     { id: "a", label: "A", type: VALUE_PORT },
     { id: "b", label: "B", type: VALUE_PORT, optional: true },
@@ -87,13 +130,92 @@ export const valueMathNode: NodeDefinition = {
         { value: "divide", label: "Divide" },
         { value: "minimum", label: "Minimum" },
         { value: "maximum", label: "Maximum" },
+        // T991. APPENDED, never inserted, and `default` is untouched (§V831): an option
+        // added to the end of a list cannot change what any stored document resolves to.
+        { value: "range", label: "Range" },
       ],
     },
-    operand: { type: "number", label: "Operand", default: 1 },
+    operand: {
+      type: "number",
+      label: "Operand",
+      default: 1,
+      inactiveWhen: (values) =>
+        values["operation"] === "range" ? "Range reads the four bounds, not the operand." : null,
+    },
+    /*
+     * §V107: every one of these is a full parameter and therefore takes every mode. That
+     * is the point rather than a side effect — `From High` bound to `op('audio1').chan.peak`
+     * is auto-gain, and a static-only bound could not express it.
+     */
+    fromLow: {
+      type: "number",
+      label: "From Low",
+      group: "Range",
+      default: 0,
+      description: "The input value that maps onto To Low.",
+      inactiveWhen: rangeOnly,
+    },
+    fromHigh: {
+      type: "number",
+      label: "From High",
+      group: "Range",
+      default: 1,
+      description: "The input value that maps onto To High; equal to From Low, every input maps to To Low.",
+      inactiveWhen: rangeOnly,
+    },
+    toLow: {
+      type: "number",
+      label: "To Low",
+      group: "Range",
+      default: 0,
+      description: "What From Low becomes.",
+      inactiveWhen: rangeOnly,
+    },
+    toHigh: {
+      type: "number",
+      label: "To High",
+      group: "Range",
+      default: 1,
+      description: "What From High becomes.",
+      inactiveWhen: rangeOnly,
+    },
+    outside: {
+      type: "enum",
+      label: "Outside",
+      group: "Range",
+      default: "extrapolate",
+      options: [
+        { value: "extrapolate", label: "Extrapolate" },
+        { value: "clamp", label: "Clamp" },
+      ],
+      description: "Extrapolate carries a value from outside the input range on past the output range; Clamp pins it to the output range.",
+      inactiveWhen: rangeOnly,
+    },
   },
   valueEvaluate: ({ inputs, values }) => {
     const a = inputs["a"] ?? {};
     const b = inputs["b"];
+
+    if (values["operation"] === "range") {
+      const fromLow = num(values["fromLow"], 0);
+      const span = num(values["fromHigh"], 1) - fromLow;
+      const toLow = num(values["toLow"], 0);
+      const reach = num(values["toHigh"], 1) - toLow;
+      // The degenerate span, decided once and above the loop: no input distinguishes
+      // itself from any other, so there is nothing per channel left to compute.
+      if (span === 0) return mapChannels(a, () => toLow);
+      const clamps = values["outside"] === "clamp";
+      return mapChannels(a, (value) => {
+        const position = (value - fromLow) / span;
+        // Clamped on the 0..1 POSITION rather than on the output: an inverted range
+        // (From Low above From High, or To Low above To High) is a legitimate way to
+        // write a reversal, and clamping the output would need to know which end was
+        // which. The position always runs low-to-high whichever way the bounds do.
+        const held = clamps ? Math.min(1, Math.max(0, position)) : position;
+        return toLow + held * reach;
+      });
+    }
+
     const fallback = num(values["operand"], 1);
     const operate = (left: number, right: number): number => {
       switch (values["operation"]) {
