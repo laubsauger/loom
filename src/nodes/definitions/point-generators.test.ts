@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   GENERATOR_SHAPES,
+  pointBoxNode,
   pointGeneratorDefinitions,
   pointGeneratorNode,
   pointSphereNode,
@@ -25,8 +26,19 @@ type DispatchShape = {
 };
 
 describe("point generator family (T298)", () => {
-  it("is seven spellings of one node: same schema minus the shape menu, same compile", () => {
-    expect(pointGeneratorDefinitions).toHaveLength(7);
+  it("is one node per shape plus the menu, and the list is derived (§V316)", () => {
+    // The presets are a Record over GENERATOR_SHAPES, so the count is forced: a shape
+    // with no node to spell it by name would not compile, and could not slip in here.
+    expect(pointGeneratorDefinitions).toHaveLength(GENERATOR_SHAPES.length + 1);
+    const spelled = new Set(pointGeneratorDefinitions.map((definition) => definition.type));
+    for (const shape of GENERATOR_SHAPES) {
+      expect(spelled, `no preset node spells ${shape}`).toContain(
+        `point${shape[0]?.toUpperCase()}${shape.slice(1)}`,
+      );
+    }
+  });
+
+  it("is eight spellings of one node: same schema minus the shape menu, same compile", () => {
     for (const definition of pointGeneratorDefinitions) {
       expect(definition.category).toBe("points");
       expect(definition.inputs).toEqual([]);
@@ -78,6 +90,29 @@ describe("point generator family (T298)", () => {
     expect(torus.pointsets?.["out"]?.topology).toBe("grid:48x24:wrapUV");
   });
 
+  /**
+   * T1057. The box is the shape that tests the T302 vocabulary rather than stretching
+   * it: six DISJOINT faces are not one cols×rows sheet, and a `grid:` claim would hand
+   * renderSurface a cell count whose quads straddle face boundaries — a picture, and a
+   * wrong one. `points` is the honest claim, and the consumer refuses by name.
+   */
+  it("publishes `points` for the box: six faces are not one grid (T1057)", () => {
+    const box = pointBoxNode.compile(
+      compileContext({ nodeId: "gen", outputs: [], parameters: { count: 600, sizeX: 3, sizeY: 1, sizeZ: 0.5, cols: 48, rows: 24 } }),
+    );
+    expect(box.diagnostics ?? []).toEqual([]);
+    expect(box.pointsets?.["out"]?.topology).toBe("points");
+    expect(box.pointsets?.["out"]?.capacity).toBe(600);
+    // cols/rows are set here and MUST NOT reach the claim — a box that quietly published
+    // grid:48x24 would address 1152 points out of an edge that carries 600.
+    const pass = box.passes[0] as DispatchShape;
+    expect(pass.uniforms["shape"]).toBe(6);
+    // All three extents reach the kernel, independently — the whole point of the shape.
+    expect(pass.uniforms["sizeX"]).toBe(3);
+    expect(pass.uniforms["sizeY"]).toBe(1);
+    expect(pass.uniforms["sizeZ"]).toBe(0.5);
+  });
+
   it("switches shape through a uniform, never a recompile (§V5)", () => {
     const passFor = (shape: string): DispatchShape =>
       pointGeneratorNode.compile(
@@ -103,8 +138,35 @@ describe("point generator family (T298)", () => {
     expect(inactiveReason("cols", { shape: "grid" })).toBeNull();
     expect(inactiveReason("sizeY", { shape: "grid" })).toBeNull();
     expect(inactiveReason("radius", { shape: "grid" })).toContain("grid");
+    // T1057: the box is the one shape that reads all three extents and no radius.
+    expect(inactiveReason("sizeX", { shape: "box" })).toBeNull();
+    expect(inactiveReason("sizeY", { shape: "box" })).toBeNull();
+    expect(inactiveReason("sizeZ", { shape: "box" })).toBeNull();
+    expect(inactiveReason("radius", { shape: "box" })).toContain("box");
+    expect(inactiveReason("radius2", { shape: "box" })).toContain("box");
+    expect(inactiveReason("cols", { shape: "box" })).toContain("box");
+    expect(inactiveReason("rows", { shape: "box" })).toContain("box");
     // A preset answers from its FIXED shape, ignoring whatever values carry.
     expect(pointSphereNode.parameters["radius"]?.inactiveWhen?.({})).toBeNull();
     expect(pointSphereNode.parameters["cols"]?.inactiveWhen?.({})).toContain("sphere");
+  });
+
+  /**
+   * §V831: a stored enum value with no matching option resolves to the DEFAULT with no
+   * error, so appending is the only safe edit. Every shape any shipped document can hold
+   * still has its row, and still reaches its own kernel branch.
+   */
+  it("keeps every previously shipped shape resolvable (§V831)", () => {
+    // GENERATOR_SHAPES IS the option list (the menu maps over it), so its prefix is the
+    // compatibility surface: box is APPENDED, nothing above it moved.
+    expect(GENERATOR_SHAPES.slice(0, 6)).toEqual(["line", "circle", "grid", "sphere", "tube", "torus"]);
+    expect(GENERATOR_SHAPES[6]).toBe("box");
+    const indices = GENERATOR_SHAPES.map(
+      (shape) =>
+        (pointGeneratorNode.compile(compileContext({ nodeId: "gen", outputs: [], parameters: { shape } }))
+          .passes[0] as DispatchShape).uniforms["shape"],
+    );
+    // Appended, never renumbered: torus is still 5 for every document that stored it.
+    expect(indices).toEqual([0, 1, 2, 3, 4, 5, 6]);
   });
 });

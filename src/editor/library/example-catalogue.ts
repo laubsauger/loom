@@ -151,6 +151,7 @@ const CATEGORY_SIGNATURES: readonly (readonly [ExampleCategory, ReadonlySet<stri
   [
     "points",
     new Set([
+      "pointBox",
       "pointGenerator",
       "pointGrid",
       "pointKernel",

@@ -193,6 +193,7 @@ export const NODE_SIDE_EFFECTS: Readonly<Record<string, SideEffect>> = {
   pointSphere: "none",
   pointTube: "none",
   pointTorus: "none",
+  pointBox: "none",
   renderInstances: "none",
   renderSurface: "none",
   pointTopology: "none",

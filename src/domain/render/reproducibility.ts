@@ -225,6 +225,7 @@ export const NODE_REPRODUCIBILITY: Readonly<Record<string, Reproducibility>> = {
   pointSphere: "pure",
   pointTube: "pure",
   pointTorus: "pure",
+  pointBox: "pure",
   renderInstances: "pure",
   renderSurface: "pure",
   pointTopology: "pure",

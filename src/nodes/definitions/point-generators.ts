@@ -10,10 +10,10 @@ import { pointPairId } from "./points.ts";
 
 /**
  * The point generator family (T298): `pointGenerator` with a shape menu, plus the
- * named presets — grid, line, circle, sphere, tube, torus — that TD users reach for by
- * name. ONE implementation (V140's Composite/Over convention): the presets share the
- * generic node's compile with the shape forced and the irrelevant knobs hidden, so a
- * fix lands in all seven nodes at once and the plan never knows which spelling built
+ * named presets — grid, line, circle, sphere, tube, torus, box — that TD users reach
+ * for by name. ONE implementation (V140's Composite/Over convention): the presets share
+ * the generic node's compile with the shape forced and the irrelevant knobs hidden, so a
+ * fix lands in all eight nodes at once and the plan never knows which spelling built
  * it. Shape reaches the KERNEL as a uniform — switching never swaps a pipeline (§V5)
  * — but the parameter is compileTime anyway, because shape also decides the published
  * topology string (T296) and an edge payload is structural for whoever consumes it
@@ -21,11 +21,20 @@ import { pointPairId } from "./points.ts";
  * module, same resources, new edge payload.
  *
  * A generator writes `position` — so it OWNS the position pair (§V197) — publishes the
- * T296 edge map, and emits `topology` for the surface renderer to come (T301):
- * grid/tube/torus carry their cols×rows connectivity analytically.
+ * T296 edge map, and emits `topology` for the surface renderer (T301): grid/tube/torus
+ * carry their cols×rows connectivity analytically. Every OTHER shape publishes `points`,
+ * and the box (T1057) is the shape that proves the vocabulary rather than stretching it
+ * — six disjoint faces are not one cols×rows sheet, and claiming a grid would hand
+ * `renderSurface` a vertex count addressing points that are not neighbours. It publishes
+ * `points` and renderSurface refuses it BY NAME (§V288), which is the honest answer.
+ *
+ * The preset table is a `Record<GeneratorShape, …>` on purpose (§V316): a shape added to
+ * `GENERATOR_SHAPES` without a node to spell it by name is a type error, not a gap
+ * someone notices months later.
  */
 
-export const GENERATOR_SHAPES = ["line", "circle", "grid", "sphere", "tube", "torus"] as const;
+/** §V831: APPEND only. A stored shape whose row disappeared silently resolves to the default. */
+export const GENERATOR_SHAPES = ["line", "circle", "grid", "sphere", "tube", "torus", "box"] as const;
 export type GeneratorShape = (typeof GENERATOR_SHAPES)[number];
 
 const SHAPE_INDEX: Record<GeneratorShape, number> = {
@@ -35,6 +44,7 @@ const SHAPE_INDEX: Record<GeneratorShape, number> = {
   sphere: 3,
   tube: 4,
   torus: 5,
+  box: 6,
 };
 
 /** Which knobs each shape actually reads — the V146 applicability data, shared. */
@@ -45,6 +55,9 @@ const SHAPE_USES: Record<GeneratorShape, ReadonlyArray<string>> = {
   sphere: ["radius"],
   tube: ["radius", "sizeZ", "cols", "rows"],
   torus: ["radius", "radius2", "cols", "rows"],
+  // The box is the only shape that reads all three extents, and no radius: it is the
+  // reason sizeZ exists as a knob separate from sizeX/sizeY.
+  box: ["sizeX", "sizeY", "sizeZ"],
 };
 
 function generatorParameters(fixedShape: GeneratorShape | null): ParameterSchema {
@@ -155,22 +168,36 @@ export const pointGeneratorNode = generatorNode(
   "pointGenerator",
   "Point Generator",
   null,
-  "Analytic point layouts — line, circle, grid, sphere, tube, torus — from one deterministic kernel. Shape is a uniform: switching never recompiles.",
+  "Analytic point layouts — line, circle, grid, sphere, tube, torus, box — from one deterministic kernel. Shape is a uniform: switching never recompiles.",
 );
 
-export const pointGridNode = generatorNode("pointGrid", "Grid Points", "grid", "A cols×rows grid of points in the xy plane.");
-export const pointLineNode = generatorNode("pointLine", "Line Points", "line", "Points along a line on x.");
-export const pointCircleNode = generatorNode("pointCircle", "Circle Points", "circle", "Points around a circle in the xy plane.");
-export const pointSphereNode = generatorNode("pointSphere", "Sphere Points", "sphere", "A Fibonacci sphere — uniform coverage, no pole clustering.");
-export const pointTubeNode = generatorNode("pointTube", "Tube Points", "tube", "A cols×rows tube along z.");
-export const pointTorusNode = generatorNode("pointTorus", "Torus Points", "torus", "A cols×rows torus: major radius around y, minor radius2.");
+/**
+ * One preset per shape, exhaustive by TYPE (§V316): shape #8 cannot land without the
+ * node that spells it by name, because this record would stop compiling.
+ */
+const SHAPE_PRESETS: Record<GeneratorShape, NodeDefinition> = {
+  grid: generatorNode("pointGrid", "Grid Points", "grid", "A cols×rows grid of points in the xy plane."),
+  line: generatorNode("pointLine", "Line Points", "line", "Points along a line on x."),
+  circle: generatorNode("pointCircle", "Circle Points", "circle", "Points around a circle in the xy plane."),
+  sphere: generatorNode("pointSphere", "Sphere Points", "sphere", "A Fibonacci sphere — uniform coverage, no pole clustering."),
+  tube: generatorNode("pointTube", "Tube Points", "tube", "A cols×rows tube along z."),
+  torus: generatorNode("pointTorus", "Torus Points", "torus", "A cols×rows torus: major radius around y, minor radius2."),
+  box: generatorNode("pointBox", "Box Points", "box", "The surface of a sizeX×sizeY×sizeZ box — six faces sharing the count by area, so a slim face gets few."),
+};
 
+export const pointGridNode = SHAPE_PRESETS.grid;
+export const pointLineNode = SHAPE_PRESETS.line;
+export const pointCircleNode = SHAPE_PRESETS.circle;
+export const pointSphereNode = SHAPE_PRESETS.sphere;
+export const pointTubeNode = SHAPE_PRESETS.tube;
+export const pointTorusNode = SHAPE_PRESETS.torus;
+export const pointBoxNode = SHAPE_PRESETS.box;
+
+/**
+ * Library order is the record's own declaration order — grid first, because it is the
+ * one everybody places — and the record is exhaustive, so the list cannot go stale.
+ */
 export const pointGeneratorDefinitions: readonly NodeDefinition[] = [
   pointGeneratorNode,
-  pointGridNode,
-  pointLineNode,
-  pointCircleNode,
-  pointSphereNode,
-  pointTubeNode,
-  pointTorusNode,
+  ...Object.values(SHAPE_PRESETS),
 ];

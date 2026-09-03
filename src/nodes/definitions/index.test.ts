@@ -180,6 +180,7 @@ describe("core catalogue (T70, T40)", () => {
       "pointSphere",
       "pointTube",
       "pointTorus",
+      "pointBox",
       "pointsFromTexture",
       "renderInstances",
       "renderSurface",

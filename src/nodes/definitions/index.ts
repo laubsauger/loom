@@ -64,6 +64,7 @@ export {
   pointSphereNode,
   pointTubeNode,
   pointTorusNode,
+  pointBoxNode,
   pointGeneratorDefinitions,
 } from "./point-generators.ts";
 export { renderInstancesNode, INSTANCE_SHAPES } from "./render-instances.ts";
