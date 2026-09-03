@@ -14,6 +14,7 @@ export {
   isComponentKeyOf,
   isParameterSlot,
   parseComponentKey,
+  componentAddressedDefinition,
   bindingFromText,
   holdsRetainedValue,
   numericLiteralFor,

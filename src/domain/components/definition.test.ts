@@ -242,3 +242,42 @@ describe("upgrade planning (§V84, §V10)", () => {
     expect(plan.diagnostics.map((d) => d.code)).toContain("component.upgrade.removedPorts");
   });
 });
+
+/**
+ * T1008/§T1019(b) — A COMPOUND COMPONENT IS A LEGAL PUBLISH TARGET. §V113 makes
+ * `color.g` a real per-channel slot in the store, and the inspector writes such keys
+ * daily — but `internalParameterOf` looked targets up as `schema[key]`, so a published
+ * parameter aimed at a component was reported missing and PRUNED as broken. That gap is
+ * why Chorus shipped one Grid vec2 where the owner asked for Rows and Columns as
+ * separate knobs. The same resolution the command door uses (T1008's shared helper)
+ * now answers here, and a genuinely wrong component still fails.
+ */
+describe("publishing a compound component (T1008/§T1019b)", () => {
+  const withComponentTarget = (key: string) => ({
+    ...bloomComponent("grade", 1),
+    graph: graphOf([node("srcA", "test.solid", { color: [0, 0, 0, 1] }, { position: { x: 0, y: 0 } })]),
+    inputs: [],
+    outputs: [],
+    parameters: [
+      {
+        key: "green",
+        definition: { type: "number" as const, label: "Green", default: 0, min: 0, max: 1 },
+        targets: [{ nodeId: "srcA", key }],
+      },
+    ],
+  });
+
+  it("validates and survives pruning — the knob the owner asked for is publishable", () => {
+    const definition = withComponentTarget("color.g");
+    const codes = validateComponentDefinition(definition, nodes).map((d) => d.code);
+    expect(codes).not.toContain("component.parameter.missingTarget");
+    // And the prune keeps it: the pre-fix behaviour silently UNPUBLISHED the knob.
+    const pruned = pruneComponentDefinition(definition, nodes);
+    expect(pruned.parameters.map((p) => p.key)).toEqual(["green"]);
+  });
+
+  it("still reports a component the compound does not have", () => {
+    const codes = validateComponentDefinition(withComponentTarget("color.q"), nodes).map((d) => d.code);
+    expect(codes).toContain("component.parameter.missingTarget");
+  });
+});

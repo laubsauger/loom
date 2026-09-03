@@ -1197,3 +1197,81 @@ describe("switching modes from the menu (§V107, §V108)", () => {
     });
   });
 });
+
+/**
+ * T1008 — COMMANDS ADDRESS COMPOUND COMPONENTS. §V113 declares `color.g` / `t.x`
+ * component-addressable and the STORE honours it (the inspector's channel rows write
+ * dotted keys daily) — but `locate()` looked keys up as `schema[key]`, which holds only
+ * base keys, so every command door refused `parameter.unknown` on a key the document
+ * demonstrably carries. Both directions matter: the copy must capture what the CHANNEL
+ * ROW SHOWS (a component that follows its compound has no slot of its own, and resolving
+ * the dotted key against the derived scalar's default would copy the DECLARED default
+ * off a channel visibly holding something else), and a genuinely wrong component must
+ * still refuse.
+ */
+describe("compound component addressing (T1008)", () => {
+  it("copies the component the channel row shows — the compound's live value, not the default", async () => {
+    const harness = createMenuHarness();
+    const nodeId = await named(harness.bus, "grade1");
+    await harness.bus.execute(
+      "graph.applyPatch",
+      patch(harness.bus.store.getRevision(), [
+        { op: "setParameters", nodeId, parameters: { tint: [0.25, 0.8, 0.5, 1] } },
+      ]),
+      context,
+    );
+    const result = await harness.bus.execute(
+      "parameter.copyValue",
+      { nodeId, parameterKey: "tint.g" },
+      context,
+    );
+    // 0.8 — the visible channel. The pre-T1008 refusal was parameter.unknown; the
+    // subtler wrong answer would be 1 (tint's declared default component).
+    expect(result.status).toBe("applied");
+    expect(result.output.text).toBe("0.8");
+  });
+
+  it("copyReference on a component writes the §V113 dotted reference", async () => {
+    const copied: string[] = [];
+    const harness = createMenuHarness(copied);
+    const nodeId = await named(harness.bus, "grade1");
+    const result = await harness.bus.execute(
+      "parameter.copyReference",
+      { nodeId, parameterKey: "tint.g" },
+      context,
+    );
+    expect(result.status).toBe("applied");
+    expect(result.output.text).toBe("op('grade1').par.tint.g");
+  });
+
+  it("paste lands on the dotted key the store already honours", async () => {
+    const harness = createMenuHarness();
+    const nodeId = await named(harness.bus, "grade1");
+    const pasted = await harness.bus.execute(
+      "parameter.paste",
+      { nodeId, parameterKey: "tint.g", text: "0.5" },
+      context,
+    );
+    expect(pasted.status).toBe("applied");
+    expect(storedOf(harness, nodeId, "tint.g")).toBe(0.5);
+  });
+
+  it("still refuses a component the compound does not have, and a dot on a scalar", async () => {
+    const harness = createMenuHarness();
+    const nodeId = await named(harness.bus, "grade1");
+    const wrongComponent = await harness.bus.execute(
+      "parameter.copyValue",
+      { nodeId, parameterKey: "tint.q" },
+      context,
+    );
+    expect(wrongComponent.status).toBe("rejected");
+    expect(wrongComponent.diagnostics[0]?.code).toBe("parameter.unknown");
+    const scalarDot = await harness.bus.execute(
+      "parameter.copyValue",
+      { nodeId, parameterKey: "radius.x" },
+      context,
+    );
+    expect(scalarDot.status).toBe("rejected");
+    expect(scalarDot.diagnostics[0]?.code).toBe("parameter.unknown");
+  });
+});

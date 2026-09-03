@@ -6,6 +6,7 @@ import type { ParameterDefinition } from "../types/parameters.ts";
 import type { PortDefinition } from "../types/ports.ts";
 import type { NodeRegistryView } from "../../nodes/registry/registry.ts";
 import { effectiveParameterSchema } from "../parameters/resolve.ts";
+import { componentAddressedDefinition } from "../parameters/slots.ts";
 import { componentNodeType, isValidComponentId } from "./component-type.ts";
 
 /**
@@ -55,7 +56,12 @@ export function internalParameterOf(
   // T903: through the funnel — publishing a REFLECTED knob (a customWgsl's `orbitSpeed`) is
   // exactly what §T880 built E46-as-a-component for, and a static read would make every one
   // of those targets unresolvable, so the published parameter would be dropped as invalid.
-  return effectiveParameterSchema(nodes.get(node.type), node.parameters)[target.key];
+  const schema = effectiveParameterSchema(nodes.get(node.type), node.parameters);
+  // T1008/§T1019(b): a COMPOUND COMPONENT is a legal publish target — §V113 makes
+  // `repeat.y` a real per-channel slot in the store, and refusing it here is why Chorus
+  // shipped one Grid vec2 where the owner asked for Rows and Columns as separate knobs.
+  // The derived scalar definition is the same one the command door resolves against.
+  return schema[target.key] ?? componentAddressedDefinition(schema, target.key);
 }
 
 function exposedPortDefinitions(

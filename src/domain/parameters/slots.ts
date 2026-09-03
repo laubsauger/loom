@@ -167,6 +167,32 @@ export function componentDefinition(
   throw new Error(`Parameter "${definition.label}" has no components.`);
 }
 
+/**
+ * T1008 — the definition a COMPONENT-ADDRESSED key resolves against, or undefined when
+ * the key is not one. §V113 declares compound parameters component-addressable and the
+ * STORE honours it (`color.r` carries its own slot and mode) — but both doors into the
+ * store looked keys up as `schema[key]`, which holds only base keys, so the command
+ * path refused `parameter.copy`/`paste`/`setMode` on `color.r` with `parameter.unknown`
+ * and the publish path could not target `repeat.y` at all. ONE resolution here, used by
+ * both, so "what can address a component" cannot answer differently per door.
+ */
+export function componentAddressedDefinition(
+  schema: ParameterSchema,
+  key: string,
+): NumberParameter | undefined {
+  const parsed = parseComponentKey(key);
+  if (parsed === null) return undefined;
+  // A literal dotted key the schema declares outright wins; this is only the fallback.
+  if (schema[key] !== undefined) return undefined;
+  const base = schema[parsed.base];
+  if (base === undefined) return undefined;
+  const names = componentNamesFor(base);
+  if (names === null) return undefined;
+  const index = names.indexOf(parsed.component);
+  if (index < 0) return undefined;
+  return componentDefinition(base, parsed.component, index);
+}
+
 /* ------------------------------------------------------------------------------------
  * The WRITE half: building the next slot (T204, T246, §V107, §V108)
  *

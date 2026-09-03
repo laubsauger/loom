@@ -17,9 +17,11 @@ import { pulseCommandInput } from "../parameters/pulse.ts";
 import { parameterReference, parseParameterReference } from "../parameters/reference.ts";
 import { resolveParameter, effectiveParameterSchema } from "../parameters/resolve.ts";
 import {
+  componentAddressedDefinition,
   componentKey,
   componentNamesFor,
   isParameterSlot,
+  parseComponentKey,
   slotFromValue,
   withMode,
 } from "../parameters/slots.ts";
@@ -310,7 +312,11 @@ function locate(context: CommandContext, input: ParameterRef): Located | Runtime
   // T880: a customWgsl's controls are reflected from its own shader, so validate the WRITE
   // against the node's EFFECTIVE schema — otherwise a reflected param (orbitSpeed, lightColor)
   // is "unknown" and every edit to it is refused, which is what the owner hit.
-  const definition = effectiveParameterSchema(context.registry.get(node.type), node.parameters)[input.parameterKey];
+  const schema = effectiveParameterSchema(context.registry.get(node.type), node.parameters);
+  // T1008: `schema` holds only BASE keys, but §V113 makes compounds component-
+  // addressable and the STORE honours it — so `color.r` resolves against the derived
+  // per-component definition rather than refusing a key the inspector writes daily.
+  const definition = schema[input.parameterKey] ?? componentAddressedDefinition(schema, input.parameterKey);
   if (definition === undefined) {
     return refuse(
       "parameter.unknown",
@@ -338,9 +344,39 @@ function capture(
   found: Located,
   kind: "value" | "reference",
 ): ParameterClipboard {
-  const resolved = resolveParameter(found.node, key, found.definition, {
-    schema: effectiveParameterSchema(context.registry.get(found.node.type), found.node.parameters),
-  });
+  const schema = effectiveParameterSchema(context.registry.get(found.node.type), found.node.parameters);
+  /*
+   * T1008 — a COMPONENT key copies what the channel row SHOWS. Resolving the dotted
+   * key against its derived scalar definition would fall back to the compound's
+   * DECLARED default whenever the component follows the compound (no slot of its
+   * own) — copying 0 off a `color.r` visibly holding 0.8. So the component path
+   * resolves the BASE and reads the §V113 per-component resolution the inspector's
+   * rows already read: same value, same active binding, one answer.
+   */
+  const parsed = schema[key] === undefined ? parseComponentKey(key) : null;
+  const baseDefinition = parsed === null ? undefined : schema[parsed.base];
+  if (parsed !== null && baseDefinition !== undefined) {
+    const base = resolveParameter(found.node, parsed.base, baseDefinition, { schema });
+    const names = componentNamesFor(baseDefinition) ?? [];
+    const component = base.components?.[names.indexOf(parsed.component)];
+    const name = nodeName(found.node);
+    const active =
+      component?.slot !== undefined && component.slot.mode !== "static"
+        ? (component.slot.bindings[component.slot.mode] ?? null)
+        : null;
+    return {
+      kind,
+      value: component?.value ?? 0,
+      valueText: valueText(component?.value ?? 0),
+      reference: name === undefined ? null : parameterReference(name, key),
+      nodeName: name ?? null,
+      parameterKey: key,
+      binding: active,
+      arity: 1,
+      typeName: found.definition.type,
+    };
+  }
+  const resolved = resolveParameter(found.node, key, found.definition, { schema });
   const name = nodeName(found.node);
   const stored = found.node.parameters[key];
   const slot = isParameterSlot(stored) ? stored : null;
