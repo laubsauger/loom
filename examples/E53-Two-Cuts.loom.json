@@ -1,0 +1,717 @@
+{
+  "assets": [],
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e1": {
+        "id": "e1",
+        "order": 0,
+        "source": {
+          "nodeId": "bed",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "src",
+          "portId": "inputs"
+        }
+      },
+      "e10": {
+        "id": "e10",
+        "source": {
+          "nodeId": "hazeW",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "washW",
+          "portId": "input"
+        }
+      },
+      "e11": {
+        "id": "e11",
+        "source": {
+          "nodeId": "hazeC",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "washC",
+          "portId": "input"
+        }
+      },
+      "e12": {
+        "id": "e12",
+        "source": {
+          "nodeId": "washW",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "baseL",
+          "portId": "in1"
+        }
+      },
+      "e13": {
+        "id": "e13",
+        "source": {
+          "nodeId": "dim",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "baseL",
+          "portId": "in2"
+        }
+      },
+      "e14": {
+        "id": "e14",
+        "source": {
+          "nodeId": "washC",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "baseR",
+          "portId": "in1"
+        }
+      },
+      "e15": {
+        "id": "e15",
+        "source": {
+          "nodeId": "dim",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "baseR",
+          "portId": "in2"
+        }
+      },
+      "e16": {
+        "id": "e16",
+        "source": {
+          "nodeId": "keyM",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "leftC",
+          "portId": "in1"
+        }
+      },
+      "e17": {
+        "id": "e17",
+        "source": {
+          "nodeId": "baseL",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "leftC",
+          "portId": "in2"
+        }
+      },
+      "e18": {
+        "id": "e18",
+        "source": {
+          "nodeId": "keyV",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "rightC",
+          "portId": "in1"
+        }
+      },
+      "e19": {
+        "id": "e19",
+        "source": {
+          "nodeId": "baseR",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "rightC",
+          "portId": "in2"
+        }
+      },
+      "e2": {
+        "id": "e2",
+        "order": 1,
+        "source": {
+          "nodeId": "cam",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "src",
+          "portId": "inputs"
+        }
+      },
+      "e20": {
+        "id": "e20",
+        "source": {
+          "nodeId": "leftC",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "halfL",
+          "portId": "in1"
+        }
+      },
+      "e21": {
+        "id": "e21",
+        "source": {
+          "nodeId": "gateL",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "halfL",
+          "portId": "in2"
+        }
+      },
+      "e22": {
+        "id": "e22",
+        "source": {
+          "nodeId": "rightC",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "halfR",
+          "portId": "in1"
+        }
+      },
+      "e23": {
+        "id": "e23",
+        "source": {
+          "nodeId": "gateR",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "halfR",
+          "portId": "in2"
+        }
+      },
+      "e24": {
+        "id": "e24",
+        "source": {
+          "nodeId": "halfL",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "sum",
+          "portId": "in1"
+        }
+      },
+      "e25": {
+        "id": "e25",
+        "source": {
+          "nodeId": "halfR",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "sum",
+          "portId": "in2"
+        }
+      },
+      "e26": {
+        "id": "e26",
+        "source": {
+          "nodeId": "sum",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      },
+      "e3": {
+        "id": "e3",
+        "source": {
+          "nodeId": "src",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "matte",
+          "portId": "input"
+        }
+      },
+      "e4": {
+        "id": "e4",
+        "source": {
+          "nodeId": "src",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "keyM",
+          "portId": "in1"
+        }
+      },
+      "e5": {
+        "id": "e5",
+        "source": {
+          "nodeId": "matte",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "keyM",
+          "portId": "in2"
+        }
+      },
+      "e6": {
+        "id": "e6",
+        "source": {
+          "nodeId": "src",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "seg",
+          "portId": "input"
+        }
+      },
+      "e7": {
+        "id": "e7",
+        "source": {
+          "nodeId": "src",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "keyV",
+          "portId": "in1"
+        }
+      },
+      "e8": {
+        "id": "e8",
+        "source": {
+          "nodeId": "seg",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "keyV",
+          "portId": "in2"
+        }
+      },
+      "e9": {
+        "id": "e9",
+        "source": {
+          "nodeId": "src",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "dim",
+          "portId": "input"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "baseL": {
+        "definitionVersion": 1,
+        "id": "baseL",
+        "label": "baseL1",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": -1020,
+          "y": -400
+        },
+        "type": "add"
+      },
+      "baseR": {
+        "definitionVersion": 1,
+        "id": "baseR",
+        "label": "baseR1",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": -1020,
+          "y": 400
+        },
+        "type": "add"
+      },
+      "bed": {
+        "definitionVersion": 1,
+        "id": "bed",
+        "label": "bed1",
+        "parameters": {
+          "amp": 1,
+          "aspectcorrect": true,
+          "exp": 1.3,
+          "gain": 0.5,
+          "harmon": 3,
+          "mono": false,
+          "offset": 0.1,
+          "period": 0.3,
+          "rough": 0.5,
+          "s4d": 1,
+          "seed": 9,
+          "speed": 0.3,
+          "spread": 2,
+          "t4d": 0.41,
+          "type": "perlin4d"
+        },
+        "position": {
+          "x": -2220,
+          "y": -140
+        },
+        "type": "noise"
+      },
+      "cam": {
+        "definitionVersion": 1,
+        "id": "cam",
+        "label": "cam1",
+        "parameters": {},
+        "position": {
+          "x": -2220,
+          "y": 140
+        },
+        "type": "webcam"
+      },
+      "dim": {
+        "definitionVersion": 1,
+        "id": "dim",
+        "label": "dim1",
+        "parameters": {
+          "brightness": 0.35
+        },
+        "position": {
+          "x": -1620,
+          "y": 0
+        },
+        "type": "level"
+      },
+      "gateL": {
+        "definitionVersion": 2,
+        "id": "gateL",
+        "label": "gateL1",
+        "parameters": {
+          "interp": "smooth",
+          "period": 1,
+          "phase": 0,
+          "stops": [
+            {
+              "color": [
+                1,
+                1,
+                1,
+                1
+              ],
+              "position": 0.47
+            },
+            {
+              "color": [
+                0,
+                0,
+                0,
+                1
+              ],
+              "position": 0.53
+            }
+          ],
+          "type": "horizontal"
+        },
+        "position": {
+          "x": -720,
+          "y": -860
+        },
+        "type": "ramp"
+      },
+      "gateR": {
+        "definitionVersion": 2,
+        "id": "gateR",
+        "label": "gateR1",
+        "parameters": {
+          "interp": "smooth",
+          "period": 1,
+          "phase": 0,
+          "stops": [
+            {
+              "color": [
+                0,
+                0,
+                0,
+                1
+              ],
+              "position": 0.47
+            },
+            {
+              "color": [
+                1,
+                1,
+                1,
+                1
+              ],
+              "position": 0.53
+            }
+          ],
+          "type": "horizontal"
+        },
+        "position": {
+          "x": -720,
+          "y": 860
+        },
+        "type": "ramp"
+      },
+      "halfL": {
+        "definitionVersion": 1,
+        "id": "halfL",
+        "label": "halfL1",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": -420,
+          "y": -160
+        },
+        "type": "multiply"
+      },
+      "halfR": {
+        "definitionVersion": 1,
+        "id": "halfR",
+        "label": "halfR1",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": -420,
+          "y": 160
+        },
+        "type": "multiply"
+      },
+      "hazeC": {
+        "definitionVersion": 1,
+        "id": "hazeC",
+        "label": "hazeC1",
+        "parameters": {
+          "amp": 1,
+          "aspectcorrect": true,
+          "exp": 1,
+          "gain": 0.5,
+          "harmon": 2,
+          "mono": false,
+          "offset": 0.3,
+          "period": 0.8,
+          "rough": 0.5,
+          "s4d": 1,
+          "seed": 34,
+          "speed": 0.12,
+          "spread": 2,
+          "t4d": 0.63,
+          "type": "perlin4d"
+        },
+        "position": {
+          "x": -1620,
+          "y": 520
+        },
+        "type": "noise"
+      },
+      "hazeW": {
+        "definitionVersion": 1,
+        "id": "hazeW",
+        "label": "hazeW1",
+        "parameters": {
+          "amp": 1,
+          "aspectcorrect": true,
+          "exp": 1,
+          "gain": 0.5,
+          "harmon": 2,
+          "mono": false,
+          "offset": 0.3,
+          "period": 0.8,
+          "rough": 0.5,
+          "s4d": 1,
+          "seed": 21,
+          "speed": 0.12,
+          "spread": 2,
+          "t4d": 0.37,
+          "type": "perlin4d"
+        },
+        "position": {
+          "x": -1620,
+          "y": -520
+        },
+        "type": "noise"
+      },
+      "keyM": {
+        "definitionVersion": 1,
+        "id": "keyM",
+        "label": "keyM1",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": -1320,
+          "y": -200
+        },
+        "type": "multiply"
+      },
+      "keyV": {
+        "definitionVersion": 1,
+        "id": "keyV",
+        "label": "keyV1",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": -1320,
+          "y": 200
+        },
+        "type": "multiply"
+      },
+      "leftC": {
+        "definitionVersion": 1,
+        "id": "leftC",
+        "label": "leftC1",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": -720,
+          "y": -260
+        },
+        "type": "over"
+      },
+      "matte": {
+        "definitionVersion": 1,
+        "id": "matte",
+        "label": "matte1",
+        "parameters": {},
+        "position": {
+          "x": -1620,
+          "y": -260
+        },
+        "type": "matte"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "label": "out1",
+        "parameters": {},
+        "position": {
+          "x": 180,
+          "y": 0
+        },
+        "type": "output"
+      },
+      "rightC": {
+        "definitionVersion": 1,
+        "id": "rightC",
+        "label": "rightC1",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": -720,
+          "y": 260
+        },
+        "type": "over"
+      },
+      "seg": {
+        "definitionVersion": 1,
+        "id": "seg",
+        "label": "seg1",
+        "parameters": {
+          "invert": false,
+          "rateLimit": 0.1
+        },
+        "position": {
+          "x": -1620,
+          "y": 260
+        },
+        "type": "personMask"
+      },
+      "src": {
+        "definitionVersion": 1,
+        "id": "src",
+        "label": "src1",
+        "parameters": {
+          "index": 0
+        },
+        "position": {
+          "x": -1920,
+          "y": 0
+        },
+        "type": "switch"
+      },
+      "sum": {
+        "definitionVersion": 1,
+        "id": "sum",
+        "label": "sum1",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": -120,
+          "y": 0
+        },
+        "type": "add"
+      },
+      "washC": {
+        "definitionVersion": 1,
+        "id": "washC",
+        "label": "washC1",
+        "parameters": {
+          "hueoffset": -150,
+          "saturation": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('seg1').chan.coverage * 8"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.2
+              }
+            },
+            "mode": "expression"
+          },
+          "value": 1
+        },
+        "position": {
+          "x": -1320,
+          "y": 520
+        },
+        "type": "hsv"
+      },
+      "washW": {
+        "definitionVersion": 1,
+        "id": "washW",
+        "label": "washW1",
+        "parameters": {
+          "hueoffset": 8,
+          "saturation": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('matte1').chan.coverage * 8"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.2
+              }
+            },
+            "mode": "expression"
+          },
+          "value": 1
+        },
+        "position": {
+          "x": -1320,
+          "y": -520
+        },
+        "type": "hsv"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E53 Two Cuts",
+  "projectId": "example-e53-two-cuts",
+  "schemaVersion": 3,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 53,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}

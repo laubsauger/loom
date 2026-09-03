@@ -42,6 +42,7 @@ export { marionetteDocument } from "./documents/marionette.ts";
 export { lissajousDocument } from "./documents/lissajous.ts";
 export { galvoDocument } from "./documents/galvo.ts";
 export { presenceDocument } from "./documents/presence.ts";
+export { twoCutsDocument } from "./documents/two-cuts.ts";
 export { pulseDocument } from "./documents/pulse.ts";
 export { lanternDocument } from "./documents/lantern.ts";
 export { chorusDocument } from "./documents/chorus.ts";
@@ -87,6 +88,7 @@ import { marionetteDocument } from "./documents/marionette.ts";
 import { lissajousDocument } from "./documents/lissajous.ts";
 import { galvoDocument } from "./documents/galvo.ts";
 import { presenceDocument } from "./documents/presence.ts";
+import { twoCutsDocument } from "./documents/two-cuts.ts";
 import { pulseDocument } from "./documents/pulse.ts";
 import { lanternDocument } from "./documents/lantern.ts";
 import { chorusDocument } from "./documents/chorus.ts";
@@ -137,5 +139,6 @@ export const EXAMPLE_DOCUMENTS: readonly ProjectDocument[] = [
   galvoDocument,
   chorusDocument,
   presenceDocument,
+  twoCutsDocument,
 ];
 
