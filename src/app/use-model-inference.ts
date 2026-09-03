@@ -14,6 +14,7 @@ import {
   POSE_INPUT_KEY,
   POSE_RESULT_KEY,
   depthSettingsFor,
+  matteInputSideFor,
 } from "@nodes/definitions/index.ts";
 import { inferenceProvidersFor } from "@nodes/definitions/inference-node.ts";
 import { scratchResourceId } from "@compiler/resources.ts";
@@ -178,7 +179,10 @@ interface InferenceRunSettings {
 function matteSettings(parameters: Readonly<Record<string, unknown>>): InferenceRunSettings {
   return {
     descriptor: parameters["model"] === MATTE_FAST.id ? MATTE_FAST : MATTE_ACCURATE,
-    inputSide: MATTE_INPUT_SIDE,
+    // §T965's knob, on the matte: the node's own Input Size, read by the definition that
+    // declares its default — never re-derived here, or "absent" would mean one thing in the
+    // schema and another in the run. The compile sizes its preprocess buffer from the same call.
+    inputSide: matteInputSideFor(parameters),
     // §V827(4): the node's own Backend request, resolved by the shared seam rather than
     // hard-coded here. Measured 2026-09-03 in Chrome: wasm 6323 ms, webgpu 658 ms for the
     // same input and a byte-identical matte, which is why `auto` tries the GPU first.

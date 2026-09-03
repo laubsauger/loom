@@ -6,7 +6,12 @@ import { scratchResourceId } from "../../compiler/resources.ts";
 import type { ModelDescriptor } from "../../runtime/models/model-acquisition.ts";
 import { DEPTH_ACCURATE, DEPTH_LIVE, DEPTH_MODELS } from "../../runtime/models/model-catalogue.ts";
 import { signatureFor } from "../../runtime/models/model-signatures.ts";
-import { inferenceModelSchema, inferenceResetSchema, letterboxPreprocessWgsl } from "./inference-node.ts";
+import {
+  inferenceAcceptsInputSize,
+  inferenceModelSchema,
+  inferenceResetSchema,
+  letterboxPreprocessWgsl,
+} from "./inference-node.ts";
 import { RGBA_TEXTURE } from "./common-ports.ts";
 import { readCompileInputs } from "./compile-context.ts";
 
@@ -159,11 +164,10 @@ function measuredCost(choice: DepthModelChoice): string {
  * offering one that fails at run time.
  */
 function acceptsInputSize(modelId: string): boolean {
-  const signature = signatureFor(modelId);
-  if (signature === undefined) return false;
-  const { shape } = signature.input;
-  const spatial = shape.slice(-2);
-  return spatial.length === 2 && spatial.every((axis) => !Number.isFinite(Number(axis)));
+  /* The rule itself moved to the §V827 seam when the matte became its second reader —
+     two copies of "is this graph symbolic" is two places for the same signature table to
+     be answered differently. The reasoning stays above; the implementation is shared. */
+  return inferenceAcceptsInputSize(modelId);
 }
 
 /**

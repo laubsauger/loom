@@ -166,7 +166,7 @@ export {
 export type { DepthNodeSettings } from "./depth.ts";
 export { pointsFromTextureNode } from "./points-from-texture.ts";
 export { poseNode, POSE_INPUT_KEY, POSE_RESULT_KEY } from "./pose.ts";
-export { matteNode, MATTE_INPUT_KEY, MATTE_RESULT_KEY } from "./matte.ts";
+export { matteNode, matteInputSideFor, MATTE_INPUT_KEY, MATTE_RESULT_KEY } from "./matte.ts";
 export {
   DEFAULT_POINT_ATTRIBUTES,
   pointKernelNode,

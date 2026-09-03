@@ -1,5 +1,6 @@
 import type { EnumParameter, ParameterSchema } from "../../domain/types/parameters.ts";
 import type { ModelDescriptor } from "../../runtime/models/model-acquisition.ts";
+import { signatureFor } from "../../runtime/models/model-signatures.ts";
 
 /**
  * §V827 — WHAT EVERY MODEL-RUNNING NODE OWES, the schema-side half, shared by
@@ -192,6 +193,27 @@ export function inferenceResetSchema(): ParameterSchema[string] {
       "THE DOWNLOADED MODEL IS KEPT — this never re-downloads, and never spends anything. " +
       "The thread is shared, so any other model node in the document restarts with it.",
   } as ParameterSchema[string];
+}
+
+/**
+ * WHETHER THIS MODEL'S GRAPH WILL ACCEPT AN INPUT SIZE AT ALL (§T965(c)).
+ *
+ * Read from the recorded signature's trailing spatial axes: symbolic names ("height",
+ * "width") mean the exporter left them free; literal digits mean the graph is pinned and
+ * anything else is refused by the session. A model with no recorded signature is treated
+ * as PINNED, which is the safe direction to be wrong in — it offers no knob rather than
+ * one that fails at run time.
+ *
+ * §T965 wrote this rule inside `depth.ts`; the matte is the second node to need it, and
+ * an Input Size that exists or does not is exactly the "computed from the weights" claim
+ * §V827 makes, so it belongs on the seam rather than in two files. `depth.ts` delegates
+ * here so the two cannot drift into different answers about the same signature table.
+ */
+export function inferenceAcceptsInputSize(modelId: string): boolean {
+  const signature = signatureFor(modelId);
+  if (signature === undefined) return false;
+  const spatial = signature.input.shape.slice(-2);
+  return spatial.length === 2 && spatial.every((axis) => !Number.isFinite(Number(axis)));
 }
 
 /**
