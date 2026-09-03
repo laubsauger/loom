@@ -3,7 +3,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { nodeGpuHost, probeDawn } from "../../runtime/backend/vgpu/node-gpu-host.ts";
 import { renderHeadless } from "./render-harness.ts";
 import type { GraphDocument, GraphNode } from "../../domain/types/graph.ts";
-import { MATTE_INPUT_SIDE, matteCoverage } from "../../runtime/models/matte-runner.ts";
+import { MATTE_INPUT_SIDE, matteCoverage, matteToFloats } from "../../runtime/models/matte-runner.ts";
 
 /**
  * THE MATTE, ON REAL HARDWARE, MEASURED AS THE VALUE A CONSUMER READS (§T957, §V288).
@@ -365,5 +365,178 @@ describe("the matte reaches the picture at full strength", () => {
     expect(matteCoverage(empty)).toBe(0);
     // §V839, as the pair: the two renders differ in the direction the metric names.
     expect(matteCoverage(discMatte())).toBeGreaterThan(matteCoverage(empty));
+  }, 240_000);
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ * WHERE THE MATTE LANDS — the geometry, measured as two centroids (§V842, §T992)
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ *
+ * The owner, once the matte stopped being empty: "we do see something in the matte… but it
+ * is not correct." Their screenshot has the subject's head and shoulders in the UPPER
+ * centre of the source and the matte's only bright region in the LOWER centre-left. A
+ * result that is present but misplaced is a GEOMETRY question, and it is one the gates
+ * above cannot see: they feed a synthetic matte and read it back, so any transform applied
+ * identically at both ends cancels out. Self-consistency is exactly what a flip preserves.
+ *
+ * §T992 is the near precedent and the reason this is worth a gate of its own: pose
+ * letterboxed its input and read its joints back as though it had not, putting every joint
+ * off by the bar width — plausible, never visibly broken, shipped.
+ *
+ * ## The method, and why it is not "look at it"
+ *
+ * A flip, a translation and a scale all look alike by eye and are trivially separable from
+ * two centroids. So this renders ONE asymmetric source — a small disc parked decisively
+ * high and left of centre — and measures where its energy is in three places:
+ *
+ *   1. the PICTURE, as the sink renders the source itself;
+ *   2. the MODEL SQUARE, from the real GPU preprocess buffer;
+ *   3. the PICTURE AGAIN, after the real un-letterbox has put a matte back on it.
+ *
+ * Step 3 uses an IDENTITY MODEL — the model input's own luma, handed back as if it were
+ * MODNet's answer — because the question is not what the model says, it is where what it
+ * says ends up. With a real model in the loop the two effects could not be separated.
+ *
+ * §V842: centroids, never an argmax. A matte is a plateau, so an argmax picks an arbitrary
+ * point on it and would report a flip and a small translation identically.
+ */
+describe("the matte lands where the subject is", () => {
+  const W = 512;
+  const H = 256;
+  const GEOMETRY_SETTINGS = settingsAt(W, H);
+
+  /** The subject: high and left, so a vertical flip and a horizontal one are both visible. */
+  const DISC = { x: 0.32, y: 0.24 };
+
+  function discGraph(withMatte: boolean): GraphDocument {
+    const nodes: Record<string, unknown> = {
+      src: {
+        id: "src",
+        type: "circle",
+        definitionVersion: 1,
+        position: { x: 0, y: 0 },
+        parameters: {
+          mode: "fill",
+          center: [DISC.x, DISC.y],
+          radius: [0.1, 0.1],
+          softness: 0.01,
+          fillcolor: [1, 1, 1, 1],
+          bgcolor: [0, 0, 0, 1],
+          // OFF: an aspect-corrected disc on a 2:1 output is an ellipse in uv, and the
+          // centroid comparison is cleaner when the shape is the same in both spaces.
+          aspectcorrect: false,
+        },
+        label: "src",
+      },
+      out: node("out", "output"),
+    };
+    const edges: Record<string, unknown> = {};
+    if (withMatte) {
+      nodes["cut"] = node("cut", "matte", {});
+      edges["e1"] = edge("e1", ["src", "out"], ["cut", "input"]);
+      edges["e2"] = edge("e2", ["cut", "out"], ["out", "input"]);
+    } else {
+      edges["e1"] = edge("e1", ["src", "out"], ["out", "input"]);
+    }
+    return { revision: 1, nodes, edges, groups: {} } as never;
+  }
+
+  /**
+   * The value-weighted centre of a single-channel field, in 0..1 of its own width and
+   * height, with the row order the buffer itself has. Both measurements below come through
+   * this one function, so a row-order convention cannot enter on one side only.
+   */
+  function centroid(values: Float32Array, width: number, height: number, stride = 1, offset = 0) {
+    let total = 0;
+    let sx = 0;
+    let sy = 0;
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const v = Math.max(0, values[(y * width + x) * stride + offset]!);
+        total += v;
+        sx += v * (x + 0.5);
+        sy += v * (y + 0.5);
+      }
+    }
+    if (total <= 0) return { x: Number.NaN, y: Number.NaN, total: 0 };
+    return { x: sx / total / width, y: sy / total / height, total };
+  }
+
+  it("puts the matte's energy where the source's energy is, not mirrored", async () => {
+    if (dawnError !== undefined) throw new Error(`Dawn unavailable: ${dawnError}`);
+    const host = nodeGpuHost();
+
+    // 1. THE PICTURE. Where the sink actually renders the disc — no convention assumed,
+    //    no parameter trusted; a `center.y` of 0.24 is only a number until this is read.
+    const plain = await renderHeadless({
+      host,
+      graph: discGraph(false),
+      settings: GEOMETRY_SETTINGS,
+      frames: 1,
+      capture: [0],
+    } as never);
+    const source = matteValues(plain.frames[0]!, "linear");
+    const cSource = centroid(source, W, H);
+
+    // 2. THE MODEL SQUARE. The real GPU preprocess, read back as the worker reads it.
+    const probed = await renderHeadless({
+      host,
+      graph: discGraph(true),
+      settings: GEOMETRY_SETTINGS,
+      frames: 2,
+      capture: [1],
+      inference: () => null,
+      probeBuffers: ["scratch:cut:modelInput"],
+    } as never);
+    const texels = new Float32Array(probed.buffers!["scratch:cut:modelInput"]!);
+    const cModel = centroid(texels, MODEL_SIDE, MODEL_SIDE, 4, 0);
+
+    // 3. THE PICTURE AGAIN, through the real un-letterbox, with an IDENTITY MODEL.
+    const identity = new Float32Array(MODEL_SIDE * MODEL_SIDE);
+    for (let i = 0; i < identity.length; i += 1) identity[i] = Math.max(0, Math.min(1, texels[i * 4]!));
+    const returned = await renderHeadless({
+      host,
+      graph: discGraph(true),
+      settings: GEOMETRY_SETTINGS,
+      frames: 1,
+      capture: [0],
+      inference: () => matteToFloats(identity, MODEL_SIDE, W, H),
+    } as never);
+    const cMatte = centroid(matteValues(returned.frames[0]!, "linear"), W, H);
+
+    console.log(
+      "centroids  source",
+      JSON.stringify(cSource),
+      "model",
+      JSON.stringify(cModel),
+      "matte",
+      JSON.stringify(cMatte),
+    );
+
+    // Each stage has to have found the disc at all; a centroid of an empty field is NaN
+    // and every comparison below would pass vacuously.
+    expect(cSource.total).toBeGreaterThan(0);
+    expect(cModel.total).toBeGreaterThan(0);
+    expect(cMatte.total).toBeGreaterThan(0);
+
+    /*
+     * LEG A — the letterbox, forwards. On a 2:1 source the picture occupies the centred
+     * vertical half of the model square, so the disc's height must map through
+     * `(y - 0.5) * occY + 0.5` with occY = 1/aspect = 0.5, and its width must not move at
+     * all. Derived from the source's MEASURED position, not from the parameter, so this
+     * still holds if the sink's row order is the opposite of what anyone assumed.
+     */
+    expect(cModel.x).toBeCloseTo(cSource.x, 2);
+    expect(cModel.y).toBeCloseTo((cSource.y - 0.5) * (H / W) + 0.5, 2);
+
+    /*
+     * LEG B — THE ROUND TRIP, and the one the owner's screenshot is about. The matte must
+     * come back on the same spot the subject occupies. A vertical flip lands at 1 - y, a
+     * horizontal one at 1 - x, and a letterbox left un-done lands at the model square's own
+     * coordinate; all three are far outside this and are reported by the numbers above.
+     */
+    expect(cMatte.x).toBeCloseTo(cSource.x, 2);
+    expect(cMatte.y).toBeCloseTo(cSource.y, 2);
   }, 240_000);
 });

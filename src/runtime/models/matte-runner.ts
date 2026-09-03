@@ -49,6 +49,13 @@ export function matteToFloats(
   width: number,
   height: number,
 ): Uint8Array {
+  /* GATED END TO END, not by symmetry: `matte-coverage.gpu.test.ts` renders an
+     asymmetric source, measures where the sink puts it, measures where the real GPU
+     preprocess puts it in the model square, and measures where THIS function puts a
+     matte back on the picture. Measured 2026-09-03 on a 2:1 output: source centroid
+     (0.320, 0.240), model square (0.320, 0.370) — the letterbox, exactly — and the
+     returned matte (0.320, 0.240), identical to five decimals. A flip would land at
+     1 - y and is what §T992 shipped for pose; there is none here. */
   const aspect = width / Math.max(height, 1);
   const [occX, occY] = aspect >= 1 ? [1, 1 / aspect] : [aspect, 1];
   const floats = new Float32Array(width * height);

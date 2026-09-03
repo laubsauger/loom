@@ -1,7 +1,6 @@
 import { useCallback, useState, useSyncExternalStore } from "react";
 import type { ProjectSettings } from "@domain/types/graph.ts";
 import {
-  DEFAULT_FRAME_RANGE,
   DEFAULT_PROJECT_FPS,
   SEEK_FRAME_LIMIT,
   projectFps,
@@ -210,7 +209,6 @@ export function ProjectSettingsDialog({
               <NumberField
                 label="width"
                 value={shown("width", width)}
-                defaultValue={width}
                 spec={dimensionSpec(maxResolution)}
                 unit="px"
                 onChange={commitOnly("width", (next) =>
@@ -223,7 +221,6 @@ export function ProjectSettingsDialog({
               <NumberField
                 label="height"
                 value={shown("height", height)}
-                defaultValue={height}
                 spec={dimensionSpec(maxResolution)}
                 unit="px"
                 onChange={commitOnly("height", (next) =>
@@ -266,7 +263,6 @@ export function ProjectSettingsDialog({
               <NumberField
                 label="target fps"
                 value={shown("fps", projectFps(settings))}
-                defaultValue={DEFAULT_PROJECT_FPS}
                 spec={FPS_SPEC}
                 onChange={commitOnly("fps", (next) =>
                   onChange({ fps: next }, "Set frame rate"),
@@ -279,7 +275,6 @@ export function ProjectSettingsDialog({
               <NumberField
                 label="preview fps"
                 value={shown("previewFps", settings.previewFps)}
-                defaultValue={settings.previewFps}
                 spec={FPS_SPEC}
                 onChange={commitOnly("previewFps", (next) =>
                   onChange({ previewFps: next }, "Set preview rate"),
@@ -307,7 +302,6 @@ export function ProjectSettingsDialog({
               <NumberField
                 label="range in"
                 value={shown("rangeStart", range.start)}
-                defaultValue={DEFAULT_FRAME_RANGE.start}
                 spec={rangeSpec(range.end - 1)}
                 onChange={commitOnly("rangeStart", (next) =>
                   onChange(
@@ -319,7 +313,6 @@ export function ProjectSettingsDialog({
               <NumberField
                 label="range out"
                 value={shown("rangeEnd", range.end)}
-                defaultValue={DEFAULT_FRAME_RANGE.end}
                 spec={rangeSpec(SEEK_FRAME_LIMIT, range.start + 1)}
                 onChange={commitOnly("rangeEnd", (next) =>
                   onChange(
@@ -365,7 +358,6 @@ export function ProjectSettingsDialog({
               <NumberField
                 label="seed"
                 value={shown("randomSeed", settings.randomSeed)}
-                defaultValue={settings.randomSeed}
                 spec={SEED_SPEC}
                 onChange={commitOnly("randomSeed", (next) =>
                   onChange({ randomSeed: next }, "Set random seed"),

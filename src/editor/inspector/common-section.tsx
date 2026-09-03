@@ -202,7 +202,6 @@ export function CommonSection({
             <NumberField
               label="Width"
               value={shown.width}
-              defaultValue={resolutionContext.project.width}
               spec={dimensionSpec(resolutionContext.maxResolution)}
               unit="px"
               onChange={(value, phase) => onDimension("width", value, phase === "commit")}
@@ -210,7 +209,6 @@ export function CommonSection({
             <NumberField
               label="Height"
               value={shown.height}
-              defaultValue={resolutionContext.project.height}
               spec={dimensionSpec(resolutionContext.maxResolution)}
               unit="px"
               onChange={(value, phase) => onDimension("height", value, phase === "commit")}

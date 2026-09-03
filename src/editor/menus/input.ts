@@ -102,7 +102,7 @@ const disconnect: InputBuilder = (_item, target, context) => {
 
 /**
  * A parameter item that also carries static input — the mode submenu's leaves and the
- * three paste rows, which differ only by the mode they name (T246, conditional paste).
+ * three paste rows, which differ only by the mode they name (T246, T1004).
  */
 const parameterRefWith: InputBuilder = (item, target) => {
   const base = parameterRef(item, target, undefined as never);
@@ -167,7 +167,7 @@ const BUILDERS: Record<string, InputBuilder> = {
   "parameter.copyReference": parameterRef,
   // `parameterRefWith`, not `parameterRef`: the three paste rows differ only by the `as`
   // they carry, and a builder that dropped it would make all three paste the same thing
-  // (conditional paste) — the B87 shape, one level in.
+  // (T1004) — the B87 shape, one level in.
   "parameter.paste": parameterRefWith,
   "parameter.reset": parameterRef,
   "parameter.setMode": parameterRefWith,
