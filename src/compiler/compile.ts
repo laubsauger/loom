@@ -37,7 +37,7 @@ import { bindingOverflows, describeOverflow } from "./bindings.ts";
 import { flattenComponents, redirectSink, withSourcePath } from "./flatten.ts";
 import type { ComponentSource } from "./flatten.ts";
 import { resolveNodeFormat } from "./format.ts";
-import { isDeclaredSink, pruneToActiveSinks, resolveSinks } from "./prune.ts";
+import { isDeclaredSink, presentsPicture, pruneToActiveSinks, resolveSinks } from "./prune.ts";
 import { resolveNodeResolution } from "./resolution.ts";
 import {
   SHARED_SAMPLER_ID,
@@ -234,7 +234,14 @@ function outputSlots(definition: NodeDefinition): OutputSlot[] {
     const resourceKind = resourceKindForOutput(port.type, isTemporalOutput(definition, port.id));
     if (resourceKind !== undefined) slots.push({ portId: port.id, resourceKind });
   }
-  if (slots.length === 0 && isDeclaredSink(definition)) {
+  /* T1029 follow-up — `presentsPicture`, not `isDeclaredSink`: the synthesized target
+     exists so an OUTPUT has somewhere to render. Analyze (buffer writer) and Laser Out
+     (DAC driver, no passes at all) got a full-size colour target no pass ever touched —
+     `presentsPicture`'s own docblock recorded the waste, E14's black-frame hunt paid for
+     it once, and the port-less data sink tripped the no-passes warning on every graph
+     that wired one. The predicate that already knows who draws now decides who gets a
+     canvas. */
+  if (slots.length === 0 && presentsPicture(definition)) {
     slots.push({ portId: SINK_TARGET_PORT, resourceKind: "target" });
   }
   return slots;

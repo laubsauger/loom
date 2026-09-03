@@ -63,10 +63,15 @@ export const pointRangeNode: NodeDefinition = {
     attribute: {
       type: "string",
       label: "Attribute",
-      default: "depthN",
+      /* T983 follow-up: "position" and not "depthN" — the ONE attribute every pointset
+         carries, so the node is valid the moment it is wired (the catalogue-chain gate
+         compiles every definition against a plain grid, and a default only a depth
+         cloud satisfies shipped that gate red for a day). A spatial slice is also a
+         sensible zone in its own right; the depth spelling is one parameter away. */
+      default: "position",
       compileTime: true,
       description:
-        "Which per-point attribute is tested, by name. The default is the depth cloud's normalized depth (DepthPoints' depthN, 0 near, 1 far); any attribute the incoming points carry works, and a name they do not carry says so and lists what they do.",
+        "Which per-point attribute is tested, by name. The default is position (a spatial slice); a depth cloud's normalized depth is depthN (0 near, 1 far). Any attribute the incoming points carry works, and a name they do not carry says so and lists what they do.",
     },
     component: {
       type: "enum",
@@ -149,7 +154,7 @@ export const pointRangeNode: NodeDefinition = {
       ],
     });
 
-    const attribute = typeof parameters["attribute"] === "string" ? parameters["attribute"].trim() : "depthN";
+    const attribute = typeof parameters["attribute"] === "string" ? parameters["attribute"].trim() : "position";
     const entry = upstream.pairs[attribute];
     if (entry === undefined) {
       const available = Object.keys(upstream.pairs).sort();

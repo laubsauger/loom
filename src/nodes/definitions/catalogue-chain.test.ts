@@ -216,6 +216,13 @@ describe("the catalogue compiles through the real compiler", () => {
         expect(alias?.resourceId, definition.type).toBe(producer?.resourceId);
         continue;
       }
+      // T1029 follow-up: a port-less DATA SINK (laserOut) contributes no pass by design —
+      // the sink declaration alone keeps its upstream compiled for the session pump. It
+      // must still SURVIVE PRUNING, which is the half a sink can actually fail.
+      if (definition.sink === true && definition.outputs.length === 0 && definition.sideEffect === "emits") {
+        expect(plan.pruned, definition.type).not.toContain("subject");
+        continue;
+      }
       expect(
         read.passes.some(
           (pass) => pass.kind !== "swap" && "nodeId" in pass && pass.nodeId === "subject",
@@ -246,6 +253,14 @@ describe("the catalogue compiles through the real compiler", () => {
           (pass.kind === "effect" || pass.kind === "dispatch" || pass.kind === "draw") &&
           pass.nodeId === "subject",
       );
+      // T1029 follow-up: a port-less DATA SINK (laserOut — `sideEffect: "emits"`, no
+      // outputs) legitimately contributes NO pass: the sink declaration keeps its
+      // upstream compiled and the session pump reads the planner's buffers from outside
+      // the plan. `presentsPicture` is the predicate the compiler itself allocates by.
+      if (definition.sink === true && definition.outputs.length === 0 && definition.sideEffect === "emits") {
+        expect(passes.length, definition.type).toBe(0);
+        continue;
+      }
       expect(passes.length, definition.type).toBeGreaterThan(0);
 
       for (const pass of passes) {
@@ -255,7 +270,24 @@ describe("the catalogue compiles through the real compiler", () => {
         expect(binding, definition.type).toBeTypeOf("string");
         const declared = uniformStructMembers(pass.shader, binding as string);
         expect(declared.length, `${definition.type}: no uniform struct found`).toBeGreaterThan(0);
-        expect(Object.keys(pass.uniforms).sort(), definition.type).toEqual(declared.sort());
+        /* T1029 follow-up — the FRAME-INJECTED names are legal residents of a dispatch
+           pass's own uniform struct: `dispatchFrameUniforms` (shared-uniforms.ts) writes
+           them BY NAME at encode time, so a kernel may declare them and the compiler
+           rightly sets no static value (laserPath's scanner clock is the case). The gate
+           therefore demands: everything SET is DECLARED, and everything declared-but-unset
+           is one of the frame keys. A misspelled field still fails both directions. */
+        const FRAME_INJECTED = new Set([
+          "timeSeconds", "deltaSeconds", "frameIndex", "pointer", "absTimeSeconds", "absFrameIndex",
+        ]);
+        const set = new Set(Object.keys(pass.uniforms));
+        for (const key of set) {
+          expect(declared, `${definition.type}: sets "${key}" its shader never declares`).toContain(key);
+        }
+        const unset = declared.filter((member) => !set.has(member));
+        const illegal = unset.filter(
+          (member) => pass.kind !== "dispatch" || !FRAME_INJECTED.has(member),
+        );
+        expect(illegal, `${definition.type}: declares but never sets`).toEqual([]);
 
         // A shared-block binding must name a real declaration too, or the runtime binds a
         // value the shader never reads and vgpu rejects the whole pass.

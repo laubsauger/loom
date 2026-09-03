@@ -115,12 +115,16 @@ describe("E14 Self-Regulating Bloom claims", () => {
       return type === undefined ? undefined : registry.get(type);
     };
     const keys = plan.outputs.map((output) => `${output.nodeId}:${output.portId}`);
-    // The premise (§V854): the tap really is ahead of the Output. If a future ordering
-    // change makes this false, the claim below stops testing anything and must be redone.
-    expect(keys).toContain("meter:$target");
+    /* T1029 follow-up — THE TRAP IS NOW REMOVED AT THE SOURCE, and this gate's premise
+       moved with it: `outputSlots` allocates the synthesized $target by
+       `presentsPicture`, so the Analyze gets NO row at all — an unwritten full-size
+       texture can no longer exist to be pointed at. The stronger claim replaces the
+       ordering premise: meter publishes nothing, and the picture rule lands on `out`
+       because it is the only picture there is. */
+    expect(keys).not.toContain("meter:$target");
     expect(keys).toContain("out:$target");
-    expect(keys.indexOf("meter:$target")).toBeLessThan(keys.indexOf("out:$target"));
-    // Both DECLARE themselves sinks — that is the fact the old rule could not tell apart.
+    // Both DECLARE themselves sinks — the fact the old first-declared-sink rule could
+    // not tell apart, and the reason the predicate exists.
     expect(definitionOf("meter")?.sink).toBe(true);
     expect(definitionOf("out")?.sink).toBe(true);
     // The rule the viewer and the render range share (`side-panes.tsx`, `use-render-range.ts`).

@@ -422,12 +422,13 @@ describe("the viewer's default output is the one that draws (E14, §V25)", () =>
 
     const select = screen.getByTestId("viewer-output-select") as HTMLSelectElement;
     const keys = [...select.options].map((option) => option.value);
-    // §V854's premise, asserted rather than hoped for: the tap really does come first in
-    // the row order the pane walks. Without this the test passes on a build that never
-    // had to choose, and the next change to that ordering makes it vacuous in silence.
-    expect(keys).toContain(`${meterId}:$target`);
+    /* T1029 follow-up — the trap this test was built around is now removed at the
+       source: `outputSlots` allocates the synthesized $target by `presentsPicture`, so
+       the Analyze publishes NO row and the select cannot even OFFER the unwritten
+       texture the old first-sink rule pointed at. The premise flips to the stronger
+       claim: the meter is absent from the picker entirely. */
+    expect(keys).not.toContain(`${meterId}:$target`);
     expect(keys).toContain(`${outId}:$target`);
-    expect(keys.indexOf(`${meterId}:$target`)).toBeLessThan(keys.indexOf(`${outId}:$target`));
 
     // The selection, and what the BACKEND was actually told to present — the pane could
     // agree with itself and still hand the surface the wrong resource.

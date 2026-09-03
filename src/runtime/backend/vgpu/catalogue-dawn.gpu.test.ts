@@ -48,12 +48,28 @@ describe("every catalogue type compiles and steps on Dawn (T751, §B146)", () =>
     async (_type, definition) => {
       const probe = await probeDawn();
       if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
+      /* T1029 follow-up: laserOut's only feed is a POINTSET, which readOutput cannot
+         capture as pixels — and the node's own effect leaves the GPU entirely. The
+         sweep still compiles and STEPS it on Dawn; the pixels claim belongs to nodes
+         that make pixels. */
+      const pixelless =
+        definition.outputs.length === 0 && definition.sink === true && definition.sideEffect === "emits";
       const result = await renderHeadless({
         host: nodeGpuHost(),
         graph: minimalGraphFor(definition, registry) as unknown as GraphDocument,
         frames: 2,
-        capture: [1],
-        outputNodeId: definition.outputs.length > 0 ? "sink" : "subject",
+        capture: pixelless ? [] : [1],
+        /* T1029 follow-up: a port-less NON-PICTURE sink (analyze writes a buffer,
+           laserOut drives a DAC) no longer allocates the synthesized $target that no
+           pass ever touched — `presentsPicture` decides who gets a canvas now. Capture
+           its FEED instead: the sweep's claim ("compiles and steps on Dawn") holds
+           unchanged, and the sink's own effect is gated in its dedicated suites. */
+        outputNodeId:
+          definition.outputs.length > 0
+            ? "sink"
+            : definition.sink === true && (definition.measuredChannel === true || definition.sideEffect === "emits")
+              ? "feed0"
+              : "subject",
       });
       expect(
         result.diagnostics.filter((diagnostic) => diagnostic.severity === "error").map((d) => d.message),
