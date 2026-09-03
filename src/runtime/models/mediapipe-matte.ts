@@ -80,9 +80,16 @@ export interface MediaPipeMatteRunner {
  *
  * So the transfer is NOT applied, for a reason beyond the small number: every other matte
  * model is fed this buffer raw, and encoding it for one of them would make the node's
- * input treatment depend on which model is selected. Whether the whole matte path should
- * be fed display-referred light is a real question and a cross-cutting one — it would
- * change MODNet's numbers too — and it is not this row's to answer.
+ * input treatment depend on which model is selected.
+ *
+ * ⚑ T1091 ANSWERED THE CROSS-CUTTING HALF and the ruling stands here unchanged: measured
+ * across all four matte models on seven frames, feeding display-referred light is NOT
+ * materially better, and the one model it does move is moved by LEVEL rather than by the
+ * transfer (§V857). The argument, the table and what it costs live at the seam where the
+ * input is actually prepared — `letterboxPreprocessWgsl` in `nodes/definitions/
+ * inference-node.ts` — because that is the one place an answer could be applied for the
+ * whole path. ⚠ THIS BLOCK'S OWN ONE-FRAME NUMBER IS THE CAUTIONARY HALF: IoU 0.9713 was
+ * true of that portrait and the same model reads 0.675 on a harder frame.
  */
 export function matteTexelsToRgba(texels: Float32Array, side: number): Uint8ClampedArray {
   const pixels = side * side;

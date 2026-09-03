@@ -259,6 +259,99 @@ export function inferenceAcceptsInputSize(modelId: string): boolean {
  * The T974 letterbox preprocess, parameterised only by its buffer binding — the WGSL
  * every image-input model node shares, so the aspect rule cannot be re-derived wrong.
  * `occOf` in depth-runner.ts is this formula's float64 twin.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ * T1091 — THIS WRITES LINEAR LIGHT, AND IT STAYS THAT WAY. MEASURED, NOT ASSUMED.
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ *
+ * The premise first, because it was a default nobody chose rather than a decision:
+ * `media.ts` declares its source texture `rgba8unorm-srgb` and `color-space.ts` records
+ * that an `-srgb` format IS the encoding, so the `textureLoad` below returns DECODED,
+ * linear values and every image-input model in this app is fed linear light. These models
+ * were trained on display-referred camera frames. Nobody had examined the mismatch.
+ *
+ * It is not a subtle one. The decode is exact and so is its size: a display-referred 0.5
+ * arrives as ((0.5 + 0.055) / 1.055)^2.4 = 0.21404, which is 1.224 stops down, and a
+ * display 0.25 arrives as 0.05088, which is 2.297 stops down. §V618's "~1.5 stops" is the
+ * right order for a midtone and UNDERSTATES the shadows. So the question deserved a
+ * measurement rather than a paragraph of reasoning either way.
+ *
+ * WHAT WAS MEASURED (2026-09-03 at `1d7af6a`, §V641; seven frames, all four matte models,
+ * both feeds; ONNX under onnxruntime-web wasm, MediaPipe under system Chrome).
+ * Four frames of real 720² footage from one room, plus a dark indoor portrait, a bright
+ * outdoor frame with three partly occluded subjects, and a high-key beach frame — chosen
+ * because one portrait is how this project has produced confident wrong answers before.
+ * Each frame letterboxed by THIS shader's formula into two squares: `linear` (the feed
+ * that ships) and `display` (the untouched source bytes, which ARE the display-referred
+ * original, so the comparison needs no round trip through a curve and back). Coverage is
+ * `matteCoverage`'s definition — the mean of the published alpha.
+ *
+ *   model            IoU(linear,display)  mean |Δα|        max |Δcoverage|
+ *   MATTE_ACCURATE   0.899 – 0.997 †      0.0013 – 0.0164  0.0099
+ *   MATTE_RVM        0.922 – 0.990        0.0016 – 0.0114  0.0038
+ *   MediaPipe        0.864 – 0.991        0.0030 – 0.0133  0.0086
+ *   MATTE_FAST       0.278 – 0.695 ‡      0.0164 – 0.1735  0.1674
+ *
+ *   † the two-kids frame is excluded from the first three rows and is quoted below; it is
+ *     a frame all four models handle badly under EITHER feed.
+ *   ‡ every frame, including the easy ones. Not one reached 0.70.
+ *
+ * SO THE ANSWER IS NOT "DISPLAY-REFERRED IS BETTER". Three of the four models barely
+ * notice the transfer, which is a result about the MODELS: MODNet full precision was
+ * already recorded flat across a 14x exposure range (§V857), and RVM and MediaPipe join it
+ * here. The one model that is transformed is the QUANTIZED build, and §V857 already says
+ * why in terms that have nothing to do with a transfer function — a quantized model has a
+ * NARROWER VALID INPUT DOMAIN, MATTE_FAST collapses below about 0.2 mean input, and the
+ * linear feed measures 0.10 – 0.56 mean on these frames while the display feed measures
+ * 0.26 – 0.73. What rescues it is BRIGHTNESS, not the curve's shape, and any lift would do.
+ *
+ * AND THE ENCODE HAS ITS OWN COST, ON THE DEFAULT MODEL. On all four clip frames the
+ * display feed makes MATTE_ACCURATE claim a salmon-coloured armchair cushion as a person
+ * (+0.0099 coverage, the whole of that row's max). That was READ OFF THE PICTURE, not
+ * inferred from the delta — the disagreeing texels were drawn back onto the frame, and
+ * they land on one object. RVM and MediaPipe differ from themselves on the same frames by
+ * a few edge texels and nothing else. (The sweep harness was scratch and is not committed;
+ * what survives it is this table and the guard below.)
+ *
+ * ONE MORE THING THE SWEEP TURNED UP, UNASKED, AND IT POINTS THE SAME WAY. MediaPipe's
+ * rung quantises this buffer to 8 bit on the way to its canvas (`matteTexelsToRgba`), and
+ * on linear values that is not free: the linear feed occupies 183 of the 256 code levels
+ * against the display feed's 256, and crushes 2.0 – 5.3% of channel samples to zero on the
+ * indoor frames. It costs that model nothing measurable — IoU 0.864 – 0.991 all the same,
+ * which is a further reading on how little these networks care what we hand them.
+ *
+ * The one instrument that does not privilege a model — how much the four AGREE WITH EACH
+ * OTHER inside each feed, mean pairwise IoU over the six pairs — says display 0.781 against
+ * linear 0.604, up on all seven frames. But that aggregate is MATTE_FAST's collapse
+ * showing through: over the other three the same number is 0.874 against 0.849, and it
+ * moves the WRONG WAY on three of the four realistic clip frames (−0.026, −0.033, −0.039;
+ * the fourth is +0.006) while helping on the two hard ones (two-kids +0.175, beach +0.083).
+ *
+ * ⚑ RULING: NO TRANSFER IS APPLIED HERE, and it is now a measured choice rather than a
+ * silence. Three reasons, in the order they carry weight:
+ *
+ *   1. It is not materially better. Six of seven frames, three of four models, IoU ≥ 0.86
+ *      and mean |Δα| ≤ 0.017 — and on the most representative footage it costs the DEFAULT
+ *      model a false positive it does not currently have.
+ *   2. The model it does move is moved by LEVEL, not by transfer (§V857). Putting a
+ *      colour-management step in the feed to correct a quantization domain would be a fix
+ *      whose stated justification does not survive its own model being replaced — and it
+ *      does not even work: MATTE_FAST under the display feed is still holed and fragmented
+ *      on the clip frames, merely less so.
+ *   3. This is the seam DEPTH, POSE and PERSON-MASK share. Encoding here changes four node
+ *      types on evidence gathered from one; encoding in the matte packers alone makes the
+ *      matte path treat a picture differently from the depth path, which is §T1088's
+ *      "input treatment depends on which thing is selected" hazard one level up.
+ *
+ * WHAT THIS DOES NOT SAY. It does not say MATTE_FAST is fine — it is feed-broken and the
+ * node's own copy and `model-catalogue.ts` both name that, which is the mitigation on
+ * record. It does not clear depth or pose, which were not measured. And it leaves a real
+ * option unbuilt rather than unnamed: a level normalisation derived from the frame, which
+ * would address §V857's domain directly and is a different change from this one.
+ *
+ * `matte-feed.test.ts` is the guard: every matte model's packing must stay the same
+ * function of this buffer up to its own documented affine normalisation, so a transfer
+ * added for one of them fails there instead of shipping.
  */
 export function letterboxPreprocessWgsl(): string {
   return `struct PreprocessParams { side: f32 };
