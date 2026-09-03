@@ -44,6 +44,12 @@ export type InferenceRequest =
   | {
       readonly kind: "load";
       readonly sessionKey: string;
+      /**
+       * T1084 — which ARTEFACT these bytes are, so the worker can look up an in-memory
+       * weight patch for them. The session key embeds it, but parsing an id back out of a
+       * composite key is how a key stops being opaque and starts being a schema.
+       */
+      readonly modelId: string;
       readonly weights: ArrayBuffer;
       /**
        * The execution providers to try, IN ORDER. The worker tries them ONE AT A TIME so

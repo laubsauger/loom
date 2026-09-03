@@ -233,7 +233,7 @@ describe("the worker's half", () => {
 
   it("packs DEPTH as planar float32 and returns an encoded picture", async () => {
     const c = core(new Float32Array([0, 1, 2, 3]));
-    await c.instance.handle({ kind: "load", sessionKey: "m@wasm", weights: new ArrayBuffer(4), providers: ["wasm"] });
+    await c.instance.handle({ kind: "load", modelId: "m", sessionKey: "m@wasm", weights: new ArrayBuffer(4), providers: ["wasm"] });
     await c.instance.handle({
       kind: "run", requestId: 7, sessionKey: "m@wasm", nodeType: "depth", modelId: DEPTH_ID, ratio: 0, smoothing: 1,
       texels: new Float32Array(2 * 2 * 4).buffer, width: 2, height: 2, side: 2, sourceWidth: 2, sourceHeight: 2,
@@ -245,7 +245,7 @@ describe("the worker's half", () => {
 
   it("packs POSE as uint8 x4 NHWC — the model's signature, not its card (§B148)", async () => {
     const c = core(new Float32Array(POSE_KEYPOINT_COUNT * 3), POSE_ID);
-    await c.instance.handle({ kind: "load", sessionKey: "m@wasm", weights: new ArrayBuffer(4), providers: ["wasm"] });
+    await c.instance.handle({ kind: "load", modelId: "m", sessionKey: "m@wasm", weights: new ArrayBuffer(4), providers: ["wasm"] });
     await c.instance.handle({
       kind: "run", requestId: 1, sessionKey: "m@wasm", nodeType: "pose", modelId: POSE_ID, ratio: 0, smoothing: 1,
       texels: new Float32Array(2 * 2 * 4).buffer, width: 0, height: 0, side: 2, sourceWidth: 2, sourceHeight: 2,
@@ -279,8 +279,8 @@ describe("the worker's half", () => {
       createTensor: () => ({}),
       post: () => undefined,
     });
-    await instance.handle({ kind: "load", sessionKey: "m@wasm", weights: new ArrayBuffer(4), providers: ["wasm"] });
-    await instance.handle({ kind: "load", sessionKey: "m@wasm", weights: new ArrayBuffer(4), providers: ["wasm"] });
+    await instance.handle({ kind: "load", modelId: "m", sessionKey: "m@wasm", weights: new ArrayBuffer(4), providers: ["wasm"] });
+    await instance.handle({ kind: "load", modelId: "m", sessionKey: "m@wasm", weights: new ArrayBuffer(4), providers: ["wasm"] });
     expect(built).toBe(1);
   });
 
@@ -312,6 +312,7 @@ describe("the worker's half", () => {
     });
     await instance.handle({
       kind: "load",
+      modelId: "m",
       sessionKey: "m@webgpu+wasm",
       weights: new ArrayBuffer(4),
       providers: ["webgpu", "wasm"],
@@ -333,7 +334,7 @@ describe("the worker's half", () => {
       now: () => (clock += 5),
     });
     await instance.handle({
-      kind: "load", sessionKey: "m@wasm", weights: new ArrayBuffer(4), providers: ["wasm"],
+      kind: "load", modelId: "m", sessionKey: "m@wasm", weights: new ArrayBuffer(4), providers: ["wasm"],
     });
     await instance.handle({
       kind: "run", requestId: 1, sessionKey: "m@wasm", nodeType: "depth", modelId: DEPTH_ID, ratio: 0, smoothing: 1,
@@ -359,7 +360,7 @@ describe("the worker's half", () => {
       post: (response) => posted.push(response),
     });
     await instance.handle({
-      kind: "load", sessionKey: "m@webgpu", weights: new ArrayBuffer(4), providers: ["webgpu"],
+      kind: "load", modelId: "m", sessionKey: "m@webgpu", weights: new ArrayBuffer(4), providers: ["webgpu"],
     });
     expect(asked).toEqual(["webgpu"]);
     const error = posted.find((m) => m.kind === "error");
@@ -382,7 +383,7 @@ describe("the worker's half", () => {
       post: (response) => posted.push(response),
     });
     await instance.handle({
-      kind: "load", sessionKey: "m@wasm", weights: new ArrayBuffer(4), providers: ["wasm"],
+      kind: "load", modelId: "m", sessionKey: "m@wasm", weights: new ArrayBuffer(4), providers: ["wasm"],
     });
     const error = posted.find((m) => m.kind === "error");
     expect(error?.kind === "error" && error.message).toContain("HTML");
@@ -405,7 +406,7 @@ describe("the worker's half", () => {
       post: (response) => posted.push(response),
     });
     const load = {
-      kind: "load" as const, sessionKey: "m@wasm", weights: new ArrayBuffer(4), providers: ["wasm"],
+      kind: "load" as const, modelId: "m", sessionKey: "m@wasm", weights: new ArrayBuffer(4), providers: ["wasm"],
     };
     await instance.handle(load);
     await instance.handle(load);
@@ -428,10 +429,10 @@ describe("the worker's half", () => {
       post: () => undefined,
     });
     await instance.handle({
-      kind: "load", sessionKey: "m@wasm", weights: new ArrayBuffer(4), providers: ["wasm"],
+      kind: "load", modelId: "m", sessionKey: "m@wasm", weights: new ArrayBuffer(4), providers: ["wasm"],
     });
     await instance.handle({
-      kind: "load", sessionKey: "m@webgpu", weights: new ArrayBuffer(4), providers: ["webgpu"],
+      kind: "load", modelId: "m", sessionKey: "m@webgpu", weights: new ArrayBuffer(4), providers: ["webgpu"],
     });
     expect(asked).toEqual(["wasm", "webgpu"]);
   });
@@ -447,7 +448,7 @@ describe("the worker's half", () => {
       createTensor: () => ({}),
       post: (response) => posted.push(response),
     });
-    await instance.handle({ kind: "load", sessionKey: "m@wasm", weights: new ArrayBuffer(4), providers: ["wasm"] });
+    await instance.handle({ kind: "load", modelId: "m", sessionKey: "m@wasm", weights: new ArrayBuffer(4), providers: ["wasm"] });
     await instance.handle({
       kind: "run", requestId: 3, sessionKey: "m@wasm", nodeType: "depth", modelId: DEPTH_ID, ratio: 0, smoothing: 1,
       texels: new ArrayBuffer(64), width: 2, height: 2, side: 2, sourceWidth: 2, sourceHeight: 2,

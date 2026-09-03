@@ -2,6 +2,7 @@ import { depthToRgba, packModelInput } from "./depth-runner.ts";
 import { POSE_INPUT_SIDE, keypointsToTexture, packPoseInput } from "./pose-runner.ts";
 import { matteToFloats, packMatteInput, smoothMatte } from "./matte-runner.ts";
 import { describeRuntimeLoadFailure } from "./runtime-load-failure.ts";
+import { applyWeightPatch } from "./model-patch.ts";
 import type { InferenceNodeType, InferenceRequest, InferenceResponse } from "./inference-protocol.ts";
 
 /**
@@ -237,15 +238,38 @@ export function createWorkerCore(options: WorkerCoreOptions) {
    * on each reason so an asset-path failure is named as one rather than as a missing GPU.
    */
   const loadSession = async (
+    modelId: string,
     weights: ArrayBuffer,
     providers: readonly string[],
   ): Promise<LoadedSession> => {
-    const ladder = providers.length > 0 ? providers : ["wasm"];
+    let ladder = providers.length > 0 ? providers : ["wasm"];
     const refusals: string[] = [];
+
+    /*
+     * T1084 — the in-memory weight patch, applied HERE because this is the one place that
+     * holds both the bytes and the ladder.
+     *
+     * A refusal is not a warning: the un-patched bytes are what run, and the providers the
+     * patch was required for come OFF the ladder. That ordering matters. RVM's WebGPU
+     * session CREATES and then throws on every run, so a rung left in place would be
+     * walked successfully, reported as the backend, and never produce a frame — §V672's
+     * echo bug arriving through the one door that was supposed to be measurement-proof.
+     * Dropping the rung with the reason attached is what keeps the readout honest.
+     */
+    const outcome = await applyWeightPatch(modelId, weights);
+    let bytes = weights;
+    if (outcome.kind === "patched") {
+      bytes = outcome.bytes;
+    } else if (outcome.kind === "refused") {
+      const dropped = ladder.filter((provider) => outcome.providers.includes(provider));
+      ladder = ladder.filter((provider) => !outcome.providers.includes(provider));
+      for (const provider of dropped) refusals.push(`[${provider}] ${outcome.reason}`);
+    }
+
     for (const provider of ladder) {
       const started = now();
       try {
-        const session = await options.createSession(weights, provider);
+        const session = await options.createSession(bytes, provider);
         return { session, backend: provider, millis: now() - started };
       } catch (error) {
         const raw = error instanceof Error ? error.message : String(error);
@@ -264,7 +288,7 @@ export function createWorkerCore(options: WorkerCoreOptions) {
           const { sessionKey } = request;
           let held = sessions.get(sessionKey);
           if (held === undefined) {
-            held = loadSession(request.weights, request.providers);
+            held = loadSession(request.modelId, request.weights, request.providers);
             sessions.set(sessionKey, held);
             // A FAILED load must not be remembered as done. It used to be: the rejected
             // promise stayed in the map, so every later attempt replayed the same stale

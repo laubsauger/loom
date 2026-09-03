@@ -196,12 +196,19 @@ export function inferenceProvidersFor(
    * T1040 — DROP A RUNG THE ARTEFACT IS MEASURED NOT TO RUN ON, and only from `auto`.
    *
    * The ladder walk reports the provider that CREATED a session, which is honest for
-   * every model that fails at create. RVM does not: measured, its WebGPU session creates
-   * in 533 ms and then every `run` throws on a missing ceil_mode AveragePool kernel. So
-   * `auto` would report "WebGPU" — from a real session, not an echo — and never produce a
-   * frame. Removing the rung is what a preference list is FOR; a PIN is a different thing
-   * and is left alone above, to fail loudly with the runtime's own words, because a
-   * picker whose selection is silently overridden has removed the choice by hiding it.
+   * every model that fails at create. A model that creates and then throws on every run
+   * would make `auto` report that provider — from a real session, not an echo — and never
+   * produce a frame. Removing the rung is what a preference list is FOR; a PIN is a
+   * different thing and is left alone above, to fail loudly with the runtime's own words,
+   * because a picker whose selection is silently overridden has removed the choice by
+   * hiding it.
+   *
+   * RVM was the case this was built for and is no longer an example of it: T1084 clears
+   * the `ceil_mode` attribute its WebGPU session used to throw on, in memory, and its
+   * `cannotRun` row is gone. No artefact carries one today. The mechanism stays because
+   * the failure mode is a property of provider ladders rather than of that one model —
+   * and its live twin is `WeightPatch.requiredFor`, which drops the same rung from inside
+   * the worker when a patch cannot be applied on a particular machine.
    */
   if (descriptor === undefined) return ladder;
   return ladder.filter((provider) => refusalFor(descriptor, provider) === undefined);

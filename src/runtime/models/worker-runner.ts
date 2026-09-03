@@ -148,7 +148,7 @@ export function createWorkerRunner(options: WorkerRunnerOptions): WorkerRunner {
       const settled = new Promise<void>((resolve, reject) => {
         loadWaiters.set(sessionKey, { resolve, reject });
       });
-      const request: InferenceRequest = { kind: "load", sessionKey, weights, providers };
+      const request: InferenceRequest = { kind: "load", sessionKey, modelId, weights, providers };
       options.worker.postMessage(request, [weights]);
       await settled;
     })();

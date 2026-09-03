@@ -176,12 +176,20 @@ export const MATTE_FAST: ModelDescriptor = {
  * beside the two MODNet builds, never a replacement for them (§V831: an added option is
  * safe, a removed one silently rewrites documents standing on it).
  *
- * ⚠ IT IS NOT THE FAST ONE, AND THE MEASUREMENT IS EMPHATIC. MODNet's `session.run` at
- * 512² on the WebGPU provider is 30 ms (§T1044). RVM AS SHIPPED cannot use that provider
- * at all (see `cannotRun` below — and read it, because the reason is not the one this
- * block used to give), so its floor is the CPU: measured 2026-09-03, wasm, one
- * thread, this artefact, the app's own 512² letterbox, median of five warm runs with the
- * recurrent state fed back —
+ * ⚠ IT WAS NOT THE FAST ONE, AND SINCE T1084 THAT IS NO LONGER WHY. This block used to
+ * say RVM could not reach the WebGPU provider at all, and carried a `cannotRun` row
+ * blaming a kernel MobileNetV3 needs. Both halves were wrong: the backbone's pooling is
+ * 9x `GlobalAveragePool` and carries no `ceil_mode`, and the three nodes that do carry it
+ * are the recurrent decoder's source pyramid. `model-patch.ts` clears them in memory
+ * after the download's hash is checked, and RVM runs on WebGPU — 16 ms at the default
+ * ratio, against 126 ms on one wasm thread.
+ *
+ * The CPU table below is kept because it is still the floor a machine without WebGPU
+ * pays, and because it was measured on a different machine and day than the T1084
+ * numbers; two honest measurements are data, and reconciling them by overwriting one
+ * would destroy the comparison. Measured 2026-09-03, wasm, one thread, this artefact,
+ * the app's own 512² letterbox, median of five warm runs with the recurrent state fed
+ * back —
  *
  *   downsample_ratio   internal   ms     state/frame
  *   0.25               128 px      61    0.38 MB     speckle below the subject
@@ -190,7 +198,9 @@ export const MATTE_FAST: ModelDescriptor = {
  *   0.75               384 px     409    3.45 MB     clean
  *   1.0                512 px     724    6.13 MB     clean
  *
- * So against MODNet-on-WebGPU it is 6x to 24x SLOWER. What it buys instead:
+ * On WebGPU, patched, the same five ratios measured 12 / 12 / 16 / 24 / 36 ms — so
+ * against MODNet's 30 ms on the same provider it is now roughly a WASH, and the choice
+ * between them is back to being the character choice this block calls it. What RVM buys:
  *
  *  - TEMPORAL COHERENCE THAT IS LEARNED, carried in four recurrent tensors rather than
  *    bolted on as an average over frames. Measured on a subject moving ~6 source px per
@@ -217,80 +227,22 @@ export const MATTE_RVM: ModelDescriptor = {
   sha256: "88d4531297118f595bf2fd60f6f566aec2e559393802d1f436c380f0cbbd2828",
   license: "GPL-3.0",
   /*
-   * ⚠ MEASURED 2026-09-03, Chromium on the Metal adapter (`apple` / `metal-3`),
-   * onnxruntime-web 1.29.0: the session CREATES on WebGPU in 366 ms and reports its
-   * outputs, and then the first `run` throws. The refusal is quoted rather than
-   * paraphrased because it names a missing KERNEL, which is a version fact:
+   * ⚠ THE DOWNLOAD IS THE AUTHOR'S ASSET AND STAYS THAT WAY — the three-byte edit that
+   * puts this model on the GPU happens IN MEMORY, on the way into the runtime, and is
+   * `model-patch.ts`'s job (T1084). Read that file for the equivalence proof; the short
+   * version is that onnxruntime-web's WebGPU AveragePool refuses the `ceil_mode`
+   * attribute before it looks at any shape, RVM carries it on three decoder pooling
+   * nodes, and on every extent this app can ask for the attribute provably changes
+   * nothing — so clearing it yields a graph measured BIT-IDENTICAL to this one.
    *
-   *   "ceil_mode output-shape is computed, but ceil_mode kernel execution
-   *    (padding/divisor) is not yet implemented in the WebGPU AveragePool kernel"
-   *
-   * The same weights on the same page run on `wasm`. That split is exactly why this is
-   * declared: create-succeeds/run-fails is invisible to a ladder that walks providers by
-   * creating sessions.
-   *
-   * ## THREE CORRECTIONS TO WHAT THIS BLOCK USED TO SAY
-   *
-   * It read "MobileNetV3's average pools carry ceil_mode, so this is structural to the
-   * backbone". That was wrong on both halves, and the artefact was read rather than
-   * reasoned about to find out:
-   *
-   *  1. NOT THE BACKBONE. The backbone's pooling is 9x `GlobalAveragePool`, which has no
-   *     `ceil_mode` attribute at all. Exactly THREE nodes in the 353-node graph carry it
-   *     — `AveragePool_169/170/171`, a straight chain off `Resize_3` that halves the
-   *     downsampled `src` three times into the recurrent decoder's source pyramid. All
-   *     three are identical and unremarkable: kernel 2x2, strides 2x2, pads all zero.
-   *  2. NOT A MISSING KERNEL SO MUCH AS A REFUSED ATTRIBUTE. The guard in the bundle is
-   *     `if (ceilMode !== 0) throw` — taken before any shape is looked at. For kernel 2 /
-   *     stride 2 / pads 0 the two rounding modes differ ONLY on an odd extent, and every
-   *     extent this node can produce is even (see below), so the EP is refusing a flag
-   *     that provably changes nothing about the work it would have to do. `MaxPool` in the
-   *     same file carries the identical guard.
-   *  3. NOT FIXED IN THE DEV LINE. Retested against onnxruntime-web
-   *     1.30.0-dev.20260901-a6e96aa798, the newest dev build: same throw, verbatim.
-   *
-   * ## WHAT WOULD CHANGE IT, MEASURED RATHER THAN GUESSED
-   *
-   * Clearing `ceil_mode` on those three nodes is a 3-byte edit to the artefact (three
-   * `0x01` -> `0x00` at fixed offsets; the file's length does not change) and it was
-   * measured EXACT, not close: original-on-wasm against patched-on-wasm, `pha` and `r4o`
-   * compared bitwise through a Uint32 view, over all 20 combinations of the node's four
-   * input sides and five ratios — 0 differing bits in every one.
-   *
-   * That equivalence is conditional on even pooled extents, and the condition holds by
-   * construction: the offered sides {256,320,384,512} are multiples of 64, the offered
-   * ratios {0.25,0.375,0.5,0.75,1.0} are multiples of 1/8 and exactly representable in
-   * f32, and ONNX Resize floors — so the internal extent is 64m * k/8 = 8mk, a multiple
-   * of 8, hence even at all three pool inputs (N, N/2, N/4).
-   *
-   * Off that menu the patched graph does not go quietly wrong — it REFUSES. Measured at
-   * sides 501, 502 and 500 (odd at the first, second and third pool respectively): every
-   * one dies at `Concat_199` with "Non concat axis dimensions must match: Axis 2 has
-   * mismatched dimensions of 63 and 62", because the pyramid it feeds is concatenated
-   * with a backbone feature map whose shape is fixed. Side 504 (off-menu but a multiple
-   * of 8) is bit-identical, as the rule says it must be.
-   *
-   * And it is worth having: patched, on WebGPU, same page, same input, median of six warm
-   * runs with the state fed back — 12 / 12 / 16 / 24 / 36 ms across the five ratios,
-   * against 41 / 76 / 126 / 263 / 465 ms on one wasm thread. Its `pha` differs from the
-   * wasm answer by at most 3.1e-5, which is SMALLER than the 4.3e-5 the shipped
-   * MODNet build differs from itself across the same two providers.
-   *
-   * None of that is wired here: the descriptor still points at the author's unpatched
-   * release asset, and this row is true of the bytes that URL serves.
+   * `bytes` and `sha256` therefore keep describing what this URL serves, unmodified, and
+   * the cache keeps storing exactly that. There is no `cannotRun` row any more: it said
+   * "webgpu", it was true of these bytes and false of the bytes that run, and a
+   * declaration that outlives its subject is worse than none. The contingent half — what
+   * happens if the patch ever fails to apply — lives in `WeightPatch.requiredFor`, which
+   * takes WebGPU off the ladder at load time with the reason attached, because that is a
+   * fact about a step that can fail on a user's machine rather than about an artefact.
    */
-  cannotRun: [
-    {
-      provider: "webgpu",
-      reason:
-        "onnxruntime-web rejects the ceil_mode attribute on AveragePool for WebGPU " +
-        "unconditionally, before looking at whether it changes any shape — the session " +
-        "starts and then every run throws. Still rejected in 1.30.0-dev.20260901. " +
-        "Unblocked by that kernel landing, or by clearing ceil_mode on the three decoder " +
-        "pools that carry it, measured bit-identical on all 20 input-size/ratio pairs " +
-        "this node can ask for.",
-    },
-  ],
 };
 
 export const MATTE_MODELS: readonly ModelDescriptor[] = [MATTE_ACCURATE, MATTE_FAST, MATTE_RVM];

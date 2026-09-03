@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ALL_MODELS, DEPTH_ACCURATE, DEPTH_LIVE, DEPTH_PROVIDERS, MATTE_RVM, POSE_ACCURATE, POSE_LIVE, unreachableWithoutRemedy } from "./model-catalogue.ts";
+import { refusalFor } from "./model-acquisition.ts";
+import { WEIGHT_PATCHES } from "./model-patch.ts";
 
 describe("the pinned model catalogue", () => {
   it("pins every model immutably — a revision in the URL, or a hash of the bytes", () => {
@@ -129,17 +131,25 @@ describe("an artefact refused on a provider", () => {
     }
   });
 
-  it("keeps RVM's row about the attribute it measured, not the backbone it does not use", () => {
-    const row = (MATTE_RVM.cannotRun ?? []).find((r) => r.provider === "webgpu");
-    expect(row).toBeDefined();
-    // The kernel name is the version fact; without it the row cannot be re-tested.
-    expect(row?.reason).toContain("ceil_mode");
-    // The correction: the three pools are in the decoder, and the claim that the
-    // MobileNetV3 backbone needs ceil_mode was measured false (its pooling is
-    // GlobalAveragePool, which has no such attribute). The row must not resurrect it.
-    expect(row?.reason).not.toContain("MobileNetV3");
-    // The dev line was tested too, and a reader has to be able to see WHICH build, or
-    // "we already checked" decays into a rumour.
-    expect(row?.reason).toContain("1.30.0-dev.20260901");
+  it("has no row for RVM, because T1084 made it false of the bytes that run", () => {
+    // The row said "webgpu", and it was true of the author's asset and false of what the
+    // runtime is handed — `model-patch.ts` clears the refused attribute in memory before
+    // the session is built. A declaration that outlives its subject is worse than none:
+    // it would take WebGPU off the ladder for a model that now reaches it.
+    expect(MATTE_RVM.cannotRun).toBeUndefined();
+  });
+
+  it("does not declare a model both patched onto a provider and unable to reach it", () => {
+    // The two mechanisms answer the same question and must never disagree. `cannotRun` is
+    // static and unconditional; `requiredFor` is contingent on a step that can fail. A
+    // model carrying both for one provider would have the ladder drop a rung the patch
+    // exists to restore, and the patch would then be dead code nobody could observe.
+    for (const patch of WEIGHT_PATCHES) {
+      const descriptor = ALL_MODELS.find((model) => model.id === patch.modelId);
+      expect(descriptor, `${patch.modelId} is patched but not in the catalogue`).toBeDefined();
+      for (const provider of patch.requiredFor) {
+        expect(refusalFor(descriptor!, provider)).toBeUndefined();
+      }
+    }
   });
 });

@@ -5,6 +5,7 @@ import { MODEL_PLANS, createWorkerCore, type InferenceSessionLike } from "./infe
 import { MODEL_SIGNATURES, signatureFor } from "./model-signatures.ts";
 import { MATTE_RVM } from "./model-catalogue.ts";
 import { refusalFor } from "./model-acquisition.ts";
+import { weightPatchFor } from "./model-patch.ts";
 import type { InferenceResponse } from "./inference-protocol.ts";
 
 /**
@@ -103,6 +104,7 @@ const KEY = "rvm@wasm";
 async function load(core: ReturnType<typeof rvmCore>): Promise<void> {
   await core.instance.handle({
     kind: "load",
+    modelId: MATTE_RVM.id,
     sessionKey: KEY,
     weights: new ArrayBuffer(4),
     providers: ["wasm"],
@@ -199,6 +201,7 @@ describe("§V861 — the matte node publishes the alpha RVM names, never its ind
     };
     await core.instance.handle({
       kind: "load",
+      modelId: MATTE_RVM.id,
       sessionKey: KEY,
       weights: new ArrayBuffer(4),
       providers: ["wasm"],
@@ -338,14 +341,21 @@ describe("the declaration table agrees with the artefacts it stands for", () => 
     expect(MODEL_PLANS[MATTE_RVM.id]!.picture).not.toBe(signature.outputs[0]);
   });
 
-  it("records that RVM cannot run on WebGPU, with a reason rather than a bare flag", () => {
-    // Measured: the session CREATES and then every run throws. Our ladder walks providers
-    // by creating them, so without this declaration `auto` reports a real WebGPU session
-    // and never produces a frame — §V672's echo bug through a measured door.
-    const reason = refusalFor(MATTE_RVM, "webgpu");
-    expect(reason).toBeDefined();
-    expect(reason).toContain("ceil_mode");
+  it("no longer refuses WebGPU, and names the patch that replaced the refusal (T1084)", () => {
+    // This used to assert the opposite, and the flip is the point of T1084. RVM's WebGPU
+    // session CREATES and then every run throws on a `ceil_mode` attribute the provider
+    // rejects — invisible to a ladder that walks providers by creating them, which is why
+    // the static refusal existed. It is gone because the cause is gone: the attribute is
+    // cleared in memory before the session is built.
+    expect(refusalFor(MATTE_RVM, "webgpu")).toBeUndefined();
     expect(refusalFor(MATTE_RVM, "wasm")).toBeUndefined();
+
+    // But the guarantee has to live SOMEWHERE, or removing the row is just forgetting.
+    // It moved to the patch, which is the thing that can actually fail on a user's
+    // machine — and which takes the rung off the ladder itself when it does.
+    const patch = weightPatchFor(MATTE_RVM.id);
+    expect(patch).toBeDefined();
+    expect(patch?.requiredFor).toContain("webgpu");
   });
 });
 

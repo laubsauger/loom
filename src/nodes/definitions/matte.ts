@@ -235,7 +235,8 @@ export function matteInputSideFor(stored: Readonly<Record<string, unknown>>): nu
  */
 interface MatteRatioCost {
   readonly ratio: number;
-  /** Median isolated `session.run`, ms, wasm — the only provider RVM runs on. */
+  /** Median isolated `session.run`, ms, wasm — the floor a machine without WebGPU pays.
+   *  Since T1084 it is no longer the ONLY provider: RVM reaches WebGPU too. */
   readonly cpuMillis: number;
   /** Recurrent state carried between frames at this ratio, MB. */
   readonly stateMb: number;
@@ -430,9 +431,10 @@ function matteParameters(stored: Readonly<Record<string, unknown>>) {
               "refines the matte back up to full resolution — this model's own cost dial, " +
               "and the one that matters, because the time tracks this rather than the " +
               "output size. The times in the labels are measured runs of this artefact on " +
-              "one portrait at the default 512 px input, on the CPU — the only provider RVM " +
-              "runs on — with ONE wasm thread, which is the floor: a cross-origin-isolated " +
-              "page gets several threads and measured about 2.3x faster. RVM's own guidance " +
+              "one portrait at the default 512 px input, on the CPU with ONE wasm thread, " +
+              "which is the floor: a cross-origin-isolated page gets several threads and " +
+              "measured about 2.3x faster, and this model reaches WebGPU as well, where the " +
+              "same five settings measured 12, 12, 16, 24 and 36 ms. RVM's own guidance " +
               "is that the downsampled side wants " +
               "to land between 256 and 512 px, so 0.5 sits at the bottom of the trained " +
               "range at a quarter of 1.0's cost and looks the same; 0.25 falls below it and " +
