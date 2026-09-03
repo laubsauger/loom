@@ -56,23 +56,29 @@ export const twoCutsDocument = document(
       node("keyV", "multiply", [-1320, 200], { opacity: 1 }, { label: "keyV1" }),
 
       // ---- the stand-in shows through, dimmed, on both sides ------------------------
-      node("dim", "level", [-1620, 0], { brightness: 0.35 }, { label: "dim1" }),
+      node("dim", "level", [-1620, 0], { brightness: 0.18 }, { label: "dim1" }),
 
       // ---- two rooms that answer their own cut (E52's coverage rule, twice) ---------
       node("hazeW", "noise", [-1620, -520], {
-        type: "perlin4d", seed: 21, period: 0.8, harmon: 2, spread: 2, gain: 0.5,
-        rough: 0.5, exp: 1, amp: 1, offset: 0.3, mono: false, aspectcorrect: true,
+        type: "perlin4d", seed: 21, period: 0.8, harmon: 2, spread: 2, gain: 0.4,
+        rough: 0.5, exp: 1, amp: 0.7, offset: 0.15, mono: true, aspectcorrect: true,
         speed: 0.12, t4d: 0.37, s4d: 1,
       }, { label: "hazeW1" }),
-      node("washW", "hsv", [-1320, -520], { hueoffset: 8, value: 1 },
-        { label: "washW1", parameters: { saturation: expressionSlot("op('matte1').chan.coverage * 8", 0.2) } }),
+      node("inkW", "solid", [-1620, -760], { color: [1.0, 0.45, 0.12, 1] }, { label: "inkW1" }),
+      node("tintW", "multiply", [-1020, -820], { opacity: 1 }, { label: "tintW1" }),
+      /* §V856 SPENT as LIGHT: the warm side literally brightens with ITS cut's coverage
+         — an empty room is a dim ember-field, a found person turns the lamp up. */
+      node("washW", "level", [-1320, -520], {},
+        { label: "washW1", parameters: { brightness: expressionSlot("0.55 + op('matte1').chan.coverage * 3", 0.55) } }),
       node("hazeC", "noise", [-1620, 520], {
-        type: "perlin4d", seed: 34, period: 0.8, harmon: 2, spread: 2, gain: 0.5,
-        rough: 0.5, exp: 1, amp: 1, offset: 0.3, mono: false, aspectcorrect: true,
+        type: "perlin4d", seed: 34, period: 0.8, harmon: 2, spread: 2, gain: 0.4,
+        rough: 0.5, exp: 1, amp: 0.7, offset: 0.15, mono: true, aspectcorrect: true,
         speed: 0.12, t4d: 0.63, s4d: 1,
       }, { label: "hazeC1" }),
-      node("washC", "hsv", [-1320, 520], { hueoffset: -150, value: 1 },
-        { label: "washC1", parameters: { saturation: expressionSlot("op('seg1').chan.coverage * 8", 0.2) } }),
+      node("inkC", "solid", [-1620, 760], { color: [0.1, 0.35, 0.9, 1] }, { label: "inkC1" }),
+      node("tintC", "multiply", [-1020, 820], { opacity: 1 }, { label: "tintC1" }),
+      node("washC", "level", [-1320, 520], {},
+        { label: "washC1", parameters: { brightness: expressionSlot("0.55 + op('seg1').chan.coverage * 3", 0.55) } }),
 
       node("baseL", "add", [-1020, -400], { opacity: 1 }, { label: "baseL1" }),
       node("baseR", "add", [-1020, 400], { opacity: 1 }, { label: "baseR1" }),
@@ -111,8 +117,12 @@ export const twoCutsDocument = document(
       edge("e8", ["seg", "out"], ["keyV", "in2"]),
 
       edge("e9", ["src", "out"], ["dim", "input"]),
-      edge("e10", ["hazeW", "out"], ["washW", "input"]),
-      edge("e11", ["hazeC", "out"], ["washC", "input"]),
+      edge("e10", ["hazeW", "out"], ["tintW", "in1"]),
+      edge("e10b", ["inkW", "out"], ["tintW", "in2"]),
+      edge("e10c", ["tintW", "out"], ["washW", "input"]),
+      edge("e11", ["hazeC", "out"], ["tintC", "in1"]),
+      edge("e11b", ["inkC", "out"], ["tintC", "in2"]),
+      edge("e11c", ["tintC", "out"], ["washC", "input"]),
       edge("e12", ["washW", "out"], ["baseL", "in1"]),
       edge("e13", ["dim", "out"], ["baseL", "in2"]),
       edge("e14", ["washC", "out"], ["baseR", "in1"]),

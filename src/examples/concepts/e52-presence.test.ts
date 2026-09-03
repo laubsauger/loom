@@ -54,14 +54,14 @@ describe("E52 Presence", () => {
     ).toBe(true);
   });
 
-  it("coverage drives the wash: §V856's scalar is wired, not just published", () => {
+  it("coverage drives the wash's LIGHT: §V856's scalar is wired, not just published", () => {
     /* The saturation slot is an EXPRESSION over mask1's coverage channel. The channel
        itself exists only in a live session (the seam publishes it; headless has no
        pump), so a render-diff on the cut edge cannot run here — what CAN be pinned is
        that the document actually spends the scalar: delete this slot and the example's
        whole "the room knows" claim silently becomes decoration. */
     const wash = document.graph.nodes["wash"];
-    const slot = wash?.parameters["saturation"] as
+    const slot = wash?.parameters["brightness"] as
       | { mode?: string; bindings?: { expression?: { source?: string } } }
       | undefined;
     expect(slot?.mode).toBe("expression");

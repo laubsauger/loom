@@ -67,6 +67,28 @@
           "portId": "out"
         },
         "target": {
+          "nodeId": "tint",
+          "portId": "in1"
+        }
+      },
+      "e6b": {
+        "id": "e6b",
+        "source": {
+          "nodeId": "ink",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "tint",
+          "portId": "in2"
+        }
+      },
+      "e6c": {
+        "id": "e6c",
+        "source": {
+          "nodeId": "tint",
+          "portId": "out"
+        },
+        "target": {
           "nodeId": "wash",
           "portId": "input"
         }
@@ -150,13 +172,13 @@
         "id": "haze",
         "label": "haze1",
         "parameters": {
-          "amp": 1,
+          "amp": 0.7,
           "aspectcorrect": true,
           "exp": 1,
-          "gain": 0.5,
+          "gain": 0.4,
           "harmon": 2,
-          "mono": false,
-          "offset": 0.25,
+          "mono": true,
+          "offset": 0.15,
           "period": 0.9,
           "rough": 0.5,
           "s4d": 1,
@@ -171,6 +193,24 @@
           "y": 320
         },
         "type": "noise"
+      },
+      "ink": {
+        "definitionVersion": 1,
+        "id": "ink",
+        "label": "ink1",
+        "parameters": {
+          "color": [
+            0.12,
+            0.75,
+            0.5,
+            1
+          ]
+        },
+        "position": {
+          "x": -1320,
+          "y": 600
+        },
+        "type": "solid"
       },
       "key": {
         "definitionVersion": 1,
@@ -236,32 +276,43 @@
         },
         "type": "switch"
       },
+      "tint": {
+        "definitionVersion": 1,
+        "id": "tint",
+        "label": "tint1",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": -1020,
+          "y": 620
+        },
+        "type": "multiply"
+      },
       "wash": {
         "definitionVersion": 1,
         "id": "wash",
         "label": "wash1",
         "parameters": {
-          "hueoffset": 0.05,
-          "saturation": {
+          "brightness": {
             "bindings": {
               "expression": {
                 "kind": "expression",
-                "source": "op('mask1').chan.coverage * 8"
+                "source": "0.55 + op('mask1').chan.coverage * 4"
               },
               "static": {
                 "kind": "static",
-                "value": 0.15
+                "value": 0.55
               }
             },
             "mode": "expression"
-          },
-          "value": 1
+          }
         },
         "position": {
           "x": -1020,
           "y": 320
         },
-        "type": "hsv"
+        "type": "level"
       }
     },
     "revision": 1

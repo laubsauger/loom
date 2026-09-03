@@ -211,14 +211,16 @@
     "phrase": 0.04257
   },
   "E52-Presence.loom.json": {
-    "motion": 0.02217,
-    "range": 0.3885,
-    "f0max": 0.8898
+    "motion": 0.02559,
+    "range": 0.419,
+    "f0max": 0.5566,
+    "cardFloor": 0.1174
   },
   "E53-Two-Cuts.loom.json": {
-    "motion": 0.02306,
-    "range": 0.3973,
-    "f0max": 1
+    "motion": 0.01177,
+    "range": 0.4061,
+    "f0max": 0.5234,
+    "cardFloor": 0.1412
   },
   "E54-Quorum.loom.json": {
     "motion": 0.02864,

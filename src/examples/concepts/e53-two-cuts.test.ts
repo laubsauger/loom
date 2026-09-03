@@ -57,7 +57,7 @@ describe("E53 Two Cuts", () => {
 
   it("each wash spends ITS OWN cut's coverage (§V856) — warm answers the matte, cool answers the segmentation", () => {
     const sourceOf = (nodeId: string): string => {
-      const slot = document.graph.nodes[nodeId]?.parameters["saturation"] as
+      const slot = document.graph.nodes[nodeId]?.parameters["brightness"] as
         | { bindings?: { expression?: { source?: string } } }
         | undefined;
       return slot?.bindings?.expression?.source ?? "";

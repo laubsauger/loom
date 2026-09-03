@@ -61,17 +61,21 @@ export const presenceDocument = document(
       /* perlin4d, NOT a 3d type: the fourth dimension is what `speed` advances, and a
          3d haze with a speed knob is a static picture wearing a motion parameter — the
          cook oracle read the whole example as a poster because this layer (the only
-         one visible without a helper) had no time axis at all. */
+         one visible without a helper) had no time axis at all. MONO, then tinted by a
+         solid: hsv-saturating a multi-hue noise averaged to white-grey pastel, which is
+         how the first shipped thumbnail was a blown-out poster (T1037's fix). */
       node("haze", "noise", [-1320, 320], {
-        type: "perlin4d", seed: 12, period: 0.9, harmon: 2, spread: 2, gain: 0.5,
-        rough: 0.5, exp: 1, amp: 1, offset: 0.25, mono: false, aspectcorrect: true,
+        type: "perlin4d", seed: 12, period: 0.9, harmon: 2, spread: 2, gain: 0.4,
+        rough: 0.5, exp: 1, amp: 0.7, offset: 0.15, mono: true, aspectcorrect: true,
         speed: 0.14, t4d: 0.37, s4d: 1,
       }, { label: "haze1" }),
-      /* §V856 made visible: saturation FOLLOWS COVERAGE. Empty room ≈ grey; a person
-         filling a tenth of the frame pulls the haze toward full colour. The channel is
+      node("ink", "solid", [-1320, 600], { color: [0.12, 0.75, 0.5, 1] }, { label: "ink1" }),
+      node("tint", "multiply", [-1020, 620], { opacity: 1 }, { label: "tint1" }),
+      /* §V856 SPENT as LIGHT: the room BRIGHTENS with coverage. Empty room = dim green
+         haze; a person filling a tenth of the frame turns the lamp up. The channel is
          the seam's own (`<name>:coverage`), so the wiring is one expression. */
-      node("wash", "hsv", [-1020, 320], { hueoffset: 0.05, value: 1 },
-        { label: "wash1", parameters: { saturation: expressionSlot("op('mask1').chan.coverage * 8", 0.15) } }),
+      node("wash", "level", [-1020, 320], {},
+        { label: "wash1", parameters: { brightness: expressionSlot("0.55 + op('mask1').chan.coverage * 4", 0.55) } }),
       node("room", "over", [-720, 80], { opacity: 1 }, { label: "room1" }),
       node("out", "output", [-420, 80], {}, { label: "out1" }),
     ],
@@ -81,7 +85,9 @@ export const presenceDocument = document(
       edge("e3", ["src", "out"], ["mask", "input"]),
       edge("e4", ["src", "out"], ["key", "in1"]),
       edge("e5", ["mask", "out"], ["key", "in2"]),
-      edge("e6", ["haze", "out"], ["wash", "input"]),
+      edge("e6", ["haze", "out"], ["tint", "in1"]),
+      edge("e6b", ["ink", "out"], ["tint", "in2"]),
+      edge("e6c", ["tint", "out"], ["wash", "input"]),
       edge("e7", ["key", "out"], ["room", "in1"]),
       edge("e8", ["wash", "out"], ["room", "in2"]),
       edge("e9", ["room", "out"], ["out", "input"]),

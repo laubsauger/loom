@@ -302,6 +302,8 @@ export function syntheticInferenceFrame(
    * silently. A fake must be sized by the thing it is filling, not by the common case.
    */
   format: string = "rgba8unorm",
+  /** T1037: shapes the fake — a matte/personMask result is a mask, not a depth map. */
+  nodeType?: string,
 ): Uint8Array {
   const [width, height] = size;
   if (format === "rgba16float") return syntheticHalfFrame(width, height, frameIndex, sourceId);
@@ -310,6 +312,31 @@ export function syntheticInferenceFrame(
      frame-index marker in texel 0 (as a plain 0..255-scaled float, so the assertions
      keep their byte spelling). */
   if (format === "r32float") {
+    /* T1037 — a MASK-shaped result gets a MASK-shaped stand-in: a soft oval "subject",
+       zero outside, because the depth-shaped radial below is WRONG-SHAPED for a matte —
+       multiplied as coverage it painted concentric rings over the whole frame, and the
+       E52/E53 thumbnails shipped as near-identical white posters through exactly this
+       third path (§V840: the oracle serves nothing, the app serves the node's neutral,
+       and this harness served depth's picture to a mask). Still unmistakably synthetic,
+       still salted, still frame-marked, and it drifts with the frame so downstream
+       motion gates keep seeing motion. */
+    if (nodeType === "matte" || nodeType === "personMask") {
+      const floats = new Float32Array(width * height);
+      let saltM = 0;
+      for (const char of sourceId) saltM = (saltM * 31 + char.charCodeAt(0)) >>> 0;
+      const cx = width * (0.5 + 0.06 * Math.sin((frameIndex + (saltM % 32)) / 9));
+      const cy = height * 0.55;
+      const rx = width * 0.16;
+      const ry = height * 0.34;
+      for (let y = 0; y < height; y += 1) {
+        for (let x = 0; x < width; x += 1) {
+          const d = Math.hypot((x - cx) / rx, (y - cy) / ry);
+          floats[y * width + x] = d >= 1 ? 0 : Math.min(0.9, (1 - d) * 3);
+        }
+      }
+      floats[0] = (frameIndex & 255) / 255;
+      return new Uint8Array(floats.buffer);
+    }
     const floats = new Float32Array(width * height);
     let salt32 = 0;
     for (const char of sourceId) salt32 = (salt32 * 31 + char.charCodeAt(0)) >>> 0;
@@ -424,6 +451,8 @@ export function registerInferenceSources(
   plan: CompiledGraph,
   frameOf: () => number,
   feed: ((nodeId: string, frameIndex: number) => Uint8Array | null) | undefined,
+  /** T1037 — the node's TYPE, so the stand-in can be SHAPED like the result it fakes. */
+  nodeTypeOf?: (nodeId: string) => string | undefined,
 ): void {
   for (const resource of plan.resources) {
     const entry = resource as {
@@ -443,7 +472,12 @@ export function registerInferenceSources(
         const frameId = frameOf();
         const recorded = feed?.(nodeId, frameId);
         if (recorded === null) return undefined;
-        return { frameId, bytes: recorded ?? syntheticInferenceFrame(sourceId, size, frameId, format) };
+        return {
+          frameId,
+          bytes:
+            recorded ??
+            syntheticInferenceFrame(sourceId, size, frameId, format, nodeTypeOf?.(nodeId)),
+        };
       },
     });
   }
@@ -535,7 +569,13 @@ export async function renderHeadless(request: HeadlessRenderRequest): Promise<He
     // T650: media draws SOMETHING attributable in headless, or nothing by stated design.
     registerSyntheticMediaSources(backend, plan, logicalGraph, () => steppingFrame);
     // T715: the inference feed, beside the media one and claiming a different prefix.
-    registerInferenceSources(backend, plan, () => steppingFrame, request.inference);
+    registerInferenceSources(
+      backend,
+      plan,
+      () => steppingFrame,
+      request.inference,
+      (nodeId) => logicalGraph.nodes[nodeId as keyof typeof logicalGraph.nodes]?.type,
+    );
 
     const control: HarnessControl = {
       resize: (outputId, size) => {

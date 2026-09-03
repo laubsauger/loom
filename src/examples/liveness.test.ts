@@ -657,7 +657,7 @@ describe("T521 — every shipped example moves, and you can see it", () => {
          * state the delta (§V642); if you did not, you just caught an accidental
          * catalogue-wide look change — do not update the file to make it quiet.
          */
-        const baseline = (LOOK_BASELINES as Record<string, { motion: number; range: number; f0max: number }>)[fileName];
+        const baseline = (LOOK_BASELINES as Record<string, { motion: number; range: number; f0max: number; cardFloor?: number }>)[fileName];
         expect(baseline, `${fileName} has no look baseline — run measure-look-baselines.ts and commit the entry`).toBeDefined();
         const drifted: string[] = [];
         const check = (metric: string, measured: number, recorded: number) => {
@@ -671,6 +671,20 @@ describe("T521 — every shipped example moves, and you can see it", () => {
           check("motion", reading.motion, baseline.motion);
           check("range", reading.range, baseline.range);
           check("f0max", reading.firstFrameMax, baseline.f0max);
+          if (baseline.cardFloor !== undefined) check("cardFloor", reading.cardFloor, baseline.cardFloor);
+        }
+        /* T1037 — THE WHITE-POSTER GATE, absolute rather than drift-relative: E52 and
+           E53 shipped near-uniform white while motion, range, f0max and the cook
+           oracle all passed — a frame can vary every frame and be white every frame
+           (§V864's family: every prior metric answers "how much", none answers "does
+           the card contain darkness"). The floor is where the picture's range STARTS.
+           Only rows measured since cardFloor existed are bound, so no unscoped sweep. */
+        if (baseline?.cardFloor !== undefined) {
+          expect(
+            reading.cardFloor,
+            `${entry.document.name}'s gallery card has no darkness in it (p001 luma ` +
+              `${reading.cardFloor.toFixed(3)}) — a washed-out poster, whatever its motion says.`,
+          ).toBeLessThan(0.35);
         }
         expect(
           drifted,

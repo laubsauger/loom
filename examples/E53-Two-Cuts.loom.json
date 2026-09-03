@@ -22,6 +22,28 @@
           "portId": "out"
         },
         "target": {
+          "nodeId": "tintW",
+          "portId": "in1"
+        }
+      },
+      "e10b": {
+        "id": "e10b",
+        "source": {
+          "nodeId": "inkW",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "tintW",
+          "portId": "in2"
+        }
+      },
+      "e10c": {
+        "id": "e10c",
+        "source": {
+          "nodeId": "tintW",
+          "portId": "out"
+        },
+        "target": {
           "nodeId": "washW",
           "portId": "input"
         }
@@ -30,6 +52,28 @@
         "id": "e11",
         "source": {
           "nodeId": "hazeC",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "tintC",
+          "portId": "in1"
+        }
+      },
+      "e11b": {
+        "id": "e11b",
+        "source": {
+          "nodeId": "inkC",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "tintC",
+          "portId": "in2"
+        }
+      },
+      "e11c": {
+        "id": "e11c",
+        "source": {
+          "nodeId": "tintC",
           "portId": "out"
         },
         "target": {
@@ -363,7 +407,7 @@
         "id": "dim",
         "label": "dim1",
         "parameters": {
-          "brightness": 0.35
+          "brightness": 0.18
         },
         "position": {
           "x": -1620,
@@ -474,13 +518,13 @@
         "id": "hazeC",
         "label": "hazeC1",
         "parameters": {
-          "amp": 1,
+          "amp": 0.7,
           "aspectcorrect": true,
           "exp": 1,
-          "gain": 0.5,
+          "gain": 0.4,
           "harmon": 2,
-          "mono": false,
-          "offset": 0.3,
+          "mono": true,
+          "offset": 0.15,
           "period": 0.8,
           "rough": 0.5,
           "s4d": 1,
@@ -501,13 +545,13 @@
         "id": "hazeW",
         "label": "hazeW1",
         "parameters": {
-          "amp": 1,
+          "amp": 0.7,
           "aspectcorrect": true,
           "exp": 1,
-          "gain": 0.5,
+          "gain": 0.4,
           "harmon": 2,
-          "mono": false,
-          "offset": 0.3,
+          "mono": true,
+          "offset": 0.15,
           "period": 0.8,
           "rough": 0.5,
           "s4d": 1,
@@ -522,6 +566,42 @@
           "y": -520
         },
         "type": "noise"
+      },
+      "inkC": {
+        "definitionVersion": 1,
+        "id": "inkC",
+        "label": "inkC1",
+        "parameters": {
+          "color": [
+            0.1,
+            0.35,
+            0.9,
+            1
+          ]
+        },
+        "position": {
+          "x": -1620,
+          "y": 760
+        },
+        "type": "solid"
+      },
+      "inkW": {
+        "definitionVersion": 1,
+        "id": "inkW",
+        "label": "inkW1",
+        "parameters": {
+          "color": [
+            1,
+            0.45,
+            0.12,
+            1
+          ]
+        },
+        "position": {
+          "x": -1620,
+          "y": -760
+        },
+        "type": "solid"
       },
       "keyM": {
         "definitionVersion": 1,
@@ -637,59 +717,81 @@
         },
         "type": "add"
       },
+      "tintC": {
+        "definitionVersion": 1,
+        "id": "tintC",
+        "label": "tintC1",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": -1020,
+          "y": 820
+        },
+        "type": "multiply"
+      },
+      "tintW": {
+        "definitionVersion": 1,
+        "id": "tintW",
+        "label": "tintW1",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": -1020,
+          "y": -820
+        },
+        "type": "multiply"
+      },
       "washC": {
         "definitionVersion": 1,
         "id": "washC",
         "label": "washC1",
         "parameters": {
-          "hueoffset": -150,
-          "saturation": {
+          "brightness": {
             "bindings": {
               "expression": {
                 "kind": "expression",
-                "source": "op('seg1').chan.coverage * 8"
+                "source": "0.55 + op('seg1').chan.coverage * 3"
               },
               "static": {
                 "kind": "static",
-                "value": 0.2
+                "value": 0.55
               }
             },
             "mode": "expression"
-          },
-          "value": 1
+          }
         },
         "position": {
           "x": -1320,
           "y": 520
         },
-        "type": "hsv"
+        "type": "level"
       },
       "washW": {
         "definitionVersion": 1,
         "id": "washW",
         "label": "washW1",
         "parameters": {
-          "hueoffset": 8,
-          "saturation": {
+          "brightness": {
             "bindings": {
               "expression": {
                 "kind": "expression",
-                "source": "op('matte1').chan.coverage * 8"
+                "source": "0.55 + op('matte1').chan.coverage * 3"
               },
               "static": {
                 "kind": "static",
-                "value": 0.2
+                "value": 0.55
               }
             },
             "mode": "expression"
-          },
-          "value": 1
+          }
         },
         "position": {
           "x": -1320,
           "y": -520
         },
-        "type": "hsv"
+        "type": "level"
       }
     },
     "revision": 1

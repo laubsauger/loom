@@ -90,6 +90,9 @@ export interface Reading {
    * E24's own note and never re-examined (§V769/§T786).
    */
   readonly cardMax: number;
+  /** T1037 — p001 of the card frame's linear luma: where the picture's range STARTS.
+   *  A blown-out card passes every max/span gate and fails only this one. */
+  readonly cardFloor: number;
   /**
    * T776 — mean |Δ| linear luma between a FULL bar (frame 180) and the arrangement's QUIET
    * bar (frame 440). Present only for examples driven by `audioPattern`.
@@ -179,6 +182,15 @@ export async function measure(
   for (const value of first) if (value > firstFrameMax) firstFrameMax = value;
   let cardMax = 0;
   for (const value of early) if (value > cardMax) cardMax = value;
+  /* T1037 — the card's FLOOR (p001 of its linear luma). E52 and E53 shipped as
+     near-white posters that PASSED motion, range and both max gates: a frame can vary
+     every frame, span 0.5 of range, and still contain no darkness at all. `range` is a
+     span; a span has no address. The floor says where the span STARTS, which is the
+     half a blown-out card fails. Present only on rows measured since it existed, so no
+     unscoped baseline sweep. */
+  const cardSorted = Float64Array.from(early).sort();
+  const cardFloor =
+    cardSorted[Math.min(cardSorted.length - 1, Math.floor(0.001 * cardSorted.length))] ?? 0;
 
   /* Indices 0/1/2 are unchanged by the extra capture, so motion, range and f0max read the
      same frames they always did and no existing baseline moves. */
@@ -197,6 +209,7 @@ export async function measure(
     range: at(0.999) - at(0.001),
     firstFrameMax,
     cardMax,
+    cardFloor,
     ...(phrase === undefined ? {} : { phrase }),
   };
 }

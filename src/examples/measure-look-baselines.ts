@@ -26,7 +26,7 @@ const only = onlyAt >= 0 ? process.argv[onlyAt + 1] : undefined;
 if (onlyAt >= 0 && only === undefined) throw new Error("--only needs a name substring");
 
 const path = join(import.meta.dirname, "look-baselines.json");
-const entries: Record<string, { motion: number; range: number; f0max: number; phrase?: number }> =
+const entries: Record<string, { motion: number; range: number; f0max: number; cardFloor?: number; phrase?: number }> =
   only === undefined ? {} : (JSON.parse(readFileSync(path, "utf8")) as typeof entries);
 let matched = 0;
 for (const document of EXAMPLE_DOCUMENTS) {
@@ -39,6 +39,9 @@ for (const document of EXAMPLE_DOCUMENTS) {
     motion: Number(reading.motion.toFixed(5)),
     range: Number(reading.range.toFixed(4)),
     f0max: Number(reading.firstFrameMax.toFixed(4)),
+    // T1037: the card's floor rides every row measured from here on (additive — old
+    // rows keep their three metrics until their example is next re-measured).
+    cardFloor: Number(reading.cardFloor.toFixed(4)),
     /* T776: only the nine audioPattern examples carry a phrase row. */
     ...(reading.phrase === undefined ? {} : { phrase: Number(reading.phrase.toFixed(5)) }),
   };
