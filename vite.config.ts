@@ -21,6 +21,29 @@ const buildCommit = (() => {
 
 const alias = (segment: string) => fileURLToPath(new URL(`./src/${segment}`, import.meta.url));
 
+/**
+ * T1041 — cross-origin isolation, so `onnxruntime-web` can actually use threads.
+ *
+ * Without COOP+COEP a page gets no `SharedArrayBuffer`, and ORT silently drops to ONE
+ * wasm thread. Measured against the real inference worker through this dev server
+ * (warm medians, 14-core machine): MODNet 512² 1030 ms → 250 ms with these headers
+ * (4.1×, landing at the 224 ms isolated bench plus ~26 ms of pack+encode); pose
+ * 21 ms → 12 ms. The multiple grows with model size — the missing headers, not the
+ * model, were most of the wasm cost.
+ *
+ * `require-corp` (not `credentialless`, which Safari lacks): every cross-origin
+ * resource must now arrive via CORS. The app's only cross-origin fetches are the
+ * Hugging Face model downloads, which send `access-control-allow-origin: *`.
+ *
+ * GitHub Pages serves no custom headers, so the HOSTED build is NOT isolated by
+ * these lines; the page must measure `crossOriginIsolated` and say which regime it
+ * is in rather than assume this config reached it (§V827).
+ */
+const isolationHeaders = {
+  "Cross-Origin-Opener-Policy": "same-origin",
+  "Cross-Origin-Embedder-Policy": "require-corp",
+};
+
 export default defineConfig({
   define: {
     __BUILD_COMMIT__: JSON.stringify(buildCommit),
@@ -38,6 +61,8 @@ export default defineConfig({
   worker: {
     format: "es",
   },
+  server: { headers: isolationHeaders },
+  preview: { headers: isolationHeaders },
   resolve: {
     alias: {
       "@": alias(""),

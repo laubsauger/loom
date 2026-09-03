@@ -517,6 +517,7 @@ export function useModelInference(
         sinkRef.current?.publish(nodeId, {
           inferenceBackend: measurement.backend,
           inferenceMs: measurement.millis,
+          inferenceIsolated: measurement.isolated,
         });
       },
     });

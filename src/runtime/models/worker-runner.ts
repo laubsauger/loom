@@ -51,6 +51,8 @@ export interface InferenceMeasurement {
   readonly backend: string;
   /** Wall time the inference took, ms. Telemetry only. */
   readonly millis: number;
+  /** T1041 — the worker's own `crossOriginIsolated`. False = wasm ran single-threaded. */
+  readonly isolated: boolean;
 }
 
 export interface WorkerRunnerOptions {
@@ -94,7 +96,11 @@ export function createWorkerRunner(options: WorkerRunnerOptions): WorkerRunner {
       const waiter = pending.get(message.requestId);
       pending.delete(message.requestId);
       if (waiter !== undefined) {
-        options.onMeasured?.(waiter.nodeId, { backend: message.backend, millis: message.millis });
+        options.onMeasured?.(waiter.nodeId, {
+          backend: message.backend,
+          millis: message.millis,
+          isolated: message.isolated,
+        });
       }
       waiter?.resolve(new Uint8Array(message.bytes));
       return;

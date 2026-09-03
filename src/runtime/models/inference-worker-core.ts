@@ -37,6 +37,12 @@ export interface WorkerCoreOptions {
   createTensor(type: string, data: Float32Array | Uint8Array, dims: readonly number[]): unknown;
   post(response: InferenceResponse, transfer?: Transferable[]): void;
   /**
+   * T1041 — the thread's own `crossOriginIsolated`, passed by the shim because only the
+   * real worker environment can measure it. Carried on every result so the regime a
+   * number was measured in travels with the number.
+   */
+  isolated: boolean;
+  /**
    * Wall clock for the DURATIONS this reports. Injected so a test can assert an exact
    * number, and named `now` rather than read directly so §V44's rule stays legible: this
    * clock never reaches a shader, a frame or a document — it only labels telemetry.
@@ -155,6 +161,7 @@ export function createWorkerCore(options: WorkerCoreOptions) {
             sessionKey,
             backend: loaded.backend,
             millis: loaded.millis,
+            isolated: options.isolated,
           });
           return;
         }
@@ -208,7 +215,14 @@ export function createWorkerCore(options: WorkerCoreOptions) {
         const buffer = new ArrayBuffer(bytes.byteLength);
         new Uint8Array(buffer).set(bytes);
         options.post(
-          { kind: "result", requestId: request.requestId, bytes: buffer, backend, millis },
+          {
+            kind: "result",
+            requestId: request.requestId,
+            bytes: buffer,
+            backend,
+            millis,
+            isolated: options.isolated,
+          },
           [buffer],
         );
       } catch (error) {

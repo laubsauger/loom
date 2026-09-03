@@ -285,9 +285,16 @@ export function NodeInfoPopup({ info, lens, onLens, onLensReset }: NodeInfoPopup
               <Value absent={info.inferenceBackend === null}>
                 {info.inferenceBackend === null
                   ? "no run yet"
-                  : info.inferenceMs === null
-                    ? info.inferenceBackend
-                    : `${info.inferenceBackend}, ${Math.round(info.inferenceMs)} ms`}
+                  : `${info.inferenceBackend}${
+                      info.inferenceMs === null ? "" : `, ${Math.round(info.inferenceMs)} ms`
+                    }${
+                      /* T1041 — the regime the number was measured in, worker-measured
+                         (§V827). Only wasm cares: threads need SharedArrayBuffer, which
+                         needs COOP/COEP headers a static host may not serve. */
+                      info.inferenceBackend === "wasm" && info.inferenceIsolated === false
+                        ? " — single-threaded (page not cross-origin isolated)"
+                        : ""
+                    }`}
               </Value>
             </>
           ) : null}

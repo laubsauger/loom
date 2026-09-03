@@ -93,6 +93,11 @@ const core = createWorkerCore({
   post: (response, transfer) => {
     scope.postMessage(response, transfer);
   },
+  /* T1041 — measured HERE, in the worker that runs the wasm, because isolation is a
+     property of the environment the threads would live in. Workers inherit it from
+     the page; the page gets it from COOP/COEP headers dev serves and GitHub Pages
+     does not. */
+  isolated: globalThis.crossOriginIsolated === true,
 });
 
 scope.addEventListener("message", (event) => {

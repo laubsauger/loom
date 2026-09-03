@@ -73,13 +73,13 @@ describe("the main thread's half", () => {
     const a = runner.run("n1", new ArrayBuffer(4));
     const b = runner.run("n2", new ArrayBuffer(4));
     await Promise.resolve();
-    fake.deliver({ kind: "loaded", sessionKey: sessionKeyFor("m", PROVIDERS), backend: "wasm", millis: 1 });
+    fake.deliver({ kind: "loaded", sessionKey: sessionKeyFor("m", PROVIDERS), backend: "wasm", millis: 1, isolated: true });
     await Promise.resolve();
     await Promise.resolve();
 
     expect(fake.sent.filter((m) => m.kind === "load")).toHaveLength(1);
-    fake.deliver({ kind: "result", requestId: 1, bytes: new ArrayBuffer(3), backend: "wasm", millis: 1 });
-    fake.deliver({ kind: "result", requestId: 2, bytes: new ArrayBuffer(3), backend: "wasm", millis: 1 });
+    fake.deliver({ kind: "result", requestId: 1, bytes: new ArrayBuffer(3), backend: "wasm", millis: 1, isolated: true });
+    fake.deliver({ kind: "result", requestId: 2, bytes: new ArrayBuffer(3), backend: "wasm", millis: 1, isolated: true });
     expect((await a).length).toBe(3);
     expect((await b).length).toBe(3);
   });
@@ -95,7 +95,7 @@ describe("the main thread's half", () => {
     const runner = runnerOver(fake);
     const first = runner.run("n1", new ArrayBuffer(4));
     await Promise.resolve();
-    fake.deliver({ kind: "loaded", sessionKey: sessionKeyFor("m", PROVIDERS), backend: "wasm", millis: 1 });
+    fake.deliver({ kind: "loaded", sessionKey: sessionKeyFor("m", PROVIDERS), backend: "wasm", millis: 1, isolated: true });
     await Promise.resolve();
     await Promise.resolve();
     const second = runner.run("n2", new ArrayBuffer(4));
@@ -106,8 +106,8 @@ describe("the main thread's half", () => {
     expect(runs).toHaveLength(2);
 
     // Second answers FIRST, and carries a distinguishable payload.
-    fake.deliver({ kind: "result", requestId: 2, bytes: new Uint8Array([2, 2]).buffer, backend: "wasm", millis: 1 });
-    fake.deliver({ kind: "result", requestId: 1, bytes: new Uint8Array([1]).buffer, backend: "wasm", millis: 1 });
+    fake.deliver({ kind: "result", requestId: 2, bytes: new Uint8Array([2, 2]).buffer, backend: "wasm", millis: 1, isolated: true });
+    fake.deliver({ kind: "result", requestId: 1, bytes: new Uint8Array([1]).buffer, backend: "wasm", millis: 1, isolated: true });
 
     expect([...(await first)]).toEqual([1]);
     expect([...(await second)]).toEqual([2, 2]);
@@ -121,7 +121,7 @@ describe("the main thread's half", () => {
     const texels = new ArrayBuffer(4);
     void runner.run("n1", texels);
     await Promise.resolve();
-    fake.deliver({ kind: "loaded", sessionKey: sessionKeyFor("m", PROVIDERS), backend: "wasm", millis: 1 });
+    fake.deliver({ kind: "loaded", sessionKey: sessionKeyFor("m", PROVIDERS), backend: "wasm", millis: 1, isolated: true });
     await Promise.resolve();
     await Promise.resolve();
     const runIndex = fake.sent.findIndex((m) => m.kind === "run");
@@ -133,7 +133,7 @@ describe("the main thread's half", () => {
     const runner = runnerOver(fake);
     const a = runner.run("n1", new ArrayBuffer(4));
     await Promise.resolve();
-    fake.deliver({ kind: "loaded", sessionKey: sessionKeyFor("m", PROVIDERS), backend: "wasm", millis: 1 });
+    fake.deliver({ kind: "loaded", sessionKey: sessionKeyFor("m", PROVIDERS), backend: "wasm", millis: 1, isolated: true });
     await Promise.resolve();
     await Promise.resolve();
     const b = runner.run("n2", new ArrayBuffer(4));
@@ -141,7 +141,7 @@ describe("the main thread's half", () => {
     await Promise.resolve();
 
     fake.deliver({ kind: "error", requestId: 1, message: "model exploded" });
-    fake.deliver({ kind: "result", requestId: 2, bytes: new ArrayBuffer(1), backend: "wasm", millis: 1 });
+    fake.deliver({ kind: "result", requestId: 2, bytes: new ArrayBuffer(1), backend: "wasm", millis: 1, isolated: true });
 
     await expect(a).rejects.toThrow("model exploded");
     expect((await b).length).toBe(1);
@@ -152,7 +152,7 @@ describe("the main thread's half", () => {
     const runner = runnerOver(fake);
     const a = runner.run("n1", new ArrayBuffer(4));
     await Promise.resolve();
-    fake.deliver({ kind: "loaded", sessionKey: sessionKeyFor("m", PROVIDERS), backend: "wasm", millis: 1 });
+    fake.deliver({ kind: "loaded", sessionKey: sessionKeyFor("m", PROVIDERS), backend: "wasm", millis: 1, isolated: true });
     await Promise.resolve();
     await Promise.resolve();
     fake.crash();
@@ -174,10 +174,10 @@ describe("the main thread's half", () => {
     await expect(runner.run("n1", new ArrayBuffer(4))).rejects.toThrow("not available");
     const second = runner.run("n1", new ArrayBuffer(4));
     await Promise.resolve();
-    fake.deliver({ kind: "loaded", sessionKey: sessionKeyFor("m", PROVIDERS), backend: "wasm", millis: 1 });
+    fake.deliver({ kind: "loaded", sessionKey: sessionKeyFor("m", PROVIDERS), backend: "wasm", millis: 1, isolated: true });
     await Promise.resolve();
     await Promise.resolve();
-    fake.deliver({ kind: "result", requestId: 1, bytes: new ArrayBuffer(2), backend: "wasm", millis: 1 });
+    fake.deliver({ kind: "result", requestId: 1, bytes: new ArrayBuffer(2), backend: "wasm", millis: 1, isolated: true });
     expect((await second).length).toBe(2);
     expect(attempts).toBe(2);
   });
@@ -199,6 +199,7 @@ describe("the worker's half", () => {
       posted,
       created,
       instance: createWorkerCore({
+      isolated: true,
         createSession: async () => fakeSession(output),
         createTensor: (type, data, dims) => {
           created.push({ type, length: data.length, dims });
@@ -249,6 +250,7 @@ describe("the worker's half", () => {
   it("keeps ONE session per model AND ladder however many runs arrive", async () => {
     let built = 0;
     const instance = createWorkerCore({
+      isolated: true,
       createSession: async () => {
         built += 1;
         return fakeSession(new Float32Array(4));
@@ -277,6 +279,7 @@ describe("the worker's half", () => {
     const posted: InferenceResponse[] = [];
     const asked: string[] = [];
     const instance = createWorkerCore({
+      isolated: true,
       createSession: async (_weights, provider) => {
         asked.push(provider);
         if (provider === "webgpu") throw new Error("no adapter");
@@ -301,6 +304,7 @@ describe("the worker's half", () => {
     const posted: InferenceResponse[] = [];
     let clock = 0;
     const instance = createWorkerCore({
+      isolated: true,
       createSession: async () => fakeSession(new Float32Array([0, 1, 2, 3])),
       createTensor: () => ({}),
       post: (response) => posted.push(response),
@@ -325,6 +329,7 @@ describe("the worker's half", () => {
     const posted: InferenceResponse[] = [];
     const asked: string[] = [];
     const instance = createWorkerCore({
+      isolated: true,
       createSession: async (_weights, provider) => {
         asked.push(provider);
         throw new Error("no adapter");
@@ -346,6 +351,7 @@ describe("the worker's half", () => {
     // this is the last point that sees the runtime's own wording.
     const posted: InferenceResponse[] = [];
     const instance = createWorkerCore({
+      isolated: true,
       createSession: async () => {
         throw new Error(
           "CompileError: WebAssembly.instantiate(): expected magic word 00 61 73 6d, found 3c 21 64 6f @+0",
@@ -368,6 +374,7 @@ describe("the worker's half", () => {
     let attempts = 0;
     const posted: InferenceResponse[] = [];
     const instance = createWorkerCore({
+      isolated: true,
       createSession: async () => {
         attempts += 1;
         if (attempts === 1) throw new Error("transient");
@@ -391,6 +398,7 @@ describe("the worker's half", () => {
     // control that silently does nothing.
     const asked: string[] = [];
     const instance = createWorkerCore({
+      isolated: true,
       createSession: async (_weights, provider) => {
         asked.push(provider);
         return fakeSession(new Float32Array(4));
@@ -410,6 +418,7 @@ describe("the worker's half", () => {
   it("reports a model that throws as an error message, not a dead thread", async () => {
     const posted: InferenceResponse[] = [];
     const instance = createWorkerCore({
+      isolated: true,
       createSession: async () => ({
         inputNames: ["x"], outputNames: ["y"],
         run: async () => { throw new Error("kernel refused"); },
@@ -467,14 +476,14 @@ describe("the export's per-frame wait survives the worker boundary", () => {
     // A REAL window, not a microtask — every microtask the chain could hide behind has
     // drained by the time a timer fires.
     await new Promise((resolve) => setTimeout(resolve, 0));
-    fake.deliver({ kind: "loaded", sessionKey: sessionKeyFor("m", PROVIDERS), backend: "wasm", millis: 1 });
+    fake.deliver({ kind: "loaded", sessionKey: sessionKeyFor("m", PROVIDERS), backend: "wasm", millis: 1, isolated: true });
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     // Genuinely outstanding together: the run is dispatched and settle has not resolved.
     expect(fake.sent.some((m) => m.kind === "run")).toBe(true);
     expect(settled).toBe(false);
 
-    fake.deliver({ kind: "result", requestId: 1, bytes: new Uint8Array([9, 9, 9, 255]).buffer, backend: "wasm", millis: 1 });
+    fake.deliver({ kind: "result", requestId: 1, bytes: new Uint8Array([9, 9, 9, 255]).buffer, backend: "wasm", millis: 1, isolated: true });
     await waiting;
 
     expect(settled).toBe(true);
@@ -501,7 +510,7 @@ describe("the export's per-frame wait survives the worker boundary", () => {
 
     const waiting = sources.settle(0);
     await new Promise((resolve) => setTimeout(resolve, 0));
-    fake.deliver({ kind: "loaded", sessionKey: sessionKeyFor("m", PROVIDERS), backend: "wasm", millis: 1 });
+    fake.deliver({ kind: "loaded", sessionKey: sessionKeyFor("m", PROVIDERS), backend: "wasm", millis: 1, isolated: true });
     await new Promise((resolve) => setTimeout(resolve, 0));
     fake.crash();
 

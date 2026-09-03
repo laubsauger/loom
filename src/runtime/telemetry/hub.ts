@@ -83,6 +83,9 @@ export interface NodeMetricSink {
        */
       inferenceBackend?: string | null;
       inferenceMs?: number | null;
+      /** T1041 — the worker's measured `crossOriginIsolated`; false means wasm ran on
+       *  ONE thread (no SharedArrayBuffer). Hosted pages without COOP/COEP land false. */
+      inferenceIsolated?: boolean | null;
     },
   ): void;
 }

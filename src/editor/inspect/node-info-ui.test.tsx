@@ -211,6 +211,7 @@ describe("T645 — the node info popup shows §V329's staleness and classificati
       resultAgeFrames: number | null;
       inferenceBackend: string | null;
       inferenceMs: number | null;
+      inferenceIsolated: boolean | null;
     }>,
   ) =>
     buildNodeInfo({
@@ -224,6 +225,7 @@ describe("T645 — the node info popup shows §V329's staleness and classificati
         resultAgeFrames: null,
         inferenceBackend: null,
         inferenceMs: null,
+        inferenceIsolated: null,
         message: null,
         errorCount: 0,
         warningCount: 0,
@@ -254,6 +256,33 @@ describe("T645 — the node info popup shows §V329's staleness and classificati
     expect(screen.getByText(/record the input to a file and play that back locked to/)).toBeTruthy();
     // A live camera has no readback to be stale, so the age row must not appear at all.
     expect(screen.queryByText("result age")).toBeNull();
+  });
+
+  it("T1041 — a wasm run on a non-isolated page SAYS it ran single-threaded (§V827)", () => {
+    // The same model is ~4× slower without SharedArrayBuffer; a hosted page (GitHub
+    // Pages serves no COOP/COEP) must say which regime its number came from, or the
+    // in-app and isolated figures look like a mystery instead of a measured fact.
+    render(
+      <NodeInfoPopup
+        info={infoFor("depth", { inferenceBackend: "wasm", inferenceMs: 1030, inferenceIsolated: false })}
+      />,
+    );
+    expect(screen.getByText(/single-threaded \(page not cross-origin isolated\)/)).toBeTruthy();
+  });
+
+  it("T1041 — the regime note vanishes when isolated, and never applies to webgpu", () => {
+    render(
+      <NodeInfoPopup
+        info={infoFor("depth", { inferenceBackend: "wasm", inferenceMs: 250, inferenceIsolated: true })}
+      />,
+    );
+    expect(screen.queryByText(/single-threaded/)).toBeNull();
+    render(
+      <NodeInfoPopup
+        info={infoFor("depth", { inferenceBackend: "webgpu", inferenceMs: 30, inferenceIsolated: false })}
+      />,
+    );
+    expect(screen.queryByText(/single-threaded/)).toBeNull();
   });
 
   it("says NOTHING for a pure node — the half that keeps the badge worth reading", () => {

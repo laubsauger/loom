@@ -87,6 +87,8 @@ export type InferenceResponse =
       readonly backend: string;
       /** Wall time the successful attempt took, ms. Telemetry only; never a render clock. */
       readonly millis: number;
+      /** T1041 — the worker's own `crossOriginIsolated`; see the result message's field. */
+      readonly isolated: boolean;
     }
   | {
       readonly kind: "result";
@@ -96,6 +98,16 @@ export type InferenceResponse =
       readonly backend: string;
       /** Wall time this inference took, ms. Telemetry only; never a render clock. */
       readonly millis: number;
+      /**
+       * T1041 — whether the worker ran cross-origin ISOLATED, measured in the worker
+       * itself (`globalThis.crossOriginIsolated`), never assumed from config. Without
+       * isolation there is no SharedArrayBuffer and wasm inference runs on ONE thread
+       * (measured: MODNet 512² 1030 ms vs 250 ms on 14 cores). GitHub Pages serves no
+       * COOP/COEP headers, so a hosted document lands in the slow regime while dev is
+       * in the fast one — a fact the node must SAY (§V827) rather than leave as "the
+       * same model is mysteriously 4× slower in prod".
+       */
+      readonly isolated: boolean;
     }
   /**
    * A failure is a MESSAGE, never a thrown worker error.

@@ -151,6 +151,12 @@ export interface NodeInfo {
    */
   readonly inferenceBackend: string | null;
   readonly inferenceMs: number | null;
+  /** T1041 — worker-measured `crossOriginIsolated`. False = wasm on ONE thread (no
+   *  SharedArrayBuffer; the page was served without COOP/COEP — GitHub Pages always
+   *  is), and the same model runs ~4× slower than the isolated number (measured,
+   *  MODNet 512²: 1030 ms vs 250 ms). Reported so a hosted document SAYS which regime
+   *  its numbers come from (§V827) instead of looking mysteriously slow. */
+  readonly inferenceIsolated: boolean | null;
 }
 
 export interface NodeInfoRequest {
@@ -392,6 +398,7 @@ export function buildNodeInfo(request: NodeInfoRequest): NodeInfo {
     resultAgeFrames: runtime.resultAgeFrames,
     inferenceBackend: runtime.inferenceBackend,
     inferenceMs: runtime.inferenceMs,
+    inferenceIsolated: runtime.inferenceIsolated,
   };
 }
 

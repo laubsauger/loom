@@ -93,6 +93,8 @@ export interface NodeRuntimeSnapshot {
    */
   inferenceBackend: string | null;
   inferenceMs: number | null;
+  /** T1041 — worker-measured cross-origin isolation; false = single-threaded wasm. */
+  inferenceIsolated: boolean | null;
   /** Highest-severity diagnostic text for this node, or null (§I.diag, §V27). */
   message: string | null;
   /** Diagnostic counts behind the node badge (§V27). */
@@ -125,6 +127,7 @@ export const IDLE_RUNTIME: NodeRuntimeSnapshot = Object.freeze({
   resultAgeFrames: null,
   inferenceBackend: null,
   inferenceMs: null,
+  inferenceIsolated: null,
   message: null,
   errorCount: 0,
   warningCount: 0,
@@ -205,6 +208,7 @@ function sameSnapshot(a: NodeRuntimeSnapshot, b: NodeRuntimeSnapshot): boolean {
     a.resultAgeFrames === b.resultAgeFrames &&
     a.inferenceBackend === b.inferenceBackend &&
     a.inferenceMs === b.inferenceMs &&
+    a.inferenceIsolated === b.inferenceIsolated &&
     a.message === b.message &&
     a.errorCount === b.errorCount &&
     a.warningCount === b.warningCount &&
