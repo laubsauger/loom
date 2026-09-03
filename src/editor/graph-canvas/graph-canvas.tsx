@@ -41,6 +41,7 @@ import {
 import { replaceEdgeOperations, spliceNodeOperations } from "@editor/edges/edge-drop.ts";
 import { ReferenceLines } from "@editor/edges/reference-lines.tsx";
 import { registerReferenceLinesCommand } from "@editor/edges/reference-lines-command.ts";
+import { registerEdgeFlowCommand } from "@editor/edges/edge-flow-command.ts";
 import { registerTimingOverlayCommand } from "@editor/nodes/timing-overlay-command.ts";
 import { createNodeTimingScaleStore } from "@editor/nodes/node-timing.ts";
 import { NodeSearch } from "@editor/library/node-search.tsx";
@@ -151,6 +152,8 @@ export function GraphCanvas({
    * different part of the graph has a different set of them.
    */
   const timingOverlay = useMemo(() => registerTimingOverlayCommand(bus), [bus]);
+  /** T1013 — the flow dashes' switch, the timing overlay's twin in the Debug submenu. */
+  const edgeFlow = useMemo(() => registerEdgeFlowCommand(bus), [bus]);
   const timingScale = useMemo(() => createNodeTimingScaleStore(), []);
   useEffect(() => () => timingScale.dispose(), [timingScale]);
 
@@ -665,6 +668,7 @@ export function GraphCanvas({
       components,
       timingOverlay,
       timingScale,
+      edgeFlow,
     }),
     [
       bus.store,
@@ -685,6 +689,7 @@ export function GraphCanvas({
       components,
       timingOverlay,
       timingScale,
+      edgeFlow,
     ],
   );
 

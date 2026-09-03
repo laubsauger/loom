@@ -3,7 +3,7 @@ import type { NodeId } from "@domain/types/ids.ts";
 import { useGraphCanvas, useNodeRuntime } from "@editor/graph-canvas/canvas-context.ts";
 import { cssVars } from "@editor/graph-canvas/css-vars.ts";
 import { formatGpuMs } from "@editor/edges/flow.ts";
-import { TIMING_HOT_SHARE, smoothGpuMs, timingShare } from "./node-timing.ts";
+import { costTier, smoothGpuMs, timingShare } from "./node-timing.ts";
 import styles from "./node-timing-overlay.module.css";
 
 /**
@@ -90,13 +90,13 @@ export const NodeTimingOverlay = memo(function NodeTimingOverlay({
         aria-label={
           smoothed === null
             ? "GPU time share: not measured"
-            : `GPU time share: ${String(percent)}% of the graph`
+            : `GPU time share: ${String(percent)}% of the graph (${costTier(share)})`
         }
       >
         <div
           className={styles.fill}
           data-testid={`node-timing-bar-${nodeId}`}
-          data-hot={share >= TIMING_HOT_SHARE}
+          data-cost={costTier(share)}
           style={cssVars({ "--timing-share": `${share * 100}%` })}
         />
       </div>

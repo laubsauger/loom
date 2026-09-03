@@ -30,28 +30,52 @@
   pointer-events: none;
 }
 
-/* The track is the whole frame; the fill is this node's share of it. */
+/*
+ * The track is the whole frame; the fill is this node's share of it.
+ *
+ * 6px, not 3px, at the owner's ask — *"a little bit thicker… so it's even easier to see
+ * at a distance."* The graph is read zoomed out, and at 40 % zoom a 3px bar is one screen
+ * pixel: present in the DOM, invisible in the room.
+ */
 .track {
-  height: 3px;
+  height: 6px;
   border-radius: var(--radius-sm);
   background: var(--bg-sunken);
   overflow: hidden;
 }
 
+/*
+ * TWO ENCODINGS OF ONE NUMBER, deliberately: the fill's LENGTH and its COLOUR both come
+ * from this node's share of the frame.
+ *
+ * That redundancy is the point at distance. Length wins when the bars are side by side and
+ * long enough to compare; hue wins when they are three pixels wide across a whole zoomed-
+ * out graph, where no length is legible but a warm dot among cool ones is. Encoding two
+ * different quantities in the two channels would be the mistake — the reader would have to
+ * know which one to believe.
+ *
+ * Every stop is a `--cost-*` token (§V17). A heat ramp is exactly where hex literals get
+ * written; `tokens.css` carries the four values and the reason they are not the status hues.
+ */
 .fill {
   width: var(--timing-share);
   height: 100%;
-  background: var(--text-dim);
-  transition: width var(--dur-fast) var(--ease-out);
+  background: var(--cost-low);
+  transition:
+    width var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out);
 }
 
-/*
- * The one tint, at §V836's threshold: this node IS the frame. Below it, length alone
- * carries the reading — a five-stop ramp would give five names to a single number and
- * none of them would be readable at graph zoom.
- */
-.fill[data-hot="true"] {
-  background: var(--signal);
+.fill[data-cost="moderate"] {
+  background: var(--cost-moderate);
+}
+
+.fill[data-cost="high"] {
+  background: var(--cost-high);
+}
+
+.fill[data-cost="dominant"] {
+  background: var(--cost-dominant);
 }
 
 .value {

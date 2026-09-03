@@ -18,6 +18,7 @@ import { TOGGLE_REFERENCE_LINES_COMMAND } from "@editor/edges/reference-lines-co
 // Same reason again (T1010): the constant, from the module rather than the
 // `@editor/nodes` barrel, which exports React surfaces.
 import { TOGGLE_TIMING_OVERLAY_COMMAND } from "@editor/nodes/timing-overlay-command.ts";
+import { TOGGLE_EDGE_FLOW_COMMAND } from "@editor/edges/edge-flow-command.ts";
 import type { MenuGuardName } from "./guards.ts";
 
 /**
@@ -119,7 +120,13 @@ export function canvasMenu(registry: NodeRegistryView): MenuSchema {
        */
       {
         label: "Debug",
-        submenu: [{ command: TOGGLE_TIMING_OVERLAY_COMMAND, label: "Node timings" }],
+        submenu: [
+          { command: TOGGLE_TIMING_OVERLAY_COMMAND, label: "Node timings" },
+          // T1013: the flow dashes, the timing overlay's twin — same question ("where is
+          // the frame going"), same submenu, same default. The owner asked for them
+          // together: "same as the timings".
+          { command: TOGGLE_EDGE_FLOW_COMMAND, label: "Edge flow" },
+        ],
       },
     ],
   };

@@ -311,6 +311,26 @@
   --category-input: #6fae9c;
   --category-output: #c08a8a;
   --category-utility: #98a2b3;
+  /*
+   * T1010 — the COST ramp for the per-node timing overlay. Owner: the bars *"could
+   * probably be colour coded depending on if they take a lot or just a little, so it's
+   * even easier to see at a distance and who's doing what."*
+   *
+   * A ramp of its own rather than `--ok`/`--warn`/`--error`, deliberately: an expensive
+   * node is not a node in trouble. Reusing the status hues would say a blur eating half
+   * the frame is a FAULT, and the graph already spends those three colours on run state
+   * (§V90 — one colour, one meaning). This is heat: cool and nearly absent at the bottom,
+   * warm and bright at the top, in a hue family none of the status tokens occupy.
+   *
+   * The stops climb in both luminance and chroma so the ramp survives the thing it is for
+   * — reading a whole graph zoomed out, where a 6px bar is a few screen pixels and hue
+   * alone does not carry. `--cost-low` is deliberately quieter than `--text-dim`: most
+   * nodes are cheap, and a graph where every bar shouts says nothing.
+   */
+  --cost-low: #5c6a80;
+  --cost-moderate: #b8a45e;
+  --cost-high: #d98b4a;
+  --cost-dominant: #e0685c;
   --z-toast: 90;
 }
 

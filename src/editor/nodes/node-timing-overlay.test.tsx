@@ -1,4 +1,7 @@
 // @vitest-environment jsdom
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { installDomStubs } from "@ui/testing/install-dom-stubs.ts";
@@ -16,7 +19,7 @@ import {
 } from "@editor/graph-canvas/testing.tsx";
 import type { NodeRuntimeStore } from "@editor/graph-canvas/node-runtime.ts";
 import { NodeView } from "./node-view.tsx";
-import { TIMING_HOT_SHARE } from "./node-timing.ts";
+import { costTier } from "./node-timing.ts";
 
 /**
  * The per-node timing overlay (T1010) — the owner's four requirements, each as a gate.
@@ -252,7 +255,10 @@ describe("the bar is a PROPORTION, and it grows for the expensive node (§V839)"
     expect(barWidth("cheap")).toBeLessThan(even);
   });
 
-  it("tints only the node that is actually the frame", async () => {
+  it("colour-codes by the SAME share the length encodes, and the ramp climbs (§V839)", async () => {
+    // The owner's ask — *"colour coded depending on if they take a lot or just a little,
+    // so it's even easier to see at a distance"* — with §V839's direction check: the
+    // expensive node must land HIGHER on the ramp, not merely on a different step.
     const { runtime, timingOverlay } = mountPair();
     await act(async () => {
       timingOverlay.set(true);
@@ -263,9 +269,58 @@ describe("the bar is a PROPORTION, and it grows for the expensive node (§V839)"
       await new Promise((resolve) => setTimeout(resolve, 5));
     });
 
-    expect(barWidth("dear") / 100).toBeGreaterThan(TIMING_HOT_SHARE);
-    expect(screen.getByTestId("node-timing-bar-dear").getAttribute("data-hot")).toBe("true");
-    expect(screen.getByTestId("node-timing-bar-cheap").getAttribute("data-hot")).toBe("false");
+    const order: ReadonlyArray<string> = ["low", "moderate", "high", "dominant"];
+    const dear = screen.getByTestId("node-timing-bar-dear").getAttribute("data-cost") ?? "";
+    const cheap = screen.getByTestId("node-timing-bar-cheap").getAttribute("data-cost") ?? "";
+    expect(order.indexOf(dear)).toBeGreaterThan(order.indexOf(cheap));
+    expect(dear).toBe("dominant");
+    expect(cheap).toBe("low");
+    // And the tier the DOM shows is the tier the share implies, not a second opinion.
+    expect(dear).toBe(costTier(barWidth("dear") / 100));
+  });
+
+  it("moves the SAME node up the ramp when only that node gets expensive (§V839)", async () => {
+    // The direction check with the denominator's other half held still, so nothing but
+    // the named property can explain the step: a share can move opposite to the cost it
+    // names when the rest of the graph moves with it.
+    const order: ReadonlyArray<string> = ["low", "moderate", "high", "dominant"];
+    const { runtime, timingOverlay } = mountPair();
+    await act(async () => {
+      timingOverlay.set(true);
+    });
+    await settle(runtime, "cheap", 10);
+    await settle(runtime, "dear", 1);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    });
+    const before = screen.getByTestId("node-timing-bar-dear").getAttribute("data-cost") ?? "";
+
+    await settle(runtime, "dear", 40);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    });
+    const after = screen.getByTestId("node-timing-bar-dear").getAttribute("data-cost") ?? "";
+    expect(order.indexOf(after)).toBeGreaterThan(order.indexOf(before));
+  });
+});
+
+describe("readable at a distance", () => {
+  it("draws a bar thick enough to survive being zoomed out", () => {
+    /*
+     * The owner's constraint is the whole reason the bar exists in this form: *"a little
+     * bit thicker… so it's even easier to see at a distance and who's doing what."* A
+     * graph is read at 30–50 % zoom while hunting for the expensive node, and React Flow
+     * scales the node subtree with the viewport — so a 3px bar is one screen pixel there,
+     * present in the DOM and invisible in the room. jsdom does no layout, so the authored
+     * height is the honest thing to assert.
+     */
+    const here = dirname(fileURLToPath(import.meta.url));
+    const css = readFileSync(join(here, "node-timing-overlay.module.css"), "utf8");
+    const track = /\.track\s*\{([^}]*)\}/.exec(css);
+    const height = /height:\s*(\d+)px/.exec(track?.[1] ?? "");
+    expect(height).not.toBeNull();
+    // 5px survives 40 % zoom as two device pixels. Below that the bar stops being a bar.
+    expect(Number.parseInt(height?.[1] ?? "0", 10)).toBeGreaterThanOrEqual(5);
   });
 });
 

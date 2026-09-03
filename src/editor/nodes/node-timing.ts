@@ -68,11 +68,38 @@ export function timingShare(gpuMs: number | null, totalMs: number): number {
 }
 
 /**
- * Above this share a node is not merely expensive, it is THE expense — the one worth
- * looking at first on a graph you did not write. The bar tints at that point; below it
- * length alone carries the reading.
+ * The cost ramp's four steps, keyed to the SHARE and never to a millisecond figure.
+ *
+ * The owner's constraint is *"at a distance"* — scanning a whole graph zoomed out for the
+ * node to look at first — and that is what forces the ramp to be proportional. An absolute
+ * ladder (say, red above 8 ms) paints a uniformly cheap graph entirely green and a
+ * uniformly expensive one entirely red, so in both cases the colour says something about
+ * the MACHINE and nothing about which node to open. A share says "this one, out of these"
+ * on any hardware, which is the question being asked.
+ *
+ * Four steps rather than a continuous gradient because the bar is a few screen pixels wide
+ * when zoomed out: a smooth ramp is unreadable at that size, while four steps are four
+ * distinguishable things. They are unevenly spaced on purpose — most nodes in a real graph
+ * sit under a tenth of the frame, so the bottom step has to be wide or everything lands in
+ * it, and the top step has to start well below "half the frame" to ever be reached on a
+ * graph with a dozen passes.
  */
-export const TIMING_HOT_SHARE = 0.35;
+export type CostTier = "low" | "moderate" | "high" | "dominant";
+
+export const COST_TIER_THRESHOLDS: ReadonlyArray<{ tier: CostTier; atLeast: number }> = [
+  { tier: "dominant", atLeast: 0.45 },
+  { tier: "high", atLeast: 0.25 },
+  { tier: "moderate", atLeast: 0.1 },
+  { tier: "low", atLeast: 0 },
+];
+
+/** Which step of the ramp a share lands on. Monotonic by construction (see the test). */
+export function costTier(share: number): CostTier {
+  for (const step of COST_TIER_THRESHOLDS) {
+    if (share >= step.atLeast) return step.tier;
+  }
+  return "low";
+}
 
 /**
  * What an OVERLAY needs — and it both reads and writes, which is the unusual part.

@@ -4,6 +4,8 @@ import type { EdgeProps, NodeProps } from "@xyflow/react";
 import { createEdgeGeometry } from "@editor/edges/edge-geometry.ts";
 import { createRenameSessionStore } from "@editor/nodes/rename-session.ts";
 import { createTimingOverlayStore } from "@editor/nodes/timing-overlay-command.ts";
+import { createEdgeFlowStore } from "@editor/edges/edge-flow-command.ts";
+import type { EdgeFlowStore } from "@editor/edges/edge-flow-command.ts";
 import { createNodeTimingScaleStore } from "@editor/nodes/node-timing.ts";
 import type { NodeTimingScaleStore } from "@editor/nodes/node-timing.ts";
 import type { TimingOverlayStore } from "@editor/nodes/timing-overlay-command.ts";
@@ -197,6 +199,8 @@ export interface FixtureContextOptions {
   /** T1010: OFF by default here too, so a fixture sees what a user sees. */
   timingOverlay?: TimingOverlayStore;
   timingScale?: NodeTimingScaleStore;
+  /** T1013: OFF by default here too, so a fixture sees what a user sees. */
+  edgeFlow?: EdgeFlowStore;
 }
 
 export function fixtureContext(options: FixtureContextOptions): {
@@ -204,15 +208,18 @@ export function fixtureContext(options: FixtureContextOptions): {
   runtime: NodeRuntimeStore;
   timingOverlay: TimingOverlayStore;
   timingScale: NodeTimingScaleStore;
+  edgeFlow: EdgeFlowStore;
 } {
   // Zero interval: tests drive time themselves rather than waiting on the 10 Hz tick.
   const runtime = options.runtime ?? createNodeRuntimeStore({ intervalMs: 0 });
   const timingOverlay = options.timingOverlay ?? createTimingOverlayStore();
   const timingScale = options.timingScale ?? createNodeTimingScaleStore({ intervalMs: 0 });
+  const edgeFlow = options.edgeFlow ?? createEdgeFlowStore();
   return {
     runtime,
     timingOverlay,
     timingScale,
+    edgeFlow,
     value: {
       store: options.store,
       registry: options.registry,
@@ -234,6 +241,7 @@ export function fixtureContext(options: FixtureContextOptions): {
       previewLens: options.previewLens,
       timingOverlay,
       timingScale,
+      edgeFlow,
     },
   };
 }

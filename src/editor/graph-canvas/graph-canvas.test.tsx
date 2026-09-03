@@ -159,7 +159,28 @@ describe("V26 — the projected edge carries the source port's family", () => {
   });
 
   it("is a static hairline while no pass has reported GPU time", async () => {
-    const { container } = await mountCanvas();
+    const { bus, container } = await mountCanvas();
+    await act(async () => {
+      await bus.execute("ui.toggleEdgeFlow", { show: true }, invocation);
+    });
+    await waitFor(() => {
+      expect(container.querySelectorAll(".react-flow__edge-path").length).toBeGreaterThan(0);
+    });
+    expect(container.querySelector('[data-testid^="edge-flow-"]')).toBeNull();
+  });
+
+  it("draws no moving layer at all until the Debug row asks for it (T1013)", async () => {
+    // The default a user meets. Same measurement as the test below; the only difference is
+    // that nobody asked for the animation, and the owner asked for that to be the default.
+    const { bus, runtime, container } = await mountCanvas();
+    const solid = Object.values(bus.store.getGraph().nodes).find(
+      (node) => node.type === "test.solid",
+    );
+    if (solid === undefined) throw new Error("expected the solid node");
+    await act(async () => {
+      runtime.publish(solid.id, { gpuMs: 6 });
+      await new Promise((resolve) => setTimeout(resolve, 2));
+    });
     await waitFor(() => {
       expect(container.querySelectorAll(".react-flow__edge-path").length).toBeGreaterThan(0);
     });
@@ -173,6 +194,12 @@ describe("V26 — the projected edge carries the source port's family", () => {
     );
     if (solid === undefined) throw new Error("expected the solid node");
 
+    // T1013: the animation is a debug view now, off unless asked for. Through the BUS
+    // COMMAND rather than the store, because that is the only door the menu row has and a
+    // test that reached past it would not notice the command going dead (§V78).
+    await act(async () => {
+      await bus.execute("ui.toggleEdgeFlow", { show: true }, invocation);
+    });
     await act(async () => {
       runtime.publish(solid.id, { gpuMs: 6 });
       await new Promise((resolve) => setTimeout(resolve, 2));

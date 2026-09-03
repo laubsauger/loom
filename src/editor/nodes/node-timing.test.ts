@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  COST_TIER_THRESHOLDS,
   TIMING_SMOOTHING_ALPHA,
+  costTier,
   createNodeTimingScaleStore,
   smoothGpuMs,
   timingShare,
@@ -75,6 +77,44 @@ describe("proportion — 'whether that's a lot compared to the others'", () => {
 
   it("clamps a share above 1, which a lagging denominator can produce", () => {
     expect(timingShare(30, 20)).toBe(1);
+  });
+});
+
+describe("the cost ramp — 'colour coded depending on if they take a lot or just a little'", () => {
+  it("never goes DOWN as the share goes up (§V839's direction, over the whole range)", () => {
+    // A ramp that inverts anywhere is worse than no ramp: the reader would be sent to the
+    // wrong node. Walked at 1 % resolution rather than at the four thresholds, so a
+    // mis-ordered table is caught rather than assumed away.
+    const order = ["low", "moderate", "high", "dominant"];
+    let previous = 0;
+    for (let percent = 0; percent <= 100; percent += 1) {
+      const rank = order.indexOf(costTier(percent / 100));
+      expect(rank).toBeGreaterThanOrEqual(0);
+      expect(rank).toBeGreaterThanOrEqual(previous);
+      previous = rank;
+    }
+  });
+
+  it("reaches every step, so no colour is unreachable decoration", () => {
+    expect(new Set([0, 0.15, 0.3, 0.8].map(costTier))).toEqual(
+      new Set(["low", "moderate", "high", "dominant"]),
+    );
+  });
+
+  it("keys off the SHARE, so an absolute millisecond figure cannot decide it", () => {
+    // The reason the ramp is proportional: on a uniformly cheap graph an absolute ladder
+    // paints everything at the bottom and names no node to look at. Same 0.5 ms node, two
+    // graphs — it is the frame it sits in that decides its colour.
+    expect(costTier(timingShare(0.5, 1))).toBe("dominant");
+    expect(costTier(timingShare(0.5, 50))).toBe("low");
+  });
+
+  it("is a table read top-down, so the thresholds must descend", () => {
+    // `costTier` returns the first step whose floor the share clears. A table out of order
+    // would silently return the wrong step for every value.
+    const floors = COST_TIER_THRESHOLDS.map((step) => step.atLeast);
+    expect([...floors].sort((a, b) => b - a)).toEqual(floors);
+    expect(floors.at(-1)).toBe(0);
   });
 });
 

@@ -28,9 +28,15 @@ function edgeData(overrides: Partial<SignalEdgeData> = {}): SignalEdgeData {
   return { portKind: "texture2d", sourceNodeId: "source-node", inactive: false, ...overrides };
 }
 
-function renderEdge(data: SignalEdgeData) {
+/**
+ * T1013 — the flow layer is a DEBUG VIEW now, off unless asked for, so every test about
+ * what it does turns it on first. `flow: false` is the default a user sees and is asserted
+ * on its own below.
+ */
+function renderEdge(data: SignalEdgeData, options: { flow?: boolean } = {}) {
   const store = createGraphStore().view;
-  const { value, runtime } = fixtureContext({ store, registry });
+  const { value, runtime, edgeFlow } = fixtureContext({ store, registry });
+  if (options.flow !== false) edgeFlow.set(true);
   const view = render(
     <CanvasFixture value={value}>
       <svg>
@@ -38,7 +44,7 @@ function renderEdge(data: SignalEdgeData) {
       </svg>
     </CanvasFixture>,
   );
-  return { ...view, runtime };
+  return { ...view, runtime, edgeFlow };
 }
 
 /** Metrics are rate-limited (§V16); let the pending flush land before asserting. */
@@ -68,6 +74,34 @@ describe("V26 — the edge's hue IS the source port's family colour", () => {
     expect(scalarStyle).toContain("var(--port-scalar)");
     expect(scalarStyle).not.toBe(textureStyle);
     expect(scalarStyle).not.toMatch(/#[0-9a-f]{3}/i);
+  });
+});
+
+/**
+ * T1013 — THE ANIMATION IS OPT-IN, and this block is the default a user meets.
+ *
+ * The owner, on first seeing the dashes move once T1011 made per-pass GPU ms real: *"we
+ * should also add these animated cable thingies, the animated edges, to the debug menu so
+ * we can toggle it on and off, and it should be probably off by default, same as the
+ * timings."* Off means the flow layer is not in the DOM — and, because that layer is what
+ * holds the per-source-node runtime subscription, it also means an edge at rest does not
+ * wake ten times a second (§V836).
+ */
+describe("T1013 — off by default, behind the Debug submenu", () => {
+  it("draws no moving layer at all until the toggle is on, however busy the pass", async () => {
+    const { container, runtime, edgeFlow } = renderEdge(edgeData({ sourceNodeId: "src" }), {
+      flow: false,
+    });
+    await publishGpuMs(runtime, "src", 12);
+    expect(container.querySelector(".react-flow__edge-path")).not.toBeNull();
+    expect(container.querySelector('[data-testid="edge-flow-e1"]')).toBeNull();
+
+    // ...and the same measurement lights it up the moment someone asks for it, so the
+    // absence above is a CHOICE and not a broken feature.
+    await act(async () => {
+      edgeFlow.set(true);
+    });
+    expect(container.querySelector('[data-testid="edge-flow-e1"]')).not.toBeNull();
   });
 });
 

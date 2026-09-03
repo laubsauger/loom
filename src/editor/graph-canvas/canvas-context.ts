@@ -8,6 +8,7 @@ import type { EdgeGeometryStore } from "@editor/edges/edge-geometry.ts";
 import type { RenameSessionStore } from "@editor/nodes/rename-session.ts";
 import type { NodeRegistryView } from "@nodes/registry/registry.ts";
 import type { ComponentRegistryView } from "@domain/components/index.ts";
+import type { EdgeFlowStore } from "@editor/edges/edge-flow-command.ts";
 import type { NodeTimingScaleSource } from "@editor/nodes/node-timing.ts";
 import type { TimingOverlayStore } from "@editor/nodes/timing-overlay-command.ts";
 import type {
@@ -146,6 +147,13 @@ export interface GraphCanvasContextValue {
    * what keeps a sample from committing the canvas (§V836).
    */
   timingScale: NodeTimingScaleSource;
+  /**
+   * T1013 — are the animated flow dashes drawn? `ui.toggleEdgeFlow`'s store, OFF by
+   * default. An edge reads it to decide whether to MOUNT its flow layer: off has to mean
+   * unmounted, because that layer is what holds the per-source-node runtime subscription
+   * and a mounted one would wake every edge on screen ten times a second (§V836).
+   */
+  edgeFlow: EdgeFlowStore;
 }
 
 /** T685: the marker text for this node's lens, and a subscription to changes in it. */

@@ -140,6 +140,11 @@ const NOT_CONSTRUCTED: ReadonlyArray<{ name: string; reason: string }> = [
       "Composed by `referenceLinesStoreFor` in the SAME module — the bus-keyed accessor, so two canvases on one document (the floated graph pane, \u00a7V97) agree about what they are drawing (T248). The product path is `registerReferenceLinesCommand` in `graph-canvas.tsx`; `graph-canvas/reference-lines.test.tsx` toggles it through the bus command and asserts the lines leave the DOM.",
   },
   {
+    name: "createEdgeFlowStore",
+    reason:
+      "Composed by `edgeFlowStoreFor` in the SAME module — the bus-keyed accessor, so two canvases on one document (§V97) agree about whether the wires are animated (T1013). The product path is `registerEdgeFlowCommand` in `graph-canvas.tsx`; `edges/signal-edge.test.tsx` mounts an edge with it off, turns it on, and asserts the flow layer appears only then.",
+  },
+  {
     name: "createTimingOverlayStore",
     reason:
       "Composed by `timingOverlayStoreFor` in the SAME module — the bus-keyed accessor, so two canvases on one document (§V97) agree about whether the timing overlay is drawn (T1010). The product path is `registerTimingOverlayCommand` in `graph-canvas.tsx`; `nodes/node-timing-overlay.test.tsx` mounts nodes with it off, turns it on, and asserts the readout appears and that a sample re-renders no node (§V836).",

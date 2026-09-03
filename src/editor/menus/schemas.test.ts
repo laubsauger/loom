@@ -106,6 +106,10 @@ const APP_REGISTERED = [
   // debug readout is DRAWN is a property of a look at the graph, not of the graph, so the
   // domain bus does not own it. Live, not planned: the Debug ▸ Node timings row is its door.
   "ui.toggleTimingOverlay",
+  // T1013: registered by the mounted graph canvas, same shape and same reason — whether a
+  // wire is ANIMATED is a property of a look at the graph. The Debug ▸ Edge flow row is
+  // its door, and off by default because a graph where every wire moves never settles.
+  "ui.toggleEdgeFlow",
   // T430/§V354: registered by the mounted graph pane (`src/app/view-commands.ts`) — only
   // the canvas can move its own camera, and framing is view state that writes no patch.
   // Live, not planned: `F` and this row both fit the graph in the window.
