@@ -102,6 +102,32 @@ import { settings, node, edge, graph, document, drivenSlot } from "./builders.ts
  * Proximity's own docblock argues for. Nothing else runs on a free clock but the hue, which
  * turns once every 80 seconds, and the nebular bed, which drifts.
  *
+ * ⚑ TWO WAYS TO MAKE IT LIVELIER WERE MEASURED AND REFUSED (T1074), because this file's
+ * thesis turns around on them: `reach` and the weights feed ONE operator that is read
+ * twice, so anything that stirs the layout stirs the colour by exactly the same amount.
+ *
+ * A BETWEEN-COMMUNITY BOND, to give the block model the nonzero cross-edge probability it
+ * is actually named for and put the reference picture's long filaments on screen — the
+ * render is four dense colonies ringing an empty middle with ZERO drawn cross links, and
+ * that is not an accident, it is the weights: structureless-global or strictly-local, and
+ * nothing between. Refused. At frame 180, where the palette claim is made, the shipped
+ * margin (nearest colour gap minus own scatter) is only +0.0031, and every nonzero bond
+ * drives it negative: 0.05 — smaller than the background tie's own 0.0526 — already gives
+ * −0.019 and 19 % of points sitting nearer a community that is not theirs. At 0.5, where
+ * bridges finally appear, Seed stops relocating any community at all. A bridge IS a colour
+ * path between communities and the colour claim needs them isolated; both cannot hold.
+ * What the picture actually wants is FEWER POINTS PER COMMUNITY — ninety members inside a
+ * radius of 0.15 make every node's six nearest its immediate lattice neighbours, so no
+ * cross pair at 0.6 can ever compete — and that is a change to the block model, not a
+ * weight to add to this one.
+ *
+ * WIDENING `rgain1`, so the moving reach keeps the layout permanently unsettled: at gain 3
+ * the assembly does stay alive (0.0047/frame against 0.0006, sustained past 30 s) and the
+ * palette margin goes to −0.043 at every bond strength INCLUDING ZERO. The ceiling sits
+ * between gain 0.6 and 1.0, and below it the extra motion is 1.2x, which is not a different
+ * picture. The dynamics therefore live on the PHRASE, in Coupling's envelope, which moves
+ * the operator's STRENGTH without changing what it measures.
+ *
  * Four knobs are left bare for a hand, each with a range that goes somewhere: Contrast 0 →
  * one undifferentiated blob, no communities possible; Repulsion 0 → every community
  * collapses to a single dot; Diffusion 0 → the seed dust never agrees on anything; Anchor 0
