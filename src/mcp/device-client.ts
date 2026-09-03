@@ -4,7 +4,13 @@ import {
   parseBridgeMessage,
   BRIDGE_PORT,
 } from "./bridge-protocol.ts";
-import { sessionPairingMemory, type BridgeSocket, type BridgeSocketFactory, type PairingMemory } from "./bridge-client.ts";
+import {
+  browserSocket,
+  sessionPairingMemory,
+  type BridgeSocket,
+  type BridgeSocketFactory,
+  type PairingMemory,
+} from "./bridge-client.ts";
 import {
   oscPortOfStream,
   vetOscDestination,
@@ -484,24 +490,3 @@ function readOutcome(value: unknown): OscSendOutcome {
   return { delivery: "failed", reason };
 }
 
-/** The real thing, adapted field by field so no cast is needed anywhere. */
-function browserSocket(url: string): BridgeSocket {
-  const socket = new WebSocket(url);
-  const bridge: BridgeSocket = {
-    send: (data) => {
-      socket.send(data);
-    },
-    close: () => {
-      socket.close();
-    },
-    onopen: null,
-    onmessage: null,
-    onclose: null,
-    onerror: null,
-  };
-  socket.onopen = () => bridge.onopen?.();
-  socket.onmessage = (event: MessageEvent) => bridge.onmessage?.({ data: event.data });
-  socket.onclose = () => bridge.onclose?.();
-  socket.onerror = () => bridge.onerror?.();
-  return bridge;
-}

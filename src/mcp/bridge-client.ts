@@ -158,8 +158,14 @@ export interface BridgeSocket {
 
 export type BridgeSocketFactory = (url: string) => BridgeSocket;
 
-/** The real thing, adapted field by field so no cast is needed anywhere. */
-function browserSocket(url: string): BridgeSocket {
+/**
+ * The real thing, adapted field by field so no cast is needed anywhere.
+ *
+ * Exported for `device-client.ts`, which held a byte-identical copy while ALREADY
+ * importing `BridgeSocket` from this module — the type crossed the seam and the one
+ * adapter that produces it did not.
+ */
+export function browserSocket(url: string): BridgeSocket {
   const socket = new WebSocket(url);
   const bridge: BridgeSocket = {
     send: (data) => {
