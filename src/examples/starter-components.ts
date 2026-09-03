@@ -20,7 +20,7 @@ import {
   kaleidoscopeDocument,
 } from "./documents.ts";
 import { DEPTH_CARVE_KERNEL, DEPTH_PAINT_KERNEL } from "./shaders/depth-points.wgsl.ts";
-import { TIME_GRID_GLITCH_WGSL, TIME_GRID_MAP_WGSL } from "./shaders/time-grid.wgsl.ts";
+import { TIME_GRID_BREAK_WGSL, TIME_GRID_MAP_WGSL, TIME_GRID_SWEEP_WGSL } from "./shaders/time-grid.wgsl.ts";
 import { SHARED_UNIFORMS_WGSL } from "../runtime/backend/shared-uniforms.ts";
 import { SHADER_SOURCE_PARAMETER } from "../domain/commands/apply-patch.ts";
 
@@ -589,6 +589,25 @@ const TIME_GRID_SETTINGS: ProjectSettings = {
 /** The internal working size, and the one number the memory line above is computed from. */
 const TIME_GRID_INTERNAL = { mode: "fixed", width: 512, height: 288 } as const;
 
+/**
+ * The effective grid, read by all four consumers so they cannot disagree about where a
+ * cell starts.
+ *
+ * The floor is TWO, not one, and it was measured rather than chosen: at `max(1, ...)` a
+ * sample-and-hold swinging below its offset parked the wall at 1x1 for a whole hold — a
+ * video wall with one cell in it, for sixteen seconds. Two is the smallest count that is
+ * still a wall. (One is also what Tile does at repeat 0.5: half an image, not a grid.)
+ */
+const churnedAxis = (channel: string) => ({
+  mode: "expression" as const,
+  bindings: {
+    static: { kind: "static" as const, value: 3 },
+    expression: { kind: "expression" as const, source: `max(1, op('${channel}').chan.value)` },
+  },
+});
+const CHURNED_COLUMNS = churnedAxis("churnx1");
+const CHURNED_ROWS = churnedAxis("churny1");
+
 export const timeGridHost: ProjectDocument = {
   schemaVersion: SCHEMA_VERSION,
   projectId: "component-time-grid",
@@ -639,7 +658,83 @@ export const timeGridHost: ProjectDocument = {
         },
         label: "feed1",
       },
+      /* The matte the wall isolates subjects with. Inside the demo host it is a luma key,
+         which is the honest answer for a bright subject on a dark bed and is
+         DETERMINISTIC — every gate and the gallery card see the dropout event actually
+         happen. E51 puts the ML `matte` node on the other side of a switch, which is the
+         same understudy shape E47 uses for `depth` (§V363/§V411). */
+      key: {
+        id: "key",
+        type: "threshold",
+        definitionVersion: 1,
+        position: { x: -1140, y: 160 },
+        parameters: { threshold: 0.24, softness: 0.3, channel: "luminance", compare: "greater" },
+        label: "key1",
+      },
       // ---- inside the boundary ----------------------------------------------------
+      /*
+       * PACK, and it is the reason the dropout costs no second ring.
+       *
+       * The wall needs TWO pictures per cell — the frame, and the frame with its
+       * background removed — and both have to be delayed by that cell's own number of
+       * frames. Two rings would be 139.5 MiB. Instead `reorder` puts the matte's luminance
+       * into ALPHA (E41's trick: one texture answering two questions), and the single ring
+       * carries colour and coverage together. A cell holding a moment from a second ago
+       * therefore drops the background OF THAT MOMENT, which is the only version of this
+       * that is not subtly wrong.
+       *
+       * It also carries the resolution pin: everything downstream inherits 512x288 from
+       * here, so the ring's cost is decided at the head of the chain rather than in the
+       * middle of it.
+       */
+      /*
+       * ── THE CHURN: the grid count is a SIGNAL, not a setting ────────────────────────
+       *
+       * Sweeping rows and columns is not a layout change on this instrument — every cell
+       * holds a different moment, so changing the count REDISTRIBUTES which moments are on
+       * screen. It is a re-cut of the whole wall, and it is cheap: `tile.repeat` is a plain
+       * uniform (no `compileTime` anywhere in `transforms.ts`) and so is every shader's
+       * grid, so a sweep recompiles nothing and reallocates nothing.
+       *
+       * SAMPLE-AND-HOLD, not a sine, and that is the owner's note three times over — "it
+       * shouldn't be a constant element", "occasionally", "rather than constant wobbling".
+       * S&H holds one value for a whole period and then jumps, so the wall RESTS and then
+       * STRIKES. `repeat`'s `range: "floor"` lands every value on an integer, so the jump
+       * is a hard re-cut rather than a smear; that snap IS the effect and is not smoothed.
+       *
+       * Two oscillators at unrelated slow rates (16 s and 24 s), so rows and columns move
+       * INDEPENDENTLY and the wall goes non-square — 8 x 12 and back, which is what the
+       * owner asked for and what a single knob could never give.
+       *
+       * They live INSIDE the component because a published parameter cannot animate at all
+       * today (§T1017). B41 makes each instance's internal labels unique and rewrites that
+       * instance's own references, so two walls in one document churn independently.
+       */
+      churnx: {
+        id: "churnx",
+        type: "lfo",
+        definitionVersion: 1,
+        position: { x: -1420, y: -420 },
+        parameters: { shape: "noise", frequency: 0.062, amplitude: 0, offset: 3, phase: 0 },
+        label: "churnx1",
+      },
+      churny: {
+        id: "churny",
+        type: "lfo",
+        definitionVersion: 1,
+        position: { x: -1420, y: -180 },
+        parameters: { shape: "noise", frequency: 0.041, amplitude: 0, offset: 3, phase: 0.37 },
+        label: "churny1",
+      },
+      pack: {
+        id: "pack",
+        type: "reorder",
+        definitionVersion: 1,
+        position: { x: -860, y: -180 },
+        parameters: { outr: "in1r", outg: "in1g", outb: "in1b", outa: "in2lum" },
+        resolution: TIME_GRID_INTERNAL,
+        label: "pack1",
+      },
       /* The grid, and the resolution pin the ring's whole cost depends on. `repeat` is
          ONE vec2 and the published Grid knob drives it whole: a component publishes onto a
          node's schema keys, and `repeat.y` is not one of them (§V113 components exist for
@@ -651,6 +746,8 @@ export const timeGridHost: ProjectDocument = {
         position: { x: -860, y: -180 },
         parameters: {
           repeat: [3, 3],
+          "repeat.x": CHURNED_COLUMNS,
+          "repeat.y": CHURNED_ROWS,
           offset: [0, 0],
           mirrorx: false,
           mirrory: false,
@@ -670,6 +767,8 @@ export const timeGridHost: ProjectDocument = {
         parameters: {
           [SHADER_SOURCE_PARAMETER]: TIME_GRID_MAP_WGSL,
           grid: [3, 3],
+          "grid.x": CHURNED_COLUMNS,
+          "grid.y": CHURNED_ROWS,
           mode: 1,
           rate: 1,
           seed: 7,
@@ -681,25 +780,92 @@ export const timeGridHost: ProjectDocument = {
         type: "slitScan",
         definitionVersion: 1,
         position: { x: -580, y: -180 },
-        parameters: { frames: 61, depth: 1 },
+        /*
+         * SCALE 0.5, AND IT IS THE BEST TRADE IN THIS COMPONENT (T1019a).
+         *
+         * Halving the ring's resolution QUARTERS its memory, so the same budget reaches
+         * four times further back — and a wall displays each cell at a FRACTION of the
+         * frame anyway, so full-resolution history was buying precision nobody can see.
+         * At the shipped 3x3 a cell is 170 px wide and its history is 85: a 2x upsample of
+         * something already being watched as one ninth of a picture.
+         *
+         *   512 x 288 x 0.5 = 256 x 144 texels, x 8 B x (Span + 1)
+         *     Span  61 -> 62 layers  -> 17.44 MiB   (1.02 s at 60 fps)
+         *     Span 120 -> 121 layers -> 34.03 MiB   (2.00 s, the node's own ceiling)
+         *
+         * The displacement map stays a textureLoad (§V849) — the history DEPICTS and may
+         * be filtered, the map ADDRESSES and must not be.
+         */
+        parameters: { frames: 61, depth: 1, scale: 0.5 },
         label: "scan1",
       },
-      /* THE TEAR. Cells are dealt in on a tick and each one breaks INSIDE ITSELF, so a
-         wall of sixteen reads as sixteen failing monitors rather than one broken tiling.
-         Its brightness gate is the audio hook: see the shader. */
-      cell: {
-        id: "cell",
+      /* THE VOCABULARY. Three kinds of damage on three clocks that share no measure, at
+         most one per cell per frame — the answer to "all the same all the time". The
+         shader's docblock carries the composition; the audio gate is a cell's own
+         brightness, so the wall breaks where the music is loudest. */
+      break: {
+        id: "break",
         type: "customWgsl",
         definitionVersion: 1,
         position: { x: -300, y: -180 },
         parameters: {
-          [SHADER_SOURCE_PARAMETER]: TIME_GRID_GLITCH_WGSL,
+          [SHADER_SOURCE_PARAMETER]: TIME_GRID_BREAK_WGSL,
           grid: [3, 3],
+          "grid.x": CHURNED_COLUMNS,
+          "grid.y": CHURNED_ROWS,
           amount: 0.35,
           rate: 1,
           seed: 7,
         },
-        label: "cell1",
+        label: "break1",
+      },
+      /* THE SWEEP — a chromatic front that travels across the wall and passes. Separate
+         from the vocabulary because it is the one GLOBAL degradation, and because a
+         separate knob is the only way either of them can be tested alone. */
+      sweep: {
+        id: "sweep",
+        type: "customWgsl",
+        definitionVersion: 1,
+        position: { x: -20, y: -180 },
+        parameters: {
+          [SHADER_SOURCE_PARAMETER]: TIME_GRID_SWEEP_WGSL,
+          grid: [3, 3],
+          "grid.x": CHURNED_COLUMNS,
+          "grid.y": CHURNED_ROWS,
+          amount: 0.5,
+          rate: 1,
+        },
+        label: "sweep1",
+      },
+      /*
+       * THE CRUSH — the owner's "thresholding, to crush the image a little bit more".
+       *
+       * Placed BEFORE the lookup on purpose: the palette is indexed by luminance, so
+       * crushing first changes WHICH COLOURS the wall can reach, not merely how hard it
+       * looks. `contrast` is the published knob; `gamma1` breathes on the free-running
+       * clock at a period that shares nothing with the palette's — one is the hand on the
+       * knob, the other is the room the knob is in.
+       */
+      crush: {
+        id: "crush",
+        type: "level",
+        definitionVersion: 1,
+        position: { x: 260, y: -180 },
+        parameters: {
+          blacklevel: 0.03,
+          whitelevel: 1,
+          contrast: 1.35,
+          brightness: 1,
+          invert: 0,
+          opacity: 1,
+          /* PINNED. This breathed on the free-running clock for one build, and it was a
+             permanent low-amplitude wobble across the whole wall — the exact thing the
+             owner rejected twice ("I don't love the permanent wobble either"). The
+             instrument's motion is now events: bursts, re-cuts and the sweep. It also
+             made Blend 0 time-varying, which cost the gate an exact claim for nothing. */
+          gamma1: 1,
+        },
+        label: "crush1",
       },
       /*
        * THE RECOLORIZER — Ramp into Lookup, which is the standard way to put a whole wall
@@ -732,21 +898,62 @@ export const timeGridHost: ProjectDocument = {
               expression: { kind: "expression", source: "abstime * 0.043 % 1" },
             },
           },
-          /* CYCLIC — first stop and last are the same colour — because `phase` wraps the
-             gradient's axis, and a palette that did not close would sweep a hard seam
-             across the wall once a cycle. Hot at 0.85 rather than at 1.0 so the index can
-             be kept clear of the wrap: see `tone`'s scale below. */
+          /*
+           * BLUES, PURPLES AND REDS. NO YELLOWS — the owner's ruling, and the whole
+           * warm band is REMOVED rather than compressed: the previous palette ran
+           * ... red -> orange -> warm white, and the frame came back cream and tan
+           * whatever the index did, because the top third of the gradient was yellow.
+           * Dodging part of a palette is not the same as not having it.
+           *
+           * CYCLIC — first stop and last are the same colour — because `phase` wraps the
+           * gradient's axis, and a palette that did not close would sweep a hard seam
+           * across the wall once a cycle.
+           *
+           * NO CHANNEL REACHES 1.0. The hottest stop is 0.94, so the recolorizer's output
+           * has headroom left before the transfer clamps and "sometimes it blows out the
+           * colour" cannot come from here (§V833). A Lookup's output IS its palette, so
+           * bounding the palette bounds the grade.
+           */
           stops: [
             { position: 0, color: [0.02, 0.02, 0.09, 1] },
-            { position: 0.2, color: [0.25, 0.06, 0.45, 1] },
-            { position: 0.45, color: [0.9, 0.15, 0.35, 1] },
-            { position: 0.68, color: [1, 0.62, 0.18, 1] },
-            { position: 0.85, color: [1, 0.97, 0.85, 1] },
+            { position: 0.16, color: [0.07, 0.12, 0.46, 1] },
+            { position: 0.36, color: [0.33, 0.13, 0.66, 1] },
+            { position: 0.56, color: [0.72, 0.14, 0.52, 1] },
+            { position: 0.74, color: [0.97, 0.3, 0.36, 1] },
+            /* THE PALE STOP, and it is here because a blues-purples-reds palette is
+               intrinsically DARK: those hues top out around 0.35 luma, and a wall graded
+               entirely inside them measured 0.277 of luma range against the catalogue's
+               0.30 contrast floor — a picture you cannot read. A pale PINK buys the
+               brightness a yellow would have bought without being one. */
+            { position: 0.88, color: [0.96, 0.72, 0.86, 1] },
             { position: 1, color: [0.02, 0.02, 0.09, 1] },
           ],
         },
         resolution: { mode: "fixed", width: 256, height: 16 },
         label: "palette1",
+      },
+      /*
+       * THE GUARD — one node, and it is §V833 made structural rather than hoped for.
+       *
+       * Everything upstream can exceed 1: the parent lights the source (E51's audio-driven
+       * flare), `crush` multiplies contrast, and a hot cell arrives at the recolorizer
+       * carrying headroom. A Lookup INDEXES by luminance, so an over-1 pixel walks off the
+       * end of the palette and lands on its cyclic closing stop — the brightest thing in
+       * the frame renders as the DARKEST colour, which is where the teal cores and the
+       * rainbow rings in the owner's frames came from. The dry side of the dissolve had the
+       * same problem one step later, at the display transfer, where it simply clipped.
+       *
+       * Clamping here fixes both at once, and it fixes them for every source rather than
+       * for the one that was measured. It is deliberately AFTER the crush — the crush is
+       * allowed to push into headroom, this is where the headroom ends.
+       */
+      guard: {
+        id: "guard",
+        type: "limit",
+        definitionVersion: 1,
+        position: { x: 540, y: -180 },
+        parameters: { mode: "clamp", low: 0, high: 1, steps: 4 },
+        label: "guard1",
       },
       /*
        * E11's lesson, and its inverse. E11 had to STRETCH its index because a noise field's
@@ -756,15 +963,18 @@ export const timeGridHost: ProjectDocument = {
        * frame renders DARK and every hot core reads as a ring. Measured on the first build:
        * the bodies came back as orange rings with dark centres.
        *
-       * So the index is COMPRESSED into 0.02..0.87 instead: black stays black, white lands
-       * on the palette's hot stop, and nothing crosses the wrap.
+       * So the index is COMPRESSED into 0.08..0.86: black lands in the deep blue rather
+       * than the near-black, white lands on the magenta, and nothing crosses the wrap.
+       * The narrower span is also what stops a soft body being painted as concentric
+       * rainbow rings — a smooth radial gradient walking a whole palette is E11's effect,
+       * and it is the wrong one here.
        */
       tone: {
         id: "tone",
         type: "lookup",
         definitionVersion: 1,
         position: { x: -20, y: 120 },
-        parameters: { channel: "luminance", row: 0.5, offset: 0.02, scale: 0.85 },
+        parameters: { channel: "luminance", row: 0.5, offset: 0.08, scale: 0.78 },
         label: "tone1",
       },
       /* Colour is a MASTER TINT over the palette, and its default is white — a true
@@ -808,19 +1018,26 @@ export const timeGridHost: ProjectDocument = {
       },
     },
     edges: {
-      "e-feed-grid": { id: "e-feed-grid", source: { nodeId: "feed", portId: "out" }, target: { nodeId: "grid", portId: "input" } },
+      "e-feed-key": { id: "e-feed-key", source: { nodeId: "feed", portId: "out" }, target: { nodeId: "key", portId: "input" } },
+      // The two boundary-crossing edges: the picture, and the matte that isolates it.
+      "e-feed-pack": { id: "e-feed-pack", source: { nodeId: "feed", portId: "out" }, target: { nodeId: "pack", portId: "in1" } },
+      "e-key-pack": { id: "e-key-pack", source: { nodeId: "key", portId: "out" }, target: { nodeId: "pack", portId: "in2" } },
+      "e-pack-grid": { id: "e-pack-grid", source: { nodeId: "pack", portId: "out" }, target: { nodeId: "grid", portId: "input" } },
       // ONE tiling, TWO consumers (§V6): the map only wants the size, the ring wants the pixels.
       "e-grid-map": { id: "e-grid-map", source: { nodeId: "grid", portId: "out" }, target: { nodeId: "map", portId: "input" } },
       "e-grid-scan": { id: "e-grid-scan", source: { nodeId: "grid", portId: "out" }, target: { nodeId: "scan", portId: "input" } },
       "e-map-scan": { id: "e-map-scan", source: { nodeId: "map", portId: "out" }, target: { nodeId: "scan", portId: "map" } },
-      "e-scan-cell": { id: "e-scan-cell", source: { nodeId: "scan", portId: "out" }, target: { nodeId: "cell", portId: "input" } },
-      "e-cell-tone": { id: "e-cell-tone", source: { nodeId: "cell", portId: "out" }, target: { nodeId: "tone", portId: "source" } },
+      "e-scan-break": { id: "e-scan-break", source: { nodeId: "scan", portId: "out" }, target: { nodeId: "break", portId: "input" } },
+      "e-break-sweep": { id: "e-break-sweep", source: { nodeId: "break", portId: "out" }, target: { nodeId: "sweep", portId: "input" } },
+      "e-sweep-crush": { id: "e-sweep-crush", source: { nodeId: "sweep", portId: "out" }, target: { nodeId: "crush", portId: "input" } },
+      "e-crush-guard": { id: "e-crush-guard", source: { nodeId: "crush", portId: "out" }, target: { nodeId: "guard", portId: "input" } },
+      "e-guard-tone": { id: "e-guard-tone", source: { nodeId: "guard", portId: "out" }, target: { nodeId: "tone", portId: "source" } },
       "e-palette-tone": { id: "e-palette-tone", source: { nodeId: "palette", portId: "out" }, target: { nodeId: "tone", portId: "lookup" } },
       "e-tone-tint": { id: "e-tone-tint", source: { nodeId: "tone", portId: "out" }, target: { nodeId: "tint", portId: "in1" } },
       "e-paint-tint": { id: "e-paint-tint", source: { nodeId: "paint", portId: "out" }, target: { nodeId: "tint", portId: "in2" } },
-      // The DRY side of the dissolve is the glitched wall, ungraded — so Blend 0 keeps the
-      // tear and drops only the colour, which is what makes them two independent knobs.
-      "e-cell-mix": { id: "e-cell-mix", source: { nodeId: "cell", portId: "out" }, target: { nodeId: "mix", portId: "in1" } },
+      // The DRY side of the dissolve is the broken, crushed wall — ungraded. So Blend
+      // dissolves COLOUR without dissolving damage, which is what makes them independent.
+      "e-guard-mix": { id: "e-guard-mix", source: { nodeId: "guard", portId: "out" }, target: { nodeId: "mix", portId: "in1" } },
       "e-tint-mix": { id: "e-tint-mix", source: { nodeId: "tint", portId: "out" }, target: { nodeId: "mix", portId: "in2" } },
       "e-mix-out": { id: "e-mix-out", source: { nodeId: "mix", portId: "out" }, target: { nodeId: "out", portId: "input" } },
     },
@@ -1288,7 +1505,7 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
     /* The SOURCE stays outside. A webcam, a movie file and a synthetic generator are all
        just a texture at this boundary, which is the whole reason this is a component and
        not a document (T956's lesson, DepthPoints' precedent). */
-    selection: ["grid", "map", "scan", "cell", "palette", "tone", "paint", "tint", "mix"],
+    selection: ["churnx", "churny", "pack", "grid", "map", "scan", "break", "sweep", "crush", "guard", "palette", "tone", "paint", "tint", "mix"],
     publish: [
       /*
        * THE PERFORMANCE PAGE. Eight knobs, and the ones that decide the LAYOUT are
@@ -1298,22 +1515,60 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
        * one a future edit is most likely to break by reaching for a compileTime knob.
        */
       {
-        key: "grid",
+        key: "columns",
         definition: {
-          type: "vector",
-          size: 2,
-          label: "Grid",
-          default: [3, 3],
+          type: "number",
+          label: "Columns",
+          default: 3,
           min: 1,
+          max: 12,
+          step: 1,
+          description: "Cells across, and the CENTRE the Churn swings about. Uniform-only: re-partitioning the wall touches no resource, so it is safe to turn mid-show. Past 61 cells they start sharing moments — that is all the ring holds.",
+        },
+        targets: [{ nodeId: "churnx", key: "offset" }],
+      },
+      {
+        key: "rows",
+        definition: {
+          type: "number",
+          label: "Rows",
+          default: 3,
+          min: 1,
+          max: 12,
+          step: 1,
+          description: "Cells down, and the centre the Churn swings about.",
+        },
+        targets: [{ nodeId: "churny", key: "offset" }],
+      },
+      {
+        key: "churn",
+        definition: {
+          type: "number",
+          label: "Churn",
+          default: 0,
+          min: 0,
           max: 8,
-          range: "floor",
-          description: "Columns x Rows. Uniform-only: it re-partitions the wall without touching the history ring, so it is safe to turn mid-show. Beyond 61 cells they start sharing moments — that is all the ring holds.",
+          range: "bounded",
+          description: "How far the wall re-cuts itself. Two sample-and-hold oscillators at unrelated slow rates (16 s and 24 s) hold a grid, then JUMP to another one — so the wall rests and then strikes rather than wobbling, and rows and columns move independently, so it goes non-square. Changing the count redistributes WHICH MOMENTS are on screen, which is why this reads as a re-cut and not as a resize. 0 pins the wall at Columns x Rows.",
         },
         targets: [
-          { nodeId: "grid", key: "repeat" },
-          { nodeId: "map", key: "grid" },
-          { nodeId: "cell", key: "grid" },
+          { nodeId: "churnx", key: "amplitude" },
+          { nodeId: "churny", key: "amplitude" },
         ],
+      },
+      {
+        key: "span",
+        definition: {
+          type: "number",
+          label: "Span",
+          default: 61,
+          min: 16,
+          max: 120,
+          step: 1,
+          description:
+            "How long a snapshot the wall distributes, in FRAMES. 61 is 1.02 s at 60 fps; 120 is 2.00 s, which is SlitScan's own ceiling rather than a memory one. COST, before you drag it: the ring runs at HALF the internal resolution (T1019a), so it is 256 x 144 x 8 B x (Span + 1) — 17.44 MiB at 61 frames and 34.03 MiB at 120. Full resolution would be four times that for a picture no cell is big enough to show. The SPAN sets the depth, not the cell count: a ring holds a CONTIGUOUS run, so two seconds costs two seconds of frames however few cells actually read them. Structural — changing it rebuilds the ring, which empties it; the wall refills over the next Span frames.",
+        },
+        targets: [{ nodeId: "scan", key: "frames" }],
       },
       {
         key: "spread",
@@ -1324,7 +1579,7 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
           min: 0,
           max: 1,
           range: "bounded",
-          description: "How much of the held second the wall spans. 1 = the full 1.02 s ring, 0 = every cell on the live frame.",
+          description: "How much of the held Span the wall distributes across its cells. 1 = the whole ring, 0 = every cell on the live frame.",
         },
         targets: [{ nodeId: "scan", key: "depth" }],
       },
@@ -1351,11 +1606,12 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
           max: 8,
           range: "bounded",
           unit: "hz",
-          description: "The wall's clock. In Sweep, 1.0 at 60 fps is an exact freeze (0.5 at 30 fps); below is slow motion, above runs backwards. In Shots it is cuts per second. It also re-deals which cells tear, so a glitch holds for a whole tick instead of boiling.",
+          description: "The wall's clock \u2014 it stretches every schedule together. In Sweep, 1.0 is an exact freeze at 60 fps with Span 61 (the ring spends Span-1 steps on a full displacement, so 60 steps is one per rendered frame); below is slow motion, above runs backwards. In Shots it is cuts per second. It also scales the glitch's burst periods, so the whole wall speeds up as one instrument.",
         },
         targets: [
           { nodeId: "map", key: "rate" },
-          { nodeId: "cell", key: "rate" },
+          { nodeId: "break", key: "rate" },
+          { nodeId: "sweep", key: "rate" },
         ],
       },
       {
@@ -1371,7 +1627,7 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
         },
         targets: [
           { nodeId: "map", key: "seed" },
-          { nodeId: "cell", key: "seed" },
+          { nodeId: "break", key: "seed" },
         ],
       },
       {
@@ -1383,9 +1639,34 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
           min: 0,
           max: 1,
           range: "bounded",
-          description: "How many cells tear on each Rate tick, and how hard. SPARSE by construction — a cell is dealt in by a seeded hash, and the brighter a cell is the likelier it is dealt, so with a source that responds to the music the tears chase the beat across the wall. 0 is byte-identical passthrough.",
+          description: "How much damage the wall takes. THREE kinds on three clocks that share no measure — a band TEAR, monochrome SNOW over a crushed silhouette, and a DROPOUT that multiplies the cell by its matte so the background falls away — at most one per cell per frame. Sparse by construction: a cell is dealt in by a seeded hash, and the brighter a cell is the likelier it is dealt, so with a source that responds to the music the damage chases the beat across the wall. 0 is the fragment's own texel, unchanged.",
         },
-        targets: [{ nodeId: "cell", key: "amount" }],
+        targets: [{ nodeId: "break", key: "amount" }],
+      },
+      {
+        key: "chroma",
+        definition: {
+          type: "number",
+          label: "Chroma",
+          default: 0.5,
+          min: 0,
+          max: 1,
+          range: "bounded",
+          description: "A chromatic aberration front that TRAVELS across the wall and passes, once every ~7.7 s at Rate 1, wrapping at the edge so it never stops. Global where every other degradation is per-cell, so it is the thing that ties the cells together rather than separating them. Its fringe is displaced cell-locally, so it never smears one moment into its neighbour. 0 is the fragment's own texel.",
+        },
+        targets: [{ nodeId: "sweep", key: "amount" }],
+      },
+      {
+        key: "crush",
+        definition: {
+          type: "number",
+          label: "Crush",
+          default: 1.35,
+          min: 1,
+          max: 5,
+          description: "Contrast, applied BEFORE the palette — so it does not merely harden the picture, it changes which colours the wall can reach. Its gamma breathes on its own slow clock underneath this knob.",
+        },
+        targets: [{ nodeId: "crush", key: "contrast" }],
       },
       {
         key: "colour",

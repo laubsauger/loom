@@ -7,26 +7,26 @@
         "description": "A VJ video wall: Tile makes the grid, SlitScan gives every cell its own moment, a seeded per-cell tear breaks the loud ones, and an evolving Ramp-into-Lookup palette ties them all together. 69.75 MiB of history at 512x288 x 61 frames.",
         "graph": {
           "edges": {
-            "e-cell-mix": {
-              "id": "e-cell-mix",
+            "e-break-sweep": {
+              "id": "e-break-sweep",
               "source": {
-                "nodeId": "cell",
+                "nodeId": "break",
                 "portId": "out"
               },
               "target": {
-                "nodeId": "mix",
-                "portId": "in1"
+                "nodeId": "sweep",
+                "portId": "input"
               }
             },
-            "e-cell-tone": {
-              "id": "e-cell-tone",
+            "e-crush-guard": {
+              "id": "e-crush-guard",
               "source": {
-                "nodeId": "cell",
+                "nodeId": "crush",
                 "portId": "out"
               },
               "target": {
-                "nodeId": "tone",
-                "portId": "source"
+                "nodeId": "guard",
+                "portId": "input"
               }
             },
             "e-grid-map": {
@@ -51,6 +51,28 @@
                 "portId": "input"
               }
             },
+            "e-guard-mix": {
+              "id": "e-guard-mix",
+              "source": {
+                "nodeId": "guard",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "mix",
+                "portId": "in1"
+              }
+            },
+            "e-guard-tone": {
+              "id": "e-guard-tone",
+              "source": {
+                "nodeId": "guard",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "tone",
+                "portId": "source"
+              }
+            },
             "e-map-scan": {
               "id": "e-map-scan",
               "source": {
@@ -60,6 +82,17 @@
               "target": {
                 "nodeId": "scan",
                 "portId": "map"
+              }
+            },
+            "e-pack-grid": {
+              "id": "e-pack-grid",
+              "source": {
+                "nodeId": "pack",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "grid",
+                "portId": "input"
               }
             },
             "e-paint-tint": {
@@ -84,14 +117,25 @@
                 "portId": "lookup"
               }
             },
-            "e-scan-cell": {
-              "id": "e-scan-cell",
+            "e-scan-break": {
+              "id": "e-scan-break",
               "source": {
                 "nodeId": "scan",
                 "portId": "out"
               },
               "target": {
-                "nodeId": "cell",
+                "nodeId": "break",
+                "portId": "input"
+              }
+            },
+            "e-sweep-crush": {
+              "id": "e-sweep-crush",
+              "source": {
+                "nodeId": "sweep",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "crush",
                 "portId": "input"
               }
             },
@@ -117,15 +161,26 @@
                 "portId": "in1"
               }
             },
-            "in_input_feed_1": {
-              "id": "in_input_feed_1",
+            "in_in1_feed_1": {
+              "id": "in_in1_feed_1",
               "source": {
-                "nodeId": "in_input",
+                "nodeId": "in_in1",
                 "portId": "out"
               },
               "target": {
-                "nodeId": "grid",
-                "portId": "input"
+                "nodeId": "pack",
+                "portId": "in1"
+              }
+            },
+            "in_in2_feed_1": {
+              "id": "in_in2_feed_1",
+              "source": {
+                "nodeId": "in_in2",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "pack",
+                "portId": "in2"
               }
             },
             "out_out_feed": {
@@ -142,25 +197,104 @@
           },
           "groups": {},
           "nodes": {
-            "cell": {
+            "break": {
               "definitionVersion": 1,
-              "id": "cell",
-              "label": "cell1",
+              "id": "break",
+              "label": "break1",
               "parameters": {
                 "amount": 0.35,
                 "grid": [
                   3,
                   3
                 ],
+                "grid.x": {
+                  "bindings": {
+                    "expression": {
+                      "kind": "expression",
+                      "source": "max(1, op('churnx1').chan.value)"
+                    },
+                    "static": {
+                      "kind": "static",
+                      "value": 3
+                    }
+                  },
+                  "mode": "expression"
+                },
+                "grid.y": {
+                  "bindings": {
+                    "expression": {
+                      "kind": "expression",
+                      "source": "max(1, op('churny1').chan.value)"
+                    },
+                    "static": {
+                      "kind": "static",
+                      "value": 3
+                    }
+                  },
+                  "mode": "expression"
+                },
                 "rate": 1,
                 "seed": 7,
-                "source": "struct SharedFrame {\n  time: f32,\n  deltaTime: f32,\n  frameIndex: f32,\n  randomSeed: f32,\n  wallTime: f32,\n  wallDelta: f32,\n  absTime: f32,\n  absFrame: f32,\n  resolution: vec2f,\n  pointer: vec4f,\n};\nstruct Params {\n  grid: vec2f,\n  amount: f32,\n  rate: f32,\n  seed: f32,\n};\n\n@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n@group(0) @binding(2) var<uniform> frameU: SharedFrame;\n@group(0) @binding(3) var<uniform> params: Params;\n\nstruct Cell {\n  index: f32,\n  count: f32,\n  last: f32,\n  local: vec2f,\n  origin: vec2f,\n  size: vec2f,\n};\n\n/* The SAME partition Tile uses: floor(uv * repeat), offset zero. Both round the count the\n   same way (Tile's `repeat` is a \"floor\"-ranged vector), so a cell here is exactly a cell\n   there and no delay or tear ever straddles a seam. */\nfn cellAt(uv: vec2f, grid: vec2f) -> Cell {\n  let cols = max(1.0, floor(grid.x + 0.5));\n  let rows = max(1.0, floor(grid.y + 0.5));\n  let ij = clamp(floor(uv * vec2f(cols, rows)), vec2f(0.0), vec2f(cols - 1.0, rows - 1.0));\n  var cell: Cell;\n  cell.index = (ij.y * cols) + ij.x;\n  cell.count = cols * rows;\n  /* One cell is a legal wall, and it must not divide by zero on its way to \"now\". */\n  cell.last = max(1.0, cell.count - 1.0);\n  cell.size = vec2f(1.0 / cols, 1.0 / rows);\n  cell.origin = ij * cell.size;\n  cell.local = clamp((uv - cell.origin) / cell.size, vec2f(0.0), vec2f(1.0));\n  return cell;\n}\n\n/*\n * Integer avalanche (the \"lowbias32\" family), and INTEGER on purpose: a float hash built\n * on fract(sin(x)) is a different number on every driver, and §V44's sibling promise — a\n * seeded look replays identically — would be a per-machine accident. u32 shifts and\n * multiplies are exact everywhere WGSL runs.\n */\nfn hashU(value: u32) -> f32 {\n  var x = value;\n  x = x ^ (x >> 16u);\n  x = x * 0x7feb352du;\n  x = x ^ (x >> 15u);\n  x = x * 0x846ca68bu;\n  x = x ^ (x >> 16u);\n  return f32(x & 0x00ffffffu) / 16777216.0;\n}\n\n/* Sample this cell, displaced along x and WRAPPED INSIDE IT. The +4.0 is there because\n   fract() of a negative number is not the wrap we want and the shove is signed. */\nfn tap(cell: Cell, dx: f32) -> vec4f {\n  let local = vec2f(fract(cell.local.x + dx + 4.0), cell.local.y);\n  return textureSampleLevel(inputTexture, inputSampler, cell.origin + (local * cell.size), 0.0);\n}\n\n@fragment\nfn fs(@location(0) uv: vec2f) -> @location(0) vec4f {\n  let dims = vec2f(textureDimensions(inputTexture));\n  let texel = vec2i(clamp(uv * dims, vec2f(0.0), dims - vec2f(1.0)));\n  let here = textureLoad(inputTexture, texel, 0);\n  if (params.amount <= 0.0) { return here; }\n\n  let cell = cellAt(uv, params.grid);\n  let index = u32(cell.index);\n  let seed = u32(clamp(params.seed, 0.0, 65535.0));\n  /* max(0.25) so the deal still turns at Rate 0 — a knob at its floor must not freeze a\n     second knob's behaviour, which is how a control stops being reachable mid-show. */\n  let tick = u32(floor(frameU.absTime * max(0.25, params.rate)));\n\n  /* THE AUDIO GATE: this cell's own centre texel. Bright cells are dealt in first. */\n  let middle = vec2i(clamp((cell.origin + (0.5 * cell.size)) * dims, vec2f(0.0), dims - vec2f(1.0)));\n  let lit = clamp(dot(textureLoad(inputTexture, middle, 0).rgb, vec3f(0.2126, 0.7152, 0.0722)), 0.0, 1.0);\n\n  let deal = hashU((index * 2654u) + (seed * 40503u) + (tick * 7919u));\n  let armed = clamp(params.amount * (0.2 + (1.8 * lit)), 0.0, 1.0);\n  if (deal >= armed) { return here; }\n\n  /* Dealt in. How hard, how many bands, and which way each band shoves — all from the\n     same (cell, tick, seed) triple, so a tear HOLDS for a whole tick instead of boiling. */\n  let strength = params.amount * (0.35 + (0.65 * hashU((index * 337u) + (tick * 61u) + seed)));\n  let bands = 4.0 + floor(hashU((index * 977u) + (tick * 131u) + seed) * 12.0);\n  let band = u32(floor(cell.local.y * bands));\n  let shove = (hashU((band * 1471u) + (index * 29u) + (tick * 523u) + seed) - 0.5) * 0.7 * strength;\n  let split = 0.06 * strength;\n\n  /* The RGB split rides the same shove, so the fringe is part of the tear rather than a\n     separate effect layered on top of it. */\n  let mid = tap(cell, shove);\n  let red = tap(cell, shove + split);\n  let blue = tap(cell, shove - split);\n  return vec4f(red.r, mid.g, blue.b, here.a);\n}"
+                "source": "struct SharedFrame {\n  time: f32,\n  deltaTime: f32,\n  frameIndex: f32,\n  randomSeed: f32,\n  wallTime: f32,\n  wallDelta: f32,\n  absTime: f32,\n  absFrame: f32,\n  resolution: vec2f,\n  pointer: vec4f,\n};\nstruct Params {\n  grid: vec2f,\n  amount: f32,\n  rate: f32,\n  seed: f32,\n};\n\n@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n@group(0) @binding(2) var<uniform> frameU: SharedFrame;\n@group(0) @binding(3) var<uniform> params: Params;\n\nstruct Cell {\n  index: f32,\n  count: f32,\n  last: f32,\n  local: vec2f,\n  origin: vec2f,\n  size: vec2f,\n};\n\n/* The SAME partition Tile uses: floor(uv * repeat), offset zero. Both round the count the\n   same way (Tile's `repeat` is a \"floor\"-ranged vector), so a cell here is exactly a cell\n   there and no delay or tear ever straddles a seam. */\nfn cellAt(uv: vec2f, grid: vec2f) -> Cell {\n  let cols = max(1.0, floor(grid.x + 0.5));\n  let rows = max(1.0, floor(grid.y + 0.5));\n  let ij = clamp(floor(uv * vec2f(cols, rows)), vec2f(0.0), vec2f(cols - 1.0, rows - 1.0));\n  var cell: Cell;\n  cell.index = (ij.y * cols) + ij.x;\n  cell.count = cols * rows;\n  /* One cell is a legal wall, and it must not divide by zero on its way to \"now\". */\n  cell.last = max(1.0, cell.count - 1.0);\n  cell.size = vec2f(1.0 / cols, 1.0 / rows);\n  cell.origin = ij * cell.size;\n  cell.local = clamp((uv - cell.origin) / cell.size, vec2f(0.0), vec2f(1.0));\n  return cell;\n}\n\n/*\n * Integer avalanche (the \"lowbias32\" family), and INTEGER on purpose: a float hash built\n * on fract(sin(x)) is a different number on every driver, and §V44's sibling promise — a\n * seeded look replays identically — would be a per-machine accident. u32 shifts and\n * multiplies are exact everywhere WGSL runs.\n */\nfn hashU(value: u32) -> f32 {\n  var x = value;\n  x = x ^ (x >> 16u);\n  x = x * 0x7feb352du;\n  x = x ^ (x >> 15u);\n  x = x * 0x846ca68bu;\n  x = x ^ (x >> 16u);\n  return f32(x & 0x00ffffffu) / 16777216.0;\n}\n\n/* Sample this cell, displaced along x and WRAPPED INSIDE IT — the one rule every\n   degradation obeys, because a tear or a fringe that crossed a seam would read as a\n   broken TILING rather than as a broken monitor. The +4.0 is there because fract() of a\n   negative is not the wrap we want and every shove is signed. */\nfn tap(cell: Cell, dx: f32) -> vec4f {\n  let local = vec2f(fract(cell.local.x + dx + 4.0), cell.local.y);\n  return textureSampleLevel(inputTexture, inputSampler, cell.origin + (local * cell.size), 0.0);\n}\n\n/*\n * A BURST SLOT — the envelope, and the whole of what changed in pass 3.\n *\n * Each slot is an independent, deterministic pulse train on ONE cell: a period in frames,\n * a lifetime of a few frames, and a per-cycle roll that decides whether this cycle fires\n * at all. A cell's phase inside its own slot is hashed from its index, so thirty-six cells\n * on the same slot are thirty-six unsynchronised trains rather than one flashbulb.\n *\n * Returns the burst's AGE in frames, or -1 when the slot is quiet.\n *\n * The periods are co-prime frame counts, so two slots on one cell realign only every\n * few hundred frames and three of them effectively never. That is what \"multiple random\n * glitches\" needs and a single tick cannot give: several short events in flight at\n * different phases.\n */\nfn slot(index: u32, seed: u32, salt: u32, period: f32, life: f32, chance: f32, frame: f32) -> f32 {\n  /* Per-cell phase, so the wall does not pulse in unison. */\n  let shifted = frame + (hashU((index * 7919u) ^ salt) * period);\n  let cycle = floor(shifted / period);\n  let age = shifted - (cycle * period);\n  if (age >= life) { return -1.0; }\n  if (hashU((index * 1013u) + (seed * 6151u) + salt + (u32(cycle) * 3571u)) >= chance) { return -1.0; }\n  return age;\n}\n\n/* Co-prime frame periods. Nothing here shares a factor with anything else here. */\nconst TEAR_A: f32 = 17.0;\nconst TEAR_B: f32 = 23.0;\nconst TEAR_C: f32 = 31.0;\nconst SNOW_A: f32 = 13.0;\nconst SNOW_B: f32 = 19.0;\nconst DROP_P: f32 = 47.0;\n\n/*\n * LIFETIMES, in frames, and they are the owner's note made numeric. A tear that lasts two\n * or three frames at 60 fps is 33-50 ms — a flicker you catch rather than a state you\n * watch. Snow is shorter still. A DROPOUT is the exception and holds for a fifth of a\n * second, because it is not damage: it is the cell briefly becoming a different picture,\n * and a two-frame version of that reads as a dropped frame rather than as an idea.\n */\nconst TEAR_LIFE: f32 = 3.0;\nconst SNOW_LIFE: f32 = 2.0;\nconst DROP_LIFE: f32 = 12.0;\n\n/* Relative rarity. A tear is the wall's ordinary weather; snow is an interruption; a\n   dropout is an EVENT, because it changes what the cell is a picture OF. */\n/*\n * How deep the grain modulates what is already there. Bounded above by construction (see\n * the SNOW branch), so this is a texture depth and not a clipping risk.\n *\n * 0.45 rather than something heavier, and the reason is the RECOLORIZER downstream: a\n * Lookup turns luminance into a palette position, so a deep luminance grain walks the\n * whole palette between neighbouring texels and monochrome noise arrives on screen as\n * multicoloured confetti. Half a stop of luminance wobble is grain; a full swing is\n * garbage. Measured against the owner's own frame.\n */\nconst SNOW_DEPTH: f32 = 0.45;\n\nconst TEAR_SHARE: f32 = 0.55;\nconst SNOW_SHARE: f32 = 0.35;\nconst DROP_SHARE: f32 = 0.30;\n\nfn luma(rgb: vec3f) -> f32 {\n  return dot(rgb, vec3f(0.2126, 0.7152, 0.0722));\n}\n\n@fragment\nfn fs(@location(0) uv: vec2f) -> @location(0) vec4f {\n  let dims = vec2f(textureDimensions(inputTexture));\n  let texel = vec2i(clamp(uv * dims, vec2f(0.0), dims - vec2f(1.0)));\n  let here = textureLoad(inputTexture, texel, 0);\n  if (params.amount <= 0.0) { return vec4f(here.rgb, 1.0); }\n\n  let cell = cellAt(uv, params.grid);\n  let index = u32(cell.index);\n  let seed = u32(clamp(params.seed, 0.0, 65535.0));\n  /* FRAMES, not seconds: an event two frames long has to be counted in the unit it is two\n     of. absFrame is the deterministic frame count the transport supplies (§V44) — never a\n     wall clock. Rate stretches or compresses every period together, so the whole wall\n     speeds up as one instrument. max(0.25) keeps the trains turning at Rate 0. */\n  let frame = frameU.absFrame * max(0.25, params.rate);\n  let tick = u32(frame);\n\n  /* THE AUDIO GATE: this cell's own centre texel. Bright cells are dealt in first, so a\n     source that responds to the music makes the damage chase the beat across the wall. */\n  let middle = vec2i(clamp((cell.origin + (0.5 * cell.size)) * dims, vec2f(0.0), dims - vec2f(1.0)));\n  let lit = clamp(luma(textureLoad(inputTexture, middle, 0).rgb), 0.0, 1.0);\n  let base = clamp(params.amount * (0.2 + (1.8 * lit)), 0.0, 1.0);\n\n  /* THREE TEAR TRAINS, TWO SNOW TRAINS, ONE DROPOUT — all independent, all per cell. */\n  let tearAge = max(\n    slot(index, seed, 101u, TEAR_A, TEAR_LIFE, base * TEAR_SHARE, frame),\n    max(\n      slot(index, seed, 211u, TEAR_B, TEAR_LIFE - 1.0, base * TEAR_SHARE, frame),\n      slot(index, seed, 307u, TEAR_C, TEAR_LIFE, base * TEAR_SHARE, frame)));\n  let snowAge = max(\n    slot(index, seed, 409u, SNOW_A, SNOW_LIFE, base * SNOW_SHARE, frame),\n    slot(index, seed, 521u, SNOW_B, SNOW_LIFE - 1.0, base * SNOW_SHARE, frame));\n  let dropAge = slot(index, seed, 631u, DROP_P, DROP_LIFE, base * DROP_SHARE, frame);\n\n  /* EXCLUSIVE, rarest first. One thing per cell per frame, on purpose: at 6x6 a cell is a\n     couple of thousand pixels and a tear under snow is mud. The variety is in WHICH cells\n     and WHICH kind, and it is asserted. */\n  if (dropAge >= 0.0) {\n    /* DROPOUT — the background falls away. Alpha arrived here as the MATTE, packed into\n       the picture before the ring (see the component's pack node), so it has been delayed\n       by exactly the same number of frames as the colour it belongs to: a cell holding a\n       moment from a second ago drops the background of THAT moment, not of now. */\n    return vec4f(here.rgb * clamp(here.a, 0.0, 1.0), 1.0);\n  }\n\n  if (snowAge >= 0.0) {\n    /*\n     * SNOW — and this branch has been rebuilt twice, both times at the cause.\n     *\n     * WHAT IT LOOKED LIKE WHEN IT WAS WRONG: the owner photographed a two-cell block of\n     * full-intensity multicoloured confetti with none of the picture left in it. Three\n     * separate faults, none of them a level:\n     *\n     *  1. IT REPLACED THE PICTURE. mix(silhouette, grain, 0.65) writes a value that owes\n     *     almost nothing to what was there, so a cell stopped being a picture. Static has\n     *     to RIDE the image — that is the difference between static and a dropout, and\n     *     this component already has a dropout.\n     *  2. IT CAME OUT CHROMATIC, and not because the grain was. The grain is monochrome\n     *     here and always was; the CONFETTI is made downstream, by the recolorizer. A\n     *     Lookup maps luminance to a palette position, so a full-swing luminance grain\n     *     walks the whole palette between adjacent texels and monochrome noise arrives on\n     *     screen as per-pixel colour garbage. The fix is at this end: keep the luminance\n     *     excursion small enough that the palette index barely moves, and the same noise\n     *     reads as grain instead.\n     *  3. IT WAS TOO BIG AND TOO SOLID. A whole cell of it is a rectangle, and a rectangle\n     *     is a graphic, not a fault. It is banded now — a few scanline bands per burst —\n     *     so it reads as a monitor breaking up rather than as a filled shape.\n     *\n     * MULTIPLICATIVE, AND HIGHLIGHT-PROTECTED (§V833/§V838). The output is bounded by\n     * crushed * (1 + SNOW_DEPTH), and the weight is already ~0 wherever the pixel is\n     * bright — so it cannot reach the clip BY CONSTRUCTION, not by tuning. The owner's\n     * \"it oversteers, overflows\" was literal: it was clipping to flat white, and a lower\n     * amount would only have made a dimmer wrong picture. The gate asserts the property\n     * rather than the number: zero pixels at 1.0 anywhere in a snowing wall.\n     *\n     * Still monochrome, and that is load-bearing twice: it is what real static is, and it\n     * is what lets the gate tell snow from a tear — a tear's RGB fringe leaves r != b and\n     * this leaves r == g == b.\n     */\n    let grain = hashU((u32(texel.x) * 73856093u) ^ (u32(texel.y) * 19349663u) ^ (tick * 83492791u) ^ seed);\n    /* SCANLINE BANDS, not the whole cell: only some of them break up on a given burst. */\n    let bandCount = 5.0 + floor(hashU((index * 5501u) + (tick * 79u) + seed) * 7.0);\n    let bandIndex = u32(floor(cell.local.y * bandCount));\n    let banded = select(0.35, 1.0, hashU((bandIndex * 2237u) + (index * 91u) + (tick * 397u) + seed) < 0.45);\n    /* A HINT of the hard silhouette — the owner's \"thresholding, to crush it\" — never the\n       whole of it, because a full step() is a two-value image with nothing left to texture. */\n    let base = luma(here.rgb);\n    let crushed = mix(base, step(0.35, base), 0.25);\n    let weight = (1.0 - smoothstep(0.30, 0.92, crushed)) * banded;\n    let value = crushed * (1.0 + (SNOW_DEPTH * weight * ((grain * 2.0) - 1.0)));\n    return vec4f(value, value, value, 1.0);\n  }\n\n  if (tearAge >= 0.0) {\n    /*\n     * TEAR — bands shove sideways with an RGB fringe riding the same displacement.\n     *\n     * PASS 3 CHANGED THE ENVELOPE, not the mechanism. Every one of these numbers now\n     * re-deals on the FRAME rather than being held for a whole tick: a burst is two or\n     * three frames long and the bands jump within it, which is what a glitch looks like.\n     * Held for a tick — the pass-2 design — it was one clean state sitting there for half\n     * a second, and the owner's verdict was that it read as slow and simplified.\n     */\n    let strength = params.amount * (0.35 + (0.65 * hashU((index * 337u) + (tick * 61u) + seed)));\n    let bands = 4.0 + floor(hashU((index * 977u) + (tick * 131u) + seed) * 12.0);\n    let band = u32(floor(cell.local.y * bands));\n    let shove = (hashU((band * 1471u) + (index * 29u) + (tick * 523u) + seed) - 0.5) * 0.7 * strength;\n    let split = 0.06 * strength;\n    let mid = tap(cell, shove);\n    let red = tap(cell, shove + split);\n    let blue = tap(cell, shove - split);\n    return vec4f(red.r, mid.g, blue.b, 1.0);\n  }\n\n  return vec4f(here.rgb, 1.0);\n}"
               },
               "position": {
-                "x": 1032,
+                "x": 1290,
                 "y": -74
               },
               "type": "customWgsl"
+            },
+            "churnx": {
+              "definitionVersion": 1,
+              "id": "churnx",
+              "label": "churnx1",
+              "parameters": {
+                "amplitude": 0,
+                "frequency": 0.062,
+                "offset": 3,
+                "phase": 0,
+                "shape": "noise"
+              },
+              "position": {
+                "x": 0,
+                "y": -544
+              },
+              "type": "lfo"
+            },
+            "churny": {
+              "definitionVersion": 1,
+              "id": "churny",
+              "label": "churny1",
+              "parameters": {
+                "amplitude": 0,
+                "frequency": 0.041,
+                "offset": 3,
+                "phase": 0.37,
+                "shape": "noise"
+              },
+              "position": {
+                "x": 0,
+                "y": -356
+              },
+              "type": "lfo"
+            },
+            "crush": {
+              "definitionVersion": 1,
+              "id": "crush",
+              "label": "crush1",
+              "parameters": {
+                "blacklevel": 0.03,
+                "brightness": 1,
+                "contrast": 1.35,
+                "gamma1": 1,
+                "invert": 0,
+                "opacity": 1,
+                "whitelevel": 1
+              },
+              "position": {
+                "x": 1806,
+                "y": -74
+              },
+              "type": "level"
             },
             "grid": {
               "definitionVersion": 1,
@@ -176,10 +310,36 @@
                 "repeat": [
                   3,
                   3
-                ]
+                ],
+                "repeat.x": {
+                  "bindings": {
+                    "expression": {
+                      "kind": "expression",
+                      "source": "max(1, op('churnx1').chan.value)"
+                    },
+                    "static": {
+                      "kind": "static",
+                      "value": 3
+                    }
+                  },
+                  "mode": "expression"
+                },
+                "repeat.y": {
+                  "bindings": {
+                    "expression": {
+                      "kind": "expression",
+                      "source": "max(1, op('churny1').chan.value)"
+                    },
+                    "static": {
+                      "kind": "static",
+                      "value": 3
+                    }
+                  },
+                  "mode": "expression"
+                }
               },
               "position": {
-                "x": 258,
+                "x": 516,
                 "y": -74
               },
               "resolution": {
@@ -189,14 +349,41 @@
               },
               "type": "tile"
             },
-            "in_input": {
+            "guard": {
               "definitionVersion": 1,
-              "id": "in_input",
-              "label": "input",
+              "id": "guard",
+              "label": "guard1",
+              "parameters": {
+                "high": 1,
+                "low": 0,
+                "mode": "clamp",
+                "steps": 4
+              },
+              "position": {
+                "x": 2064,
+                "y": -74
+              },
+              "type": "limit"
+            },
+            "in_in1": {
+              "definitionVersion": 1,
+              "id": "in_in1",
+              "label": "in1",
               "parameters": {},
               "position": {
                 "x": 0,
-                "y": -262
+                "y": -168
+              },
+              "type": "componentIn"
+            },
+            "in_in2": {
+              "definitionVersion": 1,
+              "id": "in_in2",
+              "label": "in2",
+              "parameters": {},
+              "position": {
+                "x": 0,
+                "y": 20
               },
               "type": "componentIn"
             },
@@ -209,13 +396,39 @@
                   3,
                   3
                 ],
+                "grid.x": {
+                  "bindings": {
+                    "expression": {
+                      "kind": "expression",
+                      "source": "max(1, op('churnx1').chan.value)"
+                    },
+                    "static": {
+                      "kind": "static",
+                      "value": 3
+                    }
+                  },
+                  "mode": "expression"
+                },
+                "grid.y": {
+                  "bindings": {
+                    "expression": {
+                      "kind": "expression",
+                      "source": "max(1, op('churny1').chan.value)"
+                    },
+                    "static": {
+                      "kind": "static",
+                      "value": 3
+                    }
+                  },
+                  "mode": "expression"
+                },
                 "mode": 1,
                 "rate": 1,
                 "seed": 7,
-                "source": "struct SharedFrame {\n  time: f32,\n  deltaTime: f32,\n  frameIndex: f32,\n  randomSeed: f32,\n  wallTime: f32,\n  wallDelta: f32,\n  absTime: f32,\n  absFrame: f32,\n  resolution: vec2f,\n  pointer: vec4f,\n};\nstruct Params {\n  grid: vec2f,\n  mode: f32,\n  rate: f32,\n  seed: f32,\n};\n\n@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n@group(0) @binding(2) var<uniform> frameU: SharedFrame;\n@group(0) @binding(3) var<uniform> params: Params;\n\nstruct Cell {\n  index: f32,\n  count: f32,\n  last: f32,\n  local: vec2f,\n  origin: vec2f,\n  size: vec2f,\n};\n\n/* The SAME partition Tile uses: floor(uv * repeat), offset zero. Both round the count the\n   same way (Tile's `repeat` is a \"floor\"-ranged vector), so a cell here is exactly a cell\n   there and no delay or tear ever straddles a seam. */\nfn cellAt(uv: vec2f, grid: vec2f) -> Cell {\n  let cols = max(1.0, floor(grid.x + 0.5));\n  let rows = max(1.0, floor(grid.y + 0.5));\n  let ij = clamp(floor(uv * vec2f(cols, rows)), vec2f(0.0), vec2f(cols - 1.0, rows - 1.0));\n  var cell: Cell;\n  cell.index = (ij.y * cols) + ij.x;\n  cell.count = cols * rows;\n  /* One cell is a legal wall, and it must not divide by zero on its way to \"now\". */\n  cell.last = max(1.0, cell.count - 1.0);\n  cell.size = vec2f(1.0 / cols, 1.0 / rows);\n  cell.origin = ij * cell.size;\n  cell.local = clamp((uv - cell.origin) / cell.size, vec2f(0.0), vec2f(1.0));\n  return cell;\n}\n\n/*\n * Integer avalanche (the \"lowbias32\" family), and INTEGER on purpose: a float hash built\n * on fract(sin(x)) is a different number on every driver, and §V44's sibling promise — a\n * seeded look replays identically — would be a per-machine accident. u32 shifts and\n * multiplies are exact everywhere WGSL runs.\n */\nfn hashU(value: u32) -> f32 {\n  var x = value;\n  x = x ^ (x >> 16u);\n  x = x * 0x7feb352du;\n  x = x ^ (x >> 15u);\n  x = x * 0x846ca68bu;\n  x = x ^ (x >> 16u);\n  return f32(x & 0x00ffffffu) / 16777216.0;\n}\n\nconst SHOT_ANGLES: f32 = 4.0;\n\n@fragment\nfn fs(@location(0) uv: vec2f) -> @location(0) vec4f {\n  let cell = cellAt(uv, params.grid);\n  let index = cell.index;\n  let seed = u32(clamp(params.seed, 0.0, 65535.0));\n  let mode = i32(params.mode + 0.5);\n\n  var delay = 0.0;\n  if (mode == 1) {\n    /* ORDERED — the cascade. Reading order, oldest at the bottom right. */\n    delay = index / cell.last;\n  } else if (mode == 2) {\n    /* RANDOM — every cell its own moment, held. Seeded, so it is a LOOK, not noise. */\n    delay = hashU((u32(index) * 1973u) + (seed * 9277u));\n  } else if (mode == 3) {\n    /*\n     * SWEEP — the owner's \"freeze that wanders through\".\n     *\n     * Each cell's delay RAMPS, so it looks one frame further back every frame: at\n     * Rate 1.0 (with Spread 1) that is exactly one ring-frame per rendered frame, and\n     * the cell holds STILL while the world moves on. The phase offset per cell means\n     * they wrap at different times, so the wall refreshes as a rolling wave rather than\n     * all at once. Below 1.0 the held frame plays in slow motion; above it, backwards.\n     */\n    delay = fract((index / cell.count) + (frameU.absTime * params.rate));\n  } else if (mode == 4) {\n    /*\n     * SHOTS — several angles of one scene, cut on a clock.\n     *\n     * Cells are dealt to SHOT_ANGLES groups by the seeded hash and every group holds one\n     * rung of the delay ladder; the ladder rotates one rung per tick, so the whole wall\n     * re-cuts at once and then holds. Distinct from RANDOM, which never re-cuts, and from\n     * SWEEP, which never holds a whole group together.\n     */\n    let angle = floor(hashU((u32(index) * 6151u) + (seed * 1543u)) * SHOT_ANGLES);\n    let turn = floor(frameU.absTime * max(0.0, params.rate));\n    delay = ((angle + turn) % SHOT_ANGLES) / (SHOT_ANGLES - 1.0);\n  }\n  /* mode 0 — UNIFORM — falls through at 0.0: every cell reads the newest recorded frame,\n     so the wall is the plain tiling and the scan is a no-op you can see (§V147's shape). */\n\n  return vec4f(delay, delay, delay, 1.0);\n}"
+                "source": "struct SharedFrame {\n  time: f32,\n  deltaTime: f32,\n  frameIndex: f32,\n  randomSeed: f32,\n  wallTime: f32,\n  wallDelta: f32,\n  absTime: f32,\n  absFrame: f32,\n  resolution: vec2f,\n  pointer: vec4f,\n};\nstruct Params {\n  grid: vec2f,\n  mode: f32,\n  rate: f32,\n  seed: f32,\n};\n\n@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n@group(0) @binding(2) var<uniform> frameU: SharedFrame;\n@group(0) @binding(3) var<uniform> params: Params;\n\nstruct Cell {\n  index: f32,\n  count: f32,\n  last: f32,\n  local: vec2f,\n  origin: vec2f,\n  size: vec2f,\n};\n\n/* The SAME partition Tile uses: floor(uv * repeat), offset zero. Both round the count the\n   same way (Tile's `repeat` is a \"floor\"-ranged vector), so a cell here is exactly a cell\n   there and no delay or tear ever straddles a seam. */\nfn cellAt(uv: vec2f, grid: vec2f) -> Cell {\n  let cols = max(1.0, floor(grid.x + 0.5));\n  let rows = max(1.0, floor(grid.y + 0.5));\n  let ij = clamp(floor(uv * vec2f(cols, rows)), vec2f(0.0), vec2f(cols - 1.0, rows - 1.0));\n  var cell: Cell;\n  cell.index = (ij.y * cols) + ij.x;\n  cell.count = cols * rows;\n  /* One cell is a legal wall, and it must not divide by zero on its way to \"now\". */\n  cell.last = max(1.0, cell.count - 1.0);\n  cell.size = vec2f(1.0 / cols, 1.0 / rows);\n  cell.origin = ij * cell.size;\n  cell.local = clamp((uv - cell.origin) / cell.size, vec2f(0.0), vec2f(1.0));\n  return cell;\n}\n\n/*\n * Integer avalanche (the \"lowbias32\" family), and INTEGER on purpose: a float hash built\n * on fract(sin(x)) is a different number on every driver, and §V44's sibling promise — a\n * seeded look replays identically — would be a per-machine accident. u32 shifts and\n * multiplies are exact everywhere WGSL runs.\n */\nfn hashU(value: u32) -> f32 {\n  var x = value;\n  x = x ^ (x >> 16u);\n  x = x * 0x7feb352du;\n  x = x ^ (x >> 15u);\n  x = x * 0x846ca68bu;\n  x = x ^ (x >> 16u);\n  return f32(x & 0x00ffffffu) / 16777216.0;\n}\n\n/* Sample this cell, displaced along x and WRAPPED INSIDE IT — the one rule every\n   degradation obeys, because a tear or a fringe that crossed a seam would read as a\n   broken TILING rather than as a broken monitor. The +4.0 is there because fract() of a\n   negative is not the wrap we want and every shove is signed. */\nfn tap(cell: Cell, dx: f32) -> vec4f {\n  let local = vec2f(fract(cell.local.x + dx + 4.0), cell.local.y);\n  return textureSampleLevel(inputTexture, inputSampler, cell.origin + (local * cell.size), 0.0);\n}\n\nconst SHOT_ANGLES: f32 = 4.0;\n\n@fragment\nfn fs(@location(0) uv: vec2f) -> @location(0) vec4f {\n  let cell = cellAt(uv, params.grid);\n  let index = cell.index;\n  let seed = u32(clamp(params.seed, 0.0, 65535.0));\n  let mode = i32(params.mode + 0.5);\n\n  var delay = 0.0;\n  if (mode == 1) {\n    /* ORDERED — the cascade. Reading order, oldest at the bottom right. */\n    delay = index / cell.last;\n  } else if (mode == 2) {\n    /* RANDOM — every cell its own moment, held. Seeded, so it is a LOOK, not noise. */\n    delay = hashU((u32(index) * 1973u) + (seed * 9277u));\n  } else if (mode == 3) {\n    /*\n     * SWEEP — the owner's \"freeze that wanders through\".\n     *\n     * Each cell's delay RAMPS, so it looks one frame further back every frame: at\n     * Rate 1.0 (with Spread 1) that is exactly one ring-frame per rendered frame, and\n     * the cell holds STILL while the world moves on. The phase offset per cell means\n     * they wrap at different times, so the wall refreshes as a rolling wave rather than\n     * all at once. Below 1.0 the held frame plays in slow motion; above it, backwards.\n     */\n    delay = fract((index / cell.count) + (frameU.absTime * params.rate));\n  } else if (mode == 4) {\n    /*\n     * SHOTS — several angles of one scene, cut on a clock.\n     *\n     * Cells are dealt to SHOT_ANGLES groups by the seeded hash and every group holds one\n     * rung of the delay ladder; the ladder rotates one rung per tick, so the whole wall\n     * re-cuts at once and then holds. Distinct from RANDOM, which never re-cuts, and from\n     * SWEEP, which never holds a whole group together.\n     */\n    let angle = floor(hashU((u32(index) * 6151u) + (seed * 1543u)) * SHOT_ANGLES);\n    let turn = floor(frameU.absTime * max(0.0, params.rate));\n    delay = ((angle + turn) % SHOT_ANGLES) / (SHOT_ANGLES - 1.0);\n  }\n  /* mode 0 — UNIFORM — falls through at 0.0: every cell reads the newest recorded frame,\n     so the wall is the plain tiling and the scan is a no-op you can see (§V147's shape). */\n\n  return vec4f(delay, delay, delay, 1.0);\n}"
               },
               "position": {
-                "x": 516,
+                "x": 774,
                 "y": -74
               },
               "type": "customWgsl"
@@ -228,7 +441,7 @@
                 "cross": 0.55
               },
               "position": {
-                "x": 1806,
+                "x": 2838,
                 "y": -82
               },
               "type": "cross"
@@ -239,10 +452,31 @@
               "label": "out",
               "parameters": {},
               "position": {
-                "x": 2064,
+                "x": 3096,
                 "y": -74
               },
               "type": "componentOut"
+            },
+            "pack": {
+              "definitionVersion": 1,
+              "id": "pack",
+              "label": "pack1",
+              "parameters": {
+                "outa": "in2lum",
+                "outb": "in1b",
+                "outg": "in1g",
+                "outr": "in1r"
+              },
+              "position": {
+                "x": 258,
+                "y": -82
+              },
+              "resolution": {
+                "height": 288,
+                "mode": "fixed",
+                "width": 512
+              },
+              "type": "reorder"
             },
             "paint": {
               "definitionVersion": 1,
@@ -258,7 +492,7 @@
               },
               "position": {
                 "x": 0,
-                "y": -74
+                "y": 208
               },
               "resolution": {
                 "height": 288,
@@ -299,39 +533,48 @@
                   },
                   {
                     "color": [
-                      0.25,
-                      0.06,
-                      0.45,
+                      0.07,
+                      0.12,
+                      0.46,
                       1
                     ],
-                    "position": 0.2
+                    "position": 0.16
                   },
                   {
                     "color": [
-                      0.9,
-                      0.15,
-                      0.35,
+                      0.33,
+                      0.13,
+                      0.66,
                       1
                     ],
-                    "position": 0.45
+                    "position": 0.36
                   },
                   {
                     "color": [
-                      1,
-                      0.62,
-                      0.18,
+                      0.72,
+                      0.14,
+                      0.52,
                       1
                     ],
-                    "position": 0.68
+                    "position": 0.56
                   },
                   {
                     "color": [
-                      1,
                       0.97,
-                      0.85,
+                      0.3,
+                      0.36,
                       1
                     ],
-                    "position": 0.85
+                    "position": 0.74
+                  },
+                  {
+                    "color": [
+                      0.96,
+                      0.72,
+                      0.86,
+                      1
+                    ],
+                    "position": 0.88
                   },
                   {
                     "color": [
@@ -347,7 +590,7 @@
               },
               "position": {
                 "x": 0,
-                "y": 114
+                "y": 396
               },
               "resolution": {
                 "height": 16,
@@ -362,13 +605,59 @@
               "label": "scan1",
               "parameters": {
                 "depth": 1,
-                "frames": 61
+                "frames": 61,
+                "scale": 0.5
               },
               "position": {
-                "x": 774,
+                "x": 1032,
                 "y": -82
               },
               "type": "slitScan"
+            },
+            "sweep": {
+              "definitionVersion": 1,
+              "id": "sweep",
+              "label": "sweep1",
+              "parameters": {
+                "amount": 0.5,
+                "grid": [
+                  3,
+                  3
+                ],
+                "grid.x": {
+                  "bindings": {
+                    "expression": {
+                      "kind": "expression",
+                      "source": "max(1, op('churnx1').chan.value)"
+                    },
+                    "static": {
+                      "kind": "static",
+                      "value": 3
+                    }
+                  },
+                  "mode": "expression"
+                },
+                "grid.y": {
+                  "bindings": {
+                    "expression": {
+                      "kind": "expression",
+                      "source": "max(1, op('churny1').chan.value)"
+                    },
+                    "static": {
+                      "kind": "static",
+                      "value": 3
+                    }
+                  },
+                  "mode": "expression"
+                },
+                "rate": 1,
+                "source": "struct SharedFrame {\n  time: f32,\n  deltaTime: f32,\n  frameIndex: f32,\n  randomSeed: f32,\n  wallTime: f32,\n  wallDelta: f32,\n  absTime: f32,\n  absFrame: f32,\n  resolution: vec2f,\n  pointer: vec4f,\n};\nstruct Params {\n  grid: vec2f,\n  amount: f32,\n  rate: f32,\n};\n\n@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n@group(0) @binding(2) var<uniform> frameU: SharedFrame;\n@group(0) @binding(3) var<uniform> params: Params;\n\nstruct Cell {\n  index: f32,\n  count: f32,\n  last: f32,\n  local: vec2f,\n  origin: vec2f,\n  size: vec2f,\n};\n\n/* The SAME partition Tile uses: floor(uv * repeat), offset zero. Both round the count the\n   same way (Tile's `repeat` is a \"floor\"-ranged vector), so a cell here is exactly a cell\n   there and no delay or tear ever straddles a seam. */\nfn cellAt(uv: vec2f, grid: vec2f) -> Cell {\n  let cols = max(1.0, floor(grid.x + 0.5));\n  let rows = max(1.0, floor(grid.y + 0.5));\n  let ij = clamp(floor(uv * vec2f(cols, rows)), vec2f(0.0), vec2f(cols - 1.0, rows - 1.0));\n  var cell: Cell;\n  cell.index = (ij.y * cols) + ij.x;\n  cell.count = cols * rows;\n  /* One cell is a legal wall, and it must not divide by zero on its way to \"now\". */\n  cell.last = max(1.0, cell.count - 1.0);\n  cell.size = vec2f(1.0 / cols, 1.0 / rows);\n  cell.origin = ij * cell.size;\n  cell.local = clamp((uv - cell.origin) / cell.size, vec2f(0.0), vec2f(1.0));\n  return cell;\n}\n\n/*\n * Integer avalanche (the \"lowbias32\" family), and INTEGER on purpose: a float hash built\n * on fract(sin(x)) is a different number on every driver, and §V44's sibling promise — a\n * seeded look replays identically — would be a per-machine accident. u32 shifts and\n * multiplies are exact everywhere WGSL runs.\n */\nfn hashU(value: u32) -> f32 {\n  var x = value;\n  x = x ^ (x >> 16u);\n  x = x * 0x7feb352du;\n  x = x ^ (x >> 15u);\n  x = x * 0x846ca68bu;\n  x = x ^ (x >> 16u);\n  return f32(x & 0x00ffffffu) / 16777216.0;\n}\n\n/* Sample this cell, displaced along x and WRAPPED INSIDE IT — the one rule every\n   degradation obeys, because a tear or a fringe that crossed a seam would read as a\n   broken TILING rather than as a broken monitor. The +4.0 is there because fract() of a\n   negative is not the wrap we want and every shove is signed. */\nfn tap(cell: Cell, dx: f32) -> vec4f {\n  let local = vec2f(fract(cell.local.x + dx + 4.0), cell.local.y);\n  return textureSampleLevel(inputTexture, inputSampler, cell.origin + (local * cell.size), 0.0);\n}\n\n/* Slow against everything else on the wall: one pass every ~7.7 s at Rate 1. The whole\n   point of a sweep is that you wait for it. */\nconst SWEEP_HZ: f32 = 0.13;\n/* Half-width, in frame widths. 0.22 puts the band across about two cells of a 6-wide wall\n   — wide enough to read as a front travelling, narrow enough to leave somewhere clean. */\nconst SWEEP_HALF_WIDTH: f32 = 0.22;\n\n@fragment\nfn fs(@location(0) uv: vec2f) -> @location(0) vec4f {\n  let dims = vec2f(textureDimensions(inputTexture));\n  let texel = vec2i(clamp(uv * dims, vec2f(0.0), dims - vec2f(1.0)));\n  let here = textureLoad(inputTexture, texel, 0);\n  if (params.amount <= 0.0) { return here; }\n\n  let centre = fract(frameU.absTime * SWEEP_HZ * max(0.05, params.rate));\n  let distance = abs(uv.x - centre);\n  /* Wrapped, so the band leaves the right edge and arrives at the left. */\n  let wrapped = min(distance, 1.0 - distance);\n  let band = 1.0 - smoothstep(0.0, SWEEP_HALF_WIDTH, wrapped);\n  if (band <= 0.0) { return here; }\n\n  let cell = cellAt(uv, params.grid);\n  /* 0.12 of a CELL width at full Chroma, measured against the picture rather than\n     chosen: at 0.05 the fringe was under two texels on a 6-wide wall and did not read. */\n  let shift = 0.12 * params.amount * band;\n  let red = tap(cell, shift);\n  let blue = tap(cell, -shift);\n  return vec4f(red.r, here.g, blue.b, here.a);\n}"
+              },
+              "position": {
+                "x": 1548,
+                "y": -74
+              },
+              "type": "customWgsl"
             },
             "tint": {
               "definitionVersion": 1,
@@ -378,7 +667,7 @@
                 "opacity": 1
               },
               "position": {
-                "x": 1548,
+                "x": 2580,
                 "y": -90
               },
               "type": "multiply"
@@ -389,12 +678,12 @@
               "label": "tone1",
               "parameters": {
                 "channel": "luminance",
-                "offset": 0.02,
+                "offset": 0.08,
                 "row": 0.5,
-                "scale": 0.85
+                "scale": 0.78
               },
               "position": {
-                "x": 1290,
+                "x": 2322,
                 "y": -82
               },
               "type": "lookup"
@@ -404,9 +693,15 @@
         },
         "inputs": [
           {
-            "externalId": "input",
-            "label": "input",
-            "nodeId": "in_input",
+            "externalId": "in1",
+            "label": "in1",
+            "nodeId": "in_in1",
+            "portId": "in"
+          },
+          {
+            "externalId": "in2",
+            "label": "in2",
+            "nodeId": "in_in2",
             "portId": "in"
           }
         ],
@@ -422,38 +717,84 @@
         "parameters": [
           {
             "definition": {
-              "default": [
-                3,
-                3
-              ],
-              "description": "Columns x Rows. Uniform-only: it re-partitions the wall without touching the history ring, so it is safe to turn mid-show. Beyond 61 cells they start sharing moments — that is all the ring holds.",
-              "label": "Grid",
-              "max": 8,
+              "default": 3,
+              "description": "Cells across, and the CENTRE the Churn swings about. Uniform-only: re-partitioning the wall touches no resource, so it is safe to turn mid-show. Past 61 cells they start sharing moments — that is all the ring holds.",
+              "label": "Columns",
+              "max": 12,
               "min": 1,
-              "range": "floor",
-              "size": 2,
-              "type": "vector"
+              "step": 1,
+              "type": "number"
             },
-            "key": "grid",
+            "key": "columns",
             "targets": [
               {
-                "key": "repeat",
-                "nodeId": "grid"
+                "key": "offset",
+                "nodeId": "churnx"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": 3,
+              "description": "Cells down, and the centre the Churn swings about.",
+              "label": "Rows",
+              "max": 12,
+              "min": 1,
+              "step": 1,
+              "type": "number"
+            },
+            "key": "rows",
+            "targets": [
+              {
+                "key": "offset",
+                "nodeId": "churny"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": 0,
+              "description": "How far the wall re-cuts itself. Two sample-and-hold oscillators at unrelated slow rates (16 s and 24 s) hold a grid, then JUMP to another one — so the wall rests and then strikes rather than wobbling, and rows and columns move independently, so it goes non-square. Changing the count redistributes WHICH MOMENTS are on screen, which is why this reads as a re-cut and not as a resize. 0 pins the wall at Columns x Rows.",
+              "label": "Churn",
+              "max": 8,
+              "min": 0,
+              "range": "bounded",
+              "type": "number"
+            },
+            "key": "churn",
+            "targets": [
+              {
+                "key": "amplitude",
+                "nodeId": "churnx"
               },
               {
-                "key": "grid",
-                "nodeId": "map"
-              },
+                "key": "amplitude",
+                "nodeId": "churny"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": 61,
+              "description": "How long a snapshot the wall distributes, in FRAMES. 61 is 1.02 s at 60 fps; 120 is 2.00 s, which is SlitScan's own ceiling rather than a memory one. COST, before you drag it: the ring runs at HALF the internal resolution (T1019a), so it is 256 x 144 x 8 B x (Span + 1) — 17.44 MiB at 61 frames and 34.03 MiB at 120. Full resolution would be four times that for a picture no cell is big enough to show. The SPAN sets the depth, not the cell count: a ring holds a CONTIGUOUS run, so two seconds costs two seconds of frames however few cells actually read them. Structural — changing it rebuilds the ring, which empties it; the wall refills over the next Span frames.",
+              "label": "Span",
+              "max": 120,
+              "min": 16,
+              "step": 1,
+              "type": "number"
+            },
+            "key": "span",
+            "targets": [
               {
-                "key": "grid",
-                "nodeId": "cell"
+                "key": "frames",
+                "nodeId": "scan"
               }
             ]
           },
           {
             "definition": {
               "default": 1,
-              "description": "How much of the held second the wall spans. 1 = the full 1.02 s ring, 0 = every cell on the live frame.",
+              "description": "How much of the held Span the wall distributes across its cells. 1 = the whole ring, 0 = every cell on the live frame.",
               "label": "Spread",
               "max": 1,
               "min": 0,
@@ -489,7 +830,7 @@
           {
             "definition": {
               "default": 1,
-              "description": "The wall's clock. In Sweep, 1.0 at 60 fps is an exact freeze (0.5 at 30 fps); below is slow motion, above runs backwards. In Shots it is cuts per second. It also re-deals which cells tear, so a glitch holds for a whole tick instead of boiling.",
+              "description": "The wall's clock — it stretches every schedule together. In Sweep, 1.0 is an exact freeze at 60 fps with Span 61 (the ring spends Span-1 steps on a full displacement, so 60 steps is one per rendered frame); below is slow motion, above runs backwards. In Shots it is cuts per second. It also scales the glitch's burst periods, so the whole wall speeds up as one instrument.",
               "label": "Rate",
               "max": 8,
               "min": 0,
@@ -505,7 +846,11 @@
               },
               {
                 "key": "rate",
-                "nodeId": "cell"
+                "nodeId": "break"
+              },
+              {
+                "key": "rate",
+                "nodeId": "sweep"
               }
             ]
           },
@@ -527,14 +872,14 @@
               },
               {
                 "key": "seed",
-                "nodeId": "cell"
+                "nodeId": "break"
               }
             ]
           },
           {
             "definition": {
               "default": 0.35,
-              "description": "How many cells tear on each Rate tick, and how hard. SPARSE by construction — a cell is dealt in by a seeded hash, and the brighter a cell is the likelier it is dealt, so with a source that responds to the music the tears chase the beat across the wall. 0 is byte-identical passthrough.",
+              "description": "How much damage the wall takes. THREE kinds on three clocks that share no measure — a band TEAR, monochrome SNOW over a crushed silhouette, and a DROPOUT that multiplies the cell by its matte so the background falls away — at most one per cell per frame. Sparse by construction: a cell is dealt in by a seeded hash, and the brighter a cell is the likelier it is dealt, so with a source that responds to the music the damage chases the beat across the wall. 0 is the fragment's own texel, unchanged.",
               "label": "Glitch",
               "max": 1,
               "min": 0,
@@ -545,7 +890,42 @@
             "targets": [
               {
                 "key": "amount",
-                "nodeId": "cell"
+                "nodeId": "break"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": 0.5,
+              "description": "A chromatic aberration front that TRAVELS across the wall and passes, once every ~7.7 s at Rate 1, wrapping at the edge so it never stops. Global where every other degradation is per-cell, so it is the thing that ties the cells together rather than separating them. Its fringe is displaced cell-locally, so it never smears one moment into its neighbour. 0 is the fragment's own texel.",
+              "label": "Chroma",
+              "max": 1,
+              "min": 0,
+              "range": "bounded",
+              "type": "number"
+            },
+            "key": "chroma",
+            "targets": [
+              {
+                "key": "amount",
+                "nodeId": "sweep"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": 1.35,
+              "description": "Contrast, applied BEFORE the palette — so it does not merely harden the picture, it changes which colours the wall can reach. Its gamma breathes on its own slow clock underneath this knob.",
+              "label": "Crush",
+              "max": 5,
+              "min": 1,
+              "type": "number"
+            },
+            "key": "crush",
+            "targets": [
+              {
+                "key": "contrast",
+                "nodeId": "crush"
               }
             ]
           },
@@ -597,6 +977,17 @@
   "createdAt": "2026-08-29T00:00:00.000Z",
   "graph": {
     "edges": {
+      "e-feed-key": {
+        "id": "e-feed-key",
+        "source": {
+          "nodeId": "feed",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "key",
+          "portId": "input"
+        }
+      },
       "ed_timeGrid2": {
         "id": "ed_timeGrid2",
         "source": {
@@ -605,11 +996,22 @@
         },
         "target": {
           "nodeId": "nd_timeGrid1",
-          "portId": "input"
+          "portId": "in1"
         }
       },
       "ed_timeGrid3": {
         "id": "ed_timeGrid3",
+        "source": {
+          "nodeId": "key",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_timeGrid1",
+          "portId": "in2"
+        }
+      },
+      "ed_timeGrid4": {
+        "id": "ed_timeGrid4",
         "source": {
           "nodeId": "nd_timeGrid1",
           "portId": "out"
@@ -683,13 +1085,29 @@
         },
         "type": "circle"
       },
+      "key": {
+        "definitionVersion": 1,
+        "id": "key",
+        "label": "key1",
+        "parameters": {
+          "channel": "luminance",
+          "compare": "greater",
+          "softness": 0.3,
+          "threshold": 0.24
+        },
+        "position": {
+          "x": -1140,
+          "y": 160
+        },
+        "type": "threshold"
+      },
       "nd_timeGrid1": {
         "definitionVersion": 1,
         "id": "nd_timeGrid1",
         "parameters": {},
         "position": {
-          "x": -238,
-          "y": 62
+          "x": -337,
+          "y": -51
         },
         "type": "component:timeGrid@1"
       },

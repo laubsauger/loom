@@ -32,10 +32,20 @@ bed1(noise, perlin4d) ─┐
 orb1(circle) ──────────┤
 mate1(circle) ─────────┴─► stand1(add) ──┐ order 0
 cam1(webcam) ────────────────────────────┤ order 1
-clip1(movieFileIn) ──────────────────────┴─► pick1(switch) ─► wall1 ─► out1(output)
-pathx1(lfo) pathy1(lfo) ┄drives┄► orb1.center
-matex1(lfo) matey1(lfo) ┄drives┄► mate1.center
-beat1(audioPattern) ┄low┄► orb1.radius
+clip1(movieFileIn) ──────────────────────┴─► pick1(switch) ─► flare1(level) ─┬─► wall1.in1
+                                                                             ├─► key1(threshold) ─┐
+                                                                             └─► cut1(matte) ─────┴─► mpick1(switch) ─► wall1.in2
+wall1 ─► out1(output)
+
+music1(audioPattern) ─┐ order 0
+track1(audioFileIn) ──┴─► source1(valueSwitch) ─┬─► env1(valueLag) ─┐
+                                                └─► snap1(valueLag) ┴─► the two drives below
+
+pathx1(lfo) ─► swoopa1(valueLag) ┄drives┄► orb1.center.x
+pathy1(lfo) ─► swoopb1(valueLag) ┄drives┄► orb1.center.y
+matex1(lfo) ┄drives┄► mate1.center.x
+env1(valueLag) ┄drives┄► orb1.radius.x
+snap1(valueLag) ┄drives┄► flare1.brightness
 ```
 
 ## The source is a port, not a node
@@ -60,18 +70,18 @@ Eight knobs reach the parent, and nothing else does:
 
 | Knob | Shipped | What it does |
 | --- | --- | --- |
-| Grid | 3 x 3 | Columns and rows. Uniform-only — see below. |
-| Spread | 1 | How much of the held second the wall spans. 0 puts every cell on the live frame. |
+| Columns / Rows | 4 / 5 | The grid, and the centre the Churn swings about. |
+| Churn | 3.5 | How far the wall re-cuts itself, on two sample-and-hold clocks. |
+| Span | 90 | History depth in frames. 90 is 1.5 s; the cost is stated at the knob. |
+| Spread | 1 | How much of the Span the wall distributes across its cells. |
 | Mode | 1 | Which distribution deals the delays. |
-| Rate | 2 Hz | The wall's clock: Sweep speed, Shots cuts, and how often the tear re-deals. |
-| Seed | 7 | Deals the cells — which moment each holds, and which of them tear. |
-| Glitch | 0.4 | How many cells tear per tick, and how hard. 0 is byte-identical passthrough. |
+| Rate | 2 Hz | The wall's clock — sweep speed, shot cuts, and the damage's burst periods. |
+| Seed | 7 | Deals which moment each cell holds and which of them break. |
+| Glitch | 0.4 | How much damage: tears, snow and dropouts, in bursts. |
+| Chroma | 0.55 | The aberration front that travels across the wall and passes. |
+| Crush | 1.2 | Contrast, applied before the palette, so it changes which colours are reachable. |
 | Colour | warm white | A master tint over the palette. White is a true identity. |
-| Blend | 0.7 | Master dissolve for the recolorizer. 0 is the raw wall, tear and all. |
-
-**Grid is one vector, not two numbers,** and that is a limitation rather than a taste: a
-component publishes a knob onto a whole parameter, and Tile's grid is one vector. Its two
-fields *are* columns and rows.
+| Blend | 0.82 | Master dissolve for the recolorizer. 0 is the raw wall, damage and all. |
 
 ### The five modes
 
@@ -107,7 +117,15 @@ Slit Scan's history is `width x height x bytesPerPixel x (frames + 1)`, and it i
 size from its input — so a wall fed 1080p and left unpinned would allocate 1.9 GiB. TimeGrid
 pins **512 x 288** internally:
 
-> 512 x 288 x 8 B x 62 layers = **69.75 MiB**, holding 61 frames — 1.02 s at 60 fps.
+> the ring runs at **half** the internal resolution, so it is 256 x 144 x 8 B x (Span + 1)
+> — **17.44 MiB** at Span 61 (1.02 s), **25.31 MiB** at the shipped Span 90 (1.5 s), and
+> **34.03 MiB** at the 120-frame ceiling (2.0 s).
+
+Full resolution would be four times that for detail no cell is big enough to show: at a
+4 x 5 wall a cell is 128 px wide and its history is 64. The cost of that trade is stated
+rather than hidden — the record pass averages two source texels per ring texel, and at a
+cell boundary those two belong to different cells, so exactly 2 px at each cell edge carry
+a trace of the neighbouring moment.
 
 The *span* sets the depth, not the cell count. A ring holds a contiguous run of frames, so
 covering one second costs one second of frames however few of them get read. What the cell
@@ -122,63 +140,144 @@ paying fourteen times the memory for detail the wall cannot display.
 steps is one per rendered frame at 60 fps, which is what makes Sweep's Rate 1.0 an exact
 freeze rather than a slow drift. At 30 fps the freeze rate is 0.5.
 
-## The tear
+## The damage is a vocabulary, not an effect
 
-A few cells at a time break inside themselves: bands of the cell shove sideways with an RGB
-fringe riding the same displacement, wrapped so a tear never crosses a seam — a wall of
-failing monitors rather than one broken tiling.
+Three kinds, on six independent burst trains, at most one per cell per frame:
 
-It is **sparse by construction**, and that is a constraint rather than a taste. Glitch on
-every cell every frame is static at grid scale, and static carries no information about the
-music. So a cell is *dealt in*: on each Rate tick an integer hash of (cell, seed, tick)
-decides whether it tears at all, and the same triple picks how hard, how many bands and
-which way each band shoves — so a tear **holds for a whole tick** instead of boiling.
+- **Tear** — bands of a cell shove sideways with an RGB fringe riding the same
+  displacement, wrapped so it never crosses a seam.
+- **Snow** — monochrome static riding the luminance that is already there, in a few
+  scanline bands rather than over the whole cell.
+- **Dropout** — the cell is multiplied by its own matte, so the background falls away and
+  the subject is left floating. This is the one that changes what the cell is a picture
+  *of*, which is why it is the rarest.
 
-The audio hook is here, and it is indirect on purpose: a cell's own **brightness** scales
-its chance of being dealt in. Every cell holds a different moment, so one kick arrives in
-each cell at a different time — and the tears chase it across the wall.
+**They come in bursts.** Each event is a pulse on its own co-prime frame period — 17, 23
+and 31 frames for tears, 13 and 19 for snow, 47 for dropouts — with a per-cell phase
+hashed from the cell index, so the wall never pulses in unison. A tear lives 2–3 *frames*
+and its bands re-deal on every one of them. An earlier build held one event for a whole
+tick, which was sparse and deterministic and read as slow; the difference is the envelope,
+not the randomness. `time-grid-claims.gpu.test.ts` asserts it directly: over twelve
+consecutive frames the set of broken cells must take at least six distinct values, which
+the held-for-a-tick design returns *one* for.
+
+**At most one per cell per frame**, by an if/else chain. At 6×6 a cell is a couple of
+thousand pixels and a tear under snow is mud; the variety is in *which* cells and *which*
+kind.
+
+**The snow rides the picture, it does not replace it.** It modulates luminance
+multiplicatively and its weight falls to zero in the highlights — film-grain behaviour —
+so it is texture rather than sparkle and it cannot push a bright pixel onto the clip. An
+earlier build mixed toward a full-swing grain and the result clipped to flat white; worse,
+the recolorizer downstream turned that monochrome noise into multicoloured confetti,
+because a Lookup maps luminance to a palette position and a full-swing grain walks the
+whole palette between neighbouring texels. Both are fixed at the cause: the grain is
+bounded by construction, and its excursion is small enough that the palette index barely
+moves.
+
+**The audio hook is here.** A cell's own brightness scales its chance of being dealt in, so
+with a source that responds to the music the damage chases the beat across the wall — and
+every cell holds a different moment, so one kick arrives in each cell at a different time.
+
+## The chromatic sweep
+
+A colour front travels across the wall and passes, once every ~7.7 s at Rate 1, wrapping at
+the edge so it never stops — the owner's "goes through". It is the one *global* degradation,
+so it is what ties the cells together rather than separating them, and it has its own knob
+so it can run across a clean wall or a broken one. Its fringe is displaced cell-locally, so
+it never smears one moment into its neighbour.
+
+## The wall re-cuts itself
+
+`Churn` sweeps rows and columns. On this instrument that is not a layout change: every cell
+holds a different moment, so changing the count **redistributes which moments are on
+screen**. It is a re-cut, and it is cheap — `tile.repeat` is a plain uniform and so is every
+shader's grid, so a sweep recompiles nothing and reallocates nothing.
+
+Two sample-and-hold oscillators at unrelated slow rates (16 s and 24 s) *hold* a grid and
+then jump, so the wall rests and then strikes rather than wobbling. Rows and columns move
+independently, so it goes non-square — 8 × 12 and back. `repeat`'s `range: "floor"` lands
+every value on an integer, so the jump is a hard re-cut rather than a smear; that snap is
+the effect and is not smoothed away. The floor is 2, measured: at 1 a hold parked the wall
+at 1 × 1 for sixteen seconds, which is a video wall with one cell in it.
 
 ## The recolorizer
 
 Ramp into Lookup, which is the standard way to put a whole wall on one palette. Luminance
-is the index, so every cell's brightness becomes a hue and nine independently-lit moments
-land in one colour world. The ramp's **phase walks on the free-running clock**, so the
-palette rotates through the wall over about 23 seconds.
+is the index, so every cell's brightness becomes a hue and a dozen independently-lit
+moments land in one colour world. The ramp's **phase walks on the free-running clock**, so
+the palette rotates through the wall over about 23 seconds.
+
+**Blues, purples and reds. No yellows** — the warm band is removed rather than compressed,
+because dodging part of a palette is not the same as not having it. No stop reaches 1.0
+either, so the grade has headroom left before the transfer.
 
 The palette is *cyclic* — its first and last stops are the same colour — because phase
 wraps the gradient's axis and a palette that did not close would sweep a hard seam across
-the wall once a cycle. That has a consequence the first build got wrong: an index reaching
-1.0 lands on the closing dark stop, so the brightest thing in the frame rendered *dark* and
-every hot core came back as an orange ring. The lookup's `scale` and `offset` now compress
-the index into 0.02..0.87, which is E11's problem in reverse — that example had to stretch
-its index because a noise field never left the middle third of its gradient.
+the wall once a cycle. The index is compressed into 0.08..0.78 to stay clear of that wrap
+and to stop a soft body being painted as concentric rainbow rings.
+
+**A `limit` guard clamps to 0..1 before the palette**, and it is one node fixing two
+things at once. Everything upstream can exceed 1 — the parent lights the source, `Crush`
+multiplies contrast — and a Lookup *indexes* by luminance, so an over-1 pixel walks off the
+end of the palette onto its dark closing stop: the brightest thing in the frame rendered as
+the darkest colour, which is where the teal cores came from. The dry side had the same
+problem one step later, where it simply clipped.
 
 `Colour` is a master tint over the palette, defaulting to white so it has a true identity
 and its whole range to move in.
 
-## Audio: one mapping, and where it had to go
+## Audio: wired, switch-ready, and driving two different things
 
-`beat1` is an Audio Pattern — the deterministic fixture, not a live input, because a shipped
-example must not open a device and every gate has to see the same performance twice. Its low
-band drives the body's **radius**, enveloped: the band rests at 0.71 and peaks near 0.98, so
-a raw drive would be a body that never shrinks.
+`source1` is a `valueSwitch` — E24's shape, and it has to be a switch rather than a wire:
+two audio sources landing on one value port *merge*, and both publish the same channel
+names, so the later edge would win and the other source would vanish with the graph still
+looking right. A `valueSwitch` is exclusive by construction.
 
-Driving Spread, Rate or Blend from that band is what you would reach for first, and it
-cannot be done. The compiler resolves a component instance's published page with no
-resolution context — no node reader and no frame — and the flattening is then memoized on
-the document revision. A channel read on a published knob warns and falls back to its
-retained value; a clock expression silently evaluates to zero. Measured, frames 30, 150 and
-260 of a frozen world came back byte-identical. **A component's published parameters cannot
-be animated today**, and that is reported against the compiler track rather than worked
-around here, because a dead expression in a shipped example is a lie about the feature.
+- **Index 0 (shipped)** is `music1`, an Audio Pattern at 124 bpm. It stays the default:
+  a shipped example must not open a device, and every gate has to see the same performance
+  twice.
+- **Index 1** is `track1`, an Audio File In with an empty File waiting. Drop a track on it,
+  flip the index, and everything downstream follows because everything downstream reads
+  `source1`.
+- **A microphone is deliberately absent.** An unselected *texture* `switch` branch is NOT
+  pruned — measured on this very graph: `cut1` and `cam1` both emit passes while sitting on
+  index 1 — and a shipped `audioIn` opens the device on load. To add one, drop an Audio In
+  beside `track1` and wire it to `source1.in3`; the value switch will keep it silent until
+  you select it, but the device opens regardless, so it is yours to add and not ours to
+  ship.
 
-Its *internals* are a different matter and do animate — an internal node is flattened into
-the parent graph and resolved with the frame like any other, which is what lets the palette
-walk on its own.
+Two envelopes off that one source, because the piece has two timescales:
 
-So the kick goes on the body, and on this instrument that is the better mapping anyway: the
-cascade turns one beat into a wave rolling across the grid, and the tear rides the same
-signal for free.
+- `env1` (110 ms) carries the **low** band to the body's **radius** — the kick as a swell.
+  The wall's cascade then turns one kick into a wave rolling across the grid.
+- `snap1` (35 ms) carries the **high** band to `flare1.brightness` — the hats, kept
+  transient. And that is how the audio reaches the *damage*: the vocabulary arms a cell in
+  proportion to that cell's own brightness, so lifting the source on a transient makes more
+  of the wall break. No channel crosses the component boundary.
+
+Both are enveloped off the band's own floor. Audio Pattern's `low` rests at 0.713 and peaks
+at 0.975, so a raw drive would be a body that never shrinks.
+
+### The knobs that cannot be driven yet
+
+A component's *published* parameters cannot be animated at all today: the compiler resolves
+an instance's page with no node reader and no frame, and the flattening is memoized on the
+document revision. So `Glitch`, `Chroma`, `Churn` and `Blend` are static here even though
+every one of them wants a hand on it. That is filed and being fixed; when it lands, those
+four become the obvious audio targets and nothing in this document has to change except the
+slots. Everything that *does* move inside the wall — the burst trains, the sweep, the
+palette phase, the churn — is driven from **inside** the component, where an internal node
+is flattened into the parent graph and resolved with the frame like any other.
+
+## Rest, then strike
+
+The source used to wobble continuously on four sine LFOs. It does not any more: the lead
+body is on **sample-and-hold plus a Lag**, so it is still for several seconds and then
+swoops somewhere. The second body keeps a slow sine, and dropping it would have been a
+mistake — a wall whose source is perfectly still shows the *same* frame in every cell,
+because a dozen different moments of a still picture are one picture. So the composition is
+a calm continuous element for the cells to differ by, and a striking one to watch.
 
 ## What this example is a gate for
 
@@ -187,6 +286,10 @@ signal for free.
 - A per-cell effect that is deterministic from a seed: the same seed is the same wall
   twice, a different seed is a different wall, and at Glitch 0 the seed is inert
   byte-for-byte.
+- Damage that comes in BURSTS rather than held states — asserted across consecutive frames,
+  which is the only place an envelope is visible.
+- A degradation that cannot reach the clip, asserted as a property (no pixel is pushed onto
+  the sink's ceiling) rather than as a level.
 - An internal component parameter animating on the free-running clock, which is the
   standing evidence for the half of the component model that *does* work.
 - A library component whose whole interface is a texture in, a texture out, and eight

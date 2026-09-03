@@ -94,6 +94,15 @@ fn hashU(value: u32) -> f32 {
   x = x * 0x846ca68bu;
   x = x ^ (x >> 16u);
   return f32(x & 0x00ffffffu) / 16777216.0;
+}
+
+/* Sample this cell, displaced along x and WRAPPED INSIDE IT — the one rule every
+   degradation obeys, because a tear or a fringe that crossed a seam would read as a
+   broken TILING rather than as a broken monitor. The +4.0 is there because fract() of a
+   negative is not the wrap we want and every shove is signed. */
+fn tap(cell: Cell, dx: f32) -> vec4f {
+  let local = vec2f(fract(cell.local.x + dx + 4.0), cell.local.y);
+  return textureSampleLevel(inputTexture, inputSampler, cell.origin + (local * cell.size), 0.0);
 }`;
 
 /** How many distinct moments SHOTS cuts between. Four reads as "several camera angles". */
@@ -161,39 +170,77 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
 }`;
 
 /**
- * THE TEAR — per-cell glitch, and the thing that makes the wall a VJ instrument rather
- * than a contact sheet.
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ * BREAK — a VOCABULARY of degradations, not one effect with a rate knob.
+ * ═══════════════════════════════════════════════════════════════════════════════════
  *
- * ## It is SPARSE and EVENT-LIKE, and that is a design constraint rather than a taste
+ * The previous build shipped ONE event — a band tear — dealt sparsely and held for a
+ * tick. Sparse and deterministic was right; the verdict on it was "the glitch is a little
+ * boring and all the same all the time", and that is a fair reading of a wall where every
+ * broken cell breaks the same way. Rarity is not variety.
  *
- * A glitch that fires on every cell every frame is mush at grid scale — at 6x6 it reads
- * as static, and static carries no information about the music or the picture. So a cell
- * is DEALT: on each tick of `rate`, an integer hash of (cell, seed, tick) decides whether
- * that cell tears at all. `amount` is the share of cells dealt in AND how hard they tear,
- * one knob with a large legible range, which is what a performer can reach for without a
- * steady hand.
+ * So there are three events, and the three things that make them read as a vocabulary:
+ *
+ *  1. THREE DIFFERENT KINDS OF DAMAGE. A TEAR displaces bands sideways with an RGB
+ *     fringe; SNOW replaces the cell with monochrome static over a crushed silhouette;
+ *     DROPOUT multiplies the cell by its own matte, so the background falls away and the
+ *     subject is left floating on black. A tear rearranges the picture, snow destroys it,
+ *     a dropout shows a DIFFERENT picture — which is what makes the third one worth its
+ *     cost rather than a fourth flavour of noise.
+ *
+ *  2. SIX INDEPENDENT BURST TRAINS, AND THEY ARE SHORT. Every event is a pulse on its own
+ *     co-prime frame period — three trains for tears (17, 23, 31 frames), two for snow
+ *     (13, 19) and one for dropouts (47) — with a per-cell phase hashed from the cell
+ *     index, so the wall never pulses in unison and the trains effectively never realign.
+ *     A tear lives 2-3 FRAMES and its bands re-deal every one of them.
+ *
+ *     THIS IS WHAT PASS 3 CHANGED. Pass 2 held one event for a whole tick, which was
+ *     defensible for determinism and wrong for the eye: the owner's verdict was that the
+ *     glitch "feels like it has very few frames… we are a little bit too simplified", and
+ *     that a glitch reads as a glitch because it is fast and broken-looking. Determinism
+ *     is untouched — same integer hashes, same seed, no wall clock (§V44). Only the
+ *     ENVELOPE moved: shorter lifetimes, more trains, overlapping phases.
+ *
+ *  3. AT MOST ONE PER CELL PER FRAME. The selection is an if / else-if chain, so a cell
+ *     shows exactly one degradation or none. This is a picture decision and it is the
+ *     opposite of "additive": at 6x6 a cell is a couple of thousand pixels, and a tear
+ *     under snow is mud. The variety comes from WHICH cells and WHICH kind, and it is
+ *     asserted — `time-grid-claims.gpu.test.ts` classifies every broken cell and requires
+ *     each one to fall in exactly one bucket.
  *
  * ## THE AUDIO GATE, and why it is not an audio channel
  *
- * A cell's own BRIGHTNESS scales its chance of being dealt in. That is the audio hook,
- * and it is deliberately indirect: a component's published parameters cannot be animated
- * at all today (`flatten.ts` resolves an instance's page with no frame and no node reader,
- * and `flattenComponents` is memoized on the document revision), so a channel expression
- * on `Glitch` would silently read zero. Reading the PICTURE instead needs nothing from the
- * parent but a source that already responds to the music — and on this instrument it is
- * the better mapping anyway: every cell holds a DIFFERENT MOMENT, so one kick arrives in
- * each cell at a different time, and the tears chase it across the wall.
+ * A cell's own BRIGHTNESS scales its chance of being dealt in, on all three events. That
+ * is the audio hook, and it is deliberately indirect: a component's published parameters
+ * cannot be animated at all today (§T1017 — `flatten.ts` resolves an instance's page with
+ * no frame and no node reader, and `flattenComponents` is memoized on the document
+ * revision), so a channel expression on `Glitch` would silently read zero. Reading the
+ * PICTURE instead needs nothing from the parent but a source that already responds to the
+ * music — and on this instrument it is the better mapping anyway: every cell holds a
+ * DIFFERENT MOMENT, so one kick arrives in each cell at a different time and the damage
+ * chases it across the wall.
  *
  * One texel at the cell's centre, not an average: a reduction per fragment would be a
- * whole extra pass, and the centre of a cell is exactly where a wall's subject is.
+ * whole extra pass, and the centre of a cell is where a wall's subject is.
  *
- * ## `amount = 0` IS BYTE-IDENTICAL PASSTHROUGH (§V147, E43's bar for user WGSL)
+ * ## WHY SNOW IS HASHED HERE AND NOT A `noise` NODE
  *
- * The early return is a `textureLoad` at the fragment's own integer coordinate, so the
- * knob has a true identity end rather than a nearly-invisible one — and so does an armed
- * cell's neighbour, which takes the same return.
+ * `noise` does have a `random` type, so the field itself was available. What was not
+ * available is a cheap way to show it in SOME cells: a second full-frame generator plus a
+ * per-cell gate texture plus a composite is three passes and two nodes to deliver the
+ * pixels this shader already has a hash for. The integer hash is per-texel white noise —
+ * which is what snow is, and what a lattice noise deliberately is not — and it replays
+ * from the same `seed` as every other decision here.
+ *
+ * ## `amount = 0` IS THE FRAGMENT'S OWN TEXEL (§V147, E43's bar for user WGSL)
+ *
+ * The early return is a `textureLoad` at the fragment's own integer coordinate, taken
+ * BEFORE the seed has been looked at — so Glitch has a true identity end and Seed is inert
+ * byte-for-byte at it. Alpha is normalised to 1 on every path, because alpha is carrying
+ * the MATTE through the ring (see the component's `pack`) and is not coverage any more
+ * once the dropout has had its chance to use it.
  */
-export const TIME_GRID_GLITCH_WGSL = `${SHARED_UNIFORMS_WGSL}
+export const TIME_GRID_BREAK_WGSL = `${SHARED_UNIFORMS_WGSL}
 struct Params {
   grid: vec2f,
   amount: f32,
@@ -208,12 +255,228 @@ struct Params {
 
 ${TIME_GRID_CELL_WGSL}
 
-/* Sample this cell, displaced along x and WRAPPED INSIDE IT. The +4.0 is there because
-   fract() of a negative number is not the wrap we want and the shove is signed. */
-fn tap(cell: Cell, dx: f32) -> vec4f {
-  let local = vec2f(fract(cell.local.x + dx + 4.0), cell.local.y);
-  return textureSampleLevel(inputTexture, inputSampler, cell.origin + (local * cell.size), 0.0);
+/*
+ * A BURST SLOT — the envelope, and the whole of what changed in pass 3.
+ *
+ * Each slot is an independent, deterministic pulse train on ONE cell: a period in frames,
+ * a lifetime of a few frames, and a per-cycle roll that decides whether this cycle fires
+ * at all. A cell's phase inside its own slot is hashed from its index, so thirty-six cells
+ * on the same slot are thirty-six unsynchronised trains rather than one flashbulb.
+ *
+ * Returns the burst's AGE in frames, or -1 when the slot is quiet.
+ *
+ * The periods are co-prime frame counts, so two slots on one cell realign only every
+ * few hundred frames and three of them effectively never. That is what "multiple random
+ * glitches" needs and a single tick cannot give: several short events in flight at
+ * different phases.
+ */
+fn slot(index: u32, seed: u32, salt: u32, period: f32, life: f32, chance: f32, frame: f32) -> f32 {
+  /* Per-cell phase, so the wall does not pulse in unison. */
+  let shifted = frame + (hashU((index * 7919u) ^ salt) * period);
+  let cycle = floor(shifted / period);
+  let age = shifted - (cycle * period);
+  if (age >= life) { return -1.0; }
+  if (hashU((index * 1013u) + (seed * 6151u) + salt + (u32(cycle) * 3571u)) >= chance) { return -1.0; }
+  return age;
 }
+
+/* Co-prime frame periods. Nothing here shares a factor with anything else here. */
+const TEAR_A: f32 = 17.0;
+const TEAR_B: f32 = 23.0;
+const TEAR_C: f32 = 31.0;
+const SNOW_A: f32 = 13.0;
+const SNOW_B: f32 = 19.0;
+const DROP_P: f32 = 47.0;
+
+/*
+ * LIFETIMES, in frames, and they are the owner's note made numeric. A tear that lasts two
+ * or three frames at 60 fps is 33-50 ms — a flicker you catch rather than a state you
+ * watch. Snow is shorter still. A DROPOUT is the exception and holds for a fifth of a
+ * second, because it is not damage: it is the cell briefly becoming a different picture,
+ * and a two-frame version of that reads as a dropped frame rather than as an idea.
+ */
+const TEAR_LIFE: f32 = 3.0;
+const SNOW_LIFE: f32 = 2.0;
+const DROP_LIFE: f32 = 12.0;
+
+/* Relative rarity. A tear is the wall's ordinary weather; snow is an interruption; a
+   dropout is an EVENT, because it changes what the cell is a picture OF. */
+/*
+ * How deep the grain modulates what is already there. Bounded above by construction (see
+ * the SNOW branch), so this is a texture depth and not a clipping risk.
+ *
+ * 0.45 rather than something heavier, and the reason is the RECOLORIZER downstream: a
+ * Lookup turns luminance into a palette position, so a deep luminance grain walks the
+ * whole palette between neighbouring texels and monochrome noise arrives on screen as
+ * multicoloured confetti. Half a stop of luminance wobble is grain; a full swing is
+ * garbage. Measured against the owner's own frame.
+ */
+const SNOW_DEPTH: f32 = 0.45;
+
+const TEAR_SHARE: f32 = 0.55;
+const SNOW_SHARE: f32 = 0.35;
+const DROP_SHARE: f32 = 0.30;
+
+fn luma(rgb: vec3f) -> f32 {
+  return dot(rgb, vec3f(0.2126, 0.7152, 0.0722));
+}
+
+@fragment
+fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
+  let dims = vec2f(textureDimensions(inputTexture));
+  let texel = vec2i(clamp(uv * dims, vec2f(0.0), dims - vec2f(1.0)));
+  let here = textureLoad(inputTexture, texel, 0);
+  if (params.amount <= 0.0) { return vec4f(here.rgb, 1.0); }
+
+  let cell = cellAt(uv, params.grid);
+  let index = u32(cell.index);
+  let seed = u32(clamp(params.seed, 0.0, 65535.0));
+  /* FRAMES, not seconds: an event two frames long has to be counted in the unit it is two
+     of. absFrame is the deterministic frame count the transport supplies (§V44) — never a
+     wall clock. Rate stretches or compresses every period together, so the whole wall
+     speeds up as one instrument. max(0.25) keeps the trains turning at Rate 0. */
+  let frame = frameU.absFrame * max(0.25, params.rate);
+  let tick = u32(frame);
+
+  /* THE AUDIO GATE: this cell's own centre texel. Bright cells are dealt in first, so a
+     source that responds to the music makes the damage chase the beat across the wall. */
+  let middle = vec2i(clamp((cell.origin + (0.5 * cell.size)) * dims, vec2f(0.0), dims - vec2f(1.0)));
+  let lit = clamp(luma(textureLoad(inputTexture, middle, 0).rgb), 0.0, 1.0);
+  let base = clamp(params.amount * (0.2 + (1.8 * lit)), 0.0, 1.0);
+
+  /* THREE TEAR TRAINS, TWO SNOW TRAINS, ONE DROPOUT — all independent, all per cell. */
+  let tearAge = max(
+    slot(index, seed, 101u, TEAR_A, TEAR_LIFE, base * TEAR_SHARE, frame),
+    max(
+      slot(index, seed, 211u, TEAR_B, TEAR_LIFE - 1.0, base * TEAR_SHARE, frame),
+      slot(index, seed, 307u, TEAR_C, TEAR_LIFE, base * TEAR_SHARE, frame)));
+  let snowAge = max(
+    slot(index, seed, 409u, SNOW_A, SNOW_LIFE, base * SNOW_SHARE, frame),
+    slot(index, seed, 521u, SNOW_B, SNOW_LIFE - 1.0, base * SNOW_SHARE, frame));
+  let dropAge = slot(index, seed, 631u, DROP_P, DROP_LIFE, base * DROP_SHARE, frame);
+
+  /* EXCLUSIVE, rarest first. One thing per cell per frame, on purpose: at 6x6 a cell is a
+     couple of thousand pixels and a tear under snow is mud. The variety is in WHICH cells
+     and WHICH kind, and it is asserted. */
+  if (dropAge >= 0.0) {
+    /* DROPOUT — the background falls away. Alpha arrived here as the MATTE, packed into
+       the picture before the ring (see the component's pack node), so it has been delayed
+       by exactly the same number of frames as the colour it belongs to: a cell holding a
+       moment from a second ago drops the background of THAT moment, not of now. */
+    return vec4f(here.rgb * clamp(here.a, 0.0, 1.0), 1.0);
+  }
+
+  if (snowAge >= 0.0) {
+    /*
+     * SNOW — and this branch has been rebuilt twice, both times at the cause.
+     *
+     * WHAT IT LOOKED LIKE WHEN IT WAS WRONG: the owner photographed a two-cell block of
+     * full-intensity multicoloured confetti with none of the picture left in it. Three
+     * separate faults, none of them a level:
+     *
+     *  1. IT REPLACED THE PICTURE. mix(silhouette, grain, 0.65) writes a value that owes
+     *     almost nothing to what was there, so a cell stopped being a picture. Static has
+     *     to RIDE the image — that is the difference between static and a dropout, and
+     *     this component already has a dropout.
+     *  2. IT CAME OUT CHROMATIC, and not because the grain was. The grain is monochrome
+     *     here and always was; the CONFETTI is made downstream, by the recolorizer. A
+     *     Lookup maps luminance to a palette position, so a full-swing luminance grain
+     *     walks the whole palette between adjacent texels and monochrome noise arrives on
+     *     screen as per-pixel colour garbage. The fix is at this end: keep the luminance
+     *     excursion small enough that the palette index barely moves, and the same noise
+     *     reads as grain instead.
+     *  3. IT WAS TOO BIG AND TOO SOLID. A whole cell of it is a rectangle, and a rectangle
+     *     is a graphic, not a fault. It is banded now — a few scanline bands per burst —
+     *     so it reads as a monitor breaking up rather than as a filled shape.
+     *
+     * MULTIPLICATIVE, AND HIGHLIGHT-PROTECTED (§V833/§V838). The output is bounded by
+     * crushed * (1 + SNOW_DEPTH), and the weight is already ~0 wherever the pixel is
+     * bright — so it cannot reach the clip BY CONSTRUCTION, not by tuning. The owner's
+     * "it oversteers, overflows" was literal: it was clipping to flat white, and a lower
+     * amount would only have made a dimmer wrong picture. The gate asserts the property
+     * rather than the number: zero pixels at 1.0 anywhere in a snowing wall.
+     *
+     * Still monochrome, and that is load-bearing twice: it is what real static is, and it
+     * is what lets the gate tell snow from a tear — a tear's RGB fringe leaves r != b and
+     * this leaves r == g == b.
+     */
+    let grain = hashU((u32(texel.x) * 73856093u) ^ (u32(texel.y) * 19349663u) ^ (tick * 83492791u) ^ seed);
+    /* SCANLINE BANDS, not the whole cell: only some of them break up on a given burst. */
+    let bandCount = 5.0 + floor(hashU((index * 5501u) + (tick * 79u) + seed) * 7.0);
+    let bandIndex = u32(floor(cell.local.y * bandCount));
+    let banded = select(0.35, 1.0, hashU((bandIndex * 2237u) + (index * 91u) + (tick * 397u) + seed) < 0.45);
+    /* A HINT of the hard silhouette — the owner's "thresholding, to crush it" — never the
+       whole of it, because a full step() is a two-value image with nothing left to texture. */
+    let base = luma(here.rgb);
+    let crushed = mix(base, step(0.35, base), 0.25);
+    let weight = (1.0 - smoothstep(0.30, 0.92, crushed)) * banded;
+    let value = crushed * (1.0 + (SNOW_DEPTH * weight * ((grain * 2.0) - 1.0)));
+    return vec4f(value, value, value, 1.0);
+  }
+
+  if (tearAge >= 0.0) {
+    /*
+     * TEAR — bands shove sideways with an RGB fringe riding the same displacement.
+     *
+     * PASS 3 CHANGED THE ENVELOPE, not the mechanism. Every one of these numbers now
+     * re-deals on the FRAME rather than being held for a whole tick: a burst is two or
+     * three frames long and the bands jump within it, which is what a glitch looks like.
+     * Held for a tick — the pass-2 design — it was one clean state sitting there for half
+     * a second, and the owner's verdict was that it read as slow and simplified.
+     */
+    let strength = params.amount * (0.35 + (0.65 * hashU((index * 337u) + (tick * 61u) + seed)));
+    let bands = 4.0 + floor(hashU((index * 977u) + (tick * 131u) + seed) * 12.0);
+    let band = u32(floor(cell.local.y * bands));
+    let shove = (hashU((band * 1471u) + (index * 29u) + (tick * 523u) + seed) - 0.5) * 0.7 * strength;
+    let split = 0.06 * strength;
+    let mid = tap(cell, shove);
+    let red = tap(cell, shove + split);
+    let blue = tap(cell, shove - split);
+    return vec4f(red.r, mid.g, blue.b, 1.0);
+  }
+
+  return vec4f(here.rgb, 1.0);
+}`;
+
+/**
+ * THE SWEEP — chromatic aberration that GOES THROUGH.
+ *
+ * The owner's word for it was "goes through", and that is the whole specification: not a
+ * constant fringe sitting on the picture but a band that travels across the wall and
+ * passes. It is a separate node from BREAK for two reasons. It is GLOBAL where every
+ * degradation above is per-cell, so it is the one thing on the wall that ties the cells
+ * together rather than separating them. And it gets its own published knob (`Chroma`), so
+ * a performer can run a colour sweep across a clean wall or a broken one — and so each of
+ * the two can be tested with the other switched off, which is the only way either claim
+ * means anything.
+ *
+ * It still obeys the cell rule: the band's POSITION is global, the displacement it applies
+ * is CELL-LOCAL. A fringe that crossed a seam would smear neighbouring moments into each
+ * other, which is the one thing this whole component exists to keep apart.
+ *
+ * The band wraps at the frame edge (`min(d, 1 - d)`), so it leaves one side and arrives at
+ * the other instead of stopping — "goes through", continuously, forever.
+ */
+export const TIME_GRID_SWEEP_WGSL = `${SHARED_UNIFORMS_WGSL}
+struct Params {
+  grid: vec2f,
+  amount: f32,
+  rate: f32,
+};
+
+@group(0) @binding(0) var inputSampler: sampler;
+@group(0) @binding(1) var inputTexture: texture_2d<f32>;
+@group(0) @binding(2) var<uniform> frameU: SharedFrame;
+@group(0) @binding(3) var<uniform> params: Params;
+
+${TIME_GRID_CELL_WGSL}
+
+/* Slow against everything else on the wall: one pass every ~7.7 s at Rate 1. The whole
+   point of a sweep is that you wait for it. */
+const SWEEP_HZ: f32 = 0.13;
+/* Half-width, in frame widths. 0.22 puts the band across about two cells of a 6-wide wall
+   — wide enough to read as a front travelling, narrow enough to leave somewhere clean. */
+const SWEEP_HALF_WIDTH: f32 = 0.22;
 
 @fragment
 fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
@@ -222,33 +485,18 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   let here = textureLoad(inputTexture, texel, 0);
   if (params.amount <= 0.0) { return here; }
 
+  let centre = fract(frameU.absTime * SWEEP_HZ * max(0.05, params.rate));
+  let distance = abs(uv.x - centre);
+  /* Wrapped, so the band leaves the right edge and arrives at the left. */
+  let wrapped = min(distance, 1.0 - distance);
+  let band = 1.0 - smoothstep(0.0, SWEEP_HALF_WIDTH, wrapped);
+  if (band <= 0.0) { return here; }
+
   let cell = cellAt(uv, params.grid);
-  let index = u32(cell.index);
-  let seed = u32(clamp(params.seed, 0.0, 65535.0));
-  /* max(0.25) so the deal still turns at Rate 0 — a knob at its floor must not freeze a
-     second knob's behaviour, which is how a control stops being reachable mid-show. */
-  let tick = u32(floor(frameU.absTime * max(0.25, params.rate)));
-
-  /* THE AUDIO GATE: this cell's own centre texel. Bright cells are dealt in first. */
-  let middle = vec2i(clamp((cell.origin + (0.5 * cell.size)) * dims, vec2f(0.0), dims - vec2f(1.0)));
-  let lit = clamp(dot(textureLoad(inputTexture, middle, 0).rgb, vec3f(0.2126, 0.7152, 0.0722)), 0.0, 1.0);
-
-  let deal = hashU((index * 2654u) + (seed * 40503u) + (tick * 7919u));
-  let armed = clamp(params.amount * (0.2 + (1.8 * lit)), 0.0, 1.0);
-  if (deal >= armed) { return here; }
-
-  /* Dealt in. How hard, how many bands, and which way each band shoves — all from the
-     same (cell, tick, seed) triple, so a tear HOLDS for a whole tick instead of boiling. */
-  let strength = params.amount * (0.35 + (0.65 * hashU((index * 337u) + (tick * 61u) + seed)));
-  let bands = 4.0 + floor(hashU((index * 977u) + (tick * 131u) + seed) * 12.0);
-  let band = u32(floor(cell.local.y * bands));
-  let shove = (hashU((band * 1471u) + (index * 29u) + (tick * 523u) + seed) - 0.5) * 0.7 * strength;
-  let split = 0.06 * strength;
-
-  /* The RGB split rides the same shove, so the fringe is part of the tear rather than a
-     separate effect layered on top of it. */
-  let mid = tap(cell, shove);
-  let red = tap(cell, shove + split);
-  let blue = tap(cell, shove - split);
-  return vec4f(red.r, mid.g, blue.b, here.a);
+  /* 0.12 of a CELL width at full Chroma, measured against the picture rather than
+     chosen: at 0.05 the fringe was under two texels on a 6-wide wall and did not read. */
+  let shift = 0.12 * params.amount * band;
+  let red = tap(cell, shift);
+  let blue = tap(cell, -shift);
+  return vec4f(red.r, here.g, blue.b, here.a);
 }`;

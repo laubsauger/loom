@@ -79,8 +79,17 @@ const ROWS = 4;
 const CELLS = COLS * ROWS;
 const CELL_W = WIDTH / COLS;
 const CELL_H = HEIGHT / ROWS;
+/** The shipped history depth, and the one every expected value below is derived from. */
+const SPAN = 61;
 /** SlitScan's usable depth: `frames - 1`. 61 frames, so 60 steps. */
-const RING_STEPS = 60;
+const RING_STEPS = SPAN - 1;
+/**
+ * T1019a: the ring runs at HALF the component's internal resolution. Asserted as a
+ * RESOURCE below and separately from any value, because a ring that silently stayed at
+ * full resolution passes every pixel assertion in this file while costing four times what
+ * the parameter's description promises.
+ */
+const RING_SIZE = [WIDTH / 2, HEIGHT / 2] as const;
 /** Ordered mode: cell k displaces k/(CELLS-1), which is 4k frames back on a 60-step ring. */
 const BACK_OF = (cell: number): number => Math.round((cell / (CELLS - 1)) * RING_STEPS);
 /** Late enough that the ring has archived every one of its 61 layers. */
@@ -101,7 +110,10 @@ const SETTINGS: ProjectSettings = {
 };
 
 interface WallParameters {
-  readonly grid?: readonly [number, number];
+  readonly columns?: number;
+  readonly rows?: number;
+  readonly churn?: number;
+  readonly span?: number;
   readonly spread?: number;
   readonly mode?: number;
   readonly rate?: number;
@@ -128,21 +140,34 @@ function probeGraph(wall: WallParameters, still = false): GraphDocument {
       node("bed", "ramp", { type: "vertical" }, { definitionVersion: 2 }),
       node("src", "customWgsl", { source: still ? STILL_WGSL : STAMP_WGSL }),
       node("wall", "component:timeGrid@1", {
-        grid: [COLS, ROWS],
+        columns: COLS,
+        rows: ROWS,
+        // Churn 0 pins the wall: every claim below is about a FIXED grid, and a
+        // sample-and-hold re-cutting underneath one would make it about two things.
+        churn: 0,
+        span: SPAN,
         spread: 1,
         mode: 1,
         rate: 1,
         seed: 7,
         colour: [1, 1, 1, 1],
         glitch: 0,
+        chroma: 0,
+        crush: 1,
         blend: 0,
         ...wall,
       }),
+      /* The MATTE input, deterministic: a luma key on the same card. Two of the claims
+         below (the dropout, and the matte travelling through the ring) are about what
+         arrives on `in2`, so the probe has to supply it rather than leave it dark. */
+      node("key", "threshold", { threshold: 0.5, softness: 0.05, channel: "luminance", compare: "greater" }),
       node("out", "output", { toneMap: "none" }),
     ]) as GraphDocument["nodes"],
     edges: Object.fromEntries([
       edge("e-bed-src", ["bed", "out"], ["src", "input"]),
-      edge("e-src-wall", ["src", "out"], ["wall", "input"]),
+      edge("e-src-key", ["src", "out"], ["key", "input"]),
+      edge("e-src-wall", ["src", "out"], ["wall", "in1"]),
+      edge("e-key-wall", ["key", "out"], ["wall", "in2"]),
       edge("e-wall-out", ["wall", "out"], ["out", "input"]),
     ]) as GraphDocument["edges"],
   };
@@ -168,15 +193,31 @@ async function shoot(
   return { frames: result.frames, plan: result.plan };
 }
 
-/** One cell's rectangle, as the raw component values the target holds. */
+/**
+ * THE SEAM MARGIN, and it is analytically derived rather than a fudge.
+ *
+ * The ring runs at half the internal resolution (T1019a), so the record pass averages
+ * 1/scale = 2 source texels into each ring texel — and at a cell BOUNDARY those two texels
+ * belong to different cells, because Tile's `fract` wraps there. So exactly ceil(1/scale)
+ * = 2 output pixels at each edge of every cell carry a trace of the neighbouring moment.
+ * It is a real, stated consequence of paying a quarter of the memory, and it is 2 px of a
+ * 128 px cell.
+ *
+ * Every block comparison below therefore reads cell INTERIORS. The claims are still byte
+ * identity — nothing is tolerated, the region is just the part of the cell the seam does
+ * not reach.
+ */
+const SEAM = 2;
+
+/** One cell's interior, as the raw component values the target holds. */
 function cellBlock(frame: RenderedFrame, cell: number): Float64Array {
   const values = decodeComponents(frame.bytes, frame.format);
   const col = cell % COLS;
   const row = Math.floor(cell / COLS);
-  const block = new Float64Array(CELL_W * CELL_H * 4);
+  const block = new Float64Array((CELL_W - 2 * SEAM) * (CELL_H - 2 * SEAM) * 4);
   let at = 0;
-  for (let y = row * CELL_H; y < (row + 1) * CELL_H; y += 1) {
-    for (let x = col * CELL_W; x < (col + 1) * CELL_W; x += 1) {
+  for (let y = row * CELL_H + SEAM; y < (row + 1) * CELL_H - SEAM; y += 1) {
+    for (let x = col * CELL_W + SEAM; x < (col + 1) * CELL_W - SEAM; x += 1) {
       const base = (y * frame.width + x) * 4;
       block[at] = values[base] ?? 0;
       block[at + 1] = values[base + 1] ?? 0;
@@ -326,11 +367,16 @@ describe("TimeGrid — one stream, many moments", () => {
    * same breath, because "nothing changed" would satisfy the first half perfectly.
    */
   it("changing the grid re-partitions the wall and reallocates NOTHING", async () => {
-    const square = await shoot({ grid: [COLS, ROWS] });
-    const wide = await shoot({ grid: [2, 8] });
+    const square = await shoot({ columns: COLS, rows: ROWS });
+    const wide = await shoot({ columns: 2, rows: 8 });
 
     expect(ringOf(wide.plan)).toEqual(ringOf(square.plan));
     expect(wide.plan.resources).toEqual(square.plan.resources);
+    /* And the ring is what the Span knob's description PROMISES it is (§V228). A value
+       assertion cannot see this: a full-resolution ring renders the same pixels and costs
+       four times the memory the parameter says it does. */
+    const ring = ringOf(square.plan) as { size: readonly number[]; frames: number };
+    expect({ size: [...ring.size], frames: ring.frames }).toEqual({ size: [...RING_SIZE], frames: SPAN });
 
     const signature = (plan: typeof square.plan) =>
       (plan.passes as unknown as ReadonlyArray<Record<string, unknown>>).map((pass) => ({
@@ -384,32 +430,201 @@ describe("TimeGrid — one stream, many moments", () => {
 
   /**
    * ═══════════════════════════════════════════════════════════════════════════════
-   * THE TEAR — sparse, per-cell, and reproducible from a seed.
+   * THE DAMAGE — per cell, brief, overlapping, and reproducible from a seed.
    * ═══════════════════════════════════════════════════════════════════════════════
    *
    * THE PER-CELL CLAIM, and the reason it is run in UNIFORM mode. With every cell holding
    * the same moment, the wall's sixteen blocks are byte-identical (asserted above), so the
-   * ONLY thing that can make them differ is the glitch reading its own cell index. A test
-   * run in Ordered mode would show cells differing whatever the glitch did.
+   * ONLY thing that can make them differ is a degradation reading its own cell index.
+   * A test run in Ordered mode would show cells differing whatever the glitch did.
+   *
+   * A PROPER SUBSET, not all of them, and that is the design rather than a weak assertion.
+   * Damage is dealt by short bursts on co-prime frame periods, so on any given frame some
+   * cells are firing and most are not — at 6x6 the owner should see one or two things
+   * happening, not thirty-six. "All cells break at Glitch 1" would be a different and
+   * worse instrument, and the sparsity claim below pins that from the other side.
    */
-  it("Glitch breaks cells INDIVIDUALLY: identical moments, no longer identical cells", async () => {
+  it("damage breaks cells INDIVIDUALLY: identical moments, no longer identical cells", async () => {
     const clean = (await shoot({ mode: 0, glitch: 0 })).frames[0] as RenderedFrame;
     const torn = (await shoot({ mode: 0, glitch: 1 })).frames[0] as RenderedFrame;
 
     const cleanBlocks = Array.from({ length: CELLS }, (_, cell) => cellBlock(clean, cell));
-    const tornBlocks = Array.from({ length: CELLS }, (_, cell) => cellBlock(torn, cell));
-
-    // The floor: without the glitch the sixteen are one block repeated.
+    // The floor: without damage the sixteen are one block repeated.
     expect(cleanBlocks.filter((block) => !identical(block, cleanBlocks[0] as Float64Array))).toHaveLength(0);
-    // With it, every one of them is its own — the index reached the shader.
-    const twins: string[] = [];
-    for (let a = 0; a < CELLS; a += 1) {
-      for (let b = a + 1; b < CELLS; b += 1) {
-        if (identical(tornBlocks[a] as Float64Array, tornBlocks[b] as Float64Array)) twins.push(`${a}=${b}`);
+
+    // With it, a NON-EMPTY PROPER SUBSET is broken — the cell index reached the shader.
+    const broken: number[] = [];
+    for (let cell = 0; cell < CELLS; cell += 1) {
+      if (!identical(cellBlock(torn, cell), cellBlock(clean, cell))) broken.push(cell);
+    }
+    expect(broken.length).toBeGreaterThan(0);
+    expect(broken.length).toBeLessThan(CELLS);
+
+    /*
+     * And WHICH cells break is dealt from the cell index and the seed, not from the
+     * picture: a different seed breaks a different set.
+     *
+     * This replaced a stricter assertion that was WRONG about the design — that every
+     * broken cell must differ from every other. Two cells taking a DROPOUT in the same
+     * frame are legitimately identical, because a dropout multiplies by the matte and in
+     * Uniform mode both cells hold the same picture. The gate said '0=9' and the gate was
+     * right; the claim was over-specified. Variety across cells is a property of the
+     * VOCABULARY over time, and the burst claim below is where it belongs.
+     */
+    const dealt = (frame: RenderedFrame, reference: RenderedFrame): string => {
+      let mask = "";
+      for (let cell = 0; cell < CELLS; cell += 1) {
+        mask += identical(cellBlock(frame, cell), cellBlock(reference, cell)) ? "." : "#";
+      }
+      return mask;
+    };
+    const elsewhere = (await shoot({ mode: 0, glitch: 1, seed: 23 })).frames[0] as RenderedFrame;
+    expect(dealt(elsewhere, clean)).not.toBe(dealt(torn, clean));
+  }, 240_000);
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════════
+   * THE ENVELOPE — and this is the claim pass 3 exists for.
+   * ═══════════════════════════════════════════════════════════════════════════════
+   *
+   * Pass 2 held one event per cell for a whole tick. It was sparse, deterministic, and the
+   * owner's verdict was that the glitch "feels like it has very few frames… we are a
+   * little bit too simplified" — one clean state sitting there for half a second reads as
+   * slow, not as broken. Pass 3 made every event a BURST: two or three frames long, six
+   * independent trains on co-prime periods, re-dealt every frame inside the burst.
+   *
+   * That is a property of TIME, so it is asserted across CONSECUTIVE FRAMES: over twelve
+   * of them the set of broken cells must take at least six distinct values. On the pass-2
+   * design the same measurement returns ONE — the set could not change until the tick did
+   * — so this assertion is exactly the difference between the two builds, and it is what a
+   * future "simplification" would have to trip over.
+   *
+   * The one-sided bounds are deliberate. WHICH cells break is the hash's business and
+   * pinning the exact set would be asserting the hash; that damage is brief, overlapping
+   * and never total is the instrument's business, and that is what is pinned.
+   */
+  it("damage comes in BURSTS: the broken set changes from frame to frame, and is never the whole wall", async () => {
+    const window = [140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151];
+    const clean = await shoot({ mode: 0, glitch: 0 }, window);
+    const torn = await shoot({ mode: 0, glitch: 1 }, window);
+    const cleanAt = new Map(clean.frames.map((frame) => [frame.frameIndex, frame]));
+
+    const signatures: string[] = [];
+    let mostBroken = 0;
+    let everBroken = 0;
+    for (const frame of torn.frames) {
+      const reference = cleanAt.get(frame.frameIndex);
+      if (reference === undefined) throw new Error(`no clean capture at ${frame.frameIndex}`);
+      let mask = "";
+      let count = 0;
+      for (let cell = 0; cell < CELLS; cell += 1) {
+        const same = identical(cellBlock(frame, cell), cellBlock(reference, cell));
+        mask += same ? "." : "#";
+        if (!same) count += 1;
+      }
+      signatures.push(mask);
+      mostBroken = Math.max(mostBroken, count);
+      everBroken += count;
+    }
+
+    // Non-vacuity: something actually broke over the window.
+    expect(everBroken).toBeGreaterThan(0);
+    // BRIEF: the pattern is not one state held across the window.
+    expect(new Set(signatures).size, `broken sets over 12 frames:\n${signatures.join("\n")}`).toBeGreaterThanOrEqual(6);
+    // NEVER TOTAL: the wall is damaged, not replaced.
+    expect(mostBroken).toBeLessThan(CELLS);
+  }, 300_000);
+
+  /**
+   * SNOW MUST NOT CLIP (§V833/§V838), and it must actually be THERE while that is checked.
+   *
+   * The owner photographed a block of full-intensity confetti and said it "oversteers,
+   * overflows". It did: the grain was mixed toward 1.0 and the transfer clamped, so a lit
+   * cell went to flat white and every bit of structure under it was gone. The repair was
+   * structural — the grain MODULATES luminance multiplicatively and its weight falls to
+   * zero in the highlights — so the honest gate is "nothing reaches the clamp at all",
+   * not "some number is small".
+   *
+   * ## THE FIRST VERSION OF THIS TEST COULD NOT FAIL, and that is why it reads like this
+   *
+   * It sampled ONE frame and counted clipped pixels. Red-verified by raising SNOW_DEPTH
+   * from 0.45 to 6.0 — a thirteen-fold overdrive that must clip — and it stayed GREEN,
+   * because damage is sparse and bursty and no snow happened to be firing on that frame.
+   * A clipping test that renders no snow is a test of an empty picture.
+   *
+   * So it sweeps a window, and it PROVES THE SUBJECT IS PRESENT before judging it: a
+   * snowing cell is identified exactly — its interior is monochrome (r == g == b
+   * everywhere) while the probe card underneath it never is (red is uv.x, green is uv.y)
+   * — and the claim is that snow occurred AND that nothing anywhere in the window sits on
+   * the clamp.
+   */
+  it("snow rides the picture and never reaches the clip, at full Glitch", async () => {
+    const window = [140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151];
+    const clean = await shoot({ mode: 0, glitch: 0 }, window);
+    const torn = await shoot({ mode: 0, glitch: 1 }, window);
+    const cleanAt = new Map(clean.frames.map((frame) => [frame.frameIndex, frame]));
+
+    const monochrome = (block: Float64Array): boolean => {
+      for (let at = 0; at < block.length; at += 4) {
+        if (block[at] !== block[at + 1] || block[at + 1] !== block[at + 2]) return false;
+      }
+      return true;
+    };
+
+    let snowing = 0;
+    for (const frame of torn.frames) {
+      const reference = cleanAt.get(frame.frameIndex);
+      if (reference === undefined) throw new Error(`no clean capture at ${frame.frameIndex}`);
+      for (let cell = 0; cell < CELLS; cell += 1) {
+        const block = cellBlock(frame, cell);
+        if (identical(block, cellBlock(reference, cell))) continue;
+        // Broken AND monochrome, over a card that is never monochrome: that is snow.
+        if (monochrome(block)) snowing += 1;
       }
     }
-    expect(twins, "cells the glitch treated identically").toEqual([]);
-  }, 180_000);
+
+    /*
+     * THE CEILING TEST. `>= 1.0` was the obvious predicate and it is the wrong one: the
+     * sink's own ceiling measures 0.99609 (255/256) rather than 1.0, so nothing ever
+     * satisfied it and the assertion could not fail — red-verified by overdriving
+     * SNOW_DEPTH 13x and watching it stay green.
+     *
+     * What IS exact and falsifiable: snow must not ADD pixels at the ceiling. A
+     * multiplicative, highlight-protected grain leaves the brightest pixels alone and
+     * scales everything else from a lower base, so the count of pixels sitting on the top
+     * cannot rise. An additive or over-driven one pushes whole regions onto the clamp and
+     * the count jumps. Integers, compared exactly.
+     */
+    const ceilingCount = (frames: readonly RenderedFrame[], ceiling: number): number => {
+      let n = 0;
+      for (const frame of frames) {
+        const values = decodeComponents(frame.bytes, frame.format);
+        for (let at = 0; at < values.length; at += 4) {
+          if ((values[at] ?? 0) >= ceiling || (values[at + 1] ?? 0) >= ceiling || (values[at + 2] ?? 0) >= ceiling) n += 1;
+        }
+      }
+      return n;
+    };
+    /* RGB ONLY. The first version walked every component including ALPHA, which is 1.0
+       everywhere — so the ceiling came out at 1.0, nothing could reach it, both counts were
+       zero and the assertion was vacuous. Measured, the sink's real RGB ceiling is 0.99609
+       (255/256) and a 13x overdrive pushes 4672 pixels to 9706. */
+    let ceiling = 0;
+    for (const frame of clean.frames) {
+      const values = decodeComponents(frame.bytes, frame.format);
+      for (let at = 0; at < values.length; at += 4) {
+        ceiling = Math.max(ceiling, values[at] ?? 0, values[at + 1] ?? 0, values[at + 2] ?? 0);
+      }
+    }
+
+    // NON-VACUITY, and it is the whole reason this test is shaped this way.
+    expect(snowing, "snowing cells found in the window").toBeGreaterThan(0);
+    expect(ceiling).toBeGreaterThan(0.9);
+    expect(
+      ceilingCount(torn.frames, ceiling),
+      "pixels pushed onto the sink's ceiling by the damage",
+    ).toBeLessThanOrEqual(ceilingCount(clean.frames, ceiling));
+  }, 300_000);
 
   /**
    * DETERMINISM (§V44's sibling promise). The tear is an integer hash of (cell, seed,
@@ -432,34 +647,6 @@ describe("TimeGrid — one stream, many moments", () => {
     const offEleven = (await shoot({ mode: 0, glitch: 0, seed: 11 })).frames[0] as RenderedFrame;
     expect(differingPixels(offSeven, offEleven)).toBe(0);
   }, 240_000);
-
-  /**
-   * SPARSITY, which is the whole design constraint on this knob: a tear on every cell every
-   * frame is static, and static says nothing about the music. So the deal has to be a
-   * MIDDLE — some cells at 0.35, all of them at 1.
-   *
-   * Counted on the probe card, whose cells are all equally bright, so the count is the
-   * hash's doing and not the picture's. The bound is one-sided on purpose: which cells come
-   * up is the hash's business, and pinning the exact set would be asserting the hash rather
-   * than the property.
-   */
-  it("Glitch is SPARSE in the middle of its range and total at the top", async () => {
-    const count = async (glitch: number): Promise<number> => {
-      const clean = (await shoot({ mode: 0, glitch: 0 })).frames[0] as RenderedFrame;
-      const torn = (await shoot({ mode: 0, glitch })).frames[0] as RenderedFrame;
-      const reference = cellBlock(clean, 0);
-      let broken = 0;
-      for (let cell = 0; cell < CELLS; cell += 1) {
-        if (!identical(cellBlock(torn, cell), reference)) broken += 1;
-      }
-      return broken;
-    };
-    expect(await count(0)).toBe(0);
-    const some = await count(0.35);
-    expect(some).toBeGreaterThan(0);
-    expect(some).toBeLessThan(CELLS);
-    expect(await count(1)).toBe(CELLS);
-  }, 300_000);
 
   /**
    * THE RECOLORIZER EVOLVES ON ITS OWN — the Ramp's phase is an expression on the

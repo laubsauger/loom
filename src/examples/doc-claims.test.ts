@@ -34,6 +34,12 @@ import { requireExample } from "./runner.ts";
 
 const DELIBERATE: ReadonlyArray<{ doc: string; type: string; reason: string }> = [
   {
+    doc: "E51-Chorus.md",
+    type: "audioIn",
+    reason:
+      "E24's ruling, applied: a shipped `audioIn` opens the capture device on load, and T1014's measurement on THIS graph shows an unselected texture-switch branch is not pruned — `cut1` and `cam1` both emit passes while sitting on index 1. So the microphone is an INSTRUCTION, not a node: the doc says where to wire it (`source1.in3`) and states that the device opens regardless of the value switch, which is why the example does not ship one.",
+  },
+  {
     doc: "E24-Audio-Reaction-Diffusion.md",
     type: "audioIn",
     reason:

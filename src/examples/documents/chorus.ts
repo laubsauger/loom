@@ -56,9 +56,34 @@ import { settings, node, edge, graph, document, drivenSlot, expressionSlot } fro
  * `low` mapped off its own floor. audioPattern's bands are calibrated against real music
  * (see `audio.ts`): `low` rests at 0.713 and peaks at 0.975, so the raw channel spans a
  * quarter of its nominal range and drives almost nothing. This affine puts the kick on the
- * body's whole radius.
+ * body's whole radius, taken off the slow envelope so it swells rather than snaps.
+ *
+ * ⚠ ARITHMETIC ONLY, NO `clamp()`, AND THAT IS NOT A STYLE CHOICE. `opReferenceNames` in
+ * `domain/graph/parameter-dependencies.ts` walks number / variable / opRef / unary /
+ * binary and has NO case for `call`, so an `op()` nested inside any whitelisted function
+ * is invisible to the dependency graph — no reference line on the canvas, nothing for
+ * liveness to count, nothing for the cycle gate to refuse. The first version of this file
+ * wrapped the affine in `clamp(...)`, and the audio node then read as orphaned on the
+ * canvas: the owner's report that "the audioPattern is not wired into anything at all"
+ * was that defect, not a missing wire. Reported; not fixed here (not this track's path).
+ *
+ * Unclamped is honest anyway: `low` bottoms out near 0.69, which lands the radius at
+ * 0.082 — a slightly smaller body, not a broken one.
  */
-const BODY_ON_THE_KICK = "0.085 + 0.075 * clamp((op('beat1').chan.low - 0.7) / 0.28, 0, 1)";
+const BODY_ON_THE_KICK = "0.085 + 0.26 * (op('env1').chan.low - 0.7)";
+
+/**
+ * The hats, on the FAST envelope, driving how hard the whole source is lit — and through
+ * that, how much of the wall breaks.
+ *
+ * This is the second audio gesture and it reaches the degradations, which is the thing the
+ * published knobs cannot do (§T1017). The vocabulary shader arms a cell in proportion to
+ * that cell's OWN BRIGHTNESS, so lifting the source on a transient arms more cells: the
+ * wall tears, snows and drops out ON THE HATS without a single channel crossing the
+ * component boundary. `high` rests at 0.381 and peaks at 0.574, so this rides 1.00 to
+ * about 1.50 and sits at exact unity — a true identity — when nothing is playing.
+ */
+const LIT_ON_THE_HATS = "1 + 2.6 * (op('snap1').chan.high - 0.381)";
 
 export const chorusDocument = document(
   "e51-chorus",
@@ -112,15 +137,18 @@ export const chorusDocument = document(
           center: [0.5, 0.5],
           radius: [0.11, 0.11],
           softness: 0.22,
-          fillcolor: [1, 0.9, 0.66, 1],
+          // NEUTRAL, and deliberately: Blend keeps 18% of the untinted wall, so a warm
+          // body drags the graded result toward the oranges the owner ruled out. Let the
+          // palette decide the hue and let the source decide only the shape.
+          fillcolor: [0.94, 0.95, 1, 1],
           bgcolor: [0, 0, 0, 0],
           aspectcorrect: true,
         },
         {
           label: "orb1",
           parameters: {
-            "center.x": drivenSlot("pathx1", 0.5),
-            "center.y": drivenSlot("pathy1", 0.5),
+            "center.x": drivenSlot("swoopa1", 0.5),
+            "center.y": drivenSlot("swoopb1", 0.5),
             /*
              * THE ONE AUDIO MAPPING, and it is on the SOURCE rather than on a knob.
              *
@@ -143,9 +171,36 @@ export const chorusDocument = document(
           },
         },
       ),
-      /* The deterministic fixture, not a live input: a shipped example must not open a
-         device, and every gate has to see the same performance twice (§V44, §V45). */
-      node("beat", "audioPattern", [-1980, 1340], { bpm: 124, amount: 1, beatsPerBar: 4 }, { label: "beat1" }),
+      /*
+       * ── THE AUDIO CHAIN, AND IT IS WIRED ────────────────────────────────────────────
+       *
+       * E24's shape, and it is the right one for the reason E24 gives: two audio sources
+       * landing on one value port MERGE, and both publish the same channel names, so the
+       * later edge would win and the other source would vanish with the graph still
+       * looking right. `valueSwitch` is exclusive by construction — the unselected branch
+       * is not read into the output at all — which also makes it the only safe way to
+       * offer a live source in a shipped file.
+       *
+       * INDEX 0 IS THE PATTERN and stays that way: §V44/§V45 are not negotiable, a
+       * shipped example must not open a device, and every gate has to see the same
+       * performance twice. Index 1 is the drop target — put a track on `track1`, flip the
+       * index, and everything downstream follows because everything downstream reads
+       * `source1`.
+       *
+       * `audioIn` (the microphone) is DELIBERATELY ABSENT: a shipped one opens the device
+       * on load. The `.md` says how to add it. That is E24's ruling, unchanged.
+       */
+      node("music", "audioPattern", [-2540, 1460], { bpm: 124, amount: 1, beatsPerBar: 4 }, { label: "music1" }),
+      node("track", "audioFileIn", [-2540, 1700], { monitor: true }, { label: "track1" }),
+      node("source", "valueSwitch", [-2260, 1580], { index: 0 }, { label: "source1" }),
+      /*
+       * TWO ENVELOPES, because the piece has two timescales and one Lag cannot be both.
+       * `env1` is slow — it turns the kick into a swell the BODY rides. `snap1` is fast —
+       * it keeps the transient the hats need, because what it drives is an EVENT rate
+       * rather than a shape (see `flare1`).
+       */
+      node("env", "valueLag", [-1980, 1460], { lag: 0.11 }, { label: "env1" }),
+      node("snap", "valueLag", [-1980, 1700], { lag: 0.035 }, { label: "snap1" }),
       node(
         "mate",
         "circle",
@@ -155,7 +210,7 @@ export const chorusDocument = document(
           center: [0.5, 0.5],
           radius: [0.09, 0.09],
           softness: 0.18,
-          fillcolor: [0.42, 0.78, 1, 1],
+          fillcolor: [0.62, 0.72, 0.86, 1],
           bgcolor: [0, 0, 0, 0],
           aspectcorrect: true,
         },
@@ -171,10 +226,34 @@ export const chorusDocument = document(
          second, so a path that crosses the frame in under a second would put the same
          gesture in every cell. 0.19 Hz and 0.13 Hz take about five seconds to repeat the
          shape, which is five ring-lengths of distinct material. */
-      node("pathx", "lfo", [-1980, 380], { shape: "sine", frequency: 0.19, amplitude: 0.32, offset: 0.5, phase: 0 }, { label: "pathx1" }),
-      node("pathy", "lfo", [-1980, 620], { shape: "sine", frequency: 0.13, amplitude: 0.28, offset: 0.5, phase: 0.25 }, { label: "pathy1" }),
-      node("matex", "lfo", [-1980, 860], { shape: "sine", frequency: 0.11, amplitude: 0.34, offset: 0.5, phase: 0.6 }, { label: "matex1" }),
-      node("matey", "lfo", [-1980, 1100], { shape: "sine", frequency: 0.29, amplitude: 0.24, offset: 0.5, phase: 0.1 }, { label: "matey1" }),
+      /*
+       * ── REST, THEN STRIKE ───────────────────────────────────────────────────────────
+       *
+       * These were four sine LFOs and the wall wobbled continuously. The owner's verdict:
+       * "I don't love the permanent wobble either. We can make some more explosive
+       * movement between these things occasionally, rather than constant wobbling."
+       *
+       * SAMPLE-AND-HOLD on the LEAD body: it picks a new position and HOLDS it, so the orb
+       * is still for several seconds and then goes somewhere. The Lag turns the jump into
+       * an eased swoop rather than a teleport, which is what makes it read as a MOVE.
+       *
+       * The SECOND body keeps a slow sine, and dropping it would have been the mistake
+       * this file nearly made: a wall whose source is perfectly still shows the SAME frame
+       * in every cell, because nine different moments of a still picture are one picture.
+       * So the composition is a calm continuous element plus a striking one — which is
+       * what "explosive movement between these things" actually needs to be visible
+       * against.
+       *
+       * And on this instrument a strike is worth more than it is anywhere else: every cell
+       * holds a different moment, so ONE fast move arrives in each cell at a different
+       * time and the wall shows the whole gesture at once, spread across the grid.
+       */
+      node("pathx", "lfo", [-2260, 380], { shape: "noise", frequency: 0.16, amplitude: 0.33, offset: 0.5, phase: 0 }, { label: "pathx1" }),
+      node("pathy", "lfo", [-2260, 620], { shape: "noise", frequency: 0.125, amplitude: 0.28, offset: 0.5, phase: 0.25 }, { label: "pathy1" }),
+      node("matex", "lfo", [-2260, 860], { shape: "sine", frequency: 0.043, amplitude: 0.34, offset: 0.5, phase: 0.6 }, { label: "matex1" }),
+      node("matey", "lfo", [-2260, 1100], { shape: "sine", frequency: 0.029, amplitude: 0.24, offset: 0.5, phase: 0.1 }, { label: "matey1" }),
+      node("swoopa", "valueLag", [-1980, 380], { lag: 0.3 }, { label: "swoopa1" }),
+      node("swoopb", "valueLag", [-1980, 620], { lag: 0.3 }, { label: "swoopb1" }),
       node("stand", "add", [-1420, -20], { opacity: 1 }, { label: "stand1" }),
 
       // ── the two live inputs, in the plan and compiled (§V363) ───────────────
@@ -184,6 +263,42 @@ export const chorusDocument = document(
          it to id order would let a spelling decide what plays on open. */
       node("pick", "switch", [-1140, 160], { index: 0 }, { label: "pick1" }),
 
+      /*
+       * THE FLARE — the hats, made visible, and the wall's damage gate in one node.
+       * At rest it is exactly unity, so the picture is unchanged when nothing plays.
+       */
+      node("flare", "level", [-860, 160], {
+        blacklevel: 0,
+        whitelevel: 1,
+        gamma1: 1,
+        contrast: 1,
+        invert: 0,
+        opacity: 1,
+      }, { label: "flare1", parameters: { brightness: expressionSlot(LIT_ON_THE_HATS, 1) } }),
+
+      /*
+       * ── THE MATTE, ON A SWITCH (§V363/§V411, E47's shape) ───────────────────────────
+       *
+       * TimeGrid's second input is a MATTE TEXTURE, not "the matte node" — which is what
+       * lets a luma key, a real person matte, a depth cut or a hand-drawn shape all feed
+       * the same component. Index 0 is the understudy: a luma threshold, which is the
+       * honest answer for a bright subject on a dark bed and is DETERMINISTIC, so every
+       * gate and the gallery card see the dropout event actually happen.
+       *
+       * Index 1 is `cut1`, MODNet. Per §T715 the document loads and renders without the
+       * model — the node publishes ZERO everywhere, "nobody is here", so the dropout
+       * simply blanks its cell rather than failing. Flip to 1 with the webcam on and the
+       * wall drops the room away from behind whoever is in front of it.
+       */
+      node("key", "threshold", [-580, 420], {
+        threshold: 0.24,
+        softness: 0.3,
+        channel: "luminance",
+        compare: "greater",
+      }, { label: "key1" }),
+      node("cut", "matte", [-580, 660], { model: "modnet-photographic-quantized" }, { label: "cut1" }),
+      node("mpick", "switch", [-300, 540], { index: 0 }, { label: "mpick1" }),
+
       // ── the wall ────────────────────────────────────────────────────────────
       /* The published page, turned from the outside. Grid is a vec2 because a component
          publishes onto whole parameters and Tile's repeat is one — its two fields are
@@ -192,9 +307,14 @@ export const chorusDocument = document(
       node(
         "wall",
         "component:timeGrid@1",
-        [-860, 60],
+        [-20, 160],
         {
-          grid: [3, 3],
+          columns: 4,
+          rows: 5,
+          // Occasional, not constant: the wall holds a grid for 16-24 s and then re-cuts
+          // to something as far off as 8 x 12 before coming back.
+          churn: 3.5,
+          span: 90,
           spread: 1,
           mode: 1,
           // 2 Hz at 124 bpm is very nearly one tick per beat, so the tear re-deals with
@@ -202,15 +322,17 @@ export const chorusDocument = document(
           rate: 2,
           seed: 7,
           glitch: 0.4,
+          chroma: 0.55,
+          crush: 1.5,
           colour: [1, 0.87, 0.74, 1],
-          blend: 0.7,
+          blend: 0.82,
         },
         {
           label: "wall1",
         },
       ),
 
-      node("out", "output", [-560, 60], {}, { label: "out1" }),
+      node("out", "output", [280, 160], {}, { label: "out1" }),
     ],
     [
       edge("e-bed-stand", ["bed", "out"], ["stand", "in1"], 0),
@@ -219,8 +341,23 @@ export const chorusDocument = document(
       edge("e-stand-pick", ["stand", "out"], ["pick", "inputs"], 0),
       edge("e-cam-pick", ["cam", "out"], ["pick", "inputs"], 1),
       edge("e-clip-pick", ["clip", "out"], ["pick", "inputs"], 2),
-      edge("e-pick-wall", ["pick", "out"], ["wall", "input"]),
+      edge("e-pick-flare", ["pick", "out"], ["flare", "input"]),
+      // ONE lit source, THREE consumers (§V6): the wall, the luma key and the ML matte.
+      edge("e-flare-wall", ["flare", "out"], ["wall", "in1"]),
+      edge("e-flare-key", ["flare", "out"], ["key", "input"]),
+      edge("e-flare-cut", ["flare", "out"], ["cut", "input"]),
+      edge("e-key-mpick", ["key", "out"], ["mpick", "inputs"], 0),
+      edge("e-cut-mpick", ["cut", "out"], ["mpick", "inputs"], 1),
+      edge("e-mpick-wall", ["mpick", "out"], ["wall", "in2"]),
       edge("e-wall-out", ["wall", "out"], ["out", "input"]),
+      // The audio chain, with real wires all the way to the envelopes.
+      edge("e-music-source", ["music", "out"], ["source", "in1"]),
+      edge("e-track-source", ["track", "out"], ["source", "in2"]),
+      edge("e-source-env", ["source", "out"], ["env", "in"]),
+      edge("e-source-snap", ["source", "out"], ["snap", "in"]),
+      // The bodies: hold, then swoop.
+      edge("e-pathx-swoopa", ["pathx", "out"], ["swoopa", "in"]),
+      edge("e-pathy-swoopb", ["pathy", "out"], ["swoopb", "in"]),
     ],
   ),
 );
