@@ -1,3 +1,4 @@
+import { INSTANCE_SHAPES_WGSL } from "./scene-render.wgsl.ts";
 /**
  * Scene-payload PREVIEWS (T462, §V85): a material, a light or a camera is a THING whose
  * whole job is a look, and until this file each one showed nothing. Every preview here
@@ -304,32 +305,7 @@ struct VertexOut {
   @location(2) flag: f32,   // 0 = box, 1 = background, 2 = ground
 };
 
-fn quadCorner(v: u32) -> vec2f {
-  var corners = array<vec2f, 6>(
-    vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0, 1.0),
-    vec2f(-1.0, 1.0), vec2f(1.0, -1.0), vec2f(1.0, 1.0),
-  );
-  return corners[v];
-}
-
-fn boxVertex(v: u32) -> vec3f {
-  let face = v / 6u;
-  let corner = quadCorner(v % 6u);
-  let flip = f32(face % 2u) * 2.0 - 1.0;
-  let axis = face / 2u;
-  if (axis == 0u) { return vec3f(flip, corner.x * flip, corner.y); }
-  if (axis == 1u) { return vec3f(corner.x, flip, corner.y * flip); }
-  return vec3f(corner.x * flip, corner.y, flip);
-}
-
-fn boxNormal(v: u32) -> vec3f {
-  let face = v / 6u;
-  let flip = f32(face % 2u) * 2.0 - 1.0;
-  let axis = face / 2u;
-  if (axis == 0u) { return vec3f(flip, 0.0, 0.0); }
-  if (axis == 1u) { return vec3f(0.0, flip, 0.0); }
-  return vec3f(0.0, 0.0, flip);
-}
+${INSTANCE_SHAPES_WGSL}
 
 @vertex
 fn vs(@builtin(vertex_index) vertex: u32) -> VertexOut {

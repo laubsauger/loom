@@ -1,4 +1,5 @@
 import type { CompiledNodeDescription, NodeDefinition } from "../../domain/types/node-definition.ts";
+import { instanceShapeIndex, parseInstanceShape } from "./render-instances.ts";
 import type { DispatchPassDescriptor, DrawPassDescriptor } from "../../runtime/backend/plan.ts";
 import type { CameraPayload, GeometryPayload, LightPayload, MaterialPayload, ProjectorPayload, ScenePairRef, ScenePayload } from "../../domain/types/scene.ts";
 import { resolveGroupPredicate } from "./points.ts";
@@ -807,7 +808,7 @@ export const geometryNode: NodeDefinition = {
       ...(perPoint
         ? {
             instance: {
-              shape: shapeParameter === "quad" ? "quad" : shapeParameter === "octahedron" ? "octahedron" : "box",
+              shape: parseInstanceShape(shapeParameter),
               scale: readNumber(parameters, "scale", 0.05),
               ...(mode === "beam" ? { taper: Math.min(1, Math.max(0, readNumber(parameters, "taper", 1))) } : {}),
               /* T917: the soft profile rides the instance vec4's spare w — zero new plumbing. */
@@ -1303,7 +1304,7 @@ export const renderNode: NodeDefinition = {
             ],
             uniforms: {
               lightViewProjection: Array.from(options.matrix ?? []),
-              instance: [instance.scale, instance.shape === "quad" ? 0 : instance.shape === "octahedron" ? 2 : 1, 0, 0],
+              instance: [instance.scale, instanceShapeIndex(instance.shape), 0, 0],
               ...options.extraUniforms,
             },
             uniformBinding: "params",
@@ -1778,7 +1779,7 @@ export const renderNode: NodeDefinition = {
             material: [material.metallic, material.roughness, 0, 0],
             instance: [
               instance.scale,
-              billboard || beam ? 0 : instance.shape === "quad" ? 0 : instance.shape === "octahedron" ? 2 : 1,
+              billboard || beam ? 0 : instanceShapeIndex(instance.shape),
               /* T680: z is the beam's taper. Beam mode always sets it; every other mode
                  leaves this slot at the 0 it has always held, so their uniform bytes are
                  unchanged and no golden reading moves (§V309). */
@@ -2123,7 +2124,7 @@ export const renderNode: NodeDefinition = {
             textures: glassTextures,
             uniforms: {
               ...glassUniforms,
-              instance: [instance.scale, instance.shape === "quad" ? 0 : instance.shape === "octahedron" ? 2 : 1, 0, 0],
+              instance: [instance.scale, instanceShapeIndex(instance.shape), 0, 0],
             },
             uniformBinding: "params",
             clear: false,

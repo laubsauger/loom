@@ -1,4 +1,5 @@
 import type { NodeId, PortId } from "../domain/types/ids.ts";
+import { instanceShapeIndex } from "../nodes/definitions/render-instances.ts";
 import { bypassPassthroughPorts } from "../domain/graph/bypass.ts";
 import { compareEdgeOrder } from "../domain/graph/edge-order.ts";
 import type { ScenePayload } from "../domain/types/scene.ts";
@@ -1779,7 +1780,7 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
               ...geometryUniforms,
               instance: [
                 instance.scale,
-                instance.shape === "quad" ? 0 : instance.shape === "octahedron" ? 2 : 1,
+                instanceShapeIndex(instance.shape),
                 0,
                 0,
               ],

@@ -542,7 +542,14 @@ ${options.model === "unlit" ? "" : `  let roughness = ${roughnessExpr};\n  _ = r
  * analytic normals), extracted verbatim so the lit generator and the glass generator
  * share one source (§V349). Byte-identical to the pre-extraction inline text.
  */
-const INSTANCE_SHAPES_WGSL = `fn quadCorner(v: u32) -> vec2f {
+/**
+ * T1063 — exported: interpolated everywhere a shader draws instance shapes (this
+ * file's lit/glass/shadow variants, `render-instances`, the scene-preview stock
+ * box), because the copies had already diverged once (a local renamed to `sign`,
+ * shadowing the WGSL builtin) and a fourth shape added to one copy would render
+ * as a box in every other.
+ */
+export const INSTANCE_SHAPES_WGSL = `fn quadCorner(v: u32) -> vec2f {
   var corners = array<vec2f, 6>(
     vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0, 1.0),
     vec2f(-1.0, 1.0), vec2f(1.0, -1.0), vec2f(1.0, 1.0),
@@ -1175,46 +1182,7 @@ ${linearFields}};
 @group(0) @binding(0) var<uniform> params: ShadowParams;
 @group(0) @binding(1) var<storage, read> positions: array<vec3f>;
 ${group.bindings}${scaleDeclaration}${orientDeclaration}
-fn quadCorner(v: u32) -> vec2f {
-  var corners = array<vec2f, 6>(
-    vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0, 1.0),
-    vec2f(-1.0, 1.0), vec2f(1.0, -1.0), vec2f(1.0, 1.0),
-  );
-  return corners[v];
-}
-
-fn shapeVertexCount(shape: u32) -> u32 {
-  if (shape == 0u) { return 6u; }
-  if (shape == 2u) { return 24u; }
-  return 36u;
-}
-
-fn boxVertex(v: u32) -> vec3f {
-  let face = v / 6u;
-  let corner = quadCorner(v % 6u);
-  let flip = f32(face % 2u) * 2.0 - 1.0;
-  let axis = face / 2u;
-  if (axis == 0u) { return vec3f(flip, corner.x * flip, corner.y); }
-  if (axis == 1u) { return vec3f(corner.x, flip, corner.y * flip); }
-  return vec3f(corner.x * flip, corner.y, flip);
-}
-
-fn octaVertex(v: u32) -> vec3f {
-  let face = v / 3u;
-  let sx = f32(face & 1u) * 2.0 - 1.0;
-  let sy = f32((face >> 1u) & 1u) * 2.0 - 1.0;
-  let sz = f32((face >> 2u) & 1u) * 2.0 - 1.0;
-  let corner = v % 3u;
-  if (corner == 0u) { return vec3f(sx, 0.0, 0.0); }
-  if (corner == 1u) { return vec3f(0.0, sy, 0.0); }
-  return vec3f(0.0, 0.0, sz);
-}
-
-fn shapeVertex(shape: u32, v: u32) -> vec3f {
-  if (shape == 0u) { return vec3f(quadCorner(v), 0.0); }
-  if (shape == 2u) { return octaVertex(v); }
-  return boxVertex(v);
-}
+${INSTANCE_SHAPES_WGSL}
 
 struct VertexOut {
   @builtin(position) position: vec4f,

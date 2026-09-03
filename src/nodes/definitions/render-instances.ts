@@ -28,7 +28,31 @@ import { countedDrawSupport, pointPairId, resolveColorMap, resolveGroupPredicate
 
 export const INSTANCE_SHAPES = ["quad", "box", "octahedron"] as const;
 
-const SHAPE_INDEX: Record<string, number> = { quad: 0, box: 1, octahedron: 2 };
+export type InstanceShape = (typeof INSTANCE_SHAPES)[number];
+
+/**
+ * T1063 — THE ONE shape→index map, derived from the tuple's own order (the order the
+ * WGSL chunk's branches encode). This mapping used to be written FIVE times as ternary
+ * chains falling through to box (three in scene.ts, one in compile.ts, plus the
+ * parse-side chain), against this registry sitting module-private — so a fourth shape
+ * would have rendered as a box, silently, in the render, the shadow AND the preview.
+ * Every site now asks here; adding a shape is one tuple entry plus the chunk's branch.
+ */
+const SHAPE_INDEX: Record<string, number> = Object.fromEntries(
+  INSTANCE_SHAPES.map((shape, index) => [shape, index]),
+);
+
+/** The chunk's integer for a shape. Unknown falls to box — the ONE place that rule lives. */
+export function instanceShapeIndex(shape: unknown): number {
+  return (typeof shape === "string" ? SHAPE_INDEX[shape] : undefined) ?? SHAPE_INDEX["box"]!;
+}
+
+/** The stored value, normalized. Unknown falls to "box" — same rule, name side. */
+export function parseInstanceShape(value: unknown): InstanceShape {
+  return typeof value === "string" && (INSTANCE_SHAPES as readonly string[]).includes(value)
+    ? (value as InstanceShape)
+    : "box";
+}
 
 const DEGREES_TO_RADIANS = Math.PI / 180;
 

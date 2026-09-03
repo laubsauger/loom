@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { INSTANCE_SHAPES, instanceShapeIndex, parseInstanceShape } from "./render-instances.ts";
+import { INSTANCE_SHAPES_WGSL } from "../shaders/scene-render.wgsl.ts";
 
 import { viewProjection } from "../../domain/geometry/camera.ts";
 import { INSTANCE_VERTEX_COUNT } from "../shaders/render-instances.wgsl.ts";
@@ -175,5 +177,27 @@ describe("renderInstances — colour in map mode (T369)", () => {
     expect(pass.shader).toContain("  @location(0) normal: vec3f,\n};");
     expect(pass.shader).toContain("params.color.rgb * shade");
     expect(Object.keys(pass.uniforms).sort()).toEqual(["color", "rotate", "scale", "shape", "viewProjection"]);
+  });
+});
+
+describe("T1063 — one shape registry, and the chunk that must agree with it", () => {
+  it("maps by the tuple's own order and falls to box exactly once, on both axes", () => {
+    expect(INSTANCE_SHAPES.map((shape) => instanceShapeIndex(shape))).toEqual([0, 1, 2]);
+    // The single fallthrough, stated: an unknown shape is a box by NAME and by INDEX,
+    // from one place — the rule five ternary chains used to each re-decide.
+    expect(instanceShapeIndex("dodecahedron")).toBe(instanceShapeIndex("box"));
+    expect(parseInstanceShape("octahedron")).toBe("octahedron");
+    expect(parseInstanceShape("dodecahedron")).toBe("box");
+    expect(parseInstanceShape(7)).toBe("box");
+  });
+
+  it("the WGSL chunk knows every registered shape — a new tuple entry fails here until the chunk grows its branch", () => {
+    /* A text count, and §V463's limit applies: this proves the chunk HAS a branch per
+       non-default shape, not that the branch is right — the geometry itself is pinned
+       on Dawn. What this catches is the exact shipped hazard: a fourth shape added to
+       the tuple that every shader silently renders as a box. */
+    const branches = (INSTANCE_SHAPES_WGSL.match(/if \(shape == \d+u\)/g) ?? []).length / 3;
+    // Three shape-switching fns (count/vertex/normal), each with N-1 branches + default.
+    expect(branches).toBe(INSTANCE_SHAPES.length - 1);
   });
 });

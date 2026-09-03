@@ -1,3 +1,4 @@
+import { INSTANCE_SHAPES_WGSL } from "./scene-render.wgsl.ts";
 /**
  * The instance render shader (T299): a procedural primitive per point, vertex-pulled
  * from the SoA position buffer — no vertex buffers, no mesh assets, no new pass kind.
@@ -89,71 +90,7 @@ struct VertexOut {
   @location(0) normal: vec3f,
 ${colorMap ? "  @location(1) color: vec4f,\n" : ""}};
 
-/* Function-local var: WGSL only permits runtime indexing into var-stored arrays. */
-fn quadCorner(v: u32) -> vec2f {
-  var corners = array<vec2f, 6>(
-    vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0, 1.0),
-    vec2f(-1.0, 1.0), vec2f(1.0, -1.0), vec2f(1.0, 1.0),
-  );
-  return corners[v];
-}
-
-fn shapeVertexCount(shape: u32) -> u32 {
-  if (shape == 0u) { return 6u; }
-  if (shape == 2u) { return 24u; }
-  return 36u;
-}
-
-/* Unit box: face = v/6 picks an axis and a sign, the quad table fills the face. */
-fn boxVertex(v: u32) -> vec3f {
-  let face = v / 6u;
-  let corner = quadCorner(v % 6u);
-  let sign = f32(face % 2u) * 2.0 - 1.0;
-  let axis = face / 2u;
-  if (axis == 0u) { return vec3f(sign, corner.x * sign, corner.y); }
-  if (axis == 1u) { return vec3f(corner.x, sign, corner.y * sign); }
-  return vec3f(corner.x * sign, corner.y, sign);
-}
-
-fn boxNormal(v: u32) -> vec3f {
-  let face = v / 6u;
-  let sign = f32(face % 2u) * 2.0 - 1.0;
-  let axis = face / 2u;
-  if (axis == 0u) { return vec3f(sign, 0.0, 0.0); }
-  if (axis == 1u) { return vec3f(0.0, sign, 0.0); }
-  return vec3f(0.0, 0.0, sign);
-}
-
-/* Octahedron: face = v/3 picks an octant by its sign bits; the axis apexes wind so
-   outward faces agree with the face normal normalize(signs). */
-fn octaVertex(v: u32) -> vec3f {
-  let face = v / 3u;
-  let sx = f32(face & 1u) * 2.0 - 1.0;
-  let sy = f32((face >> 1u) & 1u) * 2.0 - 1.0;
-  let sz = f32((face >> 2u) & 1u) * 2.0 - 1.0;
-  let corner = v % 3u;
-  if (corner == 0u) { return vec3f(sx, 0.0, 0.0); }
-  if (corner == 1u) { return vec3f(0.0, sy, 0.0); }
-  return vec3f(0.0, 0.0, sz);
-}
-
-fn shapeVertex(shape: u32, v: u32) -> vec3f {
-  if (shape == 0u) { return vec3f(quadCorner(v), 0.0); }
-  if (shape == 2u) { return octaVertex(v); }
-  return boxVertex(v);
-}
-
-fn shapeNormal(shape: u32, v: u32) -> vec3f {
-  if (shape == 0u) { return vec3f(0.0, 0.0, 1.0); }
-  if (shape == 2u) {
-    let face = v / 3u;
-    let sx = f32(face & 1u) * 2.0 - 1.0;
-    let sy = f32((face >> 1u) & 1u) * 2.0 - 1.0;
-    let sz = f32((face >> 2u) & 1u) * 2.0 - 1.0;
-    return normalize(vec3f(sx, sy, sz));
-  }
-  return boxNormal(v);
-}
+${INSTANCE_SHAPES_WGSL}
 
 ${groupFunction}fn rotationMatrix(r: vec3f) -> mat3x3f {
   let cx = cos(r.x); let sx = sin(r.x);
