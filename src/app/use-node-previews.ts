@@ -13,9 +13,16 @@ import {
   EMPTY_PREVIEW_PROGRAM,
   OFF_SURFACE_TILE_RECT,
   createPreviewSystem,
+  rectsIntersect,
   slotScreenRect,
+  subtractRects,
 } from "@runtime/previews/index.ts";
-import type { PreviewRequest, PreviewSystem, ViewportTransform } from "@runtime/previews/index.ts";
+import type {
+  PreviewRect,
+  PreviewRequest,
+  PreviewSystem,
+  ViewportTransform,
+} from "@runtime/previews/index.ts";
 import type { LoomBackend } from "@runtime/backend/index.ts";
 import type { NodeRegistryView } from "@nodes/registry/registry.ts";
 // T532: ONE list of previewable port kinds, shared with the slot, the compiler and the
@@ -60,6 +67,21 @@ const PREVIEW_TILE_CAPACITY = 48;
  * inside seventeen ticks — while leaving five sixths of the pool to what is on screen.
  */
 const FIRST_PAINT_RESERVE = 8;
+
+/**
+ * One node's rendered box in graph space, as React Flow has it (T1102).
+ *
+ * The WHOLE node, not its preview slot: what occludes a tile behind it is the node's
+ * chrome — header, ports, body — and clipping only against other people's PREVIEWS would
+ * leave a tile painted over the header of the node in front of it, which is half the bug.
+ */
+export interface NodeStackBox {
+  readonly nodeId: NodeId;
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
 
 export interface NodePreviewInputs {
   /**
@@ -107,6 +129,21 @@ export interface NodePreviewInputs {
    * the entire gesture — exactly the window a preview must keep up in.
    */
   readonly getNodePosition: (nodeId: NodeId) => { readonly x: number; readonly y: number } | undefined;
+  /**
+   * T1102 — every node's whole box, IN THE ORDER THE DOM PAINTS THEM, back to front.
+   *
+   * The order is the entire contribution. Node chrome is DOM and stacks by React Flow's
+   * z-index; tiles all come from one canvas at one depth (§V106), so without this the two
+   * orderings are independent and a node's preview covers the node drawn in front of it.
+   * The caller is React Flow itself, which is the only honest authority for both halves —
+   * asking the document for a stacking order would be a SECOND answer, and the two would
+   * disagree the moment a selection elevates a node (which React Flow does, and the
+   * document knows nothing about).
+   *
+   * Boxes are graph-space and LIVE for the same reason `getNodePosition` is (§V112): a
+   * drag is exactly when overlaps happen and exactly when the document is stale.
+   */
+  readonly getNodeBoxes: () => ReadonlyArray<NodeStackBox>;
   /**
    * Which DOCUMENT is open (T519, B106).
    *
@@ -365,6 +402,40 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
       const viewport = current.getViewport();
       const devicePixelRatio = typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
 
+      /*
+       * T1102 — the DOM's stacking order, in screen rects, once per tick.
+       *
+       * `getNodeBoxes()` is back-to-front, so everything AFTER a node in this array paints
+       * in front of it. `occluderRect` mirrors it in surface CSS px so the per-request
+       * clip below is a comparison and not a projection. Measured cost is one pass over
+       * the nodes; the per-request loop that follows only walks the suffix, and only for
+       * nodes that actually overlap.
+       */
+      const stack = current.getNodeBoxes();
+      const stackDepth = new Map<string, number>();
+      const occluderRect: PreviewRect[] = [];
+      for (let index = 0; index < stack.length; index += 1) {
+        const box = stack[index];
+        if (box === undefined) continue;
+        stackDepth.set(box.nodeId, index);
+        occluderRect.push(slotScreenRect(box, viewport));
+      }
+      /**
+       * Where this node's tile is still allowed to paint — `rect` minus every node drawn
+       * in front of it. `undefined` means nothing is, which is the request an ordinary
+       * laid-out patch makes for every one of its nodes.
+       */
+      const clipFor = (nodeId: NodeId, tileRect: PreviewRect): ReadonlyArray<PreviewRect> | undefined => {
+        const depth = stackDepth.get(nodeId);
+        if (depth === undefined) return undefined;
+        const occluders: PreviewRect[] = [];
+        for (let index = depth + 1; index < occluderRect.length; index += 1) {
+          const candidate = occluderRect[index];
+          if (candidate !== undefined && rectsIntersect(tileRect, candidate)) occluders.push(candidate);
+        }
+        return occluders.length === 0 ? undefined : subtractRects(tileRect, occluders);
+      };
+
       const candidates = previewCandidates(current.graph, current.registry);
       // Nodes the compiler already keeps on its own, so they must not be asked for as
       // preview sinks (see `previewCandidates`).
@@ -548,6 +619,8 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
           width: fitted.width,
           height: fitted.height,
         };
+        const screenRect = slotScreenRect(box, viewport);
+        const clip = clipFor(nodeId, screenRect);
         requests.push({
           ref: { nodeId, portId: output.portId },
           // T375 (§V57): `space` travels with the texture. `output` is the compiler's
@@ -559,7 +632,9 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
             format: output.format,
             space: output.space,
           },
-          rect: slotScreenRect(box, viewport),
+          rect: screenRect,
+          // T1102: where the DOM lets this tile paint. Absent when nothing is in front.
+          ...(clip === undefined ? {} : { clip }),
           // §V142 — where the tile is DRAWN carries the camera; how big the tile is
           // ALLOCATED must not. This is the fitted region measured inside the node's own
           // box, so it is the node's preview area at any zoom (§V117) — and, because it

@@ -222,7 +222,14 @@ export function createPreviewSystem(options: PreviewSystemOptions): PreviewSyste
       }
       // Every active tile composites every frame, due or not: a pan moves the destination
       // rect without changing a single pixel inside the tile.
-      composite.push({ ref: entry.ref, resourceId: tile.resourceId, dest: entry.request.rect });
+      // T1102: the request's clip travels with it. Computed by the editor, which is the
+      // only side that knows the DOM's stacking order; nothing here re-decides it.
+      composite.push({
+        ref: entry.ref,
+        resourceId: tile.resourceId,
+        dest: entry.request.rect,
+        ...(entry.request.clip === undefined ? {} : { clip: entry.request.clip }),
+      });
     }
 
     const command: PreviewFrameCommand = {

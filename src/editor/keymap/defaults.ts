@@ -126,6 +126,23 @@ const TD_GRAPH_BINDINGS: readonly KeyBinding[] = [
     label: "Toggle render",
   },
   {
+    /*
+     * T1102 — bring to front, on the bracket every layered editor uses for it.
+     *
+     * There is no matching send-to-back binding because there is no send-to-back command:
+     * going below the floor means negative z-indexes (which fall behind React Flow's edge
+     * layer) or renumbering the whole document. `node.bringToFront`'s docblock carries the
+     * reasoning; raising the other node is the same arrangement.
+     */
+    id: "node.bringToFront",
+    keys: "]",
+    context: "graph",
+    command: "node.bringToFront",
+    when: "hasSelection",
+    inputFrom: { from: "selectionOrHovered", as: "nodeIds" },
+    label: "Bring to front",
+  },
+  {
     id: "node.openViewer",
     keys: "v",
     context: "graph",

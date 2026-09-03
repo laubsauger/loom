@@ -37,7 +37,7 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
       // The pixel suite needs the headed lane's GPU; running it here would only ever
       // fail on "requestAdapter() resolved null". Everything else stays headless.
-      testIgnore: /(presentation-pixels|example-parity)\.spec\.ts$/,
+      testIgnore: /(presentation-pixels|example-parity|node-layering-pixels)\.spec\.ts$/,
     },
     {
       /*
@@ -67,7 +67,7 @@ export default defineConfig({
        * on and a server that is always their own.
        */
       use: { ...devices["Desktop Chrome"], headless: false, baseURL: "http://localhost:5199" },
-      testMatch: /(presentation-pixels|example-parity)\.spec\.ts$/,
+      testMatch: /(presentation-pixels|example-parity|node-layering-pixels)\.spec\.ts$/,
     },
   ],
   webServer: [

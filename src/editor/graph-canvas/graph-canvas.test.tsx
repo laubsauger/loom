@@ -103,6 +103,44 @@ describe("V1 — the canvas is a view of the domain graph", () => {
     });
   });
 
+  it("renders the document's stacking order as an inline z-index (T1102)", async () => {
+    /*
+     * The assumption BOTH halves of T1102 stand on, pinned where it can break loudly.
+     *
+     * The preview compositor takes its tile order from these elements' inline `zIndex`
+     * (`app/graph-pane.tsx`), and the browser stacks the chrome by the same declaration.
+     * That is what makes one order instead of two — and it is a property of React Flow's
+     * renderer, not of our code, so an upgrade that moved the number somewhere else would
+     * silently return the app to the bug this fixes: chrome layering one way, previews
+     * the other, with every unit test still green.
+     */
+    const { bus, container } = await mountCanvas();
+    const blur = Object.values(bus.store.getGraph().nodes).find((node) => node.type === "test.blur");
+    if (blur === undefined) throw new Error("expected the blur node");
+    const element = () => container.querySelector<HTMLElement>(`.react-flow__node[data-id="${blur.id}"]`);
+    // Untouched: no stacking order in the document, nothing forced into the style.
+    expect(Number.parseInt(element()?.style.zIndex ?? "", 10) || 0).toBe(0);
+
+    await act(async () => {
+      await bus.execute("node.bringToFront", { nodeIds: [blur.id] }, invocation);
+    });
+
+    await waitFor(() => {
+      expect(Number.parseInt(element()?.style.zIndex ?? "", 10)).toBe(
+        bus.store.getGraph().nodes[blur.id]?.ui?.z,
+      );
+    });
+    // And it is above the node nobody raised — the claim, rather than the number.
+    const solid = Object.values(bus.store.getGraph().nodes).find((node) => node.type === "test.solid");
+    const solidZ =
+      Number.parseInt(
+        container.querySelector<HTMLElement>(`.react-flow__node[data-id="${solid?.id}"]`)?.style
+          .zIndex ?? "",
+        10,
+      ) || 0;
+    expect(Number.parseInt(element()?.style.zIndex ?? "", 10)).toBeGreaterThan(solidZ);
+  });
+
   it("mutates nothing on its own — mounting a canvas is not an edit", async () => {
     const { bus } = await mountCanvas();
     const revision = bus.store.getRevision();

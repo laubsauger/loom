@@ -42,6 +42,7 @@ import { usePerDocument } from "./use-per-document.ts";
 import { registerSelectionCommands } from "./selection-commands.ts";
 import { registerViewCommands } from "./view-commands.ts";
 import { useNodePreviews } from "./use-node-previews.ts";
+import type { NodeStackBox } from "./use-node-previews.ts";
 import { useGraphBackground } from "./use-graph-background.ts";
 import styles from "./panes.module.css";
 
@@ -225,6 +226,50 @@ function GraphPaneInner({
   // uncommitted in the document for its whole duration, and this is exactly the window
   // a preview must keep following the node through.
   const getNodePosition = useCallback((nodeId: NodeId) => flow.getNode(nodeId)?.position, [flow]);
+  /**
+   * T1102 — every node's box IN PAINT ORDER, back to front, for the preview compositor.
+   *
+   * The ORDER is read off the rendered elements, and that is the point. Which node's
+   * chrome is on top is decided by two things the document does not hold: the `z-index`
+   * React Flow computes (the projection's `ui.z` PLUS React Flow's own elevation of the
+   * selected node) and, for a tie, the elements' order in the DOM. Recomputing either
+   * here would be a second answer to a question the browser has already answered — and
+   * `internals.z`, the value React Flow computes it into, is behind §V29's lint (a rule
+   * about the graph store's internals, but a blunt one, and not worth weakening for
+   * this). The inline `style.zIndex` is the very number the browser stacks by, and
+   * `querySelectorAll` returns document order, so sorting those two together IS the paint
+   * order rather than a model of it.
+   *
+   * Reading `element.style` costs no layout — it is the inline declaration, not a
+   * computed one — so this stays clear of the forced-layout trap `geometry.ts` was
+   * written to avoid. The BOX still comes from React Flow's live node (§V112, the same
+   * source `getNodePosition` uses), never from a client rect.
+   */
+  const getNodeBoxes = useCallback((): ReadonlyArray<NodeStackBox> => {
+    const root = surfaceRef.current;
+    if (root === null) return [];
+    const boxes: Array<NodeStackBox & { readonly z: number; readonly order: number }> = [];
+    root.querySelectorAll<HTMLElement>(".react-flow__node").forEach((element, order) => {
+      const nodeId = element.dataset["id"];
+      if (nodeId === undefined) return;
+      const node = flow.getNode(nodeId);
+      if (node === undefined) return;
+      const z = Number.parseInt(element.style.zIndex, 10);
+      boxes.push({
+        nodeId: nodeId as NodeId,
+        x: node.position.x,
+        y: node.position.y,
+        width: node.measured?.width ?? 0,
+        height: node.measured?.height ?? 0,
+        z: Number.isNaN(z) ? 0 : z,
+        order,
+      });
+    });
+    // z first, document order for a tie — the browser's own rule for positioned siblings
+    // inside one stacking context, which is what `.react-flow__viewport` is.
+    boxes.sort((a, b) => a.z - b.z || a.order - b.order);
+    return boxes;
+  }, [flow]);
 
   // T463: nodes flagged as GRAPH BACKGROUND render behind the patch, dimmed — the
   // preview machinery on a second canvas one z-layer down (see use-graph-background).
@@ -259,6 +304,8 @@ function GraphPaneInner({
     components: componentsView,
     getViewport,
     getNodePosition,
+    // T1102: the DOM's stacking order, so a tile does not paint over the node in front.
+    getNodeBoxes,
     previewFps,
     previewLongEdge,
     documentIdentity,

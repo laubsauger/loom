@@ -110,6 +110,22 @@ export interface GraphNode {
      * naming any internal node is TD's debug-view idiom. Meaningless on non-instances.
      */
     componentPreview?: string;
+    /**
+     * T1102 — STACKING ORDER among overlapping nodes. Higher draws in front; absent is 0.
+     *
+     * Document state rather than view state, and that is the whole decision: the owner
+     * asked to "place nodes above others", and a placement that evaporates on reload is
+     * not a placement. It costs nothing that was not already here — `ui` is persisted and
+     * undoable, `setNodeUi` already carries it, and an absent value has always meant the
+     * default — so no migration: a document written before this field is a document where
+     * every node sits at 0, which is exactly what it looked like.
+     *
+     * Deliberately NOT the whole answer to which node is in front. React Flow ELEVATES the
+     * selected node above this, so the node you are dragging comes forward without writing
+     * to the document at all — a click is not an edit (§V15's spirit: gestures commit, not
+     * hovers). This field is what survives letting go.
+     */
+    z?: number;
     bypassed?: boolean;
     muted?: boolean;
     /**

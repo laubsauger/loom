@@ -288,6 +288,77 @@ describe("node ui toggles", () => {
   });
 });
 
+/**
+ * T1102 — the STACKING ORDER a user places, and the fact that it is a document edit.
+ *
+ * The assertion is about the ORDER between nodes rather than about the number written: `z`
+ * is a position in a sequence, not a magic value, and a test pinned to "z === 1" would go
+ * red on a perfectly good renumbering. What the compositor and the DOM both consume is
+ * "which node's number is bigger", so that is what these state.
+ */
+describe("node.bringToFront (T1102)", () => {
+  const zOf = (bus: LoomBus, nodeId: string): number => bus.store.getGraph().nodes[nodeId]?.ui?.z ?? 0;
+
+  it("raises a node above every other node in the graph", async () => {
+    const { bus, solid, blur } = await harnessWithPair();
+    // Both start at the floor: an untouched document has no stacking order at all, which
+    // is the state every project saved before this field existed is in.
+    expect(bus.store.getGraph().nodes[solid]?.ui?.z).toBeUndefined();
+
+    await bus.execute("node.bringToFront", { nodeIds: [blur] }, invocation);
+    expect(zOf(bus, blur)).toBeGreaterThan(zOf(bus, solid));
+
+    // And the other way round with nothing else changed — the pair is what makes this a
+    // claim about order rather than about which node happens to be called `blur`.
+    await bus.execute("node.bringToFront", { nodeIds: [solid] }, invocation);
+    expect(zOf(bus, solid)).toBeGreaterThan(zOf(bus, blur));
+  });
+
+  it("keeps a multi-selection's own order instead of flattening it", async () => {
+    const { bus, solid, blur } = await harnessWithPair();
+    await bus.execute("node.bringToFront", { nodeIds: [blur] }, invocation);
+    const before = zOf(bus, blur) > zOf(bus, solid);
+
+    // Raising both must not silently collapse the arrangement the user just built: they
+    // would have to rebuild it to discover it was gone.
+    await bus.execute("node.bringToFront", { nodeIds: [solid, blur] }, invocation);
+    expect(zOf(bus, blur) > zOf(bus, solid)).toBe(before);
+  });
+
+  it("is an ordinary undoable document edit, not view state", async () => {
+    // The whole persisted-vs-derived decision in one assertion: if this were view state
+    // there would be nothing for undo to restore, and nothing for a save to write.
+    const { bus, solid, blur } = await harnessWithPair();
+    await bus.execute("node.bringToFront", { nodeIds: [blur] }, invocation);
+    expect(zOf(bus, blur)).toBeGreaterThan(zOf(bus, solid));
+
+    await bus.execute("graph.undo", {}, invocation);
+    expect(bus.store.getGraph().nodes[blur]?.ui?.z).toBeUndefined();
+  });
+
+  it("refuses an empty selection rather than bumping the revision", async () => {
+    const { bus } = await harnessWithPair();
+    const before = bus.store.getRevision();
+    const result = await bus.execute("node.bringToFront", { nodeIds: [] }, invocation);
+    expect(result.status).toBe("rejected");
+    expect(bus.store.getRevision()).toBe(before);
+  });
+
+  it("refuses a non-integer z through the patch layer, whoever writes it", async () => {
+    // The command can only mint integers; an agent or a hand-written patch can try
+    // anything, and a NaN would make the whole stacking order incomparable with no bad
+    // pixel to point at (§V66's shape: validate before anything reads the field).
+    const { bus, solid } = await harnessWithPair();
+    const result = await bus.execute(
+      "graph.applyPatch",
+      patch(bus.store.getRevision(), [{ op: "setNodeUi", nodeId: solid, ui: { z: 1.5 } }], "bad z"),
+      invocation,
+    );
+    expect(result.status).toBe("rejected");
+    expect(bus.store.getGraph().nodes[solid]?.ui?.z).toBeUndefined();
+  });
+});
+
 describe("commands the keymap names but nothing implements", () => {
   it("stays unregistered rather than stubbed, so the palette can say so honestly", async () => {
     const { bus } = createHarness("u");

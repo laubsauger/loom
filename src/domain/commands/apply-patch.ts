@@ -72,7 +72,18 @@ import { isValueOnlyPatch, overlappingEntities } from "./patch-scope.ts";
 /** Parameter key a shader-authorable node exposes its WGSL through. */
 export const SHADER_SOURCE_PARAMETER = "source";
 
-const UI_KEYS = new Set(["collapsed", "preview", "previewPinned", "bypassed", "muted", "background", "color", "componentPreview"]);
+const UI_KEYS = new Set([
+  "collapsed",
+  "preview",
+  "previewPinned",
+  "bypassed",
+  "muted",
+  "background",
+  "color",
+  "componentPreview",
+  // T1102: stacking order among overlapping nodes. A NUMBER, unlike every flag above.
+  "z",
+]);
 
 class PatchAbort extends Error {
   constructor() {
@@ -790,6 +801,20 @@ function executeOperation(
           // T601: an inner node id, or null to return to the default (the Out node).
           if (value !== null && typeof value !== "string") {
             fail("node.ui.type", `ui.componentPreview must be a string or null.`, { nodeId: node.id });
+          }
+        } else if (key === "z") {
+          /*
+           * T1102 — an INTEGER, and finite, because this number leaves the document.
+           *
+           * It is projected straight onto React Flow's `zIndex`, which becomes a CSS
+           * `z-index`, and it is compared against React Flow's own elevation of the
+           * selected node. A float renders as one (browsers floor it) and would then
+           * disagree with any comparison made here; a NaN or an Infinity from a
+           * hand-written patch or an agent would make the whole stacking order
+           * incomparable, silently, with no bad pixel to point at.
+           */
+          if (typeof value !== "number" || !Number.isInteger(value)) {
+            fail("node.ui.type", `ui.z must be an integer.`, { nodeId: node.id });
           }
         } else if (typeof value !== "boolean") {
           fail("node.ui.type", `ui.${key} must be a boolean.`, { nodeId: node.id });

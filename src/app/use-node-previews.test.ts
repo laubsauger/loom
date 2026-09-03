@@ -8,8 +8,8 @@ import { SINK_TARGET_PORT } from "@compiler/index.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
 import { createNodeRuntimeStore } from "@editor/graph-canvas/index.ts";
 import { createPreviewInterestStore, createPreviewSlotBounds, createPreviewViewStore } from "@editor/viewer/index.ts";
-import { DEFAULT_PREVIEW_VIEW, previewShader, previewUniforms } from "@runtime/previews/index.ts";
-import type { PreviewProgram } from "@runtime/previews/index.ts";
+import { DEFAULT_PREVIEW_VIEW, previewShader, previewUniforms, rectsIntersect } from "@runtime/previews/index.ts";
+import type { PreviewFrameCommand, PreviewProgram, PreviewRect } from "@runtime/previews/index.ts";
 import type { BackendStatus } from "@runtime/backend/index.ts";
 import type { LoomBackend } from "@runtime/backend/index.ts";
 import { previewCandidates, useNodePreviews } from "./use-node-previews.ts";
@@ -102,6 +102,7 @@ describe("useNodePreviews (T185)", () => {
         nodeRuntime,
         getViewport: () => ({ x: 0, y: 0, zoom: 1 }),
         getNodePosition: () => ({ x: 0, y: 0 }),
+        getNodeBoxes: () => [],
         previewFps: 20,
         previewLongEdge: 192,
         documentIdentity: "document-under-test",
@@ -145,6 +146,7 @@ describe("useNodePreviews (T185)", () => {
         nodeRuntime,
         getViewport: () => ({ x: 0, y: 0, zoom: 1 }),
         getNodePosition: () => ({ x: 0, y: 0 }),
+        getNodeBoxes: () => [],
         previewFps: 20,
         previewLongEdge: 192,
         documentIdentity: "document-under-test",
@@ -219,6 +221,7 @@ describe("useNodePreviews carries the preview lens (T336)", () => {
         ...(views === undefined ? {} : { views }),
         getViewport: () => ({ x: 0, y: 0, zoom: 1 }),
         getNodePosition: () => ({ x: 0, y: 0 }),
+        getNodeBoxes: () => [],
         previewFps: 20,
         previewLongEdge: 192,
         documentIdentity: "document-under-test",
@@ -307,6 +310,7 @@ describe("useNodePreviews previews the node that presents (§V25)", () => {
         previewSinks: { set: (refs) => sinkSets.push(refs) },
         getViewport: () => ({ x: 0, y: 0, zoom: 1 }),
         getNodePosition: () => ({ x: 0, y: 0 }),
+        getNodeBoxes: () => [],
         previewFps: 20,
         previewLongEdge: 192,
         documentIdentity: "document-under-test",
@@ -464,6 +468,7 @@ describe("useNodePreviews honours the preview switch (T353, §V297)", () => {
         previewSinks: { set: (refs) => sinkSets.push(refs) },
         getViewport: () => ({ x: 0, y: 0, zoom: 1 }),
         getNodePosition: () => ({ x: 0, y: 0 }),
+        getNodeBoxes: () => [],
         previewFps: 20,
         previewLongEdge: 192,
         documentIdentity: "document-under-test",
@@ -569,6 +574,7 @@ describe("useNodePreviews resets at a document boundary (T519, B106)", () => {
           nodeRuntime,
           getViewport: () => ({ x: 0, y: 0, zoom: 1 }),
           getNodePosition: () => ({ x: 0, y: 0 }),
+          getNodeBoxes: () => [],
           // A slow cadence, so "not due" lasts long enough to be a fact rather than a race.
           previewFps: 1,
           previewLongEdge: 192,
@@ -759,6 +765,7 @@ describe("useNodePreviews binds the PORT it asked for, not the node's first row 
         nodeRuntime,
         getViewport: () => ({ x: 0, y: 0, zoom: 1 }),
         getNodePosition: () => ({ x: 0, y: 0 }),
+        getNodeBoxes: () => [],
         previewFps: 20,
         previewLongEdge: 192,
         documentIdentity: "document-under-test",
@@ -837,6 +844,7 @@ describe("the viewer's interest pins a hidden tile (T756)", () => {
         interest,
         getViewport: () => ({ x: 0, y: 0, zoom: 1 }),
         getNodePosition: () => ({ x: 0, y: 0 }),
+        getNodeBoxes: () => [],
         previewFps: 20,
         previewLongEdge: 192,
         documentIdentity: "document-under-test",
@@ -889,6 +897,7 @@ describe("the viewer's interest pins a hidden tile (T756)", () => {
         interest,
         getViewport: () => ({ x: 0, y: 0, zoom: 1 }),
         getNodePosition: () => ({ x: 0, y: 0 }),
+        getNodeBoxes: () => [],
         previewFps: 20,
         previewLongEdge: 192,
         documentIdentity: "document-under-test",
@@ -946,6 +955,7 @@ describe("useNodePreviews inside a component (T1019)", () => {
         ...(options.sinks === undefined ? {} : { previewSinks: options.sinks as never }),
         getViewport: () => ({ x: 0, y: 0, zoom: 1 }),
         getNodePosition: () => ({ x: 0, y: 0 }),
+        getNodeBoxes: () => [],
         previewFps: 20,
         previewLongEdge: 192,
         documentIdentity: "document-under-test",
@@ -1041,5 +1051,203 @@ describe("useNodePreviews inside a component (T1019)", () => {
     expect(snapshot.preview?.state.kind).toBe("live");
     expect(snapshot.preview?.facts).toEqual({ width: 64, height: 64, format: "rgba8unorm" });
     nodeRuntime.dispose();
+  });
+});
+
+/**
+ * T1102 — TWO OVERLAPPING NODES, AND WHOSE PIXELS ARE ON TOP.
+ *
+ * The bug was not a z-index bug and this is where that shows: node chrome is DOM, ordered
+ * by React Flow, while EVERY preview pixel in a pane comes from one canvas at one depth
+ * (§V106). So the two stacking systems could not see each other, and a node's tile painted
+ * over the node the browser had drawn in front of it.
+ *
+ * The consumer-visible fact is which node owns a region, so the assertion is about REGIONS
+ * — no piece of the back tile is allowed to land inside the front node's box, and the back
+ * tile must still paint everywhere else. Asserting a piece list, or which blit ran first,
+ * would be asserting the mechanism.
+ *
+ * The DOM's order is an INPUT here (`getNodeBoxes`, back to front) rather than something
+ * this hook derives, which is why flipping it flips the answer with nothing else changed.
+ */
+describe("overlapping nodes layer with the DOM (T1102)", () => {
+  /** Two 200×200 nodes, the second overlapping the first's right half. */
+  const NODE_BOXES = {
+    n1: { nodeId: "n1" as const, x: 0, y: 0, width: 200, height: 200 },
+    n2: { nodeId: "n2" as const, x: 100, y: 0, width: 200, height: 200 },
+  };
+
+  function twoNodeGraph(): GraphDocument {
+    return {
+      revision: 1,
+      nodes: {
+        n1: { id: "n1", type: "test.blur", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: {} },
+        n2: { id: "n2", type: "test.blur", definitionVersion: 1, position: { x: 100, y: 0 }, parameters: {} },
+      },
+      edges: {},
+      groups: {},
+    } as unknown as GraphDocument;
+  }
+
+  function outputFor(nodeId: string) {
+    return {
+      nodeId,
+      portId: "out",
+      resourceId: `res:${nodeId}:out`,
+      resourceKind: "target" as const,
+      size: [64, 64] as const,
+      format: "rgba8unorm" as const,
+      space: "linear" as const,
+      temporal: false,
+    };
+  }
+
+  /** Runs one tick with `order` as the DOM's paint order, and returns the last composite. */
+  function compositeWith(order: ReadonlyArray<"n1" | "n2">) {
+    const registry = createTestRegistry().view();
+    const nodeRuntime = createNodeRuntimeStore();
+    const bounds = createPreviewSlotBounds();
+    // The whole node is the preview slot here, so the tile rect IS the node box and the
+    // overlap in the pictures is exactly the overlap on screen — nothing to reason about
+    // twice. A 64×64 source in a square slot letterboxes to the full slot.
+    bounds.publish("n1", { x: 0, y: 0, width: 200, height: 200 });
+    bounds.publish("n2", { x: 0, y: 0, width: 200, height: 200 });
+
+    const canvas = document.createElement("canvas");
+    canvas.getBoundingClientRect = () =>
+      ({ x: 0, y: 0, top: 0, left: 0, right: 400, bottom: 300, width: 400, height: 300 }) as DOMRect;
+
+    const commands: PreviewFrameCommand[] = [];
+    const backend = {
+      ...fakeBackend(),
+      previewHost: () => ({
+        setPreviewProgram: () => {},
+        presentPreviews: (command: PreviewFrameCommand) => commands.push(command),
+        dispose: () => {},
+      }),
+    } as unknown as LoomBackend;
+
+    renderHook(() =>
+      useNodePreviews({
+        backend,
+        canvasRef: { current: canvas },
+        bounds,
+        graph: twoNodeGraph(),
+        registry,
+        compiledOutputs: [outputFor("n1"), outputFor("n2")],
+        nodeRuntime,
+        getViewport: () => ({ x: 0, y: 0, zoom: 1 }),
+        getNodePosition: (nodeId) => NODE_BOXES[nodeId as "n1" | "n2"],
+        getNodeBoxes: () => order.map((id) => NODE_BOXES[id]),
+        previewFps: 20,
+        previewLongEdge: 192,
+        documentIdentity: "document-under-test",
+      }),
+    );
+    vi.advanceTimersToNextFrame();
+    vi.advanceTimersByTime(150);
+    nodeRuntime.dispose();
+
+    const last = commands.at(-1);
+    const tileFor = (nodeId: string) => last?.composite.find((tile) => tile.ref.nodeId === nodeId);
+    return { n1: tileFor("n1"), n2: tileFor("n2") };
+  }
+
+  /** Where the two tiles disagree: the 100×200 band both nodes claim. */
+  const OVERLAP: PreviewRect = { x: 100, y: 0, width: 100, height: 200 };
+
+  it("clips the BACK node's tile out of the front node's box, and leaves the front whole", () => {
+    // Paint order n1 then n2: n2 is in front.
+    const { n1, n2 } = compositeWith(["n1", "n2"]);
+    expect(n1, "the back node still composites — clipping is not hiding").toBeDefined();
+    expect(n2, "the front node composites").toBeDefined();
+
+    // Nothing in front of n2, so it paints its whole rect — the un-clipped path.
+    expect(n2?.clip).toBeUndefined();
+
+    // n1 keeps its own half and gives up every pixel n2's box covers. That is the claim:
+    // in the overlap the user sees n2, and before this fix they saw whichever tile the
+    // compositor happened to walk second.
+    const pieces = n1?.clip;
+    expect(pieces, "the covered node must be told where it may paint").toBeDefined();
+    expect(pieces?.length ?? 0).toBeGreaterThan(0);
+    for (const piece of pieces ?? []) {
+      expect(rectsIntersect(piece, OVERLAP), `piece ${JSON.stringify(piece)} paints into n2`).toBe(
+        false,
+      );
+    }
+    // And it still shows the half nobody covers — the exposed 100×200 strip, exactly.
+    const area = (pieces ?? []).reduce((sum, piece) => sum + piece.width * piece.height, 0);
+    expect(area).toBe(100 * 200);
+  });
+
+  it("flips with the DOM: the same two nodes, the other one in front", () => {
+    // NON-VACUITY for the test above. Only the paint order changes; the document, the
+    // positions and the slots are identical, so a fix that clipped by node id, by
+    // position, or by request order would pass one of these two and fail this pair.
+    const { n1, n2 } = compositeWith(["n2", "n1"]);
+    expect(n1?.clip).toBeUndefined();
+    const pieces = n2?.clip;
+    expect(pieces?.length ?? 0).toBeGreaterThan(0);
+    for (const piece of pieces ?? []) {
+      expect(rectsIntersect(piece, OVERLAP)).toBe(false);
+    }
+  });
+
+  it("leaves non-overlapping nodes entirely alone — no clip, no cost", () => {
+    // The population every laid-out patch is in. A clip on a node nothing covers would be
+    // a per-tile scissor pass bought for nothing, on every node, on every frame.
+    const registry = createTestRegistry().view();
+    const nodeRuntime = createNodeRuntimeStore();
+    const bounds = createPreviewSlotBounds();
+    bounds.publish("n1", { x: 0, y: 0, width: 100, height: 100 });
+    bounds.publish("n2", { x: 0, y: 0, width: 100, height: 100 });
+    const canvas = document.createElement("canvas");
+    canvas.getBoundingClientRect = () =>
+      ({ x: 0, y: 0, top: 0, left: 0, right: 400, bottom: 300, width: 400, height: 300 }) as DOMRect;
+    const commands: PreviewFrameCommand[] = [];
+    const backend = {
+      ...fakeBackend(),
+      previewHost: () => ({
+        setPreviewProgram: () => {},
+        presentPreviews: (command: PreviewFrameCommand) => commands.push(command),
+        dispose: () => {},
+      }),
+    } as unknown as LoomBackend;
+    const apart = {
+      n1: { nodeId: "n1", x: 0, y: 0, width: 100, height: 100 },
+      n2: { nodeId: "n2", x: 200, y: 0, width: 100, height: 100 },
+    } as const;
+
+    renderHook(() =>
+      useNodePreviews({
+        backend,
+        canvasRef: { current: canvas },
+        bounds,
+        graph: {
+          revision: 1,
+          nodes: {
+            n1: { id: "n1", type: "test.blur", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: {} },
+            n2: { id: "n2", type: "test.blur", definitionVersion: 1, position: { x: 200, y: 0 }, parameters: {} },
+          },
+          edges: {},
+          groups: {},
+        } as unknown as GraphDocument,
+        registry,
+        compiledOutputs: [outputFor("n1"), outputFor("n2")],
+        nodeRuntime,
+        getViewport: () => ({ x: 0, y: 0, zoom: 1 }),
+        getNodePosition: (nodeId) => apart[nodeId as "n1" | "n2"],
+        getNodeBoxes: () => [apart.n1, apart.n2],
+        previewFps: 20,
+        previewLongEdge: 192,
+        documentIdentity: "document-under-test",
+      }),
+    );
+    vi.advanceTimersToNextFrame();
+    vi.advanceTimersByTime(150);
+    nodeRuntime.dispose();
+
+    for (const tile of commands.at(-1)?.composite ?? []) expect(tile.clip).toBeUndefined();
   });
 });

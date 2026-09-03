@@ -64,6 +64,30 @@ function sameSize(
   return view.width === domain.width && view.height === domain.height;
 }
 
+/**
+ * T1102 — the DOCUMENT's stacking order, projected onto React Flow's `zIndex`.
+ *
+ * `undefined` on both sides means "no override", exactly as size does: React Flow reads an
+ * absent `zIndex` as 0, which is where every node that has never been raised sits, so an
+ * untouched document projects to nodes carrying no z-index at all rather than to a graph
+ * full of explicit zeroes.
+ *
+ * This is load-bearing beyond the chrome. The preview compositor takes its tile order from
+ * React Flow's computed `internals.z` (`app/graph-pane.tsx`), so if the document's order
+ * did not arrive HERE the two stacking systems would disagree again — which is the bug.
+ */
+function sameZ(view: { zIndex?: number | undefined }, domain: number | undefined): boolean {
+  return view.zIndex === domain;
+}
+
+function withZ(node: LoomNode, z: number | undefined): LoomNode {
+  if (z === undefined) {
+    const { zIndex: _zIndex, ...rest } = node;
+    return rest as LoomNode;
+  }
+  return { ...node, zIndex: z };
+}
+
 function withSize(node: LoomNode, size: { width: number; height: number } | undefined): LoomNode {
   if (size === undefined) {
     const { width: _width, height: _height, ...rest } = node;
@@ -103,7 +127,7 @@ export function projectNodes(
           position: { x: domain.position.x, y: domain.position.y },
           data: { nodeId },
         };
-        return [withSize(fresh, domain.size)];
+        return [withZ(withSize(fresh, domain.size), domain.ui?.z)];
       }
       // A node mid-GESTURE keeps the view's geometry until that gesture commits (§V15):
       // a drag and a resize are both deliberately uncommitted until release, so the
@@ -111,11 +135,13 @@ export function projectNodes(
       if (prior.dragging === true || prior.resizing === true) return [prior];
       const keepPosition = samePosition(prior.position, domain.position);
       const keepSize = sameSize(prior, domain.size);
-      if (keepPosition && keepSize) return [prior];
+      const keepZ = sameZ(prior, domain.ui?.z);
+      if (keepPosition && keepSize && keepZ) return [prior];
       const moved: LoomNode = keepPosition
         ? prior
         : { ...prior, position: { x: domain.position.x, y: domain.position.y } };
-      return [keepSize ? moved : withSize(moved, domain.size)];
+      const sized = keepSize ? moved : withSize(moved, domain.size);
+      return [keepZ ? sized : withZ(sized, domain.ui?.z)];
     });
   return stable(previous, next);
 }

@@ -5,8 +5,10 @@ import {
   ladderSnap,
   rectsIntersect,
   slotScreenRect,
+  subtractRects,
   tileSizeFor,
 } from "./geometry.ts";
+import type { PreviewRect } from "./types.ts";
 
 describe("tile size ladder", () => {
   it("snaps UP, so a tile is downsampled into its rect and never upsampled", () => {
@@ -157,5 +159,109 @@ describe("§B174 fractional dpr with a zoom ≠ 1", () => {
     });
     expect(tile[0]).toBe(256);
     expect(tile[0]).toBeGreaterThanOrEqual(SLOT.width * DPR);
+  });
+});
+
+/**
+ * T1102 — the clip a tile is drawn through.
+ *
+ * These are stated as PROPERTIES of the returned region rather than as an expected list of
+ * rectangles, and that is deliberate: which four pieces the subtraction happens to emit is
+ * an implementation detail, while "the tile paints everywhere it should and nowhere an
+ * occluder sits" is the claim the compositor and the user actually depend on. A test
+ * pinned to a piece list would go red on a cheaper decomposition that is just as correct.
+ */
+describe("subtractRects — where a tile may still paint (T1102)", () => {
+  const TILE: PreviewRect = { x: 100, y: 100, width: 200, height: 100 };
+
+  /** Samples the clip on a grid: true iff some piece contains the point. */
+  const covers = (pieces: ReadonlyArray<PreviewRect>, x: number, y: number): boolean =>
+    pieces.some(
+      (piece) =>
+        x >= piece.x && x < piece.x + piece.width && y >= piece.y && y < piece.y + piece.height,
+    );
+
+  const totalArea = (pieces: ReadonlyArray<PreviewRect>): number =>
+    pieces.reduce((sum, piece) => sum + piece.width * piece.height, 0);
+
+  it("returns the whole rect when nothing is in front of it", () => {
+    expect(subtractRects(TILE, [])).toEqual([TILE]);
+    // An occluder that misses is not an occluder, whichever side it misses on.
+    expect(subtractRects(TILE, [{ x: 0, y: 0, width: 100, height: 100 }])).toEqual([TILE]);
+  });
+
+  it("returns NOTHING when a node in front covers the tile — not the whole rect", () => {
+    // The distinction the compositor reads: [] means composite nothing, [rect] means
+    // composite everything. Conflating them is the difference between a hidden preview
+    // and one painted over the node that hides it.
+    expect(subtractRects(TILE, [{ x: 0, y: 0, width: 1000, height: 1000 }])).toEqual([]);
+  });
+
+  it("keeps every pixel outside the occluder and drops every pixel inside it", () => {
+    // A node overlapping the tile's right half, hanging off the top and bottom edges.
+    const occluder: PreviewRect = { x: 200, y: 50, width: 300, height: 200 };
+    const pieces = subtractRects(TILE, [occluder]);
+
+    for (let x = TILE.x; x < TILE.x + TILE.width; x += 5) {
+      for (let y = TILE.y; y < TILE.y + TILE.height; y += 5) {
+        const inside =
+          x >= occluder.x &&
+          x < occluder.x + occluder.width &&
+          y >= occluder.y &&
+          y < occluder.y + occluder.height;
+        expect(covers(pieces, x, y), `(${x},${y}) inside=${String(inside)}`).toBe(!inside);
+      }
+    }
+    // Exactly the left half survives: 100 × 100 of the tile's 200 × 100.
+    expect(totalArea(pieces)).toBe(100 * 100);
+  });
+
+  it("emits DISJOINT pieces, so the compositor cannot double-blend an overlap", () => {
+    // A hole punched in the middle — the case that produces all four strips at once, and
+    // the one where a naive top/bottom/left/right split double-counts the corners.
+    const pieces = subtractRects(TILE, [{ x: 150, y: 120, width: 40, height: 40 }]);
+    expect(totalArea(pieces)).toBe(200 * 100 - 40 * 40);
+    for (const [a, first] of pieces.entries()) {
+      for (const [b, second] of pieces.entries()) {
+        if (a >= b) continue;
+        expect(rectsIntersect(first, second), `pieces ${a} and ${b} overlap`).toBe(false);
+      }
+    }
+  });
+
+  it("subtracts several occluders, and the result is independent of their order", () => {
+    const a: PreviewRect = { x: 90, y: 90, width: 60, height: 200 };
+    const b: PreviewRect = { x: 250, y: 90, width: 60, height: 200 };
+    const forward = subtractRects(TILE, [a, b]);
+    const backward = subtractRects(TILE, [b, a]);
+    expect(totalArea(forward)).toBe(totalArea(backward));
+    // Two vertical bites out of the ends leave the middle band: x 150..250.
+    expect(totalArea(forward)).toBe(100 * 100);
+    expect(covers(forward, 200, 150)).toBe(true);
+    expect(covers(forward, 120, 150)).toBe(false);
+    expect(covers(forward, 280, 150)).toBe(false);
+  });
+
+  it("does not blow up on a pile: the bound degrades to overdraw, never to a hang", () => {
+    // 4^n pieces is the naive bound, so forty overlapping nodes must not be attempted.
+    // What the cap costs is that some occluders stop being subtracted — the pre-T1102
+    // behaviour in a corner — and what it buys is that this call returns at all.
+    const many = Array.from({ length: 40 }, (_unused, index) => ({
+      x: 100 + index * 3,
+      y: 100 + index * 2,
+      width: 7,
+      height: 5,
+    }));
+    const started = Date.now();
+    const pieces = subtractRects(TILE, many);
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect(pieces.length).toBeGreaterThan(0);
+    // And the pieces are still a subset of the tile, whatever the cap dropped.
+    for (const piece of pieces) {
+      expect(piece.x).toBeGreaterThanOrEqual(TILE.x);
+      expect(piece.y).toBeGreaterThanOrEqual(TILE.y);
+      expect(piece.x + piece.width).toBeLessThanOrEqual(TILE.x + TILE.width);
+      expect(piece.y + piece.height).toBeLessThanOrEqual(TILE.y + TILE.height);
+    }
   });
 });

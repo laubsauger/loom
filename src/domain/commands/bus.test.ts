@@ -85,6 +85,8 @@ describe("command bus — registration surface (§V39)", () => {
       "graph.removeNodes",
       "graph.revertTransaction",
       "graph.undo",
+      // T1102: stacking order among overlapping nodes, persisted in `ui.z`.
+      "node.bringToFront",
       "node.rename",
       "node.setFormat",
       "node.setResolution",

@@ -33,6 +33,39 @@ describe("round trip", () => {
     expect(rewritten.text).toBe(file.text);
   });
 
+  it("carries a node's stacking order across a save and an open (T1102)", () => {
+    /*
+     * The whole reason `ui.z` is DOCUMENT state and not view state: the owner asked to
+     * "place nodes above others", and an arrangement that resets on reload is not a
+     * placement. Asserted against the real save path rather than against the schema,
+     * because the schema this build WRITES does not enumerate `ui.z` any more than it
+     * enumerates `previewPinned` — the open path passes unknown `ui` keys through (§V68,
+     * `forward-compat.ts`), and that is the property the field actually depends on.
+     */
+    const base = testDocument();
+    const document = {
+      ...base,
+      graph: {
+        ...base.graph,
+        nodes: {
+          ...base.graph.nodes,
+          n1: { ...base.graph.nodes["n1"]!, ui: { z: 4 } },
+        },
+      },
+    };
+    const file = buildProjectFile({ document, now: () => document.updatedAt });
+
+    const loaded = loadProject(file.text, {
+      nodes: definitionSource([testDefinition({ type: "gradient" }), testDefinition({ type: "output" })]),
+    });
+    if (!loaded.ok) throw new Error(loaded.reason);
+
+    expect(loaded.document.graph.nodes["n1"]?.ui?.z).toBe(4);
+    // And the node nobody raised comes back with no stacking order at all, so an
+    // untouched document is still an untouched document.
+    expect(loaded.document.graph.nodes["n2"]?.ui).toBeUndefined();
+  });
+
   it("names the file after the project", () => {
     expect(projectFileName("My Bloom Rig")).toBe("My-Bloom-Rig.loom.json");
     expect(projectFileName("  ")).toBe("untitled.loom.json");

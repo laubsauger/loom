@@ -176,6 +176,28 @@ export interface PreviewRequest {
   /** Where the tile lands on the shared surface, CSS px (see `geometry.ts`). */
   readonly rect: PreviewRect;
   /**
+   * Where inside `rect` this tile is still allowed to paint — T1102's whole fix.
+   *
+   * EVERY preview pixel in a graph pane comes from ONE canvas, and that canvas sits at one
+   * depth in the page's stacking order (it composites OVER the node DOM, §V106). Node
+   * CHROME is DOM and is ordered by React Flow's z-index; tiles are drawn in whatever order
+   * the compositor walks them. Two orderings that cannot see each other, so a node's
+   * preview covered the node the DOM had drawn in FRONT of it — the owner's screenshot,
+   * headers layered correctly while the pictures under them were not.
+   *
+   * A single canvas cannot put a tile UNDER anything, so instead the tile declines to paint
+   * where something in front of it does: these are `rect` minus the boxes of every node
+   * drawn above this one (`subtractRects`), in the surface's CSS px. That gets
+   * preview-over-preview AND preview-under-node-chrome right at once, and — because the
+   * same subtraction is applied to every tile in the same order — the surviving regions of
+   * two overlapping tiles are disjoint, so composite ORDER stops deciding anything.
+   *
+   * ABSENT means "nothing is in front of it": paint the whole rect, which is the request
+   * every non-overlapping node makes and the path that existed before this field. An EMPTY
+   * array is the opposite and must not be confused with it — fully covered, paint nothing.
+   */
+  readonly clip?: ReadonlyArray<PreviewRect>;
+  /**
    * The preview area in the NODE's own CSS px — what the tile is sized from (§V117, §V142).
    *
    * Separate from `rect` on purpose: `rect` is where the tile is drawn and carries the
@@ -282,6 +304,16 @@ export interface PreviewCompositeTile {
   /** Tile target resource id, as declared in `PreviewProgram.resources`. */
   readonly resourceId: string;
   readonly dest: PreviewRect;
+  /**
+   * T1102 — the sub-rects of `dest` this tile may paint, carried through from
+   * `PreviewRequest.clip` (whose docblock has the why). The presenter places the picture
+   * with `dest` and SCISSORS to each of these in turn, so a partly hidden tile still
+   * shows the right part of its image rather than a squashed whole one — which is why
+   * this cannot be expressed by shrinking `dest`.
+   *
+   * Absent: paint all of `dest`. Empty: paint nothing.
+   */
+  readonly clip?: ReadonlyArray<PreviewRect>;
 }
 
 /**

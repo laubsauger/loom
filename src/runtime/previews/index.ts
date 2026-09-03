@@ -48,6 +48,7 @@ export {
   rectLongEdge,
   rectsIntersect,
   slotScreenRect,
+  subtractRects,
   tileSizeFor,
 } from "./geometry.ts";
 export type { SlotBox, TileSizeInput, ViewportTransform } from "./geometry.ts";

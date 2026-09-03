@@ -152,6 +152,90 @@ export function rectArea(rect: PreviewRect): number {
   return Math.max(0, rect.width) * Math.max(0, rect.height);
 }
 
+/**
+ * How many pieces a clip may be cut into before the subtraction gives up (T1102).
+ *
+ * Each occluder can split each surviving piece into four, so the naive bound is 4^n and a
+ * pile of forty overlapping nodes would hang the tab computing a clip nobody can see. Past
+ * this the remaining occluders are dropped and the tile OVERDRAWS them — which is exactly
+ * the behaviour that shipped before this function existed, so the failure mode of the
+ * bound is the old bug in a corner, never a hang and never a hole in the picture.
+ *
+ * Sized far above the real population: a tile is clipped by the nodes ABOVE IT that
+ * overlap it, which is zero for a laid-out patch and one or two for the stack the owner
+ * reported. Sixty-four leaves room for a genuinely messy pile before it engages.
+ */
+const MAX_CLIP_PIECES = 64;
+
+/**
+ * `rect` minus the union of `occluders`, as disjoint axis-aligned pieces (T1102).
+ *
+ * This is how a tile on the ONE shared preview surface is made to respect the DOM's
+ * stacking: the surface has a single depth in the page, so a tile cannot be "under" a node
+ * drawn above it — it can only decline to paint where that node is. The caller supplies
+ * the rects of everything that paints in front; what comes back is where this tile is
+ * still allowed to land.
+ *
+ * An empty array means FULLY OCCLUDED — composite nothing — and is a different answer from
+ * `[rect]`, which means nothing covers it. Callers must not conflate the two.
+ *
+ * Coordinates are the surface's own CSS px, like every other rect here, and the pieces are
+ * pairwise disjoint: subtracting the same occluders from every tile in DOM order makes the
+ * visible regions of two overlapping tiles disjoint too, which is why the composite order
+ * stops mattering once this is applied.
+ */
+export function subtractRects(
+  rect: PreviewRect,
+  occluders: ReadonlyArray<PreviewRect>,
+): PreviewRect[] {
+  let pieces: PreviewRect[] = [rect];
+  for (const occluder of occluders) {
+    if (pieces.length === 0) break;
+    if (pieces.length > MAX_CLIP_PIECES) break;
+    const next: PreviewRect[] = [];
+    for (const piece of pieces) {
+      if (!rectsIntersect(piece, occluder)) {
+        next.push(piece);
+        continue;
+      }
+      const pieceRight = piece.x + piece.width;
+      const pieceBottom = piece.y + piece.height;
+      const occluderRight = occluder.x + occluder.width;
+      const occluderBottom = occluder.y + occluder.height;
+      // Above and below span the piece's full width; left and right only span the band
+      // the occluder actually shares with it, so the four pieces never overlap.
+      if (occluder.y > piece.y) {
+        next.push({ x: piece.x, y: piece.y, width: piece.width, height: occluder.y - piece.y });
+      }
+      if (occluderBottom < pieceBottom) {
+        next.push({
+          x: piece.x,
+          y: occluderBottom,
+          width: piece.width,
+          height: pieceBottom - occluderBottom,
+        });
+      }
+      const bandTop = Math.max(piece.y, occluder.y);
+      const bandHeight = Math.min(pieceBottom, occluderBottom) - bandTop;
+      if (bandHeight > 0) {
+        if (occluder.x > piece.x) {
+          next.push({ x: piece.x, y: bandTop, width: occluder.x - piece.x, height: bandHeight });
+        }
+        if (occluderRight < pieceRight) {
+          next.push({
+            x: occluderRight,
+            y: bandTop,
+            width: pieceRight - occluderRight,
+            height: bandHeight,
+          });
+        }
+      }
+    }
+    pieces = next;
+  }
+  return pieces;
+}
+
 export function rectLongEdge(rect: PreviewRect): number {
   return Math.max(rect.width, rect.height);
 }

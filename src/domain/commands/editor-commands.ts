@@ -57,6 +57,8 @@ declare module "../types/commands.ts" {
     "node.toggleRender": { input: NodeSelectionInput; output: GraphPatchResult };
     /** T463 — node's output renders behind the patch, dimmed (TD's network background). */
     "node.toggleBackground": { input: NodeSelectionInput; output: GraphPatchResult };
+    /** T1102 — raise nodes above every other node, and keep them there across a reload. */
+    "node.bringToFront": { input: NodeSelectionInput; output: GraphPatchResult };
     /** TD `n` — rename a node. `label: null` clears it back to the definition's title. */
     "node.rename": { input: RenameInput; output: GraphPatchResult };
   }
@@ -470,4 +472,56 @@ export function registerEditorCommands(bus: LoomBus): void {
   // T463: TD's network background, as a flag — the graph pane renders every marked
   // node's output behind the patch, dimmed, through the preview-sink machinery.
   registerToggle(bus, "node.toggleBackground", "background", "Toggle graph background");
+
+  /*
+   * T1102 — BRING TO FRONT, and why it is a document edit rather than view state.
+   *
+   * The owner's ask was to "place nodes above others", and a stacking order that resets on
+   * reload is not a placement — so `ui.z` is document state and this is the command that
+   * writes it, on the one mutation path there is (§V29). Selecting a node still raises it
+   * for free (React Flow elevates the selected node), which covers the node you are
+   * dragging; this covers the arrangement you meant to keep.
+   *
+   * There is deliberately no SEND TO BACK. Going below the current floor means either
+   * negative z-indexes — which fall behind React Flow's own edge layer, so a node sent
+   * back would lose its wires rather than its foreground — or renumbering every node in
+   * the document to make room, which is a whole-graph patch to move one node. Bringing the
+   * OTHER node forward is the same arrangement, reachable, and costs one node's worth of
+   * undo. If that turns out to be the wrong call it is a second command, not a rewrite.
+   */
+  bus.registerCommand({
+    name: "node.bringToFront",
+    description: "Raise the target nodes above every other node in the graph.",
+    handler: (input, context) => {
+      const nodes = existing(context.graph, targets(input));
+      if (nodes.length === 0) {
+        return rejected(context.store.getRevision(), "No target node for this command.", "selection.empty");
+      }
+      const raised = new Set(nodes.map((node) => node.id));
+      let ceiling = 0;
+      for (const node of Object.values(context.graph.nodes)) {
+        if (raised.has(node.id)) continue;
+        ceiling = Math.max(ceiling, node.ui?.z ?? 0);
+      }
+      /*
+       * The targets keep their order RELATIVE to each other, which is why this assigns a
+       * run of consecutive values rather than one shared number. Raising a selection of
+       * three onto a single z would silently flatten an arrangement the user built, and
+       * they would have to rebuild it to find out.
+       *
+       * Already-on-top is not special-cased: re-issuing the command renumbers them to the
+       * same relative order one step higher, which is a no-op on screen and one undo step.
+       */
+      const ordered = [...nodes].sort((a, b) => (a.ui?.z ?? 0) - (b.ui?.z ?? 0));
+      return patchThrough(
+        context,
+        "Bring to front",
+        ordered.map((node, index) => ({
+          op: "setNodeUi" as const,
+          nodeId: node.id,
+          ui: { z: ceiling + 1 + index },
+        })),
+      );
+    },
+  });
 }

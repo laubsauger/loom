@@ -102,6 +102,47 @@ describe("V1 — React Flow's arrays are projected from the domain graph", () =>
   });
 });
 
+describe("T1102 — the document's stacking order reaches React Flow", () => {
+  it("carries ui.z onto zIndex, and leaves an unraised node carrying none", async () => {
+    const { bus } = await seed();
+    const [first] = projectNodes(bus.store.getGraph().nodes);
+    if (first === undefined) throw new Error("no nodes projected");
+
+    // Untouched is untouched: React Flow reads an absent zIndex as 0, which is where every
+    // node in every document written before this field sits.
+    expect(first.zIndex).toBeUndefined();
+
+    await bus.execute("node.bringToFront", { nodeIds: [first.id] }, context);
+    const raised = projectNodes(bus.store.getGraph().nodes, [first]).find(
+      (node) => node.id === first.id,
+    );
+    expect(raised?.zIndex).toBe(bus.store.getGraph().nodes[first.id]?.ui?.z);
+    expect(raised?.zIndex ?? 0).toBeGreaterThan(0);
+  });
+
+  it("re-projects on a z change — the stale-reuse path must not swallow it", async () => {
+    // The projection returns the PREVIOUS object whenever nothing it derives changed
+    // (§V16), and z was not one of those things until T1102. Without this the document's
+    // order would reach React Flow only when the node also happened to move or resize —
+    // i.e. two stacking systems disagreeing again, which is the bug.
+    const { bus } = await seed();
+    const before = projectNodes(bus.store.getGraph().nodes);
+    const target = before[0];
+    if (target === undefined) throw new Error("no nodes projected");
+
+    await bus.execute("node.bringToFront", { nodeIds: [target.id] }, context);
+    const after = projectNodes(bus.store.getGraph().nodes, before);
+
+    expect(after).not.toBe(before);
+    expect(after.find((node) => node.id === target.id)).not.toBe(target);
+    // Nothing else moved, so every other node is the same object it was.
+    for (const node of after) {
+      if (node.id === target.id) continue;
+      expect(node).toBe(before.find((prior) => prior.id === node.id));
+    }
+  });
+});
+
 describe("V16 — the projection is referentially stable", () => {
   it("returns the same array when nothing it derives changed", async () => {
     const { bus } = await seed();

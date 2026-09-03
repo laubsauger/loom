@@ -2216,24 +2216,61 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
             // re-rendering pixels. GPU→GPU throughout (§V7).
             f.pass({ target: surfaceTarget, clear: true }, () => {});
             if (h.blit) {
+              const [targetWidth, targetHeight] = surfaceTarget.size;
               for (const tile of command.composite) {
                 const tileTarget = set.targets.get(tile.resourceId);
                 if (tileTarget === undefined) continue;
                 if (compositesNowhere(tile.dest)) continue;
+                /*
+                 * T1102 — the tile's CLIP, as a scissor per surviving piece.
+                 *
+                 * The viewport stays the tile's FULL destination in every pass: it is what
+                 * places and scales the picture, and shrinking it to the visible piece
+                 * would squash the whole image into a corner instead of showing part of
+                 * it. The scissor is what withholds the pixels a node in front owns.
+                 *
+                 * Absent clip = paint it all (the pre-T1102 path, and what every
+                 * non-overlapping node still asks for). Empty clip = fully covered,
+                 * encode nothing — a distinction the requester states and this loop must
+                 * not flatten.
+                 */
+                const viewport = {
+                  x: tile.dest.x * dpr,
+                  y: tile.dest.y * dpr,
+                  width: Math.max(1, tile.dest.width * dpr),
+                  height: Math.max(1, tile.dest.height * dpr),
+                };
                 h.blit.set({ blitSource: tileTarget });
-                f.pass(
-                  {
-                    target: surfaceTarget,
-                    clear: false,
-                    viewport: {
-                      x: tile.dest.x * dpr,
-                      y: tile.dest.y * dpr,
-                      width: Math.max(1, tile.dest.width * dpr),
-                      height: Math.max(1, tile.dest.height * dpr),
+                if (tile.clip === undefined) {
+                  f.pass({ target: surfaceTarget, clear: false, viewport }, h.blit);
+                  continue;
+                }
+                for (const piece of tile.clip) {
+                  // vgpu THROWS on a scissor that leaves the attachment (it mirrors
+                  // WebGPU's own validation), and one throw here aborts the whole preview
+                  // update — B-shaped, exactly as the off-surface parking rect did. So the
+                  // rect is clamped to the attachment here rather than trusted.
+                  const left = Math.max(0, Math.min(targetWidth, Math.round(piece.x * dpr)));
+                  const top = Math.max(0, Math.min(targetHeight, Math.round(piece.y * dpr)));
+                  const right = Math.max(
+                    left,
+                    Math.min(targetWidth, Math.round((piece.x + piece.width) * dpr)),
+                  );
+                  const bottom = Math.max(
+                    top,
+                    Math.min(targetHeight, Math.round((piece.y + piece.height) * dpr)),
+                  );
+                  if (right <= left || bottom <= top) continue;
+                  f.pass(
+                    {
+                      target: surfaceTarget,
+                      clear: false,
+                      viewport,
+                      scissor: [left, top, right - left, bottom - top],
                     },
-                  },
-                  h.blit,
-                );
+                    h.blit,
+                  );
+                }
               }
             }
           };
