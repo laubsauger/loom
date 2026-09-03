@@ -12,14 +12,16 @@ import type { ModelDescriptor } from "../../runtime/models/model-acquisition.ts"
  *
  *   (1) the artefact and its cost, named IN the control that chooses it — the enum
  *       labels carry the measured megabytes and the licence rides the description;
+ *   (4) WHERE it runs — the execution-provider request, and the ladder it resolves to;
  *   (5) the reset pulse — §T978's recovery gesture, session-scoped, weights kept.
  *
  * Obligations (2) what-actually-ran and (3) what-it-cost are MEASUREMENTS, published by
  * the inference runtime through the node-info readouts — a schema that claimed them
  * would be §T381's echo bug by construction, so they are deliberately not here.
- * Obligation (4), per-artefact knobs, stays in each node's `parametersFor` because it
- * is per-model by nature (§T965's signature-driven Input Size is the worked example);
- * this module only guarantees it a consistent home beside (1) and (5).
+ * (4)'s PER-ARTEFACT half — a knob that only exists because of which weights were chosen,
+ * §T965's signature-driven Input Size being the worked example — stays in each node's
+ * `parametersFor`, because it is per-model by nature. What moved here is the half that is
+ * the SAME for every model node: which provider to ask for.
  *
  * Depth and pose still carry their own hand-built versions of (1) and (5); migrating
  * them onto this seam is the inference track's half of §V827 (their files, their
@@ -65,6 +67,111 @@ export function inferenceModelSchema(
       `option is the download it commits you to. ` +
       `Licence: ${[...new Set(models.map((model) => model.license))].join(", ")}.`,
   };
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ * (4) WHERE INFERENCE RUNS — the REQUEST, and never the answer (§T715, §T960, §B171)
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ *
+ * Depth built this by hand and the matte hard-coded `["webgpu", "wasm"]` with no control
+ * at all, which is the §V437 shape §V827 exists to stop: a knob delivered site by site is
+ * not delivered. The owner's words on the matte, after measuring both: "GPU is like 10
+ * times faster than the WASM implementation, so let's make sure that we prefer the WebGPU
+ * implementation. But yeah, obviously make it selectable."
+ *
+ * MEASURED 2026-09-03, MODNet at 512² in Chrome on this machine, same weights, same
+ * packed input, output identical to eight significant figures: **wasm 6323 ms, webgpu
+ * 658 ms** — 9.6×. That is the number the default encodes.
+ *
+ * Two rules bind every word here, and both are easy to break by accident:
+ *
+ *  - REPORT WHAT IT GOT, NEVER WHAT IT ASKED FOR. This list is a PARAMETER, so it can only
+ *    ever be a request. What actually ran is measured in the worker — which walks the
+ *    ladder one provider at a time for exactly this reason — and shown on the node's info
+ *    readout. A readout that echoed this control would confidently print "WebGPU" while
+ *    the CPU did the work, which is the state §B171 produced.
+ *  - NAME THE API, NEVER THE CHIP. `Neural Engine`, `ANE`, `NPU`, `hardware-accelerated`
+ *    and "the browser chose the device" are banned from every surface (§T715): WebNN
+ *    defines no device enumeration and no way to observe which device was chosen, so any
+ *    of those words would be a claim we cannot check.
+ *
+ * ⚠ THE `auto` LADDER PUTS WEBGPU FIRST, and that is the one place this deliberately
+ * differs from depth's hand-built copy (which tries WebNN first). It is the owner's
+ * instruction above, it is what the measurement says, and on every browser that can run
+ * this today WebNN is behind a flag so the two orders resolve identically anyway. When the
+ * inference track migrates depth and pose onto this seam, this is the order they take.
+ */
+interface BackendOption {
+  readonly value: string;
+  readonly label: string;
+}
+
+function machineHasWebGpu(): boolean {
+  return typeof navigator !== "undefined" && (navigator as { gpu?: unknown }).gpu !== undefined;
+}
+
+function machineHasWebNn(): boolean {
+  return typeof navigator !== "undefined" && (navigator as { ml?: unknown }).ml !== undefined;
+}
+
+/**
+ * The options THIS page can reach, probed rather than declared.
+ *
+ * A stored choice is always kept in the list even when it is unreachable — dropping it
+ * would silently rewrite the document to something the author did not pick — and its label
+ * says so rather than pretending.
+ */
+function backendOptions(stored: unknown): readonly BackendOption[] {
+  const options: BackendOption[] = [
+    { value: "auto", label: "Automatic — GPU if this browser has it, then CPU" },
+  ];
+  const offer = (value: string, name: string, reachable: boolean): void => {
+    if (!reachable && stored !== value) return;
+    options.push({ value, label: reachable ? name : `${name} — not available in this browser` });
+  };
+  offer("webgpu", "WebGPU", machineHasWebGpu());
+  offer("webnn", "WebNN", machineHasWebNn());
+  options.push({ value: "wasm", label: "CPU (WASM)" });
+  return options;
+}
+
+/** (4) The chooser. `stored` is the node's own bag, so an unreachable pin stays visible. */
+export function inferenceBackendSchema(stored: Readonly<Record<string, unknown>>): EnumParameter {
+  return {
+    type: "enum",
+    label: "Backend",
+    group: "Model",
+    default: "auto",
+    options: [...backendOptions(stored["backend"])],
+    description:
+      "Which execution provider to ask onnxruntime for. The list is what this browser " +
+      "reports it can reach, so it differs between machines. Automatic prefers the GPU — " +
+      "measured 9.6x faster than the CPU for this model on the machine this default was " +
+      "set on — and falls back to the CPU when the GPU provider will not start. Pinning " +
+      "one means exactly that one, and a pinned provider that cannot start fails with a " +
+      "reason rather than quietly running somewhere else. What it ACTUALLY ran on is " +
+      "measured after the fact and shown on the node's info popup with the time it took — " +
+      "this control is the request, that readout is the answer.",
+  };
+}
+
+/**
+ * The ladder a stored choice means, in the order the worker will try it.
+ *
+ * A PINNED choice is exactly one provider and no fallback: a picker whose selection is
+ * silently overridden has removed the choice by hiding it. A pinned provider that cannot
+ * start therefore FAILS, loudly, with the reason on the node — which is §V469, and is what
+ * the user asked for by pinning.
+ */
+export function inferenceProvidersFor(stored: Readonly<Record<string, unknown>>): readonly string[] {
+  const choice = stored["backend"];
+  if (typeof choice === "string" && choice !== "auto" && choice.length > 0) return [choice];
+  const ladder: string[] = [];
+  if (machineHasWebGpu()) ladder.push("webgpu");
+  if (machineHasWebNn()) ladder.push("webnn");
+  ladder.push("wasm");
+  return ladder;
 }
 
 /**

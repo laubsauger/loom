@@ -523,6 +523,61 @@ describe("uploads and tracking", () => {
       expect(ask(sources, "depth1:ready", 1, 1)).toBe(1);
     });
 
+    /**
+     * §V288 — WHAT IT FOUND, not merely whether it ran.
+     *
+     * `ready` says a result landed. For a node whose neutral output is also a legitimate
+     * answer — a matte, where zero everywhere means both "no model" and "nobody is in
+     * frame" — that is not enough to tell a working node from a broken one, and the app
+     * spent two wrong diagnoses on exactly that gap. So a node that CAN say how much it
+     * claimed does, and one that cannot answers UNKNOWN rather than a confident zero.
+     */
+    it("publishes what a result CLAIMED, and leaves it unknown for a node that cannot say", async () => {
+      const sources = createInferenceSources({
+        readBuffer: async () => frameBuffer(1),
+        // Two bytes of 255 out of four: half the result "claimed", on this fixture's scale.
+        run: async () => new Uint8Array([255, 255, 0, 0]),
+      });
+      sources.track([
+        entry("cut1", { channel: "cut1", coverage: (bytes) => bytes.filter((b) => b > 0).length / bytes.length }),
+        entry("depth1", { channel: "depth1" }),
+      ]);
+
+      // Before a result: the node that publishes coverage reads 0 (paired with `ready` 0,
+      // exactly as the timing fields are), the node that does not still reads UNKNOWN.
+      expect(ask(sources, "cut1:coverage", 0, 0)).toBe(0);
+      expect(sources.lastCoverage("cut1")).toBeUndefined();
+      expect(ask(sources, "depth1:coverage", 0, 0)).toBeUndefined();
+
+      sources.sample(0, 0);
+      await settled();
+
+      expect(sources.lastCoverage("cut1")).toBeCloseTo(0.5, 6);
+      expect(ask(sources, "cut1:coverage", 1, 1)).toBeCloseTo(0.5, 6);
+      // ⚠ The one that separates "nothing ran" from "it ran and found nothing": a node
+      // with no coverage reader must not be handed a zero it never measured.
+      expect(sources.lastCoverage("depth1")).toBeUndefined();
+      expect(ask(sources, "depth1:coverage", 1, 1)).toBeUndefined();
+    });
+
+    it("forgets a coverage reading with the result it described (§T978's reset)", async () => {
+      const sources = createInferenceSources({
+        readBuffer: async () => frameBuffer(1),
+        run: async () => new Uint8Array([255, 255, 255, 255]),
+      });
+      sources.track([entry("cut1", { channel: "cut1", coverage: () => 1 })]);
+      sources.sample(0, 0);
+      await settled();
+      expect(sources.lastCoverage("cut1")).toBe(1);
+
+      // A stale coverage surviving a reset would report a full matte over a node that is
+      // back to publishing its neutral — the readout claiming a fact about bytes nobody
+      // can read, which is the whole family this measurement exists to close.
+      sources.reset("cut1");
+      expect(sources.ready("cut1")).toBe(false);
+      expect(sources.lastCoverage("cut1")).toBeUndefined();
+    });
+
     it("reports the lag in FRAMES and in SECONDS, from the frame the result was computed for", async () => {
       const sources = createInferenceSources({ readBuffer: async () => frameBuffer(1), ...echoRunner() });
       sources.track([entry("depth1", { channel: "depth1" })]);

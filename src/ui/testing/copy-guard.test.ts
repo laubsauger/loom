@@ -3,6 +3,7 @@ import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
+import { buildNotices } from "../../app/use-model-inference.ts";
 
 /**
  * Guards §V90/§V91/§V92 so inline prose cannot creep back into chrome one track at a
@@ -273,5 +274,115 @@ describe("§V90/§V91/§V92 — inline prose does not creep back into chrome (T1
         true,
       );
     }
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ * §V852 — A BANNER IS ONE SENTENCE, AND THAT IS A BUDGET, NOT A STYLE NOTE
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ *
+ * The owner, on the model notices: "again we have this huge amount of text and prose and
+ * blah blah blah for the banners… No one is gonna read half a fucking book when they want
+ * to see what's going on. Make that a rule."
+ *
+ * The guard above scans `.tsx` chrome and deliberately exempts `.ts` logic, because
+ * diagnostic CONTENT is legitimately long. A notice is the exception to that exception: it
+ * is content by construction and chrome by placement, and it is the one surface that
+ * appears unbidden across the top of the app. Every clause in the banner it replaced had
+ * been added for a real reason — name the picture (B156), point at the rate (§T754),
+ * promote the reason (§T965) — and each defended itself in isolation. The LENGTH was
+ * emergent, which is why only a ceiling stops it: reviewing clause by clause asking "is
+ * this true?" always answers yes.
+ *
+ * So this is a BEHAVIOURAL gate rather than a source scan: it builds every notice the model
+ * seam can produce and measures what a person would actually read. A new state cannot dodge
+ * it by living in a file the walk above does not visit.
+ */
+describe("§V852 — model notices fit in one sentence", () => {
+  /** One short sentence. Longer than a scannable line, and nobody reads it. */
+  const MESSAGE_BUDGET = 90;
+  /** A `detail` is a fragment of DATA (a size, a reason), never a second paragraph. */
+  const DETAIL_BUDGET = 80;
+
+  const targets = [
+    {
+      nodeId: "depth1",
+      channel: "depth1",
+      kind: { nodeType: "depth", label: "Depth", neutralPicture: "flat grey" },
+      descriptor: { id: "d", label: "Depth Anything V2", bytes: 99_060_839 },
+      size: [8, 8],
+    },
+    {
+      nodeId: "cut1",
+      channel: "cut1",
+      kind: {
+        nodeType: "matte",
+        label: "Matte",
+        neutralPicture: "zero everywhere",
+        coverage: () => 0,
+      },
+      descriptor: { id: "m", label: "MODNet quantized", bytes: 6_612_345 },
+      size: [8, 8],
+    },
+  ];
+  const acquisition = { acquire: () => undefined, cancel: () => {} };
+
+  /** Every state the seam can be in, so the budget covers the whole surface. */
+  const cases: ReadonlyArray<[string, unknown, unknown]> = [
+    ["no model", { d: { kind: "absent" }, m: { kind: "absent" } }, {}],
+    [
+      "downloading",
+      { d: { kind: "downloading", received: 1_000, total: 99_060_839 }, m: { kind: "downloading", received: 1, total: 2 } },
+      {},
+    ],
+    [
+      "download failed",
+      { d: { kind: "failed", reason: "the network went away" }, m: { kind: "failed", reason: "the network went away" } },
+      {},
+    ],
+    [
+      "computing the first result",
+      { d: { kind: "ready" }, m: { kind: "ready" } },
+      { depth1: { kind: "waiting" }, cut1: { kind: "waiting" } },
+    ],
+    [
+      "the run failed",
+      { d: { kind: "ready" }, m: { kind: "ready" } },
+      {
+        depth1: { kind: "failed", reason: "no execution provider could load this model" },
+        cut1: { kind: "failed", reason: "no execution provider could load this model" },
+      },
+    ],
+    [
+      "running and claiming nothing",
+      { d: { kind: "ready" }, m: { kind: "ready" } },
+      { depth1: { kind: "running", claimsNothing: false }, cut1: { kind: "running", claimsNothing: true } },
+    ],
+  ];
+
+  it("says everything it has to say in one sentence, in every state", () => {
+    let measured = 0;
+    for (const [name, states, health] of cases) {
+      const notices = buildNotices(targets as never, states as never, acquisition, health as never);
+      for (const notice of notices) {
+        measured += 1;
+        const where = `${name}: ${notice.id}`;
+        expect(notice.message.length, `${where} — message is ${notice.message.length} chars`).toBeLessThanOrEqual(
+          MESSAGE_BUDGET,
+        );
+        // A full stop mid-string is a second sentence wearing one string's clothes, which
+        // is exactly the shape the four-sentence banner had.
+        expect(notice.message, `${where} — message is more than one sentence`).not.toMatch(/\. \S/);
+        if (notice.detail === undefined) continue;
+        expect(notice.detail.length, `${where} — detail is ${notice.detail.length} chars`).toBeLessThanOrEqual(
+          DETAIL_BUDGET,
+        );
+        expect(notice.detail, `${where} — detail is more than one sentence`).not.toMatch(/\. \S/);
+      }
+    }
+    // The gate must be MEASURING something: a `buildNotices` that returned nothing would
+    // satisfy every assertion above and prove no rule at all.
+    expect(measured).toBeGreaterThan(6);
   });
 });

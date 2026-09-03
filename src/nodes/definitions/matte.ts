@@ -6,7 +6,12 @@ import { scratchResourceId } from "../../compiler/resources.ts";
 import { inferenceSourceIdFor } from "../../runtime/execution/inference-sources.ts";
 import { MATTE_ACCURATE, MATTE_FAST, MATTE_MODELS } from "../../runtime/models/model-catalogue.ts";
 import { MATTE_INPUT_SIDE } from "../../runtime/models/matte-runner.ts";
-import { inferenceModelSchema, inferenceResetSchema, letterboxPreprocessWgsl } from "./inference-node.ts";
+import {
+  inferenceBackendSchema,
+  inferenceModelSchema,
+  inferenceResetSchema,
+  letterboxPreprocessWgsl,
+} from "./inference-node.ts";
 
 /**
  * Matte — a person MATTE from a single image, inferred (T957).
@@ -27,15 +32,30 @@ import { inferenceModelSchema, inferenceResetSchema, letterboxPreprocessWgsl } f
  *
  * Results arrive when the model finishes, not per frame; live playback shows the most
  * recent matte and reports its age. MODNet is per-frame and its edges flicker, so the
- * worker applies a temporal EMA to the matte (T957): stability bought with a few frames
- * of edge lag on a fast-moving subject. The properly-recurrent models that fix this
- * without lag are blocked (§T981; RVM is GPL besides).
+ * worker applies a temporal EMA to the matte (T957): stability bought with edge lag on a
+ * moving subject. MEASURED in the app 2026-09-03, quantized MODNet on the WebGPU provider
+ * at 1280x720: 997-1606 ms per inference, 19-25 frames behind. So the lag the EMA adds is
+ * a SECOND, not "a few frames" — see `smoothMatte` for why that number is a design
+ * question rather than a bug. The properly-recurrent models that fix this without lag are
+ * blocked (§T981; RVM is GPL besides).
  *
  * ## §V827, on the seam from day one
  *
  * The model chooser names each artefact's measured download and licence in the control
- * itself; the reset pulse is §T978's, session-scoped, weights kept. What-ran and
- * what-it-cost are published by the runtime's readouts, never echoed from here.
+ * itself; the Backend chooser names the providers THIS browser can reach and defaults to
+ * trying the GPU first (measured 2026-09-03: wasm 6323 ms, webgpu 658 ms for the same
+ * input and a byte-identical matte); the reset pulse is §T978's, session-scoped, weights
+ * kept. What-ran and what-it-cost are published by the runtime's readouts, never echoed
+ * from here.
+ *
+ * ## §V288 — AND IT SAYS HOW MUCH IT FOUND
+ *
+ * This node's neutral output is ALSO a legitimate answer: zero everywhere means "no
+ * model" and "nobody is in frame", so a working matte over an empty room is
+ * pixel-for-pixel a broken one. Every diagnosis this node has attracted has been that
+ * confusion, in both directions. So each result is measured — the fraction of the frame it
+ * claims — and published on `<name>:coverage`, with a one-line notice while it is zero.
+ * The measurement lives in `matteCoverage`; the reason it has to exist lives there too.
  */
 
 export const MATTE_INPUT_KEY = "modelInput";
@@ -58,21 +78,41 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   return vec4f(value, value, value, value);
 }`;
 
+/**
+ * The node's own schema, from its stored bag — §V827's (1), (4) and (5) in one place.
+ *
+ * A function rather than a literal because the Backend chooser is DYNAMIC: it names what
+ * this browser reports it can reach, and keeps an unreachable stored pin in the list
+ * rather than silently rewriting the document to something the author did not pick.
+ */
+function matteParameters(stored: Readonly<Record<string, unknown>>) {
+  return {
+    model: inferenceModelSchema(MATTE_MODELS, {
+      what: "Which MODNet build runs: full precision, or the quantized quarter-size trade.",
+    }),
+    backend: inferenceBackendSchema(stored),
+    reset: inferenceResetSchema(),
+  };
+}
+
 export const matteNode: NodeDefinition = {
   type: "matte",
   version: 1,
   title: "Matte",
   category: "generator",
   description:
-    "Extracts a person MATTE — a soft alpha, high on the subject, zero elsewhere — using MODNet running in the browser. Feed it to the compositing Mask node's mask input to cut a subject out (the Mask node applies a matte; this node makes one). The model downloads once per machine on first use, with your consent; until then the node publishes zero everywhere — 'nobody is here' — and the document still renders. Results arrive at the model's own rate; the matte is temporally smoothed in the worker, which steadies flickering edges at the cost of a few frames of lag on fast motion.",
+    "Extracts a person MATTE — a soft alpha, high on the subject, zero elsewhere — using MODNet running in the browser. Feed it to the compositing Mask node's mask input to cut a subject out (the Mask node applies a matte; this node makes one). The model downloads once per machine on first use, with your consent; until then the node publishes zero everywhere — 'nobody is here' — and the document still renders. Results arrive at the model's own rate — around one per second on a GPU provider at 1280x720 — and the matte is temporally smoothed in the worker, which steadies flickering edges at the cost of about a second of lag on fast motion. How much of the frame the current result claims is published on the node's `coverage` channel — zero there means the model ran and found nobody, which is not the same as the model being unavailable.",
   tags: ["matte", "matting", "segmentation", "person", "ml", "inference", "alpha"],
   inputs: [{ id: "input", label: "Input", type: RGBA_TEXTURE }],
   outputs: [{ id: "out", label: "Out", type: RGBA_TEXTURE }],
-  parameters: {
-    model: inferenceModelSchema(MATTE_MODELS, {
-      what: "Which MODNet build runs: full precision, or the quantized quarter-size trade.",
-    }),
-    reset: inferenceResetSchema(),
+  parameters: matteParameters({}),
+  /**
+   * PER-INSTANCE, because the Backend list is what THIS browser reports it can reach and a
+   * stored pin has to stay visible even when it cannot (§T960's dynamic enum). A static
+   * table would offer WebGPU on a machine that has none, which is a control that lies.
+   */
+  parametersFor(stored) {
+    return matteParameters(stored);
   },
   resolutionPolicy: { kind: "inherit", input: "input" },
   compile(context): CompiledNodeDescription {

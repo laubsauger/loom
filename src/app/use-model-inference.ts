@@ -15,6 +15,7 @@ import {
   POSE_RESULT_KEY,
   depthSettingsFor,
 } from "@nodes/definitions/index.ts";
+import { inferenceProvidersFor } from "@nodes/definitions/inference-node.ts";
 import { scratchResourceId } from "@compiler/resources.ts";
 import {
   createInferenceSources,
@@ -41,6 +42,7 @@ import {
 } from "@runtime/models/model-catalogue.ts";
 import {
   MATTE_INPUT_SIDE,
+  matteCoverage,
   matteToFloats,
   neutralMatte,
   packMatteInput,
@@ -104,12 +106,13 @@ interface InferenceKind {
   /** What to call it in a sentence a user reads. */
   readonly label: string;
   /**
-   * What the node PUBLISHES when it has no result, said as a picture (B156).
+   * What the node PUBLISHES when it has no result, said as a picture (B156) — and said in
+   * THREE OR FOUR WORDS (§V852).
    *
    * The notices used to describe the download; the owner needed them to describe the
-   * SCREEN. "Depth needs Depth Anything V2" reads as an optional extra you can dismiss;
-   * "this document is showing flat grey where the relief would be" reads as the reason
-   * the picture looks inert — which is the same fact, aimed at the thing being looked at.
+   * SCREEN. That fix was right and then grew: "flat grey instead of relief" became a
+   * clause inside a four-sentence banner nobody read. It is a noun phrase now, because it
+   * has to fit inside a one-sentence notice beside the node's name.
    */
   readonly neutralPicture: string;
   readonly inputKey: string;
@@ -139,6 +142,11 @@ interface InferenceKind {
     sourceSize: readonly [number, number],
   ): Uint8Array;
   fallback(size: readonly [number, number]): Uint8Array;
+  /**
+   * HOW MUCH OF THE FRAME A RESULT CLAIMS, or absent for a node where the question has no
+   * answer (§V288). Only the matte supplies one — see the row's own note.
+   */
+  coverage?(bytes: Uint8Array): number;
 }
 
 /** What a node instance's parameters say about running it. */
@@ -171,7 +179,10 @@ function matteSettings(parameters: Readonly<Record<string, unknown>>): Inference
   return {
     descriptor: parameters["model"] === MATTE_FAST.id ? MATTE_FAST : MATTE_ACCURATE,
     inputSide: MATTE_INPUT_SIDE,
-    providers: ["webgpu", "wasm"],
+    // §V827(4): the node's own Backend request, resolved by the shared seam rather than
+    // hard-coded here. Measured 2026-09-03 in Chrome: wasm 6323 ms, webgpu 658 ms for the
+    // same input and a byte-identical matte, which is why `auto` tries the GPU first.
+    providers: inferenceProvidersFor(parameters),
     minIntervalSeconds: 0,
     hold: false,
   };
@@ -199,7 +210,7 @@ const INFERENCE_KINDS: readonly InferenceKind[] = [
   {
     nodeType: "depth",
     label: "Depth",
-    neutralPicture: "flat grey instead of relief",
+    neutralPicture: "flat grey",
     inputKey: DEPTH_INPUT_KEY,
     resultKey: DEPTH_RESULT_KEY,
     tensorType: "float32",
@@ -239,7 +250,7 @@ const INFERENCE_KINDS: readonly InferenceKind[] = [
   {
     nodeType: "matte",
     label: "Matte",
-    neutralPicture: "zero everywhere — nobody is here",
+    neutralPicture: "zero everywhere",
     inputKey: MATTE_INPUT_KEY,
     resultKey: MATTE_RESULT_KEY,
     tensorType: "float32",
@@ -249,6 +260,13 @@ const INFERENCE_KINDS: readonly InferenceKind[] = [
     pack: (texels, side) => packMatteInput(texels, side),
     encode: (output, size) => matteToFloats(output, MATTE_INPUT_SIDE, size[0], size[1]),
     fallback: (size) => neutralMatte(size[0], size[1]),
+    /*
+     * §V288 — the ONLY node that supplies one, and the reason is its own neutral output.
+     * Zero everywhere means "no model", "no result yet", "the run failed" AND "it ran and
+     * nobody is in frame", and the first three have notices while the fourth had nothing.
+     * A measured coverage is what separates them; see `matteCoverage`.
+     */
+    coverage: (bytes) => matteCoverage(bytes),
   },
 ];
 
@@ -289,16 +307,36 @@ interface DepthTarget {
 type RunHealth =
   /** Acquired, no result yet, nothing has failed — the first inference is in flight. */
   | { readonly kind: "waiting" }
-  /** At least one result has landed. The node is live, at whatever rate the model runs. */
-  | { readonly kind: "running" }
+  /**
+   * At least one result has landed. The node is live, at whatever rate the model runs.
+   *
+   * `claimsNothing` is §V288's half: the node ran, and what it produced covers effectively
+   * none of the frame. A BOOLEAN and not the number — coverage changes with every result
+   * and this value is React state, so carrying the number here would re-render the notice
+   * strip at the model's rate (§V16's own reason). The number itself is on the
+   * `<name>:coverage` channel, where a per-frame reading belongs.
+   */
+  | { readonly kind: "running"; readonly claimsNothing: boolean }
   /** Acquired, never produced a result, and the last attempt failed with this reason. */
   | { readonly kind: "failed"; readonly reason: string };
 
 function sameHealth(a: RunHealth | undefined, b: RunHealth | undefined): boolean {
   if (a === undefined || b === undefined) return a === b;
   if (a.kind === "failed") return b.kind === "failed" && a.reason === b.reason;
+  if (a.kind === "running") return b.kind === "running" && a.claimsNothing === b.claimsNothing;
   return a.kind === b.kind;
 }
+
+/**
+ * The line between "it found something" and "it found nothing", as a fraction of the frame.
+ *
+ * 0.1% of a 1280x720 frame is about 920 texels of full alpha — far smaller than anything a
+ * matte node would call a subject, and comfortably above the floor a segmentation model
+ * returns on a frame with nobody in it (measured: MODNet on an empty picture answers a mean
+ * in the 1e-4 range, never exactly zero). A strict `=== 0` would therefore never fire and
+ * the notice would be dead code; a percent would swallow a distant subject.
+ */
+const CLAIMS_NOTHING_BELOW = 0.001;
 
 function sameHealthMap(
   a: Readonly<Record<string, RunHealth>>,
@@ -654,6 +692,11 @@ export function useModelInference(
         minIntervalSeconds: target.settings.minIntervalSeconds,
         hold: target.settings.hold,
         ...(target.channel === undefined ? {} : { channel: target.channel }),
+        // §V288: only a kind that HAS an answer supplies one. Spread rather than a `null`,
+        // so "this node publishes no coverage" stays absence rather than a zero.
+        ...(target.kind.coverage === undefined
+          ? {}
+          : { coverage: (bytes: Uint8Array) => target.kind.coverage!(bytes) }),
       }));
       sources.track(entries);
 
@@ -683,11 +726,15 @@ export function useModelInference(
       for (const candidate of targetsRef.current) {
         if (states[candidate.descriptor.id]?.kind !== "ready") continue;
         const reason = sources.lastFailure(candidate.nodeId);
-        next[candidate.nodeId] = sources.ready(candidate.nodeId)
-          ? { kind: "running" }
-          : reason === undefined
-            ? { kind: "waiting" }
-            : { kind: "failed", reason };
+        if (sources.ready(candidate.nodeId)) {
+          const claimed = sources.lastCoverage(candidate.nodeId);
+          next[candidate.nodeId] = {
+            kind: "running",
+            claimsNothing: claimed !== undefined && claimed < CLAIMS_NOTHING_BELOW,
+          };
+        } else {
+          next[candidate.nodeId] = reason === undefined ? { kind: "waiting" } : { kind: "failed", reason };
+        }
       }
       if (!sameHealthMap(healthRef.current, next)) {
         healthRef.current = next;
@@ -780,11 +827,31 @@ export function useModelInference(
  *    three previously rendered the identical flat picture. Naming them is what makes
  *    §B156's two candidate diagnoses tellable apart from the app rather than by asking.
  *
- * What is deliberately NOT here: a row for a model that is running. Its rate belongs on
- * the telemetry channel (the node info popup's "N frames behind"), because it changes
+ * What is deliberately NOT here: a row for a model that is running WELL. Its rate belongs
+ * on the telemetry channel (the node info popup's "N frames behind"), because it changes
  * every frame and §V16 caps that at 10 Hz — and because a permanent row about a thing
  * that is working correctly is the noise §V537 warns about. A healthy running model is
- * therefore identified by the ABSENCE of a row plus a picture that moves.
+ * therefore identified by the absence of a row plus a picture that moves — refined once,
+ * for the node whose correct picture does NOT move; see the `claimsNothing` branch.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ * §V852 — ONE SENTENCE. THAT IS THE WHOLE BUDGET.
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ *
+ * The owner, on the banners these rules produced: "again we have this huge amount of text
+ * and prose and blah blah blah for the banners… No one is gonna read half a fucking book
+ * when they want to see what's going on. Make that a rule."
+ *
+ * Every sentence that was here had been added for a real reason and each defended itself
+ * in isolation — B156 wanted the picture named, §T754 wanted the rate pointed at, §T965
+ * wanted the reason promoted. The LENGTH was an emergent property nobody chose, which is
+ * why reviewing it sentence by sentence asking "is this true?" never shrank it: they were
+ * all true. The question is "does this belong in a BANNER?", and almost nothing does.
+ *
+ * So: a message is ONE short sentence, a `detail` is a fragment of data or absent, and
+ * everything else moves to where it is asked for — the node info popup, a channel, the
+ * parameter's own description. `copy-guard.test.ts` holds the ceiling so it cannot regrow
+ * one well-argued clause at a time, which is exactly how it grew.
  */
 export function buildNotices(
   targets: readonly DepthTarget[],
@@ -811,7 +878,7 @@ export function buildNotices(
         id: `model-consent-${descriptor.id}`,
         tone: "warn",
         message: `${label} has no model — showing ${target.kind.neutralPicture}.`,
-        detail: `${descriptor.label}, ${formatBytes(descriptor.bytes)}. Downloaded once per machine, kept for every project.`,
+        detail: `${descriptor.label}, ${formatBytes(descriptor.bytes)}, once per machine.`,
         actions: [
           { label: "Download", onSelect: () => void acquisition.acquire(descriptor), variant: "outline" },
         ],
@@ -829,7 +896,7 @@ export function buildNotices(
         id: `model-failed-${descriptor.id}`,
         tone: "error",
         message: `${descriptor.label} could not be downloaded.`,
-        detail: `${state.reason}. The node is publishing its neutral output, so the document still renders.`,
+        detail: state.reason,
         actions: [
           { label: "Try again", onSelect: () => void acquisition.acquire(descriptor), variant: "outline" },
         ],
@@ -849,8 +916,7 @@ export function buildNotices(
       notices.push({
         id: `model-first-result-${target.nodeId}`,
         tone: "info",
-        message: `${label} has its model and is computing its first result.`,
-        detail: `Until it lands the node is still publishing ${neutralPicture}. Results then arrive at the model's own rate, not once per frame — the node info popup reports how many frames behind the latest one is.`,
+        message: `${label} is computing its first result — showing ${neutralPicture}.`,
       });
     } else if (run?.kind === "failed") {
       notices.push({
@@ -871,7 +937,32 @@ export function buildNotices(
          * visible instead of buried.
          */
         message: `${label} could not run: ${run.reason}`,
-        detail: `Publishing ${neutralPicture}; nothing is responding to ${label.toLowerCase()}.`,
+        detail: `Showing ${neutralPicture}.`,
+      });
+    } else if (run?.kind === "running" && run.claimsNothing) {
+      /*
+       * ═══════════════════════════════════════════════════════════════════════════════
+       * §V288 — THE FOURTH STATE, which used to be the silent one
+       * ═══════════════════════════════════════════════════════════════════════════════
+       *
+       * The docblock above says a healthy running model needs no row because it is
+       * identified by "the ABSENCE of a row plus a picture that moves". That is true of
+       * depth. It is FALSE of a matte, and the difference cost two wrong diagnoses in one
+       * day: a correct matte of a frame with nobody in it is zero everywhere, does not
+       * move, and is pixel-for-pixel the no-model picture, the no-result-yet picture and
+       * the failed-run picture. The owner read it as broken; the answer was that the model
+       * ran fine and there was no person in the source.
+       *
+       * So the rule is refined rather than dropped: a healthy model needs no row when its
+       * output is DISTINGUISHABLE from its neutral. When it is not, the node says what it
+       * measured. This row appears only while the measurement says nothing is being
+       * claimed, and vanishes the moment a subject appears — so it is a statement about
+       * the current picture, not a permanent banner about a working feature (§V537).
+       */
+      notices.push({
+        id: `model-empty-result-${target.nodeId}`,
+        tone: "info",
+        message: `${label} ran and found nothing — check its input.`,
       });
     }
   }

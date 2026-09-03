@@ -116,6 +116,20 @@ export interface InferenceEntry {
    * nobody can type.
    */
   readonly channel?: string;
+  /**
+   * HOW MUCH THIS RESULT CLAIMS, from the result's own bytes (§V288, §V827(2)).
+   *
+   * Optional and node-shaped, because "how much" only means something for a node whose
+   * neutral output is also a legitimate answer. The matte is that node: zero everywhere is
+   * both "no model" and "nobody is in frame", and until this existed the app could not
+   * tell those apart — the owner twice read a working matte as a broken one, and once the
+   * other way round. Depth's flat grey and pose's empty keypoint map are not ambiguous in
+   * the same way, so they supply nothing here and report nothing.
+   *
+   * The seam calls it, but does not know what a matte is: the FORMAT belongs to the node,
+   * so the function comes from the node's row and this module only stores what it returns.
+   */
+  readonly coverage?: (bytes: Uint8Array) => number;
 }
 
 /** What a node's model does. Injected, so a pseudo-inference and a real model both plug in. */
@@ -184,6 +198,14 @@ export interface InferenceSources {
    */
   lastFailure(nodeId: NodeId): string | undefined;
   /**
+   * How much of the frame this node's CURRENT result claims, for an entry that supplies a
+   * `coverage` reader — `undefined` for one that does not, and for one with no result yet.
+   *
+   * `undefined` and `0` are different answers and must stay different: "nothing has run"
+   * and "it ran and found nothing" are the two states this exists to separate.
+   */
+  lastCoverage(nodeId: NodeId): number | undefined;
+  /**
    * ═══════════════════════════════════════════════════════════════════════════════════
    * §T976 — THE TIMING, PUBLISHED AS ORDINARY CHANNELS
    * ═══════════════════════════════════════════════════════════════════════════════════
@@ -207,6 +229,10 @@ export interface InferenceSources {
    *   `depth1:fps`             completed inferences per second.
    *   `depth1:realtimeFactor`  that rate over the DISPLAY rate. 1 is keeping up; 0.05 is
    *                            one inference every twenty frames.
+   *   `cut1:coverage`          how much of the frame the CURRENT result claims, 0..1 —
+   *                            only for a node that publishes such a measurement (the
+   *                            matte). An UNKNOWN field on every other model node, on
+   *                            purpose: see `timingOf`.
    *
    * ⚠ `ready` IS THE LOAD-BEARING ONE and its definition is exact: **the first successful
    * RESULT, never "the model downloaded"**. A model present but yet to produce a frame
@@ -273,6 +299,8 @@ export function createInferenceSources(options: {
   const inFlight = new Set<NodeId>();
   /** nodeId -> why the most recent run failed. Cleared by the next success (B156). */
   const failure = new Map<NodeId, string>();
+  /** nodeId -> how much of the frame the CURRENT result claims (§V288). */
+  const coverage = new Map<NodeId, number>();
   /** nodeId -> the absolute time the last live run was ISSUED at (`minIntervalSeconds`). */
   const issuedAt = new Map<NodeId, number>();
   /** nodeId -> the absolute time the CURRENT result completed (§T976's rate and delay). */
@@ -297,6 +325,7 @@ export function createInferenceSources(options: {
     sourceFrame.delete(nodeId);
     generation.delete(nodeId);
     failure.delete(nodeId);
+    coverage.delete(nodeId);
     issuedAt.delete(nodeId);
     resultAt.delete(nodeId);
     resultInterval.delete(nodeId);
@@ -330,6 +359,14 @@ export function createInferenceSources(options: {
   const timingOf = (entry: InferenceEntry, frame: FrameEvaluationInput, field: string): number | undefined => {
     const { nodeId } = entry;
     if (field === "ready") return latest.has(nodeId) ? 1 : 0;
+    if (field === "coverage") {
+      // UNKNOWN for a node that publishes no such measurement (depth, pose) — so
+      // `depth1:coverage` fails as the typo it is rather than reporting a confident 0.
+      // For a node that does publish one, 0 before the first result, paired with `ready`
+      // exactly as the timing fields are.
+      if (entry.coverage === undefined) return undefined;
+      return coverage.get(nodeId) ?? 0;
+    }
     const stamped = sourceFrame.get(nodeId);
     // No result yet: every timing field is 0, and `ready` beside it is 0. An UNKNOWN field
     // still answers `undefined` — the two must not collapse, or `depth1:lagFrmes` becomes
@@ -381,6 +418,9 @@ export function createInferenceSources(options: {
       sourceFrame.set(nodeId, frameIndex);
       generation.set(nodeId, (generation.get(nodeId) ?? 0) + 1);
       failure.delete(nodeId);
+      // Measured from THESE bytes, beside the value they describe, so a coverage reading
+      // can never belong to a different result than the one being published.
+      if (entry.coverage !== undefined) coverage.set(nodeId, entry.coverage(bytes));
       // §T976: the RATE is the gap between two completed results, measured on the clock
       // the caller last reported. A rate derived from one result is not a rate, so the
       // interval stays 0 until there are two and `fps` says 0 rather than infinity.
@@ -486,6 +526,10 @@ export function createInferenceSources(options: {
 
     lastFailure(nodeId) {
       return failure.get(nodeId);
+    },
+
+    lastCoverage(nodeId) {
+      return coverage.get(nodeId);
     },
 
     /**

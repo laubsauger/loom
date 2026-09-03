@@ -219,9 +219,9 @@ describe("a model that is held but does not run", () => {
     // buried it.
     expect(list[0]!.message).toContain("no ExecutionProvider bound for depth-accurate");
     expect(list[0]!.message).toContain("Depth");
-    // And the detail says what is on screen instead, in one line — no "the document
+    // And the detail says what is on screen instead, in a FRAGMENT — no "the document
     // still renders" clause, which tells someone looking at a rendered document that it
-    // renders.
+    // renders (§V852 later cut this from a sentence to three words).
     expect(list[0]!.detail).toContain("flat grey");
     expect(list[0]!.detail).not.toContain("still renders");
   });
@@ -231,15 +231,72 @@ describe("a model that is held but does not run", () => {
     expect(list).toHaveLength(1);
     expect(list[0]!.tone).toBe("info");
     expect(list[0]!.message).toContain("computing its first result");
-    // §T754 is a standing owner action about the observed update interval, so the moment
-    // the model starts working is where the app points at the number.
-    expect(list[0]!.detail).toContain("frames behind");
+    // §V852: the picture rides in the SAME sentence, and the rate no longer rides at all —
+    // it changes every frame, so it belongs on the node info popup, not in an alert.
+    expect(list[0]!.message).toContain("flat grey");
+    expect(list[0]!.detail).toBeUndefined();
   });
 
   it("says NOTHING once results are landing", () => {
     // A permanent row about a thing that is working is noise (§V537), and the rate belongs
     // on the telemetry channel at <= 10 Hz (§V16) rather than in a strip. A healthy model
     // is read as the absence of a row plus a picture that moves.
-    expect(notices({ depth: { kind: "running" } })).toEqual([]);
+    expect(notices({ depth: { kind: "running", claimsNothing: false } })).toEqual([]);
+  });
+});
+
+/**
+ * §V288 — THE FOURTH STATE, and the one that was silent.
+ *
+ * The rule above ("a healthy model is the absence of a row plus a picture that moves") is
+ * right for depth and WRONG for a matte: a correct matte of a frame with nobody in it is
+ * zero everywhere, does not move, and is pixel-for-pixel identical to no-model,
+ * no-result-yet and failed-run. The owner read a working matte as broken twice in one day,
+ * and nothing on screen could have told them otherwise.
+ *
+ * These assert the SENTENCE for the state that had none, and — the half that makes it a
+ * refinement rather than a new banner — that it disappears the moment the matte claims
+ * something. A row that stayed up while the feature worked would just be §V537 again.
+ */
+describe("a matte that runs and finds nothing", () => {
+  const target = {
+    nodeId: "cut",
+    channel: "cut1",
+    kind: {
+      nodeType: "matte",
+      label: "Matte",
+      neutralPicture: "zero everywhere — nobody is here",
+      coverage: () => 0,
+    },
+    descriptor: { id: "modnet-photographic", label: "MODNet", bytes: 25_888_640 },
+    size: [8, 8] as const,
+  };
+  const notices = (health: Record<string, unknown>) =>
+    buildNotices(
+      [target] as never,
+      { "modnet-photographic": { kind: "ready" } } as never,
+      { acquire: () => undefined, cancel: () => {} },
+      health as never,
+    );
+
+  it("says the model ran and returned nothing, rather than leaving black unexplained", () => {
+    const list = notices({ cut: { kind: "running", claimsNothing: true } });
+    expect(list).toHaveLength(1);
+    expect(list[0]!.tone).toBe("info");
+    // The two facts the black picture cannot carry: that it RAN, and that the emptiness is
+    // the answer rather than a failure. Asserting both, because a row that only said
+    // "empty" would read as one more way of saying the thing is broken.
+    expect(list[0]!.message).toContain("ran");
+    expect(list[0]!.message).toContain("found nothing");
+    // §V852: and it points at what to do next in the same breath, with no second sentence.
+    // The measured readouts it would otherwise cite live on the node info popup and on
+    // `<name>:coverage`, which is where someone goes when this line is not enough.
+    expect(list[0]!.detail).toBeUndefined();
+  });
+
+  it("goes away the moment the matte claims something", () => {
+    // ⚠ The half that keeps this a refinement and not a permanent banner. If this ever
+    // fires on a working matte it is noise on the one screen that must stay readable.
+    expect(notices({ cut: { kind: "running", claimsNothing: false } })).toEqual([]);
   });
 });

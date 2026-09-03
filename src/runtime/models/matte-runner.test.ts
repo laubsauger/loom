@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { matteToFloats, neutralMatte, packMatteInput, smoothMatte } from "./matte-runner.ts";
+import { matteCoverage, matteToFloats, neutralMatte, packMatteInput, smoothMatte } from "./matte-runner.ts";
 
 describe("packing MODNet's input (T957)", () => {
   it("normalises (x − 0.5) / 0.5 per channel, NCHW — the reference inference, not the card", () => {
@@ -64,5 +64,63 @@ describe("the temporal EMA (T957 — §T981's state slot, proven small)", () => 
     const next = new Float32Array([0.25, 0.75]);
     expect([...smoothMatte(undefined, Float32Array.from(next), 0.5)]).toEqual([0.25, 0.75]);
     expect([...smoothMatte(new Float32Array([0, 0]), Float32Array.from(next), 1)]).toEqual([0.25, 0.75]);
+  });
+});
+
+/**
+ * §V288 — the measurement that separates "it ran and found nobody" from "it is broken".
+ *
+ * The bug this closes is not a wrong pixel; it is a MISSING NUMBER. A matte's neutral
+ * output and its correct output on an empty frame are the same picture, so four different
+ * states rendered identically and only three of them said anything. These assertions are
+ * about DIRECTION and about the values a consumer reads, never about a magnitude that
+ * would only pin the fixture.
+ */
+describe("how much of the frame a matte claims (§V288, §V839)", () => {
+  const SIDE = 32;
+
+  /** A subject: full alpha inside a centred box covering a quarter of the frame. */
+  function subject(fill: number): Uint8Array {
+    const floats = new Float32Array(SIDE * SIDE);
+    for (let y = SIDE / 4; y < (SIDE * 3) / 4; y += 1) {
+      for (let x = SIDE / 4; x < (SIDE * 3) / 4; x += 1) floats[y * SIDE + x] = fill;
+    }
+    return new Uint8Array(floats.buffer);
+  }
+
+  it("is the fraction of the frame the matte actually claims", () => {
+    // A quarter of the frame at full alpha IS a quarter. The number a notice and a
+    // `<name>:coverage` channel both read is this one, so it has to mean what it says.
+    expect(matteCoverage(subject(1))).toBeCloseTo(0.25, 6);
+    expect(matteCoverage(subject(0.5))).toBeCloseTo(0.125, 6);
+  });
+
+  /**
+   * §V839 — CONFIRM THE METRIC MOVES THE WAY ITS NAME SAYS, by mutating to a known-bad
+   * state and checking the number goes where predicted. A coverage that rose as the matte
+   * emptied would have named the notice's condition backwards and fired it on the one
+   * frame where everything was fine.
+   */
+  it("goes DOWN as the matte empties, and reaches zero for the neutral output", () => {
+    const full = matteCoverage(subject(1));
+    const half = matteCoverage(subject(0.5));
+    const empty = matteCoverage(neutralMatte(SIDE, SIDE));
+    expect(full).toBeGreaterThan(half);
+    expect(half).toBeGreaterThan(empty);
+    expect(empty).toBe(0);
+    // And the threshold the notice fires on separates them, which is the whole claim:
+    // a subject reads far above it, the neutral output far below.
+    expect(full).toBeGreaterThan(0.001);
+    expect(empty).toBeLessThan(0.001);
+  });
+
+  it("counts a NaN as no coverage rather than poisoning the whole reading", () => {
+    // One bad texel used to make the mean NaN, and `NaN < threshold` is false — so a
+    // completely broken result would have reported itself as a healthy one.
+    const floats = new Float32Array(SIDE * SIDE).fill(1);
+    floats[0] = Number.NaN;
+    const measured = matteCoverage(new Uint8Array(floats.buffer));
+    expect(Number.isFinite(measured)).toBe(true);
+    expect(measured).toBeCloseTo((SIDE * SIDE - 1) / (SIDE * SIDE), 6);
   });
 });
