@@ -121,11 +121,18 @@ const RAW_SCHEMA_READS: Readonly<Record<string, { readonly reason: string; reado
     reads: ["pointKernelAdvancedNode.parameters", "pointKernelAdvancedNode.parameters"],
   },
   "src/nodes/definitions/custom-wgsl.test.ts": {
-    reason: `${TYPE_ONLY_UNIT_TEST} ${HOOK_UNDER_TEST}`,
+    reason:
+      `${TYPE_ONLY_UNIT_TEST} ${HOOK_UNDER_TEST} FIVE hook calls now, not two — each drives ` +
+      "`parametersFor` with a different `struct Params` source and asserts the schema it " +
+      "reflects. Routing these through the funnel would assert the funnel, not the hook, and " +
+      "leave §T880's reflector with no direct test at all.",
     reads: [
       "customWgslNode.parameters",
       "customWgslNode.parameters",
       "customWgslNode.parameters",
+      "customWgslNode.parametersFor",
+      "customWgslNode.parametersFor",
+      "customWgslNode.parametersFor",
       "customWgslNode.parametersFor",
       "customWgslNode.parametersFor",
     ],
@@ -150,6 +157,16 @@ const RAW_SCHEMA_READS: Readonly<Record<string, { readonly reason: string; reado
   },
 
   // ── Catalogue-wide audits ──────────────────────────────────────────────────────────
+  "src/compiler/scene-preview.test.ts": {
+    reason:
+      `${CATALOGUE_AUDIT} T1020 sweeps EVERY geometry mode by reading the option list off ` +
+      "the `geometry` manifest's own `mode` enum instead of naming the modes anybody would " +
+      "think of (§V316) — which is the whole reason `beam` could fall into the surface " +
+      "`else` and show no signal on its tile while cooking. There is no node instance " +
+      "here: the sweep exists to CONSTRUCT the instances, one per declared mode, so the " +
+      "declared enum is precisely the subject and a reflected schema could not supply it.",
+    reads: ["geometryDefinition.parameters"],
+  },
   "src/domain/parameters/parameter-range.test.ts": { reason: CATALOGUE_AUDIT, reads: ["definition.parameters"] },
   "src/domain/transport/loop-continuity.test.ts": {
     reason: CATALOGUE_AUDIT,
@@ -157,8 +174,19 @@ const RAW_SCHEMA_READS: Readonly<Record<string, { readonly reason: string; reado
   },
   "src/domain/transport/shipped-clock-audit.test.ts": { reason: CATALOGUE_AUDIT, reads: ["definition.parameters"] },
   "src/tests/guardrails/parameter-precision.test.ts": {
-    reason: CATALOGUE_AUDIT,
-    reads: ["definition.parameters", "definition.parameters", "definition.parameters", "lfoNode.parameters"],
+    reason:
+      `${CATALOGUE_AUDIT} FOUR sweeps of \`allNodeDefinitions\`, not three: the derived-grid ` +
+      "refusal, T989's display+commit round trip, the declared-step snap, and the numeric-" +
+      "default census. Each walks the catalogue with no node in hand, and the DECLARED " +
+      "default is what they audit — a reflected schema carries the instance's stored value, " +
+      "which is the thing these tests are checking the author's declaration against.",
+    reads: [
+      "definition.parameters",
+      "definition.parameters",
+      "definition.parameters",
+      "definition.parameters",
+      "lfoNode.parameters",
+    ],
   },
   "src/tests/guardrails/code-parameter-order.test.ts": {
     reason:
@@ -206,8 +234,19 @@ const RAW_SCHEMA_READS: Readonly<Record<string, { readonly reason: string; reado
     reads: ["valueFilterNode.parameters", "valueFilterNode.parameters", "valueLagNode.parameters"],
   },
   "src/domain/commands/parameter-commands.test.ts": {
-    reason: TYPE_ONLY_UNIT_TEST,
+    reason:
+      `${TYPE_ONLY_UNIT_TEST} ELEVEN now, not seven, and every one is the funnel's own ` +
+      "argument: `menuNode` is a fixture definition declared in this file, and each read " +
+      "hands its declared block INTO `resolveParameterSchema(node, menuNode.parameters)` or " +
+      "into a `createNodeReferenceReader({ schemaOf })`. Calling `effectiveParameterSchema` " +
+      "first would only pre-apply the funnel to its own input — the fixture has no " +
+      "`parametersFor`, so the two are the same object, and the indirection would hide " +
+      "which schema the resolver was actually given.",
     reads: [
+      "menuNode.parameters",
+      "menuNode.parameters",
+      "menuNode.parameters",
+      "menuNode.parameters",
       "menuNode.parameters",
       "menuNode.parameters",
       "menuNode.parameters",
