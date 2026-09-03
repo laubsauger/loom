@@ -350,11 +350,14 @@ describe("T900 — migration: parse the legacy slots forever, emit them never (�
  *
  * Captured at `d7d9e26`, the commit before this work: a digest per shipped loom over every
  * pass belonging to a `pointKernel` or `pointKernelAdvanced` node — shader text, bindings,
- * workgroups and uniform VALUES. 19 looms carry 41 kernels between them (T940 added dust,
- * T918 added
- * E13's wall-placing kernel). A single changed
+ * workgroups and uniform VALUES. 22 looms carry 44 kernels between them (T940 added dust,
+ * T918 added E13's wall-placing kernel, T1070 added E54's Laplacian). A single changed
  * character in any generated module moves a digest, which is the point: the reflection had to
  * arrive as a pure ADDITION, costing a kernel that declares no `struct Params` exactly nothing.
+ *
+ * T1070 leaned on that hard and it held: `pointAt` is emitted only for a kernel that names it,
+ * so the 18 entries captured at `d7d9e26` still match to the character with the neighbour read
+ * in the generator. That is §V309 checked across 41 shipped kernels rather than asserted.
  *
  * Fix a failure by finding what the generated module gained; do NOT restamp a digest without
  * knowing which loom's picture moved.
@@ -389,6 +392,22 @@ const FRAME_ZERO_DIGESTS: Readonly<Record<string, string>> = {
   "E41-Cinder.loom.json": "d2d99371b37df6dc",
   "E42-Current.loom.json": "ebbc42ae6a703f1c",
   "E45-Pulse.loom.json": "f53677b3d9af9290",
+  /*
+   * ⚠ THREE ENTRIES CAPTURED LATER THAN THE REST, AND SAID SO RATHER THAN BLENDED IN.
+   *
+   * E49 and E50 shipped kernels and their authors never extended this table, so BOTH
+   * assertions above have been failing for everyone since — the coverage list and the
+   * `kernelCount` total (41 → 44). §B150's shape exactly: a gate red for every worker is
+   * nobody's. Their digests are therefore NOT the `d7d9e26` baseline the others are; they
+   * are what those two looms resolve to TODAY, stamped by T1070's author as the price of
+   * landing on a green tree. If either picture drifted between shipping and now, this table
+   * cannot tell you — the two examples' own claims can.
+   *
+   * E54's is a genuine first capture, which is what a new example's entry always is.
+   */
+  "E49-Lissajous.loom.json": "27a1135a06dbcbdd",
+  "E50-Galvo.loom.json": "f99d88756fc859a9",
+  "E54-Quorum.loom.json": "b2529bf4ac57d584",
 };
 
 const POINT_KERNEL_TYPES = new Set(["pointKernel", "pointKernelAdvanced"]);
@@ -411,7 +430,7 @@ describe("T900 — every shipped kernel resolves byte-equal at frame 0", () => {
 
   it("covers exactly the looms that carry kernels — a shrinking gate is a passing gate", () => {
     expect([...digests.keys()].sort()).toEqual(Object.keys(FRAME_ZERO_DIGESTS).sort());
-    expect(kernelCount).toBe(41);
+    expect(kernelCount).toBe(44);
   });
 
   it.each(Object.keys(FRAME_ZERO_DIGESTS))("%s is unchanged at frame 0", (fileName) => {

@@ -220,6 +220,12 @@
     "range": 0.3973,
     "f0max": 1
   },
+  "E54-Quorum.loom.json": {
+    "motion": 0.02864,
+    "range": 0.9981,
+    "f0max": 0.9492,
+    "phrase": 0.03436
+  },
   "E6-Displacement-Stack.loom.json": {
     "motion": 0.28359,
     "range": 0.7293,

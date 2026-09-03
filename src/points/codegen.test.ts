@@ -612,6 +612,125 @@ describe("the advection FIELD (T477, §V288/§V309)", () => {
 });
 
 /**
+ * T1070 — `pointAt(slot)`, the neighbour read the module docblock has promised since T117.
+ *
+ * The gap it closes is structural rather than cosmetic: a point kernel was a PURE PER-POINT
+ * FUNCTION, so no coupled system in the shipped set actually couples (E16's flock is a shared
+ * flow field, E32's herd talks through a texture). The one property the tests below have to
+ * hold on to is WHICH HALF it reads — the pre-frame one, which is what makes a coupled update
+ * a Jacobi iteration with an order-independent answer (§V44). A helper reading `out_*` would
+ * look more current and would make the result depend on workgroup scheduling.
+ */
+describe("pointAt — the neighbour read (T1070, §V288/§V309)", () => {
+  /** The last line of the generated RNG, i.e. what sits immediately above the author's text. */
+  const RNG_TAIL = "  return f32(pointHash(pointId, salt)) * (1.0 / 4294967296.0);\n}";
+
+  const laplacianKernel = `fn process(p: Point, ctx: PointCtx) -> Point {
+  var q = p;
+  var sum = vec3f(0.0);
+  for (var j = 0u; j < ctx.count; j += 1u) {
+    sum += pointAt(j).position;
+  }
+  q.position = mix(p.position, sum / f32(ctx.count), 0.1);
+  return q;
+}`;
+
+  it("hands back the SAME struct p is, loaded from the same pre-frame half", () => {
+    const module = generateKernelModule({
+      attributes: SCHEMA,
+      reads: ["position", "velocity"],
+      writes: ["position"],
+      kernel: laplacianKernel,
+    });
+    if (!module.ok) throw new Error(module.errors.join("; "));
+    expect(module.wgsl).toContain("fn pointAt(slot: u32) -> Point {");
+    // THE half, not merely A load: `in_*` is where `p` itself comes from, so every reader
+    // sees last frame's value whatever order the workgroups ran in. `out_*` here would be
+    // Gauss-Seidel with a scheduling-dependent answer.
+    expect(module.wgsl).toContain("n.position = in_position[slot];");
+    expect(module.wgsl).toContain("n.velocity = in_velocity[slot];");
+    expect(module.wgsl).not.toContain("out_position[slot]");
+    // One list read twice: the accessor loads exactly what `main` loads into `p`, so the
+    // two cannot come to disagree about what a Point is.
+    const accessorAttributes = [...module.wgsl.matchAll(/n\.(\w+) = in_/g)].map((m) => m[1]);
+    const mainAttributes = [...module.wgsl.matchAll(/ {2}p\.(\w+) = in_/g)].map((m) => m[1]);
+    expect(accessorAttributes).toEqual(mainAttributes);
+  });
+
+  it("costs no binding and no uniform — it is sugar over storage already bound (§V309)", () => {
+    const request = {
+      attributes: SCHEMA,
+      reads: ["position", "velocity"],
+      writes: ["position"],
+    };
+    const plain = generateKernelModule({ ...request, kernel: GRAVITY_KERNEL });
+    const coupled = generateKernelModule({ ...request, kernel: laplacianKernel });
+    if (!plain.ok || !coupled.ok) throw new Error("both modules should generate");
+    expect(coupled.buffers).toEqual(plain.buffers);
+    // The uniform block is what the emitting node must mirror by name; a member it gained
+    // here would read zero in silence at every call site that did not learn about it.
+    const blockOf = (wgsl: string): string => /struct KernelFrame \{[^}]*\}/.exec(wgsl)?.[0] ?? "";
+    expect(blockOf(coupled.wgsl)).toBe(blockOf(plain.wgsl));
+  });
+
+  it("a kernel that never names it generates byte-identical WGSL (§V309)", () => {
+    const module = generateKernelModule({
+      attributes: SCHEMA,
+      reads: ["position", "velocity"],
+      writes: ["position", "velocity"],
+      kernel: GRAVITY_KERNEL,
+    });
+    if (!module.ok) throw new Error(module.errors.join("; "));
+    // Pinned against the text this file already asserts elsewhere, so "byte-identical" is
+    // the whole module and not just the absence of the word.
+    expect(module.wgsl).not.toContain("pointAt");
+    expect(module.wgsl).toContain(`${RNG_TAIL}\n\n${GRAVITY_KERNEL}`);
+  });
+
+  it("a GROUP predicate that reads a neighbour brings the accessor in on its own", () => {
+    const module = generateKernelModule({
+      attributes: SCHEMA,
+      reads: ["position", "velocity"],
+      writes: ["position"],
+      kernel: GRAVITY_KERNEL,
+      group: "distance(p.position, pointAt(0u).position) < 0.5",
+    });
+    if (!module.ok) throw new Error(module.errors.join("; "));
+    expect(module.wgsl).toContain("fn pointAt(slot: u32) -> Point {");
+  });
+
+  it("REFUSES on a lifecycle kernel by name — the flags word could only be invented", () => {
+    const module = generateKernelModule({
+      attributes: [...SCHEMA, { name: "flags", type: "u32", default: [0] }],
+      reads: ["position"],
+      writes: ["position", "flags"],
+      kernel: laplacianKernel,
+      lifecycle: { flagsAttribute: "flags" },
+    });
+    expect(module.ok).toBe(false);
+    if (module.ok) return;
+    expect(module.errors.join(" ")).toContain("pointAt");
+    expect(module.errors.join(" ")).toContain("write-only");
+  });
+
+  it("REFUSES in a SPAWN HOOK by name — the buffers there are mid-update", () => {
+    const module = generateSpawnHookModule({
+      attributes: [...SCHEMA, { name: "flags", type: "u32", default: [0] }],
+      flagsAttribute: "flags",
+      hook: `fn spawn(child: Point, ctx: PointCtx) -> Point {
+  var q = child;
+  q.position = pointAt(0u).position;
+  return q;
+}`,
+    });
+    expect(module.ok).toBe(false);
+    if (module.ok) return;
+    expect(module.errors.join(" ")).toContain("pointAt");
+    expect(module.errors.join(" ")).toContain("mid-update");
+  });
+});
+
+/**
  * T510 — `ctx.firstRun`, the seeding signal the clocks cannot carry. `frameIndex == 0`
  * also fires at a timeline LAP (E9's fountain re-seeded at every loop); `absFrame == 0`
  * never fires again after a seek. One token per meaning: firstRun is 1u exactly when

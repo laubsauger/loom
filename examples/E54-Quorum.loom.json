@@ -1,0 +1,999 @@
+{
+  "assets": [],
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e1": {
+        "id": "e1",
+        "source": {
+          "nodeId": "beat",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "clock",
+          "portId": "in1"
+        }
+      },
+      "e10": {
+        "id": "e10",
+        "source": {
+          "nodeId": "clim",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "clag",
+          "portId": "in"
+        }
+      },
+      "e11": {
+        "id": "e11",
+        "source": {
+          "nodeId": "mesh",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "bound",
+          "portId": "points"
+        }
+      },
+      "e11b": {
+        "id": "e11b",
+        "source": {
+          "nodeId": "bound",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "web",
+          "portId": "points"
+        }
+      },
+      "e12": {
+        "id": "e12",
+        "source": {
+          "nodeId": "mesh",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "dots",
+          "portId": "points"
+        }
+      },
+      "e13": {
+        "id": "e13",
+        "source": {
+          "nodeId": "web",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "links",
+          "portId": "points"
+        }
+      },
+      "e14": {
+        "id": "e14",
+        "source": {
+          "nodeId": "nodes",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "haze",
+          "portId": "input"
+        }
+      },
+      "e15": {
+        "id": "e15",
+        "source": {
+          "nodeId": "haze",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "pool",
+          "portId": "in1"
+        }
+      },
+      "e16": {
+        "id": "e16",
+        "source": {
+          "nodeId": "neb",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "pool",
+          "portId": "in2"
+        }
+      },
+      "e17": {
+        "id": "e17",
+        "source": {
+          "nodeId": "pool",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "bed",
+          "portId": "input"
+        }
+      },
+      "e18": {
+        "id": "e18",
+        "source": {
+          "nodeId": "webs",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "thread",
+          "portId": "input"
+        }
+      },
+      "e19": {
+        "id": "e19",
+        "source": {
+          "nodeId": "nodes",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "sum",
+          "portId": "in1"
+        }
+      },
+      "e2": {
+        "id": "e2",
+        "source": {
+          "nodeId": "clock",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "hsub",
+          "portId": "a"
+        }
+      },
+      "e20": {
+        "id": "e20",
+        "order": 0,
+        "source": {
+          "nodeId": "thread",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "sum",
+          "portId": "in2"
+        }
+      },
+      "e21": {
+        "id": "e21",
+        "order": 1,
+        "source": {
+          "nodeId": "bed",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "sum",
+          "portId": "in2"
+        }
+      },
+      "e22": {
+        "id": "e22",
+        "source": {
+          "nodeId": "sum",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "glow",
+          "portId": "input"
+        }
+      },
+      "e23": {
+        "id": "e23",
+        "source": {
+          "nodeId": "glow",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "lit",
+          "portId": "in1"
+        }
+      },
+      "e24": {
+        "id": "e24",
+        "source": {
+          "nodeId": "sum",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "lit",
+          "portId": "in2"
+        }
+      },
+      "e25": {
+        "id": "e25",
+        "source": {
+          "nodeId": "lit",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "mask",
+          "portId": "in1"
+        }
+      },
+      "e26": {
+        "id": "e26",
+        "source": {
+          "nodeId": "iris",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "mask",
+          "portId": "in2"
+        }
+      },
+      "e27": {
+        "id": "e27",
+        "source": {
+          "nodeId": "mask",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "paint",
+          "portId": "input"
+        }
+      },
+      "e28": {
+        "id": "e28",
+        "source": {
+          "nodeId": "paint",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      },
+      "e3": {
+        "id": "e3",
+        "source": {
+          "nodeId": "hsub",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "henv",
+          "portId": "in"
+        }
+      },
+      "e4": {
+        "id": "e4",
+        "source": {
+          "nodeId": "henv",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "rgain",
+          "portId": "a"
+        }
+      },
+      "e5": {
+        "id": "e5",
+        "source": {
+          "nodeId": "rgain",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "reach",
+          "portId": "a"
+        }
+      },
+      "e6": {
+        "id": "e6",
+        "source": {
+          "nodeId": "clock",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "cstep",
+          "portId": "in"
+        }
+      },
+      "e7": {
+        "id": "e7",
+        "source": {
+          "nodeId": "cstep",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "cmul",
+          "portId": "a"
+        }
+      },
+      "e8": {
+        "id": "e8",
+        "source": {
+          "nodeId": "cmul",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "csub",
+          "portId": "a"
+        }
+      },
+      "e9": {
+        "id": "e9",
+        "source": {
+          "nodeId": "csub",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "clim",
+          "portId": "in"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "beat": {
+        "definitionVersion": 1,
+        "id": "beat",
+        "label": "beat1",
+        "parameters": {
+          "amount": 1,
+          "bpm": 116
+        },
+        "position": {
+          "x": -2560,
+          "y": 700
+        },
+        "type": "audioPattern"
+      },
+      "bed": {
+        "definitionVersion": 1,
+        "id": "bed",
+        "label": "bed1",
+        "parameters": {
+          "hueoffset": 0,
+          "saturation": 1.9,
+          "value": 0.5
+        },
+        "position": {
+          "x": -160,
+          "y": -300
+        },
+        "type": "hsv"
+      },
+      "bound": {
+        "definitionVersion": 1,
+        "id": "bound",
+        "label": "bound1",
+        "parameters": {
+          "attribute": "degree",
+          "component": "x",
+          "from": 0.451,
+          "mode": "inside",
+          "to": 8
+        },
+        "position": {
+          "x": -1660,
+          "y": 20
+        },
+        "type": "pointRange"
+      },
+      "cam": {
+        "definitionVersion": 1,
+        "id": "cam",
+        "label": "cam1",
+        "parameters": {
+          "eye": [
+            0,
+            0,
+            2.15
+          ],
+          "fov": 52,
+          "lookAt": [
+            0,
+            0,
+            0
+          ]
+        },
+        "position": {
+          "x": -1360,
+          "y": -700
+        },
+        "type": "camera"
+      },
+      "clag": {
+        "definitionVersion": 1,
+        "id": "clag",
+        "label": "clag1",
+        "parameters": {
+          "lag": 0.9,
+          "releaseRatio": 3
+        },
+        "position": {
+          "x": -760,
+          "y": 940
+        },
+        "type": "valueLag"
+      },
+      "clim": {
+        "definitionVersion": 1,
+        "id": "clim",
+        "label": "clim1",
+        "parameters": {
+          "maximum": 0.95,
+          "minimum": 0.25
+        },
+        "position": {
+          "x": -1060,
+          "y": 940
+        },
+        "type": "valueLimit"
+      },
+      "clock": {
+        "definitionVersion": 1,
+        "id": "clock",
+        "label": "clock1",
+        "parameters": {
+          "index": 0
+        },
+        "position": {
+          "x": -2260,
+          "y": 700
+        },
+        "type": "valueSwitch"
+      },
+      "cmul": {
+        "definitionVersion": 1,
+        "id": "cmul",
+        "label": "cmul1",
+        "parameters": {
+          "operand": 2.6,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -1660,
+          "y": 940
+        },
+        "type": "valueMath"
+      },
+      "cstep": {
+        "definitionVersion": 1,
+        "id": "cstep",
+        "label": "cstep1",
+        "parameters": {
+          "every": 4,
+          "maximum": 1,
+          "minimum": 0,
+          "seed": 11
+        },
+        "position": {
+          "x": -1960,
+          "y": 940
+        },
+        "type": "valueStep"
+      },
+      "csub": {
+        "definitionVersion": 1,
+        "id": "csub",
+        "label": "csub1",
+        "parameters": {
+          "operand": -0.45,
+          "operation": "add"
+        },
+        "position": {
+          "x": -1360,
+          "y": 940
+        },
+        "type": "valueMath"
+      },
+      "dots": {
+        "definitionVersion": 1,
+        "id": "dots",
+        "label": "dots1",
+        "parameters": {
+          "blend": "additive",
+          "material": "ink1",
+          "mode": "points",
+          "scale": {
+            "bindings": {
+              "map": {
+                "attribute": "degree",
+                "kind": "map"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.008
+              }
+            },
+            "mode": "map"
+          },
+          "soft": 0.75,
+          "tint": {
+            "bindings": {
+              "map": {
+                "attribute": "tint",
+                "kind": "map"
+              },
+              "static": {
+                "kind": "static",
+                "value": [
+                  1,
+                  1,
+                  1,
+                  1
+                ]
+              }
+            },
+            "mode": "map"
+          }
+        },
+        "position": {
+          "x": -1360,
+          "y": -440
+        },
+        "type": "geometry"
+      },
+      "glow": {
+        "definitionVersion": 1,
+        "id": "glow",
+        "label": "glow1",
+        "parameters": {
+          "extend": "hold",
+          "filter": "gaussian",
+          "size": 16
+        },
+        "position": {
+          "x": 440,
+          "y": -140
+        },
+        "type": "blur"
+      },
+      "haze": {
+        "definitionVersion": 1,
+        "id": "haze",
+        "label": "haze1",
+        "parameters": {
+          "extend": "hold",
+          "filter": "gaussian",
+          "size": 58
+        },
+        "position": {
+          "x": -760,
+          "y": -440
+        },
+        "type": "blur"
+      },
+      "henv": {
+        "definitionVersion": 1,
+        "id": "henv",
+        "label": "henv1",
+        "parameters": {
+          "lag": 0.04,
+          "releaseRatio": 8
+        },
+        "position": {
+          "x": -1660,
+          "y": 700
+        },
+        "type": "valueLag"
+      },
+      "hsub": {
+        "definitionVersion": 1,
+        "id": "hsub",
+        "label": "hsub1",
+        "parameters": {
+          "operand": -0.381,
+          "operation": "add"
+        },
+        "position": {
+          "x": -1960,
+          "y": 700
+        },
+        "type": "valueMath"
+      },
+      "hue": {
+        "definitionVersion": 1,
+        "id": "hue",
+        "label": "hue1",
+        "parameters": {
+          "amplitude": 150,
+          "frequency": 0.0125,
+          "offset": 0,
+          "phase": 0,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -1960,
+          "y": 1180
+        },
+        "type": "lfo"
+      },
+      "ink": {
+        "definitionVersion": 1,
+        "id": "ink",
+        "label": "ink1",
+        "parameters": {
+          "color": [
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "position": {
+          "x": -1660,
+          "y": -560
+        },
+        "type": "materialUnlit"
+      },
+      "iris": {
+        "definitionVersion": 2,
+        "id": "iris",
+        "label": "iris1",
+        "parameters": {
+          "interp": "smooth",
+          "period": 1,
+          "phase": 0,
+          "stops": [
+            {
+              "color": [
+                1,
+                1,
+                1,
+                1
+              ],
+              "position": 0
+            },
+            {
+              "color": [
+                1,
+                1,
+                1,
+                1
+              ],
+              "position": 0.58
+            },
+            {
+              "color": [
+                0,
+                0,
+                0,
+                1
+              ],
+              "position": 1
+            }
+          ],
+          "type": "radial"
+        },
+        "position": {
+          "x": 440,
+          "y": 100
+        },
+        "type": "ramp"
+      },
+      "links": {
+        "definitionVersion": 1,
+        "id": "links",
+        "label": "links1",
+        "parameters": {
+          "blend": "additive",
+          "endpoint": "tip",
+          "material": "ink1",
+          "mode": "beam",
+          "scale": 0.0016,
+          "soft": 0.9,
+          "taper": 0,
+          "tint": {
+            "bindings": {
+              "map": {
+                "attribute": "tint",
+                "kind": "map"
+              },
+              "static": {
+                "kind": "static",
+                "value": [
+                  1,
+                  1,
+                  1,
+                  1
+                ]
+              }
+            },
+            "mode": "map"
+          }
+        },
+        "position": {
+          "x": -1360,
+          "y": -180
+        },
+        "type": "geometry"
+      },
+      "lit": {
+        "definitionVersion": 1,
+        "id": "lit",
+        "label": "lit1",
+        "parameters": {
+          "opacity": 0.55
+        },
+        "position": {
+          "x": 740,
+          "y": -300
+        },
+        "type": "add"
+      },
+      "mask": {
+        "definitionVersion": 1,
+        "id": "mask",
+        "label": "mask1",
+        "parameters": {},
+        "position": {
+          "x": 1040,
+          "y": -300
+        },
+        "type": "multiply"
+      },
+      "mesh": {
+        "definitionVersion": 1,
+        "id": "mesh",
+        "label": "mesh1",
+        "parameters": {
+          "anchor": 0.05,
+          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"tint\",\"type\":\"vec4f\",\"semantic\":\"color\",\"qualifier\":\"color\",\"default\":[0.5,0.5,0.5,1]},{\"name\":\"degree\",\"type\":\"f32\",\"semantic\":\"size\",\"default\":[0.35]},{\"name\":\"id\",\"type\":\"u32\",\"semantic\":\"id\",\"default\":[0]}]",
+          "capacity": 480,
+          "contrast": 18,
+          "coupling": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('clag1').chan.bar"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.85
+              }
+            },
+            "mode": "expression"
+          },
+          "diffusion": 0.3,
+          "kernel": "struct Params {\n  coupling: f32,   // How hard each edge pulls its two ends together — the relaxation rate, and the structural knob.\n  contrast: f32,   // How much weaker the background tie every pair shares is than a bond inside a community; at 0 the two weigh the same, the block structure is invisible to the operator, and the field can only ever be one blob.\n  repulsion: f32,  // The Coulomb push between every pair, which is what separates one community from the next and holds a settled one open instead of letting it collapse to a dot.\n  reach: f32,      // World radius a community bond can span, and the same number the drawn web uses — the picture must not show links the operator is not using.\n  diffusion: f32,  // How fast a point's colour averages with its neighbours' — the rate at which a community agrees on a hue.\n  anchor: f32,     // How hard each point holds its own seed colour against that averaging; at 0 every community melts into one.\n}\n\n/* The community that binds to nobody — 28 % of the population, and the reason loose dust\n   scatters across the field instead of everything being swept into a cluster. */\nconst LOOSE: u32 = 4u;\n\n/* The degree an UNLINKED point carries: the floor every point starts from, so a point with\n   no community bond lands on it exactly and a point with one lands above it. bound1 reads\n   the same number from the other side, which is why neither of them is a knob (T1053: a\n   number that has to match another number is not a control). */\nconst UNLINKED: f32 = 0.45;\n\n/* Identity to a 32-bit hash. Written here rather than reached for through pointRand\n   because these draws must NOT move: pointRand keys on the frame and on this node's Seed\n   as well as on the point (§V74), which is right for per-frame randomness and wrong for a\n   fact about a point that has to be identical on frame 0 and frame 4000, at every seed, on\n   every device. The whole \"same graph, different starting place\" claim rests on the two\n   draws having two sources. */\nfn idHash(id: u32, salt: u32) -> u32 {\n  var h = (id * 2654435761u) ^ (salt * 2246822519u);\n  h = (h ^ (h >> 15u)) * 2246822519u;\n  h = (h ^ (h >> 13u)) * 3266489917u;\n  return h ^ (h >> 16u);\n}\n\nfn idRand(id: u32, salt: u32) -> f32 {\n  return f32(idHash(id, salt)) * (1.0 / 4294967296.0);\n}\n\n/* THE GRAPH — the one authored thing in this document. A stochastic block model keyed on\n   identity alone, asymmetric on purpose (§V854): 26 / 20 / 15 / 11 % in four communities,\n   the remaining 28 % affiliated with nobody. A symmetric partition could not tell a working\n   operator from a broken one, and four equal communities would settle into a rosette that\n   looks designed. */\nfn communityOf(id: u32) -> u32 {\n  let r = idRand(id, 101u);\n  if (r < 0.26) { return 0u; }\n  if (r < 0.46) { return 1u; }\n  if (r < 0.61) { return 2u; }\n  if (r < 0.72) { return 3u; }\n  return LOOSE;\n}\n\nfn seedColorOf(id: u32) -> vec3f {\n  return vec3f(idRand(id, 201u), idRand(id, 202u), idRand(id, 203u));\n}\n\nfn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n\n  /* T510: the buffers are fresh. Scatter the dust and hand every point its identity — and\n     note WHICH generator each line uses. Position comes from pointRand, so this node's Seed\n     decides where the field starts; everything else comes from idHash, so the Seed cannot\n     touch what the graph IS. */\n  if (ctx.firstRun == 1u) {\n    q.id = ctx.index;\n    let a = pointRand(ctx.index, 11u) * 6.2831853;\n    let rr = sqrt(pointRand(ctx.index, 12u)) * 0.95;\n    q.position = vec3f(cos(a) * rr, sin(a) * rr * 0.82, (pointRand(ctx.index, 13u) - 0.5) * 0.25);\n    q.tint = vec4f(seedColorOf(ctx.index), 1.0);\n    q.degree = UNLINKED;\n    return q;\n  }\n\n  let reach = max(ctx.params.reach, 0.02);\n  let mine = communityOf(p.id);\n\n  var pull = vec3f(0.0);      /* Σ w·(x_j − x_i) — minus the Laplacian applied to POSITION */\n  var blend = vec3f(0.0);     /* Σ w·c_j        — the SAME operator applied to COLOUR */\n  var push = vec3f(0.0);\n  var wsum = 0.0;\n  var bond = 0.0;             /* the COMMUNITY part of the degree, which is what a hub has */\n  var centroid = vec3f(0.0);\n  var colorSum = vec3f(0.0);\n  var colorSq = 0.0;\n\n  /* THE O(N²) SCAN, and it is one loop because it is one operator. T1070's pointAt reads\n     the pre-frame half, so every point sees the same last-frame field whatever order the\n     workgroups ran in — a Jacobi step, not a scheduling-dependent one (§V44). */\n  for (var j = 0u; j < ctx.count; j += 1u) {\n    let other = pointAt(j);\n    centroid += other.position;\n    colorSum += other.tint.rgb;\n    colorSq += dot(other.tint.rgb, other.tint.rgb);\n    if (j == ctx.index) { continue; }\n    let d = other.position - p.position;\n    let r = sqrt(max(dot(d, d), 1.0e-12));\n    /* THE EDGE WEIGHT, in two terms and both POSITIVE — so this is a genuine graph\n       Laplacian: the descent cannot run away and the diffusion cannot oscillate. (An earlier\n       cut made a between-community weight NEGATIVE to force the clusters apart. It laid out\n       beautifully and destroyed the colour, because a signed operator makes the power\n       iteration anti-align and after clamping the whole field came back grey. Separation is\n       the push's job, not the weight's.)\n\n       THE BACKGROUND TIE is on every pair at every distance — that is what makes this one\n       field rather than four that drift apart the moment they lose sight of each other, which\n       is exactly what a cut with no long-range term did. THE COMMUNITY BOND is local, and\n       only between two points of the same community. Contrast is the ratio between them, and\n       at 0 they are equal: the operator cannot see the blocks and no cluster can form. */\n    var w = 1.0 / (1.0 + max(ctx.params.contrast, 0.0));\n    var kernel = 0.0;\n    if (r <= reach) {\n      kernel = 1.0 - r / reach;\n      /* THE COULOMB PUSH, over every pair in range and softened near zero. This is what\n         separates one community from the next — the weights only ever attract — and what\n         stops a settled community from contracting to a single point. Bounded by the same\n         radius the bond is: an earlier cut let it run to infinity, and the aggregate of many\n         weak far pairs — each negligible, all of them outward — blew the field off the frame\n         inside a hundred frames. */\n      push -= (d / r) * kernel / (r * r + 0.0015);\n      if (mine == communityOf(other.id) && mine != LOOSE) {\n        w += kernel;\n        bond += kernel;\n      }\n    }\n    pull += d * w;\n    blend += other.tint.rgb * w;\n    wsum += w;\n  }\n\n  let n = f32(max(ctx.count, 1u));\n  centroid = centroid / n;\n  let mean = colorSum / n;\n  let deviation = max(sqrt(max(colorSq / n - dot(mean, mean), 0.0)), 1.0e-4);\n  let norm = max(wsum, 1.0e-6);\n\n  /* THE LAYOUT: one descent step on ½·xᵀLx, plus the push. Divided by the degree, so the\n     attraction is the random-walk Laplacian and a hub does not travel further per frame\n     than a leaf. */\n  var pos = p.position + (pull / norm) * ctx.params.coupling + push * ctx.params.repulsion;\n  /* The assembly re-centres on its own centroid — no arbitrary spring to the origin, and\n     nothing that would pull a community off its own found position. The weak background tie\n     already keeps the field bounded, so what is left here is a SAFETY, soft and far out: an\n     earlier cut used a hard projection at 1.0 and every point the push sent outward piled\n     onto that sphere, which read as a wire cage drawn around the picture. */\n  pos = pos - centroid;\n  let over = max(length(pos) - 1.75, 0.0);\n  pos = pos - normalize(pos + vec3f(1.0e-9)) * over * 0.15;\n  q.position = vec3f(pos.x, pos.y, pos.z * 0.5);\n\n  /* THE COLOUR: THE SAME OPERATOR, a different quantity. Applying it repeatedly to a value\n     is power iteration — it drives the field toward this Laplacian's low eigenvectors, which\n     is what \"colour by community\" means — and it runs on the CENTRED value because a\n     Laplacian eigenvector is a deviation from the mean, not an absolute. Anchor holds each\n     point to its own independent seed draw, so the three channels settle on three DIFFERENT\n     low modes instead of all collapsing onto the top one; turn it to zero and they do\n     collapse, which is the knob melting every community into a single hue. */\n  let centred = blend - mean * wsum;\n  var u = p.tint.rgb - mean;\n  u = u + (centred / norm - u) * ctx.params.diffusion\n        + ((seedColorOf(p.id) - vec3f(0.5)) - u) * ctx.params.anchor;\n  /* Power iteration's normalisation step, and the reason it is here rather than downstream:\n     what survives the smoothing is a per-community mean whose spread is a small fraction of\n     the seed field's, so drawn raw the frame is mid-grey. Dividing by the field's own global\n     deviation restores the scale the smoothing removed — which is also what keeps the loop\n     stable, since the shrink and the restore balance and only the SHAPE survives. */\n  q.tint = vec4f(clamp(0.5 + u * (0.34 / deviation), vec3f(0.0), vec3f(1.0)), 1.0);\n\n  /* The degree in the COMMUNITY graph, straight out of the same loop — hubs draw large,\n     edge-of-cluster nodes medium, and a point affiliated with nobody sits exactly on\n     UNLINKED. The weak background tie is deliberately NOT counted: it is the same for every\n     point, so counting it would say nothing and would cost the unaffiliated their floor. */\n  q.degree = UNLINKED + clamp(bond / 34.0, 0.0, 1.9);\n  return q;\n}",
+          "reach": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('reach1').chan.high"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.85
+              }
+            },
+            "mode": "expression"
+          },
+          "repulsion": 0.00016,
+          "seed": 54
+        },
+        "position": {
+          "x": -1960,
+          "y": -320
+        },
+        "type": "pointKernel"
+      },
+      "neb": {
+        "definitionVersion": 1,
+        "id": "neb",
+        "label": "neb1",
+        "parameters": {
+          "amp": 1,
+          "aspectcorrect": true,
+          "exp": 1.4,
+          "gain": 0.55,
+          "harmon": 3,
+          "mono": true,
+          "offset": 0.4,
+          "period": 0.42,
+          "rough": 0.5,
+          "s4d": 1,
+          "seed": 54,
+          "speed": 0.055,
+          "spread": 2,
+          "t4d": 0.41,
+          "type": "perlin4d"
+        },
+        "position": {
+          "x": -1060,
+          "y": 120
+        },
+        "type": "noise"
+      },
+      "nodes": {
+        "definitionVersion": 1,
+        "id": "nodes",
+        "label": "nodes1",
+        "parameters": {
+          "ambientIntensity": 0,
+          "background": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "camera": "cam1",
+          "lights": "",
+          "scenes": "dots1"
+        },
+        "position": {
+          "x": -1060,
+          "y": -440
+        },
+        "type": "render"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "label": "out1",
+        "parameters": {},
+        "position": {
+          "x": 1640,
+          "y": -300
+        },
+        "type": "output"
+      },
+      "paint": {
+        "definitionVersion": 1,
+        "id": "paint",
+        "label": "paint1",
+        "parameters": {
+          "hueoffset": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('hue1').chan.value"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "expression"
+          },
+          "saturation": 1.5,
+          "value": 1
+        },
+        "position": {
+          "x": 1340,
+          "y": -300
+        },
+        "type": "hsv"
+      },
+      "pool": {
+        "definitionVersion": 1,
+        "id": "pool",
+        "label": "pool1",
+        "parameters": {},
+        "position": {
+          "x": -460,
+          "y": -300
+        },
+        "type": "multiply"
+      },
+      "reach": {
+        "definitionVersion": 1,
+        "id": "reach",
+        "label": "reach1",
+        "parameters": {
+          "operand": 0.85,
+          "operation": "add"
+        },
+        "position": {
+          "x": -1060,
+          "y": 700
+        },
+        "type": "valueMath"
+      },
+      "rgain": {
+        "definitionVersion": 1,
+        "id": "rgain",
+        "label": "rgain1",
+        "parameters": {
+          "operand": 0.3,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -1360,
+          "y": 700
+        },
+        "type": "valueMath"
+      },
+      "sum": {
+        "definitionVersion": 1,
+        "id": "sum",
+        "label": "sum1",
+        "parameters": {},
+        "position": {
+          "x": 140,
+          "y": -300
+        },
+        "type": "add"
+      },
+      "thread": {
+        "definitionVersion": 1,
+        "id": "thread",
+        "label": "thread1",
+        "parameters": {
+          "brightness": 0.42,
+          "gamma1": 1.3
+        },
+        "position": {
+          "x": -760,
+          "y": -120
+        },
+        "type": "level"
+      },
+      "web": {
+        "definitionVersion": 1,
+        "id": "web",
+        "label": "web1",
+        "parameters": {
+          "falloff": 3,
+          "neighbors": 6,
+          "radius": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('reach1').chan.high"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.85
+              }
+            },
+            "mode": "expression"
+          }
+        },
+        "position": {
+          "x": -1660,
+          "y": -180
+        },
+        "type": "pointProximity"
+      },
+      "webs": {
+        "definitionVersion": 1,
+        "id": "webs",
+        "label": "webs1",
+        "parameters": {
+          "ambientIntensity": 0,
+          "background": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "camera": "cam1",
+          "lights": "",
+          "scenes": "links1"
+        },
+        "position": {
+          "x": -1060,
+          "y": -180
+        },
+        "type": "render"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E54 Quorum",
+  "projectId": "example-e54-quorum",
+  "schemaVersion": 3,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 54,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}

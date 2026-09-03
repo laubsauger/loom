@@ -283,6 +283,50 @@ const POINTER_REFERENCE = /\.\s*pointer\b/;
 const FIELD_REFERENCE = /\bfieldAt\s*\(/;
 
 /**
+ * ═════════════════════════════════════════════════════════════════════════════════════
+ * T1070 — `pointAt(slot)`: THE NEIGHBOUR READ THIS FILE'S OWN DOCBLOCK PROMISED.
+ * ═════════════════════════════════════════════════════════════════════════════════════
+ *
+ * The module doc above has said since T117 that *"no raw buffer access exists in the
+ * contract; neighbor iteration arrives later"*. This is later, and the shape of the gap is
+ * worth stating because it was load-bearing: a point kernel was a PURE PER-POINT FUNCTION,
+ * so no kernel could read another point at all. The catalogue's only neighbour query is
+ * `pointProximity`, and its answer is a DRAWABLE LINK SET rather than data — a kernel
+ * cannot consume it, and a kernel over the links cannot scatter back (no atomics, §V24).
+ * ∴ every coupled system in the shipped set is an honest fake: E16's `MURMURATION_FLOCK_KERNEL`
+ * is a *flock* whose birds never see each other (its own comment says so — a shared flow
+ * field plus a spring home), E32's herd couples through a TEXTURE, E38's motes spring to a
+ * target they read off a texture. There was no path to a spring network, a Laplacian, or a
+ * boid that actually looks at a neighbour.
+ *
+ * IT IS THE POINT STRUCT, NOT A PER-ATTRIBUTE ACCESSOR, and that is the decision. One name
+ * generalises over any schema, cannot name an attribute that is not bound (impossible by
+ * construction, so there is no refusal path to get wrong), and mirrors `p` exactly: the same
+ * struct, for a different slot. `pointAt(ctx.index)` is `p`, byte for byte.
+ *
+ * NAMED FOR WHAT IT DOES, NOT FOR WHAT THE AUTHOR WANTS IT TO MEAN. It is `pointAt`, not
+ * `neighbor`: this function knows nothing about adjacency — it hands back the Point in a
+ * SLOT (§V73's word: addressing, never identity). WHO is a neighbour is the kernel author's
+ * predicate, which is the whole reason this is one primitive rather than a policy.
+ *
+ * ⚠ IT READS THE PRE-FRAME HALF, AND THAT IS A CORRECTNESS PROPERTY RATHER THAN AN
+ * ARTEFACT. `in_*` is the half the wrapper already loads `p` from (that is what makes
+ * `var q = p; q.x += …` compose), so every slot a kernel inspects carries LAST FRAME's
+ * value — uniformly, for every reader, whatever order the workgroups happen to run in.
+ * That makes a coupled update a JACOBI iteration: order-independent, device-independent,
+ * reproducible, no atomics and no read-write hazard by construction. A helper reading
+ * `out_*` would have been Gauss-Seidel with a scheduling-dependent answer, i.e. §V44's
+ * determinism lost to a name that looked more current.
+ *
+ * COSTS NOTHING BY EXISTING (§V309): no uniform member, no binding, no `PointCtx` change —
+ * it is sugar over storage the wrapper had already bound, so a kernel that never names it
+ * generates the text it generated before this existed, and one that does adds no resource
+ * for the emitting node to mirror. The loads it performs are the Point's, so an author who
+ * wants a lean O(N²) inner loop declares a lean schema.
+ */
+const NEIGHBOR_REFERENCE = /\bpointAt\s*\(/;
+
+/**
  * T472 (§V309, §V349): the GRID, detected exactly the way the pointer is, for exactly
  * the same reason — an unconditional member would rewrite the ctx struct and the ctx
  * constructor of every point graph ever saved.
@@ -592,6 +636,22 @@ export function generateKernelModule(request: KernelModuleRequest): KernelModule
     );
   }
 
+  /* T1070: `pointAt` on a LIFECYCLE kernel is refused BY NAME (§V288), and the reason is
+     the flags word rather than the population: `alive`/`spawnCount` are WRITE-ONLY by
+     construction (they have no `in_` binding — that saved binding is what keeps the default
+     schema inside §V588's budget), so a Point assembled for another slot could only fill
+     them with an invention. A neighbour that always reads back "alive, bearing no children"
+     is precisely the plausible-wrong answer this codebase refuses to hand over. */
+  const usesNeighbor = NEIGHBOR_REFERENCE.test(kernel) || NEIGHBOR_REFERENCE.test(groupSource);
+  if (usesNeighbor && lifecycle !== undefined) {
+    errors.push(
+      "kernel calls pointAt(...), which the advanced (lifecycle) kernel does not offer — the " +
+        "packed flags word is write-only by construction (§V588), so another slot's alive and " +
+        "spawnCount cannot be read, only invented (T1070). Read neighbours in a plain Point " +
+        "Kernel, and carry what the population needs in an ordinary attribute.",
+    );
+  }
+
   /* T479: an ordinal outside the declared slots is refused BY NAME here rather than left
      to arrive as Dawn's "struct PointCtx has no member named 'value9'" (§V288). */
   const valueSlots = referencedValueSlots(kernel, groupSource);
@@ -733,6 +793,26 @@ fn fieldAt(position: vec3f) -> vec4f {
         : `  p.${attribute.name} = in_${attribute.name}[index];`,
     )
     .join("\n");
+
+  /* T1070: the same loads `main` performs for `index`, performed for a slot the kernel
+     names. Written from `touched` so the accessor and `p` can never disagree about what a
+     Point is — one list, read twice. Emitted only when the kernel says the word (§V309). */
+  const neighborDeclaration = usesNeighbor
+    ? `/* T1070: the Point in another SLOT, read from the PRE-FRAME half — the same half \`p\`
+   itself was loaded from. ∴ every reader sees LAST frame's values whatever order the
+   workgroups ran in: a Jacobi update, order- and device-independent (§V44), with no
+   atomics and no read-write hazard. \`pointAt(ctx.index)\` is \`p\`.
+
+   The SLOT is addressing, never identity (§V73) — and this function knows nothing about
+   adjacency. Which slots are neighbours is the kernel's own predicate. */
+fn pointAt(slot: u32) -> Point {
+  var n: Point;
+${touched.map((attribute) => `  n.${attribute.name} = in_${attribute.name}[slot];`).join("\n")}
+  return n;
+}
+
+`
+    : "";
 
   const stores = written
     .map((attribute) =>
@@ -899,7 +979,7 @@ ${dimStruct}struct PointCtx {
 
 ${RNG_WGSL}
 
-${fieldDeclarations}${kernel}
+${fieldDeclarations}${neighborDeclaration}${kernel}
 ${groupFunction}
 @compute @workgroup_size(${workgroupSize})
 fn main(@builtin(global_invocation_id) gid: vec3u) {
@@ -985,6 +1065,20 @@ export function generateSpawnHookModule(request: SpawnHookRequest): KernelModule
     errors.push(
       "spawn hook reads ctx.dim, but a spawning population has no grid topology — points are " +
         "born and killed, so there are no fixed cols×rows to index (T472).",
+    );
+  }
+  /* T1070: the hook runs IN PLACE over the newborn range, after the copy passes — so the
+     buffers it sees are MID-UPDATE: some slots hold this frame's survivors, some hold
+     children that have not been shaped yet, and the tail is last frame's dead. There is no
+     coherent frame for a neighbour read to belong to, which is a worse failure than the
+     lifecycle kernel's (there the answer is unreadable; here it would be READABLE AND
+     MEANINGLESS). Refused by name (§V288). */
+  if (NEIGHBOR_REFERENCE.test(request.hook)) {
+    errors.push(
+      "spawn hook calls pointAt(...), but it runs in place over just the newborn range after " +
+        "the copy passes ∴ the buffers are mid-update and another slot holds no coherent " +
+        "frame's value (T1070). Look at neighbours in the kernel that decides the birth and " +
+        "stash what the child needs in an attribute; the child arrives as its parent's copy.",
     );
   }
   /* T744: the field reaches the KERNEL, deliberately not the hook — the child arrives
