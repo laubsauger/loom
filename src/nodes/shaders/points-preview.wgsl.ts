@@ -127,7 +127,7 @@ export function pointsPreviewWgsl(options?: {
     : "";
   return `struct PreviewParams {
   viewProjection: mat4x4f,
-  /* NDC half-extent per axis (T952) — see \`pointSplatNdcExtent\`. Per-axis, because one
+  /* NDC half-extent per axis (T952) — see 'pointSplatNdcExtent'. Per-axis, because one
      NDC unit is width/2 texels across and height/2 down: a scalar drew an ellipse. */
   pointSize: vec2f,
 };
@@ -155,7 +155,7 @@ ${countGate}  let corner = quadCorner(vertex % 6u);
   let clip = params.viewProjection * vec4f(positions[instance], 1.0);
   var out: VertexOut;
   /* Clip-space billboard: offset scaled by w keeps the disc a constant screen size —
-     and \`pointSize\` is now a per-axis NDC extent standing for a fixed DEVICE-PIXEL
+     and 'pointSize' is now a per-axis NDC extent standing for a fixed DEVICE-PIXEL
      diameter, so "constant screen size" finally means constant in pixels rather than
      constant as a fraction of whatever the tile happens to be (T952). */
   out.position = vec4f(clip.xy + corner * params.pointSize * clip.w, clip.z, clip.w);

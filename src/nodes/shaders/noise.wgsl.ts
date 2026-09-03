@@ -298,8 +298,8 @@ fn baseNoise(q: vec4f, seed: u32) -> f32 {
 }
 
 /**
- * Fractal summation. \`spread\` is the frequency multiplier per harmonic (lacunarity) and
- * \`gain\` the amplitude multiplier (persistence); \`rough\` adds a spectral-slope term, so
+ * Fractal summation. 'spread' is the frequency multiplier per harmonic (lacunarity) and
+ * 'gain' the amplitude multiplier (persistence); 'rough' adds a spectral-slope term, so
  * rough = 0 is pure gain decay and rough = 1 adds a further 1/f falloff.
  */
 fn field(q: vec4f, seed: u32) -> f32 {

@@ -181,7 +181,7 @@ fn fs(@builtin(position) fragment: vec4f, @location(0) uv: vec2f) -> @location(0
   let hatch = stripe(fragment.xy, 8.0);
   let over = any(scaled > vec3f(1.0));
   let under = any(scaled < vec3f(0.0));
-  // \`out\` is a WGSL reserved word — this is \`result\` for that reason, not for style.
+  // 'out' is a WGSL reserved word — this is 'result' for that reason, not for style.
   var result = shown;
   result = select(result, mix(result, vec3f(1.0, 0.45, 0.0), hatch), over);
   result = select(result, mix(result, vec3f(0.0, 0.5, 1.0), hatch), under && !over);

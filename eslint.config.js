@@ -63,6 +63,75 @@ const v145Plugin = {
   },
 };
 
+// §V834 / T1061 — a backtick inside WGSL text ends the TypeScript template
+// literal that holds the shader. Four casualties now; the last one (backticks
+// around `mix` in switch.wgsl.ts) 500'd the whole dev bundle and was chased
+// TWICE as a transient, because a module that fails to load surfaces in vitest
+// as `FAIL [ file ]` with no test failures at all.
+//
+// WHAT THIS RULE CAN AND CANNOT SEE, stated rather than implied.
+//
+// The FATAL form is an UNESCAPED backtick: it terminates the template, the rest
+// of the shader is read as TypeScript, and the file stops parsing. No lint rule
+// ever runs on a file that does not parse — ESLint reports it as a bare
+// `Parsing error: ',' expected`, which is red but anonymous, and anonymous is
+// how it got chased twice. That half of §V834 is already caught by `pnpm lint`
+// and cannot be improved from inside a rule.
+//
+// What IS reachable, and what this rule owns, is the ESCAPED form `\``: legal
+// TypeScript, invisible in review, and one deleted backslash away from the
+// fatal one. Every casualty so far started as somebody writing a backtick in
+// WGSL prose, so the habit is the thing to remove — there is no correct use of
+// a backtick inside a shader string, and the escaped spelling only teaches the
+// hand the wrong motion.
+//
+// An odd-backtick-count heuristic on the file was the cheaper option offered in
+// §T1061 and it is NOT what this is, for a measured reason: casualty #4 wrote a
+// PAIR of backticks, so the count stayed even and the heuristic would have
+// missed the exact bug it was written for. (Every `.wgsl.ts` in the tree has an
+// even count today, including while broken.)
+const V834_MESSAGE =
+  "§V834: a backtick inside a shader's own text ends the TypeScript template literal " +
+  "that holds it, and the rest of the WGSL is then read as TypeScript — four builds have " +
+  "died this way. Quote the identifier with ' or leave it bare.";
+
+const v834Plugin = {
+  rules: {
+    "no-backtick-in-shader-text": {
+      meta: {
+        type: "problem",
+        docs: { description: "§V834: no backtick inside a template literal in a .wgsl.ts file." },
+        schema: [],
+      },
+      create(context) {
+        const source = context.sourceCode;
+        const text = source.getText();
+        return {
+          TemplateElement(node) {
+            const raw = node.value.raw;
+            if (!raw.includes("`")) return;
+            // Report AT THE BACKTICK, not at the template that contains it: a shader
+            // string is hundreds of lines long, and a rule that points at line 1 of
+            // the quasi leaves the author hunting for the character it just found.
+            // The raw text is located by search rather than by arithmetic on the
+            // node's range, because whether a TemplateElement's range includes its
+            // own delimiters is a parser detail this rule should not depend on.
+            const start = text.indexOf(raw, node.range[0]);
+            for (let at = raw.indexOf("`"); at >= 0; at = raw.indexOf("`", at + 1)) {
+              const index = start < 0 ? node.range[0] : start + at;
+              const loc = source.getLocFromIndex(index);
+              context.report({
+                loc: { start: loc, end: { line: loc.line, column: loc.column + 1 } },
+                message: V834_MESSAGE,
+              });
+            }
+          },
+        };
+      },
+    },
+  },
+};
+
 // §V3: vgpu is pre-1.0 (pinned 0.3.1). Every subpath funnels through the
 // backend adapter so a future migration doesn't require touching every file
 // that happens to import a renderer primitive.
@@ -338,6 +407,26 @@ export default tseslint.config(
     plugins: { v145: v145Plugin },
     rules: {
       "v145/explicit-colliding-type-import": "error",
+    },
+  },
+  {
+    // T1061 / §V834 — no backtick inside the shader text itself.
+    //
+    // ONE FILE IS EXEMPT AND IT IS NOT AN OVERSIGHT. `time-grid.wgsl.ts` has an
+    // escaped backtick inside `TIME_GRID_CELL_WGSL`, which is interpolated into
+    // three customWgsl sources that are stored VERBATIM in generated documents
+    // (`examples/components/TimeGrid.loom.json`, `examples/E51-Chorus.loom.json`).
+    // Deleting the backtick changes the shader string, so `sync.test.ts` goes red
+    // until the examples are regenerated — and a starter component regenerates
+    // only on the UNSCOPED run, which rewrites every example and sweeps whatever
+    // other tracks have in flight. Fixing it is therefore a one-line edit plus a
+    // full regen, not a lint fix; T1061 leaves it to whoever holds that regen.
+    // The other three sites in the tree were fixed with this rule.
+    files: ["src/**/*.wgsl.ts"],
+    ignores: ["src/examples/shaders/time-grid.wgsl.ts"],
+    plugins: { v834: v834Plugin },
+    rules: {
+      "v834/no-backtick-in-shader-text": "error",
     },
   },
   {
