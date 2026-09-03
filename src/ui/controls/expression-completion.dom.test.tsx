@@ -22,7 +22,7 @@ function renderPanel(onChange = vi.fn(), withScope = true) {
       slot={EXPRESSION_SLOT}
       value={0}
       {...(withScope ? { scope: SCOPE } : {})}
-      nodeNames={["noise1", "lfo1"]}
+      references={{ names: ["noise1", "lfo1"], membersOf: () => [] }}
       onChange={onChange}
     />,
   );

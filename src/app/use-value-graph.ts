@@ -91,6 +91,21 @@ export interface ValueGraphBinding {
    * a different instance's trajectory with no error anywhere. Ids do not move.
    */
   readonly channels: () => ReadonlyMap<NodeId, Readonly<Record<string, number>>>;
+  /**
+   * T990 — the channel names one node is publishing right now, BY NAME.
+   *
+   * Enumeration, where `resolver` above can only probe: a bag is `valueEvaluate`'s return
+   * value, so no definition declares its channel names and there is nothing static to
+   * read. `op('lfo1').chan.<here>` in the inspector has no other honest source.
+   *
+   * By NAME rather than by id — the opposite of `channels` one field up, and for a reason
+   * that does not contradict it. That field feeds a PLOT, which must follow one specific
+   * instance's trajectory and therefore cannot use a name that B41 may renumber. This one
+   * answers a REFERENCE, and `op()` addresses by name (§V129): it must resolve to whatever
+   * that name resolves to, renumbering included, or the menu would offer a spelling the
+   * reader then refuses.
+   */
+  readonly channelNames: (nodeName: string) => readonly string[];
   /** Clears every stateful stage (§V181, §V170). Transport reset and backward seek. */
   readonly reset: () => void;
   /**
@@ -132,6 +147,7 @@ export function useValueGraph(runtime: AppRuntime, externalChannels?: ChannelRes
 
   const latest = useRef<ChannelResolver | null>(null);
   const latestBags = useRef<ReadonlyMap<NodeId, Readonly<Record<string, number>>>>(new Map());
+  const latestByName = useRef<ReadonlyMap<string, Readonly<Record<string, number>>>>(new Map());
   const [diagnostics, setDiagnostics] = useState<readonly RuntimeDiagnostic[]>(NO_DIAGNOSTICS);
   /** Signature of what is currently reported, so an unchanged condition costs no render. */
   const reported = useRef("");
@@ -165,6 +181,7 @@ export function useValueGraph(runtime: AppRuntime, externalChannels?: ChannelRes
       });
       latest.current = result.resolver;
       latestBags.current = result.byId;
+      latestByName.current = result.byName;
 
       const signature = result.diagnostics
         .map((diagnostic) => `${diagnostic.code}:${diagnostic.nodeId ?? ""}`)
@@ -182,13 +199,18 @@ export function useValueGraph(runtime: AppRuntime, externalChannels?: ChannelRes
   const reset = useCallback(() => {
     session.reset();
     latestBags.current = new Map();
+    latestByName.current = new Map();
     // The channels go with the state. Keeping the last frame's numbers after a reset would
     // hand the first replayed frame a value from the history just thrown away.
     latest.current = null;
   }, [session]);
 
   /** Zero-frame answer for the structural compile, one walk per FLATTENING (T615). */
-  const structural = useRef<{ flattened: FlattenedGraph; resolver: ChannelResolver } | null>(null);
+  const structural = useRef<{
+    flattened: FlattenedGraph;
+    resolver: ChannelResolver;
+    byName: ReadonlyMap<string, Readonly<Record<string, number>>>;
+  } | null>(null);
 
   const resolver = useCallback<ChannelResolver>(
     (channel, context) => {
@@ -208,7 +230,7 @@ export function useValueGraph(runtime: AppRuntime, externalChannels?: ChannelRes
       if (cached === null || cached.flattened !== flattened) {
         const once = createValueGraphSession(runtimeRef.current.registry);
         const result = once.evaluate(flattened.graph, ZERO_FRAME, { pointer: { x: 0, y: 0, buttons: 0 } });
-        structural.current = { flattened, resolver: result.resolver };
+        structural.current = { flattened, resolver: result.resolver, byName: result.byName };
         return result.resolver(channel, context);
       }
       return cached.resolver(channel, context);
@@ -216,5 +238,16 @@ export function useValueGraph(runtime: AppRuntime, externalChannels?: ChannelRes
     [],
   );
 
-  return { resolver, evaluate, channels, reset, diagnostics };
+  /**
+   * The last evaluated frame's bag for one name, falling back to the STRUCTURAL walk the
+   * resolver already keeps — so completion works before the transport has ever run, which
+   * is exactly when someone is writing the expression.
+   */
+  const channelNames = useCallback((nodeName: string): readonly string[] => {
+    const live = latestByName.current.get(nodeName);
+    if (live !== undefined) return Object.keys(live);
+    return Object.keys(structural.current?.byName.get(nodeName) ?? {});
+  }, []);
+
+  return { resolver, evaluate, channels, channelNames, reset, diagnostics };
 }

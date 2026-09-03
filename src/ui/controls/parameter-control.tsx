@@ -32,6 +32,7 @@ import { NumberField } from "./number-field.tsx";
 import { PulseField } from "./pulse-field.tsx";
 import { StopsField } from "./stops-field.tsx";
 import { ParameterModePanel } from "./parameter-mode.tsx";
+import type { ExpressionReferenceSource } from "./expression-completion.ts";
 import { valueForDefinition } from "./parameter-value.ts";
 import { MODE_BADGES, MODE_LABELS, slotOf, withMode, withStaticValue } from "./parameter-slot.ts";
 import { TextField } from "./text-field.tsx";
@@ -130,6 +131,12 @@ export interface ParameterControlProps {
   /** Why the active mode is not producing a value, as the resolver reported it. */
   diagnostic?: RuntimeDiagnostic | null;
   /**
+   * T990 — what the document can answer about `op('…')`, forwarded to every mode panel
+   * this row draws: the compound's own, and one per channel (§V113). A component's
+   * expression references the same graph the compound's does.
+   */
+  references?: ExpressionReferenceSource;
+  /**
    * Writes stored parameters — mode envelopes, or every channel of a compound. ONE
    * call is ONE patch and therefore ONE undo entry (§V114, §V15). Omitting it hides the
    * mode UI entirely, which is what a node-embedded control wants.
@@ -157,6 +164,7 @@ export function ParameterControl({
   codeField,
   components,
   diagnostic = null,
+  references,
   onStoredChange,
   onChange,
 }: ParameterControlProps) {
@@ -372,6 +380,10 @@ export function ParameterControl({
         disabled={disabled}
         autoFocus={focusExpression}
         diagnostic={diagnostic}
+        // T990: the node names and their members, so `op('` offers the graph rather than
+        // an empty menu. The panel cannot know them; only the layer holding the document
+        // does, and for four months nothing passed them (§V272).
+        {...(references === undefined ? {} : { references })}
         // T368: the manifest's own bounds, so an expression that will clamp says so while
         // it is being written. The panel cannot know them; only the definition does.
         range={numericRangeOf(definition)}
@@ -388,6 +400,7 @@ export function ParameterControl({
                 value={component.value}
                 disabled={disabled}
                 diagnostic={component.diagnostic}
+                {...(references === undefined ? {} : { references })}
                 // A channel of a compound is bounded by the compound's own declaration.
                 range={numericRangeOf(definition)}
                 onChange={(next) => writeSlot(componentKey(parameterKey, component.name), next)}

@@ -1,8 +1,8 @@
-import { nodeByName } from "../graph/names.ts";
+import { nodeByName, nodeNames } from "../graph/names.ts";
 import type { NodeReferenceReader, NodeReferenceResult } from "../expressions/index.ts";
 import type { GraphDocument, GraphNode } from "../types/graph.ts";
 import type { NodeId } from "../types/ids.ts";
-import type { ParameterSchema, ParameterValue } from "../types/parameters.ts";
+import type { ParameterDefinition, ParameterSchema, ParameterValue } from "../types/parameters.ts";
 import { componentKey, componentNamesFor } from "./slots.ts";
 import { CHANNEL_RESOLVER_MISSING, resolveParameterSchema, type ResolveParametersOptions } from "./resolve.ts";
 
@@ -52,6 +52,117 @@ import { CHANNEL_RESOLVER_MISSING, resolveParameterSchema, type ResolveParameter
 const PARAMETER_NAMESPACE = "par";
 /** T901: `op('lfo1').chan.value` — a value node's OUTPUT channel, TD's CHOP-read idiom. */
 const CHANNEL_NAMESPACE = "chan";
+
+/**
+ * WHAT `op('…')` CAN COMPLETE TO (T990), answered by the module that decides what it can
+ * READ.
+ *
+ * The owner asked twice: "we know all the node names… and then the sub-properties should
+ * also be autosuggested and completable so we don't have to guess all the time." The
+ * guessing is the whole cost — a reference is three decisions deep (a name, a namespace,
+ * a member) and every one of them fails silently into §V108's retained fallback, so a
+ * typo reads as a working wire showing a plausible number.
+ *
+ * It lives HERE, beside the reader, rather than in the panel that draws the menu, and
+ * that is the point rather than a filing convenience. §V150 says a menu that offers what
+ * the grammar rejects teaches a wrong API with the tool's own authority; the only way to
+ * be sure that cannot happen is for the offer and the refusal to read the same two
+ * namespace constants, the same `schemaOf` funnel and the same `componentNamesFor`. A
+ * second list in the UI layer would be right on the day it was written.
+ *
+ * §B170 binds the NAME half: `op()` takes the LABEL, never the id, and two examples
+ * shipped dead because something matched on the wrong one. `nodeNames` is the authority
+ * and it is keyed by label, so the offer cannot get that wrong either.
+ */
+export interface NodeReferenceMember {
+  readonly text: string;
+  /** Shown beside the name: what accepting it would read. */
+  readonly detail?: string;
+}
+
+export interface NodeReferenceCatalogueOptions {
+  readonly graph: GraphDocument;
+  /** The same schema funnel the reader uses (§V814): a node's EFFECTIVE parameters. */
+  readonly schemaOf: (node: GraphNode) => ParameterSchema | undefined;
+  /**
+   * The channel names the node called `name` is publishing RIGHT NOW.
+   *
+   * A function supplied by the caller, and it has to be: a bag is `valueEvaluate`'s
+   * RETURN VALUE, so nothing in a definition declares its channel names — `valueMath`
+   * republishes whatever arrives, `oscIn` and `midiIn` take theirs off the wire. There is
+   * no static list to read and inventing one would be §V150's wrong-API menu. Absent, the
+   * `chan` namespace still completes (it is a real namespace) and offers no members,
+   * which is the truth: nothing here knows what is on the wire.
+   */
+  readonly channelsOf?: (name: string) => readonly string[];
+}
+
+/** Every name `op('…')` can address — LABELS (§B170), in the graph's own sorted order. */
+export function nodeReferenceNames(graph: GraphDocument): readonly string[] {
+  return [...nodeNames(graph).keys()];
+}
+
+/**
+ * The members completable at `op('name').<path…>.` — where `path` is the segments already
+ * typed IN FULL and the answer is the set of next segments.
+ *
+ * `[]` for anything the reader would refuse: a name that is not in the graph, a namespace
+ * that is not one of the two, a member under a channel (a channel is a leaf), a parameter
+ * whose value an expression cannot read. That last filter is the one worth stating: an
+ * `enum` resolves to a string and `asNumber` refuses it BY NAME, so offering it would be
+ * a suggestion whose only outcome is the error message underneath it.
+ */
+export function nodeReferenceMembers(
+  options: NodeReferenceCatalogueOptions,
+  name: string,
+  path: readonly string[],
+): readonly NodeReferenceMember[] {
+  const targetId = nodeByName(options.graph, name);
+  const target = targetId === undefined ? undefined : options.graph.nodes[targetId];
+  if (target === undefined) return [];
+
+  const [namespace, key, ...rest] = path;
+  if (namespace === undefined) {
+    return [
+      { text: PARAMETER_NAMESPACE, detail: "a parameter" },
+      { text: CHANNEL_NAMESPACE, detail: "a published channel" },
+    ];
+  }
+  if (rest.length > 0) return [];
+
+  if (namespace === CHANNEL_NAMESPACE) {
+    // `.chan.<channel>` is the whole path the reader accepts — nothing hangs off a channel.
+    if (key !== undefined) return [];
+    return (options.channelsOf?.(name) ?? []).map((text) => ({ text }));
+  }
+  if (namespace !== PARAMETER_NAMESPACE) return [];
+
+  const schema = options.schemaOf(target);
+  if (schema === undefined) return [];
+  if (key === undefined) {
+    return Object.entries(schema)
+      .filter(([, definition]) => readableAsNumber(definition))
+      // The LABEL as the detail, because a key is an identifier and a label is what the
+      // user saw in the panel they are referring to — `gain` next to "Gain" costs nothing
+      // and `lowMid` next to "Low Mid" is the difference between finding it and not.
+      .map(([parameterKey, definition]) => ({ text: parameterKey, detail: definition.label }));
+  }
+  const definition = schema[key];
+  if (definition === undefined) return [];
+  return (componentNamesFor(definition) ?? []).map((text) => ({ text }));
+}
+
+/**
+ * Can an expression read this parameter — as a number itself, or via a component?
+ *
+ * Keyed on what `asNumber` accepts (number, boolean) plus the compounds `componentNamesFor`
+ * can descend into, and NOT on a hand-kept type list, so a parameter kind added to the
+ * union arrives excluded rather than silently offered.
+ */
+function readableAsNumber(definition: ParameterDefinition): boolean {
+  if (componentNamesFor(definition) !== null) return true;
+  return definition.type === "number" || definition.type === "boolean";
+}
 
 
 export interface NodeReferenceOptions {

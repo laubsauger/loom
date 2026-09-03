@@ -109,6 +109,8 @@ export type { AssetFieldProps, CurveFieldProps, CurvePoint } from "./curve-field
 export { ParameterControl } from "./parameter-control.tsx";
 export type { ParameterControlProps } from "./parameter-control.tsx";
 
+export type { ExpressionReferenceSource } from "./expression-completion.ts";
+
 export {
   MODE_GLYPHS,
   MODE_LABELS,

@@ -1,10 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { evaluateExpression } from "@domain/expressions/index.ts";
 import { applyCompletion, completionAt } from "./expression-completion.ts";
+import type { ExpressionReferenceSource } from "./expression-completion.ts";
 
 /** Expression completion (T247, §V150). */
 
 const SCOPE = { time: 2, delta: 0.016, frame: 120, walltime: 2.1, walldelta: 0.017 };
+
+/** A document that knows node names and nothing about their members. */
+const namesOnly = (names: readonly string[]): ExpressionReferenceSource => ({
+  names,
+  membersOf: () => [],
+});
 
 describe("completionAt", () => {
   it("offers everything in scope before a character is typed", () => {
@@ -34,9 +41,75 @@ describe("completionAt", () => {
   it("offers NODE names inside op('…'), never variables", () => {
     // `op('ti` wants a node called `title`, not the variable `time`. Offering scope names
     // here would be actively misleading rather than merely unhelpful.
-    const state = completionAt("op('", 4, SCOPE, ["noise1", "lfo1"]);
+    const state = completionAt("op('", 4, SCOPE, namesOnly(["noise1", "lfo1"]));
     expect(state?.candidates.map((c) => c.text)).toEqual(["lfo1", "noise1"]);
     expect(state?.candidates.every((c) => c.kind === "node")).toBe(true);
+  });
+
+  /**
+   * T990 — THE MEMBER POSITION, which is where the regex earns its keep.
+   *
+   * The completer knows the SYNTAX and the document knows the MEMBERS, so what is asserted
+   * here is the split: which segments the caret has behind it (the PATH) and which
+   * fragment it is narrowing (the PREFIX). Getting the greedy match wrong shows up as
+   * `op('n').par.ga` asking for the members of `par.ga` — a menu that silently offers
+   * nothing, which is exactly the failure this whole task is about.
+   */
+  const echo = (): { source: ExpressionReferenceSource; asked: Array<[string, string[]]> } => {
+    const asked: Array<[string, string[]]> = [];
+    return {
+      asked,
+      source: {
+        names: ["noise1"],
+        membersOf: (name, path) => {
+          asked.push([name, [...path]]);
+          return [{ text: "gain" }, { text: "gamma" }];
+        },
+      },
+    };
+  };
+
+  it("asks for the members of the NAME once the reference is closed", () => {
+    const { source, asked } = echo();
+    completionAt("op('noise1').", 13, SCOPE, source);
+    expect(asked).toEqual([["noise1", []]]);
+  });
+
+  it("counts a fully typed segment as PATH and the fragment after the dot as PREFIX", () => {
+    const { source, asked } = echo();
+    const state = completionAt("op('noise1').par.ga", 19, SCOPE, source);
+    expect(asked).toEqual([["noise1", ["par"]]]);
+    expect(state?.prefix).toBe("ga");
+  });
+
+  it("descends a second level, so a compound's components are reachable", () => {
+    const { source, asked } = echo();
+    completionAt("op('noise1').par.color.", 23, SCOPE, source);
+    expect(asked).toEqual([["noise1", ["par", "color"]]]);
+  });
+
+  it("replaces only the fragment under the caret, never the reference before it", () => {
+    const source: ExpressionReferenceSource = {
+      names: [],
+      membersOf: () => [{ text: "gain" }],
+    };
+    const state = completionAt("op('noise1').par.ga * 2", 19, SCOPE, source);
+    expect(state).not.toBeNull();
+    const applied = applyCompletion("op('noise1').par.ga * 2", state!, state!.candidates[0]!);
+    expect(applied.source).toBe("op('noise1').par.gain * 2");
+    expect(applied.caret).toBe(21);
+  });
+
+  it("does not mistake a decimal or a bare variable for a member position", () => {
+    const { source, asked } = echo();
+    completionAt("1.5 + ti", 8, SCOPE, source);
+    expect(asked).toEqual([]);
+  });
+
+  it("still offers scope and functions where there is no reference at all", () => {
+    const { source } = echo();
+    const state = completionAt("ti", 2, SCOPE, source);
+    expect(state?.candidates.map((c) => c.text)).toContain("time");
   });
 
   it("only offers functions the evaluator actually accepts, with their call shape (§V150)", () => {

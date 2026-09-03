@@ -31,7 +31,12 @@ import type { ParameterEditor } from "./parameter-editor.ts";
 import { parseComponentNodeType } from "@domain/components/component-type.ts";
 import type { ComponentRegistryView } from "@domain/components/index.ts";
 import { resolveParameters } from "./parameter-resolver.ts";
-import { createNodeReferenceReader } from "@domain/parameters/index.ts";
+import {
+  createNodeReferenceReader,
+  nodeReferenceMembers,
+  nodeReferenceNames,
+} from "@domain/parameters/index.ts";
+import type { ExpressionReferenceSource } from "@ui/controls/expression-completion.ts";
 import { resolveNodeFormat, resolveNodeSize } from "./resolution.ts";
 import type { FormatContext, InputResolution, ResolutionContext } from "./resolution.ts";
 import styles from "./inspector.module.css";
@@ -137,6 +142,22 @@ export interface InspectorProps {
    * which is §T714's measured disaster with a different trigger.
    */
   latestFrame?: (() => FrameInputs | null) | undefined;
+  /**
+   * T990 — the channel names a node is publishing RIGHT NOW, for completing
+   * `op('lfo1').chan.<here>`.
+   *
+   * The COMPANION to `channels` above, and it has to be a second function rather than a
+   * capability of the first: a `ChannelResolver` PROBES one address and there is nothing
+   * to enumerate it with. Nor is there a static list to fall back on — a bag is
+   * `valueEvaluate`'s return value, so `oscIn` and `midiIn` take their channel names off
+   * the wire and `valueMath` republishes whatever arrives.
+   *
+   * Absent — a component editor, a test of the layout — the `chan` namespace still
+   * completes and offers no members under it, which is the truth rather than a silence.
+   * The parameter half (`op('x').par.<key>`) needs nothing extra: it comes off the graph
+   * and the registry this pane already holds.
+   */
+  channelNames?: ((nodeName: string) => readonly string[]) | undefined;
 }
 
 /** §V16: <= 10 Hz. Shared with `TimelineReadout`'s cap, for the same reason. */
@@ -200,6 +221,7 @@ export function Inspector({
   variant = "inspector",
   channels,
   latestFrame,
+  channelNames,
   audioStatus,
   midi,
   laser,
@@ -209,6 +231,43 @@ export function Inspector({
     bus.store.subscribe,
     bus.store.getGraph,
     bus.store.getGraph,
+  );
+
+  /**
+   * T990 — THE PRODUCT CALL SITE for `op('…')` completion.
+   *
+   * The owner: "we could really use autocomplete within the op('') construct. We know all
+   * the node names. And then the sub-properties should also be autosuggested." All three
+   * halves of that were knowable here and none of them were being asked for: the completer
+   * handled `op('` explicitly, `ParameterModePanel` took the names as an OPTIONAL prop, and
+   * NO product call site passed one — so the menu was fed `[]` and offered nothing, in the
+   * one place where guessing costs the most (§V272, and the same file's own comment records
+   * the sibling prop shipping dead the identical way).
+   *
+   * Built from the SAME graph and the SAME `schemaOf` funnel as `readOptionsAt`'s reader
+   * below, deliberately: what the menu offers and what the reader accepts are then one
+   * decision, so a namespace the reader stops honouring cannot go on being suggested.
+   *
+   * Memoised on the document because it is read per KEYSTROKE — the panel recomputes its
+   * candidate list on every edit and every caret move, and a new object each render would
+   * re-run that memo on every unrelated render of an open panel.
+   */
+  const references = useMemo<ExpressionReferenceSource>(
+    () => ({
+      names: nodeReferenceNames(graph),
+      membersOf: (name, path) =>
+        nodeReferenceMembers(
+          {
+            graph,
+            schemaOf: (target) =>
+              effectiveParameterSchema(bus.registry.get(target.type), target.parameters),
+            ...(channelNames === undefined ? {} : { channelsOf: channelNames }),
+          },
+          name,
+          path,
+        ),
+    }),
+    [graph, bus.registry, channelNames],
   );
 
   /**
@@ -595,6 +654,11 @@ export function Inspector({
                 // type driven by an expression dims the same parameters a typed one does.
                 inactive={entry.definition.inactiveWhen?.(resolved.values) ?? null}
                 slot={entry.slot}
+                // T990: the graph itself, so `op('` offers the node names and their
+                // members instead of an empty menu. THE call site whose absence was the
+                // whole defect — `expression-references.test.tsx` mounts this pane and
+                // fails if this line goes away (§V272/§V844).
+                references={references}
                 {...(entry.components === undefined ? {} : { components: entry.components })}
                 diagnostic={entry.diagnostic}
                 // §V114: whatever the control hands over — a mode envelope, or all four

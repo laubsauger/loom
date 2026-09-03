@@ -4,6 +4,7 @@ import type { ExpressionScope } from "@domain/expressions/index.ts";
 import { describeForecast, forecastClamp } from "@domain/parameters/expression-range.ts";
 import type { NumericRange } from "@domain/parameters/expression-range.ts";
 import { applyCompletion, completionAt } from "./expression-completion.ts";
+import type { ExpressionReferenceSource } from "./expression-completion.ts";
 import type { ParameterBinding, ParameterMode, ParameterSlot, ParameterValue } from "@domain/types/parameters.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import { cx } from "../cx.ts";
@@ -67,8 +68,19 @@ export interface ParameterModePanelProps {
    * turns on completion (T247); without it the field still works, it just cannot suggest.
    */
   scope?: ExpressionScope;
-  /** Node names, for completing inside `op('…')`. */
-  nodeNames?: readonly string[];
+  /**
+   * T990 — what the document can answer about `op('…')`: node LABELS, and the members
+   * under a name (`par`/`chan`, then a parameter key, then a component).
+   *
+   * Optional HERE because the control kit has no document — but §V272 is the reason to
+   * be uneasy about that, and it is not hypothetical in this file: the predecessor of
+   * this prop (`nodeNames`) was optional, no product call site supplied it, and the
+   * `op('` menu was fed `[]` from the day it shipped. The gate against a repeat is
+   * `src/editor/inspector/expression-references.test.tsx`, which mounts the REAL
+   * Inspector and types `op('` — a test that constructs this panel with the prop cannot
+   * detect that the app does not supply it (§V844).
+   */
+  references?: ExpressionReferenceSource;
   /**
    * The parameter's declared bounds, when it has any (T368). Supplying it turns on the
    * clamp FORECAST: an expression that leaves the range later says so now, while it is
@@ -108,7 +120,7 @@ export function ParameterModePanel({
   autoFocus = false,
   diagnostic = null,
   scope,
-  nodeNames,
+  references,
   range = null,
   onChange,
 }: ParameterModePanelProps) {
@@ -139,8 +151,8 @@ export function ParameterModePanel({
     // completion". Gating on it is how this shipped dead — the prop was optional, nothing
     // supplied it, and the menu could not appear (§V272).
     if (active !== "expression" || draft === null || dismissed) return null;
-    return completionAt(draft, caret, scope, nodeNames ?? []);
-  }, [active, draft, caret, scope, nodeNames, dismissed]);
+    return completionAt(draft, caret, scope, references);
+  }, [active, draft, caret, scope, references, dismissed]);
   const text = draft ?? payloadText(slot.bindings[active]);
 
   // The document caught up with the mode the panel was holding.

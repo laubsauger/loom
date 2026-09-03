@@ -121,6 +121,12 @@ export interface InspectorPaneProps {
    * inside the panel at <=10 Hz (§V16) — this pane never calls it.
    */
   latestFrame?: (() => FrameInputs | null) | undefined;
+  /**
+   * T990: the channel names a node publishes right now, so `op('lfo1').chan.` completes.
+   * Passed straight through — this pane enumerates nothing itself, for the same reason it
+   * invents no resolver.
+   */
+  channelNames?: ((nodeName: string) => readonly string[]) | undefined;
   status: GpuStatus;
   /** Values the open file carried that this build cannot read (§V68, §V69). */
   unknownParameters?: readonly UnknownParameter[];  /** T434(b)/T432: the session audio capture's status, for the Inspector's Audio section. */
@@ -180,6 +186,7 @@ export function InspectorPane({
   diagnostics,
   channels,
   latestFrame,
+  channelNames,
   status,
   unknownParameters = [],
   audioStatus,
@@ -253,6 +260,7 @@ export function InspectorPane({
           inputResolutions={inputResolutions}
           {...(channels === undefined ? {} : { channels })}
           {...(latestFrame === undefined ? {} : { latestFrame })}
+          {...(channelNames === undefined ? {} : { channelNames })}
           {...(audioStatus === undefined ? {} : { audioStatus })}
           {...(midi === undefined ? {} : { midi })}
           {...(laser === undefined ? {} : { laser })}

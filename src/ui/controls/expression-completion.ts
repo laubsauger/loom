@@ -11,7 +11,7 @@ import type { ExpressionScope } from "@domain/expressions/index.ts";
  * authority, and the user blames their own syntax rather than the suggestion.
  */
 
-export type CompletionKind = "variable" | "function" | "node";
+export type CompletionKind = "variable" | "function" | "node" | "member";
 
 export interface CompletionCandidate {
   readonly text: string;
@@ -19,6 +19,34 @@ export interface CompletionCandidate {
   /** Shown beside the name: a variable's current value, or a function's call shape. */
   readonly detail?: string;
 }
+
+/**
+ * What the layer holding the DOCUMENT can answer about `op('…')` (T990).
+ *
+ * One object rather than two props, because the names and the members are one capability
+ * and splitting them is how half of it ships dead — which is precisely what happened to
+ * the names alone: `nodeNames` was an optional prop, no product call site supplied it,
+ * and the menu inside `op('` offered nothing from the day it was written (§V272, the same
+ * defect this file already records one paragraph down about `scope`).
+ *
+ * `membersOf` is a FUNCTION rather than a table, and asked per keystroke rather than
+ * built up front: a channel bag is only knowable from the frame that just ran, and a
+ * table built at mount would be a snapshot of a signal.
+ */
+export interface ExpressionReferenceSource {
+  /** Node LABELS (§B170): `op()` takes the label, never the id. */
+  readonly names: readonly string[];
+  /**
+   * The next segments after `op('name').<path…>.`, where `path` holds the segments
+   * already typed in full. Empty for anything the reader would refuse.
+   */
+  readonly membersOf: (
+    name: string,
+    path: readonly string[],
+  ) => ReadonlyArray<{ readonly text: string; readonly detail?: string }>;
+}
+
+const NO_REFERENCES: ExpressionReferenceSource = { names: [], membersOf: () => [] };
 
 export interface CompletionState {
   /** The identifier being typed. Empty when the caret sits at a boundary. */
@@ -33,6 +61,16 @@ export interface CompletionState {
 const IDENTIFIER_BEFORE = /[A-Za-z_][A-Za-z0-9_]*$/;
 /** `op('` or `op("` — the caret is naming a NODE, not a variable. */
 const OP_REFERENCE_BEFORE = /\bop\(\s*['"][A-Za-z0-9_ -]*$/;
+/**
+ * `op('noise1').` / `op('noise1').par.ga` — the caret is naming a MEMBER of a node.
+ *
+ * The middle group is every segment already typed IN FULL: it is greedy, so `op('n').par.ga`
+ * backtracks to `.par` + the dot + the partial `ga` rather than swallowing `ga` as a
+ * complete segment. That is the whole trick — the segments before the last dot are the
+ * PATH, and whatever follows the last dot is the PREFIX being narrowed.
+ */
+const OP_MEMBER_BEFORE =
+  /\bop\(\s*(['"])([A-Za-z0-9_ -]*)\1\s*\)((?:\.[A-Za-z_][A-Za-z0-9_]*)*)\.([A-Za-z_][A-Za-z0-9_]*)?$/;
 
 function formatValue(value: number): string {
   if (Number.isInteger(value)) return String(value);
@@ -55,7 +93,11 @@ export function completionAt(
    * completion shipped with `scope` optional and unwired, so it could never appear.
    */
   scope?: ExpressionScope,
-  nodeNames: readonly string[] = [],
+  /**
+   * The document's own answer about `op('…')` — names and members. Absent means "nothing
+   * holds a document here" (the control kit's own tests), never "offer nothing useful".
+   */
+  references: ExpressionReferenceSource = NO_REFERENCES,
 ): CompletionState | null {
   const clamped = Math.max(0, Math.min(caret, source.length));
   const before = source.slice(0, clamped);
@@ -69,7 +111,31 @@ export function completionAt(
       prefix,
       clamped - prefix.length,
       clamped,
-      nodeNames.map((text) => ({ text, kind: "node" as const })),
+      references.names.map((text) => ({ text, kind: "node" as const })),
+    );
+  }
+
+  /**
+   * T990 — AFTER the closing paren: `op('noise1').` is naming a namespace, `.par.` a
+   * parameter, `.par.color.` a component, `.chan.` a live channel. This is the half the
+   * owner asked for twice and the half that did not exist: the completer knew `op('`
+   * and then stopped, so the two decisions that actually cost time — which namespace,
+   * which member — were still guesses.
+   */
+  const member = OP_MEMBER_BEFORE.exec(before);
+  if (member !== null) {
+    const name = member[2] ?? "";
+    const path = (member[3] ?? "").split(".").filter((segment) => segment !== "");
+    const prefix = member[4] ?? "";
+    return finish(
+      prefix,
+      clamped - prefix.length,
+      clamped,
+      references.membersOf(name, path).map((entry) => ({
+        text: entry.text,
+        kind: "member" as const,
+        ...(entry.detail === undefined ? {} : { detail: entry.detail }),
+      })),
     );
   }
 
