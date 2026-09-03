@@ -23,6 +23,8 @@ import { AudioSection, audioSectionParameters } from "./audio-section.tsx";
 import { WebcamSection, webcamSectionParameters } from "./webcam-section.tsx";
 import { MidiSection, midiSectionParameters } from "./midi-section.tsx";
 import { LaserSection, laserSectionParameters } from "./laser-section.tsx";
+import { ComponentSection, componentSectionParameters } from "./component-section.tsx";
+import { isComponentNodeType } from "@domain/components/component-type.ts";
 import { LASER_OUT_TYPE } from "@nodes/definitions/laser-out.ts";
 import type { MidiSectionSurface } from "./midi-section.tsx";
 import { DEFAULT_GROUP, groupParameters } from "./parameter-groups.ts";
@@ -466,11 +468,16 @@ export function Inspector({
   // The CONSTANT, not the literal: §T1005's tripwire reads an emitting type's literal
   // in session code as an unregistered pump's tell, and this section is a surface.
   const showsLaserSection = laser !== undefined && node.type === LASER_OUT_TYPE;
+  /* T1065 — the instance's session controls (version, upgrade, enter, detach), only
+     when a registry view is supplied: headless mounts and plain-node inspectors carry
+     no components and render no section. */
+  const showsComponentSection = components !== undefined && isComponentNodeType(node.type);
   const presentedBySections = new Set<string>([
     ...(showsAudioSection ? audioSectionParameters(node.type as "audioIn" | "audioFileIn") : []),
     ...(showsWebcamSection ? webcamSectionParameters() : []),
     ...(showsMidiSection ? midiSectionParameters() : []),
     ...(showsLaserSection ? laserSectionParameters() : []),
+    ...(showsComponentSection ? componentSectionParameters() : []),
   ]);
   const groups = groupParameters(
     resolved.entries.filter((entry) => !presentedBySections.has(entry.key)),
@@ -636,6 +643,11 @@ export function Inspector({
     />
   ) : null;
 
+  const componentSection =
+    showsComponentSection && components !== undefined ? (
+      <ComponentSection bus={bus} context={context} nodeId={node.id} components={components} />
+    ) : null;
+
   const midiSection =
     showsMidiSection && node.type === "midiIn" ? (
       <MidiSection
@@ -783,6 +795,7 @@ export function Inspector({
         {webcamSection}
         {midiSection}
         {laserSection}
+        {componentSection}
         {parameterSections}
         {commonSection}
         {connectionsSection}
@@ -805,6 +818,7 @@ export function Inspector({
           {webcamSection}
           {midiSection}
           {laserSection}
+        {componentSection}
           {parameterSections}
         </TabsContent>
         <TabsContent className={cx(styles.page, styles.page)} value="common">

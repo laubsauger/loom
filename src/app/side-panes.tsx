@@ -102,6 +102,12 @@ export interface InspectorPaneProps {
    * are true at once — you are editing a component AND you have one of its nodes
    * selected, and publishing a parameter needs to see both.
    */
+  /** T1065 — the registry view, ALWAYS (not only inside a dive): the instance's
+   *  Component section (version/upgrade/enter/detach) and the Common page's inner
+   *  preview picker both read it, and both exist at the root. REQUIRED on purpose —
+   *  the section's predecessor sat unmounted behind an optional prop nothing supplied
+   *  (§V844), so the threading is now the type checker's problem, not a test's. */
+  components: ComponentRegistryView;
   componentPage?: {
     definition: GraphComponentDefinition;
     components: ComponentRegistryView;
@@ -180,6 +186,7 @@ function inputResolutionsFor(
 
 export function InspectorPane({
   nodeId,
+  components,
   componentPage,
   graph,
   compiled,
@@ -252,7 +259,7 @@ export function InspectorPane({
         <Inspector
           bus={bus}
           context={invocation}
-          {...(componentPage === undefined ? {} : { components: componentPage.components })}
+          components={components}
           nodeId={nodeId}
           settings={settings}
           diagnostics={diagnostics}

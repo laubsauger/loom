@@ -1421,6 +1421,7 @@ export function App({
               <AppRuntimeContext.Provider value={editing.runtime}>
               <InspectorPane
                 nodeId={selectedNodeId}
+                components={componentsView}
                 {...(editing.definition === null
                   ? {}
                   : {
