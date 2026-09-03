@@ -28,13 +28,18 @@ import { NOISE_FRAGMENT_WGSL, NOISE_TYPE_OPTIONS } from "../shaders/noise.wgsl.t
  * worse than an option that is not there. They can be added one at a time, each with its
  * own implementation, without touching anything else here.
  *
- * TIME (§V44): our `ParameterValue` envelope is still static passthrough (§V61, T106), so
- * a TD user's habit of typing `absTime.seconds` into Translate 4D has nowhere to land yet.
- * `speed` is the temporary seam for it: the shader reads `time` from the SHARED FRAME
- * BLOCK, which the runtime fills from `FrameEvaluationInput`, and the 4th noise dimension
- * becomes `t4d + time * speed`. No wall clock is reachable from a node (lint-enforced), so
- * a fixed-step offline render and the live preview produce identical frames. `speed`
- * defaults to 0, matching TD, where a Noise TOP is a still image until you animate it.
+ * TIME (§V44, §V436, T497 — corrected by T1101): our `ParameterValue` envelope is still
+ * static passthrough (§V61, T106), so a TD user's habit of typing `absTime.seconds` into
+ * Translate 4D has nowhere to land yet. `speed` is the temporary seam for it: the shader
+ * reads the ABSOLUTE clock — `frameU.absTime`, filled from `FrameEvaluationInput` — and
+ * the 4th noise dimension becomes `t4d + absTime * speed`. FREE-RUNNING, not timeline
+ * time: a bounded timeline wraps at the out point, and a scrolling field that snapped
+ * back there was B98's seam in the LFO (T497 moved this off `frameU.time` for the same
+ * reason). No wall clock is reachable from a node (lint-enforced); offline the two
+ * clocks agree until a wrap, so a fixed-step render still reproduces per frame — but a
+ * LIVE seek does not rewind this field, because a seek never rewinds abstime (§T1098).
+ * `speed` defaults to 0, matching TD, where a Noise TOP is a still image until you
+ * animate it.
  *
  * SEED (§V45): `seed` is folded into a uint32 with the domain's `hashSeed` — the same hash
  * the CPU-side RNG uses — and the GPU derives every value from an integer hash of that

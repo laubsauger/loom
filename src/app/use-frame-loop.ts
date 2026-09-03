@@ -275,6 +275,13 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
   const fps = projectFps(settings);
   const fpsRef = useRef(fps);
   fpsRef.current = fps;
+  // T1100 (§V45): the project seed, read live like fps — a seed edit re-seeds the next
+  // frame, and opening a document carries its seed in with it, with no reset in either
+  // case (a settings edit is not a seek). Before this ref existed the transport was
+  // built with NO seed at all, so every live picture rendered at seed 0 while offline
+  // renders and every headless test honoured the document — T1096's first catch.
+  const seedRef = useRef(settings.randomSeed);
+  seedRef.current = settings.randomSeed;
 
   // T433 — the timeline's in/out points, read LIVE for the same reason the resolution is:
   // dragging the out point while the graph plays must not rebuild the driver, which would
@@ -372,6 +379,8 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
     // same reason fps is — the answer changes while the transport does not.
     const transport = liveClock({
       fps: () => fpsRef.current,
+      // T1100: the document's seed, per frame (§V45's live half). See `seedRef` above.
+      seed: () => seedRef.current,
       presenting: () => driverRef.current?.running === true,
     });
 

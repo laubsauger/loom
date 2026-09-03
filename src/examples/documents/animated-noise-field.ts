@@ -7,10 +7,13 @@ import { settings, node, edge, graph, document } from "./builders.ts";
  *                    └────────────► displace.disp
  *
  * `type: "perlin4d"` with `speed` non-zero is the TD animation idiom: the fourth dimension
- * advances from `FrameEvaluationInput.timeSeconds` through the shared frame block, so the
+ * advances from the ABSOLUTE clock — `frameU.absTime`, free-running per §V436/T497, NOT
+ * timeline time (corrected by T1101; this sentence used to say `timeSeconds`) — so the
  * field evolves without anything in the graph reading a clock (§V44 — a node cannot reach
- * one; it is lint-enforced). A fixed-step offline render and the live preview therefore
- * produce the same frame for the same `frameIndex`.
+ * one; it is lint-enforced). Offline, abs and timeline agree until a wrap, so a fixed-step
+ * render reproduces per `frameIndex`; LIVE, a seek does not rewind the field, because a
+ * seek never rewinds abstime (§T1098) — which is why the app-parity gate addresses this
+ * example's Dawn twin by abs (T1096).
  *
  * One Noise node, two consumers: §V6 says that renders ONCE and both consumers sample the
  * same texture. The self-displacement is also the cheapest way to make 4D noise stop

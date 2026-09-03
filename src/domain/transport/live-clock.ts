@@ -2,7 +2,18 @@ import type { FrameEvaluationInput, TransportSource } from "../types/frame.ts";
 import { DEFAULT_PROJECT_FPS, projectFps } from "../types/graph.ts";
 
 export interface LiveClockOptions {
-  seed?: number;
+  /**
+   * The project seed published as `FrameEvaluationInput.randomSeed` (§V45, T1100).
+   *
+   * Read PER FRAME when given as a getter, exactly like `fps` and for the same reason:
+   * the seed is DOCUMENT state, and both "the user edits the seed in settings" and "a
+   * different document is opened" must reach the next frame without anyone calling
+   * `reset` — a stateful copy in the transport is how the live app spent its whole life
+   * rendering every project at seed 0 while §V45's row promised otherwise (T1096's
+   * catch). A seek, a lap or a reset can therefore never perturb it: there is nothing
+   * here to perturb.
+   */
+  seed?: number | (() => number);
   maxDeltaSeconds?: number;
   now?: () => number;
   /**
@@ -108,7 +119,14 @@ export function liveClock(options: LiveClockOptions = {}): TransportSource {
   const useTimeline = (options.clock ?? "timeline") === "timeline";
   const presenting = options.presenting ?? (() => false);
 
-  let seed = options.seed ?? 0;
+  // T1100: per-frame like `readFps` above. `reset(nextSeed)` remains for TransportSource
+  // parity with `offlineTransport`; an override it sets wins until the next one, which
+  // matches the old mutable field — but the live composition passes a getter and never
+  // calls reset with a seed, so the document stays the one source of truth there.
+  const readSeed =
+    typeof options.seed === "function" ? options.seed : () => options.seed as number | undefined;
+  let seedOverride: number | undefined;
+  const seedNow = (): number => seedOverride ?? readSeed() ?? 0;
   let frameIndex = 0;
   // Timeline epoch: the (time, frame, rate) triple the current run of frames is measured
   // from. Only a rate change moves it.
@@ -258,7 +276,7 @@ export function liveClock(options: LiveClockOptions = {}): TransportSource {
         deltaSeconds: useTimeline ? timelineDelta : wallDeltaSeconds,
         frameIndex: index,
         mode: "realtime",
-        randomSeed: seed,
+        randomSeed: seedNow(),
         wallSeconds,
         wallDeltaSeconds,
         absFrameIndex: absIndex,
@@ -283,7 +301,7 @@ export function liveClock(options: LiveClockOptions = {}): TransportSource {
       // point: a seek (which is what a lap is, §V170) rewinds the timeline and leaves the
       // absolute clock running, so `abstime` is the one number an expression can lean on
       // across a loop boundary. A RENDER zeroes it through `resetAbsolute` (T467).
-      if (nextSeed !== undefined) seed = nextSeed;
+      if (nextSeed !== undefined) seedOverride = nextSeed;
       frameIndex = 0;
       lastMs = null;
       wallSeconds = 0;

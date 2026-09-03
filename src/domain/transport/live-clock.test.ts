@@ -191,6 +191,42 @@ describe("liveClock", () => {
   });
 });
 
+describe("the seed as a live setting (T1100, §V45)", () => {
+  it("reads the seed every frame, so a settings edit or a document open re-seeds with no reset", () => {
+    // §V45's live half: "re-seeding a project re-seeds every generator in it" is only
+    // true on screen if the value the shared frame block carries follows the DOCUMENT.
+    // Before T1100 the transport held a private copy captured at construction (always
+    // absent, so always 0), and the project seed never reached a live picture — found
+    // by T1096's parity gate as two decorrelated noise fields with identical statistics.
+    let seed = 7;
+    const clock = liveClock({ seed: () => seed, now: () => 0 });
+    expect(clock.next().randomSeed).toBe(7);
+    seed = 26;
+    expect(clock.next().randomSeed).toBe(26);
+  });
+
+  it("a seek and a lap cannot perturb the document's seed", () => {
+    // The structural half of T1100's seek/reset question: the getter leaves the
+    // transport nothing to perturb. `reset()` (a seek), `wrapTo` (a lap) — the next
+    // frame still carries what the document says, not a re-randomised or stale copy.
+    const clock = liveClock({ seed: () => 7, now: () => 0 });
+    clock.next();
+    clock.reset();
+    expect(clock.next().randomSeed).toBe(7);
+    clock.wrapTo?.(0);
+    expect(clock.next().randomSeed).toBe(7);
+  });
+
+  it("reset(nextSeed) still overrides — offlineTransport parity — and wins over the getter", () => {
+    // The legitimate case the getter could swallow: TransportSource.reset carries an
+    // explicit seed for callers that drive the clock directly. Nothing in the live
+    // composition uses it, but the contract stays honest where it exists.
+    const clock = liveClock({ seed: () => 7, now: () => 0 });
+    clock.reset(99);
+    expect(clock.next().randomSeed).toBe(99);
+  });
+});
+
 describe("fps as a live setting (T272)", () => {
   it("reads the rate every frame, so a project setting can change while running", () => {
     let fps = 60;

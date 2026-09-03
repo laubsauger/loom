@@ -20,11 +20,13 @@ field(noise, perlin4d) ─┬─► shape(level) ─► warp.source ─► warp(
 
 - **§V44 — time arrives as `FrameEvaluationInput`, never from a clock.** The Noise node's
   pass binds the shared frame block (`sharedBinding: "frameU"`) and its shader advances the
-  fourth dimension as `t4d + time * speed`. Nothing in a node can reach `Date.now`,
-  `performance.now` or `requestAnimationFrame` — it is lint-enforced across `src/nodes/**` —
-  so the same `frameIndex` produces the same frame whether it came from the live scheduler,
-  a future timeline playhead, or an offline fixed-step render. That seam is why an offline
-  renderer can exist later without rewriting every node.
+  fourth dimension as `t4d + absTime * speed` — the ABSOLUTE clock, free-running per
+  §V436/T497, so a bounded timeline's wrap does not snap the field back (and a live seek
+  does not rewind it, §T1098). Nothing in a node can reach `Date.now`, `performance.now`
+  or `requestAnimationFrame` — it is lint-enforced across `src/nodes/**` — and offline the
+  two clocks agree until a wrap, so the same `frameIndex` produces the same frame whether
+  it came from the live scheduler, a timeline playhead, or an offline fixed-step render.
+  That seam is why an offline renderer can exist without rewriting every node.
 - **§V6 — a fan-out renders once.** `field` has two consumers and contributes exactly one
   pass; both consumers bind the same texture. If this ever became two passes, every
   generator in every project would silently double in cost, and the two copies could

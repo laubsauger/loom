@@ -283,10 +283,17 @@ test("E3 through the live app matches Dawn per-pixel, addressed by the absolute 
   const { renderHeadless } = await import("@/tests/headless/render-harness.ts");
   const { decodeComponents } = await import("@/tests/headless/pixel-compare.ts");
 
-  /** Dawn's frame k, quantised to glass bytes with round(clamp(v)*255). Cached per k. */
-  const dawnCache = new Map<number, Uint8ClampedArray>();
-  const dawnAt = async (abs: number): Promise<Uint8ClampedArray> => {
-    const cached = dawnCache.get(abs);
+  /**
+   * Dawn's frame k at a given project seed, quantised to glass bytes with
+   * round(clamp(v)*255). Cached per (seed, k). T1100 wired the project seed into the
+   * live transport, so the twin renders at the DOCUMENT's own seed — the gate that
+   * found the live-seed defect (glass at seed 0 versus baselines at seed 7, two
+   * decorrelated fields with identical statistics) now stands as §V45's live gate:
+   * same seed, same picture, byte-exact through the whole app.
+   */
+  const dawnCache = new Map<string, Uint8ClampedArray>();
+  const dawnAt = async (abs: number, seed: number): Promise<Uint8ClampedArray> => {
+    const cached = dawnCache.get(`${seed}:${abs}`);
     if (cached !== undefined) return cached;
     // E3's only clock is abs, and Dawn's ordinary frame k carries abs = k — so the
     // reference for abs k is simply frame k, plus k+1 for the standing red-verify.
@@ -296,25 +303,7 @@ test("E3 through the live app matches Dawn per-pixel, addressed by the absolute 
       settings: {
         ...doc.settings,
         outputResolution: { width: STORE.width, height: STORE.height },
-        /*
-         * THE LIVE-SEED PIN (found by this gate, T1096; reported for its own T-number).
-         *
-         * The live app never wires `settings.randomSeed` into its transport:
-         * `use-frame-loop.ts` builds `liveClock({ fps, presenting })` with no seed and
-         * calls `transport.reset()` with no seed, so `liveClock` line 111 leaves it 0,
-         * `shared-uniforms.ts:91` writes that 0 into `frameU.randomSeed` every frame,
-         * and every generator XORs with 0 — the project's Determinism seed reaches
-         * offline renders and every headless test, and never a live picture (§V45's
-         * live half). E3 ships `randomSeed: 7`, so the glass and the Dawn baseline
-         * show two different noise fields with identical statistics — measured here:
-         * ~70% of components off with a flat dawn→glass mapping, then byte-exact the
-         * moment the twin renders with seed 0.
-         *
-         * So the twin pins seed 0 — the app's ACTUAL input, measured, like abs — and
-         * the tripwire below fails the day the app starts honouring the project seed,
-         * so this pin cannot outlive the defect.
-         */
-        randomSeed: 0,
+        randomSeed: seed,
       },
       frames: abs + 2,
       capture: [abs, abs + 1],
@@ -327,9 +316,9 @@ test("E3 through the live app matches Dawn per-pixel, addressed by the absolute 
       for (let index = 0; index < components.length; index += 1) {
         bytes[index] = Math.round(Math.min(1, Math.max(0, components[index] ?? 0)) * 255);
       }
-      dawnCache.set(frame.frameIndex, bytes);
+      dawnCache.set(`${seed}:${frame.frameIndex}`, bytes);
     }
-    const wanted = dawnCache.get(abs);
+    const wanted = dawnCache.get(`${seed}:${abs}`);
     if (wanted === undefined) throw new Error(`Dawn returned no frame ${abs}`);
     return wanted;
   };
@@ -381,6 +370,11 @@ test("E3 through the live app matches Dawn per-pixel, addressed by the absolute 
     await expect(page.locator('input[aria-label="Frame"]')).toHaveValue(String(frame));
   };
 
+  // §V45's live half, as the twin's input: the DOCUMENT's own seed, no pin. The seed
+  // must be real for the sensitivity assertions below to mean anything.
+  const projectSeed = doc.settings.randomSeed;
+  expect(projectSeed, "E3 no longer ships a non-zero seed; the seed claims go inert").not.toBe(0);
+
   const captured: Buffer[] = [];
   const absAt: number[] = [];
   for (const seekTo of SEEKS) {
@@ -398,14 +392,14 @@ test("E3 through the live app matches Dawn per-pixel, addressed by the absolute 
           if (glass.width !== STORE.width || glass.height !== STORE.height) {
             return `canvas is ${glass.width}x${glass.height}, expected ${STORE.width}x${STORE.height}`;
           }
-          const result = compare(glass.bytes, await dawnAt(before), BOUND);
+          const result = compare(glass.bytes, await dawnAt(before, projectSeed), BOUND);
           if (result.failing === 0) {
             captured[seekTo] = glass.bytes;
             absAt[seekTo] = before;
 
             // The standing red-verify: the SAME glass against Dawn's NEXT clock state
             // must fail, or the gate cannot see the clock and would pass frozen.
-            const offByOne = compare(glass.bytes, await dawnAt(before + 1), BOUND);
+            const offByOne = compare(glass.bytes, await dawnAt(before + 1, projectSeed), BOUND);
             expect(
               offByOne.failing,
               "glass at abs k also matches Dawn at k+1 — the gate cannot see the clock",
@@ -430,36 +424,44 @@ test("E3 through the live app matches Dawn per-pixel, addressed by the absolute 
     "the app's picture did not change between the pinned states",
   ).toBe(false);
 
-  // THE LIVE-SEED TRIPWIRE (see the pin above): with the defect present, Dawn at the
-  // PROJECT's own seed must NOT match the glass. The day the app wires the project seed
-  // into its live transport, this fails — and the fix is to delete the `randomSeed: 0`
-  // pin and this assertion together, restoring the project seed as the twin's input.
-  const projectSeed = doc.settings.randomSeed ?? 0;
-  expect(projectSeed, "E3 no longer ships a non-zero seed; the tripwire is inert").not.toBe(0);
+  // SEED SENSITIVITY, standing (§V898's lesson kept after the fix that retired its
+  // tripwire): the glass must NOT match Dawn at a DIFFERENT seed, or the comparison has
+  // gone blind to the very input whose miswiring this gate caught (T1100) — a seed that
+  // stopped reaching the pixels would otherwise fail silent.
   const firstAbs = absAt[SEEKS[0]];
   expect(firstAbs).toBeDefined();
   if (first !== undefined && firstAbs !== undefined) {
-    const seeded = await renderHeadless({
-      host: nodeGpuHost(),
-      graph: doc.graph,
-      settings: { ...doc.settings, outputResolution: { width: STORE.width, height: STORE.height } },
-      frames: firstAbs + 1,
-      capture: [firstAbs],
-      animate: true,
-      outputNodeId: "out",
-    });
-    const seededFrame = seeded.frames[0];
-    expect(seededFrame).toBeDefined();
-    if (seededFrame !== undefined) {
-      const components = decodeComponents(seededFrame.bytes, seededFrame.format);
-      const bytes = new Uint8ClampedArray(components.length);
-      for (let index = 0; index < components.length; index += 1) {
-        bytes[index] = Math.round(Math.min(1, Math.max(0, components[index] ?? 0)) * 255);
-      }
-      expect(
-        compare(first, bytes, BOUND).failing,
-        "the glass now matches the PROJECT seed — the live-seed defect is fixed: remove the randomSeed: 0 pin and this tripwire",
-      ).toBeGreaterThan(0);
-    }
+    const otherSeed = compare(first, await dawnAt(firstAbs, projectSeed + 1), BOUND);
+    expect(
+      otherSeed.failing,
+      "the glass also matches Dawn at a different seed — the comparison cannot see the seed",
+    ).toBeGreaterThan(0);
   }
+
+  // And §V45's own sentence, live and on glass: RE-SEEDING THE PROJECT RE-SEEDS EVERY
+  // GENERATOR IN IT. The seed is edited through the real settings dialog, and the
+  // picture must now match Dawn at the NEW seed — the same instrument that proved the
+  // old wiring dropped the seed proves the new wiring carries it, with no reset and no
+  // reopen in between (a settings edit is not a seek; T1100's structural answer).
+  const reseedTo = projectSeed + 1;
+  await page.getByRole("button", { name: "Project settings" }).click();
+  await typeInto(page, "seed", String(reseedTo));
+  await page.keyboard.press("Escape");
+  await expect(page.locator('input[aria-label="seed"]')).toHaveCount(0);
+  await seek(SEEKS[0]);
+  await expect
+    .poll(
+      async () => {
+        const before = await absFrames();
+        const glass = await glassBytes(page);
+        const after = await absFrames();
+        if (before !== after) return `abs moved ${before} -> ${after} mid-read`;
+        const result = compare(glass.bytes, await dawnAt(before, reseedTo), BOUND);
+        return result.failing === 0
+          ? "match"
+          : `abs ${before}: ${result.failing}/${result.total} outside ±${BOUND}; worst ${result.worst}`;
+      },
+      { message: "editing the seed in settings did not re-seed the live picture (§V45)", timeout: 60_000 },
+    )
+    .toBe("match");
 });
