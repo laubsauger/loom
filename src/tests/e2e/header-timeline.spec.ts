@@ -16,10 +16,11 @@ import { APP_VIEWPORT } from "./app.ts";
  *
  * ## What this CANNOT show
  *
- * There is no WebGPU in Playwright's Chromium here (see `app.ts`), so no frame is ever
- * rendered: the playhead does not move, and nothing about SEEKING, looping or rendering
- * the range out is observable. Those need a device. What is observable — and what the
- * owner's constraint is actually about — is where the strip is and how tall the bar is.
+ * This spec's headless lane has no WebGPU adapter (see `app.ts`, §V895), so no frame is
+ * ever rendered: the playhead does not move, and nothing about SEEKING, looping or
+ * rendering the range out is observable here. Those need a device — which the headed
+ * `chromium-headed-gpu` lane now has (T1086). What is observable in this lane — and what
+ * the owner's constraint is actually about — is where the strip is and how tall the bar is.
  */
 
 /** The header's fixed grid row. A timeline that needed a band of its own would change it. */

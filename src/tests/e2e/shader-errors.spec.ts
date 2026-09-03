@@ -8,9 +8,10 @@ import { APP_VIEWPORT, addNode, connect, fitAll, focusGraph, modKey, moveNode, o
  * ## What CANNOT run here, stated rather than skipped
  *
  * The criterion is "a visible shader error followed by recovery" (doc §27). Producing a
- * WGSL error requires a device that compiles WGSL, and **there is no WebGPU in Playwright's
- * Chromium on this machine** — `navigator.gpu` is `undefined` in the bundled Chromium and
- * in system Chrome, headless and headed, with and without `--enable-unsafe-webgpu`. So the
+ * WGSL error requires a device that compiles WGSL, and **this suite's headless lane has
+ * no WebGPU adapter** — `navigator.gpu` exists but `requestAdapter()` resolves null
+ * (measured 2026-09-03, see `app.ts` and §V895; HEADED Chromium does get a real adapter,
+ * which is what `presentation-pixels.spec.ts` runs on). So under this project the
  * app runs in its `gpu.unavailable` state, no plan is compiled against a device, and no
  * WGSL is ever validated. There is nothing here that could produce a shader error to
  * recover from, and a spec that pretended otherwise would be asserting against a product
@@ -137,8 +138,10 @@ test("with no device the app says so, and invents no compile result (§V12)", as
 });
 
 /**
- * BLOCKED, not skipped. Needs `navigator.gpu`, which this environment does not have, so
- * `useGraphCompile` never runs (§V12) and no compiler diagnostic can reach the panel.
+ * BLOCKED, not skipped. Needs a WebGPU adapter, which the headless lane does not have
+ * (T1086), so `useGraphCompile` never runs (§V12) and no compiler diagnostic can reach
+ * the panel. The headed `chromium-headed-gpu` lane HAS an adapter; moving this there
+ * would make it a real test.
  *
  * What it would assert: a Custom WGSL node whose required input is unconnected produces a
  * `compiler/input-missing` error, that error appears in the problems tab, and the node
@@ -147,7 +150,7 @@ test("with no device the app says so, and invents no compile result (§V12)", as
  * missing here is only that it reaches the two places a user looks.
  */
 test.fixme(
-  "a compiler error reaches the problems tab and the node badge (§V27) — needs navigator.gpu, absent in this environment",
+  "a compiler error reaches the problems tab and the node badge (§V27) — needs a WebGPU adapter, absent in the headless lane (T1086: the headed lane has one)",
   () => {
     // Intentionally empty: a body that skipped itself would report this as a pass.
   },
@@ -156,11 +159,10 @@ test.fixme(
 /**
  * BLOCKED, not skipped. Recorded as a fixme so the runner prints it every run.
  *
- * Needs: `navigator.gpu` in the browser under test. Measured absent in Playwright's
- * bundled Chromium and in system Chrome on this machine, headless and headed, with and
- * without `--enable-unsafe-webgpu`. A runner with a GPU-capable Chromium (or a Chrome
- * channel where WebGPU is enabled) can turn this into a real test; nothing in the app
- * needs to change for it.
+ * Needs: a WebGPU adapter in the browser under test, which this HEADLESS lane never gets
+ * (`requestAdapter()` null — measured 2026-09-03, see `app.ts`, §V895). The headed
+ * `chromium-headed-gpu` lane (T1086) does get one, so this can now become a real spec
+ * there; nothing in the app needs to change for it.
  *
  * The steps it would take: select the Custom WGSL node, replace its source with WGSL that
  * does not compile, blur to commit, assert the viewer still shows the previous image and
@@ -168,7 +170,7 @@ test.fixme(
  * valid source and assert the error clears and the image updates.
  */
 test.fixme(
-  "an invalid shader keeps the last valid image and shows an error, then recovers (§V9) — needs navigator.gpu, absent in this environment",
+  "an invalid shader keeps the last valid image and shows an error, then recovers (§V9) — needs a WebGPU adapter, absent in the headless lane (T1086: the headed lane has one)",
   () => {
     // Intentionally empty: see the note above. Writing a body that skips itself would
     // report this as a pass.

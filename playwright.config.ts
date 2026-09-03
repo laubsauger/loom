@@ -35,6 +35,30 @@ export default defineConfig({
     {
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
+      // The pixel suite needs the headed lane's GPU; running it here would only ever
+      // fail on "requestAdapter() resolved null". Everything else stays headless.
+      testIgnore: /presentation-pixels\.spec\.ts$/,
+    },
+    {
+      /*
+       * T1086 (§V895) — the HEADED lane, and what it buys for what it costs.
+       *
+       * Headless Chromium on this machine exposes `navigator.gpu` but resolves NO
+       * adapter; headed resolves a real `apple`/`metal-3` one (measured 2026-09-03, see
+       * `src/tests/e2e/app.ts`). So this lane is the only place in the project that can
+       * assert rendered pixels THROUGH THE APP — real canvas, real presentation blit,
+       * real compositing — a layer the Dawn suites never touch (§V628).
+       *
+       * The cost is real and owned: `headless: false` opens an actual Chromium window,
+       * so the lane needs a display session (a logged-in mac, not a bare CI runner) and
+       * adds window-server startup to the run. CI does not run e2e at all today
+       * (`.github/workflows/ci.yml`), so like the Dawn `*.gpu.test.ts` suites this lane
+       * is a local gate: without a GPU it FAILS loudly on its premise test — it never
+       * skips itself green.
+       */
+      name: "chromium-headed-gpu",
+      use: { ...devices["Desktop Chrome"], headless: false },
+      testMatch: /presentation-pixels\.spec\.ts$/,
     },
   ],
   webServer: {

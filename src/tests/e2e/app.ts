@@ -4,21 +4,35 @@ import type { Locator, Page } from "@playwright/test";
 /**
  * Shared driving for the browser suite (T48, §V15).
  *
- * ## What this environment can and cannot run, stated once
+ * ## What this environment can and cannot run, measured PER LANE (§V895, T1086)
  *
- * **There is no WebGPU in Playwright's Chromium here.** `navigator.gpu` is `undefined` in
- * the bundled Chromium and in system Chrome, headless and headed, with and without
- * `--enable-unsafe-webgpu` — measured, not assumed. The app degrades honestly in that
- * case (`gpu.unavailable`, "Editing still works"), which is what makes the specs in this
- * directory possible at all: connecting, undo/redo, parameter drag and save/reload are
- * all editor-and-domain behaviour and none of them needs a device.
+ * **WebGPU here is a property of the Playwright project, not of Playwright.** Measured
+ * 2026-09-03, bundled Chromium 151.0.7922.34 on macOS, against a real http origin — the
+ * broader sentence that used to live here ("`navigator.gpu` is undefined … headless and
+ * headed — measured, not assumed") was a real measurement of a `data:` URL, an opaque
+ * origin where WebGPU is correctly absent, over-generalised into a platform verdict;
+ * §V895 is that lesson filed:
  *
- * What that rules out is anything about PIXELS: a live preview, a viewer image, a
- * rendered output, and the half of "shader error recovery" that is about the last valid
- * output continuing to render. Those claims live in the Dawn suites
- * (`src/tests/headless/**`, `src/tests/acceptance/**`), where a real GPU exists with no
- * browser. Nothing here is written as a spec that skips itself into a green tick — see
- * `shader-errors.spec.ts` for how the unrunnable half is recorded instead.
+ *   - **Headless** — the default `chromium` project, i.e. every spec that imports this
+ *     file: `navigator.gpu` is PRESENT and `requestAdapter()` resolves null. No device.
+ *     The app degrades honestly (`gpu.unavailable`, "Editing still works"), which is
+ *     what makes these specs possible at all: connecting, undo/redo, parameter drag and
+ *     save/reload are editor-and-domain behaviour and none of them needs a device. What
+ *     the missing adapter rules out IN THIS LANE is anything about pixels: a live
+ *     preview, a viewer image, a rendered output, and the half of "shader error
+ *     recovery" that is about the last valid output continuing to render.
+ *
+ *   - **Headed** — the `chromium-headed-gpu` project (`playwright.config.ts`):
+ *     `requestAdapter()` returns a real `apple`/`metal-3` adapter and the app renders
+ *     for real. Pixel claims about what the user SEES — the actual viewer canvas,
+ *     through the presentation blit — live in `presentation-pixels.spec.ts`, whose
+ *     first test re-measures this adapter split so the claim above can never rot into a
+ *     docblock again.
+ *
+ * The Dawn suites (`src/tests/headless/**`, `src/tests/acceptance/**`) still carry the
+ * exact-pixel claims that need no browser. Nothing here is written as a spec that skips
+ * itself into a green tick — see `shader-errors.spec.ts` for how a genuinely unrunnable
+ * half is recorded instead.
  *
  * ## Two mechanical facts that cost an afternoon each
  *
