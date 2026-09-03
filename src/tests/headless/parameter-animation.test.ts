@@ -1,8 +1,10 @@
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { createUniformAnimator } from "../../app/animate-parameters.ts";
-import { compileGraph } from "../../compiler/index.ts";
+import { compileGraph, flattenComponents } from "../../compiler/index.ts";
 import type { CompiledGraph } from "../../compiler/index.ts";
+import { componentNodeType, createComponentSystem } from "../../domain/components/index.ts";
+import type { GraphComponentDefinition } from "../../domain/types/components.ts";
 import { graphChannelResolver, hasAnimatedParameters } from "../../domain/channels/graph-channels.ts";
 import type { GraphDocument, GraphNode, ProjectSettings } from "../../domain/types/graph.ts";
 import type { StoredParameter } from "../../domain/types/parameters.ts";
@@ -136,22 +138,43 @@ interface Capture {
 /**
  * Renders `frames` frames the way the app does: one structural compile, one
  * `backend.compile`, and per frame a values-only re-resolve pushed with `updateUniforms`.
+ *
+ * T1017 — `component` installs a component definition and assembles the rest in the order
+ * `use-graph-compile.ts` does: flatten ONCE (§V529's memo, here a single call because the
+ * document never changes), ask the FLAT graph whether anything animates, build the channel
+ * resolver over the FLAT graph, and hand that same flattening to every compile. Getting
+ * that order wrong is the defect, not the setup: the instance node carries the slot and is
+ * inlined away, so a gate asked about the raw document answers about a node the plan does
+ * not contain.
  */
-async function render(graph: GraphDocument, frames: number): Promise<Capture> {
-  const registry = createNodeRegistry(allNodeDefinitions).view();
+async function render(
+  graph: GraphDocument,
+  frames: number,
+  component?: GraphComponentDefinition,
+): Promise<Capture> {
+  const manifests = createNodeRegistry(allNodeDefinitions).view();
+  const system = component === undefined ? null : createComponentSystem(manifests, [component]);
+  const registry = system?.nodes ?? manifests;
+  const catalogue = system?.components.view();
   const backend = createVgpuBackend({ host: nodeGpuHost() });
   try {
     const capabilities = await backend.initialize({});
-    const base: CompiledGraph = compileGraph({ graph, settings, registry, capabilities });
+    const flattened =
+      catalogue === undefined ? undefined : flattenComponents({ graph, registry, components: catalogue });
+    const componentInputs =
+      catalogue === undefined || flattened === undefined ? {} : { components: catalogue, flattened };
+    const base: CompiledGraph = compileGraph({ graph, settings, registry, capabilities, ...componentInputs });
     const errors = base.diagnostics.filter((entry) => entry.severity === "error");
     expect(errors.map((entry) => entry.message)).toEqual([]);
 
     const outputResourceId = outputResourceIdOf(base, OUTPUT_NODE_ID);
     const compiled = await backend.compile(base);
 
-    // Exactly the gate the frame loop uses. A static graph gets no animator at all.
-    const animated = hasAnimatedParameters(graph);
-    const channels = graphChannelResolver(graph, registry);
+    // Exactly the gate the frame loop uses, on exactly the graph it uses it on (T615).
+    // A static graph gets no animator at all.
+    const flatGraph = flattened?.graph ?? graph;
+    const animated = hasAnimatedParameters(flatGraph);
+    const channels = graphChannelResolver(flatGraph, registry);
     const animator = createUniformAnimator();
     let written = 0;
 
@@ -167,6 +190,7 @@ async function render(graph: GraphDocument, frames: number): Promise<Capture> {
           settings,
           registry,
           capabilities,
+          ...componentInputs,
           resolution: { frame: inputs.frame, channels },
         });
         const count = animator.push(backend, base, next);
@@ -259,4 +283,124 @@ describe("T259 — a driven parameter moves the picture (§V163)", () => {
       expect(differingBytes(a, b), `frame ${index} differs between two identical runs`).toBe(0);
     }
   }, 90_000);
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════════════
+ * T1017 — the same claim, one level in: a PUBLISHED knob has to move the picture
+ * ═══════════════════════════════════════════════════════════════════════════════════════
+ *
+ * A component's published page is the performance surface — the owner exposes a handful of
+ * knobs to the parent and drives them live — and none of them could move. The flattener
+ * resolved the page with no frame, no channel resolver and no reader, and the result was
+ * baked onto the internal parameters of a flattening that is memoized on the document
+ * revision: an `op()` warned, a clock read 0, and the flattened output was byte-identical
+ * across frames 30 / 150 / 260 (§V837's shape a fourth time — B8 → T593 → T1000 → here).
+ *
+ * The compiler-level pin lives in `compiler/flatten.test.ts`. This is the same claim where
+ * the user meets it: the SAME `circle`, the SAME LFO, the SAME 32×32 readback as the tests
+ * above — the only difference being that the knob is published from inside a component
+ * rather than set on the node. So a pass here is the whole path, flattening included, and
+ * the static twin proves what moved was the published value and not some ambient clock.
+ */
+const SOFTNESS_COMPONENT = "softness";
+
+/** One published knob, driving the circle's `softness`: §V80's fan-out in miniature. */
+function softnessComponent(): GraphComponentDefinition {
+  return {
+    componentId: SOFTNESS_COMPONENT,
+    version: 1,
+    name: "Softness",
+    graph: {
+      revision: 1,
+      groups: {},
+      edges: {},
+      nodes: {
+        shape: node("shape", "circle", {
+          parameters: {
+            mode: "fill",
+            center: [0.5, 0.5],
+            radius: [0.3, 0.3],
+            softness: 0.4,
+            aspectcorrect: true,
+          },
+        }),
+      },
+    },
+    inputs: [],
+    outputs: [{ externalId: "out", label: "Out", nodeId: "shape", portId: "out" }],
+    parameters: [
+      {
+        key: "softness",
+        definition: { type: "number", label: "Softness", default: 0.4, min: 0, max: 1 },
+        targets: [{ nodeId: "shape", key: "softness" }],
+      },
+    ],
+  } as unknown as GraphComponentDefinition;
+}
+
+/** instance -> output, with the instance's PUBLISHED `softness` driven or pinned. */
+function publishedGraph(softness: StoredParameter | number): GraphDocument {
+  return {
+    revision: 1,
+    groups: {},
+    edges: {
+      e1: {
+        id: "e1",
+        source: { nodeId: "grade", portId: "out" },
+        target: { nodeId: OUTPUT_NODE_ID, portId: "input" },
+      },
+    },
+    nodes: {
+      lfo: node("lfo", "lfo", {
+        label: "lfo1",
+        parameters: { shape: "sine", frequency: 3, amplitude: 0.45, offset: 0.5, phase: 0 },
+      }),
+      grade: node("grade", componentNodeType(SOFTNESS_COMPONENT, 1), { parameters: { softness } }),
+      [OUTPUT_NODE_ID]: node(OUTPUT_NODE_ID, "output", {}),
+    },
+  } as unknown as GraphDocument;
+}
+
+describe("T1017 — a PUBLISHED parameter moves the picture (§V80, §V837)", () => {
+  it("renders different frames while an LFO drives a component's published knob", async () => {
+    requireDawn();
+    const capture = await render(publishedGraph(drivenBy("lfo1")), 4, softnessComponent());
+
+    for (let index = 1; index + 1 < capture.frames.length; index += 1) {
+      const previous = capture.frames[index];
+      const current = capture.frames[index + 1];
+      if (previous === undefined || current === undefined) throw new Error("missing frame");
+      expect(
+        differingBytes(previous, current),
+        `frames ${index} and ${index + 1} are identical — the published knob is frozen`,
+      ).toBeGreaterThan(20);
+    }
+
+    expect(capture.written, "no uniform block was ever written").toBeGreaterThan(0);
+  }, 60_000);
+
+  it("renders IDENTICAL frames once that published knob is static", async () => {
+    requireDawn();
+    // The control: same component, same wiring, a number instead of a slot. If these
+    // differed, what moved above was something else in the shader and not the knob.
+    const capture = await render(publishedGraph(0.4), 4, softnessComponent());
+    expect(capture.written).toBe(0);
+
+    for (let index = 0; index + 1 < capture.frames.length; index += 1) {
+      const previous = capture.frames[index];
+      const current = capture.frames[index + 1];
+      if (previous === undefined || current === undefined) throw new Error("missing frame");
+      expect(differingBytes(previous, current)).toBe(0);
+    }
+  }, 60_000);
+
+  it("never rebuilds GPU resources to animate a published value (§V5, §V529)", async () => {
+    requireDawn();
+    // The §V5 half of the design: the STRUCTURE is memoized and the VALUE travels as a
+    // slot, so a published knob at 60 Hz is `updateUniforms` and nothing else. A build
+    // above one would mean the flattening had been dragged onto the frame path.
+    const capture = await render(publishedGraph(drivenBy("lfo1")), 6, softnessComponent());
+    expect(capture.resourceBuilds).toBe(1);
+  }, 60_000);
 });

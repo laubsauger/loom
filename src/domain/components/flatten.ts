@@ -1,7 +1,7 @@
 import type { ComponentPath, GraphComponentDefinition } from "../types/components.ts";
 import type { GraphNode } from "../types/graph.ts";
 import type { NodeId } from "../types/ids.ts";
-import type { ParameterValue } from "../types/parameters.ts";
+import type { StoredParameter } from "../types/parameters.ts";
 import { formatComponentPath } from "../types/components.ts";
 import { internalParameterPath, readComponentInstance } from "./instance.ts";
 
@@ -23,12 +23,18 @@ import { internalParameterPath, readComponentInstance } from "./instance.ts";
  * mapping `publishedParameterOperations` produces when the component itself is edited;
  * this is the read-only form of it, for an instance whose internals are not in the
  * document at all.
+ *
+ * T1017: a page entry is a `StoredParameter`, not a `ParameterValue` — it may be the
+ * instance's own EXPRESSION or DRIVEN slot, handed over unresolved so the internal
+ * parameter it lands on re-resolves it per frame like any other animated parameter. The
+ * caller (`compiler/flatten.ts`) decides which entries stay slots; this function only
+ * carries whatever it is given to every target the knob drives.
  */
 export function internalParameterValues(
   definition: GraphComponentDefinition,
-  publishedValues: Readonly<Record<string, ParameterValue>>,
-): Record<string, ParameterValue> {
-  const values: Record<string, ParameterValue> = {};
+  publishedValues: Readonly<Record<string, StoredParameter>>,
+): Record<string, StoredParameter> {
+  const values: Record<string, StoredParameter> = {};
   for (const published of definition.parameters) {
     const value = publishedValues[published.key];
     if (value === undefined) continue;
@@ -49,8 +55,8 @@ export function internalParameterValues(
 export function effectiveInternalOverrides(
   definition: GraphComponentDefinition,
   instance: GraphNode,
-  publishedValues: Readonly<Record<string, ParameterValue>>,
-): Record<string, ParameterValue> {
+  publishedValues: Readonly<Record<string, StoredParameter>>,
+): Record<string, StoredParameter> {
   const state = readComponentInstance(instance);
   return {
     ...internalParameterValues(definition, publishedValues),

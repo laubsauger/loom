@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import type { GraphComponentDefinition, PublishedParameter } from "../domain/types/components.ts";
 import type { GraphDocument, GraphNode } from "../domain/types/graph.ts";
 import type { ComponentId } from "../domain/types/ids.ts";
+import type { FrameEvaluationInput } from "../domain/types/frame.ts";
+import type { ParameterSlot, ParameterValue } from "../domain/types/parameters.ts";
+import { graphChannelResolver } from "../domain/channels/graph-channels.ts";
 import {
   COMPONENT_OVERRIDES_STATE_KEY,
   PARENT_BINDINGS_STATE_KEY,
@@ -13,7 +16,7 @@ import type { ComponentRegistryView } from "../domain/components/index.ts";
 import type { EffectPassDescriptor, PassDescriptor } from "../runtime/backend/plan.ts";
 import { readExecutionPlan } from "../runtime/backend/plan.ts";
 import { compileGraph } from "./compile.ts";
-import { componentPathOf } from "./flatten.ts";
+import { componentPathOf, flattenComponents } from "./flatten.ts";
 import type { CompileRequest, CompiledGraph } from "./types.ts";
 import {
   createCompilerTestRegistry,
@@ -531,5 +534,338 @@ describe("a pinned instance previews its first PREVIEWABLE output (T609)", () =>
     // — a value port — nothing materialized, and the whole instance pruned away.
     expect(compiled.resources.map((resource) => resource.id)).toContain("target:c1/pic:out");
     expect(compiled.outputs.some((output) => output.nodeId === ("c1/pic" as never))).toBe(true);
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════════════
+ * T1017 — A PUBLISHED PARAMETER IS A PERFORMANCE KNOB, SO IT HAS TO MOVE
+ * ═══════════════════════════════════════════════════════════════════════════════════════
+ *
+ * The published page is the whole reason a component is an instrument: the owner exposes
+ * a handful of knobs to the parent and drives them live. They could not move at all. The
+ * measured symptom was that the flattened output of a frozen world was BYTE-IDENTICAL
+ * across frames 30 / 150 / 260 — an `op()` in a published expression WARNED and a clock
+ * expression silently read 0 — while the same component's INTERNAL animation was fine.
+ *
+ * §V837 for the fourth time (B8 → T593 → T1000 → here): `resolveNodeParameters` was called
+ * from the flattener with no resolution context, and `flattenComponents` is memoized on the
+ * document revision, so nothing re-evaluated per frame even if it could have. Both call
+ * sites read correctly in isolation.
+ *
+ * The fix is §V5's split one layer up: the STRUCTURE a component flattens to is a pure
+ * function of the document and stays memoized; a knob whose mode can move per frame travels
+ * as its own UNRESOLVED slot and is evaluated at the internal parameter it drives, by the
+ * per-frame values-only resolution that already exists (§V163). So every test here compiles
+ * ONE document at two moments and asserts the uniform the shader receives — which is the
+ * thing that used to be identical.
+ */
+describe("animated published parameters (T1017, §V837)", () => {
+  const frameAt = (timeSeconds: number, frameIndex: number): FrameEvaluationInput => ({
+    timeSeconds,
+    deltaSeconds: 1 / 60,
+    frameIndex,
+    mode: "offline",
+    randomSeed: 7,
+  });
+
+  const expressionSlot = (source: string, retained: ParameterValue): ParameterSlot => ({
+    mode: "expression",
+    bindings: {
+      expression: { kind: "expression", source },
+      static: { kind: "static", value: retained },
+    },
+  });
+
+  const drivenSlot = (channel: string, retained: ParameterValue): ParameterSlot => ({
+    mode: "driven",
+    bindings: {
+      driven: { kind: "driven", channel },
+      static: { kind: "static", value: retained },
+    },
+  });
+
+  /** `chain`, with room for the value/reference nodes a published expression reads. */
+  const chainWith = (
+    instances: GraphNode[],
+    extra: ReadonlyArray<GraphNode> = [],
+    gen: GraphNode = testNode("gen", "fx.generator", { label: "gen" }),
+  ): GraphDocument => {
+    const spine = [gen, ...instances, testNode("out", "fx.output")];
+    const edges: GraphDocument["edges"] = {};
+    for (let index = 0; index < spine.length - 1; index += 1) {
+      const from = spine[index] as GraphNode;
+      const to = spine[index + 1] as GraphNode;
+      edges[`e${index}`] = testEdge(`e${index}`, [from.id, "out"], [to.id, "source"]);
+    }
+    return graphOf([...spine, ...extra], edges);
+  };
+
+  /** The same document, compiled at one moment. Everything else is held constant. */
+  const at = (
+    definitions: GraphComponentDefinition[],
+    graph: GraphDocument,
+    frame: FrameEvaluationInput,
+  ): CompiledGraph => compileWith(definitions, graph, { resolution: { frame } });
+
+  it("moves an expression-driven knob across frames, at the exact value the clock implies", () => {
+    // `time * 10` on a knob that fans out to BOTH internal radii (§V80).
+    const document = chainWith([
+      instance("c1", "bloom", 1, { parameters: { blur: expressionSlot("time * 10", 4) } }),
+    ]);
+
+    const zero = at([bloom()], document, frameAt(0, 0));
+    const one = at([bloom()], document, frameAt(1, 60));
+    const later = at([bloom()], document, frameAt(2.5, 150));
+
+    // §V839: the exact number at each moment, not merely "it changed". A sign flip, a
+    // frames/seconds mix-up, and a fallback to the retained 4 each fail here.
+    expect(passFor(zero, "c1/blurA")?.uniforms?.["radius"]).toBe(0);
+    expect(passFor(one, "c1/blurA")?.uniforms?.["radius"]).toBe(10);
+    expect(passFor(later, "c1/blurA")?.uniforms?.["radius"]).toBe(25);
+    // The fan-out still fans out: one knob, every target it drives.
+    expect(passFor(later, "c1/blurB")?.uniforms?.["radius"]).toBe(25);
+
+    // The measured defect, stated as the defect.
+    expect(JSON.stringify(one.passes)).not.toBe(JSON.stringify(zero.passes));
+  });
+
+  it("keeps two instances of one component on their own published expressions", () => {
+    // Per-instance state is what makes the published page an instrument rather than a
+    // global. Flat ids are `c1/blurA` and `c2/blurA`, so the two slots never meet.
+    const document = chainWith([
+      instance("c1", "bloom", 1, { parameters: { blur: expressionSlot("time * 10", 4) } }),
+      instance("c2", "bloom", 1, { parameters: { blur: expressionSlot("time * 4", 4) } }),
+    ]);
+    const compiled = at([bloom()], document, frameAt(3, 180));
+
+    expect(passFor(compiled, "c1/blurA")?.uniforms?.["radius"]).toBe(30);
+    expect(passFor(compiled, "c2/blurA")?.uniforms?.["radius"]).toBe(12);
+  });
+
+  it("resolves op() in a published expression against the flat graph, and stops warning", () => {
+    // The measured symptom: `op()` WARNED, because the flattener resolved the published
+    // page with no node reference reader. The read now happens where the reader exists.
+    const document = chainWith(
+      [instance("c1", "bloom", 1, { parameters: { blur: expressionSlot("op('gen').par.amount * 3", 4) } })],
+      [],
+      testNode("gen", "fx.generator", { label: "gen", parameters: { amount: 7 } }),
+    );
+    const compiled = at([bloom()], document, frameAt(0, 0));
+
+    expect(passFor(compiled, "c1/blurA")?.uniforms?.["radius"]).toBe(21);
+    expect(compiled.diagnostics.filter((diagnostic) => diagnostic.message.includes("op('gen')"))).toEqual([]);
+  });
+
+  it("moves a channel-driven knob through the resolver the app actually builds", async () => {
+    // The whole seam, in the order `use-graph-compile.ts` assembles it: flatten ONCE,
+    // build the channel resolver over the FLAT graph, compile per frame against both. A
+    // published knob driven by an LFO is the shape T999's owner asked for by name.
+    const { allNodeDefinitions } = await import("../nodes/definitions/index.ts");
+    const document = chainWith(
+      [instance("c1", "bloom", 1, { parameters: { blur: drivenSlot("lfo1", 4) } })],
+      [
+        testNode("lfo", "lfo", {
+          label: "lfo1",
+          parameters: { shape: "sine", frequency: 1, amplitude: 10, offset: 20 },
+        }),
+      ],
+    );
+
+    const system = createComponentSystem(createCompilerTestRegistry(allNodeDefinitions).view(), [bloom()]);
+    const flattened = flattenComponents({
+      graph: document,
+      registry: system.nodes,
+      components: system.components.view(),
+    });
+    const channels = graphChannelResolver(flattened.graph, system.nodes);
+    const compileAt = (frame: FrameEvaluationInput): CompiledGraph =>
+      compileGraph({
+        graph: document,
+        settings: testSettings(),
+        registry: system.nodes,
+        capabilities: testCapabilities(),
+        components: system.components.view(),
+        flattened,
+        resolution: { frame, channels },
+      });
+
+    // sin(2πt) at amplitude 10 about 20: the crest and the trough, exactly.
+    expect(passFor(compileAt(frameAt(0.25, 15)), "c1/blurA")?.uniforms?.["radius"]).toBeCloseTo(30, 10);
+    expect(passFor(compileAt(frameAt(0.75, 45)), "c1/blurA")?.uniforms?.["radius"]).toBeCloseTo(10, 10);
+  });
+
+  it("animates a knob republished through two levels of nesting", () => {
+    const outer: GraphComponentDefinition = {
+      ...wrapper("bloom"),
+      parameters: [
+        {
+          key: "blur",
+          definition: { type: "number", label: "Blur", default: 3, min: 0, max: 64 },
+          targets: [{ nodeId: "inner", key: "blur" }],
+        },
+      ],
+    };
+    const document = chainWith([
+      instance("w1", "wrapper", 1, { parameters: { blur: expressionSlot("time * 6", 3) } }),
+    ]);
+
+    expect(passFor(at([bloom(), outer], document, frameAt(0, 0)), "w1/inner/blurA")?.uniforms?.["radius"]).toBe(0);
+    expect(passFor(at([bloom(), outer], document, frameAt(5, 300)), "w1/inner/blurA")?.uniforms?.["radius"]).toBe(30);
+  });
+
+  it("arms the frame loop's own gate, which the instance node used to take with it", async () => {
+    // The half that would have made the rest of this describe block dead in the APP.
+    // `use-graph-compile.ts` builds `animate` only when `hasAnimatedParameters(flatGraph)`
+    // — and the instance node, which carried the slot, is INLINED AWAY. So a document
+    // whose only animation was a published knob reported "nothing animates", `animate`
+    // was null, and no per-frame values-only compile ran at all. The slot surviving into
+    // the flat graph is what answers that question truthfully.
+    const { hasAnimatedParameters } = await import("../domain/channels/graph-channels.ts");
+    const document = chainWith([
+      instance("c1", "bloom", 1, { parameters: { blur: expressionSlot("time * 10", 4) } }),
+    ]);
+    const system = createComponentSystem(baseNodes, [bloom()]);
+    const flattened = flattenComponents({
+      graph: document,
+      registry: system.nodes,
+      components: system.components.view(),
+    });
+
+    // The raw document says yes — the slot is right there on the instance node — and the
+    // app does not read the raw document (T615, §V464c). The FLAT graph is the one asked,
+    // and it answered no, because inlining the instance deleted the only slot in it.
+    expect(hasAnimatedParameters(document)).toBe(true);
+    expect(hasAnimatedParameters(flattened.graph)).toBe(true);
+  });
+
+  it("still bakes a bind at the boundary, whose ref means something else one level in", () => {
+    // The hop hazard, and the reason the deferral is a WHITELIST rather than "any slot".
+    // `parent.gain` written on an instance names the component that owns the instance;
+    // carried inward unresolved it would name the instance itself and silently read a
+    // different knob. So a bind resolves where its scope is, and the VALUE fans out.
+    const bound: GraphComponentDefinition = {
+      componentId: "wrapper" as ComponentId,
+      version: 1,
+      name: "Wrapper",
+      graph: graphOf([
+        instance("inner", "bloom", 1, {
+          parameters: {
+            blur: { mode: "bind", bindings: { bind: { kind: "bind", ref: "parent.gain" } } } satisfies ParameterSlot,
+          },
+        }),
+      ]),
+      inputs: [{ externalId: "source", label: "Source", nodeId: "inner", portId: "source" }],
+      outputs: [{ externalId: "out", label: "Out", nodeId: "inner", portId: "out" }],
+      parameters: [
+        {
+          key: "gain",
+          definition: { type: "number", label: "Gain", default: 3, min: 0, max: 64 },
+          targets: [],
+        },
+      ],
+    };
+    const compiled = compileWith([bloom(), bound], chainWith([instance("w1", "wrapper", 1, { parameters: { gain: 17 } })]));
+
+    expect(compiled.diagnostics.filter((diagnostic) => diagnostic.severity === "error")).toEqual([]);
+    expect(passFor(compiled, "w1/inner/blurA")?.uniforms?.["radius"]).toBe(17);
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════════════
+ * B8 / T187 / §V56 — THE PUBLISHED BOUNDARY STAYS IN STORED SPACE
+ * ═══════════════════════════════════════════════════════════════════════════════════════
+ *
+ * A published page crosses TWO resolutions: the flattener resolves it against the
+ * component's own published definitions, then writes it onto internal parameters that
+ * resolve again. So the boundary must hand over the number the DOCUMENT holds
+ * (display-encoded), never the number EVALUATION consumes (already decoded to linear) —
+ * a picked mid-grey handed over decoded reaches the shader at 0.0376 instead of 0.2140,
+ * less than a fifth of the light asked for, and it reads as an art-direction choice.
+ *
+ * T1017 is the change most likely to bring that back, because it moves what crosses this
+ * boundary. These pin the arithmetic on both of its paths: a resolved value (unchanged),
+ * and a deferred slot (new) — which cannot be double-decoded because a value that was
+ * never resolved was never decoded, but that is an argument, and this is the measurement.
+ */
+describe("published colour space through a flattening (§V56, B8)", () => {
+  /** sRGB EOTF of 0.5 — the number B8 is about. Decoding it TWICE gives 0.0376. */
+  const MID_GREY_LINEAR = 0.21404114048223255;
+  // Measured by mutating the boundary to hand over `values` instead of `entries[].value`
+  // — B8's own arithmetic, decoded twice — rather than derived on paper.
+  const MID_GREY_TWICE = 0.0376494785571514;
+
+  const painter = (published: PublishedParameter[]): GraphComponentDefinition => ({
+    componentId: "painter" as ComponentId,
+    version: 1,
+    name: "Painter",
+    graph: graphOf([testNode("fill", "solid", { parameters: { color: [0, 0, 0, 1] } })]),
+    inputs: [],
+    outputs: [{ externalId: "out", label: "Out", nodeId: "fill", portId: "out" }],
+    parameters: published,
+  });
+
+  const tint = (targets: Array<{ nodeId: string; key: string }>): PublishedParameter => ({
+    key: "tint",
+    definition: { type: "color", label: "Tint", default: [0, 0, 0, 1], space: "display" },
+    targets,
+  });
+
+  const compileReal = async (
+    definition: GraphComponentDefinition,
+    node: GraphNode,
+  ): Promise<CompiledGraph> => {
+    const { allNodeDefinitions } = await import("../nodes/definitions/index.ts");
+    const { createNodeRegistry } = await import("../nodes/registry/registry.ts");
+    const system = createComponentSystem(createNodeRegistry(allNodeDefinitions).view(), [definition]);
+    return compileGraph({
+      graph: graphOf([node]),
+      settings: testSettings(),
+      registry: system.nodes,
+      capabilities: testCapabilities(),
+      components: system.components.view(),
+    });
+  };
+
+  const filledWith = (compiled: CompiledGraph): readonly number[] | undefined => {
+    const pass = effects(compiled.passes).find((candidate) => candidate.nodeId === "c1/fill");
+    const color = pass?.uniforms?.["color"];
+    return Array.isArray(color) ? (color as readonly number[]) : undefined;
+  };
+
+  it("decodes a published display colour exactly once", async () => {
+    const compiled = await compileReal(
+      painter([tint([{ nodeId: "fill", key: "color" }])]),
+      instance("c1", "painter" as ComponentId, 1, {
+        ui: { previewPinned: true },
+        parameters: { tint: [0.5, 0.5, 0.5, 1] },
+      }),
+    );
+
+    expect(filledWith(compiled)?.[0]).toBeCloseTo(MID_GREY_LINEAR, 10);
+    expect(filledWith(compiled)?.[0]).not.toBeCloseTo(MID_GREY_TWICE, 4);
+  });
+
+  it("decodes it exactly once when a per-component slot drives one channel (§V113)", async () => {
+    // The compound is published at the bare key while storage carries a slot PER
+    // COMPONENT, so the boundary reassembles rather than deferring — the path where a
+    // second decode would be easiest to reintroduce without noticing.
+    const compiled = await compileReal(
+      painter([tint([{ nodeId: "fill", key: "color" }])]),
+      instance("c1", "painter" as ComponentId, 1, {
+        ui: { previewPinned: true },
+        parameters: {
+          tint: [0, 0, 0, 1],
+          "tint.r": {
+            mode: "expression",
+            bindings: { expression: { kind: "expression", source: "0.5" } },
+          } satisfies ParameterSlot,
+        },
+      }),
+    );
+
+    expect(filledWith(compiled)?.[0]).toBeCloseTo(MID_GREY_LINEAR, 10);
+    expect(filledWith(compiled)?.[0]).not.toBeCloseTo(MID_GREY_TWICE, 4);
   });
 });
