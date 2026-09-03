@@ -106,15 +106,32 @@ const flush = async (): Promise<void> => {
 const frame = { frameIndex: 1, timeSeconds: 0.1, deltaSeconds: 1 / 60, mode: "realtime", randomSeed: 7 } as never;
 
 describe("T1029 — the hook, per path", () => {
-  it("NO HELPER: the diagnostic says what to do, and nothing ever crosses", async () => {
+  it("NO HELPER: a WARNING at the node, coverage READS ZERO, and nothing ever crosses (T1067)", async () => {
     const { backend } = fakeBackend(new Float32Array(4));
     const view = renderHook(() =>
       useVisionBridge({ deviceClient: () => null, backend: () => backend }),
     );
     act(() => view.result.current.track(graph, compiled));
+    // WARNING, so the node's own badge lights: info reached only the problems pane and
+    // the owner met a silently black node (the shipped E52 report, verbatim).
+    expect(view.result.current.diagnostics[0]?.severity).toBe("warning");
     expect(view.result.current.diagnostics[0]?.code).toBe("vision.helper.absent");
     expect(view.result.current.diagnostics[0]?.message).toContain("pnpm mcp:serve");
-    // The seam still tracks the node — the fallback (nobody) serves the picture.
+    /* THE SHIPPED FAILURE: E52 spends `mask1:coverage`, and with no helper this hook
+       tracked the entry but never joined the channel chain — so the expression FAILED
+       ("publishes no channel") instead of dimming the room. The channel must exist
+       whenever the NODE exists: zero, with the distinction carried by the warning. */
+    expect(view.result.current.resolver("mask1:coverage", { frame } as never)).toBe(0);
+    // And BEFORE any track at all (the first structural compile's world): the channel
+    // belongs to the NODE, answered from the live document, or the first compile pins
+    // an expression error nothing later clears — the shipped E52 failure exactly.
+    const cold = renderHook(() =>
+      useVisionBridge({ deviceClient: () => null, graph: () => graph }),
+    );
+    expect(cold.result.current.resolver("mask1:coverage", { frame } as never)).toBe(0);
+    expect(cold.result.current.resolver("depth1:coverage", { frame } as never)).toBeUndefined();
+    // The typo protection survives: a channel nothing publishes still refuses by name.
+    expect(view.result.current.resolver("mask1:nonsense", { frame } as never)).toBeUndefined();
     await flush();
   });
 

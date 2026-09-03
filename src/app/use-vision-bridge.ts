@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
+import type { ChannelResolver } from "@domain/parameters/resolve.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
 import type { NodeId } from "@domain/types/ids.ts";
 import type { FrameEvaluationInput } from "@domain/types/frame.ts";
@@ -125,15 +126,34 @@ export function useVisionBridge(options: {
   /** The OSC hook's shared device client — one attachment per tab (T950's rule). */
   deviceClient: () => DeviceClient | null;
   backend?: () => LoomBackend | null;
+  /** T1067 — the live document, so the coverage channel exists from the FIRST compile:
+   *  the seam's entries fill only after a compile allocates the node, and the first
+   *  structural compile therefore resolved `mask1:coverage` as unknown and pinned a
+   *  diagnostic nothing later cleared. The channel belongs to the NODE, not the seam. */
+  graph?: () => GraphDocument;
 }): {
   readonly diagnostics: readonly RuntimeDiagnostic[];
   observe(frame: FrameEvaluationInput): void;
   track(graph: GraphDocument, compiled: CompiledGraph | null): void;
   settle(frameIndex: number): Promise<void>;
+  /** T1067 — `mask1:coverage` et al. Present whenever the NODE is tracked, whether or
+   *  not a helper is: E52 shipped erroring on every unpaired machine because this hook
+   *  tracked entries but never joined the channel chain, so a document that SPENDS a
+   *  coverage (the whole §V856 design) broke instead of dimming. Zero means "nobody" in
+   *  both the found-nobody and cannot-run cases; `ready` and the door's own refusal
+   *  carry the distinction. A typo (`depth1:coverage`) still fails by name — the seam's
+   *  own entry-level refusal, untouched. */
+  readonly resolver: ChannelResolver;
 } {
   const [diagnostics, setDiagnostics] = useState<readonly RuntimeDiagnostic[]>([]);
   const targetsRef = useRef<readonly VisionTarget[]>([]);
-  const client = options.deviceClient;
+  /* T1067 — through a REF, deliberately: the seam below memoises on its inputs, and a
+     caller handing a fresh accessor per render would REBUILD the seam mid-session —
+     dropping every tracked entry, which is exactly "the node exists and publishes no
+     channel" wearing a React costume. One seam per mount; the accessor stays live. */
+  const clientRef = useRef(options.deviceClient);
+  clientRef.current = options.deviceClient;
+  const client = useCallback(() => clientRef.current(), []);
   const backendRef = useRef(options.backend);
   backendRef.current = options.backend;
   const unregisterRef = useRef(new Map<string, () => void>());
@@ -197,10 +217,15 @@ export function useVisionBridge(options: {
         });
         if (client() === null) {
           next.push({
-            severity: "info",
+            /* T1067 — WARNING, not info: a wired node that cannot run produces a black
+               mask indistinguishable from "found nobody" (§V856's trap, in the feature
+               built to avoid it). Info never reaches the node's badge, so the owner met
+               a silently black node; a warning lights the node itself, which is where
+               they were looking (§T948). */
+            severity: "warning",
             code: "vision.helper.absent",
             message:
-              "Person Mask needs the local helper (pnpm mcp:serve) on macOS — until it is paired the node publishes an empty mask (nobody).",
+              "Person Mask is NOT RUNNING — it needs the local helper (pnpm mcp:serve) paired in the Connections section, on macOS. Until then it publishes an empty mask (nobody) and coverage reads 0.",
             nodeId,
           });
         } else {
@@ -278,5 +303,31 @@ export function useVisionBridge(options: {
     [sources],
   );
 
-  return useMemo(() => ({ diagnostics, observe, track, settle }), [diagnostics, observe, track, settle]);
+  const graphOf = options.graph;
+  const resolver = useCallback<ChannelResolver>(
+    (channel, context) => {
+      const value = sources.resolver(channel, context);
+      if (value !== undefined) return value;
+      /* The node-level answer (a6's condition, verbatim: the channel must exist
+         whenever the NODE exists, not whenever a runner does). Zero for both
+         "found nobody" and "cannot run"; `ready` and the node's own warning carry
+         the distinction. Only personMask labels answer — `depth1:coverage` still
+         falls through and fails by name, which is §V150's load-bearing refusal. */
+      const split = channel.lastIndexOf(":");
+      if (split <= 0 || channel.slice(split + 1) !== "coverage") return undefined;
+      const name = channel.slice(0, split);
+      const graph = graphOf?.();
+      if (graph === undefined) return undefined;
+      for (const node of Object.values(graph.nodes)) {
+        if (node.type === "personMask" && (node.label ?? node.id) === name) return 0;
+      }
+      return undefined;
+    },
+    [graphOf, sources],
+  );
+
+  return useMemo(
+    () => ({ diagnostics, observe, track, settle, resolver }),
+    [diagnostics, observe, track, settle, resolver],
+  );
 }

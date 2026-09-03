@@ -17,6 +17,7 @@ const NO_STORE = { subscribe: () => () => {}, get: () => EMPTY_SINKS };
 
 /** Shared empty default, so omitting the argument does not re-key the compile memo. */
 const NO_CHANNELS: readonly ChannelResolver[] = [];
+const NO_SESSION_DIAGNOSTICS: readonly RuntimeDiagnostic[] = [];
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
 import type { NodeId } from "@domain/types/ids.ts";
@@ -331,6 +332,14 @@ export function useGraphCompile(
    * Each must keep a stable identity — they key the compile memo.
    */
   extraChannels: readonly ChannelResolver[] = NO_CHANNELS,
+  /**
+   * T1067 — SESSION diagnostics with a nodeId (a Person Mask with no helper, a laser
+   * refusal), folded into the per-node badge counts beside the compiler's own. Without
+   * this a node could be producing NOTHING for a session-level reason while its badge
+   * read clean — the owner met exactly that: a silently black mask whose only warning
+   * sat in the problems pane. Re-published whenever the array's identity changes.
+   */
+  sessionDiagnostics: readonly RuntimeDiagnostic[] = NO_SESSION_DIAGNOSTICS,
 ): GraphCompileResult {
   const graph = useSyncExternalStore<GraphDocument>(
     runtime.bus.store.subscribe,
@@ -699,11 +708,11 @@ export function useGraphCompile(
     publishedRef.current = publishNodeStatus(
       runtime.nodeRuntime,
       result.graph,
-      result.diagnostics,
+      [...result.diagnostics, ...sessionDiagnostics],
       result.compiled !== null,
       publishedRef.current,
     );
-  }, [runtime.nodeRuntime, result]);
+  }, [runtime.nodeRuntime, result, sessionDiagnostics]);
 
   return result;
 }

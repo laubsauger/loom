@@ -367,6 +367,8 @@ export function App({
   const vision = useVisionBridge({
     deviceClient: osc.deviceClient,
     backend: () => backendRef.current,
+    // T1067: the FLAT document, so a coverage spent inside a component resolves too.
+    graph: () => runtime.flattened.current().graph,
   });
 
   /**
@@ -393,8 +395,12 @@ export function App({
       // requires a colon AND a tracked node name on the left of it, so it cannot shadow
       // anything. Publishing the timing is what lets a downstream lerp be DRIVEN by the
       // measured lag instead of guessing it with a constant.
-      depth.resolver(channel, context),
-    [analyze.resolver, depth.resolver, midi.resolver, osc.resolver],
+      depth.resolver(channel, context) ??
+      // T1067: the vision seam's channels (`mask1:coverage`), same shape as depth's and
+      // equally shadow-proof. Absent from this chain, E52's spent coverage was a
+      // PARAMETER ERROR on every machine without a paired helper instead of a dim room.
+      vision.resolver(channel, context),
+    [analyze.resolver, depth.resolver, midi.resolver, osc.resolver, vision.resolver],
   );
 
   const valueGraph = useValueGraph(runtime, externalChannels);
@@ -533,10 +539,20 @@ export function App({
    * the order states which KIND of answer outranks which, not a tiebreak.
    */
   const driverChannels = useMemo(
-    () => [analyze.resolver, valueGraph.resolver],
-    [analyze.resolver, valueGraph.resolver],
+    /* T1067 — the WHOLE external chain, not analyze alone: `externalChannels` already
+       composes analyze → midi → osc → depth → vision in the ranked order above, and
+       every member is colon-gated so nothing here can shadow a value-graph name. With
+       only analyze in this list, `op('mask1').chan.coverage` — the exact channel E52
+       SPENDS — failed as "publishes no channel" in every expression, on every machine:
+       the seam published it and the expression engine had no road to it. */
+    () => [externalChannels, valueGraph.resolver],
+    [externalChannels, valueGraph.resolver],
   );
-  const compile = useGraphCompile(runtime, capabilities, previewSinks, driverChannels);
+  const sessionNodeDiagnostics = useMemo(
+    () => [...vision.diagnostics, ...laser.diagnostics],
+    [vision.diagnostics, laser.diagnostics],
+  );
+  const compile = useGraphCompile(runtime, capabilities, previewSinks, driverChannels, sessionNodeDiagnostics);
   const recovery = useGpuRecovery(status.kind === "ready" ? status.backend : null);
 
   // The tracked set is a function of the DOCUMENT (which nodes are Analyze) and of the
