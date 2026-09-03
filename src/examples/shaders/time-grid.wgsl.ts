@@ -296,7 +296,20 @@ const DROP_P: f32 = 47.0;
  * and a two-frame version of that reads as a dropped frame rather than as an idea.
  */
 const TEAR_LIFE: f32 = 3.0;
-const SNOW_LIFE: f32 = 2.0;
+/*
+ * FOUR, and the previous value was the owner's whole complaint: "the static noise in the
+ * glitch animation is like just ONE FRAME — that looks not well blended". It literally
+ * was. The second snow train ran at SNOW_LIFE - 1, so at SNOW_LIFE = 2 it was a
+ * single-frame flash — and a single frame does not read as texture, it reads as a POP.
+ * The tears were given 2-3 frames for exactly this reason and the static never got the
+ * same treatment. At 4 and 3 it lasts long enough to be seen as grain.
+ *
+ * SNOW_SHARE comes down with it (0.35 -> 0.18) so the DUTY CYCLE barely moves: life/period
+ * x chance was (2/13 + 1/19) x 0.35 = 0.073 and is now (4/13 + 3/19) x 0.18 = 0.084. A
+ * longer event that fires proportionally less often is the whole trade; leaving the share
+ * alone would have doubled the amount of static on the wall.
+ */
+const SNOW_LIFE: f32 = 4.0;
 const DROP_LIFE: f32 = 12.0;
 
 /* Relative rarity. A tear is the wall's ordinary weather; snow is an interruption; a
@@ -305,16 +318,21 @@ const DROP_LIFE: f32 = 12.0;
  * How deep the grain modulates what is already there. Bounded above by construction (see
  * the SNOW branch), so this is a texture depth and not a clipping risk.
  *
- * 0.45 rather than something heavier, and the reason is the RECOLORIZER downstream: a
- * Lookup turns luminance into a palette position, so a deep luminance grain walks the
- * whole palette between neighbouring texels and monochrome noise arrives on screen as
- * multicoloured confetti. Half a stop of luminance wobble is grain; a full swing is
- * garbage. Measured against the owner's own frame.
+ * 0.30, down from 0.45, on the owner's "too bright" a second time — and it is the
+ * SECOND half of that repair, not the whole of it: the brightening was the silhouette
+ * term (see the SNOW branch), and dropping the depth without deleting that would have
+ * been another dimmer wrong picture.
+ *
+ * It stays modest for the RECOLORIZER's sake too: a Lookup turns luminance into a palette
+ * position, so a deep luminance grain walks the whole palette between neighbouring texels
+ * and monochrome noise arrives as multicoloured confetti (§V853). Measured after this
+ * change, chroma across a snowing cell moves less than the clean cell's, so the grain is
+ * staying inside one region of the palette.
  */
-const SNOW_DEPTH: f32 = 0.45;
+const SNOW_DEPTH: f32 = 0.3;
 
 const TEAR_SHARE: f32 = 0.55;
-const SNOW_SHARE: f32 = 0.35;
+const SNOW_SHARE: f32 = 0.18;
 const DROP_SHARE: f32 = 0.30;
 
 fn luma(rgb: vec3f) -> f32 {
@@ -396,22 +414,55 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
      * amount would only have made a dimmer wrong picture. The gate asserts the property
      * rather than the number: zero pixels at 1.0 anywhere in a snowing wall.
      *
-     * Still monochrome, and that is load-bearing twice: it is what real static is, and it
-     * is what lets the gate tell snow from a tear — a tear's RGB fringe leaves r != b and
-     * this leaves r == g == b.
      */
     let grain = hashU((u32(texel.x) * 73856093u) ^ (u32(texel.y) * 19349663u) ^ (tick * 83492791u) ^ seed);
     /* SCANLINE BANDS, not the whole cell: only some of them break up on a given burst. */
     let bandCount = 5.0 + floor(hashU((index * 5501u) + (tick * 79u) + seed) * 7.0);
     let bandIndex = u32(floor(cell.local.y * bandCount));
     let banded = select(0.35, 1.0, hashU((bandIndex * 2237u) + (index * 91u) + (tick * 397u) + seed) < 0.45);
-    /* A HINT of the hard silhouette — the owner's "thresholding, to crush it" — never the
-       whole of it, because a full step() is a two-value image with nothing left to texture. */
-    let base = luma(here.rgb);
-    let crushed = mix(base, step(0.35, base), 0.25);
-    let weight = (1.0 - smoothstep(0.30, 0.92, crushed)) * banded;
-    let value = crushed * (1.0 + (SNOW_DEPTH * weight * ((grain * 2.0) - 1.0)));
-    return vec4f(value, value, value, 1.0);
+    /*
+     * GRAIN ON THE PICTURE. Two things were removed here, and BOTH were measured before
+     * being touched, because "too bright" had already survived one repair.
+     *
+     * 1. THE SILHOUETTE LIFT. mix(base, step(0.35, base), 0.25) raised every pixel above
+     *    the threshold by 0.25 x (1 - base) — a flat +0.10 on a bright cell before any
+     *    grain existed. Measured: a snowing cell's mean read 0.7315 against the clean
+     *    cell's 0.6853. It was never snow's job; Crush is a published knob with a level
+     *    node behind it, and a second hidden discontinuous threshold inside one
+     *    degradation is how a control surface stops being trustworthy. Deleted, not
+     *    reduced.
+     *
+     * 2. THE DESATURATION. Writing luma into all three channels made the cell a GREY
+     *    PATCH — the owner's "out of place" — and it also made it read brighter for a
+     *    reason no amount of level-tweaking would have fixed: the sink's transfer is
+     *    concave, so luma-of-encoded is not encode-of-luma, and a monochrome cell at
+     *    IDENTICAL linear luminance measures 0.7042 encoded against a colour cell's
+     *    0.6853. The picture was not brighter; it had stopped being the picture. So the
+     *    grain now rides the colour instead of replacing it, which is what film grain is.
+     *
+     * §V853 was the third suspect and the same measurement CLEARED it: chroma after the
+     * palette went 0.546 -> 0.540, DOWN. The lookup was not amplifying grain into a
+     * dimension it lacked.
+     *
+     * What is left is a symmetric multiplicative modulation, so its expected shift in
+     * LINEAR luminance is zero by construction — measured at 0.4841 -> 0.4842, and that is
+     * what the gate asserts. Every pixel of a snowing cell is therefore a positive SCALING
+     * of the pixel that was there, which is also how the gate tells snow from a tear (a
+     * tear moves pixels) and from a dropout (which zeroes them).
+     */
+    /*
+     * The weight is keyed on the PEAK CHANNEL, not on luminance, and that is a correctness
+     * fix rather than a nicety: clipping happens per channel, so protection has to be
+     * measured per channel. Keyed on luma, a pixel at luma 0.5 could still carry a red of
+     * 0.95, get the full grain because its luma looked safe, and clamp — measured, that
+     * pushed 7005 pixels onto the sink's ceiling against a clean frame's 3456. Keyed on
+     * the peak, the product peak x (1 + SNOW_DEPTH x weight(peak)) tops out around 0.9
+     * across the whole range, so nothing can reach the clamp at all.
+     */
+    let peak = max(here.r, max(here.g, here.b));
+    let weight = (1.0 - smoothstep(0.30, 0.92, peak)) * banded;
+    let value = here.rgb * (1.0 + (SNOW_DEPTH * weight * ((grain * 2.0) - 1.0)));
+    return vec4f(value, 1.0);
   }
 
   if (tearAge >= 0.0) {

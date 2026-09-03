@@ -322,12 +322,20 @@ export const chorusDocument = document(
              At 5 this reaches roughly 2x2 at one end and 10x11 at the other, and the two
              axes hold independently — so most of the states it visits are NON-SQUARE,
              which is exactly the range that was stretching the picture until the cell fit
-             landed. 3 rather than 5: at 5 the sample-and-hold reached its floor often
-             enough to park the wall at 2x2, where four copies of a sparse frame is not a
-             wall. This spans 2x3 to 8x9 and spends most of its time in the middle. Past
-             ~61 cells they start sharing moments; that is the ring's depth, stated at the
-             Span knob. */
-          churn: 3,
+             landed.
+
+             BACK UP TO 5, and the reason the floor is no longer an objection: this used to
+             be pulled back to 3 because the sample-and-hold parked the wall at 2x2, where
+             four copies of a sparse frame is not a wall. The floor is ONE now, and one
+             copy of the frame IS a picture — the wall collapsing to a single delayed
+             image, then re-cutting back out to nine or ten. That collapse is the gesture,
+             not the failure mode.
+
+             This spans 1 to 10 columns and 1 to 11 rows on two clocks that never realign.
+             The RATE is untouched: range is what makes it dynamic, the clock is what would
+             make it hectic. Past ~61 cells they share moments; that is the ring's depth,
+             stated at the Span knob. */
+          churn: 5,
           span: 90,
           spread: 1,
           mode: 1,

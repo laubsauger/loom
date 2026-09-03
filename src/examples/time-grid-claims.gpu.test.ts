@@ -585,11 +585,34 @@ describe("TimeGrid — one stream, many moments", () => {
     const torn = await shoot({ mode: 0, glitch: 1 }, window);
     const cleanAt = new Map(clean.frames.map((frame) => [frame.frameIndex, frame]));
 
-    const monochrome = (block: Float64Array): boolean => {
-      for (let at = 0; at < block.length; at += 4) {
-        if (block[at] !== block[at + 1] || block[at + 1] !== block[at + 2]) return false;
+    /*
+     * IDENTIFYING SNOW, and the discriminator had to be rebuilt when the grain stopped
+     * desaturating. It used to be "the cell is monochrome", which was true only while snow
+     * REPLACED the picture — the thing that made it look out of place.
+     *
+     * The three kinds separate cleanly on ONE measured statistic — the largest ratio any
+     * pixel's channel takes against the clean frame:
+     *
+     *   DROPOUT never exceeds 1.000. It multiplies by the matte and does nothing else.
+     *   SNOW    1.65 to 1.87, measured. It modulates, so it can lift a pixel as well as
+     *           drop one, but it is bounded by SNOW_DEPTH and the highlight weighting.
+     *   TEAR    past 15. A displaced band puts a bright pixel where a dark one was, so the
+     *           ratio is unbounded by anything but the picture's own contrast.
+     *
+     * So "something got brighter, but nothing got more than three times brighter" is snow
+     * and cannot be either of the others — five times clear of a tear, and strictly above
+     * a dropout's ceiling.
+     */
+    const looksLikeSnow = (torn: Float64Array, clean: Float64Array): boolean => {
+      let peakRatio = 0;
+      for (let at = 0; at < torn.length; at += 4) {
+        for (let channel = 0; channel < 3; channel += 1) {
+          const before = clean[at + channel] ?? 0;
+          if (before <= 0.05) continue;
+          peakRatio = Math.max(peakRatio, (torn[at + channel] ?? 0) / before);
+        }
       }
-      return true;
+      return peakRatio > 1 && peakRatio < 3;
     };
 
     let snowing = 0;
@@ -598,9 +621,9 @@ describe("TimeGrid — one stream, many moments", () => {
       if (reference === undefined) throw new Error(`no clean capture at ${frame.frameIndex}`);
       for (let cell = 0; cell < CELLS; cell += 1) {
         const block = cellBlock(frame, cell);
-        if (identical(block, cellBlock(reference, cell))) continue;
-        // Broken AND monochrome, over a card that is never monochrome: that is snow.
-        if (monochrome(block)) snowing += 1;
+        const before = cellBlock(reference, cell);
+        if (identical(block, before)) continue;
+        if (looksLikeSnow(block, before)) snowing += 1;
       }
     }
 
@@ -692,6 +715,65 @@ describe("TimeGrid — one stream, many moments", () => {
 
     const raw = await shoot({ mode: 0, glitch: 0, blend: 0 }, [120, 420], "still");
     expect(differingPixels(raw.frames[0] as RenderedFrame, raw.frames[1] as RenderedFrame)).toBe(0);
+  }, 300_000);
+
+  /**
+   * NO DEGRADATION BRIGHTENS A CELL — the owner's "too bright", as a property.
+   *
+   * "The static looks too bright" survived one repair, so this is the gate that repair
+   * should have shipped with. It is stated over ALL damage rather than over snow alone,
+   * because it needs no fragile discrimination between the three kinds and because a tear
+   * that started lifting would be the same defect wearing a different hat.
+   *
+   * ONE-SIDED, and the asymmetry is the mechanism: a tear MOVES pixels inside a cell and a
+   * snow burst MODULATES them symmetrically, so neither has any business raising the mean.
+   * A DROPOUT multiplies by the matte and legitimately drops it — hence a ceiling and no
+   * floor.
+   *
+   * MEASURED IN LINEAR LIGHT, and that is not a detail. Measured on ENCODED values the
+   * same snow read +0.019 and looked like a fault; the sink's transfer is concave, so
+   * luma-of-encoded is not encode-of-luma and any change in SATURATION moves the encoded
+   * luma on its own. That artifact is what sent the last repair after the wrong number —
+   * and it is also a real thing the owner sees, which is why the fix was to stop
+   * desaturating rather than to dim anything.
+   *
+   * The bound is 0.01 and it is derived from both ends: the worst honest excursion
+   * measured across a 24-frame window is +0.00254 (a tear), and the silhouette lift this
+   * gate exists to catch was +0.03 in linear. Four times clear of the signal, three times
+   * below the fault.
+   */
+  it("no damage brightens a cell — measured in linear light", async () => {
+    const window = [130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141];
+    const clean = await shoot({ mode: 0, spread: 0, glitch: 0, crush: 1 }, window);
+    const torn = await shoot({ mode: 0, spread: 0, glitch: 1, crush: 1 }, window);
+    const cleanAt = new Map(clean.frames.map((frame) => [frame.frameIndex, frame]));
+
+    /* The sink publishes ENCODED pixels; luminance only means anything in linear. */
+    const linear = (c: number): number => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+    const meanLuma = (frame: RenderedFrame, cell: number): number => {
+      const block = cellBlock(frame, cell);
+      let sum = 0;
+      for (let at = 0; at < block.length; at += 4) {
+        sum += 0.2126 * linear(block[at] ?? 0) + 0.7152 * linear(block[at + 1] ?? 0) + 0.0722 * linear(block[at + 2] ?? 0);
+      }
+      return sum / (block.length / 4);
+    };
+
+    const brightened: string[] = [];
+    let broken = 0;
+    for (const frame of torn.frames) {
+      const reference = cleanAt.get(frame.frameIndex);
+      if (reference === undefined) throw new Error(`no clean capture at ${frame.frameIndex}`);
+      for (let cell = 0; cell < CELLS; cell += 1) {
+        if (identical(cellBlock(frame, cell), cellBlock(reference, cell))) continue;
+        broken += 1;
+        const lift = meanLuma(frame, cell) - meanLuma(reference, cell);
+        if (lift > 0.01) brightened.push(`f${frame.frameIndex} c${cell} lifted ${lift.toFixed(5)}`);
+      }
+    }
+    // NON-VACUITY: damage has to have happened before "it did not brighten" means anything.
+    expect(broken, "broken cells over the window").toBeGreaterThan(10);
+    expect(brightened, "cells the damage made brighter").toEqual([]);
   }, 300_000);
 
   /**

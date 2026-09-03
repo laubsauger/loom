@@ -205,10 +205,10 @@
     "f0max": 0.2288
   },
   "E51-Chorus.loom.json": {
-    "motion": 0.03201,
-    "range": 0.5113,
+    "motion": 0.03618,
+    "range": 0.5142,
     "f0max": 0.5535,
-    "phrase": 0.03714
+    "phrase": 0.04257
   },
   "E6-Displacement-Stack.loom.json": {
     "motion": 0.28359,

@@ -70,8 +70,8 @@ Eight knobs reach the parent, and nothing else does:
 
 | Knob | Shipped | What it does |
 | --- | --- | --- |
-| Columns / Rows | 5 / 6 | The grid, and the centre the Churn swings about. |
-| Churn | 3 | How far the wall re-cuts itself, on two sample-and-hold clocks. |
+| Columns / Rows | 5 / 6 | The grid (1-16 each), and the centre the Churn swings about. |
+| Churn | 5 | How far the wall re-cuts itself, on two sample-and-hold clocks. |
 | Span | 90 | History depth in frames. 90 is 1.5 s; the cost is stated at the knob. |
 | Spread | 1 | How much of the Span the wall distributes across its cells. |
 | Mode | 1 | Which distribution deals the delays. |
@@ -146,8 +146,8 @@ Three kinds, on six independent burst trains, at most one per cell per frame:
 
 - **Tear** — bands of a cell shove sideways with an RGB fringe riding the same
   displacement, wrapped so it never crosses a seam.
-- **Snow** — monochrome static riding the luminance that is already there, in a few
-  scanline bands rather than over the whole cell.
+- **Snow** — grain riding the picture's own colour, in a few scanline bands rather than
+  over the whole cell, and lasting 3-4 frames.
 - **Dropout** — the cell is multiplied by its own matte, so the background falls away and
   the subject is left floating. This is the one that changes what the cell is a picture
   *of*, which is why it is the rarest.
@@ -165,15 +165,36 @@ the held-for-a-tick design returns *one* for.
 thousand pixels and a tear under snow is mud; the variety is in *which* cells and *which*
 kind.
 
-**The snow rides the picture, it does not replace it.** It modulates luminance
-multiplicatively and its weight falls to zero in the highlights — film-grain behaviour —
-so it is texture rather than sparkle and it cannot push a bright pixel onto the clip. An
-earlier build mixed toward a full-swing grain and the result clipped to flat white; worse,
-the recolorizer downstream turned that monochrome noise into multicoloured confetti,
-because a Lookup maps luminance to a palette position and a full-swing grain walks the
-whole palette between neighbouring texels. Both are fixed at the cause: the grain is
-bounded by construction, and its excursion is small enough that the palette index barely
+**The snow rides the picture, it does not replace it** — and getting there took three
+repairs, each of which measured the frame before touching a number.
+
+It was a full-swing grain mixed toward white, which clipped. It was then a *monochrome*
+multiplicative modulation, which stopped clipping and still read "too bright and out of
+place". Measured, the culprit was not the grain at all: a hidden `mix(base, step(0.35,
+base), 0.25)` lifted every mid-tone by up to +0.10 before any noise existed, taking a
+cell's mean from 0.685 to 0.732. Crushing was never snow's job — `Crush` is a published
+knob with a `level` node behind it — so it was deleted rather than reduced.
+
+The second half was the desaturation. Writing luminance into all three channels made the
+cell a *grey patch*, which is the "out of place", and it also made it measure brighter for
+a reason no level could fix: the sink's transfer is concave, so luma-of-encoded is not
+encode-of-luma, and a monochrome cell at **identical linear luminance** reads 0.704 against
+a colour cell's 0.685. The picture was not brighter; it had stopped being the picture. So
+the grain now rides the colour instead of replacing it.
+
+And it was **one frame long**. The second snow train ran at `life - 1`, so at a lifetime of
+2 it was a single-frame flash — which reads as a *pop*, not as texture. The tears were
+given 2-3 frames for exactly this reason and the static never got the same treatment; it
+runs 3-4 frames now, with its share dropped from 0.35 to 0.18 so the duty cycle barely
 moves.
+
+What is left is symmetric multiplicative modulation with its weight falling to zero in the
+highlights, so its expected shift in linear luminance is **zero by construction** — and
+that is what the gate asserts, over every kind of damage, in linear light.
+
+§V853 was the standing suspect throughout and the measurement cleared it: chroma across a
+snowing cell after the palette went 0.546 → 0.540, *down*. The lookup was not amplifying
+grain into a dimension it lacked.
 
 **The audio hook is here.** A cell's own brightness scales its chance of being dealt in, so
 with a source that responds to the music the damage chases the beat across the wall — and
@@ -232,10 +253,16 @@ shader's grid, so a sweep recompiles nothing and reallocates nothing.
 
 Two sample-and-hold oscillators at unrelated slow rates (16 s and 24 s) *hold* a grid and
 then jump, so the wall rests and then strikes rather than wobbling. Rows and columns move
-independently, so it goes non-square — 2 × 3 to 8 × 9 and back. `repeat`'s `range: "floor"` lands
+independently, so it goes non-square — 1 × 1 to 10 × 11 and back. `repeat`'s `range: "floor"` lands
 every value on an integer, so the jump is a hard re-cut rather than a smear; that snap is
-the effect and is not smoothed away. The floor is 2, measured: at 1 a hold parked the wall
-at 1 × 1 for sixteen seconds, which is a video wall with one cell in it.
+the effect and is not smoothed away.
+
+**Both axes run 1 to 16, and 1 is a setting rather than a floor to avoid.** A 1 × 1 wall is
+the whole frame at a single delay — the grid *collapsing to one image* — and swept down
+from ten and back it is a gesture. An earlier build clamped the floor at 2 because a hold
+parked the wall at 2 × 2, where four copies of a sparse frame is not a wall; that objection
+does not reach 1, where one copy of the frame is simply a picture. Turn Churn up rather
+than Rate: the range is what makes this dynamic, the clock is what would make it hectic.
 
 ## The recolorizer
 
@@ -329,6 +356,9 @@ a calm continuous element for the cells to differ by, and a striking one to watc
   which is the only place an envelope is visible.
 - A degradation that cannot reach the clip, asserted as a property (no pixel is pushed onto
   the sink's ceiling) rather than as a level.
+- Damage that never BRIGHTENS a cell, asserted in linear light over every kind at once —
+  the gate the "too bright" reports should have had, and the one that would have caught a
+  silhouette lift hiding inside a noise function.
 - An internal component parameter animating on the free-running clock, which is the
   standing evidence for the half of the component model that *does* work.
 - A library component whose whole interface is a texture in, a texture out, and eight
