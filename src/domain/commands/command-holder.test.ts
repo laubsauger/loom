@@ -54,6 +54,11 @@ const MODULES: readonly HolderEntry[] = [
   { label: "ui.openHelp", path: "src/editor/help/command.ts", load: () => import("@editor/help/command.ts"), accessor: "helpHolderFor" },
   { label: "export.renderRange", path: "src/app/render-range.ts", load: () => import("@/app/render-range.ts"), accessor: "renderRangeHolderFor" },
   { label: "project.compile", path: "src/app/compile-command.ts", load: () => import("@/app/compile-command.ts"), accessor: "compileHolderFor" },
+  /* T1010/T1013 — the two debug views. Both landed committed and green in their own
+     suites while this gate stayed red, because a coverage table is the one kind of test
+     a new module cannot fail into: it fails the TABLE, in a file its author never opened. */
+  { label: "ui.toggleEdgeFlow", path: "src/editor/edges/edge-flow-command.ts", load: () => import("@editor/edges/edge-flow-command.ts"), accessor: "edgeFlowStoreFor" },
+  { label: "ui.toggleTimingOverlay", path: "src/editor/nodes/timing-overlay-command.ts", load: () => import("@editor/nodes/timing-overlay-command.ts"), accessor: "timingOverlayStoreFor" },
   { label: "graph.selectAll", path: "src/app/selection-commands.ts", load: () => import("@/app/selection-commands.ts"), accessor: "selectionHolderFor" },
   { label: "audio.toggleTrackRecording", path: "src/app/audio-track-commands.ts", load: () => import("@/app/audio-track-commands.ts"), accessor: "audioTrackHolderFor" },
   { label: "node.openViewer", path: "src/app/viewer-commands.ts", load: () => import("@/app/viewer-commands.ts"), accessor: "viewerHolderFor" },
