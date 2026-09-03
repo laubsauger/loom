@@ -128,6 +128,41 @@ import { settings, node, edge, graph, document, drivenSlot } from "./builders.ts
  * picture. The dynamics therefore live on the PHRASE, in Coupling's envelope, which moves
  * the operator's STRENGTH without changing what it measures.
  *
+ * ⚑ AND THE POPULATION WAS TRIED TOO (T1074), because the first two refusals both pointed
+ * at it: if one operator cannot connect and isolate at once, change the INPUT the two share.
+ * The reasoning was that ~90 members inside a radius of 0.15 make every node's six nearest
+ * its own lattice neighbours, so no cross pair at 0.6 can compete and web1 draws zero links
+ * between communities. That reasoning is CORRECT and the fix still does not pay:
+ *
+ *   - FEWER MEMBERS PER COMMUNITY (16-22 % affiliated, ~20-40 each, the reference's count)
+ *     does buy settled bridges — 0 links between communities becomes 11 to 21 — and it
+ *     costs 68 % OF THE MOTION, measured by the look baseline: 0.03393 to 0.01086. Four
+ *     fifths of the points become inert dust. The owner's complaint was that this file is
+ *     not lively enough, so that is the wrong direction on their own axis. It also needs
+ *     Anchor retuned to 0.08 to keep the palette reproducible across Seeds, and the window
+ *     is NARROW — 0.05 loses cross-seed reproducibility, 0.10 loses within-community
+ *     agreement, and the surviving resolution margin is +0.019.
+ *
+ *   - MORE COMMUNITIES OF ~20 (eight of them, affiliation kept at 51 % so the motion
+ *     survives) reproduces across Seeds perfectly, 8 of 8 — and the palette margin is
+ *     NEGATIVE at every Anchor, −0.078 to −0.199. Eight community colours cannot be
+ *     resolved in three channels when each carries its own scatter. Four is not a style
+ *     choice, it is close to what an RGB embedding can actually separate.
+ *
+ *   - AND NEITHER TOUCHES THE EMPTY MIDDLE. The communities sit on a RING, every one of
+ *     them the same distance from the assembly's centroid: measured spread 0.014-0.032 at
+ *     four communities across five Repulsion settings an order of magnitude apart, and
+ *     0.053 against a mean of 0.41 at eight. Lowering Repulsion only shrinks the ring and
+ *     takes the bridges with it. That geometry belongs to the OPERATOR — a background tie
+ *     that is identical for every pair, a Coulomb push, and a recentre on the centroid put
+ *     equal clusters on a sphere with the unaffiliated filling the middle — so it is
+ *     reachable by neither the partition nor the knobs.
+ *
+ * The honest reading is that this operator makes COLONIES, and the reference picture's one
+ * organism with filaments running through it wants a different graph rather than a different
+ * setting of this one. Everything above is measured on Dawn and is recorded so the next
+ * reader spends the time on that question instead of re-deriving these three.
+ *
  * Four knobs are left bare for a hand, each with a range that goes somewhere: Contrast 0 →
  * one undifferentiated blob, no communities possible; Repulsion 0 → every community
  * collapses to a single dot; Diffusion 0 → the seed dust never agrees on anything; Anchor 0
