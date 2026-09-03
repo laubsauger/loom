@@ -1,5 +1,5 @@
 import type { EnumParameter, ParameterSchema } from "../../domain/types/parameters.ts";
-import type { ModelDescriptor } from "../../runtime/models/model-acquisition.ts";
+import { refusalFor, type ModelDescriptor } from "../../runtime/models/model-acquisition.ts";
 import { signatureFor } from "../../runtime/models/model-signatures.ts";
 
 /**
@@ -123,12 +123,22 @@ function machineHasWebNn(): boolean {
  * would silently rewrite the document to something the author did not pick — and its label
  * says so rather than pretending.
  */
-function backendOptions(stored: unknown): readonly BackendOption[] {
+function backendOptions(
+  stored: unknown,
+  descriptor: Pick<ModelDescriptor, "cannotRun"> | undefined,
+): readonly BackendOption[] {
   const options: BackendOption[] = [
     { value: "auto", label: "Automatic — GPU if this browser has it, then CPU" },
   ];
   const offer = (value: string, name: string, reachable: boolean): void => {
     if (!reachable && stored !== value) return;
+    /* T1040 — a provider the BROWSER has but this MODEL cannot use is a third state, and
+       it has to read differently from "your browser hasn't got one". It stays selectable
+       (§V831, and a pin is a request we honour and let fail loudly) but it says so. */
+    if (descriptor !== undefined && refusalFor(descriptor, value) !== undefined) {
+      options.push({ value, label: `${name} — this model cannot run on it` });
+      return;
+    }
     options.push({ value, label: reachable ? name : `${name} — not available in this browser` });
   };
   offer("webgpu", "WebGPU", machineHasWebGpu());
@@ -137,14 +147,21 @@ function backendOptions(stored: unknown): readonly BackendOption[] {
   return options;
 }
 
-/** (4) The chooser. `stored` is the node's own bag, so an unreachable pin stays visible. */
-export function inferenceBackendSchema(stored: Readonly<Record<string, unknown>>): EnumParameter {
+/**
+ * (4) The chooser. `stored` is the node's own bag, so an unreachable pin stays visible.
+ * `descriptor` is the CHOSEN model, so a provider it cannot run on is named as such
+ * rather than offered as if it would work (§T1040).
+ */
+export function inferenceBackendSchema(
+  stored: Readonly<Record<string, unknown>>,
+  descriptor?: Pick<ModelDescriptor, "cannotRun">,
+): EnumParameter {
   return {
     type: "enum",
     label: "Backend",
     group: "Model",
     default: "auto",
-    options: [...backendOptions(stored["backend"])],
+    options: [...backendOptions(stored["backend"], descriptor)],
     description:
       "Which execution provider to ask onnxruntime for. The list is what this browser " +
       "reports it can reach, so it differs between machines. Automatic prefers the GPU — " +
@@ -165,14 +182,29 @@ export function inferenceBackendSchema(stored: Readonly<Record<string, unknown>>
  * start therefore FAILS, loudly, with the reason on the node — which is §V469, and is what
  * the user asked for by pinning.
  */
-export function inferenceProvidersFor(stored: Readonly<Record<string, unknown>>): readonly string[] {
+export function inferenceProvidersFor(
+  stored: Readonly<Record<string, unknown>>,
+  descriptor?: Pick<ModelDescriptor, "cannotRun">,
+): readonly string[] {
   const choice = stored["backend"];
   if (typeof choice === "string" && choice !== "auto" && choice.length > 0) return [choice];
   const ladder: string[] = [];
   if (machineHasWebGpu()) ladder.push("webgpu");
   if (machineHasWebNn()) ladder.push("webnn");
   ladder.push("wasm");
-  return ladder;
+  /*
+   * T1040 — DROP A RUNG THE ARTEFACT IS MEASURED NOT TO RUN ON, and only from `auto`.
+   *
+   * The ladder walk reports the provider that CREATED a session, which is honest for
+   * every model that fails at create. RVM does not: measured, its WebGPU session creates
+   * in 533 ms and then every `run` throws on a missing ceil_mode AveragePool kernel. So
+   * `auto` would report "WebGPU" — from a real session, not an echo — and never produce a
+   * frame. Removing the rung is what a preference list is FOR; a PIN is a different thing
+   * and is left alone above, to fail loudly with the runtime's own words, because a
+   * picker whose selection is silently overridden has removed the choice by hiding it.
+   */
+  if (descriptor === undefined) return ladder;
+  return ladder.filter((provider) => refusalFor(descriptor, provider) === undefined);
 }
 
 /**

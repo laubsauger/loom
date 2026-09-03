@@ -48,6 +48,50 @@ export interface ModelDescriptor {
   readonly url: string;
   readonly bytes: number;
   readonly license: string;
+  /**
+   * T1040 — the artefact's SHA-256, lowercase hex, and it is a different promise from the
+   * pinned URL beside it.
+   *
+   * A pinned revision trusts the HOST to keep serving the same bytes under the same name;
+   * a hash checks the bytes that actually arrived. The two failures it catches that a byte
+   * COUNT cannot: a same-length substitution, and a proxy or captive portal that answers
+   * with something else of a plausible size. Optional because the models that shipped
+   * before this have no recorded hash — a row without one keeps the length check alone,
+   * and says so rather than pretending to be verified.
+   */
+  readonly sha256?: string;
+  /**
+   * Execution providers this artefact is MEASURED not to run on, with the refusal verbatim.
+   *
+   * §T1040's finding, and the reason this is a declaration rather than a comment: RVM's
+   * session CREATES successfully on the WebGPU provider and then every `run` throws. The
+   * ladder in `inference-worker-core` walks providers by trying to create one, so without
+   * this the node would report "WebGPU" — measured, from a real session — and never
+   * produce a frame. That is §V672's echo bug arriving through the one door that was
+   * supposed to be measurement-proof, so the fact has to travel with the artefact.
+   */
+  readonly cannotRun?: ReadonlyArray<{ readonly provider: string; readonly reason: string }>;
+}
+
+/**
+ * Whether an artefact is known not to run on a provider — the reason, or `undefined`.
+ *
+ * Read at the two places that need it: the ladder (which drops a known-broken rung) and
+ * the Backend chooser (which labels a pinned one rather than hiding it, §V831).
+ */
+export function refusalFor(
+  descriptor: Pick<ModelDescriptor, "cannotRun">,
+  provider: string,
+): string | undefined {
+  return descriptor.cannotRun?.find((row) => row.provider === provider)?.reason;
+}
+
+/** Lowercase hex SHA-256 of the bytes, via WebCrypto — present in the browser and in Node 22. */
+async function sha256Hex(bytes: ArrayBuffer): Promise<string | undefined> {
+  const subtle = globalThis.crypto?.subtle;
+  if (subtle === undefined) return undefined;
+  const digest = await subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 export type AcquisitionState =
@@ -174,6 +218,34 @@ export function createModelAcquisition(options: {
             `${descriptor.label} is ${formatBytes(descriptor.bytes)} — nothing was cached`,
         });
         return undefined;
+      }
+
+      /*
+       * T1040 — and the CHECK is the point, not the record. A hash sitting in a table that
+       * nothing verifies is documentation; this is the line that makes it a promise. It
+       * runs after the length check because a short read has a better message than "the
+       * bytes are not what we expected", and it refuses the same way: nothing is cached.
+       *
+       * A runtime with no WebCrypto (an insecure origin) cannot verify, and that is said
+       * out loud rather than passed silently — an unverifiable download is a weaker
+       * promise than a verified one and the difference has to be visible.
+       */
+      if (descriptor.sha256 !== undefined) {
+        const digest = await sha256Hex(bytes);
+        if (digest === undefined) {
+          console.warn(
+            `[loom] ${descriptor.label}: no WebCrypto on this origin, so its recorded ` +
+              `SHA-256 could not be checked — the byte count matched.`,
+          );
+        } else if (digest !== descriptor.sha256) {
+          set(id, {
+            kind: "failed",
+            reason:
+              `${descriptor.label} downloaded ${formatBytes(bytes.byteLength)} whose ` +
+              `SHA-256 is ${digest}, not the recorded ${descriptor.sha256} — nothing was cached`,
+          });
+          return undefined;
+        }
       }
 
       await options.store.put(id, bytes);

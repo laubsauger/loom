@@ -73,6 +73,38 @@ export type InferenceRequest =
        */
       readonly sourceWidth: number;
       readonly sourceHeight: number;
+      /**
+       * T1040 — WHICH ARTEFACT, and it is not derivable from `nodeType` any more.
+       *
+       * Up to RVM every node type had exactly one IO shape, so the worker's table was
+       * keyed by `nodeType` and two MODNet builds shared a row. RVM is a matte too, and
+       * takes six inputs and returns six outputs. Its plan — the packer, the picture's
+       * NAME, the recurrent feedback, the scalar inputs — is per MODEL, so the model has
+       * to travel. `sessionKey` already contains it, but only by string concatenation:
+       * parsing an id back out of a key is the kind of derivation that is right until
+       * someone puts an `@` in a model id.
+       */
+      readonly modelId: string;
+      /**
+       * RVM's `downsample_ratio` (§V827's per-artefact knob), or 0 for a model with no
+       * such input. It is the node's cost dial: RVM's encoder runs at `side × ratio` and
+       * measured 61 ms at 128 px against 724 ms at 512 px, wasm, one thread.
+       *
+       * It is carried per RUN rather than per load because it is not session identity —
+       * but it DOES change the shape of the recurrent state, so the worker drops a stash
+       * whose ratio no longer matches rather than feeding tensors the model would refuse.
+       */
+      readonly ratio: number;
+      /**
+       * The temporal EMA's blend toward the new frame; 1 disables it (§T957, §V827).
+       *
+       * Per-run, and a PARAMETER rather than the constant it used to be: the right value
+       * is a property of the MODEL. MODNet is per-frame and flickers, so it wants
+       * smoothing; RVM carries its own temporal state and stacking an average on top of a
+       * recurrent network double-counts the past. The default comes from the worker's
+       * plan table, so "what does this model want" has one answer.
+       */
+      readonly smoothing: number;
     };
 
 export type InferenceResponse =

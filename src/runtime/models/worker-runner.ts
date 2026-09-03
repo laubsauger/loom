@@ -43,6 +43,17 @@ export interface WorkerRunTarget {
    * would be a control that silently does nothing.
    */
   readonly providers: readonly string[];
+  /**
+   * T1040 — RVM's `downsample_ratio`, or 0 for a model with no scalar input.
+   *
+   * The node's cost dial: RVM's encoder runs at `side × ratio`, measured 61 ms at 128 px
+   * against 724 ms at 512 px (wasm, one thread, 512² letterbox). Not part of session
+   * identity — the same session serves any ratio — but it does resize the recurrent
+   * state, which the worker handles by dropping a stash whose ratio moved.
+   */
+  readonly ratio: number;
+  /** The temporal EMA's blend toward the new frame; 1 disables it (§T957's alpha). */
+  readonly smoothing: number;
 }
 
 /** What a completed run turned out to have used. Measured, never echoed (§V672). */
@@ -169,6 +180,11 @@ export function createWorkerRunner(options: WorkerRunnerOptions): WorkerRunner {
         side: target.side,
         sourceWidth: target.sourceWidth,
         sourceHeight: target.sourceHeight,
+        // T1040: the worker's plan table is keyed by MODEL, not node type — two matte
+        // artefacts no longer share an IO shape.
+        modelId: target.modelId,
+        ratio: target.ratio,
+        smoothing: target.smoothing,
       };
       options.worker.postMessage(request, [texels]);
       return settled;

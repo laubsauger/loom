@@ -114,8 +114,10 @@ export const POSE_MODELS: readonly ModelDescriptor[] = [POSE_ACCURATE, POSE_LIVE
 
 /**
  * T957 — MODNet person matting (the orchestrator's ruling: Apache-2.0, true soft-alpha
- * MATTING, same onnx-community conversion family as the depth model above; RVM was
- * blocked twice — GPL-3.0 weights, and the seam is single-tensor, §T981).
+ * MATTING, same onnx-community conversion family as the depth model above). RVM was
+ * blocked here twice, on GPL-3.0 weights and on a single-tensor worker seam; T1040
+ * cleared both — §V858 ruled the licence no bar for a runtime fetch, and the seam now
+ * reads a declaration table, so RVM sits beside these as `MATTE_RVM` below.
  * Revision verified 2026-09-03 against the HF model API; bytes from content-length at
  * that revision.
  */
@@ -132,6 +134,31 @@ export const MATTE_ACCURATE: ModelDescriptor = {
   license: "Apache-2.0",
 };
 
+/**
+ * ⚠ THE QUANTIZED BUILD TRADES ROBUSTNESS, NOT SPEED, AND IT BREAKS ON A DIM PICTURE.
+ *
+ * Measured 2026-09-03, both builds, same portrait, same letterboxed 512² packing, wasm.
+ * The number that matters is the MEAN INPUT LEVEL, and coverage is the fraction of the
+ * frame each one claims (the subject occupies about 0.28 of it):
+ *
+ *   mean in   accurate            quantized
+ *   0.651     0.281  (0.50,0.70)  0.288  (0.50,0.70)   both correct
+ *   0.427     0.275  (0.51,0.69)  0.284  (0.50,0.69)   both correct
+ *   0.228     0.289  (0.49,0.70)  0.157  (0.48,0.71)   quantized half strength
+ *   0.095     0.287  (0.50,0.70)  0.037  (0.32,0.80)   quantized 8x down, WRONG PLACE
+ *   0.046     0.272  (0.51,0.70)  0.007  (0.45,0.10)   quantized 41x down, WRONG PLACE
+ *
+ * The accurate build is FLAT across the whole range — every centroid within a texel of
+ * every other. The quantized one falls off a cliff below about 0.2 and what survives is
+ * no longer on the subject. A webcam frame arrives here in the LINEAR working space, so
+ * its mean is roughly a stop and a half below its display-referred value: measured live
+ * in the app, the matte's own input buffer read mean 0.049 and 0.103 — both in the
+ * collapse zone. That is the whole of "we see something in the matte, but it is not
+ * correct", and it is why this build's copy names the trade instead of implying speed.
+ *
+ * It is not faster, either: 928 ms against the accurate build's 818 ms on the same input
+ * under wasm. What it buys is 19 MB of download and nothing else.
+ */
 export const MATTE_FAST: ModelDescriptor = {
   id: "modnet-photographic-quantized",
   label: "MODNet quantized (6.6 MB)",
@@ -140,7 +167,80 @@ export const MATTE_FAST: ModelDescriptor = {
   license: "Apache-2.0",
 };
 
-export const MATTE_MODELS: readonly ModelDescriptor[] = [MATTE_ACCURATE, MATTE_FAST];
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ * T1040 — Robust Video Matting, and it is a CHARACTER choice, not a speed one
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ *
+ * The owner: "Make it so that we can choose it as a model, right?" — a third option
+ * beside the two MODNet builds, never a replacement for them (§V831: an added option is
+ * safe, a removed one silently rewrites documents standing on it).
+ *
+ * ⚠ IT IS NOT THE FAST ONE, AND THE MEASUREMENT IS EMPHATIC. MODNet's `session.run` at
+ * 512² on the WebGPU provider is 30 ms (§T1044). RVM cannot use that provider at all
+ * (see `cannotRun` below), so its floor is the CPU: measured 2026-09-03, wasm, one
+ * thread, this artefact, the app's own 512² letterbox, median of five warm runs with the
+ * recurrent state fed back —
+ *
+ *   downsample_ratio   internal   ms     state/frame
+ *   0.25               128 px      61    0.38 MB     speckle below the subject
+ *   0.375              192 px     100    0.86 MB     clean
+ *   0.5                256 px     172    1.53 MB     clean  ← the node's default
+ *   0.75               384 px     409    3.45 MB     clean
+ *   1.0                512 px     724    6.13 MB     clean
+ *
+ * So against MODNet-on-WebGPU it is 6x to 24x SLOWER. What it buys instead:
+ *
+ *  - TEMPORAL COHERENCE THAT IS LEARNED, carried in four recurrent tensors rather than
+ *    bolted on as an average over frames. Measured on a subject moving ~6 source px per
+ *    frame, mean |Δα| between consecutive published mattes: 0.0151 with the state fed
+ *    back against 0.0264 with it zeroed — the recurrence is doing 1.75x of real work, and
+ *    `matte-rvm.test.ts` is what stops that wiring being dropped silently.
+ *  - FIRST-PARTY WEIGHTS with a recorded hash. The MODNet above is a community conversion
+ *    with no hash on record; this is the author's own v1.0.0 release asset and its bytes
+ *    are checked on arrival.
+ *  - 40% SMALLER than the MODNet it sits beside.
+ *
+ * Licence GPL-3.0, and §V858 rules it not a bar: the weights are fetched by the user's
+ * browser at run time and never redistributed by us, and the GPL restricts distribution
+ * rather than use.
+ */
+export const MATTE_RVM: ModelDescriptor = {
+  id: "rvm-mobilenetv3",
+  label: "Robust Video Matting",
+  /* The AUTHOR's own release asset at a tagged version — the closest thing to a revision
+     pin a GitHub release offers, and the hash below is what actually checks it. */
+  url: "https://github.com/PeterL1n/RobustVideoMatting/releases/download/v1.0.0/rvm_mobilenetv3_fp32.onnx",
+  bytes: 14_975_696,
+  /* Read off the downloaded file 2026-09-03, twice, on two different days' downloads. */
+  sha256: "88d4531297118f595bf2fd60f6f566aec2e559393802d1f436c380f0cbbd2828",
+  license: "GPL-3.0",
+  /*
+   * ⚠ MEASURED 2026-09-03, Chromium on the Metal adapter, onnxruntime-web 1.29.0: the
+   * session CREATES on WebGPU in 533 ms and reports its outputs, and then the first
+   * `run` throws. The refusal is quoted rather than paraphrased because it names a
+   * missing KERNEL, which is a version fact that could stop being true:
+   *
+   *   "ceil_mode output-shape is computed, but ceil_mode kernel execution
+   *    (padding/divisor) is not yet implemented in the WebGPU AveragePool kernel"
+   *
+   * MobileNetV3's average pools carry `ceil_mode`, so this is structural to the backbone
+   * rather than an artefact of one input size — reproduced at ratio 1.0 and 0.5. The same
+   * weights on the same page run on `wasm` (create 56 ms, run 313 ms threaded). That
+   * split is exactly why this is declared: create-succeeds/run-fails is invisible to a
+   * ladder that walks providers by creating sessions.
+   */
+  cannotRun: [
+    {
+      provider: "webgpu",
+      reason:
+        "onnxruntime-web 1.29.0 has no ceil_mode AveragePool kernel for WebGPU, which " +
+        "MobileNetV3 needs — the session starts and then every run throws.",
+    },
+  ],
+};
+
+export const MATTE_MODELS: readonly ModelDescriptor[] = [MATTE_ACCURATE, MATTE_FAST, MATTE_RVM];
 
 export const ALL_MODELS: readonly ModelDescriptor[] = [...DEPTH_MODELS, ...POSE_MODELS, ...MATTE_MODELS];
 

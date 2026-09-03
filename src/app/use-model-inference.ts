@@ -14,7 +14,10 @@ import {
   POSE_INPUT_KEY,
   POSE_RESULT_KEY,
   depthSettingsFor,
+  matteDescriptorFor,
   matteInputSideFor,
+  matteRatioFor,
+  matteSmoothingFor,
 } from "@nodes/definitions/index.ts";
 import { inferenceProvidersFor } from "@nodes/definitions/inference-node.ts";
 import { scratchResourceId } from "@compiler/resources.ts";
@@ -36,8 +39,6 @@ import type { InferenceNodeType, WorkerLike } from "@runtime/models/inference-pr
 import {
   DEPTH_ACCURATE,
   DEPTH_LIVE,
-  MATTE_ACCURATE,
-  MATTE_FAST,
   POSE_ACCURATE,
   POSE_LIVE,
 } from "@runtime/models/model-catalogue.ts";
@@ -155,6 +156,10 @@ interface InferenceRunSettings {
   readonly descriptor: ModelDescriptor;
   readonly inputSide: number;
   readonly providers: readonly string[];
+  /** T1040 — RVM's `downsample_ratio`; 0 for a model with no scalar input. */
+  readonly ratio: number;
+  /** T1040 — the temporal EMA's blend toward the new frame; 1 disables it. */
+  readonly smoothing: number;
   readonly minIntervalSeconds: number;
   readonly hold: boolean;
 }
@@ -178,7 +183,11 @@ interface InferenceRunSettings {
  */
 function matteSettings(parameters: Readonly<Record<string, unknown>>): InferenceRunSettings {
   return {
-    descriptor: parameters["model"] === MATTE_FAST.id ? MATTE_FAST : MATTE_ACCURATE,
+    /* T1040 — resolved by the DEFINITION, not by a ternary repeated here. With two models
+       a stale copy could only pick the other MODNet; with three it silently resolves a
+       stored `rvm-mobilenetv3` to MODNet, so a document would say RVM and download
+       something else with nothing disagreeing. */
+    descriptor: matteDescriptorFor(parameters),
     // §T965's knob, on the matte: the node's own Input Size, read by the definition that
     // declares its default — never re-derived here, or "absent" would mean one thing in the
     // schema and another in the run. The compile sizes its preprocess buffer from the same call.
@@ -186,7 +195,11 @@ function matteSettings(parameters: Readonly<Record<string, unknown>>): Inference
     // §V827(4): the node's own Backend request, resolved by the shared seam rather than
     // hard-coded here. Measured 2026-09-03 in Chrome: wasm 6323 ms, webgpu 658 ms for the
     // same input and a byte-identical matte, which is why `auto` tries the GPU first.
-    providers: inferenceProvidersFor(parameters),
+    providers: inferenceProvidersFor(parameters, matteDescriptorFor(parameters)),
+    // T1040: RVM's own dial, 0 for a model with no such input; and the EMA's alpha, whose
+    // default is the artefact's rather than a constant in the worker.
+    ratio: matteRatioFor(parameters),
+    smoothing: matteSmoothingFor(parameters),
     minIntervalSeconds: 0,
     hold: false,
   };
@@ -205,6 +218,8 @@ function poseSettings(parameters: Readonly<Record<string, unknown>>): InferenceR
     descriptor: wanted === "fast" || wanted === POSE_LIVE.id ? POSE_LIVE : POSE_ACCURATE,
     inputSide: POSE_INPUT_SIDE,
     providers: ["webgpu", "wasm"],
+    ratio: 0,
+    smoothing: 1,
     minIntervalSeconds: 0,
     hold: false,
   };
@@ -227,6 +242,10 @@ const INFERENCE_KINDS: readonly InferenceKind[] = [
         providers: settings.providers,
         minIntervalSeconds: settings.minIntervalSeconds,
         hold: settings.hold,
+        // Neither depth model takes a scalar input, and neither is smoothed (§T1040's
+        // table holds the same two facts on the worker side).
+        ratio: 0,
+        smoothing: 1,
       };
     },
     pack: (texels, side) => packModelInput(texels, side),
@@ -513,6 +532,9 @@ export function useModelInference(
           height: found.size[1],
           sourceWidth: found.sourceSize[0],
           sourceHeight: found.sourceSize[1],
+          // T1040: the worker's plan table is per MODEL now, and these two ride with it.
+          ratio: found.settings.ratio,
+          smoothing: found.settings.smoothing,
           side: found.settings.inputSide,
           providers: found.settings.providers,
         };

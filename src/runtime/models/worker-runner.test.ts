@@ -3,6 +3,11 @@ import { createWorkerCore, type InferenceSessionLike } from "./inference-worker-
 import { createWorkerRunner } from "./worker-runner.ts";
 import { createInferenceSources } from "../execution/inference-sources.ts";
 import { POSE_KEYPOINT_COUNT } from "./pose-runner.ts";
+import { signatureFor } from "./model-signatures.ts";
+
+/** Real ids: the worker's plan table is keyed by them and refuses anything it lacks. */
+const DEPTH_ID = "depth-anything-v2-small";
+const POSE_ID = "movenet-lightning";
 import {
   sessionKeyFor,
   type InferenceRequest,
@@ -50,6 +55,9 @@ function fakeWorker() {
 
 const PROVIDERS = ["wasm"] as const;
 const target = {
+  /* Stays a stand-in: the MAIN thread's half is model-agnostic — it keys sessions and
+     routes replies — and the session keys these tests pin are built from it. The WORKER's
+     half is where a real id is required, because its plan table is keyed by one. */
   modelId: "m",
   nodeType: "depth" as const,
   width: 2,
@@ -58,6 +66,8 @@ const target = {
   height: 2,
   side: 2,
   providers: PROVIDERS,
+  ratio: 0,
+  smoothing: 1,
 };
 const runnerOver = (fake: ReturnType<typeof fakeWorker>) =>
   createWorkerRunner({
@@ -184,15 +194,26 @@ describe("the main thread's half", () => {
 });
 
 describe("the worker's half", () => {
-  function fakeSession(output: Float32Array): InferenceSessionLike {
+  /*
+   * §V742 — the fake's NAMES come from the extracted signature, not from this file.
+   *
+   * It used to declare `outputNames: ["out"]` and return `{ out }`, which agreed with a
+   * worker that read index 0 and would have agreed with it just as happily after the read
+   * became wrong. A fake whose contract is copied from the artefact is the only kind that
+   * can disagree with the code it stands in for.
+   */
+  function fakeSession(modelId: string, output: Float32Array): InferenceSessionLike {
+    const signature = signatureFor(modelId);
+    if (signature === undefined) throw new Error(`no recorded signature for ${modelId}`);
     return {
-      inputNames: ["pixel_values"],
-      outputNames: ["out"],
-      run: async () => ({ out: { data: output } }),
+      inputNames: [...signature.inputs],
+      outputNames: [...signature.outputs],
+      run: async () =>
+        Object.fromEntries(signature.outputs.map((name) => [name, { data: output }])),
     };
   }
 
-  function core(output: Float32Array) {
+  function core(output: Float32Array, modelId: string = DEPTH_ID) {
     const posted: InferenceResponse[] = [];
     const created: unknown[] = [];
     return {
@@ -200,7 +221,7 @@ describe("the worker's half", () => {
       created,
       instance: createWorkerCore({
       isolated: true,
-        createSession: async () => fakeSession(output),
+        createSession: async () => fakeSession(modelId, output),
         createTensor: (type, data, dims) => {
           created.push({ type, length: data.length, dims });
           return {};
@@ -214,7 +235,7 @@ describe("the worker's half", () => {
     const c = core(new Float32Array([0, 1, 2, 3]));
     await c.instance.handle({ kind: "load", sessionKey: "m@wasm", weights: new ArrayBuffer(4), providers: ["wasm"] });
     await c.instance.handle({
-      kind: "run", requestId: 7, sessionKey: "m@wasm", nodeType: "depth",
+      kind: "run", requestId: 7, sessionKey: "m@wasm", nodeType: "depth", modelId: DEPTH_ID, ratio: 0, smoothing: 1,
       texels: new Float32Array(2 * 2 * 4).buffer, width: 2, height: 2, side: 2, sourceWidth: 2, sourceHeight: 2,
     });
     expect(c.created[0]).toEqual({ type: "float32", length: 3 * 4, dims: [1, 3, 2, 2] });
@@ -223,10 +244,10 @@ describe("the worker's half", () => {
   });
 
   it("packs POSE as uint8 x4 NHWC — the model's signature, not its card (§B148)", async () => {
-    const c = core(new Float32Array(POSE_KEYPOINT_COUNT * 3));
+    const c = core(new Float32Array(POSE_KEYPOINT_COUNT * 3), POSE_ID);
     await c.instance.handle({ kind: "load", sessionKey: "m@wasm", weights: new ArrayBuffer(4), providers: ["wasm"] });
     await c.instance.handle({
-      kind: "run", requestId: 1, sessionKey: "m@wasm", nodeType: "pose",
+      kind: "run", requestId: 1, sessionKey: "m@wasm", nodeType: "pose", modelId: POSE_ID, ratio: 0, smoothing: 1,
       texels: new Float32Array(2 * 2 * 4).buffer, width: 0, height: 0, side: 2, sourceWidth: 2, sourceHeight: 2,
     });
     expect(c.created[0]).toEqual({ type: "uint8", length: 2 * 2 * 4, dims: [1, 2, 2, 4] });
@@ -239,7 +260,7 @@ describe("the worker's half", () => {
     // cannot tell which inference died and every pending one hangs (§V469 at a boundary).
     const c = core(new Float32Array(4));
     await c.instance.handle({
-      kind: "run", requestId: 42, sessionKey: "absent@wasm", nodeType: "depth",
+      kind: "run", requestId: 42, sessionKey: "absent@wasm", nodeType: "depth", modelId: DEPTH_ID, ratio: 0, smoothing: 1,
       texels: new ArrayBuffer(64), width: 2, height: 2, side: 2, sourceWidth: 2, sourceHeight: 2,
     });
     expect(c.posted).toEqual([
@@ -253,7 +274,7 @@ describe("the worker's half", () => {
       isolated: true,
       createSession: async () => {
         built += 1;
-        return fakeSession(new Float32Array(4));
+        return fakeSession(DEPTH_ID, new Float32Array(4));
       },
       createTensor: () => ({}),
       post: () => undefined,
@@ -283,7 +304,7 @@ describe("the worker's half", () => {
       createSession: async (_weights, provider) => {
         asked.push(provider);
         if (provider === "webgpu") throw new Error("no adapter");
-        return fakeSession(new Float32Array(4));
+        return fakeSession(DEPTH_ID, new Float32Array(4));
       },
       createTensor: () => ({}),
       post: (response) => posted.push(response),
@@ -305,7 +326,7 @@ describe("the worker's half", () => {
     let clock = 0;
     const instance = createWorkerCore({
       isolated: true,
-      createSession: async () => fakeSession(new Float32Array([0, 1, 2, 3])),
+      createSession: async () => fakeSession(DEPTH_ID, new Float32Array([0, 1, 2, 3])),
       createTensor: () => ({}),
       post: (response) => posted.push(response),
       // Two reads per timed span; the run's is the second pair.
@@ -315,7 +336,7 @@ describe("the worker's half", () => {
       kind: "load", sessionKey: "m@wasm", weights: new ArrayBuffer(4), providers: ["wasm"],
     });
     await instance.handle({
-      kind: "run", requestId: 1, sessionKey: "m@wasm", nodeType: "depth",
+      kind: "run", requestId: 1, sessionKey: "m@wasm", nodeType: "depth", modelId: DEPTH_ID, ratio: 0, smoothing: 1,
       texels: new Float32Array(2 * 2 * 4).buffer, width: 2, height: 2, side: 2, sourceWidth: 2, sourceHeight: 2,
     });
     const result = posted.find((m) => m.kind === "result");
@@ -378,7 +399,7 @@ describe("the worker's half", () => {
       createSession: async () => {
         attempts += 1;
         if (attempts === 1) throw new Error("transient");
-        return fakeSession(new Float32Array(4));
+        return fakeSession(DEPTH_ID, new Float32Array(4));
       },
       createTensor: () => ({}),
       post: (response) => posted.push(response),
@@ -401,7 +422,7 @@ describe("the worker's half", () => {
       isolated: true,
       createSession: async (_weights, provider) => {
         asked.push(provider);
-        return fakeSession(new Float32Array(4));
+        return fakeSession(DEPTH_ID, new Float32Array(4));
       },
       createTensor: () => ({}),
       post: () => undefined,
@@ -428,7 +449,7 @@ describe("the worker's half", () => {
     });
     await instance.handle({ kind: "load", sessionKey: "m@wasm", weights: new ArrayBuffer(4), providers: ["wasm"] });
     await instance.handle({
-      kind: "run", requestId: 3, sessionKey: "m@wasm", nodeType: "depth",
+      kind: "run", requestId: 3, sessionKey: "m@wasm", nodeType: "depth", modelId: DEPTH_ID, ratio: 0, smoothing: 1,
       texels: new ArrayBuffer(64), width: 2, height: 2, side: 2, sourceWidth: 2, sourceHeight: 2,
     });
     expect(posted.at(-1)).toEqual({ kind: "error", requestId: 3, message: "kernel refused" });
