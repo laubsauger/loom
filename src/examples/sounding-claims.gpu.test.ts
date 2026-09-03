@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { nodeGpuHost, probeDawn } from "../runtime/backend/vgpu/node-gpu-host.ts";
 import { renderHeadless } from "../tests/headless/render-harness.ts";
 import { EXAMPLE_DOCUMENTS } from "./documents.ts";
-import { pointPairId } from "../nodes/definitions/points.ts";
+import { pointStorageId } from "../nodes/definitions/point-storage.ts";
 import type { GraphDocument } from "../domain/types/graph.ts";
 
 /**
@@ -21,7 +21,8 @@ import type { GraphDocument } from "../domain/types/graph.ts";
 
 const document = EXAMPLE_DOCUMENTS.find((entry) => entry.name === "E44 Sounding");
 const SIZE = 128;
-const POSITION = pointPairId("cloud", "position");
+/* T1076: a one-attribute producer's packed buffer IS the position region. */
+const POSITION = pointStorageId("cloud");
 
 let dawnError: string | undefined;
 beforeAll(async () => {
@@ -136,7 +137,8 @@ describe("E44 Sounding — the depth map IS the geometry", () => {
    * on the attribute buffer, not on pixels. A depth map alone (a flat mid-grey) would give
    * a constant tint; the real source (the moving orb over the perlin bed) does not.
    */
-  const SAMPLE = pointPairId("tint", "sample");
+  /* T1076: `textureToAttribute` owns `sample` alone, so its buffer IS that region. */
+  const SAMPLE = pointStorageId("tint");
   async function tintSamples(map: Uint8Array): Promise<Float32Array> {
     const result = await renderHeadless({
       host: nodeGpuHost(),

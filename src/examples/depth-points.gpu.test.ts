@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readKernelAttribute } from "../nodes/definitions/test-support.ts";
 
 import { compileGraph } from "../compiler/index.ts";
 import { createNodeRegistry } from "../nodes/registry/registry.ts";
@@ -139,9 +140,17 @@ async function runCloud(
       pointer: { x: 0, y: 0, buttons: 0 },
       resolution: [64, 64],
     });
+    // T1076: regions of the paint kernel's packed buffer, addressed by its own layout.
+    const paintRead = (attribute: string) =>
+      readKernelAttribute(
+        backend.readBuffer,
+        graph.nodes["paint"] as unknown as { type: string; parameters: Record<string, unknown> },
+        "paint",
+        attribute,
+      );
     return {
-      positions: new Float32Array(await backend.readBuffer("scratch:paint:position")),
-      tints: new Float32Array(await backend.readBuffer("scratch:paint:tint")),
+      positions: (await paintRead("position")).floats,
+      tints: (await paintRead("tint")).floats,
     };
   } finally {
     backend.dispose();

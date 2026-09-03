@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { POINT_STORAGE_KEY, pointStorageId } from "./point-storage.ts";
+import { fixturePairs } from "./test-support.ts";
 
 import type { DispatchPassDescriptor } from "../../runtime/backend/plan.ts";
 import { pointGatherNode } from "./point-gather.ts";
@@ -17,24 +19,43 @@ import { compileContext } from "./test-support.ts";
  */
 
 const LINKS = (k: number, capacity = 8) => ({
-  pairs: {
-    position: { pair: "scratch:web:position", half: "write" as const, type: "vec3f" },
-    tip: { pair: "scratch:web:tip", half: "write" as const, type: "vec3f" },
-    tint: { pair: "scratch:web:tint", half: "write" as const, type: "vec4f" },
-    neighbor: { pair: "scratch:web:neighbor", half: "write" as const, type: "u32" },
-  },
+  pairs: fixturePairs(
+    "web",
+    [
+      { name: "position", type: "vec3f" },
+      { name: "tip", type: "vec3f" },
+      { name: "tint", type: "vec4f" },
+      { name: "neighbor", type: "u32" },
+    ],
+    capacity * k,
+  ),
   capacity: capacity * k,
 });
 
+const POINT_ATTRIBUTES = [
+  { name: "position", type: "vec3f" as const },
+  { name: "tint", type: "vec4f" as const, half: "read" as const },
+  { name: "id", type: "u32" as const },
+];
+
 const POINTS = {
-  pairs: {
-    position: { pair: "scratch:gen:position", half: "write" as const, type: "vec3f" },
-    tint: { pair: "scratch:gen:tint", half: "read" as const, type: "vec4f" },
-    id: { pair: "scratch:gen:id", half: "write" as const, type: "u32" },
-  },
+  pairs: fixturePairs("gen", POINT_ATTRIBUTES, 8),
   capacity: 8,
   topology: "grid:4x2",
 };
+
+/**
+ * T1076: the region a gather publishes for the ONE attribute it owns, at capacity 8. The
+ * NAME does not enter it — a packed producer's key is `@points` whatever the user typed —
+ * which is exactly why the key cannot collide with the output name.
+ */
+const gathered = (type: "vec4f" | "f32") => ({
+  buffer: pointStorageId("gath"),
+  half: "write" as const,
+  offset: 0,
+  bytes: (type === "vec4f" ? 16 : 4) * 8,
+  type,
+});
 
 const compile = (parameters: Record<string, string | number>, links = LINKS(4), points: object = POINTS) =>
   pointGatherNode.compile(
@@ -45,6 +66,14 @@ const compile = (parameters: Record<string, string | number>, links = LINKS(4), 
       parameters,
     }),
   );
+
+/** T1076: an edge entry as a pass binding — buffer, half and the attribute's own region. */
+const bindingOf = (ref: { buffer: string; half: "read" | "write"; offset: number; bytes: number } | undefined) => ({
+  resourceId: ref?.buffer,
+  half: ref?.half,
+  offset: ref?.offset,
+  bytes: ref?.bytes,
+});
 
 /** Message AND suggestion: a refusal that names the fix in the suggestion still names it. */
 const messages = (result: { diagnostics?: ReadonlyArray<{ message: string; suggestion?: string }> }): string =>
@@ -59,17 +88,16 @@ describe("pointGather — a reduction over an adjacency (T1071)", () => {
         pairs: {
           // Every incoming attribute BY REFERENCE — the aggregate cannot be lifted off the
           // population it was measured over, because they arrive on one edge.
-          position: { pair: "scratch:gen:position", half: "write", type: "vec3f" },
-          tint: { pair: "scratch:gen:tint", half: "read", type: "vec4f" },
-          id: { pair: "scratch:gen:id", half: "write", type: "u32" },
-          nbrTint: { pair: "scratch:gath:nbrTint", half: "write", type: "vec4f" },
+          ...POINTS.pairs,
+          nbrTint: gathered("vec4f"),
         },
         capacity: 8,
         // Measuring a neighbourhood moves no slot, so the lattice claim survives.
         topology: "grid:4x2",
       },
     });
-    expect(result.scratch).toEqual([{ key: "nbrTint", kind: "bufferPair", stride: 16, capacity: 8 }]);
+    // T1076: ONE packed pair in u32 words — 16 B × 8 points = 128 B, padded to 256.
+    expect(result.scratch).toEqual([{ key: POINT_STORAGE_KEY, kind: "bufferPair", stride: 4, capacity: 64 }]);
   });
 
   it("DERIVES the stride from the two capacities — K is a fact about the link set, not a knob", () => {
@@ -127,11 +155,7 @@ describe("pointGather — a reduction over an adjacency (T1071)", () => {
     // "smooth my colour over my neighbours" is spelled exactly this way.
     const smoothed = compile({ attribute: "tint", reduce: "mean", output: "tint" });
     expect(smoothed.diagnostics ?? []).toEqual([]);
-    expect(smoothed.pointsets?.["out"]?.pairs["tint"]).toEqual({
-      pair: "scratch:gath:tint",
-      half: "write",
-      type: "vec4f",
-    });
+    expect(smoothed.pointsets?.["out"]?.pairs["tint"]).toEqual(gathered("vec4f"));
   });
 
   it("names what the points DO carry when the gathered attribute is absent", () => {
@@ -165,12 +189,11 @@ describe("pointGather — a reduction over an adjacency (T1071)", () => {
     // `tint` arrives on the READ half of the producer's pair; the gather must bind THAT
     // half, not a half of its own choosing. Every read is from an input buffer and nothing
     // reads what this pass writes, so there is no before/after for a reader to straddle.
-    expect(pass.buffers).toContainEqual({ binding: "in_attr", resourceId: "scratch:gen:tint", half: "read" });
+    expect(pass.buffers).toContainEqual({ binding: "in_attr", ...bindingOf(POINTS.pairs["tint"]) });
     expect(pass.buffers).toContainEqual({
       binding: "in_link_neighbor",
-      resourceId: "scratch:web:neighbor",
-      half: "write",
+      ...bindingOf(LINKS(4).pairs["neighbor"]),
     });
-    expect(pass.buffers).toContainEqual({ binding: "out_value", resourceId: "scratch:gath:gathered", half: "write" });
+    expect(pass.buffers).toContainEqual({ binding: "out_value", ...bindingOf(gathered("vec4f")) });
   });
 });

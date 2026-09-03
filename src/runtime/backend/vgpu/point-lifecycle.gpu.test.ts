@@ -9,6 +9,7 @@ import {
   scratchBytes,
 } from "../../../points/lifecycle.ts";
 import { generateKernelModule } from "../../../points/codegen.ts";
+import { packAttributes } from "../../../points/packing.ts";
 import { pointRandReference } from "../../../points/rng.ts";
 import type { PointAttributeSchema } from "../../../points/attributes.ts";
 import { probeDawn } from "./node-gpu-host.ts";
@@ -35,7 +36,10 @@ describe("point lifecycle on Dawn (T119/T120, §V73/§V74)", () => {
     const probe = await probeDawn();
     if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
 
-    const module = generateCompactionModule(SCHEMA, CAPACITY);
+    // T1076: one packed layout, shared by the scatter and by this test's own writes.
+    const layout = packAttributes(SCHEMA, CAPACITY);
+    if (!layout.ok) throw new Error(layout.errors.join("; "));
+    const module = generateCompactionModule(SCHEMA, CAPACITY, layout);
     expect(module.ok).toBe(true);
     if (!module.ok) return;
 
@@ -57,14 +61,18 @@ describe("point lifecycle on Dawn (T119/T120, §V73/§V74)", () => {
       const blockSums = storage(gpu, scratch.blockSums, "read-write");
       const aliveCount = storage(gpu, scratch.aliveCount, "read-write");
 
-      const positionData = new Float32Array(CAPACITY * 4); // vec3f strides 16 bytes
-      positions.forEach((value, index) => positionData.set(value, index * 4));
-      const inPosition = storage(gpu, CAPACITY * 16, "read");
-      inPosition.write(positionData);
-      const outPosition = storage(gpu, CAPACITY * 16, "read-write");
-      const inId = storage(gpu, CAPACITY * 4, "read");
-      inId.write(new Uint32Array(ids));
-      const outId = storage(gpu, CAPACITY * 4, "read-write");
+      /* T1076: ONE packed buffer per half, positions and ids as regions of it — the same
+         bytes in the same order the two separate buffers held, addressed by offset. */
+      const positionRegion = layout.byName.get("position");
+      const idRegion = layout.byName.get("id");
+      if (positionRegion === undefined || idRegion === undefined) throw new Error("missing region");
+      const packedIn = new ArrayBuffer(layout.bytes);
+      const positionView = new Float32Array(packedIn, positionRegion.offset, CAPACITY * 4);
+      positions.forEach((value, index) => positionView.set(value, index * 4));
+      new Uint32Array(packedIn, idRegion.offset, CAPACITY).set(ids);
+      const inPoints = storage(gpu, layout.bytes, "read");
+      inPoints.write(new Uint8Array(packedIn));
+      const outPoints = storage(gpu, layout.bytes, "read-write");
 
       const bindingsByName: Record<string, unknown> = {
         params,
@@ -72,10 +80,8 @@ describe("point lifecycle on Dawn (T119/T120, §V73/§V74)", () => {
         scanned,
         blockSums,
         aliveCount,
-        in_position: inPosition,
-        out_position: outPosition,
-        in_id: inId,
-        out_id: outId,
+        in_points: inPoints,
+        out_points: outPoints,
       };
 
       const pipelines = module.passes.map((pass) => {
@@ -96,10 +102,11 @@ describe("point lifecycle on Dawn (T119/T120, §V73/§V74)", () => {
       const gotCount = new Uint32Array(await aliveCount.read())[0] ?? 0;
       expect(gotCount).toBe(expectedIds.aliveCount);
 
-      const gotIds = [...new Uint32Array(await outId.read())].slice(0, gotCount);
+      const packedOut = await outPoints.read();
+      const gotIds = [...new Uint32Array(packedOut, idRegion.offset, CAPACITY)].slice(0, gotCount);
       expect(gotIds).toEqual(expectedIds.compacted);
 
-      const gotPositionsRaw = new Float32Array(await outPosition.read());
+      const gotPositionsRaw = new Float32Array(packedOut, positionRegion.offset, CAPACITY * 4);
       const gotPositions = Array.from({ length: gotCount }, (_, index) => [
         gotPositionsRaw[index * 4],
         gotPositionsRaw[index * 4 + 1],
@@ -119,10 +126,20 @@ describe("point lifecycle on Dawn (T119/T120, §V73/§V74)", () => {
       { name: "id", type: "u32", semantic: "id", default: [0] },
       { name: "sample", type: "f32", default: [0] },
     ];
+    const rngLayout = packAttributes(schema, 512);
+    if (!rngLayout.ok) throw new Error(rngLayout.errors.join("; "));
+    const rngRegion = (name: string, group: string) => ({
+      group,
+      offset: rngLayout.byName.get(name)?.offset ?? 0,
+    });
     const module = generateKernelModule({
       attributes: schema,
       reads: ["id"],
       writes: ["sample"],
+      storage: {
+        reads: { id: rngRegion("id", "own:read"), sample: rngRegion("sample", "own:read") },
+        writes: { sample: rngRegion("sample", "own:write") },
+      },
       kernel: `fn process(p: Point, ctx: PointCtx) -> Point {
   var q = p;
   q.sample = pointRand(p.id, 3u);
@@ -146,16 +163,23 @@ describe("point lifecycle on Dawn (T119/T120, §V73/§V74)", () => {
         count,
       });
       const ids = Array.from({ length: count }, (_, index) => index * 17 + 3);
-      const inId = storage(gpu, count * 4, "read");
-      inId.write(new Uint32Array(ids));
-      const inSample = storage(gpu, count * 4, "read");
-      const outSample = storage(gpu, count * 4, "read-write");
+      const idOffset = rngLayout.byName.get("id")?.offset ?? 0;
+      const sampleOffset = rngLayout.byName.get("sample")?.offset ?? 0;
+      const packedIn = new ArrayBuffer(rngLayout.bytes);
+      new Uint32Array(packedIn, idOffset, count).set(ids);
+      const readHalf = storage(gpu, rngLayout.bytes, "read");
+      readHalf.write(new Uint8Array(packedIn));
+      const writeHalf = storage(gpu, rngLayout.bytes, "read-write");
 
-      const set: Record<string, unknown> = { kernelFrame, in_id: inId, in_sample: inSample, out_sample: outSample };
+      // T1076: two group bindings, whatever the schema — `pk_0` read, `pk_1` write.
+      const set: Record<string, unknown> = { kernelFrame };
+      for (const binding of module.buffers) {
+        set[binding.variable] = binding.access === "read" ? readHalf : writeHalf;
+      }
       const pipeline = compute(gpu, module.wgsl, { set });
       frame(gpu, () => pipeline.dispatch(Math.ceil(count / module.workgroupSize)));
 
-      const got = new Float32Array(await outSample.read());
+      const got = new Float32Array(await writeHalf.read(), sampleOffset, count);
       for (let index = 0; index < count; index += 1) {
         expect(got[index], `point ${index}`).toBe(pointRandReference(seed, ids[index] ?? 0, frameIndex, 3));
       }

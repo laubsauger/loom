@@ -13,6 +13,16 @@ export {
   type PointSemantic,
 } from "./attributes.ts";
 export {
+  MAX_STORAGE_BUFFER_BINDING_BYTES,
+  STORAGE_OFFSET_ALIGNMENT,
+  packAttributes,
+  regionAccessorWgsl,
+  regionStoreWgsl,
+  type PackedLayout,
+  type PackedLayoutResult,
+  type PointRegion,
+} from "./packing.ts";
+export {
   DEFAULT_WORKGROUP_SIZE,
   POINT_KERNEL_CONTRACT_VERSION,
   generateKernelModule,
@@ -20,5 +30,7 @@ export {
   type KernelModuleFailure,
   type KernelModuleRequest,
   type KernelModuleResult,
+  type KernelStorageMap,
+  type KernelStorageRegion,
   type PointBufferBinding,
 } from "./codegen.ts";

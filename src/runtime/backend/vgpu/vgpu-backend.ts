@@ -54,9 +54,11 @@ import { describeCapabilities, meetsBaseline } from "./capabilities.ts";
 import { browserGpuHost, type GpuHost, type GpuSession } from "./gpu-host.ts";
 import {
   ResourceBuildError,
+  bufferRegion,
   buildResources,
   emptyCarryOver,
   noExternalResources,
+  regionOf,
   toMutable,
   type CarryOver,
   type ExternalResources,
@@ -1050,7 +1052,11 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         if (!drawable) continue;
         const values: Record<string, unknown> = {};
         for (const binding of matching) {
-          values[binding.binding] = binding.half === "write" ? bufferPair.write : bufferPair.read;
+          const side = binding.half === "write" ? bufferPair.write : bufferPair.read;
+          // T1076: a region binding is re-pointed as a region — the swap changed which
+          // buffer holds this frame's bytes, never where the attribute sits inside it.
+          const region = regionOf(binding);
+          values[binding.binding] = region === undefined ? side : bufferRegion(side, region);
         }
         drawable.set(values);
       }
@@ -1094,7 +1100,11 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       const values: Record<string, unknown> = {};
       for (const binding of bindings) {
         const pair = active.resources.bufferPairs.get(binding.resourceId);
-        if (pair) values[binding.binding] = binding.half === "write" ? pair.write : pair.read;
+        if (!pair) continue;
+        const side = binding.half === "write" ? pair.write : pair.read;
+        // T1076: as above — the region is a property of the plan, the half is the swap's.
+        const region = regionOf(binding);
+        values[binding.binding] = region === undefined ? side : bufferRegion(side, region);
       }
       drawable.set(values);
     }
@@ -2172,7 +2182,11 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
                   set.bufferPairs.get(binding.resourceId) ??
                   program?.resources.bufferPairs.get(binding.resourceId);
                 if (pair) {
-                  values[binding.binding] = binding.half === "write" ? pair.write : pair.read;
+                  const side = binding.half === "write" ? pair.write : pair.read;
+                  // T1076: a preview's splat binds ONE region of the main program's
+                  // packed point storage, chasing the same swaps.
+                  const region = regionOf(binding);
+                  values[binding.binding] = region === undefined ? side : bufferRegion(side, region);
                   continue;
                 }
                 // A plain external buffer (counts): a main recompile replaces the

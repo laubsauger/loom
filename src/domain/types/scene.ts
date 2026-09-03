@@ -52,10 +52,21 @@ export interface LightPayload {
   };
 }
 
-/** One point attribute pair as the edge map carries it (T296 vocabulary). */
+/**
+ * One point attribute as the edge map carries it (T296 vocabulary, T1076 layout).
+ *
+ * Structurally `PointsetAttributeRef` with everything readonly: the scene channel copies
+ * the pointset payload verbatim, so the two shapes must stay identical or a geometry
+ * payload would carry an attribute the renderer cannot address.
+ */
 export interface ScenePairRef {
-  readonly pair: string;
+  /** The bufferPair holding this attribute's region — one per producer, not per attribute. */
+  readonly buffer: string;
   readonly half: "read" | "write";
+  /** T1076: byte offset of the attribute's region inside `buffer`. */
+  readonly offset: number;
+  /** T1076: bytes the region occupies (`stride × capacity`). */
+  readonly bytes: number;
   readonly type?: string;
 }
 
@@ -97,9 +108,7 @@ export interface GeometryPayload {
    */
   /** T917: additive light — the draw blends additively and stops writing depth. */
   readonly blend?: "additive";
-  readonly scaleAttribute?: {
-    readonly pair: string;
-    readonly half: "read" | "write";
+  readonly scaleAttribute?: ScenePairRef & {
     readonly type: string;
     readonly channel?: string;
   };
@@ -118,10 +127,7 @@ export interface GeometryPayload {
    * `vec4f` both stride 16 bytes — the choice is free, so it is made on what each
    * cannot do, and only the quaternion can compose, interpolate and carry roll.
    */
-  readonly orientAttribute?: {
-    readonly pair: string;
-    readonly half: "read" | "write";
-  };
+  readonly orientAttribute?: ScenePairRef;
   /**
    * T680 — BEAM mode: the other end of each segment, as a vec3f attribute pair.
    *
@@ -155,7 +161,7 @@ export interface GeometryPayload {
    */
   readonly group?: {
     readonly expression: string;
-    readonly binds: ReadonlyArray<{ attribute: string; type: string; pair: string; half: "read" | "write" }>;
+    readonly binds: ReadonlyArray<ScenePairRef & { readonly attribute: string; readonly type: string }>;
   };
   /**
    * T478: the GPU-resident live count, when the producer spawns and kills (T322).

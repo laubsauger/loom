@@ -1,6 +1,7 @@
 import type { PointAttributeSchema, PointAttributeType } from "../../points/attributes.ts";
-import { ATTRIBUTE_STRIDES, COMPONENT_COUNTS } from "../../points/attributes.ts";
-import { scratchResourceId } from "../../compiler/resources.ts";
+import { COMPONENT_COUNTS } from "../../points/attributes.ts";
+import { packAttributes } from "../../points/packing.ts";
+import { pointStorageId } from "../../nodes/definitions/point-storage.ts";
 
 /**
  * Windowed point-attribute readback (T125, §V48, §V16).
@@ -11,8 +12,12 @@ import { scratchResourceId } from "../../compiler/resources.ts";
  * orders of magnitude. Throttled to ≤10Hz (§V16) with an injectable clock; the CPU
  * mirrors in `src/points/rng.ts` double as its oracle in tests.
  *
- * Decoding uses the SAME stride/component tables the codegen and storage use — the
- * vec3f stride-16 trap is handled in exactly one place, here included by import.
+ * Decoding uses the SAME layout function the producer allocated with (`packAttributes`)
+ * and the same component table the codegen uses — the vec3f stride-16 trap and, since
+ * T1076, the region offset are each answered in exactly one place, here included by
+ * import. Before T1076 this rebuilt a per-attribute resource id by convention
+ * (`scratch:<node>:<attribute>`); attributes no longer have buffers of their own, so the
+ * read is now "the node's packed buffer, at this attribute's offset".
  */
 
 export interface PointsWindowRequest {
@@ -91,17 +96,25 @@ export function createPointsReadback(options: PointsReadbackOptions): PointsRead
       const start = Math.max(0, Math.min(Math.floor(request.start ?? 0), info.capacity));
       const count = Math.max(0, Math.min(Math.floor(request.count ?? 32), MAX_WINDOW, info.capacity - start));
 
+      /* T1076: the attribute's REGION inside the node's packed buffer, from the same
+         layout function the producer allocated with — never a second offset table. */
+      const layout = packAttributes(info.attributes, info.capacity);
+      if (!layout.ok) throw new Error(`Node "${request.nodeId}": ${layout.errors.join(" ")}`);
+      const region = layout.byName.get(attributeName);
+      if (region === undefined) {
+        throw new Error(`Node "${request.nodeId}" allocates no storage for "${attributeName}".`);
+      }
+
       // The whole pair half still crosses the bus (readBuffer has no range yet — same
       // interim as texture regions, T173); the WINDOW is what leaves this function.
       lastReadAt = at;
-      const raw = await options.readBuffer(scratchResourceId(request.nodeId, attributeName));
+      const raw = await options.readBuffer(pointStorageId(request.nodeId));
 
-      const stride = ATTRIBUTE_STRIDES[attribute.type];
       const components = COMPONENT_COUNTS[attribute.type];
       const isUnsigned = attribute.type === "u32" || attribute.type === "vec4u";
       const values: number[][] = [];
       for (let index = 0; index < count; index += 1) {
-        const base = (start + index) * stride;
+        const base = region.offset + (start + index) * region.stride;
         const view = isUnsigned
           ? new Uint32Array(raw, base, components)
           : new Float32Array(raw, base, components);

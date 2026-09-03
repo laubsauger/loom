@@ -1,4 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
+import { pointStorageId } from "../nodes/definitions/point-storage.ts";
+import { planRegion } from "../nodes/definitions/test-support.ts";
 
 import { createValueGraphSession } from "../domain/channels/value-graph.ts";
 import type { GraphDocument } from "../domain/types/graph.ts";
@@ -196,9 +198,17 @@ describe("E45 Pulse — the set holds between boundaries and changes across one"
           capture: [23],
           animate: true,
           outputNodeId: "out",
-          probeBuffers: ["scratch:prox:tint"],
+          // T1076: one probe of the proximity node's packed link buffer.
+          probeBuffers: [pointStorageId("prox")],
         });
-        const tints = new Float32Array(result.buffers?.["scratch:prox:tint"] ?? new ArrayBuffer(0));
+        /* `tint` is the THIRD region of the packed link buffer (position, tip, tint,
+           neighbor) — from byte 0 this would count link ORIGINS, all of which are
+           non-zero. The offset comes off the PLAN's own `out_tint` binding, so this
+           cannot drift from what the node emitted. */
+        const packed = result.buffers?.[pointStorageId("prox")];
+        const region = planRegion(result.plan.passes, "prox", "out_tint");
+        const tints =
+          packed === undefined ? new Float32Array(0) : new Float32Array(packed, region.offset, region.bytes / 4);
         let alive = 0;
         for (let at = 3; at < tints.length; at += 4) {
           if ((tints[at] ?? 0) > 0) alive += 1;

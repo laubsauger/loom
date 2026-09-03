@@ -5,12 +5,19 @@ import type { LogicalExecutionPlan } from "../../domain/types/backend.ts";
 import {
   DEFAULT_POINT_ATTRIBUTES,
   pointKernelNode,
-  pointKernelResources,
-  pointPairId,
   pointSetInfoFor,
   renderPointsNode,
 } from "./points.ts";
-import { compileContext } from "./test-support.ts";
+import { pointStorageId } from "./point-storage.ts";
+import { packAttributes } from "../../points/packing.ts";
+import { compileContext, fixturePairs } from "./test-support.ts";
+
+/** T1076: the u32 words one half of a default-schema point buffer occupies. */
+function packedWords(capacity: number): number {
+  const layout = packAttributes(DEFAULT_POINT_ATTRIBUTES, capacity);
+  if (!layout.ok) throw new Error(layout.errors.join("; "));
+  return layout.bytes / 4;
+}
 
 /**
  * The point family at the fixture level (T121, T122): manifests, emitted passes, the
@@ -48,12 +55,14 @@ describe("pointKernel — manifest and emission (T121)", () => {
     expect(pass.uniforms["count"]).toBe(1000);
     expect(pass.uniforms["seed"]).toBe(3);
 
-    // in_* reads the pair's read half, out_* writes the write half — one identity,
-    // swapped by the compiler after all consumers (§V22, T143 carry applies).
-    const position = pass.buffers.filter((binding) => binding.resourceId === pointPairId("sim", "position"));
-    expect(position.map((binding) => `${binding.binding}:${binding.half}`).sort()).toEqual([
-      "in_position:read",
-      "out_position:write",
+    /* T1076: TWO storage bindings for the whole schema — the node's packed read half
+       (pre-frame values) and its write half (results) — one identity, swapped by the
+       compiler after all consumers (§V22, T143 carry applies). Before packing this was
+       one binding per attribute per direction, so three attributes cost six and a fifth
+       attribute failed the pipeline in silence. */
+    expect(pass.buffers.map((binding) => `${binding.resourceId}:${binding.half}`)).toEqual([
+      `${pointStorageId("sim")}:read`,
+      `${pointStorageId("sim")}:write`,
     ]);
   });
 
@@ -81,27 +90,48 @@ describe("renderPoints — manifest and emission (T122)", () => {
     }
   });
 
-  it("derives the producer's position pair from the input's source identity", () => {
+  it("binds the producer's position REGION off the edge payload (T296, T1076)", () => {
     const result = renderPointsNode.compile(
       compileContext({
         nodeId: "draw",
         inputs: ["points"],
         sources: { points: "sim" },
+        /* T1076: the payload, not a derived id. Attributes no longer have buffers of
+           their own, so the pre-T296 `scratch:<node>:position` convention names nothing;
+           a consumer that tried it is refused by name below. */
+        pointsets: {
+          points: {
+            pairs: fixturePairs(
+              "sim",
+              [
+                { name: "velocity", type: "vec3f" },
+                { name: "position", type: "vec3f" },
+              ],
+              512,
+            ),
+            capacity: 512,
+          },
+        },
         parameters: { count: 512, sizePixels: 8, blend: "alpha", accumulate: true },
       }),
     );
     expect(result.diagnostics ?? []).toEqual([]);
     const pass = result.passes[0] as {
       kind: string;
-      buffers: Array<{ resourceId: string; half: string }>;
+      buffers: Array<{ resourceId: string; half: string; offset: number; bytes: number }>;
       blend: string;
       clear: boolean;
       instances: number;
     };
     expect(pass.kind).toBe("draw");
-    expect(pass.buffers[0]?.resourceId).toBe(pointPairId("sim", "position"));
+    expect(pass.buffers[0]?.resourceId).toBe(pointStorageId("sim"));
     // T296/§V168: consumers read the WRITE half — THIS frame's positions, in plan order.
     expect(pass.buffers[0]?.half).toBe("write");
+    /* The OFFSET is the load-bearing number: `velocity` is laid out first here, so a
+       binding that took the buffer from byte 0 would draw velocities as positions —
+       plausible, animated, and wrong. */
+    expect(pass.buffers[0]?.offset).toBe(16 * 512);
+    expect(pass.buffers[0]?.bytes).toBe(16 * 512);
     expect(pass.blend).toBe("alpha");
     // accumulate = the T180 trails pattern: no clear between frames.
     expect(pass.clear).toBe(false);
@@ -157,17 +187,25 @@ describe("pointKernel → renderPoints → output through the REAL compiler (T17
     expect(plan.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
     expect(plan.ok).toBe(true);
 
-    // One pair per default attribute, materialized from the node's scratch declaration.
+    /* T1076: ONE pair for the whole schema, materialized from the node's single scratch
+       declaration, sized to the packed layout: position and velocity at 16 B, id at 4,
+       each × 512 points, every region 256-aligned. */
     const pairs = plan.resources.filter((resource) => resource.kind === "bufferPair");
-    expect(pairs.map((pair) => pair.id).sort()).toEqual(
-      DEFAULT_POINT_ATTRIBUTES.map((attribute) => pointPairId("sim", attribute.name)).sort(),
-    );
+    expect(pairs.map((pair) => pair.id)).toEqual([pointStorageId("sim")]);
+    const packed = packAttributes(DEFAULT_POINT_ATTRIBUTES, 512);
+    if (!packed.ok) throw new Error(packed.errors.join("; "));
+    expect(packed.regions.map((region) => region.offset)).toEqual([0, 8192, 16384]);
+    const pair = pairs[0] as { stride: number; capacity: number };
+    expect(pair.stride * pair.capacity).toBe(packed.bytes);
     // …and NO texture resource for the pointset marker itself.
     expect(plan.resources.some((resource) => resource.id.startsWith("points:sim"))).toBe(false);
 
     // The consumer found the producer through the propagated edge.
     const drawPass = plan.passes.find((pass) => pass.kind === "draw");
-    expect(drawPass?.buffers?.[0]?.resourceId).toBe(pointPairId("sim", "position"));
+    expect(drawPass?.buffers?.[0]?.resourceId).toBe(pointStorageId("sim"));
+    // …at the POSITION region's offset, not from byte 0 (T1076).
+    expect(drawPass?.buffers?.[0]?.offset).toBe(0);
+    expect(drawPass?.buffers?.[0]?.bytes).toBe(16 * 512);
 
     // T297 (§V197/§V22): each pair's swap comes after the LAST pass that BINDS it —
     // ownership by binder, not by reachability. Position is read by the draw, so its
@@ -176,7 +214,8 @@ describe("pointKernel → renderPoints → output through the REAL compiler (T17
     const swaps = plan.passes
       .map((pass, index) => ({ pass, index }))
       .filter((entry) => entry.pass.kind === "swap");
-    expect(swaps).toHaveLength(DEFAULT_POINT_ATTRIBUTES.length);
+    // T1076: one pair, so one swap — it was one per attribute.
+    expect(swaps).toHaveLength(1);
     for (const { pass, index } of swaps) {
       const pairId = (pass as { resourceId: string }).resourceId;
       const lastBinder = plan.passes
@@ -190,7 +229,7 @@ describe("pointKernel → renderPoints → output through the REAL compiler (T17
     }
     const drawIndex = plan.passes.findIndex((pass) => pass.kind === "draw");
     const positionSwapIndex = plan.passes.findIndex(
-      (pass) => pass.kind === "swap" && (pass as { resourceId: string }).resourceId === pointPairId("sim", "position"),
+      (pass) => pass.kind === "swap" && (pass as { resourceId: string }).resourceId === pointStorageId("sim"),
     );
     expect(positionSwapIndex).toBeGreaterThan(drawIndex); // the by-binding claim, explicitly
 
@@ -205,14 +244,21 @@ describe("the emitted output is a plan the backend accepts", () => {
       compileContext({ nodeId: "sim", outputs: [], parameters: { capacity: 256 } }),
     );
     const render = renderPointsNode.compile(
-      compileContext({ nodeId: "draw", inputs: ["points"], sources: { points: "sim" }, parameters: { count: 256 } }),
+      compileContext({
+        nodeId: "draw",
+        inputs: ["points"],
+        sources: { points: "sim" },
+        // T1076: the edge payload the kernel above publishes — the region map, not an id.
+        pointsets: { points: { pairs: kernel.pointsets?.["out"]?.pairs ?? {}, capacity: 256 } },
+        parameters: { count: 256 },
+      }),
     );
     expect(kernel.diagnostics ?? []).toEqual([]);
     expect(render.diagnostics ?? []).toEqual([]);
 
     const plan: LogicalExecutionPlan = {
       resources: [
-        ...pointKernelResources("sim", DEFAULT_POINT_ATTRIBUTES, 256),
+        { kind: "bufferPair", id: pointStorageId("sim"), stride: 4, capacity: packedWords(256) },
         { kind: "target", id: "target:out", size: [64, 64], format: "rgba16float" },
       ],
       passes: [
@@ -220,11 +266,7 @@ describe("the emitted output is a plan the backend accepts", () => {
         // Retarget the render pass at the declared target (the fixture's id differs).
         { ...(render.passes[0] as Record<string, unknown>), target: "target:out" },
         // The compiler owns swap placement (§V22); the assembled plan mirrors it.
-        ...DEFAULT_POINT_ATTRIBUTES.map((attribute) => ({
-          kind: "swap" as const,
-          id: `swap:${pointPairId("sim", attribute.name)}`,
-          resourceId: pointPairId("sim", attribute.name),
-        })),
+        { kind: "swap" as const, id: `swap:${pointStorageId("sim")}`, resourceId: pointStorageId("sim") },
       ],
       diagnostics: [],
     };
@@ -340,11 +382,15 @@ describe("bypass on a converter is muted, not spliced (T356)", () => {
 describe("sizePixels in map mode — pscale (T286)", () => {
   const edge = {
     points: {
-      pairs: {
-        position: { pair: "scratch:sim:position", half: "write" as const, type: "vec3f" },
-        size: { pair: "scratch:sim:size", half: "write" as const, type: "f32" },
-        velocity: { pair: "scratch:sim:velocity", half: "write" as const, type: "vec3f" },
-      },
+      pairs: fixturePairs(
+        "sim",
+        [
+          { name: "position", type: "vec3f" },
+          { name: "size", type: "f32" },
+          { name: "velocity", type: "vec3f" },
+        ],
+        128,
+      ),
       capacity: 128,
       topology: "points",
     },
@@ -372,7 +418,16 @@ describe("sizePixels in map mode — pscale (T286)", () => {
     expect(pass.shader).toContain("mapSizes: array<f32>");
     expect(pass.shader).not.toContain("sizePixels");
     expect(pass.uniforms).toEqual({ color: [1, 1, 1, 1] });
-    expect(pass.buffers).toContainEqual({ binding: "mapSizes", resourceId: "scratch:sim:size", half: "write" });
+    /* T1076: the REGION, not a buffer of its own — `size` sits after `position` in the
+       fixture's packed layout, and binding it at byte 0 would size every sprite by the
+       x of its position. */
+    expect(pass.buffers).toContainEqual({
+      binding: "mapSizes",
+      resourceId: pointStorageId("sim"),
+      half: "write",
+      offset: 16 * 128,
+      bytes: 4 * 128,
+    });
   });
 
   it("swizzles a vector attribute through its declared type, never a guess", () => {
@@ -432,11 +487,15 @@ describe("sizePixels in map mode — pscale (T286)", () => {
 describe("color in map mode — per-point colour on the compound head (T364)", () => {
   const edge = {
     points: {
-      pairs: {
-        position: { pair: "scratch:sim:position", half: "write" as const, type: "vec3f" },
-        tint: { pair: "scratch:sim:tint", half: "write" as const, type: "vec4f" },
-        size: { pair: "scratch:sim:size", half: "write" as const, type: "f32" },
-      },
+      pairs: fixturePairs(
+        "sim",
+        [
+          { name: "position", type: "vec3f" },
+          { name: "tint", type: "vec4f" },
+          { name: "size", type: "f32" },
+        ],
+        64,
+      ),
       capacity: 64,
       topology: "points",
     },
@@ -463,7 +522,14 @@ describe("color in map mode — per-point colour on the compound head (T364)", (
     };
     expect(pass.shader).toContain("mapColors: array<vec4f>");
     expect(pass.uniforms).toEqual({ sizePixels: 4 });
-    expect(pass.buffers).toContainEqual({ binding: "mapColors", resourceId: "scratch:sim:tint", half: "write" });
+    expect(pass.buffers).toContainEqual({
+      binding: "mapColors",
+      resourceId: pointStorageId("sim"),
+      half: "write",
+      // T1076: `tint` is the second region — after `position`'s 16 B × 64 points.
+      offset: 16 * 64,
+      bytes: 16 * 64,
+    });
   });
 
   it("BOTH mapped: the uniform block vanishes with its struct", () => {
@@ -486,10 +552,14 @@ describe("color in map mode — per-point colour on the compound head (T364)", (
 describe("the draw-time group (T333)", () => {
   const edge = {
     points: {
-      pairs: {
-        position: { pair: "scratch:sim:position", half: "write" as const, type: "vec3f" },
-        life: { pair: "scratch:sim:life", half: "write" as const, type: "f32" },
-      },
+      pairs: fixturePairs(
+        "sim",
+        [
+          { name: "position", type: "vec3f" },
+          { name: "life", type: "f32" },
+        ],
+        64,
+      ),
       capacity: 64,
       topology: "points",
     },
@@ -512,7 +582,14 @@ describe("the draw-time group (T333)", () => {
     expect(pass.shader).toContain("group_life: array<f32>");
     expect(pass.shader).toContain("group_position: array<vec3f>");
     expect(pass.shader).toContain("return (p.life < 0.5 && p.position.y > 0.0)");
-    expect(pass.buffers).toContainEqual({ binding: "group_life", resourceId: "scratch:sim:life", half: "write" });
+    expect(pass.buffers).toContainEqual({
+      binding: "group_life",
+      resourceId: pointStorageId("sim"),
+      half: "write",
+      // T1076: `life` is the second region — after `position`'s 16 B × 64 points.
+      offset: 16 * 64,
+      bytes: 4 * 64,
+    });
   });
 
   it("refuses an unknown attribute by name, listing what the pointset provides", () => {

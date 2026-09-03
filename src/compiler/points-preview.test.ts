@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ATTRIBUTE_STRIDES } from "../points/attributes.ts";
 
 import { compileGraph } from "./index.ts";
 import { pointsPreviewResourceId } from "./resources.ts";
@@ -122,8 +123,10 @@ describe("a watched point generator previews as its own splat (T373, §V85, T563
     ) as { capacity?: number } | undefined;
     expect(capacityResource).toBeDefined();
     expect(pass?.buffers?.[0]?.half).toBe("read");
-    // Uncounted set: a literal instance count equal to the pair's capacity.
-    expect(pass?.instances).toBe(capacityResource?.capacity);
+    /* T1076: the binding is the position REGION, so its BYTES say how many points it
+       carries — the pair's own capacity is now the packed buffer's word count. */
+    const positionBytes = pass?.buffers?.[0]?.bytes ?? 0;
+    expect(pass?.instances).toBe(positionBytes / ATTRIBUTE_STRIDES["vec3f"]);
     // The camera is a VALUE on the pass (§V5) — T379's viewer camera drives it later
     // without a structure change.
     expect(Array.isArray(pass?.uniforms?.["viewProjection"])).toBe(true);

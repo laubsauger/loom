@@ -1,10 +1,18 @@
-import type { CompiledNodeDescription, NodeDefinition } from "../../domain/types/node-definition.ts";
+import type { CompiledNodeDescription, NodeDefinition, PointsetAttributeRef } from "../../domain/types/node-definition.ts";
 import type { DispatchPassDescriptor } from "../../runtime/backend/plan.ts";
-import { ATTRIBUTE_STRIDES, COMPONENT_COUNTS, type PointAttributeType } from "../../points/attributes.ts";
+import { COMPONENT_COUNTS, type PointAttributeSchema, type PointAttributeType } from "../../points/attributes.ts";
 import { pointRangeWgsl } from "../shaders/points.wgsl.ts";
 import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
 import { readNumber } from "./parameter-readers.ts";
-import { pointPairId } from "./points.ts";
+import { attributeBinding, packedPointStorage } from "./point-storage.ts";
+
+/** The only attribute this node owns; named once so the layout and the pass agree. */
+const POSITION_ATTRIBUTE: PointAttributeSchema = {
+  name: "position",
+  type: "vec3f",
+  semantic: "position",
+  default: [0, 0, 0],
+};
 
 /**
  * Range (T983) — attribute-range selection on points: keep the points whose attribute
@@ -183,6 +191,10 @@ export const pointRangeNode: NodeDefinition = {
     const counted = upstream.count !== undefined;
     const capacity = upstream.capacity;
 
+    // T1076: this node owns `position` alone; the rest passes by reference (§V197).
+    const storage = packedPointStorage(nodeId, [POSITION_ATTRIBUTE], capacity, "write");
+    if (!storage.ok) return refuse(storage.errors.join(" "));
+
     const pass: DispatchPassDescriptor = {
       kind: "dispatch",
       // The attribute, its component and the counted flag are part of the program
@@ -192,12 +204,12 @@ export const pointRangeNode: NodeDefinition = {
       entryPoint: "main",
       workgroups: [Math.ceil(capacity / 64), 1, 1],
       buffers: [
-        { binding: "in_position", resourceId: position.pair, half: position.half },
-        ...(positionIsSource ? [] : [{ binding: "in_attr", resourceId: entry.pair, half: entry.half }]),
+        attributeBinding("in_position", position),
+        ...(positionIsSource ? [] : [attributeBinding("in_attr", entry)]),
         ...(counted && upstream.count !== undefined
           ? [{ binding: "in_count", resourceId: upstream.count.buffer, half: "read" as const }]
           : []),
-        { binding: "out_position", resourceId: pointPairId(nodeId, "position"), half: "write" },
+        attributeBinding("out_position", storage.pairs["position"] as PointsetAttributeRef),
       ],
       uniforms: {
         count: capacity,
@@ -212,15 +224,12 @@ export const pointRangeNode: NodeDefinition = {
 
     return {
       passes: [pass],
-      scratch: [{ key: "position", kind: "bufferPair", stride: ATTRIBUTE_STRIDES["vec3f"], capacity }],
+      scratch: [storage.scratch],
       pointsets: {
         out: {
           // §V197 copy-on-write: fresh position, everything else republished by
           // reference — an unmodified attribute never gets a per-node copy.
-          pairs: {
-            ...upstream.pairs,
-            position: { pair: pointPairId(nodeId, "position"), half: "write" as const, type: "vec3f" },
-          },
+          pairs: { ...upstream.pairs, ...storage.pairs },
           capacity,
           // Slots never move, so the upstream connectivity claim stays true — the same
           // trade pointsFromTexture's threshold already makes on a grid.

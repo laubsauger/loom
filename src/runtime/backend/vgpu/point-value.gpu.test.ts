@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readPointAttribute } from "../../../nodes/definitions/test-support.ts";
 
 import { compileGraph } from "../../../compiler/index.ts";
 import { createValueGraphSession } from "../../../domain/channels/value-graph.ts";
@@ -32,10 +33,11 @@ import { nodeGpuHost, probeDawn } from "./node-gpu-host.ts";
  *     not coincide.
  */
 
-const ATTRIBUTES = JSON.stringify([
-  { name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] },
-  { name: "probe", type: "vec4f", default: [0, 0, 0, 0] },
-]);
+const PROBE_SCHEMA = [
+  { name: "position", type: "vec3f" as const, semantic: "position" as const, default: [0, 0, 0] },
+  { name: "probe", type: "vec4f" as const, default: [0, 0, 0, 0] },
+];
+const ATTRIBUTES = JSON.stringify(PROBE_SCHEMA);
 
 /** The whole point: the live value decides the motion, not a constant in the text. */
 const VALUE_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
@@ -156,7 +158,11 @@ async function runFrame(
     const compiled = await backend.compile(plan);
     backend.render(compiled, { frame, pointer: { x: 0, y: 0, buttons: 0 }, resolution: [16, 16] });
     expect(errors).toEqual([]);
-    const probe = new Float32Array(await backend.readBuffer("scratch:sim:probe"));
+    /* T1076: `probe` is a REGION of the kernel's packed buffer — the schema puts it
+       after `position`, so a read from byte 0 would hand back coordinates. */
+    const probe = (
+      await readPointAttribute(backend.readBuffer, "sim", PROBE_SCHEMA, 8, "probe")
+    ).floats;
     const bag = evaluated.byName.get("lfo1");
     const published = bag === undefined ? undefined : (Object.values(bag)[0] as number | undefined);
     return { kernelSaw: probe[0] as number, lfoPublished: published };

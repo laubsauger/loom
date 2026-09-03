@@ -11,7 +11,8 @@ import {
 } from "./camera-reference.ts";
 import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
 import { readColor, readNumber, readVector } from "./parameter-readers.ts";
-import { countedDrawSupport, pointPairId, resolveColorMap, resolveGroupPredicate } from "./points.ts";
+import { countedDrawSupport, resolveColorMap, resolveGroupPredicate, type GroupBind } from "./points.ts";
+import { attributeBinding } from "./point-storage.ts";
 
 /**
  * RenderInstances (T299): a procedural primitive on every point — Houdini's copy-to-
@@ -222,11 +223,27 @@ export const renderInstancesNode: NodeDefinition = {
     if ("refusal" in resolvedColor) return resolvedColor.refusal;
     const mappedColor = resolvedColor.map;
 
+    /* T1076: the position REGION off the edge, refused BY NAME when the edge carries none.
+       The old `?? pointPairId(source, "position")` fallback named a per-attribute buffer
+       that packing retired — a derived id now resolves to nothing at all. */
+    const drawPosition = points.pointset?.pairs["position"];
+    if (drawPosition === undefined) {
+      return {
+        passes: [],
+        diagnostics: [
+          {
+            severity: "error",
+            code: "node.points.edge",
+            message: `Node "${nodeId}": the points edge carries no resolved position attribute.`,
+            nodeId,
+          },
+        ],
+      };
+    }
+
     // T333: the draw-time group. Excluded instances collapse to zero-area primitives.
     const groupSource = typeof parameters["group"] === "string" ? parameters["group"].trim() : "";
-    let groupPredicate:
-      | { expression: string; binds: ReadonlyArray<{ attribute: string; type: string; pair: string; half: "read" | "write" }> }
-      | undefined;
+    let groupPredicate: { expression: string; binds: ReadonlyArray<GroupBind> } | undefined;
     if (groupSource !== "") {
       const resolvedGroup = resolveGroupPredicate(nodeId, groupSource, points.pointset);
       if ("refusal" in resolvedGroup) return resolvedGroup.refusal;
@@ -268,23 +285,13 @@ export const renderInstancesNode: NodeDefinition = {
         ),
       vertexCount: INSTANCE_VERTEX_COUNT,
       buffers: [
-        // The producer's position pair via the edge map, WRITE half: THIS frame's
-        // positions (§V168) — whoever owns the pair (§V197, by-reference reads).
-        {
-          binding: "positions",
-          resourceId: points.pointset?.pairs["position"]?.pair ?? pointPairId(points.source.nodeId, "position"),
-          half: points.pointset?.pairs["position"]?.half ?? "write",
-        },
-        ...(mappedColor === undefined
-          ? []
-          : [{ binding: "mapColors", resourceId: mappedColor.pair, half: mappedColor.half }]),
+        // The producer's position REGION via the edge map, WRITE half: THIS frame's
+        // positions (§V168) — whoever owns the buffer (§V197, by-reference reads).
+        attributeBinding("positions", drawPosition),
+        ...(mappedColor === undefined ? [] : [attributeBinding("mapColors", mappedColor)]),
         ...(groupPredicate === undefined
           ? []
-          : groupPredicate.binds.map((bind) => ({
-              binding: `group_${bind.attribute}`,
-              resourceId: bind.pair,
-              half: bind.half,
-            }))),
+          : groupPredicate.binds.map((bind) => attributeBinding(`group_${bind.attribute}`, bind))),
       ],
       // A mapped colour LEAVES the uniform block, and the record must follow the struct
       // exactly (the catalogue sweep pins that). The block itself never vanishes here —

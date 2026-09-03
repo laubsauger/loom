@@ -1,14 +1,20 @@
 /**
  * Point attribute schemas and their GPU layout (T117, §V72).
  *
- * Storage is structure-of-arrays: ONE storage buffer per attribute, never one
- * interleaved struct buffer. That kills WGSL struct-layout pain at the source (each
- * buffer is a plain `array<T>`), lets an operator bind only the attributes it touches,
- * and means adding an attribute never relayouts the others.
+ * Storage is structure-of-arrays: every attribute is a contiguous `stride × capacity` run,
+ * never an interleaved struct. That kills WGSL struct-layout pain at the source and means
+ * adding an attribute never relayouts the others.
+ *
+ * ⚑ T1076 moved WHERE those runs live. They used to be one storage buffer each, which cost
+ * a kernel 2n bindings against WebGPU's baseline of 8 per stage — four attributes, and the
+ * fifth failed the pipeline in silence (B33, §V588). They are now REGIONS of one buffer per
+ * producer per half: the same bytes in the same order, addressed by offset instead of by
+ * binding. `src/points/packing.ts` owns that layout; this file owns the strides it is built
+ * from, and both are still what a consumer binds against.
  *
  * The one layout trap worth spelling out: `array<vec3f>` has an element STRIDE of 16
  * bytes (vec3 aligns to 16 in WGSL), so a vec3 attribute costs as much as a vec4. The
- * stride table below is the single source of truth; capacity × stride is the buffer
+ * stride table below is the single source of truth; capacity × stride is the REGION
  * size everywhere.
  */
 
@@ -83,7 +89,12 @@ export function attributeBufferBytes(type: PointAttributeType, capacity: number)
   return ATTRIBUTE_STRIDES[type] * capacity;
 }
 
-/** Coarse memory estimate for a whole point system (§V24 reporting). */
+/**
+ * Coarse memory estimate for a whole point system (§V24 reporting) — the sum of the
+ * regions, EXCLUDING the inter-region alignment padding a packed buffer carries. What is
+ * actually allocated is `packAttributes(attributes, capacity).bytes`, per half; this is
+ * the payload inside it, which is what a "how much data is this" question wants.
+ */
 export function pointSetBytes(attributes: ReadonlyArray<PointAttributeSchema>, capacity: number): number {
   return attributes.reduce((total, attribute) => total + attributeBufferBytes(attribute.type, capacity), 0);
 }

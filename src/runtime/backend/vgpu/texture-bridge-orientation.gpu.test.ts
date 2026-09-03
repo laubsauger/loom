@@ -3,7 +3,8 @@ import { describe, expect, it } from "vitest";
 import { compileGraph } from "../../../compiler/index.ts";
 import { createNodeRegistry } from "../../../nodes/registry/registry.ts";
 import { allNodeDefinitions } from "../../../nodes/definitions/index.ts";
-import { pointPairId } from "../../../nodes/definitions/points.ts";
+import { pointStorageId } from "../../../nodes/definitions/point-storage.ts";
+import { pointRegionSlice } from "../../../nodes/definitions/test-support.ts";
 import { createVgpuBackend } from "./vgpu-backend.ts";
 import { nodeGpuHost, probeDawn } from "./node-gpu-host.ts";
 import type { GraphDocument } from "../../../domain/types/graph.ts";
@@ -64,7 +65,19 @@ const topBrightCircle = () =>
     color: [1, 1, 1, 1],
   });
 
-async function renderAndRead(graph: GraphDocument, pairNode: string): Promise<Float32Array> {
+/**
+ * T1076: the `sample` attribute of a node's PACKED buffer.
+ *
+ * The two subjects hold it at different offsets — `textureToAttribute` owns `sample`
+ * alone (region 0), while the kernel packs `position` first — so the slice comes off the
+ * node's own schema rather than off byte 0.
+ */
+async function renderAndRead(
+  graph: GraphDocument,
+  pairNode: string,
+  schema: ReadonlyArray<{ name: string; type: "vec3f" | "vec4f" }> = [{ name: "sample", type: "vec4f" }],
+  capacity = 2,
+): Promise<Float32Array> {
   const registry = createNodeRegistry(allNodeDefinitions).view();
   const plan = compileGraph({ graph, settings: SETTINGS, registry, capabilities: CAPABILITIES });
   expect(plan.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
@@ -79,7 +92,12 @@ async function renderAndRead(graph: GraphDocument, pairNode: string): Promise<Fl
         resolution: [64, 64],
       });
     }
-    return new Float32Array(await backend.readBuffer(pointPairId(pairNode, "sample")));
+    return pointRegionSlice(
+      await backend.readBuffer(pointStorageId(pairNode)),
+      schema,
+      capacity,
+      "sample",
+    ).floats;
   } finally {
     backend.dispose();
   }
@@ -148,7 +166,15 @@ describe("texture→points orientation (T512) — asymmetric fixture, symmetric 
       groups: {},
     } as never as GraphDocument;
 
-    const samples = await renderAndRead(graph, "sim");
+    const samples = await renderAndRead(
+      graph,
+      "sim",
+      [
+        { name: "position", type: "vec3f" },
+        { name: "sample", type: "vec4f" },
+      ],
+      2,
+    );
     expect(samples[0]).toBe(1);
     expect(samples[4]).toBe(0);
   });

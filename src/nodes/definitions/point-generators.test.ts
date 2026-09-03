@@ -8,7 +8,7 @@ import {
   pointSphereNode,
   pointTorusNode,
 } from "./point-generators.ts";
-import { pointPairId } from "./points.ts";
+import { POINT_STORAGE_KEY, pointStorageId } from "./point-storage.ts";
 import { compileContext } from "./test-support.ts";
 
 /**
@@ -64,11 +64,22 @@ describe("point generator family (T298)", () => {
     expect(pass.uniforms["shape"]).toBe(3);
     expect(pass.uniforms["radius"]).toBe(2);
     // A generator only writes — it never reads a previous frame, so there is no in_*.
+    // T1076: it writes the position REGION of its ONE packed pair; a one-attribute
+    // producer puts it at offset 0, and the region is 16 B × 500 points.
     expect(pass.buffers).toEqual([
-      { binding: "out_position", resourceId: pointPairId("gen", "position"), half: "write" },
+      {
+        binding: "out_position",
+        resourceId: pointStorageId("gen"),
+        half: "write",
+        offset: 0,
+        bytes: 16 * 500,
+      },
     ]);
+    /* The packed allocation is `array<u32>` words, PADDED to the 256-byte alignment a
+       region base must satisfy: 16 B × 500 = 8000 B rounds to 8192 B = 2048 words. That
+       padding is what lets any attribute of any schema be bound at its own offset. */
     expect(result.scratch).toEqual([
-      { key: "position", kind: "bufferPair", stride: 16, capacity: 500 },
+      { key: POINT_STORAGE_KEY, kind: "bufferPair", stride: 4, capacity: 2048 },
     ]);
   });
 
@@ -78,7 +89,15 @@ describe("point generator family (T298)", () => {
     );
     expect(sphere.pointsets).toEqual({
       out: {
-        pairs: { position: { pair: pointPairId("gen", "position"), half: "write", type: "vec3f" } },
+        pairs: {
+          position: {
+            buffer: pointStorageId("gen"),
+            half: "write",
+            offset: 0,
+            bytes: 16 * 500,
+            type: "vec3f",
+          },
+        },
         capacity: 500,
         topology: "points",
       },

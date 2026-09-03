@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { pointStorageId } from "../../nodes/definitions/point-storage.ts";
 import type { GraphNode } from "../../domain/types/graph.ts";
 import { example } from "./helpers.ts";
 
@@ -13,17 +14,22 @@ describe("E16 Murmuration", () => {
   it("chains sphere -> flock -> part -> birds by pair bindings", () => {
     const dispatchFor = (nodeId: string) =>
       plan.passes.find((pass) => pass.kind === "dispatch" && pass.nodeId === nodeId) as {
-        buffers?: ReadonlyArray<{ binding: string; resourceId: string }>;
+        buffers?: ReadonlyArray<{ binding: string; resourceId: string; half?: "read" | "write" }>;
       };
-    const bindingOf = (nodeId: string, name: string) =>
-      dispatchFor(nodeId).buffers?.find((buffer) => buffer.binding === name);
-    expect(bindingOf("flock", "in_position")?.resourceId).toBe("scratch:sphere:position");
-    expect(bindingOf("flock", "out_position")?.resourceId).toBe("scratch:flock:position");
-    expect(bindingOf("part", "in_position")?.resourceId).toBe("scratch:flock:position");
+    /* T1076: a kernel binds one PACKED buffer per producer it reads from, plus its own
+       write half — so the chain shows as which BUFFERS a link touches, in binding order,
+       rather than as one `in_<attribute>` per attribute. */
+    const buffersFor = (nodeId: string) =>
+      (dispatchFor(nodeId).buffers ?? []).map((buffer) => `${buffer.resourceId}:${buffer.half ?? "read"}`);
+    expect(buffersFor("flock")).toContain(`${pointStorageId("sphere")}:write`);
+    expect(buffersFor("flock")).toContain(`${pointStorageId("flock")}:write`);
+    expect(buffersFor("part")).toContain(`${pointStorageId("flock")}:write`);
+    // …and never two links back: `part` reads the flock, not the sphere.
+    expect(buffersFor("part")).not.toContain(`${pointStorageId("sphere")}:write`);
     const draw = plan.passes.find((pass) => pass.kind === "draw") as {
       buffers?: ReadonlyArray<{ resourceId: string }>;
     };
-    expect(draw.buffers?.[0]?.resourceId).toBe("scratch:part:position");
+    expect(draw.buffers?.[0]?.resourceId).toBe(pointStorageId("part"));
   });
 
   /**
@@ -32,14 +38,14 @@ describe("E16 Murmuration", () => {
    */
   it("keeps offset and velocity as the flock's own persistent pairs", () => {
     const dispatch = plan.passes.find((pass) => pass.kind === "dispatch" && pass.nodeId === "flock") as {
-      buffers?: ReadonlyArray<{ binding: string; resourceId: string }>;
+      buffers?: ReadonlyArray<{ binding: string; resourceId: string; half?: "read" | "write" }>;
     };
-    for (const name of ["offset", "velocity"]) {
-      expect(
-        dispatch.buffers?.find((buffer) => buffer.binding === `in_${name}`)?.resourceId,
-        name,
-      ).toBe(`scratch:flock:${name}`);
-    }
+    /* T1076: `offset` and `velocity` are regions of the flock's OWN packed pair, so what
+       shows in the plan is the flock binding its own READ half — the pre-frame state the
+       sphere cannot supply. An upstream-only kernel would bind no read half of its own. */
+    const halves = (dispatch.buffers ?? []).map((buffer) => `${buffer.resourceId}:${buffer.half ?? "read"}`);
+    expect(halves).toContain(`${pointStorageId("flock")}:read`);
+    expect(halves).toContain(`${pointStorageId("flock")}:write`);
   });
 
   /**
@@ -51,7 +57,7 @@ describe("E16 Murmuration", () => {
       buffers?: ReadonlyArray<{ binding: string; resourceId: string }>;
       uniforms?: Record<string, unknown>;
     };
-    expect(draw.buffers?.some((buffer) => buffer.resourceId === "scratch:flock:tint")).toBe(true);
+    expect(draw.buffers?.some((buffer) => buffer.resourceId === pointStorageId("flock"))).toBe(true);
     // Mapped means OUT of the uniform block (T364).
     expect(draw.uniforms?.["color"]).toBeUndefined();
   });

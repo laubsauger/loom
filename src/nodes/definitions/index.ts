@@ -189,9 +189,8 @@ export {
 export {
   DEFAULT_POINT_ATTRIBUTES,
   pointKernelNode,
-  pointKernelResources,
   pointNodeDefinitions,
-  pointPairId,
+  pointBufferId,
   renderPointsNode,
 } from "./points.ts";
 

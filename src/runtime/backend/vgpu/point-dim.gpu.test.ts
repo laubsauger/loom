@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readPointAttribute } from "../../../nodes/definitions/test-support.ts";
 
 import { compileGraph } from "../../../compiler/index.ts";
 import { createNodeRegistry } from "../../../nodes/registry/registry.ts";
@@ -30,10 +31,11 @@ import { nodeGpuHost, probeDawn } from "./node-gpu-host.ts";
  * for an off-by-one, a transposed i/j, or a stale grid to hide inside.
  */
 
-const ATTRIBUTES = JSON.stringify([
-  { name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] },
-  { name: "probe", type: "vec4f", default: [0, 0, 0, 0] },
-]);
+const PROBE_SCHEMA = [
+  { name: "position", type: "vec3f" as const, semantic: "position" as const, default: [0, 0, 0] },
+  { name: "probe", type: "vec4f" as const, default: [0, 0, 0, 0] },
+];
+const ATTRIBUTES = JSON.stringify(PROBE_SCHEMA);
 
 /**
  * The whole of `ctx.dim`, verbatim, into a per-point attribute. Note what is NOT here:
@@ -138,7 +140,17 @@ async function runProbe(graph: ReturnType<typeof gridGraph>): Promise<ReadonlyAr
       resolution: [16, 16],
     });
     expect(errors).toEqual([]);
-    const raw = new Float32Array(await backend.readBuffer("scratch:sim:probe"));
+    /* T1076: `probe` is a REGION of the kernel's packed buffer — the schema puts it
+       after `position`, so a read from byte 0 would hand back coordinates. */
+    const raw = (
+      await readPointAttribute(
+        backend.readBuffer,
+        "sim",
+        PROBE_SCHEMA,
+        graph.nodes.sim.parameters.capacity,
+        "probe",
+      )
+    ).floats;
     const slots: number[][] = [];
     for (let slot = 0; slot * 4 + 3 < raw.length; slot += 1) {
       slots.push([raw[slot * 4] as number, raw[slot * 4 + 1] as number, raw[slot * 4 + 2] as number, raw[slot * 4 + 3] as number]);

@@ -17,7 +17,66 @@ import {
   kernelReadsValueSlot,
   POINT_KERNEL_CONTRACT_VERSION,
   POINT_KERNEL_VALUE_SLOTS,
+  type KernelModuleRequest,
+  type KernelStorageMap,
+  type KernelStorageRegion,
+  type SpawnHookRequest,
 } from "./codegen.ts";
+import { packAttributes } from "./packing.ts";
+
+/**
+ * T1076: the addressing table a producing NODE hands codegen — its own packed pair, read
+ * half in, write half out. Codegen cannot compute this itself: a processor reads its
+ * UPSTREAM's regions for shared attributes (T401), so the layout rides the edge.
+ *
+ * Written here rather than imported from a node so this stays a test of codegen: what the
+ * module must do with a region table, not what one particular node puts in it.
+ */
+const TEST_CAPACITY = 1024;
+
+function ownStorage(
+  attributes: ReadonlyArray<PointAttributeSchema>,
+  writes: ReadonlyArray<string>,
+  options: { readonly inPlace?: boolean } = {},
+): KernelStorageMap {
+  const layout = packAttributes(attributes, TEST_CAPACITY);
+  if (!layout.ok) throw new Error(layout.errors.join("; "));
+  const at = (name: string, group: string): KernelStorageRegion => {
+    const region = layout.byName.get(name);
+    if (region === undefined) throw new Error(`no packed region for "${name}"`);
+    return { group, offset: region.offset };
+  };
+  const reads: Record<string, KernelStorageRegion> = {};
+  const written: Record<string, KernelStorageRegion> = {};
+  for (const attribute of attributes) reads[attribute.name] = at(attribute.name, "own:read");
+  for (const name of writes) {
+    written[name] = at(name, options.inPlace === true ? "own:read" : "own:write");
+  }
+  return { reads, writes: written };
+}
+
+/** `generateKernelModule` with the default single-producer storage map filled in. */
+function kernelModule(
+  request: Omit<KernelModuleRequest, "storage"> & { readonly storage?: KernelStorageMap },
+): ReturnType<typeof generateKernelModule> {
+  return generateKernelModule({
+    ...request,
+    storage: request.storage ?? ownStorage(request.attributes, request.writes),
+  });
+}
+
+/** `generateSpawnHookModule` with the in-place storage map filled in (T339). */
+function spawnHookModule(
+  request: Omit<SpawnHookRequest, "storage"> & { readonly storage?: KernelStorageMap },
+): ReturnType<typeof generateSpawnHookModule> {
+  const shaped = request.attributes
+    .filter((attribute) => attribute.name !== request.flagsAttribute)
+    .map((attribute) => attribute.name);
+  return generateSpawnHookModule({
+    ...request,
+    storage: request.storage ?? ownStorage(request.attributes, shaped, { inPlace: true }),
+  });
+}
 
 /**
  * T117 — the attribute→WGSL codegen module, tested as the separate unit the spec made
@@ -79,7 +138,7 @@ describe("schema validation (§V72, §V73)", () => {
 
 describe("generated kernel module", () => {
   const build = () =>
-    generateKernelModule({
+    kernelModule({
       attributes: SCHEMA,
       reads: ["position", "velocity"],
       writes: ["position", "velocity"],
@@ -91,26 +150,33 @@ describe("generated kernel module", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    // Written attributes bind an in/out pair; untouched ones ("life", "id") bind nothing.
-    expect(result.buffers.map((binding) => binding.variable)).toEqual([
-      "in_position",
-      "in_velocity",
-      "out_position",
-      "out_velocity",
-    ]);
-    expect(result.buffers.map((binding) => binding.binding)).toEqual([1, 2, 3, 4]);
+    /* T1076: TWO bindings, not four — this node's packed read half and its write half.
+       That is the whole point: the count is the number of BUFFERS the kernel touches,
+       independent of how many attributes live in them. */
+    expect(result.buffers.map((binding) => binding.variable)).toEqual(["pk_0", "pk_1"]);
+    expect(result.buffers.map((binding) => binding.binding)).toEqual([1, 2]);
+    expect(result.buffers.map((binding) => binding.access)).toEqual(["read", "read_write"]);
+    expect(result.buffers.map((binding) => binding.group)).toEqual(["own:read", "own:write"]);
 
     expect(result.wgsl).toContain("struct Point {\n  position: vec3f,\n  velocity: vec3f,\n};");
     expect(result.wgsl).toContain("if (index >= kernelFrame.count)");
-    expect(result.wgsl).toContain("p.position = in_position[index];");
-    expect(result.wgsl).toContain("out_velocity[index] = q.velocity;");
-    expect(result.wgsl).not.toContain("in_life");
+    expect(result.wgsl).toContain("p.position = pointLoad_position(index);");
+    expect(result.wgsl).toContain("pointStore_velocity(index, q.velocity);");
+    /* The offsets are the SCHEMA's, hand-checkable: position at word 0, velocity one
+       whole region later (16 B × 1024 points = 16384 B = 4096 words), both at the
+       vec3f stride of 4 words. Get this wrong and every point reads its neighbour's
+       attribute, which renders as a plausible picture of the wrong data. */
+    expect(result.wgsl).toContain("fn pointLoad_position(slot: u32) -> vec3f {\n  let o = 0u + slot * 4u;");
+    expect(result.wgsl).toContain("fn pointLoad_velocity(slot: u32) -> vec3f {\n  let o = 4096u + slot * 4u;");
+    // Untouched attributes ("life", "id") get no accessor at all, so they cost nothing.
+    expect(result.wgsl).not.toContain("pointLoad_life");
+    expect(result.wgsl).not.toContain("pointStore_id");
     expect(result.contractVersion).toBe(POINT_KERNEL_CONTRACT_VERSION);
   });
 
   it("is deterministic: the same request generates byte-identical WGSL", () => {
     const first = build();
-    const second = generateKernelModule({
+    const second = kernelModule({
       attributes: SCHEMA,
       // Different declaration order in reads/writes must not change the output.
       reads: ["velocity", "position"],
@@ -132,7 +198,7 @@ describe("generated kernel module", () => {
   });
 
   it("a written attribute is loaded too, so kernels can accumulate", () => {
-    const result = generateKernelModule({
+    const result = kernelModule({
       attributes: SCHEMA,
       reads: [],
       writes: ["life"],
@@ -144,12 +210,17 @@ describe("generated kernel module", () => {
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.wgsl).toContain("p.life = in_life[index];");
-    expect(result.wgsl).toContain("out_life[index] = q.life;");
+    expect(result.wgsl).toContain("p.life = pointLoad_life(index);");
+    expect(result.wgsl).toContain("pointStore_life(index, q.life);");
+    /* An f32 rides at its natural 4-byte stride — one word per point — after the two
+       vec3f regions (2 × 16384 B = 8192 words). The scalar case is what decided the
+       packed element type (T1076): a uniform vec4 stride would cost this attribute four
+       times its own width. */
+    expect(result.wgsl).toContain("fn pointLoad_life(slot: u32) -> f32 {\n  let o = 8192u + slot * 1u;");
   });
 
   it("rejects unknown attributes, missing writes, a bad signature and a bad workgroup size", () => {
-    const missingAttribute = generateKernelModule({
+    const missingAttribute = kernelModule({
       attributes: SCHEMA,
       reads: ["nope"],
       writes: ["position"],
@@ -157,7 +228,7 @@ describe("generated kernel module", () => {
     });
     expect(missingAttribute.ok).toBe(false);
 
-    const writesNothing = generateKernelModule({
+    const writesNothing = kernelModule({
       attributes: SCHEMA,
       reads: ["position"],
       writes: [],
@@ -165,7 +236,7 @@ describe("generated kernel module", () => {
     });
     expect(writesNothing.ok).toBe(false);
 
-    const badSignature = generateKernelModule({
+    const badSignature = kernelModule({
       attributes: SCHEMA,
       reads: [],
       writes: ["position"],
@@ -176,7 +247,7 @@ describe("generated kernel module", () => {
       expect(badSignature.errors[0]).toContain("fn process(p: Point, ctx: PointCtx) -> Point");
     }
 
-    const badWorkgroup = generateKernelModule({
+    const badWorkgroup = kernelModule({
       attributes: SCHEMA,
       reads: [],
       writes: ["position"],
@@ -196,7 +267,7 @@ describe("group predicate (T300)", () => {
   };
 
   it("gates process behind the predicate; non-members pass through byte-identical", () => {
-    const module = generateKernelModule({ ...request, group: "p.position.y > 0.0" });
+    const module = kernelModule({ ...request, group: "p.position.y > 0.0" });
     if (!module.ok) throw new Error(module.errors.join("; "));
     expect(module.wgsl).toContain("fn groupMatch(p: Point, ctx: PointCtx) -> bool {\n  return (p.position.y > 0.0);");
     expect(module.wgsl).toContain("if (groupMatch(p, ctx)) {");
@@ -205,8 +276,8 @@ describe("group predicate (T300)", () => {
   });
 
   it("generates EXACTLY the v1 text with no group — existing pass signatures stand", () => {
-    const bare = generateKernelModule(request);
-    const empty = generateKernelModule({ ...request, group: "   " });
+    const bare = kernelModule(request);
+    const empty = kernelModule({ ...request, group: "   " });
     if (!bare.ok || !empty.ok) throw new Error("generation failed");
     expect(empty.wgsl).toBe(bare.wgsl);
     expect(bare.wgsl).toContain("let q = process(p, ctx);");
@@ -264,7 +335,7 @@ describe("the pointer in PointCtx (T367)", () => {
 }`;
 
   it("declares the member in BOTH structs and passes it, for a kernel that names it", () => {
-    const module = generateKernelModule({ ...request, kernel: POINTER_KERNEL });
+    const module = kernelModule({ ...request, kernel: POINTER_KERNEL });
     if (!module.ok) throw new Error(module.errors.join("; "));
     expect(module.usesPointer).toBe(true);
     // The uniform block carries it LAST: count ends the block at 20 bytes and a vec4f
@@ -277,14 +348,14 @@ describe("the pointer in PointCtx (T367)", () => {
   it("a GROUP predicate over the pointer brings the member in on its own", () => {
     // The predicate is compiled into the same module and reads the same ctx, so the
     // member has to follow the group even when `process` never mentions it.
-    const module = generateKernelModule({ ...request, group: "ctx.pointer.z > 0.5" });
+    const module = kernelModule({ ...request, group: "ctx.pointer.z > 0.5" });
     if (!module.ok) throw new Error(module.errors.join("; "));
     expect(module.usesPointer).toBe(true);
     expect(module.wgsl).toContain("pointer: vec4f,");
   });
 
   it("generates EXACTLY the pre-T367 text for a kernel that does not name it (§V309)", () => {
-    const module = generateKernelModule(request);
+    const module = kernelModule(request);
     if (!module.ok) throw new Error(module.errors.join("; "));
     expect(module.usesPointer).toBe(false);
     expect(module.wgsl).not.toContain("pointer");
@@ -344,7 +415,7 @@ describe("the grid in PointCtx (T472)", () => {
 }`;
 
   it("bakes the EDGE's cols and rows, and derives the cell, for a kernel that names it", () => {
-    const module = generateKernelModule({ ...request, kernel: DIM_KERNEL, dim: { cols: 64, rows: 48 } });
+    const module = kernelModule({ ...request, kernel: DIM_KERNEL, dim: { cols: 64, rows: 48 } });
     if (!module.ok) throw new Error(module.errors.join("; "));
     expect(module.wgsl).toContain("struct PointDim {");
     expect(module.wgsl).toContain("  dim: PointDim,\n};");
@@ -356,7 +427,7 @@ describe("the grid in PointCtx (T472)", () => {
   });
 
   it("follows the edge, so a different grid generates a different kernel", () => {
-    const wide = generateKernelModule({ ...request, kernel: DIM_KERNEL, dim: { cols: 128, rows: 48 } });
+    const wide = kernelModule({ ...request, kernel: DIM_KERNEL, dim: { cols: 128, rows: 48 } });
     if (!wide.ok) throw new Error(wide.errors.join("; "));
     expect(wide.wgsl).toContain("PointDim(128u, 48u, index % 128u, index / 128u));");
   });
@@ -364,14 +435,14 @@ describe("the grid in PointCtx (T472)", () => {
   it("a GROUP predicate over the grid brings the member in on its own", () => {
     // The predicate compiles into the same module and reads the same ctx, so the member
     // has to follow the group even when `process` never mentions it.
-    const module = generateKernelModule({ ...request, group: "ctx.dim.j > 0u", dim: { cols: 8, rows: 8 } });
+    const module = kernelModule({ ...request, group: "ctx.dim.j > 0u", dim: { cols: 8, rows: 8 } });
     if (!module.ok) throw new Error(module.errors.join("; "));
     expect(module.wgsl).toContain("dim: PointDim,");
     expect(module.wgsl).toContain("PointDim(8u, 8u, index % 8u, index / 8u));");
   });
 
   it("REFUSES by name when the point set publishes no grid, rather than handing over zeros", () => {
-    const module = generateKernelModule({ ...request, kernel: DIM_KERNEL });
+    const module = kernelModule({ ...request, kernel: DIM_KERNEL });
     expect(module.ok).toBe(false);
     if (module.ok) throw new Error("expected a refusal");
     // §V288: the message names what is missing AND the route to having it.
@@ -381,13 +452,13 @@ describe("the grid in PointCtx (T472)", () => {
   });
 
   it("refuses a group predicate over the grid on a gridless point set too", () => {
-    const module = generateKernelModule({ ...request, group: "ctx.dim.i == 0u" });
+    const module = kernelModule({ ...request, group: "ctx.dim.i == 0u" });
     expect(module.ok).toBe(false);
   });
 
   it("generates EXACTLY the pre-T472 text for a kernel that does not name it (§V309)", () => {
     // Supplied WITH a grid: the edge offering one must not be enough to change a byte.
-    const module = generateKernelModule({ ...request, dim: { cols: 64, rows: 64 } });
+    const module = kernelModule({ ...request, dim: { cols: 64, rows: 64 } });
     if (!module.ok) throw new Error(module.errors.join("; "));
     expect(module.wgsl).not.toContain("dim");
     expect(module.wgsl).not.toContain("PointDim");
@@ -405,7 +476,7 @@ describe("the grid in PointCtx (T472)", () => {
       "  let ctx = PointCtx(index, kernelFrame.count, kernelFrame.timeSeconds, kernelFrame.deltaSeconds, kernelFrame.frameIndex);",
     );
     // And it is the SAME text a caller who never heard of T472 gets.
-    const unaware = generateKernelModule(request);
+    const unaware = kernelModule(request);
     if (!unaware.ok) throw new Error(unaware.errors.join("; "));
     expect(module.wgsl).toBe(unaware.wgsl);
   });
@@ -416,7 +487,7 @@ describe("the grid in PointCtx (T472)", () => {
   q.position = vec3f(ctx.pointer.x, f32(ctx.dim.i), f32(ctx.dim.j));
   return q;
 }`;
-    const module = generateKernelModule({ ...request, kernel: both, dim: { cols: 16, rows: 4 } });
+    const module = kernelModule({ ...request, kernel: both, dim: { cols: 16, rows: 4 } });
     if (!module.ok) throw new Error(module.errors.join("; "));
     expect(module.usesPointer).toBe(true);
     // The pointer keeps its place in the uniform block; the grid is not in the block at
@@ -456,7 +527,7 @@ describe("the value graph in PointCtx (T479)", () => {
 }`;
 
   it("declares only the slots the kernel names, in both structs and the constructor", () => {
-    const module = generateKernelModule({ ...request, kernel: VALUE_KERNEL });
+    const module = kernelModule({ ...request, kernel: VALUE_KERNEL });
     if (!module.ok) throw new Error(module.errors.join("; "));
     // PER-SLOT, not all four: a kernel reading one slot carries one f32.
     expect(module.usesValues).toEqual([2]);
@@ -473,21 +544,21 @@ describe("the value graph in PointCtx (T479)", () => {
   q.position += vec3f(ctx.value3, ctx.value1, ctx.value3) * ctx.value4;
   return q;
 }`;
-    const module = generateKernelModule({ ...request, kernel: many });
+    const module = kernelModule({ ...request, kernel: many });
     if (!module.ok) throw new Error(module.errors.join("; "));
     expect(module.usesValues).toEqual([1, 3, 4]);
     expect(module.wgsl).toContain("kernelFrame.frameIndex, kernelFrame.value1, kernelFrame.value3, kernelFrame.value4);");
   });
 
   it("a GROUP predicate over a slot brings it in on its own", () => {
-    const module = generateKernelModule({ ...request, group: "p.position.y > ctx.value1" });
+    const module = kernelModule({ ...request, group: "p.position.y > ctx.value1" });
     if (!module.ok) throw new Error(module.errors.join("; "));
     expect(module.usesValues).toEqual([1]);
     expect(module.wgsl).toContain("value1: f32,");
   });
 
   it("REFUSES an ordinal outside the declared slots by name, not by Dawn (§V288)", () => {
-    const module = generateKernelModule({
+    const module = kernelModule({
       ...request,
       kernel: VALUE_KERNEL.replace("ctx.value2", "ctx.value9"),
     });
@@ -498,7 +569,7 @@ describe("the value graph in PointCtx (T479)", () => {
   });
 
   it("generates EXACTLY the pre-T479 text for a kernel that names no slot (§V309)", () => {
-    const module = generateKernelModule(request);
+    const module = kernelModule(request);
     if (!module.ok) throw new Error(module.errors.join("; "));
     expect(module.usesValues).toEqual([]);
     // Not a bare "value" — the RNG helper's own parameter is called that. The claim is
@@ -521,7 +592,7 @@ describe("the value graph in PointCtx (T479)", () => {
     // module never declared writes a uniform nothing reads, and an inactive one hides a
     // slot the kernel is really using (§V220/§V360).
     for (let slot = 1; slot <= POINT_KERNEL_VALUE_SLOTS; slot += 1) {
-      const module = generateKernelModule({ ...request, kernel: VALUE_KERNEL });
+      const module = kernelModule({ ...request, kernel: VALUE_KERNEL });
       if (!module.ok) throw new Error(module.errors.join("; "));
       expect(kernelReadsValueSlot(slot, VALUE_KERNEL, ""), `slot ${slot}`).toBe(
         module.usesValues.includes(slot),
@@ -535,7 +606,7 @@ describe("the value graph in PointCtx (T479)", () => {
   q.velocity = q.velocity * ctx.value4;
   return q;
 }`;
-    const module = generateSpawnHookModule({
+    const module = spawnHookModule({
       attributes: [...SCHEMA, { name: "flags", type: "u32", default: [1] }],
       flagsAttribute: "flags",
       hook,
@@ -545,7 +616,7 @@ describe("the value graph in PointCtx (T479)", () => {
     expect(module.wgsl).toContain("value4: f32,");
     expect(module.wgsl).toContain("kernelFrame.frameIndex, kernelFrame.value4);");
 
-    const plain = generateSpawnHookModule({
+    const plain = spawnHookModule({
       attributes: [...SCHEMA, { name: "flags", type: "u32", default: [1] }],
       flagsAttribute: "flags",
       hook: hook.replace("* ctx.value4", "* 2.0"),
@@ -564,7 +635,7 @@ describe("the advection FIELD (T477, §V288/§V309)", () => {
 }`;
 
   it("a kernel that samples fieldAt with a field wired gets the binding and the helper", () => {
-    const module = generateKernelModule({
+    const module = kernelModule({
       attributes: SCHEMA,
       reads: ["position", "velocity"],
       writes: ["position", "velocity"],
@@ -585,7 +656,7 @@ describe("the advection FIELD (T477, §V288/§V309)", () => {
   });
 
   it("a kernel that samples fieldAt with NOTHING wired is refused by name", () => {
-    const module = generateKernelModule({
+    const module = kernelModule({
       attributes: SCHEMA,
       reads: ["position", "velocity"],
       writes: ["position", "velocity"],
@@ -598,7 +669,7 @@ describe("the advection FIELD (T477, §V288/§V309)", () => {
   });
 
   it("a wired field an incurious kernel never samples costs nothing (§V309)", () => {
-    const module = generateKernelModule({
+    const module = kernelModule({
       attributes: SCHEMA,
       reads: ["position", "velocity"],
       writes: ["position", "velocity"],
@@ -636,7 +707,7 @@ describe("pointAt — the neighbour read (T1070, §V288/§V309)", () => {
 }`;
 
   it("hands back the SAME struct p is, loaded from the same pre-frame half", () => {
-    const module = generateKernelModule({
+    const module = kernelModule({
       attributes: SCHEMA,
       reads: ["position", "velocity"],
       writes: ["position"],
@@ -647,13 +718,28 @@ describe("pointAt — the neighbour read (T1070, §V288/§V309)", () => {
     // THE half, not merely A load: `in_*` is where `p` itself comes from, so every reader
     // sees last frame's value whatever order the workgroups ran in. `out_*` here would be
     // Gauss-Seidel with a scheduling-dependent answer.
-    expect(module.wgsl).toContain("n.position = in_position[slot];");
-    expect(module.wgsl).toContain("n.velocity = in_velocity[slot];");
-    expect(module.wgsl).not.toContain("out_position[slot]");
+    expect(module.wgsl).toContain("n.position = pointLoad_position(slot);");
+    expect(module.wgsl).toContain("n.velocity = pointLoad_velocity(slot);");
+    /* THE half, structurally: every LOAD accessor reads the module's read-half binding
+       (`pk_0`) and every STORE writes the write half (`pk_1`), so `pointAt` cannot see a
+       neighbour that has already run this frame. Reading the write half is exactly the
+       order-dependent answer §V44 forbids. */
+    const loadBodies = [...module.wgsl.matchAll(/fn pointLoad_\w+[^}]+}/g)].map((m) => m[0]);
+    expect(loadBodies).toHaveLength(2);
+    for (const body of loadBodies) {
+      expect(body).toContain("pk_0[");
+      expect(body).not.toContain("pk_1[");
+    }
+    // One store: this kernel writes `position` alone, so `velocity` costs a load and no
+    // more — the same §V309 frugality the per-attribute bindings used to give.
+    const storeBodies = [...module.wgsl.matchAll(/fn pointStore_\w+[^}]+}/g)].map((m) => m[0]);
+    expect(storeBodies).toHaveLength(1);
+    expect(storeBodies[0]).toContain("fn pointStore_position");
+    expect(storeBodies[0]).toContain("pk_1[");
     // One list read twice: the accessor loads exactly what `main` loads into `p`, so the
     // two cannot come to disagree about what a Point is.
-    const accessorAttributes = [...module.wgsl.matchAll(/n\.(\w+) = in_/g)].map((m) => m[1]);
-    const mainAttributes = [...module.wgsl.matchAll(/ {2}p\.(\w+) = in_/g)].map((m) => m[1]);
+    const accessorAttributes = [...module.wgsl.matchAll(/n\.(\w+) = pointLoad_/g)].map((m) => m[1]);
+    const mainAttributes = [...module.wgsl.matchAll(/ {2}p\.(\w+) = pointLoad_/g)].map((m) => m[1]);
     expect(accessorAttributes).toEqual(mainAttributes);
   });
 
@@ -663,8 +749,8 @@ describe("pointAt — the neighbour read (T1070, §V288/§V309)", () => {
       reads: ["position", "velocity"],
       writes: ["position"],
     };
-    const plain = generateKernelModule({ ...request, kernel: GRAVITY_KERNEL });
-    const coupled = generateKernelModule({ ...request, kernel: laplacianKernel });
+    const plain = kernelModule({ ...request, kernel: GRAVITY_KERNEL });
+    const coupled = kernelModule({ ...request, kernel: laplacianKernel });
     if (!plain.ok || !coupled.ok) throw new Error("both modules should generate");
     expect(coupled.buffers).toEqual(plain.buffers);
     // The uniform block is what the emitting node must mirror by name; a member it gained
@@ -674,7 +760,7 @@ describe("pointAt — the neighbour read (T1070, §V288/§V309)", () => {
   });
 
   it("a kernel that never names it generates byte-identical WGSL (§V309)", () => {
-    const module = generateKernelModule({
+    const module = kernelModule({
       attributes: SCHEMA,
       reads: ["position", "velocity"],
       writes: ["position", "velocity"],
@@ -688,7 +774,7 @@ describe("pointAt — the neighbour read (T1070, §V288/§V309)", () => {
   });
 
   it("a GROUP predicate that reads a neighbour brings the accessor in on its own", () => {
-    const module = generateKernelModule({
+    const module = kernelModule({
       attributes: SCHEMA,
       reads: ["position", "velocity"],
       writes: ["position"],
@@ -700,7 +786,7 @@ describe("pointAt — the neighbour read (T1070, §V288/§V309)", () => {
   });
 
   it("REFUSES on a lifecycle kernel by name — the flags word could only be invented", () => {
-    const module = generateKernelModule({
+    const module = kernelModule({
       attributes: [...SCHEMA, { name: "flags", type: "u32", default: [0] }],
       reads: ["position"],
       writes: ["position", "flags"],
@@ -714,7 +800,7 @@ describe("pointAt — the neighbour read (T1070, §V288/§V309)", () => {
   });
 
   it("REFUSES in a SPAWN HOOK by name — the buffers there are mid-update", () => {
-    const module = generateSpawnHookModule({
+    const module = spawnHookModule({
       attributes: [...SCHEMA, { name: "flags", type: "u32", default: [0] }],
       flagsAttribute: "flags",
       hook: `fn spawn(child: Point, ctx: PointCtx) -> Point {
@@ -745,7 +831,7 @@ describe("ctx.firstRun (T510, §V309)", () => {
   };
 
   it("declares the member exactly when the kernel names it", () => {
-    const module = generateKernelModule({
+    const module = kernelModule({
       ...base,
       kernel: "fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  if (ctx.firstRun == 1u) { q.position = vec3f(0.0); }\n  return q;\n}",
     });
@@ -757,14 +843,14 @@ describe("ctx.firstRun (T510, §V309)", () => {
 
   it("a kernel that never names it generates byte-identical WGSL (§V309)", () => {
     const kernel = "fn process(p: Point, ctx: PointCtx) -> Point {\n  return p;\n}";
-    const module = generateKernelModule({ ...base, kernel });
+    const module = kernelModule({ ...base, kernel });
     if (!module.ok) throw new Error(module.errors.join(", "));
     expect(module.usesFirstRun).toBe(false);
     expect(module.wgsl).not.toContain("firstRun");
   });
 
   it("the GROUP predicate can declare it when the kernel does not", () => {
-    const module = generateKernelModule({
+    const module = kernelModule({
       ...base,
       kernel: "fn process(p: Point, ctx: PointCtx) -> Point {\n  return p;\n}",
       group: "ctx.firstRun == 0u",
@@ -795,8 +881,8 @@ describe("T587 — the wrapping clock is named, not left to bite", () => {
   };
   const kernelOf = (body: string) =>
     `fn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n${body}\n  return q;\n}`;
-  const noticesOf = (request: Parameters<typeof generateKernelModule>[0]) => {
-    const module = generateKernelModule(request);
+  const noticesOf = (request: Parameters<typeof kernelModule>[0]) => {
+    const module = kernelModule(request);
     if (!module.ok) throw new Error(module.errors.join(", "));
     return module.notices;
   };
@@ -869,14 +955,14 @@ describe("T587 — the wrapping clock is named, not left to bite", () => {
   q.position.x = sin(ctx.time);
   return q;
 }`;
-    const module = generateSpawnHookModule({ attributes: SCHEMA, flagsAttribute: "id", hook });
+    const module = spawnHookModule({ attributes: SCHEMA, flagsAttribute: "id", hook });
     if (!module.ok) throw new Error(module.errors.join(", "));
     expect(module.notices).toHaveLength(1);
     expect((module.notices[0] as { message: string }).message).toContain("spawn hook");
   });
 
   it("a notice is not a refusal — the module still compiles and still generates its pass", () => {
-    const module = generateKernelModule({ ...base, kernel: kernelOf("  q.position.x = sin(ctx.time);") });
+    const module = kernelModule({ ...base, kernel: kernelOf("  q.position.x = sin(ctx.time);") });
     if (!module.ok) throw new Error(module.errors.join(", "));
     expect(module.wgsl).toContain("fn main");
     expect(module.notices).toHaveLength(1);
@@ -890,8 +976,8 @@ describe("T587 — the wrapping clock is named, not left to bite", () => {
   it("emits byte-identical WGSL whether or not it carries a notice (§V309)", () => {
     const noticed = kernelOf("  q.position.x = ctx.time;");
     const declared = kernelOf("  // timeline-anchored: deliberate.\n  q.position.x = ctx.time;");
-    const wrapping = generateKernelModule({ ...base, kernel: noticed });
-    const anchored = generateKernelModule({ ...base, kernel: declared });
+    const wrapping = kernelModule({ ...base, kernel: noticed });
+    const anchored = kernelModule({ ...base, kernel: declared });
     if (!wrapping.ok || !anchored.ok) throw new Error("both should compile");
     expect(wrapping.notices).toHaveLength(1);
     expect(anchored.notices).toEqual([]);
@@ -915,7 +1001,7 @@ describe("T587 — the wrapping clock is named, not left to bite", () => {
  * for the kernel that is the comment the generated WGSL itself carries.
  */
 describe("B119 — the absFrame asymmetry is pinned and stated at both sites", () => {
-  const module = generateKernelModule({
+  const module = kernelModule({
     attributes: SCHEMA,
     reads: ["position", "id"],
     writes: ["position"],

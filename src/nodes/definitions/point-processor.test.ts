@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import { compileGraph } from "../../compiler/index.ts";
 import { createNodeRegistry } from "../registry/registry.ts";
 import { allNodeDefinitions } from "./index.ts";
-import { pointPairId } from "./points.ts";
+import { DEFAULT_POINT_ATTRIBUTES } from "./points.ts";
+import { pointStorageId } from "./point-storage.ts";
+import { packAttributes } from "../../points/packing.ts";
 import type { DispatchPassDescriptor, DrawPassDescriptor } from "../../runtime/backend/plan.ts";
 import type { GraphDocument, GraphNode } from "../../domain/types/graph.ts";
 
@@ -72,9 +74,6 @@ const kernelPass = (compiled: { passes: ReadonlyArray<unknown> }, nodeId: string
     (pass): pass is DispatchPassDescriptor => (pass as { id?: string }).id === `${nodeId}#${nodeId}:kernel`,
   ) as DispatchPassDescriptor;
 
-const bindingOf = (pass: DispatchPassDescriptor, name: string) =>
-  pass.buffers?.find((binding) => binding.binding === name);
-
 /** torus feeds a kernel feeds the renderer: the graph the owner could not draw. */
 function processorChain(kernels: number): GraphDocument {
   const capacity = 64 * 64; // the torus default: cols × rows
@@ -99,36 +98,48 @@ describe("pointKernel as a processor (T401, B57)", () => {
 
     const pass = kernelPass(compiled, "k1");
     expect(pass).toBeDefined();
-    // The upstream pair, the half holding THIS frame's data (the generator writes its
-    // "write" half every frame) — not this node's own last frame.
-    expect(bindingOf(pass, "in_position")).toEqual({
-      binding: "in_position",
-      resourceId: pointPairId("gen", "position"),
-      half: "write",
-    });
-    // Writes are the kernel's OWN — ownership follows the write (§V197).
-    expect(bindingOf(pass, "out_position")?.resourceId).toBe(pointPairId("k1", "position"));
-    // An attribute the upstream does not carry starts from this node's own state.
-    expect(bindingOf(pass, "in_velocity")?.resourceId).toBe(pointPairId("k1", "velocity"));
+    /* T1076: THREE storage buffers, whatever the schema's size — the upstream's packed
+       buffer at the half holding THIS frame's data (the generator writes its "write" half
+       every frame), this node's own read half for the attributes upstream does not carry,
+       and its own write half for the results. §V197's narrowing survives packing: it is
+       one binding PER PRODUCER now, not one per attribute. */
+    expect(pass.buffers?.map((binding) => `${binding.resourceId}:${binding.half}`)).toEqual([
+      `${pointStorageId("gen")}:write`,
+      `${pointStorageId("k1")}:read`,
+      `${pointStorageId("k1")}:write`,
+    ]);
+    // The kernel addresses regions INSIDE those buffers, so nothing is bound at an offset.
+    expect(pass.buffers?.every((binding) => binding.offset === undefined)).toBe(true);
 
     // And the renderer downstream draws the KERNEL's positions, not the generator's.
     const draw = compiled.passes.find(
       (pass): pass is DrawPassDescriptor => (pass as { nodeId?: string }).nodeId === "draw",
     ) as DrawPassDescriptor;
-    expect(draw.buffers?.[0]?.resourceId).toBe(pointPairId("k1", "position"));
+    expect(draw.buffers?.[0]?.resourceId).toBe(pointStorageId("k1"));
   });
 
   it("three-node chain: each link reads its immediate upstream — chaining composes (§V321)", () => {
     const compiled = compile(processorChain(2));
     expect(compiled.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
 
-    expect(bindingOf(kernelPass(compiled, "k1"), "in_position")?.resourceId).toBe(pointPairId("gen", "position"));
-    expect(bindingOf(kernelPass(compiled, "k2"), "in_position")?.resourceId).toBe(pointPairId("k1", "position"));
-    expect(bindingOf(kernelPass(compiled, "k2"), "out_position")?.resourceId).toBe(pointPairId("k2", "position"));
+    const bufferIds = (nodeId: string) =>
+      kernelPass(compiled, nodeId).buffers?.map((binding) => `${binding.resourceId}:${binding.half}`);
+    expect(bufferIds("k1")).toEqual([
+      `${pointStorageId("gen")}:write`,
+      `${pointStorageId("k1")}:read`,
+      `${pointStorageId("k1")}:write`,
+    ]);
+    /* k2 reads k1's buffer, never the generator's — each link reads its immediate
+       upstream. TWO bindings here, not three: k1 publishes k2's WHOLE schema, so k2 never
+       reaches for its own read half at all. */
+    expect(bufferIds("k2")).toEqual([
+      `${pointStorageId("k1")}:write`,
+      `${pointStorageId("k2")}:write`,
+    ]);
     const draw = compiled.passes.find(
       (pass): pass is DrawPassDescriptor => (pass as { nodeId?: string }).nodeId === "draw",
     ) as DrawPassDescriptor;
-    expect(draw.buffers?.[0]?.resourceId).toBe(pointPairId("k2", "position"));
+    expect(draw.buffers?.[0]?.resourceId).toBe(pointStorageId("k2"));
   });
 
   it("an attribute the schema does not declare passes through BY REFERENCE (§V197)", () => {
@@ -157,8 +168,30 @@ describe("pointKernel as a processor (T401, B57)", () => {
     const draw = compiled.passes.find(
       (pass): pass is DrawPassDescriptor => (pass as { nodeId?: string }).nodeId === "draw",
     ) as DrawPassDescriptor;
-    // The mapped colour binds the AUTHOR's tint pair — one buffer, zero copies.
-    expect(draw.buffers?.some((binding) => binding.resourceId === pointPairId("author", "tint"))).toBe(true);
+    /* The mapped colour binds the AUTHOR's tint REGION — one buffer, zero copies. The
+       OFFSET is what makes the claim: the author's schema is position then tint, so tint
+       starts one 16 B × 4096 region in. Binding the author's buffer at zero would colour
+       every instance by its own coordinates and look entirely plausible. */
+    const authorTint = packAttributes(
+      [
+        { name: "position", type: "vec3f", default: [0, 0, 0] },
+        { name: "tint", type: "vec4f", default: [1, 1, 1, 1] },
+      ],
+      4096,
+    );
+    if (!authorTint.ok) throw new Error(authorTint.errors.join("; "));
+    expect(draw.buffers).toContainEqual({
+      binding: "mapColors",
+      resourceId: pointStorageId("author"),
+      half: "write",
+      offset: authorTint.byName.get("tint")?.offset,
+      bytes: 16 * 4096,
+    });
+    // …while `positions` comes off the DOWNSTREAM kernel, which owns what it writes.
+    expect(draw.buffers?.[0]?.resourceId).toBe(pointStorageId("k"));
+    const downstream = packAttributes(DEFAULT_POINT_ATTRIBUTES, 4096);
+    if (!downstream.ok) throw new Error(downstream.errors.join("; "));
+    expect(draw.buffers?.[0]?.offset).toBe(downstream.byName.get("position")?.offset);
   });
 
   it("unconnected input compiles exactly as before — the port is optional (§V309)", () => {

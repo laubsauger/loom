@@ -58,8 +58,10 @@ export interface SamplerResourceDescriptor {
 /**
  * Storage buffer. Declared now, emitted from the P3a point slice onward (§V58, §V75).
  *
- * Point storage is structure-of-arrays — one buffer per attribute — so an operator binds
- * only the attributes it touches, and WGSL struct alignment stops being a source of bugs.
+ * Point storage is structure-of-arrays, and since T1076 every attribute of one producer is
+ * a REGION of one buffer rather than a buffer of its own: the same contiguous runs in the
+ * same order, addressed by `BufferBindingDescriptor.offset`. WGSL struct alignment stays
+ * out of it, and a kernel's binding count stops growing with the schema.
  */
 export interface BufferResourceDescriptor {
   readonly kind: "buffer";
@@ -199,6 +201,23 @@ export interface BufferBindingDescriptor {
   readonly binding: string;
   readonly resourceId: string;
   readonly half?: "read" | "write";
+  /**
+   * T1076: byte offset of the REGION this binding sees inside `resourceId`. Point storage
+   * is packed — every attribute of one producer in one buffer per half — so a consumer
+   * that still declares `array<vec3f>` binds one region rather than a whole buffer, and its
+   * WGSL is unchanged. Absent = the whole buffer from byte 0, which is every non-point
+   * binding.
+   *
+   * The offset is STATIC per compile (it comes from the schema and the capacity, both
+   * `compileTime`), which is what makes it safe to leave out of the bind-group cache key:
+   * vgpu identifies a `{buffer, offset, size}` binding by its BUFFER, so an offset that
+   * could change without the buffer changing would not invalidate the cache. Nothing here
+   * changes one without a recompile — but the structure key below carries it anyway, so a
+   * changed offset rebuilds the pass rather than relying on that argument holding.
+   */
+  readonly offset?: number;
+  /** T1076: bytes of the region, i.e. `stride × capacity`. Required whenever `offset` is. */
+  readonly bytes?: number;
 }
 
 export interface EffectPassDescriptor {
@@ -627,10 +646,22 @@ function readBufferBindings(value: unknown): ReadonlyArray<BufferBindingDescript
   const out: BufferBindingDescriptor[] = [];
   for (const entry of value) {
     if (!isRecord(entry)) return undefined;
-    const { binding, resourceId, half } = entry;
+    const { binding, resourceId, half, offset, bytes } = entry;
     if (typeof binding !== "string" || typeof resourceId !== "string") return undefined;
     if (half !== undefined && half !== "read" && half !== "write") return undefined;
-    out.push(half === undefined ? { binding, resourceId } : { binding, resourceId, half });
+    // T1076: a REGION binding carries both numbers or neither — an offset with no size
+    // would bind to the end of the packed buffer and read the next attribute past its own
+    // range, which is exactly the plausible-wrong answer this refuses to construct.
+    if (offset !== undefined || bytes !== undefined) {
+      if (!Number.isInteger(offset) || (offset as number) < 0) return undefined;
+      if (!Number.isInteger(bytes) || (bytes as number) < 1) return undefined;
+    }
+    out.push({
+      binding,
+      resourceId,
+      ...(half === undefined ? {} : { half }),
+      ...(offset === undefined ? {} : { offset: offset as number, bytes: bytes as number }),
+    });
   }
   return out;
 }
@@ -1067,7 +1098,7 @@ function passKeyParts(pass: PassDescriptor): unknown[] {
           typeof pass.workgroups === "object" && "indirect" in pass.workgroups
             ? ["indirect", pass.workgroups.indirect]
             : pass.workgroups,
-          (pass.buffers ?? []).map((b) => [b.binding, b.resourceId, b.half ?? "read"]),
+          (pass.buffers ?? []).map((b) => [b.binding, b.resourceId, b.half ?? "read", b.offset ?? 0, b.bytes ?? 0]),
           (pass.textures ?? []).map((t) => [t.binding, t.resourceId, t.sampled ?? "filtered", t.array === true]),
           Object.keys(pass.uniforms ?? {}).sort(),
           pass.uniformBinding ?? null,
@@ -1080,7 +1111,7 @@ function passKeyParts(pass: PassDescriptor): unknown[] {
           pass.target,
           pass.topology,
           typeof pass.instances === "object" ? ["indirect", pass.instances.indirect] : "literal",
-          (pass.buffers ?? []).map((b) => [b.binding, b.resourceId, b.half ?? "read"]),
+          (pass.buffers ?? []).map((b) => [b.binding, b.resourceId, b.half ?? "read", b.offset ?? 0, b.bytes ?? 0]),
           (pass.textures ?? []).map((t) => [t.binding, t.resourceId, t.sampled ?? "filtered", t.array === true]),
           Object.keys(pass.uniforms ?? {}).sort(),
           pass.uniformBinding ?? null,

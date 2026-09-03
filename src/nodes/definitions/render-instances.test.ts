@@ -5,8 +5,8 @@ import { INSTANCE_SHAPES_WGSL } from "../shaders/scene-render.wgsl.ts";
 import { viewProjection } from "../../domain/geometry/camera.ts";
 import { INSTANCE_VERTEX_COUNT } from "../shaders/render-instances.wgsl.ts";
 import { renderInstancesNode } from "./render-instances.ts";
-import { pointPairId } from "./points.ts";
-import { compileContext } from "./test-support.ts";
+import { pointStorageId } from "./point-storage.ts";
+import { compileContext, fixturePairs } from "./test-support.ts";
 
 /**
  * RenderInstances at the fixture level (T299): manifest, emission, the §V198 camera
@@ -23,6 +23,9 @@ type DrawShape = {
   uniformBinding: string;
 };
 
+/** T1076: a one-attribute producer's packed payload, for fixtures that only draw. */
+const POSITION_ONLY = fixturePairs("gen", [{ name: "position", type: "vec3f" }], 64);
+
 describe("renderInstances — manifest and emission (T299)", () => {
   it("declares a depth attachment on its output — 3D needs a z-buffer (T295)", () => {
     expect(renderInstancesNode.depthOutputs).toEqual(["out"]);
@@ -30,9 +33,21 @@ describe("renderInstances — manifest and emission (T299)", () => {
     expect(input?.type.kind).toBe("pointset");
   });
 
-  it("emits one instanced draw off the edge map's position pair", () => {
+  it("emits one instanced draw off the edge map's position REGION", () => {
     const result = renderInstancesNode.compile(
-      compileContext({ nodeId: "draw", inputs: ["points"], sources: { points: "gen" }, parameters: { count: 300 } }),
+      compileContext({
+        nodeId: "draw",
+        inputs: ["points"],
+        sources: { points: "gen" },
+        // T1076: the payload, not a derived id — attributes have no buffers of their own.
+        pointsets: {
+          points: {
+            pairs: fixturePairs("gen", [{ name: "position", type: "vec3f" }], 300),
+            capacity: 300,
+          },
+        },
+        parameters: { count: 300 },
+      }),
     );
     expect(result.diagnostics ?? []).toEqual([]);
     const pass = result.passes[0] as DrawShape;
@@ -40,7 +55,13 @@ describe("renderInstances — manifest and emission (T299)", () => {
     expect(pass.instances).toBe(300);
     expect(pass.vertexCount).toBe(INSTANCE_VERTEX_COUNT);
     expect(pass.buffers).toEqual([
-      { binding: "positions", resourceId: pointPairId("gen", "position"), half: "write" },
+      {
+        binding: "positions",
+        resourceId: pointStorageId("gen"),
+        half: "write",
+        offset: 0,
+        bytes: 16 * 300,
+      },
     ]);
   });
 
@@ -51,6 +72,7 @@ describe("renderInstances — manifest and emission (T299)", () => {
         nodeId: "draw",
         inputs: ["points"],
         sources: { points: "gen" },
+        pointsets: { points: { pairs: POSITION_ONLY, capacity: 64 } },
         parameters,
         resolution: [640, 360],
       }),
@@ -71,6 +93,7 @@ describe("renderInstances — manifest and emission (T299)", () => {
         nodeId: "draw",
         inputs: ["points"],
         sources: { points: "gen" },
+        pointsets: { points: { pairs: POSITION_ONLY, capacity: 64 } },
         parameters: { shape: "octahedron", rotate: [90, 0, -180] },
       }),
     );
@@ -94,11 +117,15 @@ describe("renderInstances — manifest and emission (T299)", () => {
 describe("renderInstances — colour in map mode (T369)", () => {
   const edge = {
     points: {
-      pairs: {
-        position: { pair: "scratch:gen:position", half: "write" as const, type: "vec3f" },
-        tint: { pair: "scratch:gen:tint", half: "write" as const, type: "vec4f" },
-        pscale: { pair: "scratch:gen:pscale", half: "write" as const, type: "f32" },
-      },
+      pairs: fixturePairs(
+        "gen",
+        [
+          { name: "position", type: "vec3f" },
+          { name: "tint", type: "vec4f" },
+          { name: "pscale", type: "f32" },
+        ],
+        64,
+      ),
       capacity: 64,
       topology: "points",
     },
@@ -119,10 +146,14 @@ describe("renderInstances — colour in map mode (T369)", () => {
     const result = mapped({ attribute: "tint" });
     expect(result.diagnostics ?? []).toEqual([]);
     const pass = result.passes[0] as DrawShape & { shader: string };
+    /* T1076: the REGION — `tint` sits after `position` in the fixture's packed layout,
+       so binding from byte 0 would colour every instance by its own coordinates. */
     expect(pass.buffers).toContainEqual({
       binding: "mapColors",
-      resourceId: "scratch:gen:tint",
+      resourceId: pointStorageId("gen"),
       half: "write",
+      offset: 16 * 64,
+      bytes: 16 * 64,
     });
     // The struct and the record must agree exactly — vgpu writes by NAME, so a `color`
     // left in the record with no member is silently dropped and one with no record entry

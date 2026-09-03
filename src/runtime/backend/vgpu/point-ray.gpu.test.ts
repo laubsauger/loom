@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import { compileGraph } from "../../../compiler/index.ts";
 import { createNodeRegistry } from "../../../nodes/registry/registry.ts";
 import { allNodeDefinitions } from "../../../nodes/definitions/index.ts";
-import { pointPairId } from "../../../nodes/definitions/points.ts";
+import { RAY_ATTRIBUTES } from "../../../nodes/definitions/points.ts";
+import { pointStorageId } from "../../../nodes/definitions/point-storage.ts";
+import { pointRegionSlice } from "../../../nodes/definitions/test-support.ts";
 import { createVgpuBackend } from "./vgpu-backend.ts";
 import { nodeGpuHost, probeDawn } from "./node-gpu-host.ts";
 import type { GraphDocument } from "../../../domain/types/graph.ts";
@@ -93,10 +95,14 @@ describe("pointRay hits a flat field exactly (T483, §V147)", () => {
         resolution: [8, 8],
       });
 
-      const hits = new Float32Array(await backend.readBuffer(pointPairId("ray", "hit")));
-      const positions = new Float32Array(await backend.readBuffer(pointPairId("ray", "hitPosition")));
-      const normals = new Float32Array(await backend.readBuffer(pointPairId("ray", "hitNormal")));
-      const distances = new Float32Array(await backend.readBuffer(pointPairId("ray", "hitDistance")));
+      /* T1076: ONE readback of the ray node's packed buffer; each result is a region of
+         it, sliced by the same layout the node allocated with. */
+      const packed = await backend.readBuffer(pointStorageId("ray"));
+      const region = (name: string) => pointRegionSlice(packed, RAY_ATTRIBUTES, 4, name).floats;
+      const hits = region("hit");
+      const positions = region("hitPosition");
+      const normals = region("hitNormal");
+      const distances = region("hitDistance");
 
       // Point 0: origin (0, 2, 0), straight down onto y = 0.5. A flat surface makes
       // the secant EXACT: hit height 0.5, distance 1.5, normal straight up.

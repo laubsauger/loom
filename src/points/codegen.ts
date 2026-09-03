@@ -1,9 +1,12 @@
 import {
+  ATTRIBUTE_STRIDES,
   COMPONENT_COUNTS,
   validateAttributes,
   type PointAttributeSchema,
+  type PointAttributeType,
 } from "./attributes.ts";
 import { MAX_SPAWN_PER_PARENT } from "./lifecycle.ts";
+import { regionAccessorWgsl, regionStoreWgsl } from "./packing.ts";
 
 /**
  * The attribute→WGSL codegen module (T117) — named the TOP RISK of the P3a slice, which
@@ -11,9 +14,10 @@ import { MAX_SPAWN_PER_PARENT } from "./lifecycle.ts";
  * first point node.
  *
  * Given an attribute schema and a per-point kernel, it generates the complete compute
- * module: the `Point` struct assembled from per-attribute buffer loads, the read/write
- * buffer bindings (structure-of-arrays; written attributes get an in/out PAIR so a
- * kernel always reads the pre-frame value), the deterministic RNG (§V74: every random
+ * module: the `Point` struct assembled from region loads out of the producer's PACKED
+ * point buffer (T1076 — one binding per producer per half, never one per attribute; a
+ * written attribute still reads its pre-frame value from the read half), the deterministic
+ * RNG (§V74: every random
  * draw is `hash(seed, pointId, frameIndex, salt)` — same seed, same point, same frame,
  * same value, on every device), and the dispatch wrapper with its count guard.
  *
@@ -63,40 +67,58 @@ export const POINT_KERNEL_CONTRACT_VERSION = 1;
  * GPU-resident live-count guard and the packed flags word exposed as `alive` and
  * `spawnCount` Point fields (both write-only by construction).
  *
- * THE BINDING BUDGET, and the two named ways past it (documented per B33 — the limit
- * fails SILENTLY when exceeded, so the strategy must be written where the arithmetic
- * lives, not rediscovered):
+ * THE BINDING BUDGET, SETTLED (T1076). Baseline WebGPU guarantees 8 storage buffers per
+ * compute STAGE, and bind GROUPS do not raise it. This kernel used to spend 2·(n−1)+2 for
+ * n attributes incl. flags — the default schema landed exactly at 8 and one more attribute
+ * busted it, silently (B33). Attributes are REGIONS of one packed buffer now, so the count
+ * is 2 plus the live-count binding whatever n is, and the ceiling moved to the bytes one
+ * binding may carry (`points/packing.ts`).
  *
- * Baseline WebGPU guarantees 8 storage buffers per compute STAGE (bind GROUPS do not
- * raise the per-stage limit). The lifecycle kernel spends 2·(n−1)+2 for n attributes
- * incl. flags — the default schema lands exactly at 8, and one more attribute busts
- * it, which is why the spawn(parent) hook (2n+4 in one pass) is deferred. The paths:
- *
- *  1. REQUEST a higher limit at device creation: `maxStorageBuffersPerShaderStage`
- *     is a baseline DEFAULT, not a ceiling — most desktop adapters offer 10–64+.
- *     `initialize()` can pass requiredLimits from `adapter.limits` and the compiler's
- *     budget checks (T328) then validate against the REAL device limit instead of 8.
- *     This widens every kernel at once and is the right first move.
- *
- *  2. TWO-PASS spawn hook: children are copied first (chunked, fits), then an
- *     in-place `spawn(child: Point, ctx)` kernel runs over just the newborn range —
- *     the child arrives as its parent's copy, so inheritance is the initial value
- *     and the pass needs only n+2 bindings. Correct hook semantics regardless of
- *     limits; design it with T287's attribute qualifiers.
+ * The two escapes that used to be written here are therefore both retired: requesting a
+ * higher `maxStorageBuffersPerShaderStage` at device creation would have widened the wrong
+ * limit (and §V588's lesson is that a generous DEV device HIDES a baseline one), and the
+ * TWO-PASS spawn hook no longer needs to be two passes to fit. It stays two on its own
+ * merits: the child arrives as its parent's copy, so inheritance is the initial value
+ * rather than something a one-pass hook would have to invent (T339, T287).
  */
 export const ADVANCED_KERNEL_CONTRACT_VERSION = 2;
 
 export const DEFAULT_WORKGROUP_SIZE = 64;
 
+/**
+ * WHERE one attribute lives, as the emitting NODE knows it (T1076).
+ *
+ * `group` is opaque to codegen: attributes carrying the same key share ONE storage
+ * binding, and the node maps the key back to a resource id and a half. This is the seam
+ * §V197's by-reference narrowing needs — a processor reads its UPSTREAM's regions for
+ * shared attributes (T401), so the layout RIDES THE EDGE and codegen cannot compute its
+ * own offsets.
+ */
+export interface KernelStorageRegion {
+  readonly group: string;
+  /** Byte offset of the attribute's region inside that group's buffer. */
+  readonly offset: number;
+}
+
+/**
+ * The full addressing table for one generated module: where each touched attribute is
+ * READ from and where each written attribute is WRITTEN to. A group named by both is
+ * bound once, `read_write` — which is exactly the spawn hook, editing in place.
+ */
+export interface KernelStorageMap {
+  readonly reads: Readonly<Record<string, KernelStorageRegion>>;
+  readonly writes: Readonly<Record<string, KernelStorageRegion>>;
+}
+
 export interface PointBufferBinding {
-  /** Attribute this binding carries. */
-  readonly attribute: string;
-  /** WGSL variable name (`in_position`, `out_position`). */
+  /** WGSL variable name (`pk_0`, `pk_1`, `liveCount`). */
   readonly variable: string;
   readonly binding: number;
   readonly access: "read" | "read_write";
-  /** Written attributes bind an in/out pair; `live` is the lifecycle count buffer (T322). */
-  readonly role: "in" | "out" | "live";
+  /** "storage" = a packed point group; "live" = the lifecycle count buffer (T322). */
+  readonly role: "storage" | "live";
+  /** The group key the emitting node supplied. Absent on "live". */
+  readonly group?: string;
 }
 
 export interface KernelModuleRequest {
@@ -105,6 +127,17 @@ export interface KernelModuleRequest {
   readonly reads: ReadonlyArray<string>;
   /** Attribute names the kernel writes. Implicitly read too (the Point struct carries them in). */
   readonly writes: ReadonlyArray<string>;
+  /**
+   * T1076: where every touched attribute lives — which packed buffer GROUP and at what
+   * byte offset. Supplied by the emitting node because a processor reads its upstream's
+   * regions (T401) and the layout therefore rides the EDGE, not this module.
+   *
+   * Every attribute in `touched` needs a `reads` entry (except a lifecycle flags word,
+   * which is write-only by construction) and every written attribute needs a `writes`
+   * one; a gap is refused by name rather than generating a module that cannot address
+   * what its own `Point` declares.
+   */
+  readonly storage: KernelStorageMap;
   /** WGSL text containing `fn process(p: Point, ctx: PointCtx) -> Point`. */
   readonly kernel: string;
   readonly workgroupSize?: number;
@@ -168,10 +201,13 @@ export interface KernelModuleRequest {
 /**
  * §V588, enforced where the arithmetic is. Baseline WebGPU guarantees 8 storage buffers per
  * compute STAGE, and B33 is what happens when a kernel walks past it: the pipeline fails
- * SILENTLY. Every kernel — plain and lifecycle alike — spends exactly 2n bindings for n
- * attributes (the lifecycle variant trades the flags word's read binding for the live-count
- * read), so the ceiling is four attributes for a plain kernel and three plus the injected
- * flags for the advanced one.
+ * SILENTLY. Every kernel used to spend exactly 2n bindings for n attributes, so the ceiling
+ * was four for a plain kernel and three plus the injected flags for the advanced one.
+ *
+ * T1076 made the count independent of n — attributes are regions of one packed buffer per
+ * producer — so what this now catches is a kernel reading from too many distinct PRODUCERS
+ * at once (§V197's by-reference chain), and the attribute ceiling became a SIZE bound in
+ * `points/packing.ts`.
  *
  * Checked HERE rather than in the two node manifests because the count is the length of the
  * binding list this function just built — an arithmetic copy in a node is a second answer
@@ -688,37 +724,55 @@ export function generateKernelModule(request: KernelModuleRequest): KernelModule
   );
   const written = attributes.filter((attribute) => writes.includes(attribute.name));
 
-  const bindings: PointBufferBinding[] = [];
-  let nextBinding = 1; // binding 0 is the uniforms block
+  /* T1076: the addressing table, resolved into GROUPS. Attributes sharing a group share
+     ONE `array<u32>` binding — which is why the count below no longer grows with n. */
+  const readAt = (name: string): KernelStorageRegion | undefined => request.storage.reads[name];
+  const writeAt = (name: string): KernelStorageRegion | undefined => request.storage.writes[name];
+  const missing: string[] = [];
   for (const attribute of touched) {
-    // T322/T323: the flags word is WRITE-ONLY. Inside the guarded range a slot is
-    // alive BY CONSTRUCTION (compaction packed survivors below the live count) and
-    // last frame's spawnCount is meaningless, so reading back is redundant — and the
-    // saved binding is what keeps the default schema inside the baseline
-    // 8-storage-buffers-per-stage budget (§V24).
     if (attribute.name === lifecycle?.flagsAttribute) continue;
-    bindings.push({
-      attribute: attribute.name,
-      variable: `in_${attribute.name}`,
-      binding: nextBinding,
-      access: "read",
-      role: "in",
-    });
-    nextBinding += 1;
+    if (readAt(attribute.name) === undefined) missing.push(`read of "${attribute.name}"`);
   }
   for (const attribute of written) {
-    bindings.push({
-      attribute: attribute.name,
-      variable: `out_${attribute.name}`,
-      binding: nextBinding,
-      access: "read_write",
-      role: "out",
-    });
+    if (writeAt(attribute.name) === undefined) missing.push(`write of "${attribute.name}"`);
+  }
+  if (missing.length > 0) {
+    /* A gap here means the NODE built a Point out of attributes it cannot address. Refused
+       by name rather than emitting a module whose `Point` declares a field no load fills
+       (§V288) — the exact silence T1076 replaced. */
+    return {
+      ok: false,
+      errors: [
+        `the storage map is missing the ${missing.join(", ")} — every touched attribute needs a ` +
+          `region and every written one a destination (T1076).`,
+      ],
+    };
+  }
+
+  /* Groups in FIRST-APPEARANCE order over reads then writes, so the generated text is
+     deterministic for a given schema. A group named by any write is bound `read_write` —
+     which is how the spawn hook, editing the read halves in place, gets ONE binding. */
+  const groupAccess = new Map<string, "read" | "read_write">();
+  const noteGroup = (region: KernelStorageRegion | undefined, write: boolean): void => {
+    if (region === undefined) return;
+    const current = groupAccess.get(region.group);
+    if (current === undefined) groupAccess.set(region.group, write ? "read_write" : "read");
+    else if (write) groupAccess.set(region.group, "read_write");
+  };
+  for (const attribute of touched) noteGroup(readAt(attribute.name), false);
+  for (const attribute of written) noteGroup(writeAt(attribute.name), true);
+
+  const groupVariable = new Map<string, string>();
+  const bindings: PointBufferBinding[] = [];
+  let nextBinding = 1; // binding 0 is the uniforms block
+  for (const [group, access] of groupAccess) {
+    const variable = `pk_${groupVariable.size}`;
+    groupVariable.set(group, variable);
+    bindings.push({ variable, binding: nextBinding, access, role: "storage", group });
     nextBinding += 1;
   }
   if (lifecycle !== undefined) {
     bindings.push({
-      attribute: lifecycle.flagsAttribute,
       variable: "liveCount",
       binding: nextBinding,
       access: "read",
@@ -727,22 +781,25 @@ export function generateKernelModule(request: KernelModuleRequest): KernelModule
     nextBinding += 1;
   }
 
-  /* §V588/B33, T900: the budget, checked against the bindings actually built. Six attributes
-     were refused and five were refused when this arithmetic lived in the advanced node; the
-     PLAIN kernel had no check at all, so a five-attribute schema built ten bindings and the
-     pipeline failed with nothing said. Loud, by name, with the ceiling stated. */
+  /* §V588/B33: the budget, checked against the bindings actually built.
+     T1076 changed what this catches. It used to be the ATTRIBUTE ceiling — 2n bindings
+     against a baseline of 8, so four attributes and the fifth failed the pipeline in
+     silence. Packing made the count independent of n, so what is left is the number of
+     distinct PRODUCERS one kernel reads from: a chain of by-reference forwards (T401,
+     §V197) can hand a kernel attributes owned by many upstream nodes, and each is one
+     more buffer to bind. The SIZE bound that replaced the attribute ceiling lives in
+     `points/packing.ts`, where the layout arithmetic is. */
   if (bindings.length > MAX_KERNEL_STORAGE_BINDINGS) {
-    const declared = lifecycle === undefined ? attributes.length : attributes.length - 1;
-    const ceiling = lifecycle === undefined ? MAX_KERNEL_STORAGE_BINDINGS / 2 : MAX_KERNEL_STORAGE_BINDINGS / 2 - 1;
+    const producers = [...groupAccess.keys()].length;
     return {
       ok: false,
       errors: [
-        `${declared} attributes need ${bindings.length} storage bindings; the baseline limit is ` +
-          `${MAX_KERNEL_STORAGE_BINDINGS} (§V588). ` +
-          (lifecycle === undefined
-            ? `A point kernel fits at most ${ceiling} attributes.`
-            : `The advanced kernel fits at most ${ceiling} attributes — the injected lifecycle flags ` +
-              `word and the live count take the rest.`),
+        `this kernel binds ${bindings.length} storage buffers — ${producers} packed point ` +
+          `${producers === 1 ? "buffer" : "buffers"}${lifecycle === undefined ? "" : " plus the live count"} — ` +
+          `and the WebGPU baseline maxStorageBuffersPerShaderStage is ${MAX_KERNEL_STORAGE_BINDINGS} (§V588). ` +
+          `Attribute COUNT is no longer the limit (T1076); this many buffers means the attributes ` +
+          `arrive from ${producers} different upstream producers by reference. Collapse the chain — ` +
+          `a kernel that WRITES an attribute owns it, and owned attributes share one buffer.`,
       ],
     };
   }
@@ -776,21 +833,51 @@ fn fieldAt(position: vec3f) -> vec4f {
     )
     .join("\n");
 
+  /* T1076: one `array<u32>` per group. Every consumer reads its attribute out of a region
+     of it, so the binding count is the number of PRODUCERS rather than of attributes. */
   const bufferDeclarations = bindings
     .map(
       (binding) =>
-        `@group(0) @binding(${binding.binding}) var<storage, ${binding.access}> ${binding.variable}: array<${
-          binding.role === "live" ? "u32" : byName.get(binding.attribute)?.type
-        }>;`,
+        `@group(0) @binding(${binding.binding}) var<storage, ${binding.access}> ${binding.variable}: array<u32>;`,
     )
     .join("\n");
+
+  /* One accessor per attribute per direction, generated off the SAME region table the
+     bindings came from — so `p`, `pointAt` and the stores cannot come to disagree about
+     where an attribute is. `bitcast` because one binding cannot be two element types. */
+  const loadName = (name: string): string => `pointLoad_${name}`;
+  const storeName = (name: string): string => `pointStore_${name}`;
+  const regionOfAttribute = (name: string, region: KernelStorageRegion): { type: PointAttributeType; offset: number; stride: number } => {
+    const type = byName.get(name)?.type as PointAttributeType;
+    return { type, offset: region.offset, stride: ATTRIBUTE_STRIDES[type] };
+  };
+  const accessorDeclarations = [
+    ...touched
+      .filter((attribute) => attribute.name !== lifecycle?.flagsAttribute)
+      .map((attribute) => {
+        const region = readAt(attribute.name) as KernelStorageRegion;
+        return regionAccessorWgsl(
+          loadName(attribute.name),
+          groupVariable.get(region.group) as string,
+          regionOfAttribute(attribute.name, region),
+        );
+      }),
+    ...written.map((attribute) => {
+      const region = writeAt(attribute.name) as KernelStorageRegion;
+      return regionStoreWgsl(
+        storeName(attribute.name),
+        groupVariable.get(region.group) as string,
+        regionOfAttribute(attribute.name, region),
+      );
+    }),
+  ].join("\n\n");
 
   const loads = touched
     .map((attribute) =>
       attribute.name === lifecycle?.flagsAttribute
         ? "  p.alive = 1u; /* by construction inside the guard (T322) */\n" +
           "  p.spawnCount = 0u; /* last frame's births are not this frame's (T323) */"
-        : `  p.${attribute.name} = in_${attribute.name}[index];`,
+        : `  p.${attribute.name} = ${loadName(attribute.name)}(index);`,
     )
     .join("\n");
 
@@ -807,7 +894,7 @@ fn fieldAt(position: vec3f) -> vec4f {
    adjacency. Which slots are neighbours is the kernel's own predicate. */
 fn pointAt(slot: u32) -> Point {
   var n: Point;
-${touched.map((attribute) => `  n.${attribute.name} = in_${attribute.name}[slot];`).join("\n")}
+${touched.map((attribute) => `  n.${attribute.name} = ${loadName(attribute.name)}(slot);`).join("\n")}
   return n;
 }
 
@@ -817,8 +904,8 @@ ${touched.map((attribute) => `  n.${attribute.name} = in_${attribute.name}[slot]
   const stores = written
     .map((attribute) =>
       attribute.name === lifecycle?.flagsAttribute
-        ? `  out_${attribute.name}[index] = (min(q.spawnCount, ${MAX_SPAWN_PER_PARENT}u) << 1u) | (q.alive & 1u);`
-        : `  out_${attribute.name}[index] = q.${attribute.name};`,
+        ? `  ${storeName(attribute.name)}(index, (min(q.spawnCount, ${MAX_SPAWN_PER_PARENT}u) << 1u) | (q.alive & 1u));`
+        : `  ${storeName(attribute.name)}(index, q.${attribute.name});`,
     )
     .join("\n");
 
@@ -964,6 +1051,8 @@ struct KernelFrame {
 
 ${bufferDeclarations}
 
+${accessorDeclarations}
+
 ${paramsDeclaration}struct Point {
 ${structFields}
 };
@@ -1039,6 +1128,12 @@ export interface SpawnHookRequest {
   readonly attributes: ReadonlyArray<PointAttributeSchema>;
   /** The packed lifecycle word — excluded from the hook's Point and bindings. */
   readonly flagsAttribute: string;
+  /**
+   * T1076: where the shaped attributes live. The hook edits IN PLACE, so every attribute
+   * names the same group in `reads` and `writes` — which is what makes it one
+   * `read_write` binding instead of two.
+   */
+  readonly storage: KernelStorageMap;
   /** WGSL text containing `fn spawn(child: Point, ctx: PointCtx) -> Point`. */
   readonly hook: string;
   readonly workgroupSize?: number;
@@ -1134,17 +1229,51 @@ export function generateSpawnHookModule(request: SpawnHookRequest): KernelModule
       : `, Params(${hookParamFields.map((field) => `kernelFrame.${kernelParamUniformKey(field.name)}`).join(", ")})`;
 
   const shaped = request.attributes.filter((attribute) => attribute.name !== request.flagsAttribute);
+  /* T1076: in place on the read halves, where the copy passes left the newborns — one
+     `read_write` binding per group rather than one per attribute. */
+  const hookGroups: string[] = [];
+  for (const attribute of shaped) {
+    const region = request.storage.writes[attribute.name];
+    if (region === undefined) {
+      return {
+        ok: false,
+        errors: [`the spawn hook's storage map is missing a destination for "${attribute.name}" (T1076).`],
+      };
+    }
+    if (!hookGroups.includes(region.group)) hookGroups.push(region.group);
+  }
+  const hookVariable = new Map(hookGroups.map((group, index) => [group, `pk_${index}`]));
   const bindings: PointBufferBinding[] = [
-    // In place: the read halves, where the copy passes left the newborns.
-    ...shaped.map((attribute, index) => ({
-      attribute: attribute.name,
-      variable: `io_${attribute.name}`,
+    ...hookGroups.map((group, index) => ({
+      variable: hookVariable.get(group) as string,
       binding: index + 1,
       access: "read_write" as const,
-      role: "out" as const,
+      role: "storage" as const,
+      group,
     })),
-    { attribute: "counts", variable: "counts", binding: shaped.length + 1, access: "read", role: "live" },
+    { variable: "counts", binding: hookGroups.length + 1, access: "read" as const, role: "live" as const },
   ];
+  const hookRegion = (attribute: PointAttributeSchema): { type: PointAttributeType; offset: number; stride: number } => ({
+    type: attribute.type,
+    offset: (request.storage.writes[attribute.name] as KernelStorageRegion).offset,
+    stride: ATTRIBUTE_STRIDES[attribute.type],
+  });
+  const hookAccessors = [
+    ...shaped.map((attribute) =>
+      regionAccessorWgsl(
+        `pointLoad_${attribute.name}`,
+        hookVariable.get((request.storage.writes[attribute.name] as KernelStorageRegion).group) as string,
+        hookRegion(attribute),
+      ),
+    ),
+    ...shaped.map((attribute) =>
+      regionStoreWgsl(
+        `pointStore_${attribute.name}`,
+        hookVariable.get((request.storage.writes[attribute.name] as KernelStorageRegion).group) as string,
+        hookRegion(attribute),
+      ),
+    ),
+  ].join("\n\n");
 
   const wgsl = `// Generated spawn hook (T339, contract v${ADVANCED_KERNEL_CONTRACT_VERSION}). Do not edit by hand.
 struct KernelFrame {
@@ -1157,13 +1286,10 @@ struct KernelFrame {
 
 @group(0) @binding(0) var<uniform> kernelFrame: KernelFrame;
 
-${shaped
-  .map(
-    (attribute, index) =>
-      `@group(0) @binding(${index + 1}) var<storage, read_write> io_${attribute.name}: array<${attribute.type}>;`,
-  )
-  .join("\n")}
-@group(0) @binding(${shaped.length + 1}) var<storage, read> counts: array<u32>;
+${hookGroups.map((group, index) => `@group(0) @binding(${index + 1}) var<storage, read_write> ${hookVariable.get(group) as string}: array<u32>;`).join("\n")}
+@group(0) @binding(${hookGroups.length + 1}) var<storage, read> counts: array<u32>;
+
+${hookAccessors}
 
 ${hookParamsDeclaration}struct Point {
 ${shaped.map((attribute) => `  ${attribute.name}: ${attribute.type},`).join("\n")}
@@ -1193,10 +1319,10 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     return;
   }
   var p: Point;
-${shaped.map((attribute) => `  p.${attribute.name} = io_${attribute.name}[index];`).join("\n")}
+${shaped.map((attribute) => `  p.${attribute.name} = pointLoad_${attribute.name}(index);`).join("\n")}
   let ctx = PointCtx(index, live, kernelFrame.timeSeconds, kernelFrame.deltaSeconds, kernelFrame.frameIndex${usesPointer ? ", kernelFrame.pointer" : ""}${hookValueSlots.map((slot) => `, kernelFrame.value${slot}`).join("")}${hookAbsArguments}${hookParamsArgument});
   let q = spawn(p, ctx);
-${shaped.map((attribute) => `  io_${attribute.name}[index] = q.${attribute.name};`).join("\n")}
+${shaped.map((attribute) => `  pointStore_${attribute.name}(index, q.${attribute.name});`).join("\n")}
 }
 `;
 

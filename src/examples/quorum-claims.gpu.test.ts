@@ -1,4 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
+import { pointStorageId } from "../nodes/definitions/point-storage.ts";
+import { kernelRegionSlice } from "../nodes/definitions/test-support.ts";
 
 import type { GraphDocument } from "../domain/types/graph.ts";
 import { nodeGpuHost, probeDawn } from "../runtime/backend/vgpu/node-gpu-host.ts";
@@ -139,7 +141,8 @@ async function renderQuorum(options?: {
     animate: true,
     ...(options?.probe === false
       ? {}
-      : { probeBuffers: ["scratch:mesh:position", "scratch:mesh:tint", "scratch:mesh:degree"] }),
+      // T1076: ONE probe of the mesh kernel's packed buffer; regions sliced below.
+      : { probeBuffers: [pointStorageId("mesh")] }),
   } as never)) as never as {
     frames: ReadonlyArray<{ frameIndex: number; width: number; height: number; format: string; bytes: Uint8Array }>;
     plan: {
@@ -164,10 +167,18 @@ async function renderQuorum(options?: {
   );
 
   const buffers = result.buffers ?? {};
-  const readVec3 = (id: string): Array<readonly [number, number, number]> => {
-    const raw = buffers[id];
-    if (raw === undefined) return [];
-    const view = new Float32Array(raw);
+  const packed = buffers[pointStorageId("mesh")];
+  const meshNode = document.graph.nodes["mesh"] as unknown as {
+    type: string;
+    parameters: Record<string, unknown>;
+  };
+  // T1076: every attribute is a region of the mesh kernel's packed buffer, sliced by the
+  // schema that kernel declares — one probe, three attributes.
+  const attribute = (name: string): Float32Array =>
+    packed === undefined ? new Float32Array(0) : kernelRegionSlice(meshNode, packed, name).floats;
+  const readVec3 = (name: string): Array<readonly [number, number, number]> => {
+    const view = attribute(name);
+    if (view.length === 0) return [];
     // §V72: a vec3f strides at SIXTEEN bytes, not twelve — the classic WGSL alignment trap,
     // and reading it as three floats would silently walk this whole assertion off the data.
     return Array.from({ length: CAPACITY }, (_unused, slot) => [
@@ -176,12 +187,11 @@ async function renderQuorum(options?: {
       view[slot * 4 + 2] ?? 0,
     ] as const);
   };
-  const degreeRaw = buffers["scratch:mesh:degree"];
-  const degreeView = degreeRaw === undefined ? new Float32Array(0) : new Float32Array(degreeRaw);
+  const degreeView = attribute("degree");
 
   return {
-    position: readVec3("scratch:mesh:position"),
-    tint: readVec3("scratch:mesh:tint"),
+    position: readVec3("position"),
+    tint: readVec3("tint"),
     degree: Array.from({ length: degreeView.length === 0 ? 0 : CAPACITY }, (_u, slot) => degreeView[slot] ?? 0),
     rgba: { width: image.width, height: image.height, data: image.data },
     passes: result.plan.passes,
@@ -592,7 +602,8 @@ describe("E54 Quorum — the operator does both jobs (T1070)", () => {
       // Laplacian and becomes 480 independent points — and every claim above would still
       // have SOMETHING to measure, which is exactly how a silent regression survives.
       expect(pass?.shader).toContain("fn pointAt(slot: u32) -> Point {");
-      expect(pass?.shader).toContain("n.position = in_position[slot];");
+      // T1076: the neighbour's position comes through the packed READ half's accessor.
+      expect(pass?.shader).toContain("n.position = pointLoad_position(slot);");
     },
     240_000,
   );

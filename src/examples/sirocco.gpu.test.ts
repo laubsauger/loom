@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
+import { readKernelAttribute } from "../nodes/definitions/test-support.ts";
 
 import { compileGraph } from "../compiler/index.ts";
 import { createNodeRegistry } from "../nodes/registry/registry.ts";
@@ -90,7 +91,17 @@ describe("E37 Sirocco — the streak is a reading of its own mote (T727, §V681)
     });
 
     const DELTA = 1 / 60;
-    const read = async (id: string) => new Float32Array(await backend.readBuffer(id));
+    /* T1076: attributes are REGIONS of the node's packed buffer, so a readback names
+       the node and the attribute and the layout does the rest. */
+    const read = async (nodeId: string, attribute: string) =>
+      (
+        await readKernelAttribute(
+          backend.readBuffer,
+          document.graph.nodes[nodeId] as { type: string; parameters: Record<string, unknown> },
+          nodeId,
+          attribute,
+        )
+      ).floats;
 
     try {
       await backend.initialize({});
@@ -107,12 +118,12 @@ describe("E37 Sirocco — the streak is a reading of its own mote (T727, §V681)
       /* Past the warm start and any first-frame transient, then TWO ADJACENT frames — the
          pair is the instrument, and a single frame cannot be one. */
       for (let frameIndex = 0; frameIndex <= 40; frameIndex += 1) step(frameIndex);
-      const positionA = await read("scratch:streak:position");
+      const positionA = await read("streak", "position");
       step(41);
-      const positionB = await read("scratch:streak:position");
-      const velocityB = await read("scratch:streak:velocity");
-      const trailB = await read("scratch:streak:trail");
-      const sizeB = await read("scratch:streak:size");
+      const positionB = await read("streak", "position");
+      const velocityB = await read("streak", "velocity");
+      const trailB = await read("streak", "trail");
+      const sizeB = await read("streak", "size");
       expect(errors).toEqual([]);
 
       let worstTrail = 0;

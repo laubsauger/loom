@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { LogicalExecutionPlan } from "../../../domain/types/backend.ts";
 import { generateKernelModule } from "../../../points/codegen.ts";
+import { packAttributes } from "../../../points/packing.ts";
 import type { PointAttributeSchema } from "../../../points/attributes.ts";
 import { createVgpuBackend } from "./vgpu-backend.ts";
 import { nodeGpuHost, probeDawn } from "./node-gpu-host.ts";
@@ -43,19 +44,28 @@ describe("dispatch + draw through the backend on Dawn (T172)", () => {
     const probe = await probeDawn();
     if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
 
+    // T1076: one packed half per direction; `position` is the only region, at offset 0.
+    const layout = packAttributes(SCHEMA, COUNT);
+    if (!layout.ok) throw new Error(layout.errors.join("; "));
     const module = generateKernelModule({
       attributes: SCHEMA,
       reads: [],
       writes: ["position"],
+      storage: {
+        reads: { position: { group: "own:read", offset: 0 } },
+        writes: { position: { group: "own:write", offset: 0 } },
+      },
       kernel: KERNEL,
     });
     expect(module.ok).toBe(true);
     if (!module.ok) return;
+    const [readBinding, writeBinding] = module.buffers;
+    if (readBinding === undefined || writeBinding === undefined) throw new Error("expected two groups");
 
     const plan: LogicalExecutionPlan = {
       resources: [
-        { kind: "buffer", id: "pos-in", stride: 16, capacity: COUNT, usage: "storage-read" },
-        { kind: "buffer", id: "pos-out", stride: 16, capacity: COUNT, usage: "storage" },
+        { kind: "buffer", id: "pos-in", stride: 4, capacity: layout.bytes / 4, usage: "storage-read" },
+        { kind: "buffer", id: "pos-out", stride: 4, capacity: layout.bytes / 4, usage: "storage" },
         { kind: "target", id: "out", size: [64, 64], format: "rgba8unorm" },
       ],
       passes: [
@@ -66,8 +76,8 @@ describe("dispatch + draw through the backend on Dawn (T172)", () => {
           entryPoint: "main",
           workgroups: [Math.ceil(COUNT / module.workgroupSize), 1, 1],
           buffers: [
-            { binding: "in_position", resourceId: "pos-in" },
-            { binding: "out_position", resourceId: "pos-out" },
+            { binding: readBinding.variable, resourceId: "pos-in" },
+            { binding: writeBinding.variable, resourceId: "pos-out" },
           ],
           uniforms: { timeSeconds: 0, deltaSeconds: 0, frameIndex: 0, seed: 7, count: COUNT },
           uniformBinding: "kernelFrame",
@@ -80,7 +90,16 @@ describe("dispatch + draw through the backend on Dawn (T172)", () => {
           topology: "point-list",
           instances: COUNT,
           vertexCount: 1,
-          buffers: [{ binding: "pos", resourceId: "pos-out" }],
+          /* The sprite shader still declares `array<vec3f>` and reads the SAME bytes —
+             T1076's whole seam: a region of the packed buffer, bound at its offset. */
+          buffers: [
+            {
+              binding: "pos",
+              resourceId: "pos-out",
+              offset: layout.byName.get("position")?.offset ?? 0,
+              bytes: layout.byName.get("position")?.bytes ?? 0,
+            },
+          ],
         },
       ],
       diagnostics: [],

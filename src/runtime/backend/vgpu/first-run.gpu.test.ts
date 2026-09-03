@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import { compileGraph } from "../../../compiler/index.ts";
 import { createNodeRegistry } from "../../../nodes/registry/registry.ts";
 import { allNodeDefinitions } from "../../../nodes/definitions/index.ts";
-import { pointPairId } from "../../../nodes/definitions/points.ts";
+import { DEFAULT_POINT_ATTRIBUTES } from "../../../nodes/definitions/points.ts";
+import { pointStorageId } from "../../../nodes/definitions/point-storage.ts";
+import { pointRegionSlice } from "../../../nodes/definitions/test-support.ts";
 import { liveCountBufferId } from "../../../nodes/definitions/point-kernel-advanced.ts";
 import { createVgpuBackend } from "./vgpu-backend.ts";
 import { nodeGpuHost, probeDawn } from "./node-gpu-host.ts";
@@ -84,7 +86,12 @@ describe("firstRun seeds; a lap does not (T510)", () => {
           resolution: [32, 32],
         });
       const x = async (): Promise<number> =>
-        new Float32Array(await backend.readBuffer(pointPairId("sim", "position")))[0] as number;
+        pointRegionSlice(
+          await backend.readBuffer(pointStorageId("sim")),
+          DEFAULT_POINT_ATTRIBUTES,
+          1,
+          "position",
+        ).floats[0] as number;
 
       render(0); // fresh pair → firstRun 1 → seed
       expect(await x()).toBe(9);

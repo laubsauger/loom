@@ -1,4 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
+import { pointStorageId } from "../nodes/definitions/point-storage.ts";
+import { pointRegionSlice } from "../nodes/definitions/test-support.ts";
 
 import type { GraphDocument } from "../domain/types/graph.ts";
 import { nodeGpuHost, probeDawn } from "../runtime/backend/vgpu/node-gpu-host.ts";
@@ -7,6 +9,19 @@ import { BYTES_PER_PIXEL } from "../runtime/export/pixel-format.ts";
 import { renderHeadless } from "../tests/headless/render-harness.ts";
 import { listExamples } from "./catalogue.ts";
 import { requireExample } from "./runner.ts";
+
+/**
+ * T1076: the DepthPoints component's point schema and capacity — the layout its `paint`
+ * kernel allocates, and therefore the one a probe must slice by. Mirrored from
+ * `starter-components.ts`; the byte-identity gate on the generated component keeps the
+ * two honest.
+ */
+const DEPTH_POINT_SCHEMA = [
+  { name: "position", type: "vec3f" as const },
+  { name: "tint", type: "vec4f" as const },
+  { name: "depthN", type: "f32" as const },
+];
+const DEPTH_POINT_CAPACITY = 36864;
 
 /**
  * E47 HOLOGRAM — THE CLAIMS (T956, then T983/§T979).
@@ -58,14 +73,13 @@ async function renderE47(options?: { mutate?: (graph: GraphDocument) => void; pr
     ...(options?.probe === false
       ? {}
       : {
+          /* T1076: ONE probe per NODE — every attribute is a region of that node's
+             packed buffer, sliced below by the schema the node declares. */
           probeBuffers: [
-            "scratch:holo/paint:position",
-            "scratch:holo/paint:depthN",
-            "scratch:holo/paint:tint",
-            "scratch:zone:position",
-            "scratch:holo2/paint:position",
-            "scratch:holo2/paint:depthN",
-            "scratch:wall:position",
+            pointStorageId("holo/paint"),
+            pointStorageId("zone"),
+            pointStorageId("holo2/paint"),
+            pointStorageId("wall"),
           ],
         }),
   } as never);
@@ -125,29 +139,41 @@ describe("E47 Hologram — the zone and the wall (T983, §T979)", () => {
     if (dawnError !== undefined) throw new Error(`Dawn unavailable: ${dawnError}`);
     const result = await renderE47();
     const buffers = (result as { buffers?: Record<string, ArrayBuffer> }).buffers ?? {};
-    const of = (id: string): Float32Array => {
-      const raw = buffers[id];
-      expect(raw, `no probe for ${id}`).toBeDefined();
-      return new Float32Array(raw!);
+    /* T1076: a probe is one node's packed buffer; the attribute is a region of it. The
+       DepthPoints component's cloud declares position/tint/depthN, and a Range owns only
+       the position it writes — so each slice needs the OWNING node's schema. */
+    const raw = (id: string): ArrayBuffer => {
+      const found = buffers[id];
+      expect(found, `no probe for ${id}`).toBeDefined();
+      return found!;
     };
+    const cloud = (nodeId: string, attribute: string): Float32Array =>
+      pointRegionSlice(raw(pointStorageId(nodeId)), DEPTH_POINT_SCHEMA, DEPTH_POINT_CAPACITY, attribute).floats;
+    const ranged = (nodeId: string): Float32Array =>
+      pointRegionSlice(
+        raw(pointStorageId(nodeId)),
+        [{ name: "position", type: "vec3f" }],
+        DEPTH_POINT_CAPACITY,
+        "position",
+      ).floats;
 
     const [lo, hi] = SUBJECT_RANGE;
     // The subject's zone: EVERY slot of the flattened component's cloud, the
     // expectation derived from its own depthN — including carve's parked spares,
     // whose default depthN rides through the same rule rather than a special case.
     const subject = assertSelection(
-      of("scratch:holo/paint:position"),
-      of("scratch:holo/paint:depthN"),
-      of("scratch:zone:position"),
+      cloud("holo/paint", "position"),
+      cloud("holo/paint", "depthN"),
+      ranged("zone"),
       (d) => d >= lo && d <= hi,
       "subject",
     );
     // The wall keeps the COMPLEMENT of the same range on its own cloud (§T979: the
     // backdrop is everything outside the subject's slab — two instances, one operator).
     const wall = assertSelection(
-      of("scratch:holo2/paint:position"),
-      of("scratch:holo2/paint:depthN"),
-      of("scratch:wall:position"),
+      cloud("holo2/paint", "position"),
+      cloud("holo2/paint", "depthN"),
+      ranged("wall"),
       (d) => !(d >= lo && d <= hi),
       "wall",
     );
@@ -222,9 +248,10 @@ describe("E47 Hologram — the zone and the wall (T983, §T979)", () => {
   it("published tint alpha is coverage: never above 1, even where the composite's alpha reads 2", async () => {
     if (dawnError !== undefined) throw new Error(`Dawn unavailable: ${dawnError}`);
     const result = await renderE47();
-    const raw = (result as { buffers?: Record<string, ArrayBuffer> }).buffers?.["scratch:holo/paint:tint"];
+    const raw = (result as { buffers?: Record<string, ArrayBuffer> }).buffers?.[pointStorageId("holo/paint")];
     expect(raw, "no tint probe").toBeDefined();
-    const tint = new Float32Array(raw!);
+    // T1076: `tint` is the SECOND region of the cloud's packed buffer, after `position`.
+    const tint = pointRegionSlice(raw!, DEPTH_POINT_SCHEMA, DEPTH_POINT_CAPACITY, "tint").floats;
     let atOne = 0;
     for (let slot = 0; slot < tint.length / 4; slot += 1) {
       const alpha = tint[slot * 4 + 3]!;

@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
+import { readKernelAttribute } from "../nodes/definitions/test-support.ts";
 
 import { compileGraph } from "../compiler/index.ts";
 import { createNodeRegistry } from "../nodes/registry/registry.ts";
@@ -75,7 +76,16 @@ describe("E38 Sigil — the mark is the same motes every time it re-forms (T727,
     backend.onDiagnostic((d) => {
       if (d.severity === "error") errors.push(`${d.code}: ${d.message}`);
     });
-    const read = async (id: string) => new Float32Array(await backend.readBuffer(id));
+    /* T1076: attributes are REGIONS of the node's packed buffer (see readKernelAttribute). */
+    const read = async (nodeId: string, attribute: string) =>
+      (
+        await readKernelAttribute(
+          backend.readBuffer,
+          document.graph.nodes[nodeId] as { type: string; parameters: Record<string, unknown> },
+          nodeId,
+          attribute,
+        )
+      ).floats;
 
     try {
       await backend.initialize({});
@@ -89,10 +99,10 @@ describe("E38 Sigil — the mark is the same motes every time it re-forms (T727,
           pointer: { x: 0, y: 0, buttons: 0 },
           resolution: [320, 180],
         });
-        if (frameIndex === 60) early = await read("scratch:gather:mark");
+        if (frameIndex === 60) early = await read("gather", "mark");
       }
-      const settledMark = await read("scratch:gather:mark");
-      const settledDrift = await read("scratch:gather:drift");
+      const settledMark = await read("gather", "mark");
+      const settledDrift = await read("gather", "drift");
       expect(errors).toEqual([]);
 
       // CLAIM 1 — not one slot changed sides across the whole cycle.

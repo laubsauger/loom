@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readKernelAttribute } from "../../../nodes/definitions/test-support.ts";
 
 import { compileGraph } from "../../../compiler/index.ts";
 import { createNodeRegistry } from "../../../nodes/registry/registry.ts";
@@ -114,7 +115,14 @@ describe("T900 — a kernel's own struct Params on Dawn", () => {
         });
       };
       const positions = async (): Promise<Float32Array> =>
-        new Float32Array(await backend.readBuffer("scratch:sim:position"));
+        (
+          await readKernelAttribute(
+            backend.readBuffer,
+            { type: "pointKernel", parameters: { capacity: CAPACITY } },
+            "sim",
+            "position",
+          )
+        ).floats;
 
       render(0);
       render(1);

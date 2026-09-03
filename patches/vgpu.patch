@@ -13,6 +13,43 @@ index 21e3d41add2578fee9198c44260cba69b7867c82..3b4ac37fdfa159b02d792a8378fefa55
          const clearDepth = targetOnly ? undefined : target.clearDepth;
          if (clearDepth !== undefined) {
              if (typeof clearDepth !== "number" || !(clearDepth >= 0 && clearDepth <= 1))
+diff --git a/dist/set-resources.js b/dist/set-resources.js
+index 43d3530106957dcbd764af7bd07f91b8d8b14ef3..ccc4d62b4cd3708633a7a0473b3d9c8d89a622cd 100644
+--- a/dist/set-resources.js
++++ b/dist/set-resources.js
+@@ -47,8 +47,15 @@ function normalizeBufferResource(binding, value, context) {
+         assertBufferUsable(value.buffer, `${context.sourceHint}.set`);
+         return { resource: { buffer: value.gpu, offset: 0, size: value.size }, identity: value.buffer.resourceIdentity, unsubscribe: (cb) => value.buffer.onDestroy(cb) };
+     }
+-    if (isGPUBufferBinding(value))
+-        return { resource: value, identity: syntheticIdentity(value.buffer) };
++    if (isGPUBufferBinding(value)) {
++        // shaderloom patch (T1076): a REGION binding may name its own identity. Without
++        // this, every region of one buffer shares that buffer's synthetic identity, so the
++        // bind-group cache cannot tell two attributes apart and #preflightAliasing reports
++        // two NON-OVERLAPPING writable regions as an alias. Point storage is packed —
++        // several attributes per buffer — and both consequences are wrong.
++        const region = { buffer: value.buffer, offset: value.offset, size: value.size };
++        return { resource: region, identity: value.resourceIdentity ?? syntheticIdentity(value.buffer) };
++    }
+     if (isRawGPUBuffer(value))
+         return { resource: { buffer: value }, identity: syntheticIdentity(value) };
+     throw incompatibleResourceError(binding, "buffer", `Pass a compatible Buffer/Uniform: ${binding.name}.set({ ${binding.name}: gpu.device.createBuffer(...) }).`);
+@@ -113,7 +120,13 @@ function asTarget(value) {
+ }
+ function hasAnyResourceShape(value) {
+     const record = value;
+-    return "gpu" in record || "bindGroup" in record || "createView" in record || "resourceIdentity" in record;
++    // shaderloom patch (T1076): a raw GPUBufferBinding ({ buffer, offset, size }) is a
++    // resource, not a JS uniform value. Without this it falls to isPlainValue() and the
++    // set() routes it at the uniform path, throwing VGPU-RING1-UNSUPPORTED — even though
++    // normalizeBufferResource() below already handles the shape (isGPUBufferBinding).
++    // Binding one region of a packed buffer is how point attributes reach shaders that
++    // still declare array<vec3f>.
++    return "gpu" in record || "bindGroup" in record || "createView" in record || "resourceIdentity" in record || isGPUBufferBinding(record);
+ }
+ function syntheticIdentity(value) {
+     if (typeof value !== "object" || value === null)
 diff --git a/dist/target-utils.js b/dist/target-utils.js
 index ec39e15a23d7dfdf7172e74d7c7305b34670a3e6..f9f04834e0554f53331cdb50872d04f6ef5cf94c 100644
 --- a/dist/target-utils.js

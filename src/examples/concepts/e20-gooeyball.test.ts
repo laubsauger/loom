@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { pointStorageId } from "../../nodes/definitions/point-storage.ts";
 import type { GraphNode } from "../../domain/types/graph.ts";
 import { example } from "./helpers.ts";
 
@@ -25,17 +26,23 @@ describe("E20 Gooeyball", () => {
       }).buffers;
     const binding = (nodeId: string, kind: "dispatch" | "draw", name: string) =>
       buffersOf(nodeId, kind)?.find((buffer) => buffer.binding === name)?.resourceId;
+    /* T1076: a kernel binds one PACKED buffer per producer, so a link shows as WHICH
+       buffers a pass touches rather than as an `in_<attribute>` per attribute. The
+       bridge is not a kernel — it keeps its named `in_position`. */
+    const reads = (nodeId: string) =>
+      (buffersOf(nodeId, "dispatch") ?? []).map((buffer) => buffer.resourceId);
 
-    expect(binding("ball", "dispatch", "in_position")).toBe("scratch:sheet:position");
-    expect(binding("bridge", "dispatch", "in_position")).toBe("scratch:ball:position");
-    expect(binding("goo", "dispatch", "in_position")).toBe("scratch:ball:position");
-    // The 2D->3D crossing itself: the goo kernel reads the BRIDGE's sample pair.
-    expect(binding("goo", "dispatch", "in_sample")).toBe("scratch:bridge:sample");
+    expect(reads("ball")).toContain(pointStorageId("sheet"));
+    expect(binding("bridge", "dispatch", "in_position")).toBe(pointStorageId("ball"));
+    expect(reads("goo")).toContain(pointStorageId("ball"));
+    // The 2D->3D crossing itself: the goo kernel reads the BRIDGE's packed buffer, where
+    // the `sample` attribute lives — one buffer, zero copies (§V197).
+    expect(reads("goo")).toContain(pointStorageId("bridge"));
     // And the surface draws the goo's positions.
     const draw = plan.passes.find(
       (pass) => pass.kind === "draw" && (pass as { id: string }).id.includes(":scene:"),
     ) as { buffers?: ReadonlyArray<{ resourceId: string }> };
-    expect(draw.buffers?.some((buffer) => buffer.resourceId === "scratch:goo:position")).toBe(true);
+    expect(draw.buffers?.some((buffer) => buffer.resourceId === pointStorageId("goo"))).toBe(true);
   });
 
   /**

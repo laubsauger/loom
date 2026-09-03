@@ -1,9 +1,9 @@
-import type { CompiledNodeDescription, NodeDefinition } from "../../domain/types/node-definition.ts";
+import type { CompiledNodeDescription, NodeDefinition, PointsetAttributeRef } from "../../domain/types/node-definition.ts";
 import type { DispatchPassDescriptor } from "../../runtime/backend/plan.ts";
-import { ATTRIBUTE_STRIDES, COMPONENT_COUNTS, type PointAttributeType } from "../../points/attributes.ts";
+import { COMPONENT_COUNTS, type PointAttributeType } from "../../points/attributes.ts";
 import { pointGatherWgsl } from "../shaders/points.wgsl.ts";
 import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
-import { pointPairId } from "./points.ts";
+import { attributeBinding, packedPointStorage } from "./point-storage.ts";
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════════════
@@ -287,6 +287,16 @@ export const pointGatherNode: NodeDefinition = {
       );
     }
 
+    /* T1076: one attribute, still a packed pair — the OUTPUT NAME is user-typed, so the
+       layout key is `@points` and can never collide with it. */
+    const storage = packedPointStorage(
+      nodeId,
+      [{ name: outputName, type: outputType, default: Array<number>(COMPONENT_COUNTS[outputType]).fill(0) }],
+      count,
+      "write",
+    );
+    if (!storage.ok) return refuse(storage.errors.join(" "));
+
     const pass: DispatchPassDescriptor = {
       kind: "dispatch",
       /* Every one of these changes the program's bindings or its arithmetic (§V62b): the
@@ -297,14 +307,10 @@ export const pointGatherNode: NodeDefinition = {
       entryPoint: "main",
       workgroups: [Math.ceil(count / 64), 1, 1],
       buffers: [
-        { binding: "in_link_neighbor", resourceId: neighbor.pair, half: neighbor.half },
-        ...(weighted || reduce === "degree"
-          ? [{ binding: "in_link_strength", resourceId: strength.pair, half: strength.half }]
-          : []),
-        ...(reduce === "degree" || source === undefined
-          ? []
-          : [{ binding: "in_attr", resourceId: source.pair, half: source.half }]),
-        { binding: "out_value", resourceId: pointPairId(nodeId, outputName), half: "write" as const },
+        attributeBinding("in_link_neighbor", neighbor),
+        ...(weighted || reduce === "degree" ? [attributeBinding("in_link_strength", strength)] : []),
+        ...(reduce === "degree" || source === undefined ? [] : [attributeBinding("in_attr", source)]),
+        attributeBinding("out_value", storage.pairs[outputName] as PointsetAttributeRef),
       ],
       uniforms: { count },
       uniformBinding: "params",
@@ -313,18 +319,13 @@ export const pointGatherNode: NodeDefinition = {
 
     return {
       passes: [pass],
-      scratch: [
-        { key: outputName, kind: "bufferPair", stride: ATTRIBUTE_STRIDES[outputType], capacity: count },
-      ],
+      scratch: [storage.scratch],
       pointsets: {
         out: {
           /* §V883/§V197: the WHOLE source republished by reference with one fresh pair on
              top. The aggregate cannot be separated from the points it was measured over,
              and no unmodified attribute gets a per-node copy. */
-          pairs: {
-            ...points.pairs,
-            [outputName]: { pair: pointPairId(nodeId, outputName), half: "write" as const, type: outputType },
-          },
+          pairs: { ...points.pairs, ...storage.pairs },
           capacity: count,
           // Measuring a neighbourhood moves no slot, so the connectivity claim survives.
           ...(points.topology === undefined ? {} : { topology: points.topology }),

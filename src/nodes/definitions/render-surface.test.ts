@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { renderSurfaceNode } from "./render-surface.ts";
-import { compileContext } from "./test-support.ts";
+import { compileContext, fixturePairs } from "./test-support.ts";
+import { pointStorageId } from "./point-storage.ts";
 
 /**
  * RenderSurface at the fixture level (T301): the analytic-topology contract. The
@@ -12,13 +13,13 @@ type DrawShape = {
   kind: string;
   instances: number;
   vertexCount: number;
-  buffers: Array<{ binding: string; resourceId: string; half: string }>;
+  buffers: Array<{ binding: string; resourceId: string; half: string; offset: number; bytes: number }>;
   uniforms: Record<string, number | readonly number[]>;
 };
 
 const gridEdge = (cols: number, rows: number, capacity = cols * rows) => ({
   points: {
-    pairs: { position: { pair: "scratch:gen:position", half: "write" as const } },
+    pairs: fixturePairs("gen", [{ name: "position", type: "vec3f" }], cols * rows),
     capacity,
     topology: `grid:${cols}x${rows}`,
   },
@@ -36,8 +37,15 @@ describe("renderSurface — the topology contract (T301)", () => {
     expect(pass.vertexCount).toBe(47 * 23 * 6);
     expect(pass.uniforms["cols"]).toBe(48);
     expect(pass.uniforms["rows"]).toBe(24);
+    // T1076: the position REGION of the producer's packed buffer, not a buffer of its own.
     expect(pass.buffers).toEqual([
-      { binding: "positions", resourceId: "scratch:gen:position", half: "write" },
+      {
+        binding: "positions",
+        resourceId: pointStorageId("gen"),
+        half: "write",
+        offset: 0,
+        bytes: 16 * 48 * 24,
+      },
     ]);
     expect(renderSurfaceNode.depthOutputs).toEqual(["out"]);
   });
@@ -49,7 +57,7 @@ describe("renderSurface — the topology contract (T301)", () => {
         inputs: ["points"],
         pointsets: {
           points: {
-            pairs: { position: { pair: "scratch:gen:position", half: "write" as const } },
+            pairs: fixturePairs("gen", [{ name: "position", type: "vec3f" }], 48 * 24),
             capacity: 48 * 24,
             topology: "grid:48x24:wrapUV",
           },
@@ -70,7 +78,7 @@ describe("renderSurface — the topology contract (T301)", () => {
         inputs: ["points"],
         pointsets: {
           points: {
-            pairs: { position: { pair: "scratch:gen:position", half: "write" as const } },
+            pairs: fixturePairs("gen", [{ name: "position", type: "vec3f" }], 256),
             capacity: 256,
             topology: "points",
           },

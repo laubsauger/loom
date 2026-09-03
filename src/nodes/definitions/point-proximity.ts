@@ -1,11 +1,19 @@
-import type { CompiledNodeDescription, NodeDefinition } from "../../domain/types/node-definition.ts";
+import type { CompiledNodeDescription, NodeDefinition, PointsetAttributeRef } from "../../domain/types/node-definition.ts";
 import type { DispatchPassDescriptor } from "../../runtime/backend/plan.ts";
-import { ATTRIBUTE_STRIDES } from "../../points/attributes.ts";
+import type { PointAttributeSchema } from "../../points/attributes.ts";
 import { formatTopology } from "../../points/topology.ts";
 import { pointProximityWgsl } from "../shaders/points.wgsl.ts";
 import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
 import { readNumber } from "./parameter-readers.ts";
-import { pointPairId } from "./points.ts";
+import { attributeBinding, packedPointStorage } from "./point-storage.ts";
+
+/** The LINK attributes this node owns, in the order the packed layout lays them out. */
+export const LINK_ATTRIBUTES: ReadonlyArray<PointAttributeSchema> = [
+  { name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] },
+  { name: "tip", type: "vec3f", default: [0, 0, 0] },
+  { name: "tint", type: "vec4f", qualifier: "color", default: [1, 1, 1, 1] },
+  { name: "neighbor", type: "u32", default: [0] },
+];
 
 /**
  * Proximity (T819) — TD's Proximity POP: each point linked to its K nearest neighbours.
@@ -139,6 +147,21 @@ export const pointProximityNode: NodeDefinition = {
     const capacity = count * neighbors;
     const counted = upstream.count !== undefined;
 
+    /* T1076: the four link attributes are regions of ONE packed pair — the same bytes in
+       the same order the four separate pairs held, addressed by offset. */
+    const storage = packedPointStorage(nodeId, LINK_ATTRIBUTES, capacity, "write");
+    if (!storage.ok) {
+      return {
+        passes: [],
+        diagnostics: storage.errors.map((message) => ({
+          severity: "error" as const,
+          code: "node.points.capacity",
+          message: `Node "${nodeId}": ${message}`,
+          nodeId,
+        })),
+      };
+    }
+
     const pass: DispatchPassDescriptor = {
       kind: "dispatch",
       // K and the counted flag are part of the program (§V62b): a different K is a
@@ -148,14 +171,13 @@ export const pointProximityNode: NodeDefinition = {
       entryPoint: "main",
       workgroups: [Math.ceil(count / 64), 1, 1],
       buffers: [
-        { binding: "in_position", resourceId: position.pair, half: position.half },
+        attributeBinding("in_position", position),
         ...(counted && upstream.count !== undefined
           ? [{ binding: "in_count", resourceId: upstream.count.buffer, half: "read" as const }]
           : []),
-        { binding: "out_position", resourceId: pointPairId(nodeId, "position"), half: "write" },
-        { binding: "out_tip", resourceId: pointPairId(nodeId, "tip"), half: "write" },
-        { binding: "out_tint", resourceId: pointPairId(nodeId, "tint"), half: "write" },
-        { binding: "out_neighbor", resourceId: pointPairId(nodeId, "neighbor"), half: "write" },
+        ...LINK_ATTRIBUTES.map((attribute) =>
+          attributeBinding(`out_${attribute.name}`, storage.pairs[attribute.name] as PointsetAttributeRef),
+        ),
       ],
       uniforms: {
         count,
@@ -168,20 +190,10 @@ export const pointProximityNode: NodeDefinition = {
 
     return {
       passes: [pass],
-      scratch: [
-        { key: "position", kind: "bufferPair", stride: ATTRIBUTE_STRIDES["vec3f"], capacity },
-        { key: "tip", kind: "bufferPair", stride: ATTRIBUTE_STRIDES["vec3f"], capacity },
-        { key: "tint", kind: "bufferPair", stride: ATTRIBUTE_STRIDES["vec4f"], capacity },
-        { key: "neighbor", kind: "bufferPair", stride: ATTRIBUTE_STRIDES["u32"], capacity },
-      ],
+      scratch: [storage.scratch],
       pointsets: {
         out: {
-          pairs: {
-            position: { pair: pointPairId(nodeId, "position"), half: "write" as const, type: "vec3f" },
-            tip: { pair: pointPairId(nodeId, "tip"), half: "write" as const, type: "vec3f" },
-            tint: { pair: pointPairId(nodeId, "tint"), half: "write" as const, type: "vec4f" },
-            neighbor: { pair: pointPairId(nodeId, "neighbor"), half: "write" as const, type: "u32" },
-          },
+          pairs: storage.pairs,
           capacity,
           // Links are a bag of segments; claiming a grid would let a mesh span them.
           topology: formatTopology({ kind: "points" }),

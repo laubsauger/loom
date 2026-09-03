@@ -1,4 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
+import { pointStorageId } from "../nodes/definitions/point-storage.ts";
+import { kernelRegionSlice } from "../nodes/definitions/test-support.ts";
 
 import { nodeGpuHost, probeDawn } from "../runtime/backend/vgpu/node-gpu-host.ts";
 import { toRgba8 } from "../runtime/export/image.ts";
@@ -51,7 +53,8 @@ async function run(mutate?: (graph: GraphDocument) => void): Promise<Probe> {
     capture: [FRAME],
     animate: true,
     outputNodeId: "out",
-    probeBuffers: ["scratch:flow:orient", "scratch:flow:position"],
+    // T1076: ONE probe of the kernel's packed buffer; the attributes are regions of it.
+    probeBuffers: [pointStorageId("flow")],
   });
   const errors = result.diagnostics.filter((diagnostic) => diagnostic.severity === "error");
   if (errors.length > 0) throw new Error(errors.map((d) => d.message).join("; "));
@@ -71,13 +74,12 @@ async function run(mutate?: (graph: GraphDocument) => void): Promise<Probe> {
   for (let at = 0; at < image.data.length; at += 4) {
     luma += 0.2126 * image.data[at]! + 0.7152 * image.data[at + 1]! + 0.0722 * image.data[at + 2]!;
   }
-  const buffers = result.buffers ?? {};
-  const orient = buffers["scratch:flow:orient"];
-  const position = buffers["scratch:flow:position"];
-  if (orient === undefined || position === undefined) throw new Error("probe buffers missing");
+  const packed = (result.buffers ?? {})[pointStorageId("flow")];
+  if (packed === undefined) throw new Error("probe buffers missing");
+  const flow = graph.nodes["flow"] as unknown as { type: string; parameters: Record<string, unknown> };
   return {
-    orient: new Float32Array(orient),
-    position: new Float32Array(position),
+    orient: kernelRegionSlice(flow, packed, "orient").floats,
+    position: kernelRegionSlice(flow, packed, "position").floats,
     meanLuma: luma / (image.data.length / 4),
   };
 }

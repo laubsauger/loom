@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readPointAttribute } from "../../../nodes/definitions/test-support.ts";
 
 import { compileGraph } from "../../../compiler/index.ts";
 import { createNodeRegistry } from "../../../nodes/registry/registry.ts";
@@ -29,10 +30,11 @@ import type { FrameEvaluationInput } from "../../../domain/types/frame.ts";
  * paused picture) and a value nobody declares is dropped without a word.
  */
 
-const ATTRIBUTES = JSON.stringify([
-  { name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] },
-  { name: "probe", type: "vec4f", default: [0, 0, 0, 0] },
-]);
+const PROBE_SCHEMA = [
+  { name: "position", type: "vec3f" as const, semantic: "position" as const, default: [0, 0, 0] },
+  { name: "probe", type: "vec4f" as const, default: [0, 0, 0, 0] },
+];
+const ATTRIBUTES = JSON.stringify(PROBE_SCHEMA);
 
 /**
  * Both clocks side by side, so one run distinguishes all four ways this can be wrong:
@@ -137,7 +139,11 @@ async function probeAt(frame: FrameEvaluationInput): Promise<readonly number[]> 
     const compiled = await backend.compile(plan);
     backend.render(compiled, { frame, pointer: { x: 0, y: 0, buttons: 0 }, resolution: [16, 16] });
     expect(errors).toEqual([]);
-    const probe = new Float32Array(await backend.readBuffer("scratch:sim:probe"));
+    /* T1076: `probe` is a REGION of the kernel's packed buffer — the schema puts it
+       after `position`, so a read from byte 0 would hand back coordinates. */
+    const probe = (
+      await readPointAttribute(backend.readBuffer, "sim", PROBE_SCHEMA, 8, "probe")
+    ).floats;
     return [probe[0] as number, probe[1] as number, probe[2] as number, probe[3] as number];
   } finally {
     backend.dispose();

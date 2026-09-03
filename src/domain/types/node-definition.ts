@@ -217,6 +217,38 @@ export type ScratchRequest =
   | ScratchExternalTextureRequest
   | ScratchRingRequest;
 
+/**
+ * WHERE one attribute of a pointset lives (T296, T1076).
+ *
+ * T1076 replaced `{ pair, half }` — one storage buffer per attribute — with a REGION of a
+ * packed buffer, because the old layout spent 2n bindings for n attributes and WebGPU's
+ * baseline allows 8 per stage: four attributes, and the fifth failed the pipeline in
+ * silence (§V588, B33). The bytes are the same bytes in the same order; only the address
+ * changed, from "its own buffer" to "this buffer plus this offset".
+ *
+ * The field is named `buffer` rather than `pair` precisely so the rename is a TYPE ERROR
+ * at every consumer. Adoption cannot be partial — a kernel reads its UPSTREAM's map for
+ * shared attributes (T401), so one unpacked producer puts every downstream kernel back on
+ * a binding per attribute — and "all producers or none" is worth having the compiler
+ * enforce rather than a reviewer.
+ */
+export interface PointsetAttributeRef {
+  /** The bufferPair holding this attribute's region. One per PRODUCER, not per attribute. */
+  buffer: string;
+  /**
+   * §V231/T322: which half holds THIS frame's data. A payload fact, never a convention —
+   * an ordinary producer names its write half (§V168), a compacted one its read half
+   * (scatter lands there), and a consumer binds what the payload says.
+   */
+  half: "read" | "write";
+  /** Byte offset of the attribute's region inside `buffer`. 256-aligned (see `src/points/packing.ts`). */
+  offset: number;
+  /** Bytes the region occupies: `stride × capacity`. */
+  bytes: number;
+  /** T286: the attribute's WGSL type, so a mapped parameter can bind and swizzle it. */
+  type?: string;
+}
+
 export interface CompiledNodeDescription {
   passes: ReadonlyArray<unknown>;
   /** Scratch resources this node's passes use between each other. */
@@ -233,7 +265,7 @@ export interface CompiledNodeDescription {
     Record<
       string,
       {
-        pairs: Readonly<Record<string, { pair: string; half: "read" | "write"; type?: string }>>;
+        pairs: Readonly<Record<string, PointsetAttributeRef>>;
         capacity: number;
         topology?: string;
         count?: { buffer: string };

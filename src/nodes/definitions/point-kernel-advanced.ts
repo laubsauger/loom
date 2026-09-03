@@ -1,7 +1,7 @@
 import type { CompiledNodeDescription, NodeDefinition, ScratchRequest } from "../../domain/types/node-definition.ts";
-import type { DispatchPassDescriptor } from "../../runtime/backend/plan.ts";
+import type { BufferBindingDescriptor, DispatchPassDescriptor } from "../../runtime/backend/plan.ts";
 import type { PointAttributeSchema } from "../../points/attributes.ts";
-import { ATTRIBUTE_STRIDES } from "../../points/attributes.ts";
+import type { PointRegion } from "../../points/packing.ts";
 import {
   ADVANCED_KERNEL_CONTRACT_VERSION,
   KERNEL_PARAM_PREFIX,
@@ -30,9 +30,16 @@ import {
   pointKernelNoticeDiagnostics,
   pointKernelValueParameters,
   pointKernelValueUniforms,
-  pointPairId,
+  pointBufferId,
   structuralParameters,
 } from "./points.ts";
+import {
+  kernelBufferBindings,
+  kernelStorage,
+  packedPointStorage,
+  regionBinding,
+  type KernelStoragePlan,
+} from "./point-storage.ts";
 import { reflectedUniforms } from "./params-reflection.ts";
 
 /**
@@ -61,12 +68,18 @@ import { reflectedUniforms } from "./params-reflection.ts";
 
 const FLAGS = "flags";
 
-function withFlags(attributes: ReadonlyArray<PointAttributeSchema>): ReadonlyArray<PointAttributeSchema> {
+/**
+ * The schema this node actually ALLOCATES: the author's, plus the injected lifecycle word.
+ * Exported since T1076 because the packed layout is a function of exactly this list, and a
+ * reader (a test, a readback) that used the author's list alone would land one region off
+ * for every attribute after the first.
+ */
+export function withFlags(attributes: ReadonlyArray<PointAttributeSchema>): ReadonlyArray<PointAttributeSchema> {
   return [...attributes, { name: FLAGS, type: "u32", default: [1] }];
 }
 
 export function liveCountBufferId(nodeId: string): string {
-  return pointPairId(nodeId, "liveCount");
+  return pointBufferId(nodeId, "liveCount");
 }
 
 export const pointKernelAdvancedNode: NodeDefinition = {
@@ -239,10 +252,30 @@ export const pointKernelAdvancedNode: NodeDefinition = {
     /* T744: the SAME field path the plain kernel rides — one route into the point
        pipeline, one fieldAt, one refusal message (§V349). */
     const fieldTexture = inputs["field"];
+    /* T1076: ONE packed pair for the whole schema, flags included. §V231: compaction lands
+       this frame's data in the READ half, so that is the half the payload names and the
+       half `swap: false` preserves. */
+    const storage = packedPointStorage(nodeId, attributes, capacity, "read", { swap: false });
+    if (!storage.ok) {
+      return {
+        passes: [],
+        diagnostics: storage.errors.map((message) => ({
+          severity: "error" as const,
+          code: "node.points.capacity",
+          message: `Node "${nodeId}": ${message}`,
+          nodeId,
+        })),
+      };
+    }
+    /* The KERNEL reads pre-frame values from the read half and writes to the write half;
+       the lifecycle passes below invert that (§V231), which is why they map their own. */
+    const kernelPlan = kernelStorage({ own: storage, touched: names, written: names });
+
     const module = generateKernelModule({
       attributes,
       reads: names,
       writes: names,
+      storage: kernelPlan.storage,
       kernel: kernelBodyOf(kernelSource),
       lifecycle: { flagsAttribute: FLAGS },
       ...(groupSource.trim() === "" ? {} : { group: groupSource }),
@@ -261,7 +294,7 @@ export const pointKernelAdvancedNode: NodeDefinition = {
       };
     }
 
-    const compaction = generateCompactionModule(attributes, capacity, "aliveBit");
+    const compaction = generateCompactionModule(attributes, capacity, storage.layout, "aliveBit");
     if (!compaction.ok) {
       return {
         passes: [],
@@ -274,7 +307,7 @@ export const pointKernelAdvancedNode: NodeDefinition = {
       };
     }
 
-    const spawn = generateSpawnModule(attributes, {
+    const spawn = generateSpawnModule(attributes, storage.layout, {
       idAttribute: idAttribute.name,
       flagsAttribute: FLAGS,
     });
@@ -283,10 +316,21 @@ export const pointKernelAdvancedNode: NodeDefinition = {
     // the pass list byte-identical to the hookless one (T300's property, kept).
     const hookSource = typeof parameters["spawn"] === "string" ? parameters["spawn"].trim() : "";
     let hookModule: ReturnType<typeof generateSpawnHookModule> | undefined;
+    let hookPlan: KernelStoragePlan | undefined;
+    const shapedNames = names.filter((name) => name !== FLAGS);
     if (hookSource !== "") {
+      hookPlan = kernelStorage({
+        own: storage,
+        touched: shapedNames,
+        written: shapedNames,
+        // T339: the hook edits the READ halves in place, where the copy passes left the
+        // newborns — so its reads and writes are ONE `read_write` binding (T1076).
+        inPlace: "read",
+      });
       hookModule = generateSpawnHookModule({
         attributes,
         flagsAttribute: FLAGS,
+        storage: hookPlan.storage,
         hook: hookSource,
         ...(params.fields.length === 0 ? {} : { params }),
       });
@@ -304,11 +348,16 @@ export const pointKernelAdvancedNode: NodeDefinition = {
     }
 
     const counts = liveCountBufferId(nodeId);
-    const scanned = pointPairId(nodeId, "scanned");
-    const blockSums = pointPairId(nodeId, "blockSums");
-    const spawnScanned = pointPairId(nodeId, "spawnScanned");
-    const spawnBlockSums = pointPairId(nodeId, "spawnBlockSums");
-    const flagsPair = pointPairId(nodeId, FLAGS);
+    const scanned = pointBufferId(nodeId, "scanned");
+    const blockSums = pointBufferId(nodeId, "blockSums");
+    const spawnScanned = pointBufferId(nodeId, "spawnScanned");
+    const spawnBlockSums = pointBufferId(nodeId, "spawnBlockSums");
+    /** T1076: the region of a named attribute inside this node's packed pair. */
+    const region = (name: string): PointRegion => {
+      const found = storage.layout.byName.get(name);
+      if (found === undefined) throw new Error(`Node "${nodeId}": no packed region for attribute "${name}".`);
+      return found;
+    };
     const frameUniforms = { timeSeconds: 0, deltaSeconds: 0, frameIndex: 0 };
     /**
      * T510/§V182 — THE LIFECYCLE PASSES RESERVE `firstRun` TOO, and this line is the one
@@ -343,26 +392,28 @@ export const pointKernelAdvancedNode: NodeDefinition = {
      * buffers — same implementation, different resources, which is exactly why the
      * second scan cannot drift from the first.
      */
-    const lifecycleBinding = (
-      passName: string,
-      name: string,
-    ): { binding: string; resourceId: string; half?: "read" | "write" } => {
+    const lifecycleBinding = (passName: string, name: string): BufferBindingDescriptor => {
       const spawnScan = passName.startsWith("spawnScan");
-      if (name === "flags") return { binding: name, resourceId: flagsPair, half: "write" };
       if (name === "scanned") return { binding: name, resourceId: spawnScan ? spawnScanned : scanned };
       if (name === "blockSums") return { binding: name, resourceId: spawnScan ? spawnBlockSums : blockSums };
       if (name === "spawnScanned") return { binding: name, resourceId: spawnScanned };
       if (name === "spawnBlockSums") return { binding: name, resourceId: spawnBlockSums };
       if (name === "aliveCount" || name === "counts") return { binding: name, resourceId: counts };
-      const attribute = name.replace(/^(in|out)_/, "");
       // Scatter and spawn copies read this frame's data from WRITE halves and land
       // results in READ halves — the §V231 inversion, contained in this pass list.
       // Exception: spawnIdentity WRITES out_id/out_flags into read halves too.
-      return {
-        binding: name,
-        resourceId: pointPairId(nodeId, attribute),
-        half: name.startsWith("in_") ? "write" : "read",
-      };
+      const half = name.startsWith("in_") ? ("write" as const) : ("read" as const);
+      /* T1076: `in_points`/`out_points` are the WHOLE packed buffer — the pass addresses
+         every attribute's region by offset, which is what collapsed the chunked scatter
+         (⌈n/2⌉ dispatches) and the per-attribute spawn copies (n dispatches) into one
+         dispatch each. Everything else is a REGION: a u32 attribute bound alone reads as
+         `array<u32>` with no change to the shared scan WGSL at all. */
+      if (name === "in_points" || name === "out_points") {
+        return { binding: name, resourceId: storage.resourceId, half };
+      }
+      // `flags` is read where this frame's flags word was written — the write half.
+      if (name === "flags") return regionBinding(name, storage.resourceId, "write", region(FLAGS));
+      return regionBinding(name, storage.resourceId, half, region(name.replace(/^(in|out)_/, "")));
     };
 
     const passes: DispatchPassDescriptor[] = [
@@ -372,15 +423,7 @@ export const pointKernelAdvancedNode: NodeDefinition = {
         shader: module.wgsl,
         entryPoint: "main",
         workgroups: [Math.ceil(capacity / module.workgroupSize), 1, 1],
-        buffers: module.buffers.map((binding) =>
-          binding.role === "live"
-            ? { binding: binding.variable, resourceId: counts }
-            : {
-                binding: binding.variable,
-                resourceId: pointPairId(nodeId, binding.attribute),
-                half: binding.role === "in" ? ("read" as const) : ("write" as const),
-              },
-        ),
+        buffers: kernelBufferBindings(module.buffers, kernelPlan, counts),
         /* T744: a texture binding, not a storage buffer — the §V588 attribute budget is
            untouched, which is why this input was always affordable. */
         ...(module.usesField && fieldTexture !== undefined
@@ -414,7 +457,9 @@ export const pointKernelAdvancedNode: NodeDefinition = {
         workgroups: [Math.ceil(capacity / SCAN_WORKGROUP_SIZE), 1, 1],
         buffers: [
           { binding: "liveCount", resourceId: counts },
-          { binding: "aliveFlags", resourceId: flagsPair, half: "write" },
+          // T1076: the flags REGION of the packed write half — `array<u32>` at an offset,
+          // so `clearDeadTailWgsl` is byte-identical to what it was.
+          regionBinding("aliveFlags", storage.resourceId, "write", region(FLAGS)),
         ],
         uniforms: { ...lifecycleFrameParams, capacity },
         uniformBinding: "params",
@@ -445,13 +490,9 @@ export const pointKernelAdvancedNode: NodeDefinition = {
               shader: hookModule.wgsl,
               entryPoint: "main",
               workgroups: [Math.ceil(capacity / hookModule.workgroupSize), 1, 1] as [number, number, number],
-              buffers: hookModule.buffers.map((binding) =>
-                binding.role === "live"
-                  ? { binding: binding.variable, resourceId: counts }
-                  : // In place, on the READ halves — where the copy passes left the
-                    // newborns and where consumers bind (§V231).
-                    { binding: binding.variable, resourceId: pointPairId(nodeId, binding.attribute), half: "read" as const },
-              ),
+              // In place, on the READ halves — where the copy passes left the newborns
+              // and where consumers bind (§V231).
+              buffers: kernelBufferBindings(hookModule.buffers, hookPlan as KernelStoragePlan, counts),
               uniforms: {
                 ...frameUniforms,
                 seed: readNumber(parameters, "seed", 7),
@@ -471,15 +512,7 @@ export const pointKernelAdvancedNode: NodeDefinition = {
     ];
 
     const scratch: ScratchRequest[] = [
-      ...attributes.map((attribute) => ({
-        kind: "bufferPair" as const,
-        key: attribute.name,
-        stride: ATTRIBUTE_STRIDES[attribute.type],
-        capacity,
-        // §V231: compaction lands this frame's data in the READ half; a swap would
-        // hand next frame the stale half.
-        swap: false,
-      })),
+      storage.scratch,
       // The counts buffer (u32 × 4): live count, id cursor, cumulative dropped
       // births, this frame's raw birth total. Slot 0 is what consumers read.
       { kind: "buffer", key: "liveCount", stride: 4, capacity: 4 },
@@ -503,12 +536,7 @@ export const pointKernelAdvancedNode: NodeDefinition = {
           // Consumers bind READ halves: that is where scatter left this frame's
           // survivors. The payload says so; nobody downstream has to know why.
           pairs: Object.fromEntries(
-            attributes
-              .filter((attribute) => attribute.name !== FLAGS)
-              .map((attribute) => [
-                attribute.name,
-                { pair: pointPairId(nodeId, attribute.name), half: "read" as const, type: attribute.type },
-              ]),
+            Object.entries(storage.pairs).filter(([name]) => name !== FLAGS),
           ),
           capacity,
           topology: "points",

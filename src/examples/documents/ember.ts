@@ -37,7 +37,8 @@ import { settings, node, edge, graph, document } from "./builders.ts";
  *
  * ## HEAT RIDES IN `velocity.z`, and the binding budget is why (§V471.2)
  *
- * A lifecycle kernel spends 2·(n−1)+2 storage bindings for n attributes including flags,
+ * A lifecycle kernel USED TO spend 2·(n−1)+2 storage bindings for n attributes incl. flags
+ * (T1076 packed them into one buffer per half and the count stopped growing with n),
  * and baseline WebGPU guarantees 8 per compute stage — so the default schema
  * (position, velocity, id, flags) lands EXACTLY at the limit and one more attribute
  * busts it silently. The simulation is 2D, so `velocity.z` is free, and heat rides

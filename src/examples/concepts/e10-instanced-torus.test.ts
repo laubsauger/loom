@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { pointStorageId } from "../../nodes/definitions/point-storage.ts";
 import type { GraphNode } from "../../domain/types/graph.ts";
 import { example } from "./helpers.ts";
 
@@ -25,7 +26,7 @@ describe("E10 Instanced Torus", () => {
       target: string;
     };
     expect(draw.vertexCount).toBe(36);
-    expect(draw.buffers?.[0]?.resourceId).toBe("scratch:points:position");
+    expect(draw.buffers?.[0]?.resourceId).toBe(pointStorageId("points"));
     const target = plan.resources.find((resource) => resource.id === draw.target);
     expect((target as { depth?: boolean }).depth).toBe(true);
   });

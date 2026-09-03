@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { pointStorageId } from "../../../nodes/definitions/point-storage.ts";
+import { planRegion } from "../../../nodes/definitions/test-support.ts";
 
 import { compileGraph } from "../../../compiler/index.ts";
 import { createNodeRegistry } from "../../../nodes/registry/registry.ts";
@@ -91,10 +93,17 @@ async function renderLinks(
         resolution: [64, 64],
       } as never);
     }
-    const positions = new Float32Array(await backend.readBuffer("scratch:prox:position"));
-    const tips = new Float32Array(await backend.readBuffer("scratch:prox:tip"));
-    const tints = new Float32Array(await backend.readBuffer("scratch:prox:tint"));
-    const neighbors = new Uint32Array(await backend.readBuffer("scratch:prox:neighbor"));
+    /* T1076: ONE readback — the four link attributes are regions of the proximity node's
+       packed buffer, at the offsets the PLAN's own emit bindings name. */
+    const packed = await backend.readBuffer(pointStorageId("prox"));
+    const slice = (binding: string) => {
+      const region = planRegion(plan.passes, "prox", binding);
+      return { floats: new Float32Array(packed, region.offset, region.bytes / 4), words: new Uint32Array(packed, region.offset, region.bytes / 4) };
+    };
+    const positions = slice("out_position").floats;
+    const tips = slice("out_tip").floats;
+    const tints = slice("out_tint").floats;
+    const neighbors = slice("out_neighbor").words;
     const links: Link[] = [];
     // vec3f is 16-byte aligned (§V720): 4 floats per element, x in lane 0.
     for (let at = 0; at * 4 < positions.length; at += 1) {

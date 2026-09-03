@@ -762,6 +762,10 @@ export function App({
         runtime.flattened.current().graph,
         runtime.registry,
         renderRangeHolderFor(runtime.bus).current?.busy() === true ? "blocked" : "live-session",
+        undefined,
+        // T1076: the pump reads the planned stream out of the PLAN's own binding regions —
+        // point attributes are packed, so an id rebuilt from the node name names nothing.
+        compile.compiled?.passes ?? [],
       );
     },
     observe: observeFrame,

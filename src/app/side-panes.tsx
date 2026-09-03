@@ -682,7 +682,14 @@ export function ViewerPane({
       .find((binding) => binding.binding === "positions");
     if (positions === undefined) return undefined;
     try {
-      const raw = new Float32Array(await backend.readBuffer(positions.resourceId));
+      /* T1076: `positions` is a REGION of the producer's packed point buffer, so the walk
+         starts at the binding's own offset and stops at its end — from byte 0 it would
+         measure whatever attribute happens to sit first. */
+      const packed = await backend.readBuffer(positions.resourceId);
+      const raw =
+        positions.offset === undefined || positions.bytes === undefined
+          ? new Float32Array(packed)
+          : new Float32Array(packed, positions.offset, positions.bytes / 4);
       let minX = Infinity, minY = Infinity, minZ = Infinity;
       let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
       for (let at = 0; at + 2 < raw.length; at += 4) {

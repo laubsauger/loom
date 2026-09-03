@@ -1,12 +1,20 @@
-import type { CompiledNodeDescription, NodeDefinition } from "../../domain/types/node-definition.ts";
+import type { CompiledNodeDescription, NodeDefinition, PointsetAttributeRef } from "../../domain/types/node-definition.ts";
 import type { DispatchPassDescriptor } from "../../runtime/backend/plan.ts";
 import type { ParameterSchema } from "../../domain/types/parameters.ts";
-import { ATTRIBUTE_STRIDES } from "../../points/attributes.ts";
+import type { PointAttributeSchema } from "../../points/attributes.ts";
 import { formatTopology } from "../../points/topology.ts";
 import { POINT_GENERATOR_WGSL } from "../shaders/point-generators.wgsl.ts";
 import { readCompileInputs } from "./compile-context.ts";
 import { readNumber } from "./parameter-readers.ts";
-import { pointPairId } from "./points.ts";
+import { attributeBinding, packedPointStorage } from "./point-storage.ts";
+
+/** The only attribute a generator owns; named once so the layout and the pass agree. */
+const POSITION_ATTRIBUTE: PointAttributeSchema = {
+  name: "position",
+  type: "vec3f",
+  semantic: "position",
+  default: [0, 0, 0],
+};
 
 /**
  * The point generator family (T298): `pointGenerator` with a shape menu, plus the
@@ -99,13 +107,29 @@ function compileGenerator(fixedShape: GeneratorShape | null) {
     const cols = Math.max(1, Math.round(readNumber(parameters, "cols", 64)));
     const rows = Math.max(1, Math.round(readNumber(parameters, "rows", 64)));
 
+    /* T1076: one packed pair even for a one-attribute producer — the layout function is
+       the single answer to "where does this attribute live", and a downstream kernel
+       reads the region off the edge without caring how many the producer owns. */
+    const storage = packedPointStorage(nodeId, [POSITION_ATTRIBUTE], capacity, "write");
+    if (!storage.ok) {
+      return {
+        passes: [],
+        diagnostics: storage.errors.map((message) => ({
+          severity: "error" as const,
+          code: "node.points.capacity",
+          message: `Node "${nodeId}": ${message}`,
+          nodeId,
+        })),
+      };
+    }
+
     const pass: DispatchPassDescriptor = {
       kind: "dispatch",
       id: `${nodeId}:generate`,
       shader: POINT_GENERATOR_WGSL,
       entryPoint: "main",
       workgroups: [Math.ceil(capacity / 64), 1, 1],
-      buffers: [{ binding: "out_position", resourceId: pointPairId(nodeId, "position"), half: "write" }],
+      buffers: [attributeBinding("out_position", storage.pairs["position"] as PointsetAttributeRef)],
       uniforms: {
         count: capacity,
         shape: SHAPE_INDEX[shape] ?? 2,
@@ -123,12 +147,10 @@ function compileGenerator(fixedShape: GeneratorShape | null) {
 
     return {
       passes: [pass],
-      scratch: [
-        { key: "position", kind: "bufferPair", stride: ATTRIBUTE_STRIDES["vec3f"], capacity },
-      ],
+      scratch: [storage.scratch],
       pointsets: {
         out: {
-          pairs: { position: { pair: pointPairId(nodeId, "position"), half: "write" as const, type: "vec3f" } },
+          pairs: storage.pairs,
           capacity,
           // T301's connectivity, in T302's vocabulary: a gridded shape publishes its
           // analytic topology, with the seams its parametrization actually closes.

@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { packAttributes } from "../../points/packing.ts";
+import { pointStorageId } from "./point-storage.ts";
 
 import { compileGraph } from "../../compiler/index.ts";
 import { createNodeRegistry } from "../registry/registry.ts";
@@ -7,6 +9,20 @@ import { scratchResourceId } from "../../compiler/resources.ts";
 import { POSE_KEYPOINT_COUNT } from "../../runtime/models/pose-runner.ts";
 import type { BackendCapabilities } from "../../domain/types/backend.ts";
 import type { GraphDocument, GraphNode, ProjectSettings } from "../../domain/types/graph.ts";
+
+/**
+ * T1076: the packed pair a one-`position` producer allocates at `capacity` points.
+ *
+ * Deliberately NOT `bytes / stride`: the allocation is padded up to the 256-byte region
+ * alignment, so 17 keypoints occupy 512 bytes rather than 272 and the naive division reads
+ * 32 points. The claim is that the node asked for THIS capacity, so the assertion is
+ * against the layout function at that capacity — one answer, not two.
+ */
+function packedWordsFor(capacity: number): number {
+  const layout = packAttributes([{ name: "position", type: "vec3f", default: [0, 0, 0] }], capacity);
+  if (!layout.ok) throw new Error(layout.errors.join("; "));
+  return layout.bytes / 4;
+}
 
 /**
  * Pose, and the node that makes its output mean something (T743).
@@ -146,10 +162,13 @@ describe("keypoints reach the point and instancing catalogue", () => {
     } as never;
 
     const plan = compile(graph);
-    const pair = plan.resources.find((r) => r.id.includes("joints") && r.id.includes("position")) as
-      | { capacity?: number }
+    // T1076: ONE packed pair per node, sized in u32 words by the layout function.
+    const pair = plan.resources.find((r) => r.id === pointStorageId("joints")) as
+      | { stride?: number; capacity?: number }
       | undefined;
-    expect(pair?.capacity).toBe(POSE_KEYPOINT_COUNT);
+    expect(pair).toBeDefined();
+    expect(pair?.stride).toBe(4);
+    expect(pair?.capacity).toBe(packedWordsFor(POSE_KEYPOINT_COUNT));
   });
 });
 
@@ -179,10 +198,12 @@ describe("Points From Texture serves Depth too, which is why it exists", () => {
 
     const plan = compile(graph);
     expect(errorsOf(plan)).toEqual([]);
-    const pair = plan.resources.find((r) => r.id.includes("cloud") && r.id.includes("position")) as
-      | { capacity?: number }
+    // T1076: one packed pair; its only region is `position` (see pointsIn).
+    const pair = plan.resources.find((r) => r.id === pointStorageId("cloud")) as
+      | { stride?: number; capacity?: number }
       | undefined;
-    expect(pair?.capacity).toBe(64 * 64);
+    expect(pair?.stride).toBe(4);
+    expect(pair?.capacity).toBe(packedWordsFor(64 * 64));
   });
 
   it("publishes grid topology in Grid mode and none in Value mode", () => {

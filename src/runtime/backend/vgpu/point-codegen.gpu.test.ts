@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { compute, createMockAdapter, frame, init, storage, uniforms } from "vgpu/mock";
 
 import { generateKernelModule } from "../../../points/codegen.ts";
-import { attributeBufferBytes, type PointAttributeSchema } from "../../../points/attributes.ts";
+import type { PointAttributeSchema } from "../../../points/attributes.ts";
+import { packAttributes } from "../../../points/packing.ts";
 
 /**
  * T117, the half string tests cannot cover: the generated point-kernel module must be
@@ -30,10 +31,24 @@ const KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
 
 describe("generated point WGSL against real reflection (T117)", () => {
   it("reflects, binds and dispatches through vgpu", async () => {
+    const capacity = 256;
+    const layout = packAttributes(SCHEMA, capacity);
+    if (!layout.ok) throw new Error(layout.errors.join("; "));
+    // T1076: the region table a producing node hands codegen — own pair, read in, write out.
+    const region = (name: string, group: string) => ({
+      group,
+      offset: layout.byName.get(name)?.offset ?? 0,
+    });
     const module = generateKernelModule({
       attributes: SCHEMA,
       reads: ["position", "velocity", "id"],
       writes: ["position", "velocity"],
+      storage: {
+        reads: Object.fromEntries(SCHEMA.map((entry) => [entry.name, region(entry.name, "own:read")])),
+        writes: Object.fromEntries(
+          ["position", "velocity"].map((name) => [name, region(name, "own:write")]),
+        ),
+      },
       kernel: KERNEL,
     });
     expect(module.ok).toBe(true);
@@ -41,7 +56,6 @@ describe("generated point WGSL against real reflection (T117)", () => {
 
     const gpu = await init({ adapter: createMockAdapter({ features: [] }) });
     try {
-      const capacity = 256;
       const kernelFrame = uniforms(gpu, {
         timeSeconds: 0,
         deltaSeconds: 1 / 60,
@@ -50,13 +64,13 @@ describe("generated point WGSL against real reflection (T117)", () => {
         count: capacity,
       });
 
+      /* T1076: one buffer per GROUP, sized to the whole packed half — the module
+         addresses each attribute's region by offset inside it. */
       const buffers: Record<string, unknown> = { kernelFrame };
       for (const binding of module.buffers) {
-        const attribute = SCHEMA.find((entry) => entry.name === binding.attribute);
-        if (!attribute) throw new Error(`unknown attribute ${binding.attribute}`);
         buffers[binding.variable] = storage(
           gpu,
-          attributeBufferBytes(attribute.type, capacity),
+          layout.bytes,
           binding.access === "read" ? "read" : "read-write",
         );
       }

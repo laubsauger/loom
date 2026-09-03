@@ -1,8 +1,10 @@
 import {
   ATTRIBUTE_STRIDES,
+  COMPONENT_COUNTS,
   validateAttributes,
   type PointAttributeSchema,
 } from "./attributes.ts";
+import type { PackedLayout } from "./packing.ts";
 
 /**
  * Scan-based lifecycle compaction (T119, §V74/§V76).
@@ -20,10 +22,13 @@ import {
  *                      on one invocation, deterministic and trivially correct. This is
  *                      a known perf lever, not a limitation — swap for a hierarchical
  *                      scan later without touching the pass interface.
- *   3. `scatter…`    — survivors copy their attributes from slot i to slot
- *                      scanned[i] + blockOffset[block(i)]. Chunked so a chunk's
- *                      in/out pairs stay inside baseline storage-buffer limits (§V24):
- *                      flags + scanned + blockSums + 2·attrs ≤ 8 per stage.
+ *   3. `scatter`     — survivors copy their attributes from slot i to slot
+ *                      scanned[i] + blockOffset[block(i)]. ONE pass over the whole
+ *                      schema since T1076: the attributes are regions of one packed
+ *                      buffer per half, so the pass spends flags + scanned + blockSums
+ *                      + in + out = 5 storage bindings whatever n is. It used to be
+ *                      CHUNKED at two attributes a pass (2·attrs + 3 ≤ 8), which cost
+ *                      ⌈n/2⌉ dispatches per frame for nothing but the binding budget.
  *
  * Slots MOVE under compaction — which is exactly why identity is the `id` attribute's
  * value and never a slot index (§V73). Nothing in these kernels reads `pointId`; they
@@ -52,9 +57,6 @@ export const COUNTS_LIVE = 0;
 export const COUNTS_NEXT_ID = 1;
 export const COUNTS_DROPPED = 2;
 export const COUNTS_BIRTHS = 3;
-
-/** Baseline WebGPU guarantees 8 storage buffers per stage; scatter uses 3 + 2·chunk. */
-const SCATTER_ATTRIBUTES_PER_PASS = 2;
 
 export interface LifecyclePass {
   readonly name: string;
@@ -184,17 +186,32 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 }`;
 }
 
-function scatterWgsl(chunk: ReadonlyArray<PointAttributeSchema>, extract: FlagsExtract): string {
-  const declarations = chunk
-    .map(
-      (attribute, index) =>
-        `@group(0) @binding(${4 + index * 2}) var<storage, read> in_${attribute.name}: array<${attribute.type}>;\n` +
-        `@group(0) @binding(${5 + index * 2}) var<storage, read_write> out_${attribute.name}: array<${attribute.type}>;`,
-    )
+/**
+ * T1076: the word-wise copy of one attribute's region from slot `index` to slot
+ * `destination`, inside packed buffers that share ONE layout. `vec3f` moves three words
+ * out of its four-word stride — the padding word was never read and is not copied.
+ */
+function copyRegionWgsl(layout: PackedLayout, indent: string): string {
+  return layout.regions
+    .flatMap((region) => {
+      const words = region.stride / 4;
+      const base = region.offset / 4;
+      return Array.from({ length: COMPONENT_COUNTS[region.type] }, (_, component) => {
+        const tail = component === 0 ? "" : ` + ${component}u`;
+        return (
+          `${indent}out_points[${base}u + destination * ${words}u${tail}] = ` +
+          `in_points[${base}u + index * ${words}u${tail}];`
+        );
+      });
+    })
     .join("\n");
-  const copies = chunk
-    .map((attribute) => `  out_${attribute.name}[destination] = in_${attribute.name}[index];`)
-    .join("\n");
+}
+
+function scatterWgsl(layout: PackedLayout, extract: FlagsExtract): string {
+  const declarations =
+    "@group(0) @binding(4) var<storage, read> in_points: array<u32>;\n" +
+    "@group(0) @binding(5) var<storage, read_write> out_points: array<u32>;";
+  const copies = copyRegionWgsl(layout, "  ");
 
   return `${PARAMS_WGSL}
 @group(0) @binding(1) var<storage, read> flags: array<u32>;
@@ -223,6 +240,12 @@ ${copies}
 export function generateCompactionModule(
   attributes: ReadonlyArray<PointAttributeSchema>,
   capacity: number,
+  /**
+   * T1076: where those attributes live inside the packed pair. Handed in rather than
+   * recomputed so the scatter and the node's own scratch request cannot come to disagree
+   * about an offset (§V349) — the pass writes bytes the renderers then read.
+   */
+  layout: PackedLayout,
   /** T323: how the scan reads its quantity out of the flags word. Default: v1's raw 0/1. */
   extract: FlagsExtract = "raw",
 ): CompactionResult {
@@ -258,24 +281,22 @@ export function generateCompactionModule(
     },
   ];
 
-  for (let start = 0; start < attributes.length; start += SCATTER_ATTRIBUTES_PER_PASS) {
-    const chunk = attributes.slice(start, start + SCATTER_ATTRIBUTES_PER_PASS);
-    passes.push({
-      name: `scatter:${chunk.map((attribute) => attribute.name).join("+")}`,
-      wgsl: scatterWgsl(chunk, extract),
-      entryPoint: "main",
-      dispatch: "perPoint",
-      bindings: [
-        { binding: 1, name: "flags", access: "read" },
-        { binding: 2, name: "scanned", access: "read" },
-        { binding: 3, name: "blockSums", access: "read" },
-        ...chunk.flatMap((attribute, index) => [
-          { binding: 4 + index * 2, name: `in_${attribute.name}`, access: "read" as const },
-          { binding: 5 + index * 2, name: `out_${attribute.name}`, access: "read_write" as const },
-        ]),
-      ],
-    });
-  }
+  /* T1076: ONE scatter for the whole schema. This used to be ⌈n/2⌉ dispatches a frame,
+     chunked purely to stay inside the 8-storage-buffers budget; packing removed the
+     reason, so the dispatches went with it. */
+  passes.push({
+    name: "scatter",
+    wgsl: scatterWgsl(layout, extract),
+    entryPoint: "main",
+    dispatch: "perPoint",
+    bindings: [
+      { binding: 1, name: "flags", access: "read" },
+      { binding: 2, name: "scanned", access: "read" },
+      { binding: 3, name: "blockSums", access: "read" },
+      { binding: 4, name: "in_points", access: "read" },
+      { binding: 5, name: "out_points", access: "read_write" },
+    ],
+  });
 
   return {
     ok: true,
@@ -372,14 +393,17 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 
 
 /* ------------------------------------------------------------------------------------
- * T323: the SPAWN half. A second scan over the same flags word (spawnCount bits) plus
- * chunked child-copy passes and one finalize. Children are COPIES of their parent —
- * every attribute rides over verbatim except id (fresh, from the monotone cursor) and
- * flags (born alive, spawning nothing). Differentiation happens NEXT frame through
- * pointRand(id, salt): distinct ids, distinct draws (§V74). The spawn(parent) hook is
- * deferred: a one-pass hook needs 2n+4 storage bindings against the per-stage limit
- * of 8 (B33's arithmetic — bind GROUPS do not raise the per-STAGE limit); the clean
- * path is a second in-place kernel over the newborn range, designed with T287.
+ * T323: the SPAWN half. A second scan over the same flags word (spawnCount bits) plus ONE
+ * child-copy pass (T1076 — it was one PER ATTRIBUTE) and one finalize. Children are COPIES
+ * of their parent — every attribute rides over verbatim except id (fresh, from the monotone
+ * cursor) and flags (born alive, spawning nothing). Differentiation happens NEXT frame
+ * through pointRand(id, salt): distinct ids, distinct draws (§V74).
+ *
+ * The spawn(parent) hook stays a SECOND PASS, and since T1076 that is a semantic choice
+ * rather than a budget one: a one-pass hook used to need 2n+4 storage bindings against the
+ * per-stage limit of 8 (B33's arithmetic), and packing retired that arithmetic. What keeps
+ * the two-pass shape is that the child arrives as its parent's copy, so inheritance is the
+ * initial value the hook shapes rather than something it would have to invent (T287).
  * ---------------------------------------------------------------------------------- */
 
 /** Frame-aware params block shared by spawn passes (T172: frame fields merge in). */
@@ -392,14 +416,23 @@ const SPAWN_PARAMS_WGSL = `struct SpawnParams {
 };
 @group(0) @binding(0) var<uniform> params: SpawnParams;`;
 
-function spawnCopyWgsl(attribute: PointAttributeSchema): string {
+/**
+ * T1076: every copied attribute in ONE pass. It was one dispatch PER ATTRIBUTE — the
+ * hook's `in`/`out` pair could not be chunked any smaller against the old budget — and
+ * with the schema packed, the pass binds 6 storage buffers whatever n is.
+ */
+function spawnCopyWgsl(layout: PackedLayout, copied: ReadonlySet<string>): string {
+  const copyLayout: PackedLayout = {
+    ...layout,
+    regions: layout.regions.filter((region) => copied.has(region.name)),
+  };
   return `${SPAWN_PARAMS_WGSL}
 @group(0) @binding(1) var<storage, read> flags: array<u32>;
 @group(0) @binding(2) var<storage, read> spawnScanned: array<u32>;
 @group(0) @binding(3) var<storage, read> spawnBlockSums: array<u32>;
 @group(0) @binding(4) var<storage, read> counts: array<u32>;
-@group(0) @binding(5) var<storage, read> in_${attribute.name}: array<${attribute.type}>;
-@group(0) @binding(6) var<storage, read_write> out_${attribute.name}: array<${attribute.type}>;
+@group(0) @binding(5) var<storage, read> in_points: array<u32>;
+@group(0) @binding(6) var<storage, read_write> out_points: array<u32>;
 
 @compute @workgroup_size(${SCAN_WORKGROUP_SIZE})
 fn main(@builtin(global_invocation_id) gid: vec3u) {
@@ -413,23 +446,36 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   }
   let base = counts[${COUNTS_LIVE}u] + spawnScanned[index] + spawnBlockSums[index / ${SCAN_WORKGROUP_SIZE}u];
   for (var child = 0u; child < births; child = child + 1u) {
-    let slot = base + child;
-    if (slot < params.capacity) {
-      out_${attribute.name}[slot] = in_${attribute.name}[index];
+    let destination = base + child;
+    if (destination < params.capacity) {
+${copyRegionWgsl(copyLayout, "      ")}
     }
   }
 }`;
 }
 
-/** Ids and flags for newborns, one pass: fresh id from the cursor, born alive. */
-function spawnIdentityWgsl(idAttribute: string): string {
+/**
+ * Ids and flags for newborns, one pass: fresh id from the cursor, born alive.
+ *
+ * T1076: BOTH writes go through ONE `out_points` binding. They were two — `out_id` and
+ * `out_flags` on separate pairs — and once the attributes became regions of one packed
+ * buffer, binding it twice as `read_write` is a writable ALIAS, which vgpu refuses at
+ * dispatch ("`src` and writable `dst` alias"). One binding, two offsets.
+ */
+function spawnIdentityWgsl(layout: PackedLayout, idAttribute: string, flagsAttribute: string): string {
+  const id = layout.byName.get(idAttribute);
+  const flagsRegion = layout.byName.get(flagsAttribute);
+  if (id === undefined || flagsRegion === undefined) {
+    throw new Error(`spawn identity needs packed regions for "${idAttribute}" and "${flagsAttribute}"`);
+  }
+  const idWord = `${id.offset / 4}u + slot * ${id.stride / 4}u`;
+  const flagsWord = `${flagsRegion.offset / 4}u + slot * ${flagsRegion.stride / 4}u`;
   return `${SPAWN_PARAMS_WGSL}
 @group(0) @binding(1) var<storage, read> flags: array<u32>;
 @group(0) @binding(2) var<storage, read> spawnScanned: array<u32>;
 @group(0) @binding(3) var<storage, read> spawnBlockSums: array<u32>;
 @group(0) @binding(4) var<storage, read> counts: array<u32>;
-@group(0) @binding(5) var<storage, read_write> out_${idAttribute}: array<u32>;
-@group(0) @binding(6) var<storage, read_write> out_flags: array<u32>;
+@group(0) @binding(5) var<storage, read_write> out_points: array<u32>;
 
 @compute @workgroup_size(${SCAN_WORKGROUP_SIZE})
 fn main(@builtin(global_invocation_id) gid: vec3u) {
@@ -450,8 +496,8 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   for (var child = 0u; child < births; child = child + 1u) {
     let slot = base + child;
     if (slot < params.capacity) {
-      out_${idAttribute}[slot] = nextIdBase + birthIndex + child;
-      out_flags[slot] = 1u; /* alive, spawning nothing */
+      out_points[${idWord}] = nextIdBase + birthIndex + child;
+      out_points[${flagsWord}] = 1u; /* alive, spawning nothing */
     }
   }
 }`;
@@ -489,12 +535,14 @@ export interface SpawnModule {
 /**
  * The spawn pass list, appended AFTER the survivor scatter: spawn scan (the alive
  * scan's generated passes with the spawnCount extraction — one implementation, so the
- * second scan cannot drift from the first), chunked child copies into the read halves,
- * identity, finalize. Bindings are named; the node maps them to resources exactly as
+ * second scan cannot drift from the first), ONE child-copy pass into the read halves
+ * (T1076 — it was one dispatch per attribute), identity, finalize. Bindings are named; the node maps them to resources exactly as
  * it does for compaction.
  */
 export function generateSpawnModule(
   attributes: ReadonlyArray<PointAttributeSchema>,
+  /** T1076: the packed layout the copies address, from the node that allocated it. */
+  layout: PackedLayout,
   options: { readonly idAttribute: string; readonly flagsAttribute: string },
 ): SpawnModule {
   const copyBindings = [
@@ -532,29 +580,23 @@ export function generateSpawnModule(
           { binding: 2, name: "aliveCount", access: "read_write" },
         ],
       },
-      ...copied.map(
-        (attribute): LifecyclePass => ({
-          name: `spawnCopy:${attribute.name}`,
-          wgsl: spawnCopyWgsl(attribute),
-          entryPoint: "main",
-          dispatch: "perPoint",
-          bindings: [
-            ...copyBindings,
-            { binding: 5, name: `in_${attribute.name}`, access: "read" },
-            { binding: 6, name: `out_${attribute.name}`, access: "read_write" },
-          ],
-        }),
-      ),
       {
-        name: "spawnIdentity",
-        wgsl: spawnIdentityWgsl(options.idAttribute),
+        name: "spawnCopy",
+        wgsl: spawnCopyWgsl(layout, new Set(copied.map((attribute) => attribute.name))),
         entryPoint: "main",
         dispatch: "perPoint",
         bindings: [
           ...copyBindings,
-          { binding: 5, name: `out_${options.idAttribute}`, access: "read_write" },
-          { binding: 6, name: "out_flags", access: "read_write" },
+          { binding: 5, name: "in_points", access: "read" as const },
+          { binding: 6, name: "out_points", access: "read_write" as const },
         ],
+      },
+      {
+        name: "spawnIdentity",
+        wgsl: spawnIdentityWgsl(layout, options.idAttribute, options.flagsAttribute),
+        entryPoint: "main",
+        dispatch: "perPoint",
+        bindings: [...copyBindings, { binding: 5, name: "out_points", access: "read_write" as const }],
       },
       {
         name: "spawnFinalize",

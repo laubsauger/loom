@@ -6,7 +6,8 @@ import type { NodeId } from "@domain/types/ids.ts";
 import { EMISSION_PUMPS } from "@domain/render/emission-pumps.ts";
 import { emissionRefusal, type SideEffectPolicy } from "@domain/render/side-effects.ts";
 import type { NodeRegistryView } from "@nodes/registry/registry.ts";
-import { pointPairId } from "@nodes/definitions/index.ts";
+import { laserStreamRegions } from "@nodes/definitions/laser-path.ts";
+import type { PassDescriptor } from "@runtime/backend/plan.ts";
 import type { LoomBackend } from "@runtime/backend/index.ts";
 import type { LoomBus } from "@domain/commands/bus.ts";
 import type { DeviceClient } from "@/mcp/device-client.ts";
@@ -122,7 +123,21 @@ export function useLaserBridge(options: {
 }): {
   readonly diagnostics: readonly RuntimeDiagnostic[];
   readonly session: LaserSessionSurface;
-  sync(graph: GraphDocument, registry: NodeRegistryView, policy: SideEffectPolicy, pointRate?: number): void;
+  /**
+   * T1076: `passes` is the current plan's pass list, and it is what tells the pump WHERE
+   * the planned stream is. The stream used to be two buffers whose ids the pump rebuilt
+   * from the source node id by convention; it is now two REGIONS of one packed buffer,
+   * and the plan is the only thing that says so. Omitted (or from a compile with no laser
+   * plan), the pump reports a missing stream rather than reading bytes that mean
+   * something else.
+   */
+  sync(
+    graph: GraphDocument,
+    registry: NodeRegistryView,
+    policy: SideEffectPolicy,
+    pointRate?: number,
+    passes?: ReadonlyArray<PassDescriptor>,
+  ): void;
 } {
   const [diagnostics, setDiagnostics] = useState<readonly RuntimeDiagnostic[]>([]);
   const [report, setReport] = useState<LaserStateReport | null>(null);
@@ -206,7 +221,13 @@ export function useLaserBridge(options: {
   estopRef.current = session.estop;
 
   const sync = useCallback(
-    (graph: GraphDocument, registry: NodeRegistryView, policy: SideEffectPolicy, pointRate = 30000) => {
+    (
+      graph: GraphDocument,
+      registry: NodeRegistryView,
+      policy: SideEffectPolicy,
+      pointRate = 30000,
+      passes: ReadonlyArray<PassDescriptor> = [],
+    ) => {
       const types = new Set(laserPumpNodeTypes());
       const next: RuntimeDiagnostic[] = [];
       for (const nodeId of Object.keys(graph.nodes).sort()) {
@@ -244,14 +265,17 @@ export function useLaserBridge(options: {
         // tab (the device itself is single-host), so the first armed target streams.
         const source = laserSourceOf(graph, nodeId as NodeId);
         const backend = options.backend?.() ?? null;
-        if (source === null || backend === null) {
+        const stream = source === null ? null : laserStreamRegions(passes, source);
+        if (source === null || backend === null || stream === null) {
           next.push({
             severity: "warning",
             code: "laser.source.missing",
             message:
               source === null
                 ? "Laser Out has no planned stream — wire a Laser Path node into its Samples input."
-                : "No live backend to read the planned stream from.",
+                : backend === null
+                  ? "No live backend to read the planned stream from."
+                  : "The wired Laser Path emitted no plan this compile — check its diagnostics.",
             nodeId,
           });
           continue;
@@ -260,11 +284,14 @@ export function useLaserBridge(options: {
           inFlight.current = true;
           void (async () => {
             try {
-              const [position, tint] = await Promise.all([
-                backend.readBuffer(pointPairId(source, "position")),
-                backend.readBuffer(pointPairId(source, "tint")),
-              ]);
-              const samples = samplesFromBuffers(new Float32Array(position), new Float32Array(tint));
+              /* T1076: ONE readback. `position` and `tint` are regions of the planner's
+                 packed buffer, sliced at the offsets the plan named — the bytes are the
+                 bytes the two separate buffers held, so the decoder is unchanged. */
+              const packed = await backend.readBuffer(stream.resourceId);
+              const samples = samplesFromBuffers(
+                new Float32Array(packed, stream.position.offset, stream.position.bytes / 4),
+                new Float32Array(packed, stream.tint.offset, stream.tint.bytes / 4),
+              );
               if (samples.length > 0) await run({ kind: "stream", samples, pointRate });
             } catch {
               // A readback refusal (outside-frame, halted) skips the frame; the DAC

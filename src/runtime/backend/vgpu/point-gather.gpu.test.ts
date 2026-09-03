@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { pointStorageId } from "../../../nodes/definitions/point-storage.ts";
+import { planRegion } from "../../../nodes/definitions/test-support.ts";
 
 import { compileGraph } from "../../../compiler/index.ts";
 import { createNodeRegistry } from "../../../nodes/registry/registry.ts";
@@ -134,8 +136,11 @@ async function gather(parameters: Record<string, unknown>, outputName: string): 
         resolution: [64, 64],
       } as never);
     }
-    const raw = await backend.readBuffer(`scratch:gath:${outputName}`);
-    return [...new Float32Array(raw)].slice(0, XS.length);
+    /* T1076: a gather owns ONE attribute, so its packed buffer IS that region — the
+       offset comes off the plan's own `out_value` binding rather than an assumption. */
+    const region = planRegion(plan.passes, "gath", "out_value");
+    const raw = await backend.readBuffer(pointStorageId("gath"));
+    return [...new Float32Array(raw, region.offset, region.bytes / 4)].slice(0, XS.length);
   } finally {
     backend.dispose();
   }
@@ -294,10 +299,21 @@ describe("Gather over an adjacency, by value (T1071)", () => {
           resolution: [64, 64],
         } as never);
       }
-      const tints = new Float32Array(await backend.readBuffer("scratch:prox:tint"));
-      const tips = new Float32Array(await backend.readBuffer("scratch:prox:tip"));
-      const neighbors = new Uint32Array(await backend.readBuffer("scratch:prox:neighbor"));
-      const measured = [...new Float32Array(await backend.readBuffer("scratch:gath:degree"))].slice(0, XS.length);
+      /* T1076: the link attributes are regions of the proximity node's packed buffer and
+         the degree is a region of the gather's — offsets from the plan's own bindings. */
+      const linkPacked = await backend.readBuffer(pointStorageId("prox"));
+      const link = (binding: string) => planRegion(plan.passes, "prox", binding);
+      const tintRegion = link("out_tint");
+      const tipRegion = link("out_tip");
+      const neighborRegion = link("out_neighbor");
+      const tints = new Float32Array(linkPacked, tintRegion.offset, tintRegion.bytes / 4);
+      const tips = new Float32Array(linkPacked, tipRegion.offset, tipRegion.bytes / 4);
+      const neighbors = new Uint32Array(linkPacked, neighborRegion.offset, neighborRegion.bytes / 4);
+      const degreeRegion = planRegion(plan.passes, "gath", "out_value");
+      const degreePacked = await backend.readBuffer(pointStorageId("gath"));
+      const measured = [
+        ...new Float32Array(degreePacked, degreeRegion.offset, degreeRegion.bytes / 4),
+      ].slice(0, XS.length);
 
       let drawn = 0;
       const fromDrawnLinks = XS.map((_x, slot) => {

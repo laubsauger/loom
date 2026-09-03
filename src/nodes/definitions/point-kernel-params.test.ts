@@ -262,34 +262,73 @@ describe("T900 — the invalidation split: one reflection, two classes", () => {
   });
 });
 
-describe("T900 — §V588's budget, enforced by the reflector and LOUD", () => {
-  it("refuses nine attributes with a diagnostic that names the number (never a truncation)", () => {
+/**
+ * §V588's budget after T1076 — the limit moved from a COUNT to a SIZE.
+ *
+ * It used to be nine attributes refused because 2n bindings exceeded the baseline 8 per
+ * stage; the ceiling was four (B33's silent pipeline failure was the fifth). Packing made
+ * the binding count independent of n, so the refusals below are the NEW bound: bytes in
+ * one storage binding, against the baseline `maxStorageBufferBindingSize` of 128 MiB.
+ *
+ * Both halves are asserted, and the first is the whole ticket: nine attributes now COMPILE.
+ */
+describe("T1076 — §V588's budget is a SIZE now, and it is still LOUD", () => {
+  it("compiles NINE attributes — the count ceiling is gone, and it costs two bindings", () => {
     const result = pointKernelNode.compile(
       compileContext({ nodeId: "sim", outputs: [], parameters: { attributes: attributesOf(9) } }),
     );
-    expect(result.passes).toEqual([]);
-    const message = errorsOf(result);
-    expect(message).toContain("9 attributes need 18 storage bindings");
-    expect(message).toContain("the baseline limit is 8");
-    expect(message).toContain("at most 4 attributes");
+    expect(errorsOf(result)).toBe("");
+    const pass = result.passes[0] as { buffers: ReadonlyArray<{ half?: string }> };
+    // Its own read half and its own write half. Eighteen bindings, before.
+    expect(pass.buffers.map((binding) => binding.half)).toEqual(["read", "write"]);
   });
 
-  it("refuses FIVE on the plain kernel — the case that used to fail silently (B33)", () => {
-    // The plain kernel had NO budget check at all: five attributes built ten bindings and
-    // the pipeline failed with nothing said. Four is the whole budget (§V588).
-    expect(errorsOf(
+  it("refuses a schema that does not FIT one storage binding, in MiB and in points", () => {
+    /* 30 × vec4f = 480 bytes per point; at a million points that is 457.8 MiB per half
+       against the baseline's 128, so the refusal has to say both the size and the
+       capacity that would fit — "too many attributes" would be false as well as useless. */
+    const wide = JSON.stringify([
+      { name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] },
+      ...Array.from({ length: 29 }, (_unused, index) => ({
+        name: `wide${index}`,
+        type: "vec4f",
+        default: [0, 0, 0, 0],
+      })),
+    ]);
+    const message = errorsOf(
       pointKernelNode.compile(
-        compileContext({ nodeId: "sim", outputs: [], parameters: { attributes: attributesOf(5) } }),
+        compileContext({ nodeId: "sim", outputs: [], parameters: { attributes: wide, capacity: 1_000_000 } }),
       ),
-    )).toContain("the baseline limit is 8");
-    expect(errorsOf(
-      pointKernelNode.compile(
-        compileContext({ nodeId: "sim", outputs: [], parameters: { attributes: attributesOf(4) } }),
-      ),
-    )).toBe("");
+    );
+    expect(message).toContain("30 attributes at capacity 1000000");
+    expect(message).toContain("maxStorageBufferBindingSize");
+    expect(message).toContain("128.0 MiB");
+    // The actionable half: how many points this schema DOES fit (464 B/point → 289 262).
+    expect(message).toContain("bytes per point");
+    expect(message).toContain("points — lower the capacity");
   });
 
-  it("refuses FOUR on the advanced kernel, whose injected flags word takes the fourth slot", () => {
+  it("the SAME schema fits at a capacity that keeps every region inside one binding", () => {
+    const wide = JSON.stringify([
+      { name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] },
+      ...Array.from({ length: 29 }, (_unused, index) => ({
+        name: `wide${index}`,
+        type: "vec4f",
+        default: [0, 0, 0, 0],
+      })),
+    ]);
+    expect(
+      errorsOf(
+        pointKernelNode.compile(
+          compileContext({ nodeId: "sim", outputs: [], parameters: { attributes: wide, capacity: 200_000 } }),
+        ),
+      ),
+    ).toBe("");
+  });
+
+  it("the advanced kernel fits far past its old three-attribute ceiling", () => {
+    /* Three plus the injected flags word was the whole budget. The lifecycle passes are a
+       fixed list now, so what decides is the same size bound as above. */
     const message = errorsOf(
       pointKernelAdvancedNode.compile(
         compileContext({
@@ -302,13 +341,14 @@ describe("T900 — §V588's budget, enforced by the reflector and LOUD", () => {
               { name: "id", type: "u32", semantic: "id", default: [0] },
               { name: "a", type: "f32", default: [0] },
               { name: "b", type: "f32", default: [0] },
+              { name: "c", type: "vec4f", default: [0, 0, 0, 0] },
+              { name: "d", type: "vec3f", default: [0, 0, 0] },
             ]),
           },
         }),
       ),
     );
-    expect(message).toContain("the baseline limit is 8");
-    expect(message).toContain("at most 3 attributes");
+    expect(message).toBe("");
   });
 });
 
@@ -361,37 +401,45 @@ describe("T900 — migration: parse the legacy slots forever, emit them never (�
  *
  * Fix a failure by finding what the generated module gained; do NOT restamp a digest without
  * knowing which loom's picture moved.
+ *
+ * ⚑ FULLY RE-STAMPED AT T1076, and this is the one change that legitimately moves EVERY row
+ * at once. Packing rewrote the storage half of every generated module — `in_position[i]`
+ * became `pointLoad_position(i)` over one `array<u32>` binding per producer instead of one
+ * per attribute — so no kernel's text survives and no digest could. What the digests are
+ * still worth is what they were worth before: from here on, one changed character in one
+ * loom moves one row. The pictures are held by the examples' own claims (56 GPU tests, all
+ * green across this change), never by these numbers.
  */
 const FRAME_ZERO_DIGESTS: Readonly<Record<string, string>> = {
-  "E9-Ember.loom.json": "f0a7e8f0752c7653",
+  "E9-Ember.loom.json": "a2450efd16233b11",
   // T915 (static aim: value1 0.5 → 1) and T918 (the wall kernel) both changed E13's
   // resolved kernel state deliberately, then T920 rebuilt the optics kernel as a
   // marched BEAM (SDF bevel boundary, 9x61x3 slots) and T915b handed the aim to the
   // pointer exclusively (y angle / x walk, no authority blend); re-pinned at each.
-  "E13-Prism.loom.json": "dd4803f6936180c9",
-  "E16-Murmuration.loom.json": "74f35048da9b841e",
-  "E20-Gooeyball.loom.json": "7d059f6ab538949e",
-  "E25-Stage.loom.json": "8ef074cc584fae53",
-  "E27-Relief.loom.json": "6868f37d1a076be9",
-  "E28-Sundial.loom.json": "28de7e0352112df2",
-  "E30-Nave.loom.json": "d7f747ddcd79b736",
-  "E31-Corona.loom.json": "c05b011af924a64a",
-  "E32-Pasture.loom.json": "002d6556e7b4ad55",
-  "E33-Obol.loom.json": "14656c8f2ff68456",
+  "E13-Prism.loom.json": "bc12d57b3409041f",
+  "E16-Murmuration.loom.json": "2b02e7a2f6ae8dc8",
+  "E20-Gooeyball.loom.json": "ae38e4e6b4c4a6be",
+  "E25-Stage.loom.json": "39f2763f1195dd59",
+  "E27-Relief.loom.json": "670d97efe970595c",
+  "E28-Sundial.loom.json": "fd30a6a5d8a12088",
+  "E30-Nave.loom.json": "79f18c0c294ff3c0",
+  "E31-Corona.loom.json": "cdf805800334b838",
+  "E32-Pasture.loom.json": "925da38ae3402e98",
+  "E33-Obol.loom.json": "68029203112b3bbc",
   /* T1053 re-pinned this one, and the module's gain is enumerable: `aim1`, `sight1`,
      `mark1` and `mark2a` each grew a `struct Params` and its uniform members, and twelve
      literals became `ctx.params.<name>` reads. NO PICTURE MOVED — every promoted uniform
      carries the exact f32 the literal it replaced was, checked pass by pass against the
      HEAD file, and E34's other four kernels (unfold1, raise1, pool1, ricochet1) are
      byte-identical because nothing in them was artistic direction. */
-  "E34-Lidar.loom.json": "7440e94c7ba2e607",
-  "E35-Nova-Torus.loom.json": "baac3790d7cf1e5f",
-  "E36-Facade.loom.json": "7eedb60eaa117c0c",
-  "E37-Sirocco.loom.json": "2a0f435d5f185759",
-  "E38-Sigil.loom.json": "d0abd8b6f76fe60f",
-  "E41-Cinder.loom.json": "d2d99371b37df6dc",
-  "E42-Current.loom.json": "ebbc42ae6a703f1c",
-  "E45-Pulse.loom.json": "f53677b3d9af9290",
+  "E34-Lidar.loom.json": "2cd2ebeb02adecc6",
+  "E35-Nova-Torus.loom.json": "738e4e77f2cf31d4",
+  "E36-Facade.loom.json": "019eaf2401006054",
+  "E37-Sirocco.loom.json": "2087d8858acc22c2",
+  "E38-Sigil.loom.json": "e492f427a3823580",
+  "E41-Cinder.loom.json": "aaf02cf8945776b3",
+  "E42-Current.loom.json": "86e6d8f32668e072",
+  "E45-Pulse.loom.json": "b28aa4050cc9445e",
   /*
    * ⚠ THREE ENTRIES CAPTURED LATER THAN THE REST, AND SAID SO RATHER THAN BLENDED IN.
    *
@@ -405,8 +453,8 @@ const FRAME_ZERO_DIGESTS: Readonly<Record<string, string>> = {
    *
    * E54's is a genuine first capture, which is what a new example's entry always is.
    */
-  "E49-Lissajous.loom.json": "27a1135a06dbcbdd",
-  "E50-Galvo.loom.json": "f99d88756fc859a9",
+  "E49-Lissajous.loom.json": "a81e0294e38b699b",
+  "E50-Galvo.loom.json": "c0dbaf5a20363773",
   /* RE-STAMPED at c4e7483 (T1074), which put a Courant bound on the layout step: `push` is a
      raw sum over in-range pairs with a 1/r² singularity, so an unclamped step had a fixed
      point only up to Coupling ≈ 0.3 while the document rests at 0.449 and strikes to 0.95.
@@ -415,7 +463,7 @@ const FRAME_ZERO_DIGESTS: Readonly<Record<string, string>> = {
      already records it. The example's own claims (`quorum-claims.gpu.test.ts`, 9 of them)
      and the §V885 look baseline both stayed green across that change and are what say the
      picture is intact; this digest only ever said "frame 0 is what it was". */
-  "E54-Quorum.loom.json": "e6147984c385915e",
+  "E54-Quorum.loom.json": "c80cb9222f1abcc8",
 };
 
 const POINT_KERNEL_TYPES = new Set(["pointKernel", "pointKernelAdvanced"]);

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { pointStorageId } from "./point-storage.ts";
 
 import { compileGraph } from "../../compiler/index.ts";
 import { createNodeRegistry } from "../../nodes/registry/registry.ts";
@@ -130,11 +131,13 @@ describe("pointRange end to end on Dawn (T983)", () => {
       groups: {},
     });
 
-    const BUFFERS = ["scratch:pts:position", "scratch:zin:position", "scratch:zout:position"];
+    /* T1076: each of these producers owns exactly ONE attribute, so its packed buffer IS
+       that attribute's region — the generator's position, each Range's fresh position. */
+    const BUFFERS = [pointStorageId("pts"), pointStorageId("zin"), pointStorageId("zout")];
     const read = await renderAndRead(slabGraph(0.25, 0.75), BUFFERS);
-    const input = read["scratch:pts:position"]!;
-    const inside = read["scratch:zin:position"]!;
-    const outside = read["scratch:zout:position"]!;
+    const input = read[pointStorageId("pts")]!;
+    const inside = read[pointStorageId("zin")]!;
+    const outside = read[pointStorageId("zout")]!;
 
     const assertPartition = (
       inputs: Float32Array,
@@ -172,9 +175,9 @@ describe("pointRange end to end on Dawn (T983)", () => {
     const hi = zs[Math.floor((zs.length * 3) / 4)]!;
     const exact = await renderAndRead(slabGraph(lo, hi), BUFFERS);
     assertPartition(
-      exact["scratch:pts:position"]!,
-      exact["scratch:zin:position"]!,
-      exact["scratch:zout:position"]!,
+      exact[pointStorageId("pts")]!,
+      exact[pointStorageId("zin")]!,
+      exact[pointStorageId("zout")]!,
       (z) => z >= lo && z <= hi,
     );
   }, 240_000);
@@ -201,10 +204,10 @@ describe("pointRange end to end on Dawn (T983)", () => {
       groups: {},
     };
 
-    const read = await renderAndRead(graph, ["scratch:pts:position", "scratch:tta:sample", "scratch:zone:position"]);
-    const positions = read["scratch:pts:position"]!;
-    const samples = read["scratch:tta:sample"]!;
-    const output = read["scratch:zone:position"]!;
+    const read = await renderAndRead(graph, [pointStorageId("pts"), pointStorageId("tta"), pointStorageId("zone")]);
+    const positions = read[pointStorageId("pts")]!;
+    const samples = read[pointStorageId("tta")]!;
+    const output = read[pointStorageId("zone")]!;
 
     let kept = 0;
     let dropped = 0;

@@ -1,4 +1,5 @@
 import type { CompiledNodeDescription, NodeDefinition } from "../../domain/types/node-definition.ts";
+import { attributeBinding } from "./point-storage.ts";
 import type { DrawPassDescriptor } from "../../runtime/backend/plan.ts";
 import { cameraPayloadMatrix, viewProjection } from "../../domain/geometry/camera.ts";
 import type { CameraPayload } from "../../domain/types/scene.ts";
@@ -166,8 +167,8 @@ export const renderSurfaceNode: NodeDefinition = {
       vertexCount: cellsU * cellsV * 6,
       buffers: [
         // The half the PAYLOAD names (§V231) — this frame's positions, whoever owns
-        // the pair (§V197) and whichever half compaction or convention left them in.
-        { binding: "positions", resourceId: positionPair.pair, half: positionPair.half },
+        // the buffer (§V197) and whichever half compaction or convention left them in.
+        attributeBinding("positions", positionPair),
       ],
       uniforms: {
         viewProjection: Array.from(matrix),

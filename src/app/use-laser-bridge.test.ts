@@ -1,5 +1,9 @@
 // @vitest-environment jsdom
 import { act, renderHook } from "@testing-library/react";
+import { PLAN_ATTRIBUTES } from "@nodes/definitions/laser-path.ts";
+import { pointStorageId } from "@nodes/definitions/point-storage.ts";
+import { packAttributes } from "@/points/packing.ts";
+import type { PassDescriptor } from "@runtime/backend/plan.ts";
 import { describe, expect, it } from "vitest";
 
 import { createNodeRegistry } from "../nodes/registry/registry.ts";
@@ -58,10 +62,49 @@ function fakeClient() {
   return { client, commands, push: (detail: string) => pushListener?.(detail) };
 }
 
-/** Two lit samples, one blanked move, then the park marker and stale tail. */
+/**
+ * T1076: the planner's PACKED plan buffer — position, tint and meta as regions of one
+ * allocation, laid out by the same function the node allocates with. Two lit samples, one
+ * blanked move, then the park marker and stale tail.
+ */
+const PLAN_CAPACITY = 4;
+const PLAN_LAYOUT = (() => {
+  const layout = packAttributes(PLAN_ATTRIBUTES, PLAN_CAPACITY);
+  if (!layout.ok) throw new Error(layout.errors.join("; "));
+  return layout;
+})();
+
+/**
+ * The plan rows the pump reads the stream's regions out of. `laserStreamRegions` finds
+ * them by the emit pass's own binding names, so a sync with no plan finds no stream — and
+ * the pump now says exactly that instead of reading a buffer that means something else.
+ */
+const PLAN_PASSES = [
+  {
+    kind: "dispatch",
+    id: "beam:laser:emit",
+    nodeId: "beam",
+    buffers: PLAN_ATTRIBUTES.map((attribute) => {
+      const region = PLAN_LAYOUT.byName.get(attribute.name);
+      if (region === undefined) throw new Error(`no region for ${attribute.name}`);
+      return {
+        binding: `out_${attribute.name}`,
+        resourceId: pointStorageId("beam"),
+        half: "write" as const,
+        offset: region.offset,
+        bytes: region.bytes,
+      };
+    }),
+  },
+] as unknown as ReadonlyArray<PassDescriptor>;
+
 function fakeBackend() {
-  const position = new Float32Array(4 * 4);
-  const tint = new Float32Array(4 * 4);
+  const bytes = new ArrayBuffer(PLAN_LAYOUT.bytes);
+  const positionRegion = PLAN_LAYOUT.byName.get("position");
+  const tintRegion = PLAN_LAYOUT.byName.get("tint");
+  if (positionRegion === undefined || tintRegion === undefined) throw new Error("no regions");
+  const position = new Float32Array(bytes, positionRegion.offset, PLAN_CAPACITY * 4);
+  const tint = new Float32Array(bytes, tintRegion.offset, PLAN_CAPACITY * 4);
   position.set([0.5, -0.25, 0, 0], 0);
   tint.set([1, 0.5, 0.25, 1], 0);
   position.set([0.625, -0.125, 0, 0], 4);
@@ -70,10 +113,7 @@ function fakeBackend() {
   tint.set([0, 1, 0, 1], 8);
   position.set([9, 9, -1.0e6, 0], 12); // the park marker: everything after is stale
   tint.set([1, 1, 1, 1], 12);
-  return {
-    readBuffer: (resourceId: string) =>
-      Promise.resolve((resourceId.endsWith(":position") ? position : tint).buffer),
-  } as unknown as LoomBackend;
+  return { readBuffer: () => Promise.resolve(bytes) } as unknown as LoomBackend;
 }
 
 const flush = async (): Promise<void> => {
@@ -109,7 +149,7 @@ describe("T950 — every no-fire path, by mechanism", () => {
   it("BLOCKED policy (a take): the refusal's own sentence, and nothing crosses the client", async () => {
     const { client, commands } = fakeClient();
     const view = mount(client, fakeBackend());
-    act(() => view.result.current.sync(graph, registry, "blocked"));
+    act(() => view.result.current.sync(graph, registry, "blocked", undefined, PLAN_PASSES));
     await flush();
     expect(commands).toEqual([]);
     expect(view.result.current.diagnostics[0]?.code).toBe("laser.emission.blocked");
@@ -118,7 +158,7 @@ describe("T950 — every no-fire path, by mechanism", () => {
 
   it("NO HELPER: says what to do (§T948's copy rule), and there is no client to cross", async () => {
     const view = mount(null, fakeBackend());
-    act(() => view.result.current.sync(graph, registry, "live-session"));
+    act(() => view.result.current.sync(graph, registry, "live-session", undefined, PLAN_PASSES));
     await flush();
     expect(view.result.current.diagnostics[0]?.code).toBe("laser.helper.absent");
     expect(view.result.current.diagnostics[0]?.message).toContain("pnpm mcp:serve");
@@ -127,7 +167,7 @@ describe("T950 — every no-fire path, by mechanism", () => {
   it("UNARMED: G1 in the diagnostic, and no stream command is even attempted", async () => {
     const { client, commands } = fakeClient();
     const view = mount(client, fakeBackend());
-    act(() => view.result.current.sync(graph, registry, "live-session"));
+    act(() => view.result.current.sync(graph, registry, "live-session", undefined, PLAN_PASSES));
     await flush();
     expect(commands.filter((entry) => entry["kind"] === "stream")).toEqual([]);
     expect(view.result.current.diagnostics[0]?.code).toBe("laser.disarmed");
@@ -143,7 +183,7 @@ describe("T950 — the one firing path, and what ends it", () => {
       await view.result.current.session.arm();
     });
     expect(view.result.current.session.armed).toBe(true);
-    act(() => view.result.current.sync(graph, registry, "live-session"));
+    act(() => view.result.current.sync(graph, registry, "live-session", undefined, PLAN_PASSES));
     await flush();
     const stream = commands.find((entry) => entry["kind"] === "stream");
     expect(stream).toBeDefined();

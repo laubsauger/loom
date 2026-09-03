@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { ATTRIBUTE_STRIDES } from "../../points/attributes.ts";
-import { scratchResourceId } from "../../compiler/resources.ts";
+import { packAttributes } from "../../points/packing.ts";
+import { pointStorageId } from "../../nodes/definitions/point-storage.ts";
 import { createPointsReadback, type PointSetInfo } from "./points.ts";
 
 /**
@@ -17,13 +18,24 @@ const INFO: PointSetInfo = {
   capacity: 100,
 };
 
-function positionBuffer(): ArrayBuffer {
-  // Slot i holds (i, 2i, 3i) at stride 16 — the padded component is garbage on purpose.
-  const data = new Float32Array(100 * 4);
+/**
+ * T1076: the node's PACKED buffer — position and id as regions of one allocation, exactly
+ * as the producer lays them out. Slot i holds (i, 2i, 3i) at stride 16 (the padded
+ * component is garbage on purpose) and id i*7 in its own region further along.
+ */
+function packedBuffer(): ArrayBuffer {
+  const layout = packAttributes(INFO.attributes, INFO.capacity);
+  if (!layout.ok) throw new Error(layout.errors.join("; "));
+  const bytes = new ArrayBuffer(layout.bytes);
+  const position = layout.byName.get("position");
+  const id = layout.byName.get("id");
+  if (position === undefined || id === undefined) throw new Error("missing region");
+  const floats = new Float32Array(bytes, position.offset, 100 * 4);
   for (let index = 0; index < 100; index += 1) {
-    data.set([index, index * 2, index * 3, 999], index * 4);
+    floats.set([index, index * 2, index * 3, 999], index * 4);
   }
-  return data.buffer;
+  new Uint32Array(bytes, id.offset, 100).set(Array.from({ length: 100 }, (_, i) => i * 7));
+  return bytes;
 }
 
 function harness(overrides: { now?: () => number } = {}) {
@@ -31,8 +43,7 @@ function harness(overrides: { now?: () => number } = {}) {
   const readback = createPointsReadback({
     readBuffer: (resourceId) => {
       reads.push(resourceId);
-      if (resourceId.endsWith(":position")) return Promise.resolve(positionBuffer());
-      return Promise.resolve(new Uint32Array(Array.from({ length: 100 }, (_, i) => i * 7)).buffer);
+      return Promise.resolve(packedBuffer());
     },
     pointSetInfo: (nodeId) => (nodeId === "sim" ? INFO : undefined),
     now: overrides.now ?? (() => 0),
@@ -46,7 +57,9 @@ describe("createPointsReadback (T125)", () => {
     const { readback, reads } = harness();
     const window = await readback.read({ nodeId: "sim", start: 10, count: 3 });
 
-    expect(reads[0]).toBe(scratchResourceId("sim", "position"));
+    /* T1076: ONE buffer per node, not one per attribute — the window comes out of the
+       `position` REGION of it, and a read from byte 0 would be right only by accident. */
+    expect(reads[0]).toBe(pointStorageId("sim"));
     expect(window.type).toBe("vec3f");
     expect(ATTRIBUTE_STRIDES["vec3f"]).toBe(16); // the trap this test guards
     expect(window.values).toEqual([

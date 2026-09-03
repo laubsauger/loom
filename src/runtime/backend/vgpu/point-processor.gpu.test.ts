@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { pointStorageId } from "../../../nodes/definitions/point-storage.ts";
+import { readKernelAttribute } from "../../../nodes/definitions/test-support.ts";
 
 import { compileGraph } from "../../../compiler/index.ts";
 import { createNodeRegistry } from "../../../nodes/registry/registry.ts";
@@ -79,8 +81,12 @@ describe("pointKernel processor on Dawn (T401)", () => {
 
       renderFrame(0);
       expect(errors).toEqual([]);
-      const source = new Float32Array(await backend.readBuffer("scratch:gen:position"));
-      const displaced = new Float32Array(await backend.readBuffer("scratch:k:position"));
+      /* T1076: the generator owns `position` alone, so its buffer IS that region; the
+         kernel packs its whole schema, so its `position` is sliced by that schema. */
+      const source = new Float32Array(await backend.readBuffer(pointStorageId("gen")));
+      const displaced = (
+        await readKernelAttribute(backend.readBuffer, { type: "pointKernel", parameters: { capacity: 8 } }, "k", "position")
+      ).floats;
       for (let point = 0; point < 8; point += 1) {
         const base = point * 4; // vec3f strides at 16 bytes
         // EXACT (§V147): +0.5/+0.25/+0.125 are dyadic — f32 addition is lossless on the
@@ -94,7 +100,9 @@ describe("pointKernel processor on Dawn (T401)", () => {
       // pre-T401 source behaviour — would be at two offsets by now.
       renderFrame(1);
       expect(errors).toEqual([]);
-      const second = new Float32Array(await backend.readBuffer("scratch:k:position"));
+      const second = (
+        await readKernelAttribute(backend.readBuffer, { type: "pointKernel", parameters: { capacity: 8 } }, "k", "position")
+      ).floats;
       for (let point = 0; point < 8; point += 1) {
         const base = point * 4;
         expect(second[base], `frame-2 point ${point} x`).toBe((source[base] ?? 0) + 0.5);

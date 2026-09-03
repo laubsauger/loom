@@ -12,6 +12,8 @@ import { scopeFromFrame, evaluateExpression } from "../expressions/evaluate.ts";
 import { resolveParameters } from "../parameters/resolve.ts";
 import { dispatchFrameUniforms, sharedUniformsFromFrame, SHARED_UNIFORMS_WGSL } from "../../runtime/backend/shared-uniforms.ts";
 import { generateKernelModule, generateSpawnHookModule } from "../../points/codegen.ts";
+import { packAttributes } from "../../points/packing.ts";
+import type { PointAttributeType } from "../../points/attributes.ts";
 import { allNodeDefinitions } from "../../nodes/definitions/index.ts";
 import {
   MEDIA_TRANSPORT_KEYS,
@@ -149,11 +151,33 @@ const ABS_HOOK = `fn spawn(child: Point, ctx: PointCtx) -> Point {
   return q;
 }`;
 
+/** T1076: the region table a producing node hands codegen — own pair, read in, write out. */
+function ownStorage(
+  attributes: ReadonlyArray<{ name: string; type: PointAttributeType }>,
+  writes: ReadonlyArray<string>,
+  inPlace = false,
+) {
+  const layout = packAttributes(
+    attributes.map((attribute) => ({ ...attribute, default: [] as number[] })),
+    1024,
+  );
+  if (!layout.ok) throw new Error(layout.errors.join("; "));
+  const at = (name: string, group: string) => ({
+    group,
+    offset: layout.byName.get(name)?.offset ?? 0,
+  });
+  return {
+    reads: Object.fromEntries(attributes.map((a) => [a.name, at(a.name, "own:read")])),
+    writes: Object.fromEntries(writes.map((n) => [n, at(n, inPlace ? "own:read" : "own:write")])),
+  };
+}
+
 function kernelModule(kernel: string, group = ""): { wgsl: string; usesAbsClock: boolean } {
   const module = generateKernelModule({
     attributes: [...KERNEL_ATTRIBUTES],
     reads: ["position"],
     writes: ["position"],
+    storage: ownStorage(KERNEL_ATTRIBUTES, ["position"]),
     kernel,
     ...(group === "" ? {} : { group }),
   });
@@ -162,9 +186,12 @@ function kernelModule(kernel: string, group = ""): { wgsl: string; usesAbsClock:
 }
 
 function hookModule(hook: string): { wgsl: string; usesAbsClock: boolean } {
+  const attributes = [...KERNEL_ATTRIBUTES, { name: "flags", type: "u32" as const, default: [0] }];
+  const shaped = attributes.filter((a) => a.name !== "flags").map((a) => a.name);
   const module = generateSpawnHookModule({
-    attributes: [...KERNEL_ATTRIBUTES, { name: "flags", type: "u32" as const, default: [0] }],
+    attributes,
     flagsAttribute: "flags",
+    storage: ownStorage(attributes, shaped, true),
     hook,
   });
   if (!module.ok) throw new Error(`hook did not compile: ${module.errors.join("; ")}`);

@@ -30,6 +30,22 @@ import type { PassDescriptor } from "../runtime/backend/plan.ts";
  * wants — and it keeps the check alive for headless runs and test fixtures, which report
  * few limits and are precisely the runs with no GPU to complain later.
  *
+ * ## Two ROW KINDS, because the limits are not all counts (T1076)
+ *
+ * Every budget here was "how many of X does this pass bind, against a per-stage maximum".
+ * `maxStorageBufferBindingSize` is not that shape: it is BYTES PER BINDING, not a count
+ * per pass, and jamming it into `count(pass)` would either report a nonsense number or
+ * silently pick one binding to speak for all of them. So the table carries two kinds —
+ * `count` rows compare one number per pass, `size` rows compare EACH binding's own bytes
+ * — and `BindingOverflow` says which unit it is reporting in.
+ *
+ * It became load-bearing with T1076: point attributes are packed into one storage buffer
+ * per producer, so the ceiling stopped being "how many attributes fit in 8 bindings" and
+ * became "how many bytes fit in one binding". The schema-level refusal lives where the
+ * layout arithmetic is (`points/packing.ts`) and speaks in attributes and capacity; this
+ * is the device-aware backstop, and it is the ONLY one that lowers when a real device
+ * reports a smaller limit than the baseline.
+ *
  * ## What this deliberately does NOT cover
  *
  * `maxStorageTexturesPerShaderStage` is a real baseline limit (4) and is left out because
@@ -49,9 +65,12 @@ const BASELINE: Readonly<Record<string, number>> = Object.freeze({
   maxSampledTexturesPerShaderStage: 16,
   maxSamplersPerShaderStage: 16,
   maxUniformBuffersPerShaderStage: 12,
+  /** T1076: bytes ONE storage binding may carry — 128 MiB. A size row, not a count row. */
+  maxStorageBufferBindingSize: 134_217_728,
 });
 
-export interface BindingBudget {
+export interface BindingCountBudget {
+  readonly kind: "count";
   /** What the user is being told they have too many of. */
   readonly what: string;
   /** The limit's name in the capability report, which is also its WebGPU spelling. */
@@ -61,6 +80,21 @@ export interface BindingBudget {
   /** How to get under the limit, phrased for this particular kind. */
   readonly remedy: string;
 }
+
+/**
+ * T1076: a per-BINDING byte budget. Each binding is measured on its own — one oversized
+ * buffer is a refusal even where every other binding on the pass is tiny.
+ */
+export interface BindingSizeBudget {
+  readonly kind: "size";
+  readonly what: string;
+  readonly limitKey: string;
+  /** Every binding whose byte size this pass declares, named so the message can say which. */
+  readonly sizes: (pass: PassDescriptor) => ReadonlyArray<{ readonly binding: string; readonly bytes: number }>;
+  readonly remedy: string;
+}
+
+export type BindingBudget = BindingCountBudget | BindingSizeBudget;
 
 const textureCount = (pass: PassDescriptor): number =>
   "textures" in pass ? (pass.textures?.length ?? 0) : 0;
@@ -76,31 +110,57 @@ const uniformCount = (pass: PassDescriptor): number => {
   return own + shared;
 };
 
+/**
+ * T1076: the bytes a point-attribute binding declares. Only REGION bindings carry a size —
+ * a plain whole-buffer binding's bytes live in the resource table, not the pass — so this
+ * reports what the plan actually states rather than inventing the rest.
+ */
+const bufferRegionSizes = (
+  pass: PassDescriptor,
+): ReadonlyArray<{ binding: string; bytes: number }> =>
+  "buffers" in pass
+    ? (pass.buffers ?? []).flatMap((binding) =>
+        binding.bytes === undefined ? [] : [{ binding: binding.binding, bytes: binding.bytes }],
+      )
+    : [];
+
 export const BINDING_BUDGETS: ReadonlyArray<BindingBudget> = Object.freeze([
   {
+    kind: "count",
     what: "storage buffers",
     limitKey: "maxStorageBuffersPerShaderStage",
     count: (pass) => ("buffers" in pass ? (pass.buffers?.length ?? 0) : 0),
     remedy:
-      "Bind fewer attributes, or split the work across passes — a kernel binding an in/out pair per attribute needs 2·(n−1)+2 storage buffers.",
+      "Split the work across passes, or shorten the chain feeding it — since T1076 a point kernel spends one storage buffer per PRODUCER it reads from, not one per attribute.",
   },
   {
+    kind: "count",
     what: "sampled textures",
     limitKey: "maxSampledTexturesPerShaderStage",
     count: textureCount,
     remedy: "Composite in stages: fold some inputs in an earlier pass and read its result.",
   },
   {
+    kind: "count",
     what: "samplers",
     limitKey: "maxSamplersPerShaderStage",
     count: (pass) => ("samplers" in pass ? (pass.samplers?.length ?? 0) : 0),
     remedy: "Reuse one sampler across bindings that want the same filtering.",
   },
   {
+    kind: "count",
     what: "uniform buffers",
     limitKey: "maxUniformBuffersPerShaderStage",
     count: uniformCount,
     remedy: "Merge the pass's uniform blocks into one.",
+  },
+  {
+    kind: "size",
+    what: "storage buffer",
+    limitKey: "maxStorageBufferBindingSize",
+    sizes: bufferRegionSizes,
+    remedy:
+      "Lower the point capacity, or carry fewer attributes — a packed point buffer is (sum of attribute strides) × capacity per half.",
   },
 ]);
 
@@ -109,8 +169,13 @@ export interface BindingOverflow {
   readonly nodeId?: string;
   readonly what: string;
   readonly limitKey: string;
+  /** What was bound: a COUNT for a count row, a BYTE total for a size row. */
   readonly count: number;
   readonly limit: number;
+  /** T1076: which unit `count` and `limit` are in, so the message can say MiB when it should. */
+  readonly unit: "count" | "bytes";
+  /** T1076: the offending binding's WGSL name, on a size row. */
+  readonly binding?: string;
   /** True when the number came from the device report rather than the WebGPU floor. */
   readonly discovered: boolean;
   readonly remedy: string;
@@ -137,20 +202,29 @@ export function bindingOverflows(
     // A swap and a counter bind nothing a shader stage sees; the budgets are per stage.
     if (pass.kind === "swap" || pass.kind === "counter") continue;
     for (const budget of BINDING_BUDGETS) {
-      const count = budget.count(pass);
-      if (count === 0) continue;
       const { limit, discovered } = limitFor(capabilities, budget.limitKey);
-      if (count <= limit) continue;
-      overflows.push({
+      const base = {
         passId: pass.id,
         ...(pass.nodeId === undefined ? {} : { nodeId: pass.nodeId }),
         what: budget.what,
         limitKey: budget.limitKey,
-        count,
         limit,
         discovered,
         remedy: budget.remedy,
-      });
+      };
+      if (budget.kind === "size") {
+        // T1076: EACH binding against the limit — one oversized region is a refusal even
+        // where every other binding on the pass is small.
+        for (const entry of budget.sizes(pass)) {
+          if (entry.bytes <= limit) continue;
+          overflows.push({ ...base, count: entry.bytes, unit: "bytes", binding: entry.binding });
+        }
+        continue;
+      }
+      const count = budget.count(pass);
+      if (count === 0) continue;
+      if (count <= limit) continue;
+      overflows.push({ ...base, count, unit: "count" });
     }
   }
   return overflows;
@@ -166,8 +240,19 @@ export function bindingOverflows(
  * and it is worth being consistent with it.
  */
 export function describeOverflow(overflow: BindingOverflow): string {
+  // T1076: bytes read as MiB. "binds 201326592 bytes; the limit is 134217728" is a number
+  // nobody can hold; "192.0 MiB against 128.0 MiB" is a decision someone can make.
+  const bytes = overflow.unit === "bytes";
+  const ceiling = bytes ? describeMiB(overflow.limit) : String(overflow.limit);
   const source = overflow.discovered
-    ? `this device's ${overflow.limitKey} is ${overflow.limit}`
-    : `the WebGPU baseline ${overflow.limitKey} is ${overflow.limit}, and this device did not report its own`;
-  return `Pass "${overflow.passId}" binds ${overflow.count} ${overflow.what}; ${source}.`;
+    ? `this device's ${overflow.limitKey} is ${ceiling}`
+    : `the WebGPU baseline ${overflow.limitKey} is ${ceiling}, and this device did not report its own`;
+  const bound = bytes
+    ? `${describeMiB(overflow.count)} to ${overflow.what} "${String(overflow.binding)}"`
+    : `${overflow.count} ${overflow.what}`;
+  return `Pass "${overflow.passId}" binds ${bound}; ${source}.`;
+}
+
+function describeMiB(bytes: number): string {
+  return `${(bytes / 1_048_576).toFixed(1)} MiB`;
 }

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readKernelAttribute } from "../nodes/definitions/test-support.ts";
 
 import { compileGraph } from "../compiler/index.ts";
 import { createNodeRegistry } from "../nodes/registry/registry.ts";
@@ -156,7 +157,8 @@ interface Segment {
 }
 
 async function runTrace(values: Values): Promise<Segment[]> {
-  const plan = compileGraph({ graph: traceGraph(values), settings: SETTINGS, registry, capabilities: CAPABILITIES });
+  const graph = traceGraph(values);
+  const plan = compileGraph({ graph, settings: SETTINGS, registry, capabilities: CAPABILITIES });
   expect(plan.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
   const backend = createVgpuBackend({ host: nodeGpuHost() });
   try {
@@ -167,8 +169,19 @@ async function runTrace(values: Values): Promise<Segment[]> {
       pointer: { x: 0, y: 0, buttons: 0 },
       resolution: [64, 64],
     });
-    const positions = new Float32Array(await backend.readBuffer("scratch:trace:position"));
-    const tips = new Float32Array(await backend.readBuffer("scratch:trace:tip"));
+    // T1076: `position` and `tip` are REGIONS of the trace kernel's packed buffer.
+    const traceRead = async (attribute: string) =>
+      (
+        await readKernelAttribute(
+          backend.readBuffer,
+          (graph as unknown as { nodes: Record<string, { type: string; parameters: Record<string, unknown> }> })
+            .nodes["trace"]!,
+          "trace",
+          attribute,
+        )
+      ).floats;
+    const positions = await traceRead("position");
+    const tips = await traceRead("tip");
     const segments: Segment[] = [];
     for (let index = 0; index < CAPACITY; index += 1) {
       const base = index * 4; // vec3f strides at 16 bytes
@@ -639,7 +652,15 @@ describe("the prism is a traced ray (T718, §V683)", () => {
           pointer: { x: 0, y: 0, buttons: 0 },
           resolution: [64, 64],
         });
-        return new Float32Array(await backend.readBuffer("scratch:trace:tint"));
+        return (
+          await readKernelAttribute(
+            backend.readBuffer,
+            (graph as unknown as { nodes: Record<string, { type: string; parameters: Record<string, unknown> }> })
+            .nodes["trace"]!,
+            "trace",
+            "tint",
+          )
+        ).floats;
       } finally {
         backend.dispose();
       }

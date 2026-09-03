@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { pointStorageId } from "../nodes/definitions/point-storage.ts";
 
 import { compileGraph } from "./index.ts";
 import { CompilerDiagnosticCode } from "./diagnostics.ts";
@@ -99,7 +100,7 @@ describe("the scene pipeline compiles by NAME (T377, T447)", () => {
     const draw = drawOf(compiled);
     expect(draw).toBeDefined();
     // The geometry's pair, by reference chain: grid → geometry → (named) → render.
-    expect(draw.buffers?.[0]?.resourceId).toBe("scratch:grid:position");
+    expect(draw.buffers?.[0]?.resourceId).toBe(pointStorageId("grid"));
     // The camera reached the uniforms as a composed matrix, the light as array values.
     expect(Array.isArray(draw.uniforms?.["viewProjection"])).toBe(true);
     expect(Array.isArray(draw.uniforms?.["light0Color"])).toBe(true);
@@ -125,8 +126,8 @@ describe("the scene pipeline compiles by NAME (T377, T447)", () => {
     const draws = sceneDraws(compiled);
     // geo1 first, geob1 second — the parameter's stated order.
     expect(draws.map((draw) => draw.buffers?.[0]?.resourceId)).toEqual([
-      "scratch:grid:position",
-      "scratch:gridb:position",
+      pointStorageId("grid"),
+      pointStorageId("gridb"),
     ]);
     // moon before sun in the flat light array: moon's intensity 0.2 leads.
     expect((draws[0]?.uniforms?.["light0Meta"] as number[])[1]).toBe(0.2);
@@ -182,8 +183,8 @@ describe("the scene pipeline compiles by NAME (T377, T447)", () => {
     const compiled = compile(graph);
     expect(compiled.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
     const byNode = new Map(sceneDraws(compiled).map((draw) => [draw.nodeId, draw.buffers?.[0]?.resourceId]));
-    expect(byNode.get("shot")).toBe("scratch:grid:position");
-    expect(byNode.get("shot2")).toBe("scratch:grid2:position");
+    expect(byNode.get("shot")).toBe(pointStorageId("grid"));
+    expect(byNode.get("shot2")).toBe(pointStorageId("grid2"));
   });
 
   it("moving the camera is a VALUE change; renaming the graph's shape is not required (§V5)", () => {
@@ -464,8 +465,14 @@ describe("per-point colour and counted sets reach the SCENE (T478)", () => {
       expect(compiled.diagnostics.filter((d) => d.severity === "error"), mode).toEqual([]);
       const draw = drawOf(compiled);
       const colors = draw.buffers?.find((binding) => binding.binding === "pointColors");
+      const positions = draw.buffers?.find((binding) => binding.binding === "positions");
       expect(colors, mode).toBeDefined();
-      expect(colors?.resourceId).toContain("color");
+      /* T1076: the colour is a REGION of the producer's packed buffer, so the id no
+         longer spells the attribute — what says "this is the colour, not the position"
+         is that the two bindings share a buffer and land at different offsets. */
+      expect(colors?.resourceId, mode).toBe(positions?.resourceId);
+      expect(colors?.offset, mode).not.toBe(positions?.offset);
+      expect(typeof colors?.offset, mode).toBe("number");
       expect(draw.shader).toContain("pointColors");
       // The material's own base colour STAYS in the uniforms: the map multiplies, it
       // never replaces — no half of the material goes silently dead (V349).

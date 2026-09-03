@@ -1,9 +1,8 @@
 import type { RuntimeDiagnostic } from "../../domain/types/diagnostics.ts";
-import type { CompiledNodeDescription, NodeDefinition } from "../../domain/types/node-definition.ts";
+import type { CompiledNodeDescription, NodeDefinition, PointsetAttributeRef } from "../../domain/types/node-definition.ts";
 import type { ParameterSchema, ParameterValue } from "../../domain/types/parameters.ts";
 import type { DispatchPassDescriptor, DrawPassDescriptor } from "../../runtime/backend/plan.ts";
 import {
-  ATTRIBUTE_STRIDES,
   validateAttributes,
   type PointAttributeSchema,
 } from "../../points/attributes.ts";
@@ -16,6 +15,12 @@ import {
   pointKernelValueKey,
   type KernelNotice,
 } from "../../points/codegen.ts";
+import {
+  attributeBinding,
+  kernelBufferBindings,
+  kernelStorage,
+  packedPointStorage,
+} from "./point-storage.ts";
 import { parseTopology } from "../../points/topology.ts";
 import { drawArgsWgsl } from "../../points/lifecycle.ts";
 import { DEFAULT_POINT_KERNEL, SPRITE_RENDER_WGSL, TEXTURE_TO_ATTRIBUTE_WGSL, pointRayWgsl, spriteRenderWgsl } from "../shaders/points.wgsl.ts";
@@ -52,13 +57,6 @@ import { scratchResourceId } from "../../compiler/resources.ts";
 import { storedStaticValue } from "../../domain/parameters/slots.ts";
 
 /**
- * The producer/consumer id contract for a pointset attribute's ping-pong pair. ONE
- * definition: the compiler materializes the producer's bufferPair scratch entries under
- * `scratchResourceId(nodeId, attribute)`, and consumers derive the identical id from
- * the edge's source identity — no second convention to drift.
- */
-
-/**
  * The point schema a node's parameters resolve to (T293) — the `pointSetInfo` the
  * read_points port needs, derived from the DOCUMENT so the composition root can wire
  * the port without re-reading node internals. Undefined for a non-point node or an
@@ -77,19 +75,29 @@ export function pointSetInfoFor(
     return { attributes, capacity: numberOf("capacity", 4096) };
   }
   if (node.type === "textureToAttribute") {
+    /* T1076: what this node OWNS, which is what its packed buffer holds. `position` used
+       to be listed here and was never readable — the id this resolved to belonged to the
+       upstream producer, so the readback threw "unknown buffer". Listing only `sample`
+       makes the refusal say which attributes the node actually has. */
     return {
-      attributes: [
-        { name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] },
-        { name: "sample", type: "vec4f", default: [0, 0, 0, 0] },
-      ],
+      attributes: [SAMPLE_ATTRIBUTE],
       capacity: numberOf("count", 4096),
     };
   }
   return undefined;
 }
 
-export function pointPairId(nodeId: string, attribute: string): string {
-  return scratchResourceId(nodeId, attribute);
+/**
+ * A point node's PLAIN scratch buffer id — the lifecycle counts, the scan workspace, a
+ * draw-argument buffer.
+ *
+ * It was `pointPairId` until T1076, when per-attribute pairs stopped existing: an
+ * attribute is now a region of the producer's ONE packed pair (`pointStorageId`), so a
+ * name minted per attribute would resolve to nothing. What survives is the plain-buffer
+ * half, which was always this function's other job.
+ */
+export function pointBufferId(nodeId: string, key: string): string {
+  return scratchResourceId(nodeId, key);
 }
 
 export const DEFAULT_POINT_ATTRIBUTES: ReadonlyArray<PointAttributeSchema> = [
@@ -120,19 +128,6 @@ export function parseAttributes(raw: unknown): { attributes?: ReadonlyArray<Poin
   return { attributes };
 }
 
-/** Buffer-pair descriptors a plan needs for one kernel node. Tests and the (future) compiler share it. */
-export function pointKernelResources(
-  nodeId: string,
-  attributes: ReadonlyArray<PointAttributeSchema>,
-  capacity: number,
-): ReadonlyArray<{ kind: "bufferPair"; id: string; stride: number; capacity: number }> {
-  return attributes.map((attribute) => ({
-    kind: "bufferPair" as const,
-    id: pointPairId(nodeId, attribute.name),
-    stride: ATTRIBUTE_STRIDES[attribute.type],
-    capacity,
-  }));
-}
 
 /**
  * T479 — the VALUE-GRAPH slots, defined ONCE for both kernel nodes (§V109: two nodes
@@ -541,10 +536,34 @@ export const pointKernelNode: NodeDefinition = {
        the kernel asks (§V288/§V309: costing nothing when unused is the whole point). */
     const incomingTopology = parseTopology(incoming?.topology);
     const fieldTexture = inputs["field"];
+
+    /* T1076: this node's own packed pair, and the addressing table codegen needs. Every
+       declared attribute is written, so every one is owned (§V197's "if you write it, you
+       own it"); the READS come from upstream wherever the chain shares an attribute. */
+    const storage = packedPointStorage(nodeId, attributes, capacity, "write");
+    if (!storage.ok) {
+      return {
+        passes: [],
+        diagnostics: storage.errors.map((message) => ({
+          severity: "error" as const,
+          code: "node.points.capacity",
+          message: `Node "${nodeId}": ${message}`,
+          nodeId,
+        })),
+      };
+    }
+    const plan = kernelStorage({
+      own: storage,
+      touched: names,
+      written: names,
+      upstream: incoming?.pairs,
+    });
+
     const module = generateKernelModule({
       attributes,
       reads: names,
       writes: names,
+      storage: plan.storage,
       kernel: kernelBodyOf(kernelSource),
       ...(groupSource.trim() === "" ? {} : { group: groupSource }),
       ...(incomingTopology?.kind === "grid"
@@ -571,25 +590,13 @@ export const pointKernelNode: NodeDefinition = {
       shader: module.wgsl,
       entryPoint: "main",
       workgroups: [Math.ceil(capacity / module.workgroupSize), 1, 1],
-      buffers: module.buffers.map((binding) => {
-        // T401: a shared attribute READS the upstream pair (the half holding this
-        // frame's data, per the edge map) instead of this node's own last frame —
-        // that is the entire processor mechanism, and codegen never knows. Binding
-        // the upstream pair also makes this pass one of its consumers, so the §V22
-        // swap lands after it (T297). Writes stay on this node's own pairs.
-        const upstream = binding.role === "in" ? incoming?.pairs[binding.attribute] : undefined;
-        if (upstream !== undefined) {
-          return { binding: binding.variable, resourceId: upstream.pair, half: upstream.half };
-        }
-        return {
-          binding: binding.variable,
-          resourceId: pointPairId(nodeId, binding.attribute),
-          // The generated module reads pre-frame values from `in_*` and writes post-frame
-          // values to `out_*`; the pair's swap (after all consumers, §V22) makes this
-          // frame's writes next frame's reads.
-          half: binding.role === "in" ? ("read" as const) : ("write" as const),
-        };
-      }),
+      /* T401/T1076: a shared attribute is READ out of the upstream's packed buffer (the
+         half the edge map names) rather than out of this node's own last frame — the whole
+         processor mechanism, and codegen never knows which is which. Binding the upstream
+         buffer also makes this pass one of its consumers, so the §V22 swap lands after it
+         (T297). Writes stay on this node's own pair, whose swap makes this frame's writes
+         next frame's reads. */
+      buffers: kernelBufferBindings(module.buffers, plan),
       uniforms: {
         timeSeconds: 0,
         deltaSeconds: 0,
@@ -637,14 +644,9 @@ export const pointKernelNode: NodeDefinition = {
       ...(module.notices.length === 0
         ? {}
         : { diagnostics: pointKernelNoticeDiagnostics(nodeId, module.notices) }),
-      // Structural declaration for the compiler's scratch handler once it learns
-      // bufferPair entries (see module doc). Shape mirrors pointKernelResources().
-      scratch: pointKernelResources(nodeId, attributes, capacity).map((resource) => ({
-        key: resource.id.split(":").slice(2).join(":"),
-        kind: "bufferPair" as const,
-        stride: resource.stride,
-        capacity: resource.capacity,
-      })),
+      // T1076: ONE pair for the whole schema; the layout that produced `pairs` below is
+      // the same one that sized it, so a key and an id can no longer disagree (§V349).
+      scratch: [storage.scratch],
       // T296: the resolved edge payload. The kernel WRITES every declared attribute,
       // so every pair in the map is its own (§V197's "if you write it, you own it").
       pointsets: {
@@ -661,15 +663,10 @@ export const pointKernelNode: NodeDefinition = {
                 ([name]) => !attributes.some((attribute) => attribute.name === name),
               ),
             ),
-            ...Object.fromEntries(
-              attributes.map((attribute) => [
-                attribute.name,
-                // §V168 through §V231: the kernel writes every pair this frame, so the
-                // payload names each write half. `type` rides along for mapped
-                // parameters (T286) — a consumer swizzles from it, never from a guess.
-                { pair: pointPairId(nodeId, attribute.name), half: "write" as const, type: attribute.type },
-              ]),
-            ),
+            // §V168 through §V231: the kernel writes every region this frame, so the
+            // payload names the write half. `type` rides along for mapped parameters
+            // (T286) — a consumer swizzles from it, never from a guess.
+            ...storage.pairs,
           },
           capacity,
           // Displacing positions never changes CONNECTIVITY: a torus grid through a
@@ -699,17 +696,21 @@ export const pointKernelNode: NodeDefinition = {
  * kernel's over stored attributes, no longer just "whatever this renderer binds".
  * Failures are §V288-shaped: by name, saying what the pointset provides.
  */
+/**
+ * One attribute a draw-time group predicate reads — the edge's REGION plus the name and
+ * type the generated WGSL needs (T1076: `attributeBinding` takes it straight).
+ */
+export interface GroupBind extends PointsetAttributeRef {
+  readonly attribute: string;
+  readonly type: string;
+}
+
 export function resolveGroupPredicate(
   nodeId: string,
   expression: string,
-  pointset:
-    | { pairs: Readonly<Record<string, { pair: string; half: "read" | "write"; type?: string }>> }
-    | undefined,
+  pointset: { pairs: Readonly<Record<string, Readonly<PointsetAttributeRef>>> } | undefined,
 ):
-  | {
-      expression: string;
-      binds: ReadonlyArray<{ attribute: string; type: string; pair: string; half: "read" | "write" }>;
-    }
+  | { expression: string; binds: ReadonlyArray<GroupBind> }
   | { refusal: CompiledNodeDescription } {
   const refuse = (message: string, suggestion?: string): { refusal: CompiledNodeDescription } => ({
     refusal: {
@@ -732,7 +733,7 @@ export function resolveGroupPredicate(
     );
   }
   const available = Object.keys(pointset?.pairs ?? {}).sort();
-  const binds: Array<{ attribute: string; type: string; pair: string; half: "read" | "write" }> = [];
+  const binds: GroupBind[] = [];
   for (const attribute of referenced) {
     const entry = pointset?.pairs[attribute];
     if (entry === undefined) {
@@ -744,7 +745,7 @@ export function resolveGroupPredicate(
     if (entry.type === undefined) {
       return refuse(`the group predicate reads "p.${attribute}", but the edge does not declare its type.`);
     }
-    binds.push({ attribute, type: entry.type, pair: entry.pair, half: entry.half });
+    binds.push({ ...entry, attribute, type: entry.type });
   }
   return { expression, binds };
 }
@@ -767,14 +768,10 @@ export function resolveGroupPredicate(
 export function resolveColorMap(
   nodeId: string,
   binding: { attribute: string; channel?: string; port?: string } | undefined,
-  pointset:
-    | { pairs: Readonly<Record<string, { pair: string; half: "read" | "write"; type?: string }>> }
-    | undefined,
+  pointset: { pairs: Readonly<Record<string, Readonly<PointsetAttributeRef>>> } | undefined,
   pointsPort: string,
   label: string = "color",
-):
-  | { map: { pair: string; half: "read" | "write" } | undefined }
-  | { refusal: CompiledNodeDescription } {
+): { map: Readonly<PointsetAttributeRef> | undefined } | { refusal: CompiledNodeDescription } {
   if (binding === undefined) return { map: undefined };
   const refuse = (message: string, suggestion?: string): { refusal: CompiledNodeDescription } => ({
     refusal: {
@@ -816,7 +813,7 @@ export function resolveColorMap(
       `${label} needs a vec4f attribute to map the whole compound; "${binding.attribute}" is ${entry.type}.`,
     );
   }
-  return { map: { pair: entry.pair, half: entry.half } };
+  return { map: entry };
 }
 
 /**
@@ -830,17 +827,19 @@ export function resolveColorMap(
  * name (§V288) rather than falling back to the retained static — the fault §B132 shipped
  * for weeks was exactly a size that looked authored and was silently dropped.
  */
+/** A resolved scalar map: the attribute's region, its type, and the component to read. */
+export interface ScalarMap extends PointsetAttributeRef {
+  readonly type: string;
+  readonly channel?: string;
+}
+
 export function resolveScalarMap(
   nodeId: string,
   binding: { attribute: string; channel?: string; port?: string } | undefined,
-  pointset:
-    | { pairs: Readonly<Record<string, { pair: string; half: "read" | "write"; type?: string }>> }
-    | undefined,
+  pointset: { pairs: Readonly<Record<string, Readonly<PointsetAttributeRef>>> } | undefined,
   pointsPort: string,
   label: string,
-):
-  | { map: { pair: string; half: "read" | "write"; type: string; channel?: string } | undefined }
-  | { refusal: CompiledNodeDescription } {
+): { map: ScalarMap | undefined } | { refusal: CompiledNodeDescription } {
   if (binding === undefined) return { map: undefined };
   const refuse = (message: string, suggestion?: string): { refusal: CompiledNodeDescription } => ({
     refusal: {
@@ -881,7 +880,7 @@ export function resolveScalarMap(
     if (binding.channel !== undefined) {
       return refuse(`${label} maps f32 attribute "${binding.attribute}" with a channel; an f32 has none.`);
     }
-    return { map: { pair: entry.pair, half: entry.half, type: entry.type } };
+    return { map: { ...entry, type: entry.type } };
   }
   const channels = vectorChannels[entry.type];
   if (channels === undefined) {
@@ -890,7 +889,7 @@ export function resolveScalarMap(
   if (binding.channel === undefined || !channels.includes(binding.channel)) {
     return refuse(`${label} maps ${entry.type} attribute "${binding.attribute}" and needs a channel (${channels.join("/")}).`);
   }
-  return { map: { pair: entry.pair, half: entry.half, type: entry.type, channel: binding.channel } };
+  return { map: { ...entry, type: entry.type, channel: binding.channel } };
 }
 
 export function countedDrawSupport(
@@ -913,7 +912,7 @@ export function countedDrawSupport(
   const count = pointset?.count;
   if (count === undefined) return undefined;
   const argsKey = options.argsKey ?? "drawArgs";
-  const argsId = pointPairId(nodeId, argsKey);
+  const argsId = pointBufferId(nodeId, argsKey);
   return {
     instances: { indirect: argsId },
     argsPass: {
@@ -1037,13 +1036,28 @@ export const renderPointsNode: NodeDefinition = {
 
     const blend = parameters["blend"] === "alpha" ? ("alpha" as const) : ("additive" as const);
 
-    type MapEntry = { pair: string; half: "read" | "write"; type?: string };
+    /* T1076: the position REGION off the edge, refused BY NAME when the edge carries none.
+       This used to fall back to `pointPairId(source, "position")` — a pre-T296 naming
+       convention that packing retires: attributes no longer have buffers of their own, so
+       a derived id names nothing and the draw would fail at resource lookup instead. */
+    const drawPosition = points.pointset?.pairs["position"];
+    if (drawPosition === undefined) {
+      return {
+        passes: [],
+        diagnostics: [
+          {
+            severity: "error",
+            code: "node.points.edge",
+            message: `Node "${nodeId}": the points edge carries no resolved position attribute.`,
+            nodeId,
+          },
+        ],
+      };
+    }
 
     // T333: the draw-time group. Excluded instances collapse to zero-area quads.
     const groupSource = typeof parameters["group"] === "string" ? parameters["group"].trim() : "";
-    let groupPredicate:
-      | { expression: string; binds: ReadonlyArray<{ attribute: string; type: string; pair: string; half: "read" | "write" }> }
-      | undefined;
+    let groupPredicate: { expression: string; binds: ReadonlyArray<GroupBind> } | undefined;
     if (groupSource !== "") {
       const resolvedGroup = resolveGroupPredicate(nodeId, groupSource, points.pointset);
       if ("refusal" in resolvedGroup) return resolvedGroup.refusal;
@@ -1079,7 +1093,7 @@ export const renderPointsNode: NodeDefinition = {
       resolvedSize.map === undefined
         ? undefined
         : {
-            entry: { pair: resolvedSize.map.pair, half: resolvedSize.map.half, type: resolvedSize.map.type } as MapEntry,
+            entry: resolvedSize.map,
             type: resolvedSize.map.type,
             ...(resolvedSize.map.channel === undefined ? {} : { channel: resolvedSize.map.channel }),
           };
@@ -1138,26 +1152,14 @@ export const renderPointsNode: NodeDefinition = {
         ),
       vertexCount: 6,
       buffers: [
-        // The producer's position pair via the edge map, WRITE half: THIS frame's
-        // positions (§V168) — whoever owns the pair (§V197, by-reference reads).
-        {
-          binding: "positions",
-          resourceId: points.pointset?.pairs["position"]?.pair ?? pointPairId(points.source.nodeId, "position"),
-          half: points.pointset?.pairs["position"]?.half ?? "write",
-        },
-        ...(mappedSize === undefined
-          ? []
-          : [{ binding: "mapSizes", resourceId: mappedSize.entry.pair, half: mappedSize.entry.half }]),
-        ...(mappedColor === undefined
-          ? []
-          : [{ binding: "mapColors", resourceId: mappedColor.pair, half: mappedColor.half }]),
+        // The producer's position REGION via the edge map, WRITE half: THIS frame's
+        // positions (§V168) — whoever owns the buffer (§V197, by-reference reads).
+        attributeBinding("positions", drawPosition),
+        ...(mappedSize === undefined ? [] : [attributeBinding("mapSizes", mappedSize.entry)]),
+        ...(mappedColor === undefined ? [] : [attributeBinding("mapColors", mappedColor)]),
         ...(groupPredicate === undefined
           ? []
-          : groupPredicate.binds.map((bind) => ({
-              binding: `group_${bind.attribute}`,
-              resourceId: bind.pair,
-              half: bind.half,
-            }))),
+          : groupPredicate.binds.map((bind) => attributeBinding(`group_${bind.attribute}`, bind))),
       ],
       // Mapped values LEAVE the uniform block entirely — the struct and the record
       // must keep matching exactly (the catalogue sweep pins that). Both mapped, the
@@ -1194,6 +1196,9 @@ export const renderPointsNode: NodeDefinition = {
  * that modified upstream pairs in place would break that derivation and alias state
  * across nodes.
  */
+/** T1076: the attribute `textureToAttribute` owns, named once for layout and pass. */
+const SAMPLE_ATTRIBUTE: PointAttributeSchema = { name: "sample", type: "vec4f", default: [0, 0, 0, 0] };
+
 export const textureToAttributeNode: NodeDefinition = {
   type: "textureToAttribute",
   version: 1,
@@ -1285,6 +1290,19 @@ export const textureToAttributeNode: NodeDefinition = {
       };
     }
     const count = upstream.capacity;
+    // T1076: this node owns `sample` alone; the rest passes by reference (§V197).
+    const storage = packedPointStorage(nodeId, [SAMPLE_ATTRIBUTE], count, "write");
+    if (!storage.ok) {
+      return {
+        passes: [],
+        diagnostics: storage.errors.map((message) => ({
+          severity: "error" as const,
+          code: "node.points.capacity",
+          message: `Node "${nodeId}": ${message}`,
+          nodeId,
+        })),
+      };
+    }
     const pass: DispatchPassDescriptor = {
       kind: "dispatch",
       id: `${nodeId}:bridge`,
@@ -1292,9 +1310,9 @@ export const textureToAttributeNode: NodeDefinition = {
       entryPoint: "main",
       workgroups: [Math.ceil(count / 64), 1, 1],
       buffers: [
-        // The producer's pair, WRITE half: this frame's positions, in plan order (§V168).
-        { binding: "in_position", resourceId: upstreamPosition.pair, half: upstreamPosition.half },
-        { binding: "out_sample", resourceId: pointPairId(nodeId, "sample"), half: "write" },
+        // The producer's region, WRITE half: this frame's positions, in plan order (§V168).
+        attributeBinding("in_position", upstreamPosition),
+        attributeBinding("out_sample", storage.pairs["sample"] as PointsetAttributeRef),
       ],
       textures: [{ binding: "sourceTexture", resourceId: texture.resource, sampled: "unfiltered" }],
       uniforms: { count },
@@ -1304,12 +1322,10 @@ export const textureToAttributeNode: NodeDefinition = {
 
     return {
       passes: [pass],
-      scratch: [
-        { key: "sample", kind: "bufferPair", stride: ATTRIBUTE_STRIDES["vec4f"], capacity: count },
-      ],
+      scratch: [storage.scratch],
       pointsets: {
         out: {
-          pairs: { ...upstream.pairs, sample: { pair: pointPairId(nodeId, "sample"), half: "write" as const, type: "vec4f" } },
+          pairs: { ...upstream.pairs, ...storage.pairs },
           capacity: count,
           ...(upstream.topology === undefined ? {} : { topology: upstream.topology }),
         },
@@ -1327,6 +1343,14 @@ export const textureToAttributeNode: NodeDefinition = {
  * parameter. Rays default straight down (rain onto terrain); a pointset carrying a
  * vec3f `direction` attribute aims each ray itself.
  */
+/** T1076: the hit attributes `pointRay` owns, in packed-layout order. */
+export const RAY_ATTRIBUTES: ReadonlyArray<PointAttributeSchema> = [
+  { name: "hit", type: "f32", default: [0] },
+  { name: "hitPosition", type: "vec3f", default: [0, 0, 0] },
+  { name: "hitNormal", type: "vec3f", qualifier: "direction", default: [0, 1, 0] },
+  { name: "hitDistance", type: "f32", default: [0] },
+];
+
 export const pointRayNode: NodeDefinition = {
   type: "pointRay",
   version: 1,
@@ -1460,6 +1484,19 @@ export const pointRayNode: NodeDefinition = {
       const list = Array.isArray(raw) ? raw : [0, -1, 0];
       return [Number(list[0] ?? 0), Number(list[1] ?? -1), Number(list[2] ?? 0)];
     })();
+    // T1076: the four hit attributes are regions of ONE packed pair.
+    const storage = packedPointStorage(nodeId, RAY_ATTRIBUTES, count, "write");
+    if (!storage.ok) {
+      return {
+        passes: [],
+        diagnostics: storage.errors.map((message) => ({
+          severity: "error" as const,
+          code: "node.points.capacity",
+          message: `Node "${nodeId}": ${message}`,
+          nodeId,
+        })),
+      };
+    }
     const pass: DispatchPassDescriptor = {
       kind: "dispatch",
       id: `${nodeId}:ray`,
@@ -1467,14 +1504,11 @@ export const pointRayNode: NodeDefinition = {
       entryPoint: "main",
       workgroups: [Math.ceil(count / 64), 1, 1],
       buffers: [
-        { binding: "in_position", resourceId: position.pair, half: position.half },
-        ...(carried === undefined
-          ? []
-          : [{ binding: "in_direction", resourceId: carried.pair, half: carried.half }]),
-        { binding: "out_hit", resourceId: pointPairId(nodeId, "hit"), half: "write" },
-        { binding: "out_hitPosition", resourceId: pointPairId(nodeId, "hitPosition"), half: "write" },
-        { binding: "out_hitNormal", resourceId: pointPairId(nodeId, "hitNormal"), half: "write" },
-        { binding: "out_hitDistance", resourceId: pointPairId(nodeId, "hitDistance"), half: "write" },
+        attributeBinding("in_position", position),
+        ...(carried === undefined ? [] : [attributeBinding("in_direction", carried)]),
+        ...RAY_ATTRIBUTES.map((attribute) =>
+          attributeBinding(`out_${attribute.name}`, storage.pairs[attribute.name] as PointsetAttributeRef),
+        ),
       ],
       textures: [{ binding: "fieldTexture", resourceId: field.resource, sampled: "unfiltered" }],
       uniforms: {
@@ -1491,21 +1525,10 @@ export const pointRayNode: NodeDefinition = {
 
     return {
       passes: [pass],
-      scratch: [
-        { key: "hit", kind: "bufferPair", stride: ATTRIBUTE_STRIDES["f32"], capacity: count },
-        { key: "hitPosition", kind: "bufferPair", stride: ATTRIBUTE_STRIDES["vec3f"], capacity: count },
-        { key: "hitNormal", kind: "bufferPair", stride: ATTRIBUTE_STRIDES["vec3f"], capacity: count },
-        { key: "hitDistance", kind: "bufferPair", stride: ATTRIBUTE_STRIDES["f32"], capacity: count },
-      ],
+      scratch: [storage.scratch],
       pointsets: {
         out: {
-          pairs: {
-            ...upstream.pairs,
-            hit: { pair: pointPairId(nodeId, "hit"), half: "write" as const, type: "f32" },
-            hitPosition: { pair: pointPairId(nodeId, "hitPosition"), half: "write" as const, type: "vec3f" },
-            hitNormal: { pair: pointPairId(nodeId, "hitNormal"), half: "write" as const, type: "vec3f" },
-            hitDistance: { pair: pointPairId(nodeId, "hitDistance"), half: "write" as const, type: "f32" },
-          },
+          pairs: { ...upstream.pairs, ...storage.pairs },
           capacity: count,
           ...(upstream.topology === undefined ? {} : { topology: upstream.topology }),
         },

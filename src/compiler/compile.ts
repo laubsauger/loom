@@ -1,11 +1,12 @@
 import type { NodeId, PortId } from "../domain/types/ids.ts";
 import { instanceShapeIndex } from "../nodes/definitions/render-instances.ts";
+import { attributeBinding } from "../nodes/definitions/point-storage.ts";
 import { bypassPassthroughPorts } from "../domain/graph/bypass.ts";
 import { compareEdgeOrder } from "../domain/graph/edge-order.ts";
 import type { ScenePayload } from "../domain/types/scene.ts";
 import type { RuntimeDiagnostic } from "../domain/types/diagnostics.ts";
 import type { LogicalExecutionPlan } from "../domain/types/backend.ts";
-import type { CompiledNodeDescription, NodeDefinition, TextureFormat } from "../domain/types/node-definition.ts";
+import type { CompiledNodeDescription, NodeDefinition, PointsetAttributeRef, TextureFormat } from "../domain/types/node-definition.ts";
 import { TEXTURE_FORMATS } from "../domain/types/node-definition.ts";
 import type { PortType } from "../domain/types/ports.ts";
 import type { DrawPassDescriptor, PassDescriptor } from "../runtime/backend/plan.ts";
@@ -1173,18 +1174,28 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
         if (!isRecord(rawInfo) || !isRecord(rawInfo["pairs"])) continue;
         const capacity = rawInfo["capacity"];
         if (!(Number.isInteger(capacity) && (capacity as number) >= 1)) continue;
-        // T322 (§V231): each pair names the half holding this frame's data.
-        const pairs: Record<string, { pair: string; half: "read" | "write"; type?: string }> = {};
+        /* T322 (§V231): each entry names the half holding this frame's data. T1076: and
+           the REGION — which packed buffer, at what byte offset, for how many bytes. An
+           entry missing any of the three is DROPPED rather than defaulted: an offset
+           taken as zero would bind the first attribute of the buffer under another
+           attribute's name, which draws a plausible picture of the wrong data. */
+        const pairs: Record<string, PointsetAttributeRef> = {};
         for (const [attribute, entry] of Object.entries(rawInfo["pairs"])) {
           if (!isRecord(entry)) continue;
-          const pair = entry["pair"];
+          const buffer = entry["buffer"];
           const half = entry["half"];
+          const offset = entry["offset"];
+          const bytes = entry["bytes"];
           const attributeType = entry["type"];
-          if (typeof pair !== "string" || pair.length === 0) continue;
+          if (typeof buffer !== "string" || buffer.length === 0) continue;
           if (half !== "read" && half !== "write") continue;
+          if (!Number.isInteger(offset) || (offset as number) < 0) continue;
+          if (!Number.isInteger(bytes) || (bytes as number) < 1) continue;
           pairs[attribute] = {
-            pair,
+            buffer,
             half,
+            offset: offset as number,
+            bytes: bytes as number,
             ...(typeof attributeType === "string" ? { type: attributeType } : {}),
           };
         }
@@ -1512,7 +1523,7 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
                 // Half "read", not the in-plan half: the preview program runs BETWEEN
                 // main frames, after the swap has landed the latest state on the read
                 // half (T563; §V168 governs in-plan consumers only).
-                { binding: "positions", resourceId: position.pair, half: "read" },
+                attributeBinding("positions", position, "read"),
                 ...(info.count === undefined
                   ? []
                   : [{ binding: "counts", resourceId: info.count.buffer }]),
@@ -1744,7 +1755,7 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
         const geometryBuffers = [
           // Half "read": the preview program runs between main frames, after the swap
           // (T563; §V168 governs in-plan consumers only).
-          { binding: "positions", resourceId: position.pair, half: "read" as const },
+          attributeBinding("positions", position, "read"),
         ];
         if (payload.mode === "points") {
           synthPasses.push({
@@ -1831,20 +1842,16 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
               instances: Math.max(1, payload.capacity),
               buffers: [
                 ...geometryBuffers,
-                { binding: "endpoints", resourceId: endpoint.pair, half: endpoint.half },
+                attributeBinding("endpoints", endpoint),
                 ...(payload.colorAttribute === undefined
                   ? []
-                  : [{ binding: "pointColors", resourceId: payload.colorAttribute.pair, half: payload.colorAttribute.half }]),
+                  : [attributeBinding("pointColors", payload.colorAttribute)]),
                 ...(payload.scaleAttribute === undefined
                   ? []
-                  : [{ binding: "pointScales", resourceId: payload.scaleAttribute.pair, half: payload.scaleAttribute.half }]),
+                  : [attributeBinding("pointScales", payload.scaleAttribute)]),
                 ...(payload.group === undefined
                   ? []
-                  : payload.group.binds.map((bind) => ({
-                      binding: `group_${bind.attribute}`,
-                      resourceId: bind.pair,
-                      half: bind.half,
-                    }))),
+                  : payload.group.binds.map((bind) => attributeBinding(`group_${bind.attribute}`, bind))),
               ],
               uniforms: {
                 ...geometryUniforms,

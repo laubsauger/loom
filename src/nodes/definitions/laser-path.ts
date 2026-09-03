@@ -1,6 +1,6 @@
-import type { CompiledNodeDescription, NodeDefinition } from "../../domain/types/node-definition.ts";
-import type { DispatchPassDescriptor } from "../../runtime/backend/plan.ts";
-import { ATTRIBUTE_STRIDES } from "../../points/attributes.ts";
+import type { CompiledNodeDescription, NodeDefinition, PointsetAttributeRef } from "../../domain/types/node-definition.ts";
+import type { DispatchPassDescriptor, PassDescriptor } from "../../runtime/backend/plan.ts";
+import type { PointAttributeSchema } from "../../points/attributes.ts";
 import {
   LASER_SCAN_WORKGROUP,
   laserCountWgsl,
@@ -10,7 +10,56 @@ import {
 } from "../shaders/laser-path.wgsl.ts";
 import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
 import { readColor, readFlag, readNumber } from "./parameter-readers.ts";
-import { pointPairId } from "./points.ts";
+import { attributeBinding, packedPointStorage } from "./point-storage.ts";
+
+/**
+ * The emit pass's stream bindings, named ONCE (§V349).
+ *
+ * T1076 made this matter: the wire pump used to rebuild `scratch:<node>:position` and
+ * `scratch:<node>:tint` by convention, which packing retired — the stream is now two
+ * REGIONS of one buffer, and the only place that says where they are is the plan. The
+ * pump finds them by these names rather than by a second copy of the layout arithmetic,
+ * and `laserStreamRegions` below is the lookup, kept beside the pass that emits them.
+ */
+export const LASER_STREAM_BINDINGS = { position: "out_position", tint: "out_tint" } as const;
+
+/**
+ * The planned stream's two regions, from the plan itself. Null when the named node emits
+ * no laser plan this compile (unwired, pruned, or refused) — the pump then says so rather
+ * than reading a buffer that means something else.
+ */
+export function laserStreamRegions(
+  passes: ReadonlyArray<PassDescriptor>,
+  nodeId: string,
+): { readonly resourceId: string; readonly position: BufferRegion; readonly tint: BufferRegion } | null {
+  for (const pass of passes) {
+    if (!("nodeId" in pass) || pass.nodeId !== nodeId || !("buffers" in pass)) continue;
+    const buffers = pass.buffers ?? [];
+    const position = buffers.find((binding) => binding.binding === LASER_STREAM_BINDINGS.position);
+    const tint = buffers.find((binding) => binding.binding === LASER_STREAM_BINDINGS.tint);
+    if (position === undefined || tint === undefined) continue;
+    if (position.offset === undefined || position.bytes === undefined) continue;
+    if (tint.offset === undefined || tint.bytes === undefined) continue;
+    return {
+      resourceId: position.resourceId,
+      position: { offset: position.offset, bytes: position.bytes },
+      tint: { offset: tint.offset, bytes: tint.bytes },
+    };
+  }
+  return null;
+}
+
+export interface BufferRegion {
+  readonly offset: number;
+  readonly bytes: number;
+}
+
+/** The sample-stream attributes this node owns, in packed-layout order. */
+export const PLAN_ATTRIBUTES: ReadonlyArray<PointAttributeSchema> = [
+  { name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] },
+  { name: "tint", type: "vec4f", qualifier: "color", default: [1, 1, 1, 1] },
+  { name: "meta", type: "vec2f", default: [0, 0] },
+];
 
 /**
  * Laser Path (T947) — the vector-display path planner: ordered points in, the PLANNED
@@ -197,6 +246,21 @@ export const laserPathNode: NodeDefinition = {
 
     const scratch = (key: string): string => `scratch:${nodeId}:${key}`;
 
+    /* T1076: position/tint/meta are regions of ONE packed pair. `use-laser-bridge` reads
+       the stream back out of it by the same offsets, off the edge payload. */
+    const storage = packedPointStorage(nodeId, PLAN_ATTRIBUTES, outCapacity, "write");
+    if (!storage.ok) {
+      return {
+        passes: [],
+        diagnostics: storage.errors.map((message) => ({
+          severity: "error" as const,
+          code: "node.points.capacity",
+          message: `Node "${nodeId}": ${message}`,
+          nodeId,
+        })),
+      };
+    }
+
     const count: DispatchPassDescriptor = {
       kind: "dispatch",
       id: `${nodeId}:laser:count:${slots}`,
@@ -204,7 +268,7 @@ export const laserPathNode: NodeDefinition = {
       entryPoint: "main",
       workgroups: [Math.ceil(capacity / 64), 1, 1],
       buffers: [
-        { binding: "in_position", resourceId: position.pair, half: position.half },
+        attributeBinding("in_position", position),
         { binding: "counts", resourceId: scratch("counts") },
       ],
       uniforms: planUniforms,
@@ -250,14 +314,16 @@ export const laserPathNode: NodeDefinition = {
       entryPoint: "main",
       workgroups: [Math.ceil(outCapacity / 64), 1, 1],
       buffers: [
-        { binding: "in_position", resourceId: position.pair, half: position.half },
+        attributeBinding("in_position", position),
         { binding: "counts", resourceId: scratch("counts") },
         { binding: "scanned", resourceId: scratch("scanned") },
         { binding: "blockSums", resourceId: scratch("blockSums") },
         { binding: "total", resourceId: scratch("total") },
-        { binding: "out_position", resourceId: pointPairId(nodeId, "position"), half: "write" },
-        { binding: "out_tint", resourceId: pointPairId(nodeId, "tint"), half: "write" },
-        { binding: "out_meta", resourceId: pointPairId(nodeId, "meta"), half: "write" },
+        // `out_position` / `out_tint` are LASER_STREAM_BINDINGS — the pump finds the
+        // planned stream's regions by these names (T1076).
+        ...PLAN_ATTRIBUTES.map((attribute) =>
+          attributeBinding(`out_${attribute.name}`, storage.pairs[attribute.name] as PointsetAttributeRef),
+        ),
       ],
       uniforms: planUniforms,
       uniformBinding: "params",
@@ -271,17 +337,11 @@ export const laserPathNode: NodeDefinition = {
         { key: "scanned", kind: "buffer", stride: 4, capacity },
         { key: "blockSums", kind: "buffer", stride: 4, capacity: blocks },
         { key: "total", kind: "buffer", stride: 4, capacity: 1 },
-        { key: "position", kind: "bufferPair", stride: ATTRIBUTE_STRIDES["vec3f"], capacity: outCapacity },
-        { key: "tint", kind: "bufferPair", stride: ATTRIBUTE_STRIDES["vec4f"], capacity: outCapacity },
-        { key: "meta", kind: "bufferPair", stride: ATTRIBUTE_STRIDES["vec2f"], capacity: outCapacity },
+        storage.scratch,
       ],
       pointsets: {
         out: {
-          pairs: {
-            position: { pair: pointPairId(nodeId, "position"), half: "write" as const, type: "vec3f" },
-            tint: { pair: pointPairId(nodeId, "tint"), half: "write" as const, type: "vec4f" },
-            meta: { pair: pointPairId(nodeId, "meta"), half: "write" as const, type: "vec2f" },
-          },
+          pairs: storage.pairs,
           capacity: outCapacity,
           // The plan is a sample stream, not a lattice; parked tail slots make any
           // stronger connectivity claim false.

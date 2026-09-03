@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readKernelAttribute } from "../../../nodes/definitions/test-support.ts";
 
 import { compileGraph } from "../../../compiler/index.ts";
 import { createNodeRegistry } from "../../../nodes/registry/registry.ts";
@@ -129,7 +130,16 @@ describe("the advanced kernel spawns from a field (T744, §V147-by-value)", () =
       // And by VALUE: every child (y = 1) sits at a bright emitter's x — the right
       // half of the ramp. A dark-side child means fieldAt read the wrong texel, the
       // wrong channel, or the wrong half of the frame; none may exist.
-      const positions = new Float32Array(await backend.readBuffer("scratch:sim:position"));
+      /* T1076: `position` is a region of the advanced kernel's packed buffer, whose schema
+         is the author's PLUS the injected lifecycle word. */
+      const positions = (
+        await readKernelAttribute(
+          backend.readBuffer,
+          { type: "pointKernelAdvanced", parameters: { capacity: 64 } },
+          "sim",
+          "position",
+        )
+      ).floats;
       let children = 0;
       for (let index = 0; index < (count ?? 0); index += 1) {
         const x = positions[index * 4] ?? 0;

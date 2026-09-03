@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { pointStorageId } from "../../../nodes/definitions/point-storage.ts";
 
 import { compileGraph } from "../../../compiler/index.ts";
 import { createNodeRegistry } from "../../../nodes/registry/registry.ts";
@@ -164,8 +165,9 @@ describe("TextureToAttribute bridge on Dawn (T124)", () => {
       // exactly that bug (this test was green while the bridge silently ran one frame
       // late). A solid field makes the claim EXACT: every point's sampled attribute is
       // the solid's linear colour [0,1,0,1], byte for byte, on the very first frames.
-      const sampleRaw = await backend.readBuffer("scratch:bridge:sample");
-      const samples = new Float32Array(sampleRaw);
+      /* T1076: `textureToAttribute` owns `sample` alone, so its packed buffer IS that
+         region — the same bytes the dedicated buffer held. */
+      const samples = new Float32Array(await backend.readBuffer(pointStorageId("bridge")));
       for (let point = 0; point < 8; point += 1) {
         const base = point * 4;
         expect(samples[base], `point ${point} r`).toBeCloseTo(0, 5);

@@ -1,10 +1,14 @@
-import type { NodeCompileContext } from "../../domain/types/node-definition.ts";
+import type { NodeCompileContext, PointsetAttributeRef } from "../../domain/types/node-definition.ts";
 import type { ParameterValue } from "../../domain/types/parameters.ts";
 import type { LogicalExecutionPlan } from "../../domain/types/backend.ts";
 import type { PortId } from "../../domain/types/ids.ts";
 import { readExecutionPlan } from "../../runtime/backend/plan.ts";
 import type { PlanReadResult } from "../../runtime/backend/plan.ts";
 import { scratchResourceId } from "../../compiler/resources.ts";
+import { COMPONENT_COUNTS, type PointAttributeType } from "../../points/attributes.ts";
+import { packAttributes } from "../../points/packing.ts";
+import { pointStorageId } from "./point-storage.ts";
+import { parseAttributes } from "./points.ts";
 
 /**
  * Fixtures for the catalogue's unit tests (T70, T40).
@@ -33,7 +37,7 @@ export interface ContextOptions {
     Record<
       PortId,
       {
-        pairs: Readonly<Record<string, { pair: string; half: "read" | "write"; type?: string }>>;
+        pairs: Readonly<Record<string, PointsetAttributeRef>>;
         capacity: number;
         topology?: string;
         count?: { buffer: string };
@@ -85,7 +89,7 @@ export function compileContext(options: ContextOptions = {}): NodeCompileContext
       sourceNodeId?: string;
       sourcePortId?: string;
       pointset?: {
-        pairs: Readonly<Record<string, { pair: string; half: "read" | "write"; type?: string }>>;
+        pairs: Readonly<Record<string, PointsetAttributeRef>>;
         capacity: number;
         topology?: string;
         count?: { buffer: string };
@@ -306,4 +310,160 @@ export function minimalGraphFor(
     }
   }
   return { revision: 1, nodes, edges, groups: {} };
+}
+
+/**
+ * T1076: an edge-payload fixture — attributes as REGIONS of one packed buffer, laid out by
+ * the same `packAttributes` a producer allocates with.
+ *
+ * Written once here rather than spelled out per test: a fixture with a hand-typed offset
+ * is a second layout answer, and the thing most likely to be quietly wrong is exactly an
+ * offset. `half` defaults to "write" (an ordinary producer's this-frame half, §V168) and
+ * is overridable per attribute for the compacted case (§V231).
+ */
+export function fixturePairs(
+  nodeId: string,
+  attributes: ReadonlyArray<{
+    readonly name: string;
+    readonly type: PointAttributeType;
+    readonly half?: "read" | "write";
+  }>,
+  capacity: number,
+): Record<string, PointsetAttributeRef> {
+  const layout = packAttributes(
+    attributes.map((attribute) => ({
+      name: attribute.name,
+      type: attribute.type,
+      default: Array<number>(COMPONENT_COUNTS[attribute.type]).fill(0),
+    })),
+    capacity,
+  );
+  if (!layout.ok) throw new Error(layout.errors.join("; "));
+  const pairs: Record<string, PointsetAttributeRef> = {};
+  for (const attribute of attributes) {
+    const region = layout.byName.get(attribute.name);
+    if (region === undefined) throw new Error(`no packed region for "${attribute.name}"`);
+    pairs[attribute.name] = {
+      buffer: pointStorageId(nodeId),
+      half: attribute.half ?? "write",
+      offset: region.offset,
+      bytes: region.bytes,
+      type: attribute.type,
+    };
+  }
+  return pairs;
+}
+
+/**
+ * T1076: one attribute's REGION inside a node's packed point buffer, for a readback.
+ *
+ * `readBuffer` hands back the whole buffer (it has no range yet, T173), so a test that
+ * wants one attribute slices it here — off the same `packAttributes` the producer
+ * allocated with, never a hand-typed offset.
+ */
+export function pointRegionSlice(
+  raw: ArrayBuffer,
+  attributes: ReadonlyArray<{ readonly name: string; readonly type: PointAttributeType }>,
+  capacity: number,
+  attribute: string,
+): { readonly floats: Float32Array; readonly words: Uint32Array } {
+  const layout = packAttributes(
+    attributes.map((entry) => ({
+      name: entry.name,
+      type: entry.type,
+      default: Array<number>(COMPONENT_COUNTS[entry.type]).fill(0),
+    })),
+    capacity,
+  );
+  if (!layout.ok) throw new Error(layout.errors.join("; "));
+  const region = layout.byName.get(attribute);
+  if (region === undefined) throw new Error(`no packed region for "${attribute}"`);
+  return {
+    floats: new Float32Array(raw, region.offset, region.bytes / 4),
+    words: new Uint32Array(raw, region.offset, region.bytes / 4),
+  };
+}
+
+/**
+ * T1076: read ONE attribute out of a node's packed point buffer, through the backend's
+ * own readback path.
+ *
+ * The convenience that replaces `readBuffer(scratch:<node>:<attribute>)`. That id named a
+ * per-attribute buffer, which packing retired — the buffer is the node's, the attribute is
+ * a region of it, and the offset comes from the same layout the producer allocated with.
+ */
+export async function readPointAttribute(
+  readBuffer: (resourceId: string) => Promise<ArrayBuffer>,
+  nodeId: string,
+  attributes: ReadonlyArray<{ readonly name: string; readonly type: PointAttributeType }>,
+  capacity: number,
+  attribute: string,
+): Promise<{ readonly floats: Float32Array; readonly words: Uint32Array }> {
+  return pointRegionSlice(await readBuffer(pointStorageId(nodeId)), attributes, capacity, attribute);
+}
+
+/**
+ * T1076: read one attribute of a point KERNEL node, with the packed layout resolved from
+ * the node's own parameters — the schema it declares, plus the injected lifecycle word for
+ * the advanced kernel, at the capacity it asked for.
+ *
+ * The test-side twin of what the producer does at compile: the region has to come off the
+ * same arithmetic, or a readback silently lands on a neighbouring attribute.
+ */
+export async function readKernelAttribute(
+  readBuffer: (resourceId: string) => Promise<ArrayBuffer>,
+  node: { readonly type: string; readonly parameters: Readonly<Record<string, unknown>> },
+  nodeId: string,
+  attribute: string,
+): Promise<{ readonly floats: Float32Array; readonly words: Uint32Array }> {
+  return kernelRegionSlice(node, await readBuffer(pointStorageId(nodeId)), attribute);
+}
+
+/**
+ * The synchronous half of `readKernelAttribute`, for a buffer already in hand — the render
+ * harness's `probeBuffers` hands back raw ArrayBuffers, and packing turned N per-attribute
+ * probes into ONE probe of the node's buffer plus N slices.
+ */
+export function kernelRegionSlice(
+  node: { readonly type: string; readonly parameters: Readonly<Record<string, unknown>> },
+  raw: ArrayBuffer,
+  attribute: string,
+): { readonly floats: Float32Array; readonly words: Uint32Array } {
+  const { attributes, error } = parseAttributes(node.parameters["attributes"]);
+  if (attributes === undefined) throw new Error(String(error));
+  const declared = node.parameters["capacity"];
+  const capacity =
+    typeof declared === "number" && Number.isFinite(declared) ? Math.max(1, Math.round(declared)) : 4096;
+  const schema =
+    node.type === "pointKernelAdvanced"
+      ? [...attributes, { name: "flags", type: "u32" as const, default: [1] }]
+      : attributes;
+  return pointRegionSlice(raw, schema, capacity, attribute);
+}
+
+/**
+ * T1076: the REGION a named pass binding covers, read off the plan itself.
+ *
+ * The exact answer wherever the producer's pass names its attributes (`out_tint`,
+ * `out_position`, …): no schema, no capacity, no second copy of the layout arithmetic —
+ * the plan already says which buffer, at what offset, for how many bytes. Generated point
+ * KERNELS bind whole packed buffers under opaque group names, so those need
+ * `kernelRegionSlice` instead.
+ */
+export function planRegion(
+  passes: ReadonlyArray<unknown>,
+  nodeId: string,
+  binding: string,
+): { readonly resourceId: string; readonly offset: number; readonly bytes: number } {
+  for (const pass of passes) {
+    const entry = pass as {
+      nodeId?: string;
+      buffers?: ReadonlyArray<{ binding: string; resourceId: string; offset?: number; bytes?: number }>;
+    };
+    if (entry.nodeId !== nodeId) continue;
+    const found = entry.buffers?.find((candidate) => candidate.binding === binding);
+    if (found === undefined || found.offset === undefined || found.bytes === undefined) continue;
+    return { resourceId: found.resourceId, offset: found.offset, bytes: found.bytes };
+  }
+  throw new Error(`no region binding "${binding}" on node "${nodeId}" in this plan`);
 }

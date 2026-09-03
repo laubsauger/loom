@@ -42,7 +42,8 @@ import { CINDER_ATTRIBUTES, CINDER_CAPACITY, CINDER_KERNEL, CINDER_SPAWN } from 
  * (cinder-claims.gpu.test.ts reads the count buffer through probeBuffers, §V729).
  * The schema is spent on id (spawning mints identity, §V73) and tint, so AGE rides
  * position.z — which doubles as depth ordering under the ortho camera — and velocity
- * is procedural: 2·(n−1)+2 with flags = exactly the baseline 8 (§V588).
+ * is procedural: 2·(n−1)+2 with flags = exactly the baseline 8 (§V588 — the arithmetic
+ * T1076 retired; the schema is what it is because the picture needs it, not the budget).
  *
  * ## The understudy moves, and the bed holds still (§V411, §V687)
  *

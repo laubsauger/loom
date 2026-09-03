@@ -1,4 +1,16 @@
 import { describe, expect, it } from "vitest";
+import { pointStorageId } from "./point-storage.ts";
+import { planRegion } from "./test-support.ts";
+
+/** T1076: one attribute's float view of the packed plan buffer, at the plan's own offset. */
+function streamRegion(
+  packed: ArrayBuffer,
+  passes: ReadonlyArray<unknown>,
+  binding: string,
+): Float32Array {
+  const region = planRegion(passes, "plan", binding);
+  return new Float32Array(packed, region.offset, region.bytes / 4);
+}
 
 import { compileGraph } from "../../compiler/index.ts";
 import { createNodeRegistry } from "../../nodes/registry/registry.ts";
@@ -141,11 +153,14 @@ async function renderAt(pps: number, timeSeconds: number) {
       resolution: [64, 64],
     });
     expect(errors).toEqual([]);
+    const packed = await backend.readBuffer(pointStorageId("plan"));
     return {
       total: new Uint32Array(await backend.readBuffer("scratch:plan:total")),
-      position: new Float32Array(await backend.readBuffer("scratch:plan:position")),
-      tint: new Float32Array(await backend.readBuffer("scratch:plan:tint")),
-      meta: new Float32Array(await backend.readBuffer("scratch:plan:meta")),
+      /* T1076: position/tint/meta are regions of ONE packed stream buffer, at the offsets
+         the emit pass itself names — one readback, three views. */
+      position: streamRegion(packed, plan.passes, "out_position"),
+      tint: streamRegion(packed, plan.passes, "out_tint"),
+      meta: streamRegion(packed, plan.passes, "out_meta"),
     };
   } finally {
     backend.dispose();

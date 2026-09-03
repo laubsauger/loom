@@ -1,10 +1,34 @@
 import { describe, expect, it } from "vitest";
+import { DEFAULT_POINT_ATTRIBUTES } from "../../../nodes/definitions/points.ts";
+import { withFlags } from "../../../nodes/definitions/point-kernel-advanced.ts";
+import { readPointAttribute } from "../../../nodes/definitions/test-support.ts";
 
 import { compileGraph } from "../../../compiler/index.ts";
 import { createNodeRegistry } from "../../../nodes/registry/registry.ts";
 import { allNodeDefinitions, liveCountBufferId } from "../../../nodes/definitions/index.ts";
 import { createVgpuBackend } from "./vgpu-backend.ts";
 import { nodeGpuHost, probeDawn } from "./node-gpu-host.ts";
+
+/**
+ * T1076: read one attribute out of the advanced kernel's PACKED buffer.
+ *
+ * The schema is the author's PLUS the injected lifecycle word (`withFlags`), because that
+ * is exactly the list the node allocates — a reader using the author's list alone would
+ * be one region off for everything after the first attribute.
+ */
+async function advancedRead(
+  backend: { readBuffer: (resourceId: string) => Promise<ArrayBuffer> },
+  attribute: string,
+  capacity: number,
+): Promise<{ readonly floats: Float32Array; readonly words: Uint32Array }> {
+  return readPointAttribute(
+    backend.readBuffer,
+    "sim",
+    withFlags(DEFAULT_POINT_ATTRIBUTES),
+    capacity,
+    attribute,
+  );
+}
 
 /**
  * T322 on a REAL device, asserted on VALUES (the orchestrated condition): a same-frame
@@ -96,14 +120,14 @@ describe("advanced kernel end to end on Dawn (T322)", () => {
       // THE VALUES. readBuffer reads the pair's read half — where scatter landed the
       // survivors, and exactly what the edge map told the consumer to bind. Survivors
       // are ids 0,2,4,6 in slot order; position.x = id * 0.2 - 0.7 by construction.
-      const positions = new Float32Array(await backend.readBuffer("scratch:sim:position"));
+      const positions = (await advancedRead(backend, "position", 8)).floats;
       const survivors = [0, 2, 4, 6];
       survivors.forEach((id, slot) => {
         expect(positions[slot * 4], `slot ${slot} (id ${id})`).toBeCloseTo(id * 0.2 - 0.7, 5);
         expect(positions[slot * 4 + 1], `slot ${slot} y`).toBeCloseTo(0, 5);
       });
       // Ids rode the compaction with their points (§V73).
-      const ids = new Uint32Array(await backend.readBuffer("scratch:sim:id"));
+      const ids = (await advancedRead(backend, "id", 8)).words;
       expect([...ids.slice(0, 4)]).toEqual(survivors);
 
       // And the whole indirect path draws: four sprites, not eight, not zero.
@@ -215,7 +239,7 @@ describe("spawn end to end on Dawn (T323)", () => {
       // ORCHESTRATED CONDITION: both packed fields non-trivial, decoded independently.
       // Survivor slot 0 is the spawning parent — its compacted flags word carries
       // alive=1 AND spawnCount=5 in one u32.
-      const flags = new Uint32Array(await backend.readBuffer("scratch:sim:flags"));
+      const flags = (await advancedRead(backend, "flags", 16)).words;
       expect((flags[0] ?? 0) & 1).toBe(1);
       expect((flags[0] ?? 0) >> 1).toBe(5);
       expect(flags[1]).toBe(1); // a non-spawning survivor: alive only
@@ -237,9 +261,9 @@ describe("spawn end to end on Dawn (T323)", () => {
       expect(countsAfter[0]).toBe(13);
       expect(countsAfter[1]).toBe(21);
 
-      const ids = new Uint32Array(await backend.readBuffer("scratch:sim:id"));
+      const ids = (await advancedRead(backend, "id", 16)).words;
       expect([...ids.slice(0, 13)]).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 16, 17, 18, 19, 20]);
-      const positions = new Float32Array(await backend.readBuffer("scratch:sim:position"));
+      const positions = (await advancedRead(backend, "position", 16)).floats;
       // Children recomputed their own position from their own id on frame one — the
       // copy gave them their parent's, identity gave them their own trajectory (§V74).
       expect(positions[8 * 4], "first child x = f(id 16)").toBeCloseTo(16 * 0.1 - 0.7, 5);
@@ -347,7 +371,7 @@ describe("spawn hook end to end on Dawn (T339)", () => {
       });
       expect(errors).toEqual([]);
 
-      const positions = new Float32Array(await backend.readBuffer("scratch:sim:position"));
+      const positions = (await advancedRead(backend, "position", 16)).floats;
       // Survivors (slots 0..7): the KERNEL's positions, y = 0 — the hook did not touch
       // them, which is the range guard's whole claim.
       for (let slot = 0; slot < 8; slot += 1) {

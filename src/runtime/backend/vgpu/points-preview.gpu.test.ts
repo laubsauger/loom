@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { pointStorageId } from "../../../nodes/definitions/point-storage.ts";
 
 import { compileGraph } from "../../../compiler/index.ts";
 import { pointsPreviewResourceId } from "../../../compiler/resources.ts";
@@ -113,7 +114,8 @@ describe("pointset preview splat on Dawn (T373)", () => {
       expect(errors).toEqual([]);
 
       // The point's actual position, then the SAME projection the compiler bakes in.
-      const raw = new Float32Array(await backend.readBuffer("scratch:gen:position"));
+      /* T1076: a generator owns `position` alone, so its packed buffer IS that region. */
+      const raw = new Float32Array(await backend.readBuffer(pointStorageId("gen")));
       const point: [number, number, number] = [raw[0] ?? 0, raw[1] ?? 0, raw[2] ?? 0];
       const camera = viewProjection([1.7, 1.2, 2.4], [0, 0, 0], { aspect: 1 });
       // Column-major mat4 × vec4(point, 1).

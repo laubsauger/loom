@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { pointStorageId } from "../../../nodes/definitions/point-storage.ts";
 
 import { compileGraph } from "../../../compiler/index.ts";
 import { createNodeRegistry } from "../../../nodes/registry/registry.ts";
@@ -88,7 +89,9 @@ describe("point generators end to end on Dawn (T298)", () => {
       }
       expect(errors).toEqual([]);
 
-      const raw = await backend.readBuffer("scratch:gen:position");
+      /* T1076: a generator owns `position` alone, so its packed buffer IS that region —
+         offset 0, byte-for-byte what the dedicated buffer held. */
+      const raw = await backend.readBuffer(pointStorageId("gen"));
       const positions = new Float32Array(raw);
       expect(positions.length).toBeGreaterThanOrEqual(256 * 4);
       for (let point = 0; point < 256; point += 1) {
@@ -187,7 +190,7 @@ describe("point generators end to end on Dawn (T298)", () => {
       }
       expect(errors).toEqual([]);
 
-      const positions = new Float32Array(await backend.readBuffer("scratch:gen:position"));
+      const positions = new Float32Array(await backend.readBuffer(pointStorageId("gen")));
       expect(positions.length).toBeGreaterThanOrEqual(COUNT * 4);
 
       // face key: which axis is pinned, and to which side. `null` = not on the surface.

@@ -1,4 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
+import { pointStorageId } from "../nodes/definitions/point-storage.ts";
+import { planRegion } from "../nodes/definitions/test-support.ts";
 
 import type { GraphDocument } from "../domain/types/graph.ts";
 import { nodeGpuHost, probeDawn } from "../runtime/backend/vgpu/node-gpu-host.ts";
@@ -122,7 +124,8 @@ describe("E50 Galvo — brightness is dwell time (T947)", () => {
     // whole star, which compresses the corner/edge energy ratio the claim is about —
     // the dots stay visibly hotter, but the mechanism is cleanest on the bare beam.
     const result = await render("E50 Galvo", {
-      probeBuffers: ["scratch:beam:total", "scratch:beam:meta", "scratch:beam:position"],
+      // T1076: `meta` and `position` are regions of ONE packed plan buffer.
+      probeBuffers: ["scratch:beam:total", pointStorageId("beam")],
       mutate: (graph) => {
         (graph.nodes["echo"]!.parameters as Record<string, unknown>)["persistence"] = 0;
         (graph.nodes["hot"]!.parameters as Record<string, unknown>)["threshold"] = 1000;
@@ -130,8 +133,13 @@ describe("E50 Galvo — brightness is dwell time (T947)", () => {
     });
     const buffers = (result as { buffers?: Record<string, ArrayBuffer> }).buffers ?? {};
     const total = new Uint32Array(buffers["scratch:beam:total"]!)[0]!;
-    const meta = new Float32Array(buffers["scratch:beam:meta"]!);
-    const position = new Float32Array(buffers["scratch:beam:position"]!);
+    /* The offsets come off the PLAN's own emit bindings, so this decode cannot drift
+       from the layout the node allocated (T1076). */
+    const packed = buffers[pointStorageId("beam")]!;
+    const metaRegion = planRegion(result.plan.passes, "beam", "out_meta");
+    const positionRegion = planRegion(result.plan.passes, "beam", "out_position");
+    const meta = new Float32Array(packed, metaRegion.offset, metaRegion.bytes / 4);
+    const position = new Float32Array(packed, positionRegion.offset, positionRegion.bytes / 4);
     expect(total).toBeGreaterThan(0);
 
     // Two dwell classes above the travel floor of 1, one per vertex sharpness.

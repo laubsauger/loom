@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { pointStorageId } from "../../nodes/definitions/point-storage.ts";
 import type { CompiledGraph } from "../../compiler/index.ts";
 import type { GraphNode } from "../../domain/types/graph.ts";
 import type { DrawPassDescriptor, EffectPassDescriptor } from "../../runtime/backend/plan.ts";
@@ -69,7 +70,7 @@ describe("E13 Prism", () => {
     /* T918 added the WALL — an opaque backdrop draw in the same scene phase — so the beam
        draws are the ones reading the optics kernel's buffers, filtered by source. */
     const beams = sceneDraws(plan).filter((pass) =>
-      buffersOf(pass).get("positions") === "scratch:optics:position",
+      buffersOf(pass).get("positions") === pointStorageId("optics"),
     );
     // T941b: THREE draws off one pointset — shaft (role < 0.5), the in-glass core
     // (0.25 < role < 0.75), and the exit fan (role > 0.5). Still selection, not nodes.
@@ -80,17 +81,25 @@ describe("E13 Prism", () => {
     ) as DrawPassDescriptor;
     expect(surface).toBeDefined();
     // The surface is the prism, from its own kernel, with no predicate.
-    expect(buffersOf(surface).get("positions")).toBe("scratch:form:position");
+    expect(buffersOf(surface).get("positions")).toBe(pointStorageId("form"));
     expect(buffersOf(surface).has("group_role")).toBe(false);
 
     for (const beam of beams) {
       const buffers = buffersOf(beam);
       // The SAME positions, and the same far end: one source.
-      expect(buffers.get("positions")).toBe("scratch:optics:position");
-      expect(buffers.get("endpoints")).toBe("scratch:optics:tip");
+      expect(buffers.get("positions")).toBe(pointStorageId("optics"));
+      expect(buffers.get("endpoints")).toBe(pointStorageId("optics"));
       // Selected, and coloured per point.
-      expect(buffers.get("group_role")).toBe("scratch:optics:role");
-      expect(buffers.get("pointColors")).toBe("scratch:optics:tint");
+      expect(buffers.get("group_role")).toBe(pointStorageId("optics"));
+      expect(buffers.get("pointColors")).toBe(pointStorageId("optics"));
+      /* T1076: one BUFFER, four distinct REGIONS. The buffer id alone no longer says
+         which attribute a binding reads — the offset does, and four bindings landing on
+         one offset would draw the same numbers as position, tip, role and colour. */
+      const offsets = ["positions", "endpoints", "group_role", "pointColors"].map((name) =>
+        (beam.buffers ?? []).find((binding) => binding.binding === name)?.offset,
+      );
+      expect(offsets.every((offset) => typeof offset === "number")).toBe(true);
+      expect(new Set(offsets).size).toBe(4);
       // instance = [half-width, shape, TAPER, 0] (T680).
       expect(beam.uniforms).toBeDefined();
     }
@@ -141,7 +150,7 @@ describe("E13 Prism", () => {
     // T945a: the environment the glass reflects is the studio PLUS the lamp's own spot
     // (beamglow) — which is how the beam reaches the facets' glints.
     expect(texturesOf(glassDraw).get("environmentMap")).toBe(outputFor(plan, "beamglow").resourceId);
-    expect(buffersOf(glassDraw).get("positions")).toBe("scratch:form:position");
+    expect(buffersOf(glassDraw).get("positions")).toBe(pointStorageId("form"));
   });
 
   /**

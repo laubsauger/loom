@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import type { DispatchPassDescriptor } from "../../runtime/backend/plan.ts";
 import { pointRangeNode } from "./point-range.ts";
-import { compileContext } from "./test-support.ts";
+import { compileContext, fixturePairs } from "./test-support.ts";
+import { pointStorageId } from "./point-storage.ts";
 
 /**
  * Range (T983) — the compile contract. The behaviour a consumer actually reads — kept
@@ -11,16 +12,18 @@ import { compileContext } from "./test-support.ts";
  * refusals, which decide what every downstream node sees.
  */
 describe("pointRange — attribute-range selection (T983)", () => {
+  // T1076: the upstream's three attributes are regions of ONE packed buffer.
+  const UPSTREAM = fixturePairs(
+    "gen",
+    [
+      { name: "position", type: "vec3f" },
+      { name: "tint", type: "vec4f", half: "read" },
+      { name: "depthN", type: "f32" },
+    ],
+    4096,
+  );
   const edge = (overrides: Partial<{ count: { buffer: string }; topology: string }> = {}) => ({
-    points: {
-      pairs: {
-        position: { pair: "scratch:gen:position", half: "write" as const, type: "vec3f" },
-        tint: { pair: "scratch:gen:tint", half: "read" as const, type: "vec4f" },
-        depthN: { pair: "scratch:gen:depthN", half: "write" as const, type: "f32" },
-      },
-      capacity: 4096,
-      ...overrides,
-    },
+    points: { pairs: UPSTREAM, capacity: 4096, ...overrides },
   });
 
   it("owns a fresh position pair and republishes every other attribute BY REFERENCE (§V197)", () => {
@@ -36,9 +39,16 @@ describe("pointRange — attribute-range selection (T983)", () => {
     expect(result.pointsets).toEqual({
       out: {
         pairs: {
-          position: { pair: "scratch:zone:position", half: "write", type: "vec3f" },
-          tint: { pair: "scratch:gen:tint", half: "read", type: "vec4f" },
-          depthN: { pair: "scratch:gen:depthN", half: "write", type: "f32" },
+          ...UPSTREAM,
+          // The one attribute this node OWNS: its own packed buffer, at region 0 —
+          // everything else still points into the upstream's (§V197).
+          position: {
+            buffer: pointStorageId("zone"),
+            half: "write",
+            offset: 0,
+            bytes: 16 * 4096,
+            type: "vec3f",
+          },
         },
         capacity: 4096,
         // Parking never moves a slot, so the upstream lattice claim stays true.

@@ -17,7 +17,7 @@
  *
  * ## The budget, and where age lives (§V588)
  *
- * The advanced kernel's arithmetic (2·(n−1)+2 with flags) allows THREE user
+ * The advanced kernel's arithmetic (2·(n−1)+2 with flags, before T1076 packed them) allowed THREE user
  * attributes. Spawning requires `id` (identity is minted at birth, §V73); the picture
  * requires `tint` (colour + the T721 size channel in w). That spends the schema —
  * so AGE rides `position.z`, scaled by −0.25: the draw is an ortho camera down −z, so

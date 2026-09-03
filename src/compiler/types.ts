@@ -3,7 +3,7 @@ import type { PreviewPayloadKind } from "./preview-orbit.ts";
 import type { RuntimeDiagnostic } from "../domain/types/diagnostics.ts";
 import type { ColorPolicy, GraphDocument, ProjectSettings } from "../domain/types/graph.ts";
 import type { BackendCapabilities, LogicalExecutionPlan } from "../domain/types/backend.ts";
-import type { NodeCompileContext, TextureFormat } from "../domain/types/node-definition.ts";
+import type { NodeCompileContext, PointsetAttributeRef, TextureFormat } from "../domain/types/node-definition.ts";
 import type { ParameterValue } from "../domain/types/parameters.ts";
 import type { NodeRegistryView } from "../nodes/registry/registry.ts";
 import type { ComponentRegistryView } from "../domain/components/index.ts";
@@ -275,23 +275,13 @@ export interface CompileEdge {
  */
 export interface PointsetEdgeInfo {
   /**
-   * attribute name → the pair to bind AND the half holding this frame's data. The pair
-   * another NODE may own. §V231/T322: the half is a PAYLOAD FACT for every pair, not a
-   * convention — an ordinary producer names its write half (§V168), a compacted one
-   * names its read half (scatter lands there), and a consumer binds what the payload
-   * says without knowing which kind fed it.
+   * attribute name → the REGION to bind: which packed buffer, which half, at what byte
+   * offset (T1076). The buffer another NODE may own. §V231/T322: the half is a PAYLOAD
+   * FACT for every attribute, not a convention — an ordinary producer names its write
+   * half (§V168), a compacted one names its read half (scatter lands there), and a
+   * consumer binds what the payload says without knowing which kind fed it.
    */
-  readonly pairs: Readonly<
-    Record<
-      string,
-      {
-        readonly pair: string;
-        readonly half: "read" | "write";
-        /** T286: the attribute's WGSL type, so a mapped parameter can bind and swizzle it. */
-        readonly type?: string;
-      }
-    >
-  >;
+  readonly pairs: Readonly<Record<string, Readonly<PointsetAttributeRef>>>;
   readonly capacity: number;
   readonly topology?: string;
   /**

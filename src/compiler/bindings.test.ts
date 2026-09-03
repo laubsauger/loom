@@ -136,6 +136,82 @@ describe("counting a pass's bindings (T328)", () => {
   });
 });
 
+/**
+ * T1076 — the SIZE row, which is a different row KIND rather than another count.
+ *
+ * Packing point attributes into one buffer per producer moved the ceiling: a kernel spends
+ * a fixed handful of bindings whatever the schema's size, and what can go wrong instead is
+ * the BYTES one of them carries. `maxStorageBufferBindingSize` is bytes-per-binding, not a
+ * count per pass, so it could not be jammed into `count(pass)` — a pass binding one 200 MiB
+ * region and three tiny ones has no meaningful "count" to compare.
+ *
+ * The schema-level refusal (`points/packing.ts`) speaks in attributes and capacity and
+ * fires before a plan exists. THIS is the device-aware backstop, and the only one that
+ * lowers when a real device reports less than the baseline.
+ */
+describe("T1076 — the per-binding SIZE budget", () => {
+  const region = (id: string, bytes: number): PassDescriptor =>
+    ({
+      kind: "dispatch",
+      id,
+      shader: "// kernel",
+      entryPoint: "main",
+      workgroups: [1, 1, 1],
+      buffers: [{ binding: "pk_0", resourceId: "points", offset: 0, bytes }],
+    }) as PassDescriptor;
+
+  it("refuses a region past the baseline 128 MiB, and states it in MiB", () => {
+    const [overflow] = bindingOverflows([region("sim:kernel", 201_326_592)], withLimits({}));
+    if (overflow === undefined) throw new Error("expected an overflow");
+    expect(overflow.unit).toBe("bytes");
+    expect(overflow.binding).toBe("pk_0");
+    const message = describeOverflow(overflow);
+    expect(message).toContain('"sim:kernel"');
+    // Bytes, said in MiB: "binds 201326592; the limit is 134217728" is a number nobody
+    // can hold, and the decision it feeds is "how many points fit".
+    expect(message).toContain("192.0 MiB to storage buffer \"pk_0\"");
+    expect(message).toContain("maxStorageBufferBindingSize is 128.0 MiB");
+    expect(message).toContain("did not report its own");
+  });
+
+  it("allows exactly the limit — the boundary is not off by one", () => {
+    expect(bindingOverflows([region("sim:kernel", 134_217_728)], withLimits({}))).toEqual([]);
+  });
+
+  it("measures EACH binding, so one huge region among small ones is still refused", () => {
+    const mixed = {
+      kind: "dispatch",
+      id: "sim:kernel",
+      shader: "// kernel",
+      entryPoint: "main",
+      workgroups: [1, 1, 1],
+      buffers: [
+        { binding: "pk_0", resourceId: "points", offset: 0, bytes: 1024 },
+        { binding: "pk_1", resourceId: "points", offset: 1024, bytes: 268_435_456 },
+      ],
+    } as PassDescriptor;
+    const overflows = bindingOverflows([mixed], withLimits({}));
+    expect(overflows.map((entry) => entry.binding)).toEqual(["pk_1"]);
+  });
+
+  it("lowers on a device that reports LESS than the baseline (§V12's direction)", () => {
+    const strict = withLimits({ maxStorageBufferBindingSize: 16_777_216 });
+    const [overflow] = bindingOverflows([region("sim:kernel", 33_554_432)], strict);
+    if (overflow === undefined) throw new Error("expected an overflow on the strict device");
+    expect(describeOverflow(overflow)).toContain("this device's maxStorageBufferBindingSize is 16.0 MiB");
+    // …and the SAME plan is clean against the baseline, which is what makes it a device
+    // fact rather than a plan fact.
+    expect(bindingOverflows([region("sim:kernel", 33_554_432)], withLimits({}))).toEqual([]);
+  });
+
+  it("says nothing about a plain whole-buffer binding, which declares no size", () => {
+    // A binding with no `bytes` is not a region; its size lives in the resource table, and
+    // reporting a guess here would be a guarantee this cannot make (the §V12 rule the
+    // storage-texture row is left out for).
+    expect(bindingOverflows([dispatch("effect:blur", 3)], withLimits({}))).toEqual([]);
+  });
+});
+
 /** A node that binds `count` storage buffers — the B33 repro, as a node. */
 function hungryNode(count: number): NodeDefinition {
   return {

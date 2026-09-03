@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readPointAttribute } from "../../../nodes/definitions/test-support.ts";
 
 import { compileGraph } from "../../../compiler/index.ts";
 import { createNodeRegistry } from "../../../nodes/registry/registry.ts";
@@ -57,10 +58,11 @@ const POINTER_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
   return q;
 }`;
 
-const ATTRIBUTES = JSON.stringify([
-  { name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] },
-  { name: "probe", type: "vec4f", default: [0, 0, 0, 0] },
-]);
+const PROBE_SCHEMA = [
+  { name: "position", type: "vec3f" as const, semantic: "position" as const, default: [0, 0, 0] },
+  { name: "probe", type: "vec4f" as const, default: [0, 0, 0, 0] },
+];
+const ATTRIBUTES = JSON.stringify(PROBE_SCHEMA);
 
 function halfFloat(bits: number): number {
   const sign = (bits & 0x8000) === 0 ? 1 : -1;
@@ -150,7 +152,10 @@ describe("the pointer in PointCtx, on Dawn (T367, §V182)", () => {
       expect(errors).toEqual([]);
 
       // The COMPUTE half, raw f32 out of the attribute the kernel wrote.
-      const kernelSide = new Float32Array(await backend.readBuffer("scratch:sim:probe"));
+      // T1076: the `probe` REGION of the kernel's packed buffer, after `position`.
+      const kernelSide = (
+        await readPointAttribute(backend.readBuffer, "sim", PROBE_SCHEMA, 4, "probe")
+      ).floats;
       const kernelPointer = [kernelSide[0], kernelSide[1], kernelSide[2], kernelSide[3]];
 
       // The FRAGMENT half, out of the pixels the shared block drove.
@@ -298,9 +303,10 @@ fn process(p: Point, ctx: PointCtx) -> Point {
   return q;
 }`;
 
-  const ATTRS = JSON.stringify([
-    { name: "position", type: "vec3f", semantic: "position", default: [0, 0, 0] },
-  ]);
+  const DISPLACE_SCHEMA = [
+    { name: "position", type: "vec3f" as const, semantic: "position" as const, default: [0, 0, 0] },
+  ];
+  const ATTRS = JSON.stringify(DISPLACE_SCHEMA);
 
   /** The same arithmetic, on the CPU. Not a re-derivation — the claim IS that they agree. */
   function expectedPositions(pointer: { x: number; y: number }): Array<[number, number]> {
@@ -381,7 +387,9 @@ fn process(p: Point, ctx: PointCtx) -> Point {
       });
       expect(errors).toEqual([]);
       // vec3f strides SIXTEEN bytes, not twelve (§V72) — four floats per point in the view.
-      const raw = new Float32Array(await backend.readBuffer("scratch:sim:position"));
+      const raw = (
+        await readPointAttribute(backend.readBuffer, "sim", DISPLACE_SCHEMA, COUNT, "position")
+      ).floats;
       return Array.from({ length: COUNT }, (_unused, index): [number, number] => [
         raw[index * 4] as number,
         raw[index * 4 + 1] as number,

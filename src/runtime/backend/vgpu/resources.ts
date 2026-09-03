@@ -5,6 +5,7 @@ import { BackendDiagnosticCode, backendDiagnostic, describeError } from "../diag
 import type { BuildStats } from "../backend-types.ts";
 import type { FrameGuard } from "../frame-guard.ts";
 import type {
+  BufferBindingDescriptor,
   EffectPassDescriptor,
   PassDescriptor,
   ResourceDescriptor,
@@ -187,7 +188,7 @@ export interface ResourceSet {
   readonly samplers: ReadonlyMap<string, GPUSampler>;
   /** CPU-fed sampleable textures, keyed by resource id (T229). */
   readonly externalTextures: ReadonlyMap<string, ExternalTextureEntry>;
-  /** SoA point storage (T118, §V75): one buffer per attribute, plus counters. */
+  /** SoA point storage (T118, §V75): one packed buffer per producer (T1076), plus counters. */
   readonly buffers: ReadonlyMap<string, StorageBuffer>;
   readonly bufferPairs: ReadonlyMap<string, PingPongStorage>;
   /**
@@ -213,7 +214,7 @@ export interface ResourceSet {
    */
   readonly dynamicTextures: ReadonlyMap<string, ReadonlyArray<TextureBindingDescriptor>>;
   /** Buffer bindings whose source is a bufferPair read half — re-pointed after each swap. */
-  readonly dynamicBuffers: ReadonlyMap<string, ReadonlyArray<{ readonly binding: string; readonly resourceId: string; readonly half?: "read" | "write" }>>;
+  readonly dynamicBuffers: ReadonlyMap<string, ReadonlyArray<BufferBindingDescriptor>>;
   /** Render target per effect pass, resolved once. Ping-pong passes render into the write half. */
   readonly renderTargets: ReadonlyMap<string, () => Target>;
 }
@@ -279,6 +280,58 @@ export const noExternalResources: ExternalResources = {
   samplers: new Map(),
 };
 
+/**
+ * T1076: one REGION of a storage buffer, as the raw `GPUBufferBinding` WebGPU already
+ * defines — `{ buffer, offset, size }`.
+ *
+ * This is the seam that makes packed point storage cost nothing at the consumers: every
+ * renderer keeps its `array<vec3f>` WGSL and binds a slice of the packed buffer instead of
+ * a buffer of its own. The bytes at that slice are the bytes the dedicated buffer held,
+ * so nothing downstream can tell the difference.
+ *
+ * vgpu routes this through `normalizeBufferResource`'s `isGPUBufferBinding` branch. That
+ * branch identified a binding by its BUFFER alone, which packing makes wrong twice over:
+ * the bind-group cache could not tell two attributes of one buffer apart, and the aliasing
+ * preflight reported two NON-OVERLAPPING writable regions as an alias (a proximity node
+ * writes four attributes at once). `patches/vgpu.patch` lets a region name its own
+ * identity, and the one below is per (buffer, offset, size).
+ *
+ * ⚠ Reaching `gpu` needs a cast: `StorageBuffer` is vgpu's public facade and does not
+ * publish the underlying `GPUBuffer`, though every implementation (real and mock) has it.
+ */
+/**
+ * T1076: the region a binding names, or undefined for a whole-buffer binding. ONE reader
+ * for the pair of optional numbers, so no site can honour `offset` and forget `bytes` —
+ * which would bind to the END of a packed buffer and silently read past the attribute.
+ */
+export function regionOf(
+  binding: Pick<BufferBindingDescriptor, "offset" | "bytes">,
+): { readonly offset: number; readonly bytes: number } | undefined {
+  return binding.offset === undefined || binding.bytes === undefined
+    ? undefined
+    : { offset: binding.offset, bytes: binding.bytes };
+}
+
+export function bufferRegion(
+  buffer: StorageBuffer,
+  region: { readonly offset: number; readonly bytes: number },
+): GPUBufferBinding & { readonly resourceIdentity: string } {
+  const handle = buffer as unknown as { readonly gpu: GPUBuffer; readonly resourceIdentity: unknown };
+  const owner = handle.resourceIdentity as { kind?: string; id?: unknown } | string | undefined;
+  const ownerKey =
+    typeof owner === "object" && owner !== null ? `${String(owner.kind)}:${String(owner.id)}` : String(owner);
+  return {
+    buffer: handle.gpu,
+    offset: region.offset,
+    size: region.bytes,
+    /* The identity the bind-group cache and vgpu's aliasing preflight key on, per REGION
+       rather than per buffer (patched into `normalizeBufferResource`). Two attributes of
+       one packed buffer are two resources: a changed offset invalidates the cached bind
+       group, and two non-overlapping writable regions are not reported as an alias. */
+    resourceIdentity: `${ownerKey}@${region.offset}+${region.bytes}`,
+  };
+}
+
 export class ResourceBuildError extends Error {
   readonly diagnostics: ReadonlyArray<RuntimeDiagnostic>;
 
@@ -335,7 +388,7 @@ export function buildResources(
   const draws = new Map<string, Draw>();
   const passUniforms = new Map<string, SharedUniforms<Record<string, unknown>>>();
   const dynamicTextures = new Map<string, ReadonlyArray<TextureBindingDescriptor>>();
-  const dynamicBuffers = new Map<string, ReadonlyArray<{ binding: string; resourceId: string; half?: "read" | "write" }>>();
+  const dynamicBuffers = new Map<string, ReadonlyArray<BufferBindingDescriptor>>();
   const renderTargets = new Map<string, () => Target>();
   const diagnostics: RuntimeDiagnostic[] = [];
 
@@ -546,16 +599,24 @@ export function buildResources(
     return undefined;
   };
 
-  const bufferValue = (resourceId: string, half: "read" | "write"): unknown => {
+  /** T1076: bind ONE region of a packed point buffer. See `bufferRegion` for the shape. */
+  const bufferValue = (
+    resourceId: string,
+    half: "read" | "write",
+    region?: { readonly offset: number; readonly bytes: number },
+  ): unknown => {
     const plain = buffers.get(resourceId) ?? externals.buffers?.get(resourceId);
-    if (plain) return plain;
+    if (plain) return region === undefined ? plain : bufferRegion(plain, region);
     // T121: a pair binds the SELECTED half — a stateful kernel reads "read" and writes
     // "write", the pair swaps as one identity. Both halves swap per frame, so both are
     // re-pointed by the backend before each render. External pairs (T563: a preview
     // program's splat binding the main program's point storage) resolve the same way
     // and are re-pointed by presentPreviews before each encode.
     const pair = bufferPairs.get(resourceId) ?? externals.bufferPairs?.get(resourceId);
-    if (pair) return half === "write" ? pair.write : pair.read;
+    if (pair) {
+      const side = half === "write" ? pair.write : pair.read;
+      return region === undefined ? side : bufferRegion(side, region);
+    }
     return undefined;
   };
 
@@ -563,14 +624,14 @@ export function buildResources(
   const buildComputeDrawBag = (
     passId: string,
     nodeId: string | undefined,
-    bufferBindings: ReadonlyArray<{ readonly binding: string; readonly resourceId: string; readonly half?: "read" | "write" }>,
+    bufferBindings: ReadonlyArray<BufferBindingDescriptor>,
     textureBindings: ReadonlyArray<TextureBindingDescriptor>,
     uniformsValue: Readonly<Record<string, unknown>> | undefined,
     uniformBinding: string | undefined,
   ): Record<string, unknown> | undefined => {
     const bag: Record<string, unknown> = {};
     for (const binding of bufferBindings) {
-      const value = bufferValue(binding.resourceId, binding.half ?? "read");
+      const value = bufferValue(binding.resourceId, binding.half ?? "read", regionOf(binding));
       if (value === undefined) {
         diagnostics.push(
           backendDiagnostic(
@@ -609,7 +670,7 @@ export function buildResources(
 
   const noteDynamicBindings = (
     passId: string,
-    bufferBindings: ReadonlyArray<{ readonly binding: string; readonly resourceId: string; readonly half?: "read" | "write" }>,
+    bufferBindings: ReadonlyArray<BufferBindingDescriptor>,
     textureBindings: ReadonlyArray<TextureBindingDescriptor>,
   ): void => {
     const dynamicTex = textureBindings.filter(

@@ -1,19 +1,21 @@
 import { describe, expect, it } from "vitest";
 
 import { pointTopologyNode } from "./point-topology.ts";
-import { compileContext } from "./test-support.ts";
+import { compileContext, fixturePairs } from "./test-support.ts";
 
 /** The topology half of the T302 split: pure edge-payload authorship. */
 describe("pointTopology — the connectivity claim (T302)", () => {
+  // T1076: one packed buffer, two regions — the shape a producer publishes.
+  const PAIRS = fixturePairs(
+    "gen",
+    [
+      { name: "position", type: "vec3f" },
+      { name: "color", type: "vec4f", half: "read" },
+    ],
+    4096,
+  );
   const edge = (capacity: number, topology: string) => ({
-    points: {
-      pairs: {
-        position: { pair: "scratch:gen:position", half: "write" as const },
-        color: { pair: "scratch:gen:color", half: "read" as const },
-      },
-      capacity,
-      topology,
-    },
+    points: { pairs: PAIRS, capacity, topology },
   });
 
   it("republishes the upstream pairs BY REFERENCE with the authored claim (§V197)", () => {
@@ -31,10 +33,7 @@ describe("pointTopology — the connectivity claim (T302)", () => {
     // Halves pass through untouched (§V231): the claim changes, the data does not.
     expect(result.pointsets).toEqual({
       out: {
-        pairs: {
-          position: { pair: "scratch:gen:position", half: "write" },
-          color: { pair: "scratch:gen:color", half: "read" },
-        },
+        pairs: PAIRS,
         capacity: 4096,
         topology: "grid:64x64:wrapU",
       },

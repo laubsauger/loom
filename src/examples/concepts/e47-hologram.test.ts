@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { pointStorageId } from "../../nodes/definitions/point-storage.ts";
 import { listExamples } from "../catalogue.ts";
 import { requireExample } from "../runner.ts";
 import type { DrawPassDescriptor, DispatchPassDescriptor } from "../../runtime/backend/plan.ts";
@@ -67,10 +68,10 @@ describe("E47 Hologram", () => {
     // matching paint. Pairing zone positions with holo2 tints (or vice versa) compiles
     // fine and puts the wall's colours on the person — which is why the PAIRING is the
     // claim, not the mere presence of two draws.
-    const zone = buffersOf(draws.find((d) => buffersOf(d).get("positions") === "scratch:zone:position"));
-    const wall = buffersOf(draws.find((d) => buffersOf(d).get("positions") === "scratch:wall:position"));
-    expect(zone.get("pointColors")).toBe("scratch:holo/paint:tint");
-    expect(wall.get("pointColors")).toBe("scratch:holo2/paint:tint");
+    const zone = buffersOf(draws.find((d) => buffersOf(d).get("positions") === pointStorageId("zone")));
+    const wall = buffersOf(draws.find((d) => buffersOf(d).get("positions") === pointStorageId("wall")));
+    expect(zone.get("pointColors")).toBe(pointStorageId("holo/paint"));
+    expect(wall.get("pointColors")).toBe(pointStorageId("holo2/paint"));
   });
 
   it("keeps the ML depth path wired and stale-tolerant (§T715)", () => {

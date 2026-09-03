@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { pointKernelAdvancedNode, liveCountBufferId } from "./point-kernel-advanced.ts";
-import { renderPointsNode } from "./points.ts";
-import { pointPairId } from "./points.ts";
-import { compileContext } from "./test-support.ts";
+import { pointBufferId, renderPointsNode } from "./points.ts";
+import { compileContext, fixturePairs } from "./test-support.ts";
 
 /**
  * The advanced kernel at the fixture level (T322): pass order, the §V231 inversion,
@@ -18,25 +17,55 @@ type PassShape = {
 };
 
 describe("pointKernelAdvanced — kill and compact (T322)", () => {
-  it("emits kernel, tail clear, alive scan, scatter, spawn scan, copies, identity, finalize — in order", () => {
+  it("emits kernel, tail clear, alive scan, scatter, spawn scan, copy, identity, finalize — in order", () => {
     const result = pointKernelAdvancedNode.compile(
       compileContext({ nodeId: "sim", outputs: [], parameters: { capacity: 1000 } }),
     );
     expect(result.diagnostics ?? []).toEqual([]);
     const ids = (result.passes as PassShape[]).map((pass) => pass.id.slice("sim:".length));
-    expect(ids[0]).toBe("kernel");
-    expect(ids[1]).toBe("clearDeadTail");
-    expect(ids[2]).toBe("scanLocal");
-    expect(ids[3]).toBe("scanBlocks");
-    const scatters = ids.slice(4).filter((id) => id.startsWith("scatter:"));
-    expect(scatters.length).toBeGreaterThan(0);
-    // T323: the spawn tail, strictly after every survivor scatter.
-    const tail = ids.slice(4 + scatters.length);
-    expect(tail[0]).toBe("spawnScanLocal");
-    expect(tail[1]).toBe("spawnScanBlocks");
-    expect(tail.slice(2, -2).every((id) => id.startsWith("spawnCopy:"))).toBe(true);
-    expect(tail[tail.length - 2]).toBe("spawnIdentity");
-    expect(tail[tail.length - 1]).toBe("spawnFinalize");
+    /* T1076: the whole lifecycle is now a FIXED pass list. It used to grow with the
+       schema — ⌈n/2⌉ scatters and one spawnCopy per attribute, chunked purely to fit the
+       8-storage-buffer budget — so a four-attribute system paid eight dispatches a frame
+       for the copies alone. Packed, each is one pass whatever n is. */
+    expect(ids).toEqual([
+      "kernel",
+      "clearDeadTail",
+      "scanLocal",
+      "scanBlocks",
+      "scatter",
+      "spawnScanLocal",
+      "spawnScanBlocks",
+      "spawnCopy",
+      "spawnIdentity",
+      "spawnFinalize",
+    ]);
+  });
+
+  it("the lifecycle dispatch count does not grow with the schema (T1076)", () => {
+    const passesFor = (attributes: string) =>
+      (
+        pointKernelAdvancedNode.compile(
+          compileContext({ nodeId: "sim", outputs: [], parameters: { capacity: 256, attributes } }),
+        ).passes as PassShape[]
+      ).length;
+    const four = passesFor(
+      '[{"name":"position","type":"vec3f","semantic":"position","default":[0,0,0]},' +
+        '{"name":"velocity","type":"vec3f","default":[0,0,0]},' +
+        '{"name":"life","type":"f32","default":[1]},' +
+        '{"name":"id","type":"u32","semantic":"id","default":[0]}]',
+    );
+    const seven = passesFor(
+      '[{"name":"position","type":"vec3f","semantic":"position","default":[0,0,0]},' +
+        '{"name":"velocity","type":"vec3f","default":[0,0,0]},' +
+        '{"name":"life","type":"f32","default":[1]},' +
+        '{"name":"age","type":"f32","default":[0]},' +
+        '{"name":"tint","type":"vec4f","default":[1,1,1,1]},' +
+        '{"name":"size","type":"f32","default":[1]},' +
+        '{"name":"id","type":"u32","semantic":"id","default":[0]}]',
+    );
+    // Seven attributes could not compile AT ALL before T1076 — 2n bindings against 8.
+    expect(four).toBe(10);
+    expect(seven).toBe(10);
   });
 
   it("scatter reads the write halves and lands in the READ halves (§V231's inversion)", () => {
@@ -44,7 +73,7 @@ describe("pointKernelAdvanced — kill and compact (T322)", () => {
       compileContext({ nodeId: "sim", outputs: [], parameters: { capacity: 256 } }),
     );
     const scatters = (result.passes as PassShape[]).filter((pass) => pass.id.includes("scatter"));
-    expect(scatters.length).toBeGreaterThan(0);
+    expect(scatters).toHaveLength(1);
     for (const pass of scatters) {
       for (const binding of pass.buffers) {
         if (binding.binding.startsWith("in_")) expect(binding.half, binding.binding).toBe("write");
@@ -94,7 +123,8 @@ describe("renderPoints on a counted edge (T322)", () => {
         sources: { points: "sim" },
         pointsets: {
           points: {
-            pairs: { position: { pair: pointPairId("sim", "position"), half: "read" } },
+            // §V231: a compacted producer publishes its READ half — the scatter lands there.
+            pairs: fixturePairs("sim", [{ name: "position", type: "vec3f", half: "read" }], 256),
             capacity: 256,
             topology: "points",
             count: { buffer: liveCountBufferId("sim") },
@@ -110,7 +140,7 @@ describe("renderPoints on a counted edge (T322)", () => {
     ];
     expect(args.id).toBe("draw:drawArgs");
     expect(args.uniforms).toEqual({ vertexCount: 6, maxInstances: 100 });
-    expect(draw.instances).toEqual({ indirect: pointPairId("draw", "drawArgs") });
+    expect(draw.instances).toEqual({ indirect: pointBufferId("draw", "drawArgs") });
     // The payload's half, not the old convention: a compacted producer says "read".
     expect(draw.buffers[0]?.half).toBe("read");
     expect(result.scratch).toEqual([
@@ -148,11 +178,14 @@ describe("spawn hook (T339)", () => {
     const passes = result.passes as PassShape[];
     const hook = passes[passes.length - 1];
     expect(hook?.id).toBe("sim:spawnHook");
-    for (const binding of hook?.buffers ?? []) {
-      if (binding.binding.startsWith("io_")) expect(binding.half, binding.binding).toBe("read");
-    }
-    // n+1 bindings — the whole reason the two-pass design fits where one pass cannot.
-    expect(hook?.buffers.length).toBe(4); // position, velocity, id + counts
+    /* T1076: TWO bindings — the packed READ half, edited in place where the copy passes
+       left the newborns, plus the counts. It was n+1 (one per shaped attribute), which was
+       the whole reason the hook had to be a second pass; packed, one pass would fit too,
+       and the two-pass shape now stands on its semantics alone (the child arrives as its
+       parent's copy) rather than on the binding budget. */
+    expect(
+      hook?.buffers.map((binding) => `${binding.binding}:${binding.half ?? "read"}`),
+    ).toEqual(["pk_0:read", "counts:read"]);
   });
 
   it("refuses a hook without the contract signature", () => {

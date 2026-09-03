@@ -1,12 +1,20 @@
-import type { CompiledNodeDescription, NodeDefinition } from "../../domain/types/node-definition.ts";
+import type { CompiledNodeDescription, NodeDefinition, PointsetAttributeRef } from "../../domain/types/node-definition.ts";
 import type { DispatchPassDescriptor } from "../../runtime/backend/plan.ts";
-import { ATTRIBUTE_STRIDES } from "../../points/attributes.ts";
+import type { PointAttributeSchema } from "../../points/attributes.ts";
 import { formatTopology } from "../../points/topology.ts";
 import { POINTS_FROM_TEXTURE_WGSL } from "../shaders/points-from-texture.wgsl.ts";
 import { RGBA_TEXTURE } from "./common-ports.ts";
 import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
 import { readNumber } from "./parameter-readers.ts";
-import { pointPairId } from "./points.ts";
+import { attributeBinding, packedPointStorage } from "./point-storage.ts";
+
+/** The only attribute this node owns; named once so the layout and the pass agree. */
+const POSITION_ATTRIBUTE: PointAttributeSchema = {
+  name: "position",
+  type: "vec3f",
+  semantic: "position",
+  default: [0, 0, 0],
+};
 
 /**
  * Points From Texture (T743) — the node the catalogue was missing.
@@ -100,13 +108,27 @@ export const pointsFromTextureNode: NodeDefinition = {
     const capacity = cols * rows;
     const mode = parameters["mode"] === "value" ? 1 : 0;
 
+    // T1076: one packed pair; the region is what downstream binds.
+    const storage = packedPointStorage(nodeId, [POSITION_ATTRIBUTE], capacity, "write");
+    if (!storage.ok) {
+      return {
+        passes: [],
+        diagnostics: storage.errors.map((message) => ({
+          severity: "error" as const,
+          code: "node.points.capacity",
+          message: `Node "${nodeId}": ${message}`,
+          nodeId,
+        })),
+      };
+    }
+
     const pass: DispatchPassDescriptor = {
       kind: "dispatch",
       id: `${nodeId}:points`,
       shader: POINTS_FROM_TEXTURE_WGSL,
       entryPoint: "main",
       workgroups: [Math.ceil(capacity / 64), 1, 1],
-      buffers: [{ binding: "out_position", resourceId: pointPairId(nodeId, "position"), half: "write" }],
+      buffers: [attributeBinding("out_position", storage.pairs["position"] as PointsetAttributeRef)],
       textures: [{ binding: "sourceTexture", resourceId: source.resource, sampled: "unfiltered" }],
       uniforms: {
         count: capacity,
@@ -124,10 +146,10 @@ export const pointsFromTextureNode: NodeDefinition = {
 
     return {
       passes: [pass],
-      scratch: [{ key: "position", kind: "bufferPair", stride: ATTRIBUTE_STRIDES["vec3f"], capacity }],
+      scratch: [storage.scratch],
       pointsets: {
         out: {
-          pairs: { position: { pair: pointPairId(nodeId, "position"), half: "write" as const, type: "vec3f" } },
+          pairs: storage.pairs,
           capacity,
           // Grid mode really is a lattice, so the surface renderer can span it (T301).
           // Value mode is a bag of joints with no analytic connectivity — claiming a grid

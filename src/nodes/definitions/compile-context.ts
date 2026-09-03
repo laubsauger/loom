@@ -1,6 +1,6 @@
 import type { ColorPolicy } from "../../domain/types/graph.ts";
 import { DEFAULT_COLOR_POLICY } from "../../domain/types/graph.ts";
-import type { NodeCompileContext, TextureFormat } from "../../domain/types/node-definition.ts";
+import type { NodeCompileContext, PointsetAttributeRef, TextureFormat } from "../../domain/types/node-definition.ts";
 import type { ColorSpace } from "../../domain/types/ports.ts";
 import type { ParameterValue } from "../../domain/types/parameters.ts";
 import type { PortId } from "../../domain/types/ids.ts";
@@ -43,13 +43,13 @@ export interface NodeCompileInputs {
          */
         readonly source?: { readonly nodeId: string; readonly portId: PortId };
         /**
-         * T296: the pointset edge payload — resolved attribute→pair map, capacity,
-         * topology. Consumers bind THESE pair ids (which another node may own, §V197)
-         * instead of deriving ids from a naming convention.
+         * T296: the pointset edge payload — resolved attribute→REGION map, capacity,
+         * topology. Consumers bind THESE buffers and offsets (which another node may own,
+         * §V197) instead of deriving ids from a naming convention.
          */
         readonly pointset?: {
-          /** §V231/T322: each pair names the HALF holding this frame's data. */
-          readonly pairs: Readonly<Record<string, { readonly pair: string; readonly half: "read" | "write"; readonly type?: string }>>;
+          /** §V231/T322/T1076: each entry names the buffer, HALF and byte offset. */
+          readonly pairs: Readonly<Record<string, Readonly<PointsetAttributeRef>>>;
           readonly capacity: number;
           readonly topology?: string;
           /** T322: GPU-resident live count, when the producer kills points. */
@@ -117,7 +117,7 @@ interface CompilerContextShape {
         sampler: string;
         sourceNodeId?: string;
         sourcePortId?: string;
-        pointset?: { pairs: Readonly<Record<string, { pair: string; half: "read" | "write"; type?: string }>>; capacity: number; topology?: string; count?: { buffer: string } };
+        pointset?: { pairs: Readonly<Record<string, PointsetAttributeRef>>; capacity: number; topology?: string; count?: { buffer: string } };
         scene?: unknown;
       }>
     >

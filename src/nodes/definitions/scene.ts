@@ -11,6 +11,7 @@ import { DATA_TEXTURE, RGBA_TEXTURE } from "./common-ports.ts";
 import { DANGLING_CAMERA_SUGGESTION, danglingCameraRefusal } from "./camera-reference.ts";
 import { readColor, readNumber, readVector } from "./parameter-readers.ts";
 import { countedDrawSupport, resolveColorMap, resolveScalarMap } from "./points.ts";
+import { attributeBinding } from "./point-storage.ts";
 import {
   GLASS_BLIT_WGSL,
   SSAA_RESOLVE_WGSL,
@@ -787,7 +788,7 @@ export const geometryNode: NodeDefinition = {
           ],
         };
       }
-      endpointPair = { pair: carried.pair, half: carried.half, type: "vec3f" };
+      endpointPair = { ...carried, type: "vec3f" };
     }
     const shapeParameter = parameters["shape"];
     const payload: GeometryPayload = {
@@ -820,13 +821,13 @@ export const geometryNode: NodeDefinition = {
         : {}),
       ...(parameters["blend"] === "additive" ? { blend: "additive" as const } : {}),
       ...(endpointPair === undefined ? {} : { endpoint: endpointPair }),
-      ...(tintMap === undefined ? {} : { colorAttribute: { pair: tintMap.pair, half: tintMap.half, type: "vec4f" } }),
+      ...(tintMap === undefined ? {} : { colorAttribute: { ...tintMap, type: "vec4f" } }),
       ...(scaleMap === undefined || !perPoint ? {} : { scaleAttribute: scaleMap }),
       /* T723: instances only — the refusal above has already turned away every other
          mode, so reaching here with a map means the frame is genuinely free to turn. */
       ...(orientMap === undefined || mode !== "instances"
         ? {}
-        : { orientAttribute: { pair: orientMap.pair, half: orientMap.half } }),
+        : { orientAttribute: orientMap }),
       ...(resolvedGroup === undefined ? {} : { group: resolvedGroup }),
       ...(pointset.count === undefined ? {} : { count: { buffer: pointset.count.buffer } }),
       material,
@@ -1274,33 +1275,17 @@ export const renderNode: NodeDefinition = {
             instances: counted?.instances ?? payload.capacity,
             vertexCount: 36,
             buffers: [
-              { binding: "positions", resourceId: position.pair, half: position.half },
+              attributeBinding("positions", position),
               // T642: the depth pass gates on the same predicate — no ghost shadows.
               ...(payload.group === undefined
                 ? []
-                : payload.group.binds.map((bind) => ({
-                    binding: `group_${bind.attribute}`,
-                    resourceId: bind.pair,
-                    half: bind.half,
-                  }))),
+                : payload.group.binds.map((bind) => attributeBinding(`group_${bind.attribute}`, bind))),
               ...(payload.scaleAttribute === undefined
                 ? []
-                : [
-                    {
-                      binding: "pointScales",
-                      resourceId: payload.scaleAttribute.pair,
-                      half: payload.scaleAttribute.half,
-                    },
-                  ]),
+                : [attributeBinding("pointScales", payload.scaleAttribute)]),
               ...(payload.orientAttribute === undefined
                 ? []
-                : [
-                    {
-                      binding: "pointOrients",
-                      resourceId: payload.orientAttribute.pair,
-                      half: payload.orientAttribute.half,
-                    },
-                  ]),
+                : [attributeBinding("pointOrients", payload.orientAttribute)]),
             ],
             uniforms: {
               lightViewProjection: Array.from(options.matrix ?? []),
@@ -1325,7 +1310,7 @@ export const renderNode: NodeDefinition = {
           topology: "triangle-list",
           instances: 1,
           vertexCount: cellsU * cellsV * 6,
-          buffers: [{ binding: "positions", resourceId: position.pair, half: position.half }],
+          buffers: [attributeBinding("positions", position)],
           uniforms: {
             lightViewProjection: Array.from(options.matrix ?? []),
             grid: [topology.cols, topology.rows, topology.wrapU ? 1 : 0, topology.wrapV ? 1 : 0],
@@ -1725,50 +1710,29 @@ export const renderNode: NodeDefinition = {
           instances: counted?.instances ?? payload.capacity,
           vertexCount: billboard || beam ? 6 : 36,
           buffers: [
-            { binding: "positions", resourceId: position.pair, half: position.half },
+            attributeBinding("positions", position),
             /* T680: the far end, bound exactly as the colour attribute is — the geometry
                node resolved the NAME against the edge, so this is one more pair ref and
                no new concept. */
             ...(payload.endpoint === undefined
               ? []
-              : [{ binding: "endpoints", resourceId: payload.endpoint.pair, half: payload.endpoint.half }]),
+              : [attributeBinding("endpoints", payload.endpoint)]),
             ...(payload.colorAttribute === undefined
               ? []
-              : [
-                  {
-                    binding: "pointColors",
-                    resourceId: payload.colorAttribute.pair,
-                    half: payload.colorAttribute.half,
-                  },
-                ]),
+              : [attributeBinding("pointColors", payload.colorAttribute)]),
             ...(payload.scaleAttribute === undefined
               ? []
-              : [
-                  {
-                    binding: "pointScales",
-                    resourceId: payload.scaleAttribute.pair,
-                    half: payload.scaleAttribute.half,
-                  },
-                ]),
+              : [attributeBinding("pointScales", payload.scaleAttribute)]),
             ...(payload.orientAttribute === undefined
               ? []
-              : [
-                  {
-                    binding: "pointOrients",
-                    resourceId: payload.orientAttribute.pair,
-                    half: payload.orientAttribute.half,
-                  },
-                ]),
-            // T642: one storage buffer per attribute the predicate reads. The compiler's
+              : [attributeBinding("pointOrients", payload.orientAttribute)]),
+            // T642: one binding per attribute the predicate reads — a REGION of the
+            // producer's packed buffer since T1076, so several land on one buffer. The compiler's
             // binding-budget check prices these against the BASELINE 8 per stage
             // (§V588), so an over-wide predicate refuses by name before any device sees it.
             ...(payload.group === undefined
               ? []
-              : payload.group.binds.map((bind) => ({
-                  binding: `group_${bind.attribute}`,
-                  resourceId: bind.pair,
-                  half: bind.half,
-                }))),
+              : payload.group.binds.map((bind) => attributeBinding(`group_${bind.attribute}`, bind))),
           ],
           uniforms: {
             viewProjection: Array.from(viewProjectionMatrix),
@@ -1917,16 +1881,10 @@ export const renderNode: NodeDefinition = {
         instances: 1,
         vertexCount: cellsU * cellsV * 6,
         buffers: [
-          { binding: "positions", resourceId: position.pair, half: position.half },
+          attributeBinding("positions", position),
           ...(payload.colorAttribute === undefined
             ? []
-            : [
-                {
-                  binding: "pointColors",
-                  resourceId: payload.colorAttribute.pair,
-                  half: payload.colorAttribute.half,
-                },
-              ]),
+            : [attributeBinding("pointColors", payload.colorAttribute)]),
         ],
         ...(material.maps.albedo === undefined &&
         material.maps.roughness === undefined &&
@@ -2120,7 +2078,7 @@ export const renderNode: NodeDefinition = {
             topology: "triangle-list",
             instances: counted?.instances ?? payload.capacity,
             vertexCount: 36,
-            buffers: [{ binding: "positions", resourceId: position.pair, half: position.half }],
+            buffers: [attributeBinding("positions", position)],
             textures: glassTextures,
             uniforms: {
               ...glassUniforms,
@@ -2160,7 +2118,7 @@ export const renderNode: NodeDefinition = {
           topology: "triangle-list",
           instances: 1,
           vertexCount: cellsU * cellsV * 6,
-          buffers: [{ binding: "positions", resourceId: position.pair, half: position.half }],
+          buffers: [attributeBinding("positions", position)],
           textures: glassTextures,
           uniforms: {
             ...glassUniforms,

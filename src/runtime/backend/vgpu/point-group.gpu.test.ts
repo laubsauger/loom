@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { DEFAULT_POINT_ATTRIBUTES } from "../../../nodes/definitions/points.ts";
+import { readPointAttribute } from "../../../nodes/definitions/test-support.ts";
 
 import { compileGraph } from "../../../compiler/index.ts";
 import { createNodeRegistry } from "../../../nodes/registry/registry.ts";
@@ -81,7 +83,11 @@ describe("group predicate end to end on Dawn (T300)", () => {
       expect(errors).toEqual([]);
 
       // Post-swap the read half is this frame's writes. Members marked, the rest zero.
-      const positions = new Float32Array(await backend.readBuffer("scratch:sim:position"));
+      /* T1076: the default schema's `position` is region 0 of the kernel's packed
+         buffer — read it through the layout rather than assuming that. */
+      const positions = (
+        await readPointAttribute(backend.readBuffer, "sim", DEFAULT_POINT_ATTRIBUTES, 8, "position")
+      ).floats;
       for (let slot = 0; slot < 8; slot += 1) {
         const expected = slot % 2 === 0 ? 5 : 0;
         expect(positions[slot * 4], `slot ${slot} x`).toBeCloseTo(expected, 5);
