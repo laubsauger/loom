@@ -54,6 +54,11 @@ const SETTLE = 180;
  */
 const RESTED = 480;
 const STRUCK = 900;
+/**
+ * T1074 — SIXTY SECONDS, which is the horizon the owner actually judges this file at and
+ * roughly four times any gate that existed. 3600 frames at the shipped 60 fps.
+ */
+const HORIZON = 3600;
 
 /** The population and the floor, read off the shipped document rather than retyped. */
 const CAPACITY = 480;
@@ -478,6 +483,99 @@ describe("E54 Quorum — the operator does both jobs (T1070)", () => {
           `community ${community} measured ${after.toFixed(4)} wide at the strike against ${before.toFixed(4)} at rest — Coupling's envelope is not reaching the layout`,
         ).toBeLessThan(before);
       }
+    },
+    900_000,
+  );
+
+  /**
+   * ⚑ T1074 — THE MINUTE, and what it does and does not claim.
+   *
+   * The strike gate above reaches 15 s. The owner's bar is a MINUTE, and a 15-second gate
+   * cannot see something that dies at 60 — so this one goes to 3600 frames.
+   *
+   * WHAT IS NOT CLAIMED, stated first so nobody reads it in: this example CONVERGES. Mean
+   * displacement is 0.0008/frame at the minute mark against 0.0006 at fifteen seconds — it
+   * is a settling field, not a perpetual one, and asserting "still moving" here would be a
+   * false claim about a real behaviour. The measured reason is recorded in the document:
+   * `reach` weights ONE operator that is read twice, so nothing can keep the layout stirred
+   * without stirring the colour by the same amount, and the palette margin goes negative
+   * before the extra motion becomes visible.
+   *
+   * WHAT IS CLAIMED is the three ways a minute can go wrong that fifteen seconds cannot see:
+   * a slow instability, a slow colour collapse, and a picture that has simply STOPPED
+   * responding to its own envelope. The third is the live one — Coupling comes off its 0.95
+   * ceiling during the third phrase, and a converged layout still has to widen when it does.
+   */
+  it(
+    "AT SIXTY SECONDS it is still bounded, still resolved, and still answering the phrase",
+    async () => {
+      const late = await renderQuorum({ at: HORIZON });
+
+      // ONE — no slow instability. The kernel's own safety radius again, not a new number.
+      const centre = meanOf(late.position);
+      const radius = Math.max(...late.position.map((p) => distance(p, centre)));
+      expect(
+        radius,
+        `after a minute the assembly reached ${radius.toFixed(3)}, past its own 1.75 safety radius`,
+      ).toBeLessThan(1.75);
+
+      // TWO — no slow colour collapse. The same inequality the headline claim makes at 180,
+      // asserted again four hundred frames after the colour could have quietly greyed out.
+      const entries = palette(late);
+      for (const community of COMMUNITIES) {
+        const own = entries[community];
+        if (own === undefined) throw new Error(`community ${community} missing`);
+        const nearest = Math.min(
+          ...COMMUNITIES.filter((other) => other !== community).map((other) =>
+            distance(own.mean, entries[other]?.mean ?? [0, 0, 0]),
+          ),
+        );
+        expect(
+          own.scatter,
+          `after a minute community ${community} scatters ${own.scatter.toFixed(4)} against a nearest gap of ${nearest.toFixed(4)} — the palette has decayed`,
+        ).toBeLessThan(nearest);
+      }
+
+      // THREE — AND IT IS STILL AN INSTRUMENT AT THE MINUTE MARK, asked the only way that
+      // actually answers it: WHAT DIFFERS IF THE EDGE WERE CUT. The same frame rendered with
+      // Coupling pinned to the retained static the drive would have replaced (§V108) must be
+      // a DIFFERENT layout — if the phrase lane had gone dead by 3600, the two would agree.
+      //
+      // An earlier form of this compared the minute against the strike and asserted the
+      // assembly had widened. It passed with the drive CUT, because the layout goes on
+      // relaxing outward on its own — it was measuring slow relaxation and calling it the
+      // envelope (§V870: a gate nobody has watched fail is not a gate).
+      const cut = await renderQuorum({
+        at: HORIZON,
+        mutate: (graph) => {
+          const mesh = graph.nodes["mesh"];
+          if (mesh === undefined) throw new Error("no mesh");
+          mesh.parameters = { ...mesh.parameters, coupling: 0.85 };
+        },
+      });
+      const spread = (field: Field): number => {
+        const entries2 = layout(field);
+        const gaps = COMMUNITIES.flatMap((a) =>
+          COMMUNITIES.filter((b) => b > a).map((b) =>
+            distance(entries2[a]?.centre ?? [0, 0, 0], entries2[b]?.centre ?? [0, 0, 0]),
+          ),
+        );
+        return gaps.reduce((sum, gap) => sum + gap, 0) / gaps.length;
+      };
+      // The scale is the SYSTEM'S OWN, not a number chosen here: by the minute mark the
+      // field is settling at a measured rate per frame, and a drive whose removal moved the
+      // layout by less than one frame of that settling would be indistinguishable from the
+      // drift. So the cut has to matter more than a frame does. (It matters ~65x more, which
+      // is the margin, not the claim.)
+      const nextLate = await renderQuorum({ at: HORIZON + 1 });
+      const settling =
+        late.position.reduce((sum, p, slot) => sum + distance(p, nextLate.position[slot] ?? [0, 0, 0]), 0) /
+        late.position.length;
+      const moved = Math.abs(spread(late) - spread(cut));
+      expect(
+        moved,
+        `at sixty seconds the driven layout sits ${spread(late).toFixed(3)} apart and the Coupling-cut one ${spread(cut).toFixed(3)} — a difference of ${moved.toFixed(5)}, against ${settling.toFixed(5)} of settling in a single frame. The phrase lane has stopped reaching the picture.`,
+      ).toBeGreaterThan(settling);
     },
     900_000,
   );
