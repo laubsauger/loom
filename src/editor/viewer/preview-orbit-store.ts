@@ -140,3 +140,40 @@ export function createPreviewOrbitStore(): PreviewOrbitStore {
     },
   };
 }
+
+/**
+ * T1051 follow-up (§V877 applied) — one shared orbit store, addressed per PANE.
+ *
+ * A dived canvas speaks INNER ids, and inner ids collide with root ones by design
+ * (E51's root `grid` and TimeGrid's interior `grid` are different nodes with one
+ * name). The app's shared store is keyed by the FLAT id — unique across the whole
+ * document — and each pane wraps it with its own prefix, so an orbit set inside a
+ * component belongs to `wall/grid` and can never move the root `grid`'s camera. The
+ * root pane's prefix is "", which makes this the identity there; a re-entered dive
+ * finds its orbits where it left them, because the flat id IS the dive path.
+ */
+export function prefixedOrbitStore(store: PreviewOrbitStore, prefix: string): PreviewOrbitStore {
+  if (prefix === "") return store;
+  const flat = (nodeId: NodeId): NodeId => `${prefix}/${nodeId}` as NodeId;
+  return {
+    get: (nodeId) => store.get(flat(nodeId)),
+    mode: (nodeId) => store.mode(flat(nodeId)),
+    setMode: (nodeId, mode) => {
+      store.setMode(flat(nodeId), mode);
+    },
+    subscribe: (nodeId, listener) => store.subscribe(flat(nodeId), listener),
+    apply: (nodeId, delta) => {
+      store.apply(flat(nodeId), delta);
+    },
+    zoom: (nodeId, factor) => {
+      store.zoom(flat(nodeId), factor);
+    },
+    reset: (nodeId) => {
+      store.reset(flat(nodeId));
+    },
+    ...(store.frameContent === undefined
+      ? {}
+      : { frameContent: (nodeId, frame) => store.frameContent!(flat(nodeId), frame) }),
+    ...(store.release === undefined ? {} : { release: (nodeId) => store.release!(flat(nodeId)) }),
+  };
+}

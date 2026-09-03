@@ -20,7 +20,7 @@ export type { NodePreviewSlotProps } from "./node-preview-slot.tsx";
 
 export { createPreviewSlotBounds } from "./preview-slot-bounds.ts";
 export type { PreviewSlotBoundsStore } from "./preview-slot-bounds.ts";
-export { createPreviewOrbitStore } from "./preview-orbit-store.ts";
+export { createPreviewOrbitStore, prefixedOrbitStore } from "./preview-orbit-store.ts";
 export type { PreviewOrbitStore } from "./preview-orbit-store.ts";
 
 /**

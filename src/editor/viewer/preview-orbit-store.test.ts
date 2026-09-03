@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { NodeId } from "@domain/types/ids.ts";
-import { createPreviewOrbitStore } from "./preview-orbit-store.ts";
+import { createPreviewOrbitStore, prefixedOrbitStore } from "./preview-orbit-store.ts";
 
 /**
  * T656 — the inspection store, on its own.
@@ -122,5 +122,47 @@ describe("frame content (T379)", () => {
     store.apply(node, { azimuth: 0.5 });
     expect(store.get(node)?.azimuth).toBe(0.5);
     expect(store.get(node)?.frame?.lookAt).toEqual([4, 0, -2]);
+  });
+});
+
+describe("T1051 follow-up — one shared store, per-pane prefixes, no leaks either way", () => {
+  it("an orbit set INSIDE a component never moves the root node with the same name — and vice versa", () => {
+    const shared = createPreviewOrbitStore();
+    const root = prefixedOrbitStore(shared, "");
+    const inside = prefixedOrbitStore(shared, "wall");
+
+    // E51's real collision: a root node `grid` and TimeGrid's interior `grid`.
+    inside.setMode("grid" as NodeId, "adjustable");
+    inside.apply("grid" as NodeId, { azimuth: 0.5 });
+    expect(root.get("grid" as NodeId)).toBeUndefined();
+    expect(root.mode("grid" as NodeId)).toBe("home");
+
+    root.setMode("grid" as NodeId, "adjustable");
+    root.apply("grid" as NodeId, { azimuth: -0.25 });
+    expect(inside.get("grid" as NodeId)?.azimuth).toBe(0.5);
+    expect(root.get("grid" as NodeId)?.azimuth).toBe(-0.25);
+
+    // The shared store holds both, under the FLAT ids — which is what makes a
+    // re-entered dive find its orbit where it was left.
+    expect(shared.get("wall/grid" as NodeId)?.azimuth).toBe(0.5);
+    expect(shared.get("grid" as NodeId)?.azimuth).toBe(-0.25);
+  });
+
+  it("the root prefix is the identity — zero indirection where none is needed", () => {
+    const shared = createPreviewOrbitStore();
+    expect(prefixedOrbitStore(shared, "")).toBe(shared);
+  });
+
+  it("subscriptions route through the prefix: an interior listener wakes on the interior write only", () => {
+    const shared = createPreviewOrbitStore();
+    const inside = prefixedOrbitStore(shared, "wall");
+    let woke = 0;
+    inside.subscribe("grid" as NodeId, () => {
+      woke += 1;
+    });
+    prefixedOrbitStore(shared, "").setMode("grid" as NodeId, "adjustable");
+    expect(woke).toBe(0);
+    inside.setMode("grid" as NodeId, "adjustable");
+    expect(woke).toBe(1);
   });
 });

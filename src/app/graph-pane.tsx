@@ -30,6 +30,7 @@ import {
   usePreviewViews,
 } from "@editor/viewer/index.ts";
 import type { PreviewGizmoTile } from "@editor/viewer/index.ts";
+import { prefixedOrbitStore } from "@editor/viewer/index.ts";
 import { effectiveParameterSchema, resolveParameters } from "@domain/parameters/resolve.ts";
 import { ValuePlot } from "@editor/nodes/value-plot.tsx";
 import { plotValues } from "@editor/nodes/value-function.ts";
@@ -202,8 +203,19 @@ function GraphPaneInner({
   // pane shares this camera — both surfaces show the same preview target per node, so
   // one camera per node is the truthful model. A caller that passes none (tests, a
   // second graph pane) still gets its own store, per T561's original construction.
+  /* T1019/T1031 — ONE spelling of the pane's flat prefix, shared by the texture
+     preview hook and the value plots: the canvas speaks inner ids, everything keyed
+     off the compiled/flattened document speaks prefixed ones. */
+  const flatPrefix = (componentPath ?? []).join("/");
   const localOrbits = usePerDocument(documentIdentity, createPreviewOrbitStore);
-  const previewOrbits = orbits ?? localOrbits;
+  /* T1051 follow-up: the SHARED store, addressed by this pane's flat prefix — an
+     interior `grid` orbits under `wall/grid`, never the root `grid` (see the
+     adapter's docblock). Identity at the root; local fallback when the app passes
+     nothing (tests, embeds). */
+  const previewOrbits = useMemo(
+    () => prefixedOrbitStore(orbits ?? localOrbits, flatPrefix),
+    [orbits, localOrbits, flatPrefix],
+  );
   // T336: the preview LENS. Registers `preview.setView`/`preview.resetView` and keeps their
   // default target on the selection while this pane is mounted — the pane that shows previews
   // is the one that can honestly offer a command for changing how they look (§V90).
@@ -216,10 +228,6 @@ function GraphPaneInner({
 
   // T463: nodes flagged as GRAPH BACKGROUND render behind the patch, dimmed — the
   // preview machinery on a second canvas one z-layer down (see use-graph-background).
-  /* T1019/T1031 — ONE spelling of the pane's flat prefix, shared by the texture
-     preview hook and the value plots: the canvas speaks inner ids, everything keyed
-     off the compiled/flattened document speaks prefixed ones. */
-  const flatPrefix = (componentPath ?? []).join("/");
 
   useGraphBackground({
     backend: previewBackend,

@@ -1402,8 +1402,15 @@ export function App({
                  * vacated and refused with `selection.noCanvas`, silently.
                  */
                 rootBus={runtime.bus}
-                orbits={insideComponent ? undefined : previewOrbits}
-                interest={insideComponent ? undefined : previewInterest}
+                /*
+                 * T1051 follow-up (§V877): the LAST two insideComponent starvations,
+                 * ungated now that the pane translates ids — orbits ride the shared
+                 * store through the pane's own prefix adapter (an interior node's
+                 * orbit keys under its FLAT id, so it can never move a root node's
+                 * camera — gated), and interest already matches on either spelling.
+                 */
+                orbits={previewOrbits}
+                interest={previewInterest}
               />
               </AppRuntimeContext.Provider>
             </NodeInfoHost>
