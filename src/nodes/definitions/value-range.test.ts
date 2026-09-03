@@ -6,6 +6,7 @@ import type { ValueChannels } from "../../domain/types/node-definition.ts";
 import { createValueGraphSession } from "../../domain/channels/value-graph.ts";
 import { createNodeRegistry } from "../registry/registry.ts";
 import { allNodeDefinitions } from "./index.ts";
+import { effectiveParameterSchema } from "../../domain/parameters/resolve.ts";
 import { valueMathNode } from "./value-graph-nodes.ts";
 
 /**
@@ -23,6 +24,13 @@ import { valueMathNode } from "./value-graph-nodes.ts";
  */
 
 const registry = createNodeRegistry(allNodeDefinitions).view();
+
+/**
+ * §T903's funnel, even for a manifest question with no node instance in hand: it is the
+ * ONE way to a node's parameters, and `effective-schema-closure` counts a raw
+ * `valueMathNode.parameters` as a surface reading round it.
+ */
+const SCHEMA = effectiveParameterSchema(valueMathNode, {});
 
 const FRAME: FrameEvaluationInput = {
   timeSeconds: 0,
@@ -233,7 +241,7 @@ describe("T991 — a degenerate input range answers To Low, never Infinity", () 
  */
 describe("§V831 — an existing valueMath document is untouched", () => {
   it("keeps `add` as the default operation and the six originals in order", () => {
-    const operation = valueMathNode.parameters["operation"];
+    const operation = SCHEMA["operation"];
     expect(operation?.type).toBe("enum");
     if (operation?.type !== "enum") throw new Error("unreachable — the assertion above");
     expect(operation.default).toBe("add");
@@ -266,7 +274,7 @@ describe("§V831 — an existing valueMath document is untouched", () => {
 describe("§V146 — the panel says which half of Math is doing the work", () => {
   it("dims the range bounds for an arithmetic operation, and not for Range", () => {
     for (const key of ["fromLow", "fromHigh", "toLow", "toHigh", "outside"]) {
-      const definition = valueMathNode.parameters[key];
+      const definition = SCHEMA[key];
       expect(definition, key).toBeDefined();
       expect(definition?.inactiveWhen?.({ operation: "add" }), key).toBeTruthy();
       expect(definition?.inactiveWhen?.({ operation: "range" }), key).toBeNull();
@@ -274,7 +282,7 @@ describe("§V146 — the panel says which half of Math is doing the work", () =>
   });
 
   it("dims the operand for Range, and not for an arithmetic operation", () => {
-    const operand = valueMathNode.parameters["operand"];
+    const operand = SCHEMA["operand"];
     expect(operand?.inactiveWhen?.({ operation: "range" })).toBeTruthy();
     expect(operand?.inactiveWhen?.({ operation: "multiply" })).toBeNull();
   });
