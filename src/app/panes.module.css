@@ -253,13 +253,21 @@
   layout, and the aspect box is the canvas's own so a non-square output is letterboxed
   rather than stretched.
 */
+/*
+  T1158 — the FRAME, not the picture.
+
+  This used to be `aspect-ratio: 16 / 9`, which is the whole of the owner's report: the box
+  kept a shape the project had not asked for, and the canvas filling it stretched a portrait
+  output across it. The frame now takes the pane, and `.picture` inside it takes the
+  OUTPUT's aspect — the same relationship a node's preview slot has to its letterboxed tile
+  (§V118), which is the surface this one was diverging from.
+*/
 .surface {
   display: flex;
   align-items: center;
   justify-content: center;
-  flex: 0 0 auto;
+  flex: 1 1 auto;
   min-height: 0;
-  aspect-ratio: 16 / 9;
   background: var(--bg-sunken);
   border: var(--border-hairline);
   border-radius: var(--radius);
@@ -267,16 +275,28 @@
 }
 
 /*
-  Fullscreen (T394). The UA sizes a fullscreen element to the screen, but the aspect box
-  and the hairline above are the pane's chrome and would letterbox the picture a second
-  time inside a screen-sized frame. Dropped for the duration; the canvas keeps its own
-  `object-fit`-free 100%/100% and the runtime keeps blitting into the same surface.
+  Fullscreen (T394). The UA sizes a fullscreen element to the screen, and the hairline and
+  radius above are the pane's chrome — they would frame the picture a second time inside a
+  screen-sized box. Dropped for the duration; `.picture` keeps letterboxing, so filling the
+  screen with the frame gives the picture the whole screen at its own aspect.
 */
 .surface:fullscreen {
-  aspect-ratio: auto;
   border: none;
   border-radius: 0;
   background: var(--bg-sunken);
+}
+
+/*
+  T1158 — the picture. Sized in PIXELS by `fitInsideRegion` from `side-panes.tsx`, because a
+  `<canvas>` is a replaced element whose intrinsic size is the backing store the layout box
+  sizes — an `aspect-ratio` rule on the canvas would close that loop. The 100%/100% here is
+  what shows before the first measurement and where no `ResizeObserver` exists: the frame
+  itself, which is exactly what shipped before this row.
+*/
+.picture {
+  position: relative;
+  width: 100%;
+  height: 100%;
 }
 
 .canvas {

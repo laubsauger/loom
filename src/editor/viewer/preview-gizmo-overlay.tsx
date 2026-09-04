@@ -36,11 +36,12 @@ import styles from "./viewer.module.css";
  * not a `stopPropagation` someone can delete.
  *
  * THE BIG VIEWER PANE HAS NO SUCH LAYER, and that is a finding rather than an omission:
- * `app/side-panes.tsx`'s viewer is a bare `<canvas>` inside a `.surface` that is not even
- * a positioning context, handed straight to `backend.present`. Gizmos there need that
- * pane to grow an overlay sibling first — a `src/app` change with its own hit-testing and
- * its own aspect story (the present blit STRETCHES to the canvas, where a node tile
- * letterboxes), which is why this row lands on the graph pane's tiles and says so.
+ * `app/side-panes.tsx`'s viewer is a `<canvas>` filling a `.picture` box, handed straight
+ * to `backend.present`. Gizmos there need that pane to grow an overlay sibling first — a
+ * `src/app` change with its own hit-testing — which is why this row lands on the graph
+ * pane's tiles and says so. THE ASPECT HALF OF THAT DIVERGENCE IS GONE (T1158): the viewer
+ * used to stretch the blit to a `16 / 9` frame while a node tile letterboxed, and it now
+ * letterboxes through `fitInsideRegion`, the same §V118 call used below.
  *
  * ## Positioned, never measured — with one deliberate exception
  *

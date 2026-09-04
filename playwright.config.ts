@@ -16,7 +16,7 @@ import { defineConfig, devices } from "@playwright/test";
  * half the split.
  */
 const NEEDS_A_REAL_ADAPTER =
-  /(presentation-pixels|example-parity|node-layering-pixels|mediapipe-matte)\.spec\.ts$/;
+  /(presentation-pixels|example-parity|node-layering-pixels|mediapipe-matte|viewer-aspect)\.spec\.ts$/;
 
 export default defineConfig({
   testDir: "./src/tests/e2e",

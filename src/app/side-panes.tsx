@@ -26,6 +26,7 @@ import type { PortDragQuery } from "@editor/library/index.ts";
 import type { LoomBackend } from "@runtime/backend/index.ts";
 import { normalizedPointer } from "@runtime/execution/index.ts";
 import type { PointerRect, PointerSource } from "@runtime/execution/index.ts";
+import { fitInsideRegion } from "@editor/nodes/preview-fit.ts";
 import { usePixelReadout } from "@editor/viewer/index.ts";
 import type { PixelReadoutOptions } from "@editor/viewer/index.ts";
 import type { PreviewOrbitStore } from "@editor/viewer/index.ts";
@@ -602,8 +603,9 @@ export function ViewerPane({
   /**
    * Publishing the cursor (T324, §V236).
    *
-   * The canvas fills its surface exactly, so the element's own box IS the picture's box and
-   * normalising against it needs no letterbox arithmetic. `buttons` rides the same events,
+   * The canvas fills its PICTURE box exactly (T1158 letterboxes that box inside the pane
+   * rather than stretching the canvas across it), so the element's own box IS the picture's
+   * box and normalising against it needs no letterbox arithmetic. `buttons` rides the same events,
    * so a press with no movement still reaches a shader.
    *
    * There is deliberately NO `onPointerLeave`. §V236 says the pointer HOLDS its last
@@ -860,6 +862,63 @@ export function ViewerPane({
   const surface = useCallback(() => surfaceRef.current, []);
   useFullscreenSurface(bus, surface);
 
+  /**
+   * T1158 — THE PICTURE LETTERBOXES INSIDE THE PANE. IT NEVER STRETCHES.
+   *
+   * The frame used to be locked at `aspect-ratio: 16 / 9` with the canvas filling it, so
+   * the present blit stretched the output into whatever shape the pane happened to be.
+   * Set a 720×1280 portrait project and the resolution reads correctly in the inspector,
+   * the node tiles preview correctly, and the viewer alone shows a wide, squashed picture
+   * — which is exactly the report ("even if I crunch it down it's gonna stay in the
+   * initial 16:9 aspect ratio"). The viewer was the ONE surface in the app that stretched:
+   * node tiles have letterboxed since §V118, and this file's sibling docblock in
+   * `preview-gizmo-overlay.tsx` had already written the divergence down.
+   *
+   * So this is §V118's OWN function, not a second copy of its arithmetic. `.surface` is
+   * now the FRAME and fills the pane; the picture is `fitInsideRegion`'s largest box with
+   * the output's aspect that fits inside it, centred — the identical call
+   * `use-node-previews.ts` composites every live tile with, so the two surfaces agree by
+   * sharing the code rather than by coincidence.
+   *
+   * NOTHING IS STORED. The aspect is read off the output the compiler resolved, so it
+   * follows a resolution swap (T1157) and a per-node override with no second source that
+   * could disagree — the same rule §T1064 deleted 180 lines to restore.
+   *
+   * WHY PIXELS AND NOT AN `aspect-ratio` RULE: a `<canvas>` is a replaced element whose
+   * intrinsic size is its backing store, and `use-output-presentation.ts` sizes that
+   * backing store FROM the laid-out box. An aspect rule on the canvas would close that
+   * loop. The box therefore lands on a plain wrapper, which has no intrinsic size, and the
+   * canvas keeps filling it exactly — so the element's own box is still the picture's box
+   * and the pointer/probe normalisation below needs no letterbox arithmetic of its own.
+   *
+   * `canvasKey` is a dependency for `use-output-presentation`'s reason: a ResizeObserver
+   * is a per-window object, so a pane floated into a child document needs its observer
+   * re-armed, and that key is what changes when adoption crosses documents (T705).
+   */
+  const pictureRef = useRef<HTMLDivElement | null>(null);
+  const sourceWidth = selected?.size[0] ?? null;
+  const sourceHeight = selected?.size[1] ?? null;
+  useEffect(() => {
+    const frame = surfaceRef.current;
+    const picture = pictureRef.current;
+    if (frame === null || picture === null) return;
+    if (sourceWidth === null || sourceHeight === null) return;
+    const apply = (): void => {
+      const box = fitInsideRegion({ width: frame.clientWidth, height: frame.clientHeight }, [
+        sourceWidth,
+        sourceHeight,
+      ]);
+      picture.style.width = `${box.width}px`;
+      picture.style.height = `${box.height}px`;
+    };
+    apply();
+    const view = frame.ownerDocument.defaultView;
+    if (view === null || typeof view.ResizeObserver !== "function") return;
+    const observer = new view.ResizeObserver(apply);
+    observer.observe(frame);
+    return () => observer.disconnect();
+  }, [canvasKey, sourceWidth, sourceHeight]);
+
   // §V351/B67. A separate ref from `surfaceRef`: that one is the picture the Fullscreen
   // API is pointed at, this one is the pane the keymap resolves against.
   const viewerPaneRef = useRef<HTMLDivElement | null>(null);
@@ -985,6 +1044,7 @@ export function ViewerPane({
         ) : selected === null ? (
           <p className={styles.note}>No output</p>
         ) : (
+          <div ref={pictureRef} className={styles.picture} data-testid="viewer-picture">
           <canvas
             key={canvasKey}
             ref={(element) => {
@@ -1011,6 +1071,7 @@ export function ViewerPane({
             onKeyDown={onCanvasKeyDown}
             style={orbitable ? { cursor: "grab", touchAction: "none" } : undefined}
           />
+          </div>
         )}
       </div>
 
