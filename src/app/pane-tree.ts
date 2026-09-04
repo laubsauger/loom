@@ -694,17 +694,36 @@ export const DEFAULT_PANE_TREE: PaneTreeLayout = {
         // 50/50. The libraries are a browsing surface and the tab dock holds an editor;
         // neither is the other's margin.
         ratio: 50,
+        /*
+         * EXAMPLES FIRST, AND OPEN, on a fresh profile — the owner's call.
+         *
+         * The shader editor was first and selected, which meant the first thing a new
+         * user saw in the bottom dock was an empty text pane for a node they had not
+         * created. The example library is the one tab in this strip that has something in
+         * it before the user does anything, and it is the door to the starter document
+         * this default now boots with (`use-starter-project.ts`).
+         *
+         * The TAB KEYS are deliberately left at their historical numbers rather than
+         * renumbered to match the new order. A key is an identity, not a position:
+         * `homes` restore hints (T486) and any stored tree name tabs by key, and
+         * renumbering would silently repoint them. Only the ARRAY order and `active`
+         * carry the arrangement.
+         *
+         * This is the DEFAULT only. A profile with a stored tree
+         * (`shaderloom.shell.layouts.v5`) keeps whatever the user arranged; the doors to
+         * this order are a fresh profile and `layout.reset` / the menu's "Default" row.
+         */
         first: {
           kind: "leaf",
           id: "leaf-bottom",
           tabs: [
+            { key: "examples-5", role: "examples" },
             { key: "shader-2", role: "shader" },
             { key: "problems-3", role: "problems" },
             { key: "performance-4", role: "performance" },
-            { key: "examples-5", role: "examples" },
             { key: "agent-6", role: "agent" },
           ],
-          active: "shader-2",
+          active: "examples-5",
         },
         // T932: ONE leaf, two tabs — see the reversal in the docblock. A split here
         // halves the rows of whichever library you are actually scanning, and rows are

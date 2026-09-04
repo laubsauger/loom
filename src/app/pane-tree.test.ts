@@ -54,10 +54,10 @@ describe("v3 → tree migration reproduces the flat arrangement (T404)", () => {
     // One minted tab per zone entry, in zone order, roles preserved.
     expect(findLeaf(tree, "leaf-left")?.tabs.map((tab) => tab.role)).toEqual(["library", "components"]);
     expect(findLeaf(tree, "leaf-bottom")?.tabs.map((tab) => tab.role)).toEqual([
+      "examples",
       "shader",
       "problems",
       "performance",
-      "examples",
       "agent",
     ]);
     // The active TAB carries the active ROLE of its zone.
@@ -214,7 +214,7 @@ describe("the projection goes NULL the moment the tree stops being flat (V385)",
     const moved = moveTab(flat, allTabs(flat).find((tab) => tab.role === "problems")!.key, "leaf-right");
     const projected = shellLayoutFromTree(moved);
     expect(projected?.zones.right).toEqual(["viewer", "problems"]);
-    expect(projected?.zones.bottom).toEqual(["shader", "performance", "examples", "agent"]);
+    expect(projected?.zones.bottom).toEqual(["examples", "shader", "performance", "agent"]);
   });
 
   it("the T927 default is structural, so v3 cannot hold it at all", () => {
@@ -340,12 +340,12 @@ describe("the split/close algebra", () => {
 
     it("leaves the source ALONE while any tab remains — including a floated one (§V97)", () => {
       const tree = DEFAULT_PANE_TREE;
-      const shader = findLeaf(tree, "leaf-bottom")!.tabs[0]!;
-      const moved = moveTab(tree, shader.key, "leaf-center");
+      const first = findLeaf(tree, "leaf-bottom")!.tabs[0]!;
+      const moved = moveTab(tree, first.key, "leaf-center");
       expect(findLeaf(moved, "leaf-bottom")?.tabs.map((tab) => tab.role)).toEqual([
+        "shader",
         "problems",
         "performance",
-        "examples",
         "agent",
       ]);
 
@@ -417,14 +417,14 @@ describe("the split/close algebra", () => {
     it("lands where the caret was, not one past it, when dragging RIGHTWARDS", () => {
       const tree = DEFAULT_PANE_TREE;
       const bottom = findLeaf(tree, "leaf-bottom")!;
-      const shader = bottom.tabs[0]!; // shader | problems | performance | examples | agent
-      // Aimed at the gap before "examples", which is index 3 in the strip on screen.
-      const moved = moveTab(tree, shader.key, "leaf-bottom", 3);
+      const first = bottom.tabs[0]!; // examples | shader | problems | performance | agent
+      // Aimed at the gap before "performance", which is index 3 in the strip on screen.
+      const moved = moveTab(tree, first.key, "leaf-bottom", 3);
       expect(findLeaf(moved, "leaf-bottom")?.tabs.map((tab) => tab.role)).toEqual([
-        "problems",
-        "performance",
         "shader",
+        "problems",
         "examples",
+        "performance",
         "agent",
       ]);
     });
@@ -434,11 +434,11 @@ describe("the split/close algebra", () => {
       const agent = findLeaf(tree, "leaf-bottom")!.tabs[4]!;
       const moved = moveTab(tree, agent.key, "leaf-bottom", 1);
       expect(findLeaf(moved, "leaf-bottom")?.tabs.map((tab) => tab.role)).toEqual([
-        "shader",
+        "examples",
         "agent",
+        "shader",
         "problems",
         "performance",
-        "examples",
       ]);
     });
   });

@@ -71,8 +71,17 @@ async function closeBottomRegion(user: ReturnType<typeof userEvent.setup>) {
   }
 }
 
-/** Moves the active pane of `zone` using the keyboard-reachable move menu. */
+/**
+ * Moves a pane using the keyboard-reachable move menu.
+ *
+ * The move button belongs to the ACTIVE tab of a leaf, so the pane is fronted first —
+ * which is what a person does anyway, and what keeps this helper from depending on which
+ * tab the default arrangement happens to open on (the bottom dock's is `examples` since
+ * the starter network landed, and was `shader editor` before it).
+ */
 async function movePaneVia(user: ReturnType<typeof userEvent.setup>, paneTitle: string, target: string) {
+  const tab = screen.queryByRole("tab", { name: paneTitle });
+  if (tab !== null && tab.getAttribute("aria-selected") !== "true") await user.click(tab);
   await user.click(screen.getByRole("button", { name: `Move ${paneTitle}` }));
   await user.click(screen.getByRole("button", { name: target }));
 }
@@ -344,17 +353,17 @@ describe("T931 — dropping a tab into another pane's tab strip", () => {
 
     const transfer = dragTransfer();
     fireEvent.dragStart(screen.getByRole("tab", { name: "inspector" }), { dataTransfer: transfer });
-    // Gap 2 of the bottom dock: shader | problems | HERE | performance | examples | agent.
+    // Gap 2 of the bottom dock: examples | shader | HERE | problems | performance | agent.
     fireEvent.dragOver(slot("leaf-bottom", 2), { dataTransfer: transfer });
     fireEvent.drop(slot("leaf-bottom", 2), { dataTransfer: transfer });
 
     const bottom = findLeaf(readPaneTreeStore(storage).current, "leaf-bottom");
     expect(bottom?.tabs.map((tab) => tab.role)).toEqual([
-      "shader",
-      "problems",
-      "inspector",
-      "performance",
       "examples",
+      "shader",
+      "inspector",
+      "problems",
+      "performance",
       "agent",
     ]);
     // And it is the tab you are now looking at — a drop that lands behind another tab
@@ -393,10 +402,10 @@ describe("T931 — dropping a tab into another pane's tab strip", () => {
     fireEvent.drop(slot("leaf-bottom", 3), { dataTransfer: transfer });
 
     expect(findLeaf(readPaneTreeStore(storage).current, "leaf-bottom")?.tabs.map((tab) => tab.role)).toEqual([
-      "problems",
-      "performance",
-      "shader",
       "examples",
+      "problems",
+      "shader",
+      "performance",
       "agent",
     ]);
   });
@@ -699,7 +708,13 @@ describe("V19 — keyboard reachability", () => {
     const storage = createMemoryStorage();
     render(<AppShell storage={storage} shaderEditor={<div>editor slot</div>} />);
 
-    // Keyboard only: focus the move trigger, open it with Enter, walk to the target.
+    // Keyboard only, and that includes FRONTING the pane: the move trigger belongs to the
+    // active tab, and the bottom dock opens on `examples` since the starter network
+    // landed. Arrow-right moves focus AND selection along the strip (see the arrow-key
+    // test below), so no pointer is involved in getting there either.
+    screen.getByRole("tab", { name: "examples" }).focus();
+    await user.keyboard("{ArrowRight}");
+
     const trigger = screen.getByRole("button", { name: "Move shader editor" });
     trigger.focus();
     await user.keyboard("{Enter}");
@@ -1197,11 +1212,11 @@ describe("T854 — every tab carries its own close", () => {
 
     // The bottom leaf holds five tabs. Make one that is NOT first the active one, so
     // "did the click select before closing?" has a visible answer: a close that ran
-    // through selection would hand active back to tabs[0] (shader editor).
+    // through selection would hand active back to tabs[0] (examples).
     const bottom = zoneElement("bottom");
     await user.click(within(bottom).getByRole("tab", { name: "problems" }));
     expect(findLeaf(readPaneTreeStore(storage).current, "leaf-bottom")?.active).toBe(
-      findLeaf(readPaneTreeStore(storage).current, "leaf-bottom")?.tabs[1]?.key,
+      findLeaf(readPaneTreeStore(storage).current, "leaf-bottom")?.tabs[2]?.key,
     );
 
     await user.click(within(bottom).getByRole("button", { name: "Close examples" }));
@@ -1220,17 +1235,17 @@ describe("T854 — every tab carries its own close", () => {
     render(<AppShell storage={storage} shaderEditor={<div>editor slot</div>} problems={<div>problems slot</div>} />);
 
     const bottom = zoneElement("bottom");
-    expect(within(bottom).getByRole("tab", { name: "shader editor" }).getAttribute("aria-selected")).toBe("true");
-    await user.click(within(bottom).getByRole("button", { name: "Close shader editor" }));
+    expect(within(bottom).getByRole("tab", { name: "examples" }).getAttribute("aria-selected")).toBe("true");
+    await user.click(within(bottom).getByRole("button", { name: "Close examples" }));
 
     // `closeTab`'s own rule, reached through the strip: active falls to the first
     // remaining tab, never to null while tabs remain.
     const leaf = findLeaf(readPaneTreeStore(storage).current, "leaf-bottom");
-    expect(leaf?.tabs.map((tab) => tab.role)).toEqual(["problems", "performance", "examples", "agent"]);
+    expect(leaf?.tabs.map((tab) => tab.role)).toEqual(["shader", "problems", "performance", "agent"]);
     expect(leaf?.active).toBe(leaf?.tabs[0]?.key);
     const after = zoneElement("bottom");
-    expect(within(after).getByRole("tab", { name: "problems" }).getAttribute("aria-selected")).toBe("true");
-    expect(after.contains(screen.getByText("problems slot"))).toBe(true);
+    expect(within(after).getByRole("tab", { name: "shader editor" }).getAttribute("aria-selected")).toBe("true");
+    expect(after.contains(screen.getByText("editor slot"))).toBe(true);
   });
 
   it("closing the LAST tab empties the leaf and asks what it should show — it does not close the area", async () => {
@@ -1263,9 +1278,9 @@ describe("T854 — every tab carries its own close", () => {
      */
     await user.click(within(zoneElement("bottom")).getByRole("button", { name: "Close shader editor" }));
     expect(findLeaf(readPaneTreeStore(storage).current, "leaf-bottom")?.tabs.map((tab) => tab.role)).toEqual([
+      "examples",
       "problems",
       "performance",
-      "examples",
       "agent",
     ]);
     expect(document.querySelector('[data-pane-leaf="leaf-bottom"]')).not.toBeNull();

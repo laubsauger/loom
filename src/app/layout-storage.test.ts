@@ -198,7 +198,7 @@ describe("V95 — the arrangement is data", () => {
 
   it("keeps the active tab when the move did not touch it, and picks one when it did", () => {
     const layout = movePane(DEFAULT_SHELL_LAYOUT, "performance", "left");
-    expect(layout.active.bottom).toBe("shader"); // untouched
+    expect(layout.active.bottom).toBe("examples"); // untouched
     const emptied = (["shader", "problems", "examples", "agent"] as const).reduce<ShellLayout>(
       (next, paneId) => movePane(next, paneId, "left"),
       layout,

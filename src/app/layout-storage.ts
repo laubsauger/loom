@@ -134,14 +134,18 @@ export const DEFAULT_SHELL_LAYOUT: ShellLayout = {
     center: ["graph"],
     right: ["viewer"],
     rightBottom: ["inspector"],
-    bottom: ["shader", "problems", "performance", "examples", "agent"],
+    // Examples first and open — see the same reordering, and the reason for it, on
+    // `DEFAULT_PANE_TREE`. Kept in step with the tree so the flat model's SKELETON_TREE
+    // (what a restored baseline dock is built from, T936) and the v3 migration fallback
+    // cannot hand back an arrangement the tree default abandoned.
+    bottom: ["examples", "shader", "problems", "performance", "agent"],
   },
   active: {
     left: "library",
     center: "graph",
     right: "viewer",
     rightBottom: "inspector",
-    bottom: "shader",
+    bottom: "examples",
   },
   floating: [],
 };
