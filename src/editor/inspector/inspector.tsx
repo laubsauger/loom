@@ -34,7 +34,7 @@ import { parseComponentNodeType } from "@domain/components/component-type.ts";
 import type { ComponentRegistryView } from "@domain/components/index.ts";
 import { resolveParameters } from "./parameter-resolver.ts";
 import {
-  createNodeReferenceReader,
+  createParameterReadOptions,
   nodeReferenceMembers,
   nodeReferenceNames,
 } from "@domain/parameters/index.ts";
@@ -401,21 +401,14 @@ export function Inspector({
    * calling it, and the panel disagreeing with the picture. So the frame is a PARAMETER of
    * this builder rather than a field spread on afterwards — the one thing that means "at
    * which moment" cannot now be set on the resolve and forgotten on the reader.
+   *
+   * T1129 lifted that builder to `domain/parameters` and routed the compiler and the OSC
+   * pump through it too: the shape was honoured at all three sites and enforced at none,
+   * which is what let §T1000 and §T1001 be the third and fourth recurrences. What is left
+   * here is the panel's own question — which graph, which moment.
    */
-  const readOptionsAt = (frame?: FrameEvaluationInput) => {
-    const base = {
-      ...(channels === undefined ? {} : { channels }),
-      ...(frame === undefined ? {} : { frame }),
-    };
-    return {
-      nodes: createNodeReferenceReader({
-        graph,
-        schemaOf: (target) => effectiveParameterSchema(bus.registry.get(target.type), target.parameters),
-        base,
-      }),
-      ...base,
-    };
-  };
+  const readOptionsAt = (frame?: FrameEvaluationInput) =>
+    createParameterReadOptions({ graph, registry: bus.registry, channels, frame });
   const readOptions = readOptionsAt();
 
   /**

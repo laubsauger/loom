@@ -110,6 +110,17 @@ const NOT_CONSTRUCTED: ReadonlyArray<{ name: string; reason: string }> = [
       "Deliberately never used in the app — its own docstring says so. Two sessions would mint identical ids and collide on merge (§V40). Fixtures and the shipped-component builder only.",
   },
   {
+    name: "createNodeReferenceReader",
+    reason:
+      "T1129: composed by `createParameterReadOptions` in the SAME module, and that is now the " +
+      "point. The reader is a CLOSURE over its `base`, so a caller that builds one alone can be " +
+      "handed a frame and channels on the resolve that never reach it — §B8's shape, four " +
+      "recurrences deep (§B46, §T593, §T1000, §T1001). The inspector, the compiler and the OSC " +
+      "pump all reach it through the factory, and `node-references.test.ts`'s T1129 scan fails " +
+      "if any product module calls it directly again. It stays exported for its own unit tests, " +
+      "which drive the reader with and without a base on purpose.",
+  },
+  {
     name: "createComponentRegistry",
     reason:
       "Composed by `createComponentSystem` in the same module, which the composition root does construct. The registry and its component-aware node view are two halves of one seam.",

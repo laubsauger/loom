@@ -62,10 +62,16 @@ export type {
   ResolvedParameter,
   ResolvedParameters,
 } from "./resolve.ts";
-export { createNodeReferenceReader, nodeReferenceMembers, nodeReferenceNames } from "./node-references.ts";
+export {
+  createNodeReferenceReader,
+  createParameterReadOptions,
+  nodeReferenceMembers,
+  nodeReferenceNames,
+} from "./node-references.ts";
 export type {
   NodeReferenceCatalogueOptions,
   NodeReferenceMember,
   NodeReferenceOptions,
+  ParameterReadContext,
 } from "./node-references.ts";
 export { codeParametersLast, codeParametersOf } from "./code.ts";

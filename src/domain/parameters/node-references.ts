@@ -1,10 +1,18 @@
+import type { NodeRegistryView } from "../../nodes/registry/registry.ts";
 import { nodeByName, nodeNames } from "../graph/names.ts";
 import type { NodeReferenceReader, NodeReferenceResult } from "../expressions/index.ts";
+import type { FrameEvaluationInput } from "../types/frame.ts";
 import type { GraphDocument, GraphNode } from "../types/graph.ts";
 import type { NodeId } from "../types/ids.ts";
 import type { ParameterDefinition, ParameterSchema, ParameterValue } from "../types/parameters.ts";
 import { componentKey, componentNamesFor } from "./slots.ts";
-import { CHANNEL_RESOLVER_MISSING, resolveParameterSchema, type ResolveParametersOptions } from "./resolve.ts";
+import {
+  CHANNEL_RESOLVER_MISSING,
+  effectiveParameterSchema,
+  resolveParameterSchema,
+  type ChannelResolver,
+  type ResolveParametersOptions,
+} from "./resolve.ts";
 
 /**
  * Reading `op('noise1').par.gain` — the cross-node value path (T316, §V148, §V127).
@@ -204,6 +212,59 @@ function asNumber(value: ParameterValue | undefined, reference: string): NodeRef
 
 export function createNodeReferenceReader(options: NodeReferenceOptions): NodeReferenceReader {
   return readerWithin(options, new Set());
+}
+
+/** What a call site knows: the graph being read, the catalogue, and WHEN. */
+export interface ParameterReadContext {
+  readonly graph: GraphDocument;
+  readonly registry: NodeRegistryView;
+  /**
+   * The moment. A PARAMETER rather than a field the caller sets afterwards, because
+   * setting it on the resolve and forgetting it on the reader is the entire bug (§B46).
+   */
+  readonly frame?: FrameEvaluationInput | undefined;
+  /** Absent = `op('x').chan.*` reports "no channel resolver" and §V108's static stands. */
+  readonly channels?: ChannelResolver | undefined;
+}
+
+/**
+ * §V837 / §T1129 — THE ONE FACTORY. The reader and the options it is read alongside are
+ * built here, together, or they are not built.
+ *
+ * `op('lfo1').chan.value` is read INSIDE the reader, off `NodeReferenceOptions.base`. The
+ * reader is a CLOSURE built before the resolve, so the `frame` and `channels` handed to
+ * `resolveParameters` never reach it: a caller that builds a reader with no `base` gets a
+ * panel, a plan or a pump that answers every `.chan` read with "this context has no
+ * channel resolver", falls back to §V108's retained static, and freezes there while the
+ * picture animates. That is §B8's shape, and it has now recurred FOUR times — §T593, the
+ * inspector (§T1000), the OSC pump (§T1001), and §B46 before them.
+ *
+ * Every one of those fixes was correct and local, and every one left the next call site
+ * free to omit the pairing again: three sites each spelled this out, and nothing made
+ * site four spell it. So the pairing is no longer spelled at a call site at all. A caller
+ * says WHICH graph, WHICH catalogue and WHEN; it cannot say "reader without base",
+ * because there is no longer an argument for it.
+ */
+export function createParameterReadOptions(
+  context: ParameterReadContext,
+): Pick<ResolveParametersOptions, "frame" | "channels" | "nodes"> {
+  const base = {
+    ...(context.channels === undefined ? {} : { channels: context.channels }),
+    ...(context.frame === undefined ? {} : { frame: context.frame }),
+  };
+  return {
+    nodes: createNodeReferenceReader({
+      graph: context.graph,
+      /*
+       * §T903 — through the funnel: `op('lantern').par.orbitSpeed` reads a key that only
+       * exists in the node's REFLECTED schema, and a static-schema reader would answer
+       * "no such parameter" for a control the inspector is showing.
+       */
+      schemaOf: (node) => effectiveParameterSchema(context.registry.get(node.type), node.parameters),
+      base,
+    }),
+    ...base,
+  };
 }
 
 /**

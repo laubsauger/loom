@@ -1,9 +1,13 @@
+import { readFileSync, readdirSync } from "node:fs";
+import { join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
+import type { NodeRegistryView } from "../../nodes/registry/registry.ts";
 import { evaluateExpression } from "../expressions/index.ts";
 import type { GraphDocument, GraphNode } from "../types/graph.ts";
 import type { ParameterSchema } from "../types/parameters.ts";
-import { createNodeReferenceReader } from "./node-references.ts";
+import { createNodeReferenceReader, createParameterReadOptions } from "./node-references.ts";
 import { resolveParameterSchema } from "./resolve.ts";
 
 /**
@@ -278,5 +282,65 @@ describe("reading op('name').chan.channel (T901)", () => {
     const resolved = resolve(graphOf(source, subject), subject);
     expect(resolved?.diagnostic?.severity).toBe("info");
     expect(resolved?.diagnostic?.code).toBe("parameter.channels.unavailable");
+  });
+});
+
+/**
+ * §T1129 / §V837 — THE FACTORY IS THE ONLY WAY TO A READER, AND A GATE SAYS SO.
+ *
+ * The pairing "reader + the base it reads through" was honoured at all three call sites
+ * and enforced at none, which is how §T1000 (the inspector) and §T1001 (the OSC pump)
+ * became the third and fourth recurrences of §B8's shape. A shared factory only makes the
+ * right thing EASY; this scan is what makes the wrong thing impossible to land quietly.
+ */
+describe("T1129 — the parameter read options come from one factory", () => {
+  /** lfo1's bag, the way the value graph publishes it. */
+  const channels = (address: string) => (address === "lfo1" ? 0.5 : undefined);
+
+  it("resolves a channel expression through the base the factory built", () => {
+    const source = node("n1", "lfo1");
+    const subject = node("n2", "a", { gain: expression("op('lfo1').chan.value") });
+    const graph = graphOf(source, subject);
+    const options = createParameterReadOptions({
+      graph,
+      registry: { get: () => ({ parameters: SCHEMA }) } as unknown as NodeRegistryView,
+      channels,
+    });
+    // 0.5 only if `channels` reached the READER's base. Without it the reference reports
+    // "no channel resolver" and the parameter sits on §V108's retained static (1).
+    const resolved = resolveParameterSchema(subject, SCHEMA, options).get("gain");
+    expect(resolved?.value).toBe(0.5);
+    expect(resolved?.diagnostic).toBeNull();
+  });
+
+  it("leaves no product module building a reader of its own", () => {
+    const walk = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
+        entry.isDirectory()
+          ? walk(join(dir, entry.name))
+          : /\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)
+            ? [join(dir, entry.name)]
+            : [],
+      );
+    const root = fileURLToPath(new URL("../../../", import.meta.url));
+    const sources = walk(join(root, "src"));
+    // The floor: a walk that finds nothing would assert over the empty set (§T985).
+    expect(sources.length).toBeGreaterThan(100);
+    /** Comments stripped: what the CODE does, not what a docblock says about it (§T949). */
+    const code = (file: string) =>
+      readFileSync(file, "utf8")
+        .replace(/\/\*[\s\S]*?\*\//g, " ")
+        .replace(/^[ \t]*\/\/.*$/gm, " ");
+    const callers = sources
+      .filter((file) => /\bcreateNodeReferenceReader\s*\(/.test(code(file)))
+      .map((file) => relative(root, file).replaceAll("\\", "/"));
+    expect(
+      callers,
+      "A module builds its own cross-node reader instead of calling " +
+        "`createParameterReadOptions`. The reader is a CLOSURE over its `base`, so a " +
+        "hand-built one can be handed a frame and channels on the resolve that never reach " +
+        "it — §B8's shape, which has now recurred four times (§T593, §T1000, §T1001, §B46). " +
+        "Ask the factory for both, or this is the fifth (T1129).",
+    ).toEqual(["src/domain/parameters/node-references.ts"]);
   });
 });

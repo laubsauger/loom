@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { createNodeReferenceReader, resolveParameters } from "@domain/parameters/index.ts";
-import { effectiveParameterSchema, type ChannelResolver } from "@domain/parameters/resolve.ts";
+import { createParameterReadOptions, resolveParameters } from "@domain/parameters/index.ts";
+import type { ChannelResolver } from "@domain/parameters/resolve.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { FrameEvaluationInput } from "@domain/types/frame.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
@@ -277,20 +277,13 @@ export function useOscBridge(options: OscBridgeOptions = {}): OscBridgeBinding {
        * its last typed value for the life of the session while the picture animated.
        *
        * That is §B8's shape for the THIRD time (§T593 was the second, §T1000 the inspector
-       * one). Hence the factory rather than a `nodes` field spread on afterwards: "at
-       * which moment" is a PARAMETER here, so it cannot be set on the resolve and
-       * forgotten on the reader. Built once per frame, not per node — two frames in one
-       * evaluation is a value that is right on its own and wrong in context.
+       * one). §T1129 made the factory SHARED rather than restated at each of the three
+       * sites: "at which moment" is a parameter of `createParameterReadOptions`, so it
+       * cannot be set on the resolve and forgotten on the reader here or anywhere else.
+       * Built once per frame, not per node — two frames in one evaluation is a value that
+       * is right on its own and wrong in context.
        */
-      const base = { frame, channels };
-      const readOptions = {
-        nodes: createNodeReferenceReader({
-          graph,
-          schemaOf: (target) => effectiveParameterSchema(registry.get(target.type), target.parameters),
-          base,
-        }),
-        ...base,
-      };
+      const readOptions = createParameterReadOptions({ graph, registry, frame, channels });
 
       /*
        * §T1006 — THE SET THIS PUMP OWNS IS DERIVED, IN BOTH DIRECTIONS.

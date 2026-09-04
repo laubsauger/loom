@@ -6,7 +6,7 @@ import type { ParameterSchema, ParameterValue } from "../domain/types/parameters
 import type { PortDefinition } from "../domain/types/ports.ts";
 import { arePortsCompatible, describePortType } from "../domain/graph/port-compat.ts";
 import { resolveParameterSchema, effectiveParameterSchema, type ParameterMapBinding } from "../domain/parameters/resolve.ts";
-import { createNodeReferenceReader } from "../domain/parameters/node-references.ts";
+import { createParameterReadOptions } from "../domain/parameters/node-references.ts";
 import type { ResolveParametersOptions } from "../domain/parameters/resolve.ts";
 import { bindCycleDiagnostics } from "../domain/parameters/bind-cycles.ts";
 import { referenceCycleDiagnostics } from "../domain/graph/reference-cycles.ts";
@@ -179,20 +179,13 @@ export function validateGraph(
    * the same reader, so a reference cannot mean one thing on screen and another on the
    * GPU. That divergence is B8, and it cost this project a day.
    */
-  const resolution: ParameterResolution = {
-    ...options,
-    nodes:
-      options.nodes ??
-      createNodeReferenceReader({
-        graph,
-        // T903: through the funnel — `op('lantern').par.orbitSpeed` reads a key that only
-        // exists in the node's REFLECTED schema, and a static-schema reader would answer
-        // "no such parameter" for a control the inspector is showing.
-        schemaOf: (node) => effectiveParameterSchema(registry.get(node.type), node.parameters),
-        base: { ...(options.frame === undefined ? {} : { frame: options.frame }),
-                ...(options.channels === undefined ? {} : { channels: options.channels }) },
-      }),
-  };
+  const resolution: ParameterResolution =
+    options.nodes === undefined
+      ? // T1129/§V837: the reader and its base come from the one factory, not from a
+        // `base` spelled out here. The `frame` and `channels` it re-supplies are the ones
+        // `options` already carries, so this spread changes nothing but where they come from.
+        { ...options, ...createParameterReadOptions({ graph, registry, frame: options.frame, channels: options.channels }) }
+      : options;
 
   for (const nodeId of Object.keys(graph.nodes).sort()) {
     const node = graph.nodes[nodeId];
