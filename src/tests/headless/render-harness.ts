@@ -515,6 +515,16 @@ export function registerSyntheticMediaSources(
   }
 }
 
+/**
+ * T1132: the longest the frame loop may hold the event loop before letting the process
+ * answer for itself. See the long note at the yield, in the loop below.
+ *
+ * EXPORTED so `harness-event-loop.test.ts` derives its bound from the promise rather than
+ * restating a number: the gate's claim is "no gap longer than this", and if the value moves
+ * the gate moves with it.
+ */
+export const FRAME_LOOP_YIELD_MS = 1_000;
+
 export async function renderHeadless(request: HeadlessRenderRequest): Promise<HeadlessRenderResult> {
   const settings = request.settings ?? paritySettings();
   const frameCount = request.frames ?? 1;
@@ -725,7 +735,93 @@ export async function renderHeadless(request: HeadlessRenderRequest): Promise<He
 
     const captured: RenderedFrame[] = [];
     const wanted = new Set(capture);
+    let lastYield = Date.now();
     for (let index = 0; index < frameCount; index += 1) {
+      /**
+       * ⚑ T1132/B150 — THE LOOP LETS THE PROCESS BREATHE, AND THAT IS NOT A COURTESY.
+       *
+       * A render with no Analyze node and one captured frame awaits NOTHING between
+       * `driver.step()` calls, so the whole render is ONE uninterrupted block of the
+       * event loop. Measured as a SET, same machine, back to back, E54 at its shipped
+       * sixty-second horizon (3600 frames) — a 100 ms interval watching for its own ticks:
+       *
+       *   yield disabled     wall 36.3s   worst-uninterrupted-block 35.7s
+       *   yield at 5000 ms   wall 33.8s   worst-uninterrupted-block  5.1s
+       *   yield at 1000 ms   wall 25.7s   worst-uninterrupted-block  1.0s
+       *
+       * The render was the block, ALL of it, and the yield bounds it at the constant. The
+       * walls say the yield is not paid for: the shortest run of the three is the one that
+       * yields most often, so the spread is run-to-run noise and the interval was chosen for
+       * margin rather than traded against throughput.
+       *
+       * A Node process that does not turn its loop for half a minute cannot answer
+       * anything, and thirty-six seconds idle is the FLOOR: the quorum file renders this
+       * twelve times while the rest of the suite runs on the other workers, and the block
+       * stretches with the contention. That is exactly why `pnpm test` failed and the file
+       * alone passed. Under Vitest a long enough block is a hard failure with no failing
+       * test:
+       *
+       *  - the worker calls `onTaskUpdate` on the main process, and birpc arms a timer for
+       *    the reply (`birpc`'s `DEFAULT_TIMEOUT = 6e4`, bundled in
+       *    `vitest/dist/chunks/index.*.js`). The reply arrives on time and sits UNREAD in
+       *    the channel, because the loop is blocked. When the block ends Node runs the
+       *    TIMERS phase before the POLL phase, so the expired timeout wins the race against
+       *    a message already in the queue;
+       *  - `@vitest/runner`'s `updateTask` stores that promise in a module-level
+       *    `previousUpdate` from inside a `setTimeout` and does not await it until the NEXT
+       *    task update, so the rejection is unhandled when it lands. Vitest exits non-zero
+       *    reporting `Timeout calling "onTaskUpdate"` while every test in the file passed.
+       *    §B150's shape exactly: a red nobody owns, on the one command that is supposed
+       *    to say everything is fine.
+       *
+       * NOT REACHABLE FROM CONFIG, and this was checked rather than assumed: Vitest 2.1.9's
+       * `createForksRpcOptions` returns `{serialize, deserialize, post, on}` and no
+       * `timeout`, and `createRuntimeRpc` spreads it over options that set none either, so
+       * birpc's 60 000 ms default stands and no vitest setting reaches it.
+       *
+       * NOR WOULD A PROJECT SPLIT, which is the shape this was first reported as: giving
+       * `*.gpu.test.ts` its own project (or its own worker, or `fileParallelism: false`)
+       * only changes which files share a worker. The block is ONE TEST'S ONE RENDER inside
+       * one worker, and that worker is the one that must answer.
+       *
+       * The independent reason, which would stand with no runner at all: Vitest's per-test
+       * timeout is a timer too, so it cannot fire during the block either. A render that
+       * genuinely hangs here is undetectable for as long as it holds the loop.
+       *
+       * TIME, not a frame count: what must stay bounded is the WALL GAP, and it inflates
+       * with machine load, which a frame count cannot see. One second is a sixtieth of the
+       * deadline it protects, and the measurements above say the ~35 extra turns it costs
+       * across a 3600-frame render are free.
+       *
+       * ⚑ A TIMER, AND SPECIFICALLY NOT `setImmediate` — WHICH IS WHERE THIS LANDED FIRST.
+       * Measured on the fixture in `harness-event-loop.test.ts`, which watches one observer
+       * per phase for exactly this reason:
+       *
+       *  - `await Promise.resolve()` is no yield at all. A resolved promise never leaves the
+       *    MICROTASK queue, so it reaches no phase of the loop: messages sat unread for the
+       *    whole 2.2 s render;
+       *  - `setImmediate` resumes in the CHECK phase. The loop passes through POLL on the
+       *    way, so the pending reply IS read — and this looked like a fix — but it never
+       *    reaches the TIMERS phase, and a `setInterval` observer sat silent for the entire
+       *    render underneath it. Nothing that EXPIRES can fire in a phase never reached,
+       *    which is the half that keeps a hung render detectable at all;
+       *  - `setTimeout(…, 0)` resumes in TIMERS, and control returns to the loop at the NEXT
+       *    yield — from inside that phase, so the loop then completes it and goes on through
+       *    poll. Both observers stay inside the bound. That is this line.
+       *
+       * (§V48: between frames is the sanctioned window, which is where the Analyze path
+       * already awaits.)
+       *
+       * NOT COPIED into `renderPlanHeadless` below, deliberately: it has the same unyielding
+       * shape, but its callers render tens of frames, so it has never held the loop long
+       * enough to starve anything and there is nothing to measure. Should one of them grow a
+       * long horizon, this is the line it needs and `harness-event-loop.test.ts` is the gate
+       * it needs pointing at it — not a second copy invented from scratch.
+       */
+      if (Date.now() - lastYield >= FRAME_LOOP_YIELD_MS) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        lastYield = Date.now();
+      }
       steppingFrame = index;
       // T661: the pointer for THIS frame is set before the step that reads it, and
       // what gets recorded is the state the engine actually read — the audio seam's
