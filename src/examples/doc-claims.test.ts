@@ -34,6 +34,12 @@ import { requireExample } from "./runner.ts";
 
 const DELIBERATE: ReadonlyArray<{ doc: string; type: string; reason: string }> = [
   {
+    doc: "E55-Reactor.md",
+    type: "audioIn",
+    reason:
+      "E24's ruling, applied (T1141): a shipped `audioIn` opens the capture device on load, so the microphone is an instruction in the prose — replace `track1`, set `source1` to 1 — and never a node in the file.",
+  },
+  {
     doc: "E51-Chorus.md",
     type: "audioIn",
     reason:

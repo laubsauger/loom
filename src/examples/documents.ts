@@ -47,6 +47,7 @@ export { quorumDocument } from "./documents/quorum.ts";
 export { pulseDocument } from "./documents/pulse.ts";
 export { lanternDocument } from "./documents/lantern.ts";
 export { chorusDocument } from "./documents/chorus.ts";
+export { reactorDocument } from "./documents/reactor.ts";
 import { feedbackEchoDocument } from "./documents/feedback-echo.ts";
 import { reactionDiffusionDocument } from "./documents/reaction-diffusion.ts";
 import { animatedNoiseFieldDocument } from "./documents/animated-noise-field.ts";
@@ -94,6 +95,7 @@ import { quorumDocument } from "./documents/quorum.ts";
 import { pulseDocument } from "./documents/pulse.ts";
 import { lanternDocument } from "./documents/lantern.ts";
 import { chorusDocument } from "./documents/chorus.ts";
+import { reactorDocument } from "./documents/reactor.ts";
 
 export const EXAMPLE_DOCUMENTS: readonly ProjectDocument[] = [
   feedbackEchoDocument,
@@ -143,5 +145,6 @@ export const EXAMPLE_DOCUMENTS: readonly ProjectDocument[] = [
   presenceDocument,
   twoCutsDocument,
   quorumDocument,
+  reactorDocument,
 ];
 

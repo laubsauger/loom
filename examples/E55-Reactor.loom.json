@@ -1,0 +1,560 @@
+{
+  "assets": [],
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e-add-grade": {
+        "id": "e-add-grade",
+        "source": {
+          "nodeId": "add",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "grade",
+          "portId": "input"
+        }
+      },
+      "e-bed-reactor": {
+        "id": "e-bed-reactor",
+        "source": {
+          "nodeId": "bed",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "reactor",
+          "portId": "input"
+        }
+      },
+      "e-blur-gain": {
+        "id": "e-blur-gain",
+        "source": {
+          "nodeId": "blur",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "gain",
+          "portId": "input"
+        }
+      },
+      "e-cut-blur": {
+        "id": "e-cut-blur",
+        "source": {
+          "nodeId": "cut",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "blur",
+          "portId": "input"
+        }
+      },
+      "e-env-highx": {
+        "id": "e-env-highx",
+        "source": {
+          "nodeId": "env",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "highx",
+          "portId": "a"
+        }
+      },
+      "e-env-levelx": {
+        "id": "e-env-levelx",
+        "source": {
+          "nodeId": "env",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "levelx",
+          "portId": "a"
+        }
+      },
+      "e-env-lowx": {
+        "id": "e-env-lowx",
+        "source": {
+          "nodeId": "env",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "lowx",
+          "portId": "a"
+        }
+      },
+      "e-gain-add": {
+        "id": "e-gain-add",
+        "order": 0,
+        "source": {
+          "nodeId": "gain",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "add",
+          "portId": "in2"
+        }
+      },
+      "e-grade-out": {
+        "id": "e-grade-out",
+        "source": {
+          "nodeId": "grade",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      },
+      "e-highx-highb": {
+        "id": "e-highx-highb",
+        "source": {
+          "nodeId": "highx",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "highb",
+          "portId": "a"
+        }
+      },
+      "e-levelx-levelb": {
+        "id": "e-levelx-levelb",
+        "source": {
+          "nodeId": "levelx",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "levelb",
+          "portId": "a"
+        }
+      },
+      "e-lowx-lowb": {
+        "id": "e-lowx-lowb",
+        "source": {
+          "nodeId": "lowx",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "lowb",
+          "portId": "a"
+        }
+      },
+      "e-music-source": {
+        "id": "e-music-source",
+        "source": {
+          "nodeId": "music",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "source",
+          "portId": "in1"
+        }
+      },
+      "e-reactor-add": {
+        "id": "e-reactor-add",
+        "source": {
+          "nodeId": "reactor",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "add",
+          "portId": "in1"
+        }
+      },
+      "e-reactor-cut": {
+        "id": "e-reactor-cut",
+        "source": {
+          "nodeId": "reactor",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "cut",
+          "portId": "input"
+        }
+      },
+      "e-source-env": {
+        "id": "e-source-env",
+        "source": {
+          "nodeId": "source",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "env",
+          "portId": "in"
+        }
+      },
+      "e-track-source": {
+        "id": "e-track-source",
+        "source": {
+          "nodeId": "track",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "source",
+          "portId": "in2"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "add": {
+        "definitionVersion": 1,
+        "id": "add",
+        "label": "add1",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": 600,
+          "y": 0
+        },
+        "type": "add"
+      },
+      "bed": {
+        "definitionVersion": 1,
+        "id": "bed",
+        "label": "bed1",
+        "parameters": {
+          "amp": 0.1,
+          "offset": 0.04,
+          "period": 0.6,
+          "type": "perlin2d"
+        },
+        "position": {
+          "x": -900,
+          "y": 0
+        },
+        "type": "noise"
+      },
+      "blur": {
+        "definitionVersion": 1,
+        "id": "blur",
+        "label": "blur1",
+        "parameters": {
+          "extend": "hold",
+          "filter": "gaussian",
+          "size": 42
+        },
+        "position": {
+          "x": 0,
+          "y": 200
+        },
+        "type": "blur"
+      },
+      "cut": {
+        "definitionVersion": 1,
+        "id": "cut",
+        "label": "cut1",
+        "parameters": {
+          "blacklevel": 0.55,
+          "brightness": 0,
+          "contrast": 1,
+          "gamma1": 1,
+          "invert": 0,
+          "opacity": 1,
+          "whitelevel": 1
+        },
+        "position": {
+          "x": -300,
+          "y": 200
+        },
+        "type": "level"
+      },
+      "env": {
+        "definitionVersion": 1,
+        "id": "env",
+        "label": "env1",
+        "parameters": {
+          "lag": 0.08
+        },
+        "position": {
+          "x": -900,
+          "y": 700
+        },
+        "type": "valueLag"
+      },
+      "gain": {
+        "definitionVersion": 1,
+        "id": "gain",
+        "label": "gain1",
+        "parameters": {
+          "blacklevel": 0,
+          "brightness": 1.4,
+          "contrast": 1,
+          "gamma1": 1,
+          "invert": 0,
+          "opacity": 1,
+          "whitelevel": 1
+        },
+        "position": {
+          "x": 300,
+          "y": 200
+        },
+        "type": "level"
+      },
+      "grade": {
+        "definitionVersion": 1,
+        "id": "grade",
+        "label": "grade1",
+        "parameters": {
+          "hueoffset": 0,
+          "saturation": 1.1,
+          "value": 1
+        },
+        "position": {
+          "x": 900,
+          "y": 0
+        },
+        "type": "hsv"
+      },
+      "highb": {
+        "definitionVersion": 1,
+        "id": "highb",
+        "label": "highb1",
+        "parameters": {
+          "operand": -0.05,
+          "operation": "add"
+        },
+        "position": {
+          "x": -300,
+          "y": 1000
+        },
+        "type": "valueMath"
+      },
+      "highx": {
+        "definitionVersion": 1,
+        "id": "highx",
+        "label": "highx1",
+        "parameters": {
+          "operand": 1.5,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -600,
+          "y": 1000
+        },
+        "type": "valueMath"
+      },
+      "levelb": {
+        "definitionVersion": 1,
+        "id": "levelb",
+        "label": "levelb1",
+        "parameters": {
+          "operand": 0.75,
+          "operation": "add"
+        },
+        "position": {
+          "x": -300,
+          "y": 600
+        },
+        "type": "valueMath"
+      },
+      "levelx": {
+        "definitionVersion": 1,
+        "id": "levelx",
+        "label": "levelx1",
+        "parameters": {
+          "operand": 2.8,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -600,
+          "y": 600
+        },
+        "type": "valueMath"
+      },
+      "lowb": {
+        "definitionVersion": 1,
+        "id": "lowb",
+        "label": "lowb1",
+        "parameters": {
+          "operand": -3,
+          "operation": "add"
+        },
+        "position": {
+          "x": -300,
+          "y": 800
+        },
+        "type": "valueMath"
+      },
+      "lowx": {
+        "definitionVersion": 1,
+        "id": "lowx",
+        "label": "lowx1",
+        "parameters": {
+          "operand": 4.7,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -600,
+          "y": 800
+        },
+        "type": "valueMath"
+      },
+      "music": {
+        "definitionVersion": 1,
+        "id": "music",
+        "label": "music1",
+        "parameters": {
+          "amount": 1,
+          "bpm": 112
+        },
+        "position": {
+          "x": -1500,
+          "y": 600
+        },
+        "type": "audioPattern"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "label": "out1",
+        "parameters": {
+          "toneMap": "filmic"
+        },
+        "position": {
+          "x": 1200,
+          "y": 0
+        },
+        "type": "output"
+      },
+      "reactor": {
+        "definitionVersion": 1,
+        "id": "reactor",
+        "label": "reactor1",
+        "parameters": {
+          "coreColor": [
+            1,
+            0.55,
+            0.2,
+            1
+          ],
+          "coreGain": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('levelb1').chan.level"
+              },
+              "static": {
+                "kind": "static",
+                "value": 1
+              }
+            },
+            "mode": "expression"
+          },
+          "dispersion": 0.35,
+          "distance": 3.2,
+          "divisions": 7,
+          "edgeColor": [
+            0.2,
+            0.5,
+            1,
+            1
+          ],
+          "exposure": 1.9,
+          "facet": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('highb1').chan.highMid"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.7
+              }
+            },
+            "mode": "expression"
+          },
+          "frameColor": [
+            0.35,
+            0.3,
+            0.28,
+            1
+          ],
+          "frameWidth": 0.22,
+          "haze": 0.35,
+          "ior": 1.45,
+          "laserCount": 3,
+          "laserGain": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('lowb1').chan.low"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.6
+              }
+            },
+            "mode": "expression"
+          },
+          "layers": 3,
+          "orbit": 1,
+          "shellGap": 0.16,
+          "source": "struct SharedFrame {\n  time: f32,\n  deltaTime: f32,\n  frameIndex: f32,\n  randomSeed: f32,\n  wallTime: f32,\n  wallDelta: f32,\n  absTime: f32,\n  absFrame: f32,\n  resolution: vec2f,\n  pointer: vec4f,\n};\nstruct Params {\n  layers: f32,        // how many nested shells around the core, 0 to 4\n  divisions: f32,     // cells per shell on the outermost sphere; inner shells carry fewer\n  frameWidth: f32,    // width of the organic frame bars, as a share of a cell\n  shellGap: f32,      // radial spacing between shells, as a share of the outer radius\n  ior: f32,           // index of refraction of the faces — 1 is inert, 1.5 is glass\n  dispersion: f32,    // chromatic split of the reflected core glow per channel\n  facet: f32,         // per-cell tilt of each glass face — the disco glitter\n  coreGain: f32,      // the core's radiance — driven by the music's level\n  coreColor: vec4f,   // the core's hot colour\n  edgeColor: vec4f,   // the core's cool rim colour\n  laserGain: f32,     // brightness of the radial filaments — driven by the kick\n  laserCount: f32,    // how many filaments cut through the shells\n  haze: f32,          // density of the light-catching medium between and around the shells\n  spin: f32,          // shell counter-rotation rate\n  turbulence: f32,    // how hard the core churns\n  frameColor: vec4f,  // the frame's own colour under the core's light\n  orbit: f32,         // camera orbit rate\n  distance: f32,      // camera distance from the core\n  exposure: f32,      // master gain on the whole picture before the bloom\n};\n\n@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n@group(0) @binding(2) var<uniform> frameU: SharedFrame;\n@group(0) @binding(3) var<uniform> params: Params;\n\nconst PI: f32 = 3.14159265;\nconst OUTER_R: f32 = 1.0;\nconst HAZE_R: f32 = 1.9;          // the bound of the exterior haze — beams leak this far\nconst SHELL_HALF: f32 = 0.012;    // half thickness the frame bars stand proud of the face\nconst MAX_EVENTS: i32 = 12;       // outer bound + 4 shells × 2 crossings + core + exit\nconst HAZE_PER_UNIT: f32 = 10.0;  // haze samples per world unit of segment\nconst HAZE_STEPS_MIN: i32 = 4;\nconst HAZE_STEPS_MAX: i32 = 18;\nconst CORE_STEPS: i32 = 20;       // volumetric samples across the core\nconst MAX_LAYERS: i32 = 4;\n\n// ---------------------------------------------------------------- hashing and noise\nfn hash13(p: vec3f) -> f32 {\n  var q = fract(p * 0.1031);\n  q = q + vec3f(dot(q, q.zyx + 31.32));\n  return fract((q.x + q.y) * q.z);\n}\nfn hash33(p: vec3f) -> vec3f {\n  var q = fract(p * vec3f(0.1031, 0.1030, 0.0973));\n  q = q + vec3f(dot(q, q.yxz + 33.33));\n  return fract((q.xxy + q.yxx) * q.zyx);\n}\nfn vnoise(x: vec3f) -> f32 {\n  let i = floor(x); let f = fract(x);\n  let u = f * f * (3.0 - 2.0 * f);\n  let a = mix(hash13(i), hash13(i + vec3f(1.0, 0.0, 0.0)), u.x);\n  let b = mix(hash13(i + vec3f(0.0, 1.0, 0.0)), hash13(i + vec3f(1.0, 1.0, 0.0)), u.x);\n  let c = mix(hash13(i + vec3f(0.0, 0.0, 1.0)), hash13(i + vec3f(1.0, 0.0, 1.0)), u.x);\n  let d = mix(hash13(i + vec3f(0.0, 1.0, 1.0)), hash13(i + vec3f(1.0, 1.0, 1.0)), u.x);\n  return mix(mix(a, b, u.y), mix(c, d, u.y), u.z);\n}\nfn fbm3(x: vec3f) -> f32 {\n  var v = 0.0; var a = 0.5; var q = x;\n  for (var k: i32 = 0; k < 3; k = k + 1) {\n    v = v + a * vnoise(q);\n    q = q * 2.07 + vec3f(11.1, 3.3, 7.7);\n    a = a * 0.5;\n  }\n  return v;\n}\n\nfn rotY(v: vec3f, a: f32) -> vec3f {\n  let c = cos(a); let s = sin(a);\n  return vec3f(v.x * c - v.z * s, v.y, v.x * s + v.z * c);\n}\nfn rotX(v: vec3f, a: f32) -> vec3f {\n  let c = cos(a); let s = sin(a);\n  return vec3f(v.x, v.y * c - v.z * s, v.y * s + v.z * c);\n}\n\n// ---------------------------------------------------------------- the cell partition\nstruct Cell {\n  edge: f32,     // distance-like measure to the nearest cell border (F2 - F1)\n  id: vec3f,     // the owning feature point — stable per cell, the facet's random seed\n  across: vec3f, // direction from the nearest feature point to the second — the border normal\n};\n\n/* 3D Worley over the direction scaled by freq: organic polygonal cells on the sphere with no\n   pole, no seam, and a rounded border profile for free (F2 - F1 grows away from the border).\n   27 cells; the jitter is unconstrained so F2 is honest. */\nfn cellEdge(d: vec3f, freq: f32, salt: f32) -> Cell {\n  let p = d * freq + vec3f(salt * 7.31, salt * 3.17, salt * 5.53);\n  let i = floor(p);\n  var f1 = 8.0; var f2 = 8.0;\n  var p1 = vec3f(0.0); var p2 = vec3f(0.0);\n  for (var z: i32 = -1; z <= 1; z = z + 1) {\n    for (var y: i32 = -1; y <= 1; y = y + 1) {\n      for (var x: i32 = -1; x <= 1; x = x + 1) {\n        let g = i + vec3f(f32(x), f32(y), f32(z));\n        let fp = g + hash33(g);\n        let dd = dot(fp - p, fp - p);\n        if (dd < f1) {\n          f2 = f1; p2 = p1;\n          f1 = dd; p1 = fp;\n        } else if (dd < f2) {\n          f2 = dd; p2 = fp;\n        }\n      }\n    }\n  }\n  var out: Cell;\n  out.edge = sqrt(f2) - sqrt(f1);\n  out.id = p1;\n  out.across = normalize(p2 - p1 + vec3f(1.0e-5, 0.0, 0.0));\n  return out;\n}\n\n// ---------------------------------------------------------------- the shells\nfn layerCount() -> i32 {\n  return clamp(i32(round(params.layers)), 0, MAX_LAYERS);\n}\nfn shellRadius(k: i32) -> f32 {\n  return OUTER_R - f32(k) * params.shellGap * OUTER_R;\n}\n/* The core's radius: just inside the innermost shell, or a bare core with no shells. */\nfn coreRadius() -> f32 {\n  let n = layerCount();\n  return select(0.72, shellRadius(n - 1) - 0.55 * params.shellGap, n > 0);\n}\nfn shellFreq(k: i32) -> f32 {\n  return max(1.0, params.divisions * (1.0 - 0.22 * f32(k)));\n}\n/* Each shell turns at its own rate and alternates direction, so the lattices slide over\n   each other and the beams they gate never line up twice. */\nfn shellDir(p: vec3f, k: i32) -> vec3f {\n  let t = frameU.absTime * params.spin;\n  let sgn = select(1.0, -1.0, (k % 2) == 1);\n  let d = normalize(p);\n  return rotX(rotY(d, sgn * t * (0.11 + 0.05 * f32(k))), 0.35 * f32(k) + 0.2 * sgn * t * 0.37);\n}\n/* The frame bars in this shell's own scale: bar half-width as a share of a cell. */\nfn barWidth(k: i32) -> f32 {\n  return params.frameWidth * 0.5;\n}\n/* 1 through a face, 0 under a bar, soft over 'soft' of a cell — the light gate. The medium\n   reads it wider than the surface does: a shaft's edge blurs with distance from the bar. */\nfn gate(p: vec3f, k: i32, soft: f32) -> f32 {\n  let c = cellEdge(shellDir(p, k), shellFreq(k), f32(k));\n  let w = barWidth(k);\n  return smoothstep(w, w + soft, c.edge);\n}\n\n/* Light arriving at x from the core, gated by every shell between x and the origin. */\nfn coreLightAt(x: vec3f) -> f32 {\n  let r = length(x);\n  var vis = 1.0;\n  let n = layerCount();\n  for (var k: i32 = 0; k < MAX_LAYERS; k = k + 1) {\n    if (k >= n) { break; }\n    let rk = shellRadius(k);\n    if (rk < r) { vis = vis * mix(0.03, 1.0, gate(x, k, 0.06 + 0.22 * (r - rk))); }\n  }\n  return params.coreGain * vis / (r * r + 0.04);\n}\n\n/* The radial filaments: a coarse Worley on direction; borders become sheets from the core. */\nfn laser(d: vec3f) -> f32 {\n  let t = frameU.absTime;\n  let dd = rotY(rotX(d, 0.31 * t), -0.23 * t);\n  let c = cellEdge(dd, max(1.0, params.laserCount), 9.0);\n  return params.laserGain * smoothstep(0.09, 0.0, c.edge);\n}\n\n/* Colour of the core by normalised radius: white-hot centre, hot body, cool rim. */\nfn coreTint(rn: f32) -> vec3f {\n  let hot = mix(vec3f(1.0, 0.98, 0.92), params.coreColor.rgb, smoothstep(0.05, 0.45, rn));\n  return mix(hot, params.edgeColor.rgb, smoothstep(0.55, 1.0, rn));\n}\n\n/* The core's glow seen along a ray that does NOT enter it — what a facet reflects. */\nfn coreGlow(o: vec3f, d: vec3f) -> vec3f {\n  let b = dot(-o, d);\n  let h2 = dot(o, o) - b * b;\n  let ahead = smoothstep(-0.3, 0.3, b);\n  let g = params.coreGain * ahead / (h2 * 6.0 + 0.15);\n  let rn = clamp(sqrt(max(h2, 0.0)) / coreRadius(), 0.0, 1.0);\n  return g * 0.9 * coreTint(rn) + laser(normalize(o + d * max(b, 0.0))) * 0.08 * params.coreColor.rgb;\n}\n\nfn fresnel(cosI: f32, eta: f32) -> f32 {\n  let r0 = (eta - 1.0) / (eta + 1.0);\n  let f0 = r0 * r0;\n  return f0 + (1.0 - f0) * pow(1.0 - cosI, 5.0);\n}\n\n/* Nearest forward crossing with a sphere of radius r; -1 when there is none. */\nfn sphereHit(o: vec3f, d: vec3f, r: f32) -> f32 {\n  let b = dot(o, d);\n  let c = dot(o, o) - r * r;\n  let disc = b * b - c;\n  if (disc < 0.0) { return -1.0; }\n  let s = sqrt(disc);\n  let t0 = -b - s;\n  let t1 = -b + s;\n  if (t0 > 1.0e-4) { return t0; }\n  if (t1 > 1.0e-4) { return t1; }\n  return -1.0;\n}\n\n// ---------------------------------------------------------------- the background\nfn background(d: vec3f) -> vec3f {\n  let up = d.y * 0.5 + 0.5;\n  var sky = mix(vec3f(0.006, 0.007, 0.014), vec3f(0.012, 0.02, 0.05), up);\n  let neb = fbm3(d * 2.2 + vec3f(3.0, 1.0, 0.0));\n  sky = sky + vec3f(0.02, 0.012, 0.04) * smoothstep(0.55, 0.8, neb);\n  let cell = floor(d * 90.0);\n  let star = hash13(cell);\n  let near = length(fract(d * 90.0) - 0.5);\n  sky = sky + vec3f(0.6, 0.7, 0.9) * smoothstep(0.996, 1.0, star) * smoothstep(0.25, 0.0, near);\n  return sky;\n}\n\n// ---------------------------------------------------------------- integrators\n/* Haze along [o + d·t0, o + d·t1]: core light × density, gated by the shells. */\nfn hazeSegment(o: vec3f, d: vec3f, t0: f32, t1: f32, jitter: f32) -> vec3f {\n  let len = t1 - t0;\n  if (len <= 0.0) { return vec3f(0.0); }\n  // Samples per unit length, not per segment: a grazing ray's long walk through the outer\n  // medium was aliasing the gate into shards at a fixed count. The half-step jitter turns\n  // what is left into fine static grain rather than banding.\n  let steps = clamp(i32(len * HAZE_PER_UNIT), HAZE_STEPS_MIN, HAZE_STEPS_MAX);\n  let dt = len / f32(steps);\n  var acc = vec3f(0.0);\n  for (var s: i32 = 0; s < HAZE_STEPS_MAX; s = s + 1) {\n    if (s >= steps) { break; }\n    let t = t0 + (f32(s) + 0.25 + 0.5 * jitter) * dt;\n    let x = o + d * t;\n    let light = coreLightAt(x);\n    let r = length(x);\n    // Thin inside the ball so the shells read; the medium is for the beams OUTSIDE.\n    let dens = params.haze * mix(0.22, 1.0, smoothstep(0.75, 1.05, r)) * smoothstep(HAZE_R, OUTER_R * 0.8, r);\n    let beam = 1.0 + laser(normalize(x)) * 4.0;\n    let tint = mix(params.coreColor.rgb, params.edgeColor.rgb, smoothstep(0.9, 1.9, r));\n    acc = acc + dens * light * beam * tint * dt;\n  }\n  return acc;\n}\n\n/* The emissive core from t0 to t1 along the ray. Returns rgb and the surviving throughput. */\nfn coreSegment(o: vec3f, d: vec3f, t0: f32, t1: f32, jitter: f32) -> vec4f {\n  let len = t1 - t0;\n  if (len <= 0.0) { return vec4f(0.0, 0.0, 0.0, 1.0); }\n  let dt = len / f32(CORE_STEPS);\n  let rc = coreRadius();\n  let tm = frameU.absTime;\n  var acc = vec3f(0.0);\n  var tr = 1.0;\n  for (var s: i32 = 0; s < CORE_STEPS; s = s + 1) {\n    let t = t0 + (f32(s) + jitter) * dt;\n    let x = o + d * t;\n    let rn = clamp(length(x) / rc, 0.0, 1.0);\n    let shell = 1.0 - rn * rn;\n    let churn = fbm3(x * (3.5 / rc) + vec3f(0.0, tm * 0.35, tm * 0.21) + vec3f(0.3 * sin(tm * 0.7)));\n    let dens = shell * (0.35 + params.turbulence * (churn - 0.3) * 2.2);\n    let fil = laser(normalize(x)) * smoothstep(0.0, 0.25, rn) * (1.0 - rn);\n    let emit = params.coreGain * (max(dens, 0.0) * 2.4 + fil * 1.6) * coreTint(rn)\n             + params.coreGain * 6.0 * smoothstep(0.55, 0.0, rn) * vec3f(1.0, 0.97, 0.9);\n    acc = acc + tr * emit * dt;\n    tr = tr * exp(-max(dens, 0.0) * 0.9 * dt);\n  }\n  return vec4f(acc, tr);\n}\n\n/* The frame under the core's light: dark metal, rim-lit from behind, edges glowing where\n   the bar thins toward a face — the light bleeding through the frame rather than around it. */\nfn shadeFrame(p: vec3f, n: vec3f, d: vec3f, k: i32, edge01: f32) -> vec3f {\n  let toCore = normalize(-p);\n  let light = coreLightAt(p * 1.02);\n  let diff = max(dot(n, toCore), 0.0);\n  let back = max(dot(-n, toCore), 0.0);\n  let rim = pow(1.0 - max(dot(n, -d), 0.0), 3.0);\n  let spec = pow(max(dot(reflect(d, n), toCore), 0.0), 24.0);\n  let env = background(reflect(d, n)) * 2.0;\n  let base = params.frameColor.rgb;\n  let lit = base * (0.04 + 0.9 * diff * light) * params.coreColor.rgb\n          + base * 0.25 * back * light * params.edgeColor.rgb\n          + spec * light * 0.6 * mix(params.coreColor.rgb, vec3f(1.0), 0.5)\n          + rim * light * 0.35 * params.edgeColor.rgb\n          + env * (0.15 + 0.5 * rim);\n  let bleed = smoothstep(0.55, 1.0, edge01) * light * 0.5 * params.coreColor.rgb;\n  return lit + bleed;\n}\n\n// ---------------------------------------------------------------- the walk\nfn trace(ro: vec3f, rd: vec3f, jitter: f32) -> vec3f {\n  var o = ro;\n  var d = rd;\n  var col = vec3f(0.0);\n  var tp = vec3f(1.0);\n  let n = layerCount();\n  let rc = coreRadius();\n  let eta = max(params.ior, 1.0);\n\n  // Before the haze bound there is nothing but background.\n  let tb = sphereHit(o, d, HAZE_R);\n  if (tb < 0.0) { return background(d); }\n  o = o + d * tb;\n\n  for (var e: i32 = 0; e < MAX_EVENTS; e = e + 1) {\n    let r = length(o);\n    if (r > HAZE_R + 1.0e-3) { break; }\n\n    // The next crossing: the nearest of every shell, the core boundary and the haze bound.\n    var tNext = sphereHit(o, d, HAZE_R);\n    var kind = -1;                       // -1 exit, 0..3 shell k, 9 core\n    for (var k: i32 = 0; k < MAX_LAYERS; k = k + 1) {\n      if (k >= n) { break; }\n      let tk = sphereHit(o, d, shellRadius(k));\n      if (tk > 0.0 && (tNext < 0.0 || tk < tNext)) { tNext = tk; kind = k; }\n    }\n    let tc = sphereHit(o, d, rc);\n    if (tc > 0.0 && (tNext < 0.0 || tc < tNext)) { tNext = tc; kind = 9; }\n    if (tNext < 0.0) { break; }\n\n    if (r < rc - 1.0e-4) {\n      // Inside the core: march the emissive volume to its far boundary.\n      let seg = coreSegment(o, d, 0.0, tNext, jitter);\n      col = col + tp * seg.rgb;\n      tp = tp * seg.a;\n      o = o + d * (tNext + 2.0e-4);\n      continue;\n    }\n\n    // Haze up to the crossing.\n    col = col + tp * hazeSegment(o, d, 0.0, tNext, jitter);\n    let p = o + d * tNext;\n\n    if (kind < 0) { col = col + tp * background(d); break; }\n    if (kind == 9) { o = p + d * 2.0e-4; continue; }\n\n    // A shell surface. Frame bar, or glass face?\n    let k = kind;\n    let cell = cellEdge(shellDir(p, k), shellFreq(k), f32(k));\n    let w = barWidth(k);\n    let sn = normalize(p);\n    let entering = dot(d, sn) < 0.0;\n    let nOut = select(-sn, sn, entering);\n\n    if (cell.edge < w) {\n      // Rounded bar: the sphere normal tilted toward the border by how close we are to it.\n      let across = normalize(cell.across - sn * dot(cell.across, sn) + vec3f(1.0e-5));\n      let prof = (1.0 - cell.edge / max(w, 1.0e-4));\n      let nb = normalize(nOut + across * prof * prof * 0.9);\n      col = col + tp * shadeFrame(p, nb, d, k, prof);\n      tp = vec3f(0.0);\n      break;\n    }\n\n    // Glass face: a per-cell facet, Fresnel-split.\n    let tilt = (hash33(cell.id) - 0.5) * 2.0;\n    let nf = normalize(nOut + (tilt - nOut * dot(tilt, nOut)) * params.facet * 0.35);\n    let cosI = clamp(dot(-d, nf), 0.0, 1.0);\n    let etaHere = select(1.0 / eta, eta, entering);\n    let F = fresnel(cosI, eta);\n    let refl = reflect(d, nf);\n    // The reflected share reads the core's glow, per channel offset by dispersion.\n    let dsp = params.dispersion * 0.6;\n    let gR = coreGlow(p, normalize(refl + across3(nf) * dsp)).r;\n    let gG = coreGlow(p, refl).g;\n    let gB = coreGlow(p, normalize(refl - across3(nf) * dsp)).b;\n    col = col + tp * F * (vec3f(gR, gG, gB) + background(refl) * 0.6);\n    // The transmitted share bends and walks on; total internal reflection turns it back.\n    let k2 = 1.0 - etaHere * etaHere * (1.0 - cosI * cosI);\n    var t = refl;\n    if (k2 >= 0.0) { t = normalize(etaHere * d + (etaHere * cosI - sqrt(k2)) * nf); }\n    tp = tp * (1.0 - F) * vec3f(0.93, 0.96, 0.97);\n    d = t;\n    o = p + d * 3.0e-4;\n    if (max(max(tp.r, tp.g), tp.b) < 0.01) { break; }\n  }\n  return col;\n}\n\n/* A tangent-ish direction to offset the dispersion samples along. */\nfn across3(n: vec3f) -> vec3f {\n  let a = select(vec3f(1.0, 0.0, 0.0), vec3f(0.0, 1.0, 0.0), abs(n.x) > 0.9);\n  return normalize(cross(n, a));\n}\n\n@fragment\nfn fs(@location(0) uv: vec2f) -> @location(0) vec4f {\n  let aspect = frameU.resolution.x / max(frameU.resolution.y, 1.0);\n  let q = (uv - vec2f(0.5)) * vec2f(aspect, -1.0) * 2.0;\n  let t = frameU.absTime;\n\n  // The orbit: a slow circle with a breathing elevation, the ball a touch above centre.\n  let a = t * params.orbit * 0.12 + 0.6;\n  let el = 0.22 + 0.10 * sin(t * 0.071);\n  let dist = max(params.distance, 1.2);\n  let eye = vec3f(dist * cos(a) * cos(el), dist * sin(el), dist * sin(a) * cos(el));\n  let aim = vec3f(0.0, -0.08, 0.0);\n  let fwd = normalize(aim - eye);\n  let right = normalize(cross(fwd, vec3f(0.0, 1.0, 0.0)));\n  let upv = cross(right, fwd);\n  let focal = 1.9;\n  let rd = normalize(fwd * focal + right * q.x + upv * q.y);\n\n  // Fixed per-pixel dither for the volume integrals: grain, never flicker.\n  let px = floor(uv * frameU.resolution);\n  let jitter = hash13(vec3f(px, 1.7));\n\n  var col = trace(eye, rd, jitter) * params.exposure;\n  // A gentle vignette keeps the eye on the ball.\n  let vig = smoothstep(1.9, 0.4, length(q * vec2f(0.8, 1.0)));\n  col = col * mix(0.55, 1.0, vig);\n  // The input is read so the binding stays live; it contributes a whisper of its texture.\n  let bed = textureSampleLevel(inputTexture, inputSampler, uv, 0.0).rgb;\n  col = col + bed * 0.02;\n  return vec4f(col, 1.0);\n}\n",
+          "spin": 1,
+          "turbulence": 0.8
+        },
+        "position": {
+          "x": -600,
+          "y": 0
+        },
+        "type": "customWgsl"
+      },
+      "source": {
+        "definitionVersion": 1,
+        "id": "source",
+        "label": "source1",
+        "parameters": {
+          "index": 0
+        },
+        "position": {
+          "x": -1200,
+          "y": 700
+        },
+        "type": "valueSwitch"
+      },
+      "track": {
+        "definitionVersion": 1,
+        "id": "track",
+        "label": "track1",
+        "parameters": {
+          "cue": false,
+          "cuePoint": 0,
+          "extend": "loop",
+          "file": "",
+          "monitor": true,
+          "play": true,
+          "playMode": "freeRun",
+          "speed": 1,
+          "trimEnd": 0,
+          "trimStart": 0,
+          "volume": 1
+        },
+        "position": {
+          "x": -1500,
+          "y": 800
+        },
+        "type": "audioFileIn"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E55 Reactor",
+  "projectId": "example-e55-reactor",
+  "schemaVersion": 3,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 55,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}

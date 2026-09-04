@@ -229,6 +229,13 @@
     "cardFloor": 0,
     "phrase": 0.02623
   },
+  "E55-Reactor.loom.json": {
+    "motion": 0.01541,
+    "range": 0.3352,
+    "f0max": 0.969,
+    "cardFloor": 0.0095,
+    "phrase": 0.01478
+  },
   "E6-Displacement-Stack.loom.json": {
     "motion": 0.28359,
     "range": 0.7293,
