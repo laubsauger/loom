@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -28,11 +29,21 @@ import {
  *
  * ## What it forbids, precisely
  *
- * The literal `pnpm <script>` form, in any file under `src/` except this one and the module
- * that owns it — including the retired name, so a stale sentence is caught as loudly as a
- * duplicated fresh one. A bare `"mcp:serve"` (the alias constant in `client-config.ts`,
- * which exists so a test can assert `package.json` still carries the alias) is not a command
- * a user is told to type, and is deliberately not matched.
+ * The literal `pnpm <script>` form inside a STRING OR TEMPLATE LITERAL, in any file under
+ * `src/` except this one and the module that owns it — including the retired name, so a
+ * stale sentence is caught as loudly as a duplicated fresh one.
+ *
+ * String literals and not raw text, because the fact being defended is about what the
+ * PRODUCT SAYS. A docblock naming the command is documentation that can go stale; a string
+ * literal naming it is a second command in the user's face, and only one of those is the
+ * failure this gate exists for. Parsed rather than pattern-matched, because "is this inside
+ * a comment" is not a question a regex answers — the same reason `copy-guard.test.ts` walks
+ * the AST. A template literal that INTERPOLATES the constant carries none of its text and
+ * so passes, which is exactly the fix this gate is asking for.
+ *
+ * A bare `"mcp:serve"` (the alias constant in `client-config.ts`, which exists so a test can
+ * assert `package.json` still carries the alias) is not a command a user is told to type,
+ * and is deliberately not matched.
  */
 
 const SRC = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -57,14 +68,33 @@ function sourceFiles(dir: string): string[] {
   return found;
 }
 
+/** Every string and template literal in a file, comments and identifiers excluded. */
+function literalText(path: string): string[] {
+  const source = ts.createSourceFile(path, readFileSync(path, "utf8"), ts.ScriptTarget.ES2022, true);
+  const found: string[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isStringLiteralLike(node)) found.push(node.text);
+    else if (ts.isTemplateExpression(node)) {
+      // The literal SPANS only. An interpolated `${DEVICE_HELPER_COMMAND}` contributes no
+      // text, which is the whole point: reading the constant is the passing answer.
+      found.push(node.head.text, ...node.templateSpans.map((span) => span.literal.text));
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return found;
+}
+
 describe("the helper command has exactly one spelling (T1110)", () => {
-  it("is not written out anywhere else under src/", () => {
+  it("is not written into a string anywhere else under src/", () => {
     const offenders: string[] = [];
     for (const path of sourceFiles(SRC)) {
       if (ALLOWED.has(path)) continue;
-      const text = readFileSync(path, "utf8");
+      const strings = literalText(path);
       for (const command of [DEVICE_HELPER_COMMAND, RETIRED_COMMAND]) {
-        if (text.includes(command)) offenders.push(`${relative(SRC, path)} spells "${command}"`);
+        if (strings.some((text) => text.includes(command))) {
+          offenders.push(`${relative(SRC, path)} spells "${command}"`);
+        }
       }
     }
     expect(

@@ -13,7 +13,7 @@ import {
   type BridgeSocketFactory,
   type PairingMemory,
 } from "@devices/transport/bridge-socket.ts";
-import { DEVICE_HELPER_COMMAND } from "@devices/helper.ts";
+import { DEVICE_HELPER_COMMAND, DEVICE_HELPER_NAME } from "@devices/helper.ts";
 import { TRANSPORT_LABEL, type McpTransportRegistry } from "./connections.ts";
 import { toolListings } from "./published-tools.ts";
 
@@ -235,6 +235,38 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
         // never interpolated into anything a model reads (§V37).
         const said = message["reason"];
         const wasRemembered = attemptWasRemembered;
+        if (message["devicesOnly"] === true) {
+          /*
+           * T1111 — THE ONE REFUSAL THAT IS ALSO A CONFIRMATION.
+           *
+           * A helper started with `--devices-only` has no agent door, and it sets this flag
+           * only AFTER the pairing code matched (`bridge-host.ts` checks in that order, on
+           * purpose). So the code is proved, and T925's rule — never remember an unconfirmed
+           * code — is satisfied by the same gate a successful attach passes.
+           *
+           * Remembering it is the whole point: this row is the ONLY pairing surface in the
+           * product, and the DEVICE client reads its code from this memory. Falling into the
+           * branch below would `memory.forget()` a code the human had just typed correctly,
+           * and a helper started FOR devices would be unpairable from the one place a person
+           * can pair it. The state is `disconnected`, not `error`, because nothing failed:
+           * there are no agent tools here, and the field stays open for another helper.
+           */
+          if (attempting !== null) memory.write(attempting);
+          wanted = false;
+          attached = false;
+          attempting = null;
+          const live = socket;
+          socket = null;
+          if (live !== null) {
+            live.onclose = null;
+            live.close();
+          }
+          publish(
+            "disconnected",
+            `Paired with ${DEVICE_HELPER_NAME}, which is running for DEVICES ONLY: this tab can now reach OSC, a laser DAC and the Vision worker with that code. It serves no agent tools — restart it as \`${DEVICE_HELPER_COMMAND}\` if you also want an MCP client to drive this tab. (The helper said: ${typeof said === "string" ? said : "no reason given"})`,
+          );
+          return;
+        }
         wanted = false;
         attached = false;
         // A refused code is forgotten, and NOT retried. Codes are minted per process, so a

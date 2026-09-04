@@ -15,9 +15,9 @@ import { nodeGpuHost, probeDawn } from "../runtime/backend/vgpu/node-gpu-host.ts
 import { createAgentPorts } from "../runtime/export/agent-ports.ts";
 import { createMcpConnection, type McpConnection } from "./server.ts";
 import { createBridgeHost, type BridgeStatus } from "./bridge-host.ts";
-import { createDeviceHub, nodeUdpSocketFactory, type UdpSocketFactory } from "@devices/device-hub.ts";
-import { createLaserHost, nodeLaserDiscovery, nodeTcpSocketFactory } from "@devices/laser-host.ts";
-import { createVisionHost, nodeVisionStart } from "@devices/vision-host.ts";
+import { createDeviceDoors, type DeviceDoors } from "@devices/doors.ts";
+import type { UdpSocketFactory } from "@devices/device-hub.ts";
+import { HELPER_DEVICES_ONLY_FLAG } from "@devices/helper.ts";
 
 /**
  * The out-of-process MCP server (T290, T294): a HEADLESS Loom on stdio — store,
@@ -58,6 +58,14 @@ import { createVisionHost, nodeVisionStart } from "@devices/vision-host.ts";
  * With nothing attached this serves headless exactly as before — that path works and the
  * tests depend on it — but says so in the `instructions`, in every tool description and in
  * every tool result, so "the agent built a graph I cannot see" is never silent (§V338).
+ *
+ * ## TWO ENTRY POINTS LIVE HERE, AND ONE OF THEM IS NOT AN MCP SERVER (T1111)
+ *
+ * `serveStdio()` is the above. `serveDevices()` — `pnpm helper --devices-only` — is the
+ * loopback DEVICE bridge and nothing else: no store, no bus, no catalogue, no tool surface,
+ * no GPU and no JSON-RPC on stdin. It is here rather than under `src/devices/` because the
+ * listener it needs is `bridge-host.ts` and §V901 runs mcp → devices, never the reverse;
+ * `createDeviceHelper` below carries that trade in full.
  */
 
 /** Mirrors the app's new-project defaults until documents carry settings (T272). */
@@ -244,61 +252,32 @@ export function createHeadlessMcpServer(options: HeadlessMcpServerOptions): Head
   // eslint-disable-next-line prefer-const
   let connection: McpConnection;
   /*
-   * T942 tier 3: the DEVICE hub, built beside the bridge rather than as a second server.
+   * T942/T950/T1029 — the three doors a page cannot open for itself, built beside the bridge
+   * rather than as second servers, and built by `@devices/doors.ts` so the devices-only
+   * helper (T1111) and this one cannot end up with different sets of them.
    *
-   * It binds NOTHING on construction — a UDP socket opens only when an attached page asks
-   * for one by port, so a running MCP server is not a listening OSC server until somebody
-   * says so. That is the same "nothing dials on load" consent the page attachment has.
+   * They bind, dial and spawn NOTHING on construction: a running MCP server is not a
+   * listening OSC server, is not connected to a DAC and is not holding the camera until an
+   * attached page says so. Same "nothing dials on load" consent the page attachment has.
    */
-  const devices =
+  const doors: DeviceDoors | null =
     options.bridge === undefined
       ? null
-      : createDeviceHub({
-          socketFactory: options.bridge.udpSocketFactory ?? nodeUdpSocketFactory(),
-          ...(options.bridge.deviceFlushMs === undefined ? {} : { flushMs: options.bridge.deviceFlushMs }),
-          ...(options.bridge.deviceNow === undefined ? {} : { now: options.bridge.deviceNow }),
+      : createDeviceDoors({
+          ...(options.bridge.udpSocketFactory === undefined
+            ? {}
+            : { udpSocketFactory: options.bridge.udpSocketFactory }),
+          ...(options.bridge.deviceFlushMs === undefined ? {} : { deviceFlushMs: options.bridge.deviceFlushMs }),
+          ...(options.bridge.deviceNow === undefined ? {} : { deviceNow: options.bridge.deviceNow }),
+          ...(options.bridge.laser === undefined ? {} : { laser: options.bridge.laser }),
+          ...(options.bridge.vision === undefined ? {} : { vision: options.bridge.vision }),
         });
-  /*
-   * T950 — the laser host, built beside the device hub with the same posture: it binds
-   * and dials NOTHING on construction. A TCP connection to a DAC opens only when an
-   * attached page names a host and the vet passes; the discovery socket exists only for
-   * the seconds of a connect attempt. The dead-man runs on THIS process's clock — the
-   * failsafe on the far side of the page (G2) — and the bridge disposes the whole thing
-   * when the device client goes away, which is the page-death blanking path.
-   */
-  const laser =
-    options.bridge === undefined
-      ? null
-      : (options.bridge.laser ??
-        createLaserHost({
-          sockets: nodeTcpSocketFactory(),
-          discovery: nodeLaserDiscovery(),
-          clock: {
-            now: () => Date.now(),
-            every: (ms, tick) => {
-              const handle = setInterval(tick, ms);
-              return () => clearInterval(handle);
-            },
-          },
-        }));
-  /*
-   * T1029 — the vision door: person segmentation through the OS's own Vision framework.
-   * Same posture as the laser host: NOTHING runs on construction — the Swift worker is
-   * compiled (once per machine, cached by source hash) and spawned only when an attached
-   * page asks for its first mask, and `releaseDevice` disposes it with the client.
-   */
-  const vision =
-    options.bridge === undefined
-      ? null
-      : (options.bridge.vision ?? createVisionHost({ start: nodeVisionStart() }));
   const bridge =
     options.bridge === undefined
       ? null
       : createBridgeHost({
           headless: surface,
-          ...(devices === null ? {} : { devices }),
-          ...(laser === null ? {} : { laser }),
-          ...(vision === null ? {} : { vision }),
+          ...(doors === null ? {} : { devices: doors.devices, laser: doors.laser, vision: doors.vision }),
           ...(options.bridge.port === undefined ? {} : { port: options.bridge.port }),
           ...(options.bridge.handoffDir === undefined ? {} : { handoffDir: options.bridge.handoffDir }),
           ...(options.bridge.proxyRetryMs === undefined ? {} : { proxyRetryMs: options.bridge.proxyRetryMs }),
@@ -483,7 +462,122 @@ export function serveStdio(): void {
   });
 }
 
+/**
+ * THE DEVICE DOOR, OPENED ALONE (T1111).
+ *
+ * ## The owner's sentence, as a function
+ *
+ * *"why would that depend on the mcp server?"* — asked about the Person Mask node. T1103
+ * proved it does not and made the folder, the refusals and the Connections panel say so.
+ * This is the last of it: `pnpm helper --devices-only` starts the loopback listener with the
+ * three device doors and NOTHING else. No store, no bus, no node catalogue, no agent tool
+ * surface, no Dawn, and no JSON-RPC on stdin. `bridge-host.ts` refuses `attach` and
+ * `proxyAttach` by name, so there is no agent server here in any sense a person or a
+ * process could observe.
+ *
+ * ## What it deliberately shares with the full helper
+ *
+ * The LISTENER, the PAIRING CODE and the device doors — one implementation each. The
+ * Connections row is the only pairing surface in the product and the device role rides its
+ * code, so a devices-only helper that paired differently would need a second ceremony to
+ * explain. It pairs identically; what differs is what the other two roles answer.
+ *
+ * ## Why this is a mode and not a second file under `src/devices/`
+ *
+ * §V901: nothing under `src/devices/` may import `src/mcp/`, and the listener lives in
+ * `bridge-host.ts` because it multiplexes the two MCP roles. Making the listener itself
+ * role-agnostic and moving it down is a REWRITE of a 1100-line file against two large
+ * suites, and it buys no fact the user can observe — the user types a command and gets a
+ * device bridge either way. It would buy a path that no longer says `mcp`, and structural
+ * proof that the device role cannot reach an `McpToolSource`. That trade is named here so
+ * the next reader does not have to rediscover it.
+ */
+export interface DeviceHelperOptions {
+  /** `0` for an OS-assigned port (tests). Defaults to the shared constant. */
+  readonly port?: number;
+  /** Where a HUMAN reads the pairing code and every refusal (§V233/§V288). */
+  readonly announce?: (message: string) => void;
+  /** The three doors. Defaulted to the real ones; injected whole by a gate. */
+  readonly doors?: DeviceDoors;
+  /** Injectable so a test never writes into the developer's real home directory. */
+  readonly handoffDir?: string;
+  /** How often a helper that lost the bind retries it. Injectable so a test does not wait. */
+  readonly retryMs?: number;
+}
+
+export interface DeviceHelper {
+  /**
+   * What the listener is doing, for whoever is printing it (§V338). The same `BridgeStatus`
+   * the MCP path reports, because it is the same listener — `detail` names the mode.
+   */
+  status(): BridgeStatus;
+  /** The pairing code a human types into Connections. */
+  readonly pairingCode: string;
+  dispose(): void;
+}
+
+export function createDeviceHelper(options: DeviceHelperOptions = {}): DeviceHelper {
+  const announce = options.announce ?? ((): void => undefined);
+  const doors = options.doors ?? createDeviceDoors();
+  const bridge = createBridgeHost({
+    // NO `headless` — that absence IS the mode, and it is what makes the agent doors
+    // unserveable rather than merely closed. See `bridge-host.ts`.
+    devices: doors.devices,
+    laser: doors.laser,
+    vision: doors.vision,
+    ...(options.port === undefined ? {} : { port: options.port }),
+    ...(options.handoffDir === undefined ? {} : { handoffDir: options.handoffDir }),
+    ...(options.retryMs === undefined ? {} : { proxyRetryMs: options.retryMs }),
+    onNotice: (report) => {
+      // One audience here, not two: there is no MCP client to notify, so the operator's
+      // terminal is the whole channel and the pairing code has to reach it (§V233).
+      announce(report.message);
+    },
+  });
+  return {
+    status: () => bridge.status(),
+    pairingCode: bridge.pairingCode,
+    dispose() {
+      // Order matters: the bridge fires the laser's dead-man through `releaseDevice` while
+      // the host is still alive, and only then are the doors torn down.
+      bridge.dispose();
+      doors.dispose();
+    },
+  };
+}
+
+/** `pnpm helper --devices-only`: the device bridge, and a process that stays up for it. */
+export function serveDevices(): void {
+  const helper = createDeviceHelper({
+    announce: (message) => {
+      // stderr, exactly as `serveStdio` uses it, so there is one announce channel and one
+      // shape of line in the two modes. Nothing writes stdout here — there is no protocol
+      // on it — but a human piping the output should still find the code where it always is.
+      process.stderr.write(`[loom helper] ${message}\n`);
+    },
+  });
+  /*
+   * A helper started at a terminal is one somebody will Ctrl-C, which the stdio server —
+   * spawned and killed by an MCP client — never was. Disposing on the signal runs the
+   * bridge's release path first, so a laser that is mid-stream is blanked, stopped and
+   * e-stopped by this process before it exits (G2) rather than left to the DAC's own
+   * timeout. Both signals, because a supervisor sends TERM and a keyboard sends INT.
+   */
+  let closing = false;
+  const close = (): void => {
+    if (closing) return;
+    closing = true;
+    helper.dispose();
+    process.exit(0);
+  };
+  process.on("SIGINT", close);
+  process.on("SIGTERM", close);
+}
+
 // Started directly (not imported): serve.
 if (process.argv[1]?.endsWith("serve.ts") === true) {
-  serveStdio();
+  // T1111: the flag decides WHICH doors open. Read here rather than inside either function,
+  // so the two entry points stay independently callable by a test.
+  if (process.argv.includes(HELPER_DEVICES_ONLY_FLAG)) serveDevices();
+  else serveStdio();
 }

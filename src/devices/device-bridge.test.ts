@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -11,7 +11,14 @@ import { effectiveParameterSchema } from "../domain/parameters/resolve.ts";
 import type { GraphDocument, GraphNode } from "../domain/types/graph.ts";
 import type { NodeId } from "../domain/types/ids.ts";
 import type { FrameEvaluationInput } from "../domain/types/frame.ts";
-import { createHeadlessMcpServer } from "../mcp/serve.ts";
+import { createHeadlessMcpServer, createDeviceHelper } from "../mcp/serve.ts";
+import { createBridgeClient } from "../mcp/bridge-client.ts";
+import { createMcpTransportRegistry } from "../mcp/connections.ts";
+import { createGraphStore } from "../domain/graph/store.ts";
+import { createDomainBus } from "../domain/commands/index.ts";
+import { createAgentToolSurface } from "../agent/surface.ts";
+import { createDeviceDoors } from "./doors.ts";
+import type { PairingMemory } from "./transport/bridge-socket.ts";
 import { createDeviceClient } from "./device-client.ts";
 import type { UdpSocket, UdpSocketFactory } from "./device-hub.ts";
 import { encodeOscMessage } from "./osc-codec.ts";
@@ -617,6 +624,269 @@ describe("§T458's three findings, mapped onto the device role", () => {
     expect(status?.deviceAttached).toBe(true);
     expect(status?.attached).toBe(false);
     expect(status?.deviceClient).toBe("vitest-device");
+  });
+});
+
+/* ------------------------------------------------------------------ GATE 5 */
+
+/**
+ * GATE 5 — THE DEVICE DOOR OPENS WITH NO AGENT SERVER (T1111).
+ *
+ * ## The claim under test, in the owner's words
+ *
+ * *"why would that depend on the mcp server?"*, asked of the Person Mask node. §T1103 made
+ * the folder and the sentences honest; this is the behaviour catching up. `pnpm helper
+ * --devices-only` builds NO store, NO bus, NO node catalogue, NO agent tool surface and NO
+ * GPU — `createDeviceHelper` is the whole composition — and a Loom tab still pairs with it
+ * and still drives a parameter from a real OSC datagram.
+ *
+ * ## Why the parameter, and not the attach
+ *
+ * "The flag parsed" and "the socket attached" are both mechanism. The fact a person cares
+ * about is that an OSC In node WORKS, so the first gate runs the reading through the real
+ * value graph and the real resolver, exactly as GATE 1 does against the full helper — the
+ * SAME assertion against a process that is not an MCP server.
+ *
+ * ## Why the pairing test is the important one
+ *
+ * The Connections row is the only pairing surface in the product, and the code reaches the
+ * device client through the memory the AGENT client writes on a confirmed attach. A
+ * devices-only helper refuses the agent role — so without the `devicesOnly` marker the page
+ * would FORGET the code it had just typed correctly, and a helper started for devices would
+ * be unpairable from the only place a human can pair it. That is the strand this gate
+ * exists to catch.
+ */
+describe("GATE 5 — devices with no agent server (T1111)", () => {
+  interface DevicesOnlyHarness {
+    readonly port: number;
+    readonly pairingCode: string;
+    readonly udp: ReturnType<typeof fakeUdp>;
+    readonly handoffDir: string;
+    readonly helper: ReturnType<typeof createDeviceHelper>;
+    readonly notices: string[];
+  }
+
+  async function devicesOnlyHelper(): Promise<DevicesOnlyHarness> {
+    const handoffDir = mkdtempSync(join(tmpdir(), "loom-devices-only-"));
+    cleanups.push(() => {
+      rmSync(handoffDir, { recursive: true, force: true });
+    });
+    const udp = fakeUdp();
+    const notices: string[] = [];
+    const helper = createDeviceHelper({
+      // Port 0: the OS picks, so parallel suites never collide on the shared constant.
+      port: 0,
+      handoffDir,
+      announce: (message) => notices.push(message),
+      // The REAL door construction, with the operating system's UDP replaced and nothing
+      // else — the same line `serveDevices()` runs, minus the socket it cannot fake.
+      doors: createDeviceDoors({ udpSocketFactory: udp.factory, deviceFlushMs: 5 }),
+    });
+    cleanups.push(() => {
+      helper.dispose();
+    });
+    await until(() => helper.status().port != null, "the devices-only helper to bind a port");
+    const status = helper.status();
+    if (status.port == null) throw new Error("devices-only helper reported no port");
+    return { port: status.port, pairingCode: helper.pairingCode, udp, handoffDir, helper, notices };
+  }
+
+  it("an OSC datagram drives a parameter through a helper that is not an MCP server", async () => {
+    const harness = await devicesOnlyHelper();
+    const device = attachDevice(harness, harness.pairingCode);
+    await until(() => device.state().kind === "attached", "the device role to attach");
+
+    device.client.listen([9471]);
+    await until(() => harness.udp.boundPorts().includes(9471), "the helper to bind the UDP port");
+    harness.udp.deliver(9471, encodeOscMessage("/synth/cutoff", [0.625]) as Uint8Array);
+    await until(() => device.readings.has("osc:/synth/cutoff"), "the reading to reach the page");
+
+    // The same end-to-end assertion GATE 1 makes, against a process with no store, no bus,
+    // no catalogue and no tool surface. §V461: an exact value that no rest could produce.
+    const registry = createNodeRegistry(allNodeDefinitions).view();
+    const session = createValueGraphSession(registry);
+    const graph = documentWith(
+      node("osc1", "oscIn", { port: 9471, controls: "cutoff", cutoffAddress: "/synth/cutoff", cutoffRest: 0.11 }),
+    );
+    const frame: FrameEvaluationInput = {
+      timeSeconds: 0,
+      deltaSeconds: 1 / 60,
+      frameIndex: 0,
+      mode: "realtime",
+      randomSeed: 1,
+    };
+    const evaluated = session.evaluate(graph, frame, {
+      pointer: { x: 0, y: 0, buttons: 0 },
+      channels: (name) => device.readings.get(name),
+    });
+    expect(evaluated.byId.get("osc1" as NodeId)).toEqual({ cutoff: 0.625 });
+
+    const driven = resolveParameters(
+      {
+        ...node("blur1", "blur", {}),
+        parameters: {
+          size: {
+            mode: "driven",
+            bindings: {
+              driven: { kind: "driven", channel: "osc1:cutoff" },
+              static: { kind: "static", value: 0.02 },
+            },
+          },
+        },
+      } as unknown as GraphNode,
+      registry.get("blur"),
+      { frame, channels: evaluated.resolver },
+    );
+    expect(driven.get("size")?.value).toBeCloseTo(0.625, 6);
+  });
+
+  it("publishes NO handoff file, so no proxy credential exists for a door that is not there", async () => {
+    const harness = await devicesOnlyHelper();
+    // The handoff exists to hand a SIBLING a proxy token. This listener refuses the proxy
+    // role, so writing one would put a credential for a non-existent door on disk with 0600
+    // on it — and would make a sibling's refusal read as a token mismatch.
+    expect(readdirSync(harness.handoffDir)).toEqual([]);
+    // And the operator is told what this process is, in the banner that carries the code.
+    expect(harness.notices.join(" ")).toContain("DEVICES ONLY");
+    expect(harness.notices.join(" ")).toContain(harness.pairingCode);
+  });
+
+  /**
+   * THE PAIRING SEAM, THROUGH BOTH REAL CLIENTS AND ONE REAL SOCKET.
+   *
+   * The agent client attaches with a CORRECT code, is refused because there is no agent
+   * door, and must come away having REMEMBERED that code — because the device client reads
+   * it from exactly there. Then the device client picks it up through its own
+   * `reconnectRemembered`, which is the product path `use-osc-bridge.ts` drives when a node
+   * starts asking for OSC mid-session.
+   */
+  it("pairs the tab: a correct code refused for devices-only is REMEMBERED, and the device client uses it", async () => {
+    const harness = await devicesOnlyHelper();
+
+    // The remembered-code seam, faked at the STORAGE and nowhere else: `sessionStorage` is
+    // not reachable from a node suite, and two tests in one file must not share a secret.
+    let remembered: string | null = null;
+    const memory: PairingMemory = {
+      read: () => remembered,
+      write: (code) => {
+        remembered = code;
+      },
+      forget: () => {
+        remembered = null;
+      },
+    };
+
+    // The REAL agent client, publishing into the REAL Connections registry, against a real
+    // socket — nothing about this path is stubbed except where the code is kept.
+    const store = createGraphStore();
+    const registry = createNodeRegistry(allNodeDefinitions).view();
+    const { bus } = createDomainBus({ store, registry });
+    const surface = createAgentToolSurface({
+      bus,
+      actor: { kind: "agent", id: "test", label: "vitest" },
+      projectId: "t1111",
+      ports: {},
+    });
+    const transports = createMcpTransportRegistry();
+    const agent = createBridgeClient({
+      surface: () => surface,
+      registry: transports,
+      port: harness.port,
+      client: "vitest-page",
+      memory,
+      autoReconnect: false,
+    });
+    cleanups.push(() => {
+      agent.disconnect();
+    });
+
+    agent.connect(harness.pairingCode);
+    await until(() => remembered !== null, "the page to remember the code it was refused with");
+    expect(remembered).toBe(harness.pairingCode);
+
+    /*
+     * The row a human reads. NOT an error: nothing failed — the code was right and this
+     * helper simply has no tools. An `error` row here would tell the owner their pairing
+     * did not work at the exact moment it did.
+     */
+    const row = transports.snapshot().find((entry) => entry.kind === "bridge");
+    expect(row?.state).toBe("disconnected");
+    expect(row?.detail).toContain("DEVICES ONLY");
+    // The field stays open, so another helper can still be paired from the same row.
+    expect(row?.connect).not.toBeNull();
+
+    // And now the fact the owner asked for: the DEVICE client, given only what the page
+    // remembered, attaches and carries a real OSC reading.
+    const states: OscBridgeState[] = [];
+    const readings = new Map<string, number>();
+    const device = createDeviceClient({
+      port: harness.port,
+      client: "vitest-device",
+      memory,
+      autoConnect: false,
+      onState: (state) => states.push(state),
+      onReadings: (values) => {
+        for (const [name, value] of Object.entries(values)) readings.set(name, value);
+      },
+    });
+    cleanups.push(() => {
+      device.dispose();
+    });
+    device.reconnectRemembered();
+    await until(
+      () => states[states.length - 1]?.kind === "attached",
+      "the device client to attach with the remembered code",
+    );
+    device.listen([9472]);
+    await until(() => harness.udp.boundPorts().includes(9472), "the helper to bind the UDP port");
+    harness.udp.deliver(9472, encodeOscMessage("/pad/x", [0.375]) as Uint8Array);
+    await until(() => readings.has("osc:/pad/x"), "a reading to arrive on the paired device socket");
+    expect(readings.get("osc:/pad/x")).toBeCloseTo(0.375, 6);
+  });
+
+  it("refuses a WRONG code the ordinary way, so devices-only is not a way past the gate", async () => {
+    const harness = await devicesOnlyHelper();
+    let remembered: string | null = "PRIOR1";
+    const memory: PairingMemory = {
+      read: () => remembered,
+      write: (code) => {
+        remembered = code;
+      },
+      forget: () => {
+        remembered = null;
+      },
+    };
+    const store = createGraphStore();
+    const registry = createNodeRegistry(allNodeDefinitions).view();
+    const { bus } = createDomainBus({ store, registry });
+    const surface = createAgentToolSurface({
+      bus,
+      actor: { kind: "agent", id: "test", label: "vitest" },
+      projectId: "t1111",
+      ports: {},
+    });
+    const transports = createMcpTransportRegistry();
+    const agent = createBridgeClient({
+      surface: () => surface,
+      registry: transports,
+      port: harness.port,
+      client: "vitest-page",
+      memory,
+      autoReconnect: false,
+    });
+    cleanups.push(() => {
+      agent.disconnect();
+    });
+
+    // The legitimate case the guard could swallow, from the other side: a wrong code must
+    // still be an ERROR and must still be forgotten, or "devices-only" would be a way to
+    // have any code remembered.
+    agent.connect("WRONG1");
+    await until(
+      () => transports.snapshot().find((entry) => entry.kind === "bridge")?.state === "error",
+      "the wrong code to be refused as an error",
+    );
+    expect(remembered).toBeNull();
   });
 });
 

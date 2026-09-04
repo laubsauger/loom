@@ -63,7 +63,19 @@ export type BridgeToolListing = McpToolListing;
 /** Host → page. Requests carry an `id`; the page answers with the matching reply. */
 export type BridgeHostMessage =
   | { readonly type: "attached"; readonly serverInfo: string }
-  | { readonly type: "refused"; readonly reason: string }
+  /**
+   * `devicesOnly` marks the ONE refusal that is not a rejection of the credential (T1111).
+   *
+   * A helper started with `--devices-only` has no agent door, so it refuses `attach` — but
+   * it checks the pairing code FIRST and only sets this flag when the code MATCHED. The page
+   * therefore learns two separate facts from one message: your code is right, and there are
+   * no tools here. That distinction is load-bearing: `bridge-client.ts` REMEMBERS a code
+   * refused this way (T925's rule is "never remember an unconfirmed code", and this one is
+   * confirmed), which is what lets the device client pair with a helper that has no MCP
+   * door open. Without it, the only pairing surface in the product would strand the very
+   * mode it is pairing with.
+   */
+  | { readonly type: "refused"; readonly reason: string; readonly devicesOnly?: true }
   | { readonly type: "listTools"; readonly id: number }
   | { readonly type: "callTool"; readonly id: number; readonly tool: string; readonly arguments: unknown }
   | { readonly type: "ping"; readonly id: number };

@@ -104,6 +104,27 @@ import type { McpToolListing, McpToolSource } from "./server.ts";
  * availability is the one thing the two processes genuinely disagree about — the browser has
  * ports the headless twin does not.
  *
+ * ## THE DEVICE DOOR OPENS ALONE (T1111)
+ *
+ * `headless` is OPTIONAL, and its absence is the whole feature: with no headless surface
+ * there is nothing an agent could be served, so this listener registers only the `device`
+ * role and refuses `attach` and `proxyAttach` BY NAME. `pnpm helper --devices-only` is then
+ * literally what the owner asked for — a laser, an OSC socket and the Vision worker, with no
+ * MCP server, no tool surface and no GPU in the process at all.
+ *
+ * Two consequences are deliberate and neither is cosmetic:
+ *
+ *  - **No handoff file, and no proxy mode.** The handoff publishes a proxy TOKEN, and a
+ *    token for a door that always refuses is a lie written to disk with `0600` on it. A
+ *    devices-only host that loses the bind therefore retries it and never proxies: proxying
+ *    forwards TOOL calls, and this process has no tools to forward.
+ *  - **The refusal of a CORRECT code is not a rejection.** The pairing code is checked
+ *    FIRST, and only a code that matched earns the `devicesOnly` refusal. That is what lets
+ *    the tab pair: the Connections row is the only pairing surface in the product, the
+ *    device role rides its code through `sessionPairingMemory`, and a plain refusal would
+ *    make the page FORGET the code it had just proved correct (T925) — stranding the device
+ *    half of a helper started for the device half. See `bridge-client.ts`.
+ *
  * ## Pairing, and what it is defending against
  *
  * Loopback is not authorisation. Any page in any tab can open `ws://127.0.0.1:43919` — a
@@ -165,8 +186,13 @@ export interface BridgeHost {
   /**
    * The tool source an `McpConnection` should read. Delegates live; do not cache what it
    * returns, because which surface answers changes when a tab attaches.
+   *
+   * NULL when this host was built without a `headless` surface (T1111): there is no agent
+   * door on that listener, so there is nothing for an MCP connection to read and the caller
+   * builds no connection. Nullable rather than a refusing stub, because a stub would let a
+   * devices-only helper grow an MCP connection by accident and answer "refused" forever.
    */
-  readonly source: McpToolSource;
+  readonly source: McpToolSource | null;
   readonly pairingCode: string;
   /** The one-paragraph `instructions` the MCP client hands its model at initialize. */
   instructions(): string;
@@ -175,8 +201,15 @@ export interface BridgeHost {
 }
 
 export interface BridgeHostOptions {
-  /** The headless surface that answers when no tab is attached. */
-  readonly headless: McpToolSource;
+  /**
+   * The headless surface that answers when no tab is attached.
+   *
+   * ABSENT means this listener has no AGENT doors at all (T1111): `attach` and `proxyAttach`
+   * are refused by name and only the `device` role can be claimed. Encoded as an absence
+   * rather than a `mode` flag because it is structural — you cannot serve tools you were not
+   * given a surface for, so a devices-only host cannot answer a tool call by any path.
+   */
+  readonly headless?: McpToolSource;
   /** `0` for an OS-assigned port (tests). Defaults to the shared constant. */
   readonly port?: number;
   /** Attachment changed, or the page's tool list moved — wire to `refreshTools`. */
@@ -256,9 +289,18 @@ interface PendingCall {
 }
 
 export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
-  const { headless } = options;
+  const headless = options.headless ?? null;
+  /**
+   * Whether this listener has AGENT doors at all (T1111).
+   *
+   * One boolean, derived from one absence, read in the five places the two modes differ:
+   * the two role gates, the handoff, the EADDRINUSE reaction, and what a human is told.
+   */
+  const agentDoor = headless !== null;
   const pairingCode = mintPairingCode();
-  const proxyToken = mintProxyToken();
+  // Not minted at all without an agent door: there is no proxy role to credential, and
+  // `proxyTokenMatches` refuses an empty expectation, so the branch is fenced twice.
+  const proxyToken = agentDoor ? mintProxyToken() : "";
   const wantedPort = options.port ?? BRIDGE_PORT;
   const handoffDir = options.handoffDir ?? defaultHandoffDir();
   const callTimeoutMs = options.callTimeoutMs ?? DEFAULT_CALL_TIMEOUT_MS;
@@ -295,10 +337,18 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
     socket.send(JSON.stringify(message));
   };
 
-  const refuse = (socket: LoopbackConnection, reason: string): void => {
+  const refuse = (
+    socket: LoopbackConnection,
+    reason: string,
+    /**
+     * T1111: set ONLY when the pairing code was correct and the door is simply not here.
+     * The page reads it to keep the code rather than forget it — see `bridge-protocol.ts`.
+     */
+    extra: Readonly<Record<string, unknown>> = {},
+  ): void => {
     // Refusals name the problem to BOTH sides (§V288): the page renders this sentence in
     // its panel, and the operator reads it beside the server's own log.
-    send(socket, { type: "refused", reason });
+    send(socket, { type: "refused", reason, ...extra });
     notice({ severity: "warning", message: `Bridge refused a connection: ${reason}` });
     socket.close();
   };
@@ -357,6 +407,8 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
 
   /** What THIS process would execute — the page's roster, or the headless one, marked. */
   const localList = (): readonly McpToolListing[] => {
+    // Unreachable without an agent door — `source` is null, so nobody can ask (T1111).
+    if (headless === null) return [];
     const live = pageTools;
     if (live === null) {
       return headless.listTools().map((tool) => ({
@@ -372,6 +424,13 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
 
   /** What THIS process would run a call against — the page, or the headless surface. */
   const localCall = async (name: string, input: unknown): Promise<unknown> => {
+    if (headless === null) {
+      return bridgeFailureResult(
+        name,
+        "bridge/devices-only",
+        "This helper was started for devices only, so it serves no tools.",
+      );
+    }
     const socket = page;
     if (socket === null || pageTools === null) {
       return annotate(await headless.callTool(name, input), false);
@@ -610,6 +669,17 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
 
       if (role === "none") {
         if (type === "proxyAttach") {
+          if (!agentDoor) {
+            // T1111: not "wrong token" — there is no proxy role on a devices-only helper,
+            // because proxying forwards TOOL calls and this process has none. Named, so a
+            // sibling server's own notice says the useful thing rather than "refused".
+            clearTimeout(silence);
+            refuse(
+              socket,
+              "this Loom helper was started for devices only, so it serves no tools and cannot be proxied. The process that owns this port is not an MCP server.",
+            );
+            return;
+          }
           // The proxy role is gated by a secret that lives ONLY in a 0600 file, so a page —
           // which cannot read a file — can reach this branch and never past it (T921).
           if (!proxyTokenMatches(proxyToken, message["token"])) {
@@ -702,6 +772,25 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
         if (typeof code !== "string" || !pairingCodeMatches(pairingCode, code)) {
           clearTimeout(silence);
           refuse(socket, "that pairing code does not match the one this bridge printed.");
+          return;
+        }
+        if (!agentDoor) {
+          /*
+           * T1111 — THE ORDER OF THESE TWO CHECKS IS THE FEATURE.
+           *
+           * The code is verified ABOVE, so reaching here means it was RIGHT. The page is
+           * told both facts in one message: paired, and no tools. It then REMEMBERS the
+           * code (T925 forbids remembering an unconfirmed one; this one is confirmed) and
+           * the device client attaches with it. Refusing before the code check — or with
+           * an unmarked refusal — would make the page forget a correct code and leave the
+           * only pairing surface in the product unable to pair with this mode.
+           */
+          clearTimeout(silence);
+          refuse(
+            socket,
+            "this Loom helper was started for devices only, so it serves no agent tools. Your pairing code is correct and this tab can use its devices — OSC, a laser DAC and the Vision worker. Restart the helper without --devices-only to drive this tab from an MCP client.",
+            { devicesOnly: true },
+          );
           return;
         }
         // The one-PAGE rule, checked at the moment a page claims the role rather than at
@@ -854,12 +943,19 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
         listenError = null;
         // Published BEFORE the banner, so a sibling that reads it the same millisecond finds
         // a complete file rather than a port with no token (T921).
-        const failure = writeHandoff(handoffDir, {
-          port,
-          pid: process.pid,
-          proxyToken,
-          startedAt: Date.now(),
-        });
+        //
+        // NOT published by a devices-only host (T1111): the handoff exists to hand a sibling
+        // a PROXY TOKEN, and this listener refuses the proxy role. Writing one would put a
+        // credential for a door that does not exist into a file, and would make a sibling's
+        // refusal read as a token mismatch instead of "that process serves no tools".
+        const failure = agentDoor
+          ? writeHandoff(handoffDir, {
+              port,
+              pid: process.pid,
+              proxyToken,
+              startedAt: Date.now(),
+            })
+          : null;
         const promoted = proxy !== null;
         if (proxy !== null) {
           proxy.dispose();
@@ -867,7 +963,11 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
         }
         notice({
           severity: "info",
-          message: `${promoted ? `The port freed and this server (PID ${process.pid}) took it. ` : ""}Bridge listening on ${BRIDGE_HOST}:${port}. Pairing code ${pairingCode}. Open Loom, find Connections in the agent panel, and enter it to drive the tab you are looking at.`,
+          message: agentDoor
+            ? `${promoted ? `The port freed and this server (PID ${process.pid}) took it. ` : ""}Bridge listening on ${BRIDGE_HOST}:${port}. Pairing code ${pairingCode}. Open Loom, find Connections in the agent panel, and enter it to drive the tab you are looking at.`
+            : // T1111: the devices-only banner must not send the reader looking for agent
+              // tools that are not there, and must still name the ONE pairing ceremony.
+              `Device bridge listening on ${BRIDGE_HOST}:${port}, DEVICES ONLY — no MCP server, no agent tools. Pairing code ${pairingCode}. Open Loom, find Connections in the agent panel, and enter it; OSC, a laser DAC and Person Mask then reach this process.`,
         });
         if (failure !== null) {
           // Not fatal — this bridge works. What is lost is a SIBLING's ability to find it,
@@ -883,7 +983,21 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
         server = null;
         listenError = error.message;
         if ((error as NodeJS.ErrnoException).code === "EADDRINUSE") {
-          enterProxyMode();
+          if (agentDoor) {
+            enterProxyMode();
+            return;
+          }
+          /*
+           * T1111: a devices-only host does not proxy. Proxying forwards TOOL calls and
+           * this process has none — and the incumbent, whichever mode it is in, already
+           * serves the device role on that port, so the honest advice is to pair with it.
+           * The bind is still retried, which is what makes closing the incumbent recover.
+           */
+          notice({
+            severity: "warning",
+            message: `Another process already owns ${BRIDGE_HOST}:${wantedPort}. If that is another Loom helper it already serves devices — pair with the code IT printed, not this one. Retrying the bind every ${Math.round(retryMs / 1000)}s in case it stops.`,
+          });
+          scheduleRebind();
           return;
         }
         // Not fatal, and not silent: the stdio server is still a working headless Loom.
@@ -982,7 +1096,9 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
       incumbent: null,
       deviceAttached: device !== null,
       deviceClient,
-      detail: `Listening on ${BRIDGE_HOST}:${boundPort}, nothing attached. Tool calls run headless. Pairing code ${pairingCode}.`,
+      detail: agentDoor
+        ? `Listening on ${BRIDGE_HOST}:${boundPort}, nothing attached. Tool calls run headless. Pairing code ${pairingCode}.`
+        : `Listening on ${BRIDGE_HOST}:${boundPort}, DEVICES ONLY — no agent tools are served by this helper. Pairing code ${pairingCode}.`,
     };
   };
 
@@ -1024,6 +1140,8 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
     if (live !== null) return live;
     const state = proxy?.state();
     const owner = `the Loom bridge on ${BRIDGE_HOST}:${state?.port ?? wantedPort}${state?.pid == null ? "" : ` (PID ${state.pid})`}`;
+    // A devices-only host never proxies, so this is unreachable there (T1111).
+    if (headless === null) return [];
     return headless.listTools().map((tool) => ({
       ...tool,
       available: false,
@@ -1032,7 +1150,12 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
     }));
   };
 
-  const source: McpToolSource = {
+  /**
+   * NULL without an agent door (T1111) — see `BridgeHost.source`. The whole MCP surface of
+   * this module hangs off this one object, so withholding it is what makes "no agent
+   * server" structural rather than a promise kept by five separate branches.
+   */
+  const source: McpToolSource | null = !agentDoor ? null : {
     listTools() {
       return [bridgeStatusListing(), ...(proxy === null ? localList() : proxiedList())];
     },
@@ -1053,6 +1176,12 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
     pairingCode,
     instructions() {
       const current = status();
+      if (!agentDoor) {
+        // Unreachable in the product — a devices-only helper builds no MCP connection — but
+        // it must not LIE if something asks (§V338). One sentence, no pairing code: nothing
+        // reading `instructions` can pair anything on this listener.
+        return `Loom device helper, PID ${current.pid}. This process serves DEVICES ONLY (started with --devices-only): OSC, a laser DAC and the Apple Vision worker, for a Loom tab on this machine. It is not an MCP server and publishes no tools.`;
+      }
       const readTheTool =
         `Call \`${BRIDGE_STATUS_TOOL}\` to read the CURRENT pairing code, port and attach state; ` +
         "never repeat a pairing code from earlier in this conversation, because it may name a server that has exited.";
@@ -1100,7 +1229,10 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
       rebind = null;
       proxy?.dispose();
       proxy = null;
-      if (boundPort !== null) clearHandoff(handoffDir, boundPort, process.pid);
+      // Only a host that PUBLISHED a handoff clears one (T1111). A devices-only host wrote
+      // none, and reaching into that directory to delete a file it never made is how a
+      // stale entry with a recycled PID gets removed by a process that never owned it.
+      if (agentDoor && boundPort !== null) clearHandoff(handoffDir, boundPort, process.pid);
       server?.close();
       server = null;
     },

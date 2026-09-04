@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { DEVICE_HELPER_DEVICES_ONLY_COMMAND } from "@devices/helper.ts";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createMemoryStorage, installDomStubs } from "@ui/testing/install-dom-stubs.ts";
@@ -1305,6 +1306,16 @@ describe("the agent tool surface is constructed (B12, T220, §V39, §V42)", () =
     };
     expect(config.mcpServers?.["loom"]?.command).toBe("node");
     expect(config.mcpServers?.["loom"]?.args?.join(" ")).toContain("src/mcp/serve.ts");
+
+    /*
+     * T1110/T1111 — the tab that teaches the AGENT door must also say the device door
+     * needs no agent, because this is where the owner's wrong inference was formed: the
+     * only place in the app naming the helper's command named it as an MCP thing. The
+     * devices-only command is asserted from the constant, so a rename moves both.
+     */
+    const tab = snippet.closest("div")?.parentElement?.textContent ?? "";
+    expect(tab).toContain(DEVICE_HELPER_DEVICES_ONLY_COMMAND);
+    expect(tab.toLowerCase()).toContain("laser");
   });
 });
 

@@ -95,6 +95,11 @@ const NOT_CONSTRUCTED: ReadonlyArray<{ name: string; reason: string }> = [
       "pretending to have hardware.",
   },
   {
+    name: "createDeviceHelper",
+    reason:
+      "T1111: constructed by serveDevices() in the SAME module — the --devices-only entry point, the sibling of serveStdio() below and excused for the identical reason. device-bridge.test.ts's GATE 5 drives it end to end: a real socket, a real OSC datagram and a driven parameter, with no MCP server in the process.",
+  },
+  {
     name: "createHeadlessMcpServer",
     reason:
       "Constructed by serveStdio() in the SAME module — the stdio MCP server's own process entry point (T294), which this scan does not treat as an app root. serve.gpu.test.ts drives it end to end with real pixels.",

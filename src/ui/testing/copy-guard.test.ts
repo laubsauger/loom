@@ -163,6 +163,17 @@ const ALLOWLIST: ReadonlyArray<{ file: string; text: string }> = [
     file: "src/editor/help/mcp-setup.tsx",
     text: "An external MCP client starts this server as a subprocess and gets the same tools the in-app agent has: read the graph, add and rewire nodes, edit parameters and shader source, compile, and undo.",
   },
+  {
+    // T1110/T1111. The second long line on the same tab, and it is there because THIS TAB
+    // is where the owner's wrong inference was formed: the only place in the app naming the
+    // helper's command named it as an agent thing, and he read "Person Mask needs
+    // `pnpm mcp:serve`" as "Person Mask needs an agent protocol". Correcting that needs the
+    // sentence, not a label — a tooltip would hide the correction behind the misreading it
+    // is correcting. It sits under the snippet, where a reader has already been told what
+    // the agent door is for, and it is the last thing the tab says.
+    file: "src/editor/help/mcp-setup.tsx",
+    text: "That one process is also Loom&rsquo;s device helper: OSC, a laser DAC and Person Mask reach hardware through it, with the same pairing code, and need no agent and no MCP client. For devices alone, with no MCP server:",
+  },
 ];
 
 function isSentenceShaped(text: string): boolean {
