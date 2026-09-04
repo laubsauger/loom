@@ -243,16 +243,24 @@ export const getProjectSummary: AgentTool<EmptyInput, ProjectSummary> = {
       grantedCapabilities: runtime.bus.grants.list(invocation.actor).map((grant) => grant.capability),
     };
 
+    // T1146: this diagnostic used to ride on EVERY call claiming "the bus has no project
+    // query, only graph.get" — false since T175 registered `project.get`, which the app
+    // attaches (`use-agent-surface.ts`) and the headless server does not. A note that is
+    // wrong half the time and paid for every time is worse than no note: it told an agent
+    // to register a query that already exists, and cost ~230 characters to do it.
+    const projectQuery = runtime.bus.hasQuery("project.get");
     return ok("get_project_summary", summary, {
       revision: graph.revision,
-      diagnostics: [
-        diagnostic(
-          "info",
-          "tool.partialSource",
-          "Project name, settings and asset list are not included: the bus has no project query, only graph.get.",
-          { suggestion: "Register a project.get query to complete this summary." },
-        ),
-      ],
+      diagnostics: projectQuery
+        ? []
+        : [
+            diagnostic(
+              "info",
+              "tool.partialSource",
+              "Project name, settings and asset list are not included: this session registers no project.get query.",
+              { suggestion: "Read what the graph holds; the project envelope is unavailable on this surface." },
+            ),
+          ],
     });
   },
 };

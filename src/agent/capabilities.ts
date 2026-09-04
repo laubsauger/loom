@@ -37,9 +37,20 @@ import type { CapabilityClass } from "@domain/types/commands.ts";
  * It is a readback (§V48, §V7) and its result is pixels crossing out of the app to the
  * calling model. That is the export class doing exactly the job it exists for, even
  * though no file is written. `save_project` writes a file, so it needs `localFile`.
+ *
+ * ## Two places declare a gate, and this one was incomplete (T1115, T1146)
+ *
+ * Every gated tool ALSO declares `capabilities` on its own definition, and the surface
+ * unions the two (`ungrantedFor` in `surface.ts`), so behaviour never depended on this
+ * table being complete — and it was not: `describe_output` declared `export` inline only,
+ * so this exported table, whose docblock calls itself "the capability gate table", named
+ * three of the four gated tools. Harmless to the running product, wrong to every reader.
+ * Listed here now; collapsing the two declarations into one is a contract change and is
+ * filed rather than done.
  */
 export const TOOL_CAPABILITIES: Readonly<Record<string, readonly CapabilityClass[]>> = Object.freeze({
   render_preview: Object.freeze(["export"] as const),
+  describe_output: Object.freeze(["export"] as const),
   read_points: Object.freeze(["export"] as const),
   save_project: Object.freeze(["localFile"] as const),
 });

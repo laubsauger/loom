@@ -5,13 +5,15 @@ import type { AgentTool, ToolStatus } from "../types.ts";
 /**
  * Workflow tools (T57, §I.tools).
  *
- * `play` and `pause` have NO command behind them today, and they say so rather than
- * pretending. Each names the command it needs, so `list_tools` reads as a to-do list for
- * the tracks that own those surfaces instead of as a working feature that quietly does
- * nothing: `transport.play` / `transport.pause` have been named by the keymap since T77
- * and report unresolved (the frame loop registers `transport.togglePlay`, which is one
- * command for two tool verbs — resolving that is the transport owner's call, not a place
- * for this adapter to invent a mapping).
+ * `play` and `pause` are REAL in the app since T292: `src/app/transport-commands.ts`
+ * registers `transport.play` and `transport.pause` as idempotent verbs beside the keymap's
+ * `transport.togglePlay`, because an agent told "play" while playing must not pause. They
+ * stay unavailable on the HEADLESS server, which has no frame loop at all and waives them
+ * by name in the T597 parity gates (§V541) — so `list_tools` still reads as the truth about
+ * whichever surface answered, rather than as a working feature that quietly does nothing.
+ *
+ * T1146: this paragraph claimed for months that neither command existed anywhere. It was
+ * true when written and stale by the time an agent read it.
  *
  * `compile_project` is real since T220: `project.compile` is registered by the
  * composition root, which is the only place that has `ProjectSettings`, a live
@@ -106,7 +108,12 @@ export const saveProject: AgentTool<SaveProjectInput, SaveProjectData> = {
   name: "save_project",
   title: "Save project",
   description:
-    "Write the open project to a .loom.json file. Writing a file needs the localFile capability, which only the user can grant.",
+    // T1146: this used to end "...which only the user can grant" — the very sentence T1097
+    // deleted from the REFUSAL, left standing here, and false in the same way: `localFile`
+    // has no issuer anywhere in the codebase, so no user can grant it either. The published
+    // description carries `grantRefusal`, which states the surface's real answer; this
+    // sentence only has to name the gate, not invent a key for it.
+    "Write the open project to a .loom.json file. Writing a file needs the localFile capability.",
   kind: "workflow",
   inputSchema: saveProjectInput,
   requires: { commands: ["project.save"] },

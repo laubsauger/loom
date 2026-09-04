@@ -16,6 +16,7 @@ import {
   type AgentToolSurface,
 } from "./surface.ts";
 import type { AgentPorts, PreviewExport, ToolResult } from "./types.ts";
+import { TOOL_CAPABILITIES, capabilitiesForTool } from "./capabilities.ts";
 
 /**
  * The agent tool surface: §V29 §V30 §V37 §V38 §V39 §V42 §V59.
@@ -635,5 +636,56 @@ describe("the agent reads a reflecting node's own controls (T903)", () => {
     // Nothing is placed in the catalogue, so there is no instance to reflect from: a
     // per-instance key here would be an invention, not a reading.
     expect(summaries.find((entry) => entry.type === "test.reflecting")?.parameterKeys).not.toContain("orbitSpeed");
+  });
+});
+
+/**
+ * T1146 — the descriptions and the per-call notes are CLAIMS, and stale claims cost a
+ * caller a turn each.
+ *
+ * Both defects below were live: `TOOL_CAPABILITIES` — an exported table whose own docblock
+ * calls itself "the capability gate table" — named three of the four gated tools, and
+ * `get_project_summary` told every caller on every call to register a query that T175 had
+ * already registered and the app already attaches. Neither was reachable by any gate:
+ * behaviour was correct in both cases, so only a reader could catch them, and no reader did.
+ */
+describe("tool claims match the product (T1146)", () => {
+  it("the exported capability table names every tool that declares a gate", () => {
+    const { surface } = createFixture();
+    // A tool's own `capabilities` is the primary declaration; the table is the second
+    // copy, and a second copy that can silently omit a row is how `describe_output`
+    // reached an exported table as ungated while being gated.
+    const declared = surface
+      .listTools()
+      .filter((tool) => capabilitiesForTool(tool.name).length > 0 || (tool.grantRefusal ?? null) !== null);
+    // Derived from the surface on both sides, not pinned to a literal: a fifth gated tool
+    // is supposed to arrive without editing this test, and only DISAGREEMENT is the defect.
+    expect(declared.length).toBeGreaterThan(0);
+    expect(declared.map((tool) => tool.name).sort()).toEqual(Object.keys(TOOL_CAPABILITIES).sort());
+  });
+
+  it("get_project_summary claims the project envelope is missing only when it really is", async () => {
+    const without = createFixture();
+    const bare = await without.surface.callTool("get_project_summary", {});
+    expect(bare.diagnostics.map((entry) => entry.code)).toEqual(["tool.partialSource"]);
+    // and it does not name a query as unregistered while pointing at it as the fix
+    expect(bare.diagnostics[0]?.suggestion).not.toContain("Register a project.get");
+
+    const withProject = createFixture();
+    attachStateSources(withProject.bus, {
+      project: () => ({
+        projectId: "project-1",
+        name: "sketch",
+        schemaVersion: 1,
+        settings: {} as never,
+        assets: [],
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      }),
+    });
+    const answered = await withProject.surface.callTool("get_project_summary", {});
+    // The load-bearing assertion: with `project.get` registered the note is GONE. It rode
+    // on every call of the tool the surface tells agents to call first, and it was false.
+    expect(answered.diagnostics).toEqual([]);
   });
 });
