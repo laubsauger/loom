@@ -895,4 +895,122 @@ describe("TimeGrid — one stream, many moments", () => {
     }
     expect(twins, "cells holding the same moment").toEqual([]);
   }, 180_000);
+
+  /**
+   * ─────────────────────────────────────────────────────────────────────────────────
+   * T1042 — E51's MATTE, on the shipped bytes, in two halves.
+   * ─────────────────────────────────────────────────────────────────────────────────
+   *
+   * The bug: `mpick1` shipped at index 0, so the MATTE NODE's output reached no pixel of
+   * the wall. The owner changed its model, its backend and its resolution and the picture
+   * never moved, because the thing he was tuning was not on the path the output takes. The
+   * claim above — nine cells holding nine moments — could not have caught it: it says
+   * nothing about `in2`, and it is green either way.
+   *
+   * ## Why this is two assertions and not one
+   *
+   * THE ROUTE is structural and must be asserted structurally, because the pixel half is
+   * nearly blind. TimeGrid consumes its matte in exactly ONE place — the per-cell dropout —
+   * and a dropout is rare on purpose (period 47, life 12, share 0.30, odds scaling with
+   * cell brightness). MEASURED over frames 60-479 of this document: driving `wall1.in2`
+   * from all-white to all-black moves SIX frames out of 420 and not one component
+   * elsewhere. A pixel gate alone would therefore pass on 414 of every 420 frames with the
+   * matte severed — which is exactly the state that shipped.
+   *
+   * So: the branch assertion is the one that would have failed on the bug, and the pixel
+   * assertion is the one that proves the branch reaches the glass rather than merely being
+   * wired. Neither is sufficient; both are cheap.
+   */
+  it("E51 Chorus ships the matte node on the wall's matte input, and cutting it changes the frame", async () => {
+    const file = listExamples().find((entry) => entry.fileName === "E51-Chorus.loom.json");
+    if (file === undefined) throw new Error("E51-Chorus.loom.json is not shipped");
+    const { document } = requireExample(file);
+    const graph = document.graph;
+
+    /*
+     * HALF ONE — the selected branch is the MATTE NODE, derived rather than spelled.
+     * Read the switch's index, find the edge that arrives at that order, and name the TYPE
+     * of the node it comes from. Asserting `index === 1` alone would go quietly wrong the
+     * day someone reorders the branches.
+     */
+    const chosen = graph.nodes["mpick"]?.parameters?.["index"];
+    expect(typeof chosen, "mpick1 must carry a plain numeric index").toBe("number");
+    const feeding = Object.values(graph.edges).filter(
+      (edge) => edge.target.nodeId === "mpick" && edge.target.portId === "inputs",
+    );
+    const selected = feeding.find((edge) => (edge.order ?? 0) === chosen);
+    expect(selected, `no edge arrives at mpick1 order ${String(chosen)}`).toBeDefined();
+    const source = graph.nodes[selected!.source.nodeId];
+    expect(
+      source?.type,
+      "the branch mpick1 selects must be the matte node — the one whose Inspector page a " +
+        "user tunes. At index 0 it was `threshold` and the matte node reached no pixel.",
+    ).toBe("matte");
+    expect(
+      Object.values(graph.edges).some(
+        (edge) => edge.source.nodeId === "mpick" && edge.target.nodeId === "wall" && edge.target.portId === "in2",
+      ),
+      "mpick1 must reach the wall's matte input",
+    ).toBe(true);
+
+    /*
+     * HALF TWO — the same bytes, rendered with and without `e-mpick-wall`, over the window
+     * where the dropout is known to fire. 192x108 because the dropout's schedule is
+     * resolution-independent (the component pins its own internal size) and the readback
+     * is not.
+     */
+    const WINDOW = Array.from({ length: 21 }, (_, at) => 280 + at);
+    const shootShipped = async (mutate: (graph: GraphDocument) => void): Promise<Map<number, Float64Array>> => {
+      const copy = JSON.parse(JSON.stringify(graph)) as GraphDocument;
+      mutate(copy);
+      const result = await renderHeadless({
+        host: nodeGpuHost(),
+        graph: copy,
+        settings: { ...document.settings, outputResolution: { width: 192, height: 108 } },
+        components: await starterComponentsView(),
+        frames: Math.max(...WINDOW) + 1,
+        capture: WINDOW,
+        animate: true,
+        outputNodeId: "out",
+      });
+      expect(result.diagnostics.filter((diagnostic) => diagnostic.severity === "error")).toEqual([]);
+      return new Map(result.frames.map((frame) => [frame.frameIndex, decodeComponents(frame.bytes, frame.format)]));
+    };
+
+    const wired = await shootShipped(() => {});
+    const severed = await shootShipped((copy) => {
+      delete (copy.edges as Record<string, unknown>)["e-mpick-wall"];
+    });
+
+    const moved: number[] = [];
+    for (const at of WINDOW) {
+      const a = wired.get(at);
+      const b = severed.get(at);
+      if (a === undefined || b === undefined) throw new Error(`no capture at frame ${at}`);
+      let differing = 0;
+      for (let component = 0; component < a.length; component += 1) {
+        if ((a[component] ?? 0) !== (b[component] ?? 0)) differing += 1;
+      }
+      if (differing > 0) moved.push(at);
+    }
+
+    /*
+     * THE CLAIM. Cutting the matte must change the frame — measured at 288-293 on
+     * 2026-09-04. If this window ever comes back empty, the first thing to check is not
+     * this wire but whether the source got darker: the dropout's odds scale with cell
+     * brightness, so retuning `bed1` or `flare1` moves the burst.
+     */
+    expect(moved, "cutting the matte changed no frame in the window where the dropout fires").not.toEqual([]);
+
+    /*
+     * AND ITS SHAPE, derived rather than measured: a dropout lives DROP_LIFE = 12 shader
+     * frames, and E51 runs the wall at Rate 2, so one burst is 12 / 2 = 6 RENDERED frames,
+     * contiguous. A wire that leaked the matte outside the dropout — an alpha the ring or
+     * the recolorizer was reading on its own account — would move frames continuously and
+     * fail here while passing the assertion above.
+     */
+    const contiguous = moved.every((at, index) => index === 0 || at === (moved[index - 1] ?? 0) + 1);
+    expect(contiguous, `the frames the matte moved are not one burst: ${moved.join(",")}`).toBe(true);
+    expect(moved.length, `a burst at Rate 2 is DROP_LIFE / 2 = 6 rendered frames; got ${moved.join(",")}`).toBe(6);
+  }, 300_000);
 });

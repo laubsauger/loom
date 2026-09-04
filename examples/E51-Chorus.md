@@ -64,6 +64,35 @@ every cell the same *pose* at a different place, which reads as polka dots; two 
 each cell a different *configuration* — near, crossing, far apart — and a configuration is
 what a viewer reads as "a different moment".
 
+## The matte is a port too — and it is a smaller thing than it looks
+
+`wall1.in2` wants a **matte texture**, not "the matte node", which is why a luma key, a
+person matte, a depth cut or a hand-drawn shape all feed the same component. `mpick1` picks
+which one arrives:
+
+- **Index 0** is `key1`, a luma **threshold** — the honest answer for a bright subject on a
+  dark bed, and deterministic.
+- **Index 1 (shipped)** is `cut1`, the **Matte** node (MODNet). It used to be 0, and that
+  was a bug (T1042): with the matte node's output reaching no pixel of the wall, nothing on
+  its Inspector page — model, backend, resolution — could change the picture, and every
+  experiment run against it was correctly reporting no difference. The node whose knobs the
+  Inspector offers is the node on the path.
+
+Without the model the Matte node publishes zero everywhere — "nobody is here", §T715 — so a
+dropout blanks its cell instead of failing. `pick1` deliberately stays on the understudy: a
+shipped example must not open a device on load, so *seeing* the matte work means flipping
+`pick1` to 1 with a camera attached.
+
+**Be honest about what that buys, because the switch was never the whole story.** TimeGrid
+consumes its matte in exactly one place — the per-cell **dropout** — and a dropout is rare
+by construction. Measured on Dawn over frames 60–479 of this document: driving `wall1.in2`
+from all-white to all-black changes **six frames out of four hundred and twenty**, one
+burst, in one cell, and not a single component anywhere else.
+`time-grid-claims.gpu.test.ts` asserts exactly that, so the route cannot silently die again
+— but a once-every-seven-seconds event in one cell is not a demonstration of matting. **E52
+Presence and E53 Two Cuts are**, with the cut one hop from the output and its coverage spent
+on something always visible. E51 is a video wall that *accepts* a matte.
+
 ## The performance page
 
 Eight knobs reach the parent, and nothing else does:
@@ -304,8 +333,8 @@ looking right. A `valueSwitch` is exclusive by construction.
   flip the index, and everything downstream follows because everything downstream reads
   `source1`.
 - **A microphone is deliberately absent.** An unselected *texture* `switch` branch is NOT
-  pruned — measured on this very graph: `cut1` and `cam1` both emit passes while sitting on
-  index 1 — and a shipped `audioIn` opens the device on load. To add one, drop an Audio In
+  pruned — measured on this very graph: `key1` and `cam1` both emit passes while sitting on
+  an unselected branch — and a shipped `audioIn` opens the device on load. To add one, drop an Audio In
   beside `track1` and wire it to `source1.in3`; the value switch will keep it silent until
   you select it, but the device opens regardless, so it is yours to add and not ours to
   ship.

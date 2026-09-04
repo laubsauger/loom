@@ -281,14 +281,35 @@ export const chorusDocument = document(
        *
        * TimeGrid's second input is a MATTE TEXTURE, not "the matte node" — which is what
        * lets a luma key, a real person matte, a depth cut or a hand-drawn shape all feed
-       * the same component. Index 0 is the understudy: a luma threshold, which is the
-       * honest answer for a bright subject on a dark bed and is DETERMINISTIC, so every
-       * gate and the gallery card see the dropout event actually happen.
+       * the same component. Index 0 is `key1`, the understudy: a luma threshold, which is
+       * the honest answer for a bright subject on a dark bed and is DETERMINISTIC.
        *
-       * Index 1 is `cut1`, MODNet. Per §T715 the document loads and renders without the
-       * model — the node publishes ZERO everywhere, "nobody is here", so the dropout
-       * simply blanks its cell rather than failing. Flip to 1 with the webcam on and the
-       * wall drops the room away from behind whoever is in front of it.
+       * Index 1 is `cut1`, MODNet, AND IT IS THE SHIPPED DEFAULT (T1042). It was 0, and
+       * the owner's report was that nothing he changed on the Matte node — model, backend,
+       * resolution — moved the picture. It could not: at index 0 the matte node's output
+       * reached no pixel of the wall, so every experiment was correctly reporting no
+       * difference. The node whose knobs the Inspector offers is now the node on the path.
+       *
+       * Per §T715 the document loads and renders without the model — the node publishes
+       * ZERO everywhere, "nobody is here", so a dropout blanks its cell rather than
+       * failing. With the webcam on (`pick1` → 1) the wall drops the room away from behind
+       * whoever is in front of it.
+       *
+       * ⚠ `pick1` STAYS AT 0, against the first reading of T1042. A shipped example must
+       * not open a device on load — E27's precedent, restated by E52 and E53, and this
+       * file's own audio switch obeys it eight paragraphs down. Flipping it would trade a
+       * deterministic gallery card and every headless gate for a permission prompt.
+       *
+       * ⚠ AND THE SWITCH WAS NEVER THE WHOLE CAUSE. MEASURED on Dawn over frames 60-479 of
+       * the shipped document (192x108): driving the matte on `wall.in2` from all-ONE to
+       * all-ZERO changes SIX FRAMES OUT OF 420 — one burst, at 288-293, and not one
+       * component anywhere else. TimeGrid consumes its matte in exactly one place, the
+       * per-cell DROPOUT, which is rare by construction (period 47, life 12, share 0.30)
+       * and rarer here because its odds scale with cell brightness and this bed is dark.
+       * So the matte is on the path and is asserted from pixels, but "the wall drops the
+       * room away" is a once-every-seven-seconds event in one cell, not a look. The
+       * feature's real demonstrations are E52 and E53, where the cut is ONE hop from the
+       * output; E51 is a video wall that accepts a matte, and the prose now says so.
        */
       node("key", "threshold", [-580, 420], {
         threshold: 0.24,
@@ -304,7 +325,7 @@ export const chorusDocument = document(
          own input buffer measured 0.049 and 0.103. The accurate build is flat across five
          stops, centroid stable to a texel. The default is the accurate one. */
       node("cut", "matte", [-580, 660], {}, { label: "cut1" }),
-      node("mpick", "switch", [-300, 540], { index: 0 }, { label: "mpick1" }),
+      node("mpick", "switch", [-300, 540], { index: 1 }, { label: "mpick1" }),
 
       // ── the wall ────────────────────────────────────────────────────────────
       /* The published page, turned from the outside. Grid is a vec2 because a component
