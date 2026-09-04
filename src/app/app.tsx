@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { scopeFromFrame } from "@domain/expressions/index.ts";
 import type { ExpressionScope } from "@domain/expressions/index.ts";
 import type { CommandResult, CommandStatus } from "@domain/types/commands.ts";
@@ -24,7 +24,11 @@ import type { AppRuntime } from "./app-runtime.ts";
 import type { AgentToolSurface } from "@agent/index.ts";
 import { AppShell } from "./app-shell.tsx";
 import { AgentPane, PerformancePane, ShaderPane } from "./dock-panes.tsx";
-import { OPEN_SETTINGS_COMMAND, ProjectSettingsHost } from "@editor/inspect/index.ts";
+import {
+  OPEN_SETTINGS_COMMAND,
+  ProjectSettingsHost,
+  starterPreferenceStore,
+} from "@editor/inspect/index.ts";
 import type { CookPolicyValue } from "@editor/inspect/index.ts";
 import type { FrameRange, ProjectSettings } from "@domain/types/graph.ts";
 import { projectFps, projectRange } from "@domain/types/graph.ts";
@@ -54,6 +58,7 @@ import { usePulseFiring } from "./pulse-firing.ts";
 import { useRuntimeCommands } from "./runtime-commands.ts";
 import { createPreviewSinkStore } from "./preview-sinks.ts";
 import { useAutosave } from "./use-autosave.ts";
+import { useStarterProject } from "./use-starter-project.ts";
 import { useGpuStatus } from "./use-gpu-status.ts";
 import { useGpuRecovery } from "./use-gpu-recovery.ts";
 import { useFrameLoop } from "./use-frame-loop.ts";
@@ -162,6 +167,16 @@ export function App({
   // by a caller is that caller's to dispose. Read when the effect RUNS, so the flag
   // describes the runtime the cleanup will actually be tearing down.
   const owned = useRef(providedRuntime === undefined);
+  /**
+   * Did the APP build the runtime it mounted with? Frozen at mount, unlike `owned`.
+   *
+   * The starter network turns on this (see `use-starter-project.ts`): a caller that hands
+   * a runtime in has already chosen the open document, and a starter that replaced it
+   * would be overruling the only party that knows what it is for.
+   */
+  const selfBooted = useRef(providedRuntime === undefined);
+  /** The document instance the app came up on, for the same starter decision. */
+  const bootDocumentIdentity = useRef(runtime.documentIdentity);
   const runtimeRef = useRef(runtime);
   runtimeRef.current = runtime;
 
@@ -979,6 +994,44 @@ export function App({
     onNewProject: startNewProject,
     isDirty,
     onSaved: dirty.markSaved,
+  });
+
+  /**
+   * The starter network, on a boot with nothing to restore — see `use-starter-project.ts`
+   * for the whole argument, including why an autosave always wins and why a pristine
+   * starter cannot become the user's document.
+   *
+   * Wired HERE rather than inside `useAutosave` because it needs both halves of the boot:
+   * the launch lookup's answer (which autosave owns) and `project.open` on the bus (which
+   * `useProject` owns), and neither may reach into the other. `openText` without a file
+   * name on purpose: nobody opened a file, so the top bar must not claim one.
+   */
+  const { openText: openProjectText } = project;
+  // The one per-person store (see `starter-preference.ts`) — the same object the settings
+  // dialog reads, so the switch and the boot cannot disagree.
+  const starterPreference = starterPreferenceStore();
+  const startOnStarter = useSyncExternalStore(
+    starterPreference.subscribe,
+    starterPreference.get,
+  );
+  useStarterProject({
+    // `owned` is exactly this question at mount, but it FLIPS to true after the first
+    // open, so it cannot be read later in the session for "did we boot ourselves". This
+    // is the same fact, frozen.
+    selfBooted: selfBooted.current,
+    // Still the document the app booted with — nobody opened anything while the launch
+    // lookup was in flight. `documentIdentity` names the LOADED INSTANCE, which is exactly
+    // the question (see its docblock in `app-runtime.ts`).
+    atBootDocument: runtime.documentIdentity === bootDocumentIdentity.current,
+    // …and nothing is mid-open. `busy` is set before the parse; `documentIdentity` only
+    // moves after it, so the two together cover the whole of "somebody chose a document".
+    openInFlight: project.busy,
+    enabled: startOnStarter,
+    restoreChecked: autosave.restoreChecked,
+    hasRestore: autosave.restore !== null,
+    isDirty,
+    projectId: runtime.invocation.projectId,
+    openText: openProjectText,
   });
 
   /**

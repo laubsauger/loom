@@ -47,6 +47,13 @@ export type {
 } from "./node-info-model.ts";
 
 export type { CookPolicyValue } from "./performance-panel.tsx";
+export {
+  STARTER_PREFERENCE_DEFAULT,
+  STARTER_PREFERENCE_STORAGE_KEY,
+  createStarterPreferenceStore,
+  starterPreferenceStore,
+} from "./starter-preference.ts";
+export type { StarterPreferenceStore } from "./starter-preference.ts";
 export { ProjectSettingsDialog } from "./project-settings.tsx";
 export type { ProjectSettingsProps } from "./project-settings.tsx";
 export { ProjectSettingsHost } from "./project-settings-host.tsx";

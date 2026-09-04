@@ -62,6 +62,9 @@ describe("the Shaderloom → Loom rename holds (§T899)", () => {
       "shaderloom.project.id.v1",
       "shaderloom.keymap.overrides.v1",
       "shaderloom.graph.nodeTypeLabels.v1",
+      // "start on a starter network rather than an empty canvas" — per person, like the
+      // node type label above (`editor/inspect/starter-preference.ts`).
+      "shaderloom.project.startOnStarter.v1",
       "shaderloom.autosave",
       "shaderloom-models-v1",
       "shaderloom.commands.holders",

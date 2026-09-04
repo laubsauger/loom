@@ -44,6 +44,21 @@ export interface AutosaveWiring {
   readonly unavailable: boolean;
   /** Newest snapshot found at launch, if any. The prompt offers it (§T139). */
   readonly restore: RestoreCandidate | null;
+  /**
+   * The launch lookup has ANSWERED — `restore` is a finding, not a "not yet".
+   *
+   * `restore === null` cannot carry that on its own: it is the value both before the
+   * IndexedDB round trip and after one that found nothing, and the starter-network
+   * decision (`use-starter-project.ts`) turns on exactly that difference. Loading a
+   * starter while the lookup is still in flight is how a starter lands on top of work
+   * that was about to be offered back.
+   *
+   * True as soon as the answer is knowable, which includes "there is no store at all" —
+   * that browser context has no snapshots to lose. It stays FALSE when the lookup
+   * FAILED: an unreadable store is not the same claim as an empty one, and the safe
+   * reading of "I could not tell" is "assume there is something there".
+   */
+  readonly restoreChecked: boolean;
   dismissRestore(): void;
   /** Forces any pending write. Awaited before a manual save and on unload. */
   flush(): Promise<void>;
@@ -65,14 +80,21 @@ export function useAutosave(runtime: AppRuntime, options: UseAutosaveOptions = {
   const [diagnostics, setDiagnostics] = useState<readonly RuntimeDiagnostic[]>([]);
   const [unavailable, setUnavailable] = useState(false);
   const [restore, setRestore] = useState<RestoreCandidate | null>(null);
+  const [restoreChecked, setRestoreChecked] = useState(false);
   const flushRef = useRef<() => Promise<void>>(noop);
 
   useEffect(() => {
     const store = createStore();
+    // A NEW runtime (open, new project) re-asks the question, so the previous answer
+    // stops being one until this lookup lands.
+    setRestoreChecked(false);
 
     if (store === undefined) {
       setUnavailable(true);
       setRestore(null);
+      // Nothing is being snapshotted here, so there is nothing to restore — an answer,
+      // not an absence of one.
+      setRestoreChecked(true);
       setDiagnostics([
         {
           severity: "warning",
@@ -118,7 +140,9 @@ export function useAutosave(runtime: AppRuntime, options: UseAutosaveOptions = {
     if (restoreOnLaunch) {
       void findRestoreCandidate(store, runtime.invocation.projectId)
         .then((candidate) => {
-          if (!cancelled) setRestore(candidate ?? null);
+          if (cancelled) return;
+          setRestore(candidate ?? null);
+          setRestoreChecked(true);
         })
         .catch((error: unknown) => {
           if (cancelled) return;
@@ -148,5 +172,13 @@ export function useAutosave(runtime: AppRuntime, options: UseAutosaveOptions = {
   // T465: the problems tab's Clear empties every ACCUMULATING source; anything still
   // real re-reports on its own and thereby proves it is live.
   const clearDiagnostics = useCallback(() => setDiagnostics([]), []);
-  return { diagnostics, clearDiagnostics, unavailable, restore, dismissRestore, flush };
+  return {
+    diagnostics,
+    clearDiagnostics,
+    unavailable,
+    restore,
+    restoreChecked,
+    dismissRestore,
+    flush,
+  };
 }

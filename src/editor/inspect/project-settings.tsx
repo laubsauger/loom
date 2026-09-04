@@ -8,6 +8,7 @@ import {
 } from "@domain/types/graph.ts";
 import type { TextureFormat } from "@domain/types/node-definition.ts";
 import { nodeTypeLabelStore } from "@editor/nodes/node-type-labels.ts";
+import { starterPreferenceStore } from "./starter-preference.ts";
 import { BooleanField } from "@ui/controls/boolean-field.tsx";
 import { ControlRow } from "@ui/controls/control-row.tsx";
 import { EnumField } from "@ui/controls/enum-field.tsx";
@@ -130,6 +131,8 @@ export function ProjectSettingsDialog({
     typeLabels.subscribe,
     typeLabels.get,
   );
+  const starter = starterPreferenceStore();
+  const startOnStarter = useSyncExternalStore(starter.subscribe, starter.get);
 
   /**
    * The value a field is mid-drag, keyed by field. Null for a field means "show the
@@ -347,6 +350,32 @@ export function ProjectSettingsDialog({
               label="Show each node's type beside its name"
               value={showTypeLabels}
               onChange={(next) => typeLabels.set(next)}
+            />
+          </ControlRow>
+        </section>
+
+        {/*
+          The STARTUP switch, and the same argument as the row above for why it is here
+          and not in `ProjectSettings`.
+
+          It decides what happens before any document exists — an empty canvas, or the
+          small shipped network `use-starter-project.ts` opens when there is nothing to
+          restore — so there is no `.loom.json` it could honestly ride in. Per person,
+          `localStorage`, no revision bump, and this dialog because it is the only
+          settings surface the app has (T356).
+
+          Worth stating plainly next to the switch: turning it OFF cannot cost anyone
+          their work, and neither can leaving it on. The starter only ever loads onto a
+          boot with no autosave to restore, so the setting chooses between a starter and
+          an empty canvas — never between a starter and your project.
+        */}
+        <section className={styles.group} aria-label="Startup">
+          <h3 className={styles.groupTitle}>startup</h3>
+          <ControlRow label="starter network">
+            <BooleanField
+              label="Open a small example when there is nothing to restore"
+              value={startOnStarter}
+              onChange={(next) => starter.set(next)}
             />
           </ControlRow>
         </section>
