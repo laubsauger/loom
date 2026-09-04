@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
+import { DEVICE_HELPER_COMMAND } from "@devices/helper.ts";
 
 import type { GraphDocument } from "../domain/types/graph.ts";
 import type { CompiledGraph } from "../compiler/index.ts";
@@ -116,7 +117,7 @@ describe("T1029 — the hook, per path", () => {
     // the owner met a silently black node (the shipped E52 report, verbatim).
     expect(view.result.current.diagnostics[0]?.severity).toBe("warning");
     expect(view.result.current.diagnostics[0]?.code).toBe("vision.helper.absent");
-    expect(view.result.current.diagnostics[0]?.message).toContain("pnpm mcp:serve");
+    expect(view.result.current.diagnostics[0]?.message).toContain(DEVICE_HELPER_COMMAND);
     /* THE SHIPPED FAILURE: E52 spends `mask1:coverage`, and with no helper this hook
        tracked the entry but never joined the channel chain — so the expression FAILED
        ("publishes no channel") instead of dimming the room. The channel must exist

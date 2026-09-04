@@ -1,5 +1,6 @@
 import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
+import { DEVICE_HELPER_COMMAND } from "@devices/helper.ts";
 
 import { createNodeRegistry } from "@nodes/registry/registry.ts";
 import { allNodeDefinitions } from "@nodes/definitions/index.ts";
@@ -158,7 +159,7 @@ describe("§T948 rule 3 — the reason reaches a surface, and says what to DO", 
     expect(diagnostic?.severity).toBe("warning");
     expect(diagnostic?.message.toLowerCase()).not.toContain("disabled");
     // The action, not the fault: what to run and where to type the code.
-    expect(diagnostic?.suggestion).toContain("pnpm mcp:serve");
+    expect(diagnostic?.suggestion).toContain(DEVICE_HELPER_COMMAND);
     expect(diagnostic?.suggestion).toContain("Connections");
   });
 

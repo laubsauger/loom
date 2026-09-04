@@ -834,7 +834,7 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
       onIncumbentGone: () => {
         // No live Loom bridge is registered for that port, so taking it is a promotion rather
         // than a second collision. This is the path that makes closing a Desktop session, or
-        // stopping a terminal `pnpm mcp:serve`, hand the bridge to a process that is still
+        // stopping a helper started at a terminal, hand the bridge to a process that is still
         // running instead of leaving the port free and every server useless.
         if (disposed) return;
         listenError = null;

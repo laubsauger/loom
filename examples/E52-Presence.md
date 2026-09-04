@@ -2,7 +2,7 @@
 
 A presence mirror: whoever stands at the camera is lifted off their background by the
 operating system's own person segmentation — Apple Vision, reached through the local
-helper (`pnpm mcp:serve`) over the device bridge — and composited over a slow synthetic
+helper (`pnpm helper`) over the device bridge — and composited over a slow synthetic
 haze that wakes into colour when someone is in frame.
 
 ## The trade this node demonstrates

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { DEVICE_HELPER_COMMAND } from "@devices/helper.ts";
 
 import { OSC_COPY_LIMIT, oscStatusLine, type OscBridgeState } from "./osc-status.ts";
 
@@ -70,8 +71,8 @@ describe("§T948 rule 3 — the copy says what to DO, not what is broken", () =>
   });
 
   it("names the helper and the command wherever starting one is the action", () => {
-    expect(oscStatusLine({ kind: "idle" }, 0).hint).toContain("pnpm mcp:serve");
-    expect(oscStatusLine({ kind: "unreachable" }, 0).hint).toContain("pnpm mcp:serve");
+    expect(oscStatusLine({ kind: "idle" }, 0).hint).toContain(DEVICE_HELPER_COMMAND);
+    expect(oscStatusLine({ kind: "unreachable" }, 0).hint).toContain(DEVICE_HELPER_COMMAND);
     expect(oscStatusLine({ kind: "idle" }, 0).headline).toContain("helper");
   });
 

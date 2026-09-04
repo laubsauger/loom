@@ -5,6 +5,8 @@ import { readCompileInputs } from "./compile-context.ts";
 import { scratchResourceId } from "../../compiler/resources.ts";
 import { inferenceSourceIdFor } from "../../runtime/execution/inference-sources.ts";
 import { letterboxPreprocessWgsl } from "./inference-node.ts";
+// T1110: one spelling of the helper command, in `devices/helper.ts`. Constants only.
+import { DEVICE_HELPER_COMMAND } from "../../devices/helper.ts";
 
 /**
  * Person Mask (T1029) — person segmentation through the OS's own Vision framework,
@@ -68,7 +70,7 @@ export const personMaskNode: NodeDefinition = {
   title: "Person Mask",
   category: "generator",
   description:
-    "Person segmentation through the operating system's own Vision framework — no model download, no weights, nothing to verify. Needs the local helper (pnpm mcp:serve) on macOS; anywhere else the node stays neutral (zero mask, nobody) and says why. The OS supplies the model, so the cut may differ between machines and OS versions — for a hash-pinned, reproducible matte use the Matte node instead. White where the person is; every channel carries the mask.",
+    `Person segmentation through the operating system's own Vision framework — no model download, no weights, nothing to verify. Needs the local helper (${DEVICE_HELPER_COMMAND}) on macOS; anywhere else the node stays neutral (zero mask, nobody) and says why. The OS supplies the model, so the cut may differ between machines and OS versions — for a hash-pinned, reproducible matte use the Matte node instead. White where the person is; every channel carries the mask.`,
   tags: ["segmentation", "person", "mask", "vision", "matte", "device", "alpha"],
   inputs: [{ id: "input", label: "Input", type: RGBA_TEXTURE }],
   outputs: [{ id: "out", label: "Out", type: RGBA_TEXTURE }],

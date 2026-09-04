@@ -1,5 +1,7 @@
 import type { CompiledNodeDescription, NodeDefinition } from "../../domain/types/node-definition.ts";
 import { SINK_TAG } from "./sink.ts";
+// T1110: one spelling of the helper command, in `devices/helper.ts`. Constants only.
+import { DEVICE_HELPER_COMMAND } from "../../devices/helper.ts";
 
 /**
  * Laser Out (T950) — the planned sample stream, to a laser projector DAC. A SINK with
@@ -51,7 +53,7 @@ export const laserOutNode: NodeDefinition = {
   title: "Laser Out",
   category: "output",
   description:
-    "Sends a planned laser sample stream (from Laser Path) to an Ether Dream DAC on the local network. Needs the local helper (pnpm mcp:serve) — a browser page cannot open TCP. THERE IS NO DEFAULT DEVICE and NOTHING EMITS UNTIL ARMED: set Host, Connect (the DAC's own broadcast supplies its capacity), then Arm in the node's Laser section — a once-per-session action that is never saved with the document. A take, an offline render, a headless export and the test suites never transmit; if the page stalls or closes mid-stream, the helper's dead-man blanks, stops and emergency-stops the DAC on its own. This drives a laser projector: the projector, its interlocks and its scan-fail hardware are the operator's responsibility, and this node does not make an unsafe projector safe.",
+    `Sends a planned laser sample stream (from Laser Path) to an Ether Dream DAC on the local network. Needs the local helper (${DEVICE_HELPER_COMMAND}) — a browser page cannot open TCP. THERE IS NO DEFAULT DEVICE and NOTHING EMITS UNTIL ARMED: set Host, Connect (the DAC's own broadcast supplies its capacity), then Arm in the node's Laser section — a once-per-session action that is never saved with the document. A take, an offline render, a headless export and the test suites never transmit; if the page stalls or closes mid-stream, the helper's dead-man blanks, stops and emergency-stops the DAC on its own. This drives a laser projector: the projector, its interlocks and its scan-fail hardware are the operator's responsibility, and this node does not make an unsafe projector safe.`,
   tags: ["laser", "output", "device", "ether-dream", "dac", SINK_TAG],
   /*
    * T949/§V841 — the row's argument, not just its verdict: this node's PURPOSE is to

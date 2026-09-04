@@ -3,10 +3,11 @@ import { Button } from "@ui/index.ts";
 
 import {
   MCP_GRANT_EXPORT_FLAG,
-  MCP_SERVE_SCRIPT,
+  HELPER_SCRIPT_NAME,
   REPO_PATH_PLACEHOLDER,
   mcpClientConfigSnippet,
 } from "../../mcp/client-config.ts";
+import { DEVICE_HELPER_DEVICES_ONLY_COMMAND } from "@devices/helper.ts";
 import styles from "./help.module.css";
 
 /**
@@ -29,6 +30,13 @@ import styles from "./help.module.css";
  * A browser cannot know where its own repository is checked out. Rather than print a
  * placeholder and hope, the field makes the one edit the user must make anyway, and the
  * snippet below it is then genuinely paste-ready.
+ *
+ * ## Why an AGENTS tab ends by talking about lasers (T1110/T1111)
+ *
+ * Because the process this tab teaches is the SAME process an OSC node, a laser DAC and the
+ * Person Mask node reach, and this tab was the last surface still implying otherwise. The
+ * owner's question was "why would that depend on the mcp server?" — it does not, and the
+ * final line says so, with the flag that starts the device door on its own.
  */
 export function McpSetup() {
   const [repoPath, setRepoPath] = useState("");
@@ -100,7 +108,17 @@ export function McpSetup() {
       </pre>
 
       <p>
-        Same server at a terminal: <code>pnpm {MCP_SERVE_SCRIPT}</code>
+        Same server at a terminal: <code>pnpm {HELPER_SCRIPT_NAME}</code>
+      </p>
+      {/*
+        §V338/§V288: the fact that these are ONE process is only useful if it is stated
+        where the wrong inference is made. Both halves, both commands, one sentence.
+      */}
+      <p>
+        That one process is also Loom&rsquo;s device helper: OSC, a laser DAC and Person
+        Mask reach hardware through it, with the same pairing code, and need no agent and no
+        MCP client. For devices alone, with no MCP server:{" "}
+        <code>{DEVICE_HELPER_DEVICES_ONLY_COMMAND}</code>
       </p>
     </div>
   );

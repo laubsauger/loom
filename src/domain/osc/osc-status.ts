@@ -32,6 +32,14 @@
  * test is the cap. Same reasoning, same shape as `midi-status.ts` (§T959).
  */
 
+/*
+ * T1110: the COMMAND is not this module's fact. It used to be spelled here, twice, which is
+ * how a rename of the one thing T1103 called "the one place that names the command" would
+ * have left two hints still saying the old name. `helper.ts` is string constants and imports
+ * nothing; §V901 forbids `devices` importing UPWARD, and this is the reverse direction.
+ */
+import { DEVICE_HELPER_COMMAND } from "@devices/helper.ts";
+
 /**
  * WHY there is (or is not) OSC. Lives here rather than in the transport so a DOMAIN module
  * never has to import one — the same direction `midi-status.ts` faces.
@@ -97,14 +105,14 @@ export function oscStatusLine(state: OscBridgeState, addressCount: number): OscS
       // to "why does this node do nothing on the hosted build" (§T948 rule 3).
       return {
         headline: "OSC needs a local helper",
-        hint: "Run pnpm mcp:serve, then enter its pairing code.",
+        hint: `Run ${DEVICE_HELPER_COMMAND}, then enter its pairing code.`,
       };
     case "connecting":
       return { headline: "Reaching the local helper", hint: "One moment." };
     case "unreachable":
       return {
         headline: "No local helper answered",
-        hint: "Start it with pnpm mcp:serve in the project.",
+        hint: `Start it with ${DEVICE_HELPER_COMMAND} in the project.`,
       };
     case "refused":
       // The helper's own words. A stale pairing code is the ordinary cause and the helper

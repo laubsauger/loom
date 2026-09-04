@@ -36,7 +36,7 @@ import { registerHooks } from "node:module";
  * this hook did not know about fails as "Cannot find package '@thing/x'" — an error
  * that reads like a missing npm install, not like a stale table.
  *
- * Usage: `node --import ./src/tooling/alias-hooks.ts src/mcp/serve.ts` (`pnpm mcp:serve`).
+ * Usage: `node --import ./src/tooling/alias-hooks.ts src/mcp/serve.ts` (the `helper` script).
  */
 
 const repoRoot = new URL("../../", import.meta.url);

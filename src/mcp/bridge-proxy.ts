@@ -38,7 +38,7 @@ import { readHandoff } from "./bridge-handoff.ts";
  *
  * The handoff names a PID, so "the file is gone or that process is not running" is a fact
  * this module can establish rather than guess. It then tells its owner, which re-attempts
- * the bind — so stopping a terminal `pnpm mcp:serve` promotes one of Desktop's pair into the
+ * the bind — so stopping a helper started at a terminal promotes one of Desktop's pair into the
  * listener instead of leaving three processes that can all only refuse.
  */
 

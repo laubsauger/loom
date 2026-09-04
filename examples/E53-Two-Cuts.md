@@ -29,7 +29,7 @@ no person: both cuts honestly find nobody, both keys go dark, and what ships is 
 two-tone animated diptych with the stand-in glowing through at low brightness on both
 sides. Flip `src1` to 1 with a webcam to appear twice at once — the left half also wants
 the matte model downloaded (the node's notice offers it), the right half wants the local
-helper (`pnpm mcp:serve`) on macOS. Each half degrades alone: whichever cut is unavailable
+helper (`pnpm helper`) on macOS. Each half degrades alone: whichever cut is unavailable
 goes dark on its side and says why, while the other keeps cutting.
 
 Nodes: `bed1(noise)` → `src1(switch)` ← `cam1(webcam)`; `src1` → `matte1(matte)` →

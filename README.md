@@ -67,11 +67,13 @@ Then send from one tab and learn in the other. The page repeats these instructio
 An **OSC In** node reads OSC as channels and an **OSC Out** node sends them back out, so a
 patch can sit in the middle of a studio chain rather than at the end of one.
 
-Both need a **local helper**, because a browser page cannot receive or send UDP. The helper
-is the MCP server you may already be running:
+Both need a **local helper**, because a browser page cannot receive or send UDP. It is one
+process with two doors — the device bridge these nodes use, and the stdio MCP server an
+agent uses — so if you are already running it for an agent, it is already running for OSC:
 
 ```bash
-pnpm mcp:serve
+pnpm helper                  # both doors
+pnpm helper --devices-only   # OSC, laser and Person Mask, with no MCP server at all
 ```
 
 Enter the pairing code it prints in the agent panel's **Connections** section, once. The OSC
@@ -128,7 +130,7 @@ Use this as `.mcp.json` with Claude Code, or merge the `mcpServers` block into y
       "args": [
         "--dir",
         "/ABSOLUTE/PATH/TO/loom",
-        "mcp:serve"
+        "helper"
       ]
     }
   }
@@ -136,6 +138,11 @@ Use this as `.mcp.json` with Claude Code, or merge the `mcpServers` block into y
 ```
 
 Replace both paths. `which pnpm` prints the first one. Restart Claude, then ask it to call `bridge_status` and show the current pairing code.
+
+The script was called `mcp:serve` until it was renamed to `helper`; the old name still works
+as an alias, so an existing config keeps running. The **agent → Agents** help tab generates a
+config that spawns `node` directly, which avoids pnpm's startup banner landing in the
+JSON-RPC stream.
 
 To drive the visible editor:
 

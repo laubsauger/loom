@@ -33,7 +33,8 @@ pnpm typecheck           # THE type gate. Bare `tsc --noEmit` at root checks not
 pnpm test                # vitest run, both workspace projects
 pnpm test:headless       # only the "headless" (node env) project
 pnpm test:e2e            # playwright, src/tests/e2e, boots dev server itself
-pnpm mcp:serve           # headless Loom MCP server on stdio (+ loopback bridge for a Loom tab)
+pnpm helper              # the local helper: stdio MCP server + loopback device bridge (was `mcp:serve`, still aliased)
+pnpm helper --devices-only  # the DEVICE door alone — OSC/laser/Vision, no MCP server (T1111)
 pnpm deploy              # triggers the GitHub Pages workflow — only when the user explicitly asks
 ```
 
@@ -79,7 +80,7 @@ Path aliases: `@domain @compiler @runtime @editor @nodes @ui @agent @devices` �
 
 **Agent surface:** `src/agent/` = bus adapters + zod tool schemas only, no app logic. `src/mcp/` = stdio MCP server, loopback bridge so a browser tab can serve tools against the live document, WebMCP adapter.
 
-**Devices:** `src/devices/` = the LOCAL DEVICE BRIDGE, and it is not an agent surface (T1103). OSC (`osc-codec`, `device-hub`), the Ether Dream laser path (`ether-dream`, `laser-service`, `laser-host`), the Apple Vision worker (`vision-host`), and the page-side `device-client`. `src/devices/transport/` holds what both roles on the one loopback socket share — the wire constants and pairing rules (`bridge-wire.ts`), the browser socket and pairing memory (`bridge-socket.ts`), the RFC 6455 server (`loopback-ws.ts`). **The dependency runs `src/mcp/` → `src/devices/` and `src/app/use-*-bridge.ts` → `src/devices/`; nothing under `src/devices/` may import `src/mcp/`.** One helper process serves both halves, which is why `pnpm mcp:serve` starts the device bridge too; every user-facing sentence naming that command comes from `src/devices/helper.ts`.
+**Devices:** `src/devices/` = the LOCAL DEVICE BRIDGE, and it is not an agent surface (T1103). OSC (`osc-codec`, `device-hub`), the Ether Dream laser path (`ether-dream`, `laser-service`, `laser-host`), the Apple Vision worker (`vision-host`), and the page-side `device-client`. `src/devices/transport/` holds what both roles on the one loopback socket share — the wire constants and pairing rules (`bridge-wire.ts`), the browser socket and pairing memory (`bridge-socket.ts`), the RFC 6455 server (`loopback-ws.ts`). **The dependency runs `src/mcp/` → `src/devices/` and `src/app/use-*-bridge.ts` → `src/devices/`; nothing under `src/devices/` may import `src/mcp/`.** One helper process serves both halves, which is why `pnpm helper` starts the device bridge too — and `pnpm helper --devices-only` starts the device door with no MCP server, no tool surface and no GPU (T1111). Every user-facing sentence naming that command comes from `src/devices/helper.ts`, and `helper.test.ts` fails if any other file under `src/` spells it (T1110).
 
 ## Lint-enforced invariants (eslint.config.js)
 

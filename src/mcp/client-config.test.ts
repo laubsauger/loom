@@ -7,7 +7,8 @@ import {
   MCP_ENTRY_PATH,
   MCP_GRANT_EXPORT_FLAG,
   MCP_LOADER_PATH,
-  MCP_SERVE_SCRIPT,
+  HELPER_SCRIPT_NAME,
+  LEGACY_HELPER_SCRIPT,
   REPO_PATH_PLACEHOLDER,
   mcpClientConfigSnippet,
   mcpServerArgv,
@@ -41,15 +42,36 @@ describe("MCP client config (T399)", () => {
   });
 
   it("has a package script that starts the SAME entry point through the SAME loader", () => {
-    const script = packageJson.scripts?.[MCP_SERVE_SCRIPT];
-    expect(script, `package.json has no "${MCP_SERVE_SCRIPT}" script`).toBeTypeOf("string");
+    const script = packageJson.scripts?.[HELPER_SCRIPT_NAME];
+    expect(script, `package.json has no "${HELPER_SCRIPT_NAME}" script`).toBeTypeOf("string");
     expect(script).toContain(MCP_LOADER_PATH);
     expect(script).toContain(MCP_ENTRY_PATH);
   });
 
+  /**
+   * T1110 — THE RENAME MUST NOT BREAK A CONFIG THAT IS ALREADY ON SOMEBODY'S DISK.
+   *
+   * The task's premise was that no MCP client config depends on the script NAME, because
+   * `mcpServerArgv` spawns `node` directly. That is true of the config this module GENERATES
+   * and false of the one the README taught by hand: `pnpm --dir <repo> mcp:serve`, which
+   * names the script and is in `.mcp.json` files we cannot reach. So the old name stays as an
+   * alias for one release, and it has to start the same thing — an alias that drifts is worse
+   * than no alias, because it fails later and elsewhere.
+   */
+  it("keeps the retired name as an alias that starts the SAME entry point (one release)", () => {
+    const alias = packageJson.scripts?.[LEGACY_HELPER_SCRIPT];
+    expect(alias, `package.json has no "${LEGACY_HELPER_SCRIPT}" alias`).toBeTypeOf("string");
+    expect(alias).toContain(MCP_LOADER_PATH);
+    expect(alias).toContain(MCP_ENTRY_PATH);
+    // Spelled out rather than delegating through `pnpm run helper`: MEASURED on pnpm 9.15.4,
+    // `pnpm run X` writes its banner to STDOUT, so an alias that shelled out would put TWO
+    // banners in front of the JSON-RPC stream a `pnpm --dir … mcp:serve` client reads.
+    expect(alias).not.toContain("pnpm");
+  });
+
   it("spawns node directly rather than through pnpm, because pnpm writes to stdout", () => {
     // MEASURED: `pnpm run` prints its banner on STDOUT, which is the JSON-RPC channel —
-    // a client reading that stream sees `> loom@0.0.0 mcp:serve` before the first
+    // a client reading that stream sees `> loom@0.0.0 helper` before the first
     // message. The script is for a human at a terminal; the snippet is for a client.
     const config = JSON.parse(mcpClientConfigSnippet()) as {
       mcpServers: Record<string, { command: string; args: string[] }>;

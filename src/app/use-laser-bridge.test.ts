@@ -5,6 +5,7 @@ import { pointStorageId } from "@nodes/definitions/point-storage.ts";
 import { packAttributes } from "@/points/packing.ts";
 import type { PassDescriptor } from "@runtime/backend/plan.ts";
 import { describe, expect, it } from "vitest";
+import { DEVICE_HELPER_COMMAND } from "@devices/helper.ts";
 
 import { createNodeRegistry } from "../nodes/registry/registry.ts";
 import { allNodeDefinitions } from "../nodes/definitions/index.ts";
@@ -161,7 +162,7 @@ describe("T950 — every no-fire path, by mechanism", () => {
     act(() => view.result.current.sync(graph, registry, "live-session", undefined, PLAN_PASSES));
     await flush();
     expect(view.result.current.diagnostics[0]?.code).toBe("laser.helper.absent");
-    expect(view.result.current.diagnostics[0]?.message).toContain("pnpm mcp:serve");
+    expect(view.result.current.diagnostics[0]?.message).toContain(DEVICE_HELPER_COMMAND);
   });
 
   it("UNARMED: G1 in the diagnostic, and no stream command is even attempted", async () => {

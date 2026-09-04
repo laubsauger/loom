@@ -1,5 +1,7 @@
+import { HELPER_SCRIPT } from "@devices/helper.ts";
+
 /**
- * HOW TO POINT AN MCP CLIENT AT THIS REPO (T399).
+ * HOW TO POINT AN MCP CLIENT AT THIS REPO (T399, T1110).
  *
  * ## The gap this closes
  *
@@ -17,12 +19,19 @@
  * loader, or drop the entry point and that test goes red rather than the help panel
  * quietly teaching a command that no longer runs.
  *
- * ## Why the snippet does not use `pnpm mcp:serve`
+ * ## Why the snippet does not go through pnpm
  *
- * MEASURED, not assumed: `pnpm run` writes its two-line banner to STDOUT, which is the
- * JSON-RPC channel. A client reading that stream sees `> loom@0.0.0 mcp:serve`
- * before the first message and fails to parse. The script is for humans at a terminal;
- * the snippet spawns `node` directly.
+ * MEASURED, not assumed, and re-measured on pnpm 9.15.4 for T1110: `pnpm run` writes its
+ * two-line banner to STDOUT, which is the JSON-RPC channel. A client reading that stream
+ * sees `> loom@0.0.0 helper` before the first message and fails to parse. The script is for
+ * humans at a terminal; the snippet spawns `node` directly.
+ *
+ * ## Why the script NAME is not this module's fact any more (T1110)
+ *
+ * It was, and it was the wrong owner. The script starts ONE process with TWO doors — the
+ * stdio MCP server and the device bridge — so `@devices/helper.ts` names it and everything
+ * that has to say it out loud (refusals, node descriptions, OSC hints, the help panel) reads
+ * it from there. That is the direction §V901 allows: mcp → devices, never the reverse.
  *
  * The paths in the snippet are ABSOLUTE, and that is deliberate too: the loader resolves
  * the repo from its own module URL, so an absolute invocation works from whatever
@@ -39,8 +48,23 @@ export const MCP_ENTRY_PATH = "src/mcp/serve.ts";
 /** The path-alias loader the entry point needs (see `alias-hooks.ts`). */
 export const MCP_LOADER_PATH = "src/tooling/alias-hooks.ts";
 
-/** The `package.json` script that starts the same server for a human at a terminal. */
-export const MCP_SERVE_SCRIPT = "mcp:serve";
+/**
+ * The `package.json` script that starts the same PROCESS for a human at a terminal.
+ *
+ * Re-exported rather than re-spelled: `client-config.test.ts` asserts this name against
+ * `package.json`, so the assertion covers the constant every refusal in the product uses.
+ */
+export const HELPER_SCRIPT_NAME = HELPER_SCRIPT;
+
+/**
+ * The name the script had until T1110, kept in `package.json` as an alias for one release.
+ *
+ * It is published here for ONE reason: `client-config.test.ts` asserts the alias still
+ * starts the same entry point. README recipes and hand-written `.mcp.json` files in the
+ * wild spawn `pnpm --dir <repo> mcp:serve`, and a rename that silently broke them would be
+ * the rename doing harm. T1110: delete this and the alias together, one release on.
+ */
+export const LEGACY_HELPER_SCRIPT = "mcp:serve";
 
 /**
  * T334/§V38: pixels and readbacks leave the process only when the INVOCATION says so.

@@ -5,6 +5,7 @@ import type { Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { DEVICE_HELPER_COMMAND } from "@devices/helper.ts";
 
 import { createGraphStore } from "../domain/graph/store.ts";
 import { createDomainBus } from "../domain/commands/index.ts";
@@ -352,7 +353,7 @@ describe("the idle bridge row is a signpost (T533, §V338)", () => {
     cleanups.push(() => client.disconnect());
     const row = registry.snapshot().find((transport) => transport.kind === "bridge");
     expect(row?.state).toBe("disconnected");
-    expect(row?.detail).toContain("pnpm mcp:serve");
+    expect(row?.detail).toContain(DEVICE_HELPER_COMMAND);
     expect(row?.detail).toContain("headless copy");
     expect(row?.detail).toContain("pairing code");
   });

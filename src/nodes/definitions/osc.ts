@@ -8,6 +8,10 @@ import {
 } from "../../domain/osc/osc-mapping.ts";
 import { OSC_CHANNEL_PREFIX } from "../../domain/osc/osc-address.ts";
 import { VALUE_PORT } from "./common-ports.ts";
+// T1110: the helper's COMMAND is spelled in exactly one place (`devices/helper.ts`), so a
+// rename reaches every node description as well as every refusal. Constants only; the
+// definition stays headless (§V11).
+import { DEVICE_HELPER_COMMAND } from "../../devices/helper.ts";
 
 /**
  * T942 tier 3 — OSC IN and OSC OUT: the studio's lingua franca, both directions.
@@ -71,7 +75,7 @@ import { VALUE_PORT } from "./common-ports.ts";
 const OSC_PORT_HINT = "UDP port. 0 means not listening — there is no default port.";
 
 const OSC_IN_DESCRIPTION =
-  "OSC as channels: every address you have learned, published under the name you gave it, so osc1:cutoff drives a parameter and a Lag on the node smooths all of them at once. Name the channels you want in Controls and each one grows its own Address and Rest parameter on this node — there is no separate panel to visit. Needs a local helper (pnpm mcp:serve) because a browser page cannot receive UDP, and the helper listens on 127.0.0.1 only, so the sender must be on this machine. Values arrive EXACTLY as sent: unlike a 7-bit MIDI CC, an OSC argument has no declared full scale, so nothing is normalised for you — wire a Value Math when you want a band. Multi-argument messages address by index, so /pad/xy publishes /pad/xy/0 and /pad/xy/1. With no helper, no port or nothing arriving, every learned row still publishes its Rest value, so the document loads and renders — the inspector's OSC section says which of those it is. CLOCKLESS (§V436): it reports where the controls are, so a timeline loop passes straight through it. Live input: a render over it does not reproduce.";
+  `OSC as channels: every address you have learned, published under the name you gave it, so osc1:cutoff drives a parameter and a Lag on the node smooths all of them at once. Name the channels you want in Controls and each one grows its own Address and Rest parameter on this node — there is no separate panel to visit. Needs a local helper (${DEVICE_HELPER_COMMAND}) because a browser page cannot receive UDP, and the helper listens on 127.0.0.1 only, so the sender must be on this machine. Values arrive EXACTLY as sent: unlike a 7-bit MIDI CC, an OSC argument has no declared full scale, so nothing is normalised for you — wire a Value Math when you want a band. Multi-argument messages address by index, so /pad/xy publishes /pad/xy/0 and /pad/xy/1. With no helper, no port or nothing arriving, every learned row still publishes its Rest value, so the document loads and renders — the inspector's OSC section says which of those it is. CLOCKLESS (§V436): it reports where the controls are, so a timeline loop passes straight through it. Live input: a render over it does not reproduce.`;
 
 /**
  * `oscIn`'s STATIC half, hoisted so `parametersFor` can compose it without reading the
@@ -180,7 +184,7 @@ export const oscOutNode: NodeDefinition = {
   title: "OSC Out",
   category: "output",
   description:
-    "Sends this node's incoming channels out as OSC, so Loom is a PEER in a studio chain rather than a leaf. One channel called value sends /address; several send /address/name each. Needs a local helper (pnpm mcp:serve) because a browser page cannot speak UDP. THERE IS NO DEFAULT DESTINATION: set Host and Port or nothing is transmitted, and broadcast and multicast addresses are refused by name — a lighting network is a network. OSC rides UDP, so the helper can report that a datagram LEFT this machine and can never report that it arrived: the inspector says sent, arrival unconfirmed, and means it. Passes its input through unchanged, so it can sit inline in a chain and its plot shows what is being sent. The transmission happens in the live session only — an offline or headless render of this document sends nothing.",
+    `Sends this node's incoming channels out as OSC, so Loom is a PEER in a studio chain rather than a leaf. One channel called value sends /address; several send /address/name each. Needs a local helper (${DEVICE_HELPER_COMMAND}) because a browser page cannot speak UDP. THERE IS NO DEFAULT DESTINATION: set Host and Port or nothing is transmitted, and broadcast and multicast addresses are refused by name — a lighting network is a network. OSC rides UDP, so the helper can report that a datagram LEFT this machine and can never report that it arrived: the inspector says sent, arrival unconfirmed, and means it. Passes its input through unchanged, so it can sit inline in a chain and its plot shows what is being sent. The transmission happens in the live session only — an offline or headless render of this document sends nothing.`,
   tags: ["value", "output", "osc", "network", "bridge", "send"],
   /*
    * T949 — THE ONE WORLD-ACTING NODE IN THE CATALOGUE, and the declaration is separate
