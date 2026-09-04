@@ -6,6 +6,7 @@ import { ControlRow } from "@ui/controls/control-row.tsx";
 import type { ControlVariant } from "@ui/controls/control-row.tsx";
 import { EnumField } from "@ui/controls/enum-field.tsx";
 import { NumberField } from "@ui/controls/number-field.tsx";
+import { SwapDimensions } from "@ui/controls/swap-dimensions.tsx";
 import type { NumericSpec } from "@ui/controls/types.ts";
 import { cx } from "@ui/cx.ts";
 import type { ParameterEditor } from "./parameter-editor.ts";
@@ -143,12 +144,13 @@ export function CommonSection({
     applyResolution(overrideForResolutionMode(modeKey, shown, portId));
   };
 
-  const onDimension = (axis: "width" | "height", value: number, commit: boolean): void => {
-    const next = { ...shown, [axis]: Math.max(1, Math.round(value)) };
-    if (!commit) {
-      setDraft(next);
-      return;
-    }
+  /**
+   * The one write for the width/height box, shared by the two fields and by the T1157
+   * swap. Both gestures produce the same kind of value — a box — so they must not each
+   * decide independently which MODE that box belongs to; getting that wrong is how a
+   * `fit` node silently becomes `fixed`.
+   */
+  const writeBox = (next: { width: number; height: number }): void => {
     setDraft(null);
     // Editing the box under fit/limit must not silently switch the node to fixed.
     const mode =
@@ -161,6 +163,15 @@ export function CommonSection({
           ? { mode, width: next.width, height: next.height }
           : { mode, width: next.width, height: next.height, input: selectedInput },
     );
+  };
+
+  const onDimension = (axis: "width" | "height", value: number, commit: boolean): void => {
+    const next = { ...shown, [axis]: Math.max(1, Math.round(value)) };
+    if (!commit) {
+      setDraft(next);
+      return;
+    }
+    writeBox(next);
   };
 
   const formatDiagnostics = formatDiagnosticsFor(nodeId, diagnostics);
@@ -206,7 +217,7 @@ export function CommonSection({
       ) : null}
 
       {hasDimensions ? (
-        <ControlRow label="Size" variant={variant} hint="px">
+        <ControlRow label="Size" variant={variant} hint="px" compileTime>
           <div className={styles.sizeFields}>
             <NumberField
               label="Width"
@@ -222,6 +233,18 @@ export function CommonSection({
               unit="px"
               onChange={(value, phase) => onDimension("height", value, phase === "commit")}
             />
+            {/*
+              T1157 — the SAME control the project settings page carries, on the level of
+              the ladder below it (§V171). The owner asked for the toggle "maybe in other
+              places too", and this is the other place: a per-node override in `fixed`,
+              `fit` or `limit` is a width/height box exactly like the project's, so it gets
+              one button rather than a second implementation of one.
+
+              It swaps the numbers ON SCREEN and hands them to `writeBox`, so it lands in
+              whatever mode the box already belongs to and cannot turn a `fit` into a
+              `fixed`.
+            */}
+            <SwapDimensions width={shown.width} height={shown.height} onSwap={writeBox} />
           </div>
         </ControlRow>
       ) : null}

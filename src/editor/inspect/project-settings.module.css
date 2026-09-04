@@ -58,3 +58,15 @@
 .scalar {
   max-width: calc(var(--space-48) * 3);
 }
+
+/*
+ * T1157 — the resolution pair plus its swap button. `.pair` alone gives every child an
+ * equal `1fr` column, which would make the button as wide as a number field and shrink
+ * both fields to a third of the row. The action takes its own width; the two numbers keep
+ * splitting the rest. `.pair` stays untouched because the timeline range row uses it and
+ * has no action.
+ */
+.pairWithAction {
+  grid-auto-flow: row;
+  grid-template-columns: 1fr 1fr auto;
+}

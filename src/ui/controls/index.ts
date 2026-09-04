@@ -88,6 +88,9 @@ export type { PulseFieldProps } from "./pulse-field.tsx";
 export { EnumField } from "./enum-field.tsx";
 export type { EnumFieldProps, EnumOption } from "./enum-field.tsx";
 
+export { SwapDimensions, orientationOf } from "./swap-dimensions.tsx";
+export type { Orientation, SwapDimensionsProps } from "./swap-dimensions.tsx";
+
 export { TextField } from "./text-field.tsx";
 export type { TextFieldProps } from "./text-field.tsx";
 

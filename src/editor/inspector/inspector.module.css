@@ -125,10 +125,14 @@
   color: var(--warn);
 }
 
+/*
+ * Width, height, and the T1157 swap. Three explicit columns rather than the equal `1fr`
+ * each an auto-flow gave: the action is an icon-sized button, and letting it claim a third
+ * of the row would shrink both numbers to make room for a glyph.
+ */
 .sizeFields {
   display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: 1fr;
+  grid-template-columns: 1fr 1fr auto;
   gap: var(--space-2);
 }
 

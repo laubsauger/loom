@@ -13,12 +13,14 @@ import { BooleanField } from "@ui/controls/boolean-field.tsx";
 import { ControlRow } from "@ui/controls/control-row.tsx";
 import { EnumField } from "@ui/controls/enum-field.tsx";
 import { NumberField } from "@ui/controls/number-field.tsx";
+import { SwapDimensions } from "@ui/controls/swap-dimensions.tsx";
 import type { EditPhase, NumericSpec } from "@ui/controls/types.ts";
 import {
   DialogContent,
   DialogRoot,
   DialogTitle,
 } from "@ui/primitives/dialog.tsx";
+import { cx } from "@ui/cx.ts";
 import styles from "./project-settings.module.css";
 
 /**
@@ -207,8 +209,8 @@ export function ProjectSettingsDialog({
             fields, not two rows the eye has to pair up itself. `px` rides on each field
             rather than floating beside the row.
           */}
-          <ControlRow label="resolution">
-            <div className={styles.pair}>
+          <ControlRow label="resolution" compileTime>
+            <div className={cx(styles.pair, styles.pairWithAction)}>
               <NumberField
                 label="width"
                 value={shown("width", width)}
@@ -232,6 +234,22 @@ export function ProjectSettingsDialog({
                     "Set output height",
                   ),
                 )}
+              />
+              {/*
+                T1157 — the owner's portrait/landscape button, and it is a BUTTON: it
+                writes the pair the other way round through the same `project.setSettings`
+                the two fields above use, and stores no orientation of its own. The word
+                "portrait" is re-derived from whatever comes back, so there is nothing here
+                that can disagree with the numbers. It writes the DOCUMENT's pair, never
+                `shown`: a swap mid-drag would otherwise commit a value the drag had not.
+              */}
+              <SwapDimensions
+                width={width}
+                height={height}
+                onSwap={(next) => {
+                  setLive({});
+                  onChange({ outputResolution: next }, "Swap output orientation");
+                }}
               />
             </div>
           </ControlRow>
