@@ -340,8 +340,16 @@ describe("oscOut transmits only what the document configured (§T950 gap 4)", ()
    * the reader. So the destination port here is `op('p1').chan.value` on a real `constant`
    * node, resolved through the real `resolveParameters` inside the real hook: with no
    * reader the port reads as its retained `0` and the pump sends nothing at all.
+   *
+   * AND IT IS ASSERTED OVER TWO FRAMES, because "frozen" is a claim about TIME and a
+   * single frame cannot refute it. One frame proves only that the number is not the
+   * retained static; a reader built ONCE and closed over frame 0's channels — the
+   * §T1000 shape, one `useMemo` away — answers correctly forever and still freezes.
+   * So the channel MOVES between the two syncs and the datagram must move with it:
+   * cut the reader and there is no send at all, hoist it out of the frame and the
+   * second send goes to the FIRST frame's port.
    */
-  it("resolves op().chan on an oscOut parameter, so a driven destination is not frozen", async () => {
+  it("resolves op().chan on an oscOut parameter, and FOLLOWS it across frames", async () => {
     const graph = graphOf({
       p1: { type: "constant", label: "p1", parameters: { value: 9001 } },
       // A statically configured `oscIn`, so the attachment happens at all — `pumped` seeds
@@ -358,17 +366,25 @@ describe("oscOut transmits only what the document configured (§T950 gap 4)", ()
         },
       },
     });
-    const channels = ((channel: string) => (channel === "p1:value" || channel === "p1" ? 9001 : undefined)) as ChannelResolver;
+    // The channel a sender is actually publishing: a different number on each frame.
+    const portAt = (seconds: number): number => 9001 + Math.round(seconds);
+    const channelsAt =
+      (seconds: number): ChannelResolver =>
+      (channel: string) =>
+        channel === "p1:value" || channel === "p1" ? portAt(seconds) : undefined;
+    const bags = new Map([["b" as NodeId, { value: 0.5 }]]);
     const { socket, hook } = pumped(graph);
-    await act(async () => {
-      hook.result.current.sync(frameAt(0), graph, registry, new Map([["b" as NodeId, { value: 0.5 }]]), channels, LIVE);
-      await Promise.resolve();
-    });
+    for (const seconds of [0, 1]) {
+      await act(async () => {
+        hook.result.current.sync(frameAt(seconds), graph, registry, bags, channelsAt(seconds), LIVE);
+        await Promise.resolve();
+      });
+    }
     const sends = socket.sent.filter((message) => message["type"] === "deviceSend");
-    expect(sends).toHaveLength(1);
-    // The VALUE the expression produced, not merely that something was sent: a reader that
-    // answered a stale number would still have sent, to the wrong place.
-    expect((sends[0] as { to?: { port?: number } }).to?.port).toBe(9001);
+    // The VALUES the expression produced, not merely that something was sent: a reader
+    // that answered a stale number would still have sent, to the wrong place — and one
+    // that answered frame 0 forever would have sent both datagrams to 9001.
+    expect(sends.map((message) => (message as { to?: { port?: number } }).to?.port)).toEqual([9001, 9002]);
   });
 
   it("is refusing because the NODE says it acts on the world, not because it is called oscOut", () => {
