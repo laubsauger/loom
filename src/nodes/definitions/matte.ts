@@ -381,7 +381,13 @@ const MATTE_BLIT_WGSL = `struct MatteParams {
 @fragment
 fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   let dims = vec2f(textureDimensions(matteTexture, 0));
-  let texel = vec2i(clamp(uv, vec2f(0.0), vec2f(1.0)) * (dims - vec2f(1.0)));
+  /* T1051: TEXEL CENTRES, not endpoints. uv * (dims - 1) is the BILINEAR convention —
+     it maps uv=1 onto the LAST texel centre — and reading it with a floor squeezes the
+     picture by a texel: a pixel centre (x+0.5)/w landed on floor((x+0.5)/w*(w-1)), which
+     is x at the left edge and x-1 from about halfway across, so the last source texel was
+     UNREACHABLE and the last column duplicated its neighbour. The nearest read wants
+     uv * dims, floored, with the open right end (uv == 1 exactly) pulled back inside. */
+  let texel = vec2i(min(clamp(uv, vec2f(0.0), vec2f(1.0)) * dims, dims - vec2f(1.0)));
   var value = textureLoad(matteTexture, texel, 0).r;
   /* LEVELS, on the alpha ramp: remap [black, white] onto [0,1], then bend it. The span is
      floored by the resolver, not here — a zero span is a NaN matte and nothing downstream

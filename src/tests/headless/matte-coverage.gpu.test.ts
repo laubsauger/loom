@@ -288,14 +288,17 @@ describe("the matte reaches the picture at full strength", () => {
      * agree — a readout that stayed healthy while the picture went black would be §V288's
      * own defect one layer up.
      *
-     * WITHIN A TEXEL, not exactly, and the slack is named rather than tuned: the result
-     * blit resolves its nearest texel as `uv * (dims - 1)`, which dilates a hard edge by
-     * about half a texel. On a disc 32 texels across that is a perimeter-over-area effect
-     * of roughly 2/r = 6%, and the measured 0.198 -> 0.214 is exactly that. The uniform
-     * case below carries the no-crush claim with no edges at all, so this bound is allowed
-     * to be loose without the pair of them being loose.
+     * WITHIN ONE STORABLE STEP, and the budget is the FORMAT's rather than the sampler's.
+     * This bound was 0.03 until T1051, sized for a dilation that the blit no longer has:
+     * `uv * (dims - 1)` read with a floor smeared a hard edge by about half a texel, which
+     * on a disc 32 texels across is a perimeter-over-area effect of roughly 2/r = 6% and
+     * showed up as 0.198 -> 0.214. The blit is now the identity, so the ONLY thing left
+     * between the fed matte and this number is the round trip through the surface: a fed 1
+     * comes back as the largest half below one, so the mean can fall short by at most one
+     * rgba16float step. Measured after the fix: 0.198022 against 0.198242, a difference of
+     * 0.00022 — which is the lit fraction times that one step, exactly.
      */
-    expect(Math.abs(claimed / (SIZE * SIZE) - matteCoverage(fed))).toBeLessThan(0.03);
+    expect(Math.abs(claimed / (SIZE * SIZE) - matteCoverage(fed))).toBeLessThan(2 ** -11);
     expect(matteCoverage(fed)).toBeGreaterThan(0.001);
   }, 240_000);
 
@@ -538,5 +541,152 @@ describe("the matte lands where the subject is", () => {
      */
     expect(cMatte.x).toBeCloseTo(cSource.x, 2);
     expect(cMatte.y).toBeCloseTo(cSource.y, 2);
+  }, 240_000);
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ * WHICH SOURCE TEXEL AN OUTPUT PIXEL READS — T1051, at the edges where it shows
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ *
+ * The result texture is written at the picture's own size (`matteToFloats` returns
+ * `width * height` floats), so the blit's job is the IDENTITY: output pixel (x, y) reads
+ * source texel (x, y), and nothing else does.
+ *
+ * `MATTE_BLIT_WGSL` shipped `vec2i(clamp(uv, 0, 1) * (dims - 1))` — the BILINEAR
+ * convention, which maps uv = 1 onto the LAST texel CENTRE — read with a floor. A pixel
+ * centre (x+0.5)/w then landed on floor((x+0.5)/w * (w-1)): x at the left edge, x-1 from
+ * about halfway across. Two consumer-visible consequences, and this gate names both:
+ *
+ *   - THE LAST SOURCE COLUMN WAS UNREACHABLE. At 64 wide, output 63 read texel 62, so
+ *     nothing a model wrote into column 63 could appear in the picture at all.
+ *   - AN INTERIOR COLUMN WAS DUPLICATED. Texel 31 was read by outputs 31 AND 32, which is
+ *     the "squeezed by one texel" the picture showed.
+ *
+ * §V864 is why this is not asked as a coverage or a centroid: both are aggregates, and a
+ * one-texel shift moves neither out of any sane tolerance while it visibly moves the
+ * subject. Where a texel landed is a WHERE question, so it is asked per pixel.
+ *
+ * §V147 — the classifier is DERIVED, and the third state is loud. A fed 0 arrives as
+ * exactly 0 (sRGB fixes zero, and half-float holds it), and a fed 1 arrives as the largest
+ * half below one, because the sink evaluates 1.055·v^(1/2.4) − 0.055 in f32 and stores the
+ * result in rgba16float — the same one-step shortfall `carries a flat matte through at
+ * exactly its own level` measures above. So the two legal answers are computed from that
+ * step rather than guessed at, and a pixel that is NEITHER — a blend of two texels, which
+ * is what a filtered read would produce — fails by name instead of being rounded into one
+ * of them.
+ */
+describe("the matte blit reads the texel under the pixel", () => {
+  /** Aligned row pitch (8 bytes per texel), non-square so a transposed read is a shape error. */
+  const MW = 64;
+  const MH = 32;
+
+  /** First, last, and one interior — the edges are where an off-by-one stops being subtle. */
+  const LIT_COLUMNS = [0, 31, MW - 1];
+  const LIT_ROWS = [0, 15, MH - 1];
+
+  /**
+   * What a fed 1.0 reads back as: sRGB-encoded, stored one half-float step low, decoded.
+   * Derived from the format's step, never from a measurement pasted back in — and rounded
+   * through `fround` because `matteValues` hands back a Float32Array, so the comparison
+   * has to happen in the precision the value is actually held at.
+   */
+  const LIT = Math.fround(((1 - 2 ** -11 + 0.055) / 1.055) ** 2.4);
+
+  /** Lit, dark, or NEITHER — the third answer is the failure this gate is looking for. */
+  function classify(value: number): "lit" | "dark" | "between" {
+    if (value === 0) return "dark";
+    if (value >= LIT && value <= 1) return "lit";
+    return "between";
+  }
+
+  /** A result texture lit in whole columns (or rows), fed raw — no letterbox in the way. */
+  function stripes(axis: "column" | "row", lit: readonly number[]): Uint8Array {
+    const floats = new Float32Array(MW * MH);
+    for (let y = 0; y < MH; y += 1) {
+      for (let x = 0; x < MW; x += 1) {
+        floats[y * MW + x] = lit.includes(axis === "column" ? x : y) ? 1 : 0;
+      }
+    }
+    return new Uint8Array(floats.buffer);
+  }
+
+  async function renderStripes(fed: Uint8Array): Promise<Float32Array> {
+    const result = await renderHeadless({
+      host: nodeGpuHost(),
+      graph: matteGraph(),
+      settings: settingsAt(MW, MH),
+      frames: 1,
+      capture: [0],
+      inference: () => fed,
+    } as never);
+    const frame = result.frames[0]!;
+    expect(
+      [frame.width, frame.height],
+      "the picture is not the size this gate fed a result for, so every index below reads the wrong texel",
+    ).toEqual([MW, MH]);
+    return matteValues(frame, spaceOf(result.plan as never, result.outputResourceId as never));
+  }
+
+  it.each([
+    { axis: "column" as const, lit: LIT_COLUMNS },
+    { axis: "row" as const, lit: LIT_ROWS },
+  ])("carries a lit $axis through at its own index, edges included", async ({ axis, lit }) => {
+    if (dawnError !== undefined) throw new Error(`Dawn unavailable: ${dawnError}`);
+    const actual = await renderStripes(stripes(axis, lit));
+
+    /*
+     * The whole picture at once, so a stripe that MOVED and a stripe that SPREAD are both
+     * failures and are told apart in the message. Reported as the set of lit indices rather
+     * than as the first bad pixel: "shows [0, 31, 32] where [0, 31, 63] was fed" says what
+     * happened; "pixel (32, 0) is 0.9989" does not.
+     */
+    const litIndices: number[] = [];
+    const count = axis === "column" ? MW : MH;
+    const span = axis === "column" ? MH : MW;
+    for (let index = 0; index < count; index += 1) {
+      const seen = new Set<string>();
+      for (let along = 0; along < span; along += 1) {
+        const value = axis === "column" ? actual[along * MW + index]! : actual[index * MW + along]!;
+        seen.add(classify(value));
+      }
+      expect(
+        [...seen].sort(),
+        `${axis} ${index} is not one value down its whole length — the blit is reading more than the texel under the pixel`,
+      ).toHaveLength(1);
+      if (seen.has("lit")) litIndices.push(index);
+    }
+
+    expect(
+      litIndices,
+      `fed ${axis}s ${JSON.stringify(lit)} and the picture shows ${JSON.stringify(litIndices)} — ` +
+        `a missing last ${axis} means the final texel is unreachable, a doubled one means the picture is squeezed`,
+    ).toEqual([...lit]);
+  }, 240_000);
+
+  /**
+   * The gate above compares two SETS, and a set comparison over an empty render is exactly
+   * §V883's vacuous shape — a node that drew nothing would report [] and only fail because
+   * the fixture is non-empty. So the same frame is asserted the other way round, by count:
+   * as many pixels came out lit as texels were fed lit, and that number is not zero.
+   */
+  it("lights exactly as many pixels as it was fed, and not zero of them", async () => {
+    if (dawnError !== undefined) throw new Error(`Dawn unavailable: ${dawnError}`);
+    const fed = stripes("column", LIT_COLUMNS);
+    const actual = await renderStripes(fed);
+    const fedFloats = new Float32Array(fed.buffer, fed.byteOffset, MW * MH);
+
+    let fedLit = 0;
+    for (const value of fedFloats) if (value === 1) fedLit += 1;
+    let renderedLit = 0;
+    for (const value of actual) if (classify(value) === "lit") renderedLit += 1;
+
+    expect(fedLit, "the fixture lit nothing — every claim in this describe would be vacuous").toBe(
+      LIT_COLUMNS.length * MH,
+    );
+    expect(
+      renderedLit,
+      `${fedLit} texels were fed at full matte and ${renderedLit} pixels came out lit`,
+    ).toBe(fedLit);
   }, 240_000);
 });

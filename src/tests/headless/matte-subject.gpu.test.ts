@@ -123,16 +123,17 @@ function spaceOf(plan: { outputs: ReadonlyArray<{ resourceId: string; space?: st
  * WGSL blit both are (T959: a matte edge blended bilinearly invents coverage that neither
  * the subject nor the background owns).
  *
- * ⚠ THE BLIT'S OWN TEXEL READ IS COMPOSED IN HERE, AND IT IS OFF BY UP TO ONE TEXEL.
- * `MATTE_BLIT_WGSL` reads `vec2i(clamp(uv, 0, 1) * (dims - 1))`, so a pixel centre
- * `(x+0.5)/w` lands on `floor((x+0.5)/w * (w-1))` — which is `x` at the left edge and
- * `x - 1` from about halfway across, i.e. the matte is squeezed by one texel and the last
- * column is duplicated. MEASURED, not deduced: without this term the first draft of this
- * gate failed at (142, 95) reading 0.9368 where the reference says 0.1294, which is
- * exactly the neighbouring texel across a silhouette edge. It is written here rather than
- * corrected because correcting a shipped shader's sampling is a picture change and belongs
- * to the node's owner, not to a test — and because a gate that hides the mapping it had to
- * match is how a one-texel drift becomes permanent.
+ * THE BLIT'S OWN TEXEL READ IS COMPOSED IN HERE, AND SINCE T1051 IT IS THE IDENTITY.
+ * The result texture is written at the picture's own size (`matteToFloats` returns
+ * `width * height` floats), so output pixel `(x, y)` must read source texel `(x, y)` and
+ * nothing else. Until T1051 `MATTE_BLIT_WGSL` read `vec2i(clamp(uv, 0, 1) * (dims - 1))`,
+ * the BILINEAR convention floored — `x` at the left edge and `x - 1` from about halfway
+ * across, so the picture was squeezed by a texel and the last source column was
+ * unreachable. MEASURED both ways, not deduced: against the shipped shader this gate read
+ * 0.9368 at (142, 95) where the reference says 0.1294 — the neighbouring texel across a
+ * silhouette edge — and reads the reference after the fix. `matte-coverage.gpu.test.ts`
+ * holds the mapping on its own, per column and per row, where a one-texel drift is an
+ * integer disagreement rather than a soft edge.
  */
 function expectedPicture(reference: Float32Array, width: number, height: number): Float32Array {
   const side = MATTE_REFERENCE_SIDE;
@@ -143,8 +144,8 @@ function expectedPicture(reference: Float32Array, width: number, height: number)
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
       // The blit's read, first: which texel of the r32float result this output pixel gets.
-      const tx = Math.min(width - 1, Math.floor(((x + 0.5) / width) * (width - 1)));
-      const ty = Math.min(height - 1, Math.floor(((y + 0.5) / height) * (height - 1)));
+      const tx = x;
+      const ty = y;
       // Then the un-letterbox, from that texel back into the model square.
       const u = ((tx + 0.5) / width - 0.5) * occX + 0.5;
       const v = ((ty + 0.5) / height - 0.5) * occY + 0.5;
