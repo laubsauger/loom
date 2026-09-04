@@ -48,6 +48,7 @@ export { pulseDocument } from "./documents/pulse.ts";
 export { lanternDocument } from "./documents/lantern.ts";
 export { chorusDocument } from "./documents/chorus.ts";
 export { reactorDocument } from "./documents/reactor.ts";
+export { forestDocument } from "./documents/forest.ts";
 export { vesperDocument } from "./documents/vesper.ts";
 import { feedbackEchoDocument } from "./documents/feedback-echo.ts";
 import { reactionDiffusionDocument } from "./documents/reaction-diffusion.ts";
@@ -97,6 +98,7 @@ import { pulseDocument } from "./documents/pulse.ts";
 import { lanternDocument } from "./documents/lantern.ts";
 import { chorusDocument } from "./documents/chorus.ts";
 import { reactorDocument } from "./documents/reactor.ts";
+import { forestDocument } from "./documents/forest.ts";
 import { vesperDocument } from "./documents/vesper.ts";
 
 export const EXAMPLE_DOCUMENTS: readonly ProjectDocument[] = [
@@ -149,5 +151,6 @@ export const EXAMPLE_DOCUMENTS: readonly ProjectDocument[] = [
   quorumDocument,
   reactorDocument,
   vesperDocument,
+  forestDocument,
 ];
 

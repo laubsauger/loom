@@ -243,6 +243,12 @@
     "cardFloor": 0,
     "phrase": 0.25329
   },
+  "E57-Forest.loom.json": {
+    "motion": 0.02103,
+    "range": 0.7206,
+    "f0max": 0.752,
+    "cardFloor": 0.0012
+  },
   "E6-Displacement-Stack.loom.json": {
     "motion": 0.28359,
     "range": 0.7293,
