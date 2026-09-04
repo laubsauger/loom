@@ -60,7 +60,18 @@ import type {
   NodeToggleCommand,
   PreviewLensSource,
 } from "./canvas-context.ts";
-import { LOOM_NODE_TYPE, SIGNAL_EDGE_TYPE, projectEdges, projectNodes } from "./derive.ts";
+import {
+  registerSelectNodesCommand,
+  selectCreatedNodes,
+} from "@editor/selection/select-created.ts";
+import type { SelectNodesHandlers } from "@editor/selection/select-created.ts";
+import {
+  LOOM_NODE_TYPE,
+  SIGNAL_EDGE_TYPE,
+  projectEdges,
+  projectNodes,
+  withSelection,
+} from "./derive.ts";
 import type { LoomEdge, LoomNode } from "./derive.ts";
 import { createNodeRuntimeStore } from "./node-runtime.ts";
 import type { NodeRuntimeSource } from "./node-runtime.ts";
@@ -87,6 +98,13 @@ const PAN_MOUSE_BUTTONS = [1] as const;
 
 export interface GraphCanvasProps {
   bus: LoomBus;
+  /**
+   * Other buses whose `graph.selectNodes` must reach THIS canvas — T969(b)'s reason,
+   * unchanged: inside a component `bus` is the session bus, while the keymap, the
+   * menubar, the palette and the right-click menus all keep dispatching on the ROOT bus.
+   * There is one canvas, so every door that can reach it gets the same handlers.
+   */
+  selectionBuses?: readonly LoomBus[];
   /** Actor identity for every mutation this canvas makes (§V30). */
   invocation: InvocationContext;
   /**
@@ -122,6 +140,7 @@ export interface GraphCanvasProps {
 
 export function GraphCanvas({
   bus,
+  selectionBuses,
   components,
   invocation,
   runtime,
@@ -194,6 +213,37 @@ export function GraphCanvas({
     setViewEdges((previous) => projectEdges(domainEdges, domainNodes, registry, previous));
   }, [domainEdges, domainNodes, registry]);
 
+  /**
+   * `graph.selectNodes`' performer, and the ONE place that knows what selecting means
+   * here (§V78, §V101). See `@editor/selection/select-created.ts` for why it is a command.
+   *
+   * IT PROJECTS FROM THE LIVE DOCUMENT RATHER THAN MAPPING OVER THE CURRENT ARRAY, and
+   * that is the whole difficulty of "select the node that was just added". The request
+   * arrives immediately after the patch that created the node applied — a microtask after
+   * `bus.execute` resolves — and at that moment React Flow's array is still the pre-patch
+   * one: the effect above, which is what puts the new node into it, has not run yet,
+   * because the store update only SCHEDULES a render. A `setNodes` map over what is
+   * currently held would therefore quietly drop exactly the node the user just added,
+   * which is the entire feature, and it would do so on a timing race — green in a test
+   * that awaits the effect, dead in the app.
+   *
+   * Re-running `projectNodes` against `bus.store.getGraph()` removes the race instead of
+   * betting on it: the store is authoritative and already holds the new node, whichever
+   * side of the commit this lands on. The effect above then re-projects with the same
+   * document and hands back the node objects it finds in `previous` untouched, so the
+   * `selected` flag set here survives (that reuse is what `projectNodes` already does for
+   * every other React-Flow-owned field).
+   */
+  const selectNodes = useCallback(
+    (nodeIds: readonly NodeId[]) => {
+      const wanted = new Set<string>(nodeIds);
+      setViewNodes((previous) =>
+        withSelection(projectNodes(bus.store.getGraph().nodes, previous), wanted),
+      );
+    },
+    [bus],
+  );
+
   const dispatch = useCallback<GraphDispatch>(
     (operations: GraphPatchOperation[], label: string) => {
       if (operations.length === 0) return;
@@ -222,6 +272,30 @@ export function GraphCanvas({
   const onInit = useCallback((instance: ReactFlowInstance<LoomNode, LoomEdge>) => {
     flowRef.current = instance;
   }, []);
+
+  /**
+   * The canvas fills `graph.selectNodes`' holder while it is mounted — the same shape as
+   * `graph.selectAll` and `view.frameAll`, and for the same reason: selection is not
+   * document state, so the surface that can perform it is the one that registers it.
+   */
+  useEffect(() => {
+    const handlers: SelectNodesHandlers = {
+      select: selectNodes,
+      // What React Flow is holding IS what the user is looking at — the component's
+      // internals inside a dive, the document at the root (T969(b)).
+      nodeIds: () => (flowRef.current?.getNodes() ?? []).map((node) => node.id as NodeId),
+    };
+    // `commandHolder` is one object per bus, so this is one holder at the root and two
+    // inside a component; registration itself is idempotent on each.
+    const holders = new Set([
+      registerSelectNodesCommand(bus),
+      ...(selectionBuses ?? []).map(registerSelectNodesCommand),
+    ]);
+    for (const holder of holders) holder.current = handlers;
+    return () => {
+      for (const holder of holders) if (holder.current === handlers) holder.current = null;
+    };
+  }, [bus, selectNodes, selectionBuses]);
 
   /** The canvas element — the double-click boundary and the viewport-centre fallback. */
   const canvasRef = useRef<HTMLDivElement | null>(null);
@@ -609,12 +683,21 @@ export function GraphCanvas({
   const addSearchedNode = useCallback(
     (type: string, position: { x: number; y: number }) => {
       setNodeSearchAt(null);
-      dispatch(
-        [{ op: "addNode", ref: "$added", type, position: { x: position.x, y: position.y } }],
-        "Add node",
-      );
+      const patch: GraphPatch = {
+        baseRevision: bus.store.getRevision(),
+        operations: [
+          { op: "addNode", ref: "$added", type, position: { x: position.x, y: position.y } },
+        ],
+        label: "Add node",
+      };
+      // Not `dispatch`: the node the user just picked becomes the selection, and that
+      // needs the RESULT — `createdIds` is the only place the minted id exists.
+      void bus.execute("graph.applyPatch", patch, invocation).then(async (result) => {
+        onPatchResult?.(result);
+        await selectCreatedNodes(bus, invocation, result);
+      });
     },
-    [dispatch],
+    [bus, invocation, onPatchResult],
   );
 
   const reportEnter = useCallback(

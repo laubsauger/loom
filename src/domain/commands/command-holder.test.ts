@@ -60,6 +60,7 @@ const MODULES: readonly HolderEntry[] = [
   { label: "ui.toggleEdgeFlow", path: "src/editor/edges/edge-flow-command.ts", load: () => import("@editor/edges/edge-flow-command.ts"), accessor: "edgeFlowStoreFor" },
   { label: "ui.toggleTimingOverlay", path: "src/editor/nodes/timing-overlay-command.ts", load: () => import("@editor/nodes/timing-overlay-command.ts"), accessor: "timingOverlayStoreFor" },
   { label: "graph.selectAll", path: "src/app/selection-commands.ts", load: () => import("@/app/selection-commands.ts"), accessor: "selectionHolderFor" },
+  { label: "graph.selectNodes", path: "src/editor/selection/select-created.ts", load: () => import("@editor/selection/select-created.ts"), accessor: "selectNodesHolderFor" },
   { label: "audio.toggleTrackRecording", path: "src/app/audio-track-commands.ts", load: () => import("@/app/audio-track-commands.ts"), accessor: "audioTrackHolderFor" },
   { label: "node.openViewer", path: "src/app/viewer-commands.ts", load: () => import("@/app/viewer-commands.ts"), accessor: "viewerHolderFor" },
   { label: "ui.openLayouts", path: "src/app/layout-commands.ts", load: () => import("@/app/layout-commands.ts"), accessor: "layoutCommandHolderFor" },

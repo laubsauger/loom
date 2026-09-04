@@ -8,6 +8,7 @@ import { publishesValueChannels } from "@domain/types/node-definition.ts";
 import type { LoadProjectSuccess, SnapshotStore } from "@domain/project/index.ts";
 import { HelpHost, OPEN_HELP_COMMAND } from "@editor/help/index.ts";
 import { NodeInfoHost } from "@editor/inspect/index.ts";
+import { SELECT_NODES_COMMAND } from "@editor/selection/select-created.ts";
 import { KeymapProvider } from "@editor/keymap/index.ts";
 import type { KeymapDispatch } from "@editor/keymap/index.ts";
 import type { KeymapEnvironment } from "@editor/keymap/index.ts";
@@ -221,6 +222,28 @@ export function App({
   const onSelectionChange = useCallback((nodeIds: readonly NodeId[]) => {
     setSelection((previous) => (sameIds(previous, nodeIds) ? previous : [...nodeIds]));
   }, []);
+
+  /**
+   * A node created by a pane that is NOT the canvas — placing a component instance, and
+   * saving a selection as one — becomes the canvas selection.
+   *
+   * `onSelectionChange` is the wrong door for it and had been all along: this state is the
+   * REPORT the canvas makes, not a way to drive it, so the two callers below set the
+   * inspector's idea of the selection while React Flow kept drawing the old one, and the
+   * next click on the canvas overwrote it. `graph.selectNodes` reaches the mounted canvas
+   * (§V101, §V78), which then reports back through `onSelectionChange` above — one
+   * direction, one authority.
+   */
+  const selectNodes = useCallback(
+    (nodeIds: readonly NodeId[]) => {
+      void runtime.bus.execute(
+        SELECT_NODES_COMMAND,
+        { nodeIds: [...nodeIds] },
+        runtime.invocation,
+      );
+    },
+    [runtime.bus, runtime.invocation],
+  );
 
   const onPortDragChange = useCallback((next: PortDragOrigin | null) => {
     setPortDrag((previous) => (previous === next ? previous : next));
@@ -1337,7 +1360,7 @@ export function App({
                 context={runtime.invocation}
                 components={componentsView}
                 selection={selection}
-                onPlaced={onSelectionChange}
+                onPlaced={selectNodes}
               />
             </ErrorBoundary>
           }
@@ -1374,7 +1397,7 @@ export function App({
                 insideComponent={insideComponent}
                 onNavigate={editing.navigate}
                 onExit={editing.exit}
-                onCreated={onSelectionChange}
+                onCreated={selectNodes}
               />
               <AppRuntimeContext.Provider value={editing.runtime}>
               <GraphPane

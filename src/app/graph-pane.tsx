@@ -39,6 +39,7 @@ import type { ValueHistorySource } from "@editor/nodes/value-history.ts";
 import type { LoomBackend } from "@runtime/backend/index.ts";
 import { useAppRuntime } from "./app-context.ts";
 import { usePerDocument } from "./use-per-document.ts";
+import { selectCreatedNodes } from "@editor/selection/select-created.ts";
 import { registerSelectionCommands } from "./selection-commands.ts";
 import { registerViewCommands } from "./view-commands.ts";
 import { useNodePreviews } from "./use-node-previews.ts";
@@ -190,6 +191,7 @@ function GraphPaneInner({
   const { bus, components, documentIdentity, invocation, nodeRuntime, registry, settings } = useAppRuntime();
   // T969(b): the same object as `bus` unless the caller is showing a component's internals.
   const rootBus = rootBusProp ?? bus;
+  const selectionBuses = useMemo(() => [rootBus], [rootBus]);
   // T601: the component catalogue view, for resolving an instance's preview target.
   const componentsView = useMemo(() => components.view(), [components]);
   const flow = useReactFlow();
@@ -571,16 +573,23 @@ function GraphPaneInner({
     [cameraGizmoNodes, cameraGizmos, flatPrefix, nodeRuntime, orbitableNodes, previewBounds, previewOrbits, previewViews, readCameraPose, registry, settings, valueHistory],
   );
 
+  /** Hands back the applied result, for the one caller that needs `createdIds`. */
   const dispatch = useCallback(
-    (operations: GraphPatchOperation[], label: string) => {
-      if (operations.length === 0) return;
-      void bus
+    (
+      operations: GraphPatchOperation[],
+      label: string,
+    ): Promise<CommandResult<"graph.applyPatch">> | undefined => {
+      if (operations.length === 0) return undefined;
+      return bus
         .execute(
           "graph.applyPatch",
           { baseRevision: bus.store.getRevision(), operations, label },
           invocation,
         )
-        .then(onPatchResult);
+        .then((result) => {
+          onPatchResult(result);
+          return result;
+        });
     },
     [bus, invocation, onPatchResult],
   );
@@ -617,10 +626,16 @@ function GraphPaneInner({
         );
       }
 
-      dispatch(operations, `Add ${type}`);
+      // Awaited, unlike every other gesture on this pane, because the node the user just
+      // added becomes the selection and `createdIds` is the only place its minted id
+      // exists. One call covers three gestures: the library's click, the library's
+      // drag-drop, and a wire dragged off a port and released on empty canvas.
+      void dispatch(operations, `Add ${type}`)?.then((result) =>
+        selectCreatedNodes(bus, invocation, result),
+      );
       onPortDragChange(null);
     },
-    [dispatch, onPortDragChange],
+    [bus, dispatch, invocation, onPortDragChange],
   );
 
   /**
@@ -824,6 +839,14 @@ function GraphPaneInner({
       <GraphMenuHost bus={bus} selection={selection}>
         <GraphCanvas
           bus={bus}
+          /*
+           * T969(b)'s list, applied to `graph.selectNodes`: inside a component `bus` is
+           * the session bus, while the keymap, the palette and the right-click menus keep
+           * dispatching on the ROOT one — so a paste run from a hotkey while dived would
+           * select on a bus no canvas was answering. Memoised in `selectionBuses` above so
+           * the registration effect does not re-run every render.
+           */
+          selectionBuses={selectionBuses}
           components={componentsView}
           invocation={invocation}
           runtime={nodeRuntime}

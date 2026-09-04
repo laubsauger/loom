@@ -146,6 +146,24 @@ export function projectNodes(
   return stable(previous, next);
 }
 
+/**
+ * Selection, applied to a projection — `graph.selectNodes`' half of the split.
+ *
+ * REPLACES: a node not in `wanted` is deselected, which is what every editor does and
+ * what keeps a `delete` after an add from taking the previous selection with it.
+ *
+ * Reuses each node object when its `selected` flag is already right, and `stable` returns
+ * the previous array when none moved, so selecting what is already selected re-renders
+ * nothing (§V16).
+ */
+export function withSelection(nodes: readonly LoomNode[], wanted: ReadonlySet<string>): LoomNode[] {
+  const next = nodes.map((node) => {
+    const selected = wanted.has(node.id);
+    return (node.selected ?? false) === selected ? node : { ...node, selected };
+  });
+  return stable(nodes, next);
+}
+
 function isInactive(node: GraphNode | undefined): boolean {
   return node?.ui?.bypassed === true || node?.ui?.muted === true;
 }

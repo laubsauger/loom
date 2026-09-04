@@ -16,6 +16,7 @@ import type {
   CommandResult,
   InvocationContext,
 } from "../../domain/types/commands.ts";
+import { selectCreatedNodes } from "@editor/selection/select-created.ts";
 import type { KeymapDispatch, KeymapEngine } from "./engine.ts";
 import { createKeymapEngine } from "./engine.ts";
 import type { ResolvedKeymap } from "./resolve.ts";
@@ -144,7 +145,18 @@ export function KeymapProvider({
         getEnvironment: () => environmentRef.current,
         getInvocationContext: () => invocationRef.current,
         onPendingChange: setPending,
-        onDispatch: (dispatch) => dispatchRef.current?.(dispatch),
+        onDispatch: (dispatch) => {
+          // A hotkey that created nodes selects them (§V101) — `mod+v` and `mod+d` are
+          // the live cases. Here rather than inside the engine so the engine stays the
+          // headless, side-effect-free dispatcher its own tests exercise; and here rather
+          // than at each command so a command registered later gets it for nothing.
+          if (dispatch.status === "dispatched") {
+            void dispatch.run.then((result) =>
+              selectCreatedNodes(bus, invocationRef.current, result),
+            );
+          }
+          dispatchRef.current?.(dispatch);
+        },
       }),
     [bus, store.platform],
   );
@@ -210,11 +222,16 @@ export function useRunCommand(): (
   return useCallback(
     async (command, input = {}) => {
       if (!bus.hasCommand(command)) return null;
-      return bus.execute(
+      const result = await bus.execute(
         command as CommandName,
         input as CommandInput<CommandName>,
         invocationContext,
       );
+      // "the way a hotkey would" includes this: the canvas menu's "Add node here", and
+      // Paste/Duplicate from a menu row or the palette, select what they created exactly
+      // as `mod+v` does above (§V78 — one behaviour, not two).
+      await selectCreatedNodes(bus, invocationContext, result);
+      return result;
     },
     [bus, invocationContext],
   );
