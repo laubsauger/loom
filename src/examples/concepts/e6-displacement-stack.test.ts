@@ -62,7 +62,12 @@ describe("E6 Displacement Stack", () => {
    * shipped file takes the renderable path; the discipline is proven here instead.
    */
   it("flags an r32float displacement field as data, exempt from conversion", () => {
-    const asData = recompile(document, withFormat(document.graph, "field", "r32float"));
+    /* T1067: this control is deliberately unrenderable — r32float through the plan's shared
+       LINEAR sampler needs `float32-filterable`, which baseline Tier B does not have — so the
+       expected code is declared. Every OTHER diagnostic still fails the recompile. */
+    const asData = recompile(document, withFormat(document.graph, "field", "r32float"), [
+      CompilerDiagnosticCode.bindingUnfilterable,
+    ]);
 
     expect(asData.outputs.find((o) => o.nodeId === "field")?.space).toBe("data");
     // Inherited down the branch, so the whole stack stays data...

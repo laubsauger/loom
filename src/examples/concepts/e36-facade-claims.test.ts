@@ -1,25 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { compileGraph } from "../../compiler/index.ts";
 import type { CompiledGraph } from "../../compiler/index.ts";
 import type { GraphDocument } from "../../domain/types/graph.ts";
 import type { DrawPassDescriptor } from "../../runtime/backend/plan.ts";
-import { TIER_B_CAPABILITIES, exampleRegistry, messagesOf } from "../runner.ts";
-import { example } from "./helpers.ts";
+import { example, recompile as sharedRecompile } from "./helpers.ts";
 
 describe("E36 Facade claims", () => {
   const { document, plan } = example("E36-Facade.loom.json");
 
+  /* T1067: was a local compile against a BARE `exampleRegistry()` — the same trap helpers.ts
+     carried, one file over. It goes through the shared `recompile` now, which uses this
+     example's own component-aware pair and refuses a severed or diagnosing plan. */
   const recompile = (mutate: (graph: GraphDocument) => void): CompiledGraph => {
     const graph = structuredClone(document.graph) as GraphDocument;
     mutate(graph);
-    const compiled = compileGraph({
-      graph,
-      settings: document.settings,
-      registry: exampleRegistry(),
-      capabilities: TIER_B_CAPABILITIES,
-    });
-    expect(messagesOf(compiled.diagnostics.filter((d) => d.severity === "error"))).toEqual([]);
-    return compiled;
+    return sharedRecompile(document, graph);
   };
 
   const litPass = (compiled: CompiledGraph, id: string): DrawPassDescriptor => {
