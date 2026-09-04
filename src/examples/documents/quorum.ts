@@ -102,9 +102,26 @@ import { settings, node, edge, graph, document, drivenSlot } from "./builders.ts
  * Proximity's own docblock argues for. Nothing else runs on a free clock but the hue, which
  * turns once every 80 seconds, and the nebular bed, which drifts.
  *
- * ⚑ TWO WAYS TO MAKE IT LIVELIER WERE MEASURED AND REFUSED (T1074), because this file's
- * thesis turns around on them: `reach` and the weights feed ONE operator that is read
- * twice, so anything that stirs the layout stirs the colour by exactly the same amount.
+ * ⚑ FOUR WAYS TO MAKE IT LIVELIER WERE MEASURED AND REFUSED (T1074), and they are ONE
+ * refusal rather than four attempts (§V900): FOUR RESOLVED HUES REQUIRE THE OPERATOR TO BE
+ * BLOCK-DIAGONAL, AND A BLOCK-DIAGONAL OPERATOR HAS NO BOUNDARY. A partition that is legible
+ * AS COLOUR is a partition whose blocks do not talk, and reorganisation is blocks talking.
+ *
+ * `Contrast` IS that ratio — community bond over background tie — so it is block-diagonality
+ * with a knob on it, and sweeping it (frames 900 to 1500) shows the two requirements moving
+ * MONOTONICALLY IN OPPOSITE DIRECTIONS WITH NO OVERLAPPING WINDOW. At contrast 18: frontier 0
+ * links, churn 0 of 350, palette margins +0.158 / +0.394 / +0.153 / +0.387. At 8: frontier
+ * still 0, churn still 0, margins already going negative. At 3: 22 frontier links, churn
+ * STILL 0. At 1, where membership finally moves: frontier 165, churn 57 of 350 — and all four
+ * margins are negative by then, −0.196 to −0.199. So the answer is not the reach, not the
+ * community count, not the density, and not WHICH GRAPH THE OPERATOR COMPUTES OVER; moving a
+ * Laplacian onto a sparse adjacency changes which graph is frontier-free, it does not create a
+ * frontier. Before asking an operator to both SHOW a structure and CHANGE it, ask whether the
+ * showing is the absence of the changing.
+ *
+ * That is this file's own thesis read from the other side: `reach` and the weights feed ONE
+ * operator that is read twice, so anything that stirs the layout stirs the colour by exactly
+ * the same amount. The four attempts below are the evidence, each refused with numbers.
  *
  * A BETWEEN-COMMUNITY BOND, to give the block model the nonzero cross-edge probability it
  * is actually named for and put the reference picture's long filaments on screen — the
@@ -161,7 +178,64 @@ import { settings, node, edge, graph, document, drivenSlot } from "./builders.ts
  * The honest reading is that this operator makes COLONIES, and the reference picture's one
  * organism with filaments running through it wants a different graph rather than a different
  * setting of this one. Everything above is measured on Dawn and is recorded so the next
- * reader spends the time on that question instead of re-deriving these three.
+ * reader does not re-derive it. THE DIFFERENT GRAPH WAS THEN TRIED. It is refusals three and
+ * four, and it is where §V900 stopped being a guess about this operator and became a sweep.
+ *
+ * ⚑ THE OPERATOR MOVED ONTO THE DRAWN GRAPH (T1082, measured in T1074) — the fix the owner
+ * proposed himself, and the one the paragraph above asks for. `web1` is `pointProximity
+ * {neighbors: 6}`, so THE PICTURE IS ALREADY A SPARSE SIX-NEAREST-NEIGHBOUR WEB while the
+ * kernel loops every pair inside `reach`: the render shows a frontier the operator does not
+ * have, and computing the Laplacian over the adjacency the picture already draws would put
+ * the two back on one graph. The claim was that a k-NN adjacency HAS a boundary by
+ * construction, a point's six nearest BEING its frontier. IT DOES NOT HOLD FOR THIS FILE.
+ * Measured on the shipped document, on Dawn, over its OWN drawn web: cross-community links
+ * are 68 of 2100 at frame 180 and 0 of 2100 at every frame from 900 to 3600 (twelve frames,
+ * two complete four-bar phrases), and points with even one foreign neighbour are 0 of 350 —
+ * computed with the radius cap REMOVED, so that is pure six-nearest rather than a radius
+ * artefact. The dense field is frontier-free because every point sees EVERY colony; the
+ * sparse graph is frontier-free for the exact mirror reason, because NO point sees ANY other
+ * colony. Same cause both times: the dense same-label bond separates the colonies by more
+ * than any point's sixth-nearest.
+ *
+ * Label propagation over it was measured five ways and none survives. Dense bond with a k-NN
+ * vote: 0 of 350 label changes after frame 480, and size-normalising the vote does not move
+ * it — THE SPARSE BOND, NOT THE SPARSE VOTE, IS THE LOAD-BEARING CHANGE. Label-blind k-NN
+ * bond with a plain vote: monopoly, [350, 0, 0, 0] by frame 2100. Label-blind with a
+ * size-normalised vote LOOKED sustained, and the lag test says otherwise — 12 to 15 flips at
+ * every ODD lag and exactly 0 at +2, +4, +8 and +16, which is a 2-cycle, flicker rather than
+ * reorganisation, and it is the one thing a churn metric cannot see. The fifth genuinely
+ * sustains (k-NN same-label bond, size-normalised vote): 22-37 % churn in every window to
+ * 3600, a monotone lag profile out to 141 of 350 at +480, 132-180 frontier links where this
+ * file has 0, motion 0.00194 against 0.00074. Its RENDER is a rainbow-confetti annulus — one
+ * continuous hue gradient round a ring, four communities invisible — and the numbers agree:
+ * palette margins negative at every community, −0.006 to −0.18, even when the partition is
+ * read from the operator's own mutable label, and only 90 of 350 points still carry their
+ * founding label at frame 180, so §V854's 26/20/15/11 washes to 88/86/88/88 and the cross-seed
+ * claim has no community identity left to be about. That configuration is not a failure, it is
+ * a DIFFERENT example's thesis, and T1108 holds the question of whether it becomes one.
+ *
+ * ⚑ AND RECRUITMENT WITH HYSTERESIS (T1074) — quorum sensing, which is what this file is
+ * named for, and the last shape left: a loose point JOINS a community when its neighbour
+ * share reaches Q and falls back to dust below L < Q, voting over a k-NN neighbourhood of the
+ * WHOLE population so dust can hear a colony, with the community bond kept strictly
+ * within-community. It settles ONCE, to [54, 91, 13, 20] with 302 loose, and then reports 0 of
+ * 480 label changes at every lag from frame 180 to 3600. The reason is the same one a third
+ * time: once the colonies separate, a dust point's six nearest are ALL DUST — there are 302 of
+ * them and they fill the middle — so its support is 0 and nobody joins, while a colony member
+ * is surrounded by its own so nobody leaves. The symptom does not resist being fixed; it
+ * relocates.
+ *
+ * ⚠ AND THE SCOPE OF ALL FOUR, so this reads as the refusal it is and not a wider one
+ * (T1113, open): §V900 is a statement about the operator's FIXED POINT. Every measurement
+ * above was taken at equilibrium or through ordinary phrase dynamics, and the 0 of 2100 cross
+ * links from frame 900 on are a property of the SETTLED LAYOUT rather than of the graph — the
+ * colonies simply end up further apart than any point's sixth-nearest. An EXTERNAL
+ * disturbance that shoves a colony across that gap leaves the operator, and so
+ * block-diagonality, untouched while making foreign points each other's near neighbours: the
+ * frontier that does not exist at rest would exist during the collision, and the labels would
+ * be READING the layout rather than fighting it — which is why T1081's authored label strike
+ * reverted 73 of 73 in one frame and a positional one might not. Nothing has measured that
+ * transient. It is the one direction these four do not close.
  *
  * Four knobs are left bare for a hand, each with a range that goes somewhere: Contrast 0 →
  * one undifferentiated blob, no communities possible; Repulsion 0 → every community
