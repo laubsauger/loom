@@ -590,6 +590,128 @@ describe("E54 Quorum — the operator does both jobs (T1070)", () => {
     900_000,
   );
 
+  /**
+   * ⚑ T1113 — THE FRONTIER, WHICH IS THE ONE THING FIVE ATTEMPTS COULD NOT PRODUCE.
+   *
+   * §V900 says four resolved hues require the operator to be block-diagonal and a
+   * block-diagonal operator has no boundary — and §T1074 measured that on this file's OWN
+   * drawn 6-NN web: cross-community links are 0 of 2100 at EVERY frame from 900 to 3600.
+   * Four ways to buy a frontier by changing the operator were refused, because each bought
+   * it by destroying the palette, monotonically and with no overlapping window.
+   *
+   * ⚑ BUT §V900 IS A STATEMENT ABOUT THE OPERATOR'S FIXED POINT, AND A DISTURBANCE IS AN
+   * EXTERNAL INPUT THAT MOVES THE SYSTEM AWAY FROM ITS FIXED POINT. The colonies sit
+   * further apart than any point's sixth-nearest neighbour — measured, centre gaps 0.545 to
+   * 0.820 against a 6th-NN distance of 0.067 — but that separation is a property of the
+   * SETTLED LAYOUT, not of the graph. Drive two colonies into each other and the distance
+   * collapses: foreign points become each other's near neighbours, and the frontier that
+   * does not exist at rest EXISTS DURING THE COLLISION.
+   *
+   * So this claim is a BEFORE AND AFTER ON THE SAME DOCUMENT rather than a threshold: the
+   * web must be frontier-free while the lane rests, and must carry cross-community links
+   * while it fires. Both halves are required — the resting half is what stops this passing
+   * on a file that has simply been stirred into mush, and it is the half that carries
+   * §V900 forward rather than around it.
+   *
+   * WHAT IS NOT CLAIMED, and it is the honest limit of the mechanism: MEMBERSHIP DOES NOT
+   * CHANGE. `communityOf` is a pure hash of identity, so nothing is conquered — the
+   * colonies collide, interpenetrate and separate again carrying exactly the labels they
+   * arrived with. Measured at the deepest interpenetration, only 3 to 9 of 350 points would
+   * flip even under a label-propagation rule that does not exist here. The disturbance buys
+   * a FRONTIER and a REARRANGEMENT, not a conquest, and asserting otherwise would be the
+   * §T1074 failure repeated.
+   */
+  it(
+    "THE DISTURBANCE MAKES A FRONTIER THE SETTLED FILE DOES NOT HAVE: colonies collide on the strike and the web goes frontier-free again at rest",
+    async () => {
+      /* The drawn web is `bound1 -> web1`: the unaffiliated are parked out of every radius
+         (§V788) before the query runs, so the frontier is measured over exactly the points
+         the picture joins, and re-derived here from identity rather than read back out of
+         the render it is judging. */
+      const affiliated = (): number[] => {
+        const out: number[] = [];
+        for (let slot = 0; slot < CAPACITY; slot += 1) if (communityOf(slot) !== LOOSE) out.push(slot);
+        return out;
+      };
+      /* web1 is `pointProximity { neighbors: 6 }`, so a point's frontier IS its six
+         nearest. Counted the same way §T1074 counted it, so the numbers are comparable. */
+      const crossLinks = (field: Field): number => {
+        const slots = affiliated();
+        let cross = 0;
+        for (const i of slots) {
+          const pi = field.position[i] ?? [0, 0, 0];
+          const nearest = slots
+            .filter((j) => j !== i)
+            .map((j) => ({ j, d: distance(pi, field.position[j] ?? [0, 0, 0]) }))
+            .sort((a, b) => a.d - b.d)
+            .slice(0, 6);
+          for (const link of nearest) if (communityOf(link.j) !== communityOf(i)) cross += 1;
+        }
+        return cross;
+      };
+
+      /* `dstep1` holds two bars (248.3 frames at 116 bpm) and its shipped seed strikes on
+         the phrases at 497-745, 1490-1738 and 2234-2483. 1600 is deep inside the second;
+         1300 and 1900 sit either side of it, both past the layout's own relaxation. */
+      const STRIKE = 1600;
+      const BEFORE = 1300;
+      const AFTER = 1900;
+
+      const struck = await renderQuorum({ at: STRIKE });
+      const before = await renderQuorum({ at: BEFORE });
+      const after = await renderQuorum({ at: AFTER });
+
+      // ONE — AT REST THE WEB IS FRONTIER-FREE, on both sides of the strike. This is
+      // §T1074's measurement, unchanged, and it is what the disturbance must not destroy.
+      for (const [tag, field, frame] of [
+        ["before", before, BEFORE],
+        ["after", after, AFTER],
+      ] as const) {
+        const resting = crossLinks(field);
+        expect(
+          resting,
+          `${resting} cross-community links on the drawn web at frame ${frame} (${tag} the strike), where a settled E54 has exactly 0 — the colonies are no longer separating between strikes, so the disturbance has become a permanent stir rather than an event`,
+        ).toBe(0);
+      }
+
+      // TWO — AND ON THE STRIKE THERE IS A FRONTIER. Not a threshold: the resting value is
+      // 0 by the assertion above, so any nonzero count is the disturbance's whole effect,
+      // and this is the "what differs if the edge were cut" bar taken literally.
+      const frontier = crossLinks(struck);
+      expect(
+        frontier,
+        `the drawn web carries ${frontier} cross-community links at the strike, against 0 at rest on either side — the disturbance lane is not reaching the layout, so the colonies never touch`,
+      ).toBeGreaterThan(0);
+
+      // THREE — AND IT IS THE COLONIES COLLIDING, not the whole picture shrinking. A
+      // uniform contraction is a SIMILARITY TRANSFORM and k-NN adjacency is scale-invariant,
+      // so a shrunk field would show the same six neighbours and no frontier at all. The
+      // discriminator is that the closest pair of colonies must close by MORE than the
+      // assembly as a whole does; under a pure homothety the two ratios are equal.
+      const gapMin = (field: Field): number => {
+        const centres = layout(field).map((entry) => entry.centre);
+        let min = Infinity;
+        for (let a = 0; a < COMMUNITIES.length; a += 1) {
+          for (let b = a + 1; b < COMMUNITIES.length; b += 1) {
+            min = Math.min(min, distance(centres[a] ?? [0, 0, 0], centres[b] ?? [0, 0, 0]));
+          }
+        }
+        return min;
+      };
+      const extent = (field: Field): number => {
+        const centre = meanOf(field.position);
+        return Math.max(...field.position.map((p) => distance(p, centre)));
+      };
+      const gapRatio = gapMin(struck) / gapMin(before);
+      const extentRatio = extent(struck) / extent(before);
+      expect(
+        gapRatio,
+        `at the strike the closest colony gap went to ${(gapRatio * 100).toFixed(1)} % of its resting value while the whole assembly went to ${(extentRatio * 100).toFixed(1)} % — the field is being SCALED rather than the colonies driven together, and a similarity transform cannot make a frontier because k-NN adjacency is scale-invariant`,
+      ).toBeLessThan(extentRatio);
+    },
+    900_000,
+  );
+
   it(
     "the shipped kernel really does read its neighbours — T1070's accessor is in the compiled module",
     async () => {

@@ -102,6 +102,13 @@ import { settings, node, edge, graph, document, drivenSlot } from "./builders.ts
  * Proximity's own docblock argues for. Nothing else runs on a free clock but the hue, which
  * turns once every 80 seconds, and the nebular bed, which drifts.
  *
+ * AND THE STRUCTURAL EVENT IS THE DISTURBANCE (T1113): on about one phrase in three,
+ * `dstep1 -> dlim1 -> dlag1` drives the two closest colonies through each other and lets
+ * them separate again into a new arrangement. That is the one thing in this document that
+ * is not the operator relaxing, it is external to it by construction, and it is why the
+ * ring comes back in a different order instead of the same one. Everything else here
+ * settles; this is what makes the settling worth watching twice.
+ *
  * ⚑ FOUR WAYS TO MAKE IT LIVELIER WERE MEASURED AND REFUSED (T1074), and they are ONE
  * refusal rather than four attempts (§V900): FOUR RESOLVED HUES REQUIRE THE OPERATOR TO BE
  * BLOCK-DIAGONAL, AND A BLOCK-DIAGONAL OPERATOR HAS NO BOUNDARY. A partition that is legible
@@ -225,17 +232,40 @@ import { settings, node, edge, graph, document, drivenSlot } from "./builders.ts
  * is surrounded by its own so nobody leaves. The symptom does not resist being fixed; it
  * relocates.
  *
- * ⚠ AND THE SCOPE OF ALL FOUR, so this reads as the refusal it is and not a wider one
- * (T1113, open): §V900 is a statement about the operator's FIXED POINT. Every measurement
- * above was taken at equilibrium or through ordinary phrase dynamics, and the 0 of 2100 cross
- * links from frame 900 on are a property of the SETTLED LAYOUT rather than of the graph — the
- * colonies simply end up further apart than any point's sixth-nearest. An EXTERNAL
- * disturbance that shoves a colony across that gap leaves the operator, and so
- * block-diagonality, untouched while making foreign points each other's near neighbours: the
- * frontier that does not exist at rest would exist during the collision, and the labels would
- * be READING the layout rather than fighting it — which is why T1081's authored label strike
- * reverted 73 of 73 in one frame and a positional one might not. Nothing has measured that
- * transient. It is the one direction these four do not close.
+ * ⚑⚑ AND THE SCOPE OF ALL FOUR, WHICH IS WHERE THE FIFTH GOT IN (T1113, and it is the
+ * `disturb` term in the kernel below). §V900 IS A STATEMENT ABOUT THE OPERATOR'S FIXED
+ * POINT. Every measurement above was taken at equilibrium or through ordinary phrase
+ * dynamics, and the 0 of 2100 cross links from frame 900 on are a property of the SETTLED
+ * LAYOUT rather than of the graph — measured, the colony centre gaps are 0.545 to 0.820
+ * while a point's sixth-nearest neighbour sits at 0.067, a factor of eight. So the
+ * separation is a DISTANCE, and a distance can be closed by moving bodies.
+ *
+ * THE PREMISE HELD. An external disturbance leaves the operator — and so block-diagonality,
+ * and so §V900 — untouched, because it adds no weight to anything: it moves positions and
+ * lets the graph be read where they land. Driving the two closest colonies into each other
+ * takes the drawn web from 0 cross-community links to 80-95 of 2100, and from 0 to 48-63 of
+ * 350 points holding a foreign near neighbour, and then back to EXACTLY 0 once the strike
+ * passes and the push separates them again. On the shipped wiring that is 44-80 links at
+ * each of the three struck phrases and 0 at every rested frame between them.
+ *
+ * THE PALETTE SURVIVES IT, and for a reason that can be pointed at rather than hoped for:
+ * THE COLOUR OPERATOR'S CROSS-COMMUNITY WEIGHT IS DISTANCE-INDEPENDENT. Every pair carries
+ * the background tie at every distance, and the only distance-dependent term is gated on
+ * `mine == communityOf(other.id)` — so there is no term for proximity to strengthen across
+ * a boundary, and two colonies can be driven through each other without exchanging any
+ * colour they would not have exchanged at rest. Measured, worst margin +0.0123 during and
+ * after the collision against +0.0129 for the same frames undisturbed: a delta of −0.0008,
+ * where every refused attempt above went negative outright.
+ *
+ * ⚠ AND WHAT IT DOES NOT BUY, because this is the fifth attempt on a file that has refused
+ * four and the temptation is to overclaim the one that worked: IT IS NOT CONQUEST.
+ * `communityOf` is still a pure hash of identity, so no point changes hands — the colonies
+ * collide, interpenetrate and separate carrying exactly the labels they arrived with. At
+ * the deepest interpenetration only 3 to 9 of 350 points would flip even under a
+ * label-propagation rule, and building one needs a fifth attribute against §V588's ceiling
+ * of four. What the disturbance buys is a FRONTIER and a REARRANGEMENT — the ring comes
+ * back in a visibly different order — and that is a smaller claim than the one T1113 set
+ * out to test. §V900 is not refuted; it is bounded to the fixed point it was always about.
  *
  * Four knobs are left bare for a hand, each with a range that goes somewhere: Contrast 0 →
  * one undifferentiated blob, no communities possible; Repulsion 0 → every community
@@ -281,6 +311,7 @@ const QUORUM_KERNEL = `struct Params {
   reach: f32,      // World radius a community bond can span, and the same number the drawn web uses — the picture must not show links the operator is not using.
   diffusion: f32,  // How fast a point's colour averages with its neighbours' — the rate at which a community agrees on a hue.
   anchor: f32,     // How hard each point holds its own seed colour against that averaging; at 0 every community melts into one.
+  disturb: f32,    // T1113: the DISTURBANCE — how hard each colony is driven at the colony it is paired with. 0 at rest, and the only term in this kernel that is not part of the operator.
 }
 
 /* The community that binds to nobody — 28 % of the population, and the reason loose dust
@@ -356,12 +387,17 @@ fn process(p: Point, ctx: PointCtx) -> Point {
   var centroid = vec3f(0.0);
   var colorSum = vec3f(0.0);
   var colorSq = 0.0;
+  /* T1113: the four colony centres, accumulated in the SAME scan — the disturbance needs
+     somewhere to aim, and a colony's centre is the only landmark this operator owns. */
+  var csum = array<vec3f, 4>();
+  var cnt = array<f32, 4>();
 
   /* THE O(N²) SCAN, and it is one loop because it is one operator. T1070's pointAt reads
      the pre-frame half, so every point sees the same last-frame field whatever order the
      workgroups ran in — a Jacobi step, not a scheduling-dependent one (§V44). */
   for (var j = 0u; j < ctx.count; j += 1u) {
     let other = pointAt(j);
+    { let oc = communityOf(other.id); if (oc < 4u) { csum[oc] += other.position; cnt[oc] += 1.0; } }
     centroid += other.position;
     colorSum += other.tint.rgb;
     colorSq += dot(other.tint.rgb, other.tint.rgb);
@@ -411,6 +447,45 @@ fn process(p: Point, ctx: PointCtx) -> Point {
      attraction is the random-walk Laplacian and a hub does not travel further per frame
      than a leaf. */
   var advance = (pull / norm) * ctx.params.coupling + push * ctx.params.repulsion;
+
+  /* ⚑ THE DISTURBANCE (T1113), AND IT IS THE ONE TERM HERE THAT IS NOT THE OPERATOR.
+     Communities 0↔3 and 1↔2 are driven at each other's centres while disturb is up, so
+     the two closest colonies collide, interpenetrate, and are pushed apart again into a
+     NEW arrangement when it falls. Nothing about the operator changes: the bond is still
+     strictly within-community, the block structure is still block-diagonal, and this is an
+     EXTERNAL input that moves the system away from its fixed point rather than a different
+     fixed point (§V900 is a statement about the fixed point; the interesting behaviour is
+     in the transient).
+
+     WHY AN ASYMMETRIC AIM, MEASURED — three were tried at the same force and only this one
+     collides, because THE AIM IS THE AUTHORED THING AND THE STRENGTH IS NOT:
+       - a uniform contraction toward the centroid is a SIMILARITY TRANSFORM, and k-NN
+         adjacency is SCALE-INVARIANT. Gap 0.542 → 0.435 and assembly radius 0.608 → 0.468,
+         the SAME ratio, and the frontier stays at 0. Shrinking the picture changes nobody's
+         six nearest;
+       - a cyclic chase (0→1→2→3→0) is a merry-go-round: every colony pursues a target that
+         is itself fleeing, the ring's symmetry survives, frontier 3–12 links;
+       - mutual head-on, this one: frontier 80–95 links of 2100, and 48–63 of 350 points
+         acquire a foreign near neighbour where the settled file has EXACTLY ZERO (T1074).
+     3u - mine pairs the two CLOSEST colonies (centre gaps 0.562 and 0.562) rather than
+     the two furthest (0.820, 0.770) that mine ^ 1u would have paired.
+
+     AND IT IS ADDED BEFORE THE COURANT CLAMP, which is what makes it a FORCE rather than a
+     teleport: it inherits the same travel bound every other term obeys, so no point moves
+     more than 3 % of reach in a frame however hard it is driven. The clamp SATURATES —
+     at the shipped gain a point half a world from its aim wants to step 0.25 and takes
+     0.0255 — so disturb is a GATE on whether the colonies are driven, not a dial on how
+     violently, and the collision runs at the speed the field's own relaxation does. That is
+     also why it cannot reach the period-2 explosion the clamp exists to refuse.
+
+     The loose dust is NOT driven: it is affiliated with nobody, so it has no colony to be
+     paired with, and §V788 parks it out of every radius anyway. It stays where it is and
+     the colonies move through it. */
+  if (ctx.params.disturb > 0.0 && mine < 4u) {
+    var ccentre = array<vec3f, 4>();
+    for (var c = 0u; c < 4u; c += 1u) { ccentre[c] = csum[c] / max(cnt[c], 1.0); }
+    advance += (ccentre[3u - mine] - p.position) * ctx.params.disturb;
+  }
 
   /* ⚑ THE COURANT BOUND, AND IT IS WHAT MAKES THE STRIKE SURVIVABLE.
 
@@ -535,6 +610,24 @@ export const quorumDocument = document(
       node("csub", "valueMath", [-1360, 940], { operation: "add", operand: -0.45 }, { label: "csub1" }),
       node("clim", "valueLimit", [-1060, 940], { minimum: 0.25, maximum: 0.95 }, { label: "clim1" }),
       node("clag", "valueLag", [-760, 940], { lag: 0.9, releaseRatio: 3 }, { label: "clag1" }),
+      /* THE DISTURBANCE LANE (T1113) — three nodes, on the same clock seam as everything
+         else, and no arithmetic chain: the STEP'S OWN min/max do the mapping. `dstep1`
+         holds a draw for two bars and emits −3.0 + 4.2·r, so `dlim1` clamping to [0, 0.5]
+         is a GATE: the lane is flat zero unless the draw clears 0.714, which is a bit under
+         a third of phrases. That is the rest-and-strike shape stated as arithmetic — most
+         phrases the assembly is left alone, and on the others it is driven together.
+
+         IT GETS ITS OWN STEP RATHER THAN READING `cstep1` because coupling's draw sequence
+         happens to run high for five phrases together (0.73, 0.86, 0.96, 0.89, 0.75), so
+         ANY threshold on it fires as one long contiguous block instead of as separate
+         events. A second draw off the same clock is still the same tempo; it is just not
+         the same coin. At the shipped seed it strikes on three well-separated phrases —
+         frames 497–745, 1490–1738 and 2234–2483 — and rests for the rest of the minute. */
+      node("dstep", "valueStep", [-1360, 1420], { every: 2, minimum: -3, maximum: 1.2, seed: 82 }, { label: "dstep1" }),
+      node("dlim", "valueLimit", [-1060, 1420], { minimum: 0, maximum: 0.5 }, { label: "dlim1" }),
+      /* Eased on the way in and out for the same reason clag1 is: a collision that snaps on
+         reads as a teleport even when the clamp is holding every step to 3 % of reach. */
+      node("dlag", "valueLag", [-760, 1420], { lag: 0.7, releaseRatio: 2 }, { label: "dlag1" }),
       /* The only free-running clock in the file, and it turns once every 80 seconds. */
       node("hue", "lfo", [-1960, 1180], { shape: "sine", frequency: 0.0125, amplitude: 150, offset: 0, phase: 0 }, { label: "hue1" }),
 
@@ -553,6 +646,10 @@ export const quorumDocument = document(
         parameters: {
           reach: drivenSlot("reach1:high", 0.85),
           coupling: drivenSlot("clag1:bar", 0.85),
+          /* T1113: 0 at rest, and the document's only structural event that is not the
+             operator relaxing. Bare default 0 so a file with the lane cut is the file as
+             it shipped before the disturbance existed. */
+          disturb: drivenSlot("dlag1:bar", 0),
         },
       }),
       /* THE GRAPH, MINUS ITS ISOLATED VERTICES. Proximity is a purely SPATIAL query, so run
@@ -668,6 +765,11 @@ export const quorumDocument = document(
       edge("e8", ["cmul", "out"], ["csub", "a"]),
       edge("e9", ["csub", "out"], ["clim", "in"]),
       edge("e10", ["clim", "out"], ["clag", "in"]),
+      /* The disturbance lane hangs off `clock1`, the same seam every other lane reads, so
+         swapping the pattern for a real track's analysis moves the shove with it. */
+      edge("e10a", ["clock", "out"], ["dstep", "in"]),
+      edge("e10b", ["dstep", "out"], ["dlim", "in"]),
+      edge("e10c", ["dlim", "out"], ["dlag", "in"]),
       edge("e11", ["mesh", "out"], ["bound", "points"]),
       edge("e11b", ["bound", "out"], ["web", "points"]),
       edge("e12", ["mesh", "out"], ["dots", "points"]),
