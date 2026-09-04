@@ -16,6 +16,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:gates": "vitest run src/tests/integration/composition-seams.test.ts src/tests/guardrails/effective-schema-closure.test.ts src/tests/guardrails/greppable-sources.test.ts src/tests/guardrails/wgsl-templates.test.ts src/tests/guardrails/frame-path-flattening.test.ts src/tests/guardrails/uniform-push-closure.test.ts src/domain/commands/command-holder.test.ts src/domain/render/emission-sites.test.ts src/domain/render/side-effects.test.ts src/tests/integration/rename-gate.test.ts src/nodes/definitions/headless.test.ts src/ui/testing/copy-guard.test.ts",
     "test:headless": "vitest run --project headless",
     "test:e2e": "playwright test --pass-with-no-tests",
     "helper": "node --import ./src/tooling/alias-hooks.ts ./src/mcp/serve.ts",

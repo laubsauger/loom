@@ -48,8 +48,11 @@ For application or shared-library changes, run:
 ```bash
 pnpm lint
 pnpm typecheck
-pnpm test
+pnpm test        # >2 min. Prefer the ladder below.
+pnpm test:gates  # ~10 s. The tree-walking guardrails no selector can find. Not optional.
 pnpm build
 ```
+
+**Scope your test runs.** Run `pnpm vitest run <paths>` for what you touched, then `pnpm test:gates` (~10 s) — those 12 gates walk the source tree rather than importing what they check, so nothing else selects them and they are what catch a factory you orphaned or a command you left uncovered. Run the full `pnpm test` only when the blast radius is genuinely everything: a shared abstraction, a registry, a domain type, a generated artefact, or a file move. `pnpm typecheck` always. Note `vitest related`/`--changed` are broken here (`.md` import analysis).
 
 Also run `pnpm test:headless` for backend, rendering, or WGSL changes and `pnpm test:e2e` for browser interaction changes when the environment supports them. Report commands that could not be run and why.

@@ -30,7 +30,8 @@ pnpm dev                 # vite dev server, http://localhost:5173 (logs build co
 pnpm build               # tsc -b && vite build  (CI runs this; vite-only breakage passes tsc+vitest)
 pnpm lint                # eslint . — custom invariant rules, see below
 pnpm typecheck           # THE type gate. Bare `tsc --noEmit` at root checks nothing (solution tsconfig).
-pnpm test                # vitest run, both workspace projects
+pnpm test                # vitest run, both workspace projects — 580 files, 8k+ tests, >2 min
+pnpm test:gates          # the 12 tree-walking guardrails only — ~10 s. See "Scoping test runs".
 pnpm test:headless       # only the "headless" (node env) project
 pnpm test:e2e            # playwright, src/tests/e2e, boots dev server itself
 pnpm helper              # the local helper: stdio MCP server + loopback device bridge (was `mcp:serve`, still aliased)
@@ -57,6 +58,19 @@ node --import ./src/tooling/alias-hooks.ts src/examples/build-thumbnails.ts --on
 ```
 
 The bare `node --experimental-strip-types src/...` form is dead and has been "fixed" in docblocks three times; run a command before trusting it.
+
+## Scoping test runs
+
+`pnpm test` is >2 minutes and most changes cannot reach most of it. Default to this ladder instead:
+
+1. **`pnpm vitest run <paths>`** — the tests for what you touched, named directly. Seconds.
+2. **`pnpm test:gates`** — ~10 s, and **not optional**. These 12 gates walk the *source tree* (`readdirSync`, globs) rather than importing what they check, so **no dependency-graph selector can find them and your own file's tests will never pull them in**: `composition-seams` (a factory no product entry point reaches), `command-holder` (a command with no coverage row), `emission-sites` (an unregistered pump), `rename-gate` (an unregistered storage address), `copy-guard`, `headless`, `side-effects`, and the four `guardrails/`. They are the ones that catch what you did not know you touched.
+3. **`pnpm typecheck`** — always. It is the cheapest cross-file blast-radius check you have.
+4. **`pnpm test` in full** only when the blast radius genuinely is everything: a change to a **shared abstraction, a registry, a domain type, or a generated artefact**. Moving a file counts.
+
+`pnpm build` still gates anything touching the asset pipeline or imports — vite-only breakage passes tsc *and* vitest.
+
+⚠ `vitest related` / `--changed` **do not work in this repo**: import analysis tries to parse `.md` files and throws `Failed to parse source for import analysis`. Naming paths is the working substitute; fixing `assetsInclude` would unlock it.
 
 ## GPU tests (Dawn)
 
