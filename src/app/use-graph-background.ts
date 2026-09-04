@@ -181,6 +181,15 @@ export function useGraphBackground(inputs: GraphBackgroundInputs): void {
      * screen to compare its rate against and nobody times it — so the fixed step is both
      * correct and the cheaper of the two, and the default (§V662's safe direction) is
      * already the right answer.
+     *
+     * T1104 — and it is deliberately SEEDLESS too, which is the other thing that looks like
+     * a bug here. This clock is REFRESH CADENCE ONLY and reaches no shader: its frame is
+     * read exactly twice, at `previews/system.ts:111` and `previews/schedule.ts:300`, and
+     * only for `timeSeconds`; `PreviewFrameCommand` carries neither time nor seed. The seed
+     * arrives instead through the MAIN PROGRAM'S SHARED BLOCK, which this host binds
+     * (`vgpu-backend.ts:1380`) and only `backend.render()` writes — so the background
+     * already draws at the document's seed, and passing one in here would change no pixel.
+     * Traced three times now; the trace lives in §T1104.
      */
     const clock = liveClock();
     let lastDeviceGeneration = backend.status.deviceGeneration;
