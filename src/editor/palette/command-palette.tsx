@@ -72,11 +72,42 @@ export function CommandPalette({
   const [activeIndex, setActiveIndex] = useState(0);
   const [status, setStatus] = useState("");
 
-  // Commands are registered as tracks load, so the list is rebuilt each time it opens.
-  const entries = useMemo(
-    () => (open ? buildPaletteEntries({ bus, resolved }) : []),
-    [open, bus, resolved],
-  );
+  /*
+   * Commands are registered as tracks load, so the list is rebuilt each time it opens —
+   * in an EFFECT, after the commit, never during the render that observed the bus.
+   *
+   * ## T1124 — the bug this shape exists to stop, measured
+   *
+   * Opening a document does not mutate the runtime, it REPLACES it (`app.tsx` calls
+   * `setRuntime(createAppRuntime(…))`), and the new bus starts with only the commands the
+   * composition root registers. Every command a mounted SURFACE owns — `ui.openLayouts`,
+   * `layout.reset`, `ui.showProblems`, `ui.openHelp`, `ui.openSettings`,
+   * `ui.showNodeInfo`, `ui.openCommandPalette` — is put back by that surface's own effect,
+   * which by definition has not run yet at the moment this component renders with the new
+   * bus. Building the list during that render snapshots a bus that is still half empty,
+   * and because the memo's deps do not change again the snapshot NEVER refreshes: the
+   * palette stays wrong for as long as it is open.
+   *
+   * Measured at HEAD, headless Chromium, T1123's first-boot starter (which is a document
+   * open, so it swaps the runtime a beat after the canvas paints): a palette opened in
+   * that window listed 50 commands instead of 85, `ui.openLayouts` absent entirely and
+   * `ui.openHelp` / `ui.openSettings` / `ui.showNodeInfo` greyed as "unavailable". Every
+   * one of them is reachable again by closing the palette and reopening it, which is
+   * exactly the shape that keeps a bug like this out of a report — it does not reproduce
+   * the second time you look.
+   *
+   * §V307's whole claim is that one command buys three doors. This was the palette door
+   * dying silently while the other two kept working. Caught by `layout.spec.ts`'s V307
+   * spec, which is the only gate that drives the palette in the composed app.
+   *
+   * Effects flush in tree order, and the surfaces that register are mounted ABOVE and
+   * BEFORE this component (`AppShell` precedes `CommandPalette` in `app.tsx`), so their
+   * re-registration lands in the same commit, before this runs.
+   */
+  const [entries, setEntries] = useState<readonly PaletteEntry[]>([]);
+  useEffect(() => {
+    setEntries(open ? buildPaletteEntries({ bus, resolved }) : []);
+  }, [open, bus, resolved]);
 
   const results = useMemo(
     () => fuzzyFilter(query, entries, (entry) => [entry.label, entry.command]).slice(0, maxResults),
