@@ -44,11 +44,11 @@ describe("T39 — node library pane", () => {
     // ACTIVE filter — asserted below, because a trigger that always reads "all" would
     // leave the user unable to tell what they are looking at.
     const openFilters = () =>
-      fireEvent.click(screen.getByRole("button", { name: /^(Filter by category|Category: )/ }));
+      fireEvent.click(screen.getByRole("button", { name: /^Filter nodes by category/ }));
     openFilters();
     fireEvent.click(screen.getByRole("button", { name: "generator" }));
     expect(screen.queryByText("Blur")).toBeNull();
-    expect(screen.getByRole("button", { name: "Category: generator" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Filter nodes by category: generator" })).toBeDefined();
     openFilters();
     fireEvent.click(screen.getByRole("button", { name: "generator" }));
     expect(screen.getByText("Blur")).toBeDefined();
@@ -147,7 +147,7 @@ describe("T427 — the filter is bounded by the pane, not sized by the catalogue
 
   it("moves the set out of the way without shrinking it — all 40 are one click away", () => {
     render(<NodeLibrary definitions={catalogueOf(40)} />);
-    fireEvent.click(screen.getByRole("button", { name: "Filter by category" }));
+    fireEvent.click(screen.getByRole("button", { name: "Filter nodes by category" }));
     // 40 categories, plus "all" — which is the pressed one while nothing is filtered.
     expect(screen.getAllByRole("button", { pressed: false })).toHaveLength(40);
     expect(screen.getAllByRole("button", { pressed: true })).toHaveLength(1);
@@ -155,9 +155,9 @@ describe("T427 — the filter is bounded by the pane, not sized by the catalogue
 
   it("names the ACTIVE filter on the trigger, so the pane still says what it is showing", () => {
     render(<NodeLibrary definitions={catalogueOf(40)} />);
-    fireEvent.click(screen.getByRole("button", { name: "Filter by category" }));
+    fireEvent.click(screen.getByRole("button", { name: "Filter nodes by category" }));
     fireEvent.click(screen.getByRole("button", { name: "category-07" }));
-    const trigger = screen.getByRole("button", { name: "Category: category-07" });
+    const trigger = screen.getByRole("button", { name: "Filter nodes by category: category-07" });
     // One name, not a list: the trigger's label is O(1) in the catalogue too.
     expect(trigger.textContent).toBe("category-07");
     expect(screen.getByRole("region", { name: "category-07" })).toBeDefined();

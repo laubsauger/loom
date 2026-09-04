@@ -3,7 +3,7 @@ import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { NodeDefinition } from "@domain/types/node-definition.ts";
 import { NodeIdentity } from "@ui/primitives/node-identity.tsx";
 import { PopoverAnchor, PopoverContent, PopoverRoot } from "@ui/primitives/popover.tsx";
-import { categoriesOf, filterLibrary } from "./search.ts";
+import { ALL_CATEGORIES, categoriesOf, filterLibrary } from "./search.ts";
 import styles from "./node-search.module.css";
 
 /**
@@ -351,7 +351,12 @@ export function NodeSearch({ definitions, anchor, onPick, onClose }: NodeSearchP
                     choose(isAll ? null : name);
                   }}
                 >
-                  {isAll ? "all" : name}
+                  {/* T1130: the library pane's own catch-all word, imported rather than
+                      re-spelled. This strip said "all" and the pane's chip "All", and the
+                      cross-surface gate had to compare the two lists case-blind to get
+                      past it — the gate was compensating for a difference with no reason
+                      to exist. */}
+                  {isAll ? ALL_CATEGORIES : name}
                 </button>
               );
             })}

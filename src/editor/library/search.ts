@@ -318,3 +318,15 @@ export function describeDrag(drag: PortDragQuery): string {
 export function describeDragPrecisely(drag: PortDragQuery): string {
   return describePortType(drag.type);
 }
+
+/**
+ * The catch-all category, as ONE word for every surface that offers one (T1130).
+ *
+ * A word, not an icon: a compact trigger must state its own state (§V90). It lives here
+ * rather than in either surface because there are two of them — the library pane's filter
+ * chip and the node browser's tab strip — and they used to spell it "All" and "all". The
+ * cross-surface gate that compares their category lists had to read the catch-all
+ * case-blind to get past that, which is a test compensating for a difference with no
+ * reason to exist. One constant, and the gate can go back to an exact match.
+ */
+export const ALL_CATEGORIES = "All";

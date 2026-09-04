@@ -162,7 +162,7 @@ export function ExampleLibrary({
       notice={message}
       toolbar={
         <LibrarySearch
-          label="Search examples"
+          collection="examples"
           value={query}
           onChange={setQuery}
           categories={categories}

@@ -12,7 +12,7 @@ import {
   PopoverTrigger,
 } from "@ui/primitives/popover.tsx";
 import { cx } from "@ui/cx.ts";
-import { groupEntries } from "./search.ts";
+import { ALL_CATEGORIES, groupEntries } from "./search.ts";
 import styles from "./library.module.css";
 
 /**
@@ -140,8 +140,18 @@ export function LibraryPanel<T>({
 }
 
 export interface LibrarySearchProps {
-  /** Accessible name for the field, e.g. "Search nodes". Also its placeholder. */
-  label: string;
+  /**
+   * WHAT THIS SURFACE LISTS, as a plural noun: "nodes", "examples", "components" (T1130).
+   *
+   * ONE noun per pane, and every control in the row is named from it — the field reads
+   * "Search nodes", the filter trigger "Filter nodes by category". Two panes are open at
+   * once in the default arrangement (§T1123/§T1125's node library and examples pane), and
+   * a sighted user tells their controls apart by WHICH PANE THEY ARE IN while a screen
+   * reader user has only the name. So the collection cannot be optional and cannot be
+   * spelled separately per control: a second free-text `label` prop beside this one is
+   * exactly how the two triggers came to share the string "Filter by category".
+   */
+  collection: string;
   value: string;
   onChange: (next: string) => void;
   /** Extra key handling, e.g. the node pane's Enter-adds-the-top-hit. */
@@ -156,9 +166,6 @@ export interface LibrarySearchProps {
   onFiltersOpenChange?: (next: boolean) => void;
 }
 
-/** The resting label. A word, not an icon: a compact trigger must state its own state. */
-const ALL_CATEGORIES = "All";
-
 /**
  * The search field, with the category filter beside it on one row (§T855).
  *
@@ -168,7 +175,7 @@ const ALL_CATEGORIES = "All";
  * "what am I looking at", and the whole set is one click away.
  */
 export function LibrarySearch({
-  label,
+  collection,
   value,
   onChange,
   onKeyDown,
@@ -190,8 +197,8 @@ export function LibrarySearch({
         type="search"
         className={styles.search}
         value={value}
-        placeholder={label}
-        aria-label={label}
+        placeholder={`Search ${collection}`}
+        aria-label={`Search ${collection}`}
         {...(title === undefined ? {} : { title })}
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={(event) => {
@@ -209,7 +216,19 @@ export function LibrarySearch({
               type="button"
               className={cx(styles.chip, styles.filterTrigger)}
               aria-expanded={filtersOpen}
-              aria-label={category === null ? "Filter by category" : `Category: ${category}`}
+              /*
+               * T1130 — NAMED BY THE COLLECTION IT FILTERS, IN BOTH STATES.
+               *
+               * The active state carries it too, and that is not belt-and-braces: two
+               * panes narrowed to the same category name would otherwise both announce
+               * "Category: Generators" and the duplicate would be back, wearing a value
+               * instead of a placeholder.
+               */
+              aria-label={
+                category === null
+                  ? `Filter ${collection} by category`
+                  : `Filter ${collection} by category: ${category}`
+              }
             >
               {category ?? ALL_CATEGORIES}
             </button>

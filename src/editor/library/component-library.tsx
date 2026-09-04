@@ -178,7 +178,7 @@ export function ComponentLibrary({
       notice={message}
       toolbar={
         <>
-          <LibrarySearch label="Search components" value={query} onChange={setQuery} />
+          <LibrarySearch collection="components" value={query} onChange={setQuery} />
 
           <div className={styles.saveRow}>
             <input

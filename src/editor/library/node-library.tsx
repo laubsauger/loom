@@ -98,7 +98,7 @@ export function NodeLibrary({
             owner's words: "node library didnt adjust its category filter".
           */}
           <LibrarySearch
-            label="Search nodes"
+            collection="nodes"
             value={query}
             onChange={setQuery}
             title="Enter adds the top hit"

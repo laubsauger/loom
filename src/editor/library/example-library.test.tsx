@@ -219,7 +219,7 @@ describe("ExampleLibrary (T189, §V93)", () => {
       <ExampleLibrary bus={bus} context={context} dirty={false} examples={[EXAMPLE, OTHER]} />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Filter by category" }));
+    fireEvent.click(screen.getByRole("button", { name: "Filter examples by category" }));
     const menu = await screen.findByRole("dialog");
     // Derived, not hand-listed: both categories present in the fixture, and nothing else.
     expect(within(menu).getByRole("button", { name: "points" })).toBeDefined();
@@ -230,7 +230,7 @@ describe("ExampleLibrary (T189, §V93)", () => {
     await waitFor(() => expect(screen.queryByRole("button", { name: /E9 Test/ })).toBeNull());
     expect(screen.getByRole("button", { name: /E12 Other/ })).toBeDefined();
     // The trigger answers "what am I looking at" (§V90).
-    expect(screen.getByRole("button", { name: "Category: feedback" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Filter examples by category: feedback" })).toBeDefined();
   });
 
   it("shows the description on FOCUS, not only on hover (§V19)", async () => {

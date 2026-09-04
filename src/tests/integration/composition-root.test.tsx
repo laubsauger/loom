@@ -141,6 +141,96 @@ describe("every shell slot is filled with a real pane", () => {
       expect(screen.queryByText(hint)).toBeNull();
     }
   });
+
+  /**
+   * T1130 — NO TWO CONTROLS ON SCREEN AT ONCE ANSWER TO THE SAME NAME.
+   *
+   * The report was two `button[aria-label="Filter by category"]`s: `0cce047`/`9be113c` put
+   * a node library in the left dock and an examples pane in the bottom, and both shipped
+   * the shared `LibrarySearch` with its one hard-coded trigger label. A sighted user tells
+   * them apart by which pane they are in. A screen-reader user has only the name, and the
+   * two names were the same string — and Playwright's strict mode had already reported the
+   * same fact from the other side (§T1124: the bare locator resolved to two elements and
+   * the click refused, so the spec had to be scoped around it).
+   *
+   * ⚑ THE CLAIM IS THE GENERAL DEFECT, NOT THOSE TWO STRINGS. It walks the mounted tree
+   * and asserts every INTERACTIVE control's `aria-label` is unique, so the pane that gets
+   * added next month is in this gate the day it lands and nothing below names a pane, a
+   * label or a count. §V908's shape: the inclusion is derived (anything that takes a
+   * click or a keystroke), and only the exclusions are enumerated.
+   *
+   * CONTROLS, not every labelled element, and the line is drawn where the consequence is.
+   * A `section` landmark and the `tablist` inside it deliberately share a name — the
+   * region and its tab strip are the same thing to a reader — and two library panes each
+   * heading a "points" category section is a repeated GROUP name, which is how grouping
+   * works. A repeated BUTTON name is a person unable to say which of two things they are
+   * about to press.
+   *
+   * The scope is the DEFAULT ARRANGEMENT, which is what "simultaneously mounted" means to
+   * someone who has just opened the app. A surface that only co-mounts behind a gesture
+   * (the cursor-anchored node browser reuses "Search nodes") is out of reach here and
+   * would need its own, opened, mounting.
+   */
+  const CONTROL = [
+    "button",
+    "input",
+    "select",
+    "textarea",
+    "a[href]",
+    ...["button", "tab", "menuitem", "checkbox", "switch", "slider", "combobox"].map(
+      (role) => `[role="${role}"]`,
+    ),
+  ].join(", ");
+
+  /**
+   * ⚑ KNOWN, PRE-EXISTING, AND NOT THIS ROW'S TO FIX (§V749, §V740).
+   *
+   * Every dock in the pane tree ships these two buttons, so the default arrangement has
+   * FIVE of each: they are T1130's exact defect, at five times the scale, and they arrived
+   * with the same T1123/T1125 layout work that produced the filter triggers. They live in
+   * the pane furniture rather than the library, so fixing them here would be widening this
+   * row into another one's files — the flag belongs on the board instead, and the fix is
+   * the same shape the filter triggers just took (name the dock in the button).
+   *
+   * This list is the ONLY way past this gate, it is two entries long, and each says why.
+   * A name added here is a visible decision on the diff, never a way to launder a new
+   * collision past the guard.
+   */
+  const KNOWN_DUPLICATE_CONTROL_NAMES: ReadonlyArray<string> = [
+    "Add a tab to this area",
+    "Split or close this pane area",
+  ];
+
+  it("gives every control on screen at once its own accessible name", async () => {
+    await mountApp();
+
+    const byLabel = new Map<string, number>();
+    for (const element of document.body.querySelectorAll(CONTROL)) {
+      const label = element.getAttribute("aria-label");
+      if (label === null) continue;
+      byLabel.set(label, (byLabel.get(label) ?? 0) + 1);
+    }
+
+    // NON-VACUITY: an unmounted shell has no controls at all and every claim below is free.
+    expect(byLabel.size).toBeGreaterThan(5);
+    // AND THE EXCLUSIONS STAY HONEST: a name excused here must still be on screen, or the
+    // list has outlived its reason and is quietly widening the gate (§B153).
+    for (const name of KNOWN_DUPLICATE_CONTROL_NAMES) {
+      expect(
+        byLabel.get(name) ?? 0,
+        `"${name}" is excused as a known duplicate but is not mounted`,
+      ).toBeGreaterThan(1);
+    }
+
+    const shared = [...byLabel]
+      .filter(([label, count]) => count > 1 && !KNOWN_DUPLICATE_CONTROL_NAMES.includes(label))
+      .map(([label, count]) => `${label} (${count})`);
+    expect(
+      shared,
+      `two or more controls are mounted together under one name: ${shared.join(", ")}. ` +
+        `A sighted user tells them apart by where they sit; someone navigating by name cannot.`,
+    ).toEqual([]);
+  });
 });
 
 describe("the node library reaches the document through the bus (§V29)", () => {
