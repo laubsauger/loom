@@ -712,6 +712,135 @@ describe("E54 Quorum — the operator does both jobs (T1070)", () => {
     900_000,
   );
 
+  /**
+   * ⚑ T1114 — THE COLOUR MOVED OFF THE NODES AND INTO THE HAZE, and the depth is graded
+   * from an attribute the operator wrote rather than painted on.
+   *
+   * The reference picture this file is chasing has near-white nodes with the colour living
+   * in the haze behind them; E54 had fully saturated nodes per community. `white1` is one
+   * `hsv` placed AFTER `haze1`'s tap, so the blur still sees saturated communities and only
+   * the front of the frame is desaturated.
+   *
+   * That is a claim about WHERE the colour is, so it is asserted as a relation BETWEEN two
+   * measured quantities in the SAME frame rather than against any chosen number: the dim
+   * pixels (the haze) must be MORE saturated than the bright ones (the nodes).
+   *
+   * ⚠ AND THAT RELATION ALONE IS NOT EVIDENCE, which the red-verify showed rather than the
+   * author guessing: with `white1` returned to saturation 1 the haze is STILL more saturated
+   * than the node cores, because a blur of coloured points is more saturated than their
+   * additive centres whatever grade is applied. So the load-bearing assertion is the SECOND
+   * one — the node cores must be measurably LESS saturated than they are with `white1`
+   * neutral. The first states the arrangement; only the second says this node caused it.
+   */
+  it(
+    "THE COLOUR IS IN THE HAZE, NOT ON THE NODES: the dim pixels are more saturated than the bright ones, and are not once white1 is neutral",
+    async () => {
+      /* HSV saturation of an 8-bit pixel, (max - min) / max — 0 for any grey, whatever its
+         brightness, which is exactly the question being asked. */
+      const saturationBands = (field: Field): { bright: number; dim: number } => {
+        const data = field.rgba.data;
+        const pixels: Array<{ luma: number; sat: number }> = [];
+        for (let i = 0; i < data.length; i += 4) {
+          const r = data[i] ?? 0;
+          const g = data[i + 1] ?? 0;
+          const b = data[i + 2] ?? 0;
+          const max = Math.max(r, g, b);
+          const min = Math.min(r, g, b);
+          if (max === 0) continue; // pure black carries no colour and no counter-evidence
+          pixels.push({ luma: max, sat: (max - min) / max });
+        }
+        pixels.sort((a, b) => b.luma - a.luma);
+        /* The brightest twentieth is the node cores; the band below the median is the haze.
+           Both are fixed fractions of whatever the picture turns out to be, so neither is a
+           threshold on the content. */
+        const bright = pixels.slice(0, Math.max(1, Math.floor(pixels.length * 0.05)));
+        const dim = pixels.slice(Math.floor(pixels.length * 0.5), Math.floor(pixels.length * 0.9));
+        const mean = (list: typeof pixels): number =>
+          list.reduce((acc, p) => acc + p.sat, 0) / Math.max(list.length, 1);
+        return { bright: mean(bright), dim: mean(dim) };
+      };
+
+      const shipped = await renderQuorum({ probe: false, at: STRUCK });
+      const shippedBands = saturationBands(shipped);
+      expect(
+        shippedBands.dim,
+        `the haze measured ${shippedBands.dim.toFixed(4)} saturation against ${shippedBands.bright.toFixed(4)} on the node cores — the colour is still living on the nodes, so white1 is not reaching the front layer`,
+      ).toBeGreaterThan(shippedBands.bright);
+
+      // AND THE OTHER WAY (§V884): neutralise white1 and the relation must not survive, or
+      // the claim above was about the picture rather than about this node.
+      const saturated = await renderQuorum({
+        probe: false,
+        at: STRUCK,
+        mutate: (graph) => {
+          const white = graph.nodes["white"];
+          if (white === undefined) throw new Error("E54 has no white node");
+          white.parameters = { ...white.parameters, saturation: 1 };
+        },
+      });
+      const saturatedBands = saturationBands(saturated);
+      expect(
+        saturatedBands.bright,
+        `with white1 neutral the node cores measured ${saturatedBands.bright.toFixed(4)} saturation against ${shippedBands.bright.toFixed(4)} shipped — the desaturation is doing nothing, so the shipped reading was not caused by this node`,
+      ).toBeGreaterThan(shippedBands.bright);
+    },
+    480_000,
+  );
+
+  /**
+   * ⚑ T1114 — AND THE DEPTH IS REAL DATA, not a painted gradient.
+   *
+   * `deep1` and `fore1` split the cloud on `position.z`, which the kernel settles into TWO
+   * SHEETS at z ≈ ∓0.023 holding 239 and 241 points — measured, and stable from frame 20 to
+   * 3600. The far half is veiled and blurred, the near half added on top crisp.
+   *
+   * The split is asserted where it is decidable — on the point buffer, against the halves
+   * the shipped `from`/`to` actually name — and the veil is asserted the "what differs if
+   * the edge were cut" way, because a drifting layer that reaches nothing is the exact
+   * failure this project keeps finding.
+   */
+  it(
+    "THE DEPTH SPLIT IS ON REAL DATA AND THE VEIL REACHES THE SCREEN",
+    async () => {
+      const field = await renderQuorum({ at: STRUCK });
+
+      // ONE — the operator really did sort the points onto two sides of the split plane, so
+      // `deep1`/`fore1` are dividing something rather than sending everything one way. The
+      // boundary is the shipped `to: 0` / `from: 0`, quoted rather than chosen.
+      let back = 0;
+      let front = 0;
+      for (let slot = 0; slot < CAPACITY; slot += 1) {
+        const z = field.position[slot]?.[2] ?? 0;
+        if (z < 0) back += 1;
+        else front += 1;
+      }
+      expect(back, `${back} of ${CAPACITY} points are behind the split plane — the far half is empty and the veil has nothing to grade`).toBeGreaterThan(0);
+      expect(front, `${front} of ${CAPACITY} points are in front of the split plane — the near half is empty`).toBeGreaterThan(0);
+
+      // TWO — AND THE VEIL IS COMPOSITING. Pulling the veil1 -> fog1 edge is refused at
+      // compile, exactly as emptying webs1's scene list is: a Multiply with one input is an
+      // error, not a pass-through. So the veil is neutralised INTO A CONSTANT 1 instead —
+      // amp 0, offset 1, which is the same node computing white everywhere — and that is
+      // the honest form of "what differs if this edge were cut" for an operator whose
+      // identity element exists.
+      const shipped = await renderQuorum({ probe: false, at: STRUCK });
+      const noVeil = await renderQuorum({
+        probe: false,
+        at: STRUCK,
+        mutate: (graph) => {
+          const veil = graph.nodes["veil"];
+          if (veil === undefined) throw new Error("E54 has no veil node");
+          veil.parameters = { ...veil.parameters, amp: 0, offset: 1 };
+        },
+      });
+      expect(
+        differingPixels(shipped, noVeil),
+        "cutting veil1 changed nothing — the veil is not reaching the far layer",
+      ).toBeGreaterThan(0);
+    },
+    480_000,
+  );
+
   it(
     "the shipped kernel really does read its neighbours — T1070's accessor is in the compiled module",
     async () => {

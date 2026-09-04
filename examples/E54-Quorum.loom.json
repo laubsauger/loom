@@ -157,10 +157,120 @@
           "portId": "input"
         }
       },
-      "e19": {
-        "id": "e19",
+      "e19a": {
+        "id": "e19a",
         "source": {
-          "nodeId": "nodes",
+          "nodeId": "mesh",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "deep",
+          "portId": "points"
+        }
+      },
+      "e19b": {
+        "id": "e19b",
+        "source": {
+          "nodeId": "mesh",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "fore",
+          "portId": "points"
+        }
+      },
+      "e19c": {
+        "id": "e19c",
+        "source": {
+          "nodeId": "deep",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "deepdots",
+          "portId": "points"
+        }
+      },
+      "e19d": {
+        "id": "e19d",
+        "source": {
+          "nodeId": "fore",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "foredots",
+          "portId": "points"
+        }
+      },
+      "e19e": {
+        "id": "e19e",
+        "source": {
+          "nodeId": "deepr",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "fog",
+          "portId": "in1"
+        }
+      },
+      "e19f": {
+        "id": "e19f",
+        "source": {
+          "nodeId": "veil",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "fog",
+          "portId": "in2"
+        }
+      },
+      "e19g": {
+        "id": "e19g",
+        "source": {
+          "nodeId": "fog",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "soft",
+          "portId": "input"
+        }
+      },
+      "e19h": {
+        "id": "e19h",
+        "source": {
+          "nodeId": "soft",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "depth",
+          "portId": "in1"
+        }
+      },
+      "e19i": {
+        "id": "e19i",
+        "source": {
+          "nodeId": "forer",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "depth",
+          "portId": "in2"
+        }
+      },
+      "e19j": {
+        "id": "e19j",
+        "source": {
+          "nodeId": "depth",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "white",
+          "portId": "input"
+        }
+      },
+      "e19k": {
+        "id": "e19k",
+        "source": {
+          "nodeId": "white",
           "portId": "out"
         },
         "target": {
@@ -514,6 +624,103 @@
         },
         "type": "valueMath"
       },
+      "deep": {
+        "definitionVersion": 1,
+        "id": "deep",
+        "label": "deep1",
+        "parameters": {
+          "attribute": "position",
+          "component": "z",
+          "from": -1,
+          "mode": "inside",
+          "to": 0
+        },
+        "position": {
+          "x": -1660,
+          "y": -900
+        },
+        "type": "pointRange"
+      },
+      "deepdots": {
+        "definitionVersion": 1,
+        "id": "deepdots",
+        "label": "deepdots1",
+        "parameters": {
+          "blend": "additive",
+          "material": "ink1",
+          "mode": "points",
+          "scale": {
+            "bindings": {
+              "map": {
+                "attribute": "degree",
+                "kind": "map"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.008
+              }
+            },
+            "mode": "map"
+          },
+          "soft": 0.75,
+          "tint": {
+            "bindings": {
+              "map": {
+                "attribute": "tint",
+                "kind": "map"
+              },
+              "static": {
+                "kind": "static",
+                "value": [
+                  1,
+                  1,
+                  1,
+                  1
+                ]
+              }
+            },
+            "mode": "map"
+          }
+        },
+        "position": {
+          "x": -1360,
+          "y": -900
+        },
+        "type": "geometry"
+      },
+      "deepr": {
+        "definitionVersion": 1,
+        "id": "deepr",
+        "label": "deepr1",
+        "parameters": {
+          "ambientIntensity": 0,
+          "background": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "camera": "cam1",
+          "lights": "",
+          "scenes": "deepdots1"
+        },
+        "position": {
+          "x": -1060,
+          "y": -900
+        },
+        "type": "render"
+      },
+      "depth": {
+        "definitionVersion": 1,
+        "id": "depth",
+        "label": "depth1",
+        "parameters": {},
+        "position": {
+          "x": -160,
+          "y": -900
+        },
+        "type": "add"
+      },
       "dlag": {
         "definitionVersion": 1,
         "id": "dlag",
@@ -604,6 +811,103 @@
           "y": 1420
         },
         "type": "valueStep"
+      },
+      "fog": {
+        "definitionVersion": 1,
+        "id": "fog",
+        "label": "fog1",
+        "parameters": {},
+        "position": {
+          "x": -760,
+          "y": -900
+        },
+        "type": "multiply"
+      },
+      "fore": {
+        "definitionVersion": 1,
+        "id": "fore",
+        "label": "fore1",
+        "parameters": {
+          "attribute": "position",
+          "component": "z",
+          "from": 0,
+          "mode": "inside",
+          "to": 1
+        },
+        "position": {
+          "x": -1660,
+          "y": -1040
+        },
+        "type": "pointRange"
+      },
+      "foredots": {
+        "definitionVersion": 1,
+        "id": "foredots",
+        "label": "foredots1",
+        "parameters": {
+          "blend": "additive",
+          "material": "ink1",
+          "mode": "points",
+          "scale": {
+            "bindings": {
+              "map": {
+                "attribute": "degree",
+                "kind": "map"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.008
+              }
+            },
+            "mode": "map"
+          },
+          "soft": 0.75,
+          "tint": {
+            "bindings": {
+              "map": {
+                "attribute": "tint",
+                "kind": "map"
+              },
+              "static": {
+                "kind": "static",
+                "value": [
+                  1,
+                  1,
+                  1,
+                  1
+                ]
+              }
+            },
+            "mode": "map"
+          }
+        },
+        "position": {
+          "x": -1360,
+          "y": -1040
+        },
+        "type": "geometry"
+      },
+      "forer": {
+        "definitionVersion": 1,
+        "id": "forer",
+        "label": "forer1",
+        "parameters": {
+          "ambientIntensity": 0,
+          "background": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "camera": "cam1",
+          "lights": "",
+          "scenes": "foredots1"
+        },
+        "position": {
+          "x": -1060,
+          "y": -1040
+        },
+        "type": "render"
       },
       "glow": {
         "definitionVersion": 1,
@@ -989,6 +1293,21 @@
         },
         "type": "valueMath"
       },
+      "soft": {
+        "definitionVersion": 1,
+        "id": "soft",
+        "label": "soft1",
+        "parameters": {
+          "extend": "hold",
+          "filter": "gaussian",
+          "size": 12
+        },
+        "position": {
+          "x": -460,
+          "y": -900
+        },
+        "type": "blur"
+      },
       "sum": {
         "definitionVersion": 1,
         "id": "sum",
@@ -1013,6 +1332,33 @@
           "y": -120
         },
         "type": "level"
+      },
+      "veil": {
+        "definitionVersion": 1,
+        "id": "veil",
+        "label": "veil1",
+        "parameters": {
+          "amp": 0.8,
+          "aspectcorrect": true,
+          "exp": 1.2,
+          "gain": 0.5,
+          "harmon": 2,
+          "mono": true,
+          "offset": 0.3,
+          "period": 0.9,
+          "rough": 0.5,
+          "s4d": 1,
+          "seed": 154,
+          "speed": 0.09,
+          "spread": 2,
+          "t4d": 0.63,
+          "type": "perlin4d"
+        },
+        "position": {
+          "x": -1360,
+          "y": -1180
+        },
+        "type": "noise"
       },
       "web": {
         "definitionVersion": 1,
@@ -1062,6 +1408,21 @@
           "y": -180
         },
         "type": "render"
+      },
+      "white": {
+        "definitionVersion": 1,
+        "id": "white",
+        "label": "white1",
+        "parameters": {
+          "hueoffset": 0,
+          "saturation": 0.28,
+          "value": 1
+        },
+        "position": {
+          "x": -460,
+          "y": -440
+        },
+        "type": "hsv"
       }
     },
     "revision": 1

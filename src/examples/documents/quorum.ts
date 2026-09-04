@@ -4,9 +4,12 @@ import { settings, node, edge, graph, document, drivenSlot } from "./builders.ts
  * E54 — Quorum (T1070). THE GRAPH LAPLACIAN, DOING BOTH JOBS AT ONCE.
  *
  *   mesh1(pointKernel) ─┬─► bound1(pointRange) ─► web1(pointProximity) ─► links1(geometry)
- *                       │                                                      └─► webs1(render) ─► thread1(level)
- *                       └─► dots1(geometry) ─► nodes1(render) ─┬─► haze1(blur) ─► pool1(multiply ◄ neb1) ─► bed1(hsv)
- *                                                              └──────────────────────────────────────────► sum1(add)
+ *                       │                                              └─► webs1(render) ─► thread1(level)
+ *                       ├─► dots1(geometry) ─► nodes1(render) ─► haze1(blur) ─► pool1(multiply ◄ neb1) ─► bed1(hsv)
+ *                       ├─► deep1(pointRange z<0) ─► deepdots1 ─► deepr1(render) ─┐
+ *                       └─► fore1(pointRange z>0) ─► foredots1 ─► forer1(render) ─┼─► depth1(add)
+ *                                        veil1(noise) ─► fog1(multiply) ─► soft1(blur) ─┘
+ *   depth1 ─► white1(hsv, desaturate) ─► sum1(add) ◄ thread1, bed1
  *   sum1 ─► glow1(blur) ─► lit1(add) ─► mask1(multiply ◄ iris1) ─► paint1(hsv) ─► out1
  *
  * ## The one idea
@@ -90,6 +93,40 @@ import { settings, node, edge, graph, document, drivenSlot } from "./builders.ts
  * and therefore carries no structure: it is the field, not a filament. The unaffiliated are
  * still DRAWN — `dots1` reads the full set — as loose points joined to nothing, which is
  * what they are in the graph.
+ *
+ * ## Where the colour lives, and where the depth comes from (T1114)
+ *
+ * THE NODES ARE NEAR-WHITE AND THE COLOUR IS IN THE HAZE — the reference picture's actual
+ * arrangement, and the last thing about it this file had not copied. It costs one `hsv`,
+ * and the whole trick is WHERE it sits: `haze1` taps `nodes1` upstream of it, so the blur
+ * still sees fully saturated communities and the bed carries each community's own hue,
+ * while the layer that lands on the FRONT of the frame is desaturated. One render, read
+ * twice, graded differently for each job — the same move the web/haze split already makes.
+ *
+ * AND THE DEPTH WAS ALREADY IN THE DATA. Points carry a real `position.z`; the kernel halves
+ * it every frame while the Coulomb push drives it apart, so it settles on a balance rather
+ * than decaying. Measured, that balance is not a spread but TWO RAZOR-THIN SHEETS at
+ * z ≈ ∓0.023 — p10 equals the minimum and p90 the maximum to five decimals — holding 239
+ * and 241 points, stable from frame 20 to 3600. The operator sorted the population into a
+ * back plate and a front plate on its own, and nobody had ever looked.
+ *
+ * The camera cannot show it: at z = 2.15 the two sheets differ by 0.046 in 2.15, a 2 %
+ * perspective difference, invisible. So the cue is GRADED — two Ranges split the cloud on
+ * that boundary ("subject inside, backdrop outside", the node's own documented use), the
+ * far half is multiplied by a drifting perlin4d veil and blurred, and the near half is added
+ * on top crisp. Distance costs sharpness as well as light, and the blur is the half of it
+ * the eye actually reads.
+ *
+ * ⚠ WHAT IT IS AND IS NOT, because the split is per-point: the two sheets are INTERLEAVED
+ * IN SCREEN SPACE, so this buys each cluster internal VOLUME — crisp nodes among softer
+ * ones — and NOT figure-ground between clusters. A whole colony cannot be behind another,
+ * because no colony is on one plate. And it is paid for: motion 0.04202 → 0.03556 and phrase
+ * 0.03979 → 0.03072 against the same file with the veil cut. Softening half the points
+ * genuinely lowers per-pixel response AND lowers the contrast the instrument measures it
+ * with, and those two cannot be told apart from the outside — so the honest statement is
+ * that the look changed on purpose and the numbers moved with it. Against the file as it
+ * stood BEFORE both changes (0.03393 / 0.03473), the pair together is motion +4.8 % and
+ * phrase −11.5 %.
  *
  * ## The instrument (§V471 — this is a VJ file, not a plate)
  *
@@ -709,6 +746,79 @@ export const quorumDocument = document(
         scenes: "dots1", camera: "cam1", lights: "", ambientIntensity: 0, background: [0, 0, 0, 1],
       }, { label: "nodes1" }),
 
+      // ---- the veil: depth the camera cannot give us (T1114) -------------------------
+      /* ⚑ THE DEPTH IS ALREADY IN THE DATA, AND THE CAMERA CANNOT SHOW IT. Points carry a
+         real `position.z`, and the kernel's last line halves it every frame while the
+         Coulomb push drives it apart, so z settles on a BALANCE rather than decaying away.
+         Measured on the shipped file, that balance is not a spread at all — it is TWO
+         RAZOR-THIN SHEETS at z ≈ −0.023 and +0.023 (p10 equals the min and p90 equals the
+         max to five decimals), holding 239 and 241 points, stable from frame 20 to 3600.
+         The operator sorted the population into a back plate and a front plate on its own.
+
+         And it reads as NOTHING: the camera sits at z = 2.15, so the two sheets differ in
+         distance by 0.046 in 2.15 — a 2 % perspective difference, invisible. So the depth
+         cue has to be GRADED rather than projected, which is exactly what the owner asked
+         for: make some things APPEAR to be behind.
+
+         Two Ranges over the same boundary split the cloud exactly in two — the node's own
+         documented use, "subject inside, backdrop outside" — and because the split is on a
+         real attribute the operator wrote, which half a point is in is a fact about the
+         system rather than a random draw. Points are PARKED, not compacted (§V197), so both
+         halves keep the same slots and every other attribute passes through untouched. */
+      node("deep", "pointRange", [-1660, -900], {
+        attribute: "position", component: "z", from: -1, to: 0, mode: "inside",
+      }, { label: "deep1" }),
+      node("fore", "pointRange", [-1660, -1040], {
+        attribute: "position", component: "z", from: 0, to: 1, mode: "inside",
+      }, { label: "fore1" }),
+      /* Both halves draw with dots1's settings, because the difference between near and far
+         must come from the COMPOSITE and not from two differently-authored point styles —
+         otherwise the depth is painted rather than placed. */
+      node("deepdots", "geometry", [-1360, -900], {
+        mode: "points", material: "ink1", soft: 0.75, blend: "additive", scale: 0.008,
+      }, {
+        label: "deepdots1",
+        parameters: {
+          scale: { mode: "map", bindings: { static: { kind: "static", value: 0.008 }, map: { kind: "map", attribute: "degree" } } },
+          tint: { mode: "map", bindings: { static: { kind: "static", value: [1, 1, 1, 1] }, map: { kind: "map", attribute: "tint" } } },
+        },
+      }),
+      node("foredots", "geometry", [-1360, -1040], {
+        mode: "points", material: "ink1", soft: 0.75, blend: "additive", scale: 0.008,
+      }, {
+        label: "foredots1",
+        parameters: {
+          scale: { mode: "map", bindings: { static: { kind: "static", value: 0.008 }, map: { kind: "map", attribute: "degree" } } },
+          tint: { mode: "map", bindings: { static: { kind: "static", value: [1, 1, 1, 1] }, map: { kind: "map", attribute: "tint" } } },
+        },
+      }),
+      node("deepr", "render", [-1060, -900], {
+        scenes: "deepdots1", camera: "cam1", lights: "", ambientIntensity: 0, background: [0, 0, 0, 1],
+      }, { label: "deepr1" }),
+      node("forer", "render", [-1060, -1040], {
+        scenes: "foredots1", camera: "cam1", lights: "", ambientIntensity: 0, background: [0, 0, 0, 1],
+      }, { label: "forer1" }),
+      /* THE VEIL ITSELF — its own perlin4d rather than a second read of `neb1`, because the
+         bed and the veil want opposite settings: the bed is a slow wide wash and this is a
+         faster, tighter churn that has to break up at the scale of a cluster. §V880's
+         reason for perlin4d over perlin3d applies twice over here — a 3d noise panned
+         across the frame would slide like a decal, and what this needs is a field that
+         EVOLVES in place. Offset 0.45 with amp 0.55 keeps it in roughly [0.45, 1]: the far
+         half is dimmed and churned, never extinguished, which is what makes it read as
+         "seen through something" rather than as points switching off. */
+      node("veil", "noise", [-1360, -1180], {
+        type: "perlin4d", seed: 154, period: 0.9, harmon: 2, spread: 2, gain: 0.5,
+        rough: 0.5, exp: 1.2, amp: 0.8, offset: 0.3, mono: true, aspectcorrect: true,
+        speed: 0.09, t4d: 0.63, s4d: 1,
+      }, { label: "veil1" }),
+      node("fog", "multiply", [-760, -900], {}, { label: "fog1" }),
+      /* The second half of the depth cue, and the one that does the most work: distance
+         costs SHARPNESS as well as light. A small blur on the far half only — the near half
+         never passes through this — so the two plates differ in focus, which the eye reads
+         as depth far more readily than a brightness difference. */
+      node("soft", "blur", [-460, -900], { size: 12, filter: "gaussian", extend: "hold" }, { label: "soft1" }),
+      node("depth", "add", [-160, -900], {}, { label: "depth1" }),
+
       // ---- the haze: a density field, not a decoration ------------------------------
       /* Blurring the NODES is the density of the nodes, so the haze pools where the graph is
          dense because the graph is dense there — and it carries each community's own colour
@@ -728,6 +838,18 @@ export const quorumDocument = document(
       /* The filaments, graded down so the web is structure rather than glare — the reference
          reads its links as thread, not as light. */
       node("thread", "level", [-760, -120], { brightness: 0.42, gamma1: 1.3 }, { label: "thread1" }),
+      /* THE NODES GO NEAR-WHITE AND THE COLOUR STAYS IN THE HAZE (T1114) — the reference
+         picture's actual arrangement, and the one thing about it this file never copied.
+         It is ONE node in ONE place because of where it sits: `haze1` taps `nodes1`
+         UPSTREAM of this, so the blur still sees fully saturated communities and the bed
+         still carries each community's own hue, while what lands on the FRONT of the frame
+         is desaturated. Same render, read twice, graded differently for its two jobs —
+         which is the same trick the web/haze split already plays one layer up.
+         Value is left at 1 and NOT lifted: in HSV, dropping saturation raises the two
+         lower channels to meet the top one, so the nodes get BRIGHTER on their own. Lifting
+         value as well drove `range` and `f0max` to exactly 1.0000 — clipping, measured —
+         and the highlights came back flat. */
+      node("white", "hsv", [-460, -440], { hueoffset: 0, saturation: 0.28, value: 1 }, { label: "white1" }),
 
       // ---- assemble, glow, iris ------------------------------------------------------
       /* Front is the NODES; the filaments and the bed fold in behind, in that order. */
@@ -779,7 +901,21 @@ export const quorumDocument = document(
       edge("e16", ["neb", "out"], ["pool", "in2"]),
       edge("e17", ["pool", "out"], ["bed", "input"]),
       edge("e18", ["webs", "out"], ["thread", "input"]),
-      edge("e19", ["nodes", "out"], ["sum", "in1"]),
+      /* THE DEPTH COMPOSITE (T1114): far half x veil -> softened -> the near half added on
+         top, and THAT is what goes to the front of the frame. `haze1` still taps `nodes1`,
+         the undivided render, so the bed remains the honest density of ALL the nodes and
+         does not inherit the veil's holes. */
+      edge("e19a", ["mesh", "out"], ["deep", "points"]),
+      edge("e19b", ["mesh", "out"], ["fore", "points"]),
+      edge("e19c", ["deep", "out"], ["deepdots", "points"]),
+      edge("e19d", ["fore", "out"], ["foredots", "points"]),
+      edge("e19e", ["deepr", "out"], ["fog", "in1"]),
+      edge("e19f", ["veil", "out"], ["fog", "in2"]),
+      edge("e19g", ["fog", "out"], ["soft", "input"]),
+      edge("e19h", ["soft", "out"], ["depth", "in1"]),
+      edge("e19i", ["forer", "out"], ["depth", "in2"]),
+      edge("e19j", ["depth", "out"], ["white", "input"]),
+      edge("e19k", ["white", "out"], ["sum", "in1"]),
       edge("e20", ["thread", "out"], ["sum", "in2"], 0),
       edge("e21", ["bed", "out"], ["sum", "in2"], 1),
       edge("e22", ["sum", "out"], ["glow", "input"]),
