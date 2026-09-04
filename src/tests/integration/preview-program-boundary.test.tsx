@@ -107,7 +107,7 @@ const CAPABILITIES: BackendCapabilities = {
 /** The node id document A has and document B does not — the `blend`/`born`/`bowl` of the pair. */
 const A_ONLY_NODE = "midtones";
 
-function documentText(name: string, withMid: boolean): string {
+function documentText(name: string, withMid: boolean, outputNodeId = "out"): string {
   const nodes: Record<string, unknown> = {
     field: {
       id: "field",
@@ -117,8 +117,8 @@ function documentText(name: string, withMid: boolean): string {
       position: { x: 0, y: 0 },
       parameters: { color: [1, 0, 0, 1] },
     },
-    out: {
-      id: "out",
+    [outputNodeId]: {
+      id: outputNodeId,
       type: "output",
       definitionVersion: 1,
       label: "out1",
@@ -144,13 +144,13 @@ function documentText(name: string, withMid: boolean): string {
     edges["e-mid-out"] = {
       id: "e-mid-out",
       source: { nodeId: A_ONLY_NODE, portId: "out" },
-      target: { nodeId: "out", portId: "input" },
+      target: { nodeId: outputNodeId, portId: "input" },
     };
   } else {
     edges["e-field-out"] = {
       id: "e-field-out",
       source: { nodeId: "field", portId: "out" },
-      target: { nodeId: "out", portId: "input" },
+      target: { nodeId: outputNodeId, portId: "input" },
     };
   }
   return JSON.stringify({
@@ -181,6 +181,15 @@ function documentText(name: string, withMid: boolean): string {
 const DOCUMENT_A = documentText("B143 A", true);
 /** Two — `field`, `out`. Shares both with A, which is why the leak has somewhere to hide. */
 const DOCUMENT_B = documentText("B143 B", false);
+/**
+ * T1126: the same two nodes, with the Output node named so that a node ADDED LATER sorts
+ * ahead of it. `plan.outputs` is ordered by node id and the viewer takes the first row
+ * that presents a picture, so `zout` is what lets a refused plan's new Output node become
+ * the sink the app WANTS while the installed plan still holds this one. The `z` is the
+ * whole point of the name and nothing else about the document differs.
+ */
+const DOCUMENT_C_OUTPUT = "zout";
+const DOCUMENT_C = documentText("T1126 C", false, DOCUMENT_C_OUTPUT);
 
 interface Journal {
   /** `compile` when a plan is handed over, `installed` when that compile RESOLVES. */
@@ -198,6 +207,12 @@ interface Journal {
   planResources: readonly string[];
   /** Preview TICKS: `presentPreviews` is the second half of `PreviewSystem.update()`. */
   presents: number;
+  /**
+   * T1126: every output id the VIEWER has asked the backend to present, from the attach
+   * and from every `setOutput` repoint. The viewer is a `compiled.outputs` consumer of the
+   * same class as the preview stack, and this is the id it hands over.
+   */
+  readonly presented: string[];
   /** Resolvers for compiles parked by `park()`. */
   readonly parked: Array<() => void>;
   /** While true, a compile does not resolve until `release()` is called. */
@@ -217,6 +232,7 @@ function journallingBackend(): { backend: LoomBackend; journal: Journal } {
     programs: new Map(),
     planResources: [],
     presents: 0,
+    presented: [],
     parked: [],
     parking: false,
   };
@@ -254,7 +270,15 @@ function journallingBackend(): { backend: LoomBackend; journal: Journal } {
         },
       };
     },
-    present: () => ({ id: "present-stub", outputId: "", setOutput: () => {}, dispose: () => {} }),
+    present: (_canvas: unknown, options: { outputId: string }) => {
+      journal.presented.push(options.outputId);
+      return {
+        id: "present-stub",
+        outputId: options.outputId,
+        setOutput: (next: string) => journal.presented.push(next),
+        dispose: () => {},
+      };
+    },
     onGpuTimings: () => () => {},
     onCpuTimings: () => () => {},
     compile: async (plan: unknown) => {
@@ -548,5 +572,141 @@ describe("B179 — a document with a compiler error never previews against a pla
       },
       { timeout: 5_000 },
     );
+  }, 30_000);
+});
+
+/**
+ * T1126 — THE VIEWER IS THE SAME CLASS OF CONSUMER, AND WAS DELIBERATELY LEFT OUT OF §T1121.
+ *
+ * `ViewerPane` reads `compiled.outputs`, picks the declared sink off it, and hands that id
+ * to `backend.present`. Fed `compile.compiled` it read THE PLAN THE APP WANTED — and
+ * `use-frame-loop.ts:550` refuses to install a plan carrying a compiler error, so what the
+ * GPU holds is the previous one. The §T1121 worker raised this rather than widening its own
+ * change, which is right, and this is the extension: the same `installedPlan` latch, one
+ * more prop.
+ *
+ * ## Why it was "low risk today" and why that is not a reason to leave it
+ *
+ * Every `$target` id derives from a stable node id, so an ordinary edit — a parameter, a
+ * wire, a node added mid-chain — leaves the sink's id untouched and the stale id happens to
+ * still resolve. The exposure is the plan that RENAMES OR ADDS THE OUTPUT NODE while also
+ * carrying an error: then the app wants a sink the installed program has never heard of,
+ * and the viewer asks the backend to present it.
+ *
+ * ## What this gate does, and what it refuses to do
+ *
+ * The claim is on the id the viewer HANDS OVER — the value the consumer reads back, not
+ * "which prop was passed". It is checked against the resources of the plan the backend
+ * ACTUALLY INSTALLED (`planResources`, written when a `compile` RESOLVES), which is the
+ * backend's own test for whether an id means anything.
+ *
+ * The added Output node's type and the wire's port ids are DERIVED from the registry, the
+ * same way §T1121's gate derives its forty-two node types: nothing below hard-codes a node
+ * type, a port name, or a resource id.
+ */
+
+/** Present calls the installed plan cannot answer — the viewer's `backend/unknown-resource`. */
+function unresolvedPresents(journal: Journal): string[] {
+  const known = new Set(journal.planResources);
+  return [...new Set(journal.presented)].filter((id) => !known.has(id));
+}
+
+/**
+ * A node type that CANNOT compile unconnected (a required texture input) and still emits a
+ * texture — so wiring its output into a new Output node makes that whole chain error while
+ * keeping the new Output node a live sink rather than a pruned one.
+ */
+function erroringLink(runtime: AppRuntime): { type: string; outPort: string } {
+  for (const type of typesWithARequiredTextureInput(runtime)) {
+    const definition = runtime.registry.get(type);
+    const outPort = definition?.outputs.find((port) => port.type.kind === "texture2d")?.id;
+    if (outPort !== undefined) return { type, outPort };
+  }
+  throw new Error("no registered type has both a required texture input and a texture output");
+}
+
+/** The Output node's own texture input, read off its definition rather than retyped. */
+function outputInputPort(runtime: AppRuntime): string {
+  const definition = runtime.registry.get("output");
+  const port = definition?.inputs.find((input) => input.type.kind === "texture2d")?.id;
+  if (port === undefined) throw new Error("the output node has no texture input");
+  return port;
+}
+
+describe("T1126 — the viewer presents from the plan the backend has", () => {
+  it("hands `present` no output id the installed plan does not carry", async () => {
+    const session = await mount();
+    await session.open(DOCUMENT_C, "C.loom.json");
+    await settle();
+
+    /*
+     * NON-VACUITY, and it is load-bearing twice over: the viewer really is presenting
+     * (so a claim about what it presents is about something), and what it presents is the
+     * document's declared sink (so the latch has not simply blanked the pane).
+     */
+    await waitFor(
+      () => {
+        expect(session.journal.presented.length).toBeGreaterThan(0);
+      },
+      { timeout: 5_000 },
+    );
+    expect(session.journal.presented.some((id) => id.includes(DOCUMENT_C_OUTPUT))).toBe(true);
+    expect(unresolvedPresents(session.journal)).toEqual([]);
+
+    const runtime = session.runtime();
+    const link = erroringLink(runtime);
+    const inputPort = outputInputPort(runtime);
+
+    /*
+     * ONE ATOMIC PATCH that ADDS AN OUTPUT NODE AND BREAKS THE COMPILE TOGETHER. Both
+     * halves matter: the new Output node is the sink the app wants, and the unconnected
+     * required input on the node feeding it is what makes `use-frame-loop` refuse to hand
+     * the plan over, so the backend keeps the program that has never heard of it.
+     */
+    let created: Record<string, string> = {};
+    await act(async () => {
+      const result = await runtime.bus.execute(
+        "graph.applyPatch",
+        {
+          baseRevision: runtime.bus.store.getRevision(),
+          label: "a second output, on a broken chain",
+          operations: [
+            { op: "addNode" as const, ref: "$bad", type: link.type, position: { x: 240, y: 200 } },
+            { op: "addNode" as const, ref: "$second", type: "output", position: { x: 480, y: 200 } },
+            {
+              op: "connect" as const,
+              source: { nodeId: "$bad", portId: link.outPort },
+              target: { nodeId: "$second", portId: inputPort },
+            },
+          ],
+        },
+        runtime.invocation,
+      );
+      expect(result.status).toBe("applied");
+      created = (result.output as { createdIds: Record<string, string> }).createdIds;
+    });
+    await settle();
+
+    /*
+     * THE PRECONDITIONS, ASSERTED RATHER THAN ASSUMED — without both, the claim below is
+     * true for a reason that has nothing to do with the latch.
+     *
+     *  1. the new Output node sorts AHEAD of the document's own, so it is the row the
+     *     viewer's first-picture-presenting-sink scan reaches first in the wanted plan;
+     *  2. the plan the backend HAS carries no resource of it.
+     */
+    const second = created["$second"];
+    if (second === undefined) throw new Error("the patch created no second output node");
+    expect(second.localeCompare(DOCUMENT_C_OUTPUT)).toBeLessThan(0);
+    expect(session.journal.planResources.filter((id) => id.includes(second))).toEqual([]);
+
+    // THE CLAIM. Every id the viewer has handed the backend is one the installed plan
+    // carries — so the presentation surface is attached to a real program, and the picture
+    // on screen is the one the GPU is actually rendering.
+    expect(
+      unresolvedPresents(session.journal),
+      `the viewer asked the backend to present ${unresolvedPresents(session.journal).join(", ")}, ` +
+        `which the installed plan does not carry — it is reading the plan the app wanted.`,
+    ).toEqual([]);
   }, 30_000);
 });

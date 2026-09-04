@@ -1640,7 +1640,22 @@ export function App({
           viewer={
             <ErrorBoundary name="Viewer">
               <ViewerPane
-                compiled={compile.compiled}
+                /*
+                 * T1126 — THE SAME CONSUMER CLASS §T1121 FIXED, AND THE SAME LATCH.
+                 *
+                 * The viewer picks the declared sink off this plan's `outputs` and hands
+                 * the id to `backend.present`. Fed `compile.compiled` it read the plan the
+                 * app WANTED; `use-frame-loop.ts:550` refuses to install a plan carrying a
+                 * compiler error, so what the GPU holds is `installedPlan` and only that.
+                 *
+                 * Low risk while every `$target` id derives from a stable node id — which
+                 * is why §T1121 left it out of scope rather than silently widening — but a
+                 * refused plan that RENAMES or ADDS the Output node hands the presentation
+                 * surface an id the installed program does not carry. With no installed
+                 * plan at all the pane now says it has no output, which is the honest
+                 * state: the backend has never been given a program to present from.
+                 */
+                compiled={installedPlan}
                 graph={compile.graph}
                 backend={backend ?? null}
                 pointer={pointer}
