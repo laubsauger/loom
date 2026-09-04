@@ -2,7 +2,6 @@ import { useState } from "react";
 import type { NodeFormatOverride, NodeResolutionOverride } from "@domain/types/graph.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { NodeId, PortId } from "@domain/types/ids.ts";
-import type { NodeDefinition } from "@domain/types/node-definition.ts";
 import { ControlRow } from "@ui/controls/control-row.tsx";
 import type { ControlVariant } from "@ui/controls/control-row.tsx";
 import { EnumField } from "@ui/controls/enum-field.tsx";
@@ -23,20 +22,19 @@ import {
   overrideForFormatMode,
   overrideForResolutionMode,
   resolutionModeKey,
-  resolveNodeFormat,
-  resolveNodeSize,
 } from "./resolution.ts";
-import type { FormatContext, ResolutionContext, ResolvedFormat, ResolvedSize } from "./resolution.ts";
+import type { FormatContext, ResolutionContext, ResolvedCommon } from "./resolution.ts";
 import styles from "./inspector.module.css";
 
 /**
  * The node "Common" section (T73, §V50, §V51) — TouchDesigner's Common page.
  *
  * Two selects and a readout. The readout is the point: a user who picks "1/2" wants to
- * see the pixels they will get, not the word "1/2". Same for format, which can be
- * refused by the device — when the compiler says a format is unsupported, its
- * diagnostic (and the fallback it chose) is surfaced here verbatim. The fallback
- * decision stays in the compiler; duplicating it in the UI is how the two drift apart.
+ * see the pixels they will get, not the word "1/2" — and since T1064 those pixels are
+ * READ OFF THE COMPILED PLAN rather than recomputed here. Same for format, which can be
+ * refused by the device: the compiler's diagnostic and the fallback it chose are surfaced
+ * verbatim, and the panel makes no claim of its own about support. Duplicating either
+ * decision in the UI is how the two drift apart, and for two releases they had.
  *
  * "Auto" is expressed by CLEARING the override (`null`), not by writing `{mode:"auto"}`:
  * an absent override means "whatever the definition's policy says", which is what the
@@ -64,11 +62,17 @@ export interface CommonSectionProps {
     readonly current: string;
     readonly choices: readonly ComponentPreviewChoice[];
   };
-  definition: NodeDefinition | undefined;
   resolution: NodeResolutionOverride | undefined;
   format: NodeFormatOverride | undefined;
   resolutionContext: ResolutionContext;
   formatContext: FormatContext;
+  /**
+   * What the compiler resolved for this node, or `null` when the plan has no row for it
+   * (pruned, inside a component, or nothing compiled yet). Resolved once by the pane and
+   * passed down: it is a READ of shared state now, not a pure function two callers may
+   * each evaluate.
+   */
+  resolved: ResolvedCommon | null;
   diagnostics?: readonly RuntimeDiagnostic[];
   editor: ParameterEditor;
   variant?: ControlVariant;
@@ -77,11 +81,11 @@ export interface CommonSectionProps {
 export function CommonSection({
   nodeId,
   componentPreview,
-  definition,
   resolution,
   format,
   resolutionContext,
   formatContext,
+  resolved,
   diagnostics,
   editor,
   variant = "inspector",
@@ -93,9 +97,16 @@ export function CommonSection({
    */
   const [draft, setDraft] = useState<{ width: number; height: number } | null>(null);
 
-  const size = resolveNodeSize(resolution, definition?.resolutionPolicy, resolutionContext);
-  const resolvedFormat = resolveNodeFormat(format, definition?.formatPolicy, formatContext);
-  const shown = draft ?? { width: size.width, height: size.height };
+  /*
+   * The SEED for the Custom / Fit / Limit boxes. The plan's own numbers when there are
+   * any; the project size when the node has no row, so switching modes on a pruned node
+   * still writes a sane box instead of a zero.
+   */
+  const seed =
+    resolved === null
+      ? resolutionContext.project
+      : { width: resolved.size.width, height: resolved.size.height };
+  const shown = draft ?? seed;
 
   const inputs = resolutionContext.inputs ?? [];
   const selectedInput: PortId | undefined =
@@ -121,9 +132,7 @@ export function CommonSection({
   };
 
   const onModeChange = (key: string): void => {
-    applyResolution(
-      overrideForResolutionMode(key, { width: size.width, height: size.height }, selectedInput),
-    );
+    applyResolution(overrideForResolutionMode(key, shown, selectedInput));
   };
 
   const onInputChange = (portId: string): void => {
@@ -247,17 +256,12 @@ export function CommonSection({
         </div>
       ))}
 
-      {formatDiagnostics.length === 0 && !resolvedFormat.supported ? (
-        <div role="alert" className={styles.diagnostic}>
-          <span>
-            {resolvedFormat.format} is not in this device&apos;s capability report; the compiler
-            will fall back.
-          </span>
-          <span className={styles.diagnosticHint}>
-            Pick a supported format, or accept the documented fallback (§V51).
-          </span>
-        </div>
-      ) : null}
+      {/*
+        T1064: no second "unsupported" alert. The panel used to raise one from its own
+        copy of the format ladder, over the format the user ASKED for — while the plan
+        was already rendering the substitute. The compiler's own `format-unsupported`
+        diagnostic is directly above and names that substitute.
+      */}
     </section>
   );
 }
@@ -268,8 +272,8 @@ function dimensionSpec(maxResolution: number | undefined): NumericSpec {
 }
 
 export interface CommonReadoutProps {
-  size: ResolvedSize;
-  format: ResolvedFormat;
+  /** `null` when the compiled plan has no row for this node — see `resolvedCommonFor`. */
+  resolved: ResolvedCommon | null;
   /**
    * One dense line instead of a bordered block (T269). The inspector header uses it:
    * the resolved size and format are the facts you glance at constantly — and they move
@@ -289,7 +293,28 @@ export interface CommonReadoutProps {
  * "unsupported" are STATE, not help, and state is one of the four things a dense row is
  * allowed to say.
  */
-export function CommonReadout({ size, format, compact = false }: CommonReadoutProps) {
+export function CommonReadout({ resolved, compact = false }: CommonReadoutProps) {
+  /*
+   * T1064 — THE STATE THE MIRROR COULD NOT REACH, and therefore never showed. A node that
+   * is pruned, or inside a component the pane dived into, or simply not compiled yet, has
+   * NO SIZE: nothing on the GPU is that many pixels wide. The old arithmetic always had an
+   * answer, so it printed a confident number for a texture that does not exist. Saying
+   * "no size" is the honest reading, and it is a legible one — the node is not in the plan.
+   */
+  if (resolved === null) {
+    const title = "not in the compiled plan";
+    return (
+      <div
+        className={compact ? styles.readoutLine : styles.readout}
+        aria-label="Resolved output"
+        title={title}
+      >
+        <span className={styles.readoutValue}>—</span>
+        <span className={styles.readoutSource}>{title}</span>
+      </div>
+    );
+  }
+  const { size, format } = resolved;
   if (compact) {
     return (
       <div
@@ -305,7 +330,6 @@ export function CommonReadout({ size, format, compact = false }: CommonReadoutPr
         </span>
         <span className={styles.readoutValue}>{format.format}</span>
         {size.clamped ? <span className={styles.readoutFlag}>clamped</span> : null}
-        {format.supported ? null : <span className={styles.readoutFlag}>unsupported</span>}
       </div>
     );
   }
@@ -315,10 +339,14 @@ export function CommonReadout({ size, format, compact = false }: CommonReadoutPr
         {size.width} × {size.height}
       </span>
       <span className={styles.readoutSource}>{size.source}</span>
-      {size.clamped ? <span className={styles.readoutFlag}>clamped to project limit</span> : null}
+      {/*
+        T1064: "the limit in force", the compiler's own words, because it is not always
+        the PROJECT's. `compiler/resolution.ts` clamps to `min(project, device)`, and the
+        half that bit on the machine this bug was reported from was the device's.
+      */}
+      {size.clamped ? <span className={styles.readoutFlag}>clamped to the limit in force</span> : null}
       <span className={styles.readoutValue}>{format.format}</span>
       <span className={styles.readoutSource}>{format.source}</span>
-      {format.supported ? null : <span className={styles.readoutFlag}>unsupported</span>}
     </div>
   );
 }

@@ -18,7 +18,7 @@ import { ComponentPage } from "@editor/component/index.ts";
 import type { GraphComponentDefinition } from "@domain/types/components.ts";
 import type { ComponentRegistryView } from "@domain/components/registry.ts";
 import { Inspector } from "@editor/inspector/index.ts";
-import type { InputResolution, MidiSectionSurface } from "@editor/inspector/index.ts";
+import type { InputResolution, MidiSectionSurface, PlannedOutput } from "@editor/inspector/index.ts";
 import { useKeymapPane } from "@editor/keymap/index.ts";
 import { ContextMenuHost } from "@editor/menus/index.ts";
 import { NodeLibrary } from "@editor/library/index.ts";
@@ -184,6 +184,29 @@ function inputResolutionsFor(
   });
 }
 
+/**
+ * T1064 — the node's OWN row in the plan: the size and format it actually got.
+ *
+ * The sibling of `inputResolutionsFor` above, and it exists for the same reason: the
+ * document stores overrides, not results, and the panel had been RE-DERIVING the results
+ * from the overrides with its own copy of the compiler's ladder. Two copies of one rule
+ * disagreed twice — on every device below the project cap, and on every format that fell
+ * back — so the panel now reads instead.
+ *
+ * FIRST row, not a search: every output a node materializes shares that node's one
+ * resolved resolution and format (`compiler/compile.ts` computes both once per node and
+ * writes them into each slot), so any row answers, and the first is the one that exists.
+ * `undefined` when the node has no row at all — pruned, inside a component, or nothing
+ * compiled yet — which the readout reports rather than papering over.
+ */
+function plannedOutputFor(
+  nodeId: NodeId | null,
+  compiled: CompiledGraph | null,
+): PlannedOutput | undefined {
+  if (nodeId === null || compiled === null) return undefined;
+  return compiled.outputs.find((candidate) => candidate.nodeId === nodeId);
+}
+
 export function InspectorPane({
   nodeId,
   components,
@@ -217,6 +240,9 @@ export function InspectorPane({
     () => inputResolutionsFor(nodeId, graph, compiled, inputs),
     [compiled, graph, inputs, nodeId],
   );
+
+  // T1064: the answer the Common readout shows, taken from the plan rather than re-derived.
+  const planned = useMemo(() => plannedOutputFor(nodeId, compiled), [compiled, nodeId]);
 
   const unknownHere = useMemo(
     () => (nodeId === null ? [] : unknownParameters.filter((entry) => entry.nodeId === nodeId)),
@@ -274,6 +300,7 @@ export function InspectorPane({
               : undefined
           }
           inputResolutions={inputResolutions}
+          planned={planned ?? null}
           {...(channels === undefined ? {} : { channels })}
           {...(latestFrame === undefined ? {} : { latestFrame })}
           {...(channelNames === undefined ? {} : { channelNames })}

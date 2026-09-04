@@ -13,11 +13,31 @@ import type { NodeId, PortId } from "@domain/types/ids.ts";
 /**
  * The Common section's value logic (T73, §V50, §V51) — TouchDesigner's Common page.
  *
- * Pure, and separated from the component for one reason: the section's whole job is to
- * show the user the size and format they will actually get, and "which pixels does
- * 1/2 give me" is a claim worth testing. The compiler owns the authoritative
- * propagation at compile time (§V21, T72/T75); this mirrors it for display only and
- * never writes anything.
+ * ## T1064 — this file used to answer the question itself, and it answered it wrong
+ *
+ * Until now the module carried a SECOND implementation of the compiler's precedence
+ * ladder — `resolveNodeSize` / `resolveNodeFormat` and ~180 lines of arithmetic under
+ * them — so that the panel could show a size before anything was compiled. Two copies of
+ * one rule is two answers, and both of the ways they diverged were user-visible:
+ *
+ *  1. THE SIZE WAS WRONG ON EVERY DEVICE BELOW THE PROJECT CAP. The caller passed the
+ *     project cap alone while `compiler/resolution.ts` clamps to
+ *     `min(project, capabilities.maxTextureDimension2D)`, so a 2048-limit device read a
+ *     size no node on it ever has. `a388cda` restored the second half of that `min` as a
+ *     stopgap; the `min` is gone now, along with the ladder it was patching.
+ *  2. THE FORMAT WAS WRONG WHENEVER IT FELL BACK. The mirror flagged the requested format
+ *     `unsupported` while returning it unchanged; the plan carries the `FORMAT_FALLBACKS`
+ *     substitute the node actually renders into. Reproducing that here needed the
+ *     depth-vs-colour split (§B1), the fallback chain and the no-fallback placeholder
+ *     (§B2) — about twenty-five more lines of mirror to fix a mirror.
+ *
+ * So the panel now READS. `resolvedCommonFor` takes the node's own row out of the
+ * compiled plan and reports the numbers the GPU was asked for, and the only thing still
+ * derived here is the human SOURCE LABEL — which is precedence, not arithmetic, and
+ * cannot disagree with a pixel.
+ *
+ * What is left is therefore three things and no fourth: the source labels, the select
+ * options, and the overrides those selects WRITE. Nothing in this file computes a size.
  */
 
 export interface InputResolution {
@@ -30,10 +50,15 @@ export interface InputResolution {
 }
 
 export interface ResolutionContext {
+  /**
+   * The project size. NOT an answer any more — the plan is. This is the SEED the Custom /
+   * Fit / Limit boxes start from when the node has no row in the plan at all (pruned,
+   * inside a component, or nothing compiled yet), so choosing a mode never writes a zero.
+   */
   project: { width: number; height: number };
   /** Inputs in manifest order — index 0 is the implicit "the input" for scale/inherit. */
   inputs?: readonly InputResolution[];
-  /** §V24 project cap on either dimension. */
+  /** §V24 editing bound on either dimension: `min(project cap, device cap)`. */
   maxResolution?: number;
 }
 
@@ -42,151 +67,94 @@ export interface ResolvedSize {
   height: number;
   /** Human-readable account of where the size came from. Shown next to the numbers. */
   source: string;
-  /** True when the project limit reduced the requested size (§V24). */
+  /** True when the limit in force reduced the requested size (§V24). */
   clamped: boolean;
 }
 
 const MIN_DIMENSION = 1;
 
-function findInput(
-  context: ResolutionContext,
+function labelOfInput(
+  inputs: readonly InputResolution[],
   portId: PortId | undefined,
-): InputResolution | undefined {
-  const inputs = context.inputs ?? [];
-  if (portId === undefined) return inputs[0];
-  return inputs.find((input) => input.portId === portId);
-}
-
-function sizeOfInput(
-  context: ResolutionContext,
-  portId: PortId | undefined,
-): { size: { width: number; height: number }; label: string; resolved: boolean } {
-  const input = findInput(context, portId);
-  const label = input?.label ?? portId ?? "input";
-  if (input?.size === undefined) {
-    // Not connected, or the compiler has not reported a size yet. Falling back to the
-    // project size is what the propagation does too — say so rather than show nothing.
-    return { size: context.project, label, resolved: false };
-  }
-  return { size: input.size, label, resolved: true };
-}
-
-function finish(
-  size: { width: number; height: number },
-  source: string,
-  context: ResolutionContext,
-): ResolvedSize {
-  const cap = context.maxResolution;
-  const round = (value: number): number =>
-    Math.max(MIN_DIMENSION, Math.round(Number.isFinite(value) ? value : MIN_DIMENSION));
-  let width = round(size.width);
-  let height = round(size.height);
-  let clamped = false;
-  if (cap !== undefined && Number.isFinite(cap) && cap >= MIN_DIMENSION) {
-    if (width > cap || height > cap) {
-      clamped = true;
-      width = Math.min(width, cap);
-      height = Math.min(height, cap);
-    }
-  }
-  return { width, height, source, clamped };
-}
-
-/** The definition's own policy — what "auto" means for this node (§V50). */
-export function resolveFromPolicy(
-  policy: ResolutionPolicy | undefined,
-  context: ResolutionContext,
-): ResolvedSize {
-  if (policy === undefined) return finish(context.project, "node default · project", context);
-  switch (policy.kind) {
-    case "project":
-      return finish(context.project, "node default · project", context);
-    case "fixed":
-      return finish({ width: policy.width, height: policy.height }, "node default · fixed", context);
-    case "inherit": {
-      const input = sizeOfInput(context, policy.input);
-      return finish(
-        input.size,
-        input.resolved ? `node default · from ${input.label}` : "node default · input unresolved",
-        context,
-      );
-    }
-    case "scale": {
-      const input = sizeOfInput(context, policy.input);
-      return finish(
-        { width: input.size.width * policy.factor, height: input.size.height * policy.factor },
-        `node default · ${policy.factor}× ${input.label}`,
-        context,
-      );
-    }
-    case "custom":
-      return finish(context.project, "node default · node-computed", context);
-    default: {
-      const never: never = policy;
-      void never;
-      return finish(context.project, "project", context);
-    }
-  }
+): { label: string; resolved: boolean } {
+  const input = portId === undefined ? inputs[0] : inputs.find((entry) => entry.portId === portId);
+  return {
+    label: input?.label ?? portId ?? "input",
+    // The input's OWN size, itself read off the plan by the caller. Absent means the
+    // compiler has not reported one — not connected, or not compiled.
+    resolved: input?.size !== undefined,
+  };
 }
 
 /**
- * The size the node's output will actually be. An absent override, or `{mode:"auto"}`,
- * defers to the definition's policy — that is the default and the untouched state.
+ * Which level decided the size, in words. PRECEDENCE ONLY (§V50) — an override that is
+ * not `auto` wins, else the definition's policy, else the project — and deliberately not
+ * a pixel: the numbers beside this label come from the plan, so a label that disagreed
+ * with them would be visibly wrong rather than quietly wrong.
  */
-export function resolveNodeSize(
+export function resolutionSourceLabel(
   override: NodeResolutionOverride | undefined,
   policy: ResolutionPolicy | undefined,
-  context: ResolutionContext,
-): ResolvedSize {
-  if (override === undefined || override.mode === "auto") return resolveFromPolicy(policy, context);
+  inputs: readonly InputResolution[],
+): string {
+  if (override === undefined || override.mode === "auto") {
+    if (policy === undefined) return "node default · project";
+    switch (policy.kind) {
+      case "project":
+        return "node default · project";
+      case "fixed":
+        return "node default · fixed";
+      case "inherit": {
+        const input = labelOfInput(inputs, policy.input);
+        return input.resolved ? `node default · from ${input.label}` : "node default · input unresolved";
+      }
+      case "scale": {
+        const input = labelOfInput(inputs, policy.input);
+        return `node default · ${policy.factor}× ${input.label}`;
+      }
+      case "custom":
+        return "node default · node-computed";
+      default: {
+        const never: never = policy;
+        void never;
+        return "node default · project";
+      }
+    }
+  }
 
   switch (override.mode) {
     case "project":
-      return finish(context.project, "project", context);
+      return "project";
     case "input": {
-      const input = sizeOfInput(context, override.input);
-      return finish(input.size, input.resolved ? `from ${input.label}` : "input unresolved", context);
+      const input = labelOfInput(inputs, override.input);
+      return input.resolved ? `from ${input.label}` : "input unresolved";
     }
     case "scale": {
-      const input = sizeOfInput(context, override.input);
-      const label = scaleLabel(override.factor) ?? `${override.factor}×`;
-      return finish(
-        { width: input.size.width * override.factor, height: input.size.height * override.factor },
-        input.resolved ? `${label} of ${input.label}` : `${label} of project`,
-        context,
-      );
+      const input = labelOfInput(inputs, override.input);
+      const factor = scaleLabel(override.factor) ?? `${override.factor}×`;
+      return input.resolved ? `${factor} of ${input.label}` : `${factor} of project`;
     }
     case "fixed":
-      return finish({ width: override.width, height: override.height }, "custom", context);
+      return "custom";
     case "fit": {
-      // Largest size fitting inside the box while keeping the input's aspect.
-      const input = sizeOfInput(context, override.input);
-      const scale = Math.min(override.width / input.size.width, override.height / input.size.height);
-      return finish(
-        { width: input.size.width * scale, height: input.size.height * scale },
-        input.resolved ? `fit ${override.width}×${override.height} of ${input.label}` : "input unresolved",
-        context,
-      );
+      const input = labelOfInput(inputs, override.input);
+      return input.resolved
+        ? `fit ${override.width}×${override.height} of ${input.label}`
+        : "input unresolved";
     }
     case "limit": {
-      // Only shrinks, and only when the input exceeds the box.
-      const input = sizeOfInput(context, override.input);
-      const scale = Math.min(1, override.width / input.size.width, override.height / input.size.height);
-      const limited = scale < 1;
-      return finish(
-        { width: input.size.width * scale, height: input.size.height * scale },
-        input.resolved
-          ? limited
-            ? `limited to ${override.width}×${override.height}`
-            : `within ${override.width}×${override.height}`
-          : "input unresolved",
-        context,
-      );
+      /*
+       * "limited to" vs "within" — which of the two it was — is the one label that needed
+       * arithmetic to choose, and it is exactly the thing the numbers next to it already
+       * say. The box is named; whether it bit is visible.
+       */
+      const input = labelOfInput(inputs, override.input);
+      return input.resolved ? `limit ${override.width}×${override.height}` : "input unresolved";
     }
     default: {
       const never: never = override;
       void never;
-      return finish(context.project, "project", context);
+      return "project";
     }
   }
 }
@@ -300,99 +268,137 @@ export function overrideForResolutionMode(
 // ---- format (§V51) ------------------------------------------------------
 
 export interface FormatContext {
-  projectFormat: TextureFormat;
   inputs?: readonly InputResolution[];
-  /** Formats the device reports (§V12). Undefined = capability report not read yet. */
+  /**
+   * Formats the device reports (§V12). Undefined = capability report not read yet. Used
+   * ONLY to mark unreachable entries in the Format chooser — never to decide what a node
+   * got, which is the plan's answer and already carries the fallback.
+   */
   supported?: readonly TextureFormat[];
 }
 
 export interface ResolvedFormat {
+  /** The format the node renders into — the plan's, so already past every fallback. */
   format: TextureFormat;
   source: string;
-  /** False only when a capability report is present and does not list the format. */
-  supported: boolean;
 }
 
-function formatOfInput(context: FormatContext, portId: PortId | undefined): ResolvedFormat | null {
-  const inputs = context.inputs ?? [];
-  const input = portId === undefined ? inputs[0] : inputs.find((entry) => entry.portId === portId);
-  if (input?.format === undefined) return null;
-  return { format: input.format, source: `from ${input.label}`, supported: true };
-}
-
-function withSupport(resolved: ResolvedFormat, context: FormatContext): ResolvedFormat {
-  const supported = context.supported;
-  if (supported === undefined) return resolved;
-  return { ...resolved, supported: supported.includes(resolved.format) };
-}
-
-export function resolveFormatFromPolicy(
-  policy: FormatPolicy | undefined,
-  context: FormatContext,
-): ResolvedFormat {
-  if (policy === undefined) {
-    return withSupport(
-      { format: context.projectFormat, source: "node default · project", supported: true },
-      context,
-    );
-  }
-  switch (policy.kind) {
-    case "project":
-      return withSupport(
-        { format: context.projectFormat, source: "node default · project", supported: true },
-        context,
-      );
-    case "fixed":
-      return withSupport(
-        { format: policy.format, source: "node default · fixed", supported: true },
-        context,
-      );
-    case "inherit": {
-      const inherited = formatOfInput(context, policy.input);
-      return withSupport(
-        inherited === null
-          ? { format: context.projectFormat, source: "node default · input unresolved", supported: true }
-          : { ...inherited, source: `node default · ${inherited.source}` },
-        context,
-      );
-    }
-    default: {
-      const never: never = policy;
-      void never;
-      return withSupport(
-        { format: context.projectFormat, source: "project", supported: true },
-        context,
-      );
-    }
-  }
-}
-
-export function resolveNodeFormat(
+/**
+ * Which level decided the format, in words (§V51). Precedence only, exactly as
+ * `resolutionSourceLabel` — the format beside it is the plan's.
+ *
+ * There is deliberately no `supported` flag here any more. The old one was computed from
+ * the REQUESTED format and shown next to it, so a node whose `rgba16float` had already
+ * been substituted read "rgba16float (unsupported)" — naming a format it was not using
+ * and a problem the compiler had already solved. What the user needs instead is the
+ * compiler's own `format-unsupported` warning, which names the substitute; that is what
+ * `formatDiagnosticsFor` below surfaces, and it is the only claim about support the panel
+ * makes.
+ */
+export function formatSourceLabel(
   override: NodeFormatOverride | undefined,
   policy: FormatPolicy | undefined,
-  context: FormatContext,
-): ResolvedFormat {
+  inputs: readonly InputResolution[],
+): string {
+  const fromInput = (portId: PortId | undefined): { label: string; resolved: boolean } => {
+    const input = portId === undefined ? inputs[0] : inputs.find((entry) => entry.portId === portId);
+    return { label: input?.label ?? portId ?? "input", resolved: input?.format !== undefined };
+  };
+
   if (override === undefined || override.mode === "auto") {
-    return resolveFormatFromPolicy(policy, context);
+    if (policy === undefined) return "node default · project";
+    switch (policy.kind) {
+      case "project":
+        return "node default · project";
+      case "fixed":
+        return "node default · fixed";
+      case "inherit": {
+        const input = fromInput(policy.input);
+        return input.resolved ? `node default · from ${input.label}` : "node default · input unresolved";
+      }
+      default: {
+        const never: never = policy;
+        void never;
+        return "node default · project";
+      }
+    }
   }
   switch (override.mode) {
     case "project":
-      return withSupport({ format: context.projectFormat, source: "project", supported: true }, context);
+      return "project";
     case "input": {
-      const inherited = formatOfInput(context, override.input);
-      return withSupport(
-        inherited ?? { format: context.projectFormat, source: "input unresolved", supported: true },
-        context,
-      );
+      const input = fromInput(override.input);
+      return input.resolved ? `from ${input.label}` : "input unresolved";
     }
     case "fixed":
-      return withSupport({ format: override.format, source: "fixed", supported: true }, context);
+      return "fixed";
     default: {
       const never: never = override;
       void never;
-      return withSupport({ format: context.projectFormat, source: "project", supported: true }, context);
+      return "project";
     }
   }
+}
+
+/**
+ * One materialized output row, as the plan carries it. Structurally satisfied by the
+ * compiler's `ResolvedOutput` without this module importing it — the panel needs two of
+ * its fields and has no business knowing the other eleven.
+ */
+export interface PlannedOutput {
+  readonly size: readonly [number, number];
+  readonly format: TextureFormat;
+}
+
+export interface ResolvedCommon {
+  readonly size: ResolvedSize;
+  readonly format: ResolvedFormat;
+}
+
+export interface ResolvedCommonRequest {
+  readonly nodeId: NodeId;
+  /**
+   * The node's own row in the compiled plan, or `undefined` when it has none: pruned to a
+   * dead branch (§V25), inside a component the pane dived into, or nothing compiled yet.
+   */
+  readonly planned: PlannedOutput | undefined;
+  readonly resolution: NodeResolutionOverride | undefined;
+  readonly format: NodeFormatOverride | undefined;
+  readonly resolutionPolicy: ResolutionPolicy | undefined;
+  readonly formatPolicy: FormatPolicy | undefined;
+  readonly inputs: readonly InputResolution[];
+  /** The compile's own diagnostics; `clamped` is read from them, never re-derived. */
+  readonly diagnostics: readonly RuntimeDiagnostic[] | undefined;
+}
+
+const RESOLUTION_CLAMPED = "compiler/resolution-clamped";
+
+/**
+ * The size and format this node ACTUALLY got, read off the plan.
+ *
+ * `null` when the plan has no row for the node. That state used to be unreachable, because
+ * the mirror always had an arithmetic answer to give — which is precisely how it managed
+ * to print a confident number for a node that does not exist on the GPU. A caller that
+ * gets `null` must say so rather than substitute one.
+ */
+export function resolvedCommonFor(request: ResolvedCommonRequest): ResolvedCommon | null {
+  const { planned } = request;
+  if (planned === undefined) return null;
+  const clamped = (request.diagnostics ?? []).some(
+    (diagnostic) => diagnostic.nodeId === request.nodeId && diagnostic.code === RESOLUTION_CLAMPED,
+  );
+  return {
+    size: {
+      width: planned.size[0],
+      height: planned.size[1],
+      source: resolutionSourceLabel(request.resolution, request.resolutionPolicy, request.inputs),
+      clamped,
+    },
+    format: {
+      format: planned.format,
+      source: formatSourceLabel(request.format, request.formatPolicy, request.inputs),
+    },
+  };
 }
 
 export const FORMAT_MODE_AUTO = "auto";

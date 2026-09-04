@@ -39,8 +39,13 @@ import {
   nodeReferenceNames,
 } from "@domain/parameters/index.ts";
 import type { ExpressionReferenceSource } from "@ui/controls/expression-completion.ts";
-import { resolveNodeFormat, resolveNodeSize } from "./resolution.ts";
-import type { FormatContext, InputResolution, ResolutionContext } from "./resolution.ts";
+import { resolvedCommonFor } from "./resolution.ts";
+import type {
+  FormatContext,
+  InputResolution,
+  PlannedOutput,
+  ResolutionContext,
+} from "./resolution.ts";
 import styles from "./inspector.module.css";
 
 /**
@@ -70,8 +75,17 @@ import styles from "./inspector.module.css";
  */
 
 export interface InspectorProjectSettings {
+  /** The SEED for the Custom/Fit/Limit boxes on a node the plan has no row for. */
   outputResolution: { width: number; height: number };
+  /**
+   * T1064: NOT an answer, and deliberately unread. The project format used to be the
+   * bottom of this panel's own format ladder; the ladder is gone and the format a node
+   * has comes off the plan, past every fallback. Kept because `InspectorProjectSettings`
+   * is a projection of `ProjectSettings` that other panes construct — reaching for it to
+   * resolve a format again is how the mirror gets rebuilt.
+   */
   workingFormat: TextureFormat;
+  /** §V24. Bounds the Custom width/height FIELDS; never decides a resolved size. */
   limits?: { maxResolution?: number };
 }
 
@@ -84,8 +98,10 @@ export interface InspectorProps {
   /** Compiler diagnostics; the Common section surfaces the format ones (§V51). */
   diagnostics?: readonly RuntimeDiagnostic[];
   /**
-   * Device capability report (§V12), used to flag unsupported formats and to CLAMP the
-   * size readout the way the compiler does.
+   * Device capability report (§V12). Two uses, and since T1064 neither of them decides a
+   * resolved value: `formats` marks unreachable entries in the Format chooser, and
+   * `maxTextureDimension2D` bounds the Custom width/height FIELDS. What the node actually
+   * got is `planned` below — the compiler already applied both caps to produce it.
    *
    * `maxTextureDimension2D` is `capabilities.limits["maxTextureDimension2D"]` — the
    * device's own ceiling. Absent means "no device report yet", not "unlimited".
@@ -93,6 +109,15 @@ export interface InspectorProps {
   capabilities?:
     | { formats: readonly TextureFormat[]; maxTextureDimension2D?: number | undefined }
     | undefined;
+  /**
+   * T1064 — THE ANSWER, not the ingredients: this node's own output row from the compiled
+   * plan. Absent (or `null`) means the plan has no row for it, and the readout says so
+   * rather than inventing a size.
+   *
+   * `side-panes.tsx` digs it out of `CompiledGraph`, the same way it already digs out
+   * `inputResolutions`, so the panel never holds a plan it would have to search.
+   */
+  planned?: PlannedOutput | null;
   /**
    * Resolved size/format per input port, when the compiler has reported them. Without
    * it the Common section falls back to the project size and says so.
@@ -227,6 +252,7 @@ export function Inspector({
   diagnostics,
   capabilities,
   inputResolutions,
+  planned,
   editor: providedEditor,
   variant = "inspector",
   channels,
@@ -487,28 +513,18 @@ export function Inspector({
     }));
 
   /**
-   * ⚠ STOPGAP, not the design. The real fix is DELETING `./resolution.ts`'s arithmetic.
+   * T1064 — the editing bound, and the ONLY surviving use of the caps in this pane.
    *
-   * The panel ran its own copy of the compiler's precedence ladder and was handed the
-   * PROJECT cap alone, while `compiler/resolution.ts`'s `effectiveMaxResolution` clamps to
-   * `min(project, capabilities.maxTextureDimension2D)`. So on any device whose
-   * `maxTextureDimension2D` is below the project cap — which is most of them at 4096 or
-   * 8192 against a 16384 project — the readout showed a size the node NEVER HAS.
-   *
-   * This restores the second half of the min so the panel stops lying today. It does not
-   * make the mirror right: it is still a second implementation that can drift again, and
-   * `editor/inspect/node-info-model.ts` — the OTHER panel on the same screen — already
-   * reads `output.size` straight off the compiler's `ResolvedOutput`. That is where this
-   * belongs, and `side-panes.tsx` already has `compiled` in scope at this call site.
-   *
-   * Deliberately NOT calling `effectiveMaxResolution`: its signature takes a full
-   * `ProjectSettings` and this pane holds the narrowed `InspectorProjectSettings`, so
-   * reusing it means widening a compiler export to serve code that is scheduled to be
-   * deleted. The two-line min dies with the mirror.
+   * `min(project, device)` bounds the Custom width/height FIELDS: a user should not be
+   * able to type a number the compiler will silently clamp. It is not, any more, how the
+   * READOUT gets its size — that is `planned`, straight off the plan, already clamped by
+   * `compiler/resolution.ts` with both halves of this same min. The stopgap that lived
+   * here (`a388cda`) restored the device half so the readout would stop lying; the readout
+   * no longer does arithmetic at all, so what is left is a control's max and nothing else.
    */
   const projectCap = settings.limits?.maxResolution;
   const deviceCap = capabilities?.maxTextureDimension2D;
-  const effectiveCap =
+  const editingCap =
     deviceCap === undefined || deviceCap <= 0
       ? projectCap
       : projectCap === undefined
@@ -518,18 +534,28 @@ export function Inspector({
   const resolutionContext: ResolutionContext = {
     project: settings.outputResolution,
     inputs,
-    ...(effectiveCap === undefined ? {} : { maxResolution: effectiveCap }),
+    ...(editingCap === undefined ? {} : { maxResolution: editingCap }),
   };
   const formatContext: FormatContext = {
-    projectFormat: settings.workingFormat,
     inputs,
     ...(capabilities === undefined ? {} : { supported: capabilities.formats }),
   };
-  // Resolved here as well as inside CommonSection: both are pure functions of the same
-  // inputs, and passing the answer down would couple the header to the section's shape
-  // for no gain. The section resolves what its own controls need; this is the readout.
-  const resolvedSize = resolveNodeSize(node.resolution, definition?.resolutionPolicy, resolutionContext);
-  const resolvedFormat = resolveNodeFormat(node.format, definition?.formatPolicy, formatContext);
+  /*
+   * Resolved ONCE and passed down. It used to be computed here and again inside
+   * `CommonSection` on the grounds that both were pure functions of the same inputs —
+   * true of arithmetic, and the wrong shape for a read: this is now a lookup into shared
+   * state, and two lookups is two chances to be handed different state.
+   */
+  const resolvedCommon = resolvedCommonFor({
+    nodeId: node.id,
+    planned: planned ?? undefined,
+    resolution: node.resolution,
+    format: node.format,
+    resolutionPolicy: definition?.resolutionPolicy,
+    formatPolicy: definition?.formatPolicy,
+    inputs,
+    diagnostics,
+  });
 
   /*
    * T601: a component instance's Common page states and edits which INNER node the
@@ -586,11 +612,11 @@ export function Inspector({
     <CommonSection
       nodeId={node.id}
       {...(previewChoices === undefined ? {} : { componentPreview: previewChoices })}
-      definition={definition}
       resolution={node.resolution}
       format={node.format}
       resolutionContext={resolutionContext}
       formatContext={formatContext}
+      resolved={resolvedCommon}
       {...(diagnostics === undefined ? {} : { diagnostics })}
       editor={editor}
       variant={variant}
@@ -752,7 +778,7 @@ export function Inspector({
           typeTitle={`${definition?.title ?? node.type} — this node's type`}
         />
       </header>
-      <CommonReadout size={resolvedSize} format={resolvedFormat} compact />
+      <CommonReadout resolved={resolvedCommon} compact />
       {/*
         §T1056 — what the bus (or a refused drop) said, until the document moves again.
         §V852: the message only. A diagnostic's `suggestion` is the second question and

@@ -10,6 +10,10 @@ import type { NodeId } from "@domain/types/ids.ts";
 import type { NodeDefinition } from "@domain/types/node-definition.ts";
 import { createNodeRegistry } from "@nodes/registry/registry.ts";
 import { installDomStubs } from "@ui/testing/install-dom-stubs.ts";
+import { compileGraph } from "@compiler/index.ts";
+import type { BackendCapabilities } from "@domain/types/backend.ts";
+import type { PlannedOutput } from "./resolution.ts";
+import type { ProjectSettings } from "@domain/types/graph.ts";
 import { Inspector } from "./inspector.tsx";
 import type { InspectorProjectSettings } from "./inspector.tsx";
 
@@ -56,6 +60,31 @@ const everythingNode: NodeDefinition = {
   compile: () => ({ passes: [] }),
 };
 
+/** A generator, so `everythingNode`'s required input is satisfied. */
+const sourceNode: NodeDefinition = {
+  type: "test.source",
+  version: 1,
+  title: "Source",
+  category: "test",
+  inputs: [],
+  outputs: [{ id: "out", label: "Out", type: rgba }],
+  parameters: {},
+  compile: () => ({ passes: [] }),
+};
+
+/** A declared sink, so the graph above has somewhere to end and nothing is pruned. */
+const sinkNode: NodeDefinition = {
+  type: "test.sink",
+  version: 1,
+  title: "Sink",
+  category: "test",
+  sink: true,
+  inputs: [{ id: "input", label: "Input", type: rgba }],
+  outputs: [],
+  parameters: {},
+  compile: () => ({ passes: [] }),
+};
+
 const settings: InspectorProjectSettings = {
   outputResolution: { width: 1920, height: 1080 },
   workingFormat: "rgba8unorm",
@@ -65,7 +94,18 @@ const settings: InspectorProjectSettings = {
 // Module-level so the identity is stable across renders: the pane keys its editor to it.
 const context = contextFor(alice);
 
-async function setup(options: { diagnostics?: readonly RuntimeDiagnostic[] } = {}) {
+/**
+ * T1064 — every render below hands the panel a PLAN ROW, because that is now the only
+ * place a resolved size or format comes from. The default row is what the compiler
+ * resolves for this fixture: the definition's policy inherits from `source`, which is
+ * 800×600 rgba8unorm. Tests that used to watch the panel re-derive that number now watch
+ * it REPORT one, which is the whole change.
+ */
+const PLANNED_800x600 = { size: [800, 600] as readonly [number, number], format: "rgba8unorm" as const };
+
+async function setup(
+  options: { diagnostics?: readonly RuntimeDiagnostic[]; planned?: PlannedOutput | null } = {},
+) {
   const store = createGraphStore({ ids: createSequentialIdFactory("i") });
   const { bus } = createDomainBus({
     store,
@@ -93,12 +133,29 @@ async function setup(options: { diagnostics?: readonly RuntimeDiagnostic[] } = {
       inputResolutions={[
         { portId: "source", label: "Source", size: { width: 800, height: 600 }, format: "rgba8unorm" },
       ]}
+      planned={options.planned === undefined ? PLANNED_800x600 : options.planned}
       {...(options.diagnostics === undefined ? {} : { diagnostics: options.diagnostics })}
     />,
   );
 
   const node = () => bus.store.getGraph().nodes[nodeId];
-  return { bus, nodeId, node };
+  /** Re-render with a DIFFERENT plan row — what a recompile does in the live app. */
+  const recompiledTo = (planned: PlannedOutput): void => {
+    render(
+      <Inspector
+        bus={bus}
+        context={context}
+        nodeId={nodeId}
+        settings={settings}
+        capabilities={{ formats: ["rgba8unorm", "rgba16float"] }}
+        inputResolutions={[
+          { portId: "source", label: "Source", size: { width: 800, height: 600 }, format: "rgba8unorm" },
+        ]}
+        planned={planned}
+      />,
+    );
+  };
+  return { bus, nodeId, node, recompiledTo };
 }
 
 /**
@@ -209,7 +266,16 @@ describe("T73 — the Common section shows what the node will actually produce",
     expect(within(readout).getByText("rgba8unorm")).toBeDefined();
   });
 
-  it("halves the readout when the user picks 1/2, and stores the override", async () => {
+  /**
+   * T1064 — the readout follows the COMPILER, one plan behind, and that is the point.
+   *
+   * It used to halve the number itself the instant the select changed, which looked more
+   * responsive and was a guess: the panel was telling the user what it believed the
+   * compiler would decide. Now the override is written, the app recompiles, and the new
+   * plan carries the answer — so what is asserted is the write and then the report, with
+   * the recompile made explicit because this harness has no compile loop of its own.
+   */
+  it("stores the 1/2 override, and reports the size the NEXT plan carries", async () => {
     const harness = await setup();
     openCommon();
     fireEvent.change(screen.getByLabelText("Resolution mode"), { target: { value: "scale:1/2" } });
@@ -217,8 +283,12 @@ describe("T73 — the Common section shows what the node will actually produce",
     await waitFor(() =>
       expect(harness.node()?.resolution).toEqual({ mode: "scale", factor: 0.5, input: "source" }),
     );
+    // Still the plan it was given: no guess is made in between.
+    expect(within(screen.getByLabelText("Resolved output")).getByText("800 × 600")).toBeDefined();
+
+    harness.recompiledTo({ size: [400, 300], format: "rgba8unorm" });
     await waitFor(() =>
-      expect(within(screen.getByLabelText("Resolved output")).getByText("400 × 300")).toBeDefined(),
+      expect(within(screen.getAllByLabelText("Resolved output")[1]!).getByText("400 × 300")).toBeDefined(),
     );
   });
 
@@ -263,15 +333,33 @@ describe("T73 — the Common section shows what the node will actually produce",
     await waitFor(() => expect(harness.node()?.format).toBeUndefined());
   });
 
-  it("warns when the chosen format is outside the device capability report (§V12)", async () => {
-    const harness = await setup();
+  /**
+   * T1064 — THE PANEL NO LONGER JUDGES SUPPORT, and this test is the one that used to
+   * pin the bug.
+   *
+   * It asserted that picking `r32float` on a device without it made the readout say
+   * "r32float — unsupported". Both halves were wrong at once: the node was already
+   * rendering into the fallback the compiler picked, so the panel was naming a format
+   * the node did not have and reporting a problem that had already been solved. The
+   * substitute is named by the compiler's own diagnostic (the test directly below), and
+   * the only support claim left in this panel is on the CHOOSER — an option marked
+   * before it is picked, which is help rather than a lie.
+   */
+  it("marks an unreachable format in the chooser, and never contradicts the plan (§V12)", async () => {
+    const harness = await setup({ planned: { size: [800, 600], format: "rgba16float" } });
     openCommon();
-    fireEvent.change(screen.getByLabelText("Pixel format"), { target: { value: "r32float" } });
-    await waitFor(() => expect(harness.node()?.format).toBeDefined());
+    const chooser = screen.getByLabelText("Pixel format") as HTMLSelectElement;
+    const unreachable = Array.from(chooser.options).find((option) => option.value === "r32float");
+    expect(unreachable?.textContent).toContain("unsupported");
 
-    const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toContain("r32float");
-    expect(within(screen.getByLabelText("Resolved output")).getByText("unsupported")).toBeDefined();
+    fireEvent.change(chooser, { target: { value: "r32float" } });
+    await waitFor(() => expect(harness.node()?.format).toEqual({ mode: "fixed", format: "r32float" }));
+
+    // The readout names what the PLAN carries — the fallback — not what was asked for.
+    const readout = screen.getByLabelText("Resolved output");
+    expect(within(readout).getByText("rgba16float")).toBeDefined();
+    expect(readout.textContent).not.toContain("r32float");
+    expect(readout.textContent).not.toContain("unsupported");
   });
 
   it("surfaces the compiler's own diagnostic and the fallback it chose (§V51)", async () => {
@@ -463,38 +551,80 @@ describe("T954 — name first, machine type as a badge", () => {
 });
 
 /**
- * The size readout must clamp the way the PLAN does, not the way the project alone does.
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ * T1064 — THE NUMBER ON SCREEN IS THE NUMBER THE COMPILER RESOLVED.
+ * ═══════════════════════════════════════════════════════════════════════════════════
  *
- * The panel runs its own copy of the compiler's precedence ladder (`./resolution.ts`) and
- * was handed the project cap ALONE, while `compiler/resolution.ts` clamps to
- * `min(project, capabilities.maxTextureDimension2D)`. Every device whose
- * `maxTextureDimension2D` sits below the project cap — most of them, at 4096 or 8192
- * against a 16384 project — therefore read a size the node never has. The user is told the
- * output is 4000 wide; it is 2048.
+ * The panel used to run its own copy of the compiler's precedence ladder and was handed
+ * the project cap ALONE, while `compiler/resolution.ts` clamps to
+ * `min(project, capabilities.maxTextureDimension2D)`. Every device whose ceiling sits
+ * below the project cap — most of them, at 4096 or 8192 against a 16384 project — read a
+ * size the node never has. The user was told the output is 4000 wide; it was 2048.
  *
- * The fixture is chosen so the two answers DIFFER (§V870): 4000 custom is UNDER the 4096
- * project cap, so the project cap alone changes nothing and only the device cap can
- * produce 2048. A fixture over both caps would go green against the bug.
+ * `a388cda` patched the mirror's inputs. This gates the real fix, and it gates it the only
+ * way that cannot be satisfied by a better mirror: the expectation is COMPILED, not
+ * written down. `compileGraph` runs with the device cap in force, its `ResolvedOutput` row
+ * is handed to the panel exactly as `side-panes.tsx` hands it over, and the readout must
+ * agree with it. Any second implementation that disagreed by a pixel fails here.
  *
- * ⚠ This gates a STOPGAP. The real fix is deleting the mirrored arithmetic and reading the
- * compiler's `ResolvedOutput`, as `editor/inspect/node-info-model.ts` already does; these
- * assertions are about the ANSWER, so they survive that change.
+ * The fixture is 4000 UNDER the 4096 project cap on purpose (§V854): a size over BOTH caps
+ * would resolve to 2048 either way and would have gone green against the bug. The 16384
+ * case is its converse — clamping to a constant cannot pass both.
  */
-describe("the resolved-size readout clamps to the device, not just the project", () => {
-  async function renderWithCap(
-    deviceCap: number | undefined,
-  ): Promise<{ readout: () => string }> {
+describe("the resolved-size readout is the compiler's answer, on the device in front of you", () => {
+  const registry = createNodeRegistry([sourceNode, everythingNode, sinkNode]).view();
+
+  const projectSettings = (): ProjectSettings =>
+    ({
+      outputResolution: { width: 1920, height: 1080 },
+      workingFormat: "rgba8unorm",
+      randomSeed: 1,
+      previewLongEdge: 192,
+      previewFps: 20,
+      limits: {
+        maxResolution: 4096,
+        maxDispatch: 65_535,
+        maxBufferBytes: 268_435_456,
+        memoryBudgetBytes: 1_073_741_824,
+      },
+    }) as never;
+
+  const capabilitiesWith = (deviceCap: number | undefined): BackendCapabilities =>
+    ({
+      tier: "A",
+      features: [],
+      formats: ["rgba8unorm", "rgba16float"],
+      timestampQuery: false,
+      limits: deviceCap === undefined ? {} : { maxTextureDimension2D: deviceCap },
+    }) as never;
+
+  async function renderWithCap(deviceCap: number | undefined): Promise<{
+    readout: () => string;
+    /** What the COMPILER resolved for the node — the expectation, derived not asserted. */
+    planned: [number, number];
+  }> {
     const store = createGraphStore({ ids: createSequentialIdFactory("i") });
-    const { bus } = createDomainBus({
-      store,
-      registry: createNodeRegistry([everythingNode]).view(),
-    });
+    const { bus } = createDomainBus({ store, registry });
     const created = await bus.execute(
       "graph.applyPatch",
       {
         baseRevision: 0,
         operations: [
+          { op: "addNode", ref: "$src", type: sourceNode.type, position: { x: -200, y: 0 } },
           { op: "addNode", ref: "$n", type: everythingNode.type, position: { x: 0, y: 0 } },
+          { op: "addNode", ref: "$out", type: sinkNode.type, position: { x: 200, y: 0 } },
+          {
+            op: "connect",
+            ref: "$feed",
+            source: { nodeId: "$src", portId: "out" },
+            target: { nodeId: "$n", portId: "source" },
+          },
+          {
+            op: "connect",
+            ref: "$e",
+            source: { nodeId: "$n", portId: "out" },
+            target: { nodeId: "$out", portId: "input" },
+          },
         ],
       },
       context,
@@ -515,12 +645,24 @@ describe("the resolved-size readout clamps to the device, not just the project",
       context,
     );
 
+    const compiled = compileGraph({
+      graph: bus.store.getGraph(),
+      settings: projectSettings(),
+      registry,
+      capabilities: capabilitiesWith(deviceCap),
+    });
+    expect(compiled.diagnostics.filter((entry) => entry.severity === "error")).toEqual([]);
+    const row = compiled.outputs.find((output) => output.nodeId === nodeId);
+    if (row === undefined) throw new Error("the compiler materialized no output for the node");
+
     render(
       <Inspector
         bus={bus}
         context={context}
         nodeId={nodeId}
         settings={settings}
+        diagnostics={compiled.diagnostics}
+        planned={row}
         capabilities={{
           formats: ["rgba8unorm", "rgba16float"],
           ...(deviceCap === undefined ? {} : { maxTextureDimension2D: deviceCap }),
@@ -529,14 +671,16 @@ describe("the resolved-size readout clamps to the device, not just the project",
     );
     return {
       readout: () => screen.getByLabelText("Resolved output").textContent ?? "",
+      planned: [row.size[0], row.size[1]],
     };
   }
 
   it("shows the DEVICE ceiling when it is lower than the project cap", async () => {
-    const { readout } = await renderWithCap(2048);
-    // 2048, not 4000: the node cannot have 4000 on this device, so the panel must not
-    // claim it does.
-    expect(readout()).toContain("2048 × 2048");
+    const { readout, planned } = await renderWithCap(2048);
+    // The plan is the authority, and the plan says 2048 — pinned here so that "the readout
+    // matches the plan" cannot be satisfied by both of them being wrong together.
+    expect(planned).toEqual([2048, 2048]);
+    expect(readout()).toContain(`${planned[0]} × ${planned[1]}`);
     expect(readout()).not.toContain("4000");
     expect(readout()).toContain("clamped");
   });
@@ -544,7 +688,8 @@ describe("the resolved-size readout clamps to the device, not just the project",
   it("shows the requested size when the device can allocate it — both directions", async () => {
     // The same 4000, on a device that can take it. Without this, an implementation that
     // clamped everything to a constant would pass the assertion above.
-    const { readout } = await renderWithCap(16384);
+    const { readout, planned } = await renderWithCap(16384);
+    expect(planned).toEqual([4000, 4000]);
     expect(readout()).toContain("4000 × 4000");
     expect(readout()).not.toContain("clamped");
   });
@@ -552,7 +697,39 @@ describe("the resolved-size readout clamps to the device, not just the project",
   it("falls back to the project cap when no device has reported yet", async () => {
     // Absent means "no report", not "unlimited": 4000 is under the 4096 project cap, so it
     // stands. This is the pre-device state the panel renders before the backend attaches.
-    const { readout } = await renderWithCap(undefined);
+    const { readout, planned } = await renderWithCap(undefined);
+    expect(planned).toEqual([4000, 4000]);
     expect(readout()).toContain("4000 × 4000");
+  });
+
+  /**
+   * The state the deleted arithmetic could not represent. No plan row means no texture —
+   * pruned, inside a component, or nothing compiled yet — and a panel that answers anyway
+   * is the whole class of bug this row was about, one step further along.
+   */
+  it("says it has no size when the node is not in the plan, rather than inventing one", async () => {
+    const store = createGraphStore({ ids: createSequentialIdFactory("i") });
+    const { bus } = createDomainBus({ store, registry });
+    const created = await bus.execute(
+      "graph.applyPatch",
+      {
+        baseRevision: 0,
+        operations: [
+          { op: "addNode", ref: "$n", type: everythingNode.type, position: { x: 0, y: 0 } },
+        ],
+      },
+      context,
+    );
+    render(
+      <Inspector
+        bus={bus}
+        context={context}
+        nodeId={created.output.createdIds["$n"] as NodeId}
+        settings={settings}
+      />,
+    );
+    const readout = screen.getByLabelText("Resolved output").textContent ?? "";
+    expect(readout).not.toMatch(/\d/);
+    expect(readout).toContain("not in the compiled plan");
   });
 });
