@@ -146,6 +146,23 @@ const ALLOWLIST: ReadonlyArray<{ file: string; text: string }> = [
     file: "src/app/app.tsx",
     text: "They are kept exactly as saved and shown read-only rather than edited blind.",
   },
+  /**
+   * T1121/B179 — the two halves of the notice that says the picture is not the edit.
+   *
+   * Same class as the GPU-halt and autosave entries above it: a NOTICE OBJECT's own
+   * message and detail, which is the strip's data rather than decoration around it. It
+   * cannot be a tooltip or a `?` handle — nothing on screen looks wrong while it is
+   * true, so there is no label for the reader to hover and no reason for them to
+   * suspect there is anything to ask about. That silence is exactly the bug (§B179).
+   */
+  {
+    file: "src/app/app.tsx",
+    text: "Output stale — this document has errors, so the last version that compiled is still rendering.",
+  },
+  {
+    file: "src/app/app.tsx",
+    text: "What you see is not your latest edit. Fix the errors in Problems and it catches up.",
+  },
   {
     file: "src/app/side-panes.tsx",
     text: "kept exactly as saved and written back unchanged, so nothing is lost — but this build cannot show a control over",

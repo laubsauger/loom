@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createMemoryStorage, installDomStubs } from "@ui/testing/install-dom-stubs.ts";
 import { installFlowStubs } from "@editor/graph-canvas/testing.tsx";
@@ -187,6 +187,15 @@ interface Journal {
   readonly calls: string[];
   /** Latest program per attached preview host, as the texture resource ids it binds. */
   readonly installed: Map<number, readonly string[]>;
+  /** T1121: the latest program object per host, kept whole so its own resources are readable. */
+  readonly programs: Map<number, PreviewProgram>;
+  /**
+   * T1121: the resources of the plan the backend has ACTUALLY INSTALLED — written when a
+   * `compile` resolves, never when one is merely handed over. A plan the app refused to
+   * hand over leaves this holding the previous document's, which is the whole subject of
+   * the second describe below.
+   */
+  planResources: readonly string[];
   /** Preview TICKS: `presentPreviews` is the second half of `PreviewSystem.update()`. */
   presents: number;
   /** Resolvers for compiles parked by `park()`. */
@@ -205,6 +214,8 @@ function journallingBackend(): { backend: LoomBackend; journal: Journal } {
   const journal: Journal = {
     calls: [],
     installed: new Map(),
+    programs: new Map(),
+    planResources: [],
     presents: 0,
     parked: [],
     parking: false,
@@ -232,12 +243,14 @@ function journallingBackend(): { backend: LoomBackend; journal: Journal } {
       return {
         setPreviewProgram(program: PreviewProgram) {
           journal.installed.set(id, boundResourceIds(program));
+          journal.programs.set(id, program);
         },
         presentPreviews() {
           journal.presents += 1;
         },
         dispose() {
           journal.installed.delete(id);
+          journal.programs.delete(id);
         },
       };
     },
@@ -253,6 +266,9 @@ function journallingBackend(): { backend: LoomBackend; journal: Journal } {
       // and rebuilding every preview host — happens against whatever program the hosts
       // are holding at this instant.
       journal.calls.push("installed");
+      journal.planResources = ((plan as { resources?: ReadonlyArray<{ id: string }> }).resources ?? []).map(
+        (resource) => resource.id,
+      );
       return { id: `plan-${journal.calls.length}`, logical: plan, passes: [] };
     },
     render: () => {},
@@ -387,5 +403,150 @@ describe("B143 — the closed document's preview program is uninstalled before t
       { timeout: 5_000 },
     );
     expect(heldResourceIds(session.journal).filter((id) => id.includes(A_ONLY_NODE))).toEqual([]);
+  }, 30_000);
+});
+
+/**
+ * B179 / T1121 — THE APP FEEDS THE PREVIEW STACK THE OUTPUTS OF THE PLAN IT WANTED, NOT
+ * THE PLAN THE BACKEND HAS.
+ *
+ * ## The report
+ *
+ * The same `backend/unknown-resource` sentence as B143 above, but with no document
+ * boundary anywhere near it: one node with a required input left unconnected is enough,
+ * on a document that has never been closed, and it repeats every thirty frames
+ * (`retryDirtyPreviewHosts`, T311) for as long as the error stands.
+ *
+ * ## The cause, which is one line on each side
+ *
+ *  1. `use-frame-loop.ts` refuses to install a plan that carries a compiler error
+ *     (`if (compiled === null || !compiled.ok) return;`), so the backend keeps the
+ *     PREVIOUS program. That refusal is §V9 and it is correct.
+ *  2. `app.tsx` fed the whole preview stack `compile.compiled?.outputs` UNCONDITIONALLY —
+ *     the outputs of the plan that was never handed over. Every row materialised only in
+ *     the refused plan becomes a preview pass binding a resource the installed plan does
+ *     not have.
+ *
+ * ## Why this gate can see it, and why it is not a list of five node ids
+ *
+ * The claim is checked the way the backend checks it: EVERY texture a preview pass binds
+ * must be resolvable against the installed plan's resources or the program's own. It is
+ * not "these five nodes do not warn" — the node types are DERIVED from the registry (any
+ * type with a required texture input and a texture output), so a node added to the
+ * catalogue tomorrow is in the case the day it lands, and none of the assertions name a
+ * node type or a document.
+ *
+ * The refusal itself is asserted, not assumed: `compile` must not have been called again,
+ * which is what "the backend still holds the previous program" means from out here.
+ */
+
+/** Node types whose required input is a texture and whose output is one (§V701: derived). */
+function typesWithARequiredTextureInput(runtime: AppRuntime): readonly string[] {
+  return runtime.registry
+    .list()
+    .filter(
+      (definition) =>
+        definition.inputs.some(
+          (port) => port.optional !== true && port.type.kind === "texture2d",
+        ) && definition.outputs.some((port) => port.type.kind === "texture2d"),
+    )
+    .map((definition) => definition.type);
+}
+
+/**
+ * What the BACKEND would report: a preview pass binding a texture that neither the
+ * installed plan nor the program itself carries is one `backend/unknown-resource`.
+ */
+function unresolvedBindings(journal: Journal): string[] {
+  const unresolved: string[] = [];
+  for (const program of journal.programs.values()) {
+    const known = new Set([...journal.planResources, ...program.resources.map((r) => r.id)]);
+    for (const pass of program.passes) {
+      for (const binding of pass.textures ?? []) {
+        if (!known.has(binding.resourceId)) unresolved.push(`${pass.id} -> ${binding.resourceId}`);
+      }
+    }
+  }
+  return unresolved;
+}
+
+describe("B179 — a document with a compiler error never previews against a plan the backend does not have", () => {
+  it("binds no resource outside the installed plan, and says the picture is stale", async () => {
+    const session = await mount();
+    await session.open(DOCUMENT_B, "B.loom.json");
+    await settle();
+
+    // NON-VACUITY: previews are live and binding real resources of the installed plan. On
+    // an empty program every assertion below is free.
+    await waitFor(
+      () => {
+        expect(heldResourceIds(session.journal).length).toBeGreaterThan(0);
+      },
+      { timeout: 5_000 },
+    );
+    expect(unresolvedBindings(session.journal)).toEqual([]);
+    expect(screen.queryByTestId("notice-strip")?.textContent ?? "").not.toContain("stale");
+
+    const types = typesWithARequiredTextureInput(session.runtime());
+    // Derived, and the number is not the point — that it is a class rather than a roster
+    // is. If the catalogue ever stops having several such types this gate has stopped
+    // being about anything.
+    expect(types.length).toBeGreaterThan(3);
+
+    let created: Record<string, string> = {};
+    await act(async () => {
+      const runtime = session.runtime();
+      const result = await runtime.bus.execute(
+        "graph.applyPatch",
+        {
+          baseRevision: runtime.bus.store.getRevision(),
+          label: "dangling",
+          operations: types.map((type, index) => ({
+            op: "addNode" as const,
+            ref: `$dangling${index}`,
+            type,
+            position: { x: 40 * (index % 8), y: 40 * Math.floor(index / 8) },
+          })),
+        },
+        runtime.invocation,
+      );
+      expect(result.status).toBe("applied");
+      created = (result.output as { createdIds: Record<string, string> }).createdIds;
+    });
+    await settle();
+
+    const danglingIds = Object.values(created);
+    expect(danglingIds.length).toBe(types.length);
+
+    /**
+     * THE PRECONDITION, ASSERTED RATHER THAN ASSUMED — and note what it is NOT.
+     *
+     * It is not "no compile was handed over". A dangling node reaches no sink, so the
+     * FIRST plan after the patch prunes it and is perfectly valid; it is the preview
+     * scheduler asking for those nodes as sinks that makes them live, and THAT plan is
+     * the one carrying the errors and the one `use-frame-loop` refuses. What is true
+     * either way, and is the only thing the claim below rests on, is that the plan the
+     * backend HAS carries no resource of these nodes.
+     */
+    const installedDangling = session.journal.planResources.filter((id) =>
+      danglingIds.some((nodeId) => id.includes(nodeId)),
+    );
+    expect(installedDangling).toEqual([]);
+
+    // THE CLAIM. Every preview pass binds something the installed plan (or the program
+    // itself) actually carries — so there is no `backend/unknown-resource` to report, and
+    // none is suppressed.
+    expect(unresolvedBindings(session.journal)).toEqual([]);
+
+    // AND THE HALF THAT HELPS: the user is told the render is not their edit. Asserted as
+    // the sentence a person reads, not as a boolean somewhere.
+    await waitFor(
+      () => {
+        expect(screen.getByTestId("notice-strip").textContent).toContain(
+          "Output stale — this document has errors, so the last version that compiled is still rendering.",
+        );
+      },
+      { timeout: 5_000 },
+    );
   }, 30_000);
 });

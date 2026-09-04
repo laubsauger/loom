@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { scopeFromFrame } from "@domain/expressions/index.ts";
 import type { ExpressionScope } from "@domain/expressions/index.ts";
+import type { CompiledGraph } from "@compiler/index.ts";
 import type { CommandResult, CommandStatus } from "@domain/types/commands.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { NodeId } from "@domain/types/ids.ts";
@@ -147,6 +148,8 @@ export interface AppProps {
 }
 
 const NO_DIAGNOSTICS: readonly RuntimeDiagnostic[] = [];
+/** T1121: one identity, so "the backend has no plan" does not re-render the preview stack. */
+const EMPTY_OUTPUTS: CompiledGraph["outputs"] = [];
 
 function sameIds(a: readonly NodeId[], b: readonly NodeId[]): boolean {
   return a.length === b.length && a.every((id, index) => id === b[index]);
@@ -592,6 +595,52 @@ export function App({
   );
   const compile = useGraphCompile(runtime, capabilities, previewSinks, driverChannels, sessionNodeDiagnostics);
   const recovery = useGpuRecovery(status.kind === "ready" ? status.backend : null);
+
+  /**
+   * THE PLAN THE BACKEND HAS — not the plan this app wanted (T1121, B179, §V9).
+   *
+   * `useFrameLoop` refuses to install a plan carrying any compiler error, so the backend
+   * keeps the previously installed program. That refusal is §V9 and it is right. What was
+   * wrong is that the preview stack was fed `compile.compiled.outputs` UNCONDITIONALLY:
+   * the rows of a plan that was never handed over. Every row materialised only in the
+   * refused plan became a preview pass binding a resource the installed program does not
+   * have, and the backend said so — correctly — once per pass, re-reported every thirty
+   * frames by `retryDirtyPreviewHosts` (T311) for as long as the error stood. One node
+   * with a required input left unconnected was enough, on a document nobody had closed.
+   *
+   * So the latch is here rather than on `PreviewHostHandle` or `LoomBackend`: `graph-pane`
+   * passes this ONE array to `useNodePreviews`, `useGraphBackground` and the orbit/gizmo
+   * sets, and all four are "what the GPU currently holds" consumers. Asking the backend
+   * instead would have meant a new query on 34 hand-written `previewHost` fakes.
+   *
+   * ⚠ AN EFFECT, DELIBERATELY, AND NOT A RENDER-PHASE UPDATE (§V904). `useGraphCompile`'s
+   * memo writes `lastCompile.current` DURING RENDER, which makes React's sanctioned
+   * "adjust state during render" discard the pass and re-run the component against a ref
+   * that has already moved on — that is how §B106 came back from four files away. Nothing
+   * in `App` may classify anything during render while that is true.
+   */
+  const [installedPlan, setInstalledPlan] = useState<CompiledGraph | null>(null);
+  /*
+   * FIRST, so that when a load and a clean compile land in the same commit the latch
+   * below still wins: effects run in declaration order. A document boundary throws the
+   * whole program away (B143), so the closed document's rows cannot carry across — and if
+   * the INCOMING document is the one with the errors, holding nothing is the honest state.
+   */
+  useEffect(() => {
+    setInstalledPlan(null);
+  }, [runtime.documentIdentity]);
+  useEffect(() => {
+    const plan = compile.compiled;
+    if (plan === null || !plan.ok) return;
+    setInstalledPlan(plan);
+  }, [compile.compiled]);
+  /**
+   * The user-visible fact behind the latch: what is on screen is NOT what was just edited.
+   *
+   * Gated on there being an installed plan at all, because with none there is no picture
+   * to be stale — the viewer is black and the problems tab is the whole story.
+   */
+  const outputStale = installedPlan !== null && compile.compiled !== null && !compile.compiled.ok;
 
   // The tracked set is a function of the DOCUMENT (which nodes are Analyze) and of the
   // PLAN (whether the reduction buffer was actually allocated), so it is re-derived where
@@ -1213,6 +1262,30 @@ export function App({
       });
     }
 
+    /*
+     * T1121/B179 — THE STALE RENDER, SAID OUT LOUD.
+     *
+     * A document with one bad node used to render yesterday's picture forever, silently:
+     * the frame counter advanced, the viewer kept moving, and no edit since the last
+     * clean compile was on screen. §V9's own `stale` never covered this — it is set for
+     * BACKEND pipeline failures, and this plan never reached the backend at all. The
+     * owner spent a session unable to tell whether his edits were working.
+     *
+     * Worded for someone who does not know what a plan is, in the voice of the sentence
+     * §V9 already shows in the shader pane ("output stale — last valid shader still
+     * rendering"). It carries no action because the action is in the problems tab, which
+     * is already listing the errors this is about.
+     */
+    if (outputStale) {
+      list.push({
+        id: "output-stale",
+        tone: "warn",
+        message:
+          "Output stale — this document has errors, so the last version that compiled is still rendering.",
+        detail: "What you see is not your latest edit. Fix the errors in Problems and it catches up.",
+      });
+    }
+
     if (autosave.unavailable) {
       list.push({
         id: "autosave-unavailable",
@@ -1270,7 +1343,15 @@ export function App({
     list.push(...depth.notices);
 
     return list;
-  }, [autosave, depth.notices, floatBlocked, project, recovery, runtime.unknownParameters.length]);
+  }, [
+    autosave,
+    depth.notices,
+    floatBlocked,
+    outputStale,
+    project,
+    recovery,
+    runtime.unknownParameters.length,
+  ]);
 
   const environment = useMemo<KeymapEnvironment>(
     () => ({ context: "global", selection, hoveredNodeId }),
@@ -1485,7 +1566,14 @@ export function App({
                  * fix that translates ids is worthless while the feed is cut upstream
                  * of it: starving the pane was the bug wearing the fear's old clothes.
                  */
-                compiledOutputs={compile.compiled?.outputs ?? []}
+                /*
+                 * T1121/B179 — the outputs of the plan THE BACKEND HAS, latched on the
+                 * same predicate `use-frame-loop` installs on. This used to be
+                 * `compile.compiled?.outputs`, the plan the app WANTED, and one
+                 * unconnected required input was enough to make every tile of the
+                 * refused plan bind a resource the installed program never had.
+                 */
+                compiledOutputs={installedPlan?.outputs ?? EMPTY_OUTPUTS}
                 previewFps={runtime.settings.previewFps}
                 previewLongEdge={runtime.settings.previewLongEdge}
                 previewSinks={previewSinks}
