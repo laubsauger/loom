@@ -70,7 +70,7 @@ The bare `node --experimental-strip-types src/...` form is dead and has been "fi
 
 `pnpm build` still gates anything touching the asset pipeline or imports — vite-only breakage passes tsc *and* vitest.
 
-⚠ `vitest related` / `--changed` **do not work in this repo**: import analysis tries to parse `.md` files and throws `Failed to parse source for import analysis`. Naming paths is the working substitute; fixing `assetsInclude` would unlock it.
+`pnpm vitest related --run <changed files>` selects step 1 for you off the module graph (≈7 s for a leaf module). It needs `assetsInclude: ["**/*.md"]` in `vitest.config.ts` — without it, import analysis reaches `example-catalogue.ts`'s `examples/*.md` glob, resolves the specifier before its `?raw` query applies, and throws on prose. **It still does not select the step-2 gates** — nothing does.
 
 ## GPU tests (Dawn)
 

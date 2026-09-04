@@ -4,6 +4,16 @@ import { defineConfig } from "vitest/config";
 const alias = (segment: string) => fileURLToPath(new URL(`./src/${segment}`, import.meta.url));
 
 export default defineConfig({
+  /* `vitest related` / `--changed` walk the module graph and run Vite's import
+     analysis over every file they reach. `example-catalogue.ts` globs
+     `examples/*.md` with `query: "?raw"`, and that analysis pass resolves the
+     specifier BEFORE the query applies, so it tries to parse prose as JS and
+     throws `Failed to parse source for import analysis`. Declaring `.md` an
+     asset makes the analysis skip it; the `?raw` import is unaffected, and this
+     is the TEST config only — `vite.config.ts` and the shipped bundle are
+     untouched. Without this line, change-scoped test selection does not run at
+     all in this repo. */
+  assetsInclude: ["**/*.md"],
   resolve: {
     alias: {
       "@": alias(""),
