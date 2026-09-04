@@ -224,8 +224,13 @@ describe("§T965 — the backend is SHOWN and PICKABLE, and worded honestly", ()
   it("NEVER names a chip on any surface (§T715's banned vocabulary)", () => {
     // The WebNN specification deliberately defines no device enumeration and no way to
     // observe which device was chosen, so any of these would be an unverifiable claim.
+    // T1107 — the acronyms match on a WORD; `NPU` as a bare substring fires on `INPUT`
+    // and `ANE` on `PLANE`. Rationale in full in `inference-node.test.ts`.
     const surface = JSON.stringify(schemaFor({ backend: "webgpu" })) + depthNode.description;
-    for (const banned of ["Neural Engine", "ANE", "NPU", "hardware-accelerated", "the browser chose the device"]) {
+    for (const banned of [/\bANEs?\b/, /\bNPUs?\b/]) {
+      expect(surface, `depth names ${banned.source}`).not.toMatch(banned);
+    }
+    for (const banned of ["Neural Engine", "hardware-accelerated", "the browser chose the device"]) {
       expect(surface).not.toContain(banned);
     }
   });

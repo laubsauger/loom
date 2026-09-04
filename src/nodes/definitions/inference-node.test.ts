@@ -124,10 +124,24 @@ describe("§V827 — every model-running node meets the seam's obligations", () 
   it("NEVER names a chip, on any model node's surface (§T715)", () => {
     // The WebNN specification deliberately defines no device enumeration and no way to
     // observe which device was chosen, so any of these would be unverifiable.
+    //
+    // T1107 — the ACRONYMS match on a WORD, not as bare substrings. Spelled `toContain`
+    // they are three letters looking for themselves anywhere: `NPU` fires on `INPUT RANGE`
+    // (reported, in good faith, as "matte names NPU"), and `ANE` would fire on `PLANE` and
+    // `ANEW` — all words a compositor's copy legitimately carries. That matters more than a
+    // lost cycle: a guard that cries wolf on correct copy teaches the next author to route
+    // around it, which is how a real §T715 violation eventually ships. The bans themselves
+    // are NOT weakened — `s?` keeps the plural inside rather than opening a hole beside it,
+    // and every spelling a violation would actually use ("the ANE", "ANE-backed", "NPUs",
+    // "Apple Neural Engine (ANE)") still fails. The two PHRASES stay literal: no English
+    // word contains them, so a boundary would buy nothing.
     for (const definition of inferenceNodes) {
       const surface =
         JSON.stringify(effectiveParameterSchema(definition, {})) + (definition.description ?? "");
-      for (const banned of ["Neural Engine", "ANE", "NPU", "hardware-accelerated"]) {
+      for (const banned of [/\bANEs?\b/, /\bNPUs?\b/]) {
+        expect(surface, `${definition.type} names ${banned.source}`).not.toMatch(banned);
+      }
+      for (const banned of ["Neural Engine", "hardware-accelerated"]) {
         expect(surface, `${definition.type} names ${banned}`).not.toContain(banned);
       }
     }
