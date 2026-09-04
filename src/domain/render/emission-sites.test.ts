@@ -34,7 +34,17 @@ function code(file: string): string {
     .replace(/^[ \t]*\/\/.*$/gm, " ");
 }
 
-/** Every non-test source module a pump could hide in. */
+/**
+ * The surface's own home and the node definition tree (owned by §T949's egress scan) are
+ * the two deliberate exclusions. They are ENUMERATED while the scanned tree is DERIVED,
+ * and that asymmetry is the point (§T1129, §V906): a forgotten exclusion is a loud red a
+ * reviewer resolves, a forgotten inclusion is a gate that silently sees nothing. §T1103
+ * moved every device pump to `src/devices/` — a directory no hand-list had — and the
+ * scan's old root list went blind without failing. A walk of `src` cannot go blind again.
+ */
+const NOT_A_PUMP_SITE = ["src/domain/render", "src/nodes/definitions"];
+
+/** Every non-test source module a pump could hide in: all of `src`, minus the exclusions. */
 function sessionSources(): string[] {
   const walk = (dir: string): string[] =>
     readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
@@ -44,11 +54,10 @@ function sessionSources(): string[] {
           ? [join(dir, entry.name)]
           : [],
     );
-  // Everything session-side. `src/domain/render` (the surface's own home) and the node
-  // definition tree (owned by §T949's egress scan) are the two deliberate exclusions.
-  return ["src/app", "src/runtime", "src/editor", "src/mcp", "src/compiler", "src/points"].flatMap(
-    (dir) => walk(join(ROOT, dir)),
-  );
+  return walk(join(ROOT, "src")).filter((file) => {
+    const path = relative(ROOT, file).replaceAll("\\", "/");
+    return !NOT_A_PUMP_SITE.some((dir) => path === dir || path.startsWith(`${dir}/`));
+  });
 }
 
 describe("T1005 — the pump ledger, held to the side-effect ledger", () => {
