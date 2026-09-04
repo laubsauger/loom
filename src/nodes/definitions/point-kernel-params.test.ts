@@ -462,8 +462,21 @@ const FRAME_ZERO_DIGESTS: Readonly<Record<string, string>> = {
      tree from c4e7483 until now — §B150's shape a second time, in the same table that
      already records it. The example's own claims (`quorum-claims.gpu.test.ts`, 9 of them)
      and the §V885 look baseline both stayed green across that change and are what say the
-     picture is intact; this digest only ever said "frame 0 is what it was". */
-  "E54-Quorum.loom.json": "c80cb9222f1abcc8",
+     picture is intact; this digest only ever said "frame 0 is what it was".
+
+     RE-STAMPED AGAIN (T1124/§V903), and the reason is a RESOLVED UNIFORM, not a kernel edit:
+     E54's two drive lanes were stepped-then-clamped with draw ranges several times their
+     clamp widths, so `clag1:bar` sat at exactly 0.950000 from f989 to f2979 and `dlim1`
+     clamped 71 % of the disturbance's draws to zero. Re-ranging them (`cmul1` 2.6 → 0.76,
+     `csub1` −0.45 → +0.20, `cstep1` seed 11 → 330, `dstep1` [−3, 1.2] → [−0.45, 0.55])
+     changes the value `coupling` resolves to AT FRAME 0 — 0.449 → 0.867 — and this digest
+     hashes the resolved passes, so it moves by construction. The kernel WGSL is byte-identical
+     across the change; what moved is one number in the uniform block. Green in the same
+     commit: the nine `quorum-claims.gpu.test.ts` claims, `channel-integrity`, `sync`,
+     `doc-drift`, and the §V885 look row (re-measured in that commit, motion 0.03393 → 0.02956
+     — see the commit message; that window is 2 seconds inside the FIRST phrase and the same
+     file measured over the whole minute moves +16.5 %). */
+  "E54-Quorum.loom.json": "700f1821ebfc353a",
 };
 
 const POINT_KERNEL_TYPES = new Set(["pointKernel", "pointKernelAdvanced"]);

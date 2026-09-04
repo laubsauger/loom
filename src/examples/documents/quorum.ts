@@ -131,15 +131,21 @@ import { settings, node, edge, graph, document, drivenSlot } from "./builders.ts
  * ## The instrument (§V471 — this is a VJ file, not a plate)
  *
  * It RESTS AND STRIKES rather than vibrating. The structural move is on the PHRASE: `cstep1`
- * holds a value for four bars and `clag1` eases it into Coupling, so most phrases sit
- * settled and an occasional one lets the whole assembly relax open, communities
- * interpenetrating, before it re-condenses. That is a different picture, not a wobble. The
+ * holds a value for four bars and `clag1` eases it into Coupling, and the lane spends 92 %
+ * of its draws INSIDE the limiter rather than on it (§V903/T1124), so the phrases settle and
+ * open — condensed while the colour resolves, open from 8.3 s, and alternating after — with
+ * the communities interpenetrating on the open ones. That is a different picture, not a
+ * wobble, and it is stated as a DUTY CYCLE because the version that stated it as a RANGE
+ * spent thirty-three continuous seconds pinned at maximum coupling and read as dead. The
  * fine motion is on the BEAT: the high band drives `reach1`, so connection density is the
  * music made visible — the web tightens on a hit and thins in the quiet, exactly the use
  * Proximity's own docblock argues for. Nothing else runs on a free clock but the hue, which
  * turns once every 80 seconds, and the nebular bed, which drifts.
  *
- * AND THE STRUCTURAL EVENT IS THE DISTURBANCE (T1113): on about one phrase in three,
+ * AND THE STRUCTURAL EVENT IS THE DISTURBANCE (T1113): on 55 % of its two-bar draws — ten
+ * fires in the first minute, never silent for more than 8.3 s (T1124; it was three fires
+ * and a 29-second hole, which is why the owner reported a mechanism that had shipped and
+ * measured as one that had never run) —
  * `dstep1 -> dlim1 -> dlag1` drives the two closest colonies through each other and lets
  * them separate again into a new arrangement. That is the one thing in this document that
  * is not the operator relaxing, it is external to it by construction, and it is why the
@@ -314,7 +320,9 @@ import { settings, node, edge, graph, document, drivenSlot } from "./builders.ts
  * travels more than 3 % of `reach` in a frame. Without it this file shipped a knob whose
  * usable range ended at Coupling ≈ 0.3 while its own four-bar envelope struck to 0.95: the
  * first strike put the assembly into a period-2 explosion it could never leave, and every
- * gate passed because every gate stopped at frame 180 and the first strike lands at 497.
+ * gate passed because every gate stopped at frame 180 and the first strike landed at 497.
+ * (§V903/T1124 has since re-ranged that envelope; the opening phrase is now the condensed
+ * one, so frame 180 no longer sits below anything the clamp is there for.)
  * The measurements are at the clamp, in the kernel. A knob that goes to 11 and blows up is
  * worse than one that goes to 11 and holds.
  *
@@ -536,8 +544,10 @@ fn process(p: Point, ctx: PointCtx) -> Point {
      hundreds of pairs at once.
 
      MEASURED, through the real plan on Dawn, over E54's own four-bar envelope. Without
-     this clamp the step has a fixed point only up to Coupling ≈ 0.3; the document RESTS at
-     0.449 and STRIKES to 0.95. Pinned at each value, mean displacement per point per frame
+     this clamp the step has a fixed point only up to Coupling ≈ 0.3; the document now walks
+     the whole of [0.25, 0.95] rather than pinning at either end (§V903/T1124), so it crosses
+     that boundary every phrase instead of sitting past it. Pinned at each value, mean
+     displacement per point per frame
      and the assembly's radius over the last 12 frames of 400:
 
         Coupling  0.20 → 0.001 / radius 0.848..0.857     (settles)
@@ -640,27 +650,65 @@ export const quorumDocument = document(
          cannot show a link the operator is not using (§V349). */
       node("reach", "valueMath", [-1060, 700], { operation: "add", operand: 0.85 }, { label: "reach1" }),
       /* THE STRUCTURAL MOVE, on the PHRASE rather than on a timer: a value held four bars,
-         stretched so most phrases land at full coupling and an occasional one drops the
-         assembly loose, then eased so the re-condensation is a swell and not a snap. */
-      node("cstep", "valueStep", [-1960, 940], { every: 4, minimum: 0, maximum: 1, seed: 11 }, { label: "cstep1" }),
-      node("cmul", "valueMath", [-1660, 940], { operation: "multiply", operand: 2.6 }, { label: "cmul1" }),
-      node("csub", "valueMath", [-1360, 940], { operation: "add", operand: -0.45 }, { label: "csub1" }),
+         mapped onto the limiter's own interval and then eased, so the re-condensation is a
+         swell and not a snap.
+
+         ⚑ §V903 / T1124 — THE GAIN IS 0.76 AND NOT 2.6, AND THE DIFFERENCE IS THE WHOLE
+         ENVELOPE. `2.6·r − 0.45` spans 2.600 into a clamp 0.700 wide, so 46 % of draws pinned
+         to the 0.95 ceiling and 27 % to the 0.25 floor and only 27 % landed anywhere in
+         between: measured, `clag1:bar` sat at EXACTLY 0.950000 from f989 to f2979 — thirty-
+         three continuous seconds of flat maximum coupling, which from the outside is a step
+         that never fires. A clamp is not a limiter on a signal that rarely reaches it; when
+         the draw range is several times the clamp width THE CLAMP IS THE SIGNAL. `0.76·r +
+         0.20` spans [0.200, 0.960] against [0.25, 0.95] — 92.1 % of draws in the interior,
+         6.6 % on the floor, 1.3 % on the ceiling, and the limiter goes back to being one.
+
+         ⚑ AND THE SEED MOVED FOR A REASON NO RANGE CAN REACH. Two measurements bracket this
+         lane: the assembly only visibly OPENS below coupling ≈0.35 (45 cross-community links
+         on the drawn web at 0.30, 104 at 0.20, 0–1 from 0.35 up — every value from 0.45 to
+         0.95 is ONE PICTURE), and the colour only RESOLVES out of the seed field while the
+         layout is condensed (§V900's palette margin at frame 180, coupling pinned: −0.0102 at
+         0.25, −0.0129 at 0.35, −0.0005 at 0.40, +0.0040 at 0.45, +0.0109 at 0.95 — a
+         TRANSIENT, not a law, since the same ladder reads +0.0412 at coupling 0.20 by frame
+         900). So the OPENING phrase has to be condensed and some later phrase has to be open.
+         Seed 11's first eight draws were 0.346, 0.733, 0.856, 0.957, 0.886, 0.753, 0.476,
+         0.357 — draw 0 is the LOWEST of the eight, so any monotone map that clears the
+         palette knee on the opening phrase clears it on all seven others, and the file could
+         not open in its first sixty-six seconds whatever the gain and offset were. Seed 330
+         draws 0.867, 0.281, 0.754, 0.642, 0.929, 0.598, 0.250, 0.472: condensed while the
+         colour resolves, OPEN from 8.3 s, and settling and opening again every phrase after. */
+      node("cstep", "valueStep", [-1960, 940], { every: 4, minimum: 0, maximum: 1, seed: 330 }, { label: "cstep1" }),
+      node("cmul", "valueMath", [-1660, 940], { operation: "multiply", operand: 0.76 }, { label: "cmul1" }),
+      node("csub", "valueMath", [-1360, 940], { operation: "add", operand: 0.2 }, { label: "csub1" }),
       node("clim", "valueLimit", [-1060, 940], { minimum: 0.25, maximum: 0.95 }, { label: "clim1" }),
       node("clag", "valueLag", [-760, 940], { lag: 0.9, releaseRatio: 3 }, { label: "clag1" }),
       /* THE DISTURBANCE LANE (T1113) — three nodes, on the same clock seam as everything
          else, and no arithmetic chain: the STEP'S OWN min/max do the mapping. `dstep1`
-         holds a draw for two bars and emits −3.0 + 4.2·r, so `dlim1` clamping to [0, 0.5]
-         is a GATE: the lane is flat zero unless the draw clears 0.714, which is a bit under
-         a third of phrases. That is the rest-and-strike shape stated as arithmetic — most
-         phrases the assembly is left alone, and on the others it is driven together.
+         holds a draw for two bars and emits −0.45 + 1.0·r, so `dlim1` clamping to [0, 0.5]
+         is a GATE with a DIAL behind it: the lane is flat zero on the 45 % of draws that
+         come up negative, and graded 0…0.5 on the rest. That is the rest-and-strike shape
+         stated as arithmetic — the assembly is left alone on some phrases and driven
+         together on the others.
 
-         IT GETS ITS OWN STEP RATHER THAN READING `cstep1` because coupling's draw sequence
-         happens to run high for five phrases together (0.73, 0.86, 0.96, 0.89, 0.75), so
-         ANY threshold on it fires as one long contiguous block instead of as separate
-         events. A second draw off the same clock is still the same tempo; it is just not
-         the same coin. At the shipped seed it strikes on three well-separated phrases —
-         frames 497–745, 1490–1738 and 2234–2483 — and rests for the rest of the minute. */
-      node("dstep", "valueStep", [-1360, 1420], { every: 2, minimum: -3, maximum: 1.2, seed: 82 }, { label: "dstep1" }),
+         ⚑ §V903 / T1124 — THE RANGE WAS −3.0 + 4.2·r AND THAT WAS THE SAME MISTAKE THE
+         COUPLING LANE MADE: a minimum of −3 against a clamp 0.5 wide is a span of 8.4
+         clamp-widths, so 71.4 % of draws clamped to zero, 15 draws in the first minute
+         produced THREE fires, the longest silent run was 7 draws = 29 SECONDS OF NOTHING,
+         and the mean gap was 14.5 s. An owner watching for thirty seconds saw a dead file
+         and was right. State the DUTY CYCLE, never the range. At [−0.45, 0.55] the span is
+         2.0 clamp-widths: 50 % of draws land in the interior, 45 % rest, 5 % reach the
+         ceiling — TEN fires in the first minute against three, longest silent run 2 draws
+         = 8.3 s, mean gap 7.5 s. Measured on Dawn against the drawn 6-NN web, the frontier
+         still goes 0 → 321 → 0 → 104 → 0 → 55 → 0: the colonies still SEPARATE between
+         strikes, so this is a faster event and not a permanent stir.
+
+         IT GETS ITS OWN STEP RATHER THAN READING `cstep1` because the two lanes want
+         different tempos (two bars against four) and because a threshold on the coupling
+         draw would fire in step with the phrase instead of across it. A second draw off the
+         same clock is still the same tempo; it is just not the same coin. At the shipped
+         seed it rests on draws 0, 4, 7, 8 and 10 of the first minute and strikes on the
+         other ten — frames 248–993, 1242–1738, 2235–2483 and 2731–3725. */
+      node("dstep", "valueStep", [-1360, 1420], { every: 2, minimum: -0.45, maximum: 0.55, seed: 82 }, { label: "dstep1" }),
       node("dlim", "valueLimit", [-1060, 1420], { minimum: 0, maximum: 0.5 }, { label: "dlim1" }),
       /* Eased on the way in and out for the same reason clag1 is: a collision that snaps on
          reads as a teleport even when the clamp is holding every step to 3 % of reach. */

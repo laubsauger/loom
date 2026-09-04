@@ -81,9 +81,17 @@ the graph is dense because the graph is dense there, in each community's own col
 ## The instrument
 
 It rests and strikes rather than vibrating. The structural move is on the **phrase**:
-`cstep1(valueStep)` holds a value for four bars and `clag1(valueLag)` eases it into Coupling,
-so most phrases sit settled and an occasional one lets the whole assembly relax open,
-communities interpenetrating, before it re-condenses — a different picture, not a wobble. The
+`cstep1(valueStep)` holds a value for four bars and `clag1(valueLag)` eases it into Coupling.
+92 % of its draws land inside the limiter rather than on it, so the phrases genuinely settle
+and open — condensed while the colour resolves out of the seed field, open from 8.3 s with
+the communities interpenetrating, alternating after — a different picture, not a wobble. That
+is stated as a **duty cycle** and not as a range on purpose: the version that stated it as a
+range spanned 2.6 into a clamp 0.7 wide and spent thirty-three continuous seconds pinned at
+maximum coupling, which from outside is a step that never fires. The second lane says the
+same thing: `dstep1 -> dlim1 -> dlag1` shoves the two closest colonies through each other on
+55 % of its two-bar draws — ten times in the first minute, never silent for more than 8.3 s —
+and lets them separate again into a new arrangement, which is why the ring comes back in a
+different order instead of the same one. The
 fine motion is on the **beat**: the high band drives `reach1`, so connection density is the
 music made visible; the web tightens on a hit and thins in the quiet. Nothing else runs on a
 free clock but the hue, which turns once every 80 seconds, and the nebular bed, which drifts.

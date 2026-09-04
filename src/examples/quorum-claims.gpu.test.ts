@@ -49,13 +49,22 @@ const SETTLE = 180;
  * T1074 — the two ends of E54's own Coupling envelope, in frames, at the shipped 116 bpm
  * (one bar = 124.1 frames, so `cstep1`'s four-bar hold steps at 497).
  *
- * RESTED is the last frame of the opening phrase, where Coupling still sits on its
- * retained 0.449; STRUCK is deep inside the first struck phrase, Coupling eased to 0.95.
- * Both are past the layout's own relaxation, so what is compared is two settled states
- * rather than two points on one transient.
+ * RESTED is the OPEN end of the envelope and STRUCK is the CONDENSED end, both read late
+ * in their own phrase so what is compared is two settled states rather than two points on
+ * one transient.
+ *
+ * ⚑ T1124 RE-DERIVED BOTH FROM THE RETUNED LANE, and they swapped ends of the file. §V903's
+ * fix re-ranged `cstep1 -> cmul1 -> csub1` (gain 2.6 → 0.76, offset −0.45 → +0.20) and moved
+ * its seed 11 → 330, because the old map pinned 46 % of draws to the 0.95 ceiling and seed
+ * 11's draw 0 was the LOWEST of its first eight — the file could not open inside a minute.
+ * The envelope now runs 0.867 / 0.281 / 0.754 / 0.642 / 0.929 / 0.598 / 0.250 / 0.472 over
+ * its first eight four-bar phrases, so f950 is the OPEN phrase (draw 1, coupling 0.281) and
+ * f2200 the CONDENSED one (draw 4, coupling 0.929), where `dstep1` is also silent. Measured
+ * community radii: 0.2482 / 0.2689 / 0.1714 / 0.1447 at f950 against 0.1769 / 0.1688 /
+ * 0.1366 / 0.1294 at f2200 — all four narrower, which is what the strike claim asserts.
  */
-const RESTED = 480;
-const STRUCK = 900;
+const RESTED = 950;
+const STRUCK = 2200;
 /**
  * T1074 — SIXTY SECONDS, which is the horizon the owner actually judges this file at and
  * roughly four times any gate that existed. 3600 frames at the shipped 60 fps.
@@ -451,8 +460,8 @@ describe("E54 Quorum — the operator does both jobs (T1070)", () => {
   it(
     "THE STRIKE IS SURVIVABLE: after the four-bar envelope fires, the assembly is still bounded and still moving as one",
     async () => {
-      // Frame 900 sits ~400 frames past the first strike (497), with Coupling eased to its
-      // 0.95 ceiling — the state every existing gate stopped short of.
+      // Frame 2200 sits late in the envelope's most condensed phrase (Coupling 0.929) with
+      // the disturbance lane silent — the state every gate before T1074 stopped short of.
       const struck = await renderQuorum({ at: STRUCK });
       const next = await renderQuorum({ at: STRUCK + 1 });
 
@@ -513,8 +522,9 @@ describe("E54 Quorum — the operator does both jobs (T1070)", () => {
    *
    * WHAT IS CLAIMED is the three ways a minute can go wrong that fifteen seconds cannot see:
    * a slow instability, a slow colour collapse, and a picture that has simply STOPPED
-   * responding to its own envelope. The third is the live one — Coupling comes off its 0.95
-   * ceiling during the third phrase, and a converged layout still has to widen when it does.
+   * responding to its own envelope. The third is the live one — Coupling is at 0.472 in the
+   * phrase that contains frame 3600, well off the 0.85 the cut below pins, and a converged
+   * layout still has to sit differently when it is driven than when it is not.
    */
   it(
     "AT SIXTY SECONDS it is still bounded, still resolved, and still answering the phrase",
@@ -650,12 +660,20 @@ describe("E54 Quorum — the operator does both jobs (T1070)", () => {
         return cross;
       };
 
-      /* `dstep1` holds two bars (248.3 frames at 116 bpm) and its shipped seed strikes on
-         the phrases at 497-745, 1490-1738 and 2234-2483. 1600 is deep inside the second;
-         1300 and 1900 sit either side of it, both past the layout's own relaxation. */
-      const STRIKE = 1600;
-      const BEFORE = 1300;
-      const AFTER = 1900;
+      /* `dstep1` holds two bars (248.3 frames at 116 bpm). T1124 re-ranged it from
+         [−3, 1.2] to [−0.45, 0.55] (§V903: a minimum of −3 against a clamp 0.5 wide clamped
+         71 % of draws to zero and left a 29-second silent run), so it now rests on draws 0,
+         4, 7, 8 and 10 of the first minute and strikes on the other ten. 1650 is deep inside
+         the strike that runs 1490-1738; 1200 sits in the rest before it (draw 4) and 2100 in
+         the rest after it (draw 8), both past the layout's own relaxation and both inside a
+         CONDENSED Coupling phrase — which matters now that Coupling actually reaches its
+         open end, because below ~0.30 the assembly opens into a contiguous ring and carries
+         a frontier of its own (measured, disturbance cut: 45 cross links at coupling 0.30,
+         104 at 0.20, 0-1 from 0.35 up). The disturbance's contribution is what is asserted
+         here, so it is read where coupling contributes nothing. */
+      const STRIKE = 1650;
+      const BEFORE = 1200;
+      const AFTER = 2100;
 
       const struck = await renderQuorum({ at: STRIKE });
       const before = await renderQuorum({ at: BEFORE });
