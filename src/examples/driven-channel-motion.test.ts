@@ -344,8 +344,8 @@ describe("T1145 — every driven channel in every shipped document actually move
 
   /**
    * And the sweep has to have swept something. Both numbers are floors under what HEAD
-   * measures (55 documents, 89 distinct driven channels), not equalities — this file is not
-   * the place a new example gets registered.
+   * measures (57 documents, 165 distinct driven channels read from 210 sites), not
+   * equalities — this file is not the place a new example gets registered.
    */
   it("sweeps a real inventory of documents and driven channels", () => {
     expect(SWEEP.length).toBeGreaterThan(40);
