@@ -142,6 +142,19 @@ export const oscInNode: NodeDefinition = {
   category: "input",
   description: OSC_IN_DESCRIPTION,
   tags: ["value", "input", "osc", "network", "bridge", "learn"],
+  /*
+   * T1006 — THE INGRESS DECLARATION, and it is the mirror of `oscOut`'s `sideEffect`.
+   *
+   * The session opens the union of the ports its `listensOn` nodes name. Saying it here
+   * rather than letting the pump match on the type name is what stops §B45/§V316's
+   * shape recurring: the pump filtered `node.type !== "oscIn" && node.type !== "oscOut"`,
+   * a set stated over a category and implemented as two members, and a second listening
+   * node would have been skipped in silence.
+   *
+   * It is load-bearing, not documentation: delete this and no socket is ever opened for
+   * this node — `use-osc-bridge.test.tsx` measures exactly that.
+   */
+  listensOn: { channelPrefix: OSC_CHANNEL_PREFIX, portParameter: "port" },
   inputs: [],
   outputs: [{ id: "out", label: "Out", type: VALUE_PORT }],
   parameters: OSC_IN_PARAMETERS,

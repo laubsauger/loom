@@ -11,6 +11,7 @@ import { OSC_CHANNEL_PREFIX } from "@domain/osc/osc-address.ts";
 import type { OscBridgeState } from "@domain/osc/osc-status.ts";
 import { describeSendOutcome, oscStatusLine } from "@domain/osc/osc-status.ts";
 import { emissionRefusal, type SideEffectPolicy } from "@domain/render/side-effects.ts";
+import { EMISSION_PUMPS } from "@domain/render/emission-pumps.ts";
 import { createDeviceClient, type DeviceClient } from "@devices/device-client.ts";
 import type { OscSendOutcome } from "@devices/device-protocol.ts";
 import type { BridgeSocketFactory } from "@devices/transport/bridge-socket.ts";
@@ -87,6 +88,40 @@ import { DEVICE_HELPER_NAME, DEVICE_HELPER_START } from "@devices/helper.ts";
  * when a sender starts or a destination breaks, not when a fader moves — are React state,
  * and each is written only when it actually differs.
  */
+
+/** The ledger path THIS module is registered under; the derivation key, not a display string. */
+const PUMP_PATH = "src/app/use-osc-bridge.ts";
+
+/**
+ * T1006 — the node types whose data this pump sends OUT, from `EMISSION_PUMPS` rather
+ * than from a hand-list, exactly as `laserPumpNodeTypes()` reads it.
+ *
+ * `emission-sites.test.ts` already forces every `emits` node to hold exactly one pump
+ * row, so a second sender routed to this file lands as ONE ledger row and is pumped
+ * without this module changing. It cannot land any other way.
+ */
+export function oscPumpEmittingTypes(): readonly string[] {
+  return Object.entries(EMISSION_PUMPS)
+    .filter(([, path]) => path === PUMP_PATH)
+    .map(([type]) => type)
+    .sort();
+}
+
+/**
+ * T1006 — the node types that ask this session to LISTEN, from the registry rather than
+ * from a hand-list: any definition declaring `listensOn` for the `osc:` namespace.
+ *
+ * The ingress half has no ledger and needs none — the declaration is on the definition
+ * (`node-definition.ts`), so the catalogue itself is the set. A second listening node
+ * type is pumped BY EXISTING, and the port it is asked for is the parameter it named.
+ */
+export function oscPumpListeningTypes(registry: NodeRegistryView): readonly string[] {
+  return registry
+    .list()
+    .filter((definition) => definition.listensOn?.channelPrefix === OSC_CHANNEL_PREFIX)
+    .map((definition) => definition.type)
+    .sort();
+}
 
 export interface OscBridgeBinding {
   readonly state: OscBridgeState;
@@ -257,8 +292,31 @@ export function useOscBridge(options: OscBridgeOptions = {}): OscBridgeBinding {
         ...base,
       };
 
+      /*
+       * §T1006 — THE SET THIS PUMP OWNS IS DERIVED, IN BOTH DIRECTIONS.
+       *
+       * This loop used to open with `node.type !== "oscIn" && node.type !== "oscOut"`:
+       * a set stated over a CATEGORY ("the OSC nodes") and implemented as two named
+       * MEMBERS, which is §B45/§V316 exactly — §B45 enumerated four of five parameter
+       * modes and `map` was absent for months with nothing to notice. A third OSC node
+       * type would have been skipped here the same way, in silence, and the author who
+       * lands one is the author wiring a device.
+       *
+       * So neither half is written down here. EGRESS comes from `EMISSION_PUMPS` keyed
+       * on this file's own path — `laserPumpNodeTypes()` in `use-laser-bridge.ts` is the
+       * precedent, written for this row — and `emission-sites.test.ts` already forces
+       * every `emits` node to have exactly one pump row, so a second sender routed here
+       * is pumped by ITS LEDGER ROW EXISTING. INGRESS comes from the registry: any
+       * definition declaring `listensOn` for the `osc:` namespace, so a second listening
+       * node is pumped BY EXISTING and the port parameter it names is the one read.
+       */
+      const emitting = new Set(oscPumpEmittingTypes());
+      const listening = new Set(oscPumpListeningTypes(registry));
+
       for (const [rawId, node] of Object.entries(graph.nodes)) {
-        if (node.type !== "oscIn" && node.type !== "oscOut") continue;
+        const listens = listening.has(node.type);
+        const emits = emitting.has(node.type);
+        if (!listens && !emits) continue;
         const nodeId = rawId as NodeId;
         const definition = registry.get(node.type);
         if (definition === undefined) continue;
@@ -267,14 +325,18 @@ export function useOscBridge(options: OscBridgeOptions = {}): OscBridgeBinding {
         const resolved = resolveParameters(node, definition, readOptions);
         const read = (key: string): unknown => resolved.get(key)?.value;
 
-        if (node.type === "oscIn") {
-          const port = read("port");
+        if (listens) {
+          // The parameter the DEFINITION named, not an assumed `"port"` — that is what
+          // makes the declaration load-bearing rather than decorative.
+          const port = read(definition.listensOn?.portParameter ?? "");
           if (typeof port === "number" && Number.isInteger(port) && port > 0) {
             ports.push(port);
             wanting.push(nodeId);
           }
-          continue;
         }
+        // Not `else`: a node that both listens and emits must do both. Today none does,
+        // and that is precisely the assumption a hand-written branch bakes in forever.
+        if (!emits) continue;
 
         const host = typeof read("host") === "string" ? (read("host") as string).trim() : "";
         const port = typeof read("port") === "number" ? (read("port") as number) : 0;

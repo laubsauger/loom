@@ -10,7 +10,12 @@ import type { NodeId } from "@domain/types/ids.ts";
 import type { BridgeSocket } from "@devices/transport/bridge-socket.ts";
 import type { ChannelResolver } from "@domain/parameters/resolve.ts";
 import type { SideEffectPolicy } from "@domain/render/side-effects.ts";
-import { messagesFor, useOscBridge } from "./use-osc-bridge.ts";
+import type { NodeDefinition } from "@domain/types/node-definition.ts";
+import type { NodeRegistryView } from "@nodes/registry/registry.ts";
+import { EMISSION_PUMPS } from "@domain/render/emission-pumps.ts";
+import { OSC_CHANNEL_PREFIX } from "@domain/osc/osc-address.ts";
+import { VALUE_PORT } from "@nodes/definitions/common-ports.ts";
+import { messagesFor, oscPumpEmittingTypes, oscPumpListeningTypes, useOscBridge } from "./use-osc-bridge.ts";
 
 /**
  * T942 tier 3 — THE PUMP: what the document says becomes what the socket sees.
@@ -392,6 +397,133 @@ describe("oscOut transmits only what the document configured (§T950 gap 4)", ()
     // a definition that quietly loses the declaration fails here as well as above.
     expect(registry.get("oscOut")?.sideEffect).toBe("emits");
     expect(registry.get("oscIn")?.sideEffect).toBeUndefined();
+  });
+});
+
+/*
+ * §T1006 — THE SET THIS PUMP OWNS IS DERIVED, AND THE GATE IS DERIVED WITH IT.
+ *
+ * The pump filtered `node.type !== "oscIn" && node.type !== "oscOut"`: a set stated over
+ * a CATEGORY and implemented as two named MEMBERS. §B45 is this project's record of what
+ * that costs — the parameter menu enumerated four of five `ParameterMode`s and `map` was
+ * absent for months, under a comment claiming every parameter takes every mode.
+ *
+ * So this block never writes "oscIn" or "oscOut" into an expectation of what the pump
+ * handles. It FABRICATES A THIRD OSC NODE TYPE that exists nowhere in the product, hands
+ * the pump a registry containing it, and requires the socket to open for it — a gate that
+ * hand-listed the same two names would have moved the bug rather than caught it. And it
+ * puts a FLOOR under each derivation, because a query that returns nothing would hold a
+ * derived gate green while proving nothing at all.
+ */
+describe("§T1006 — the pump's node set is derived from the registry and the ledger", () => {
+  /**
+   * A listening node the catalogue has never seen, and its port parameter is deliberately
+   * NOT called `port`: the pump must read the parameter the DEFINITION named. Anything
+   * that pattern-matched on a type name or assumed `"port"` fails here.
+   */
+  const thirdListener: NodeDefinition = {
+    type: "oscInFabricated",
+    version: 1,
+    title: "Fabricated OSC In",
+    category: "input",
+    description: "A third OSC-shaped listening node that exists only in this test.",
+    tags: ["value", "input", "osc"],
+    inputs: [],
+    outputs: [{ id: "out", label: "Out", type: VALUE_PORT }],
+    parameters: {
+      listenPort: { type: "number", label: "Port", default: 0, min: 0, max: 65_535, step: 1 },
+    },
+    listensOn: { channelPrefix: OSC_CHANNEL_PREFIX, portParameter: "listenPort" },
+    valueEvaluate: () => ({}),
+    compile: () => ({ passes: [] }),
+  };
+  const extended = createNodeRegistry([...allNodeDefinitions, thirdListener]).view();
+
+  /**
+   * Attached, with whichever catalogue the case is about — and NOTHING is cleared from
+   * the record, because the subscribe is exactly what is under test: the pump hands
+   * `listen(ports)` the set it derived, and the client opens those sockets the moment the
+   * helper answers.
+   */
+  function attached(graph: GraphDocument, view: NodeRegistryView) {
+    globalThis.sessionStorage.setItem("loom.bridge.pairing.v1", "ABCDEF");
+    const socket = fakeSocket();
+    const hook = renderHook(() => useOscBridge({ socketFactory: socket.factory, port: 1, autoConnect: false }));
+    act(() => {
+      hook.result.current.sync(frameAt(0), graph, view, new Map(), NO_CHANNELS, LIVE);
+      socket.open();
+    });
+    act(() => {
+      socket.say({ type: "deviceAttached", sources: [] });
+    });
+    return { socket, hook };
+  }
+
+  const subscribedPorts = (sent: ReadonlyArray<Record<string, unknown>>): number[] =>
+    sent
+      .filter((message) => message["type"] === "deviceSubscribe")
+      .map((message) => (message["source"] as { port?: number }).port ?? 0);
+
+  it("opens the socket a node type it has never heard of asks for", () => {
+    const graph = graphOf({
+      n: { type: "oscInFabricated", label: "third1", parameters: { listenPort: 9100 } },
+    });
+    const { socket } = attached(graph, extended);
+    // NOTHING was added to a list to make this pass. The node declared `listensOn` and
+    // the pump found it in the catalogue — which is the whole claim of the row.
+    expect(subscribedPorts(socket.sent)).toEqual([9100]);
+  });
+
+  it("is the DECLARATION that opens it, not the node's presence in the document", () => {
+    // The same node with `listensOn` removed: the definition is otherwise identical, so
+    // anything still opening a socket here is doing it for some other reason. This is the
+    // red-verify baked in — the declaration is load-bearing or this test cannot pass.
+    const { listensOn: _dropped, ...deaf } = thirdListener;
+    const without = createNodeRegistry([...allNodeDefinitions, deaf as NodeDefinition]).view();
+    const graph = graphOf({
+      n: { type: "oscInFabricated", label: "third1", parameters: { listenPort: 9100 } },
+      // A real `oscIn` alongside, so the session still attaches and the silence below is
+      // about the fabricated node rather than about nothing being connected.
+      a: { type: "oscIn", label: "osc1", parameters: { port: 9000 } },
+    });
+    const { socket } = attached(graph, without);
+    expect(subscribedPorts(socket.sent)).toEqual([9000]);
+  });
+
+  it("derives its EGRESS set from the emission ledger's rows for this file", () => {
+    // Computed from the ledger, never restated: the expectation moves when the ledger
+    // does. §T1005's gate already forbids an `emits` node without a row, so this is the
+    // link that makes a second sender routed here arrive pumped.
+    const fromLedger = Object.entries(EMISSION_PUMPS)
+      .filter(([, path]) => path === "src/app/use-osc-bridge.ts")
+      .map(([type]) => type)
+      .sort();
+    expect(oscPumpEmittingTypes()).toEqual(fromLedger);
+    // THE FLOOR (§T985): a ledger read that returned nothing would satisfy the line above
+    // and prove nothing, so the set is required to be non-empty and every member of it is
+    // required to really be a world-acting node.
+    expect(oscPumpEmittingTypes().length).toBeGreaterThan(0);
+    for (const type of oscPumpEmittingTypes()) {
+      expect(registry.get(type)?.sideEffect, type).toBe("emits");
+    }
+  });
+
+  it("derives its INGRESS set from the catalogue's own declarations", () => {
+    const declared = allNodeDefinitions
+      .filter((definition) => definition.listensOn?.channelPrefix === OSC_CHANNEL_PREFIX)
+      .map((definition) => definition.type)
+      .sort();
+    expect(oscPumpListeningTypes(registry)).toEqual(declared);
+    // The same floor, and the same reason: a registry walk that matched nothing would
+    // leave every assertion above vacuously true.
+    expect(oscPumpListeningTypes(registry).length).toBeGreaterThan(0);
+    // And the derivation is a real filter rather than "everything": a catalogue where
+    // every node listened would also pass the two lines above.
+    expect(oscPumpListeningTypes(registry).length).toBeLessThan(allNodeDefinitions.length);
+    // The fabricated type is found only when it is IN the catalogue handed over — which
+    // is what makes the first case a property of the registry, not of this file.
+    expect(oscPumpListeningTypes(extended)).toContain("oscInFabricated");
+    expect(oscPumpListeningTypes(registry)).not.toContain("oscInFabricated");
   });
 });
 

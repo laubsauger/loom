@@ -348,6 +348,33 @@ export interface NodeDefinition {
    * mandatory, and why this is not a fourth `Reproducibility` value.
    */
   sideEffect?: SideEffect;
+  /**
+   * T1006: this node needs THE SESSION to open a listening socket on its behalf. The
+   * ingress mirror of `sideEffect` — that field says a node's data leaves the process,
+   * this one says the process must be listening for a node's data to arrive at all.
+   *
+   * A page can neither bind a UDP port nor speak the protocol, so the node cannot open
+   * anything itself (§V182). It declares the CHANNEL NAMESPACE its readings arrive under
+   * and WHICH of its parameters carries the port number; the pump for that namespace
+   * (`use-osc-bridge.ts` for `osc:`) subscribes to the union of the ports its instances
+   * name, and to nothing when none do.
+   *
+   * DECLARED RATHER THAN PATTERN-MATCHED ON THE TYPE NAME, which is the whole point of
+   * the row: the pump used to test `node.type !== "oscIn" && node.type !== "oscOut"` —
+   * a set stated over a CATEGORY and implemented as two MEMBERS, §B45/§V316 exactly,
+   * silently wrong the moment member #3 appears. With this field a second listening node
+   * is pumped BY EXISTING.
+   *
+   * The parameter NAME lives here rather than being assumed to be `port`, so the
+   * declaration is load-bearing rather than decorative: remove it and the socket is
+   * never opened, which is what `use-osc-bridge.test.tsx` measures.
+   */
+  listensOn?: {
+    /** The `ValueEvaluateContext.channels` prefix its readings arrive under (`osc:`). */
+    readonly channelPrefix: string;
+    /** The parameter holding the port to listen on. `0` means NOT LISTENING. */
+    readonly portParameter: string;
+  };
   capabilities?: CapabilityRequirement[];
   /**
    * Kernel ABI version this definition was written against (§V77). Checked before a
