@@ -61,23 +61,12 @@
       "e11": {
         "id": "e11",
         "source": {
+          "nodeId": "spread",
+          "portId": "out"
+        },
+        "target": {
           "nodeId": "mesh",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "bound",
-          "portId": "points"
-        }
-      },
-      "e11b": {
-        "id": "e11b",
-        "source": {
-          "nodeId": "bound",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "web",
-          "portId": "points"
+          "portId": "field"
         }
       },
       "e12": {
@@ -87,12 +76,68 @@
           "portId": "out"
         },
         "target": {
-          "nodeId": "dots",
+          "nodeId": "sow",
           "portId": "points"
         }
       },
       "e13": {
         "id": "e13",
+        "source": {
+          "nodeId": "trail",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "spread",
+          "portId": "input"
+        }
+      },
+      "e14": {
+        "id": "e14",
+        "source": {
+          "nodeId": "sow",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "mix",
+          "portId": "in1"
+        }
+      },
+      "e15": {
+        "id": "e15",
+        "order": 0,
+        "source": {
+          "nodeId": "spread",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "mix",
+          "portId": "in2"
+        }
+      },
+      "e15a": {
+        "id": "e15a",
+        "source": {
+          "nodeId": "mesh",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "bound",
+          "portId": "points"
+        }
+      },
+      "e16": {
+        "id": "e16",
+        "source": {
+          "nodeId": "bound",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "web",
+          "portId": "points"
+        }
+      },
+      "e17": {
+        "id": "e17",
         "source": {
           "nodeId": "web",
           "portId": "out"
@@ -102,8 +147,30 @@
           "portId": "points"
         }
       },
-      "e14": {
-        "id": "e14",
+      "e18": {
+        "id": "e18",
+        "source": {
+          "nodeId": "bound",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "dots",
+          "portId": "points"
+        }
+      },
+      "e18a": {
+        "id": "e18a",
+        "source": {
+          "nodeId": "bound",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "frontdots",
+          "portId": "points"
+        }
+      },
+      "e19": {
+        "id": "e19",
         "source": {
           "nodeId": "nodes",
           "portId": "out"
@@ -111,171 +178,6 @@
         "target": {
           "nodeId": "haze",
           "portId": "input"
-        }
-      },
-      "e15": {
-        "id": "e15",
-        "source": {
-          "nodeId": "haze",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "pool",
-          "portId": "in1"
-        }
-      },
-      "e16": {
-        "id": "e16",
-        "source": {
-          "nodeId": "neb",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "pool",
-          "portId": "in2"
-        }
-      },
-      "e17": {
-        "id": "e17",
-        "source": {
-          "nodeId": "pool",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "bed",
-          "portId": "input"
-        }
-      },
-      "e18": {
-        "id": "e18",
-        "source": {
-          "nodeId": "webs",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "thread",
-          "portId": "input"
-        }
-      },
-      "e19a": {
-        "id": "e19a",
-        "source": {
-          "nodeId": "mesh",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "deep",
-          "portId": "points"
-        }
-      },
-      "e19b": {
-        "id": "e19b",
-        "source": {
-          "nodeId": "mesh",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "fore",
-          "portId": "points"
-        }
-      },
-      "e19c": {
-        "id": "e19c",
-        "source": {
-          "nodeId": "deep",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "deepdots",
-          "portId": "points"
-        }
-      },
-      "e19d": {
-        "id": "e19d",
-        "source": {
-          "nodeId": "fore",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "foredots",
-          "portId": "points"
-        }
-      },
-      "e19e": {
-        "id": "e19e",
-        "source": {
-          "nodeId": "deepr",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "fog",
-          "portId": "in1"
-        }
-      },
-      "e19f": {
-        "id": "e19f",
-        "source": {
-          "nodeId": "veil",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "fog",
-          "portId": "in2"
-        }
-      },
-      "e19g": {
-        "id": "e19g",
-        "source": {
-          "nodeId": "fog",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "soft",
-          "portId": "input"
-        }
-      },
-      "e19h": {
-        "id": "e19h",
-        "source": {
-          "nodeId": "soft",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "depth",
-          "portId": "in1"
-        }
-      },
-      "e19i": {
-        "id": "e19i",
-        "source": {
-          "nodeId": "forer",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "depth",
-          "portId": "in2"
-        }
-      },
-      "e19j": {
-        "id": "e19j",
-        "source": {
-          "nodeId": "depth",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "white",
-          "portId": "input"
-        }
-      },
-      "e19k": {
-        "id": "e19k",
-        "source": {
-          "nodeId": "white",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "sum",
-          "portId": "in1"
         }
       },
       "e2": {
@@ -291,6 +193,72 @@
       },
       "e20": {
         "id": "e20",
+        "source": {
+          "nodeId": "haze",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "pool",
+          "portId": "in1"
+        }
+      },
+      "e21": {
+        "id": "e21",
+        "source": {
+          "nodeId": "neb",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "pool",
+          "portId": "in2"
+        }
+      },
+      "e22": {
+        "id": "e22",
+        "source": {
+          "nodeId": "pool",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "bed",
+          "portId": "input"
+        }
+      },
+      "e22a": {
+        "id": "e22a",
+        "source": {
+          "nodeId": "webs",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "thread",
+          "portId": "input"
+        }
+      },
+      "e22b": {
+        "id": "e22b",
+        "source": {
+          "nodeId": "nodes",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "white",
+          "portId": "input"
+        }
+      },
+      "e23": {
+        "id": "e23",
+        "source": {
+          "nodeId": "white",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "sum",
+          "portId": "in1"
+        }
+      },
+      "e24": {
+        "id": "e24",
         "order": 0,
         "source": {
           "nodeId": "thread",
@@ -301,8 +269,8 @@
           "portId": "in2"
         }
       },
-      "e21": {
-        "id": "e21",
+      "e25": {
+        "id": "e25",
         "order": 1,
         "source": {
           "nodeId": "bed",
@@ -313,8 +281,8 @@
           "portId": "in2"
         }
       },
-      "e22": {
-        "id": "e22",
+      "e26": {
+        "id": "e26",
         "source": {
           "nodeId": "sum",
           "portId": "out"
@@ -322,72 +290,39 @@
         "target": {
           "nodeId": "glow",
           "portId": "input"
-        }
-      },
-      "e23": {
-        "id": "e23",
-        "source": {
-          "nodeId": "glow",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "lit",
-          "portId": "in1"
-        }
-      },
-      "e24": {
-        "id": "e24",
-        "source": {
-          "nodeId": "sum",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "lit",
-          "portId": "in2"
-        }
-      },
-      "e25": {
-        "id": "e25",
-        "source": {
-          "nodeId": "lit",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "mask",
-          "portId": "in1"
-        }
-      },
-      "e26": {
-        "id": "e26",
-        "source": {
-          "nodeId": "iris",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "mask",
-          "portId": "in2"
         }
       },
       "e27": {
         "id": "e27",
         "source": {
-          "nodeId": "mask",
+          "nodeId": "glow",
           "portId": "out"
         },
         "target": {
-          "nodeId": "paint",
-          "portId": "input"
+          "nodeId": "lit",
+          "portId": "in1"
         }
       },
       "e28": {
         "id": "e28",
         "source": {
-          "nodeId": "paint",
+          "nodeId": "sum",
           "portId": "out"
         },
         "target": {
-          "nodeId": "out",
-          "portId": "input"
+          "nodeId": "lit",
+          "portId": "in2"
+        }
+      },
+      "e29": {
+        "id": "e29",
+        "source": {
+          "nodeId": "lit",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "mask",
+          "portId": "in1"
         }
       },
       "e3": {
@@ -399,6 +334,39 @@
         "target": {
           "nodeId": "henv",
           "portId": "in"
+        }
+      },
+      "e30": {
+        "id": "e30",
+        "source": {
+          "nodeId": "iris",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "mask",
+          "portId": "in2"
+        }
+      },
+      "e31": {
+        "id": "e31",
+        "source": {
+          "nodeId": "mask",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "paint",
+          "portId": "input"
+        }
+      },
+      "e32": {
+        "id": "e32",
+        "source": {
+          "nodeId": "paint",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
         }
       },
       "e4": {
@@ -491,7 +459,7 @@
         "parameters": {
           "hueoffset": 0,
           "saturation": 1.9,
-          "value": 0.5
+          "value": 0.42
         },
         "position": {
           "x": -160,
@@ -504,11 +472,11 @@
         "id": "bound",
         "label": "bound1",
         "parameters": {
-          "attribute": "degree",
-          "component": "x",
-          "from": 0.451,
+          "attribute": "sense",
+          "component": "z",
+          "from": 0,
           "mode": "inside",
-          "to": 8
+          "to": 0.5
         },
         "position": {
           "x": -1660,
@@ -524,18 +492,20 @@
           "eye": [
             0,
             0,
-            2.15
+            2
           ],
           "fov": 52,
           "lookAt": [
             0,
             0,
             0
-          ]
+          ],
+          "ortho": true,
+          "orthoHeight": 2.16
         },
         "position": {
           "x": -1360,
-          "y": -700
+          "y": -940
         },
         "type": "camera"
       },
@@ -558,8 +528,8 @@
         "id": "clim",
         "label": "clim1",
         "parameters": {
-          "maximum": 0.95,
-          "minimum": 0.25
+          "maximum": -0.05,
+          "minimum": -0.55
         },
         "position": {
           "x": -1060,
@@ -585,7 +555,7 @@
         "id": "cmul",
         "label": "cmul1",
         "parameters": {
-          "operand": 0.76,
+          "operand": 0.6,
           "operation": "multiply"
         },
         "position": {
@@ -615,7 +585,7 @@
         "id": "csub",
         "label": "csub1",
         "parameters": {
-          "operand": 0.2,
+          "operand": -0.6,
           "operation": "add"
         },
         "position": {
@@ -623,103 +593,6 @@
           "y": 940
         },
         "type": "valueMath"
-      },
-      "deep": {
-        "definitionVersion": 1,
-        "id": "deep",
-        "label": "deep1",
-        "parameters": {
-          "attribute": "position",
-          "component": "z",
-          "from": -1,
-          "mode": "inside",
-          "to": 0
-        },
-        "position": {
-          "x": -1660,
-          "y": -900
-        },
-        "type": "pointRange"
-      },
-      "deepdots": {
-        "definitionVersion": 1,
-        "id": "deepdots",
-        "label": "deepdots1",
-        "parameters": {
-          "blend": "additive",
-          "material": "ink1",
-          "mode": "points",
-          "scale": {
-            "bindings": {
-              "map": {
-                "attribute": "degree",
-                "kind": "map"
-              },
-              "static": {
-                "kind": "static",
-                "value": 0.008
-              }
-            },
-            "mode": "map"
-          },
-          "soft": 0.75,
-          "tint": {
-            "bindings": {
-              "map": {
-                "attribute": "tint",
-                "kind": "map"
-              },
-              "static": {
-                "kind": "static",
-                "value": [
-                  1,
-                  1,
-                  1,
-                  1
-                ]
-              }
-            },
-            "mode": "map"
-          }
-        },
-        "position": {
-          "x": -1360,
-          "y": -900
-        },
-        "type": "geometry"
-      },
-      "deepr": {
-        "definitionVersion": 1,
-        "id": "deepr",
-        "label": "deepr1",
-        "parameters": {
-          "ambientIntensity": 0,
-          "background": [
-            0,
-            0,
-            0,
-            1
-          ],
-          "camera": "cam1",
-          "lights": "",
-          "scenes": "deepdots1"
-        },
-        "position": {
-          "x": -1060,
-          "y": -900
-        },
-        "type": "render"
-      },
-      "depth": {
-        "definitionVersion": 1,
-        "id": "depth",
-        "label": "depth1",
-        "parameters": {},
-        "position": {
-          "x": -160,
-          "y": -900
-        },
-        "type": "add"
       },
       "dlag": {
         "definitionVersion": 1,
@@ -740,8 +613,8 @@
         "id": "dlim",
         "label": "dlim1",
         "parameters": {
-          "maximum": 0.5,
-          "minimum": 0
+          "maximum": 0.84,
+          "minimum": 0.44
         },
         "position": {
           "x": -1060,
@@ -760,12 +633,13 @@
           "scale": {
             "bindings": {
               "map": {
-                "attribute": "degree",
+                "attribute": "sense",
+                "channel": "w",
                 "kind": "map"
               },
               "static": {
                 "kind": "static",
-                "value": 0.008
+                "value": 0.009
               }
             },
             "mode": "map"
@@ -774,7 +648,7 @@
           "tint": {
             "bindings": {
               "map": {
-                "attribute": "tint",
+                "attribute": "banner",
                 "kind": "map"
               },
               "static": {
@@ -802,8 +676,8 @@
         "label": "dstep1",
         "parameters": {
           "every": 2,
-          "maximum": 0.55,
-          "minimum": -0.45,
+          "maximum": 0.875,
+          "minimum": 0.395,
           "seed": 82
         },
         "position": {
@@ -812,102 +686,23 @@
         },
         "type": "valueStep"
       },
-      "fog": {
+      "frontdots": {
         "definitionVersion": 1,
-        "id": "fog",
-        "label": "fog1",
-        "parameters": {},
-        "position": {
-          "x": -760,
-          "y": -900
-        },
-        "type": "multiply"
-      },
-      "fore": {
-        "definitionVersion": 1,
-        "id": "fore",
-        "label": "fore1",
-        "parameters": {
-          "attribute": "position",
-          "component": "z",
-          "from": 0,
-          "mode": "inside",
-          "to": 1
-        },
-        "position": {
-          "x": -1660,
-          "y": -1100
-        },
-        "type": "pointRange"
-      },
-      "foredots": {
-        "definitionVersion": 1,
-        "id": "foredots",
-        "label": "foredots1",
+        "id": "frontdots",
+        "label": "frontdots1",
         "parameters": {
           "blend": "additive",
+          "group": "p.sense.y > 0.45",
           "material": "ink1",
           "mode": "points",
-          "scale": {
-            "bindings": {
-              "map": {
-                "attribute": "degree",
-                "kind": "map"
-              },
-              "static": {
-                "kind": "static",
-                "value": 0.008
-              }
-            },
-            "mode": "map"
-          },
-          "soft": 0.75,
-          "tint": {
-            "bindings": {
-              "map": {
-                "attribute": "tint",
-                "kind": "map"
-              },
-              "static": {
-                "kind": "static",
-                "value": [
-                  1,
-                  1,
-                  1,
-                  1
-                ]
-              }
-            },
-            "mode": "map"
-          }
+          "scale": 0.016,
+          "soft": 0.6
         },
         "position": {
           "x": -1360,
-          "y": -1100
+          "y": -700
         },
         "type": "geometry"
-      },
-      "forer": {
-        "definitionVersion": 1,
-        "id": "forer",
-        "label": "forer1",
-        "parameters": {
-          "ambientIntensity": 0,
-          "background": [
-            0,
-            0,
-            0,
-            1
-          ],
-          "camera": "cam1",
-          "lights": "",
-          "scenes": "foredots1"
-        },
-        "position": {
-          "x": -1060,
-          "y": -1100
-        },
-        "type": "render"
       },
       "glow": {
         "definitionVersion": 1,
@@ -931,7 +726,7 @@
         "parameters": {
           "extend": "hold",
           "filter": "gaussian",
-          "size": 58
+          "size": 44
         },
         "position": {
           "x": -760,
@@ -1056,7 +851,7 @@
           "endpoint": "tip",
           "material": "ink1",
           "mode": "beam",
-          "scale": 0.0016,
+          "scale": 0.0022,
           "soft": 0.9,
           "taper": 0,
           "tint": {
@@ -1089,7 +884,7 @@
         "id": "lit",
         "label": "lit1",
         "parameters": {
-          "opacity": 0.55
+          "opacity": 0.45
         },
         "position": {
           "x": 740,
@@ -1113,11 +908,9 @@
         "id": "mesh",
         "label": "mesh1",
         "parameters": {
-          "anchor": 0.05,
-          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"tint\",\"type\":\"vec4f\",\"semantic\":\"color\",\"qualifier\":\"color\",\"default\":[0.5,0.5,0.5,1]},{\"name\":\"degree\",\"type\":\"f32\",\"semantic\":\"size\",\"default\":[0.35]},{\"name\":\"id\",\"type\":\"u32\",\"semantic\":\"id\",\"default\":[0]}]",
-          "capacity": 480,
-          "contrast": 18,
-          "coupling": {
+          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]},{\"name\":\"heading\",\"type\":\"vec3f\",\"qualifier\":\"direction\",\"default\":[1,0,0]},{\"name\":\"banner\",\"type\":\"vec4f\",\"semantic\":\"color\",\"qualifier\":\"color\",\"default\":[1,0,0,1]},{\"name\":\"sense\",\"type\":\"vec4f\",\"default\":[0,0,0,0.3]}]",
+          "capacity": 3000,
+          "envoy": {
             "bindings": {
               "expression": {
                 "kind": "expression",
@@ -1125,27 +918,16 @@
               },
               "static": {
                 "kind": "static",
-                "value": 0.85
+                "value": -0.3
               }
             },
             "mode": "expression"
           },
-          "diffusion": 0.3,
-          "disturb": {
-            "bindings": {
-              "expression": {
-                "kind": "expression",
-                "source": "op('dlag1').chan.bar"
-              },
-              "static": {
-                "kind": "static",
-                "value": 0
-              }
-            },
-            "mode": "expression"
-          },
-          "kernel": "struct Params {\n  coupling: f32,   // How hard each edge pulls its two ends together — the relaxation rate, and the structural knob.\n  contrast: f32,   // How much weaker the background tie every pair shares is than a bond inside a community; at 0 the two weigh the same, the block structure is invisible to the operator, and the field can only ever be one blob.\n  repulsion: f32,  // The Coulomb push between every pair, which is what separates one community from the next and holds a settled one open instead of letting it collapse to a dot.\n  reach: f32,      // World radius a community bond can span, and the same number the drawn web uses — the picture must not show links the operator is not using.\n  diffusion: f32,  // How fast a point's colour averages with its neighbours' — the rate at which a community agrees on a hue.\n  anchor: f32,     // How hard each point holds its own seed colour against that averaging; at 0 every community melts into one.\n  disturb: f32,    // T1113: the DISTURBANCE — how hard each colony is driven at the colony it is paired with. 0 at rest, and the only term in this kernel that is not part of the operator.\n}\n\n/* The community that binds to nobody — 28 % of the population, and the reason loose dust\n   scatters across the field instead of everything being swept into a cluster. */\nconst LOOSE: u32 = 4u;\n\n/* The degree an UNLINKED point carries: the floor every point starts from, so a point with\n   no community bond lands on it exactly and a point with one lands above it. bound1 reads\n   the same number from the other side, which is why neither of them is a knob (T1053: a\n   number that has to match another number is not a control). */\nconst UNLINKED: f32 = 0.45;\n\n/* Identity to a 32-bit hash. Written here rather than reached for through pointRand\n   because these draws must NOT move: pointRand keys on the frame and on this node's Seed\n   as well as on the point (§V74), which is right for per-frame randomness and wrong for a\n   fact about a point that has to be identical on frame 0 and frame 4000, at every seed, on\n   every device. The whole \"same graph, different starting place\" claim rests on the two\n   draws having two sources. */\nfn idHash(id: u32, salt: u32) -> u32 {\n  var h = (id * 2654435761u) ^ (salt * 2246822519u);\n  h = (h ^ (h >> 15u)) * 2246822519u;\n  h = (h ^ (h >> 13u)) * 3266489917u;\n  return h ^ (h >> 16u);\n}\n\nfn idRand(id: u32, salt: u32) -> f32 {\n  return f32(idHash(id, salt)) * (1.0 / 4294967296.0);\n}\n\n/* THE GRAPH — the one authored thing in this document. A stochastic block model keyed on\n   identity alone, asymmetric on purpose (§V854): 26 / 20 / 15 / 11 % in four communities,\n   the remaining 28 % affiliated with nobody. A symmetric partition could not tell a working\n   operator from a broken one, and four equal communities would settle into a rosette that\n   looks designed. */\nfn communityOf(id: u32) -> u32 {\n  let r = idRand(id, 101u);\n  if (r < 0.26) { return 0u; }\n  if (r < 0.46) { return 1u; }\n  if (r < 0.61) { return 2u; }\n  if (r < 0.72) { return 3u; }\n  return LOOSE;\n}\n\nfn seedColorOf(id: u32) -> vec3f {\n  return vec3f(idRand(id, 201u), idRand(id, 202u), idRand(id, 203u));\n}\n\nfn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n\n  /* T510: the buffers are fresh. Scatter the dust and hand every point its identity — and\n     note WHICH generator each line uses. Position comes from pointRand, so this node's Seed\n     decides where the field starts; everything else comes from idHash, so the Seed cannot\n     touch what the graph IS. */\n  if (ctx.firstRun == 1u) {\n    q.id = ctx.index;\n    let a = pointRand(ctx.index, 11u) * 6.2831853;\n    let rr = sqrt(pointRand(ctx.index, 12u)) * 0.95;\n    q.position = vec3f(cos(a) * rr, sin(a) * rr * 0.82, (pointRand(ctx.index, 13u) - 0.5) * 0.25);\n    q.tint = vec4f(seedColorOf(ctx.index), 1.0);\n    q.degree = UNLINKED;\n    return q;\n  }\n\n  let reach = max(ctx.params.reach, 0.02);\n  let mine = communityOf(p.id);\n\n  var pull = vec3f(0.0);      /* Σ w·(x_j − x_i) — minus the Laplacian applied to POSITION */\n  var blend = vec3f(0.0);     /* Σ w·c_j        — the SAME operator applied to COLOUR */\n  var push = vec3f(0.0);\n  var wsum = 0.0;\n  var bond = 0.0;             /* the COMMUNITY part of the degree, which is what a hub has */\n  var centroid = vec3f(0.0);\n  var colorSum = vec3f(0.0);\n  var colorSq = 0.0;\n  /* T1113: the four colony centres, accumulated in the SAME scan — the disturbance needs\n     somewhere to aim, and a colony's centre is the only landmark this operator owns. */\n  var csum = array<vec3f, 4>();\n  var cnt = array<f32, 4>();\n\n  /* THE O(N²) SCAN, and it is one loop because it is one operator. T1070's pointAt reads\n     the pre-frame half, so every point sees the same last-frame field whatever order the\n     workgroups ran in — a Jacobi step, not a scheduling-dependent one (§V44). */\n  for (var j = 0u; j < ctx.count; j += 1u) {\n    let other = pointAt(j);\n    { let oc = communityOf(other.id); if (oc < 4u) { csum[oc] += other.position; cnt[oc] += 1.0; } }\n    centroid += other.position;\n    colorSum += other.tint.rgb;\n    colorSq += dot(other.tint.rgb, other.tint.rgb);\n    if (j == ctx.index) { continue; }\n    let d = other.position - p.position;\n    let r = sqrt(max(dot(d, d), 1.0e-12));\n    /* THE EDGE WEIGHT, in two terms and both POSITIVE — so this is a genuine graph\n       Laplacian: the descent cannot run away and the diffusion cannot oscillate. (An earlier\n       cut made a between-community weight NEGATIVE to force the clusters apart. It laid out\n       beautifully and destroyed the colour, because a signed operator makes the power\n       iteration anti-align and after clamping the whole field came back grey. Separation is\n       the push's job, not the weight's.)\n\n       THE BACKGROUND TIE is on every pair at every distance — that is what makes this one\n       field rather than four that drift apart the moment they lose sight of each other, which\n       is exactly what a cut with no long-range term did. THE COMMUNITY BOND is local, and\n       only between two points of the same community. Contrast is the ratio between them, and\n       at 0 they are equal: the operator cannot see the blocks and no cluster can form. */\n    var w = 1.0 / (1.0 + max(ctx.params.contrast, 0.0));\n    var kernel = 0.0;\n    if (r <= reach) {\n      kernel = 1.0 - r / reach;\n      /* THE COULOMB PUSH, over every pair in range and softened near zero. This is what\n         separates one community from the next — the weights only ever attract — and what\n         stops a settled community from contracting to a single point. Bounded by the same\n         radius the bond is: an earlier cut let it run to infinity, and the aggregate of many\n         weak far pairs — each negligible, all of them outward — blew the field off the frame\n         inside a hundred frames. */\n      push -= (d / r) * kernel / (r * r + 0.0015);\n      if (mine == communityOf(other.id) && mine != LOOSE) {\n        w += kernel;\n        bond += kernel;\n      }\n    }\n    pull += d * w;\n    blend += other.tint.rgb * w;\n    wsum += w;\n  }\n\n  let n = f32(max(ctx.count, 1u));\n  centroid = centroid / n;\n  let mean = colorSum / n;\n  let deviation = max(sqrt(max(colorSq / n - dot(mean, mean), 0.0)), 1.0e-4);\n  let norm = max(wsum, 1.0e-6);\n\n  /* THE LAYOUT: one descent step on ½·xᵀLx, plus the push. Divided by the degree, so the\n     attraction is the random-walk Laplacian and a hub does not travel further per frame\n     than a leaf. */\n  var advance = (pull / norm) * ctx.params.coupling + push * ctx.params.repulsion;\n\n  /* ⚑ THE DISTURBANCE (T1113), AND IT IS THE ONE TERM HERE THAT IS NOT THE OPERATOR.\n     Communities 0↔3 and 1↔2 are driven at each other's centres while disturb is up, so\n     the two closest colonies collide, interpenetrate, and are pushed apart again into a\n     NEW arrangement when it falls. Nothing about the operator changes: the bond is still\n     strictly within-community, the block structure is still block-diagonal, and this is an\n     EXTERNAL input that moves the system away from its fixed point rather than a different\n     fixed point (§V900 is a statement about the fixed point; the interesting behaviour is\n     in the transient).\n\n     WHY AN ASYMMETRIC AIM, MEASURED — three were tried at the same force and only this one\n     collides, because THE AIM IS THE AUTHORED THING AND THE STRENGTH IS NOT:\n       - a uniform contraction toward the centroid is a SIMILARITY TRANSFORM, and k-NN\n         adjacency is SCALE-INVARIANT. Gap 0.542 → 0.435 and assembly radius 0.608 → 0.468,\n         the SAME ratio, and the frontier stays at 0. Shrinking the picture changes nobody's\n         six nearest;\n       - a cyclic chase (0→1→2→3→0) is a merry-go-round: every colony pursues a target that\n         is itself fleeing, the ring's symmetry survives, frontier 3–12 links;\n       - mutual head-on, this one: frontier 80–95 links of 2100, and 48–63 of 350 points\n         acquire a foreign near neighbour where the settled file has EXACTLY ZERO (T1074).\n     3u - mine pairs the two CLOSEST colonies (centre gaps 0.562 and 0.562) rather than\n     the two furthest (0.820, 0.770) that mine ^ 1u would have paired.\n\n     AND IT IS ADDED BEFORE THE COURANT CLAMP, which is what makes it a FORCE rather than a\n     teleport: it inherits the same travel bound every other term obeys, so no point moves\n     more than 3 % of reach in a frame however hard it is driven. The clamp SATURATES —\n     at the shipped gain a point half a world from its aim wants to step 0.25 and takes\n     0.0255 — so disturb is a GATE on whether the colonies are driven, not a dial on how\n     violently, and the collision runs at the speed the field's own relaxation does. That is\n     also why it cannot reach the period-2 explosion the clamp exists to refuse.\n\n     The loose dust is NOT driven: it is affiliated with nobody, so it has no colony to be\n     paired with, and §V788 parks it out of every radius anyway. It stays where it is and\n     the colonies move through it. */\n  if (ctx.params.disturb > 0.0 && mine < 4u) {\n    var ccentre = array<vec3f, 4>();\n    for (var c = 0u; c < 4u; c += 1u) { ccentre[c] = csum[c] / max(cnt[c], 1.0); }\n    advance += (ccentre[3u - mine] - p.position) * ctx.params.disturb;\n  }\n\n  /* ⚑ THE COURANT BOUND, AND IT IS WHAT MAKES THE STRIKE SURVIVABLE.\n\n     Everything above is an EXPLICIT step, so it is only meaningful while a point stays\n     inside the neighbourhood it just measured: a point that crosses reach in one frame\n     has been moved by a set of neighbours it no longer has. pull respects that on its\n     own — it is a weighted MEAN of neighbour offsets, bounded by the cluster's own width.\n     push does not, and cannot: it is a raw SUM over every in-range pair with a 1/r²\n     singularity, so its size is set by how many pairs are close rather than by any\n     distance in the picture, and a pull-in is precisely the event that drives r small for\n     hundreds of pairs at once.\n\n     MEASURED, through the real plan on Dawn, over E54's own four-bar envelope. Without\n     this clamp the step has a fixed point only up to Coupling ≈ 0.3; the document now walks\n     the whole of [0.25, 0.95] rather than pinning at either end (§V903/T1124), so it crosses\n     that boundary every phrase instead of sitting past it. Pinned at each value, mean\n     displacement per point per frame\n     and the assembly's radius over the last 12 frames of 400:\n\n        Coupling  0.20 → 0.001 / radius 0.848..0.857     (settles)\n        Coupling  0.30 → 0.005 / radius 0.771..0.781     (settles)\n        Coupling  0.45 → 0.079 / radius 0.689..0.746     (a period-2 breath begins)\n        Coupling  0.70 → 0.231 / radius 0.521..0.941\n        Coupling  0.95 → 0.819 / radius 0.433..2.497     (the whole field, every frame)\n\n     That last row is the bug the owner saw: the assembly inhales and explodes on\n     ALTERNATING FRAMES — push fires hardest exactly when the pull has just collapsed the\n     spacing, throws everything outward past the soft safety at 1.75, and the pull hauls it\n     back in for the next one. It never recovers because there is nothing to recover TO: an\n     explicit step past its stability limit has no fixed point to fall into. Nothing jumped\n     — Coupling eases over 140 frames through clag1 — the smooth ramp simply walks the\n     step across its own stability boundary.\n\n     WHY A TRAVEL LIMIT AND NOT A SMALLER KNOB (the four cuts, all measured at 0.95):\n       - shrink Repulsion / cap Coupling at the last stable value: that is a knob that goes\n         to 3 instead of 11, and this is a VJ file (§V471);\n       - a bigger soft core (0.0015 → 0.0035, → 0.02): still 0.106 / radius 0.413..0.624.\n         It buys a constant factor and Repulsion is a knob, so any fixed core has a dial\n         setting that outruns it;\n       - clamp each PAIR to a fraction of its own separation: still 0.30 / radius\n         0.494..1.324. The aggregate is the problem, not any one pair;\n       - divide push by its own weight sum, making it an average exactly as pull is:\n         still 0.15..0.25 at every Repulsion that keeps the clusters open, and it re-scales\n         a published knob by 60× to say the same thing;\n       - clamp only the push: settles, and the communities implode to radius 0.07..0.19,\n         because holding a settled cluster open IS the push's magnitude.\n\n     So the bound is on the TRAVEL, stated in the one length this operator owns. Three\n     percent of reach is a factor of ~1.5 under the measured knee (0.05 leaves a residue,\n     0.04 and below converge) and ~60× ABOVE the step a settled field actually takes, so it\n     shapes nothing at rest and only ever refuses a blow-up. It holds the knobs at 11:\n     Coupling 2.0 → 0.004, Repulsion ×10 → 0.001, Repulsion ×62 → 0.001, all settling.\n     Unclamped, Repulsion ×10 at Coupling 0.95 reaches radius 16.9 and mean displacement\n     10.1 — the field is off the frame.\n\n     This is the same class as the unbounded push recorded above and one layer deeper: that\n     cut bounded the push's RANGE and left its MAGNITUDE free. */\n  let travel = length(advance);\n  let limit = reach * 0.03;\n  if (travel > limit) { advance = advance * (limit / travel); }\n\n  var pos = p.position + advance;\n  /* The assembly re-centres on its own centroid — no arbitrary spring to the origin, and\n     nothing that would pull a community off its own found position. The weak background tie\n     already keeps the field bounded, so what is left here is a SAFETY, soft and far out: an\n     earlier cut used a hard projection at 1.0 and every point the push sent outward piled\n     onto that sphere, which read as a wire cage drawn around the picture. */\n  pos = pos - centroid;\n  let over = max(length(pos) - 1.75, 0.0);\n  pos = pos - normalize(pos + vec3f(1.0e-9)) * over * 0.15;\n  q.position = vec3f(pos.x, pos.y, pos.z * 0.5);\n\n  /* THE COLOUR: THE SAME OPERATOR, a different quantity. Applying it repeatedly to a value\n     is power iteration — it drives the field toward this Laplacian's low eigenvectors, which\n     is what \"colour by community\" means — and it runs on the CENTRED value because a\n     Laplacian eigenvector is a deviation from the mean, not an absolute. Anchor holds each\n     point to its own independent seed draw, so the three channels settle on three DIFFERENT\n     low modes instead of all collapsing onto the top one; turn it to zero and they do\n     collapse, which is the knob melting every community into a single hue. */\n  let centred = blend - mean * wsum;\n  var u = p.tint.rgb - mean;\n  u = u + (centred / norm - u) * ctx.params.diffusion\n        + ((seedColorOf(p.id) - vec3f(0.5)) - u) * ctx.params.anchor;\n  /* Power iteration's normalisation step, and the reason it is here rather than downstream:\n     what survives the smoothing is a per-community mean whose spread is a small fraction of\n     the seed field's, so drawn raw the frame is mid-grey. Dividing by the field's own global\n     deviation restores the scale the smoothing removed — which is also what keeps the loop\n     stable, since the shrink and the restore balance and only the SHAPE survives. */\n  q.tint = vec4f(clamp(0.5 + u * (0.34 / deviation), vec3f(0.0), vec3f(1.0)), 1.0);\n\n  /* The degree in the COMMUNITY graph, straight out of the same loop — hubs draw large,\n     edge-of-cluster nodes medium, and a point affiliated with nobody sits exactly on\n     UNLINKED. The weak background tie is deliberately NOT counted: it is the same for every\n     point, so counting it would say nothing and would cost the unaffiliated their floor. */\n  q.degree = UNLINKED + clamp(bond / 34.0, 0.0, 1.9);\n  return q;\n}",
-          "reach": {
+          "group": "",
+          "kernel": "struct Params {\n  speed: f32,      // World units a second an agent walks. Everything else is a turn; this is the only length it travels.\n  senseDist: f32,  // How far ahead the three sensors reach — AND the radius the drawn web uses. One number (§V349).\n  senseAngle: f32, // Half-angle between the outer two sensors and the middle one.\n  turn: f32,       // Radians a second an agent turns toward the better sensor. A FIXED turn, not a gain.\n  envoy: f32,      // Weight on the OTHER armies' trail. Negative keeps each to its own network; toward zero the fronts interpenetrate.\n  wander: f32,     // Random turn, radians a second — the disorder that stops the network consolidating and stopping.\n}\n\n/* ⚑ ONE SPACE, AND IT IS ISOTROPIC END TO END — WHICH IS WHY THE TRAIL GRID IS SQUARE.\n   position is WORLD; the camera below is ORTHOGRAPHIC, so a circle in these coordinates is a\n   circle on screen and a step is the same length whichever way it points, with no aspect\n   constant anywhere in the motion. fieldAt maps x and y each from [-1, 1] onto the wired\n   texture, so a 16:9 trail grid would make a world unit 1.78x more texels across than up:\n   the three sensors would reach further sideways than forwards-and-back, and the trails\n   would BEND TOWARD THE VERTICAL. That was built and rendered before it was understood —\n   the whole population strung itself into near-vertical streaks in a narrow band. A SQUARE\n   grid removes the constant instead of compensating for it in six places. */\n\nfn idHash(id: u32, salt: u32) -> u32 {\n  var h = (id * 2654435761u) ^ (salt * 2246822519u);\n  h = (h ^ (h >> 15u)) * 2246822519u;\n  h = (h ^ (h >> 13u)) * 3266489917u;\n  return h ^ (h >> 16u);\n}\n\nfn idRand(id: u32, salt: u32) -> f32 {\n  return f32(idHash(id, salt)) * (1.0 / 4294967296.0);\n}\n\n/* THE ARMIES — the one authored thing in this document, and still a stochastic block model\n   keyed on identity alone, deliberately asymmetric (§V854): 42 / 34 / 24 %. Three and not\n   four because there are three channels to hold them: an army IS a channel here, so the\n   colour cannot fail to resolve and the count is not a style choice either.\n\n   Written with idHash rather than reached for through pointRand because this draw must NOT\n   move: pointRand keys on the frame and on this node's Seed as well as on the point (§V74),\n   which is right for per-frame randomness and wrong for a fact about an agent that has to be\n   identical on frame 0 and frame 4000, at every seed, on every device. */\nfn foundingOf(id: u32) -> vec3f {\n  let r = idRand(id, 101u);\n  if (r < 0.42) { return vec3f(1.0, 0.0, 0.0); }\n  if (r < 0.76) { return vec3f(0.0, 1.0, 0.0); }\n  return vec3f(0.0, 0.0, 1.0);\n}\n\nfn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n\n  /* T510: firstRun is 1u on exactly the dispatches whose storage was just created or\n     cleared — the seeding signal, and the only honest one (frameIndex == 0 is a timeline lap,\n     not a fresh buffer). */\n  if (ctx.firstRun == 1u) {\n    /* THE THREE ARMIES START APART, each in its own disc on a ring, so the opening of the\n       piece is three colonies growing networks TOWARD each other and the first thing on\n       screen is the meeting. sqrt() on the radius makes each disc uniform rather than\n       centre-heavy. */\n    let home = foundingOf(ctx.index);\n    let slot = home.g * 2.0943951 + home.b * 4.1887902;\n    let seat = vec2f(cos(slot + 1.5707963), sin(slot + 1.5707963)) * 0.52;\n    let a = pointRand(ctx.index, 37u) * 6.2831853;\n    let rr = sqrt(pointRand(ctx.index, 11u)) * 0.30;\n    let h = pointRand(ctx.index, 23u) * 6.2831853;\n    q.position = vec3f(seat + vec2f(cos(a), sin(a)) * rr, 0.0);\n    q.heading = vec3f(cos(h), sin(h), 0.0);\n    q.banner = vec4f(home, 1.0);\n    q.sense = vec4f(0.0, 0.0, idRand(ctx.index, 77u), 0.45);\n    return q;\n  }\n\n  let pos = q.position.xy;\n  let dir = normalize(select(vec2f(1.0, 0.0), q.heading.xy, dot(q.heading.xy, q.heading.xy) > 1.0e-8));\n  let nrm = vec2f(-dir.y, dir.x);\n\n  /* WHAT THIS AGENT WANTS TO SMELL, and it is the whole interaction between the armies in\n     one line. Its own channel at 1; the other two at envoy, which is SIGNED. Negative and an\n     army is repelled by foreign scent, so it holds its own network and a front forms where\n     two of them press; toward zero the fronts interpenetrate. POSITIVE WAS MEASURED AND IS\n     NOT IN THE SHIPPED RANGE: at +0.35 every army follows every other, the three networks\n     fuse into one rainbow cable, and the field empties — a real fixed point, in the one file\n     that is here not to have one. */\n  let want = q.banner.rgb + (vec3f(1.0) - q.banner.rgb) * ctx.params.envoy;\n\n  let sway = ctx.params.senseAngle;\n  let reach = ctx.params.senseDist;\n  let lDir = dir * cos(sway) + nrm * sin(sway);\n  let rDir = dir * cos(sway) - nrm * sin(sway);\n  let ahead = dot(fieldAt(vec3f(pos + dir * reach, 0.0)).rgb, want);\n  let left = dot(fieldAt(vec3f(pos + lDir * reach, 0.0)).rgb, want);\n  let right = dot(fieldAt(vec3f(pos + rDir * reach, 0.0)).rgb, want);\n\n  /* A FIXED TURN TOWARD THE BETTER SIDE — Physarum's own rule, and NOT a proportional\n     controller on (left - right)/total: a gain small enough that a saturated sensor does not\n     spin the agent is also too small to turn it onto a feature ten pixels wide before it has\n     walked past. E32 measured that over six builds; it is the same arithmetic here. The\n     epsilon is the other half — on bare field all three sensors read zero, the comparison is\n     meaningless, and an agent that turns on noise never travels anywhere. */\n  var steer = 0.0;\n  if (max(left, right) > ahead + 1.0e-5) {\n    steer = select(-ctx.params.turn, ctx.params.turn, left > right);\n  }\n  /* THE DISORDER, and it is load-bearing rather than a garnish. Without it the network\n     consolidates onto fewer and fewer trunks and never invents a new one; this is what keeps\n     agents leaving good corridors, which is what keeps corridors being abandoned. */\n  steer += (pointRand(ctx.index, 5u) - 0.5) * ctx.params.wander;\n\n  /* THE ONLY FENCE, and it is a TURN and not a spring. A spring has a fixed point, and a\n     population sitting on its own fixed point is the thing this whole rework exists to stop\n     (E32 measured the same failure from the other side: a fixed roost eats one spot to the\n     ground and stays there).\n\n     AND IT IS A FIXED TURN RATHER THAN ONE PROPORTIONAL TO THE SINE OF THE BEARING, which is\n     a real bug and not a nicety: an agent heading STRAIGHT out has sine zero, so a\n     proportional rim applies no torque at all to precisely the agent that is leaving.\n     Measured — with the proportional form the whole population slid into the bottom-right\n     corner and packed against the hard clamp by frame 1800. */\n  let away = length(pos);\n  let sinMid = (dir.y * pos.x - dir.x * pos.y) / max(away, 1.0e-5);\n  let side = select(-1.0, 1.0, sinMid >= 0.0);\n  steer += side * ctx.params.turn * 1.6 * smoothstep(0.86, 1.05, away);\n\n  let ang = atan2(dir.y, dir.x) + steer * ctx.delta;\n  let walk = vec2f(cos(ang), sin(ang));\n  /* A hard clamp, not a mechanism — the rim turn above is what actually holds the field.\n     Anything that reaches this has been pushed by the wander on the far side of the frame. */\n  let nextPos = clamp(pos + walk * ctx.params.speed * ctx.delta, vec2f(-1.08), vec2f(1.08));\n\n  /* WHAT THE AGENT KNOWS ABOUT ITSELF, and the picture reads all of it (§V471.2).\n\n     MEMBERSHIP DOES NOT CHANGE. banner is written once, at firstRun, and never touched: an\n     agent deposits its founding army's channel for its whole life, so a trail is ONE clean\n     colour and territory is the only thing the armies can take off each other. A converting\n     agent - allegiance on the simplex - was built and cut, for the two reasons in the\n     docblock. */\n  let here = fieldAt(vec3f(nextPos, 0.0)).rgb;\n  let total = here.r + here.g + here.b;\n  let depth = clamp(total * 0.5, 0.0, 1.0);\n  let own = dot(here, q.banner.rgb) / max(total, 1.0e-5);\n\n  q.heading = vec3f(walk, 0.0);\n  q.position = vec3f(nextPos, 0.0);\n  /* x = how deep the trail under this agent is, y = how much of it belongs to SOMEBODY ELSE\n     (the contest, and the caste the front layer draws), z = spare, w = THE NODE'S DRAWN SIZE,\n     which dots1 maps: an agent standing on a trunk draws as a hub and one out in the open\n     draws small. This is the trail system's answer to the former operator's weighted degree,\n     and it is measured in the same loop that steers. */\n  q.sense = vec4f(depth, 1.0 - own, idRand(ctx.index, 77u), 0.45 + 1.15 * depth);\n  return q;\n}",
+          "seed": 54,
+          "senseAngle": 0.42,
+          "senseDist": {
             "bindings": {
               "expression": {
                 "kind": "expression",
@@ -1153,19 +935,54 @@
               },
               "static": {
                 "kind": "static",
-                "value": 0.85
+                "value": 0.24
               }
             },
             "mode": "expression"
           },
-          "repulsion": 0.00016,
-          "seed": 54
+          "speed": 0.4,
+          "turn": 25,
+          "wander": 2
         },
         "position": {
           "x": -1960,
           "y": -320
         },
         "type": "pointKernel"
+      },
+      "mix": {
+        "definitionVersion": 1,
+        "format": {
+          "format": "rgba16float",
+          "mode": "fixed"
+        },
+        "id": "mix",
+        "label": "mix1",
+        "parameters": {
+          "opacity": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('dlag1').chan.bar"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.6
+              }
+            },
+            "mode": "expression"
+          }
+        },
+        "position": {
+          "x": -1060,
+          "y": 320
+        },
+        "resolution": {
+          "height": 288,
+          "mode": "fixed",
+          "width": 288
+        },
+        "type": "add"
       },
       "neb": {
         "definitionVersion": 1,
@@ -1208,7 +1025,7 @@
           ],
           "camera": "cam1",
           "lights": "",
-          "scenes": "dots1"
+          "scenes": "dots1 frontdots1"
         },
         "position": {
           "x": -1060,
@@ -1270,7 +1087,7 @@
         "id": "reach",
         "label": "reach1",
         "parameters": {
-          "operand": 0.85,
+          "operand": 0.2,
           "operation": "add"
         },
         "position": {
@@ -1284,7 +1101,7 @@
         "id": "rgain",
         "label": "rgain1",
         "parameters": {
-          "operand": 0.3,
+          "operand": 0.1,
           "operation": "multiply"
         },
         "position": {
@@ -1293,18 +1110,67 @@
         },
         "type": "valueMath"
       },
-      "soft": {
+      "sow": {
         "definitionVersion": 1,
-        "id": "soft",
-        "label": "soft1",
+        "id": "sow",
+        "label": "sow1",
+        "parameters": {
+          "accumulate": false,
+          "blend": "alpha",
+          "color": {
+            "bindings": {
+              "map": {
+                "attribute": "banner",
+                "kind": "map"
+              },
+              "static": {
+                "kind": "static",
+                "value": [
+                  1,
+                  1,
+                  1,
+                  1
+                ]
+              }
+            },
+            "mode": "map"
+          },
+          "count": 3000,
+          "group": "",
+          "sizePixels": 5
+        },
+        "position": {
+          "x": -1360,
+          "y": 120
+        },
+        "resolution": {
+          "height": 288,
+          "mode": "fixed",
+          "width": 288
+        },
+        "type": "renderPoints"
+      },
+      "spread": {
+        "definitionVersion": 1,
+        "format": {
+          "format": "rgba16float",
+          "mode": "fixed"
+        },
+        "id": "spread",
+        "label": "spread1",
         "parameters": {
           "extend": "hold",
           "filter": "gaussian",
-          "size": 12
+          "size": 4
         },
         "position": {
-          "x": -460,
-          "y": -900
+          "x": -1360,
+          "y": 320
+        },
+        "resolution": {
+          "height": 288,
+          "mode": "fixed",
+          "width": 288
         },
         "type": "blur"
       },
@@ -1333,32 +1199,36 @@
         },
         "type": "level"
       },
-      "veil": {
+      "trail": {
         "definitionVersion": 1,
-        "id": "veil",
-        "label": "veil1",
+        "format": {
+          "format": "rgba16float",
+          "mode": "fixed"
+        },
+        "id": "trail",
+        "label": "trail1",
         "parameters": {
-          "amp": 0.8,
-          "aspectcorrect": true,
-          "exp": 1.2,
-          "gain": 0.5,
-          "harmon": 2,
-          "mono": true,
-          "offset": 0.3,
-          "period": 0.9,
-          "rough": 0.5,
-          "s4d": 1,
-          "seed": 154,
-          "speed": 0.09,
-          "spread": 2,
-          "t4d": 0.63,
-          "type": "perlin4d"
+          "clearColor": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "persistence": 0.72,
+          "reset": false,
+          "source": "mix1",
+          "substeps": 1
         },
         "position": {
-          "x": -1360,
-          "y": -1300
+          "x": -1660,
+          "y": 320
         },
-        "type": "noise"
+        "resolution": {
+          "height": 288,
+          "mode": "fixed",
+          "width": 288
+        },
+        "type": "feedback"
       },
       "web": {
         "definitionVersion": 1,
@@ -1375,7 +1245,7 @@
               },
               "static": {
                 "kind": "static",
-                "value": 0.85
+                "value": 0.24
               }
             },
             "mode": "expression"
@@ -1415,7 +1285,7 @@
         "label": "white1",
         "parameters": {
           "hueoffset": 0,
-          "saturation": 0.28,
+          "saturation": 0.3,
           "value": 1
         },
         "position": {

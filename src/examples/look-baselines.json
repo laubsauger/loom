@@ -223,11 +223,11 @@
     "cardFloor": 0.1412
   },
   "E54-Quorum.loom.json": {
-    "motion": 0.02956,
+    "motion": 0.05087,
     "range": 1,
-    "f0max": 0.9547,
+    "f0max": 1,
     "cardFloor": 0,
-    "phrase": 0.02623
+    "phrase": 0.05446
   },
   "E55-Reactor.loom.json": {
     "motion": 0.01541,

@@ -1,109 +1,100 @@
 # E54 — Quorum
 
-Four communities find each other in the dark, agree on a colour, and hold. Nothing in this
-file says where a cluster goes or what shade it is — one operator does both jobs, and the
-picture is that operator converging.
+Three slime molds share one piece of ground. Nothing here says where a corridor goes or which
+army holds it — agents lay a trail, smell it, and follow it, and the network you can see is
+what that keeps doing.
 
-## One matrix, read twice
+## Two halves that had to be argued into one file
 
-A force-directed layout **is** gradient descent on the graph Laplacian: spring attraction
-along edges minimises `xᵀLx`, and the low-energy configurations **are** the low
-eigenvectors. Diffusion over the same operator is power iteration: averaging a value with
-its neighbours, over and over, drives it toward those same low eigenvectors — which is
-exactly what "colour by community" means.
+**The motion is a trail system.** `mesh1(pointKernel)` runs three thousand agents. Each one
+deposits into a trail field, reads it a little way ahead through three sensors, turns toward
+the better one and walks. The field decays. That is Physarum, and it was chosen for one
+property: **it has no fixed point to fall into.** Corridors form because a path that gets
+walked gets stronger; they die because a path that stops being walked fades; and both happen
+at once, forever, because the same agents that thicken one corridor are abandoning another.
 
-So `mesh1(pointKernel)` runs a single loop over every pair of points, and inside it one
-weight `w` accumulates two things: a positional pull (the layout) and a colour average (the
-embedding). The clusters and their colours are not two effects that agree. They are one
-matrix, read twice.
+**The picture is nodes and a web.** `web1(pointProximity)` links each drawn agent to its six
+nearest and `links1(geometry)` draws every link, so what is on screen is discrete units with
+visible relationships between them. Because the units are actually going somewhere, the web
+genuinely forms and breaks instead of converging on an adjacency and holding it.
 
-The weight has two positive terms. A **background tie** on every pair at every distance —
-that is what makes this one field rather than four that drift apart the moment they lose
-sight of each other. A **community bond** on top, only between two points of the same
-community and only inside `reach`. **Contrast** is the ratio between them; at 0 they are
-equal, the operator cannot see the blocks at all, and the field can only be one blob.
-Keeping communities apart is a separate **Coulomb push** over every pair inside the same
-radius, which is also what stops a settled community from contracting to a single point.
+**And the two halves want opposite populations**, which is the finding this file cost. A
+trail system wants MANY agents — below about a thousand the field stops being a medium they
+can find each other through and each army collapses to a single thread. A drawn k-nearest web
+wants FEW: agents on a trail sit far closer to each other *along* it than the corridors sit
+apart, so all six of a point's nearest are its own immediate line-neighbours and the web
+renders as a bead chain rather than a network. Rendered at 3000, 2400, 900, 600, 420 and 250
+agents, and the two failures meet in the middle: there is no count that is both. So the
+scales are separated rather than averaged. Three thousand agents deposit and steer;
+`bound1(pointRange)` parks all but the half with the lowest `sense.z` — a fixed per-agent
+draw, so the sample never changes and a node cannot flicker in and out of the picture —
+before the web is computed. Sampling lifts the spacing between drawn nodes enough that a link
+reaches across to the next corridor instead of down its own.
 
-## What is authored, and what emerges
+## Three armies, one channel each
 
-**Authored: the graph, and nothing else.** Which community a point belongs to is a hash of
-its **id** — a stochastic block model, 26 / 20 / 15 / 11 % of the population in four
-communities and the remaining 28 % affiliated with nobody. That is not a cheat, it is the
-input: a Laplacian is an operator *on* a graph, and a graph with no community structure has
-no communities to find. The split is deliberately lopsided; four equal blocks settle into a
-rosette that looks designed.
+Red, green and blue. An agent is drawn to its own channel and pushed away from the other two,
+and how hard it is pushed is **Envoy**, the phrase knob. So colour is not something an
+operator has to resolve out of noise: colour **is** the channel, territory is where a channel
+dominates, and two armies merging their ground is simply two channels overlapping. The nodes
+go near-white and the armies' colours reach the frame through the haze.
 
-**Emergent: everything you can see.** Where each cluster sits. How tightly it holds. Which
-bridges survive between clusters. How large each node draws — that is its weighted degree in
-the community graph, measured in the same loop. And what colour each community settles on:
-the seed colours are one independent random draw per point per channel, and four coherent
-hues come out of that noise because the operator puts them there.
+**Authored: the armies, and nothing else.** Which one an agent belongs to is a hash of its
+index — 42 / 34 / 24 % of the population, deliberately lopsided — and it never changes.
 
-**The proof is one parameter.** `mesh1`'s Seed feeds the scatter that starts the field and
-nothing else; every fact about the graph comes from a separate identity hash that does not
-read it. Change Seed and the same graph starts somewhere else — the same communities condense
-in different places, wearing the same colours. `e54-quorum.gpu.test.ts` renders both seeds
-and asserts exactly that, in both directions: the layouts differ, the palette does not.
+**Emergent: everything you can see.** Every corridor, every junction, every loop, where the
+fronts run, which army holds which ground, how large each node draws (that is the depth of
+the trail underneath it, measured in the same loop that steers), and how long any of it
+lasts. Measured, the population is 42/34/24 and the territory is near-equal, with the lead
+changing hands three times over a minute: a small army holds proportionally more ground per
+agent, because a trail saturates and a crowded one wastes itself on scent already there.
 
-## How a point sees a neighbour
+## It does not settle, and that is the claim
 
-Until T1070 a point kernel was a pure per-point function: one point, no way to reach another.
-The catalogue's only neighbour query is Proximity, whose answer is a drawable link set rather
-than data a kernel can consume, and a kernel over links cannot scatter back to points — this
-project's points machinery has no atomics. Every coupled system in the shipped set is
-therefore an honest fake and says so; E16's flock is a shared flow field whose birds never see
-each other.
+Asserted as a **lag profile** over territory rather than as a churn number, because a churn
+number cannot tell reorganisation from flicker — an earlier candidate for this file looked
+sustained and its lag profile said *2-cycle*: odd lags flickering, even lags exactly zero.
+Of the texels the trail holds in both frames, the fraction that changed hands climbs
+monotonically from under 2 % at one frame to the high sixties by four seconds, at three base
+frames twenty seconds apart, with no odd/even alternation anywhere. And the ceiling is
+derived rather than chosen: with shares near 31/34/35 the Simpson index `1 − Σp²` is about
+0.66, so past four seconds ownership is statistically independent of ownership now and the
+profile can climb no further. The web says the same thing in pixels — four seconds on, almost
+none of it is the same web.
 
-`pointAt(slot)` hands a kernel the Point in another slot, read from the same **pre-frame
-half** the wrapper loads `p` from. That is the whole of its correctness: every reader sees
-last frame's values whatever order the workgroups ran in, so a coupled update is a Jacobi
-iteration — order-independent, device-independent, reproducible frame for frame. It costs no
-binding and no uniform; it is sugar over storage the wrapper had already bound.
+## What this replaced, and what was given up
 
-The cost is O(N²), stated rather than hidden: 480 points is 230k pair evaluations a frame.
+Until T1138 the operator here was a **graph Laplacian**: one loop over every pair of points
+accumulating a positional pull and a colour average under the same weight, so the clusters
+and their colours were one matrix read twice. It is a good idea and the file proved it. It is
+also, exactly, gradient descent on a fixed energy — so settling was not its bug, it was its
+purpose, and nine attempts to make it keep reorganising failed for that one reason. The
+kernel's docblock keeps all nine measurements, because they are the reason not to try any of
+them again.
 
-## One reach, two consumers
-
-The kernel's `reach` and `web1(pointProximity)`'s Radius are the same number, both reading
-`reach1(valueMath)`. A picture that draws links its operator is not using lies about its own
-mechanism, so every filament on screen is one of the operator's own edges — the six strongest
-at each node. `bound1(pointRange)` parks the unaffiliated before the query runs, because the
-background tie is identical for every pair in the field and so carries no structure: it is
-the field, not a filament. The unaffiliated are still drawn — `dots1(geometry)` reads the
-full set — as loose points joined to nothing, which is what they are in the graph.
-
-Two render passes, one camera, and the split is why the haze has a colour at all: blurring a
-single render that held both layers would smear 2880 pale filaments over 480 coloured nodes
-and the bed would come back grey. `haze1(blur)` blurs the **nodes**, so the bed pools where
-the graph is dense because the graph is dense there, in each community's own colour.
+Given up with it, said plainly: **the cross-seed community claim.** There is no operator
+resolving hues out of a seed field any more, so "change Seed and the same communities condense
+somewhere else wearing the same colours" is not a sentence this file can say. Colour is now
+assigned rather than found — a smaller claim about colour, bought for a much larger one about
+motion.
 
 ## The instrument
 
-It rests and strikes rather than vibrating. The structural move is on the **phrase**:
-`cstep1(valueStep)` holds a value for four bars and `clag1(valueLag)` eases it into Coupling.
-92 % of its draws land inside the limiter rather than on it, so the phrases genuinely settle
-and open — condensed while the colour resolves out of the seed field, open from 8.3 s with
-the communities interpenetrating, alternating after — a different picture, not a wobble. That
-is stated as a **duty cycle** and not as a range on purpose: the version that stated it as a
-range spanned 2.6 into a clamp 0.7 wide and spent thirty-three continuous seconds pinned at
-maximum coupling, which from outside is a step that never fires. The second lane says the
-same thing: `dstep1 -> dlim1 -> dlag1` shoves the two closest colonies through each other on
-55 % of its two-bar draws — ten times in the first minute, never silent for more than 8.3 s —
-and lets them separate again into a new arrangement, which is why the ring comes back in a
-different order instead of the same one. The
-fine motion is on the **beat**: the high band drives `reach1`, so connection density is the
-music made visible; the web tightens on a hit and thins in the quiet. Nothing else runs on a
-free clock but the hue, which turns once every 80 seconds, and the nebular bed, which drifts.
-
-Four knobs on `mesh1` are left bare for a hand, and each range goes somewhere:
+The phrase is **Envoy**, held four bars and eased in, landing 83 % of its draws inside its
+limiter. At the floor each army keeps hard to its own network; at the ceiling the fronts
+interpenetrate — measured, half again to twice the contested ground and a quarter more trail,
+on one knob. The two-bar step is the **deposit**, how much scent a footfall leaves. On the
+beat, the high band drives **Sense Distance**, which is *also* the web's radius, so a hit both
+lengthens the agents' reach and thickens the drawn network. Neither lane has a silent state:
+both ends of both are pictures, so the worst case is a different picture rather than no
+picture.
 
 | knob | at zero | turned up |
 | --- | --- | --- |
-| Contrast | one undifferentiated blob — the block structure is invisible to the operator | four communities that barely acknowledge each other |
-| Repulsion | every community collapses to a single dot | clusters open into lace, then drift apart |
-| Diffusion | the seed dust never agrees on anything | communities resolve in a few frames |
-| Anchor | every community melts into one colour | back to salt-and-pepper noise |
+| Envoy | the armies stop avoiding each other, share corridors and the field thins | three hard-edged networks with sharp fronts between them |
+| Sense Distance | agents cannot smell past themselves and the network never forms | a few thick trunks and long links |
+| Turn | agents cannot lock onto a corridor at all | every corridor is followed rigidly |
+| Wander | the network consolidates and stops inventing new paths | it never consolidates at all |
 
 `clock1(valueSwitch)` is the tempo seam: at index 0 it is the deterministic pattern that
 ships, and one flip puts a real track's analysis in its place.
@@ -111,26 +102,34 @@ ships, and one flip puts a real track's analysis in its place.
 ## The chain
 
 ```
+mesh1(pointKernel) -> sow1(renderPoints) -> mix1(add) <- spread1(blur)
+trail1(feedback) -> spread1(blur) -> mesh1(pointKernel)
 mesh1(pointKernel) -> bound1(pointRange) -> web1(pointProximity) -> links1(geometry) -> webs1(render) -> thread1(level)
-mesh1(pointKernel) -> dots1(geometry) -> nodes1(render) -> haze1(blur) -> pool1(multiply) <- neb1(noise)
-pool1(multiply) -> bed1(hsv) -> sum1(add) <- nodes1(render), thread1(level)
+bound1(pointRange) -> dots1(geometry) -> nodes1(render) -> haze1(blur) -> pool1(multiply) <- neb1(noise)
+bound1(pointRange) -> frontdots1(geometry) -> nodes1(render) -> white1(hsv)
+pool1(multiply) -> bed1(hsv) -> sum1(add) <- white1(hsv), thread1(level)
 sum1(add) -> glow1(blur) -> lit1(add) -> mask1(multiply) <- iris1(ramp)
 mask1(multiply) -> paint1(hsv) -> out1(output)
 beat1(audioPattern) -> clock1(valueSwitch) -> hsub1(valueMath) -> henv1(valueLag) -> rgain1(valueMath) -> reach1(valueMath)
 clock1(valueSwitch) -> cstep1(valueStep) -> cmul1(valueMath) -> csub1(valueMath) -> clim1(valueLimit) -> clag1(valueLag)
+clock1(valueSwitch) -> dstep1(valueStep) -> dlim1(valueLimit) -> dlag1(valueLag) -> mix1(add)
 hue1(lfo) -> paint1(hsv)
 cam1(camera) -> webs1(render), nodes1(render);  ink1(materialUnlit) -> links1(geometry), dots1(geometry)
 ```
 
-## Three cuts that failed, and why
+## Four things that failed, and why
 
-Recorded at their lines in the kernel, because each was a plausible design:
-
-- **A negative between-community weight**, to force the clusters apart. It laid out
-  beautifully and destroyed the colour — a signed operator makes the power iteration
-  anti-align, and after clamping the whole field came back grey. Separation is the push's
-  job, not the weight's.
-- **An unbounded Coulomb push.** The aggregate of many negligible far pairs, each one
-  outward, blew the field clean off the frame inside a hundred frames.
-- **A hard containment sphere.** Every point the push sent outward piled onto it, and the
-  picture wore a wire cage.
+- **Drawing the trail field itself**, with the agents as bare particles. It renders as a
+  handsome slime mold and it has no relationships in it to watch: *"we don't see these
+  networks that are disintegrating and integrating — the different units are like tiny specks
+  now."* Correct, and the reason the web came back.
+- **An additive deposit.** A trail answers "is this path walked", which is bounded; additive,
+  a dozen agents standing together leave a dozen times the scent, and a saturated texel has no
+  gradient left for the three sensors to answer.
+- **A long trail memory.** At persistence 0.85 and 0.95, across every deposit and wander
+  tried, the network coarsens within a minute to a handful of thick cables: a corridor's pull
+  is its traffic times its memory, so the busier corridor is proportionally stronger and
+  nothing stops it taking the rest. The memory this file runs on is where the agents are.
+- **A 16:9 trail grid.** The agents' space is isotropic, so a widescreen grid makes a world
+  unit 1.78x more texels across than up: the sensors reach further sideways than forwards and
+  the trails bend toward the vertical. The grid is square.

@@ -455,28 +455,20 @@ const FRAME_ZERO_DIGESTS: Readonly<Record<string, string>> = {
    */
   "E49-Lissajous.loom.json": "a81e0294e38b699b",
   "E50-Galvo.loom.json": "c0dbaf5a20363773",
-  /* RE-STAMPED at c4e7483 (T1074), which put a Courant bound on the layout step: `push` is a
-     raw sum over in-range pairs with a 1/r² singularity, so an unclamped step had a fixed
-     point only up to Coupling ≈ 0.3 while the document rests at 0.449 and strikes to 0.95.
-     That commit changed the kernel and did not re-stamp here, so this row was red on every
-     tree from c4e7483 until now — §B150's shape a second time, in the same table that
-     already records it. The example's own claims (`quorum-claims.gpu.test.ts`, 9 of them)
-     and the §V885 look baseline both stayed green across that change and are what say the
-     picture is intact; this digest only ever said "frame 0 is what it was".
+  /* RE-STAMPED THREE TIMES, and each reason is written down because a digest that moves
+     without one is indistinguishable from a picture that broke.
 
-     RE-STAMPED AGAIN (T1124/§V903), and the reason is a RESOLVED UNIFORM, not a kernel edit:
-     E54's two drive lanes were stepped-then-clamped with draw ranges several times their
-     clamp widths, so `clag1:bar` sat at exactly 0.950000 from f989 to f2979 and `dlim1`
-     clamped 71 % of the disturbance's draws to zero. Re-ranging them (`cmul1` 2.6 → 0.76,
-     `csub1` −0.45 → +0.20, `cstep1` seed 11 → 330, `dstep1` [−3, 1.2] → [−0.45, 0.55])
-     changes the value `coupling` resolves to AT FRAME 0 — 0.449 → 0.867 — and this digest
-     hashes the resolved passes, so it moves by construction. The kernel WGSL is byte-identical
-     across the change; what moved is one number in the uniform block. Green in the same
-     commit: the nine `quorum-claims.gpu.test.ts` claims, `channel-integrity`, `sync`,
-     `doc-drift`, and the §V885 look row (re-measured in that commit, motion 0.03393 → 0.02956
-     — see the commit message; that window is 2 seconds inside the FIRST phrase and the same
-     file measured over the whole minute moves +16.5 %). */
-  "E54-Quorum.loom.json": "700f1821ebfc353a",
+     (1) c4e7483 (T1074) put a Courant bound on the layout step. (2) T1124/§V903 re-ranged
+     two drive lanes, which moved a RESOLVED UNIFORM rather than the kernel — `coupling` at
+     frame 0 went 0.449 → 0.867 and this digest hashes resolved passes, so it moved by
+     construction. (3) T1138 REPLACED THE KERNEL OUTRIGHT: the graph Laplacian is gone and a
+     trail kernel is in its place, with a different attribute schema, a different Params
+     struct and a different capacity (480 → 3000). Nothing about this row is comparable to
+     the one before it, which is the honest thing to say about a digest whose subject was
+     rewritten. The picture is asserted by the ten claims in `quorum-claims.gpu.test.ts` —
+     rewritten in the same commit — and by a re-measured §V885 look row (motion 0.02956 →
+     0.05087, whole minute 0.03706 → 0.06468, both moving the same way, §V913). */
+  "E54-Quorum.loom.json": "97543aa1ddcffb2f",
 };
 
 const POINT_KERNEL_TYPES = new Set(["pointKernel", "pointKernelAdvanced"]);

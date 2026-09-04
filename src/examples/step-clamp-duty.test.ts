@@ -43,15 +43,17 @@ const DECLARED_INTERIOR: Record<string, number> = {
   /* E45 (T828): the clamp IS the signal ON PURPOSE — the outer thirds of the phrase pick
      land on the poles so the set cuts hard, and a mid-range pick blends as the exception. */
   "E45-Pulse.loom.json step": 0.083,
-  /* E54 Coupling (T1124): re-ranged from `x2.6 - 0.45` (26.9 % interior, 46.2 % pinned to
-     the ceiling) to `x0.76 + 0.20`, so the phrase envelope is in the OUTPUT and not only in
-     the parameters. The clamp still limits — it just no longer does the authoring. */
-  "E54-Quorum.loom.json cstep": 0.921,
-  /* E54 disturbance (T1124): re-ranged from [-3, 1.2] (11.9 % interior, 71.4 % clamped to
-     silence) to [-0.45, 0.55]. The 45 % that still clamp to zero are the REST in rest-and-
-     strike; what changed is that resting is now a designed minority rather than the lane's
-     whole behaviour. */
-  "E54-Quorum.loom.json dstep": 0.5,
+  /* E54 Envoy (T1138): the phrase lane on the reworked file, `x0.60 - 0.60` into a clamp
+     [-0.55, -0.05] — 1.20 clamp-widths, so the interior is 83.3 % and the two bounds are
+     symmetric at 8.3 % each. AND NEITHER BOUND IS SILENCE: the floor is three hard-edged
+     networks and the ceiling is three interpenetrating ones, both measured on Dawn, so the
+     worst this lane can do is a different picture rather than no picture. That is the part
+     the file could not say while its operator was a relaxation with a rest state. */
+  "E54-Quorum.loom.json cstep": 0.833,
+  /* E54 deposit (T1138): [0.395, 0.875] into a clamp [0.44, 0.84], the same 1.20
+     clamp-widths and the same 83.3 % interior. It drives how much scent a footfall leaves,
+     which is the balance against the trail's decay and so how bold the network draws. */
+  "E54-Quorum.loom.json dstep": 0.833,
 };
 
 const num = (value: unknown, fallback: number): number => (typeof value === "number" ? value : fallback);

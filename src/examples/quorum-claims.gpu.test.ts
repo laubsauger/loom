@@ -11,24 +11,25 @@ import { listExamples } from "./catalogue.ts";
 import { requireExample } from "./runner.ts";
 
 /**
- * E54 QUORUM — THE CLAIMS (T1070).
+ * E54 QUORUM — THE CLAIMS (T1070, REWRITTEN T1138 WHEN THE OPERATOR WAS REPLACED).
  *
- * The example's whole assertion is that ONE operator lays the graph out AND colours it, and
- * that neither the arrangement nor the palette is authored. A screenshot cannot tell an
- * emergent cluster from a painted one, so the claims are made where the answer actually is:
- * on the point buffers the kernel writes, through the real plan on Dawn — with the expected
- * partition DERIVED in this file from the same identity hash the WGSL uses, so nothing here
- * is a band (§V147).
+ * The example's assertion is no longer "one Laplacian lays the graph out and colours it".
+ * It is: THREE ARMIES DEPOSIT INTO ONE TRAIL FIELD, STEER BY IT, AND NEVER STOP TAKING
+ * GROUND OFF EACH OTHER. Every claim below is one clause of that, and the load-bearing one
+ * is the LAG PROFILE — because a churn number cannot tell reorganisation from a 2-cycle, and
+ * T1074 shipped a candidate whose churn looked healthy and whose lag profile read
+ * "12–15 flips at every odd lag, exactly 0 at +2, +4, +8, +16".
  *
- * ⚠ THE HEADLINE CLAIM IS ASSERTED BOTH WAYS (§V884's rule, which exists because the
- * one-way form passes for the wrong reason). "Different start, same communities" is only
- * evidence if the start REALLY DIFFERED: a test that checked the palette matched would pass
- * just as happily if Seed did nothing at all. So the layout is asserted to have MOVED in the
- * same breath as the palette is asserted to have held.
+ * WHERE THE CLAIMS ARE MADE. Membership and the deposit are asserted on the point buffers
+ * the kernel writes, with the partition RE-DERIVED here from the same identity hash the WGSL
+ * uses, so this file knows the answer without reading it out of the picture it is judging.
+ * Territory is asserted on the TRAIL FIELD, captured through the real plan on Dawn, because
+ * territory is a property of the ground rather than of any agent.
  *
- * The pixel claims keep the buffers honest about reaching the screen — the "what differs if
- * the edge were cut" bar, taken literally on the two layers whose separation is the reason
- * the haze has a colour at all.
+ * ⚑ AND §V912 IS WHY THE FRONTIER CLAIM IS A PIXEL CLAIM. Nine sessions measured this file's
+ * frontier as a COUNT over pairs; a count can rise 3.6x with the picture visually identical,
+ * because a pair sitting where the picture already had ink adds a number and no pixel. So
+ * the front is DRAWN (`front1`), and what is asserted is that cutting it changes the frame.
  */
 
 function e54() {
@@ -42,47 +43,34 @@ beforeAll(async () => {
   dawnError = (await probeDawn()).error;
 }, 60_000);
 
-const SIZE = { width: 320, height: 180 };
-/** Long enough for the descent to have settled — never frame 0, where nothing has moved yet (§V876). */
-const SETTLE = 180;
+/** The trail grid's own resolution — reading the field at anything else resamples it. */
+const FIELD = { width: 1280, height: 720 };
+/** The trail grid, square because the agents' space is isotropic — see the kernel. */
+const GRID = { width: 288, height: 288 };
+/** The population, read off the shipped kernel rather than retyped. */
+const AGENTS = 3000;
+/** The fraction `bound1` parks all but — the half the picture draws. */
+const DRAWN_SHARE = 0.5;
 /**
- * T1074 — the two ends of E54's own Coupling envelope, in frames, at the shipped 116 bpm
- * (one bar = 124.1 frames, so `cstep1`'s four-bar hold steps at 497).
- *
- * RESTED is the OPEN end of the envelope and STRUCK is the CONDENSED end, both read late
- * in their own phrase so what is compared is two settled states rather than two points on
- * one transient.
- *
- * ⚑ T1124 RE-DERIVED BOTH FROM THE RETUNED LANE, and they swapped ends of the file. §V903's
- * fix re-ranged `cstep1 -> cmul1 -> csub1` (gain 2.6 → 0.76, offset −0.45 → +0.20) and moved
- * its seed 11 → 330, because the old map pinned 46 % of draws to the 0.95 ceiling and seed
- * 11's draw 0 was the LOWEST of its first eight — the file could not open inside a minute.
- * The envelope now runs 0.867 / 0.281 / 0.754 / 0.642 / 0.929 / 0.598 / 0.250 / 0.472 over
- * its first eight four-bar phrases, so f950 is the OPEN phrase (draw 1, coupling 0.281) and
- * f2200 the CONDENSED one (draw 4, coupling 0.929), where `dstep1` is also silent. Measured
- * community radii: 0.2482 / 0.2689 / 0.1714 / 0.1447 at f950 against 0.1769 / 0.1688 /
- * 0.1366 / 0.1294 at f2200 — all four narrower, which is what the strike claim asserts.
- */
-const RESTED = 950;
-const STRUCK = 2200;
-/**
- * T1074 — SIXTY SECONDS, which is the horizon the owner actually judges this file at and
- * roughly four times any gate that existed. 3600 frames at the shipped 60 fps.
+ * SIXTY SECONDS, the horizon the owner judges this file at: 3600 frames at 60 fps. The lag
+ * profile has to reach it, because "does not settle" is a claim about the long run and every
+ * gate this file ever had that stopped at frame 180 passed on a file that died at second 60.
  */
 const HORIZON = 3600;
-
-/** The population and the floor, read off the shipped document rather than retyped. */
-const CAPACITY = 480;
-/* f32, because that is what the buffer holds: 0.45 is not representable, and comparing a
-   read-back float against the DOUBLE 0.45 fails on a kernel that is behaving perfectly. */
-const UNLINKED = Math.fround(0.45);
-const LOOSE = 4;
+/** A base frame late enough that the opening three colonies have long since met. */
+const BASE = 1800;
+/** Lags, in frames. Powers of two through +32 are what refutes a 2-cycle (§T1074). */
+const LAGS = [1, 2, 4, 8, 16, 32, 60, 120, 240] as const;
+/** Past +240 the profile is at the independence ceiling and wanders; asserted separately. */
+const TAIL_LAGS = [480, 960] as const;
+/** Out of 255 on the graded field: below this a texel holds no trail worth owning. */
+const TRAIL_FLOOR = 10;
 
 /*
- * THE GRAPH, RE-DERIVED HERE — the same arithmetic the kernel's `idHash` / `communityOf`
- * perform, in u32 semantics, so this file knows which community every slot belongs to
- * WITHOUT reading it back out of the picture it is judging. That independence is the point:
- * a partition recovered from the render would agree with the render by construction.
+ * THE ARMIES, RE-DERIVED — the same arithmetic the kernel's `idHash` / `foundingOf` perform,
+ * in u32 semantics. `Math.imul` is not a convenience here: it is the only way to get WGSL's
+ * wrapping 32-bit multiply out of JavaScript's doubles, and without it this file would
+ * disagree with the shader about which agent is in which army.
  */
 function idHash(id: number, salt: number): number {
   let h = (Math.imul(id, 2654435761) ^ Math.imul(salt, 2246822519)) >>> 0;
@@ -95,151 +83,139 @@ function idRand(id: number, salt: number): number {
   return idHash(id, salt) / 4294967296;
 }
 
-function communityOf(id: number): number {
+/** 0, 1, 2 — the channel this agent deposits into, for life. */
+function armyOf(id: number): number {
   const r = idRand(id, 101);
-  if (r < 0.26) return 0;
-  if (r < 0.46) return 1;
-  if (r < 0.61) return 2;
-  if (r < 0.72) return 3;
-  return LOOSE;
+  if (r < 0.42) return 0;
+  if (r < 0.76) return 1;
+  return 2;
 }
 
-const COMMUNITIES = [0, 1, 2, 3] as const;
+const ARMIES = [0, 1, 2] as const;
 
-/** Slots belonging to each community, and the unaffiliated, by identity alone. */
-const MEMBERS = new Map<number, number[]>();
-for (let slot = 0; slot < CAPACITY; slot += 1) {
-  const community = communityOf(slot);
-  const list = MEMBERS.get(community) ?? [];
-  list.push(slot);
-  MEMBERS.set(community, list);
+interface Shot {
+  /** Per captured frame: the trail field as RGBA8, in capture order. */
+  readonly field: ReadonlyArray<{ width: number; height: number; data: Uint8Array }>;
+  /** Per slot: banner r, g, b — the one-hot army. Empty when buffers were not probed. */
+  readonly banner: ReadonlyArray<readonly [number, number, number]>;
+  /** Per slot: sense x, y, z, w. Empty when buffers were not probed. */
+  readonly sense: ReadonlyArray<readonly [number, number, number, number]>;
 }
 
-interface Field {
-  /** Per slot: x, y, z. */
-  readonly position: ReadonlyArray<readonly [number, number, number]>;
-  /** Per slot: r, g, b. */
-  readonly tint: ReadonlyArray<readonly [number, number, number]>;
-  /** Per slot: the weighted degree in the community graph. */
-  readonly degree: ReadonlyArray<number>;
-  readonly rgba: { width: number; height: number; data: Uint8Array };
-  readonly passes: ReadonlyArray<{ id?: string; shader?: string }>;
-}
-
-async function renderQuorum(options?: {
-  seed?: number;
-  mutate?: (graph: GraphDocument) => void;
-  probe?: boolean;
-  /** The frame to stop and read at. Defaults to SETTLE; the strike claims pass their own. */
-  at?: number;
-}): Promise<Field> {
+async function shoot(options: {
+  readonly capture: readonly number[];
+  /** Which node's texture to read. `spread` is the trail field; `out` is the frame. */
+  readonly node?: string;
+  readonly mutate?: (graph: GraphDocument) => void;
+  readonly buffers?: boolean;
+}): Promise<Shot> {
   const { document } = e54();
   const graph = structuredClone(document.graph) as GraphDocument;
-  const mesh = graph.nodes["mesh"];
-  if (mesh === undefined) throw new Error("E54 has no mesh node");
-  if (options?.seed !== undefined) mesh.parameters = { ...mesh.parameters, seed: options.seed };
-  options?.mutate?.(graph);
-  const at = options?.at ?? SETTLE;
+  options.mutate?.(graph);
+  const node = options.node ?? "spread";
+  const last = Math.max(...options.capture);
   const result = (await renderHeadless({
     host: nodeGpuHost(),
     graph,
-    settings: { ...document.settings, outputResolution: SIZE },
-    frames: at + 1,
-    capture: [at],
+    settings: { ...document.settings, outputResolution: options.node === undefined ? GRID : FIELD },
+    frames: last + 1,
+    capture: [...options.capture],
+    outputNodeId: node,
     fps: 60,
     animate: true,
-    ...(options?.probe === false
-      ? {}
-      // T1076: ONE probe of the mesh kernel's packed buffer; regions sliced below.
-      : { probeBuffers: [pointStorageId("mesh")] }),
+    ...(options.buffers === true ? { probeBuffers: [pointStorageId("mesh")] } : {}),
   } as never)) as never as {
     frames: ReadonlyArray<{ frameIndex: number; width: number; height: number; format: string; bytes: Uint8Array }>;
-    plan: {
-      outputs: ReadonlyArray<{ nodeId: string; space?: string }>;
-      passes: ReadonlyArray<{ id?: string; shader?: string }>;
-    };
+    plan: { outputs: ReadonlyArray<{ nodeId: string; space?: string }> };
     buffers?: Record<string, ArrayBuffer>;
   };
 
-  const frame = result.frames.find((entry) => entry.frameIndex === at);
-  if (frame === undefined) throw new Error(`no captured frame at ${at}`);
-  const space = result.plan.outputs.find((output) => output.nodeId === "out")?.space ?? "linear";
-  const image = toRgba8(
-    {
-      width: frame.width,
-      height: frame.height,
-      format: frame.format as never,
-      bytes: frame.bytes,
-      rowStride: frame.width * (BYTES_PER_PIXEL[frame.format as never] ?? 8),
-    },
-    { space } as never,
-  );
+  const space = result.plan.outputs.find((output) => output.nodeId === node)?.space ?? "linear";
+  const field = options.capture.map((at) => {
+    const frame = result.frames.find((entry) => entry.frameIndex === at);
+    if (frame === undefined) throw new Error(`no captured frame at ${at}`);
+    const image = toRgba8(
+      {
+        width: frame.width,
+        height: frame.height,
+        format: frame.format as never,
+        bytes: frame.bytes,
+        rowStride: frame.width * (BYTES_PER_PIXEL[frame.format as never] ?? 8),
+      },
+      { space } as never,
+    );
+    return { width: image.width, height: image.height, data: image.data };
+  });
 
-  const buffers = result.buffers ?? {};
-  const packed = buffers[pointStorageId("mesh")];
-  const meshNode = document.graph.nodes["mesh"] as unknown as {
-    type: string;
-    parameters: Record<string, unknown>;
-  };
-  // T1076: every attribute is a region of the mesh kernel's packed buffer, sliced by the
-  // schema that kernel declares — one probe, three attributes.
-  const attribute = (name: string): Float32Array =>
-    packed === undefined ? new Float32Array(0) : kernelRegionSlice(meshNode, packed, name).floats;
-  const readVec3 = (name: string): Array<readonly [number, number, number]> => {
-    const view = attribute(name);
-    if (view.length === 0) return [];
-    // §V72: a vec3f strides at SIXTEEN bytes, not twelve — the classic WGSL alignment trap,
-    // and reading it as three floats would silently walk this whole assertion off the data.
-    return Array.from({ length: CAPACITY }, (_unused, slot) => [
-      view[slot * 4] ?? 0,
-      view[slot * 4 + 1] ?? 0,
-      view[slot * 4 + 2] ?? 0,
-    ] as const);
-  };
-  const degreeView = attribute("degree");
-
+  const packed = result.buffers?.[pointStorageId("mesh")];
+  if (packed === undefined) return { field, banner: [], sense: [] };
+  const meshNode = document.graph.nodes["mesh"] as unknown as { type: string; parameters: Record<string, unknown> };
+  const bannerView = kernelRegionSlice(meshNode, packed, "banner").floats;
+  const senseView = kernelRegionSlice(meshNode, packed, "sense").floats;
   return {
-    position: readVec3("position"),
-    tint: readVec3("tint"),
-    degree: Array.from({ length: degreeView.length === 0 ? 0 : CAPACITY }, (_u, slot) => degreeView[slot] ?? 0),
-    rgba: { width: image.width, height: image.height, data: image.data },
-    passes: result.plan.passes,
+    field,
+    banner: Array.from({ length: AGENTS }, (_u, slot) =>
+      [bannerView[slot * 4] ?? 0, bannerView[slot * 4 + 1] ?? 0, bannerView[slot * 4 + 2] ?? 0] as const),
+    sense: Array.from({ length: AGENTS }, (_u, slot) =>
+      [senseView[slot * 4] ?? 0, senseView[slot * 4 + 1] ?? 0, senseView[slot * 4 + 2] ?? 0, senseView[slot * 4 + 3] ?? 0] as const),
   };
 }
 
-function meanOf(values: ReadonlyArray<readonly [number, number, number]>): readonly [number, number, number] {
-  const sum = values.reduce<[number, number, number]>(
-    (acc, v) => [acc[0] + v[0], acc[1] + v[1], acc[2] + v[2]],
-    [0, 0, 0],
-  );
-  const n = Math.max(values.length, 1);
-  return [sum[0] / n, sum[1] / n, sum[2] / n];
+/** Who owns each texel: the largest channel, or −1 where the trail is below the floor. */
+function ownership(image: { data: Uint8Array }): Int8Array {
+  const own = new Int8Array(image.data.length / 4);
+  for (let p = 0, at = 0; p < own.length; p += 1, at += 4) {
+    const r = image.data[at] ?? 0;
+    const g = image.data[at + 1] ?? 0;
+    const b = image.data[at + 2] ?? 0;
+    if (r + g + b < TRAIL_FLOOR) { own[p] = -1; continue; }
+    own[p] = r >= g ? (r >= b ? 0 : 2) : (g >= b ? 1 : 2);
+  }
+  return own;
 }
 
-function distance(a: readonly [number, number, number], b: readonly [number, number, number]): number {
-  return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+/** Of the texels ALIVE IN BOTH, what fraction changed hands. */
+function changedHands(a: Int8Array, b: Int8Array): { fraction: number; both: number } {
+  let both = 0;
+  let flipped = 0;
+  for (let p = 0; p < a.length; p += 1) {
+    if ((a[p] ?? -1) < 0 || (b[p] ?? -1) < 0) continue;
+    both += 1;
+    if (a[p] !== b[p]) flipped += 1;
+  }
+  return { fraction: both === 0 ? 0 : flipped / both, both };
 }
 
-/** The mean colour each community settled on, and the mean scatter of its members about it. */
-function palette(field: Field): Array<{ mean: readonly [number, number, number]; scatter: number }> {
-  return COMMUNITIES.map((community) => {
-    const slots = MEMBERS.get(community) ?? [];
-    const colours = slots.map((slot) => field.tint[slot] ?? ([0, 0, 0] as const));
-    const mean = meanOf(colours);
-    const scatter = colours.reduce((acc, c) => acc + distance(c, mean), 0) / Math.max(colours.length, 1);
-    return { mean, scatter };
-  });
+/** Each army's share of the living ground. */
+function territory(own: Int8Array): [number, number, number] {
+  const count = [0, 0, 0];
+  let live = 0;
+  for (let p = 0; p < own.length; p += 1) {
+    const o = own[p] ?? -1;
+    if (o < 0) continue;
+    live += 1;
+    count[o] = (count[o] ?? 0) + 1;
+  }
+  return [count[0]! / Math.max(live, 1), count[1]! / Math.max(live, 1), count[2]! / Math.max(live, 1)];
 }
 
-/** Where each community ended up, and how wide it spread getting there. */
-function layout(field: Field): Array<{ centre: readonly [number, number, number]; radius: number }> {
-  return COMMUNITIES.map((community) => {
-    const slots = MEMBERS.get(community) ?? [];
-    const points = slots.map((slot) => field.position[slot] ?? ([0, 0, 0] as const));
-    const centre = meanOf(points);
-    const radius = points.reduce((acc, p) => acc + distance(p, centre), 0) / Math.max(points.length, 1);
-    return { centre, radius };
-  });
+function liveTexels(own: Int8Array): number {
+  let live = 0;
+  for (let p = 0; p < own.length; p += 1) if ((own[p] ?? -1) >= 0) live += 1;
+  return live;
+}
+
+/** Fraction of live texels where the runner-up channel is at least half the leader. */
+function contestedFraction(image: { data: Uint8Array }): number {
+  let live = 0;
+  let contested = 0;
+  for (let at = 0; at < image.data.length; at += 4) {
+    const c = [image.data[at] ?? 0, image.data[at + 1] ?? 0, image.data[at + 2] ?? 0].sort((x, y) => y - x);
+    if (c[0]! + c[1]! + c[2]! < TRAIL_FLOOR) continue;
+    live += 1;
+    if (c[1]! >= 0.5 * c[0]!) contested += 1;
+  }
+  return live === 0 ? 0 : contested / live;
 }
 
 /** Removes the one edge between two nodes, so a claim can ask what it was contributing. */
@@ -252,628 +228,419 @@ function cutEdge(graph: GraphDocument, source: string, target: string): void {
   graph.edges = rest;
 }
 
-function differingPixels(a: Field, b: Field): number {
+/** Detach a driven slot and hold the parameter at a constant. */
+function pin(graph: GraphDocument, nodeId: string, key: string, value: number): void {
+  const node = graph.nodes[nodeId];
+  if (node === undefined) throw new Error(`no node "${nodeId}"`);
+  if (node.parameters?.[key] === undefined) throw new Error(`no parameter "${key}" on "${nodeId}"`);
+  node.parameters = { ...node.parameters, [key]: value };
+}
+
+function differingPixels(a: { data: Uint8Array }, b: { data: Uint8Array }): number {
   let differing = 0;
-  for (let i = 0; i < a.rgba.data.length; i += 4) {
-    if (
-      a.rgba.data[i] !== b.rgba.data[i] ||
-      a.rgba.data[i + 1] !== b.rgba.data[i + 1] ||
-      a.rgba.data[i + 2] !== b.rgba.data[i + 2]
-    ) {
-      differing += 1;
-    }
+  for (let i = 0; i < a.data.length; i += 4) {
+    if (a.data[i] !== b.data[i] || a.data[i + 1] !== b.data[i + 1] || a.data[i + 2] !== b.data[i + 2]) differing += 1;
   }
   return differing;
 }
 
-describe("E54 Quorum — the operator does both jobs (T1070)", () => {
+describe("E54 Quorum — three slime molds and one piece of ground (T1138)", () => {
   it("Dawn is available, or this suite says so rather than skipping", () => {
     expect(dawnError, dawnError ?? "").toBeUndefined();
   });
 
   it(
-    "THE COMMUNITIES ARE RESOLVED: every community's colour scatter is smaller than the gap to its nearest neighbour",
+    "IT DOES NOT SETTLE: territory turnover is MONOTONE in the lag out to the sixty-second horizon, and the plateau is the shares' own Simpson index",
+    { timeout: 300_000 },
     async () => {
-      const field = await renderQuorum();
-      const entries = palette(field);
-      // The definition of a resolved clustering, not a threshold on one: members agree with
-      // each other by MORE than the communities differ. Diffusion 0 (the knob's own zero)
-      // leaves the seed noise in place and this inequality reverses, which is the mutation
-      // the red-verify pass used.
-      for (const community of COMMUNITIES) {
-        const own = entries[community];
-        if (own === undefined) throw new Error(`community ${community} missing`);
-        const nearest = Math.min(
-          ...COMMUNITIES.filter((other) => other !== community).map((other) =>
-            distance(own.mean, entries[other]?.mean ?? [0, 0, 0]),
-          ),
-        );
+      expect(dawnError, dawnError ?? "").toBeUndefined();
+      const capture = [BASE, ...LAGS.map((lag) => BASE + lag), ...TAIL_LAGS.map((lag) => BASE + lag)];
+      const shot = await shoot({ capture });
+      const owners = shot.field.map(ownership);
+      const base = owners[0];
+      if (base === undefined) throw new Error("no base frame");
+
+      const profile = LAGS.map((lag, index) => ({ lag, ...changedHands(base, owners[index + 1]!) }));
+      const tail = TAIL_LAGS.map((lag, index) => ({ lag, ...changedHands(base, owners[LAGS.length + 1 + index]!) }));
+      const label = [...profile, ...tail].map((row) => `+${row.lag} ${(100 * row.fraction).toFixed(1)}%`).join("  ");
+
+      /* (a) EVERY LAG THROUGH +240 SEES MORE TURNOVER THAN THE ONE BEFORE IT. That single
+         shape is what separates the three things a churn number cannot tell apart:
+           settled      — every entry ~0;
+           a 2-cycle    — odd lags flicker, EVEN lags read exactly 0 (T1074 measured one);
+           reorganising — monotone, which is this.
+         Measured on the shipped bytes from f1800: 1.9 / 3.7 / 7.0 / 13.4 / 20.8 / 26.5 /
+         33.8 / 43.2 / 57.2 %. The former operator's own number at every one of these lags
+         was 0 of 350 membership changes, from f180 to f3600. */
+      for (let index = 1; index < profile.length; index += 1) {
+        const previous = profile[index - 1]!;
+        const current = profile[index]!;
         expect(
-          own.scatter,
-          `community ${community}: members scatter ${own.scatter.toFixed(4)} about their own colour but the nearest other community is only ${nearest.toFixed(4)} away — the communities have not resolved`,
-        ).toBeLessThan(nearest);
+          current.fraction,
+          `turnover fell from +${previous.lag} to +${current.lag} — the profile is not monotone: ${label}`,
+        ).toBeGreaterThan(previous.fraction);
       }
-    },
-    240_000,
-  );
 
-  it(
-    "THE COLOUR IS FOUND, NOT PAINTED: a different Seed starts the same graph elsewhere and it settles into the SAME palette",
-    async () => {
-      const a = await renderQuorum({ seed: 54 });
-      const b = await renderQuorum({ seed: 907 });
+      /* (b) AND IT IS NOT FLICKER, said the way §T1074 learned to say it: a 2-cycle reads
+         EXACTLY ZERO at every even lag. Here the even lags are the larger entries. */
+      for (const even of [2, 4, 8, 16, 32] as const) {
+        const row = profile.find((entry) => entry.lag === even)!;
+        expect(row.fraction, `+${even} is a 2-cycle's zero, not reorganisation: ${label}`).toBeGreaterThan(0.02);
+      }
 
-      // ONE: the start really differed. Without this the claim below passes for a graph
-      // whose Seed does nothing at all (§V884 — assert both sides, or assert nothing).
-      const layoutA = layout(a);
-      const layoutB = layout(b);
-      const moved = COMMUNITIES.filter((community) => {
-        const one = layoutA[community];
-        const two = layoutB[community];
-        if (one === undefined || two === undefined) return false;
-        // A relocation, not a jitter: the centre has to have moved further than the cluster
-        // is wide. A seed-independent layout would move it by exactly zero.
-        return distance(one.centre, two.centre) > Math.max(one.radius, two.radius);
-      });
-      expect(
-        moved.length,
-        `changing Seed relocated ${moved.length} of ${COMMUNITIES.length} communities by more than their own width — the two runs did not really start differently`,
-      ).toBeGreaterThanOrEqual(2);
-
-      // TWO: and the palette held. THE CLAIM IS AN ARGMIN, NOT A DISTANCE — each community's
-      // settled colour at the other seed is nearer to ITS OWN colour here than to any other
-      // community's. That is exactly "the same communities in the same colours", it names no
-      // bound, and it is what fails the moment the colour starts following the start: a
-      // palette that reshuffles cannot match itself community for community.
-      //
-      // (An earlier form of this claim compared the four communities' RANK on each channel.
-      // It failed honestly, and the failure was the test's fault rather than the example's:
-      // two communities settle close enough on one channel that their ORDER can swap while
-      // every colour is still where it belongs. A rank is a global statement about four
-      // numbers; the property being claimed is per community.)
-      const paletteA = palette(a);
-      const paletteB = palette(b);
-      for (const community of COMMUNITIES) {
-        const own = paletteA[community]?.mean ?? ([0, 0, 0] as const);
-        const settled = paletteB[community]?.mean ?? ([0, 0, 0] as const);
-        const nearest = [...COMMUNITIES].sort(
-          (x, y) =>
-            distance(settled, paletteA[x]?.mean ?? [0, 0, 0]) - distance(settled, paletteA[y]?.mean ?? [0, 0, 0]),
-        )[0];
+      /* (c) THE CEILING IS DERIVED, NOT CHOSEN (§V147). If ownership at a long lag were
+         statistically INDEPENDENT of ownership at the base, the fraction that changed hands
+         would be exactly 1 − Σpᵢ², the Simpson index of the shares themselves — so the
+         profile CANNOT climb past that, and past +240 it stops climbing and wanders around
+         it instead. Asserting more monotonicity there would be asserting a system exceed its
+         own ceiling. What is asserted is that the tail STAYS decorrelated rather than
+         recohering, which is what a system falling back toward a fixed point would do. */
+      const simpson = (shares: readonly [number, number, number]): number =>
+        1 - shares.reduce((total, p) => total + p * p, 0);
+      const independent = simpson(territory(base));
+      const longest = profile[profile.length - 1]!;
+      expect(longest.fraction, `turnover cannot exceed independence ${independent.toFixed(3)}: ${label}`).toBeLessThan(independent + 0.05);
+      for (const row of tail) {
         expect(
-          nearest,
-          `community ${community} came back at ${settled.map((v) => v.toFixed(3)).join(", ")}, which is nearer community ${String(nearest)}'s colour (${(paletteA[nearest as number]?.mean ?? [0, 0, 0]).map((v) => v.toFixed(3)).join(", ")}) than its own (${own.map((v) => v.toFixed(3)).join(", ")}) — the palette is following the start, not the graph`,
-        ).toBe(community as number);
+          row.fraction,
+          `at +${row.lag} the picture has RE-COHERED toward where it was — that is a system falling back to a fixed point: ${label}`,
+        ).toBeGreaterThan(0.55 * independent);
+        expect(row.fraction, `turnover cannot exceed independence ${independent.toFixed(3)}: ${label}`).toBeLessThan(independent + 0.05);
       }
     },
-    480_000,
   );
 
   it(
-    "THE DEGREE IS MEASURED, NOT AUTHORED: the unaffiliated sit EXACTLY on the floor and every community carries hubs above it",
+    "NO ARMY IS EVER WIPED OUT: all three hold ground at every quarter of the minute, and the lead changes hands",
+    { timeout: 300_000 },
     async () => {
-      const field = await renderQuorum();
-      const loose = MEMBERS.get(LOOSE) ?? [];
-      expect(loose.length, "the block model must actually leave some points unaffiliated").toBeGreaterThan(100);
-      for (const slot of loose) {
-        // EXACT float equality, and it can be: a point with no community bond adds nothing
-        // to the accumulator, so the kernel stores the floor bit for bit. `bound1` splits
-        // the graph on this same number, which is why neither of them is a knob.
-        expect(field.degree[slot], `slot ${slot} is unaffiliated but carries degree ${String(field.degree[slot])}`).toBe(
-          UNLINKED,
-        );
-      }
-      for (const community of COMMUNITIES) {
-        const slots = MEMBERS.get(community) ?? [];
-        const top = Math.max(...slots.map((slot) => field.degree[slot] ?? 0));
-        expect(top, `community ${community} produced no node above the unlinked floor`).toBeGreaterThan(UNLINKED);
-      }
-    },
-    240_000,
-  );
+      expect(dawnError, dawnError ?? "").toBeUndefined();
+      const marks = [900, 1800, 2700, HORIZON];
+      const shot = await shoot({ capture: marks });
+      const shares = shot.field.map((image) => territory(ownership(image)));
+      const label = shares.map((s, i) => `f${marks[i]} ${s.map((v) => (100 * v).toFixed(0)).join("/")}`).join("  ");
 
-  it(
-    "CONTRAST 0 IS ONE BLOB: with the background tie weighing what a bond does, the operator cannot see the blocks",
-    async () => {
-      const shipped = await renderQuorum();
-      const flat = await renderQuorum({
-        mutate: (graph) => {
-          const mesh = graph.nodes["mesh"];
-          if (mesh === undefined) throw new Error("no mesh");
-          mesh.parameters = { ...mesh.parameters, contrast: 0 };
-        },
-      });
-      const separation = (field: Field): number => {
-        const entries = layout(field);
-        return Math.min(
-          ...COMMUNITIES.flatMap((a) =>
-            COMMUNITIES.filter((b) => b > a).map((b) =>
-              distance(entries[a]?.centre ?? [0, 0, 0], entries[b]?.centre ?? [0, 0, 0]),
-            ),
-          ),
-        );
-      };
-      // Comparative and derived: at contrast 0 every pair weighs the same, so the descent has
-      // one minimum and the four centroids must sit on top of each other. No bound is named.
-      expect(
-        separation(flat),
-        `contrast 0 still separated the communities by ${separation(flat).toFixed(4)} against the shipped ${separation(shipped).toFixed(4)} — the knob's zero is not the zero it claims`,
-      ).toBeLessThan(separation(shipped));
-      // And a blob is a different picture, so the knob is reachable from the screen too.
-      expect(differingPixels(shipped, flat)).toBeGreaterThan(0);
-    },
-    480_000,
-  );
-
-  it(
-    "BOTH LAYERS REACH THE SCREEN: cutting the web, and cutting the haze, each change the frame",
-    async () => {
-      const shipped = await renderQuorum({ probe: false });
-      const noWeb = await renderQuorum({
-        probe: false,
-        mutate: (graph) => {
-          // The filaments ride `sum1`'s variadic Behind port beside the bed; pulling that
-          // one edge is literally "what differs if this edge were cut". (Emptying `webs1`'s
-          // scene list instead is refused at compile — a Render with no geometry named is an
-          // error, not a dark layer.)
-          cutEdge(graph, "thread", "sum");
-        },
-      });
-      const noHaze = await renderQuorum({
-        probe: false,
-        mutate: (graph) => {
-          cutEdge(graph, "bed", "sum");
-        },
-      });
-      expect(differingPixels(shipped, noWeb), "cutting thread1 changed nothing — the web is not drawing").toBeGreaterThan(0);
-      expect(differingPixels(shipped, noHaze), "cutting bed1 changed nothing — the haze is not compositing").toBeGreaterThan(0);
-    },
-    480_000,
-  );
-
-  /**
-   * ⚑ T1074 — THE STRIKE, GATED WHERE IT ACTUALLY HAPPENS.
-   *
-   * Every claim above stops at frame 180 and E54's first strike lands at 497, so the whole
-   * suite — plus the cook oracle's 80 frames and the thumbnail's single capture — passed a
-   * document whose four-bar envelope drove the layout step clean past its own stability
-   * limit the moment it fired. The owner's report was "looks okay at first and then
-   * suddenly starts to freak out on the first pull-in, and just ends up jittering around
-   * like crazy". §V876: pin where the motion has ACCUMULATED, not at frame 0.
-   *
-   * MEASURED, unclamped, through this same harness on Dawn — mean displacement per point
-   * per frame / assembly radius:
-   *
-   *     frame  180 (rest, coupling 0.449)   0.066 / 0.72
-   *     frame  480 (rest, last frame)       0.086 / 0.69
-   *     frame  700 (strike, coupling 0.94)  0.562 / 1.83
-   *     frame 1200 (strike, coupling 0.95)  0.680 / 2.37
-   *
-   * With the kernel's Courant bound: 0.003 / 0.76 and 0.0005 / 0.63 respectively — settled
-   * at both ends of the envelope.
-   *
-   * THE TWO CLAIMS ARE A SET (§V884), because either alone passes for the wrong reason. A
-   * bound on the motion passes trivially for a kernel that never moves at all; a claim that
-   * the strike CHANGES the picture passes just as happily for the explosion. So the strike
-   * is asserted to have done something AND to have stayed bounded doing it.
-   */
-  it(
-    "THE STRIKE IS SURVIVABLE: after the four-bar envelope fires, the assembly is still bounded and still moving as one",
-    async () => {
-      // Frame 2200 sits late in the envelope's most condensed phrase (Coupling 0.929) with
-      // the disturbance lane silent — the state every gate before T1074 stopped short of.
-      const struck = await renderQuorum({ at: STRUCK });
-      const next = await renderQuorum({ at: STRUCK + 1 });
-
-      // ONE — THE COURANT BOUND, which is the kernel's own stated invariant rather than a
-      // number chosen to pass: no point may travel further in a frame than 3 % of `reach`,
-      // and `reach` is itself bounded above by reach1's own arithmetic (0.85 + 0.3 x the
-      // high-band envelope, which cannot exceed 1). So the derived ceiling is exact.
-      const travelled = struck.position.map((p, slot) => distance(p, next.position[slot] ?? [0, 0, 0]));
-      const worst = Math.max(...travelled);
-      const ceiling = (0.85 + 0.3) * 0.03;
-      expect(
-        worst,
-        `a point moved ${worst.toFixed(4)} in one frame at the strike, past the kernel's own ${ceiling.toFixed(4)} Courant bound — the layout step is running past its stability limit`,
-      ).toBeLessThan(ceiling);
-
-      // TWO — AND IT IS STILL ONE ASSEMBLY. 1.75 is the kernel's own soft safety radius,
-      // quoted from the same source; unclamped this reaches 2.37 and the field is off the
-      // frame. Nothing here is a tolerance band: both numbers are read off the kernel.
-      const centre = meanOf(struck.position);
-      const radius = Math.max(...struck.position.map((p) => distance(p, centre)));
-      expect(
-        radius,
-        `the assembly reached ${radius.toFixed(3)} after the strike, past its own 1.75 safety radius — it has been blown off the frame`,
-      ).toBeLessThan(1.75);
-
-      // THREE — AND THE STRIKE ACTUALLY DID SOMETHING, or the two bounds above are just
-      // measuring a still life. Comparative and derived, no bound named: raising Coupling
-      // tightens each community about its own centre, so every community must be narrower
-      // at the strike than at rest. Cut the clag1 -> mesh drive and this is an equality.
-      const rested = await renderQuorum({ at: RESTED });
-      const wideAtRest = layout(rested).map((entry) => entry.radius);
-      const tightAtStrike = layout(struck).map((entry) => entry.radius);
-      for (const community of COMMUNITIES) {
-        const before = wideAtRest[community] ?? 0;
-        const after = tightAtStrike[community] ?? 0;
-        expect(
-          after,
-          `community ${community} measured ${after.toFixed(4)} wide at the strike against ${before.toFixed(4)} at rest — Coupling's envelope is not reaching the layout`,
-        ).toBeLessThan(before);
-      }
-    },
-    900_000,
-  );
-
-  /**
-   * ⚑ T1074 — THE MINUTE, and what it does and does not claim.
-   *
-   * The strike gate above reaches 15 s. The owner's bar is a MINUTE, and a 15-second gate
-   * cannot see something that dies at 60 — so this one goes to 3600 frames.
-   *
-   * WHAT IS NOT CLAIMED, stated first so nobody reads it in: this example CONVERGES. Mean
-   * displacement is 0.0008/frame at the minute mark against 0.0006 at fifteen seconds — it
-   * is a settling field, not a perpetual one, and asserting "still moving" here would be a
-   * false claim about a real behaviour. The measured reason is recorded in the document:
-   * `reach` weights ONE operator that is read twice, so nothing can keep the layout stirred
-   * without stirring the colour by the same amount, and the palette margin goes negative
-   * before the extra motion becomes visible.
-   *
-   * WHAT IS CLAIMED is the three ways a minute can go wrong that fifteen seconds cannot see:
-   * a slow instability, a slow colour collapse, and a picture that has simply STOPPED
-   * responding to its own envelope. The third is the live one — Coupling is at 0.472 in the
-   * phrase that contains frame 3600, well off the 0.85 the cut below pins, and a converged
-   * layout still has to sit differently when it is driven than when it is not.
-   */
-  it(
-    "AT SIXTY SECONDS it is still bounded, still resolved, and still answering the phrase",
-    async () => {
-      const late = await renderQuorum({ at: HORIZON });
-
-      // ONE — no slow instability. The kernel's own safety radius again, not a new number.
-      const centre = meanOf(late.position);
-      const radius = Math.max(...late.position.map((p) => distance(p, centre)));
-      expect(
-        radius,
-        `after a minute the assembly reached ${radius.toFixed(3)}, past its own 1.75 safety radius`,
-      ).toBeLessThan(1.75);
-
-      // TWO — no slow colour collapse. The same inequality the headline claim makes at 180,
-      // asserted again four hundred frames after the colour could have quietly greyed out.
-      const entries = palette(late);
-      for (const community of COMMUNITIES) {
-        const own = entries[community];
-        if (own === undefined) throw new Error(`community ${community} missing`);
-        const nearest = Math.min(
-          ...COMMUNITIES.filter((other) => other !== community).map((other) =>
-            distance(own.mean, entries[other]?.mean ?? [0, 0, 0]),
-          ),
-        );
-        expect(
-          own.scatter,
-          `after a minute community ${community} scatters ${own.scatter.toFixed(4)} against a nearest gap of ${nearest.toFixed(4)} — the palette has decayed`,
-        ).toBeLessThan(nearest);
-      }
-
-      // THREE — AND IT IS STILL AN INSTRUMENT AT THE MINUTE MARK, asked the only way that
-      // actually answers it: WHAT DIFFERS IF THE EDGE WERE CUT. The same frame rendered with
-      // Coupling pinned to the retained static the drive would have replaced (§V108) must be
-      // a DIFFERENT layout — if the phrase lane had gone dead by 3600, the two would agree.
-      //
-      // An earlier form of this compared the minute against the strike and asserted the
-      // assembly had widened. It passed with the drive CUT, because the layout goes on
-      // relaxing outward on its own — it was measuring slow relaxation and calling it the
-      // envelope (§V870: a gate nobody has watched fail is not a gate).
-      const cut = await renderQuorum({
-        at: HORIZON,
-        mutate: (graph) => {
-          const mesh = graph.nodes["mesh"];
-          if (mesh === undefined) throw new Error("no mesh");
-          mesh.parameters = { ...mesh.parameters, coupling: 0.85 };
-        },
-      });
-      const spread = (field: Field): number => {
-        const entries2 = layout(field);
-        const gaps = COMMUNITIES.flatMap((a) =>
-          COMMUNITIES.filter((b) => b > a).map((b) =>
-            distance(entries2[a]?.centre ?? [0, 0, 0], entries2[b]?.centre ?? [0, 0, 0]),
-          ),
-        );
-        return gaps.reduce((sum, gap) => sum + gap, 0) / gaps.length;
-      };
-      // The scale is the SYSTEM'S OWN, not a number chosen here: by the minute mark the
-      // field is settling at a measured rate per frame, and a drive whose removal moved the
-      // layout by less than one frame of that settling would be indistinguishable from the
-      // drift. So the cut has to matter more than a frame does. (It matters ~65x more, which
-      // is the margin, not the claim.)
-      const nextLate = await renderQuorum({ at: HORIZON + 1 });
-      const settling =
-        late.position.reduce((sum, p, slot) => sum + distance(p, nextLate.position[slot] ?? [0, 0, 0]), 0) /
-        late.position.length;
-      const moved = Math.abs(spread(late) - spread(cut));
-      expect(
-        moved,
-        `at sixty seconds the driven layout sits ${spread(late).toFixed(3)} apart and the Coupling-cut one ${spread(cut).toFixed(3)} — a difference of ${moved.toFixed(5)}, against ${settling.toFixed(5)} of settling in a single frame. The phrase lane has stopped reaching the picture.`,
-      ).toBeGreaterThan(settling);
-    },
-    900_000,
-  );
-
-  /**
-   * ⚑ T1113 — THE FRONTIER, WHICH IS THE ONE THING FIVE ATTEMPTS COULD NOT PRODUCE.
-   *
-   * §V900 says four resolved hues require the operator to be block-diagonal and a
-   * block-diagonal operator has no boundary — and §T1074 measured that on this file's OWN
-   * drawn 6-NN web: cross-community links are 0 of 2100 at EVERY frame from 900 to 3600.
-   * Four ways to buy a frontier by changing the operator were refused, because each bought
-   * it by destroying the palette, monotonically and with no overlapping window.
-   *
-   * ⚑ BUT §V900 IS A STATEMENT ABOUT THE OPERATOR'S FIXED POINT, AND A DISTURBANCE IS AN
-   * EXTERNAL INPUT THAT MOVES THE SYSTEM AWAY FROM ITS FIXED POINT. The colonies sit
-   * further apart than any point's sixth-nearest neighbour — measured, centre gaps 0.545 to
-   * 0.820 against a 6th-NN distance of 0.067 — but that separation is a property of the
-   * SETTLED LAYOUT, not of the graph. Drive two colonies into each other and the distance
-   * collapses: foreign points become each other's near neighbours, and the frontier that
-   * does not exist at rest EXISTS DURING THE COLLISION.
-   *
-   * So this claim is a BEFORE AND AFTER ON THE SAME DOCUMENT rather than a threshold: the
-   * web must be frontier-free while the lane rests, and must carry cross-community links
-   * while it fires. Both halves are required — the resting half is what stops this passing
-   * on a file that has simply been stirred into mush, and it is the half that carries
-   * §V900 forward rather than around it.
-   *
-   * WHAT IS NOT CLAIMED, and it is the honest limit of the mechanism: MEMBERSHIP DOES NOT
-   * CHANGE. `communityOf` is a pure hash of identity, so nothing is conquered — the
-   * colonies collide, interpenetrate and separate again carrying exactly the labels they
-   * arrived with. Measured at the deepest interpenetration, only 3 to 9 of 350 points would
-   * flip even under a label-propagation rule that does not exist here. The disturbance buys
-   * a FRONTIER and a REARRANGEMENT, not a conquest, and asserting otherwise would be the
-   * §T1074 failure repeated.
-   */
-  it(
-    "THE DISTURBANCE MAKES A FRONTIER THE SETTLED FILE DOES NOT HAVE: colonies collide on the strike and the web goes frontier-free again at rest",
-    async () => {
-      /* The drawn web is `bound1 -> web1`: the unaffiliated are parked out of every radius
-         (§V788) before the query runs, so the frontier is measured over exactly the points
-         the picture joins, and re-derived here from identity rather than read back out of
-         the render it is judging. */
-      const affiliated = (): number[] => {
-        const out: number[] = [];
-        for (let slot = 0; slot < CAPACITY; slot += 1) if (communityOf(slot) !== LOOSE) out.push(slot);
-        return out;
-      };
-      /* web1 is `pointProximity { neighbors: 6 }`, so a point's frontier IS its six
-         nearest. Counted the same way §T1074 counted it, so the numbers are comparable. */
-      const crossLinks = (field: Field): number => {
-        const slots = affiliated();
-        let cross = 0;
-        for (const i of slots) {
-          const pi = field.position[i] ?? [0, 0, 0];
-          const nearest = slots
-            .filter((j) => j !== i)
-            .map((j) => ({ j, d: distance(pi, field.position[j] ?? [0, 0, 0]) }))
-            .sort((a, b) => a.d - b.d)
-            .slice(0, 6);
-          for (const link of nearest) if (communityOf(link.j) !== communityOf(i)) cross += 1;
+      /* T1074 measured a label-propagation variant reaching MONOPOLY — [350, 0, 0, 0] by
+         frame 2100 — and T1119 measured envoy conquest annihilating the smaller party. The
+         reason neither can happen here is structural rather than tuned: membership is fixed,
+         so an army can lose all its ground and still be walking on it. */
+      for (const [index, share] of shares.entries()) {
+        for (const army of ARMIES) {
+          expect(share[army], `army ${army} was wiped out at f${marks[index]}: ${label}`).toBeGreaterThan(0.12);
         }
-        return cross;
-      };
-
-      /* `dstep1` holds two bars (248.3 frames at 116 bpm). T1124 re-ranged it from
-         [−3, 1.2] to [−0.45, 0.55] (§V903: a minimum of −3 against a clamp 0.5 wide clamped
-         71 % of draws to zero and left a 29-second silent run), so it now rests on draws 0,
-         4, 7, 8 and 10 of the first minute and strikes on the other ten. 1650 is deep inside
-         the strike that runs 1490-1738; 1200 sits in the rest before it (draw 4) and 2100 in
-         the rest after it (draw 8), both past the layout's own relaxation and both inside a
-         CONDENSED Coupling phrase — which matters now that Coupling actually reaches its
-         open end, because below ~0.30 the assembly opens into a contiguous ring and carries
-         a frontier of its own (measured, disturbance cut: 45 cross links at coupling 0.30,
-         104 at 0.20, 0-1 from 0.35 up). The disturbance's contribution is what is asserted
-         here, so it is read where coupling contributes nothing. */
-      const STRIKE = 1650;
-      const BEFORE = 1200;
-      const AFTER = 2100;
-
-      const struck = await renderQuorum({ at: STRIKE });
-      const before = await renderQuorum({ at: BEFORE });
-      const after = await renderQuorum({ at: AFTER });
-
-      // ONE — AT REST THE WEB IS FRONTIER-FREE, on both sides of the strike. This is
-      // §T1074's measurement, unchanged, and it is what the disturbance must not destroy.
-      for (const [tag, field, frame] of [
-        ["before", before, BEFORE],
-        ["after", after, AFTER],
-      ] as const) {
-        const resting = crossLinks(field);
-        expect(
-          resting,
-          `${resting} cross-community links on the drawn web at frame ${frame} (${tag} the strike), where a settled E54 has exactly 0 — the colonies are no longer separating between strikes, so the disturbance has become a permanent stir rather than an event`,
-        ).toBe(0);
       }
 
-      // TWO — AND ON THE STRIKE THERE IS A FRONTIER. Not a threshold: the resting value is
-      // 0 by the assertion above, so any nonzero count is the disturbance's whole effect,
-      // and this is the "what differs if the edge were cut" bar taken literally.
-      const frontier = crossLinks(struck);
-      expect(
-        frontier,
-        `the drawn web carries ${frontier} cross-community links at the strike, against 0 at rest on either side — the disturbance lane is not reaching the layout, so the colonies never touch`,
-      ).toBeGreaterThan(0);
+      /* And the ground genuinely moves: the LEADER is not the same army at every mark. */
+      const leaders = shares.map((share) => share.indexOf(Math.max(...share)));
+      expect(new Set(leaders).size, `one army led at every mark — the ground is not moving: ${label}`).toBeGreaterThan(1);
+    },
+  );
 
-      // THREE — AND IT IS THE COLONIES COLLIDING, not the whole picture shrinking. A
-      // uniform contraction is a SIMILARITY TRANSFORM and k-NN adjacency is scale-invariant,
-      // so a shrunk field would show the same six neighbours and no frontier at all. The
-      // discriminator is that the closest pair of colonies must close by MORE than the
-      // assembly as a whole does; under a pure homothety the two ratios are equal.
-      const gapMin = (field: Field): number => {
-        const centres = layout(field).map((entry) => entry.centre);
-        let min = Infinity;
-        for (let a = 0; a < COMMUNITIES.length; a += 1) {
-          for (let b = a + 1; b < COMMUNITIES.length; b += 1) {
-            min = Math.min(min, distance(centres[a] ?? [0, 0, 0], centres[b] ?? [0, 0, 0]));
+  it(
+    "THE ARMIES ARE THE ONLY AUTHORED THING, AND MEMBERSHIP NEVER CHANGES: every agent's banner is its founding one-hot, exactly, a minute in",
+    { timeout: 300_000 },
+    async () => {
+      expect(dawnError, dawnError ?? "").toBeUndefined();
+      const shot = await shoot({ capture: [HORIZON], buffers: true });
+      expect(shot.banner.length, "no packed point buffer came back").toBe(AGENTS);
+
+      /* EXACT, not a band (§V147): `banner` is written once at firstRun and never touched,
+         so after 3600 frames every component is still exactly 1 or exactly 0 — which is what
+         makes a trail ONE clean colour and territory the only thing an army can lose. A
+         converting agent (allegiance on the simplex) was built and cut; this is the
+         assertion that says the cut held. */
+      const counted = [0, 0, 0];
+      for (let slot = 0; slot < AGENTS; slot += 1) {
+        const banner = shot.banner[slot]!;
+        const army = armyOf(slot);
+        for (const channel of ARMIES) {
+          expect(
+            banner[channel],
+            `slot ${slot} is army ${army} but its banner reads ${banner.join(", ")} at f${HORIZON}`,
+          ).toBe(channel === army ? 1 : 0);
+        }
+        counted[army] = (counted[army] ?? 0) + 1;
+      }
+
+      /* §V854's lopsided block model, asserted as the count it actually produces rather than
+         as the nominal 42/34/24 — a hash is not a uniform draw and pretending otherwise is
+         how a partition claim quietly becomes a tolerance. */
+      expect(counted.reduce((a, b) => a + b, 0)).toBe(AGENTS);
+      for (const army of ARMIES) expect(counted[army]).toBeGreaterThan(0.2 * AGENTS);
+      expect(counted[0], "army 0 is the largest, by construction").toBeGreaterThan(counted[1]!);
+      expect(counted[1], "army 1 is the middle one, by construction").toBeGreaterThan(counted[2]!);
+    },
+  );
+
+  it(
+    "THE TRAIL IS THE MECHANISM: hold the deposit at zero and the field is EXACTLY empty; cut the sensing and the kernel refuses by name",
+    { timeout: 300_000 },
+    async () => {
+      expect(dawnError, dawnError ?? "").toBeUndefined();
+
+      /* (a) NOTHING ON SCREEN IS PAINTED. `trail1` clears to (0,0,0,0) and the only thing
+         that ever adds to it is `sow1` through `mix1`'s front, so with that front held at
+         zero the field is not "dim" or "mostly dark" — it is EXACTLY zero at every texel, at
+         a frame where the shipped file is a full network. That is the whole loop asserted in
+         one comparison. (Held at zero rather than unwired because Composite's `in2` is a
+         REQUIRED port: cutting it is a document that does not compile, which would assert
+         something about the compiler instead of about this file.) */
+      const cut = await shoot({ capture: [600], mutate: (graph) => pin(graph, "mix", "opacity", 0) });
+      const cutField = cut.field[0]!;
+      let peak = 0;
+      for (let at = 0; at < cutField.data.length; at += 4) {
+        peak = Math.max(peak, cutField.data[at] ?? 0, cutField.data[at + 1] ?? 0, cutField.data[at + 2] ?? 0);
+      }
+      expect(peak, "with the deposit held at zero, some texel still holds trail").toBe(0);
+
+      const whole = await shoot({ capture: [600] });
+      expect(liveTexels(ownership(whole.field[0]!)), "the shipped file has no trail at f600").toBeGreaterThan(20_000);
+
+      /* (b) AND THE SENSING IS NOT OPTIONAL — refused BY NAME rather than degrading to a
+         random walk that would still render something plausible (§V288/T477). This is the
+         legitimate case the guard could swallow, exercised: the kernel calls `fieldAt`, so a
+         document with the field edge missing must not compile at all. */
+      const { document } = e54();
+      const graph = structuredClone(document.graph) as GraphDocument;
+      cutEdge(graph, "spread", "mesh");
+      await expect(
+        renderHeadless({
+          host: nodeGpuHost(),
+          graph,
+          settings: { ...document.settings, outputResolution: GRID },
+          frames: 2,
+          capture: [1],
+          outputNodeId: "out",
+          fps: 60,
+          animate: true,
+        } as never),
+      ).rejects.toThrow(/fieldAt/);
+    },
+  );
+
+  it(
+    "ENVOY IS A PICTURE AND NOT A NUANCE: pinned at its clamp's two bounds the front is half again as wide and the trail nearly twice as long",
+    { timeout: 300_000 },
+    async () => {
+      expect(dawnError, dawnError ?? "").toBeUndefined();
+      /* §T1079's bar taken literally — what differs if the edge were cut. The lane is
+         DETACHED and held at each end of its own limiter, so this compares the two pictures
+         the shipped envelope actually walks between rather than two arbitrary settings. */
+      const keep = await shoot({ capture: [BASE], mutate: (graph) => pin(graph, "mesh", "envoy", -0.55) });
+      const meet = await shoot({ capture: [BASE], mutate: (graph) => pin(graph, "mesh", "envoy", -0.05) });
+
+      const keepContested = contestedFraction(keep.field[0]!);
+      const meetContested = contestedFraction(meet.field[0]!);
+      const keepLive = liveTexels(ownership(keep.field[0]!));
+      const meetLive = liveTexels(ownership(meet.field[0]!));
+      const label =
+        `floor: ${keepLive} live, ${(100 * keepContested).toFixed(1)}% contested; ` +
+        `ceiling: ${meetLive} live, ${(100 * meetContested).toFixed(1)}% contested`;
+
+      /* Measured on the shipped bytes at f1800: 100 653 live and 20.8 % contested at the
+         floor against 42 357 and 13.4 % at the ceiling. Hard avoidance keeps three separate
+         networks that interleave finely; weak avoidance lets the armies share cables, which
+         is FEWER cables. Both bounds are a picture — which is why neither end of this lane
+         is silence (§V903), and it is the thing the former file's disturbance gate could not
+         say about its own floor. */
+      expect(keepContested, `envoy does not change the front: ${label}`).toBeGreaterThan(1.3 * meetContested);
+      expect(keepLive, `envoy does not change how much trail there is: ${label}`).toBeGreaterThan(1.2 * meetLive);
+    },
+  );
+
+  it(
+    "THE DEPOSIT IS BOUNDED ON PURPOSE: additive clips several times as much of the trail as alpha, and a clipped trail has no gradient left in it",
+    { timeout: 300_000 },
+    async () => {
+      expect(dawnError, dawnError ?? "").toBeUndefined();
+      /* A trail answers "is this path walked", which is BOUNDED — twenty agents standing
+         together cannot leave twenty times the scent. Additive they do, and the consequence
+         is mechanical rather than cosmetic: a saturated texel has NO GRADIENT, so the three
+         sensors of every agent crossing a busy trunk read the same number and the steering
+         rule has nothing to answer.
+
+         ⚠ AND THE CLAIM IS WHAT WAS MEASURED, NOT WHAT WAS EXPECTED, TWICE. The first form
+         of this test asserted that additive COLLAPSES the network, on the strength of an
+         observation made at a different decay and deposit; measured against the shipped
+         bytes that is false — additive carries MORE live trail, just blown out. The second
+         form asserted alpha clips EXACTLY ZERO texels, which was true at one deposit setting
+         and stopped being true at the shipped one. What survives both corrections is the
+         RATIO, which is the thing the blend mode actually controls. */
+      const shipped = await shoot({ capture: [BASE] });
+      const additive = await shoot({
+        capture: [BASE],
+        mutate: (graph) => {
+          const sow = graph.nodes["sow"];
+          if (sow === undefined) throw new Error("no sow node");
+          sow.parameters = { ...sow.parameters, blend: "additive" };
+        },
+      });
+      const clipped = (image: { data: Uint8Array }): number => {
+        let count = 0;
+        for (let at = 0; at < image.data.length; at += 4) {
+          if (Math.max(image.data[at] ?? 0, image.data[at + 1] ?? 0, image.data[at + 2] ?? 0) >= 250) count += 1;
+        }
+        return count;
+      };
+      const shippedClipped = clipped(shipped.field[0]!);
+      const additiveClipped = clipped(additive.field[0]!);
+      expect(
+        additiveClipped,
+        `additive did not blow the trail out: alpha ${shippedClipped} clipped texels, additive ${additiveClipped}`,
+      ).toBeGreaterThan(2 * shippedClipped);
+    },
+  );
+
+  it(
+    "THE WEB IS A NETWORK THAT KEEPS REARRANGING: it covers the frame, and the links it draws decorrelate steadily with the lag",
+    { timeout: 300_000 },
+    async () => {
+      expect(dawnError, dawnError ?? "").toBeUndefined();
+      /* ⚑ THE CLAIM THE OWNER ACTUALLY MADE, ASSERTED AS PIXELS. The first cut of this
+         rework kept the trail physics and drew the agents as bare particles; he said
+         "we don't see these networks that are disintegrating and integrating — the different
+         units are like tiny specks now", and he was right: a trail rendered as its own
+         agents has no relationships in it to watch. So `web1` draws the links, and what is
+         asserted is that they are THERE and that they KEEP CHANGING.
+
+         `webs1` is the link layer alone — no nodes, no haze, no glow — so this measures the
+         web and nothing else. Jaccard over lit pixels: how much of the union of two frames'
+         webs is in both. A settled web holds near 1 at every lag; a re-drawn one falls. */
+      const lags = [0, 8, 60, 240] as const;
+      const shot = await shoot({ capture: lags.map((lag) => BASE + lag), node: "webs" });
+      const lit = shot.field.map((image) => {
+        const on = new Uint8Array(image.data.length / 4);
+        let count = 0;
+        for (let p = 0, at = 0; p < on.length; p += 1, at += 4) {
+          if (Math.max(image.data[at] ?? 0, image.data[at + 1] ?? 0, image.data[at + 2] ?? 0) >= 24) { on[p] = 1; count += 1; }
+        }
+        return { on, count };
+      });
+      const base = lit[0]!;
+
+      /* THE WEB EXISTS AND IT SPANS THE FRAME. Not "some links were drawn": the beams are
+         thin, so this is a floor on ink rather than on area — but a web that had collapsed to
+         a few bead chains, which is what every count below about six hundred drawn nodes
+         produced, does not reach it. */
+      expect(base.count, `the drawn web covers only ${base.count} pixels — that is not a network`).toBeGreaterThan(6_000);
+
+      const jaccard = lit.slice(1).map((later, index) => {
+        let both = 0;
+        let either = 0;
+        for (let p = 0; p < base.on.length; p += 1) {
+          const a = base.on[p] === 1;
+          const b = later.on[p] === 1;
+          if (a || b) either += 1;
+          if (a && b) both += 1;
+        }
+        return { lag: lags[index + 1]!, overlap: either === 0 ? 0 : both / either };
+      });
+      const label = jaccard.map((row) => `+${row.lag} ${(100 * row.overlap).toFixed(1)}%`).join("  ");
+
+      /* AND IT KEEPS BREAKING. Each longer lag shares LESS of its web with the base than the
+         one before — links form and break continuously rather than settling into a fixed
+         adjacency, which is exactly what the former operator's web did (T1074: 0 of 350
+         membership changes and a frontier of 0 from f900 on). By four seconds almost none of
+         the web is the same web. */
+      for (let index = 1; index < jaccard.length; index += 1) {
+        expect(
+          jaccard[index]!.overlap,
+          `the web at +${jaccard[index]!.lag} shares MORE with the base than at +${jaccard[index - 1]!.lag} — it is settling: ${label}`,
+        ).toBeLessThan(jaccard[index - 1]!.overlap);
+      }
+      expect(
+        jaccard[jaccard.length - 1]!.overlap,
+        `four seconds on, ${(100 * jaccard[jaccard.length - 1]!.overlap).toFixed(1)} % of the web is unchanged — that is a settled adjacency: ${label}`,
+      ).toBeLessThan(0.2);
+    },
+  );
+
+  it(
+    "THE FRONTIER IS DRAWN, NOT COUNTED (§V912): the contested caste is a minority of the population and cutting it changes the frame",
+    { timeout: 300_000 },
+    async () => {
+      expect(dawnError, dawnError ?? "").toBeUndefined();
+      const shot = await shoot({ capture: [BASE], node: "out", buffers: true });
+      expect(shot.sense.length, "no packed point buffer came back").toBe(AGENTS);
+
+      /* The caste `front1` draws is `p.sense.y > 0.45` — agents where less than 55 % of the
+         trail underneath is their own army's. It has to be a MINORITY or it is not a front
+         line, it is the whole population; and it has to be non-empty or the layer is a
+         decoration that never fires (§V471.8's failure shape). */
+      let caste = 0;
+      let drawn = 0;
+      for (let slot = 0; slot < AGENTS; slot += 1) {
+        if (shot.sense[slot]![2] > DRAWN_SHARE) continue; // parked by bound1, never drawn
+        drawn += 1;
+        if (shot.sense[slot]![1] > 0.45) caste += 1;
+      }
+      const share = caste / Math.max(drawn, 1);
+      expect(share, `the contested caste is empty at f${BASE}`).toBeGreaterThan(0.02);
+      expect(share, `the contested caste is the whole population at f${BASE} — that is not a front`).toBeLessThan(0.6);
+
+      /* And it reaches the screen. A count over pairs can triple with the picture unchanged;
+         a layer that is drawn cannot, and this is the difference stated as pixels. */
+      /* Dropped from `nodes1`'s scene list rather than unwired — Render names its scenes by
+         string, so this is the document saying "do not draw that layer" in its own terms. */
+      const without = await shoot({
+        capture: [BASE],
+        node: "out",
+        mutate: (graph) => {
+          const render = graph.nodes["nodes"];
+          if (render === undefined) throw new Error("no nodes render");
+          if (render.parameters?.["scenes"] !== "dots1 frontdots1") throw new Error("nodes1 no longer draws frontdots1");
+          render.parameters = { ...render.parameters, scenes: "dots1" };
+        },
+      });
+      const differing = differingPixels(shot.field[0]!, without.field[0]!);
+      expect(
+        differing,
+        `silencing frontdots1 changed ${differing} of ${FIELD.width * FIELD.height} pixels — the frontier layer is not on screen`,
+      ).toBeGreaterThan(0.02 * FIELD.width * FIELD.height);
+    },
+  );
+
+  it(
+    "THE CENTRE IS NOT A VACUUM: the middle of the frame holds as much trail as the ring around it, which is the complaint this rework answers",
+    { timeout: 300_000 },
+    async () => {
+      expect(dawnError, dawnError ?? "").toBeUndefined();
+      /* THE OWNER'S OWN WORDS ABOUT THE FORMER FILE: "the centre area between the clusters
+         acts like a vacuum that no one can enter". It was true and it was structural —
+         §T1079's background tie plus Coulomb push plus recentre puts equal clusters ON A
+         SHELL, and §T1133 found the strike was tangential so nothing was ever aimed through
+         the middle. Here there is no shell and no aim: agents follow gradients, and a
+         gradient runs wherever a trail does.
+
+         Measured as DENSITY PER TEXEL so the two regions are comparable despite the annulus
+         having four times the area — the mistake a raw count would make. */
+      const marks = [900, BASE, 2700, HORIZON];
+      const shot = await shoot({ capture: marks });
+      for (const [index, image] of shot.field.entries()) {
+        const own = ownership(image);
+        let inner = 0;
+        let innerLive = 0;
+        let outer = 0;
+        let outerLive = 0;
+        for (let y = 0; y < image.height; y += 1) {
+          for (let x = 0; x < image.width; x += 1) {
+            /* Distance from the middle in HALF-HEIGHTS, the same unit the kernel's own rim
+               fence is stated in, so "the centre" here means what it means in the WGSL. */
+            const dx = (x / image.width - 0.5) * 2 * (image.width / image.height);
+            const dy = (y / image.height - 0.5) * 2;
+            const radius = Math.hypot(dx, dy);
+            if (radius > 0.95) continue;
+            const live = (own[y * image.width + x] ?? -1) >= 0 ? 1 : 0;
+            if (radius < 0.4) { inner += 1; innerLive += live; } else { outer += 1; outerLive += live; }
           }
         }
-        return min;
-      };
-      const extent = (field: Field): number => {
-        const centre = meanOf(field.position);
-        return Math.max(...field.position.map((p) => distance(p, centre)));
-      };
-      const gapRatio = gapMin(struck) / gapMin(before);
-      const extentRatio = extent(struck) / extent(before);
-      expect(
-        gapRatio,
-        `at the strike the closest colony gap went to ${(gapRatio * 100).toFixed(1)} % of its resting value while the whole assembly went to ${(extentRatio * 100).toFixed(1)} % — the field is being SCALED rather than the colonies driven together, and a similarity transform cannot make a frontier because k-NN adjacency is scale-invariant`,
-      ).toBeLessThan(extentRatio);
-    },
-    900_000,
-  );
-
-  /**
-   * ⚑ T1114 — THE COLOUR MOVED OFF THE NODES AND INTO THE HAZE, and the depth is graded
-   * from an attribute the operator wrote rather than painted on.
-   *
-   * The reference picture this file is chasing has near-white nodes with the colour living
-   * in the haze behind them; E54 had fully saturated nodes per community. `white1` is one
-   * `hsv` placed AFTER `haze1`'s tap, so the blur still sees saturated communities and only
-   * the front of the frame is desaturated.
-   *
-   * That is a claim about WHERE the colour is, so it is asserted as a relation BETWEEN two
-   * measured quantities in the SAME frame rather than against any chosen number: the dim
-   * pixels (the haze) must be MORE saturated than the bright ones (the nodes).
-   *
-   * ⚠ AND THAT RELATION ALONE IS NOT EVIDENCE, which the red-verify showed rather than the
-   * author guessing: with `white1` returned to saturation 1 the haze is STILL more saturated
-   * than the node cores, because a blur of coloured points is more saturated than their
-   * additive centres whatever grade is applied. So the load-bearing assertion is the SECOND
-   * one — the node cores must be measurably LESS saturated than they are with `white1`
-   * neutral. The first states the arrangement; only the second says this node caused it.
-   */
-  it(
-    "THE COLOUR IS IN THE HAZE, NOT ON THE NODES: the dim pixels are more saturated than the bright ones, and are not once white1 is neutral",
-    async () => {
-      /* HSV saturation of an 8-bit pixel, (max - min) / max — 0 for any grey, whatever its
-         brightness, which is exactly the question being asked. */
-      const saturationBands = (field: Field): { bright: number; dim: number } => {
-        const data = field.rgba.data;
-        const pixels: Array<{ luma: number; sat: number }> = [];
-        for (let i = 0; i < data.length; i += 4) {
-          const r = data[i] ?? 0;
-          const g = data[i + 1] ?? 0;
-          const b = data[i + 2] ?? 0;
-          const max = Math.max(r, g, b);
-          const min = Math.min(r, g, b);
-          if (max === 0) continue; // pure black carries no colour and no counter-evidence
-          pixels.push({ luma: max, sat: (max - min) / max });
-        }
-        pixels.sort((a, b) => b.luma - a.luma);
-        /* The brightest twentieth is the node cores; the band below the median is the haze.
-           Both are fixed fractions of whatever the picture turns out to be, so neither is a
-           threshold on the content. */
-        const bright = pixels.slice(0, Math.max(1, Math.floor(pixels.length * 0.05)));
-        const dim = pixels.slice(Math.floor(pixels.length * 0.5), Math.floor(pixels.length * 0.9));
-        const mean = (list: typeof pixels): number =>
-          list.reduce((acc, p) => acc + p.sat, 0) / Math.max(list.length, 1);
-        return { bright: mean(bright), dim: mean(dim) };
-      };
-
-      const shipped = await renderQuorum({ probe: false, at: STRUCK });
-      const shippedBands = saturationBands(shipped);
-      expect(
-        shippedBands.dim,
-        `the haze measured ${shippedBands.dim.toFixed(4)} saturation against ${shippedBands.bright.toFixed(4)} on the node cores — the colour is still living on the nodes, so white1 is not reaching the front layer`,
-      ).toBeGreaterThan(shippedBands.bright);
-
-      // AND THE OTHER WAY (§V884): neutralise white1 and the relation must not survive, or
-      // the claim above was about the picture rather than about this node.
-      const saturated = await renderQuorum({
-        probe: false,
-        at: STRUCK,
-        mutate: (graph) => {
-          const white = graph.nodes["white"];
-          if (white === undefined) throw new Error("E54 has no white node");
-          white.parameters = { ...white.parameters, saturation: 1 };
-        },
-      });
-      const saturatedBands = saturationBands(saturated);
-      expect(
-        saturatedBands.bright,
-        `with white1 neutral the node cores measured ${saturatedBands.bright.toFixed(4)} saturation against ${shippedBands.bright.toFixed(4)} shipped — the desaturation is doing nothing, so the shipped reading was not caused by this node`,
-      ).toBeGreaterThan(shippedBands.bright);
-    },
-    480_000,
-  );
-
-  /**
-   * ⚑ T1114 — AND THE DEPTH IS REAL DATA, not a painted gradient.
-   *
-   * `deep1` and `fore1` split the cloud on `position.z`, which the kernel settles into TWO
-   * SHEETS at z ≈ ∓0.023 holding 239 and 241 points — measured, and stable from frame 20 to
-   * 3600. The far half is veiled and blurred, the near half added on top crisp.
-   *
-   * The split is asserted where it is decidable — on the point buffer, against the halves
-   * the shipped `from`/`to` actually name — and the veil is asserted the "what differs if
-   * the edge were cut" way, because a drifting layer that reaches nothing is the exact
-   * failure this project keeps finding.
-   */
-  it(
-    "THE DEPTH SPLIT IS ON REAL DATA AND THE VEIL REACHES THE SCREEN",
-    async () => {
-      const field = await renderQuorum({ at: STRUCK });
-
-      // ONE — the operator really did sort the points onto two sides of the split plane, so
-      // `deep1`/`fore1` are dividing something rather than sending everything one way. The
-      // boundary is the shipped `to: 0` / `from: 0`, quoted rather than chosen.
-      let back = 0;
-      let front = 0;
-      for (let slot = 0; slot < CAPACITY; slot += 1) {
-        const z = field.position[slot]?.[2] ?? 0;
-        if (z < 0) back += 1;
-        else front += 1;
+        const innerDensity = innerLive / Math.max(inner, 1);
+        const outerDensity = outerLive / Math.max(outer, 1);
+        expect(
+          innerDensity,
+          `at f${marks[index]} the centre holds ${(100 * innerDensity).toFixed(1)} % live trail against the ring's ${(100 * outerDensity).toFixed(1)} % — the middle is emptying again`,
+        ).toBeGreaterThan(0.75 * outerDensity);
       }
-      expect(back, `${back} of ${CAPACITY} points are behind the split plane — the far half is empty and the veil has nothing to grade`).toBeGreaterThan(0);
-      expect(front, `${front} of ${CAPACITY} points are in front of the split plane — the near half is empty`).toBeGreaterThan(0);
-
-      // TWO — AND THE VEIL IS COMPOSITING. Pulling the veil1 -> fog1 edge is refused at
-      // compile, exactly as emptying webs1's scene list is: a Multiply with one input is an
-      // error, not a pass-through. So the veil is neutralised INTO A CONSTANT 1 instead —
-      // amp 0, offset 1, which is the same node computing white everywhere — and that is
-      // the honest form of "what differs if this edge were cut" for an operator whose
-      // identity element exists.
-      const shipped = await renderQuorum({ probe: false, at: STRUCK });
-      const noVeil = await renderQuorum({
-        probe: false,
-        at: STRUCK,
-        mutate: (graph) => {
-          const veil = graph.nodes["veil"];
-          if (veil === undefined) throw new Error("E54 has no veil node");
-          veil.parameters = { ...veil.parameters, amp: 0, offset: 1 };
-        },
-      });
-      expect(
-        differingPixels(shipped, noVeil),
-        "cutting veil1 changed nothing — the veil is not reaching the far layer",
-      ).toBeGreaterThan(0);
     },
-    480_000,
-  );
-
-  it(
-    "the shipped kernel really does read its neighbours — T1070's accessor is in the compiled module",
-    async () => {
-      const { document } = e54();
-      expect(document.graph.nodes["mesh"]?.type).toBe("pointKernel");
-      const field = await renderQuorum({ probe: false });
-      const pass = field.passes.find((entry) => entry.id === "mesh#mesh:kernel");
-      expect(pass, "the mesh kernel emitted no pass").toBeDefined();
-      // Not decoration: if this example ever loses the neighbour read it stops being a
-      // Laplacian and becomes 480 independent points — and every claim above would still
-      // have SOMETHING to measure, which is exactly how a silent regression survives.
-      expect(pass?.shader).toContain("fn pointAt(slot: u32) -> Point {");
-      // T1076: the neighbour's position comes through the packed READ half's accessor.
-      expect(pass?.shader).toContain("n.position = pointLoad_position(slot);");
-    },
-    240_000,
   );
 });
