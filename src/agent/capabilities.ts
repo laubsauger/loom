@@ -9,7 +9,15 @@ import type { CapabilityClass } from "@domain/types/commands.ts";
  *
  *  1. No tool in this surface grants, requests or elevates anything. There is no
  *     `grant_capability` tool and no tool input field that carries a grant. A grant
- *     arrives only through the human confirm flow that owns `bus.grants`.
+ *     arrives only from whoever owns `bus.grants` — the composition root.
+ *
+ *     T1097: this sentence used to name "the human confirm flow", which has never been
+ *     built (T90's unbuilt half). Today the only issuers are `serve.ts` under
+ *     `--grant-export` and `app-runtime.ts` handing the human `viewportControl`, so in a
+ *     browser tab all four gated tools — `render_preview`, `describe_output`,
+ *     `read_points`, `save_project` — are refused permanently. That is a real
+ *     product gap, not a rule — and until it closes, the surface says so out loud rather
+ *     than pointing at a prompt nobody sends (see `grantRoutes` in `surface.ts`).
  *  2. The surface reads grants from `bus.grants` — the BUS-OWNED store keyed by actor
  *     (T90). `InvocationContext.capabilities` is advisory and the bus no longer consults
  *     it, so an adapter that fabricates the array changes nothing.

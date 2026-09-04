@@ -67,8 +67,59 @@ export interface AgentSurfaceOptions {
   ports?: AgentPorts;
   /** Hold every patch-shaped mutation for human approval before it applies (§V42). */
   requireApproval?: boolean;
+  /**
+   * How each capability class can actually be granted IN THIS SESSION (T1097, §V38).
+   *
+   * §V38 says a tool call never grants a capability — but a check whose grant nobody can
+   * ever issue is not a permission, it is a refusal wearing one, and the refusal used to
+   * name "the app's confirm flow" that does not exist. So the composition root, which is
+   * the only thing that knows what it can issue, declares the route as DATA and this
+   * adapter echoes it. Nothing here decides policy.
+   *
+   * A class with no entry is reported as UNOBTAINABLE, because in this codebase that is
+   * the truth: grants are written only by whoever holds `bus.grants`, and a root that can
+   * write one says so here. A root that gains a grant path and forgets to declare it makes
+   * its product say "never", which is visible; the old default said "ask again", which was
+   * not (§Rule 8).
+   */
+  grantRoutes?: Partial<Record<CapabilityClass, CapabilityGrantRoute>>;
   presence?: AgentPresenceStore;
   now?: () => number;
+}
+
+/**
+ * One capability class's grant route, as the composition root declares it (T1097).
+ *
+ * `obtainable: false` is a real answer, not an absence: "this surface can never hold it,
+ * here is what to use instead" is what stops a caller retrying a wall.
+ */
+export interface CapabilityGrantRoute {
+  /** True when something in THIS session can issue the grant. */
+  readonly obtainable: boolean;
+  /** One sentence: how to obtain it, or — when it cannot be — what to use instead. */
+  readonly guidance: string;
+}
+
+/**
+ * The refusal a caller reads when a tool's capability is missing (T1097, §V38).
+ *
+ * Derived once, here, so `deniedResult` and the published tool listings cannot tell two
+ * stories about one gate (§V39). Capability names are OUR strings, never document text.
+ */
+export function grantRefusalText(
+  tool: string,
+  ungranted: readonly CapabilityClass[],
+  routes: Partial<Record<CapabilityClass, CapabilityGrantRoute>>,
+): string | null {
+  if (ungranted.length === 0) return null;
+  const parts = ungranted.map((capability) => {
+    const route = routes[capability];
+    const guidance = route === undefined ? "" : ` ${route.guidance}`;
+    return route?.obtainable === true
+      ? `"${capability}" is not granted yet.${guidance}`
+      : `"${capability}" can never be granted on this surface — no grant path for it exists here, so retrying or waiting for an approval prompt will not change the answer (§V38).${guidance}`;
+  });
+  return `"${tool}" requires an ungranted capability: ${ungranted.join(", ")}. ${parts.join(" ")}`;
 }
 
 export interface RevertData {
@@ -191,8 +242,13 @@ export function createAgentToolSurface(options: AgentSurfaceOptions): AgentToolS
       .filter((capability, index, all) => all.indexOf(capability) === index)
       .filter((capability) => !bus.grants.has(actor, capability));
 
+  const grantRoutes = options.grantRoutes ?? {};
+  const unobtainableIn = (ungranted: readonly CapabilityClass[]): CapabilityClass[] =>
+    ungranted.filter((capability) => grantRoutes[capability]?.obtainable !== true);
+
   const infoFor = (tool: AgentTool): AgentToolInfo => {
     const missing = missingFor(tool);
+    const ungranted = ungrantedFor(tool);
     return {
       name: tool.name,
       title: tool.title,
@@ -205,7 +261,9 @@ export function createAgentToolSurface(options: AgentSurfaceOptions): AgentToolS
       available:
         missing.commands.length === 0 && missing.queries.length === 0 && missing.ports.length === 0,
       missing,
-      ungranted: ungrantedFor(tool),
+      ungranted,
+      unobtainable: unobtainableIn(ungranted),
+      grantRefusal: grantRefusalText(tool.name, ungranted, grantRoutes),
       inputSchema: tool.inputSchema as z.ZodType<unknown>,
     };
   };
@@ -285,16 +343,26 @@ export function createAgentToolSurface(options: AgentSurfaceOptions): AgentToolS
     return result(tool.name, "unavailable", null, { diagnostics: parts });
   }
 
+  /**
+   * T1097: the refusal names WHETHER THE GRANT IS OBTAINABLE HERE, not just that it is
+   * missing. It used to say "only the user can grant it, through the app's confirm flow"
+   * — a flow that has never existed — so a model denied `render_preview` in a browser tab
+   * was told to ask again on a wall that can never move. The message is the same string
+   * `listTools` publishes, so the list and the denial agree (§V39).
+   */
   function deniedResult(tool: AgentTool, ungranted: readonly CapabilityClass[]): ToolResult {
+    const unobtainable = unobtainableIn(ungranted);
     return result(tool.name, "denied", null, {
       diagnostics: [
         diagnostic(
           "error",
-          "capability.denied",
-          `"${tool.name}" requires an ungranted capability: ${ungranted.join(", ")}.`,
+          unobtainable.length > 0 ? "capability.unobtainable" : "capability.denied",
+          grantRefusalText(tool.name, ungranted, grantRoutes) ?? "",
           {
             suggestion:
-              "Only the user can grant it, through the app's confirm flow. Calling this tool again cannot grant it (§V38).",
+              unobtainable.length > 0
+                ? "Do not retry: nothing this tool can do grants a capability, and this surface has no grant path for it (§V38)."
+                : "Only whoever owns this session's grant store can issue it. Calling this tool again cannot grant it (§V38).",
           },
         ),
       ],

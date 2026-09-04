@@ -1,5 +1,6 @@
 import { toolInputSchema } from "../agent/surface.ts";
 import { zodToJsonSchema } from "./json-schema.ts";
+import { describeTool } from "./published-tools.ts";
 
 /**
  * The MCP adapter (T290, §V39, §V192): transport + schema over the agent surface,
@@ -43,6 +44,19 @@ export interface McpToolListing {
     readonly queries: readonly string[];
     readonly ports: readonly string[];
   };
+  /**
+   * The refusal this tool would return for want of a capability, or null (T1097, §V38).
+   *
+   * Carried on the wire because it is the half the OTHER process cannot compute: the
+   * bridge's page holds its own grant store, so whether `render_preview` can ever be
+   * granted there is the page's answer, not the host's. Sent as the finished sentence
+   * rather than as flags, so one derivation reaches both the listing and the denial.
+   *
+   * OPTIONAL because a listing can genuinely have no gate to describe — `bridge_status`
+   * is the transport's own tool and holds nothing — and because an older page on the far
+   * side of the bridge will not send it. Absent means "no refusal known", never "callable".
+   */
+  readonly grantRefusal?: string | null;
 }
 
 /**
@@ -141,9 +155,17 @@ export function createMcpConnection(options: McpConnectionOptions): McpConnectio
     send({ jsonrpc: "2.0", id: id ?? null, error: { code, message } });
   };
 
-  /** What list_changed diffing considers "the list": names + availability. */
+  /**
+   * What list_changed diffing considers "the list": names, availability, and — T1097 —
+   * whether a grant refusal is riding on the description. A grant issued mid-session
+   * changes what the client may call, which is the same news as a port appearing.
+   */
   const toolSignature = (): string =>
-    JSON.stringify(surface.listTools().map((tool) => [tool.name, tool.available]));
+    JSON.stringify(
+      surface
+        .listTools()
+        .map((tool) => [tool.name, tool.available, (tool.grantRefusal ?? null) !== null]),
+    );
   let announcedTools = toolSignature();
 
   const toolList = (): Record<string, unknown> => ({
@@ -152,9 +174,7 @@ export function createMcpConnection(options: McpConnectionOptions): McpConnectio
       return {
         name: tool.name,
         title: tool.title,
-        description: tool.available
-          ? tool.description
-          : `${tool.description} (currently unavailable: missing ${[...tool.missing.commands, ...tool.missing.queries, ...tool.missing.ports].join(", ") || "capabilities"})`,
+        description: describeTool(tool),
         inputSchema: schema === null ? { type: "object" } : zodToJsonSchema(schema),
       };
     }),

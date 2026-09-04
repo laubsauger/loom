@@ -6,8 +6,13 @@
  * server (doc §30.2). The presence UI lives in `src/editor/agent/**` and only reads.
  */
 
-export { createAgentToolSurface } from "./surface.ts";
-export type { AgentSurfaceOptions, AgentToolSurface, RevertData } from "./surface.ts";
+export { createAgentToolSurface, grantRefusalText } from "./surface.ts";
+export type {
+  AgentSurfaceOptions,
+  AgentToolSurface,
+  CapabilityGrantRoute,
+  RevertData,
+} from "./surface.ts";
 
 export { createAgentPresence } from "./presence.ts";
 export type {

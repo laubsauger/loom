@@ -10,7 +10,11 @@ import type { NodeDefinition } from "@domain/types/node-definition.ts";
 import { createNodeRegistry } from "@nodes/registry/registry.ts";
 import { blurNode, compositeNode, solidNode } from "@nodes/registry/test-nodes.ts";
 
-import { createAgentToolSurface, type AgentToolSurface } from "./surface.ts";
+import {
+  createAgentToolSurface,
+  type AgentSurfaceOptions,
+  type AgentToolSurface,
+} from "./surface.ts";
 import type { AgentPorts, PreviewExport, ToolResult } from "./types.ts";
 
 /**
@@ -63,6 +67,8 @@ function createFixture(
     requireApproval?: boolean;
     /** Attaches the `selection.get` source the composition root attaches (T175). */
     selection?: () => SelectionSnapshot;
+    /** T1097: what this session declares it can grant. Absent = it declares nothing. */
+    grantRoutes?: AgentSurfaceOptions["grantRoutes"];
   } = {},
 ): Fixture {
   const store = createGraphStore({
@@ -103,6 +109,7 @@ function createFixture(
     projectId: "project-1",
     ...(options.ports === undefined ? {} : { ports: options.ports }),
     ...(options.requireApproval === undefined ? {} : { requireApproval: options.requireApproval }),
+    ...(options.grantRoutes === undefined ? {} : { grantRoutes: options.grantRoutes }),
     now: () => 1_000,
   });
 
@@ -240,7 +247,12 @@ describe("tools with no command behind them report unavailable (§V39)", () => {
 
 describe("capability grants are not self-grantable (§V38, §V67)", () => {
   it("refuses render_preview without the export grant, even with the export port attached", async () => {
-    const wired = createFixture({ ports: { preview: previewPort } });
+    const wired = createFixture({
+      ports: { preview: previewPort },
+      grantRoutes: {
+        export: { obtainable: true, guidance: "Restart the server with --grant-export." },
+      },
+    });
     const outcome = await wired.surface.callTool("render_preview", { nodeId: "n1" });
 
     expect(outcome.status).toBe("denied");
@@ -307,6 +319,97 @@ describe("capability grants are not self-grantable (§V38, §V67)", () => {
     wired.bus.grants.grant(human, "export");
     const outcome = await wired.surface.callTool("render_preview", { nodeId: "n1" });
     expect(outcome.status).toBe("denied");
+  });
+});
+
+/**
+ * T1097, §V38: A CHECK WITH NO GRANT PATH IS NOT A PERMISSION, IT IS A REFUSAL WEARING ONE.
+ *
+ * `render_preview` was published to the browser tab while the `export` grant it checks was
+ * issuable only by the stdio server's own `--grant-export` invocation — no in-page grant
+ * exists — and the refusal read "only the user can grant it, through the app's confirm
+ * flow", a flow that has never been built. The caller was told to wait for a prompt nobody
+ * sends. These tests assert THE SENTENCE A CALLER READS BACK, in both worlds, because the
+ * bug was never a wrong boolean: `denied` was correct and the prose around it was a lie.
+ */
+describe("a permanent denial says so (T1097, §V38)", () => {
+  const routeless = (): Fixture => createFixture({ ports: { preview: previewPort } });
+
+  it("tells a caller with no grant path that retrying will never work, and why", async () => {
+    const outcome = await routeless().surface.callTool("render_preview", { nodeId: "n1" });
+    const [first] = outcome.diagnostics;
+
+    expect(outcome.status).toBe("denied");
+    // A distinct code, because "not yet" and "never here" are different instructions and a
+    // client that cannot tell them apart burns its turns on the second one.
+    expect(first?.code).toBe("capability.unobtainable");
+    expect(first?.message).toContain("can never be granted on this surface");
+    expect(first?.message).toContain("export");
+    expect(first?.suggestion).toContain("Do not retry");
+    // The old prose, verbatim: this is the sentence the finding was about.
+    expect(JSON.stringify(outcome)).not.toContain("confirm flow");
+  });
+
+  it("names the route instead when the grant IS obtainable here", async () => {
+    const wired = createFixture({
+      ports: { preview: previewPort },
+      grantRoutes: {
+        export: {
+          obtainable: true,
+          guidance: "Restart this MCP server with the `--grant-export` flag.",
+        },
+      },
+    });
+    const outcome = await wired.surface.callTool("render_preview", { nodeId: "n1" });
+    const [first] = outcome.diagnostics;
+
+    expect(first?.code).toBe("capability.denied");
+    expect(first?.message).toContain("--grant-export");
+    expect(first?.message).not.toContain("can never be granted");
+  });
+
+  it("publishes the same sentence in listTools that the call returns (§V39)", async () => {
+    const wired = routeless();
+    const listed = wired.surface.listTools().find((tool) => tool.name === "render_preview");
+    const called = await wired.surface.callTool("render_preview", { nodeId: "n1" });
+
+    expect(listed?.grantRefusal).not.toBeNull();
+    // One derivation: a list that promised what the call refuses is how a model spends a
+    // turn discovering a wall. The published note IS the refusal.
+    expect(called.diagnostics[0]?.message).toBe(listed?.grantRefusal);
+    expect(listed?.unobtainable).toEqual(["export"]);
+  });
+
+  it("says nothing about grants once the capability is held", async () => {
+    const wired = routeless();
+    wired.bus.grants.grant(agent, "export");
+    const listed = wired.surface.listTools().find((tool) => tool.name === "render_preview");
+
+    expect(listed?.grantRefusal).toBeNull();
+    expect(listed?.unobtainable).toEqual([]);
+  });
+
+  /**
+   * THE CENSUS, not the one tool someone happened to try.
+   *
+   * A one-off fix to `render_preview` leaves the other three advertised on the same wall.
+   * Derived from the catalogue rather than listed, so a NEW capability-gated tool cannot be
+   * published to a routeless surface without this failing — and pinned by name, so the set
+   * growing is a decision someone makes rather than a diff nobody reads.
+   */
+  it("marks EVERY capability-gated tool unobtainable on a surface that declares no route", () => {
+    const wired = routeless();
+    registerSaveCommand(wired.bus);
+    const tools = wired.surface.listTools();
+
+    const gated = tools.filter((tool) => tool.capabilities.length > 0).map((tool) => tool.name);
+    expect(gated).toEqual(["render_preview", "describe_output", "read_points", "save_project"]);
+
+    for (const name of gated) {
+      const tool = tools.find((candidate) => candidate.name === name);
+      expect(tool?.unobtainable).toEqual(tool?.capabilities);
+      expect(tool?.grantRefusal).toContain("can never be granted on this surface");
+    }
   });
 });
 

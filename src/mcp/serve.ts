@@ -166,6 +166,21 @@ export function createHeadlessMcpServer(options: HeadlessMcpServerOptions): Head
     actor: { kind: "agent", id: "mcp", label: "MCP client" },
     projectId: "mcp-session",
     ports,
+    /**
+     * T1097 (§V38): here the export grant IS reachable, and the refusal now says how.
+     * Unlike a browser tab — which has no in-page grant path at all and says so — this
+     * process holds the flag that issues it, so "not granted yet" is the truthful reading
+     * and a client that restarts with the flag gets a different answer. `localFile` is
+     * absent on purpose: nothing in this process can ever issue it, and `save_project`
+     * reports unavailable here anyway (no `project.save` in a headless twin).
+     */
+    grantRoutes: {
+      export: {
+        obtainable: true,
+        guidance:
+          "Restart this MCP server with the `--grant-export` flag on its own invocation (T334); nothing on the wire can grant it.",
+      },
+    },
   });
 
   /*

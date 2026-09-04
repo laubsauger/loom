@@ -6,6 +6,7 @@ import { createDomainBus } from "../domain/commands/index.ts";
 import { createNodeRegistry } from "../nodes/registry/registry.ts";
 import { allNodeDefinitions } from "../nodes/definitions/index.ts";
 import { createAgentToolSurface, toolInputSchema } from "../agent/surface.ts";
+import type { AgentPorts, PreviewExport } from "../agent/types.ts";
 import { createMcpConnection } from "./server.ts";
 import { registerWebMcp } from "./webmcp.ts";
 import { toolListings } from "./published-tools.ts";
@@ -21,7 +22,7 @@ import { registerTransportCommands } from "../app/transport-commands.ts";
  * protocol shapes; nothing is mocked below the transport.
  */
 
-function harness() {
+function harness(options: { ports?: AgentPorts } = {}) {
   const store = createGraphStore();
   const registry = createNodeRegistry(allNodeDefinitions).view();
   const { bus } = createDomainBus({ store, registry });
@@ -29,6 +30,10 @@ function harness() {
     bus,
     actor: { kind: "agent", id: "mcp-test", label: "MCP" },
     projectId: "p1",
+    // T1097: a browser tab HAS the preview port, so it reaches the capability gate that a
+    // GPU-less headless twin never gets to. A test about the gate has to stand where the
+    // tab stands, or `unavailable` answers first and the gate is never exercised.
+    ...(options.ports === undefined ? {} : { ports: options.ports }),
   });
   const sent: Array<Record<string, unknown>> = [];
   const connection = createMcpConnection({ surface, send: (message) => sent.push(message) });
@@ -434,4 +439,92 @@ describe("T597/§V39 — the headless server offers the full catalogue", () => {
       server.dispose();
     }
   }, 60_000);
+});
+
+/**
+ * T1097 (§V38, §V338): A TOOL LIST IS A PROMISE, AND THIS ONE WAS FALSE.
+ *
+ * `render_preview` is published to a browser tab, and no tab can be granted `export` —
+ * the grant exists only on the stdio server's own `--grant-export` invocation and there is
+ * no in-page grant UI. The list said nothing about it, so a model read a callable tool,
+ * spent a turn calling it, and got a refusal telling it to ask for a permission nobody can
+ * issue. Availability was already annotated here; the grant was not, and the two cost the
+ * caller exactly the same thing.
+ *
+ * These assert the bytes a client reads: the `tools/list` description over JSON-RPC, the
+ * WebMCP descriptor an in-page host receives, and the `tools/call` refusal — and that the
+ * three say ONE thing (§V39).
+ */
+describe("the published list says a tool cannot be called (T1097)", () => {
+  /** A preview port that answers, so the CAPABILITY gate is what refuses, not the port. */
+  const previewPort: PreviewExport = {
+    renderPreview: ({ ref }) =>
+      Promise.resolve({
+        ref,
+        mimeType: "image/png" as const,
+        width: 1,
+        height: 1,
+        bytes: new Uint8Array([137, 80, 78, 71]),
+      }),
+  };
+
+  const describedAs = (tools: Array<Record<string, unknown>>, name: string): string =>
+    String(tools.find((tool) => tool["name"] === name)?.["description"] ?? "");
+
+  it("annotates the permanent refusal in tools/list, and the call returns the same sentence", async () => {
+    const { request, surface } = harness({ ports: { preview: previewPort } });
+
+    const list = await request("tools/list", {}, 2);
+    const described = describedAs(list.result?.["tools"] as Array<Record<string, unknown>>, "render_preview");
+    expect(described).toContain("can never be granted on this surface");
+    expect(described).toContain("export");
+
+    const call = await request("tools/call", { name: "render_preview", arguments: { nodeId: "n1" } }, 3);
+    const content = (call.result?.["content"] as Array<{ text: string }>) ?? [];
+    const returned = JSON.parse(content[0]?.text ?? "{}") as {
+      status: string;
+      diagnostics: Array<{ code: string; message: string; suggestion?: string }>;
+    };
+    expect(returned.status).toBe("denied");
+    // The code is distinct from an ordinary `capability.denied`, because "not yet" and
+    // "never here" are different instructions to a caller deciding whether to try again.
+    expect(returned.diagnostics[0]?.code).toBe("capability.unobtainable");
+    expect(returned.diagnostics[0]?.suggestion).toContain("Do not retry");
+    // One derivation, not two pictures of one gate: the note in the list IS the refusal.
+    const published = surface.listTools().find((tool) => tool.name === "render_preview");
+    expect(published?.grantRefusal).not.toBeNull();
+    expect(described).toContain(published?.grantRefusal ?? " ");
+    expect(returned.diagnostics[0]?.message).toBe(published?.grantRefusal);
+  });
+
+  it("carries the same annotation to a WebMCP host, which is the surface a tab publishes to", () => {
+    const { surface } = harness({ ports: { preview: previewPort } });
+    const published: Array<{ name: string; description: string }> = [];
+    registerWebMcp(surface, {
+      host: {
+        document: {
+          modelContext: {
+            provideContext: ({ tools }: { tools: Array<{ name: string; description: string }> }) => {
+              published.push(...tools);
+            },
+          },
+        },
+      },
+    });
+
+    const preview = published.find((tool) => tool.name === "render_preview");
+    expect(preview?.description).toContain("can never be granted on this surface");
+    // A tool with nothing ungranted is described exactly as its catalogue entry is.
+    const getGraph = published.find((tool) => tool.name === "get_graph");
+    expect(getGraph?.description).not.toContain("granted");
+  });
+
+  it("says nothing about grants once the capability is held — the note tracks the gate", async () => {
+    const { request, bus } = harness({ ports: { preview: previewPort } });
+    bus.grants.grant({ kind: "agent", id: "mcp-test", label: "MCP" }, "export");
+
+    const list = await request("tools/list", {}, 2);
+    const described = describedAs(list.result?.["tools"] as Array<Record<string, unknown>>, "render_preview");
+    expect(described).not.toContain("granted");
+  });
 });

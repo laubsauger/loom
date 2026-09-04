@@ -1,9 +1,14 @@
 import { useEffect, useMemo, useRef } from "react";
 import { createAgentToolSurface } from "@agent/index.ts";
-import type { AgentPorts, AgentRuntimeMetrics, AgentToolSurface } from "@agent/index.ts";
+import type {
+  AgentPorts,
+  AgentRuntimeMetrics,
+  AgentToolSurface,
+  CapabilityGrantRoute,
+} from "@agent/index.ts";
 import { frameClockVerdict } from "@runtime/telemetry/frame-clock.ts";
 import { attachStateSources } from "@domain/commands/index.ts";
-import type { Actor } from "@domain/types/commands.ts";
+import type { Actor, CapabilityClass } from "@domain/types/commands.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { NodeId, Revision } from "@domain/types/ids.ts";
 import type { AppRuntime } from "./app-runtime.ts";
@@ -50,6 +55,38 @@ import type { AppRuntime } from "./app-runtime.ts";
 
 /** The agent this build talks to. §V30: an agent is an actor, never anonymous. */
 export const AGENT_ACTOR: Actor = { kind: "agent", id: "assistant", label: "Assistant" };
+
+/**
+ * WHAT A BROWSER TAB CAN ACTUALLY GRANT — which today is nothing (T1097, §V38).
+ *
+ * The finding, live: `render_preview` was published to this page's WebMCP and bridge
+ * transports while the `export` grant it checks was issuable ONLY by `--grant-export` on
+ * the stdio server's own invocation. There is no in-page grant UI, so no tab could ever
+ * hold it. A check with no grant path is not a permission, it is a refusal wearing one —
+ * §V38's "permanent denial in a costume" — and the refusal read "ask the user, through the
+ * app's confirm flow", sending the caller at a wall that cannot move.
+ *
+ * Declaring it is the floor, not the fix: the honest resolutions are to BUILD the in-page
+ * grant (a page asking to render and read back pixels is a real capability decision and
+ * needs a surface that makes the ask legible, not a yes button) or to STOP PUBLISHING these
+ * tools to a tab. Until one of those is decided, the caller is told the truth instead of
+ * being told to wait for a prompt nobody sends.
+ *
+ * Four tools sit behind these two classes: `render_preview`, `describe_output`,
+ * `read_points` (export) and `save_project` (localFile).
+ */
+export const PAGE_GRANT_ROUTES = {
+  export: {
+    obtainable: false,
+    guidance:
+      "No surface in this browser tab can issue the export grant: it exists only on the out-of-process Loom MCP server, whose own invocation carried `--grant-export`, and it belongs to that server's headless document — attaching this tab to the bridge does not carry it over. For pixels from THIS document, use the app's own export and record controls, which the person at the keyboard drives.",
+  },
+  localFile: {
+    obtainable: false,
+    guidance:
+      "No surface in this browser tab can issue the localFile grant. The user saves through the app's own Save control, which opens the browser's file picker — the consent gesture a tool call cannot stand in for.",
+  },
+} satisfies Partial<Record<CapabilityClass, CapabilityGrantRoute>>;
 
 export interface AgentSurfaceState {
   readonly selection: readonly NodeId[];
@@ -125,6 +162,8 @@ export function useAgentSurface(
         actor: AGENT_ACTOR,
         projectId: runtime.invocation.projectId,
         ports,
+        // T1097: what this surface can and cannot ever be granted, as data. See above.
+        grantRoutes: PAGE_GRANT_ROUTES,
         // No `requireApproval` here on purpose. §V42 requires agent activity to be
         // VISIBLE and revertible, which the presence pane provides; holding every edit
         // for a click is a product policy nobody has asked for, and the surface already

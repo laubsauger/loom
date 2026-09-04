@@ -49,7 +49,41 @@ export function toolListings(surface: AgentToolSurface): readonly McpToolListing
       queries: [...tool.missing.queries],
       ports: [...tool.missing.ports],
     },
+    grantRefusal: tool.grantRefusal,
   }));
+}
+
+/**
+ * THE DESCRIPTION A CLIENT ACTUALLY READS (T1097, §V38, §V338).
+ *
+ * A tool list is a promise. `render_preview` was published to the browser tab reading as
+ * plainly callable while the `export` grant it checks had no in-page route at all, so a
+ * model spent a turn discovering a wall — §V38's "permanent denial in a costume", found by
+ * a worker rather than by any gate. Availability was already annotated here; the grant was
+ * not, and the two failures cost a caller exactly the same thing.
+ *
+ * The refusal sentence is the surface's own (`grantRefusal`), so the list says what the
+ * call would say. Applies to whichever listing crosses — the page's, over the bridge, or
+ * the headless one.
+ */
+export function describeTool(tool: {
+  readonly description: string;
+  readonly available: boolean;
+  readonly missing: {
+    readonly commands: readonly string[];
+    readonly queries: readonly string[];
+    readonly ports: readonly string[];
+  };
+  readonly grantRefusal?: string | null;
+}): string {
+  const notes: string[] = [];
+  if (!tool.available) {
+    const names = [...tool.missing.commands, ...tool.missing.queries, ...tool.missing.ports];
+    notes.push(`currently unavailable: missing ${names.join(", ") || "capabilities"}`);
+  }
+  const refusal = tool.grantRefusal ?? null;
+  if (refusal !== null) notes.push(refusal);
+  return notes.length === 0 ? tool.description : `${tool.description} (${notes.join(" ")})`;
 }
 
 export function publishedTools(surface: AgentToolSurface): readonly PublishedTool[] {
@@ -57,7 +91,7 @@ export function publishedTools(surface: AgentToolSurface): readonly PublishedToo
     const schema = toolInputSchema(tool.name);
     return {
       name: tool.name,
-      description: tool.description,
+      description: describeTool(tool),
       inputSchema: schema === null ? { type: "object" } : zodToJsonSchema(schema),
     };
   });

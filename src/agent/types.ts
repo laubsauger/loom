@@ -279,6 +279,20 @@ export interface AgentToolInfo {
   };
   /** Capability classes the caller does NOT currently hold (§V38). */
   readonly ungranted: readonly CapabilityClass[];
+  /**
+   * Ungranted classes this session has NO WAY to grant — a permanent refusal (T1097).
+   *
+   * The difference between "not yet" and "never here" is the whole of §V38's "permanent
+   * denial in a costume": a caller told to ask again when nothing can ever say yes
+   * spends its turns on a loop. Empty when every ungranted class has a route.
+   */
+  readonly unobtainable: readonly CapabilityClass[];
+  /**
+   * The refusal a call to this tool would receive right now, or null when nothing is
+   * ungranted (T1097). Derived ONCE here so the denial a caller reads and the note a
+   * published tool list carries cannot disagree (§V39).
+   */
+  readonly grantRefusal: string | null;
   readonly inputSchema: z.ZodType<unknown>;
 }
 
