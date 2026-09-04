@@ -18,6 +18,7 @@ import { createPreviewSystem } from "../../runtime/previews/system.ts";
 import { DEFAULT_PREVIEW_VIEW } from "../../runtime/previews/types.ts";
 import type { PreviewRequest } from "../../runtime/previews/types.ts";
 import { decodeComponents } from "../headless/pixel-compare.ts";
+import { frameLoopBreather } from "../headless/render-harness.ts";
 import { POC, POC_SIZE, pocDocument, pocGraph, pocSettings } from "./poc-graph.ts";
 
 /**
@@ -318,8 +319,20 @@ describe("T49 Phase 1 exit — a feedback graph runs long without accumulating G
       expect(builds).toBe(1);
       expect(bytes).toBeGreaterThan(0);
 
-      // The playback segment. Nothing is read, nothing is compiled, nothing is resized.
+      /*
+       * The playback segment. Nothing is read, nothing is compiled, nothing is resized.
+       *
+       * T1132 — and the yield is not a change to what this test measures. Thirty-six
+       * thousand `render` calls with no await between them held the worker's event loop for
+       * the whole segment, so `onTaskUpdate` timed out on a reply it could not read and the
+       * run exited non-zero with all nine tests here passing. This file was the SECOND
+       * instance of that; `frameLoopBreather` is the one implementation both use, and the
+       * long note lives on it. It reads the clock and encodes nothing, so every counter
+       * asserted below is untouched by it.
+       */
+      const breathe = frameLoopBreather();
       for (let index = 1; index < FRAMES_LONG_RUN; index += 1) {
+        await breathe();
         backend.render(compiled, frameInputs(index));
       }
 
