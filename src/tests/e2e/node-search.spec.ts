@@ -475,7 +475,23 @@ test("the tabs and the library pane's dropdown offer the SAME categories", async
    */
   await openApp(page);
 
-  await page.locator('button[aria-label="Filter by category"]').click();
+  /*
+   * T1124 — the NODE library's dropdown, named by what the pane searches rather than by
+   * where the pane sits.
+   *
+   * `button[aria-label="Filter by category"]` is no longer unique: the EXAMPLE library
+   * ships the same control, and since T1123/T1125 the default arrangement has a node
+   * library in the left dock and an examples pane open in the bottom one, so the bare
+   * locator resolves to two elements and the click refuses in strict mode. Scoping to
+   * `data-pane-leaf="leaf-left"` would only re-break the day the docks move again
+   * (§V906); scoping to the tab panel that holds the node SEARCH BOX names the pane by
+   * what it is, and it is the same pane `openBrowser` compares against below.
+   */
+  const libraryPane = page
+    .getByRole("tabpanel")
+    .filter({ has: page.locator('input[aria-label="Search nodes"]') });
+  await expect(libraryPane).toHaveCount(1);
+  await libraryPane.getByLabel("Filter by category").click();
   const fromPane = await page
     .locator('[data-radix-popper-content-wrapper] button')
     .allTextContents();
@@ -484,7 +500,16 @@ test("the tabs and the library pane's dropdown offer the SAME categories", async
   await openBrowser(page);
   const fromTabs = await page.locator('[data-testid="node-search"] [role="tab"]').allTextContents();
 
-  const strip = (names: string[]): string[] => names.map((name) => name.trim()).filter((name) => name !== "all");
+  /*
+   * The catch-all row is an AFFORDANCE, not a category, and the two surfaces spell it
+   * differently: the strip renders a lowercase `all` tab, the pane's chip an "All". That
+   * is a copy difference and it is deliberately not what this gate is about — the claim
+   * is that the CATEGORIES agree — so the catch-all comes off both lists case-blind.
+   * (T1124: matching it exactly meant "All" survived the filter on one side only, and the
+   * comparison failed on a word neither list is really offering.)
+   */
+  const strip = (names: string[]): string[] =>
+    names.map((name) => name.trim()).filter((name) => name.toLowerCase() !== "all");
   expect(strip(fromTabs)).toEqual(strip(fromPane));
   // A guard on the guard: if either list ever came back empty this would pass vacuously.
   expect(strip(fromTabs).length).toBeGreaterThan(5);

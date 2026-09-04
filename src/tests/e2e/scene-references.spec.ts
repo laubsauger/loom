@@ -41,7 +41,21 @@ test("a render node offers no input sockets, and a named camera paints a hued re
   const targets = page.locator(`.react-flow__handle.target[data-nodeid="${render}"]`);
   await expect(targets).toHaveCount(1);
   await expect(targets).toHaveAttribute("data-handleid", "environment");
-  await expect(page.locator(`.react-flow__handle.source[data-nodeid="${render}"]`)).toHaveCount(1);
+  /*
+   * …and its OUTPUTS are the whole story on the source side: `out` and, since T722, the
+   * camera's readable `depth`.
+   *
+   * T1124: this read `toHaveCount(1)` and had been red since T722 added the depth port.
+   * A count is the wrong shape for the claim anyway — it cannot tell "Render grew a
+   * second output" from "Render's output was renamed" — so the handles are named. The
+   * list is a FIXTURE, not a read of `scene.ts`: pinning it to the definition would make
+   * the assertion agree with whatever the definition says and stop meaning anything.
+   */
+  const sources = page.locator(`.react-flow__handle.source[data-nodeid="${render}"]`);
+  await expect(sources).toHaveCount(2);
+  expect(
+    await sources.evaluateAll((nodes) => nodes.map((node) => node.getAttribute("data-handleid"))),
+  ).toEqual(["out", "depth"]);
   const camName = (await page.getByTestId(`node-name-${cam}`).innerText()).trim();
   expect(camName.length).toBeGreaterThan(0);
 

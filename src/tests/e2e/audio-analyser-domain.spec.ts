@@ -199,10 +199,51 @@ test.describe("T702 — the analyser's band channels are dB-domain, measured LIV
           decibels: number[];
         }[] = [];
 
+        /*
+         * WAIT ON THE AUDIO CLOCK, NOT THE WALL CLOCK (T1124).
+         *
+         * `context.currentTime` only advances when the render thread actually renders, so
+         * "the analyser has consumed N seconds of the signal it is being asked about" is a
+         * CONDITION this can wait for. A `setTimeout` cannot express that: it measures the
+         * main thread's idea of elapsed time, which under load has nothing to do with how
+         * much audio was produced.
+         *
+         * This spec used a flat 90 ms, and on the null sink headless Chromium runs on this
+         * machine `context.sampleRate` is 24000 — so one analyser window (2048 samples) is
+         * 85.3 ms and the wait cleared it by 4.7 ms. Measured at HEAD, 12 copies of this
+         * spec in parallel: 5 of 12 runs failed, ALWAYS on the first of the four slope
+         * steps (-0.0525, -0.0536, +0.0151, +0.0250 against a predicted 0.1429) because
+         * the +10 dB captures were taken while the window still held pre-roll silence, and
+         * two runs reported `NaN` from check 3 — a capture in which every bin sat below
+         * -100 dB, i.e. no audio at all. Serially the same spec passed 6 of 6 with the
+         * statistic between 0.1404 and 0.1476. A flake with a longer sleep would still be
+         * a flake: at a 48 kHz sample rate the old wait was two windows and fine, so the
+         * number was never the problem — reading a duration instead of the clock was.
+         *
+         * The bound is generous and it THROWS rather than proceeding: a starved run says
+         * so, instead of reporting a mis-measured slope as a refutation of §V647.
+         */
+        const advanceAudio = async (seconds: number): Promise<void> => {
+          const from = context.currentTime;
+          for (let attempt = 0; attempt < 1000; attempt += 1) {
+            if (context.currentTime - from >= seconds) return;
+            await new Promise((resolve) => setTimeout(resolve, 5));
+          }
+          throw new Error(
+            `the audio clock advanced ${(context.currentTime - from).toFixed(4)}s of a needed ` +
+              `${seconds.toFixed(4)}s in 5s of wall time — the render thread is starved`,
+          );
+        };
+        const windowSeconds = fftSize / context.sampleRate;
+
         for (const gainDb of gains) {
           gain.gain.value = 10 ** (gainDb / 20);
+          // TWO full windows before the first capture at a new gain: one to flush the
+          // previous gain out of the analyser's 2048 samples, one of margin for the
+          // quantum the change itself lands in.
+          await advanceAudio(windowSeconds * 2);
           for (let take = 0; take < captures; take += 1) {
-            await new Promise((resolve) => setTimeout(resolve, 90));
+            await advanceAudio(windowSeconds);
             /*
              * SUSPEND before reading. The audio thread advances the analyser's write
              * index in render quanta; without this, `getFloatTimeDomainData` and

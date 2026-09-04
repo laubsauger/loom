@@ -87,7 +87,11 @@ test("a drag on a control never pans the graph or moves the node (§V20)", async
   expect(afterBox?.y).toBeCloseTo(beforeBox?.y ?? Number.NaN, 1);
   expect(afterTransform, "the control drag panned the canvas").toBe(beforeTransform);
   // The gesture belongs to the control: the node it sits on is still the selection.
-  await expect(page.getByRole("tabpanel", { name: "inspector" })).toContainText(noise);
+  // T1124: read from `data-node-id`, not from the panel's text — the header names the
+  // node (T954/§B170) and never prints the id a labelled node is addressed by.
+  await expect(
+    page.getByRole("tabpanel", { name: "inspector" }).locator(`[data-node-id="${noise}"]`),
+  ).toHaveCount(1);
 });
 
 test("typing a value into the field commits it, and one undo takes it back", async ({ page }) => {

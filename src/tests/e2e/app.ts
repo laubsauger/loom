@@ -331,8 +331,26 @@ export async function selectNode(page: Page, nodeId: string): Promise<void> {
   // few px can sit under the dock's tab strip, and a click at {40,8} lands on the
   // strip instead. The name is what a user clicks, and it is always inside the header.
   await page.getByTestId(`node-name-${nodeId}`).click();
-  // The inspector lives in a dock tab panel titled by its pane (T436 layout shell).
-  await expect(page.getByRole("tabpanel", { name: "inspector" })).toContainText(nodeId);
+  /*
+   * The inspector lives in a dock tab panel titled by its pane (T436 layout shell), and
+   * WHICH node it is showing is read from `data-node-id`, not from its text.
+   *
+   * T1124: this used to be `toContainText(nodeId)`, which stopped being true at T954 —
+   * the header was deliberately re-founded on the NAME (`node.label ?? node.id`, §B170:
+   * ids are edge addresses, labels are names), so a node carrying a label never prints
+   * its id anywhere in the panel. Every node the library adds carries one, so the helper
+   * asserted a string the inspector had no reason to render and took EIGHT specs down
+   * with it (node-info ×2, parameter-drag ×4, precision-swatch, project-io) — none of
+   * them about the inspector's header at all.
+   *
+   * `data-node-id` is the same fact in the form that survives a copy change: it is the
+   * id the panel is built for, it moves when the selection moves, and a helper that
+   * asserted the label instead would pass for the WRONG node whenever two nodes share
+   * a name.
+   */
+  await expect(
+    page.getByRole("tabpanel", { name: "inspector" }).locator(`[data-node-id="${nodeId}"]`),
+  ).toHaveCount(1);
 }
 
 /**
