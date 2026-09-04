@@ -44,15 +44,18 @@ import { SHARED_UNIFORMS_WGSL } from "../../runtime/backend/shared-uniforms.ts";
  * Deterministic (§V44/§V45): `absTime` is the only clock; the volumetric dither is a hash
  * of the pixel, fixed across frames, so it is grain rather than flicker.
  */
-export const REACTOR_WGSL = `${SHARED_UNIFORMS_WGSL}
+const TEMPLATE = `${SHARED_UNIFORMS_WGSL}
 struct Params {
   layers: f32,        // how many nested shells around the core, 0 to 4
   divisions: f32,     // cells per shell on the outermost sphere; inner shells carry fewer
   frameWidth: f32,    // width of the organic frame bars, as a share of a cell
-  shellGap: f32,      // radial spacing between shells, as a share of the outer radius
+  blocked: f32,       // share of each shell's faces that are solid plates — each shell blocks its own set
+  shellGap: f32,      // radial spacing between shells, as a share of the outer radius — driven by the high-mids
+  swell: f32,         // the outer shell's radius — driven by the music's level on the slowest lag, so the ball breathes
   ior: f32,           // index of refraction of the faces — 1 is inert, 1.5 is glass
   dispersion: f32,    // chromatic split of the reflected core glow per channel
   facet: f32,         // per-cell tilt of each glass face — the disco glitter
+  glassColor: vec4f,  // the glass's own colour: its head-on reflectance, its scatter, and its transmission tint
   coreGain: f32,      // the core's radiance — driven by the music's level
   coreColor: vec4f,   // the core's hot colour
   edgeColor: vec4f,   // the core's cool rim colour
@@ -65,6 +68,7 @@ struct Params {
   orbit: f32,         // camera orbit rate
   distance: f32,      // camera distance from the core
   exposure: f32,      // master gain on the whole picture before the bloom
+  hueDrift: f32,      // degrees per minute the whole lit palette turns — core, glass and beams together, the sky stays
 };
 
 @group(0) @binding(0) var inputSampler: sampler;
@@ -72,14 +76,22 @@ struct Params {
 @group(0) @binding(2) var<uniform> frameU: SharedFrame;
 @group(0) @binding(3) var<uniform> params: Params;
 
+/* Which half of the picture this pass draws (T1150). PASS 0 is the geometry — shells, glass,
+   core, the haze BEHIND the ball along the refracted ray — at the project resolution, and it
+   reads the front haze from its input. PASS 1 is the FRONT haze alone: the straight ray from
+   the camera through the medium to the first thing it hits, run at half resolution because
+   a volumetric is low-frequency and the exterior medium was the whole frame's cost; the
+   bilinear read in PASS 0 is the softening that also settles the grain. */
+const PASS: i32 = __PASS__;
 const PI: f32 = 3.14159265;
 const OUTER_R: f32 = 1.0;
 const HAZE_R: f32 = 1.9;          // the bound of the exterior haze — beams leak this far
 const SHELL_HALF: f32 = 0.012;    // half thickness the frame bars stand proud of the face
 const MAX_EVENTS: i32 = 12;       // outer bound + 4 shells × 2 crossings + core + exit
-const HAZE_PER_UNIT: f32 = 10.0;  // haze samples per world unit of segment
+const HAZE_PER_UNIT: f32 = 20.0;  // front haze: samples per world unit (PASS 1, quarter the pixels)
+const HAZE_PER_UNIT_BACK: f32 = 8.0; // haze behind the ball along the refracted ray (PASS 0)
 const HAZE_STEPS_MIN: i32 = 4;
-const HAZE_STEPS_MAX: i32 = 18;
+const HAZE_STEPS_MAX: i32 = 40;
 const CORE_STEPS: i32 = 20;       // volumetric samples across the core
 const MAX_LAYERS: i32 = 4;
 
@@ -112,6 +124,24 @@ fn fbm3(x: vec3f) -> f32 {
   }
   return v;
 }
+
+/* Colour evolution (the owner's round three): ONE hue angle, applied to every lit colour,
+   so the hot core, the cold glass and the warm beams keep their relationship while the
+   scheme turns — a YIQ rotation, free-running on absTime, minutes per revolution. The sky
+   and the stars are not lit by the core and do not turn. */
+fn hueTurn(c: vec3f) -> vec3f {
+  let a = frameU.absTime * params.hueDrift * (PI / 180.0) / 60.0;
+  let y = dot(c, vec3f(0.299, 0.587, 0.114));
+  let i = dot(c, vec3f(0.596, -0.274, -0.322));
+  let q = dot(c, vec3f(0.211, -0.523, 0.312));
+  let ca = cos(a); let sa = sin(a);
+  let i2 = i * ca - q * sa;
+  let q2 = i * sa + q * ca;
+  return max(vec3f(y + 0.956 * i2 + 0.621 * q2, y - 0.272 * i2 - 0.647 * q2, y - 1.106 * i2 + 1.703 * q2), vec3f(0.0));
+}
+fn coreRGB() -> vec3f { return hueTurn(params.coreColor.rgb); }
+fn edgeRGB() -> vec3f { return hueTurn(params.edgeColor.rgb); }
+fn glassRGB() -> vec3f { return hueTurn(params.glassColor.rgb); }
 
 fn rotY(v: vec3f, a: f32) -> vec3f {
   let c = cos(a); let s = sin(a);
@@ -164,7 +194,7 @@ fn layerCount() -> i32 {
   return clamp(i32(round(params.layers)), 0, MAX_LAYERS);
 }
 fn shellRadius(k: i32) -> f32 {
-  return OUTER_R - f32(k) * params.shellGap * OUTER_R;
+  return OUTER_R * params.swell - f32(k) * params.shellGap * OUTER_R;
 }
 /* The core's radius: just inside the innermost shell, or a bare core with no shells. */
 fn coreRadius() -> f32 {
@@ -188,21 +218,36 @@ fn barWidth(k: i32) -> f32 {
 }
 /* 1 through a face, 0 under a bar, soft over 'soft' of a cell — the light gate. The medium
    reads it wider than the surface does: a shaft's edge blurs with distance from the bar. */
+/* A face is a solid plate when its cell's hash falls under this shell's share. The share
+   and the hash salt both vary by shell, so every shell blocks a different set of cells and
+   throws its own silhouette into the light. */
+fn blockedFace(c: Cell, k: i32) -> bool {
+  let share = params.blocked * (0.7 + 0.3 * f32(k % 2 == 0));
+  return hash13(c.id * 1.37 + vec3f(f32(k) * 13.7, 5.1, 2.3)) < share;
+}
 fn gate(p: vec3f, k: i32, soft: f32) -> f32 {
   let c = cellEdge(shellDir(p, k), shellFreq(k), f32(k));
   let w = barWidth(k);
-  return smoothstep(w, w + soft, c.edge);
+  return select(smoothstep(w, w + soft, c.edge), 0.0, blockedFace(c, k));
 }
 
-/* Light arriving at x from the core, gated by every shell between x and the origin. */
+/* The core's light at x with no shell in the way — the cheap term for surfaces. */
+fn coreLightBare(x: vec3f) -> f32 {
+  let r = length(x);
+  return params.coreGain / (r * r + 0.04);
+}
+
+/* Light arriving at x from the core, gated by the shells between x and the origin. Outside
+   the ball only the two outer shells gate: the third's shadow has already passed two gates
+   and is not worth a Worley per sample (the exterior haze is the file's whole cost). */
 fn coreLightAt(x: vec3f) -> f32 {
   let r = length(x);
   var vis = 1.0;
-  let n = layerCount();
+  let n = select(layerCount(), min(layerCount(), 2), r > OUTER_R);
   for (var k: i32 = 0; k < MAX_LAYERS; k = k + 1) {
     if (k >= n) { break; }
     let rk = shellRadius(k);
-    if (rk < r) { vis = vis * mix(0.03, 1.0, gate(x, k, 0.06 + 0.22 * (r - rk))); }
+    if (rk < r) { vis = vis * mix(0.03, 1.0, gate(x, k, 0.05 + 0.10 * (r - rk))); }
   }
   return params.coreGain * vis / (r * r + 0.04);
 }
@@ -217,8 +262,8 @@ fn laser(d: vec3f) -> f32 {
 
 /* Colour of the core by normalised radius: white-hot centre, hot body, cool rim. */
 fn coreTint(rn: f32) -> vec3f {
-  let hot = mix(vec3f(1.0, 0.98, 0.92), params.coreColor.rgb, smoothstep(0.05, 0.45, rn));
-  return mix(hot, params.edgeColor.rgb, smoothstep(0.55, 1.0, rn));
+  let hot = mix(vec3f(1.0, 0.98, 0.92), coreRGB(), smoothstep(0.05, 0.45, rn));
+  return mix(hot, edgeRGB(), smoothstep(0.55, 1.0, rn));
 }
 
 /* The core's glow seen along a ray that does NOT enter it — what a facet reflects. */
@@ -228,7 +273,7 @@ fn coreGlow(o: vec3f, d: vec3f) -> vec3f {
   let ahead = smoothstep(-0.3, 0.3, b);
   let g = params.coreGain * ahead / (h2 * 6.0 + 0.15);
   let rn = clamp(sqrt(max(h2, 0.0)) / coreRadius(), 0.0, 1.0);
-  return g * 0.9 * coreTint(rn) + laser(normalize(o + d * max(b, 0.0))) * 0.08 * params.coreColor.rgb;
+  return g * 0.9 * coreTint(rn) + laser(normalize(o + d * max(b, 0.0))) * 0.08 * coreRGB();
 }
 
 fn fresnel(cosI: f32, eta: f32) -> f32 {
@@ -266,15 +311,17 @@ fn background(d: vec3f) -> vec3f {
 
 // ---------------------------------------------------------------- integrators
 /* Haze along [o + d·t0, o + d·t1]: core light × density, gated by the shells. */
-fn hazeSegment(o: vec3f, d: vec3f, t0: f32, t1: f32, jitter: f32) -> vec3f {
+/* Returns (core-tinted weight, edge-tinted weight): the colour is applied by whoever reads
+   it, so the half-res pass carries no palette and the two passes cannot disagree about it. */
+fn hazeSegment(o: vec3f, d: vec3f, t0: f32, t1: f32, jitter: f32, perUnit: f32) -> vec2f {
   let len = t1 - t0;
-  if (len <= 0.0) { return vec3f(0.0); }
+  if (len <= 0.0 || params.haze <= 0.0) { return vec2f(0.0); }
   // Samples per unit length, not per segment: a grazing ray's long walk through the outer
   // medium was aliasing the gate into shards at a fixed count. The half-step jitter turns
   // what is left into fine static grain rather than banding.
-  let steps = clamp(i32(len * HAZE_PER_UNIT), HAZE_STEPS_MIN, HAZE_STEPS_MAX);
+  let steps = clamp(i32(len * perUnit), HAZE_STEPS_MIN, HAZE_STEPS_MAX);
   let dt = len / f32(steps);
-  var acc = vec3f(0.0);
+  var acc = vec2f(0.0);
   for (var s: i32 = 0; s < HAZE_STEPS_MAX; s = s + 1) {
     if (s >= steps) { break; }
     let t = t0 + (f32(s) + 0.25 + 0.5 * jitter) * dt;
@@ -282,10 +329,16 @@ fn hazeSegment(o: vec3f, d: vec3f, t0: f32, t1: f32, jitter: f32) -> vec3f {
     let light = coreLightAt(x);
     let r = length(x);
     // Thin inside the ball so the shells read; the medium is for the beams OUTSIDE.
-    let dens = params.haze * mix(0.22, 1.0, smoothstep(0.75, 1.05, r)) * smoothstep(HAZE_R, OUTER_R * 0.8, r);
-    let beam = 1.0 + laser(normalize(x)) * 4.0;
-    let tint = mix(params.coreColor.rgb, params.edgeColor.rgb, smoothstep(0.9, 1.9, r));
-    acc = acc + dens * light * beam * tint * dt;
+    // Thin between the shells, a bright skirt around the core, dense outside for the beams.
+    let dens = params.haze * (mix(0.22, 1.0, smoothstep(0.75, 1.05, r)) + 0.45 * smoothstep(0.7, 0.2, r))
+             * smoothstep(HAZE_R, OUTER_R * 0.8, r);
+    // Streaks: any function of DIRECTION alone is constant along a radius, so a fine noise on
+    // the direction reads as striation running with the beam rather than lumps sitting on it.
+    let dir = normalize(x);
+    let streak = 0.55 + 0.9 * vnoise(rotY(dir, frameU.absTime * 0.05) * 9.0);
+    let beam = (1.0 + laser(dir) * 4.0) * streak;
+    let m = smoothstep(0.95, 1.7, r);
+    acc = acc + dens * light * beam * dt * vec2f(1.0 - m, m);
   }
   return acc;
 }
@@ -307,8 +360,8 @@ fn coreSegment(o: vec3f, d: vec3f, t0: f32, t1: f32, jitter: f32) -> vec4f {
     let churn = fbm3(x * (3.5 / rc) + vec3f(0.0, tm * 0.35, tm * 0.21) + vec3f(0.3 * sin(tm * 0.7)));
     let dens = shell * (0.35 + params.turbulence * (churn - 0.3) * 2.2);
     let fil = laser(normalize(x)) * smoothstep(0.0, 0.25, rn) * (1.0 - rn);
-    let emit = params.coreGain * (max(dens, 0.0) * 2.4 + fil * 1.6) * coreTint(rn)
-             + params.coreGain * 6.0 * smoothstep(0.55, 0.0, rn) * vec3f(1.0, 0.97, 0.9);
+    let emit = params.coreGain * (max(dens, 0.0) * 3.2 + fil * 1.6) * coreTint(rn)
+             + params.coreGain * 5.0 * smoothstep(0.6, 0.0, rn) * mix(vec3f(1.0, 0.97, 0.9), coreRGB(), 0.4);
     acc = acc + tr * emit * dt;
     tr = tr * exp(-max(dens, 0.0) * 0.9 * dt);
   }
@@ -319,24 +372,42 @@ fn coreSegment(o: vec3f, d: vec3f, t0: f32, t1: f32, jitter: f32) -> vec4f {
    the bar thins toward a face — the light bleeding through the frame rather than around it. */
 fn shadeFrame(p: vec3f, n: vec3f, d: vec3f, k: i32, edge01: f32) -> vec3f {
   let toCore = normalize(-p);
-  let light = coreLightAt(p * 1.02);
+  let light = coreLightBare(p) * 0.6;
   let diff = max(dot(n, toCore), 0.0);
   let back = max(dot(-n, toCore), 0.0);
   let rim = pow(1.0 - max(dot(n, -d), 0.0), 3.0);
   let spec = pow(max(dot(reflect(d, n), toCore), 0.0), 24.0);
   let env = background(reflect(d, n)) * 2.0;
   let base = params.frameColor.rgb;
-  let lit = base * (0.04 + 0.9 * diff * light) * params.coreColor.rgb
-          + base * 0.25 * back * light * params.edgeColor.rgb
-          + spec * light * 0.6 * mix(params.coreColor.rgb, vec3f(1.0), 0.5)
-          + rim * light * 0.35 * params.edgeColor.rgb
+  let lit = base * (0.04 + 0.9 * diff * light) * coreRGB()
+          + base * 0.25 * back * light * edgeRGB()
+          + spec * light * 0.6 * mix(coreRGB(), vec3f(1.0), 0.5)
+          + rim * light * 0.35 * edgeRGB()
           + env * (0.15 + 0.5 * rim);
-  let bleed = smoothstep(0.55, 1.0, edge01) * light * 0.5 * params.coreColor.rgb;
+  let bleed = smoothstep(0.55, 1.0, edge01) * light * 0.3 * coreRGB();
   return lit + bleed;
 }
 
 // ---------------------------------------------------------------- the walk
-fn trace(ro: vec3f, rd: vec3f, jitter: f32) -> vec3f {
+fn hazeColour(w: vec2f) -> vec3f { return w.x * coreRGB() + w.y * edgeRGB(); }
+
+/* The first event along the straight ray from o: the nearest of every shell, the core
+   boundary and the haze bound. Shared by both passes so they agree where the front ends. */
+fn firstEvent(o: vec3f, d: vec3f) -> vec2f {
+  let n = layerCount();
+  var tNext = sphereHit(o, d, HAZE_R);
+  var kind = -1.0;
+  for (var k: i32 = 0; k < MAX_LAYERS; k = k + 1) {
+    if (k >= n) { break; }
+    let tk = sphereHit(o, d, shellRadius(k));
+    if (tk > 0.0 && (tNext < 0.0 || tk < tNext)) { tNext = tk; kind = f32(k); }
+  }
+  let tc = sphereHit(o, d, coreRadius());
+  if (tc > 0.0 && (tNext < 0.0 || tc < tNext)) { tNext = tc; kind = 9.0; }
+  return vec2f(tNext, kind);
+}
+
+fn trace(ro: vec3f, rd: vec3f, jitter: f32, uv: vec2f) -> vec3f {
   var o = ro;
   var d = rd;
   var col = vec3f(0.0);
@@ -354,16 +425,9 @@ fn trace(ro: vec3f, rd: vec3f, jitter: f32) -> vec3f {
     let r = length(o);
     if (r > HAZE_R + 1.0e-3) { break; }
 
-    // The next crossing: the nearest of every shell, the core boundary and the haze bound.
-    var tNext = sphereHit(o, d, HAZE_R);
-    var kind = -1;                       // -1 exit, 0..3 shell k, 9 core
-    for (var k: i32 = 0; k < MAX_LAYERS; k = k + 1) {
-      if (k >= n) { break; }
-      let tk = sphereHit(o, d, shellRadius(k));
-      if (tk > 0.0 && (tNext < 0.0 || tk < tNext)) { tNext = tk; kind = k; }
-    }
-    let tc = sphereHit(o, d, rc);
-    if (tc > 0.0 && (tNext < 0.0 || tc < tNext)) { tNext = tc; kind = 9; }
+    let ev = firstEvent(o, d);
+    let tNext = ev.x;
+    let kind = i32(ev.y);                // -1 exit, 0..3 shell k, 9 core
     if (tNext < 0.0) { break; }
 
     if (r < rc - 1.0e-4) {
@@ -375,8 +439,14 @@ fn trace(ro: vec3f, rd: vec3f, jitter: f32) -> vec3f {
       continue;
     }
 
-    // Haze up to the crossing.
-    col = col + tp * hazeSegment(o, d, 0.0, tNext, jitter);
+    // Haze up to the crossing. The FRONT segment (e == 0, the straight ray from the haze
+    // bound to the first thing it meets) was drawn by PASS 1 at half resolution and arrives
+    // on the input; every later segment rides a refracted ray only this pass knows.
+    if (e == 0) {
+      col = col + hazeColour(textureSampleLevel(inputTexture, inputSampler, uv, 0.0).rg);
+    } else {
+      col = col + tp * hazeColour(hazeSegment(o, d, 0.0, tNext, jitter, HAZE_PER_UNIT_BACK));
+    }
     let p = o + d * tNext;
 
     if (kind < 0) { col = col + tp * background(d); break; }
@@ -389,6 +459,13 @@ fn trace(ro: vec3f, rd: vec3f, jitter: f32) -> vec3f {
     let sn = normalize(p);
     let entering = dot(d, sn) < 0.0;
     let nOut = select(-sn, sn, entering);
+
+    if (blockedFace(cell, k)) {
+      // A solid plate: the frame's material across the whole face, flat to the sphere.
+      col = col + tp * shadeFrame(p, nOut, d, k, 0.0) * 0.85;
+      tp = vec3f(0.0);
+      break;
+    }
 
     if (cell.edge < w) {
       // Rounded bar: the sphere normal tilted toward the border by how close we are to it.
@@ -405,19 +482,26 @@ fn trace(ro: vec3f, rd: vec3f, jitter: f32) -> vec3f {
     let nf = normalize(nOut + (tilt - nOut * dot(tilt, nOut)) * params.facet * 0.35);
     let cosI = clamp(dot(-d, nf), 0.0, 1.0);
     let etaHere = select(1.0 / eta, eta, entering);
-    let F = fresnel(cosI, eta);
+    // Schlick alone is ~3% head-on and only grows at grazing, so a colour that lives in it
+    // vanishes the moment a face turns toward you (the owner's first note). The glass gets a
+    // floor on its head-on reflectance, tinted its own colour, and a scatter term that
+    // carries the same colour through the face under the core's light.
+    let F = max(fresnel(cosI, eta), 0.06);
+    let fTint = mix(vec3f(1.0), glassRGB(), 0.6);
     let refl = reflect(d, nf);
+    let lightHere = coreLightBare(p) * 0.6;
+    col = col + tp * glassRGB() * 0.02 * lightHere;
     // The reflected share reads the core's glow, per channel offset by dispersion.
     let dsp = params.dispersion * 0.6;
     let gR = coreGlow(p, normalize(refl + across3(nf) * dsp)).r;
     let gG = coreGlow(p, refl).g;
     let gB = coreGlow(p, normalize(refl - across3(nf) * dsp)).b;
-    col = col + tp * F * (vec3f(gR, gG, gB) + background(refl) * 0.6);
+    col = col + tp * F * fTint * (vec3f(gR, gG, gB) + background(refl) * 0.6);
     // The transmitted share bends and walks on; total internal reflection turns it back.
     let k2 = 1.0 - etaHere * etaHere * (1.0 - cosI * cosI);
     var t = refl;
     if (k2 >= 0.0) { t = normalize(etaHere * d + (etaHere * cosI - sqrt(k2)) * nf); }
-    tp = tp * (1.0 - F) * vec3f(0.93, 0.96, 0.97);
+    tp = tp * (1.0 - F) * mix(vec3f(0.97), glassRGB() * 0.4 + 0.6, 0.18);
     d = t;
     o = p + d * 3.0e-4;
     if (max(max(tp.r, tp.g), tp.b) < 0.01) { break; }
@@ -450,16 +534,32 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   let rd = normalize(fwd * focal + right * q.x + upv * q.y);
 
   // Fixed per-pixel dither for the volume integrals: grain, never flicker.
+  // White-noise hash, fixed per pixel. Interleaved gradient noise was tried for its evenness
+  // and refused: its lattice reads as a dot screen in a still, worse than grain.
   let px = floor(uv * frameU.resolution);
   let jitter = hash13(vec3f(px, 1.7));
 
-  var col = trace(eye, rd, jitter) * params.exposure;
+  if (PASS == 1) {
+    // The front haze only, as two weights; the input (a dark bed) is read to keep the
+    // binding live and contributes nothing.
+    let bed = textureSampleLevel(inputTexture, inputSampler, uv, 0.0).r * 0.0;
+    let tb = sphereHit(eye, rd, HAZE_R);
+    if (tb < 0.0) { return vec4f(0.0, 0.0, 0.0, 1.0); }
+    let o = eye + rd * tb;
+    let ev = firstEvent(o, rd);
+    let w = hazeSegment(o, rd, 0.0, max(ev.x, 0.0), jitter, HAZE_PER_UNIT);
+    return vec4f(w.x + bed, w.y, 0.0, 1.0);
+  }
+
+  var col = trace(eye, rd, jitter, uv) * params.exposure;
   // A gentle vignette keeps the eye on the ball.
   let vig = smoothstep(1.9, 0.4, length(q * vec2f(0.8, 1.0)));
   col = col * mix(0.55, 1.0, vig);
-  // The input is read so the binding stays live; it contributes a whisper of its texture.
-  let bed = textureSampleLevel(inputTexture, inputSampler, uv, 0.0).rgb;
-  col = col + bed * 0.02;
   return vec4f(col, 1.0);
 }
 `;
+
+/** The geometry pass at the project resolution — the node whose page holds every knob. */
+export const REACTOR_WGSL = TEMPLATE.replace("__PASS__", "0");
+/** The front-haze pass, run at half resolution by the node's resolution override (T1150). */
+export const REACTOR_HAZE_WGSL = TEMPLATE.replace("__PASS__", "1");

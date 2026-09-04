@@ -1,5 +1,5 @@
-import { settings, node, edge, graph, document, drivenSlot } from "./builders.ts";
-import { REACTOR_WGSL } from "../shaders/reactor.wgsl.ts";
+import { settings, node, edge, graph, document, drivenSlot, expressionSlot } from "./builders.ts";
+import { REACTOR_HAZE_WGSL, REACTOR_WGSL } from "../shaders/reactor.wgsl.ts";
 
 /**
  * E55 — Reactor (T1141). LIT FROM INSIDE.
@@ -58,32 +58,46 @@ import { REACTOR_WGSL } from "../shaders/reactor.wgsl.ts";
  *
  * ## MEASURED, on the shipped file (the numbers the T1141 row asked for)
  *
- * COST, Dawn/Metal, 1280×720, the whole graph including the bloom, ms per frame:
- *   defaults (3 shells, 7 divisions)            13.1
- *   top of range (4 shells, 14 divisions, 6 filaments)  16.6
- *   bare core (0 shells)                         6.2
- * The exterior haze is the cost: samples per world unit (14 → 10 after the first cut), each
- * sample gating through every shell. That is where a slower device should be trimmed first.
+ * COST, Dawn/Metal, the whole graph including both bloom widths, ms per frame, min of
+ * repeated runs (another session shared the GPU part of the evening; single runs drifted
+ * up to +40%):
+ *   1280×720, defaults, one pass (first ship)       13.1
+ *   1280×720, after the owner's three rounds, one pass   14.3
+ *   1920×1080, one pass                             31     (haze off: 16 — the geometry alone is AT the 60 fps budget)
+ *   1280×720, split (T1150: front haze at half res) 13.5
+ *   1920×1080, split                                25     (40 fps)
+ * So 1080p60 is not reachable for this design on this machine even with the split; 1080p
+ * at ~40 is. The file ships at 1280×720 and the .md says how to switch.
  *
  * MOTION (§V913 — the row and the minute, same instrument, 192×108 linear luma, 120-frame
- * gaps): the recorded f60→f180 row reads 0.0154; the whole minute averages 0.0178 over 29
- * gaps, min 0.0127, max 0.0238, and the last gap f3420→f3600 reads 0.0172. Nothing settles,
- * because nothing here is an envelope.
+ * gaps), after the three rounds: the recorded f60→f180 row reads 0.0254 (first ship 0.0154);
+ * the whole minute averages 0.0269 over 29 gaps (first ship 0.0178), min 0.0211, max 0.0346,
+ * last gap f3420→f3600 0.0260. The look moved ON PURPOSE (the form lanes and the streaks);
+ * `range` moved 0.335 → 0.550 with it. Nothing settles, because nothing here is an envelope.
  *
- * DUTY (§V903 — 3600 frames of the pattern through the three lanes):
- *   coreGain  = 2.8·level  + 0.75 → 0.905..2.198, mean 1.18, above retained 86%, longest hold 0
- *   laserGain = 4.7·low    − 3.0  → 0.307..1.583, mean 0.63, retained 0.6 sits at the mean
- *   facet     = 1.5·highMid − 0.05 → 0.393..1.018, mean 0.71, above retained 74%, longest hold 0
- * No lane is ever clamped to a constant and none can fall below its bias. `laserGain`'s
- * retained value was 1 in the first draft — brighter than 99% of what the music delivered,
- * so silence would have outshone the track; it is 0.6 now, the driven mean.
+ * DUTY (§V903/§V914 — 3600 frames of the pattern through the six lanes):
+ *   coreGain   = 2.8·level    + 0.75  (env1)  → 0.905..2.198, mean 1.18, above retained 86%, hold 0
+ *   laserGain  = 4.7·low      − 3.0   (env1)  → 0.307..1.583, mean 0.63, retained 0.6 ≈ mean, hold 0
+ *   facet      = 1.5·highMid  − 0.05  (env1)  → 0.393..1.018, mean 0.71, above retained 74%, hold 0
+ *   frameWidth = 0.62·low     − 0.265 (env2)  → 0.190..0.340, mean 0.21, above retained 31%, hold 0
+ *   shellGap   = 0.17·highMid + 0.118 (env2)  → 0.170..0.239, mean 0.20, above retained 73%, hold 1
+ *   swell      = 0.23·level   + 0.96  (env3)  → 0.980..1.079, mean 1.00, above retained 28%, hold 1
+ * No lane is ever clamped to a constant, none can fall below its bias, and every retained
+ * value sits inside its driven range. `laserGain`'s retained value was 1 in the first draft
+ * — brighter than 99% of what the music delivered — and is 0.6 now, the driven mean.
  *
- * WHAT WAS REFUSED, with the picture as the judge (§V885): a fixed 8-sample haze WITHOUT
- * dither aliased the shell gate into crystalline shards outside the ball — striking, and a
- * sampling artefact; with per-pixel dither at the same count it was speckle. Samples per
- * unit length with a half-step jitter is what ships: fine static grain, no shards. And the
- * first draft's medium was as dense inside the ball as outside, which veiled the shells the
- * whole design exists to show; the medium is now thin inside and the beams live outside.
+ * WHAT WAS REFUSED, with the picture as the judge (§V885):
+ *   - a fixed 8-sample haze WITHOUT dither aliased the shell gate into crystalline shards;
+ *     per-pixel white dither at the same count was speckle; interleaved-gradient dither
+ *     (round one) read as a dot screen in stills. Samples per unit with a half-step white
+ *     jitter ships — and the half-res front pass (T1150) is what finally settled the grain,
+ *     because a bilinear read of a quarter as many samples is a blur, not a dither.
+ *   - the first draft's medium was as dense inside the ball as outside and veiled the shells.
+ *   - round one's blue: a per-crossing transmission tint that was right once and, stacked
+ *     across six crossings, filtered the orange core to white (checked at one shell, where
+ *     the same tint had been invisible, and at four); it ships at a fifth of the strength.
+ *   - colour evolution as `lfo → grade1.hueoffset` (E35's idiom) turned the background
+ *     olive with the ball and opened the file at −180°; the hue turns inside the shader.
  */
 export const reactorDocument = document(
   "e55-reactor",
@@ -93,20 +107,51 @@ export const reactorDocument = document(
     [
       /* A near-black bed the shader reads at 2% — the input binding stays live and the
          background carries a whisper of texture instead of a flat fill. */
-      node("bed", "noise", [-900, 0], {
+      node("bed", "noise", [-1200, 0], {
         type: "perlin2d", period: 0.6, amp: 0.1, offset: 0.04,
       }, { label: "bed1" }),
+
+      /* T1150 — THE FRONT HAZE AT HALF RESOLUTION. The medium outside the ball was the
+         whole frame's cost (15 ms of 31 at 1080p), and a volumetric is low-frequency, so
+         this pass draws only the straight ray's haze up to the first thing it hits, at
+         `scale 0.5` of its input through the node's own resolution override (the seam the
+         compiler already had — no new node). `reactor1` reads it back bilinearly, which is
+         the softening the owner asked for and what settles round one's grain. Every knob it
+         needs MIRRORS `reactor1`'s by expression (`op().par` reads the RESOLVED value, driven
+         lanes included — §V148), so the two passes cannot disagree about the shells; its
+         colour is applied by `reactor1`, so it carries no palette at all. */
+      node("haze", "customWgsl", [-900, 0], {
+        source: REACTOR_HAZE_WGSL,
+      }, {
+        label: "haze1",
+        resolution: { mode: "scale", factor: 0.5 },
+        parameters: {
+          layers: expressionSlot("op('reactor1').par.layers", 3),
+          divisions: expressionSlot("op('reactor1').par.divisions", 7),
+          frameWidth: expressionSlot("op('reactor1').par.frameWidth", 0.22),
+          blocked: expressionSlot("op('reactor1').par.blocked", 0.18),
+          shellGap: expressionSlot("op('reactor1').par.shellGap", 0.2),
+          swell: expressionSlot("op('reactor1').par.swell", 1),
+          coreGain: expressionSlot("op('reactor1').par.coreGain", 1),
+          laserGain: expressionSlot("op('reactor1').par.laserGain", 0.6),
+          laserCount: expressionSlot("op('reactor1').par.laserCount", 3),
+          haze: expressionSlot("op('reactor1').par.haze", 0.35),
+          spin: expressionSlot("op('reactor1').par.spin", 1),
+          orbit: expressionSlot("op('reactor1').par.orbit", 1),
+          distance: expressionSlot("op('reactor1').par.distance", 3.2),
+        },
+      }),
 
       node("reactor", "customWgsl", [-600, 0], {
         source: REACTOR_WGSL,
         layers: 3,
         divisions: 7,
-        frameWidth: 0.22,
-        shellGap: 0.16,
+        blocked: 0.18,
         ior: 1.45,
         dispersion: 0.35,
+        glassColor: [0.4, 0.75, 1, 1],
         coreColor: [1, 0.55, 0.2, 1],
-        edgeColor: [0.2, 0.5, 1, 1],
+        edgeColor: [0.25, 0.62, 1, 1],
         laserCount: 3,
         haze: 0.35,
         spin: 1,
@@ -115,26 +160,45 @@ export const reactorDocument = document(
         orbit: 1,
         distance: 3.2,
         exposure: 1.9,
+        /* Colour evolution (round three): one hue angle turns core, glass and beams
+           together, inside the shader, so the sky stays deep and the core/glass contrast
+           is invariant — 40°/min is one revolution per nine minutes: moved when you look
+           back, never visibly cycling. A `hueoffset` LFO on `grade1` was tried first and
+           refused: it turned the background olive with the ball. */
+        hueDrift: 40,
       }, {
         label: "reactor1",
+        // The geometry pass draws at the PROJECT resolution; without this it would inherit
+        // the half-res haze it reads.
+        resolution: { mode: "project" },
         parameters: {
           coreGain: drivenSlot("levelb1:level", 1),
           laserGain: drivenSlot("lowb1:low", 0.6),
           facet: drivenSlot("highb1:highMid", 0.7),
+          swell: drivenSlot("swellb1:level", 1),
+          frameWidth: drivenSlot("barb1:low", 0.22),
+          shellGap: drivenSlot("gapb1:highMid", 0.2),
         },
       }),
 
-      /* The bloom, E35's idiom: cut the highlights, blur them wide, add them back. */
+      /* The bloom, E35's idiom in TWO widths: cut the highlights, blur them, add them back —
+         and blur the blur again for a wide skirt, so the core does not merely peak but FALLS
+         OFF (the owner's "blinded at the core" note is about the roll-off, not the dot). */
       node("cut", "level", [-300, 200], {
-        blacklevel: 0.55, whitelevel: 1, brightness: 0, contrast: 1, gamma1: 1, invert: 0, opacity: 1,
+        blacklevel: 0.5, whitelevel: 1, brightness: 0, contrast: 1, gamma1: 1, invert: 0, opacity: 1,
       }, { label: "cut1" }),
       node("blur", "blur", [0, 200], { filter: "gaussian", size: 42, extend: "hold" }, { label: "blur1" }),
       node("gain", "level", [300, 200], {
-        blacklevel: 0, whitelevel: 1, brightness: 1.4, contrast: 1, gamma1: 1, invert: 0, opacity: 1,
+        blacklevel: 0, whitelevel: 1, brightness: 1.5, contrast: 1, gamma1: 1, invert: 0, opacity: 1,
       }, { label: "gain1" }),
+      node("blur2", "blur", [300, 400], { filter: "gaussian", size: 42, extend: "hold" }, { label: "blur2" }),
+      node("gain2", "level", [600, 400], {
+        blacklevel: 0, whitelevel: 1, brightness: 0.8, contrast: 1, gamma1: 1, invert: 0, opacity: 1,
+      }, { label: "gain2" }),
       node("add", "add", [600, 0], { opacity: 1 }, { label: "add1" }),
-      node("grade", "hsv", [900, 0], { hueoffset: 0, saturation: 1.1, value: 1 }, { label: "grade1" }),
-      node("out", "output", [1200, 0], { toneMap: "filmic" }, { label: "out1" }),
+      node("add2", "add", [900, 0], { opacity: 1 }, { label: "add2" }),
+      node("grade", "hsv", [1200, 0], { hueoffset: 0, saturation: 1.1, value: 1 }, { label: "grade1" }),
+      node("out", "output", [1500, 0], { toneMap: "filmic" }, { label: "out1" }),
 
       /* The drive, in the catalogue's fixed shape. */
       node("music", "audioPattern", [-1500, 600], { amount: 1, bpm: 112 }, { label: "music1" }),
@@ -144,6 +208,12 @@ export const reactorDocument = document(
       }, { label: "track1" }),
       node("source", "valueSwitch", [-1200, 700], { index: 0 }, { label: "source1" }),
       node("env", "valueLag", [-900, 700], { lag: 0.08 }, { label: "env1" }),
+      /* Two slower envelopes for the FORM (the owner's round two: the audio drove light and
+         not shape). The bars and the gaps ride a 0.35 s lag; the outer shell's swell rides
+         0.7 s, the slowest and largest response, so the shells answer at different speeds
+         and read as separate bodies rather than pulsing in unison. */
+      node("env2", "valueLag", [-900, 900], { lag: 0.35 }, { label: "env2" }),
+      node("env3", "valueLag", [-900, 1100], { lag: 0.7 }, { label: "env3" }),
 
       /* The three affine pairs, each calibrated on the shipped pattern through `env1` (lag
          0.08): level 0.056..0.517 → coreGain 0.905..2.198; low 0.704..0.975 → laserGain
@@ -156,15 +226,26 @@ export const reactorDocument = document(
       node("lowb", "valueMath", [-300, 800], { operand: -3.0, operation: "add" }, { label: "lowb1" }),
       node("highx", "valueMath", [-600, 1000], { operand: 1.5, operation: "multiply" }, { label: "highx1" }),
       node("highb", "valueMath", [-300, 1000], { operand: -0.05, operation: "add" }, { label: "highb1" }),
+      node("barx", "valueMath", [-600, 1200], { operand: 0.62, operation: "multiply" }, { label: "barx1" }),
+      node("barb", "valueMath", [-300, 1200], { operand: -0.265, operation: "add" }, { label: "barb1" }),
+      node("gapx", "valueMath", [-600, 1400], { operand: 0.17, operation: "multiply" }, { label: "gapx1" }),
+      node("gapb", "valueMath", [-300, 1400], { operand: 0.118, operation: "add" }, { label: "gapb1" }),
+      node("swellx", "valueMath", [-600, 1600], { operand: 0.23, operation: "multiply" }, { label: "swellx1" }),
+      node("swellb", "valueMath", [-300, 1600], { operand: 0.96, operation: "add" }, { label: "swellb1" }),
     ],
     [
-      edge("e-bed-reactor", ["bed", "out"], ["reactor", "input"]),
+      edge("e-bed-haze", ["bed", "out"], ["haze", "input"]),
+      edge("e-haze-reactor", ["haze", "out"], ["reactor", "input"]),
       edge("e-reactor-add", ["reactor", "out"], ["add", "in1"]),
       edge("e-reactor-cut", ["reactor", "out"], ["cut", "input"]),
       edge("e-cut-blur", ["cut", "out"], ["blur", "input"]),
       edge("e-blur-gain", ["blur", "out"], ["gain", "input"]),
       edge("e-gain-add", ["gain", "out"], ["add", "in2"], 0),
-      edge("e-add-grade", ["add", "out"], ["grade", "input"]),
+      edge("e-blur-blur2", ["blur", "out"], ["blur2", "input"]),
+      edge("e-blur2-gain2", ["blur2", "out"], ["gain2", "input"]),
+      edge("e-add-add2", ["add", "out"], ["add2", "in1"]),
+      edge("e-gain2-add2", ["gain2", "out"], ["add2", "in2"], 0),
+      edge("e-add2-grade", ["add2", "out"], ["grade", "input"]),
       edge("e-grade-out", ["grade", "out"], ["out", "input"]),
 
       edge("e-music-source", ["music", "out"], ["source", "in1"]),
@@ -176,6 +257,14 @@ export const reactorDocument = document(
       edge("e-lowx-lowb", ["lowx", "out"], ["lowb", "a"]),
       edge("e-env-highx", ["env", "out"], ["highx", "a"]),
       edge("e-highx-highb", ["highx", "out"], ["highb", "a"]),
+      edge("e-source-env2", ["source", "out"], ["env2", "in"]),
+      edge("e-source-env3", ["source", "out"], ["env3", "in"]),
+      edge("e-env2-barx", ["env2", "out"], ["barx", "a"]),
+      edge("e-barx-barb", ["barx", "out"], ["barb", "a"]),
+      edge("e-env2-gapx", ["env2", "out"], ["gapx", "a"]),
+      edge("e-gapx-gapb", ["gapx", "out"], ["gapb", "a"]),
+      edge("e-env3-swellx", ["env3", "out"], ["swellx", "a"]),
+      edge("e-swellx-swellb", ["swellx", "out"], ["swellb", "a"]),
     ],
   ),
 );

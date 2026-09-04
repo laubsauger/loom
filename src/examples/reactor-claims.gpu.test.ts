@@ -22,8 +22,9 @@ import { effectFor, example, valueGraphRun, CENTRE } from "./concepts/helpers.ts
  *      are opaque and the medium OUTSIDE the ball goes dark: the shafts are the faces, not a
  *      halo painted around a sphere.
  *   3. THE MUSIC REACHES THE PICTURE, AND ITS LANES NEVER SIT CLAMPED (§V903). Cutting the
- *      three drives changes the frame; the driven `coreGain` never falls below its bias and
- *      never holds one value for a second.
+ *      six drives — three on the light, three on the FORM (the outer shell's swell, the bar
+ *      width, the shell gap) — changes the frame; the driven `coreGain` never falls below
+ *      its bias and never holds one value for a second.
  *   4. LIVELINESS IS STRUCTURAL (T1138, §V913). Consecutive frames still differ at the end
  *      of a whole minute, not only inside the first draw.
  *
@@ -171,7 +172,7 @@ describe("E55 Reactor — claims", () => {
     expect(dawnError, dawnError ?? "").toBeUndefined();
     const [driven] = await shoot({}, [60]);
     // The retained values are what the slots resolve to with the channel cut (§V108).
-    const [cut] = await shoot({ coreGain: 1, laserGain: 0.6, facet: 0.7 }, [60]);
+    const [cut] = await shoot({ coreGain: 1, laserGain: 0.6, facet: 0.7, swell: 1, frameWidth: 0.22, shellGap: 0.2 }, [60]);
     expect(differs(driven!, cut!)).toBe(true);
 
     // The value graph alone, 900 frames of the shipped pattern: coreGain = 2.8·level + 0.75
