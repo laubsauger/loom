@@ -5,7 +5,12 @@ import type { LogicalExecutionPlan } from "../../domain/types/backend.ts";
 import { readExecutionPlan } from "../../runtime/backend/plan.ts";
 import { createNodeRegistry, validateNodeDefinition } from "../registry/registry.ts";
 import { SHADER_SOURCE_PARAMETER } from "../../domain/commands/apply-patch.ts";
-import { customWgslNode, declaresUniformBlock, reflectParamsStruct } from "./custom-wgsl.ts";
+import {
+  CUSTOM_WGSL_YIELDED_KEYS,
+  customWgslNode,
+  declaresUniformBlock,
+  reflectParamsStruct,
+} from "./custom-wgsl.ts";
 import {
   CUSTOM_WGSL_DEFAULT_SOURCE,
   CUSTOM_WGSL_SHARED_BINDING,
@@ -408,6 +413,57 @@ struct Params { ${fields} };
       expect(compiled.passes).toHaveLength(1);
       const amountOnly = customWgslNode.parametersFor!({ [SHADER_SOURCE_PARAMETER]: withParams("amount: f32,") });
       expect(amountOnly["amount"]?.type).toBe("number");
+    });
+
+    /**
+     * §V908/§V316 — THE RESERVED SET IS DERIVED, AND THIS ASKS THE MANIFEST, NOT A LIST.
+     *
+     * T1059 shipped its guard as `new Set([SHADER_SOURCE_PARAMETER])` — a CATEGORY ("the keys
+     * this node owns") written down as one MEMBER, which is §B45's shape. The two tests above
+     * pin `source` by name and would go on passing while a newly added second owned parameter
+     * was quietly eaten by reflection, which is T1059 all over again and silent again.
+     *
+     * So these iterate what the node's manifest actually declares, minus the enumerated yield.
+     * Add a parameter to `customWgslNode.parameters` and it is covered here the same day: it
+     * either survives a shader that names it, or somebody has to say out loud that the shader
+     * is allowed to have it.
+     */
+    describe("the names a shader may not take come off the manifest (§V908)", () => {
+      const manifestKeys = Object.keys(customWgslNode.parameters);
+      const owned = manifestKeys.filter((key) => !CUSTOM_WGSL_YIELDED_KEYS.has(key));
+
+      it("has a manifest to derive from, and every yield names a key that is in it", () => {
+        // Without these two, `it.each(owned)` below is `it.each([])` — zero tests, green.
+        expect(manifestKeys.length).toBeGreaterThan(1);
+        expect(owned).toContain(SHADER_SOURCE_PARAMETER);
+        /*
+         * A yield naming a key the manifest does not have is not harmless text: it is a typo
+         * whose effect is that the key it MEANT stays owned, which is a control the author
+         * cannot have and a refusal nobody expected. The quiet half of §V908, so it is loud here.
+         */
+        for (const yielded of CUSTOM_WGSL_YIELDED_KEYS) expect(manifestKeys).toContain(yielded);
+      });
+
+      it.each(owned)("keeps the node's own %s when a shader declares a field of that name", (key) => {
+        const source = withParams(`${key}: f32,`);
+        // The DEFINITION, not the key — the key was never what T1059 lost (§V870).
+        const schema = customWgslNode.parametersFor!({ [SHADER_SOURCE_PARAMETER]: source });
+        expect(schema[key]).toEqual(customWgslNode.parameters[key]);
+        // And the drop is reported rather than swallowed (§V288).
+        const compiled = customWgslNode.compile(contextFor({ parameters: { [SHADER_SOURCE_PARAMETER]: source } }));
+        expect(compiled.passes).toEqual([]);
+        expect((compiled.diagnostics ?? []).map((entry) => entry.code)).toContain("node.customWgsl.params");
+      });
+
+      it.each([...CUSTOM_WGSL_YIELDED_KEYS])("lets a shader have %s, which is what a yield means", (key) => {
+        const source = withParams(`${key}: f32,`);
+        const compiled = customWgslNode.compile(contextFor({ parameters: { [SHADER_SOURCE_PARAMETER]: source, [key]: 0 } }));
+        expect(compiled.diagnostics ?? []).toEqual([]);
+        // Bound as a uniform, which is the whole reason E43/E45 need this name back.
+        expect(firstPass(contextFor({ parameters: { [SHADER_SOURCE_PARAMETER]: source, [key]: 0 } })).uniforms).toEqual({
+          [key]: 0,
+        });
+      });
     });
   });
 });

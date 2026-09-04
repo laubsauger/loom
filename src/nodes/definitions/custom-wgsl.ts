@@ -81,12 +81,38 @@ const SOURCE_PARAM: ParameterDefinition = {
  * the node, with no error and no way back short of editing the file by hand. Somebody writing
  * a perfectly ordinary shader lost the box they wrote it in.
  *
- * `amount` is deliberately NOT here. It is the historical static fallback, not something this
+ * §V908 — DERIVED FROM THE MANIFEST, WITH THE YIELD ENUMERATED, and that asymmetry is the
+ * whole point of the shape. T1059 landed this as `new Set([SHADER_SOURCE_PARAMETER])`: a
+ * hand-listed set of one, stating a CATEGORY ("the keys this node owns") as a MEMBER, which
+ * is §V316's shape and §B45's. Adding a second node-owned parameter to the manifest would
+ * not have added it here, and the reward for forgetting would have been T1059 again — silent,
+ * because reflection overwrites without complaint. Derived, a forgotten yield is instead a
+ * loud refusal on somebody's shader, which a reviewer resolves by naming it below.
+ *
+ * `amount` is the one yield. It is the historical static fallback rather than something this
  * node owns per-instance: E43/E45's §V147 identity is that a shader declaring `amount: f32`
  * reflects one control named Amount, and taking that name away would change what those
  * examples render.
  */
-const CUSTOM_WGSL_OWN_KEYS: ReadonlySet<string> = new Set([SHADER_SOURCE_PARAMETER]);
+const CUSTOM_WGSL_YIELDED_KEYS: ReadonlySet<string> = new Set(["amount"]);
+
+/**
+ * The node's own parameters, as one object — the SEED reflection is spread onto AND the set
+ * of names it may not take. `point-kernel-advanced.ts` has taken its `ownKeys` off its own
+ * manifest this way since T900; this is the same move, and having one derivation feed both
+ * halves is what makes "seeded but not reserved" unspellable rather than merely unlikely.
+ *
+ * Computed per call rather than hoisted, because it reads the manifest off `customWgslNode`
+ * — declared below. Two entries filtered next to a WGSL scan costs nothing.
+ */
+function customWgslOwnParameters(): ParameterSchema {
+  return Object.fromEntries(
+    Object.entries(customWgslNode.parameters).filter(([key]) => !CUSTOM_WGSL_YIELDED_KEYS.has(key)),
+  );
+}
+
+/** Exported for `custom-wgsl.test.ts`, which derives the owned set from the manifest the same way. */
+export { CUSTOM_WGSL_YIELDED_KEYS };
 
 /** The diagnostic this node refuses a name-stealing field under (§V288). */
 const CUSTOM_WGSL_PARAM_CODE = "node.customWgsl.params";
@@ -110,9 +136,10 @@ function reflectedFields(source: string): readonly ReflectedField[] {
  * out of a colliding shader is always still on the node.
  */
 function reflectedSchema(source: string): ParameterSchema {
+  const own = customWgslOwnParameters();
   return codeParametersLast({
-    [SHADER_SOURCE_PARAMETER]: SOURCE_PARAM,
-    ...reflectedParamSchema(reflectedFields(source), CUSTOM_WGSL_OWN_KEYS),
+    ...own,
+    ...reflectedParamSchema(reflectedFields(source), new Set(Object.keys(own))),
   });
 }
 
@@ -171,7 +198,12 @@ export const customWgslNode: NodeDefinition = {
        schema so the editor survives — but a control that is silently absent is exactly the
        §V288 bug, and the shader is not going to do what its author wrote either way, because
        `source` in `params` would be handed the default 0 rather than their WGSL text. */
-    const collisions = reflectedParamCollisions(nodeId, fields, CUSTOM_WGSL_OWN_KEYS, CUSTOM_WGSL_PARAM_CODE);
+    const collisions = reflectedParamCollisions(
+      nodeId,
+      fields,
+      new Set(Object.keys(customWgslOwnParameters())),
+      CUSTOM_WGSL_PARAM_CODE,
+    );
     if (collisions.length > 0) return { passes: [], diagnostics: collisions };
 
     // Bind EXACTLY the fields the shader's own `struct Params` declares (T880), each shaped to

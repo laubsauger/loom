@@ -120,16 +120,30 @@ const RAW_SCHEMA_READS: Readonly<Record<string, { readonly reason: string; reado
     reason: REFLECTOR_SELF_READ,
     reads: ["pointKernelAdvancedNode.parameters", "pointKernelAdvancedNode.parameters"],
   },
+  "src/nodes/definitions/custom-wgsl.ts": {
+    reason:
+      `${REFLECTOR_SELF_READ} T1059 followed §V908 here: the names a shader's \`struct Params\` ` +
+      "may not take are DERIVED from this node's own manifest minus one enumerated yield, " +
+      "rather than hand-listed — the same read `point-kernel-advanced.ts` has made since T900, " +
+      "and the read is what makes a newly added owned parameter reserved by construction.",
+    reads: ["customWgslNode.parameters"],
+  },
   "src/nodes/definitions/custom-wgsl.test.ts": {
     reason:
-      `${TYPE_ONLY_UNIT_TEST} ${HOOK_UNDER_TEST} FIVE hook calls now, not two — each drives ` +
+      `${TYPE_ONLY_UNIT_TEST} ${HOOK_UNDER_TEST} SIX hook calls now, not two — each drives ` +
       "`parametersFor` with a different `struct Params` source and asserts the schema it " +
       "reflects. Routing these through the funnel would assert the funnel, not the hook, and " +
-      "leave §T880's reflector with no direct test at all.",
+      "leave §T880's reflector with no direct test at all. Two of the manifest reads are " +
+      "§V908's own gate (T1059): it enumerates `customWgslNode.parameters` to ask the question " +
+      "of every key the node declares, which is exactly the read a hand-listed test would not " +
+      "make and exactly why the previous one could not see a second owned key.",
     reads: [
       "customWgslNode.parameters",
       "customWgslNode.parameters",
       "customWgslNode.parameters",
+      "customWgslNode.parameters",
+      "customWgslNode.parameters",
+      "customWgslNode.parametersFor",
       "customWgslNode.parametersFor",
       "customWgslNode.parametersFor",
       "customWgslNode.parametersFor",
