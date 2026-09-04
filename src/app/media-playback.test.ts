@@ -398,3 +398,100 @@ describe("T493 — awaitMediaReady refuses by name instead of hanging (§V369)",
     expect(MEDIA_OPEN_TIMEOUT_MS).toBe(10_000);
   });
 });
+
+/**
+ * ⚑ T1155 — A TRANSPORT PARAMETER DRIVEN BY A CHANNEL ACTUALLY REACHES THE ELEMENT.
+ *
+ * `createMediaTransportRunner`'s docblock has promised since T493 that "every transport
+ * parameter takes every mode: an expression on `speed`, a `cuePoint` bound to a sibling, a
+ * `trimStart` driven by an audio channel". None of it worked, and this file's twenty-six
+ * other tests were all green while it did not: they resolve STATIC parameters, so the
+ * missing half was invisible to every one of them.
+ *
+ * The missing half is `nodes` — `op('x').chan.y` is read inside the NODE REFERENCE READER
+ * (§V837), not off the `channels` resolver, so a resolve handed only `channels` answers
+ * every chan read with "this context has no channel resolver" and falls back to §V108's
+ * retained static. §V837 already records four instances (§T593, §T1000, §T1001, §B46);
+ * this was the fifth, and it is the one that decides whether E56 Vesper is a picture or a
+ * still frame.
+ *
+ * Red-verified: with the options spelled out by hand again, the playhead reports the
+ * retained 4 at every frame and the last assertion below fails on 1 distinct position.
+ */
+describe("T1155 — a DRIVEN transport parameter reaches the playhead", () => {
+  const registry = createNodeRegistry(allNodeDefinitions);
+
+  /** `cuePoint` reading a channel, written exactly as `drivenSlot` compiles it (§T897). */
+  const drivenCue: GraphDocument = {
+    revision: 1,
+    nodes: {
+      m: {
+        id: "m",
+        type: "movieFileIn",
+        definitionVersion: 1,
+        position: { x: 0, y: 0 },
+        parameters: {
+          cue: true,
+          playMode: "freeRun",
+          cuePoint: {
+            mode: "expression",
+            bindings: {
+              static: { kind: "static", value: 4 },
+              expression: { kind: "expression", source: "op('sun1').chan.high" },
+            },
+          },
+        },
+      },
+      /* The reader resolves `op('sun1')` against the GRAPH before it asks the channel
+         resolver, so the publisher has to be here — which is the contract, not a fixture
+         detail: an expression naming a node nobody has is a broken reference (§V890). */
+      sun: {
+        id: "sun",
+        type: "valueMath",
+        definitionVersion: 1,
+        position: { x: 0, y: 0 },
+        label: "sun1",
+        parameters: {},
+      },
+    },
+    edges: {},
+  } as unknown as GraphDocument;
+
+  /** A channel that MOVES, so a frozen readout cannot be mistaken for a still signal. */
+  const sweeping = (frameIndex: number) => (address: string) =>
+    address === "sun1:high" ? (frameIndex % 60) / 10 : undefined;
+
+  it("holds at the CHANNEL's value, not at the retained static", () => {
+    let index = 0;
+    const runner = createMediaTransportRunner("m", {
+      graph: () => drivenCue,
+      registry,
+      channels: () => sweeping(index) as never,
+    });
+
+    const positions: number[] = [];
+    for (index = 0; index < 120; index += 1) {
+      const stepped = runner.step(
+        { timeSeconds: index / 60, deltaSeconds: 1 / 60, frameIndex: index, mode: "realtime", randomSeed: 1 },
+        10,
+      );
+      expect(stepped).not.toBeNull();
+      expect(stepped!.head.cued).toBe(true);
+      positions.push(stepped!.head.position);
+    }
+
+    /* Exact, not a band: frame 7 asks for 0.7 and the cue holds the element exactly there
+       (§V147). A resolve without the reader answers the retained 4 for every one of them. */
+    expect(positions[7]).toBeCloseTo(0.7, 10);
+    expect(positions[59]).toBeCloseTo(5.9, 10);
+    expect(positions[60]).toBeCloseTo(0, 10);
+
+    /* ⚑ LAST, and the one that names the behaviour (§V910): the playhead MOVES. Sixty
+       distinct positions where the frozen fallback produces exactly one. */
+    expect(new Set(positions).size).toBe(60);
+    /* And the frozen fallback is not merely rarer, it is ABSENT as a fixed point: the
+       retained 4 appears exactly where the sweep passes through it (frames 40 and 100)
+       and nowhere else, which a resolve without the reader could never produce. */
+    expect(positions.filter((value) => value === 4)).toHaveLength(2);
+  });
+});

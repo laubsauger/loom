@@ -236,6 +236,13 @@
     "cardFloor": 0.0042,
     "phrase": 0.09942
   },
+  "E56-Vesper.loom.json": {
+    "motion": 0.41959,
+    "range": 0.7498,
+    "f0max": 0.7498,
+    "cardFloor": 0,
+    "phrase": 0.25329
+  },
   "E6-Displacement-Stack.loom.json": {
     "motion": 0.28359,
     "range": 0.7293,

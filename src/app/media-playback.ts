@@ -3,7 +3,7 @@ import type { GraphDocument } from "@domain/types/graph.ts";
 import type { NodeId } from "@domain/types/ids.ts";
 import type { ParameterValue } from "@domain/types/parameters.ts";
 import type { ChannelResolver } from "@domain/parameters/resolve.ts";
-import { resolveParameters } from "@domain/parameters/index.ts";
+import { createParameterReadOptions, resolveParameters } from "@domain/parameters/index.ts";
 import {
   createMediaClock,
   mediaPlayhead,
@@ -164,10 +164,27 @@ export function createMediaTransportRunner(
     const definition = context.registry.get(node.type);
     if (definition === undefined) return null;
     const channels = context.channels();
-    const resolved = resolveParameters(node, definition, {
+    /**
+     * ⚑ T1155 — §V837's ONE FACTORY, and this call site is why it exists.
+     *
+     * These options used to be `{ frame, channels }` spelled out here, with NO `nodes`
+     * reader — and `op('sun1').chan.high` is read INSIDE that reader, never off
+     * `channels`. So every expression on a transport parameter failed with "this context
+     * has no channel resolver", fell back to §V108's retained static, and froze there:
+     * the docblock above has promised "a `cuePoint` bound to a sibling, a `trimStart`
+     * driven by an audio channel" since T493 and NOT ONE OF THEM HAS EVER WORKED.
+     *
+     * §B8's shape, and §V837 already names it as having recurred four times (§T593, the
+     * inspector §T1000, the OSC pump §T1001, §B46). This was the fifth, and it was found
+     * by E56, whose whole picture is a driven `cuePoint`: the file loaded, the element
+     * reached readyState 4, and `currentTime` sat at the retained 3.42 forever.
+     */
+    const resolved = resolveParameters(node, definition, createParameterReadOptions({
+      graph: context.graph(),
+      registry: context.registry,
       ...(frame === undefined ? {} : { frame }),
       ...(channels === undefined ? {} : { channels }),
-    });
+    }));
     return (key) => resolved.get(key)?.value;
   };
 

@@ -1,0 +1,354 @@
+{
+  "assets": [],
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e-clip-tone": {
+        "id": "e-clip-tone",
+        "source": {
+          "nodeId": "clip",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "tone",
+          "portId": "input"
+        }
+      },
+      "e-env-sun": {
+        "id": "e-env-sun",
+        "source": {
+          "nodeId": "env",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "sun",
+          "portId": "a"
+        }
+      },
+      "e-grade-mul": {
+        "id": "e-grade-mul",
+        "source": {
+          "nodeId": "grade",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "mul",
+          "portId": "in1"
+        }
+      },
+      "e-mul-out": {
+        "id": "e-mul-out",
+        "source": {
+          "nodeId": "mul",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      },
+      "e-music-source": {
+        "id": "e-music-source",
+        "source": {
+          "nodeId": "music",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "source",
+          "portId": "in1"
+        }
+      },
+      "e-source-env": {
+        "id": "e-source-env",
+        "source": {
+          "nodeId": "source",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "env",
+          "portId": "in"
+        }
+      },
+      "e-tone-grade": {
+        "id": "e-tone-grade",
+        "source": {
+          "nodeId": "tone",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "grade",
+          "portId": "input"
+        }
+      },
+      "e-track-source": {
+        "id": "e-track-source",
+        "source": {
+          "nodeId": "track",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "source",
+          "portId": "in2"
+        }
+      },
+      "e-vign-mul": {
+        "id": "e-vign-mul",
+        "order": 0,
+        "source": {
+          "nodeId": "vign",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "mul",
+          "portId": "in2"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "clip": {
+        "definitionVersion": 1,
+        "id": "clip",
+        "label": "clip1",
+        "parameters": {
+          "cue": true,
+          "cuePoint": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('sun1').chan.high"
+              },
+              "static": {
+                "kind": "static",
+                "value": 3.42
+              }
+            },
+            "mode": "expression"
+          },
+          "extend": "hold",
+          "file": "media/portrait-sunset.mp4",
+          "play": true,
+          "playMode": "freeRun",
+          "speed": 1,
+          "trimEnd": 0,
+          "trimStart": 0
+        },
+        "position": {
+          "x": -2100,
+          "y": 0
+        },
+        "resolution": {
+          "height": 960,
+          "mode": "fixed",
+          "width": 540
+        },
+        "type": "movieFileIn"
+      },
+      "env": {
+        "definitionVersion": 1,
+        "id": "env",
+        "label": "env1",
+        "parameters": {
+          "lag": 0.6,
+          "releaseRatio": 8
+        },
+        "position": {
+          "x": -1500,
+          "y": 910
+        },
+        "type": "valueLag"
+      },
+      "grade": {
+        "definitionVersion": 1,
+        "id": "grade",
+        "label": "grade1",
+        "parameters": {
+          "hueoffset": 0,
+          "saturation": 1.32,
+          "value": 1
+        },
+        "position": {
+          "x": -1400,
+          "y": 0
+        },
+        "type": "hsv"
+      },
+      "mul": {
+        "definitionVersion": 1,
+        "id": "mul",
+        "label": "mul1",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": -1100,
+          "y": 0
+        },
+        "type": "multiply"
+      },
+      "music": {
+        "definitionVersion": 1,
+        "id": "music",
+        "label": "music1",
+        "parameters": {
+          "amount": 1,
+          "beatsPerBar": 4,
+          "bpm": 112
+        },
+        "position": {
+          "x": -2100,
+          "y": 700
+        },
+        "type": "audioPattern"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "label": "out1",
+        "parameters": {
+          "toneMap": "filmic"
+        },
+        "position": {
+          "x": -800,
+          "y": 0
+        },
+        "type": "output"
+      },
+      "source": {
+        "definitionVersion": 1,
+        "id": "source",
+        "label": "source1",
+        "parameters": {
+          "index": 0
+        },
+        "position": {
+          "x": -1800,
+          "y": 910
+        },
+        "type": "valueSwitch"
+      },
+      "sun": {
+        "definitionVersion": 1,
+        "id": "sun",
+        "label": "sun1",
+        "parameters": {
+          "fromHigh": 0.45,
+          "fromLow": 0.33,
+          "operation": "range",
+          "outside": "clamp",
+          "toHigh": 0,
+          "toLow": 9.7
+        },
+        "position": {
+          "x": -1200,
+          "y": 910
+        },
+        "type": "valueMath"
+      },
+      "tone": {
+        "definitionVersion": 1,
+        "id": "tone",
+        "label": "tone1",
+        "parameters": {
+          "blacklevel": 0.055,
+          "brightness": 1,
+          "contrast": 1.3,
+          "gamma1": 0.9,
+          "invert": 0,
+          "opacity": 1,
+          "whitelevel": 0.86
+        },
+        "position": {
+          "x": -1700,
+          "y": 0
+        },
+        "resolution": {
+          "mode": "project"
+        },
+        "type": "level"
+      },
+      "track": {
+        "definitionVersion": 1,
+        "id": "track",
+        "label": "track1",
+        "parameters": {
+          "cue": false,
+          "cuePoint": 0,
+          "extend": "loop",
+          "file": "",
+          "monitor": true,
+          "play": true,
+          "playMode": "freeRun",
+          "speed": 1,
+          "trimEnd": 0,
+          "trimStart": 0,
+          "volume": 1
+        },
+        "position": {
+          "x": -2100,
+          "y": 1120
+        },
+        "type": "audioFileIn"
+      },
+      "vign": {
+        "definitionVersion": 1,
+        "id": "vign",
+        "label": "vign1",
+        "parameters": {
+          "aspectcorrect": true,
+          "bgcolor": [
+            0.3,
+            0.28,
+            0.34,
+            1
+          ],
+          "center": [
+            0.5,
+            0.5
+          ],
+          "fillcolor": [
+            1,
+            1,
+            1,
+            1
+          ],
+          "mode": "fill",
+          "radius": [
+            0.78,
+            0.78
+          ],
+          "softness": 0.6
+        },
+        "position": {
+          "x": -1400,
+          "y": 420
+        },
+        "resolution": {
+          "mode": "project"
+        },
+        "type": "circle"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E56 Vesper",
+  "projectId": "example-e56-vesper",
+  "schemaVersion": 3,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 1280,
+      "width": 720
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 56,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}
