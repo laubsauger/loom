@@ -57,6 +57,36 @@ async function until(predicate: () => boolean, what: string, budgetMs = 5_000): 
   }
 }
 
+/**
+ * T1129 — WAIT ON THE HALF YOU ARE ABOUT TO ASSERT. The server's view is not the page's.
+ *
+ * `bridgeStatus().attached` flips when the SERVER accepts the pairing and puts the
+ * `attached` frame on the wire. The page's `memory.write` happens when the CLIENT reads
+ * that frame — a socket round trip later — and `publish("connected")` happens immediately
+ * after it (`bridge-client.ts`, the `attached` case: write, then publish). So a test that
+ * waits on the server's flag and then asserts the page's remembered code is asserting
+ * across a gap that nothing closes, and on a loaded machine the read lands inside it.
+ *
+ * Measured, not guessed. Eight concurrent runs of this file on a 14-core box failed twice
+ * on the old wait, and twenty-four failed three times (`storage.current()` reading `null`
+ * at the line after a server-side wait) — while every run finished in ~5.2s, nowhere near
+ * the 5s poll budget. It was never a timeout, so a bigger budget would have hidden this
+ * rather than fixed it. Twenty-four concurrent runs on this wait: 24 green.
+ *
+ * The client's own `connected` row is the event that happens-AFTER the write, so a test
+ * gated on it cannot read the memory early. It is also a different observable from the
+ * one being asserted, so the assertion stays real.
+ */
+async function untilPageAttached(
+  registry: { snapshot(): ReadonlyArray<{ kind: string; state: string }> },
+  what: string,
+): Promise<void> {
+  await until(
+    () => registry.snapshot().find((transport) => transport.kind === "bridge")?.state === "connected",
+    what,
+  );
+}
+
 /** A real Loom document with a real bus and the real catalogue — the "page". */
 function pageHarness(extras: { ports?: Parameters<typeof createAgentToolSurface>[0]["ports"] } = {}) {
   const store = createGraphStore();
@@ -589,14 +619,35 @@ describe("two servers, one port: the loser proxies the winner (T921, §V288)", (
   it("serves the WINNER's tool roster, and the one-page rule still refuses a second tab", async () => {
     const { incumbent, loser } = await racingServers();
     const code = pairingCodeOf(incumbent);
-    const first = await attachPage(incumbent, { code });
-    await until(() => first.row()?.state === "connected", "the first page to attach");
+    /*
+     * T1129 — THE PROXY IS SEATED BEFORE THE PAGE MOVES THE ROSTER, so the change this
+     * test waits for is one particular change and not "some notification arrived".
+     *
+     * `pairingCode !== null` is set by `proxyAttached`, and the roster is a SECOND round
+     * trip after it (`bridge-proxy.ts`: proxyAttached -> send listTools -> listToolsResult
+     * -> onToolsChanged). Waiting on the code and then reading `tools/list` reads the
+     * roster inside that gap — measured: 1 failure in 12 concurrent runs of this file, the
+     * loser still publishing its REFUSED catalogue. And the other interleaving is worse
+     * and quieter: proxy seated first, page attaches second, and the roster in hand is the
+     * incumbent's HEADLESS one until the attach's `toolsChanged` moves it.
+     *
+     * So both moves are awaited in order, each on the notification the product itself
+     * emits when the roster changes hands — an observable this test does not assert on.
+     */
+    const rosterMoves = (): number =>
+      loser.sent.filter((message) => message["method"] === "notifications/tools/list_changed").length;
     await until(
       () =>
         loser.server.bridgeStatus()?.mode === "proxying" &&
         (loser.server.bridgeStatus()?.pairingCode ?? null) !== null,
       "the proxy to reach the incumbent",
     );
+    await until(() => rosterMoves() >= 1, "the incumbent's roster to reach the proxy");
+    const beforeAttach = rosterMoves();
+
+    const first = await attachPage(incumbent, { code });
+    await until(() => first.row()?.state === "connected", "the first page to attach");
+    await until(() => rosterMoves() > beforeAttach, "the ATTACHED roster to reach the proxy");
 
     // The roster the loser publishes is the roster that will actually execute — the page's.
     const listed = await loser.request("tools/list", {}, 910);
@@ -778,16 +829,17 @@ describe("the bridge survives a reload (T925)", () => {
     const code = pairingCodeOf(harness);
     const storage = fakeMemory();
 
+    const firstRegistry = createMcpTransportRegistry();
     const first = createBridgeClient({
       surface: () => pageHarness().surface,
-      registry: createMcpTransportRegistry(),
+      registry: firstRegistry,
       port: harness.port,
       client: "vitest-page",
       memory: storage.memory,
     });
     cleanups.push(() => first.disconnect());
     first.connect(code);
-    await until(() => harness.server.bridgeStatus()?.attached === true, "the first attach");
+    await untilPageAttached(firstRegistry, "the first attach to reach the page");
     // Remembered only once the bridge CONFIRMED it — one write, the accepted code.
     expect(storage.writes).toEqual([code]);
 
@@ -873,16 +925,17 @@ describe("the bridge survives a reload (T925)", () => {
     const code = pairingCodeOf(harness);
 
     const kept = fakeMemory();
+    const keptRegistry = createMcpTransportRegistry();
     const teardown = createBridgeClient({
       surface: () => pageHarness().surface,
-      registry: createMcpTransportRegistry(),
+      registry: keptRegistry,
       port: harness.port,
       client: "vitest-page",
       memory: kept.memory,
     });
     cleanups.push(() => teardown.disconnect());
     teardown.connect(code);
-    await until(() => harness.server.bridgeStatus()?.attached === true, "the attach");
+    await untilPageAttached(keptRegistry, "the attach to reach the page");
     teardown.disconnect();
     // The reload path. Forgetting here would defeat the whole feature.
     expect(kept.current()).toBe(code);
@@ -899,7 +952,7 @@ describe("the bridge survives a reload (T925)", () => {
     });
     cleanups.push(() => revoked.disconnect());
     revoked.connect(code);
-    await until(() => harness.server.bridgeStatus()?.attached === true, "the second attach");
+    await untilPageAttached(registry, "the second attach to reach the page");
     expect(dropped.current()).toBe(code);
 
     // The panel's own affordance — the button a human presses — is explicit revocation.
@@ -933,7 +986,7 @@ describe("the bridge survives a reload (T925)", () => {
     });
     cleanups.push(() => client.disconnect());
     client.connect(code);
-    await until(() => harness.server.bridgeStatus()?.attached === true, "the attach");
+    await untilPageAttached(inner, "the attach to reach the page");
 
     // The secret is remembered and transmitted, and appears in NOTHING that gets rendered,
     // screenshotted or pasted into a bug report.
