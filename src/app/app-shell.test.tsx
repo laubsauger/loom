@@ -7,7 +7,7 @@ import { createMemoryStorage, installDomStubs } from "@ui/testing/install-dom-st
 import { AppShell } from "./app-shell.tsx";
 import { TopBar } from "./top-bar.tsx";
 import type { PaneWindow } from "./pane-window.tsx";
-import { DEFAULT_SHELL_LAYOUT, LAYOUT_STORAGE_KEY, readLayout } from "./layout-storage.ts";
+import { DEFAULT_LAYOUT_ID, DEFAULT_SHELL_LAYOUT, LAYOUT_STORAGE_KEY, readLayout } from "./layout-storage.ts";
 import { PANE_TREE_STORAGE_KEY, readPaneTreeStore } from "./pane-tree-storage.ts";
 import { allTabs, findLeaf, leavesOf } from "./pane-tree.ts";
 import type { LayoutStorage, ShellLayout } from "./layout-storage.ts";
@@ -37,10 +37,10 @@ function zoneElement(zone: string): HTMLElement {
 }
 
 /**
- * T927: the v5 TREE store is the truth, and the DEFAULT arrangement is no longer
- * projectable to v3 (its bottom region is two columns) — so a fresh shell writes no v3
- * record at all and `readLayout` would answer with a stock default that has nothing to
- * do with what is on screen. These read the arrangement where it actually lives.
+ * The v5 TREE store is the truth. `readLayout` answers with the v3 PROJECTION, which is
+ * absent whenever the arrangement is structural (it was for the whole T927/T932 default),
+ * so a helper built on it would sometimes describe a stock default that has nothing to do
+ * with what is on screen. These read the arrangement where it actually lives.
  */
 function leafHolding(storage: LayoutStorage, role: string): string | null {
   const tree = readPaneTreeStore(storage).current;
@@ -57,10 +57,11 @@ function floatingRoles(storage: LayoutStorage): string[] {
 }
 
 /**
- * Empties the whole bottom REGION. Since T927 the bottom is TWO columns — the tab dock
- * and the libraries beside it — so closing one leaf no longer frees the bottom edge, and
- * a test that closed only `leaf-bottom` would be asserting against a shell that still
- * has a bottom bar.
+ * Empties the whole bottom REGION.
+ *
+ * One leaf under T1125 and two under T927/T932 (the tab dock plus the libraries beside
+ * it). It still loops, because a stored layout from that era reaches this helper through
+ * the same shell and closing only `leaf-bottom` would leave a bottom bar standing.
  */
 async function closeBottomRegion(user: ReturnType<typeof userEvent.setup>) {
   for (const leafId of ["leaf-bottom", "leaf-libraries"]) {
@@ -153,16 +154,22 @@ describe("V18 — layout persistence", () => {
     expect(readLayout(storage).zones.left).toEqual(["library", "components"]);
   });
 
-  it("T927: a FRESH shell writes only v5 — the default has no faithful v3 (V385)", () => {
+  it("T1125: a FRESH shell opens with the libraries in the LEFT dock, sharing one leaf", () => {
     const storage = createMemoryStorage();
     render(<AppShell storage={storage} />);
 
-    // Not an omission: writing a five-zone projection of a two-column bottom region
-    // would be a lie with a version number on it, and V385 says remove rather than lie.
-    expect(storage.keys()).toEqual([PANE_TREE_STORAGE_KEY]);
-    // T932: one leaf, two tabs — see `pane-tree.test.ts` for why the split was reversed.
-    expect(leafHolding(storage, "library")).toBe("leaf-libraries");
-    expect(leafHolding(storage, "components")).toBe("leaf-libraries");
+    // What a new user actually gets — read back off the shell that mounted, not off the
+    // constant. T927/T932 put this pair in a second column of the bottom bar; the owner
+    // called it squeezed, and a scan-and-drag list is bought in ROWS.
+    expect(leafHolding(storage, "library")).toBe("leaf-left");
+    expect(leafHolding(storage, "components")).toBe("leaf-left");
+    expect(activeRoleOf(storage, "leaf-left")).toBe("library");
+    // …and the bottom region is ONE dock: the vacated column was not backfilled.
+    expect(leafHolding(storage, "shader")).toBe("leaf-bottom");
+    expect(findLeaf(readPaneTreeStore(storage).current, "leaf-libraries")).toBeUndefined();
+    // The default is five-zone again, so V385 writes the v3 projection rather than
+    // clearing it — an old build opening this browser sees the same arrangement.
+    expect(storage.keys().sort()).toEqual([PANE_TREE_STORAGE_KEY, LAYOUT_STORAGE_KEY].sort());
   });
 
   it("restores stored pane sizes on mount", () => {
@@ -295,14 +302,14 @@ describe("V95 — relocatable panes", () => {
     };
     fireEvent.dragStart(tab, { dataTransfer: transfer });
 
-    const target = document.querySelector<HTMLElement>('[data-drop-leaf="leaf-libraries"]');
+    const target = document.querySelector<HTMLElement>('[data-drop-leaf="leaf-left"]');
     expect(target, "no drop target while a tab is being dragged").not.toBeNull();
     fireEvent.drop(target as HTMLElement, { dataTransfer: transfer });
 
-    expect(leafHolding(storage, "inspector")).toBe("leaf-libraries");
-    expect(zoneElement("libraries").contains(screen.getByText("inspector slot"))).toBe(true);
+    expect(leafHolding(storage, "inspector")).toBe("leaf-left");
+    expect(zoneElement("left").contains(screen.getByText("inspector slot"))).toBe(true);
     // The targets are drag-only chrome and must not linger.
-    expect(document.querySelector('[data-drop-leaf="leaf-libraries"]')).toBeNull();
+    expect(document.querySelector('[data-drop-leaf="leaf-left"]')).toBeNull();
   });
 });
 
@@ -488,7 +495,7 @@ describe("V96 — moving a pane never remounts it", () => {
     // The move menu takes focus while it is open and Radix restores it to the trigger,
     // so this asserts what the pane machinery is responsible for: the element the pane
     // had focused is refocused, with its selection, once it lands.
-    await movePaneVia(user, "shader editor", "Library dock");
+    await movePaneVia(user, "shader editor", "Left dock");
 
     expect(input.value).toBe("abcdef");
     expect(input.selectionStart).toBe(2);
@@ -801,14 +808,14 @@ describe("T426 — the right sidebar is a full-height column", () => {
   it("leaves the bottom region spanning the whole work area, sidebar excluded", () => {
     render(<AppShell storage={createMemoryStorage()} shaderEditor={<div>editor slot</div>} />);
     /*
-     * T927 renamed what is on the left of the bottom row — the libraries are the bottom
-     * region's second column now, not a dock beside the graph — but the T426 property is
-     * untouched and is what this asserts: the bottom region lives INSIDE the work area,
+     * The T426 property, asserted independently of whatever the default puts in the work
+     * area (T927 moved the libraries into the bottom region, T1125 moved them back to a
+     * left dock, and this held throughout): the bottom region lives INSIDE the work area,
      * so the sidebar it stops short of still runs full height.
      */
     const work = panel("panel-split-columns-a");
     expect(work.contains(zoneElement("bottom"))).toBe(true);
-    expect(work.contains(zoneElement("libraries"))).toBe(true);
+    expect(work.contains(zoneElement("left"))).toBe(true);
     expect(work.contains(panel("panel-split-columns-b"))).toBe(false);
   });
 
@@ -839,7 +846,7 @@ describe("T436 — named layouts", () => {
     await user.click(screen.getByRole("button", { name: "Save" }));
   }
 
-  it("lists the built-in presets, with T426's arrangement selected on a fresh install", async () => {
+  it("lists the built-in presets, with the default selected on a fresh install", async () => {
     const user = userEvent.setup();
     render(<AppShell storage={createMemoryStorage()} />);
     await openMenu(user);
@@ -847,8 +854,63 @@ describe("T436 — named layouts", () => {
     expect(screen.getByRole("button", { name: /^Default/ }).getAttribute("aria-current")).toBe(
       "true",
     );
-    // T470: Classic is gone — Default is the one preset that ships.
+    // T1125: exactly two ship — the patching shell and the playing one.
+    expect(screen.getByRole("button", { name: /^Perform/ })).toBeDefined();
+    // T470: Classic is gone.
     expect(screen.queryByRole("button", { name: /^Classic/ })).toBeNull();
+  });
+
+  it("T1125 — PERFORM puts the viewer on the work area and the parameters full height", async () => {
+    const user = userEvent.setup();
+    const storage = createMemoryStorage();
+    render(
+      <AppShell
+        storage={storage}
+        viewer={<div>viewer slot</div>}
+        inspector={<div>inspector slot</div>}
+        nodeLibrary={<div>library slot</div>}
+      />,
+    );
+
+    await openMenu(user);
+    await user.click(screen.getByRole("button", { name: /^Perform/ }));
+
+    /*
+     * The distinction the preset is FOR, read back off the shell: in Default the graph is
+     * the biggest thing and the output is a sidebar tile; here the viewer has the work
+     * area and the inspector has the whole sidebar, because the moment the patch is built
+     * the two things you look at are the output and the parameter you are driving.
+     */
+    expect(zoneElement("center").contains(screen.getByText("viewer slot"))).toBe(true);
+    expect(zoneElement("right").contains(screen.getByText("inspector slot"))).toBe(true);
+    expect(document.querySelector('[data-pane-leaf="leaf-rightBottom"]')).toBeNull();
+    // The graph is MINIMISED, not gone — Loom has no document-level exposed-parameter
+    // surface, so the inspector is filled by SELECTING a node, and a Perform layout
+    // without a graph would leave its own parameter pane permanently empty.
+    expect(leafHolding(storage, "graph")).toBe("leaf-bottom");
+    // Build-time surfaces are absent, which is the point of the mode.
+    expect(leafHolding(storage, "library")).toBeNull();
+    expect(screen.queryByText("library slot")).toBeNull();
+
+    // …and the way back is the row above it. Reversible from the same menu it came from.
+    await openMenu(user);
+    await user.click(screen.getByRole("button", { name: /^Default/ }));
+    expect(leafHolding(storage, "library")).toBe("leaf-left");
+    expect(zoneElement("center").contains(screen.getByText("viewer slot"))).toBe(false);
+  });
+
+  it("a preset cannot be renamed, updated or deleted — a preset is CODE", async () => {
+    const user = userEvent.setup();
+    render(<AppShell storage={createMemoryStorage()} />);
+
+    await openMenu(user);
+    await user.click(screen.getByRole("button", { name: /^Perform/ }));
+    await openMenu(user);
+    // The same rule the Default row has always had, asserted for the row T1125 added:
+    // there is no store entry to edit, so the verbs are off.
+    for (const verb of ["Update", "Rename", "Delete"]) {
+      expect(screen.getByRole("button", { name: verb }).hasAttribute("disabled")).toBe(true);
+    }
   });
 
   it("saves the live arrangement under a name and persists it across a reload", async () => {
@@ -876,7 +938,7 @@ describe("T436 — named layouts", () => {
     await openMenu(user);
     await saveAs(user, "Mine");
     // Rearrange, then update: the entry changes, the list does not grow.
-    await movePaneVia(user, "shader editor", "Library dock");
+    await movePaneVia(user, "shader editor", "Left dock");
     await openMenu(user);
     await user.click(screen.getByRole("button", { name: "Update" }));
 
@@ -884,7 +946,7 @@ describe("T436 — named layouts", () => {
     expect(saved, "Update appended instead of overwriting").toHaveLength(1);
     expect(
       leavesOf(saved[0]!.layout.root)
-        .find((leaf) => leaf.id === "leaf-libraries")
+        .find((leaf) => leaf.id === "leaf-left")
         ?.tabs.map((tab) => tab.role),
     ).toContain("shader");
   });
@@ -900,7 +962,7 @@ describe("T436 — named layouts", () => {
     expect(screen.getByRole("button", { name: "Update" }).hasAttribute("disabled")).toBe(true);
 
     await user.keyboard("{Escape}");
-    await movePaneVia(user, "shader editor", "Library dock");
+    await movePaneVia(user, "shader editor", "Left dock");
     await openMenu(user);
     expect(screen.getByRole("button", { name: "Update" }).hasAttribute("disabled")).toBe(false);
   });
@@ -943,7 +1005,7 @@ describe("T436 — named layouts", () => {
     const storage = createMemoryStorage();
     render(<AppShell storage={storage} shaderEditor={<div>editor slot</div>} />);
 
-    await movePaneVia(user, "shader editor", "Library dock");
+    await movePaneVia(user, "shader editor", "Left dock");
     await openMenu(user);
     await saveAs(user, "Doomed");
     await openMenu(user);
@@ -951,14 +1013,14 @@ describe("T436 — named layouts", () => {
 
     expect(readPaneTreeStore(storage).layouts).toEqual([]);
     // The room is unchanged; only the bookmark went.
-    expect(zoneElement("libraries").contains(screen.getByText("editor slot"))).toBe(true);
+    expect(zoneElement("left").contains(screen.getByText("editor slot"))).toBe(true);
   });
 
   it("restores a saved layout, putting the panes back where that layout had them", async () => {
     const user = userEvent.setup();
     render(<AppShell storage={createMemoryStorage()} shaderEditor={<div>editor slot</div>} />);
 
-    await movePaneVia(user, "shader editor", "Library dock");
+    await movePaneVia(user, "shader editor", "Left dock");
     await openMenu(user);
     await saveAs(user, "Editor left");
     await movePaneVia(user, "shader editor", "Centre dock");
@@ -967,7 +1029,7 @@ describe("T436 — named layouts", () => {
     await openMenu(user);
     await user.click(screen.getByRole("button", { name: /^Editor left/ }));
 
-    expect(zoneElement("libraries").contains(screen.getByText("editor slot"))).toBe(true);
+    expect(zoneElement("left").contains(screen.getByText("editor slot"))).toBe(true);
   });
 
 });
@@ -1006,9 +1068,10 @@ describe("V311 — a v2 layout still opens on what the user arranged", () => {
     // And nothing is lost: their arrangement is a row in the menu, one click away.
     await user.click(screen.getByRole("button", { name: "Layout" }));
     expect(screen.getByRole("button", { name: /^Saved layout/ })).toBeDefined();
-    // And v2's key is gone. T927: only v5 remains — the new default has no faithful v3
-    // projection, so the old key is REMOVED rather than left holding a lie (V385).
-    expect(storage.keys()).toEqual([PANE_TREE_STORAGE_KEY]);
+    // And v2's own key is gone: it is read once, migrated, and removed. What remains is
+    // v5 plus the v3 PROJECTION of it — faithful, because T1125's default is five-zone
+    // again (under T927 it was structural and V385 removed the v3 key instead).
+    expect(storage.keys().sort()).toEqual([PANE_TREE_STORAGE_KEY, LAYOUT_STORAGE_KEY].sort());
   });
 });
 
@@ -1397,12 +1460,16 @@ describe("T494 — an absent edge area spawns back", () => {
  * The owner: "it still only lets us show 3 panes that currently exist instead of always
  * allowing us to bring back or hide any." The cause was two mechanisms with two
  * different meanings of "absent" — the toggle list showed docks the tree HAS, T494's
- * spawn list showed EDGES that are free — and the left dock fell between them: T927
+ * spawn list showed EDGES that are free — and the left dock fell between them: T927 had
  * removed `leaf-left` from the tree, and the graph touching the left edge makes that
  * edge read as held. Neither list could name it.
  *
  * T931 turned that from untidy into urgent: dragging a leaf's last tab out collapses it,
  * so a dock can be destroyed and the only way back was a full reset.
+ *
+ * ⚑ T1125 put a left dock back in the DEFAULT, so "absent" has to be reached rather than
+ * assumed: these DESTROY the dock the T931 way first — drag its last tabs out — which is
+ * the situation the row exists for and is now the only one a user can be in.
  */
 describe("T936 — every baseline dock is listed, whatever the tree holds", () => {
   async function openLayoutMenu(user: ReturnType<typeof userEvent.setup>) {
@@ -1411,12 +1478,28 @@ describe("T936 — every baseline dock is listed, whatever the tree holds", () =
     }
   }
 
-  it("lists all three on the stock shell — including the left dock it does not have", () => {
-    render(<AppShell storage={createMemoryStorage()} />);
-    fireEvent.click(screen.getByRole("button", { name: "Layout" }));
+  /** T931's one-way door: move both of the left dock's tabs out and the leaf collapses. */
+  async function destroyLeftDock(user: ReturnType<typeof userEvent.setup>) {
+    await movePaneVia(user, "node library", "Bottom dock");
+    await movePaneVia(user, "components", "Bottom dock");
+    expect(document.querySelector('[data-pane-leaf="leaf-left"]')).toBeNull();
+  }
 
-    // Two present, one absent, and the absent one is the whole point: before T936 it
-    // appeared in NEITHER list, which is exactly what the owner was looking at.
+  it("lists all three baseline docks, and the destroyed one reads ABSENT", async () => {
+    const user = userEvent.setup();
+    render(<AppShell storage={createMemoryStorage()} />);
+
+    // The stock shell has all three, so all three are ordinary shown/hidden toggles.
+    await openLayoutMenu(user);
+    for (const name of ["Right dock", "Bottom dock", "Left dock"]) {
+      expect(screen.getByRole("button", { name }).textContent).toBe("shown");
+    }
+    await user.keyboard("{Escape}");
+
+    // Destroy one and the row survives, in the third state. Before T936 it appeared in
+    // NEITHER list, which is exactly what the owner was looking at.
+    await destroyLeftDock(user);
+    await openLayoutMenu(user);
     expect(screen.getByRole("button", { name: "Right dock" }).textContent).toBe("shown");
     expect(screen.getByRole("button", { name: "Bottom dock" }).textContent).toBe("shown");
     expect(screen.getByRole("button", { name: "Restore Left dock" }).textContent).toBe("absent");
@@ -1426,6 +1509,7 @@ describe("T936 — every baseline dock is listed, whatever the tree holds", () =
     const user = userEvent.setup();
     render(<AppShell storage={createMemoryStorage()} graphCanvas={<div>canvas slot</div>} />);
 
+    await destroyLeftDock(user);
     await openLayoutMenu(user);
     await user.click(screen.getByRole("button", { name: "Restore Left dock" }));
 
@@ -1451,16 +1535,18 @@ describe("T936 — every baseline dock is listed, whatever the tree holds", () =
       />,
     );
     // Arrange something first, so "restore" has something it could destroy.
+    await destroyLeftDock(user);
     await movePaneVia(user, "shader editor", "Centre dock");
     const before = readPaneTreeStore(storage).current;
 
     await openLayoutMenu(user);
     await user.click(screen.getByRole("button", { name: "Restore Left dock" }));
 
-    // A reset would have put the shader editor back in the bottom dock and dropped the
-    // library column — that is the bug this row exists to fix, not to commit.
+    // A reset would have put the shader editor back in the bottom dock and dragged the
+    // node library back into the left dock — that is the bug this row exists to fix, not
+    // to commit.
     expect(zoneElement("center").contains(screen.getByText("editor slot"))).toBe(true);
-    expect(zoneElement("libraries").contains(screen.getByText("library slot"))).toBe(true);
+    expect(zoneElement("bottom").contains(screen.getByText("library slot"))).toBe(true);
     expect(zoneElement("right").contains(screen.getByText("viewer slot"))).toBe(true);
     const after = readPaneTreeStore(storage).current;
     expect(allTabs(after).map((tab) => tab.key).sort()).toEqual(
@@ -1504,6 +1590,7 @@ describe("T936 — every baseline dock is listed, whatever the tree holds", () =
     const user = userEvent.setup();
     render(<AppShell storage={createMemoryStorage()} />);
 
+    await destroyLeftDock(user);
     await openLayoutMenu(user);
     await user.click(screen.getByRole("button", { name: "Restore Left dock" }));
     await openLayoutMenu(user);
@@ -1552,5 +1639,134 @@ describe("T486 — a closed area comes back through the layout menu", () => {
     };
     walk(persisted.current.root);
     expect(hasShader).toBe(true);
+  });
+});
+
+/**
+ * T1125 (§V813, §V311) — CHANGING THE DEFAULT MUST NOT TOUCH ANYBODY'S STORED LAYOUT.
+ *
+ * The one thing in this change that could annoy an existing user badly. Layouts persist
+ * under `shaderloom.shell.layouts.v5`, and the only doors to a new default are a FRESH
+ * profile and `layout.reset` / the menu's "Default" row. A migration would be the bug:
+ * somebody who spent an evening arranging their shell does not want it rearranged because
+ * we changed our minds about where the node library goes.
+ *
+ * The fixture is the literal record a profile that used the app during T927/T932 still
+ * has in `localStorage` — the arrangement this task replaces — because "an arbitrary tree
+ * round-trips" is a weaker statement than "the arrangement we just abandoned survives".
+ */
+const T932_STORED_TREE = {
+  root: {
+    kind: "split",
+    id: "split-columns",
+    direction: "row",
+    ratio: 61, // dragged by the user, so this is THEIRS and not any default
+    first: {
+      kind: "split",
+      id: "split-rows",
+      direction: "column",
+      ratio: 72,
+      first: { kind: "leaf", id: "leaf-center", tabs: [{ key: "graph-1", role: "graph" }], active: "graph-1" },
+      second: {
+        kind: "split",
+        id: "split-bottom",
+        direction: "row",
+        ratio: 50,
+        first: {
+          kind: "leaf",
+          id: "leaf-bottom",
+          tabs: [
+            { key: "examples-5", role: "examples" },
+            { key: "shader-2", role: "shader" },
+            { key: "problems-3", role: "problems" },
+            { key: "performance-4", role: "performance" },
+            { key: "agent-6", role: "agent" },
+          ],
+          active: "shader-2",
+        },
+        second: {
+          kind: "leaf",
+          id: "leaf-libraries",
+          tabs: [
+            { key: "library-7", role: "library" },
+            { key: "components-8", role: "components" },
+          ],
+          active: "components-8",
+        },
+      },
+    },
+    second: {
+      kind: "split",
+      id: "split-right",
+      direction: "column",
+      ratio: 50,
+      first: { kind: "leaf", id: "leaf-right", tabs: [{ key: "viewer-9", role: "viewer" }], active: "viewer-9" },
+      second: {
+        kind: "leaf",
+        id: "leaf-rightBottom",
+        tabs: [{ key: "inspector-10", role: "inspector" }],
+        active: "inspector-10",
+      },
+    },
+  },
+  floating: [],
+  nextKey: 11,
+} as const;
+
+describe("T1125 — a stored layout is UNTOUCHED by the new default", () => {
+  const storedRecord = (currentId: string | null) =>
+    JSON.stringify({ version: 5, current: T932_STORED_TREE, currentId, layouts: [] });
+
+  it("boots the arrangement the user left, not the new default", () => {
+    const storage = createMemoryStorage({ [PANE_TREE_STORAGE_KEY]: storedRecord(null) });
+    render(<AppShell storage={storage} nodeLibrary={<div>library slot</div>} />);
+
+    // Their library column is still a library column, still open on COMPONENTS, and the
+    // left dock the new default ships is nowhere on screen.
+    expect(document.querySelector('[data-pane-leaf="leaf-libraries"]')).not.toBeNull();
+    expect(document.querySelector('[data-pane-leaf="leaf-left"]')).toBeNull();
+    expect(activeRoleOf(storage, "leaf-libraries")).toBe("components");
+    expect(activeRoleOf(storage, "leaf-bottom")).toBe("shader");
+    // Including the divider they dragged: 61, not the default's 74.
+    expect((readPaneTreeStore(storage).current.root as { ratio: number }).ratio).toBe(61);
+  });
+
+  it("does not REWRITE it either — the stored bytes survive a mount", () => {
+    // Not the same statement: a shell that mounted their tree and then persisted a
+    // "repaired" version of it would pass the test above and still lose their layout on
+    // the reload after next.
+    const before = storedRecord(null);
+    const storage = createMemoryStorage({ [PANE_TREE_STORAGE_KEY]: before });
+    render(<AppShell storage={storage} />);
+    expect(storage.getItem(PANE_TREE_STORAGE_KEY)).toBe(before);
+  });
+
+  it("even for a profile sitting ON the preset whose arrangement changed", () => {
+    /*
+     * The scariest case, and the one a naive "the default moved, so move them" would
+     * break: `currentId` says `preset:default`, and the Default preset is now a different
+     * arrangement than the one they are looking at. The furniture wins — the selection is
+     * a bookmark, not an instruction — and the menu says "modified" rather than silently
+     * rearranging the room (T470/T589's rule, arriving at a changed preset).
+     */
+    const storage = createMemoryStorage({ [PANE_TREE_STORAGE_KEY]: storedRecord(DEFAULT_LAYOUT_ID) });
+    render(<AppShell storage={storage} />);
+
+    expect(document.querySelector('[data-pane-leaf="leaf-libraries"]')).not.toBeNull();
+    expect(document.querySelector('[data-pane-leaf="leaf-left"]')).toBeNull();
+    expect(readPaneTreeStore(storage).current).toEqual(T932_STORED_TREE);
+  });
+
+  it("…and the DOOR to the new default is the menu's own Default row", () => {
+    // The counterpart, and what makes the three gates above a choice rather than a trap:
+    // the new arrangement is one click away, on demand, from the layout the user has.
+    const storage = createMemoryStorage({ [PANE_TREE_STORAGE_KEY]: storedRecord(null) });
+    render(<AppShell storage={storage} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Layout" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Default/ }));
+
+    expect(leafHolding(storage, "library")).toBe("leaf-left");
+    expect(document.querySelector('[data-pane-leaf="leaf-libraries"]')).toBeNull();
   });
 });

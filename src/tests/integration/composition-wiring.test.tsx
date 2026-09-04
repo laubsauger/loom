@@ -1335,14 +1335,17 @@ describe("help, and the two libraries that had no host", () => {
   });
 
   /**
-   * T927 moved the pair out of the left dock; T932 kept them SHARING a leaf, which is
-   * what §V93 has always permitted — both ADD to the open document. They now sit in the
-   * bottom region's own column, where each tab gets the full column height (T927 shipped
-   * them stacked and the browser said four rows; see `pane-tree.test.ts`).
+   * The pair SHARE a leaf, which is what §V93 has always permitted — both ADD to the
+   * open document — and T932's measurement is why it is one leaf rather than two: a
+   * split halves the rows of whichever library you are scanning. Where that leaf lives
+   * has moved twice (T927 out of the left dock, T1125 back into it), and §V93 is about
+   * the pairing rather than the address, so this finds the leaf BY ITS CONTENT.
    */
   function libraryLeaf(): Element {
-    const leaf = document.querySelector('[data-pane-leaf="leaf-libraries"]');
-    if (leaf === null) throw new Error("no library column");
+    const leaf = document
+      .querySelector('[data-pane-role="library"]')
+      ?.closest("[data-pane-leaf]");
+    if (leaf == null) throw new Error("no leaf holds the node library");
     return leaf;
   }
 

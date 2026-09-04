@@ -81,10 +81,10 @@ describe("the read chain: v4 → v3 → default (V311)", () => {
 
 describe("write keeps BOTH versions honest (V385)", () => {
   /*
-   * T927: "flat-expressible" is measured against the FIVE-ZONE SKELETON, not against
-   * `DEFAULT_PANE_TREE`. The default is authored as a tree now and its bottom region is
-   * a split, so it is structural by construction — using it here would assert the
-   * projection is faithful about a tree v3 cannot hold at all.
+   * "Flat-expressible" is measured against the FIVE-ZONE SKELETON, not against
+   * `DEFAULT_PANE_TREE`: the default is authored as a tree and has been structural
+   * before (T927/T932) and flat since (T1125), and a gate that follows it around is
+   * asserting about the default rather than about the projection rule.
    */
   const FLAT_TREE = treeFromShellLayout(DEFAULT_SHELL_LAYOUT);
 
@@ -116,16 +116,22 @@ describe("write keeps BOTH versions honest (V385)", () => {
     expect(readPaneTreeStore(storage).current).toEqual(split);
   });
 
-  it("T927: the DEFAULT arrangement itself is one of those — no v3 record is written", () => {
+  it("T1125: the DEFAULT arrangement projects again — an old build sees the same shell", () => {
     /*
-     * Not a regression, and worth pinning so it is not read as one: the new default is
-     * structural, so a FRESH profile has no v3 projection at all. An old build opening
-     * the same browser falls back to ITS default rather than to a lie about ours — the
-     * V385 rule, arriving at the stock arrangement for the first time.
+     * The flip side of T927's gate, which pinned the opposite: while the default was
+     * structural (the libraries in a second bottom column) a FRESH profile got NO v3
+     * record, and an old build opening the same browser fell back to its own default.
+     * T1125 put the libraries back in the left dock, so the default is the five-zone
+     * shape again and the projection is honest rather than absent.
+     *
+     * V385 is untouched by that: the rule is "faithful or REMOVED, never stale", and the
+     * `CLEARS…` gate above is what tests it. This one exists so that a later default
+     * which stops projecting is a decision somebody makes on purpose.
      */
     const storage = memoryStorage();
     writePaneTreeStore({ current: DEFAULT_PANE_TREE, currentId: null, layouts: [] }, storage);
-    expect(storage.map.has(LAYOUT_STORAGE_KEY)).toBe(false);
+    expect(storage.map.has(LAYOUT_STORAGE_KEY)).toBe(true);
+    expect(readLayoutStore(storage).current).toEqual(DEFAULT_SHELL_LAYOUT);
     expect(readPaneTreeStore(storage).current).toEqual(DEFAULT_PANE_TREE);
   });
 

@@ -70,14 +70,14 @@ const HIT_AREA = { coarse: 12, fine: 6 } as const;
  * not wrong ones.
  */
 const CANONICAL_LEAF_NAMES: Readonly<Record<string, string>> = {
-  // T927/T932 moved the two libraries out of the left dock and into one leaf in the
-  // bottom region's second column. `leaf-left` stays named: a stored layout from before
-  // still has it, and a dock the user is looking at must not lose its name on upgrade.
   "leaf-left": "Left dock",
   "leaf-center": "Centre dock",
   "leaf-right": "Right dock top",
   "leaf-rightBottom": "Right dock bottom",
   "leaf-bottom": "Bottom dock",
+  // T927/T932's library column. T1125 took it out of the DEFAULT (the libraries are back
+  // in the left dock), but a stored layout from that era still has the leaf, and a dock
+  // the user is looking at must not lose its name on upgrade.
   "leaf-libraries": "Library dock",
 };
 
@@ -85,10 +85,10 @@ const CANONICAL_LEAF_NAMES: Readonly<Record<string, string>> = {
  * Panels beyond the BASELINE DOCKS that the layout menu can collapse, when the current
  * tree has them (§V399: every shell panel is collapsible).
  *
- * T927's library column is the only one. It is what the left dock's toggle used to be
- * for — get the libraries out of the way in one gesture — and without it the T932
- * arrangement would be the first to ship a panel with no way to close it. T932 made that
- * column a single LEAF, so the toggle targets the leaf.
+ * T927's library column is the only one, and T1125 left it here after removing it from
+ * the default: the row is offered ONLY while the tree actually has the leaf, so it costs
+ * a fresh profile nothing and is still the one way a T927/T932-era stored layout can
+ * collapse its library column.
  *
  * The three baseline docks are NOT here: T936 lists them unconditionally, because a row
  * that appears only while its dock exists cannot bring a destroyed dock back.
@@ -109,8 +109,9 @@ const SPLIT_HANDLE_NAMES: Readonly<Record<string, string>> = {
   "split-rows": "Resize bottom dock",
   "split-main": "Resize left dock",
   "split-right": "Resize sidebar split",
-  // T927's new divider: the bottom region's two columns. (T932 removed the second one —
-  // the libraries share a leaf now, so there is nothing inside that column to resize.)
+  // T927's divider between the bottom region's two columns. Not in the default since
+  // T1125, but a stored layout from that era still has it and its handle still needs a
+  // name (§V19).
   "split-bottom": "Resize library column",
 };
 
@@ -266,11 +267,11 @@ export function AppShell({
           return walk(node.first) ?? walk(node.second);
         };
         /*
-         * T927: the default tree first, then the FIVE-ZONE SKELETON. The default no
-         * longer contains `split-main` — a user still sitting on a stored flat layout
-         * has that divider on screen, and answering 50/50 for it would turn a
-         * double-click from "put it back" into "resize it to something it never was".
-         * The skeleton is where those ids and their stock ratios still live.
+         * The default tree first, then the FIVE-ZONE SKELETON. The fallback matters for
+         * ids the CURRENT default does not carry — T927's `split-bottom`, still on
+         * screen for anyone sitting on a stored layout from that era — because answering
+         * 50/50 for one of those would turn a double-click from "put it back" into
+         * "resize it to something it never was".
          */
         return walk(DEFAULT_PANE_TREE.root) ?? walk(SKELETON_TREE.root) ?? 50;
       })();

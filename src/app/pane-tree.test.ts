@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   DEFAULT_PANE_TREE,
+  PERFORM_PANE_TREE,
   addTab,
   moveTabToEdge,
   spawnEdge,
@@ -40,6 +41,97 @@ import { DEFAULT_SHELL_LAYOUT } from "./layout-storage.ts";
  * is asserted outright.
  */
 
+/** Every node's rectangle as a fraction of the window — the only way to assert AREA. */
+const rectOf = (layout: PaneTreeLayout, id: PaneKey) => {
+  let found: { x: number; y: number; w: number; h: number } | null = null;
+  const walk = (node: LayoutNode, x: number, y: number, w: number, h: number): void => {
+    if (node.id === id) found = { x, y, w, h };
+    if (node.kind === "leaf") return;
+    const share = node.ratio / 100;
+    if (node.direction === "row") {
+      walk(node.first, x, y, w * share, h);
+      walk(node.second, x + w * share, y, w * (1 - share), h);
+    } else {
+      walk(node.first, x, y, w, h * share);
+      walk(node.second, x, y + h * share, w, h * (1 - share));
+    }
+  };
+  walk(layout.root, 0, 0, 1, 1);
+  return found as { x: number; y: number; w: number; h: number } | null;
+};
+
+/** The rectangle of whichever leaf currently holds `role`. */
+const roleRect = (layout: PaneTreeLayout, role: string) => {
+  const leaf = leavesOf(layout.root).find((candidate) => candidate.tabs.some((tab) => tab.role === role));
+  return leaf === undefined ? null : rectOf(layout, leaf.id);
+};
+
+/**
+ * The arrangement T927/T932 SHIPPED as the default, kept here as a fixture.
+ *
+ * Two jobs, both of which need the real thing rather than a number in a comment: T1125's
+ * gain is measured against what it replaced, and this is byte-for-byte what a profile
+ * that used the app during that era still has stored — which is what the "an existing
+ * layout is untouched" gates read back.
+ */
+const SHIPPED_T932_TREE: PaneTreeLayout = {
+  root: {
+    kind: "split",
+    id: "split-columns",
+    direction: "row",
+    ratio: 74,
+    first: {
+      kind: "split",
+      id: "split-rows",
+      direction: "column",
+      ratio: 72,
+      first: { kind: "leaf", id: "leaf-center", tabs: [{ key: "graph-1", role: "graph" }], active: "graph-1" },
+      second: {
+        kind: "split",
+        id: "split-bottom",
+        direction: "row",
+        ratio: 50,
+        first: {
+          kind: "leaf",
+          id: "leaf-bottom",
+          tabs: [
+            { key: "examples-5", role: "examples" },
+            { key: "shader-2", role: "shader" },
+            { key: "problems-3", role: "problems" },
+            { key: "performance-4", role: "performance" },
+            { key: "agent-6", role: "agent" },
+          ],
+          active: "examples-5",
+        },
+        second: {
+          kind: "leaf",
+          id: "leaf-libraries",
+          tabs: [
+            { key: "library-7", role: "library" },
+            { key: "components-8", role: "components" },
+          ],
+          active: "library-7",
+        },
+      },
+    },
+    second: {
+      kind: "split",
+      id: "split-right",
+      direction: "column",
+      ratio: 50,
+      first: { kind: "leaf", id: "leaf-right", tabs: [{ key: "viewer-9", role: "viewer" }], active: "viewer-9" },
+      second: {
+        kind: "leaf",
+        id: "leaf-rightBottom",
+        tabs: [{ key: "inspector-10", role: "inspector" }],
+        active: "inspector-10",
+      },
+    },
+  },
+  floating: [],
+  nextKey: 11,
+};
+
 describe("v3 → tree migration reproduces the flat arrangement (T404)", () => {
   it("builds the canonical five-zone skeleton with the flat ratios", () => {
     const tree = treeFromShellLayout(DEFAULT_SHELL_LAYOUT);
@@ -75,84 +167,35 @@ describe("v3 → tree migration reproduces the flat arrangement (T404)", () => {
 });
 
 /**
- * T927/T932 — the default arrangement itself, which is now a value in this module rather
- * than a derivation of the flat one. Every assertion here is a thing the owner asked
- * for, so a change that quietly walks one back is a failure and not a diff.
+ * T1125 — the default arrangement itself, which is a value in this module rather than a
+ * derivation of the flat one. Every assertion here is a thing the owner asked for, so a
+ * change that quietly walks one back is a failure and not a diff.
  */
-describe("the T932 default: the libraries live in the bottom region's own column", () => {
-  const bottomRegion = () => {
-    const root = DEFAULT_PANE_TREE.root;
-    if (root.kind !== "split") throw new Error("root is a leaf");
-    const work = root.first;
-    if (work.kind !== "split") throw new Error("work area is a leaf");
-    return work.second;
-  };
-
-  it("has NO left dock — the graph is the whole work area above the bottom", () => {
-    const root = DEFAULT_PANE_TREE.root as Extract<typeof DEFAULT_PANE_TREE.root, { kind: "split" }>;
-    const work = root.first as Extract<typeof root, { kind: "split" }>;
-    expect(work.first).toEqual(
-      expect.objectContaining({ kind: "leaf", id: "leaf-center", tabs: [{ key: "graph-1", role: "graph" }] }),
-    );
-    // Nothing anywhere is the old left dock.
-    expect(leavesOf(DEFAULT_PANE_TREE.root).map((leaf) => leaf.id)).not.toContain("leaf-left");
-  });
-
-  it("the graph is WIDER than it was: it takes the 23% the left dock held", () => {
-    // Measured, not asserted by shape. Widths are fractions of the window.
-    const widthOf = (layout: PaneTreeLayout, role: string): number => {
-      let width = 0;
-      const walk = (node: PaneTreeLayout["root"], w: number): void => {
-        if (node.kind === "leaf") {
-          if (node.tabs.some((tab) => tab.role === role)) width = w;
-          return;
-        }
-        const share = node.ratio / 100;
-        const first = node.direction === "row" ? w * share : w;
-        const second = node.direction === "row" ? w * (1 - share) : w;
-        walk(node.first, first);
-        walk(node.second, second);
-      };
-      walk(layout.root, 1);
-      return width;
-    };
-    const before = widthOf(treeFromShellLayout(DEFAULT_SHELL_LAYOUT), "graph");
-    const after = widthOf(DEFAULT_PANE_TREE, "graph");
-    expect(after).toBeGreaterThan(before);
-    expect(after).toBeCloseTo(0.74, 5); // the whole work area, where it held 77% of it
-  });
-
-  it("the bottom region is TWO COLUMNS at 50/50 — the tab dock, then the libraries", () => {
-    const bottom = bottomRegion();
-    expect(bottom.kind).toBe("split");
-    const region = bottom as Extract<typeof bottom, { kind: "split" }>;
-    expect(region.direction).toBe("row"); // two columns
-    expect(region.ratio).toBe(50);
-    expect((region.first as { id: string }).id).toBe("leaf-bottom");
-    expect((region.second as { id: string }).id).toBe("leaf-libraries");
-  });
-
-  it("library and components share ONE leaf, so each gets the FULL column height (T932)", () => {
+describe("the T1125 default: the libraries are back in the LEFT DOCK", () => {
+  it("library and components are in the left dock, sharing ONE leaf (T932's rule travels)", () => {
     /*
-     * T927 made these two SEPARATE LEAVES, so both would be visible at once — and this
-     * gate asserted exactly that, with a comment calling a shared leaf the version that
-     * "moves them without buying anything". Measurement reversed it, and the reversal is
-     * the thing worth learning here, not the shape:
+     * The full history, because the shape alone teaches nothing:
      *
-     *   in the browser, stacked in a 34%-tall bottom bar, the node library rendered FOUR
-     *   rows under its search box. As a tab of one leaf it gets the whole column — about
-     *   double — because the split was spending half the height on whichever library the
-     *   user was not reading at that moment.
+     *   T927 moved this pair out of the left dock into a second column of the bottom
+     *   region, stacked, to give the graph the left 23%. Measured in the browser, the
+     *   node library rendered ONE row there. T932 made the pair TABS OF ONE LEAF, which
+     *   bought back the full column height — six rows. The owner then looked at six rows
+     *   in a 28%-tall bar and called it squeezed.
      *
-     * So the cost is chosen, not overlooked: only one of the pair is on screen at a
-     * time. For a SCAN-AND-DRAG surface, rows beat simultaneity, and the owner picked
-     * that having seen both. A future change back to two leaves is not wrong on its face
-     * — but it must come with a measurement of the rows it costs, or it is T927 again.
+     * T927's own report already held the number that settles it: the left dock showed
+     * about TWENTY rows. A scan-and-drag list is bought in ROWS, and the left dock is the
+     * only full-height column in this shell that is not the graph.
+     *
+     * What does NOT change is T932's finding, and it is why this is one leaf and not two
+     * stacked ones: a split halves the rows of whichever library you are actually
+     * scanning, wherever the leaf lives. A future change back to two leaves is not wrong
+     * on its face — but it must come with a measurement of the rows it costs, or it is
+     * T927 again.
      */
     const leaves = leavesOf(DEFAULT_PANE_TREE.root);
     const libraryLeaf = leaves.find((leaf) => leaf.tabs.some((tab) => tab.role === "library"))!;
     const componentsLeaf = leaves.find((leaf) => leaf.tabs.some((tab) => tab.role === "components"))!;
-    expect(libraryLeaf.id).toBe("leaf-libraries");
+    expect(libraryLeaf.id).toBe("leaf-left");
     expect(componentsLeaf.id).toBe(libraryLeaf.id);
     // Two tabs, and the node library is the one that opens — it is the surface you scan.
     expect(libraryLeaf.tabs.map((tab) => tab.role)).toEqual(["library", "components"]);
@@ -161,11 +204,71 @@ describe("the T932 default: the libraries live in the bottom region's own column
     expect(libraryLeaf.tabs.some((tab) => tab.role === "examples")).toBe(false);
   });
 
-  it("the library column is HALF the bottom, not a margin beside the tab dock (T932)", () => {
-    // The dock holds an editor and the libraries are a browsing surface; the owner asked
-    // for 50/50 between them, and a ratio drifting back to 74/26 is a silent regression.
-    const region = bottomRegion() as Extract<ReturnType<typeof bottomRegion>, { kind: "split" }>;
-    expect(region.ratio).toBe(50);
+  it("the library dock is TALLER than the bottom-region column it left — the whole point", () => {
+    /*
+     * The reason for the move, asserted as AREA rather than as a tree shape: the T932
+     * arrangement gave the pair 28% of the window's height, and the left dock gives it
+     * the whole work area above the bottom bar. Anything that trims the left dock back
+     * towards the bottom bar's height has undone the change without saying so.
+     */
+    const before = roleRect(SHIPPED_T932_TREE, "library")!;
+    const after = roleRect(DEFAULT_PANE_TREE, "library")!;
+    expect(after.h).toBeGreaterThan(before.h * 2);
+    expect(after.h).toBeCloseTo(0.72, 5); // the work area above the bottom bar
+    // …and it is hard against the left edge, level with the graph.
+    expect(after.x).toBeCloseTo(0, 5);
+    expect(after.y).toBeCloseTo(0, 5);
+  });
+
+  it("the bottom region is ONE dock — the vacated column went to the SHADER EDITOR", () => {
+    /*
+     * T1125's second half, and the owner delegated it: with the libraries gone there was
+     * a free column beside the bottom tab dock, and nothing was put in it. The dock
+     * absorbs it instead, which doubles the width of the shader editor — the one surface
+     * down there starved by width rather than height — and widens the examples grid and
+     * the problems list with it. A rail of filler beside the code you are editing is
+     * worse than no rail, so a later change that fills this space owes a reason a person
+     * would agree with.
+     */
+    const root = DEFAULT_PANE_TREE.root as Extract<typeof DEFAULT_PANE_TREE.root, { kind: "split" }>;
+    const work = root.first as Extract<typeof root, { kind: "split" }>;
+    expect(work.second.kind).toBe("leaf"); // not T927's `split-bottom`
+    expect(work.second.id).toBe("leaf-bottom");
+
+    const before = roleRect(SHIPPED_T932_TREE, "shader")!;
+    const after = roleRect(DEFAULT_PANE_TREE, "shader")!;
+    expect(after.w).toBeCloseTo(before.w * 2, 5);
+    expect(after.w).toBeCloseTo(0.74, 5); // the whole work area
+  });
+
+  it("the graph gives the left dock 23% back and is still the biggest thing on screen", () => {
+    // The cost of the move, stated rather than hidden: T927 bought the graph this width
+    // and T1125 spends it. The graph must still dominate the shell — it is what the
+    // default layout is FOR (the "Perform" preset is where the viewer takes over).
+    const graph = roleRect(DEFAULT_PANE_TREE, "graph")!;
+    expect(graph.w).toBeCloseTo(0.74 * 0.77, 5);
+    const viewer = roleRect(DEFAULT_PANE_TREE, "viewer")!;
+    expect(graph.w * graph.h).toBeGreaterThan(viewer.w * viewer.h * 3);
+  });
+
+  it("the tree default and the FLAT default describe the same arrangement (T1123)", () => {
+    /*
+     * ⚑ The constraint that has broken twice. `DEFAULT_SHELL_LAYOUT` is not decoration:
+     * `SKELETON_TREE` derives from it, and so do the position and ratio of every dock the
+     * layout menu can RESTORE (T936, `baselinePlacement`) and the v3 migration's fallback.
+     * T927 let the two diverge deliberately — a fresh profile then got the OLD
+     * arrangement, because a stock flat record and no record at all read back the same.
+     *
+     * They are compared by SHAPE and by ZONE CONTENT, not byte-for-byte, because the one
+     * thing that legitimately differs is the tab KEYS: those are identities (T1123) and
+     * deriving the default would renumber them.
+     */
+    const skeleton = treeFromShellLayout(DEFAULT_SHELL_LAYOUT);
+    const shapeOf = (node: LayoutNode): unknown =>
+      node.kind === "leaf"
+        ? { id: node.id, roles: node.tabs.map((tab) => tab.role), active: node.tabs.find((tab) => tab.key === node.active)?.role ?? null }
+        : { id: node.id, direction: node.direction, ratio: node.ratio, first: shapeOf(node.first), second: shapeOf(node.second) };
+    expect(shapeOf(DEFAULT_PANE_TREE.root)).toEqual(shapeOf(skeleton.root));
   });
 
   it("every key is unique and the mint counter clears them all", () => {
@@ -184,11 +287,11 @@ describe("the T932 default: the libraries live in the bottom region's own column
 
 describe("the projection goes NULL the moment the tree stops being flat (V385)", () => {
   /*
-   * T927: these gates run on the FLAT-DERIVED tree, not on `DEFAULT_PANE_TREE`. The
-   * default is now authored as a tree and is structural by construction — its bottom
-   * region is a split — so it projects to null before any of these cases is applied,
-   * and a gate asserting null against it could not fail. The five-zone skeleton is what
-   * "still flat-expressible" MEANS, so it is what the trigger is measured against.
+   * These gates run on the FLAT-DERIVED tree. The five-zone skeleton is what "still
+   * flat-expressible" MEANS, so it is what the trigger is measured against — and running
+   * them on the default instead would tie them to whatever shape the default happens to
+   * have this month (under T927 the default was structural, so every one of these would
+   * have passed before its case was applied).
    */
   const flat = treeFromShellLayout(DEFAULT_SHELL_LAYOUT);
 
@@ -217,11 +320,31 @@ describe("the projection goes NULL the moment the tree stops being flat (V385)",
     expect(projected?.zones.bottom).toEqual(["examples", "shader", "performance", "agent"]);
   });
 
-  it("the T927 default is structural, so v3 cannot hold it at all", () => {
-    // Not incidental: the bottom region is two columns and the second is split
-    // vertically, which the five fixed zones have no spelling for. V385 therefore
-    // CLEARS the v3 record for a fresh profile rather than writing a lie into it.
-    expect(shellLayoutFromTree(DEFAULT_PANE_TREE)).toBeNull();
+  it("T927's default was structural — v3 could not hold it, and V385 CLEARED the record", () => {
+    // The trigger asserted against the arrangement that actually caused it. T932's
+    // bottom region is two columns, which the five fixed zones have no spelling for, so
+    // a profile on that default had its v3 record REMOVED rather than written wrong.
+    expect(shellLayoutFromTree(SHIPPED_T932_TREE)).toBeNull();
+  });
+
+  it("T1125's default IS projectable again — an old build reads the same arrangement", () => {
+    /*
+     * The consequence of putting the libraries back in the left dock, stated rather than
+     * discovered later: the default is the five-zone shape again, so `writePaneTreeStore`
+     * writes a faithful v3 projection for a fresh profile instead of clearing the key.
+     * That is the GOOD direction of V385 (a stale record is the harm, an accurate one is
+     * the feature) — but it is a behaviour change, and a gate that only ever asserted
+     * "null" would have hidden it.
+     */
+    const projected = shellLayoutFromTree(DEFAULT_PANE_TREE);
+    expect(projected).not.toBeNull();
+    expect(projected).toEqual(DEFAULT_SHELL_LAYOUT);
+  });
+
+  it("the PERFORM preset is tree-only — it has no left dock and a single-leaf sidebar", () => {
+    // Why `PANE_TREE_PRESETS` cannot derive it from a flat entry (T1125). Not a detail:
+    // a preset that projected would write itself into the v3 record as something else.
+    expect(shellLayoutFromTree(PERFORM_PANE_TREE)).toBeNull();
   });
 });
 
@@ -297,7 +420,7 @@ describe("the split/close algebra", () => {
 
   it("the LAST leaf never closes — the shell always has somewhere to stand", () => {
     let tree: PaneTreeLayout = DEFAULT_PANE_TREE;
-    for (const id of ["leaf-bottom", "leaf-libraries", "leaf-right", "leaf-rightBottom"]) {
+    for (const id of ["leaf-bottom", "leaf-left", "leaf-right", "leaf-rightBottom"]) {
       tree = closeLeaf(tree, id);
     }
     expect(leavesOf(tree.root).map((leaf) => leaf.id)).toEqual(["leaf-center"]);
@@ -485,7 +608,7 @@ describe("the split/close algebra", () => {
  *
  * The owner: "it still only lets us show 3 panes that currently exist instead of always
  * allowing us to bring back or hide any." The gap was structural and had two halves:
- * `leaf-left` is not in the default tree (T927 removed it) AND the left EDGE reads as
+ * `leaf-left` was not in the default tree (T927 removed it) AND the left EDGE reads as
  * HELD, because the graph touches it — so the region appeared in neither the toggle list
  * nor T494's spawn list. Two mechanisms, two different meanings of "absent", and a dock
  * that fell between them.
@@ -493,38 +616,33 @@ describe("the split/close algebra", () => {
  * T931 is what made it urgent rather than untidy: dragging a leaf's last tab out now
  * collapses that leaf, so a dock can be DESTROYED and the only way back was a full
  * layout reset — which throws away everything else the user arranged.
+ *
+ * ⚑ T1125 put a left dock back in the DEFAULT, which would have quietly disarmed most of
+ * this file: `restoreBaselineRegion(DEFAULT_PANE_TREE, "left")` is now a no-op, and a
+ * gate built on it asserts nothing. So these run on `SHIPPED_T932_TREE` — the exact
+ * arrangement that produced the bug, and the one a profile from that era still holds.
  */
 describe("the baseline docks: always listed, absent ones restorable (T936)", () => {
-  const rectOf = (layout: PaneTreeLayout, id: PaneKey) => {
-    let found: { x: number; y: number; w: number; h: number } | null = null;
-    const walk = (node: LayoutNode, x: number, y: number, w: number, h: number): void => {
-      if (node.id === id) found = { x, y, w, h };
-      if (node.kind === "leaf") return;
-      const share = node.ratio / 100;
-      if (node.direction === "row") {
-        walk(node.first, x, y, w * share, h);
-        walk(node.second, x + w * share, y, w * (1 - share), h);
-      } else {
-        walk(node.first, x, y, w, h * share);
-        walk(node.second, x, y + h * share, w, h * (1 - share));
-      }
-    };
-    walk(layout.root, 0, 0, 1, 1);
-    return found as { x: number; y: number; w: number; h: number } | null;
-  };
-
-  it("reports the third state: the default has a right and a bottom, and NO left", () => {
-    // The exact shape the owner is looking at, and the reason the menu showed three rows.
-    expect(baselineRegionNode(DEFAULT_PANE_TREE, "right")).toBe("split-right");
-    expect(baselineRegionNode(DEFAULT_PANE_TREE, "bottom")).toBe("leaf-bottom");
-    expect(baselineRegionNode(DEFAULT_PANE_TREE, "left")).toBeNull();
+  it("reports the third state: the T932 shell had a right and a bottom, and NO left", () => {
+    // The exact shape the owner was looking at, and the reason the menu showed three rows.
+    expect(baselineRegionNode(SHIPPED_T932_TREE, "right")).toBe("split-right");
+    expect(baselineRegionNode(SHIPPED_T932_TREE, "bottom")).toBe("leaf-bottom");
+    expect(baselineRegionNode(SHIPPED_T932_TREE, "left")).toBeNull();
     // …and the other mechanism could not have offered it either: the graph touches the
     // left edge, so T494 reads that edge as HELD. Absent from BOTH lists is the bug.
-    expect(spawnableEdges(DEFAULT_PANE_TREE)).toEqual([]);
+    expect(spawnableEdges(SHIPPED_T932_TREE)).toEqual([]);
+  });
+
+  it("the T1125 default carries all three regions, so every row reads SHOWN", () => {
+    // Not the same statement as the one above: the menu must list all three whatever the
+    // tree holds (that is T936), and now the tree does hold all three.
+    expect(baselineRegionNode(DEFAULT_PANE_TREE, "right")).toBe("split-right");
+    expect(baselineRegionNode(DEFAULT_PANE_TREE, "bottom")).toBe("leaf-bottom");
+    expect(baselineRegionNode(DEFAULT_PANE_TREE, "left")).toBe("leaf-left");
   });
 
   it("restores the left dock BESIDE THE GRAPH — inside the work area, above the bottom", () => {
-    const restored = restoreBaselineRegion(DEFAULT_PANE_TREE, "left");
+    const restored = restoreBaselineRegion(SHIPPED_T932_TREE, "left");
     expect(baselineRegionNode(restored, "left")).toBe("leaf-left");
 
     /*
@@ -554,7 +672,7 @@ describe("the baseline docks: always listed, absent ones restorable (T936)", () 
      * anywhere or a tab order shuffled anywhere fails this — not just the leaves the
      * insertion happens to touch.
      */
-    let custom: PaneTreeLayout = DEFAULT_PANE_TREE;
+    let custom: PaneTreeLayout = SHIPPED_T932_TREE;
     custom = setSplitRatio(custom, "split-columns", 61);
     custom = setSplitRatio(custom, "split-bottom", 33);
     const libraries = findLeaf(custom, "leaf-libraries")!;
@@ -575,15 +693,18 @@ describe("the baseline docks: always listed, absent ones restorable (T936)", () 
   });
 
   it("gives the restored dock an EMPTY leaf — the picker, never a guessed tab (T853)", () => {
-    const restored = restoreBaselineRegion(DEFAULT_PANE_TREE, "left");
+    const restored = restoreBaselineRegion(SHIPPED_T932_TREE, "left");
     const dock = findLeaf(restored, "leaf-left")!;
     // Guessing would make "bring the left dock back" and "put the node library back" the
-    // same button, and reopen a pane the user deliberately moved out of it.
+    // same button, and reopen a pane the user deliberately moved out of it. ⚑ Note this
+    // is the one place the T1125 default differs in KIND: its `leaf-left` ships WITH the
+    // libraries in it, because that is an authored arrangement rather than a recreation
+    // of a dock somebody emptied on purpose.
     expect(dock.tabs).toEqual([]);
     expect(dock.active).toBeNull();
     // Nothing was taken from anywhere else to fill it.
     expect(allTabs(restored).map((tab) => tab.key).sort()).toEqual(
-      allTabs(DEFAULT_PANE_TREE).map((tab) => tab.key).sort(),
+      allTabs(SHIPPED_T932_TREE).map((tab) => tab.key).sort(),
     );
   });
 
@@ -601,7 +722,7 @@ describe("the baseline docks: always listed, absent ones restorable (T936)", () 
   });
 
   it("restores the bottom bar SHORT OF the sidebar, which wrapping the root would not", () => {
-    const noBottom = closeLeaf(closeLeaf(DEFAULT_PANE_TREE, "leaf-bottom"), "leaf-libraries");
+    const noBottom = closeLeaf(DEFAULT_PANE_TREE, "leaf-bottom");
     expect(baselineRegionNode(noBottom, "bottom")).toBeNull();
 
     const restored = restoreBaselineRegion(noBottom, "bottom");
@@ -791,13 +912,17 @@ describe("floating (§V97) and docking home", () => {
   it("homeLeafFor answers by ROLE — the first leaf carrying it, else the first leaf", () => {
     expect(homeLeafFor(DEFAULT_PANE_TREE, "graph")).toBe("leaf-center");
     /*
-     * T927: the fallback branch needs the leaf that CARRIED the role to be gone, not
-     * merely emptied — the graph's own leaf is the first leaf of the default now, so
-     * closing the tab alone would answer "leaf-center" through the FIRST branch and the
-     * two answers would stop being distinguishable.
+     * The fallback branch needs the leaf that CARRIED the role to be gone, not merely
+     * emptied: closing the tab alone leaves `leaf-center` in the tree and the answer
+     * could come from either branch, so the two would stop being distinguishable.
+     *
+     * The answer is the FIRST leaf of what remains, and under T1125 that is the left dock
+     * — the value changing with the default is the point, not a regression. What must not
+     * change is that a role with no leaf still lands SOMEWHERE.
      */
     const noGraph = closeLeaf(DEFAULT_PANE_TREE, "leaf-center");
-    expect(homeLeafFor(noGraph, "graph")).toBe("leaf-bottom");
+    expect(homeLeafFor(noGraph, "graph")).toBe("leaf-left");
+    expect(leavesOf(noGraph.root)[0]?.id).toBe("leaf-left");
   });
 });
 
@@ -858,10 +983,11 @@ describe("a closed role comes BACK (T486, V423)", () => {
     expect(findLeaf(closed, "leaf-bottom")).toBeUndefined();
 
     const restored = restoreRole(closed, "shader");
-    // Not a tab wedged into a surviving dock: a fresh area with the SHAPE the closed
-    // one had. T927/T932 moved where that is — the bottom dock is now the FIRST column
-    // of a two-column bottom region, so it comes back as a row split beside the library
-    // leaf at the region's own 50/50, not as a third tab inside it.
+    // Not a tab wedged into a surviving dock: a fresh area with the SHAPE the closed one
+    // had. Under T1125 the bottom dock is the second child of the work area's column
+    // split again, so it comes back UNDER the graph at the stock 72/28 — the recipe
+    // tracks the default rather than a remembered position, which is what makes this
+    // survive a default being rearranged (it has been, twice).
     const leaves = leavesOf(restored.root);
     expect(leaves.length).toBe(5);
     const fresh = leaves.find((leaf) => leaf.tabs.some((tab) => tab.role === "shader"))!;
@@ -884,10 +1010,10 @@ describe("a closed role comes BACK (T486, V423)", () => {
       walk(restored.root);
       return found;
     })();
-    // A ROW split with the new area on the FIRST (left) side, at the old 50/50.
-    expect(parent?.direction).toBe("row");
-    expect(parent?.secondIsFresh).toBe(false);
-    expect(parent?.ratio).toBe(50);
+    // A COLUMN split with the new area on the SECOND (lower) side, at the old 72/28.
+    expect(parent?.direction).toBe("column");
+    expect(parent?.secondIsFresh).toBe(true);
+    expect(parent?.ratio).toBe(72);
   });
 
   it("a stale recipe degrades to the first leaf — restored somewhere beats nowhere", () => {

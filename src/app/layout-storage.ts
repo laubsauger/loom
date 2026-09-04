@@ -112,12 +112,15 @@ export interface ShellLayout {
 /**
  * T426 — the default arrangement, IN THE FLAT MODEL.
  *
- * ⚠ T927: this is NO LONGER what a fresh shell mounts with. The live default is
- * `DEFAULT_PANE_TREE` (`pane-tree.ts`), authored as a tree because the arrangement it
- * describes — the node library and components as a vertically-split second column
- * inside the bottom region, with no left dock — has no flat spelling. What survives
- * here is v3's own default: the fallback a stored flat layout is repaired against and
- * the shape `migrateLegacyLayout` produces, both of which must keep speaking v3.
+ * ⚠ This is not itself what a fresh shell mounts with — that is `DEFAULT_PANE_TREE`
+ * (`pane-tree.ts`), and the two must agree. T927 pulled them apart (the libraries became
+ * a second column of the bottom region, which has no flat spelling); T1125 put the
+ * libraries back in the left dock and dropped that column, so the tree default has the
+ * five-zone SHAPE again and differs only in its tab KEYS, which are identities (T1123)
+ * and so cannot be derived. What this value is FOR is unchanged either way: v3's own
+ * default — the fallback a stored flat layout is repaired against, the shape
+ * `migrateLegacyLayout` produces, and the source `SKELETON_TREE` derives a restored
+ * baseline dock's position and ratio from (T936).
  *
  * The right sidebar is a full-height column split horizontally: the viewer on top, the
  * inspector under it. Before this, both were TABS in a right dock that stopped where the
@@ -135,9 +138,9 @@ export const DEFAULT_SHELL_LAYOUT: ShellLayout = {
     right: ["viewer"],
     rightBottom: ["inspector"],
     // Examples first and open — see the same reordering, and the reason for it, on
-    // `DEFAULT_PANE_TREE`. Kept in step with the tree so the flat model's SKELETON_TREE
-    // (what a restored baseline dock is built from, T936) and the v3 migration fallback
-    // cannot hand back an arrangement the tree default abandoned.
+    // `DEFAULT_PANE_TREE` (T1123). Kept in step with the tree so the flat model's
+    // SKELETON_TREE (what a restored baseline dock is built from, T936) and the v3
+    // migration fallback cannot hand back an arrangement the tree default abandoned.
     bottom: ["examples", "shader", "problems", "performance", "agent"],
   },
   active: {

@@ -12,6 +12,7 @@ import {
 import type { LayoutStorage, ShellLayout } from "./layout-storage.ts";
 import {
   DEFAULT_PANE_TREE,
+  PERFORM_PANE_TREE,
   repairPaneTree,
   shellLayoutFromTree,
   treeFromShellLayout,
@@ -68,20 +69,37 @@ export interface PaneTreeStore {
 }
 
 /**
- * The stock presets, lifted from the flat model's own list (T436).
+ * T1125: the id of the second built-in preset. Tree-only — see `PERFORM_PANE_TREE`.
  *
- * T927: "Default" is the one preset whose arrangement is NOT expressible flat — the
- * bottom region is two columns and the second is split vertically — so it is taken
- * from `DEFAULT_PANE_TREE`, which is authored as a tree, instead of being derived from
- * the flat entry. Deriving it would quietly hand back the old five-zone skeleton, and
- * this list is what `layout.reset` and the layout menu's "Default" row restore: the one
- * door a person with a stored layout has to the new arrangement.
+ * `preset:` prefixed, so `isPresetLayoutId` already knows it cannot be renamed, updated
+ * or deleted; a preset is CODE, and the list of things a user may edit does not grow.
  */
-export const PANE_TREE_PRESETS: readonly NamedPaneTree[] = LAYOUT_PRESETS.map((preset) => ({
-  id: preset.id,
-  name: preset.name,
-  layout: preset.id === DEFAULT_LAYOUT_ID ? DEFAULT_PANE_TREE : treeFromShellLayout(preset.layout),
-}));
+export const PERFORM_LAYOUT_ID = "preset:perform";
+
+/**
+ * The stock presets. "Default" comes from the flat model's own list (T436); "Perform" is
+ * tree-only and appended here.
+ *
+ * T927 took "Default" from `DEFAULT_PANE_TREE` rather than deriving it, because its
+ * bottom region was two columns and had no flat spelling. T1125 gave the default the
+ * five-zone shape back, so the derivation would now agree in shape — but not in tab KEYS,
+ * which are identities (T1123), so the tree is still the source. This list is what
+ * `layout.reset` and the layout menu's rows restore.
+ *
+ * T1125 — the pair, and why there are exactly two: "Default" is the patching shell and
+ * "Perform" is the playing one, which is the one distinction in this tool a person feels
+ * rather than reads. The default keeps its NAME as well as its id: it is the documented
+ * way back from anywhere (`layout.reset`, §T936's menu row), and a row called anything
+ * else stops saying so.
+ */
+export const PANE_TREE_PRESETS: readonly NamedPaneTree[] = [
+  ...LAYOUT_PRESETS.map((preset) => ({
+    id: preset.id,
+    name: preset.name,
+    layout: preset.id === DEFAULT_LAYOUT_ID ? DEFAULT_PANE_TREE : treeFromShellLayout(preset.layout),
+  })),
+  { id: PERFORM_LAYOUT_ID, name: "Perform", layout: PERFORM_PANE_TREE },
+];
 
 export const DEFAULT_PANE_TREE_STORE: PaneTreeStore = {
   current: DEFAULT_PANE_TREE,

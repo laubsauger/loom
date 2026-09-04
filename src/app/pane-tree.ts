@@ -630,40 +630,43 @@ export function shellLayoutFromTree(layout: PaneTreeLayout): ShellLayout | null 
 }
 
 /**
- * T927 — the default arrangement, AUTHORED AS A TREE.
+ * T1125 — the default arrangement, AUTHORED AS A TREE.
  *
- * It used to be `treeFromShellLayout(DEFAULT_SHELL_LAYOUT)`, and it could not stay that
- * way: the flat model has five fixed zones and no way to say "the bottom region is two
- * columns, and the second one is split vertically". Deriving this shape would silently
- * flatten it back to the five-zone skeleton, so the default is written here, in the
- * model that can express it. `treeFromShellLayout` stays — it is the v3 MIGRATION, and
- * a stored flat layout is still exactly five zones.
+ * ## The libraries are back in the LEFT DOCK, and T927's own measurement is why
  *
- * What changed and why:
+ * T927 moved `library` + `components` out of the left dock and into a second column of
+ * the bottom region, to free the left 23% for the graph. T932 then made that column ONE
+ * leaf with two tabs, because a vertical split halved the rows of whichever library you
+ * were actually reading. Both changes were measured, and the numbers T927 recorded are
+ * the ones that send this back: the left dock showed about TWENTY rows of the node
+ * library; the bottom column showed one stacked, six as a tab. The owner has now looked
+ * at the tabbed version in place and called it "squeezed" — a scan-and-drag list wants
+ * HEIGHT, and the only full-height column in this shell that is not the graph is the
+ * left dock.
  *
- *  - the LEFT zone is gone. `library` and `components` move into the bottom region,
- *    which becomes two columns: the five-role tab dock on the left, the two libraries
- *    on the right.
- *  - the graph takes the whole work-area width the left dock used to hold (23% of it).
- *
- * ## T932 — the libraries are TABS OF ONE LEAF, and that is a measured reversal
- *
- * T927 shipped them as a vertical SPLIT, on the reasoning that two leaves show both at
- * once where two tabs show one. That reasoning was right and the result was still
- * wrong, because it was never measured: in the browser, at a 28% bottom bar, the node
- * library rendered ONE row under its search box, and at 60% of a 34% bar it rendered
- * four. The pane you can see is not the pane you can use.
- *
- * A library is a SCAN-AND-DRAG surface. Given the choice between "both visible, four
- * rows each" and "one visible, the full column height", the owner looked at both and
- * chose rows — so the split is gone and the pair shares a leaf again. The cost is real
- * and is not being hidden: you can no longer see the node library and your components
- * at the same time. What you get back is roughly double the rows at the same bottom-bar
- * height, which is what makes the surface browsable at all.
+ * ⚠ Do NOT read this as "T932 was wrong". T932's finding still holds and is why the pair
+ * stays ONE LEAF WITH TWO TABS here rather than becoming two stacked leaves: splitting
+ * them halves the rows of the one you are scanning, wherever the leaf happens to live.
+ * What changed is the leaf's home, not the argument about its contents. A future change
+ * to two leaves still owes a measurement of the rows it costs, or it is T927 again.
  *
  * §V93 still holds and is why they may share this leaf: both ADD to the open document.
  * The example library must never join them — OPEN replaces the document, and a
  * destructive verb one tab away from two harmless ones is how a session gets lost.
+ *
+ * ## The bottom region is ONE dock again — the vacated column was not backfilled
+ *
+ * With the libraries gone there was a free column beside the bottom tab dock, and the
+ * owner asked what should go in it. Nothing does. The tab dock absorbs it, which doubles
+ * the width of the SHADER EDITOR — the one surface down there that is starved by width
+ * rather than height — and widens the examples grid and the problems list with it. A
+ * rail of filler beside the code you are editing is worse than no rail.
+ *
+ * ⚑ A consequence worth knowing: the default is now structurally the five-zone skeleton
+ * again, so `shellLayoutFromTree` PROJECTS it and an older build reading v3 sees the same
+ * arrangement instead of falling back. It is still authored here rather than derived from
+ * `DEFAULT_SHELL_LAYOUT`, because the tab KEYS are identities (T1123) and deriving would
+ * renumber them; the two must agree in SHAPE, and `pane-tree.test.ts` pins that.
  *
  * This is NOT a migration. Only a profile with no stored layout — or one that runs
  * `layout.reset` / picks "Default" in the layout menu — ever sees it; everyone else
@@ -679,64 +682,66 @@ export const DEFAULT_PANE_TREE: PaneTreeLayout = {
       kind: "split",
       id: "split-rows",
       direction: "column",
-      // T932 puts this back to the flat default's 72/28, where T927 had bought rows for
-      // the stacked libraries with 66/34. A TAB gets the whole column, so the rows are
-      // there without the six points of height, and the graph keeps them: it gained the
-      // left dock's 23% of the WIDTH on top, taking its area from 41% of the window to
-      // 53%. Measured in the browser, not reasoned about — that is what T927 got wrong.
+      // The flat default's 72/28. T927 spent 34 here buying rows for the stacked
+      // libraries; nothing in the bottom dock needs them now that the libraries are a
+      // full-height column again.
       ratio: 72,
-      // No left dock: the graph IS the work area above the bottom region.
-      first: { kind: "leaf", id: "leaf-center", tabs: [{ key: "graph-1", role: "graph" }], active: "graph-1" },
-      second: {
+      first: {
         kind: "split",
-        id: "split-bottom",
+        id: "split-main",
         direction: "row",
-        // 50/50. The libraries are a browsing surface and the tab dock holds an editor;
-        // neither is the other's margin.
-        ratio: 50,
-        /*
-         * EXAMPLES FIRST, AND OPEN, on a fresh profile — the owner's call.
-         *
-         * The shader editor was first and selected, which meant the first thing a new
-         * user saw in the bottom dock was an empty text pane for a node they had not
-         * created. The example library is the one tab in this strip that has something in
-         * it before the user does anything, and it is the door to the starter document
-         * this default now boots with (`use-starter-project.ts`).
-         *
-         * The TAB KEYS are deliberately left at their historical numbers rather than
-         * renumbered to match the new order. A key is an identity, not a position:
-         * `homes` restore hints (T486) and any stored tree name tabs by key, and
-         * renumbering would silently repoint them. Only the ARRAY order and `active`
-         * carry the arrangement.
-         *
-         * This is the DEFAULT only. A profile with a stored tree
-         * (`shaderloom.shell.layouts.v5`) keeps whatever the user arranged; the doors to
-         * this order are a fresh profile and `layout.reset` / the menu's "Default" row.
-         */
+        // 23/77, the skeleton's own share — see `baselinePlacement`, which reads it off
+        // `SKELETON_TREE` so the menu's "restore the left dock" lands at this width.
+        ratio: 23,
+        // T1125: ONE leaf, two tabs. T932's reason travels with the pair — a split here
+        // halves the rows of whichever library you are scanning, and rows are what this
+        // surface is for. What the left dock adds is the FULL WORK-AREA HEIGHT.
         first: {
           kind: "leaf",
-          id: "leaf-bottom",
-          tabs: [
-            { key: "examples-5", role: "examples" },
-            { key: "shader-2", role: "shader" },
-            { key: "problems-3", role: "problems" },
-            { key: "performance-4", role: "performance" },
-            { key: "agent-6", role: "agent" },
-          ],
-          active: "examples-5",
-        },
-        // T932: ONE leaf, two tabs — see the reversal in the docblock. A split here
-        // halves the rows of whichever library you are actually scanning, and rows are
-        // what this surface is for.
-        second: {
-          kind: "leaf",
-          id: "leaf-libraries",
+          id: "leaf-left",
           tabs: [
             { key: "library-7", role: "library" },
             { key: "components-8", role: "components" },
           ],
           active: "library-7",
         },
+        second: {
+          kind: "leaf",
+          id: "leaf-center",
+          tabs: [{ key: "graph-1", role: "graph" }],
+          active: "graph-1",
+        },
+      },
+      /*
+       * EXAMPLES FIRST, AND OPEN, on a fresh profile — the owner's call (T1123).
+       *
+       * The shader editor was first and selected, which meant the first thing a new
+       * user saw in the bottom dock was an empty text pane for a node they had not
+       * created. The example library is the one tab in this strip that has something in
+       * it before the user does anything, and it is the door to the starter document
+       * this default now boots with (`use-starter-project.ts`).
+       *
+       * The TAB KEYS are deliberately left at their historical numbers rather than
+       * renumbered to match the new order. A key is an identity, not a position:
+       * `homes` restore hints (T486) and any stored tree name tabs by key, and
+       * renumbering would silently repoint them. Only the ARRAY order and `active`
+       * carry the arrangement.
+       *
+       * This is the DEFAULT only. A profile with a stored tree
+       * (`shaderloom.shell.layouts.v5`) keeps whatever the user arranged; the doors to
+       * this order are a fresh profile and `layout.reset` / the menu's "Default" row.
+       */
+      second: {
+        kind: "leaf",
+        id: "leaf-bottom",
+        tabs: [
+          { key: "examples-5", role: "examples" },
+          { key: "shader-2", role: "shader" },
+          { key: "problems-3", role: "problems" },
+          { key: "performance-4", role: "performance" },
+          { key: "agent-6", role: "agent" },
+        ],
+        active: "examples-5",
       },
     },
     second: {
@@ -751,6 +756,74 @@ export const DEFAULT_PANE_TREE: PaneTreeLayout = {
         tabs: [{ key: "inspector-10", role: "inspector" }],
         active: "inspector-10",
       },
+    },
+  },
+  floating: [],
+  nextKey: 11,
+};
+
+/**
+ * T1125 — "Perform": the second built-in preset, and the only one that is a MODE rather
+ * than a rearrangement.
+ *
+ * The default above is for building a patch: the graph is the biggest thing on screen and
+ * the output is a thumbnail in the sidebar. This is the other half of what the tool is
+ * for — the graph is finished and you are playing it. So the ratios inverts: the VIEWER
+ * takes the work area (about 52% of the window as one rectangle, against the default's
+ * 13% sidebar tile), the INSPECTOR becomes a full-height column so a parameter's slider
+ * has travel, and the graph is MINIMISED rather than gone.
+ *
+ * Minimised, not gone, and that is the load-bearing decision. Loom has no document-level
+ * exposed-parameter surface — promotion exists for COMPONENT parameter pages only
+ * (`domain/components`) — so the inspector shows the SELECTED node's parameters, and
+ * selecting a node needs a graph you can click. A Perform layout that removed the graph
+ * would leave its own parameter pane permanently empty. It sits in the bottom dock, wide
+ * and short, beside `performance` — under stage conditions the two questions are "what do
+ * I reach for next" and "am I holding frame rate".
+ *
+ * Everything build-time (library, components, examples, shader, problems, agent) is
+ * absent, and the ways back are the ones every layout has: pick "Default" in the layout
+ * menu, `layout.reset`, or restore a single pane from the menu's absent-roles list.
+ *
+ * Not flat-projectable on purpose — the work area has no `split-main` and the sidebar is
+ * a single leaf — so, like the default before T1125, it lives here rather than in
+ * `LAYOUT_PRESETS`. Tab keys deliberately reuse the default's numbering for the same
+ * roles (T1123: a key is an identity), so switching presets does not repoint T486's
+ * restore hints.
+ */
+export const PERFORM_PANE_TREE: PaneTreeLayout = {
+  root: {
+    kind: "split",
+    id: "split-columns",
+    direction: "row",
+    // The same 74/26 as the default: the sidebar width is muscle memory, and only what
+    // it HOLDS changes.
+    ratio: 74,
+    first: {
+      kind: "split",
+      id: "split-rows",
+      direction: "column",
+      // 70/30 rather than the default's 72/28 — the graph strip needs enough height to
+      // read a node's title, and the viewer is not measurably worse for two points.
+      ratio: 70,
+      first: { kind: "leaf", id: "leaf-center", tabs: [{ key: "viewer-9", role: "viewer" }], active: "viewer-9" },
+      second: {
+        kind: "leaf",
+        id: "leaf-bottom",
+        tabs: [
+          { key: "graph-1", role: "graph" },
+          { key: "performance-4", role: "performance" },
+        ],
+        active: "graph-1",
+      },
+    },
+    // A single leaf, not `split-right`: the sidebar's whole job here is the parameters,
+    // and halving it for a second pane is what the default already does.
+    second: {
+      kind: "leaf",
+      id: "leaf-right",
+      tabs: [{ key: "inspector-10", role: "inspector" }],
+      active: "inspector-10",
     },
   },
   floating: [],
