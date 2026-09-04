@@ -230,11 +230,18 @@
     "phrase": 0.05446
   },
   "E55-Reactor.loom.json": {
-    "motion": 0.02735,
-    "range": 0.7443,
-    "f0max": 0.9709,
-    "cardFloor": 0.0041,
-    "phrase": 0.06274
+    "motion": 0.04047,
+    "range": 0.8543,
+    "f0max": 0.9905,
+    "cardFloor": 0.0042,
+    "phrase": 0.09942
+  },
+  "E56-Vesper.loom.json": {
+    "motion": 0.13647,
+    "range": 0.6908,
+    "f0max": 0.6927,
+    "cardFloor": 0.0019,
+    "phrase": 0.12815
   },
   "E6-Displacement-Stack.loom.json": {
     "motion": 0.28359,

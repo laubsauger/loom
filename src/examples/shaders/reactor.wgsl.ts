@@ -65,6 +65,7 @@ struct Params {
   laserCount: f32,    // how many filaments cut through the shells
   haze: f32,          // density of the light-catching medium between and around the shells
   spin: f32,          // shell counter-rotation rate
+  morph: f32,         // how far the cells drift and reshape over time — 0 holds the lattice still
   turbulence: f32,    // how hard the core churns
   frameColor: vec4f,  // the frame's own colour under the core's light
   shellHueStep: f32,  // degrees of hue each shell inward sits from the shared angle — colour deepening toward the core
@@ -145,7 +146,8 @@ fn hueTurnBy(c: vec3f, extra: f32) -> vec3f {
   return max(vec3f(y + 0.956 * i2 + 0.621 * q2, y - 0.272 * i2 - 0.647 * q2, y - 1.106 * i2 + 1.703 * q2), vec3f(0.0));
 }
 fn hueTurn(c: vec3f) -> vec3f { return hueTurnBy(c, 0.0); }
-fn coreRGB() -> vec3f { return hueTurn(params.coreColor.rgb); }
+/* The core's colour cools toward the rim colour as the shell shuts: contained light dims red. */
+fn coreRGB() -> vec3f { return hueTurn(mix(params.coreColor.rgb, params.edgeColor.rgb * 0.6, 0.55 * clamp(params.shieldOuter, 0.0, 1.0))); }
 fn edgeRGB() -> vec3f { return hueTurn(params.edgeColor.rgb); }
 fn glassRGB() -> vec3f { return hueTurn(params.glassColor.rgb); }
 /* Colour deepens INWARD: each shell's glass and frame sit a fixed step further round the
@@ -175,11 +177,22 @@ struct Cell {
 /* 3D Worley over the direction scaled by freq: organic polygonal cells on the sphere with no
    pole, no seam, and a rounded border profile for free (F2 - F1 grows away from the border).
    27 cells; the jitter is unconstrained so F2 is honest. */
-fn cellEdge(d: vec3f, freq: f32, salt: f32) -> Cell {
+fn cellEdge(d0: vec3f, freq: f32, salt: f32) -> Cell {
+  // MORPHING: the direction is warped by three slow travelling sines before the lattice
+  // is read, so the cells stretch, shear and slide continuously — faces grow and shrink,
+  // borders travel — and never snap. A warp of the LOOKUP, not of the feature points: it
+  // costs three sines per read instead of a second hash per cell (which doubled the
+  // frame's Worley bill, measured 13.8 → 23 ms, and was refused).
+  let t = frameU.absTime;
+  let d = normalize(d0 + params.morph * 0.22 * vec3f(
+    sin(d0.y * 3.1 + t * 0.23 + salt),
+    sin(d0.z * 2.7 - t * 0.19 + salt * 2.0),
+    sin(d0.x * 3.3 + t * 0.17 + salt * 3.0)));
   let p = d * freq + vec3f(salt * 7.31, salt * 3.17, salt * 5.53);
   let i = floor(p);
   var f1 = 8.0; var f2 = 8.0;
   var p1 = vec3f(0.0); var p2 = vec3f(0.0);
+  var g1 = vec3f(0.0);
   for (var z: i32 = -1; z <= 1; z = z + 1) {
     for (var y: i32 = -1; y <= 1; y = y + 1) {
       for (var x: i32 = -1; x <= 1; x = x + 1) {
@@ -188,7 +201,7 @@ fn cellEdge(d: vec3f, freq: f32, salt: f32) -> Cell {
         let dd = dot(fp - p, fp - p);
         if (dd < f1) {
           f2 = f1; p2 = p1;
-          f1 = dd; p1 = fp;
+          f1 = dd; p1 = fp; g1 = g;
         } else if (dd < f2) {
           f2 = dd; p2 = fp;
         }
@@ -197,7 +210,10 @@ fn cellEdge(d: vec3f, freq: f32, salt: f32) -> Cell {
   }
   var out: Cell;
   out.edge = sqrt(f2) - sqrt(f1);
-  out.id = p1;
+  // Identity is the GRID cell the owning point lives in, not the point: the point moves
+  // when the lattice morphs, and a facet's tilt or a plate's state hashed off a moving
+  // number would flicker. The grid cell never moves.
+  out.id = g1;
   out.across = normalize(p2 - p1 + vec3f(1.0e-5, 0.0, 0.0));
   return out;
 }
@@ -229,6 +245,11 @@ fn shellDir(p: vec3f, k: i32) -> vec3f {
 fn barWidth(k: i32) -> f32 {
   return params.frameWidth * 0.5;
 }
+/* A strut's width varies by cell — thick members and fine ones in one frame — so the
+   lattice reads as grown rather than extruded. */
+fn barWidthAt(c: Cell, k: i32) -> f32 {
+  return barWidth(k) * (0.55 + 0.9 * hash13(c.id * 0.731 + vec3f(f32(k) * 3.1, 7.7, 1.3)));
+}
 /* 1 through a face, 0 under a bar, soft over 'soft' of a cell — the light gate. The medium
    reads it wider than the surface does: a shaft's edge blurs with distance from the bar. */
 /* A face is a solid plate when its cell's hash falls under this shell's share. The share
@@ -245,14 +266,22 @@ fn blockedFace(c: Cell, k: i32) -> bool {
 }
 fn gate(p: vec3f, k: i32, soft: f32) -> f32 {
   let c = cellEdge(shellDir(p, k), shellFreq(k), f32(k));
-  let w = barWidth(k);
-  return select(smoothstep(w, w + soft, c.edge), 0.0, blockedFace(c, k));
+  let w = barWidthAt(c, k);
+  // A shut plate is a hull, not a wall: a twelfth leaks, so a collapsed ball still glows
+  // through its seams and skin rather than going out like a switch.
+  return select(smoothstep(w, w + soft, c.edge), 0.12, blockedFace(c, k));
 }
 
+/* THE COLLAPSE: the core's radiance itself goes down while the outer shell is shut, and
+   its colour cools — "the ball collapsing, light going out" is the core dying back under
+   its shielding, not merely a lid on a lamp. Opens back to full on the same lag. */
+fn coreGain() -> f32 {
+  return params.coreGain * mix(1.0, 0.32, clamp(params.shieldOuter, 0.0, 1.0));
+}
 /* The core's light at x with no shell in the way — the cheap term for surfaces. */
 fn coreLightBare(x: vec3f) -> f32 {
   let r = length(x);
-  return params.coreGain / (r * r + 0.04);
+  return coreGain() / (r * r + 0.04);
 }
 
 /* Light arriving at x from the core, gated by the shells between x and the origin. Outside
@@ -267,7 +296,7 @@ fn coreLightAt(x: vec3f) -> f32 {
     let rk = shellRadius(k);
     if (rk < r) { vis = vis * mix(0.03, 1.0, gate(x, k, 0.05 + 0.10 * (r - rk))); }
   }
-  return params.coreGain * vis / (r * r + 0.04);
+  return coreGain() * vis / (r * r + 0.04);
 }
 
 /* The radial filaments: a coarse Worley on direction; borders become sheets from the core. */
@@ -289,7 +318,7 @@ fn coreGlow(o: vec3f, d: vec3f) -> vec3f {
   let b = dot(-o, d);
   let h2 = dot(o, o) - b * b;
   let ahead = smoothstep(-0.3, 0.3, b);
-  let g = params.coreGain * ahead / (h2 * 6.0 + 0.15);
+  let g = coreGain() * ahead / (h2 * 6.0 + 0.15);
   let rn = clamp(sqrt(max(h2, 0.0)) / coreRadius(), 0.0, 1.0);
   return g * 0.9 * coreTint(rn) + laser(normalize(o + d * max(b, 0.0))) * 0.08 * coreRGB();
 }
@@ -378,8 +407,8 @@ fn coreSegment(o: vec3f, d: vec3f, t0: f32, t1: f32, jitter: f32) -> vec4f {
     let churn = fbm3(x * (3.5 / rc) + vec3f(0.0, tm * 0.35, tm * 0.21) + vec3f(0.3 * sin(tm * 0.7)));
     let dens = shell * (0.35 + params.turbulence * (churn - 0.3) * 2.2);
     let fil = laser(normalize(x)) * smoothstep(0.0, 0.25, rn) * (1.0 - rn);
-    let emit = params.coreGain * (max(dens, 0.0) * 3.2 + fil * 1.6) * coreTint(rn)
-             + params.coreGain * 5.0 * smoothstep(0.6, 0.0, rn) * mix(vec3f(1.0, 0.97, 0.9), coreRGB(), 0.4);
+    let emit = coreGain() * (max(dens, 0.0) * 3.2 + fil * 1.6) * coreTint(rn)
+             + coreGain() * 5.0 * smoothstep(0.6, 0.0, rn) * mix(vec3f(1.0, 0.97, 0.9), coreRGB(), 0.4);
     acc = acc + tr * emit * dt;
     tr = tr * exp(-max(dens, 0.0) * 0.9 * dt);
   }
@@ -399,6 +428,7 @@ fn shadeFrame(p: vec3f, n: vec3f, d: vec3f, k: i32, edge01: f32) -> vec3f {
   let base = frameRGBk(k);
   let lit = base * (0.04 + 0.9 * diff * light) * coreRGB()
           + base * 0.35 * light * mix(coreRGB(), vec3f(1.0), 0.3)
+          + light * 0.22 * coreRGB() * (0.5 + 0.5 * max(dot(n, -d), 0.0))
           + base * 0.25 * back * light * edgeRGB()
           + spec * light * 0.6 * mix(coreRGB(), vec3f(1.0), 0.5)
           + rim * light * 0.35 * edgeRGB()
@@ -477,14 +507,20 @@ fn trace(ro: vec3f, rd: vec3f, jitter: f32, uv: vec2f) -> vec3f {
     // A shell surface. Frame bar, or glass face?
     let k = kind;
     let cell = cellEdge(shellDir(p, k), shellFreq(k), f32(k));
-    let w = barWidth(k);
+    let w = barWidthAt(cell, k);
     let sn = normalize(p);
     let entering = dot(d, sn) < 0.0;
     let nOut = select(-sn, sn, entering);
 
     if (blockedFace(cell, k)) {
-      // A solid plate: the frame's material across the whole face, flat to the sphere.
-      col = col + tp * shadeFrame(p, nOut, d, k, 0.0) * 0.85;
+      // A shut plate is CONTAINED light, not a dead hull: the frame's material across the
+      // face, a seam that glows where the plate meets its strut, and a skin thin enough that
+      // the core's light shows through it as a dull heat.
+      let seam = smoothstep(w + 0.35, w, cell.edge);
+      let heat = coreLightBare(p) * 0.6;
+      col = col + tp * (shadeFrame(p, nOut, d, k, seam) * 0.75
+                        + seam * seam * heat * 1.4 * mix(coreRGB(), vec3f(1.0, 0.9, 0.7), 0.3)
+                        + heat * 0.035 * coreRGB() * max(dot(nOut, -d), 0.0));
       tp = vec3f(0.0);
       break;
     }

@@ -77,8 +77,25 @@ import { REACTOR_HAZE_WGSL, REACTOR_WGSL } from "../shaders/reactor.wgsl.ts";
  * the shutters happen AFTER the row's window, which is exactly the instrument's blind spot
  * §V913 names. `range` moved 0.335 → 0.550 → 0.744. Every step moved ON PURPOSE.
  *
+ * THE CREATIVE PASS (the owner: "cooler … different colours, morphing … play with the shapes
+ * … bars really fixed … cover more range in the intensity, really see the ball collapsing,
+ * light going out"). Struts VERIFIED at the close station by eye: lit rounded members with
+ * the core's light through the body, no black outline; width varies by cell. THE COLLAPSE:
+ * while the outer shell is shut the core's radiance dies to a third and cools toward the rim
+ * colour, shut plates are contained light (seams glow, the skin leaks a twelfth), releases
+ * lengthened (outer ×70, inner ×28) so a collapse LANDS: shut 23.5% of the minute, longest
+ * shut run 133 frames (2.2 s; was 11.9% / 67). Wider intensity: coreGain 4.2·level + 0.5
+ * (0.73..2.67), escalation 11·level − 0.4 (0.56..5.3). MORPHING: the lattice direction is
+ * warped by three slow travelling sines before the cells are read, cell identity pinned to
+ * the grid so plates and facets never flicker while their shapes move. Motion, both windows:
+ * row 0.0405, whole minute 0.1208 (min 0.0376, max 0.2486, last gap 0.0653) — 3× the row;
+ * range 0.744 → 0.854. Every step on purpose. Cost: 18.1 ms at 1280×720 (min of three,
+ * two other node processes alive; was 13.8): the seams, the varied struts and the warp's
+ * three sines per lookup. The per-cell morph that doubled the Worley hash bill (23 ms) was
+ * refused for the direction warp.
+ *
  * DUTY (§V903/§V914 — 3600 frames of the pattern through the lanes):
- *   coreGain    = 2.8·level    + 0.75  (env1) → 0.905..2.198, mean 1.18, above retained 86%, hold 0
+ *   coreGain    = 4.2·level    + 0.5   (env1) → 0.733..2.671, mean 1.14, above retained 75%, hold 0
  *   laserGain   = 4.7·low      − 3.0   (env1) → 0.307..1.583, mean 0.63, retained 0.6 ≈ mean, hold 0
  *   facet       = 1.5·highMid  − 0.05  (env1) → 0.393..1.018, mean 0.71, above retained 74%, hold 0
  *   frameWidth  = 0.41·low     − 0.2   (env2) → 0.101..0.200, mean 0.12, above retained 34%, hold 1
@@ -155,6 +172,7 @@ export const reactorDocument = document(
           laserCount: expressionSlot("op('reactor1').par.laserCount", 3),
           haze: expressionSlot("op('reactor1').par.haze", 0.35),
           spin: expressionSlot("op('reactor1').par.spin", 1),
+          morph: expressionSlot("op('reactor1').par.morph", 0.6),
           orbit: expressionSlot("op('reactor1').par.orbit", 1),
           distance: expressionSlot("op('reactor1').par.distance", 3.2),
         },
@@ -173,6 +191,7 @@ export const reactorDocument = document(
         laserCount: 3,
         haze: 0.35,
         spin: 1,
+        morph: 0.6,
         turbulence: 0.8,
         frameColor: [0.35, 0.3, 0.28, 1],
         shellHueStep: 25,
@@ -258,8 +277,8 @@ export const reactorDocument = document(
          0.307..1.583; highMid 0.295..0.712 → facet 0.393..1.018. Every pair maps ALL the
          channels, and the slot picks one by name (`levelb1:level`), so retuning a lane is
          two numbers in one pair and nothing else. */
-      node("levelx", "valueMath", [-600, 600], { operand: 2.8, operation: "multiply" }, { label: "levelx1" }),
-      node("levelb", "valueMath", [-300, 600], { operand: 0.75, operation: "add" }, { label: "levelb1" }),
+      node("levelx", "valueMath", [-600, 600], { operand: 4.2, operation: "multiply" }, { label: "levelx1" }),
+      node("levelb", "valueMath", [-300, 600], { operand: 0.5, operation: "add" }, { label: "levelb1" }),
       node("lowx", "valueMath", [-600, 800], { operand: 4.7, operation: "multiply" }, { label: "lowx1" }),
       node("lowb", "valueMath", [-300, 800], { operand: -3.0, operation: "add" }, { label: "lowb1" }),
       node("highx", "valueMath", [-600, 1000], { operand: 1.5, operation: "multiply" }, { label: "highx1" }),
@@ -296,14 +315,14 @@ export const reactorDocument = document(
       node("armt", "timer", [-900, 1500], { delay: 3, speed: 1 }, { label: "armt1" }),
       node("armc", "valueLimit", [-600, 2200], { minimum: 0, maximum: 1 }, { label: "armc1" }),
       node("arm", "valueMath", [300, 2100], { operand: 1, operation: "minimum" }, { label: "arm1" }),
-      node("shieldo", "valueLag", [600, 1700], { lag: 0.04, releaseRatio: 30 }, { label: "shieldo1" }),
-      node("shieldi", "valueLag", [600, 1900], { lag: 0.16, releaseRatio: 12 }, { label: "shieldi1" }),
+      node("shieldo", "valueLag", [600, 1700], { lag: 0.04, releaseRatio: 70 }, { label: "shieldo1" }),
+      node("shieldi", "valueLag", [600, 1900], { lag: 0.16, releaseRatio: 28 }, { label: "shieldi1" }),
       /* THE ESCALATION (the owner: "more bloom on the centre that can escalate and sometimes
          blow up"): the tight bloom's gain rides the slowest envelope with an aggressive
          range, so a sustained loud passage blows the core out and a quiet one lets it
          settle back; the retained 1.3 sits inside the driven range (§V914). */
-      node("blowx", "valueMath", [-600, 2000], { operand: 6, operation: "multiply" }, { label: "blowx1" }),
-      node("blowb", "valueMath", [-300, 2000], { operand: 0.1, operation: "add" }, { label: "blowb1" }),
+      node("blowx", "valueMath", [-600, 2000], { operand: 11, operation: "multiply" }, { label: "blowx1" }),
+      node("blowb", "valueMath", [-300, 2000], { operand: -0.4, operation: "add" }, { label: "blowb1" }),
     ],
     [
       edge("e-bed-haze", ["bed", "out"], ["haze", "input"]),

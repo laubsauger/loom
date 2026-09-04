@@ -64,9 +64,16 @@ interface Shot {
   readonly luma: Float32Array;
 }
 
-async function shoot(overrides: Record<string, unknown>, frames: readonly number[]): Promise<Shot[]> {
+/** Zero both bloom widths: the ring claims read the HAZE, and a lit shell's bloom spills past the ball. */
+function noBloom(graph: GraphDocument): void {
+  (graph.nodes["gain"]!.parameters as Record<string, unknown>)["brightness"] = 0;
+  (graph.nodes["gain2"]!.parameters as Record<string, unknown>)["brightness"] = 0;
+}
+
+async function shoot(overrides: Record<string, unknown>, frames: readonly number[], mutate?: (graph: GraphDocument) => void): Promise<Shot[]> {
   const { graph, settings } = e55();
   setReactor(graph, overrides);
+  mutate?.(graph);
   const last = Math.max(...frames);
   const result = await renderHeadless({
     host: nodeGpuHost(),
@@ -160,10 +167,11 @@ describe("E55 Reactor — claims", () => {
 
   it("the frame gates the light: all-bar shells darken the medium outside the ball", async () => {
     expect(dawnError, dawnError ?? "").toBeUndefined();
-    const [open] = await shoot({ frameWidth: 0 }, [60]);
-    const [closed] = await shoot({ frameWidth: 2 }, [60]);
-    // Outside the ball the only lit thing is the haze, and its gate is ≤ 1 with bars and
-    // exactly 1 without — monotone per pixel, again up to one quantisation step.
+    // With the bloom zeroed, outside the ball the only lit thing is the haze (a shell that is
+    // all lit strut blooms past its own edge), and its gate is ≤ 1 with bars and exactly 1
+    // without — monotone per pixel, again up to one quantisation step.
+    const [open] = await shoot({ frameWidth: 0 }, [60], noBloom);
+    const [closed] = await shoot({ frameWidth: 2 }, [60], noBloom);
     expect(brighterCount(closed!, open!, inRing)).toBe(0);
     expect(meanWhere(closed!, inRing)).toBeLessThan(meanWhere(open!, inRing));
   });
@@ -175,8 +183,8 @@ describe("E55 Reactor — claims", () => {
     const [cut] = await shoot({ coreGain: 1, laserGain: 0.6, facet: 0.7, swell: 1, frameWidth: 0.12, shellGap: 0.2, shieldOuter: 0, shieldInner: 0 }, [60]);
     expect(differs(driven!, cut!)).toBe(true);
 
-    // The value graph alone, 900 frames of the shipped pattern: coreGain = 2.8·level + 0.75
-    // with level ≥ 0, so it can never fall below 0.75 — and it never holds still for a second.
+    // The value graph alone, 900 frames of the shipped pattern: coreGain = 4.2·level + 0.5
+    // with level ≥ 0, so it can never fall below 0.5 — and it never holds still for a second.
     const run = valueGraphRun(example(FILE).document);
     let min = Number.POSITIVE_INFINITY;
     let longestHold = 0;
@@ -190,20 +198,20 @@ describe("E55 Reactor — claims", () => {
       longestHold = Math.max(longestHold, hold);
       previous = gain;
     }
-    expect(min).toBeGreaterThanOrEqual(0.75);
+    expect(min).toBeGreaterThanOrEqual(0.5);
     expect(longestHold).toBeLessThan(60);
   });
 
   it("the shutters shield: a shut shell darkens the medium outside the ball, an open one is the rest state", async () => {
     expect(dawnError, dawnError ?? "").toBeUndefined();
-    const [open] = await shoot({ shieldOuter: 0, shieldInner: 0 }, [60]);
-    const [shut] = await shoot({ shieldOuter: 1, shieldInner: 1 }, [60]);
+    const [open] = await shoot({ shieldOuter: 0, shieldInner: 0 }, [60], noBloom);
+    const [shut] = await shoot({ shieldOuter: 1, shieldInner: 1 }, [60], noBloom);
     // A shut plate is a gate at 0 where an open face is ≤ 1: monotone per pixel in the ring,
     // and the ring is darker in the mean — the "shielded inside" half of the owner's gesture.
     expect(brighterCount(shut!, open!, inRing)).toBe(0);
     expect(meanWhere(shut!, inRing)).toBeLessThan(meanWhere(open!, inRing));
     // And the shipped file at frame 60 IS the open state (§V914): identical bytes.
-    const [shipped] = await shoot({}, [60]);
+    const [shipped] = await shoot({}, [60], noBloom);
     expect(differs(shipped!, open!)).toBe(false);
   });
 
