@@ -816,7 +816,7 @@ export const quorumDocument = document(
       node("deep", "pointRange", [-1660, -900], {
         attribute: "position", component: "z", from: -1, to: 0, mode: "inside",
       }, { label: "deep1" }),
-      node("fore", "pointRange", [-1660, -1040], {
+      node("fore", "pointRange", [-1660, -1100], {
         attribute: "position", component: "z", from: 0, to: 1, mode: "inside",
       }, { label: "fore1" }),
       /* Both halves draw with dots1's settings, because the difference between near and far
@@ -831,7 +831,7 @@ export const quorumDocument = document(
           tint: { mode: "map", bindings: { static: { kind: "static", value: [1, 1, 1, 1] }, map: { kind: "map", attribute: "tint" } } },
         },
       }),
-      node("foredots", "geometry", [-1360, -1040], {
+      node("foredots", "geometry", [-1360, -1100], {
         mode: "points", material: "ink1", soft: 0.75, blend: "additive", scale: 0.008,
       }, {
         label: "foredots1",
@@ -843,7 +843,7 @@ export const quorumDocument = document(
       node("deepr", "render", [-1060, -900], {
         scenes: "deepdots1", camera: "cam1", lights: "", ambientIntensity: 0, background: [0, 0, 0, 1],
       }, { label: "deepr1" }),
-      node("forer", "render", [-1060, -1040], {
+      node("forer", "render", [-1060, -1100], {
         scenes: "foredots1", camera: "cam1", lights: "", ambientIntensity: 0, background: [0, 0, 0, 1],
       }, { label: "forer1" }),
       /* THE VEIL ITSELF — its own perlin4d rather than a second read of `neb1`, because the
@@ -854,7 +854,7 @@ export const quorumDocument = document(
          EVOLVES in place. Offset 0.45 with amp 0.55 keeps it in roughly [0.45, 1]: the far
          half is dimmed and churned, never extinguished, which is what makes it read as
          "seen through something" rather than as points switching off. */
-      node("veil", "noise", [-1360, -1180], {
+      node("veil", "noise", [-1360, -1300], {
         type: "perlin4d", seed: 154, period: 0.9, harmon: 2, spread: 2, gain: 0.5,
         rough: 0.5, exp: 1.2, amp: 0.8, offset: 0.3, mono: true, aspectcorrect: true,
         speed: 0.09, t4d: 0.63, s4d: 1,
@@ -897,7 +897,7 @@ export const quorumDocument = document(
          lower channels to meet the top one, so the nodes get BRIGHTER on their own. Lifting
          value as well drove `range` and `f0max` to exactly 1.0000 — clipping, measured —
          and the highlights came back flat. */
-      node("white", "hsv", [-460, -440], { hueoffset: 0, saturation: 0.28, value: 1 }, { label: "white1" }),
+      node("white", "hsv", [-460, -500], { hueoffset: 0, saturation: 0.28, value: 1 }, { label: "white1" }),
 
       // ---- assemble, glow, iris ------------------------------------------------------
       /* Front is the NODES; the filaments and the bed fold in behind, in that order. */
