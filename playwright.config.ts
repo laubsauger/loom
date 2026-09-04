@@ -5,6 +5,19 @@ import { defineConfig, devices } from "@playwright/test";
  * none exist yet, this just wires up the runner so `pnpm test:e2e` works
  * once they do.
  */
+/**
+ * The specs that need a real WebGPU adapter, named ONCE (T1131).
+ *
+ * The two projects below split on this and nothing else: the headed lane MATCHES it, the
+ * headless lane IGNORES it. It was written out twice, and the two copies drifted the moment
+ * a spec was added to one of them — `mediapipe-matte` went into neither, so it ran in the
+ * one project structurally unable to run it and failed on "no WebGPU adapter" for a whole
+ * session while looking like a product bug. One regex, two readers, no way to add a spec to
+ * half the split.
+ */
+const NEEDS_A_REAL_ADAPTER =
+  /(presentation-pixels|example-parity|node-layering-pixels|mediapipe-matte)\.spec\.ts$/;
+
 export default defineConfig({
   testDir: "./src/tests/e2e",
   /**
@@ -35,9 +48,16 @@ export default defineConfig({
     {
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
-      // The pixel suite needs the headed lane's GPU; running it here would only ever
-      // fail on "requestAdapter() resolved null". Everything else stays headless.
-      testIgnore: /(presentation-pixels|example-parity|node-layering-pixels)\.spec\.ts$/,
+      /*
+       * The pixel suite needs the headed lane's GPU; running it here would only ever
+       * fail on "requestAdapter() resolved null". Everything else stays headless.
+       *
+       * T1131: `mediapipe-matte` joined them. Its failure was never a bug or a flake —
+       * "no WebGPU adapter — the delivered path cannot be gated" is this lane's structural
+       * truth (§V895: `navigator.gpu` is present but `requestAdapter()` resolves null), so
+       * the spec was simply in the one project that cannot run it.
+       */
+      testIgnore: NEEDS_A_REAL_ADAPTER,
     },
     {
       /*
@@ -67,7 +87,7 @@ export default defineConfig({
        * on and a server that is always their own.
        */
       use: { ...devices["Desktop Chrome"], headless: false, baseURL: "http://localhost:5199" },
-      testMatch: /(presentation-pixels|example-parity|node-layering-pixels)\.spec\.ts$/,
+      testMatch: NEEDS_A_REAL_ADAPTER,
     },
   ],
   webServer: [
