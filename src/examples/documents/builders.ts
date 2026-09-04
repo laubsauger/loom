@@ -7,6 +7,8 @@ import type {
 } from "../../domain/types/graph.ts";
 import type { ParameterSlot, ParameterValue } from "../../domain/types/parameters.ts";
 import { channelExpression } from "../../domain/parameters/slots.ts";
+import { parseComponentNodeType } from "../../domain/components/component-type.ts";
+import { allNodeDefinitions } from "../../nodes/definitions/index.ts";
 import { SCHEMA_VERSION } from "../../domain/types/schemas.ts";
 
 
@@ -54,6 +56,49 @@ export function settings(overrides: Partial<ProjectSettings> = {}): ProjectSetti
   };
 }
 
+/**
+ * What a node of this type is CURRENTLY at — the number the loader will not migrate (T1068).
+ *
+ * `node()` used to write `definitionVersion: 1` for everything, so authoring a
+ * current-schema node shipped a file the loader immediately migrated. §T1037 hit it on
+ * Ramp, whose schema moved to 2: without `definitionVersion: 2` in `extra` the loader
+ * REWROTE the stops on load, and the only thing that noticed was the runner's
+ * `changed: false` gate — the author's own feedback was migration diagnostics, a whole
+ * pipeline stage away from the call site that lied.
+ *
+ * The registry is right there and the builder was not asking it. It asks now, so the
+ * builder's default is TRUE BY CONSTRUCTION for every type and stays true the next time a
+ * node's version advances — the trap generalises to any such node, and this is the only
+ * place that can close it for all of them at once (§V316: the category, not a member).
+ *
+ * A COMPONENT INSTANCE mirrors the version already in its own type (§V79/§V84 —
+ * `component:<id>@<version>`, and `definitionVersion` carries the same number, which is
+ * exactly what `saveAsComponent` writes). So it is read off the type rather than looked
+ * up: there is no built-in definition to ask.
+ *
+ * An UNKNOWN type throws rather than defaulting. A document naming a type the registry
+ * does not have is a typo that would otherwise compile to a severed graph with a
+ * diagnostic nobody reads at authoring time (§V883's "a degraded compile is not a failed
+ * one"), and it is the same mistake this docblock's own warning about parameter keys
+ * describes — caught here, at the call site, with the name in the message.
+ */
+function currentDefinitionVersion(type: string): number {
+  const component = parseComponentNodeType(type);
+  if (component !== null) return component.version;
+  const version = DEFINITION_VERSIONS.get(type);
+  if (version === undefined) {
+    throw new Error(
+      `node("${type}"): no node type "${type}" is registered. An example may only place types the ` +
+        "registry has — check the spelling against src/nodes/definitions/.",
+    );
+  }
+  return version;
+}
+
+const DEFINITION_VERSIONS: ReadonlyMap<string, number> = new Map(
+  allNodeDefinitions.map((definition) => [definition.type, definition.version]),
+);
+
 export function node(
   id: string,
   type: string,
@@ -64,7 +109,10 @@ export function node(
   return {
     id,
     type,
-    definitionVersion: 1,
+    /* T1068: the registry's number, not 1. An explicit `definitionVersion` in `extra` still
+       wins, because a MIGRATION fixture legitimately wants to be old — the spread below is
+       what keeps that available. */
+    definitionVersion: currentDefinitionVersion(type),
     position: { x: position[0], y: position[1] },
     ...extra,
     // T348: MERGED, never last-writer-wins — an example that passes base parameters
