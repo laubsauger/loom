@@ -94,6 +94,30 @@ import { REACTOR_HAZE_WGSL, REACTOR_WGSL } from "../shaders/reactor.wgsl.ts";
  * three sines per lookup. The per-cell morph that doubled the Worley hash bill (23 ms) was
  * refused for the direction warp.
  *
+ * THE SKELETON PASS (the owner: "panels look super bad … infinitely flat, like a paper ball
+ * — not a 3D organic skeleton … too many panels, too cheap … dive into the centre and back
+ * out and around … play with the reflection stuff"). The diagnosis, and it is mine as much
+ * as his: a filled panel is a flat polygon, AND my struts had no depth — a shading trick on
+ * a perfect sphere, so every hit lay on one surface and the silhouette was a clean circle.
+ * A paper ball, whatever the shading did. What changed: (1) at rest the outer shell has NO
+ * plates and each shell inward carries more (blocked·(k/n)²), so the rest state is an open
+ * skeleton and closing is the shielding event alone; (2) the outer shell's struts are a
+ * SOLID — a signed-distance tube of depth strutDepth along every border, marched through
+ * the shell band at the outer crossings only — so they stand proud, occlude the face behind
+ * them and break the silhouette; (3) a shut plate is RECESSED behind its frame (a shell of
+ * flush plates is a smooth sphere however it is lit: the middle shell, shut by a collapse at
+ * f1000, read as a pink balloon behind the fixed struts until this), the ray continuing to
+ * the inset surface to meet the strut's inner wall or the plate; (4) the camera DIVES: four
+ * legs — wide, surface, one continuous pass through the centre and out the far side (never
+ * parked in the core: the first draft dwelt there four seconds looking at plate backs), a
+ * half-turn swing back — gaze held along the travel through the ball and turned back to the
+ * core once outside; inside the ball plates read as glass and a plate on the lens is passed
+ * through; (5) glints ×1.5, inner-shell glass clearer than the outer's. Cost: 16.3 ms at the
+ * wide shot, 17.1 ms averaged over a whole tour (720p, min of two), so the dive costs about
+ * a millisecond; the previous pass's 18.1 came down because the panels went. Motion, both
+ * windows: row 0.0326, whole minute 0.0851 (min 0.0302, max 0.1842, last gap 0.0650);
+ * range 0.854 → 0.871. Every step on purpose.
+ *
  * DUTY (§V903/§V914 — 3600 frames of the pattern through the lanes):
  *   coreGain    = 4.2·level    + 0.5   (env1) → 0.733..2.671, mean 1.14, above retained 75%, hold 0
  *   laserGain   = 4.7·low      − 3.0   (env1) → 0.307..1.583, mean 0.63, retained 0.6 ≈ mean, hold 0
@@ -162,9 +186,10 @@ export const reactorDocument = document(
           shieldOuter: expressionSlot("op('reactor1').par.shieldOuter", 0),
           shieldInner: expressionSlot("op('reactor1').par.shieldInner", 0),
           stations: expressionSlot("op('reactor1').par.stations", 1),
-          travel: expressionSlot("op('reactor1').par.travel", 54),
+          travel: expressionSlot("op('reactor1').par.travel", 75),
           frameWidth: expressionSlot("op('reactor1').par.frameWidth", 0.12),
-          blocked: expressionSlot("op('reactor1').par.blocked", 0.08),
+          blocked: expressionSlot("op('reactor1').par.blocked", 0.1),
+          strutDepth: expressionSlot("op('reactor1').par.strutDepth", 0.04),
           shellGap: expressionSlot("op('reactor1').par.shellGap", 0.2),
           swell: expressionSlot("op('reactor1').par.swell", 1),
           coreGain: expressionSlot("op('reactor1').par.coreGain", 1),
@@ -182,10 +207,11 @@ export const reactorDocument = document(
         source: REACTOR_WGSL,
         layers: 3,
         divisions: 4,
-        blocked: 0.08,
+        blocked: 0.1,
+        strutDepth: 0.04,
         ior: 1.45,
         dispersion: 0.35,
-        glassColor: [0.4, 0.75, 1, 1],
+        glassColor: [0.35, 0.72, 1, 1],
         coreColor: [1, 0.55, 0.2, 1],
         edgeColor: [0.25, 0.62, 1, 1],
         laserCount: 3,
@@ -198,7 +224,7 @@ export const reactorDocument = document(
         orbit: 1,
         distance: 3.2,
         stations: 1,
-        travel: 54,
+        travel: 75,
         exposure: 1.9,
         /* Colour evolution (round three): one hue angle turns core, glass and beams
            together, inside the shader, so the sky stays deep and the core/glass contrast
@@ -250,7 +276,7 @@ export const reactorDocument = document(
       }, { label: "gain1", parameters: { brightness: drivenSlot("blowb1:level", 1.3) } }),
       node("blur2", "blur", [600, 400], { filter: "gaussian", size: 42, extend: "hold" }, { label: "blur2" }),
       node("gain2", "level", [900, 400], {
-        blacklevel: 0, whitelevel: 1, brightness: 0.9, contrast: 1, gamma1: 1, invert: 0, opacity: 1,
+        blacklevel: 0, whitelevel: 1, brightness: 0.6, contrast: 1, gamma1: 1, invert: 0, opacity: 1,
       }, { label: "gain2" }),
       node("add", "add", [900, 0], { opacity: 1 }, { label: "add1" }),
       node("add2", "add", [1200, 0], { opacity: 1 }, { label: "add2" }),

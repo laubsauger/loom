@@ -49,7 +49,8 @@ struct Params {
   layers: f32,        // how many nested shells around the core, 0 to 4
   divisions: f32,     // cells on the outermost shell — few and large, so adjacent facets differ in angle; inner shells carry more
   frameWidth: f32,    // width of the organic frame bars, as a share of a cell
-  blocked: f32,       // share of each shell's faces that are solid plates at rest — each shell blocks its own set
+  blocked: f32,       // share of the INNERMOST shell's faces that are plates at rest; each shell outward has fewer, the outer none — a skeleton you see through
+  strutDepth: f32,    // how far the outer shell's struts stand proud of its faces — the relief that makes the skeleton solid
   shieldOuter: f32,   // the outer shell's shielding, 0 open to 1 shut — driven by drops in the music
   shieldInner: f32,   // the inner shells' shielding, on a slower lag, so the shutters cascade inward
   shellGap: f32,      // radial spacing between shells, as a share of the outer radius — driven by the high-mids
@@ -71,7 +72,7 @@ struct Params {
   shellHueStep: f32,  // degrees of hue each shell inward sits from the shared angle — colour deepening toward the core
   orbit: f32,         // camera orbit rate
   distance: f32,      // camera distance at the wide station
-  stations: f32,      // how far the camera travels: 0 holds the wide shot, 1 visits the close-up and the inside
+  stations: f32,      // how far the camera travels: 0 holds the wide shot, 1 dives through the core and out the far side
   travel: f32,        // seconds for one tour of the three stations
   exposure: f32,      // master gain on the whole picture before the bloom
   hueDrift: f32,      // degrees per minute the whole lit palette turns — core, glass and beams together, the sky stays
@@ -256,7 +257,13 @@ fn barWidthAt(c: Cell, k: i32) -> f32 {
    and the hash salt both vary by shell, so every shell blocks a different set of cells and
    throws its own silhouette into the light. */
 fn blockedFace(c: Cell, k: i32) -> bool {
-  let rest = params.blocked * (0.7 + 0.3 * f32(k % 2 == 0));
+  // A filled panel is a flat polygon, and enough of them turn a skeleton into a paper ball
+  // (the owner's read, and it is right). At rest the outer shell has NONE; each shell inward
+  // carries more, so the core sits in containment you look through the open frame to see.
+  // Closing is the shielding event alone — rare, dramatic, temporary.
+  let n = max(layerCount() - 1, 1);
+  let depth = f32(k) / f32(n);
+  let rest = params.blocked * depth * depth;
   let shield = select(params.shieldInner, params.shieldOuter, k == 0);
   // The shutters: the shield raises the threshold every plate's hash is judged against, so
   // plates close in hash order — a cascade across the shell, not a texture change — and at
@@ -320,7 +327,7 @@ fn coreGlow(o: vec3f, d: vec3f) -> vec3f {
   let ahead = smoothstep(-0.3, 0.3, b);
   let g = coreGain() * ahead / (h2 * 6.0 + 0.15);
   let rn = clamp(sqrt(max(h2, 0.0)) / coreRadius(), 0.0, 1.0);
-  return g * 0.9 * coreTint(rn) + laser(normalize(o + d * max(b, 0.0))) * 0.08 * coreRGB();
+  return g * 1.4 * coreTint(rn) + laser(normalize(o + d * max(b, 0.0))) * 0.08 * coreRGB();
 }
 
 fn fresnel(cosI: f32, eta: f32) -> f32 {
@@ -377,7 +384,7 @@ fn hazeSegment(o: vec3f, d: vec3f, t0: f32, t1: f32, jitter: f32, perUnit: f32) 
     let r = length(x);
     // Thin inside the ball so the shells read; the medium is for the beams OUTSIDE.
     // Thin between the shells, a bright skirt around the core, dense outside for the beams.
-    let dens = params.haze * (mix(0.22, 1.0, smoothstep(0.75, 1.05, r)) + 0.45 * smoothstep(0.7, 0.2, r))
+    let dens = params.haze * (mix(0.22, 1.0, smoothstep(0.75, 1.05, r)) + 0.3 * smoothstep(0.7, 0.2, r))
              * smoothstep(HAZE_R, OUTER_R * 0.8, r);
     // Streaks: any function of DIRECTION alone is constant along a radius, so a fine noise on
     // the direction reads as striation running with the beam rather than lumps sitting on it.
@@ -405,7 +412,9 @@ fn coreSegment(o: vec3f, d: vec3f, t0: f32, t1: f32, jitter: f32) -> vec4f {
     let rn = clamp(length(x) / rc, 0.0, 1.0);
     let shell = 1.0 - rn * rn;
     let churn = fbm3(x * (3.5 / rc) + vec3f(0.0, tm * 0.35, tm * 0.21) + vec3f(0.3 * sin(tm * 0.7)));
-    let dens = shell * (0.35 + params.turbulence * (churn - 0.3) * 2.2);
+    // Contrast in the churn is what keeps the core from reading as a smooth ball through
+    // the shells: the fbm is pushed hard around its mean and the floor is low.
+    let dens = shell * (0.12 + params.turbulence * (churn - 0.42) * 4.5);
     let fil = laser(normalize(x)) * smoothstep(0.0, 0.25, rn) * (1.0 - rn);
     let emit = coreGain() * (max(dens, 0.0) * 3.2 + fil * 1.6) * coreTint(rn)
              + coreGain() * 5.0 * smoothstep(0.6, 0.0, rn) * mix(vec3f(1.0, 0.97, 0.9), coreRGB(), 0.4);
@@ -428,7 +437,7 @@ fn shadeFrame(p: vec3f, n: vec3f, d: vec3f, k: i32, edge01: f32) -> vec3f {
   let base = frameRGBk(k);
   let lit = base * (0.04 + 0.9 * diff * light) * coreRGB()
           + base * 0.35 * light * mix(coreRGB(), vec3f(1.0), 0.3)
-          + light * 0.22 * coreRGB() * (0.5 + 0.5 * max(dot(n, -d), 0.0))
+          + light * 0.09 * mix(coreRGB(), vec3f(1.0), 0.5) * (0.5 + 0.5 * max(dot(n, -d), 0.0))
           + base * 0.25 * back * light * edgeRGB()
           + spec * light * 0.6 * mix(coreRGB(), vec3f(1.0), 0.5)
           + rim * light * 0.35 * edgeRGB()
@@ -439,6 +448,20 @@ fn shadeFrame(p: vec3f, n: vec3f, d: vec3f, k: i32, edge01: f32) -> vec3f {
 
 // ---------------------------------------------------------------- the walk
 fn hazeColour(w: vec2f) -> vec3f { return w.x * coreRGB() + w.y * edgeRGB(); }
+
+/* The outer shell's strut as a SOLID: a tube of radial depth strutDepth lying along every
+   cell border. Signed distance = max(distance from the shell band, distance from the border
+   band), in world units, so a ray can be marched through it and a strut can stand proud of
+   the faces, occlude the face behind it, and break the silhouette — the thing a shaded
+   sphere cannot do. Only the outer shell pays for this. */
+fn strutSdf(p: vec3f, k: i32) -> vec2f {
+  let R = shellRadius(k);
+  let c = cellEdge(shellDir(p, k), shellFreq(k), f32(k));
+  let w = barWidthAt(c, k);
+  let dr = abs(length(p) - R) - params.strutDepth;
+  let de = (c.edge - w) * R / shellFreq(k);
+  return vec2f(max(dr, de), select(0.0, 1.0, blockedFace(c, k)));
+}
 
 /* The first event along the straight ray from o: the nearest of every shell, the core
    boundary and the haze bound. Shared by both passes so they agree where the front ends. */
@@ -506,21 +529,78 @@ fn trace(ro: vec3f, rd: vec3f, jitter: f32, uv: vec2f) -> vec3f {
 
     // A shell surface. Frame bar, or glass face?
     let k = kind;
+    var sn = normalize(p);
+    var entering = dot(d, sn) < 0.0;
+
+    if (k == 0 && params.strutDepth > 0.001) {
+      // RELIEF. Walk the ray through the outer shell's band [R − depth, R + depth] against
+      // the strut solid; a hit is a strut with a real normal (sphere-radial on its crown,
+      // tangent on its flanks); no hit means the ray reached the face plane.
+      let R = shellRadius(0);
+      let depth = params.strutDepth;
+      let insideBand = length(o) < R + depth && length(o) > R - depth;
+      let tIn = select(sphereHit(o, d, R + depth), 0.0, insideBand);
+      var tw = max(tIn, 0.0);
+      // An eye inside the band itself (the dive passing through the shell) skips the solid:
+      // a strut sitting on the lens is a black frame, and the pass takes a few frames.
+      var hit = false;
+      if (insideBand) { tw = 1.0e9; }
+      var ph = p;
+      for (var st: i32 = 0; st < 10; st = st + 1) {
+        ph = o + d * tw;
+        let rr = length(ph);
+        if (rr > R + depth + 1.0e-3 && dot(ph, d) > 0.0) { break; }
+        if (rr < R - depth - 1.0e-3 && dot(ph, d) < 0.0) { break; }
+        let sd = strutSdf(ph, 0).x;
+        if (sd < 0.0015) { hit = true; break; }
+        tw = tw + max(sd, 0.004);
+      }
+      if (hit) {
+        let rr = length(ph);
+        let radial = normalize(ph);
+        let c = cellEdge(shellDir(ph, 0), shellFreq(0), 0.0);
+        let across = normalize(c.across - radial * dot(c.across, radial) + vec3f(1.0e-5));
+        let onCrown = smoothstep(0.0, depth * 0.6, abs(rr - R));
+        let ns = normalize(radial * sign(rr - R) * (0.35 + onCrown) + across * (1.0 - onCrown) * 0.9);
+        let prof = 1.0 - clamp((c.edge - 0.0) / max(barWidthAt(c, 0), 1.0e-4), 0.0, 1.0);
+        col = col + tp * shadeFrame(ph, ns, d, 0, prof);
+        tp = vec3f(0.0);
+        break;
+      }
+      // Reached the faces: continue at the sphere crossing as before.
+    }
+
     let cell = cellEdge(shellDir(p, k), shellFreq(k), f32(k));
     let w = barWidthAt(cell, k);
-    let sn = normalize(p);
-    let entering = dot(d, sn) < 0.0;
     let nOut = select(-sn, sn, entering);
 
-    if (blockedFace(cell, k)) {
-      // A shut plate is CONTAINED light, not a dead hull: the frame's material across the
-      // face, a seam that glows where the plate meets its strut, and a skin thin enough that
-      // the core's light shows through it as a dull heat.
-      let seam = smoothstep(w + 0.35, w, cell.edge);
-      let heat = coreLightBare(p) * 0.6;
-      col = col + tp * (shadeFrame(p, nOut, d, k, seam) * 0.75
-                        + seam * seam * heat * 1.4 * mix(coreRGB(), vec3f(1.0, 0.9, 0.7), 0.3)
-                        + heat * 0.035 * coreRGB() * max(dot(nOut, -d), 0.0));
+    // A plate within a hand's width of the lens (the dive passing through a shut shell) is
+    // read as glass: a plate ON the lens is a flat wall for the frames it takes to pass.
+    // And from INSIDE the ball (the dive) the plates are read as glass: the inside view is
+    // the skeleton around the core, not the backs of shutters.
+    if (blockedFace(cell, k) && tNext > 0.06 && length(ro) > shellRadius(0)) {
+      // A shut plate is RECESSED behind its frame — a shell of flush plates is a smooth
+      // sphere, and a smooth sphere is a balloon however it is lit (the owner's read). The
+      // ray continues to the inset surface; where it lands under a strut it has met the
+      // strut's inner wall, elsewhere the plate: CONTAINED light, not a dead hull — the
+      // frame's material across the face, a seam that glows where the plate meets its
+      // strut, and a skin thin enough that the core's light shows through as a dull heat.
+      let R = shellRadius(k);
+      let recess = max(params.strutDepth, 0.02) * 1.3;
+      let inset = select(R - recess, R + recess, !entering);
+      let t2 = sphereHit(o, d, inset);
+      var p2 = p;
+      if (t2 > tNext) { p2 = o + d * t2; }
+      let c2 = cellEdge(shellDir(p2, k), shellFreq(k), f32(k));
+      let w2 = barWidthAt(c2, k);
+      let wall = c2.edge < w2 * 1.6;
+      let n2 = select(nOut, normalize(c2.across - nOut * dot(c2.across, nOut) + vec3f(1.0e-5)) * -1.0, wall);
+      let seam = smoothstep(w2 + 0.3, w2, c2.edge);
+      let heat = coreLightBare(p2) * 0.6;
+      let plate = shadeFrame(p2, n2, d, k, seam) * select(0.75, 0.35, wall)
+                + seam * seam * heat * 1.4 * mix(coreRGB(), vec3f(1.0, 0.9, 0.7), 0.3)
+                + select(heat * 0.035 * coreRGB() * max(dot(n2, -d), 0.0), vec3f(0.0), wall);
+      col = col + tp * plate;
       tp = vec3f(0.0);
       break;
     }
@@ -544,11 +624,13 @@ fn trace(ro: vec3f, rd: vec3f, jitter: f32, uv: vec2f) -> vec3f {
     // vanishes the moment a face turns toward you (the owner's first note). The glass gets a
     // floor on its head-on reflectance, tinted its own colour, and a scatter term that
     // carries the same colour through the face under the core's light.
-    let F = max(fresnel(cosI, eta), 0.06);
-    let fTint = mix(vec3f(1.0), glassRGBk(k), 0.6);
+    // The outer shell's glass keeps a head-on floor (its colour must survive facing you);
+    // the inner shells' glass is clearer, or each one reads as a balloon behind the frame.
+    let F = max(fresnel(cosI, eta), select(0.02, 0.06, k == 0));
+    let fTint = mix(vec3f(1.0), glassRGBk(k), 0.8);
     let refl = reflect(d, nf);
     let lightHere = coreLightBare(p) * 0.6;
-    col = col + tp * glassRGBk(k) * 0.02 * lightHere;
+    col = col + tp * glassRGBk(k) * select(0.008, 0.02, k == 0) * lightHere;
     // The reflected share reads the core's glow, per channel offset by dispersion.
     let dsp = params.dispersion * 0.6;
     let gR = coreGlow(p, normalize(refl + across3(nf) * dsp)).r;
@@ -559,7 +641,7 @@ fn trace(ro: vec3f, rd: vec3f, jitter: f32, uv: vec2f) -> vec3f {
     let k2 = 1.0 - etaHere * etaHere * (1.0 - cosI * cosI);
     var t = refl;
     if (k2 >= 0.0) { t = normalize(etaHere * d + (etaHere * cosI - sqrt(k2)) * nf); }
-    tp = tp * (1.0 - F) * mix(vec3f(0.97), glassRGB() * 0.4 + 0.6, 0.18);
+    tp = tp * (1.0 - F) * mix(vec3f(0.97), glassRGB() * 0.4 + 0.6, select(0.08, 0.18, k == 0));
     d = t;
     o = p + d * 3.0e-4;
     if (max(max(tp.r, tp.g), tp.b) < 0.01) { break; }
@@ -587,17 +669,40 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   // parallax away): wide, close on the shell surface with struts passing the lens, and
   // between the outer shells looking in at the core through the inner lattices. stations
   // scales how far from the wide shot the tour goes; 0 is the wide shot held.
-  let u = fract(t / max(params.travel, 1.0)) * 3.0;
-  let seg = floor(u);
-  let f = smoothstep(0.3, 0.7, fract(u));
+  // THE DIVE. One signed distance along the orbit's radial, in five legs: wide → close on
+  // the surface → THROUGH the centre → out the far side (a negative distance is the
+  // antipode) → wide again, looking back. Eased; struts sweep past the lens at the surface
+  // and the core fills the frame at the centre — the parallax a shell cannot fake.
   let wideD = max(params.distance, 1.2);
-  let dA = select(select(wideD, wideD * 0.52, seg == 1.0), 0.7, seg == 2.0);
-  let dB = select(select(wideD * 0.52, 0.7, seg == 1.0), wideD, seg == 2.0);
-  let dTour = mix(dA, dB, f);
-  let dist = mix(wideD, dTour, clamp(params.stations, 0.0, 1.0));
-  let eye = vec3f(dist * cos(a) * cos(el), dist * sin(el), dist * sin(a) * cos(el));
-  let aim = vec3f(0.0, -0.08, 0.0) * clamp(dist - 1.0, 0.0, 1.0);
-  let fwd = normalize(aim - eye);
+  let u = fract(t / max(params.travel, 1.0)) * 4.0;
+  let seg = floor(u);
+  let fu = fract(u);
+  // Legs 0 and 2 dwell at their ends; leg 1 — the dive — is ONE continuous motion through
+  // the centre with no dwell there: the core is passed at speed, never parked in.
+  let fDwell = smoothstep(0.2, 0.8, fu);
+  let fThrough = fu * fu * (3.0 - 2.0 * fu);
+  var dA = wideD; var dB = wideD; var f = fDwell;
+  if (seg == 0.0) { dA = wideD; dB = wideD * 0.55; }
+  else if (seg == 1.0) { dA = wideD * 0.55; dB = -wideD * 0.55; f = fThrough; }
+  else if (seg == 2.0) { dA = -wideD * 0.55; dB = -wideD; }
+  else { dA = -wideD; dB = -wideD; }
+  let stations = clamp(params.stations, 0.0, 1.0);
+  let dist = mix(wideD, mix(dA, dB, f), stations);
+  // The last leg swings half a turn around the ball at wide distance, which brings the
+  // antipode back to the near side for the next tour.
+  let swing = select(0.0, fDwell * PI, seg == 3.0) * stations;
+  let a2 = a + swing;
+  let radial = vec3f(cos(a2) * cos(el), sin(el), sin(a2) * cos(el));
+  let eye = radial * dist;
+  // Looking at the core from outside; through the dive the gaze holds its travel direction
+  // (a look-at through the centre would snap as the eye passes it), then eases back.
+  // Ahead only while INSIDE the ball; once out the far side the gaze turns back to the core
+  // over the next half unit of travel — "back out and around" is looking back at it.
+  let diving = smoothstep(1.25, 0.7, abs(dist));
+  let aimCentre = vec3f(0.0, -0.08, 0.0) * clamp(abs(dist) - 1.0, 0.0, 1.0);
+  let aimAhead = eye - radial * 2.0;
+  let aim = mix(aimCentre, aimAhead, diving);
+  let fwd = normalize(aim - eye + vec3f(0.0, 1.0e-4, 0.0));
   let right = normalize(cross(fwd, vec3f(0.0, 1.0, 0.0)));
   let upv = cross(right, fwd);
   let focal = 1.9;
@@ -614,6 +719,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
     // binding live and contributes nothing.
     let bed = textureSampleLevel(inputTexture, inputSampler, uv, 0.0).r * 0.0;
     var o = eye;
+    if (length(eye) < coreRadius()) { return vec4f(bed, 0.0, 0.0, 1.0); }
     if (length(eye) >= HAZE_R) {
       let tb = sphereHit(eye, rd, HAZE_R);
       if (tb < 0.0) { return vec4f(0.0, 0.0, 0.0, 1.0); }
@@ -626,7 +732,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
 
   // Exposure follows the station: the eye near the core sees the same radiance the wide
   // shot integrates over a whole disc, so the close and inside stations stop down.
-  let stop = mix(0.22, 1.0, smoothstep(0.5, wideD, dist));
+  let stop = mix(0.07, 1.0, smoothstep(0.15, wideD, abs(dist)));
   var col = trace(eye, rd, jitter, uv) * params.exposure * stop;
   // A gentle vignette keeps the eye on the ball.
   let vig = smoothstep(1.9, 0.4, length(q * vec2f(0.8, 1.0)));

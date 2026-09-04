@@ -230,11 +230,11 @@
     "phrase": 0.05446
   },
   "E55-Reactor.loom.json": {
-    "motion": 0.04047,
-    "range": 0.8543,
-    "f0max": 0.9905,
-    "cardFloor": 0.0042,
-    "phrase": 0.09942
+    "motion": 0.03259,
+    "range": 0.8713,
+    "f0max": 0.9924,
+    "cardFloor": 0.0041,
+    "phrase": 0.08536
   },
   "E56-Vesper.loom.json": {
     "motion": 0.41959,
