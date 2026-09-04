@@ -62,6 +62,21 @@ export async function openApp(page: Page): Promise<void> {
     // event the spec waits for never fired. An own undefined shadows the prototype.
     win["showSaveFilePicker"] = undefined;
     win["showOpenFilePicker"] = undefined;
+    /*
+     * START ON AN EMPTY CANVAS.
+     *
+     * The product now opens a small shipped example on a boot with nothing to restore
+     * (`src/app/use-starter-project.ts`), so a spec that adds two nodes and drags between
+     * them would be doing it on top of E6's six. This is the SHIPPED preference — the same
+     * key the settings dialog writes — not a test-only hatch, so a spec still exercises the
+     * real code path for someone who has turned the starter off. A spec that WANTS the
+     * starter can set it back to "on" in its own init script.
+     */
+    try {
+      window.localStorage.setItem("shaderloom.project.startOnStarter.v1", "off");
+    } catch {
+      /* a storage-blocked context has no starter either way */
+    }
   });
   await page.goto("/");
   await expect(page.getByTestId("graph-canvas")).toBeVisible();

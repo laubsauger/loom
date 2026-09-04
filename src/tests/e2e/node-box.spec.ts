@@ -71,6 +71,19 @@ async function openExample(page: Page, name: string): Promise<void> {
 }
 
 test("the derived node box is the box the browser renders", async ({ page }) => {
+  /*
+   * This spec navigates itself rather than going through `openApp`, so it opts out of the
+   * starter network here (the shipped preference, same key the settings dialog writes).
+   * Without it the app boots into E6 and the first `openExample` races the starter's own
+   * load — measured: six nodes on screen where the spec was counting nine.
+   */
+  await page.addInitScript(() => {
+    try {
+      window.localStorage.setItem("shaderloom.project.startOnStarter.v1", "off");
+    } catch {
+      /* a storage-blocked context has no starter either way */
+    }
+  });
   await page.goto("/");
   await expect(page.getByTestId("graph-canvas")).toBeVisible();
 
