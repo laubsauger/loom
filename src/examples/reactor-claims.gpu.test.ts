@@ -172,7 +172,7 @@ describe("E55 Reactor — claims", () => {
     expect(dawnError, dawnError ?? "").toBeUndefined();
     const [driven] = await shoot({}, [60]);
     // The retained values are what the slots resolve to with the channel cut (§V108).
-    const [cut] = await shoot({ coreGain: 1, laserGain: 0.6, facet: 0.7, swell: 1, frameWidth: 0.22, shellGap: 0.2 }, [60]);
+    const [cut] = await shoot({ coreGain: 1, laserGain: 0.6, facet: 0.7, swell: 1, frameWidth: 0.12, shellGap: 0.2, shieldOuter: 0, shieldInner: 0 }, [60]);
     expect(differs(driven!, cut!)).toBe(true);
 
     // The value graph alone, 900 frames of the shipped pattern: coreGain = 2.8·level + 0.75
@@ -192,6 +192,48 @@ describe("E55 Reactor — claims", () => {
     }
     expect(min).toBeGreaterThanOrEqual(0.75);
     expect(longestHold).toBeLessThan(60);
+  });
+
+  it("the shutters shield: a shut shell darkens the medium outside the ball, an open one is the rest state", async () => {
+    expect(dawnError, dawnError ?? "").toBeUndefined();
+    const [open] = await shoot({ shieldOuter: 0, shieldInner: 0 }, [60]);
+    const [shut] = await shoot({ shieldOuter: 1, shieldInner: 1 }, [60]);
+    // A shut plate is a gate at 0 where an open face is ≤ 1: monotone per pixel in the ring,
+    // and the ring is darker in the mean — the "shielded inside" half of the owner's gesture.
+    expect(brighterCount(shut!, open!, inRing)).toBe(0);
+    expect(meanWhere(shut!, inRing)).toBeLessThan(meanWhere(open!, inRing));
+    // And the shipped file at frame 60 IS the open state (§V914): identical bytes.
+    const [shipped] = await shoot({}, [60]);
+    expect(differs(shipped!, open!)).toBe(false);
+  });
+
+  it("the bloom branch is alive: zeroing both widths darkens the disc", async () => {
+    expect(dawnError, dawnError ?? "").toBeUndefined();
+    // The branch shipped DEAD for three rounds (cut1.brightness was 0, a multiplier) and no
+    // gate noticed, because add(x, 0) = x. This is the wire-cut claim that would have.
+    const [lit] = await shoot({}, [60]);
+    const { graph, settings } = e55();
+    // `add` requires both inputs, so the branch is cut the way the defect cut it: both gains
+    // at zero (gain1's brightness is a driven slot; the static 0 replaces it).
+    (graph.nodes["gain"]!.parameters as Record<string, unknown>)["brightness"] = 0;
+    (graph.nodes["gain2"]!.parameters as Record<string, unknown>)["brightness"] = 0;
+    const result = await renderHeadless({ host: nodeGpuHost(), graph, settings, frames: 61, capture: [60], animate: true, fps: 60, outputNodeId: "out" });
+    const errors = result.diagnostics.filter((d) => d.severity === "error");
+    if (errors.length > 0) throw new Error(errors.map((d) => d.message).join("; "));
+    const frame = result.frames[0]!;
+    const space = result.plan.outputs.find((o) => o.nodeId === "out")?.space ?? "linear";
+    const image = toRgba8(
+      { width: frame.width, height: frame.height, format: frame.format, bytes: frame.bytes, rowStride: frame.width * (BYTES_PER_PIXEL[frame.format] ?? 8) },
+      { space },
+    );
+    const bare: Shot = { data: image.data, luma: new Float32Array(WIDTH * HEIGHT) };
+    for (let p = 0; p < bare.luma.length; p += 1) {
+      const at = p * 4;
+      bare.luma[p] = (0.2126 * (image.data[at] ?? 0) + 0.7152 * (image.data[at + 1] ?? 0) + 0.0722 * (image.data[at + 2] ?? 0)) / 255;
+    }
+    // A bloom only ADDS: no pixel is darker with it, and the disc is brighter with it.
+    expect(brighterCount(bare, lit!, () => true)).toBe(0);
+    expect(meanWhere(lit!, inDisc)).toBeGreaterThan(meanWhere(bare, inDisc));
   });
 
   it("liveliness is structural: consecutive frames differ at the end of a minute", async () => {
