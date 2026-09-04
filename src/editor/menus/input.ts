@@ -130,6 +130,9 @@ const BUILDERS: Record<string, InputBuilder> = {
   "node.togglePin": nodeIds,
   "node.toggleRender": nodeIds,
   "node.toggleBackground": nodeIds,
+  // T1102 — the selection, like every other multi-node action. `]` and the menu row are
+  // one command, so raising a stack of nine nodes is one gesture from either door (§V78).
+  "node.bringToFront": nodeIds,
 
   // Rename is single-target by nature, so it takes the node under the CURSOR rather than
   // the whole selection: "rename these nine nodes" has no one answer, and picking one of

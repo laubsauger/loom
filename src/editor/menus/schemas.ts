@@ -149,10 +149,32 @@ export const NODE_MENU: MenuSchema = {
     // every node and the `d` key; the pin had neither, and one of them had to be the one
     // you can reach without knowing it exists.
     { command: "node.togglePin", label: "Pin preview" },
-    // T463: TD's network background — this node's output behind the patch, dimmed.
-    // It DISPLACED "Set colour…" per the item cap's own rule (a planned row, still
-    // reachable through its keymap binding and the palette when it lands).
-    { command: "node.toggleBackground", label: "Graph background" },
+    /**
+     * T1102 — the stacking pair, as a SUBMENU rather than as a twelfth row.
+     *
+     * `node.bringToFront` landed with `]` and no menu row (the file was held by another
+     * track at the time), and the node menu was already AT its eleven-item cap. The cap's
+     * own instruction is to displace a row or open a submenu rather than raise it a second
+     * time, and nothing here was stale enough to displace — every remaining row is either
+     * the only door to its command (`node.togglePin`) or a gesture a right-click menu is
+     * expected to offer (Copy, Cut, Duplicate, Delete, Rename).
+     *
+     * These two ARE one question — what is drawn on top of what. "Bring to front" is this
+     * node's z among the nodes it overlaps (`ui.z`, the explicit order T1102 persists);
+     * "Graph background" is this node's picture painted behind the whole patch (T463).
+     * Neither loses a door by being nested (§V78): "Bring to front" keeps `]` and the
+     * palette, and "Graph background" keeps its own binding.
+     */
+    {
+      label: "Layer",
+      submenu: [
+        { command: "node.bringToFront", label: "Bring to front" },
+        // T463: TD's network background — this node's output behind the patch, dimmed.
+        // It DISPLACED "Set colour…" per the item cap's own rule (a planned row, still
+        // reachable through its keymap binding and the palette when it lands).
+        { command: "node.toggleBackground", label: "Graph background" },
+      ],
+    },
     { separator: true },
     // The ellipsis is a promise, and until T415 it was a lie: this named `node.rename`,
     // which needs a `label` no menu route could ever supply, so the item dispatched a
