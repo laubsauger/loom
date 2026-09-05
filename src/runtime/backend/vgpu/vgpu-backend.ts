@@ -1243,6 +1243,11 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         // (VGPU-SURFACE-NOT-IN-FRAME), so the blit pipeline compiles lazily on its
         // first encode. One-time cost on the first presented frame, not per frame.
       } else if (p.boundSource !== source) {
+        // T1180: the blit outlives the source it was pointed at, and vgpu's eviction
+        // subscription follows the SLOT, not the entry it built — so the entry naming the
+        // outgoing target would survive that target's destroy with nothing listening. One
+        // orphan per recompile, for the life of the device.
+        evictBindGroups(p.blit);
         p.blit.set({ blitSource: bindValue });
       }
       p.boundSource = source;
@@ -1392,6 +1397,15 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       // replaced ones are destroyed. The shared block is kept iff it is the main
       // program's (whose lifecycle owns it) or carried forward.
       if (previous) releaseResourcesExcept(previous, h.set);
+      // T1180: THE tile blit is one long-lived Effect whose single texture slot is
+      // re-pointed at every tile of every composite, so it holds one cached bind group per
+      // tile target it has EVER been shown — and vgpu's eviction subscription follows the
+      // slot, so the entries naming the tiles just destroyed above are now orphans. This is
+      // where the leak actually was: §T1174's camera loop retained +12 unreachable
+      // GPUBindGroups per identical five-second cycle, all of them this blit's, for as long
+      // as the session ran. Evicting here caps it at the tiles currently live; each is
+      // rebuilt on its next composite pass.
+      if (previous) evictBindGroups(h.blit);
 
       // Bindings that live in the MAIN program get re-pointed after its recompiles.
       h.externalBindings = [];
@@ -2610,6 +2624,28 @@ function computeCarryOver(
  * declare it, but the concrete implementations have it, and without it every shader edit
  * leaks the replaced objects until `gpu.dispose()` (§T49's stable-resource-count gate).
  */
+/**
+ * Drops one drawable's entries from the gpu's shared bind-group cache (T1180).
+ *
+ * vgpu keys that cache on `drawId:group:identities`, mints a fresh id per Effect/Draw/
+ * Compute, and reclaims an entry ONLY when a resource the entry names is destroyed — and
+ * that subscription is per binding SLOT, so re-`set()`ing a slot unsubscribes the previous
+ * resource and orphans the entry that named it. Both shapes are live here: a rebuilt
+ * program discards Effects (§T1174 measured 13-14 rebuilds per five seconds of panning),
+ * and the tile blit re-points one texture slot at every tile of every frame. Nothing
+ * upstream can reach the cache, so `evictBindGroups` comes from `patches/vgpu.patch`,
+ * which calls vgpu's own `clearDraw`.
+ *
+ * Safe by construction: the id prefix is unique per drawable, and an entry still wanted is
+ * rebuilt on the next encode. Over-evicting costs a `createBindGroup`, never a wrong bind
+ * group. `bind-group-eviction.test.ts` is the gate; it fails if the patch is dropped.
+ */
+function evictBindGroups(drawable: unknown): void {
+  const candidate = drawable as { evictBindGroups?: () => void };
+  if (typeof candidate?.evictBindGroups !== "function") return;
+  candidate.evictBindGroups();
+}
+
 /** Releases `previous`'s objects except those shared (by identity) with `next`. An
  * absent `next` releases everything — the failed-build cleanup path (B9), where the
  * half-built set shares only what it CARRIED from the retained program. */
@@ -2625,6 +2661,20 @@ function releaseResourcesExcept(previous: ResourceSet, next?: ResourceSet): void
     }
   };
 
+  // T1180: the drawables go FIRST — vgpu reclaims a bind-group cache entry only when a
+  // resource the entry NAMES is destroyed, so a replaced Effect that rebound surviving
+  // targets (a shader edit) would otherwise leave its entries unreachable for the life of
+  // the device. Doing it before the resources also shrinks the map every `evictIdentity`
+  // below has to scan.
+  for (const [id, item] of previous.effects) {
+    if (next?.effects.get(id) !== item) evictBindGroups(item);
+  }
+  for (const [id, item] of previous.computes) {
+    if (next?.computes.get(id) !== item) evictBindGroups(item);
+  }
+  for (const [id, item] of previous.draws) {
+    if (next?.draws.get(id) !== item) evictBindGroups(item);
+  }
   for (const [id, target] of previous.targets) {
     if (next?.targets.get(id) !== target) destroy(target);
   }

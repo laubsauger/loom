@@ -1,3 +1,77 @@
+diff --git a/dist/compute.js b/dist/compute.js
+index fa1d930d97886ed6168d1ce9598f810e9ce61e15..076a88d671527de0c7da84dc1e1a4ca6e78d7c3e 100644
+--- a/dist/compute.js
++++ b/dist/compute.js
+@@ -71,6 +71,16 @@ export class ComputePipeline {
+         if (opts.set)
+             this.set(opts.set);
+     }
++    /**
++     * shaderloom patch (T1180): drop this compute's cached bind groups; see
++     * InternalDraw.evictBindGroups. A compute shares the gpu's one bind cache with every draw
++     * while `nextComputeId` is a counter separate from `nextDrawId`, so one id can name both —
++     * the worst case is still a rebuilt bind group on the other one's next encode, never a
++     * wrong one. Its own pipeline and shader module are per-instance and are left to the GC.
++     */
++    evictBindGroups() {
++        this.cache.clearDraw(this.id);
++    }
+     set(values) {
+         assertDeviceUsable(this.device, `${this.label}.set`);
+         this.setCore.set(values);
+diff --git a/dist/draw.js b/dist/draw.js
+index d6011f8aba886f4a9f5f4e15b7da07fe889ad006..e4036ed78a5ca3a46590a3b8f121d2e926a5d2fa 100644
+--- a/dist/draw.js
++++ b/dist/draw.js
+@@ -102,6 +102,35 @@ export class InternalDraw {
+     writesDepth() { return drawWritesDepth(this); }
+     /** @internal Frame drawable protocol; see {@link drawStencilWritingOps}. */
+     stencilWritingOps() { return drawStencilWritingOps(this); }
++    /**
++     * shaderloom patch (T1180): drop this draw's cached bind groups. It calls the cache's own
++     * `clearDraw`, which upstream defines and never calls; nothing else can reach it, because
++     * the cache is a private kernel service and `drawId` is a closure-local counter.
++     *
++     * Two ways entries become unreachable, and neither has a public exit today:
++     *
++     * 1. A DISCARDED drawable. The key is `drawId:group:identities` and every Draw/Effect
++     *    mints a fresh `nextDrawId`, so a program rebuild's replaced Effects leave their
++     *    entries behind for the life of the device — Draw/Effect/Compute expose no destroy at
++     *    all. `subscribeEviction` reclaims an entry only when a resource it names is
++     *    destroyed, so entries over surviving resources (a shader edit rebinding the same
++     *    target) survive with it.
++     *
++     * 2. A LIVE drawable whose bindings ROTATE. The eviction subscription is per binding
++     *    SLOT, not per cache entry: `set()`ing a slot to a new resource unsubscribes the
++     *    previous one, so an entry naming the old resource outlives that resource's destroy
++     *    with nothing listening. A blit that re-points one texture slot at each of N targets
++     *    keeps N entries and is subscribed to one.
++     *
++     * Only this draw's own entries go — the drawId prefix is unique per instance — and any
++     * entry still wanted is rebuilt on the next encode (`setCore.bindGroups()` calls
++     * `getOrCreate` every time), so an over-eager evict costs a rebuild, never a wrong bind
++     * group. Pipelines, shader modules and layouts are shared by key and are untouched.
++     */
++    evictBindGroups() {
++        const state = drawState(this);
++        state.cache.clearDraw(state.id);
++    }
+     set(values) {
+         const state = drawState(this);
+         assertDeviceUsable(state.device, `${this.label}.set`);
+diff --git a/dist/effect.js b/dist/effect.js
+index 079c6686ce2c87a580f217b12c9ea978f0ed3005..fb684c09ba66ed7763f8f2123a5f6ec635bda0ea 100644
+--- a/dist/effect.js
++++ b/dist/effect.js
+@@ -31,6 +31,8 @@ export class InternalEffect {
+         effectImpls.set(this, impl);
+     }
+     set(values) { effectImpl(this).set(values); return this; }
++    /** shaderloom patch (T1180): forwards to the underlying draw; see InternalDraw.evictBindGroups. */
++    evictBindGroups() { effectImpl(this).evictBindGroups(); }
+     draw(target = {}) { effectImpl(this).draw(isTarget(target) ? { target } : target); }
+     compile(target) { return effectImpl(this).compile(target).then(() => this); }
+     compileSync(target) { effectImpl(this).compileSync(target); return this; }
 diff --git a/dist/frame.js b/dist/frame.js
 index 21e3d41add2578fee9198c44260cba69b7867c82..3b4ac37fdfa159b02d792a8378fefa55f3a1a4bd 100644
 --- a/dist/frame.js
