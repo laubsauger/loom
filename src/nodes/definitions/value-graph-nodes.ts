@@ -904,6 +904,187 @@ export const valueNormalizeNode: NodeDefinition = {
   compile: noPasses,
 };
 
+const SPEED_LIMIT_OPTIONS = [
+  { value: "loop", label: "Loop" },
+  { value: "hold", label: "Hold" },
+  { value: "mirror", label: "Mirror" },
+] as const;
+
+/**
+ * T1190 — SPEED: integrate a RATE into a POSITION. TD's Speed CHOP.
+ *
+ * ## The gap, and it is the one E56 fell into
+ *
+ * The value family could shape a signal every way except ONE: it had no accumulator. Every
+ * node in it is a function of the current sample (Math, Limit, Switch, Step) or of a
+ * bounded amount of recent history (Slope, Lag, Filter, Normalize). Nothing turned a level
+ * into MOTION, and the value graph is acyclic, so nobody could build one out of the parts.
+ *
+ * ⚑⚑ THE OWNER FOUND THE CONSEQUENCE BEFORE ANYONE FOUND THE GAP. E56 mapped an audio
+ * envelope onto a video playhead as an ABSOLUTE POSITION, and he reported the picture
+ * *"freezing a lot"* and *"navigating itself into a corner"*. He diagnosed it himself:
+ * *"maybe we're lagging/enveloping/normalizing it to a flat line and nothing moves until
+ * something shuffles."* He is right, and it is STRUCTURAL rather than a tuning failure:
+ *
+ *   UNDER A POSITION MAP, A CONSTANT INPUT IS A FROZEN PICTURE.
+ *
+ * Every stage that makes a control signal usable — an envelope follower, a lag, this
+ * project's own Normalize — makes it FLATTER, and flatness is exactly what a position map
+ * renders as stillness. Tuning trades a freeze for jitter and cannot escape the trade.
+ *
+ * ## What integrating changes
+ *
+ * Under `position += rate * dt`, a constant input is CONSTANT MOTION. The signal decides
+ * how FAST you travel rather than WHERE you are, so:
+ *
+ *  - it cannot freeze while the rate has a floor, and a floor is one number;
+ *  - it cannot corner itself, because there is no absolute target to sit on;
+ *  - REVERSE falls out — a negative rate runs backwards, and under `mirror` the bound
+ *    supplies the sign for free, so a strictly positive rate still travels both ways.
+ *
+ * MEASURED on E56's own chain, over 2400 steady-state frames, as the longest run of frames
+ * showing the SAME source frame — the honest reading of "it freezes", and the one a duty
+ * or a range cannot give:
+ *
+ *   position map, the owner's own settings    109 frames still (1.82 s), 20.3% pinned
+ *   position map, as this file first shipped   14 frames still (0.23 s), 0% pinned
+ *   RATE DRIVE through this node                5 frames still (0.08 s)
+ *
+ * ## The cost, stated: THIS NODE GIVES UP RANDOM ACCESS
+ *
+ * An integrator's output depends on how you ARRIVED at a frame, so a scrub does not find
+ * the same value and an offline render reproduces only from the transport's own start.
+ * That is not new ground — `stateful` with `randomAccess: false` is what Lag, Filter,
+ * Slope and Trigger already declare (§V181), the state clears on transport reset, and the
+ * replay from a reset is deterministic. But it IS the trade against the position map, and
+ * E56's round one chose position precisely to keep it. The owner used both and chose this.
+ *
+ * ## At the limit (§V316: one vocabulary, not two)
+ *
+ * The words are the MEDIA TRANSPORT's own — Loop, Hold, Mirror — deliberately, because
+ * they name the same three ideas and a user who learns one should not have to learn the
+ * other. (`black` has no meaning for a number, so this list is the transport's minus one.)
+ * MIRROR is the default and the others are not: hold stops, which is the failure this node
+ * exists to remove, and loop is a jump cut. Mirror is the only one that stays continuous
+ * AND stays alive.
+ *
+ * The fold is a pure function of ONE accumulator, not of a stored direction bit — the same
+ * arithmetic `mediaPlayhead` uses for its own mirror, so "which way is it going" has one
+ * definition in the repo and cannot get out of step with the position. `hold` clamps the
+ * ACCUMULATOR rather than the output, which is anti-windup: without it a signal that ran
+ * past the top would have to unwind all the way back before the picture moved again, which
+ * is a freeze wearing a different hat.
+ *
+ * ## Where it starts, and why that needs no parameter
+ *
+ * The MIDPOINT of the bounds, on first sight. Same argument as Normalize's mid-rank 0.5: a
+ * fresh session opens in the middle of the range and travels out of it, rather than pinned
+ * at an end. Starting at `minimum` would make the first thing every user sees the one state
+ * this node is built to avoid.
+ *
+ * ## Clock (§V453/§V436): DELTA-DRIVEN
+ *
+ * It reads `frame.deltaSeconds` and nothing else, so the distance travelled across a
+ * timeline lap is the real step and the accumulator crosses it intact. §V44 holds
+ * trivially: no wall clock, no timer. Frame-rate independence is EXACT here rather than
+ * statistical — the integral of a rate over the same seconds is the same distance at any
+ * step size, up to floating-point summation order.
+ *
+ * ⚠ THE NAME COLLIDES WITH `movieFileIn`'s OWN `speed`, AND THAT IS ON PURPOSE. This is
+ * TD's Speed CHOP, which is what a TD user reaches for by name when they want a rate
+ * turned into a position, and the catalogue mirrors the CHOP set deliberately (Lag, Limit,
+ * Math, Switch, Trigger, Slope, Filter). E56 labels its instance `travel1` rather than
+ * `speed1` so the two never read as the same control in one graph.
+ */
+export const valueSpeedNode: NodeDefinition = {
+  type: "valueSpeed",
+  version: 1,
+  title: "Speed",
+  category: "value",
+  description:
+    "Integrates its input as a RATE (units per second) and outputs a POSITION. TD's Speed CHOP. This is what turns a level into MOTION: under a position map a constant input is a frozen picture, and under this a constant input is constant travel, so a drive built on it cannot stall or corner itself. At Limit uses the media transport's own words — Loop cycles, Hold stops, MIRROR bounces (the default: the only one that stays both continuous and alive), and a bounce makes a positive rate travel both ways, which is reverse for free. Starts at the MIDPOINT of the bounds. DELTA-DRIVEN (§V436), and it gives up random access: an integral depends on how you reached the frame, so a scrub does not find it (§V181).",
+  tags: ["value", "speed", "integrate", "accumulate", "ramp", "motion", "chop"],
+  inputs: [{ id: "in", label: "In", type: VALUE_PORT }],
+  outputs: [{ id: "out", label: "Out", type: VALUE_PORT }],
+  parameters: {
+    minimum: {
+      type: "number",
+      label: "Minimum",
+      default: 0,
+      // `soft`, like every other bound in the family that is a POSITION rather than an
+      // amount: any finite value is legal and the range is a suggestion.
+      range: "soft",
+      min: -1000,
+      max: 1000,
+      // B80: declared rather than derived. A range this wide with no step derives a grid of
+      // 10 and a field showing zero decimals, so E56's own 0.4 would render as "0" — the
+      // guardrail caught exactly that. Matched to `cuePoint`'s step, because seconds into a
+      // clip is what this bound most often is.
+      step: 0.01,
+      description: "The low bound of the travel, and half of where it starts.",
+    },
+    maximum: {
+      type: "number",
+      label: "Maximum",
+      default: 1,
+      range: "soft",
+      min: -1000,
+      max: 1000,
+      step: 0.01,
+      description: "The high bound of the travel. Equal to Minimum, the output is that value and nothing moves.",
+    },
+    limit: {
+      type: "enum",
+      label: "At Limit",
+      // Mirror, not Hold: this node exists because a drive that stops is the bug. The
+      // transport's `extend` spells the same three ideas the same way (§V316).
+      default: "mirror",
+      options: [...SPEED_LIMIT_OPTIONS],
+      description:
+        "What happens at the bounds — the same three words the media transport's At End uses. Loop cycles and jump-cuts; Hold stops there; Mirror bounces and reverses, which is the only one that keeps travelling.",
+    },
+  },
+  stateful: VALUE_STATEFUL,
+  valueEvaluate: ({ inputs, values, frame, state }) => {
+    const low = num(values["minimum"], 0);
+    const high = num(values["maximum"], 1);
+    const span = high - low;
+    const limit = values["limit"];
+    const travelled = (state["travelled"] ?? {}) as Record<string, number>;
+    const delta = frame.deltaSeconds > 0 ? frame.deltaSeconds : 0;
+    const out = mapChannels(inputs["in"] ?? {}, (rate, name) => {
+      // A collapsed range is a decision, not a gap: hold the one value asked for.
+      if (!(span > 0)) return low;
+      // First sight starts at the MIDPOINT — see the docblock; a fresh session opens in
+      // the middle of the travel rather than pinned at the end it is meant to leave.
+      let accumulated = travelled[name] ?? low + span / 2;
+      accumulated += rate * delta;
+      if (limit === "hold") {
+        // Anti-windup: the ACCUMULATOR clamps, not just the output. Without this a rate
+        // that ran past the top would have to unwind before the picture moved again.
+        accumulated = accumulated < low ? low : accumulated > high ? high : accumulated;
+        travelled[name] = accumulated;
+        return accumulated;
+      }
+      travelled[name] = accumulated;
+      if (limit === "loop") return low + wrapPositive(accumulated - low, span);
+      // MIRROR: the triangle fold, and it is `mediaPlayhead`'s own arithmetic — one period
+      // is TWO spans and the second half runs backwards, so the direction is a pure
+      // function of the accumulator rather than a bit that can disagree with it.
+      const phase = wrapPositive(accumulated - low, span * 2);
+      return low + (phase > span ? span * 2 - phase : phase);
+    });
+    state["travelled"] = travelled;
+    return out;
+  },
+  compile: noPasses,
+};
+
+/** Positive modulo. `-1 % 10` is `-1` in JS and a negative rate needs `9`. */
+function wrapPositive(value: number, span: number): number {
+  return ((value % span) + span) % span;
+}
+
 /**
  * T654 — Channel In: a named channel as a value source. TD's Select CHOP shape.
  *
@@ -966,4 +1147,5 @@ export const valueGraphNodeDefinitions: readonly NodeDefinition[] = [
   valueSwitchNode,
   valueStepNode,
   valueNormalizeNode,
+  valueSpeedNode,
 ];

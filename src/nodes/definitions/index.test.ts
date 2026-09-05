@@ -155,6 +155,9 @@ describe("core catalogue (T70, T40)", () => {
       // always occupies" — each channel's PERCENTILE within its own recent history, so
       // equal time maps to equal range. No TD analog; named for what it does.
       "valueNormalize",
+      // T1190: TD's Speed CHOP, name and limit types both — the value family's only
+      // accumulator, and the node that turns a level into MOTION rather than a position.
+      "valueSpeed",
       // T414: sound as channels — the value family's third input source after Mouse
       // and the trio. Deliberately named for what it IS, not a TD analog.
       "audioIn",
@@ -295,6 +298,7 @@ describe("reset is exposed where it is declared (§V123, T216)", () => {
      * next reader does not inherit a reason that was true two hundred tasks ago.
      */
     valueNormalize: "no command can reach one value node's state; the feedback table holds textures",
+    valueSpeed: "no command can reach one value node's state; the feedback table holds textures",
   };
 
   it("every stateful node either fires a reset or is a listed gap", () => {
@@ -374,6 +378,7 @@ describe("T438 (§V316) — the channel publishers are DECLARED, not a category"
         "valueLimit",
         "valueMath",
         "valueNormalize",
+        "valueSpeed",
         "valueSlope",
         "valueStep",
         "valueSwitch",

@@ -293,6 +293,10 @@ const CLOCK_OWNERSHIP: Readonly<Record<string, "free-running" | "timeline-anchor
   // samples — never a clock POSITION. So a lap carries a real step and the ranked history
   // crosses it intact, exactly as Lag's held value does. Its state is history, not phase.
   valueNormalize: "delta-driven",
+  // T1190: Speed integrates a rate against the frame STEP and reads no clock position, so
+  // the distance travelled across a lap is the real step and the accumulator crosses it
+  // intact — the same reading as Lag's held value.
+  valueSpeed: "delta-driven",
   // CLOCKLESS: reads no clock. A loop cannot reach them.
   constant: "clockless",
   mouse: "clockless",

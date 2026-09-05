@@ -323,6 +323,11 @@ export const NODE_REPRODUCIBILITY: Readonly<Record<string, Reproducibility>> = {
   // a function of the inputs already seen. Same shape as Lag — the state resets with the
   // transport and replays deterministically, so a render reproduces frame for frame.
   valueNormalize: "pure",
+  // T1190: an INTEGRATOR, and still `pure` under this axis — its output is a function of
+  // its inputs and its own state, the state clears on transport reset, and the replay from
+  // a reset is deterministic. Random access is what it gives up, and that is `stateful`'s
+  // `randomAccess: false` (§V181), not this axis's question.
+  valueSpeed: "pure",
   audioPattern: "pure",
   // MEDIA FILES ARE PURE AS TYPES, and this is the split the module note argues for. A
   // bound file locked to the timeline is `f(frame)`; free run is a PARAMETER fact and

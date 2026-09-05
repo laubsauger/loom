@@ -100,6 +100,7 @@ export {
   valueFilterNode,
   valueSwitchNode,
   valueNormalizeNode,
+  valueSpeedNode,
   valueGraphNodeDefinitions,
 } from "./value-graph-nodes.ts";
 export { customWgslNode } from "./custom-wgsl.ts";
