@@ -19,15 +19,32 @@ import { ALEMBIC_WGSL } from "../shaders/alembic.wgsl.ts";
  * to be copied. The five looks in the `.md` are five coordinates of THIS shader's own
  * parameter space, found by eye here. `alembic.wgsl.ts` carries the long version.
  *
- * ## ONE EXAMPLE AND NOT FIVE
+ * ## ONE SHADER AND FIVE FILES — WHICH HALF OF §T1166's ARGUMENT SURVIVED (§T1171)
  *
- * The family is one instrument at five settings, and that is the thing a reader should take
- * away — so it is one shader whose knobs ARE the axes that separate the golfs, and the five
- * looks are a table in the `.md` that the claims file parses and renders. Five documents
- * would have been five slots for one idea (§V471), four copies of the same prose to keep in
- * step, and would have hidden the shared primitive rather than shown it. There is no preset
- * selector either: a selector would have made four of the five unreachable by hand, which is
- * the opposite of the point.
+ * This shipped alone, on the argument that five near-identical documents would be five slots
+ * for one idea, four copies of the same prose to keep in step, and would hide the shared
+ * primitive rather than show it.
+ *
+ * HALF OF THAT IS STILL IN FORCE and is enforced by the import at the top of this file:
+ * there is exactly ONE shader module, and E59-E62 import it rather than copying it. The
+ * knobs still ARE the axes that separate the golfs, and there is still no preset selector —
+ * a selector would make four of the five unreachable by hand.
+ *
+ * ⚑ THE OTHER HALF WAS WRONG AND THE OWNER OVERRULED IT. **The catalogue is the product
+ * surface.** Four looks that exist only as rows in a table are REACHABLE, not SHOWN, and
+ * being shown is what a catalogue is for — the same failure §T728 names when it complains
+ * about a node type appearing in exactly one example. So the four ship as their own entries,
+ * each with its own card, its own claim, and ITS OWN GRADIENT: E59 Vault, E60 Snarl,
+ * E61 Skein, E62 Rake. Four documents sharing one ramp would have wasted the argument two
+ * paragraphs down, which is that the colour term is a node.
+ *
+ * What that leaves THIS file is the technique, and the table — which is no longer a second
+ * source, because `alembic-claims.gpu.test.ts` now asserts that every row is EXACTLY the
+ * shipped document's difference from this one, in both directions.
+ *
+ * ⚠ ONE ROW HAD TO BE RENAMED. §T1166's table called E60 *Corona*, and E31 Corona has
+ * shipped since long before it. A row can share a name with an example; a catalogue entry
+ * cannot.
  *
  * ## THE GRAPH IS THREE NODES AND THE MIDDLE ONE OWNS NO COLOUR
  *

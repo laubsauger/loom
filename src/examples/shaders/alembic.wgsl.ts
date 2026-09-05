@@ -1,7 +1,13 @@
 import { SHARED_UNIFORMS_WGSL } from "../../runtime/backend/shared-uniforms.ts";
 
 /**
- * E58 Alembic — the domain-warped accumulation march (T1166).
+ * The domain-warped accumulation march (T1166) — the shader behind FIVE shipped documents.
+ *
+ * E58 Alembic, E59 Vault, E60 Snarl, E61 Skein and E62 Rake are one module at five settings
+ * (§T1171). They import this file; none of them copies it, and the claims gate on E58 asserts
+ * that the parameter table in `E58-Alembic.md` is exactly each document's difference from
+ * E58's — so a fork of this source would show up as a row that no longer describes its file.
+ * Everything below is written for E58 and is true of all five.
  *
  * ## CREDIT, FIRST, BECAUSE IT IS THE CONSTRAINT THIS FILE WAS WRITTEN UNDER
  *
@@ -20,8 +26,9 @@ import { SHARED_UNIFORMS_WGSL } from "../../runtime/backend/shared-uniforms.ts";
  * SPECIFIC GOLFED SOURCE is his, so nothing below is transcribed from it. This is the
  * instrument those five pictures are made ON, written from the technique, and it is
  * deliberately NOT an attempt to reproduce his five frames: reproducing a picture exactly
- * is what pushes a reimplementation back into copying an expression. The five looks in the
- * `.md` are five coordinates of THIS shader's own parameter space, found by eye here.
+ * is what pushes a reimplementation back into copying an expression. The five looks — E58's
+ * table, and the four documents it now links — are five coordinates of THIS shader's own
+ * parameter space, found by eye here, and none of them is named after one of his pieces.
  * Credit to @Xor for the family and for the golfs that named it.
  *
  * ## WHAT THE MARCH ACTUALLY IS, because it is not a sphere trace

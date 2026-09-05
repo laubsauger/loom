@@ -34,9 +34,11 @@ import { requireExample } from "./runner.ts";
  *      a pace read off the shipped file is one either clock can carry, and the red-verify
  *      proved it — an easing that settles the march after four seconds passed that
  *      assertion outright (§V923).
- *   5. THE FIVE LOOKS ARE FIVE PICTURES. The four alternate coordinates the `.md` publishes
- *      are each far from the shipped one and from each other, so the table is a claim the
- *      suite keeps rather than prose that rots.
+ *   5. THE FIVE LOOKS ARE FIVE PICTURES, AND FOUR OF THEM ARE FILES. The four alternate
+ *      coordinates the `.md` publishes are each far from the shipped one and from each
+ *      other; and since T1171 shipped them as E59-E62, every row is also asserted to be
+ *      EXACTLY that document's difference from this one, so the table cannot become a
+ *      second source that drifts from the files it names.
  *
  * Every bound is exact or derived (§V147): the grey identity and the reflection identity are
  * byte equality; "no pixel darkens" allows exactly one 8-bit quantisation step; the pace
@@ -196,11 +198,23 @@ function shippedParameters(): Record<string, unknown> {
   return e58().graph.nodes["alembic"]!.parameters as Record<string, unknown>;
 }
 
-function publishedLooks(): Record<string, Record<string, number>> {
+interface PublishedLook {
+  /** The `E59-Vault.loom.json` the row's "ships as" column links to (T1171). */
+  readonly file: string;
+  readonly overrides: Record<string, number>;
+}
+
+function publishedLooks(): Record<string, PublishedLook> {
   const markdown = readFileSync(LOOKS_DOC, "utf8");
-  const looks: Record<string, Record<string, number>> = {};
-  for (const [, name, body] of markdown.matchAll(/^\|\s*\*\*(\w+)\*\*\s*\|[^|]*\|\s*`([^`]+)`\s*\|/gm)) {
-    if (name === undefined || body === undefined) continue;
+  const looks: Record<string, PublishedLook> = {};
+  /* Four columns since T1171 — look, ships as, what it is, overrides. The `Throat` row is
+     not matched and must not be: its overrides cell is an em dash, because it IS this file. */
+  for (const [, name, shipsAs, body] of markdown.matchAll(
+    /^\|\s*\*\*(\w+)\*\*\s*\|([^|]*)\|[^|]*\|\s*`([^`]+)`\s*\|/gm,
+  )) {
+    if (name === undefined || shipsAs === undefined || body === undefined) continue;
+    const link = /\(\.\/(E\d+-[\w-]+)\.md\)/.exec(shipsAs);
+    if (link === null) throw new Error(`E58's look table: row ${name} links no shipped example`);
     const overrides: Record<string, number> = {};
     for (const pair of body.split(",")) {
       const [key, value] = pair.trim().split(/\s+/);
@@ -215,9 +229,16 @@ function publishedLooks(): Record<string, Record<string, number>> {
       }
       overrides[key] = Number(value);
     }
-    looks[name] = overrides;
+    looks[name] = { file: `${link[1]}.loom.json`, overrides };
   }
   return looks;
+}
+
+/** `alembic1`'s parameters as some OTHER shipped file in the family carries them. */
+function parametersOf(fileName: string): Record<string, unknown> {
+  const file = listExamples().find((entry) => entry.fileName === fileName);
+  if (file === undefined) throw new Error(`${fileName} is not shipped`);
+  return requireExample(file).document.graph.nodes["alembic"]!.parameters as Record<string, unknown>;
 }
 
 describe("E58 Alembic — claims", () => {
@@ -316,16 +337,50 @@ describe("E58 Alembic — claims", () => {
     expect(march.end).toBeGreaterThan(march.start * 0.7);
   }, 300_000);
 
+  /**
+   * T1171 — THE TABLE IS THE FOUR SHIPPED FILES, and this is what stops it becoming a
+   * second source.
+   *
+   * While the four looks were only rows, parsing and rendering them was enough: the table
+   * WAS the only statement of those coordinates, so it could not disagree with anything.
+   * Shipping them as documents creates exactly the hazard the parser's own docblock warns
+   * about one level up — two lists that must agree, and nothing checking that they do. A
+   * reader would open E59 expecting the numbers this file prints.
+   *
+   * So the row is asserted to be the DIFFERENCE: every key `E59-Vault`'s `alembic1` carries
+   * differently from this one's must be in the row, with that value, and nothing else may
+   * differ. Both directions matter — a missing key is a document that moved and a table that
+   * did not, and an extra key is a row promising a change the file does not make.
+   *
+   * `source` is deliberately not special-cased: the four import the SAME shader module, so
+   * it compares equal, and the day one of them forks its own copy this gate is what says so.
+   */
+  it("every published row IS the shipped document's difference from this file (T1171)", () => {
+    const looks = publishedLooks();
+    expect(Object.keys(looks).sort()).toEqual(["Rake", "Skein", "Snarl", "Vault"]);
+    const mine = shippedParameters();
+    for (const [name, look] of Object.entries(looks)) {
+      const theirs = parametersOf(look.file);
+      const differing = [...new Set([...Object.keys(mine), ...Object.keys(theirs)])]
+        .filter((key) => JSON.stringify(mine[key]) !== JSON.stringify(theirs[key]))
+        .sort();
+      expect(differing, `${name} (${look.file}) against E58`).toEqual(Object.keys(look.overrides).sort());
+      for (const [key, value] of Object.entries(look.overrides)) {
+        expect(theirs[key], `${name}'s ${key}, as the table publishes it`).toBe(value);
+      }
+    }
+  });
+
   it("the five looks are five pictures", async () => {
     expect(dawnError, dawnError ?? "").toBeUndefined();
     const looks = publishedLooks();
     // A guard on the guard: a parser that came back empty would make everything below
     // vacuously true, and the table would stop being checked with nothing saying so.
-    expect(Object.keys(looks).sort()).toEqual(["Corona", "Rake", "Skein", "Vault"]);
+    expect(Object.keys(looks).sort()).toEqual(["Rake", "Skein", "Snarl", "Vault"]);
     const [shipped] = await shoot({}, [60]);
     const shots: Record<string, Shot> = {};
-    for (const [name, overrides] of Object.entries(looks)) {
-      shots[name] = (await shoot(overrides, [60]))[0]!;
+    for (const [name, look] of Object.entries(looks)) {
+      shots[name] = (await shoot(look.overrides, [60]))[0]!;
     }
     // Every published coordinate is a long way from the one that ships...
     for (const [name, shot] of Object.entries(shots)) {

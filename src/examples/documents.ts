@@ -51,6 +51,10 @@ export { reactorDocument } from "./documents/reactor.ts";
 export { forestDocument } from "./documents/forest.ts";
 export { vesperDocument } from "./documents/vesper.ts";
 export { alembicDocument } from "./documents/alembic.ts";
+export { vaultDocument } from "./documents/vault.ts";
+export { snarlDocument } from "./documents/snarl.ts";
+export { skeinDocument } from "./documents/skein.ts";
+export { rakeDocument } from "./documents/rake.ts";
 export { skinDocument } from "./documents/skin.ts";
 import { feedbackEchoDocument } from "./documents/feedback-echo.ts";
 import { reactionDiffusionDocument } from "./documents/reaction-diffusion.ts";
@@ -103,6 +107,10 @@ import { reactorDocument } from "./documents/reactor.ts";
 import { forestDocument } from "./documents/forest.ts";
 import { vesperDocument } from "./documents/vesper.ts";
 import { alembicDocument } from "./documents/alembic.ts";
+import { vaultDocument } from "./documents/vault.ts";
+import { snarlDocument } from "./documents/snarl.ts";
+import { skeinDocument } from "./documents/skein.ts";
+import { rakeDocument } from "./documents/rake.ts";
 import { skinDocument } from "./documents/skin.ts";
 
 export const EXAMPLE_DOCUMENTS: readonly ProjectDocument[] = [
@@ -157,6 +165,10 @@ export const EXAMPLE_DOCUMENTS: readonly ProjectDocument[] = [
   vesperDocument,
   forestDocument,
   alembicDocument,
+  vaultDocument,
+  snarlDocument,
+  skeinDocument,
+  rakeDocument,
   skinDocument,
 ];
 

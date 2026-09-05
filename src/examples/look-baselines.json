@@ -255,10 +255,34 @@
     "f0max": 0.9994,
     "cardFloor": 0.0002
   },
+  "E59-Vault.loom.json": {
+    "motion": 0.03153,
+    "range": 0.6358,
+    "f0max": 0.9139,
+    "cardFloor": 0.0001
+  },
   "E6-Displacement-Stack.loom.json": {
     "motion": 0.28359,
     "range": 0.7293,
     "f0max": 0.7341
+  },
+  "E60-Snarl.loom.json": {
+    "motion": 0.13296,
+    "range": 0.8572,
+    "f0max": 1,
+    "cardFloor": 0.0016
+  },
+  "E61-Skein.loom.json": {
+    "motion": 0.25675,
+    "range": 0.9919,
+    "f0max": 0.9994,
+    "cardFloor": 0.0025
+  },
+  "E62-Rake.loom.json": {
+    "motion": 0.11484,
+    "range": 0.5028,
+    "f0max": 0.7643,
+    "cardFloor": 0.0053
   },
   "E63-Skin.loom.json": {
     "motion": 0.02473,

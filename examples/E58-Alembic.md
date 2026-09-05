@@ -14,9 +14,15 @@ an **octave-doubling domain warp**, under a march that accumulates depth from a 
 
 None of that is ownable: iterated `sin` domain warping, an accumulating pseudo-distance march and `tanh` tone-mapping are each older than any of the five. His particular golfed source *is* his, and none of it is transcribed here — not the expressions, not the colour terms, not the constants. This file is the **instrument** those pictures are made on, written from the technique, and it deliberately does not try to reproduce any of his five frames: chasing an exact picture is precisely what pushes a reimplementation back into copying an expression. The five looks below are five coordinates of *this* shader's parameter space, found by eye in this repository.
 
-## One example, not five, and why
+## One shader, five files — and which half of that argument survived
 
-Five near-identical documents would be five catalogue slots for one idea, four copies of the same prose to keep in step, and five thumbnails of the same technique. Worse, it would hide the thing a reader should actually take away, which is that these are **one instrument at five settings**. So the family is one shader whose parameters *are* the axes that separate the golfs — how many octaves, how fast the frequency grows, how far each one pushes, what shape the march accumulates against, where the colour comes from — and the five looks are a table you can type in. Every knob in that table is continuous. There is no preset selector, because a preset selector would have made four of the five looks unreachable by hand, which is the opposite of the point.
+This file first shipped alone, on the argument that five near-identical documents would be five catalogue slots for one idea, four copies of the same prose to keep in step, and five thumbnails of the same technique — hiding the thing a reader should take away, which is that these are **one instrument at five settings**.
+
+Half of that was right and is still in force: there is exactly **one shader module**, `alembic.wgsl.ts`, and every file in the family imports it rather than copying it. Its parameters *are* the axes that separate the golfs — how many octaves, how fast the frequency grows, how far each one pushes, what shape the march accumulates against, where the colour comes from. Every one of them is continuous, and there is no preset selector, because a selector would have made four of the five looks unreachable by hand.
+
+The other half was wrong, and the owner overruled it (T1171). **The catalogue is the product surface.** Four looks that exist only as rows in a table are reachable, not *shown* — and being shown is what the catalogue is for. So the other four now ship as their own entries, each with its own card, its own claims, and **its own gradient**: [E59 Vault](./E59-Vault.md), [E60 Snarl](./E60-Snarl.md), [E61 Skein](./E61-Skein.md), [E62 Rake](./E62-Rake.md). Four documents shipping one ramp would have wasted the argument two sections down, which is that the colour term is a node.
+
+What that leaves this file to be is the one that carries the technique, and the table below, which is now checked against the four shipped documents rather than merely rendered.
 
 ## What the march actually is
 
@@ -48,15 +54,21 @@ The claims measure this as an identity rather than an impression: **feed the sha
 
 ## Five looks
 
-Every row is a set of overrides on `alembic1`, on the shipped ramp, at the shipped everything-else. **The claims file parses this table out of this document**, renders all four, and asserts each is far from the shipped picture *and* from every other row — and it refuses a row that names a parameter `alembic1` does not have. So the table is a gate rather than a promise, and a typo here reddens the suite instead of misleading a reader.
+Every row is a set of overrides on `alembic1`, at the shipped everything-else, and every row after the first is now also a **shipped file** you can open. The table exists because five entries in a gallery do not tell you that they are five settings of one thing, and this is where that is visible: five pictures, one shader, and the difference between them written out as numbers.
 
-| look | what it is | overrides |
-| --- | --- | --- |
-| **Throat** | as shipped: a corona of gold and magenta fibre around a dark eye | — |
-| **Vault** | the fold goes architectural — flat planes, corners, a cavern lit from around a bend | `twist 0.5, warpGain 1.2, flare 0, wander 0.15, coil 0.3, exposure 0.014, depthFade 0.9` |
-| **Corona** | the vessel opens and its axis corkscrews wide: a filament storm, no throat | `flare 0, wander 1.1, coil 1.4, looseness 5, exposure 0.012, depthFade 0.15, radius 1.4` |
-| **Skein** | a dense 1.25 octave stack: long silky ribbons instead of fibre | `lacunarity 1.25, octaves 9, baseFreq 1.6, warpGain 1, exposure 0.02` |
-| **Rake** | a narrow flared funnel with depth driven hard into the phase: combed golden rays | `radius 0.9, flare 0.28, wander 0, coil 0, drift 2.4, exposure 0.006, looseness 4` |
+**The claims file parses this table out of this document** and does two things with it. It renders all four and asserts each is far from the shipped picture *and* from every other row. And it opens the four shipped examples and asserts that **each row is exactly the difference between that document's `alembic1` and this one's** — so the table cannot drift away from the files it names, and a typo here reddens the suite instead of misleading a reader. It also refuses a row naming a parameter `alembic1` does not have.
+
+Each shipped file additionally brings its own gradient; the ramp is not in the table, because the table is about the shader's coordinates.
+
+| look | ships as | what it is | overrides |
+| --- | --- | --- | --- |
+| **Throat** | this file | a corona of gold and magenta fibre around a dark eye | — |
+| **Vault** | [E59](./E59-Vault.md) | the fold goes architectural — flat planes, corners, a cavern lit from around a bend | `twist 0.5, warpGain 1.2, flare 0, wander 0.15, coil 0.3, depthFade 0.9` |
+| **Snarl** | [E60](./E60-Snarl.md) | the vessel opens and its axis corkscrews wide: a filament storm, no throat | `flare 0, wander 1.1, coil 1.4, looseness 5, exposure 0.012, depthFade 0.15, radius 1.4` |
+| **Skein** | [E61](./E61-Skein.md) | a dense 1.25 octave stack: long silky ribbons instead of fibre | `lacunarity 1.25, octaves 9, baseFreq 1.6, warpGain 1` |
+| **Rake** | [E62](./E62-Rake.md) | a narrow flared funnel with depth driven hard into the phase: combed golden rays | `radius 0.9, flare 0.28, wander 0, coil 0, drift 2.4, exposure 0.0035, looseness 4` |
+
+*Snarl* was called *Corona* while it was only a row. It could not keep that name as a catalogue entry: [E31 Corona](./E31-Corona.md) has shipped since long before it and is the reel's opening shot. The new name pairs it against *Skein* on purpose — thread wound in order against the same thread lost.
 
 ## Cost
 
@@ -68,6 +80,8 @@ Dawn/Metal, whole graph, alternating short runs at two frame counts and keeping 
 | E57 Forest | 7.38 ms (recorded 6.6) | 3.67 ms (recorded 3.3) |
 | **E58 Alembic** (this file) | **14.47 ms** | **8.38 ms** |
 | E55 Reactor | 32.49 ms (recorded 24.3) | 13.5 ms (T1156's, not re-measured) |
+
+**T1171 re-measured the family** on a busier machine and could not calibrate both references, so it certified its block from the inside instead — E58, E59, E60 and E62 all march 72 steps at 6 octaves and therefore *must* price the same, and their spread is the block's error bar. In that block E58 read 6.36 at 720p and 17.17 at 1080p, with the four agreeing to 11% and 5.4%: **the four six-octave looks are one price**, and only *Skein* costs more, by the octave ratio (1.51× and 1.47×, where 9⁄6 is 1.50). Each new file's doc carries the table.
 
 Read it with its own error bar. At 720p E13 lands on its recorded value to 0.4%, so that column is trustworthy. At 1080p E13 and E57 read 10% and 12% over — a *consistent* offset, which is a lightly loaded machine rather than a broken measurement — so 14.47 is about 10% high as well and the honest figure is near 13 ms. The **ratios** are the robust part: 3.0× E13 and 2.3× E57 at 720p, 3.7× and 2.0× at 1080p. This file sits between Forest and Reactor at both resolutions.
 
