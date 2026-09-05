@@ -197,6 +197,15 @@ export function createHeadlessMcpServer(options: HeadlessMcpServerOptions): Head
         guidance:
           "Restart this MCP server with the `--grant-export` flag on its own invocation (T334); nothing on the wire can grant it.",
       },
+      // T1220: the same flag issues both here, so the same sentence is the truthful route.
+      // A reader who sees this on a tile refusal and `export` on a `read_points` refusal is
+      // being told the accurate thing: one flag, two capabilities, and the smaller one is
+      // also the only one a paired browser tab can ever hold.
+      previewSnapshot: {
+        obtainable: true,
+        guidance:
+          "Restart this MCP server with the `--grant-export` flag on its own invocation, which issues the tile-bounded snapshot capability alongside export (T334, T1220); nothing on the wire can grant it.",
+      },
     },
   });
 
@@ -241,8 +250,16 @@ export function createHeadlessMcpServer(options: HeadlessMcpServerOptions): Head
   // the catalogue, "pixels leave the process" can mean a camera. The authority model
   // is intact either way: the grant lives in the bus store, nothing on the wire can
   // write one, and the MCP host's own approval flow gates tool USE, not our grants.
+  //
+  // T1220: the flag issues BOTH classes. `previewSnapshot` is the tile-bounded half that
+  // `render_preview` and `describe_output` now need, and a person who typed a flag allowing
+  // full-fidelity pixels has already allowed a 384px thumbnail — so withholding it would be
+  // a wall in front of nothing. The implication runs one way only: `previewSnapshot` never
+  // implies `export`, and this composition root is the only party that may decide either.
   if (options.grantExport === true) {
-    bus.grants.grant({ kind: "agent", id: "mcp", label: "MCP client" }, "export");
+    const mcpActor = { kind: "agent", id: "mcp", label: "MCP client" } as const;
+    bus.grants.grant(mcpActor, "export");
+    bus.grants.grant(mcpActor, "previewSnapshot");
   }
 
   /**
@@ -286,6 +303,9 @@ export function createHeadlessMcpServer(options: HeadlessMcpServerOptions): Head
       ? null
       : createBridgeHost({
           headless: surface,
+          // T1220: the operator's out-of-band consent, carried to whichever tab the
+          // operator then pairs. The bridge only reports it; the page composes it.
+          operatorGrantedSnapshots: options.grantExport === true,
           ...(doors === null ? {} : { devices: doors.devices, laser: doors.laser, vision: doors.vision }),
           ...(options.bridge.port === undefined ? {} : { port: options.bridge.port }),
           ...(options.bridge.handoffDir === undefined ? {} : { handoffDir: options.bridge.handoffDir }),

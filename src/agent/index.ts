@@ -26,7 +26,12 @@ export type {
   ProposalStatus,
 } from "./presence.ts";
 
-export { TOOL_CAPABILITIES, capabilitiesForTool } from "./capabilities.ts";
+export {
+  TOOL_CAPABILITIES,
+  SNAPSHOT_MAX_SIZE,
+  applyBridgeOperatorConsent,
+  capabilitiesForTool,
+} from "./capabilities.ts";
 
 export { DEFAULT_OUTPUT_PORT, outputKey } from "./types.ts";
 export type {

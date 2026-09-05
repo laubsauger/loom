@@ -12,6 +12,7 @@ import { createDomainBus } from "../domain/commands/index.ts";
 import { createNodeRegistry } from "../nodes/registry/registry.ts";
 import { allNodeDefinitions } from "../nodes/definitions/index.ts";
 import { createAgentToolSurface } from "../agent/surface.ts";
+import { applyBridgeOperatorConsent, SNAPSHOT_MAX_SIZE } from "../agent/capabilities.ts";
 import { createBridgeClient } from "./bridge-client.ts";
 import { createMcpTransportRegistry } from "./connections.ts";
 import { createHeadlessMcpServer } from "./serve.ts";
@@ -88,21 +89,34 @@ async function untilPageAttached(
   );
 }
 
+const PAGE_ACTOR = { kind: "agent", id: "page", label: "Page" } as const;
+
 /** A real Loom document with a real bus and the real catalogue — the "page". */
-function pageHarness(extras: { ports?: Parameters<typeof createAgentToolSurface>[0]["ports"] } = {}) {
+function pageHarness(
+  extras: {
+    ports?: Parameters<typeof createAgentToolSurface>[0]["ports"];
+    /**
+     * T1220: hold NOTHING up front and let the attach decide, the way the product does.
+     * The default keeps every test written before T1220 asserting what it asserted.
+     */
+    readonly grantsFromAttach?: boolean;
+  } = {},
+) {
   const store = createGraphStore();
   const registry = createNodeRegistry(allNodeDefinitions).view();
   const { bus } = createDomainBus({ store, registry });
   const surface = createAgentToolSurface({
     bus,
-    actor: { kind: "agent", id: "page", label: "Page" },
+    actor: PAGE_ACTOR,
     projectId: "page-project",
     ...(extras.ports === undefined ? {} : { ports: extras.ports }),
   });
   // The tab grants what the tab grants: pixels leaving the page are the page's decision,
-  // the way serve.ts's --grant-export is the operator's (§V38).
-  bus.grants.grant({ kind: "agent", id: "page", label: "Page" }, "export");
-  return { store, surface };
+  // the way serve.ts's --grant-export is the operator's (§V38). A tab exercising T1220's
+  // SPLIT starts cold instead, and takes whatever the attach hands it — which for the
+  // snapshot class is the product's own path and for `export` is nothing, ever.
+  if (extras.grantsFromAttach !== true) bus.grants.grant(PAGE_ACTOR, "export");
+  return { store, surface, bus };
 }
 
 interface Harness {
@@ -141,12 +155,18 @@ interface BridgedServerOptions {
   readonly proxyRetryMs?: number;
   /** A server that is expected to LOSE does not wait for a bound port. */
   readonly expectBound?: boolean;
+  /**
+   * T1220: whether THIS helper's invocation carried `--grant-export`, which is the
+   * out-of-band human consent the attach then reports to whichever tab pairs with it.
+   */
+  readonly grantExport?: boolean;
 }
 
 async function bridgedServer(options: BridgedServerOptions = {}): Promise<Harness> {
   const sent: Array<Record<string, unknown>> = [];
   const server = createHeadlessMcpServer({
     send: (message) => sent.push(message),
+    ...(options.grantExport === undefined ? {} : { grantExport: options.grantExport }),
     bridge: {
       // Port 0: the OS picks, so parallel suites never collide on the shared constant.
       port: options.port ?? 0,
@@ -200,15 +220,30 @@ function pairingCodeOf(harness: Harness): string {
  */
 async function attachPage(
   harness: Harness,
-  options: { code?: string; ports?: Parameters<typeof createAgentToolSurface>[0]["ports"] } = {},
+  options: {
+    code?: string;
+    ports?: Parameters<typeof createAgentToolSurface>[0]["ports"];
+    /** T1220: build a cold tab and let the attach hand it whatever it hands it. */
+    readonly grantsFromAttach?: boolean;
+  } = {},
 ) {
-  const page = pageHarness(options.ports === undefined ? {} : { ports: options.ports });
+  const page = pageHarness({
+    ...(options.ports === undefined ? {} : { ports: options.ports }),
+    ...(options.grantsFromAttach === undefined ? {} : { grantsFromAttach: options.grantsFromAttach }),
+  });
   const registry = createMcpTransportRegistry();
   const client = createBridgeClient({
     surface: () => page.surface,
     registry,
     port: harness.port,
     client: "vitest-page",
+    // The PRODUCT's own composition-root call (T1220): `use-mcp-transports.ts` passes this
+    // exact function, so what the transport reports lands in the bus-owned grant store by
+    // the one path the app uses. A test that granted directly here would be asserting a
+    // fixture; this asserts the seam.
+    onOperatorConsent: (consent) => {
+      applyBridgeOperatorConsent(page.bus.grants, PAGE_ACTOR, consent);
+    },
   });
   cleanups.push(() => {
     client.disconnect();
@@ -392,7 +427,10 @@ describe("the idle bridge row is a signpost (T533, §V338)", () => {
 
 describe("bridge union (V432, T451)", () => {
   it("a page-only port answers a stdio call: render_preview runs the TAB's exporter", async () => {
-    const harness = await bridgedServer();
+    // T1220: `render_preview` is gated on `previewSnapshot`, which a tab holds only while
+    // attached to a helper whose operator typed the flag — so the union this test is about
+    // now runs over the real consent path as well as the real socket.
+    const harness = await bridgedServer({ grantExport: true });
     // The page brings what only a tab has: a preview read source. Width 7 is the marker
     // that THIS exporter answered, not any other surface's.
     const page = await attachPage(harness, {
@@ -444,6 +482,176 @@ describe("bridge union (V432, T451)", () => {
     expect(payload.status).toBe("ok");
     expect(payload.data?.width).toBe(7);
     expect(payload.bridge?.["attached"]).toBe(true);
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════════════
+ * T1220 — AN ATTACHED TAB CAN BE SEEN, AND STILL CANNOT BE READ OUT
+ * ═══════════════════════════════════════════════════════════════════════════════════════
+ *
+ * MEASURED, and the diagnosis is closed: the owner started the helper with
+ * `--grant-export` exactly as the README says, attached his tab, and `read_points` came
+ * back `capability.unobtainable` with `bridge.attached: true`. The flag grants `export` in
+ * the SERVER's own bus store, for the server's own headless document; the attached tab is
+ * a different bus, and nothing on the wire may write a grant (§V38). So the one mode he
+ * actually wanted — an agent driving the document he is looking at — was the one mode
+ * where the pixel tools could not work.
+ *
+ * His reframing is what these tests encode: *"in the end what we want is to be able to
+ * pass out SNAPSHOTS of different canvases / node outputs."* That is not `export`. A tile
+ * of a named output, at the size the tab already draws it, is a smaller act than
+ * full-fidelity pixels of arbitrary content — so it is a smaller capability, composed from
+ * two consents a PERSON gave outside the page (the flag on the invocation, the pairing code
+ * typed into the tab) and never from anything the page or the wire decided for itself.
+ *
+ * Over a real socket and real JSON-RPC, because §V382 is exactly the trap here: a stubbed
+ * transport would assert that the client calls the callback the test handed it, and would
+ * stay green if the `attached` frame never carried the flag at all.
+ *
+ * The NEGATIVE is the assertion that matters most. The failure mode of splitting a
+ * capability is that the split quietly becomes a widening, and no positive test can see
+ * that happen.
+ */
+describe("preview snapshots from an attached tab (T1220, §V38, §V382)", () => {
+  /**
+   * The two ports only a TAB has. The exporter honours `maxSize`, so the tool's clamp is
+   * what bounds the tile; the points port is present and REJECTS, so `read_points` is
+   * refused by the capability gate rather than reported unavailable for want of a port —
+   * availability is checked first, and a missing port would make the negative below pass
+   * for the wrong reason.
+   */
+  const tabPorts = {
+    preview: {
+      renderPreview: async ({ ref, maxSize }: { ref: unknown; maxSize: number }) => ({
+        ref,
+        width: maxSize,
+        height: maxSize,
+        bytes: new Uint8Array([1, 2, 3]),
+      }),
+    },
+    points: {
+      read: () => Promise.reject(new Error("read_points ran in the tab without export")),
+    },
+  } as never;
+
+  it("hands a cold tab the snapshot capability — and nothing else — when the operator typed the flag", async () => {
+    const harness = await bridgedServer({ grantExport: true });
+    const page = await attachPage(harness, { grantsFromAttach: true, ports: tabPorts });
+    await untilPageAttached(page.registry, "the page to attach");
+
+    // The grant is in the BUS-OWNED store, which is the only authority §V38 recognises —
+    // and it is the small class alone. `export` was never in the tab and is not now.
+    expect(page.bus.grants.list(PAGE_ACTOR).map((grant) => grant.capability)).toEqual([
+      "previewSnapshot",
+    ]);
+  });
+
+  it("a stdio agent SEES the attached tab, bounded to the tile size, and still cannot read it out", async () => {
+    const harness = await bridgedServer({ grantExport: true });
+    const page = await attachPage(harness, { grantsFromAttach: true, ports: tabPorts });
+    await untilPageAttached(page.registry, "the page to attach");
+
+    // A node in the PAGE's document — the headless twin knows nothing of it.
+    await harness.request("tools/call", { name: "add_node", arguments: { type: "solid" } }, 40);
+    const nodeId = Object.keys(page.store.view.getGraph().nodes)[0] ?? "";
+    expect(nodeId).not.toBe("");
+
+    // THE POSITIVE: an agent on the stdio pipe asks for a full frame of the live document
+    // and gets EYES — a tile, at the bound, of the thing the owner is looking at.
+    const seen = await harness.request(
+      "tools/call",
+      { name: "render_preview", arguments: { nodeId, maxSize: 2048 } },
+      41,
+    );
+    const snapshot = JSON.parse(
+      (seen.result?.["content"] as Array<{ type: string; text: string }>).find(
+        (entry) => entry.type === "text",
+      )?.text ?? "{}",
+    ) as {
+      status: string;
+      data?: { width?: number; base64?: string; snapshotBounded?: true };
+      bridge?: Record<string, unknown>;
+    };
+    expect(snapshot.status).toBe("ok");
+    expect(snapshot.bridge?.["attached"]).toBe(true);
+    // The bound is enforced against the CAPABILITY, so the 2048 the caller asked for is not
+    // the number that reached the tab's exporter.
+    expect(snapshot.data?.width).toBe(SNAPSHOT_MAX_SIZE);
+    expect(snapshot.data?.snapshotBounded).toBe(true);
+    // The pixels reach the model as MCP image content — `toolResultContent` lifts the
+    // base64 out of the JSON so a client that renders images shows the tile inline. This is
+    // the byte-level form of "the agent can see the owner's document".
+    const image = (seen.result?.["content"] as Array<{ type: string; data?: string }>).find(
+      (entry) => entry.type === "image",
+    );
+    expect(image?.data).toBe("AQID");
+
+    // THE NEGATIVE, and the whole reason to trust the positive: `export` did not move. The
+    // same agent, the same attachment, the same second — and the full-fidelity readback is
+    // still refused, by name.
+    const readOut = await harness.request(
+      "tools/call",
+      { name: "read_points", arguments: { nodeId } },
+      42,
+    );
+    const refusal = JSON.parse(
+      (readOut.result?.["content"] as Array<{ type: string; text: string }>).find(
+        (entry) => entry.type === "text",
+      )?.text ?? "{}",
+    ) as { status: string; diagnostics: Array<{ code: string; message: string }> };
+    expect(refusal.status).toBe("denied");
+    expect(refusal.diagnostics[0]?.message).toContain("export");
+    // The refusal came from the TAB, not from the headless twin — which does hold `export`
+    // on this server, and would have answered. Without this the negative could pass while
+    // reading a document nobody can see (§V338).
+    expect(
+      (
+        JSON.parse(
+          (readOut.result?.["content"] as Array<{ type: string; text: string }>).find(
+            (entry) => entry.type === "text",
+          )?.text ?? "{}",
+        ) as { bridge?: Record<string, unknown> }
+      ).bridge?.["attached"],
+    ).toBe(true);
+    expect(page.bus.grants.has(PAGE_ACTOR, "export")).toBe(false);
+  });
+
+  it("hands a tab NOTHING when the operator did not type the flag — pairing alone grants no pixels", async () => {
+    // Default: no `--grant-export` on this helper's invocation, which is the state the
+    // owner's second consent cannot substitute for. Two consents, and one is missing.
+    const harness = await bridgedServer();
+    const page = await attachPage(harness, { grantsFromAttach: true, ports: tabPorts });
+    await untilPageAttached(page.registry, "the page to attach");
+
+    expect(page.bus.grants.list(PAGE_ACTOR)).toEqual([]);
+
+    await harness.request("tools/call", { name: "add_node", arguments: { type: "solid" } }, 50);
+    const nodeId = Object.keys(page.store.view.getGraph().nodes)[0] ?? "";
+    const seen = await harness.request(
+      "tools/call",
+      { name: "render_preview", arguments: { nodeId } },
+      51,
+    );
+    const payload = JSON.parse(
+      (seen.result?.["content"] as Array<{ type: string; text: string }>).find(
+        (entry) => entry.type === "text",
+      )?.text ?? "{}",
+    ) as { status: string };
+    expect(payload.status).toBe("denied");
+  });
+
+  it("takes the capability back when the attachment ends", async () => {
+    const harness = await bridgedServer({ grantExport: true });
+    const page = await attachPage(harness, { grantsFromAttach: true, ports: tabPorts });
+    await untilPageAttached(page.registry, "the page to attach");
+    expect(page.bus.grants.has(PAGE_ACTOR, "previewSnapshot")).toBe(true);
+
+    // The human presses Disconnect. A capability that outlived the consent that produced it
+    // would be a page holding pixels rights with nothing on the other end of them.
+    page.client.disconnect({ forget: true });
+
+    expect(page.bus.grants.has(PAGE_ACTOR, "previewSnapshot")).toBe(false);
   });
 });
 

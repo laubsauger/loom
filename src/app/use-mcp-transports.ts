@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import type { AgentToolSurface } from "@agent/index.ts";
+import { applyBridgeOperatorConsent } from "@agent/index.ts";
 import { toolInputSchema } from "@agent/surface.ts";
+import type { LoomBus } from "@domain/commands/index.ts";
 import type { McpToolDetail } from "@editor/agent/index.ts";
 import { createMcpTransportRegistry } from "../mcp/connections.ts";
 import type { McpTransportStatus } from "../mcp/connections.ts";
 import { registerWebMcp } from "../mcp/webmcp.ts";
 import { createBridgeClient, type BridgeClient } from "../mcp/bridge-client.ts";
+import { AGENT_ACTOR } from "./use-agent-surface.ts";
 import { zodToJsonSchema } from "../mcp/json-schema.ts";
 
 /**
@@ -35,7 +38,7 @@ export interface McpTransportsView {
   readonly describeTool: (name: string) => McpToolDetail | null;
 }
 
-export function useMcpTransports(surface: AgentToolSurface): McpTransportsView {
+export function useMcpTransports(surface: AgentToolSurface, bus: LoomBus): McpTransportsView {
   const registry = useMemo(() => createMcpTransportRegistry(), []);
 
   /**
@@ -50,6 +53,15 @@ export function useMcpTransports(surface: AgentToolSurface): McpTransportsView {
    */
   const surfaceRef = useRef(surface);
   surfaceRef.current = surface;
+
+  /**
+   * The bus is read through a ref for the SAME reason the surface is (B76): a new project
+   * mints a new runtime and a new bus, and an effect keyed on it would tear the socket down
+   * mid-session. The grant is written to whichever bus is live when the consent arrives,
+   * which is the one the tool call will be checked against (T1220).
+   */
+  const busRef = useRef(bus);
+  busRef.current = bus;
 
   // Publication is a side effect with a report, not a render value — registered ONCE per
   // registry, against the ref. B93 measured what keying this on `surface` did: the first
@@ -79,6 +91,27 @@ export function useMcpTransports(surface: AgentToolSurface): McpTransportsView {
       surface: () => surfaceRef.current,
       registry,
       client: globalThis.location?.host ?? "a Loom tab",
+      /*
+       * T1220 — THE PAGE'S ONE GRANT, ISSUED AT THE COMPOSITION ROOT.
+       *
+       * This is the seam that closes the reachability gap the owner hit live: the helper's
+       * `--grant-export` granted `export` in the HELPER's own bus, for its own headless
+       * document, and an attached tab is a different bus — so an agent driving the document
+       * he was looking at read `grantedCapabilities: []` and could not see a thing. The two
+       * human consents (the flag on the invocation, the pairing code typed into this tab)
+       * are composed here, into the SMALLER capability only: `previewSnapshot`, never
+       * `export`. The whole authority argument, including what it does not cover, is
+       * written above `applyBridgeOperatorConsent` — read that before changing this line.
+       *
+       * The transport reports; this decides; `bus.grants` records. Nothing on the wire
+       * writes a grant (§V38), and a tool still cannot grant itself anything.
+       */
+      onOperatorConsent: (consent) => {
+        applyBridgeOperatorConsent(busRef.current.grants, AGENT_ACTOR, consent);
+        // The roster's `ungranted`/`unobtainable` fields just moved, and `tools/list` is
+        // what an attached model reads them from (§V338, T1097).
+        bridgeRef.current?.toolsChanged();
+      },
     });
     bridgeRef.current = bridge;
     return () => {

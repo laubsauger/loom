@@ -1265,7 +1265,7 @@ export function App({
   );
   // T397/§V338: publishing the surface to a transport AND reporting what that publication
   // found. The row this produces is the app's only answer to "is an agent attached?".
-  const mcpTransports = useMcpTransports(agentSurface);
+  const mcpTransports = useMcpTransports(agentSurface, runtime.bus);
 
   /** The installed catalogue, for the library panes and the help panel's node reference. */
   const definitions = useMemo(() => [...runtime.registry.list()], [runtime]);

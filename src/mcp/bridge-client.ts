@@ -107,6 +107,20 @@ export interface BridgeClientOptions {
    * Default on — that is the whole feature. Off is for a test that wants a cold client.
    */
   readonly autoReconnect?: boolean;
+  /**
+   * WHAT THE HELPER'S OPERATOR CONSENTED TO, REPORTED — never applied here (T1220, §V192).
+   *
+   * Called with `{ snapshots }` when the bridge confirms the attach, and with `null` on
+   * every detach, refusal and teardown. This module is transport: it moves bytes and
+   * decides nothing, so it does not touch `bus.grants` — the composition root does, through
+   * `applyBridgeOperatorConsent`, which is where the authority argument is written down. A
+   * transport that wrote grants would be the thing §V38 forbids wearing a different hat.
+   *
+   * `null` on detach rather than "leave what was there": the capability exists because a
+   * paired helper is attached, so it goes when the attachment does — a closed helper takes
+   * it with it, and a page that never attached never had it.
+   */
+  readonly onOperatorConsent?: (consent: { readonly snapshots: boolean } | null) => void;
 }
 
 export interface BridgeClient {
@@ -186,6 +200,17 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
     socket?.send(JSON.stringify(message));
   };
 
+  /**
+   * T1220: the operator's consent, forwarded — and withdrawn on EVERY path that ends the
+   * attachment (confirmed detach, refusal, socket close, teardown). Called with `null`
+   * even when nothing was ever granted, because a revoke of something absent is a no-op
+   * and a missed revoke is a capability outliving the consent that produced it. Cheap in
+   * one direction, wrong in the other.
+   */
+  const reportConsent = (consent: { readonly snapshots: boolean } | null): void => {
+    options.onOperatorConsent?.(consent);
+  };
+
   /** Answers one bridge request. Everything else on the wire is ignored, deliberately. */
   const handle = (message: Record<string, unknown>): void => {
     switch (message["type"]) {
@@ -223,6 +248,17 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
         // Remembered only once the bridge has CONFIRMED it, so a wrong code is never stored
         // and never replayed on the next reload (T925).
         if (attempting !== null) memory.write(attempting);
+        /*
+         * T1220 — THE SECOND CONSENT LANDS HERE, and only here.
+         *
+         * Reaching this line means the bridge accepted a code A HUMAN typed into this tab,
+         * so this is the moment the page-side half of the consent is proved. `snapshots`
+         * carries the other half — that the same human typed `--grant-export` on the
+         * helper's own invocation. Neither alone does anything: no flag, no capability;
+         * no confirmed pairing, this case never runs. What the composition root does with
+         * the pair is `applyBridgeOperatorConsent`'s business, not this transport's.
+         */
+        reportConsent({ snapshots: message["snapshots"] === true });
         publish(
           "connected",
           "Attached. An agent on your MCP client is driving THIS document — every tool call it makes lands on the graph you are looking at.",
@@ -255,6 +291,7 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
           wanted = false;
           attached = false;
           attempting = null;
+          reportConsent(null);
           const live = socket;
           socket = null;
           if (live !== null) {
@@ -269,6 +306,7 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
         }
         wanted = false;
         attached = false;
+        reportConsent(null);
         // A refused code is forgotten, and NOT retried. Codes are minted per process, so a
         // stale one after the server respawned is the EXPECTED case, not an exceptional one
         // — and a retry loop would hammer a bridge that can never accept it (T925).
@@ -339,6 +377,9 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
         if (socket !== live) return;
         socket = null;
         attempting = null;
+        // Before the `wanted` early-out: a socket that dies ends the attachment whether or
+        // not anybody wanted it to, and the capability must not survive it (T1220).
+        reportConsent(null);
         if (!wanted) return;
         wanted = false;
         // §V288: a connection that dies says so. Silence would leave the panel reading
@@ -362,6 +403,10 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
       attached = false;
       attempting = null;
       attemptWasRemembered = false;
+      // Unconditionally, and NOT only under `forget`: a component teardown ends the
+      // attachment too, and a grant left behind by an unmounted transport would be a
+      // capability with nothing on the other end of it (T1220).
+      reportConsent(null);
       // Explicit revocation is explicit: a human pressing Disconnect must not be silently
       // re-attached by the next reload. A component teardown passes nothing (T925).
       if (disconnectOptions?.forget === true) memory.forget();

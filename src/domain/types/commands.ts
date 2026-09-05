@@ -36,7 +36,40 @@ export type CapabilityClass =
    * The human actor holds this by construction — you control your own camera — so it
    * costs a person nothing and is the one thing an agent must be given.
    */
-  | "viewportControl";
+  | "viewportControl"
+  /**
+   * SEEING A NAMED OUTPUT AT THE SIZE IT IS ALREADY ON SCREEN (T1220, §V38).
+   *
+   * `export` and this are two different acts that were gated as one, and the owner is the
+   * one who separated them: *"in the end what we want is to be able to pass out SNAPSHOTS
+   * of different canvases / node outputs."* Export means FULL-FIDELITY pixels of ARBITRARY
+   * content leaving the process — the thing that can be a camera frame at capture
+   * resolution, and is rightly guarded. A preview snapshot is a SMALL TILE OF A NAMED
+   * OUTPUT, at the size the user is already looking at, in a document the user paired.
+   * Same seam, different risk. Gating them as one class did not make the gate strict, it
+   * made it the WRONG SHAPE: the mode the owner actually wants — an agent driving the
+   * document he is watching — was the one mode where an agent could not see anything at
+   * all, and what an agent needs to iterate on a look is not fidelity, it is EYES.
+   *
+   * ## The bound is the capability, and it is enforced in code
+   *
+   * `SNAPSHOT_MAX_SIZE` in `@agent/capabilities.ts` is what makes this safe enough to
+   * grant, so it is enforced where the pixels are produced (`tools/preview.ts` clamps the
+   * request AND refuses an oversized answer) rather than promised in a docstring. An actor
+   * holding this and not `export` cannot obtain a full-resolution frame by any input.
+   *
+   * ## The residual, named rather than waved away
+   *
+   * A webcam node's preview tile is still a camera frame. This class ALLOWS that and says
+   * so — the mitigations are that it is the pixels the user is already seeing, at the size
+   * they are already displayed, in a document the user paired — which is bounded, not
+   * zero. Refusing snapshots whose upstream reaches a capture node was considered and
+   * rejected: it would have to be a node-type denylist (convention, staleable) guarding a
+   * tile the user has on screen anyway, while the honest full-fidelity case it is imagined
+   * to stop — `read_points`, an unbounded readback, a full-res `maxSize` — is what
+   * `export` still refuses. See `@agent/capabilities.ts` for the whole argument.
+   */
+  | "previewSnapshot";
 
 export interface CapabilityGrant {
   capability: CapabilityClass;

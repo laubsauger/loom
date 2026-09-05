@@ -162,6 +162,15 @@ given it reports that it can compile and validate but never see a frame. **A hel
 without it refuses pixels for every client that attaches to it**, so pass it here rather than
 discovering it later.
 
+Two of those three also work **against the tab you are looking at**, and they are the two you
+want while iterating on a look: once you pair a tab (below), `render_preview` and
+`describe_output` answer from the live document, at preview-tile size (384px on the longest
+edge). That is a smaller capability than export — a named output at the size already on your
+screen — and it needs **both** halves of the consent: the flag above, typed by you outside the
+page, and the pairing code, typed by you into the page. `read_points` and full-resolution
+readback stay `export`, which no browser tab can hold; they answer from the helper's own
+headless document, and from the app you use the export and record controls instead (T1220).
+
 A second instance that finds the port already taken **stops being a server and becomes a
 client of the incumbent**, forwarding `tools/list` and `tools/call` over loopback — so two
 Claude processes drive the same live tab rather than racing for it. The proxy authenticates

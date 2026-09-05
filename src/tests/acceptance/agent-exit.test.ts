@@ -357,12 +357,14 @@ describe("T62 Phase 1 agent exit — compile, preview, timings", () => {
       const compiledPlan = await backend.compile(built);
       backend.render(compiledPlan, frameInputs(0, pocSettings().outputResolution.width));
 
-      // §V38: rendering an image out of the app is the `export` capability class, and a
-      // tool call never grants it. Without the grant the answer is `denied`, not a PNG.
+      // §V38: rendering an image out of the app is a capability class, and a tool call
+      // never grants it. Without the grant the answer is `denied`, not a PNG. T1220 split
+      // the class this tool checks — a 64px tile is `previewSnapshot`, not `export` — and
+      // the property this acceptance test is about is unchanged: no grant, no pixels.
       const denied = await surface.callTool("render_preview", { nodeId: gradeId, maxSize: 64 });
       expect(denied.status).toBe("denied");
 
-      bus.grants.grant(AGENT, "export");
+      bus.grants.grant(AGENT, "previewSnapshot");
       const rendered = await surface.callTool("render_preview", { nodeId: gradeId, maxSize: 64 });
       const image = expectOk(rendered) as {
         width: number;

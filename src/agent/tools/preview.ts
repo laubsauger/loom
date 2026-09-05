@@ -1,5 +1,6 @@
 import type { GraphDocument } from "@domain/types/graph.ts";
 
+import { SNAPSHOT_MAX_SIZE } from "../capabilities.ts";
 import { describeOutputInput, renderPreviewInput, type DescribeOutputInput, type RenderPreviewInput } from "../schemas.ts";
 import { failed, ok } from "../tool-support.ts";
 import { DEFAULT_OUTPUT_PORT, type AgentTool, type OutputRef, type OutputStatsData } from "../types.ts";
@@ -27,10 +28,17 @@ import { DEFAULT_OUTPUT_PORT, type AgentTool, type OutputRef, type OutputStatsDa
  * the playback loop. This tool holds a `PreviewExport` port (T68 supplies it) and has no
  * other way to obtain a pixel — there is no backend import in this directory.
  *
- * ## It needs the `export` grant
+ * ## It needs the `previewSnapshot` grant — and `export` for full fidelity (T1220)
  *
- * The result is pixels leaving the app for the calling model. That is the export
- * capability class doing its job, even though no file is written (§V38).
+ * The result is pixels leaving the app for the calling model, but a TILE of a named output
+ * is not the act `export` exists to guard; see `@agent/capabilities.ts` for the argument
+ * and `SNAPSHOT_MAX_SIZE` for the bound that makes it a smaller ask. The bound is enforced
+ * HERE, twice and against the actor's grants rather than against anything in the input:
+ * the requested `maxSize` is clamped for an actor that does not hold `export`, and an
+ * answer that comes back larger than the bound anyway is REFUSED rather than returned.
+ * Two checks because they fail for different reasons — the clamp is the contract with a
+ * provider that honours `maxSize`, the refusal is what happens when one does not — and a
+ * bound that only one of them enforced would be a docstring, not a bound.
  */
 
 export interface PreviewImageData {
@@ -41,6 +49,13 @@ export interface PreviewImageData {
   readonly byteLength: number;
   /** Base64 PNG. Bounded by `maxSize`; the provider may return a smaller image. */
   readonly base64: string;
+  /**
+   * T1220: the tile bound was applied to this call, because the actor holds
+   * `previewSnapshot` and not `export`. Reported rather than silent — an agent that asked
+   * for 2048 and got 384 should be told which of the two numbers it is reasoning about,
+   * and §V338's rule is that a detection is shown, not merely branched on.
+   */
+  readonly snapshotBounded?: true;
 }
 
 const DEFAULT_MAX_SIZE = 512;
@@ -74,7 +89,7 @@ export const renderPreview: AgentTool<RenderPreviewInput, PreviewImageData> = {
   kind: "read",
   inputSchema: renderPreviewInput,
   requires: { queries: ["graph.get"], ports: ["preview"] },
-  capabilities: ["export"],
+  capabilities: ["previewSnapshot"],
   mutates: false,
   async run(input, runtime) {
     const ref: OutputRef = { nodeId: input.nodeId, portId: input.portId ?? DEFAULT_OUTPUT_PORT };
@@ -127,7 +142,20 @@ export const renderPreview: AgentTool<RenderPreviewInput, PreviewImageData> = {
       });
     }
 
-    const maxSize = input.maxSize ?? DEFAULT_MAX_SIZE;
+    /*
+     * T1220 — THE TILE BOUND, READ OFF THE ACTOR'S GRANTS.
+     *
+     * `export` is the full-fidelity capability and it is unchanged: an actor holding it
+     * gets exactly the behaviour this tool has always had, up to the schema's 2048. An
+     * actor holding only `previewSnapshot` cannot reach past the tile bound by any input,
+     * because the number is not taken from the input at all — it is the min of what was
+     * asked and what the capability allows. `bus.grants` is the bus-owned store §V38 makes
+     * the sole authority; the invocation's advisory `capabilities` array is not consulted,
+     * here or anywhere.
+     */
+    const fullFidelity = runtime.bus.grants.has(runtime.invocation().actor, "export");
+    const requested = input.maxSize ?? (fullFidelity ? DEFAULT_MAX_SIZE : SNAPSHOT_MAX_SIZE);
+    const maxSize = fullFidelity ? requested : Math.min(requested, SNAPSHOT_MAX_SIZE);
     let image;
     try {
       image = await exporter.renderPreview({ ref, maxSize });
@@ -145,6 +173,28 @@ export const renderPreview: AgentTool<RenderPreviewInput, PreviewImageData> = {
       );
     }
 
+    /*
+     * The second half of the bound, and it is not belt-and-braces: `maxSize` is a REQUEST
+     * to a provider this module does not own (`PreviewExport` is injected, and the tests
+     * inject their own), so a provider that ignores it would otherwise be a way through
+     * the gate — an actor with the small capability receiving a full-resolution frame. The
+     * pixels are dropped rather than downscaled: there is no image resampler in this
+     * directory, and inventing one to salvage a provider that broke its contract would be
+     * a silent repair of a loud bug (§V469's shape).
+     */
+    if (!fullFidelity && (image.width > SNAPSHOT_MAX_SIZE || image.height > SNAPSHOT_MAX_SIZE)) {
+      return failed<PreviewImageData>(
+        "render_preview",
+        "export.snapshotOversize",
+        `A preview snapshot is bounded to ${SNAPSHOT_MAX_SIZE}px on each edge, and the render came back ${image.width}x${image.height}; the pixels were discarded rather than returned.`,
+        {
+          revision: graph.revision,
+          suggestion:
+            "This is a bug in the attached preview provider, which ignored the requested maxSize — not something a different input can fix. Full-resolution readback is the `export` capability, which this actor does not hold (T1220, §V38).",
+        },
+      );
+    }
+
     return ok<PreviewImageData>(
       "render_preview",
       {
@@ -154,6 +204,7 @@ export const renderPreview: AgentTool<RenderPreviewInput, PreviewImageData> = {
         height: image.height,
         byteLength: image.bytes.length,
         base64: encodeBase64(image.bytes),
+        ...(fullFidelity ? {} : { snapshotBounded: true as const }),
       },
       { revision: graph.revision },
     );
@@ -166,6 +217,10 @@ export const renderPreview: AgentTool<RenderPreviewInput, PreviewImageData> = {
  * "is it black? clipped? flat?" costs ~a hundred tokens here and thousands as a
  * thumbnail. Same seam and grant as render_preview (§V48, §V38) — statistics of pixels
  * are still pixel information leaving the app.
+ *
+ * T1220 moved that shared grant from `export` to `previewSnapshot`, and this tool needs no
+ * bound of its own: three numbers per channel are already smaller than the tile the
+ * capability allows, and there is no input by which they can become an image.
  */
 export const describeOutput: AgentTool<DescribeOutputInput, OutputStatsData> = {
   name: "describe_output",
@@ -175,7 +230,7 @@ export const describeOutput: AgentTool<DescribeOutputInput, OutputStatsData> = {
   kind: "read",
   inputSchema: describeOutputInput,
   requires: { queries: ["graph.get"], ports: ["preview"] },
-  capabilities: ["export"],
+  capabilities: ["previewSnapshot"],
   mutates: false,
   async run(input, runtime) {
     const port = runtime.ports.preview;

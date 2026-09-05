@@ -477,7 +477,9 @@ describe("the published list says a tool cannot be called (T1097)", () => {
     const list = await request("tools/list", {}, 2);
     const described = describedAs(list.result?.["tools"] as Array<Record<string, unknown>>, "render_preview");
     expect(described).toContain("can never be granted on this surface");
-    expect(described).toContain("export");
+    // T1220 renamed the class this tool is gated on; `export` still gates `read_points`
+    // and full-resolution readback, and is asserted as still-refused in bridge.test.ts.
+    expect(described).toContain("previewSnapshot");
 
     const call = await request("tools/call", { name: "render_preview", arguments: { nodeId: "n1" } }, 3);
     const content = (call.result?.["content"] as Array<{ text: string }>) ?? [];
@@ -521,7 +523,7 @@ describe("the published list says a tool cannot be called (T1097)", () => {
 
   it("says nothing about grants once the capability is held — the note tracks the gate", async () => {
     const { request, bus } = harness({ ports: { preview: previewPort } });
-    bus.grants.grant({ kind: "agent", id: "mcp-test", label: "MCP" }, "export");
+    bus.grants.grant({ kind: "agent", id: "mcp-test", label: "MCP" }, "previewSnapshot");
 
     const list = await request("tools/list", {}, 2);
     const described = describedAs(list.result?.["tools"] as Array<Record<string, unknown>>, "render_preview");

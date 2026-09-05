@@ -18,8 +18,14 @@ import {
   type AgentSurfaceOptions,
   type AgentToolSurface,
 } from "./surface.ts";
-import type { AgentPorts, PreviewExport, ToolResult } from "./types.ts";
-import { TOOL_CAPABILITIES, capabilitiesForTool } from "./capabilities.ts";
+import type {
+  AgentPorts,
+  PointsExport,
+  PreviewExport,
+  PreviewImageRequest,
+  ToolResult,
+} from "./types.ts";
+import { SNAPSHOT_MAX_SIZE, TOOL_CAPABILITIES, capabilitiesForTool } from "./capabilities.ts";
 
 /**
  * The agent tool surface: §V29 §V30 §V37 §V38 §V39 §V42 §V59.
@@ -54,15 +60,28 @@ interface Fixture {
   queried: string[];
 }
 
+/** What the tool ASKED the provider for. T1220 asserts the clamp on this, not on the answer. */
+const previewRequests: PreviewImageRequest[] = [];
+
 const previewPort: PreviewExport = {
-  renderPreview: ({ ref, maxSize }) =>
-    Promise.resolve({
+  renderPreview: ({ ref, maxSize }) => {
+    previewRequests.push({ ref, maxSize });
+    return Promise.resolve({
       ref,
       mimeType: "image/png" as const,
+      // Honours the request, as a real provider does — so an answer that exceeds the tile
+      // bound can only come from a provider that broke the contract, which is its own test.
       width: Math.min(maxSize, 8),
       height: Math.min(maxSize, 8),
       bytes: new Uint8Array([137, 80, 78, 71]),
-    }),
+    });
+  },
+};
+
+/** `read_points` is the tool that stays behind `export`; this is the port it needs to run. */
+const pointsPort: PointsExport = {
+  read: () =>
+    Promise.reject(new Error("read_points must never reach its port without the export grant")),
 };
 
 function createFixture(
@@ -142,6 +161,7 @@ function registerSaveCommand(bus: LoomBus): void {
 beforeEach(() => {
   fixture = createFixture();
   saved = 0;
+  previewRequests.length = 0;
 });
 
 const addSolid = async (surface = fixture.surface): Promise<ToolResult> =>
@@ -250,18 +270,105 @@ describe("tools with no command behind them report unavailable (§V39)", () => {
 });
 
 describe("capability grants are not self-grantable (§V38, §V67)", () => {
-  it("refuses render_preview without the export grant, even with the export port attached", async () => {
+  it("refuses render_preview without its grant, even with the export port attached", async () => {
     const wired = createFixture({
       ports: { preview: previewPort },
       grantRoutes: {
-        export: { obtainable: true, guidance: "Restart the server with --grant-export." },
+        previewSnapshot: { obtainable: true, guidance: "Restart the server with --grant-export." },
       },
     });
     const outcome = await wired.surface.callTool("render_preview", { nodeId: "n1" });
 
     expect(outcome.status).toBe("denied");
     expect(outcome.diagnostics[0]?.code).toBe("capability.denied");
+    expect(wired.bus.grants.has(agent, "previewSnapshot")).toBe(false);
+  });
+
+  /**
+   * T1220 — THE TWO CLASSES ARE NOT ONE, AND THIS IS THE ASSERTION THAT PROVES IT.
+   *
+   * The whole row is a split: a tile of a named output is a smaller act than full-fidelity
+   * pixels of arbitrary content, so `previewSnapshot` was carved out of `export` for the
+   * two tools that answer "what does it look like". The failure mode of that change is
+   * WIDENING — a snapshot grant that quietly carries the export tools with it — so the
+   * negative is asserted beside the positive, on one actor holding exactly one of them.
+   */
+  it("grants a snapshot without granting export, and read_points stays refused", async () => {
+    const wired = createFixture({ ports: { preview: previewPort, points: pointsPort } });
+    const added = await addSolid(wired.surface);
+    const nodeId = createdNodeId(added);
+    wired.bus.grants.grant(agent, "previewSnapshot");
+
+    const seen = await wired.surface.callTool("render_preview", { nodeId });
+    expect(seen.status).toBe("ok");
+
+    const readOut = await wired.surface.callTool("read_points", { nodeId });
+    expect(readOut.status).toBe("denied");
+    expect(readOut.diagnostics[0]?.message).toContain("export");
+    // The store is the authority, and it says the actor holds one class, not two (§V67).
     expect(wired.bus.grants.has(agent, "export")).toBe(false);
+    expect(wired.bus.grants.list(agent).map((grant) => grant.capability)).toEqual([
+      "previewSnapshot",
+    ]);
+  });
+
+  /**
+   * The bound is the capability. An actor holding the small class asks for a full frame and
+   * gets the tile — and is TOLD it was bounded, because an agent reasoning about what it can
+   * see should not be reasoning about the number it asked for (§V338).
+   */
+  it("clamps a snapshot to the tile bound however large the request, and says it did", async () => {
+    const wired = createFixture({ ports: { preview: previewPort } });
+    const added = await addSolid(wired.surface);
+    const nodeId = createdNodeId(added);
+    wired.bus.grants.grant(agent, "previewSnapshot");
+
+    const outcome = await wired.surface.callTool("render_preview", { nodeId, maxSize: 2048 });
+
+    expect(outcome.status).toBe("ok");
+    expect(previewRequests.at(-1)?.maxSize).toBe(SNAPSHOT_MAX_SIZE);
+    expect((outcome.data as { snapshotBounded?: true }).snapshotBounded).toBe(true);
+
+    // The same call by an actor that DOES hold export is unbounded, which is what makes the
+    // clamp a property of the capability rather than of the tool.
+    wired.bus.grants.grant(agent, "export");
+    const full = await wired.surface.callTool("render_preview", { nodeId, maxSize: 2048 });
+    expect(full.status).toBe("ok");
+    expect(previewRequests.at(-1)?.maxSize).toBe(2048);
+    expect((full.data as { snapshotBounded?: true }).snapshotBounded).toBeUndefined();
+  });
+
+  /**
+   * `maxSize` is a REQUEST to an injected provider, so the clamp alone is a contract, not a
+   * bound. A provider that ignores it must not become the way a snapshot-only actor obtains
+   * a full-resolution frame — the pixels are dropped, loudly.
+   */
+  it("refuses an oversized answer from a provider that ignored the bound", async () => {
+    const wired = createFixture({
+      ports: {
+        preview: {
+          renderPreview: (request) =>
+            Promise.resolve({
+              ref: request.ref,
+              mimeType: "image/png" as const,
+              width: 1920,
+              height: 1080,
+              bytes: new Uint8Array([137, 80, 78, 71]),
+            }),
+        },
+      },
+    });
+    const added = await addSolid(wired.surface);
+    const nodeId = createdNodeId(added);
+    wired.bus.grants.grant(agent, "previewSnapshot");
+
+    const outcome = await wired.surface.callTool("render_preview", { nodeId });
+
+    expect(outcome.status).toBe("error");
+    expect(outcome.diagnostics[0]?.code).toBe("export.snapshotOversize");
+    // The pixels never reach the caller — the point of the check.
+    expect(JSON.stringify(outcome)).not.toContain("iVBOR");
+    expect(outcome.data).toBeNull();
   });
 
   it("cannot grant itself by passing capabilities in the tool input", async () => {
@@ -286,8 +393,8 @@ describe("capability grants are not self-grantable (§V38, §V67)", () => {
     const added = await addSolid(wired.surface);
     const nodeId = createdNodeId(added);
 
-    // This is the confirm flow's write, not a tool's: nothing an agent calls reaches it.
-    wired.bus.grants.grant(agent, "export");
+    // This is the grant issuer's write, not a tool's: nothing an agent calls reaches it.
+    wired.bus.grants.grant(agent, "previewSnapshot");
 
     const outcome = await wired.surface.callTool("render_preview", { nodeId });
     expect(outcome.status).toBe("ok");
@@ -348,7 +455,7 @@ describe("a permanent denial says so (T1097, §V38)", () => {
     // client that cannot tell them apart burns its turns on the second one.
     expect(first?.code).toBe("capability.unobtainable");
     expect(first?.message).toContain("can never be granted on this surface");
-    expect(first?.message).toContain("export");
+    expect(first?.message).toContain("previewSnapshot");
     expect(first?.suggestion).toContain("Do not retry");
     // The old prose, verbatim: this is the sentence the finding was about.
     expect(JSON.stringify(outcome)).not.toContain("confirm flow");
@@ -358,7 +465,7 @@ describe("a permanent denial says so (T1097, §V38)", () => {
     const wired = createFixture({
       ports: { preview: previewPort },
       grantRoutes: {
-        export: {
+        previewSnapshot: {
           obtainable: true,
           guidance: "Restart this MCP server with the `--grant-export` flag.",
         },
@@ -381,12 +488,12 @@ describe("a permanent denial says so (T1097, §V38)", () => {
     // One derivation: a list that promised what the call refuses is how a model spends a
     // turn discovering a wall. The published note IS the refusal.
     expect(called.diagnostics[0]?.message).toBe(listed?.grantRefusal);
-    expect(listed?.unobtainable).toEqual(["export"]);
+    expect(listed?.unobtainable).toEqual(["previewSnapshot"]);
   });
 
   it("says nothing about grants once the capability is held", async () => {
     const wired = routeless();
-    wired.bus.grants.grant(agent, "export");
+    wired.bus.grants.grant(agent, "previewSnapshot");
     const listed = wired.surface.listTools().find((tool) => tool.name === "render_preview");
 
     expect(listed?.grantRefusal).toBeNull();

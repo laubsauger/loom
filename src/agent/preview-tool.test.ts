@@ -75,7 +75,13 @@ function createFixture(exporter?: PreviewExport): Fixture {
     ports: { preview: port },
     now: () => 1_000,
   });
+  // Both, the way the one composition root that issues either issues both (T1220): these
+  // tests are about port-scoped identity and refusal ORDER, not about the gate, so the
+  // actor here is the full-fidelity one and `render_preview` behaves as it always has.
+  // The gate itself is asserted in `surface.test.ts` and over a real socket in
+  // `mcp/bridge.test.ts`.
   bus.grants.grant(agent, "export");
+  bus.grants.grant(agent, "previewSnapshot");
   return { store, surface, requests };
 }
 

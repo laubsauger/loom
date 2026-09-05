@@ -62,7 +62,16 @@ export type BridgeToolListing = McpToolListing;
 
 /** Host → page. Requests carry an `id`; the page answers with the matching reply. */
 export type BridgeHostMessage =
-  | { readonly type: "attached"; readonly serverInfo: string }
+  /**
+   * `snapshots` reports ONE out-of-band fact: this helper's own invocation carried
+   * `--grant-export` (T1220). It is not a grant and cannot become one on the wire — §V38's
+   * boundary is that nothing arriving on a socket writes a grant, and that is untouched.
+   * It is one of TWO conditions the page composes, the other being the human typing this
+   * helper's pairing code into that tab; see `applyBridgeOperatorConsent` in
+   * `@agent/capabilities.ts` for the whole argument. Absent means the operator did not type
+   * the flag, and the tab holds nothing.
+   */
+  | { readonly type: "attached"; readonly serverInfo: string; readonly snapshots?: true }
   /**
    * `devicesOnly` marks the ONE refusal that is not a rejection of the credential (T1111).
    *

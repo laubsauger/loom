@@ -254,6 +254,15 @@ export interface BridgeHostOptions {
    * process warm for nobody.
    */
   readonly vision?: import("@devices/vision-host.ts").VisionHost;
+  /**
+   * Whether THIS helper's own invocation carried `--grant-export` (T1220).
+   *
+   * Reported to an attaching page in the `attached` frame, and nowhere else. The bridge
+   * does not act on it: it is a fact about the command line a human typed, which the page
+   * composes with the pairing code that same human typed into the tab. Default false, like
+   * the flag it mirrors — a helper started without it hands a tab nothing.
+   */
+  readonly operatorGrantedSnapshots?: boolean;
 }
 
 /**
@@ -838,7 +847,13 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
           const first = pageTools === null;
           pageTools = tools as readonly BridgeToolListing[];
           if (first) {
-            send(socket, { type: "attached", serverInfo: "loom-bridge" });
+            send(socket, {
+              type: "attached",
+              serverInfo: "loom-bridge",
+              // T1220: present only when the operator typed the flag. The page needs BOTH
+              // this and the code the human typed into it before anything is granted.
+              ...(options.operatorGrantedSnapshots === true ? { snapshots: true } : {}),
+            });
             notice({
               severity: "info",
               message: `Bridge attached to ${pageClient ?? "a Loom tab"}; tool calls now run against the live document.`,

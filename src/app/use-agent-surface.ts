@@ -11,6 +11,7 @@ import { attachStateSources } from "@domain/commands/index.ts";
 import type { Actor, CapabilityClass } from "@domain/types/commands.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { NodeId, Revision } from "@domain/types/ids.ts";
+import { MCP_HELPER_GRANT_EXPORT_COMMAND } from "../mcp/client-config.ts";
 import type { AppRuntime } from "./app-runtime.ts";
 
 /**
@@ -57,7 +58,7 @@ import type { AppRuntime } from "./app-runtime.ts";
 export const AGENT_ACTOR: Actor = { kind: "agent", id: "assistant", label: "Assistant" };
 
 /**
- * WHAT A BROWSER TAB CAN ACTUALLY GRANT — which today is nothing (T1097, §V38).
+ * WHAT A BROWSER TAB CAN ACTUALLY GRANT — one thing, since T1220 (T1097, §V38).
  *
  * The finding, live: `render_preview` was published to this page's WebMCP and bridge
  * transports while the `export` grant it checks was issuable ONLY by `--grant-export` on
@@ -72,14 +73,38 @@ export const AGENT_ACTOR: Actor = { kind: "agent", id: "assistant", label: "Assi
  * tools to a tab. Until one of those is decided, the caller is told the truth instead of
  * being told to wait for a prompt nobody sends.
  *
- * Four tools sit behind these two classes: `render_preview`, `describe_output`,
- * `read_points` (export) and `save_project` (localFile).
+ * ## T1220 built one of the two routes, and split the class it needed
+ *
+ * The owner's reframing: *"in the end what we want is to be able to pass out SNAPSHOTS of
+ * different canvases / node outputs"* — which is not `export`. So `render_preview` and
+ * `describe_output` moved to `previewSnapshot`, a tile-bounded class this tab CAN hold,
+ * issued by `applyBridgeOperatorConsent` while a bridge the human paired is attached to a
+ * helper the human started with `--grant-export`. `obtainable: true` is therefore a
+ * truthful "not yet" here, not a wall in disguise: the thing that changes the answer is a
+ * gesture the person at the keyboard can actually perform, and the guidance names it.
+ *
+ * `export` and `localFile` are unchanged and still permanent refusals in a tab, and the
+ * `export` route now says WHY as well as HOW — T1220's own finding about a refusal that
+ * "explains the MECHANISM at length and never says why". `read_points` (export) and
+ * `save_project` (localFile) are what still sit behind them.
  */
 export const PAGE_GRANT_ROUTES = {
   export: {
     obtainable: false,
     guidance:
-      "No surface in this browser tab can issue the export grant: it exists only on the out-of-process Loom MCP server, whose own invocation carried `--grant-export`, and it belongs to that server's headless document — attaching this tab to the bridge does not carry it over. For pixels from THIS document, use the app's own export and record controls, which the person at the keyboard drives.",
+      "No surface in this browser tab can issue the export grant, and the reason is not bureaucracy: this live document may contain your camera, and export means full-fidelity pixels of whatever is in it leaving the app — a webcam node at capture resolution is a camera frame. It exists only on the out-of-process Loom MCP server, whose own invocation carried `--grant-export`, and it belongs to that server's headless document; attaching this tab to the bridge does not carry it over. To SEE this document instead of reading it out, render_preview and describe_output need only the tile-bounded `previewSnapshot` capability, which a paired bridge does carry (T1220). For full-fidelity pixels, use the app's own export and record controls, which the person at the keyboard drives.",
+  },
+  /**
+   * T1220. Obtainable, and the guidance is the recipe — both halves, in order, because a
+   * caller that has one of them and not the other gets no capability and needs to know
+   * which half is missing.
+   */
+  previewSnapshot: {
+    obtainable: true,
+    guidance:
+      "A snapshot is a tile of a named output at the size this tab already draws it, and this tab CAN hold that capability — but only while it is attached to a local Loom helper whose own invocation carried the export flag, and whose pairing code the person at the keyboard typed into the agent panel's Connections section. Both are that person's to do and neither can be done from here: ask them to run " +
+      `\`${MCP_HELPER_GRANT_EXPORT_COMMAND}\`` +
+      " in the project and enter the code it prints. Note that a snapshot of a node fed by a camera is a camera frame, downscaled — bounded by the tile size, not zero.",
   },
   localFile: {
     obtainable: false,

@@ -1,4 +1,4 @@
-import { HELPER_SCRIPT } from "@devices/helper.ts";
+import { DEVICE_HELPER_COMMAND, HELPER_SCRIPT } from "@devices/helper.ts";
 
 /**
  * HOW TO POINT AN MCP CLIENT AT THIS REPO (T399, T1110).
@@ -72,6 +72,17 @@ export const LEGACY_HELPER_SCRIPT = "mcp:serve";
  * rather than silently absent.
  */
 export const MCP_GRANT_EXPORT_FLAG = "--grant-export";
+
+/**
+ * The one spelling of "start the helper so an agent may see pixels" (T1220, T1110).
+ *
+ * Composed from the two constants that already own their halves — the script name lives in
+ * `@devices/helper.ts` because one process serves both doors, the flag lives above because
+ * it is an MCP-side gate — so a rename of either moves this and every sentence that reads
+ * it. Written here rather than in the page, because `helper.test.ts` fails any file under
+ * `src/` that spells the command itself, and it is right to.
+ */
+export const MCP_HELPER_GRANT_EXPORT_COMMAND = `${DEVICE_HELPER_COMMAND} ${MCP_GRANT_EXPORT_FLAG}`;
 
 /** Stands in for the repo root when nobody has told us where it is. */
 export const REPO_PATH_PLACEHOLDER = "/absolute/path/to/this-repo";
