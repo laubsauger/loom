@@ -397,3 +397,81 @@ describe("pointTransform does not touch per-point size (T1205, on Dawn)", () => 
     expect(lit(fatter)).toBeGreaterThan(lit(control) * 3);
   }, 240_000);
 });
+
+/**
+ * Rotation, and the two things a rotation gets wrong silently: THE SIGN and THE ORDER.
+ *
+ * ⚠ THIS IS THE ONE PLACE THE FILE CANNOT ASSERT EXACTLY, AND THE REASON IS THE CONTRACT
+ * RATHER THAN THE DEVICE. WGSL specifies `sin`/`cos` to an ABSOLUTE error of 2^-11 inside
+ * [-π, π] — not a relative one — so `cos(π/2)` is permitted to come back as 4.9e-4 rather
+ * than 0, and a bit-exact expectation here would be pinning what Metal happens to do, not
+ * what the language promises. The bound below is that allowance times the fixture's offset
+ * magnitude (1.0), and nothing else: 2^-11 ≈ 4.9e-4, taken at 2e-3 for the three cosines a
+ * composed turn multiplies together. The candidate answers it has to separate differ by a
+ * FULL UNIT, so the bound excludes every wrong convention by three orders of magnitude —
+ * which is what makes a band acceptable here where §V147 would otherwise refuse one.
+ *
+ * The fixture is a single point one unit along +z from an AUTHORED pivot at the origin, so
+ * each rotation's answer is a basis vector and can be read off by hand.
+ */
+describe("pointTransform's rotation pins its sign and its order (T1205, on Dawn)", () => {
+  const AT_Z = `fn process(p: Point, ctx: PointCtx) -> Point {
+  var q = p;
+  q.position = vec3f(0.0, 0.0, 1.0);
+  return q;
+}`;
+
+  const spun = (rotate: readonly [number, number, number]): GraphDocument =>
+    ({
+      revision: 1,
+      nodes: {
+        seed: node("seed", "pointGrid", { cols: 1, rows: 1, count: 1 }),
+        cloud: node("cloud", "pointKernel", { capacity: 1, attributes: POSITION_ONLY, kernel: AT_Z }),
+        move: node("move", "pointTransform", { pivot: "point", pivotPoint: [0, 0, 0], rotate: [...rotate] }),
+        draw: node("draw", "renderPoints", { count: 1, sizePixels: 2 }),
+        out: node("out", "output", {}),
+      },
+      edges: {
+        e0: edge("e0", ["seed", "out"], ["cloud", "in"]),
+        e1: edge("e1", ["cloud", "out"], ["move", "points"]),
+        e2: edge("e2", ["move", "out"], ["draw", "points"]),
+        e3: edge("e3", ["draw", "out"], ["out", "input"]),
+      },
+      groups: {},
+    }) as never;
+
+  const TOLERANCE = 2e-3;
+
+  const turned = async (rotate: readonly [number, number, number]): Promise<[number, number, number]> => {
+    const read = await render(spun(rotate), [pointStorageId("move")]);
+    const out = read.buffers[pointStorageId("move")] as Float32Array;
+    return [at(out, 0, 0), at(out, 0, 1), at(out, 0, 2)];
+  };
+
+  const near = (got: readonly number[], want: readonly number[], what: string): void => {
+    for (let axis = 0; axis < 3; axis += 1) {
+      expect(Math.abs((got[axis] as number) - (want[axis] as number)), `${what} axis ${axis} (got ${got[axis]})`)
+        .toBeLessThan(TOLERANCE);
+    }
+  };
+
+  it("turns +z the way a right-handed X and Y turn do, and the sign is not free", async () => {
+    // +90° about X carries +z to −y. A TRANSPOSED matrix — the single most common way to
+    // build this wrong — carries it to +y instead, one full unit away.
+    near(await turned([90, 0, 0]), [0, -1, 0], "rotate x 90");
+    // +90° about Y carries +z to +x. Same trap, mirrored.
+    near(await turned([0, 90, 0]), [1, 0, 0], "rotate y 90");
+    // And the identity is genuinely inert, so the three readings above are not a fixture
+    // that answers the same way whatever it is asked.
+    near(await turned([0, 0, 0]), [0, 0, 1], "rotate none");
+  }, 240_000);
+
+  it("applies X then Y then Z, which is the order the parameter claims", async () => {
+    /* ⚑ THE CLAIM THE DOCSTRING MAKES, MADE FALSIFIABLE. X-then-Y on +z is X's answer
+       (0,−1,0), because Y leaves −y alone. The opposite convention — Z-then-Y-then-X, the
+       other half of what "Euler XYZ" is used to mean in the wild — takes +z to +x. An
+       undeclared order is exactly how two tools come to disagree, so the order is written
+       down in the parameter and pinned here. */
+    near(await turned([90, 90, 0]), [0, -1, 0], "rotate x then y");
+  }, 240_000);
+});
