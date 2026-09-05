@@ -106,6 +106,39 @@ export const soundingDocument = document(
       // colour is textureToAttribute's job by composition) and hands `draw1` a per-point
       // colour, so the cloud IS the video standing up in depth — E27's lesson, its own path.
       node("tint", "textureToAttribute", [-1120, -60], { count: 6912 }, { label: "tint1" }),
+      /*
+       * T1205 — THE CLOUD'S SIZE, WHICH UNTIL THIS NODE WAS NOT AUTHORABLE AT ALL.
+       *
+       * `cloud1.sizeX/sizeY` are pinned at exactly 2.0 by §T830 and cannot be the lever:
+       * they are a DATA CONTRACT, not a size — `tint1` reads `position.xy` back as a UV, so
+       * any other number puts the colour on the wrong box (the file's own note records what
+       * 2.6x1.95 did: the image squished into the middle columns and smeared at the edges).
+       * And `draw1.scale` is the OTHER thing that is not this: it sizes each box, so turning
+       * it up fuses the lattice into an opaque slab instead of making the cloud bigger. So
+       * the sheet was stuck at the clip square, and the only remaining lever was the camera
+       * — which cannot be it either, because `plate1` ADDS the source picture underneath at
+       * full frame, and a camera move slides the cloud against a plate that does not move.
+       *
+       * This node is the lever, and it sits AFTER `tint1` on purpose: the bridge upstream
+       * still reads a cloud on the clip square, so §T830's contract is untouched, and only
+       * what gets DRAWN grows. That is the whole argument for a transform on the data rather
+       * than a matrix on the renderer — the constraint and the framing live at different
+       * points of one chain, and a node lets them.
+       *
+       * PIVOT: CENTROID, and here it is doing real work rather than taking a default. This
+       * sheet's middle in z is wherever the depth model put it, and it MOVES — the orb
+       * swings, the relief re-reads every 2.6 s. About the ORIGIN, growing the cloud would
+       * also multiply that z, so the sheet would surge toward and away from the lens as the
+       * content changed depth. About its own centroid it grows where it stands.
+       */
+      node("xform", "pointTransform", [-1020, 140], {
+        // 1.2, and both bounds were rendered rather than reasoned. The boxes do NOT grow
+        // with the cloud — that is the point — so the lattice reads airier as it spreads;
+        // 1.3 already pushes the sheet's outer arc onto the frame edge, which is a cropped
+        // gallery card, and further still the relief reads as separate motes rather than as
+        // a surface. 1.2 fills the dead margins the shot used to carry and touches nothing.
+        scale: [1.2, 1.2, 1.2], translate: [0, 0, 0], rotate: [0, 0, 0], pivot: "centroid",
+      }, { label: "xform1" }),
 
       // ---- the look: a dense box cloud, lit, seen from off-axis so relief reads -----
       node("draw", "renderInstances", [-920, -60], {
@@ -164,7 +197,9 @@ export const soundingDocument = document(
       // the undimmed picture) to give each point the video's own colour before the draw.
       edge("e-cloud-tint", ["cloud", "out"], ["tint", "points"]),
       edge("e-pick-tint", ["pick", "out"], ["tint", "texture"]),
-      edge("e-tint-draw", ["tint", "out"], ["draw", "points"]),
+      // T1205: the transform sits between the bridge and the draw — see xform1's note.
+      edge("e-tint-xform", ["tint", "out"], ["xform", "points"]),
+      edge("e-xform-draw", ["xform", "out"], ["draw", "points"]),
       edge("e-pick-dim", ["pick", "out"], ["dim", "input"]),
       edge("e-draw-plate", ["draw", "out"], ["plate", "in1"]),
       edge("e-dim-plate", ["dim", "out"], ["plate", "in2"]),

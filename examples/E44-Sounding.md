@@ -17,7 +17,7 @@ clip1(movieFileIn) ──────────── order 1 ─┘      │ 
                                                 ▼                   ▼
 out1 ◄─ plate1(add) ◄─ dim1(level) ◄────────────┘   tint1(textureToAttribute) ◄ cloud1(GRID)
             ▲                                                │
-            └──────────── draw1(renderInstances, 6912 boxes) ◄┘
+            └── draw1(renderInstances, 6912 boxes) ◄ xform1(pointTransform, 1.2× ⌾ centroid) ◄┘
 ```
 
 ## It opens flat, and that is the design
@@ -31,6 +31,28 @@ No example had ever exercised that path. `sounding-claims.gpu.test.ts` asserts b
 it on the position buffer rather than on pixels: mid-grey in gives a cloud whose z-spread is
 under 0.01, and a left-to-right brightness ramp gives a left-to-right rise that is monotonic
 across every one of 96 columns. A screenshot cannot tell a real relief from a plausible one.
+
+## The cloud's size is not the cloud producer's size
+
+`cloud1.sizeX/sizeY` look like the lever for "make it bigger" and are not one. They are
+pinned at exactly 2.0 because `tint1` reads each point's `position.xy` back as a UV — that
+is what puts the video's own colour on the right box — so any other number lands the picture
+on the wrong points. `draw1.scale` is not the lever either: it sizes each *box*, so turning
+it up fuses the lattice into a slab instead of enlarging the cloud. And the camera cannot do
+it, because `plate1` adds the source picture underneath at full frame, so moving the eye
+slides the cloud against a backdrop that does not move.
+
+So `xform1` does it, sitting between the bridge and the draw. Upstream of it the cloud is
+still on the clip square and the UV contract holds; downstream it is 1.2× larger and fills
+the margins the shot used to waste. The boxes do not grow with it — a point transform moves
+points and leaves their size alone, which is the whole distinction from `draw1.scale` — so
+the lattice reads a little airier as it spreads.
+
+It scales about the cloud's **centroid**, and that is not a default taken for free. This
+sheet's middle in depth is wherever the model put it, and it moves as the orb swings. About
+the origin, growing the cloud would multiply that depth too and the sheet would surge toward
+and away from the lens whenever the content changed distance. About its own centroid it
+grows where it stands.
 
 ## The camera pivots, and the sway is the depth cue
 

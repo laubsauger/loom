@@ -137,10 +137,21 @@
           "portId": "inputs"
         }
       },
-      "e-tint-draw": {
-        "id": "e-tint-draw",
+      "e-tint-xform": {
+        "id": "e-tint-xform",
         "source": {
           "nodeId": "tint",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "xform",
+          "portId": "points"
+        }
+      },
+      "e-xform-draw": {
+        "id": "e-xform-draw",
+        "source": {
+          "nodeId": "xform",
           "portId": "out"
         },
         "target": {
@@ -475,6 +486,34 @@
           "y": -60
         },
         "type": "textureToAttribute"
+      },
+      "xform": {
+        "definitionVersion": 1,
+        "id": "xform",
+        "label": "xform1",
+        "parameters": {
+          "pivot": "centroid",
+          "rotate": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            1.2,
+            1.2,
+            1.2
+          ],
+          "translate": [
+            0,
+            0,
+            0
+          ]
+        },
+        "position": {
+          "x": -1020,
+          "y": 140
+        },
+        "type": "pointTransform"
       }
     },
     "revision": 1

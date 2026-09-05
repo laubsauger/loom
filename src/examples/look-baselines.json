@@ -164,9 +164,10 @@
     "phrase": 0.03713
   },
   "E44-Sounding.loom.json": {
-    "motion": 0.07293,
-    "range": 0.9743,
-    "f0max": 1
+    "motion": 0.09205,
+    "range": 0.9106,
+    "f0max": 1,
+    "cardFloor": 0.0242
   },
   "E45-Pulse.loom.json": {
     "motion": 0.01293,
