@@ -176,6 +176,48 @@ describe("T950 — every no-fire path, by mechanism", () => {
   });
 });
 
+describe("T1174 — a document with no Laser Out does no laser work at all", () => {
+  /**
+   * `sync` runs every frame, and almost every document has no laser node in it. It used
+   * to sort every node id in the graph and rebuild its type Set to arrive at an empty
+   * diagnostics list.
+   *
+   * WHAT THIS TEST PINS, exactly: the skip is BEHAVIOUR-NEUTRAL by construction — with
+   * the early return deleted, the loop below it produces the same empty list, so no test
+   * can observe the skip itself and this one does not pretend to (§V910: a test named for
+   * a property it does not measure is worse than none). What it DOES catch is the early
+   * return's one real failure mode — returning without clearing, which strands the
+   * previous frame's "ARMED and streaming" diagnostic on screen after the laser node is
+   * deleted. Red-verified: drop the `setDiagnostics` and this goes red.
+   *
+   * The case the guard could swallow — a graph that DOES contain a laserOut — is covered
+   * by the four tests around it, which all drive that graph through `sync`.
+   */
+  it("crosses nothing and strands no diagnostic when the pump is absent", async () => {
+    const { client, commands } = fakeClient();
+    const view = mount(client, fakeBackend());
+    await act(async () => {
+      await view.result.current.session.arm();
+    });
+    // A frame WITH the pump: this is the state the skip has to clean up after.
+    act(() => view.result.current.sync(graph, registry, "live-session", undefined, PLAN_PASSES));
+    await flush();
+    expect(view.result.current.diagnostics[0]?.code).toBe("laser.armed");
+    const crossedBefore = commands.length;
+
+    // The same session, now looking at a graph with no laserOut in it.
+    const noPump = {
+      ...graph,
+      nodes: { beam: graph.nodes["beam"] },
+      edges: {},
+    } as unknown as GraphDocument;
+    act(() => view.result.current.sync(noPump, registry, "live-session", undefined, PLAN_PASSES));
+    await flush();
+    expect(view.result.current.diagnostics).toEqual([]);
+    expect(commands.length).toBe(crossedBefore);
+  });
+});
+
 describe("T950 — the one firing path, and what ends it", () => {
   it("ARMED and live: the planned stream crosses, exactly as the buffers hold it", async () => {
     const { client, commands } = fakeClient();

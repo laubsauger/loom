@@ -66,6 +66,16 @@ export function laserPumpNodeTypes(): readonly string[] {
     .sort();
 }
 
+/**
+ * T1174 — the pump types as a Set, derived ONCE.
+ *
+ * `EMISSION_PUMPS` is a module constant, so `laserPumpNodeTypes()` returns the same list
+ * forever — but `sync` runs per frame and was rebuilding it, plus a `Set` around it, every
+ * time. Derived here instead of inlined so it still comes from the one registry the
+ * `emission-sites` gate walks: the set a reader sees is the set that file declares.
+ */
+const LASER_PUMP_TYPES: ReadonlySet<string> = new Set(laserPumpNodeTypes());
+
 const PARKED_Z = -1.0e6;
 
 /** The laserPath node feeding a laserOut's points input, or null when unwired. */
@@ -229,7 +239,37 @@ export function useLaserBridge(options: {
       pointRate = 30000,
       passes: ReadonlyArray<PassDescriptor> = [],
     ) => {
-      const types = new Set(laserPumpNodeTypes());
+      const types = LASER_PUMP_TYPES;
+      /*
+       * T1174 — RETURN BEFORE THE WALK WHEN THE WALK CANNOT DO ANYTHING.
+       *
+       * `osc.sync` opens with a guard of that shape (`client.current === null` — no socket,
+       * no work). This is the same idea on the condition that actually dominates here: the
+       * laser pump cannot skip on the client, because an ABSENT helper is a diagnostic it
+       * owes the user ("Laser Out needs the helper", below). What it can skip on is a
+       * document that contains no Laser Out at all.
+       *
+       * A document with no Laser Out in it still paid, every frame, for `Object.keys().sort()`
+       * over EVERY node in the graph plus a rebuilt type Set — to arrive at an empty
+       * diagnostics list. Nearly every document is that document. This is the same scan the
+       * loop below does, minus the sort and the array, and it stops at the first pump.
+       *
+       * The ordered walk still happens when a pump IS present, because it decides which
+       * armed target streams ("the first armed target", below) and that must not depend on
+       * key order. So this skips the work, never the decision.
+       */
+      let hasPump = false;
+      for (const id of Object.keys(graph.nodes)) {
+        if (types.has(graph.nodes[id]?.type ?? "")) {
+          hasPump = true;
+          break;
+        }
+      }
+      if (!hasPump) {
+        // No pump means no diagnostics — the same list the loop below would have produced.
+        setDiagnostics((prior) => (prior.length === 0 ? prior : []));
+        return;
+      }
       const next: RuntimeDiagnostic[] = [];
       for (const nodeId of Object.keys(graph.nodes).sort()) {
         const node = graph.nodes[nodeId];
