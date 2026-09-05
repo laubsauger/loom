@@ -99,6 +99,7 @@ export {
   valueLagNode,
   valueFilterNode,
   valueSwitchNode,
+  valueNormalizeNode,
   valueGraphNodeDefinitions,
 } from "./value-graph-nodes.ts";
 export { customWgslNode } from "./custom-wgsl.ts";

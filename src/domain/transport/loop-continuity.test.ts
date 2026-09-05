@@ -289,6 +289,10 @@ const CLOCK_OWNERSHIP: Readonly<Record<string, "free-running" | "timeline-anchor
   valueSlope: "delta-driven",
   valueLag: "delta-driven",
   valueFilter: "delta-driven",
+  // T1190: Normalize reads `deltaSeconds` and nothing else, and only to size its window in
+  // samples — never a clock POSITION. So a lap carries a real step and the ranked history
+  // crosses it intact, exactly as Lag's held value does. Its state is history, not phase.
+  valueNormalize: "delta-driven",
   // CLOCKLESS: reads no clock. A loop cannot reach them.
   constant: "clockless",
   mouse: "clockless",

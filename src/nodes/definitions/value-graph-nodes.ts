@@ -746,6 +746,165 @@ export const valueStepNode: NodeDefinition = {
 };
 
 /**
+ * T1190 — NORMALIZE: map a signal through ITS OWN DISTRIBUTION, not through its raw range.
+ *
+ * ## The problem, in the owner's words
+ *
+ * *"maybe we make up an interesting ranging system that doesn't just make it linear on the
+ * frequency or loudness spectrum — it gives more resolution to where there's more
+ * interesting changes, instead of wasting most of the resolution on the first 20 decibels
+ * that will almost always be used up and never give us anything."*
+ *
+ * That is a real and well-known problem and it is not a tuning failure. A level signal is
+ * distributed extremely unevenly: it occupies a narrow band around its own median almost
+ * all the time and visits its extremes almost never. Map that band LINEARLY onto a
+ * destination and the destination barely moves for 80% of the run and then lurches — so
+ * the fix people reach for is a hand-set floor and gain, which has to be re-tuned for
+ * every track and is wrong again the moment the mix changes.
+ *
+ * ## The mapping: RANK, not range
+ *
+ * The output of a channel is the fraction of its own recent history it currently sits
+ * ABOVE — its percentile. Equal amounts of TIME then map to equal amounts of RANGE, which
+ * is histogram equalisation, and it puts the resolution exactly where the signal spends
+ * its time rather than where its endpoints happen to be. There is no floor and no gain,
+ * and nothing to re-tune per track: the signal supplies its own calibration.
+ *
+ * ⚑ WHAT IT ALLOCATES BY, said plainly, because it is not quite what the ask said. It
+ * allocates by OCCUPANCY — where the signal spends its time — not by rate of change. The
+ * two coincide in practice for the case that motivated this (a level whose common band is
+ * both where it lives and where it moves), and occupancy is the standard, parameter-free
+ * transform. Allocating by |derivative| instead is a different and much less well-behaved
+ * animal: it is dominated by noise, and it makes a signal that is loud and steady rank the
+ * same as one that is quiet and steady. Wire `valueFilter` in high-pass mode ahead of this
+ * node and you get that reading anyway, on purpose rather than by accident.
+ *
+ * ## ⚠ THE TRADE, DESIGNED AROUND RATHER THAN DISCOVERED
+ *
+ * A distribution measured over history ADAPTS, so the same input maps to different outputs
+ * at different times. That is the price of needing no calibration, and it is the thing
+ * that can feel drifty. The knob is deliberately the ONE thing that decides it:
+ *
+ *   `window` — how many SECONDS of history define "typical".
+ *
+ * A FIXED SLIDING WINDOW was chosen over the alternatives (a warm-up gate, a slow
+ * adaptation rate, a one-shot measured distribution) because it is the only one whose
+ * drift is legible as a single number the user can reason about: everything older than
+ * `window` has no vote, everything newer has one vote, and there is no half-life to
+ * convert in your head. A one-shot distribution would be stabler and cannot work here —
+ * it needs a representative pass over the material BEFORE the first frame, which a live
+ * input does not have.
+ *
+ * ⚑ THE RULE THAT MAKES IT USABLE, and it follows from the mapping rather than from
+ * taste: THE WINDOW MUST BE LONGER THAN THE CYCLE YOU WANT TO SEE. A window shorter than
+ * the phrase normalises the phrase AWAY — every bar becomes "typical" as it arrives, the
+ * rank hovers near the middle, and the destination stops sweeping. Set it to a few times
+ * the longest structure you want the output to traverse.
+ *
+ * ## Warm-up needs no knob, and the reason is the MID-RANK convention
+ *
+ * The rank counts values strictly below plus HALF the ties, over the whole window
+ * INCLUDING the current sample. Three consequences, all of them load-bearing and all of
+ * them exact rather than approximate:
+ *
+ *  - the FIRST frame has one sample, itself, and reports 0.5 — the middle. So a fresh
+ *    session opens in the middle of the destination's range and converges from there,
+ *    rather than opening pinned at an end while the window fills. That is the warm-up
+ *    behaviour, and it costs no parameter;
+ *  - a CONSTANT input reports 0.5 forever, which is the honest answer for a signal that
+ *    carries no information — not 0, not 1, and not a division by zero;
+ *  - ⚑ THE OUTPUT CAN NEVER REACH 0 OR 1. With N samples in the window the extremes are
+ *    exactly `0.5/N` and `1 - 0.5/N`. **This is what answers the "don't max out" half of
+ *    the ask structurally rather than by clamping**: a destination fed from here cannot be
+ *    driven into its wall, because the drive has no wall to hand it.
+ *
+ * ## Clock (§V453/§V436): DELTA-DRIVEN, like Lag and Filter
+ *
+ * It reads `frame.deltaSeconds` and nothing else — only to size the window in samples —
+ * and never a clock POSITION. So a timeline lap carries a real step and the history
+ * crosses it intact. §V44 holds trivially: no wall clock, no timer, no rAF.
+ *
+ * A frame with no elapsed time (a paused frame, and the first frame in some harnesses)
+ * contributes no sample — there is no interval for it to occupy — but the current value is
+ * still RANKED against the history that exists, so a paused frame reports the same number
+ * as the frame before it rather than a hole.
+ *
+ * ⚠ FRAME-RATE INDEPENDENCE IS STATISTICAL, NOT BIT-EXACT. The window holds the same
+ * SECONDS at 30fps offline and 60fps live, so the distribution and therefore the output
+ * agree to within sampling noise — but the sample COUNT differs, so the ranks are not the
+ * same doubles. Stated rather than implied, because `valueLag`'s independence IS exact by
+ * derivation and a reader who knows that would assume the same here.
+ *
+ * ## Cost
+ *
+ * One ring buffer and one linear scan per channel per frame: `window / deltaSeconds`
+ * comparisons. The default is 960 samples at 60fps. It is linear in the window, so a
+ * minute of history over an eight-channel bag is ~29k comparisons a frame — still nothing,
+ * and worth knowing before someone drives `window` from a channel.
+ */
+export const valueNormalizeNode: NodeDefinition = {
+  type: "valueNormalize",
+  version: 1,
+  title: "Normalize",
+  category: "value",
+  description:
+    "Maps every channel onto 0..1 by its RANK within its own recent history — the fraction of the window it currently sits above. Equal amounts of time map to equal amounts of range, so the resolution lands where the signal actually spends it: an audio level that lives in a narrow band sweeps the whole output instead of a sliver of it, with no floor and no gain to tune per track. The output NEVER reaches 0 or 1, so what it drives cannot be driven into its wall. Window is the drift knob, and it must be LONGER than the cycle you want to see — shorter and it normalises that cycle away. DELTA-DRIVEN (§V436): it reads the frame STEP to size the window, never a clock position.",
+  tags: ["value", "normalize", "percentile", "rank", "histogram", "equalise", "autogain", "chop"],
+  inputs: [{ id: "in", label: "In", type: VALUE_PORT }],
+  outputs: [{ id: "out", label: "Out", type: VALUE_PORT }],
+  parameters: {
+    window: {
+      type: "number",
+      label: "Window",
+      description:
+        "How many seconds of history define 'typical'. THIS IS THE DRIFT KNOB: short reacts fast and re-calibrates under you, long is stable and slow to adapt. It must be longer than the cycle you want the output to traverse — a window shorter than the phrase normalises the phrase away and the output stops sweeping. The default is about two four-bar phrases at club tempo, which is the safe side of that rule.",
+      // 16 s rather than 8: a four-bar phrase at 120 bpm IS 8 s, so a default of 8 would sit
+      // exactly on the boundary of the one way to hold this node wrong. Two phrases is the
+      // first setting that cannot silently normalise away the structure it was reached for.
+      default: 16,
+      min: 0.25,
+      max: 60,
+      step: 0.01,
+      range: "floor",
+      unit: "seconds",
+    },
+  },
+  stateful: VALUE_STATEFUL,
+  valueEvaluate: ({ inputs, values, frame, state }) => {
+    // The schema's `range: "floor"` already clamps at 0.25; this floor is for the bare
+    // record a headless caller may hand in, the same tolerance `mediaTransportFrom` keeps.
+    const seconds = Math.max(0.001, num(values["window"], 16));
+    const history = (state["history"] ?? {}) as Record<string, number[]>;
+    // A frame with no elapsed time occupies no interval, so it contributes no sample —
+    // but it is still ranked below, which is what makes a paused frame report the value
+    // it had rather than a gap.
+    const capacity = frame.deltaSeconds > 0 ? Math.max(2, Math.round(seconds / frame.deltaSeconds)) : 0;
+    const out = mapChannels(inputs["in"] ?? {}, (value, name) => {
+      const samples = history[name] ?? [];
+      if (capacity > 0) {
+        samples.push(value);
+        if (samples.length > capacity) samples.splice(0, samples.length - capacity);
+      }
+      history[name] = samples;
+      // MID-RANK, over a window that includes this sample: strictly-below plus half the
+      // ties. See the docblock — this is what makes the first frame 0.5, a constant
+      // signal 0.5, and the extremes 0.5/N and 1-0.5/N rather than 0 and 1.
+      if (samples.length === 0) return 0.5;
+      let below = 0;
+      let ties = 0;
+      for (const sample of samples) {
+        if (sample < value) below += 1;
+        else if (sample === value) ties += 1;
+      }
+      return (below + ties * 0.5) / samples.length;
+    });
+    state["history"] = history;
+    return out;
+  },
+  compile: noPasses,
+};
+
+/**
  * T654 — Channel In: a named channel as a value source. TD's Select CHOP shape.
  *
  * §V615's door-opener: §V144 promised image → parameter → image and the catalogue could
@@ -806,4 +965,5 @@ export const valueGraphNodeDefinitions: readonly NodeDefinition[] = [
   valueFilterNode,
   valueSwitchNode,
   valueStepNode,
+  valueNormalizeNode,
 ];

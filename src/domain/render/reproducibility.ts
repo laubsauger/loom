@@ -319,6 +319,10 @@ export const NODE_REPRODUCIBILITY: Readonly<Record<string, Reproducibility>> = {
   valueFilter: "pure",
   valueSwitch: "pure",
   valueStep: "pure",
+  // T1190: a function of (input, deltaSeconds, held history), where the history is itself
+  // a function of the inputs already seen. Same shape as Lag — the state resets with the
+  // transport and replays deterministically, so a render reproduces frame for frame.
+  valueNormalize: "pure",
   audioPattern: "pure",
   // MEDIA FILES ARE PURE AS TYPES, and this is the split the module note argues for. A
   // bound file locked to the timeline is `f(frame)`; free run is a PARAMETER fact and

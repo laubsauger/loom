@@ -151,6 +151,10 @@ describe("core catalogue (T70, T40)", () => {
       // step. Named Step rather than Hold because TD's Hold CHOP is gated by a second
       // input and stateful; this is a pure function of a count, so a scrub reproduces.
       "valueStep",
+      // T1190: the answer to "a linear map wastes its range on the levels a signal
+      // always occupies" — each channel's PERCENTILE within its own recent history, so
+      // equal time maps to equal range. No TD analog; named for what it does.
+      "valueNormalize",
       // T414: sound as channels — the value family's third input source after Mouse
       // and the trio. Deliberately named for what it IS, not a TD analog.
       "audioIn",
@@ -279,6 +283,18 @@ describe("reset is exposed where it is declared (§V123, T216)", () => {
     valueTrigger: "the value-graph session is not mounted in the app",
     valueLag: "the value-graph session is not mounted in the app",
     valueFilter: "the value-graph session is not mounted in the app",
+    /*
+     * ⚠ T1190 — THE FOUR REASONS ABOVE ARE STALE, and this entry does not repeat them.
+     * `createValueGraphSession` HAS been mounted since B27/T305 (`use-value-graph.ts`,
+     * which exposes a `reset` the transport already calls). What is actually missing is a
+     * per-node reset COMMAND: `runtime.resetFeedback` resolves through
+     * `CompiledGraph.feedback`, whose entries are texture pairs, so a pulse pointing at it
+     * could not name one value node's state — it would be a button that lies, which is
+     * what this list exists to prevent. Correcting the other four is a change to four
+     * shipped nodes' surface and is not this task's to make; it is recorded here so the
+     * next reader does not inherit a reason that was true two hundred tasks ago.
+     */
+    valueNormalize: "no command can reach one value node's state; the feedback table holds textures",
   };
 
   it("every stateful node either fires a reset or is a listed gap", () => {
@@ -357,6 +373,7 @@ describe("T438 (§V316) — the channel publishers are DECLARED, not a category"
         "valueLag",
         "valueLimit",
         "valueMath",
+        "valueNormalize",
         "valueSlope",
         "valueStep",
         "valueSwitch",
