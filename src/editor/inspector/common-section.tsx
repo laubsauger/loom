@@ -53,7 +53,15 @@ export interface ComponentPreviewChoice {
 }
 
 export interface CommonSectionProps {
+  /** The id every EDIT below is addressed to: the id the pane's own document holds. */
   nodeId: NodeId;
+  /**
+   * T1202 — the same node's id in the COMPILED plan, when the pane is inside a component
+   * and the two differ (`instance/inner` vs `inner`). Used for the compiler diagnostics
+   * shown beside the Format chooser and for nothing else; every write still goes to
+   * `nodeId`. Absent = identical, which is every node at the root. See `Inspector`.
+   */
+  planNodeId?: NodeId;
   /**
    * T601: present only on component instances — which INNER node the instance's
    * preview shows. The default is STATED in the list (§V499: never silently first):
@@ -69,7 +77,8 @@ export interface CommonSectionProps {
   formatContext: FormatContext;
   /**
    * What the compiler resolved for this node, or `null` when the plan has no row for it
-   * (pruned, inside a component, or nothing compiled yet). Resolved once by the pane and
+   * (pruned, or nothing compiled yet — T1202 struck "inside a component" off that list,
+   * where it was never a state but a mis-spelled lookup). Resolved once by the pane and
    * passed down: it is a READ of shared state now, not a pure function two callers may
    * each evaluate.
    */
@@ -81,6 +90,7 @@ export interface CommonSectionProps {
 
 export function CommonSection({
   nodeId,
+  planNodeId,
   componentPreview,
   resolution,
   format,
@@ -174,7 +184,8 @@ export function CommonSection({
     writeBox(next);
   };
 
-  const formatDiagnostics = formatDiagnosticsFor(nodeId, diagnostics);
+  // T1202: diagnostics are the COMPILER's, so they are keyed by flattened id.
+  const formatDiagnostics = formatDiagnosticsFor(planNodeId ?? nodeId, diagnostics);
 
   return (
     <section className={styles.section} aria-label="Common">
@@ -319,10 +330,18 @@ export interface CommonReadoutProps {
 export function CommonReadout({ resolved, compact = false }: CommonReadoutProps) {
   /*
    * T1064 — THE STATE THE MIRROR COULD NOT REACH, and therefore never showed. A node that
-   * is pruned, or inside a component the pane dived into, or simply not compiled yet, has
-   * NO SIZE: nothing on the GPU is that many pixels wide. The old arithmetic always had an
-   * answer, so it printed a confident number for a texture that does not exist. Saying
-   * "no size" is the honest reading, and it is a legible one — the node is not in the plan.
+   * is pruned, or simply not compiled yet, has NO SIZE: nothing on the GPU is that many
+   * pixels wide. The old arithmetic always had an answer, so it printed a confident number
+   * for a texture that does not exist. Saying "no size" is the honest reading, and it is a
+   * legible one — the node is not in the plan.
+   *
+   * T1202/§B189 — this comment USED TO LIST "inside a component the pane dived into" as a
+   * third reason, and that sentence cost the owner an entire investigation. It was not a
+   * state; it was `side-panes.tsx` asking the flattened plan for a raw inner id and being
+   * told no. Every interior node in every component therefore read "— not in the compiled
+   * plan" while its row sat in the plan under `instance/inner`, and the excuse written
+   * here is precisely why nobody questioned the message for six months. An excuse that
+   * covers for a bug is worse than no message: state the states, and only the states.
    */
   if (resolved === null) {
     const title = "not in the compiled plan";

@@ -6,7 +6,7 @@ import type {
   PointerEvent as ReactPointerEvent,
 } from "react";
 import { DRAG_THRESHOLD_PX } from "@ui/controls/drag-math.ts";
-import { presentsPicture } from "@compiler/index.ts";
+import { flattenedNodeId, presentsPicture } from "@compiler/index.ts";
 import type { CompiledGraph } from "@compiler/index.ts";
 import type { UnknownParameter } from "@domain/project/index.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
@@ -120,6 +120,16 @@ export interface InspectorPaneProps {
   };
   graph: GraphDocument;
   compiled: CompiledGraph | null;
+  /**
+   * T1202 — where `graph` SITS, so the plan lookups below can spell an id the plan holds.
+   *
+   * The same prop `GraphPane` takes, for the same reason and under the same rule
+   * (§T1019/§T1031): the canvas and the inspector speak INNER ids, while everything keyed
+   * off the compiled/flattened document speaks PREFIXED ones. Absent or empty = the root
+   * graph, where the two spellings are identical — which is exactly why the bug was
+   * invisible from outside a component for six months.
+   */
+  componentPath?: readonly NodeId[];
   diagnostics: readonly RuntimeDiagnostic[];
   /**
    * The compile's own channel resolver (B46, §V61) — see `Inspector`'s prop. Passed
@@ -159,12 +169,18 @@ export interface InspectorPaneProps {
  * The Common section needs this to answer "inherit from input" honestly (§V50, §V51).
  * It comes from the compiled plan, which is the only thing that knows — the document
  * stores overrides, not results.
+ *
+ * T1202 — `graph` is the graph THE PANE IS SHOWING, so its edges name inner ids, while
+ * `compiled` is the flattened plan. Every upstream node id therefore crosses through
+ * `flattenedNodeId` before it is looked up; without that these rows read "connected" with
+ * no size for every input of every node inside a component. See `flatPrefix` below.
  */
 function inputResolutionsFor(
   nodeId: NodeId | null,
   graph: GraphDocument,
   compiled: CompiledGraph | null,
   ports: readonly { id: string; label: string }[],
+  flatPrefix: string,
 ): InputResolution[] {
   if (nodeId === null) return [];
   const upstream = new Map<string, { nodeId: NodeId; portId: string }>();
@@ -176,8 +192,9 @@ function inputResolutionsFor(
   return ports.map((port) => {
     const source = upstream.get(port.id);
     if (source === undefined) return { portId: port.id, label: port.label, connected: false };
+    const sourceInPlan = flattenedNodeId(flatPrefix, source.nodeId);
     const output = compiled?.outputs.find(
-      (candidate) => candidate.nodeId === source.nodeId && candidate.portId === source.portId,
+      (candidate) => candidate.nodeId === sourceInPlan && candidate.portId === source.portId,
     );
     if (output === undefined) return { portId: port.id, label: port.label, connected: true };
     return {
@@ -202,15 +219,26 @@ function inputResolutionsFor(
  * FIRST row, not a search: every output a node materializes shares that node's one
  * resolved resolution and format (`compiler/compile.ts` computes both once per node and
  * writes them into each slot), so any row answers, and the first is the one that exists.
- * `undefined` when the node has no row at all — pruned, inside a component, or nothing
- * compiled yet — which the readout reports rather than papering over.
+ * `undefined` when the node has no row at all — PRUNED, or nothing compiled yet — which
+ * the readout reports as "not in the compiled plan" rather than papering over.
+ *
+ * T1202/§B189 — "inside a component" USED TO BE ON THAT LIST, and it was never a state:
+ * it was this function asking the flattened plan for a raw inner id. Measured on E47:
+ * `matte` matched no row while `cut/matte` returned `1280x720 rgba16float`. The readout
+ * told the owner an interior node was not in the plan while it was in the plan, and he
+ * spent an investigation on a component-system defect that did not exist. The excuse in
+ * this docblock is what kept anyone from questioning the message, so it is stated the
+ * other way round now: if this returns `undefined` for a node you can see on the canvas,
+ * the node is genuinely absent from the plan.
  */
 function plannedOutputFor(
   nodeId: NodeId | null,
   compiled: CompiledGraph | null,
+  flatPrefix: string,
 ): PlannedOutput | undefined {
   if (nodeId === null || compiled === null) return undefined;
-  return compiled.outputs.find((candidate) => candidate.nodeId === nodeId);
+  const inPlan = flattenedNodeId(flatPrefix, nodeId);
+  return compiled.outputs.find((candidate) => candidate.nodeId === inPlan);
 }
 
 export function InspectorPane({
@@ -219,6 +247,7 @@ export function InspectorPane({
   componentPage,
   graph,
   compiled,
+  componentPath,
   diagnostics,
   channels,
   latestFrame,
@@ -242,13 +271,26 @@ export function InspectorPane({
     [definition],
   );
 
+  /* T1019/T1031/T1202 — this pane's flat prefix, spelled the way `graph-pane.tsx` spells
+     it: the inspector shows the graph the canvas shows, so it speaks INNER ids, and every
+     lookup below that goes to the compiled/flattened document must prefix them. */
+  const flatPrefix = (componentPath ?? []).join("/");
+  /* T1202 — the id this node has IN THE PLAN, for the two lookups keyed off flat state:
+     the plan's own rows (here) and the compiler's diagnostics (inside `Inspector`, which
+     filters them by node for the "clamped"/"unsupported format" flags on this very
+     readout). Identical to `nodeId` at the root. */
+  const planNodeId = nodeId === null ? null : flattenedNodeId(flatPrefix, nodeId);
+
   const inputResolutions = useMemo(
-    () => inputResolutionsFor(nodeId, graph, compiled, inputs),
-    [compiled, graph, inputs, nodeId],
+    () => inputResolutionsFor(nodeId, graph, compiled, inputs, flatPrefix),
+    [compiled, flatPrefix, graph, inputs, nodeId],
   );
 
   // T1064: the answer the Common readout shows, taken from the plan rather than re-derived.
-  const planned = useMemo(() => plannedOutputFor(nodeId, compiled), [compiled, nodeId]);
+  const planned = useMemo(
+    () => plannedOutputFor(nodeId, compiled, flatPrefix),
+    [compiled, flatPrefix, nodeId],
+  );
 
   const unknownHere = useMemo(
     () => (nodeId === null ? [] : unknownParameters.filter((entry) => entry.nodeId === nodeId)),
@@ -283,6 +325,7 @@ export function InspectorPane({
       }
       inputResolutions={inputResolutions}
       planned={planned ?? null}
+      {...(planNodeId === null ? {} : { planNodeId })}
       {...(channels === undefined ? {} : { channels })}
       {...(latestFrame === undefined ? {} : { latestFrame })}
       {...(channelNames === undefined ? {} : { channelNames })}

@@ -1680,7 +1680,28 @@ export function App({
                       },
                     })}
                 graph={editing.graph}
-                compiled={insideComponent ? null : compile.compiled}
+                /*
+                 * T1202/§B189 — THE SAME STARVATION §T1051 FOUND ON THE CANVAS, one pane
+                 * over, and the last one of its family.
+                 *
+                 * This was `insideComponent ? null : compile.compiled` from §T423, the
+                 * day the component editor landed, and out of the same real fear §T1051
+                 * records: the plan holds FLATTENED ids, so an unprefixed inner id that
+                 * happened to match a root row would report another node's size on this
+                 * node's readout (§V8). Handing the pane nothing was the safe half of an
+                 * answer whose other half — translate the ids — never arrived, so for
+                 * every node inside every component the inspector said "— not in the
+                 * compiled plan" while the row was there, and the per-input resolution
+                 * rows read "connected" with no size.
+                 *
+                 * `componentPath` is the other half: the pane prefixes with it before it
+                 * touches the plan, exactly as the canvas has since §T1019. The plan is
+                 * the same one `diagnostics` and `channels` beside it come from, on
+                 * purpose — the readout's "clamped" flag is a diagnostic lookup, and two
+                 * compiles is two chances to disagree.
+                 */
+                compiled={compile.compiled}
+                componentPath={editing.path}
                 diagnostics={compile.diagnostics}
                 // B46/§V61: the panel resolves through the resolver the COMPILE used.
                 channels={compile.channels}

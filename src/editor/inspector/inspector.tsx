@@ -121,6 +121,19 @@ export interface InspectorProps {
    */
   planned?: PlannedOutput | null;
   /**
+   * T1202 — the id this node has IN THE COMPILED PLAN, when that differs from `nodeId`.
+   *
+   * `nodeId` is the id every EDIT is addressed to, and inside a component that is the
+   * INNER id its own document holds — the panel must keep using it for the bus, because
+   * the session bus mutating the component's internals knows no other spelling. But the
+   * plan and the compiler's diagnostics are keyed off the FLATTENED document, where the
+   * same node is `instance/inner`. Only `side-panes.tsx` knows where the pane is sitting,
+   * so it does the translation once (§T1019's rule) and hands the result down rather than
+   * making the panel prefix anything. Absent = the two are the same, which is every node
+   * at the root.
+   */
+  planNodeId?: NodeId;
+  /**
    * Resolved size/format per input port, when the compiler has reported them. Without
    * it the Common section falls back to the project size and says so.
    */
@@ -262,6 +275,7 @@ export function Inspector({
   capabilities,
   inputResolutions,
   planned,
+  planNodeId,
   editor: providedEditor,
   variant = "inspector",
   channels,
@@ -622,8 +636,12 @@ export function Inspector({
    * true of arithmetic, and the wrong shape for a read: this is now a lookup into shared
    * state, and two lookups is two chances to be handed different state.
    */
+  // T1202: the plan's spelling, because `clamped` is read out of the COMPILER's
+  // diagnostics and those name flattened ids. `node.id` inside a component matched none
+  // of them, so an interior node whose size the compiler clamped said nothing about it.
+  const nodeIdInPlan = planNodeId ?? node.id;
   const resolvedCommon = resolvedCommonFor({
-    nodeId: node.id,
+    nodeId: nodeIdInPlan,
     planned: planned ?? undefined,
     resolution: node.resolution,
     format: node.format,
@@ -687,6 +705,7 @@ export function Inspector({
   const commonSection = (
     <CommonSection
       nodeId={node.id}
+      {...(planNodeId === undefined ? {} : { planNodeId })}
       {...(previewChoices === undefined ? {} : { componentPreview: previewChoices })}
       resolution={node.resolution}
       format={node.format}
