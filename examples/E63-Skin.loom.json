@@ -1,0 +1,656 @@
+{
+  "assets": [],
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e-a-dots": {
+        "id": "e-a-dots",
+        "source": {
+          "nodeId": "standA",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "dots",
+          "portId": "points"
+        }
+      },
+      "e-b-open": {
+        "id": "e-b-open",
+        "source": {
+          "nodeId": "standB",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "open",
+          "portId": "points"
+        }
+      },
+      "e-bed-plate": {
+        "id": "e-bed-plate",
+        "order": 0,
+        "source": {
+          "nodeId": "bed",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "plate",
+          "portId": "in2"
+        }
+      },
+      "e-c-seam": {
+        "id": "e-c-seam",
+        "source": {
+          "nodeId": "standC",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "seam",
+          "portId": "points"
+        }
+      },
+      "e-field-fold": {
+        "id": "e-field-fold",
+        "source": {
+          "nodeId": "field",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "fold",
+          "portId": "input"
+        }
+      },
+      "e-fold-bed": {
+        "id": "e-fold-bed",
+        "source": {
+          "nodeId": "fold",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "bed",
+          "portId": "source"
+        }
+      },
+      "e-fold-hide": {
+        "id": "e-fold-hide",
+        "source": {
+          "nodeId": "fold",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "hide",
+          "portId": "texture"
+        }
+      },
+      "e-hide-a": {
+        "id": "e-hide-a",
+        "source": {
+          "nodeId": "hide",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "standA",
+          "portId": "in"
+        }
+      },
+      "e-hide-b": {
+        "id": "e-hide-b",
+        "source": {
+          "nodeId": "hide",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "standB",
+          "portId": "in"
+        }
+      },
+      "e-hide-c": {
+        "id": "e-hide-c",
+        "source": {
+          "nodeId": "hide",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "standC",
+          "portId": "in"
+        }
+      },
+      "e-plate-out": {
+        "id": "e-plate-out",
+        "source": {
+          "nodeId": "plate",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      },
+      "e-seam-closed": {
+        "id": "e-seam-closed",
+        "source": {
+          "nodeId": "seam",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "closed",
+          "portId": "points"
+        }
+      },
+      "e-shot-plate": {
+        "id": "e-shot-plate",
+        "source": {
+          "nodeId": "shot",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "plate",
+          "portId": "in1"
+        }
+      },
+      "e-swatch-bed": {
+        "id": "e-swatch-bed",
+        "source": {
+          "nodeId": "swatch",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "bed",
+          "portId": "lookup"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "bed": {
+        "definitionVersion": 1,
+        "id": "bed",
+        "label": "bed1",
+        "parameters": {
+          "channel": "red",
+          "offset": 0,
+          "row": 0.5,
+          "scale": 1
+        },
+        "position": {
+          "x": -520,
+          "y": 700
+        },
+        "type": "lookup"
+      },
+      "cam": {
+        "definitionVersion": 1,
+        "id": "cam",
+        "label": "cam1",
+        "parameters": {
+          "eye": [
+            0,
+            0.32,
+            4.1
+          ],
+          "fov": 46,
+          "lookAt": [
+            0,
+            0.01,
+            0
+          ]
+        },
+        "position": {
+          "x": -520,
+          "y": -700
+        },
+        "type": "camera"
+      },
+      "closed": {
+        "definitionVersion": 1,
+        "id": "closed",
+        "label": "closed1",
+        "parameters": {
+          "material": "hidemat1",
+          "mode": "surface"
+        },
+        "position": {
+          "x": -520,
+          "y": 320
+        },
+        "type": "geometry"
+      },
+      "dots": {
+        "definitionVersion": 1,
+        "id": "dots",
+        "label": "dots1",
+        "parameters": {
+          "blend": "opaque",
+          "material": "hidemat1",
+          "mode": "points",
+          "scale": 0.008,
+          "soft": 0,
+          "spherical": true
+        },
+        "position": {
+          "x": -520,
+          "y": -320
+        },
+        "type": "geometry"
+      },
+      "field": {
+        "definitionVersion": 1,
+        "id": "field",
+        "label": "field1",
+        "parameters": {
+          "amp": 1,
+          "aspectcorrect": true,
+          "exp": 1.4,
+          "gain": 0.55,
+          "harmon": 3,
+          "mono": true,
+          "offset": 0.05,
+          "period": 0.24,
+          "rough": 0.5,
+          "s4d": 1,
+          "seed": 63,
+          "speed": 0.22,
+          "spread": 2.1,
+          "t4d": 0.63,
+          "type": "perlin4d"
+        },
+        "position": {
+          "x": -2020,
+          "y": 0
+        },
+        "type": "noise"
+      },
+      "fold": {
+        "definitionVersion": 1,
+        "id": "fold",
+        "label": "fold1",
+        "parameters": {
+          "extend": "hold",
+          "keephigh": false,
+          "mirrorx": true,
+          "mirrory": false,
+          "pivot": [
+            0.5,
+            0.5
+          ],
+          "rotate": 0
+        },
+        "position": {
+          "x": -1720,
+          "y": 0
+        },
+        "type": "mirror"
+      },
+      "hide": {
+        "definitionVersion": 1,
+        "id": "hide",
+        "label": "hide1",
+        "parameters": {
+          "cols": 96,
+          "depth": 1,
+          "mode": "grid",
+          "rows": 96,
+          "sizeX": 2,
+          "sizeY": 2,
+          "threshold": 0
+        },
+        "position": {
+          "x": -1420,
+          "y": 0
+        },
+        "type": "pointsFromTexture"
+      },
+      "hidemat": {
+        "definitionVersion": 1,
+        "id": "hidemat",
+        "label": "hidemat1",
+        "parameters": {
+          "color": [
+            0.52,
+            0.4,
+            0.35,
+            1
+          ],
+          "roughness": 0.65,
+          "shininess": 30,
+          "specular": [
+            1,
+            0.82,
+            0.6,
+            1
+          ]
+        },
+        "position": {
+          "x": -820,
+          "y": -520
+        },
+        "type": "materialPhong"
+      },
+      "key": {
+        "definitionVersion": 1,
+        "id": "key",
+        "label": "key1",
+        "parameters": {
+          "color": [
+            1,
+            0.72,
+            0.42,
+            1
+          ],
+          "direction": [
+            -0.45,
+            -0.5,
+            -0.72
+          ],
+          "intensity": 1,
+          "kind": "directional"
+        },
+        "position": {
+          "x": -220,
+          "y": -700
+        },
+        "type": "light"
+      },
+      "open": {
+        "definitionVersion": 1,
+        "id": "open",
+        "label": "open1",
+        "parameters": {
+          "material": "hidemat1",
+          "mode": "surface"
+        },
+        "position": {
+          "x": -520,
+          "y": 0
+        },
+        "type": "geometry"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "label": "out1",
+        "parameters": {},
+        "position": {
+          "x": 380,
+          "y": 0
+        },
+        "type": "output"
+      },
+      "plate": {
+        "definitionVersion": 1,
+        "id": "plate",
+        "label": "plate1",
+        "parameters": {},
+        "position": {
+          "x": 80,
+          "y": 0
+        },
+        "type": "over"
+      },
+      "rakex": {
+        "definitionVersion": 1,
+        "id": "rakex",
+        "label": "rakex1",
+        "parameters": {
+          "amplitude": 0.95,
+          "frequency": 0.07,
+          "offset": 0,
+          "phase": 0,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -220,
+          "y": -1060
+        },
+        "type": "lfo"
+      },
+      "rakez": {
+        "definitionVersion": 1,
+        "id": "rakez",
+        "label": "rakez1",
+        "parameters": {
+          "amplitude": 0.55,
+          "frequency": 0.07,
+          "offset": 0.35,
+          "phase": 0.25,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -220,
+          "y": -880
+        },
+        "type": "lfo"
+      },
+      "rim": {
+        "definitionVersion": 1,
+        "id": "rim",
+        "label": "rim1",
+        "parameters": {
+          "color": [
+            0.22,
+            0.55,
+            1,
+            1
+          ],
+          "direction.x": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('rakex1').chan.value"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.38
+              }
+            },
+            "mode": "expression"
+          },
+          "direction.y": -0.2,
+          "direction.z": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('rakez1').chan.value"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.45
+              }
+            },
+            "mode": "expression"
+          },
+          "intensity": 1.1,
+          "kind": "directional"
+        },
+        "position": {
+          "x": -220,
+          "y": -520
+        },
+        "type": "light"
+      },
+      "seam": {
+        "definitionVersion": 1,
+        "id": "seam",
+        "label": "seam1",
+        "parameters": {
+          "cols": 96,
+          "connectivity": "grid",
+          "rows": 96,
+          "wrapU": true,
+          "wrapV": false
+        },
+        "position": {
+          "x": -820,
+          "y": 320
+        },
+        "type": "pointTopology"
+      },
+      "shot": {
+        "definitionVersion": 1,
+        "id": "shot",
+        "label": "shot1",
+        "parameters": {
+          "ambientColor": [
+            0.38,
+            0.46,
+            0.68,
+            1
+          ],
+          "ambientIntensity": 0.055,
+          "antialias": "msaa",
+          "background": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "camera": "cam1",
+          "lights": "key1 rim1",
+          "scenes": "dots1 open1 closed1"
+        },
+        "position": {
+          "x": -220,
+          "y": 0
+        },
+        "type": "render"
+      },
+      "standA": {
+        "definitionVersion": 1,
+        "id": "standA",
+        "label": "standA1",
+        "parameters": {
+          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]}]",
+          "capacity": 9216,
+          "height": 2.35,
+          "kernel": "struct Params {\n  offsetX: f32,   // where this copy of the tube stands, in world x\n  radius: f32,    // rest radius, before the relief\n  height: f32,    // rim to rim\n  relief: f32,    // how far the sampled height pushes the skin out\n  turn: f32,      // bearing of column 0, degrees — the seam faces the camera at 0\n};\n\nfn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  /* ctx.dim IS the incoming edge's grid (T472): cols, rows and this slot's cell, read off\n     the topology pointsFromTexture published. Turn the Columns knob upstream and this\n     follows, which a hard-coded 96u could not do. */\n  let u = f32(ctx.dim.i) / f32(ctx.dim.cols);\n  let v = f32(ctx.dim.j) / f32(ctx.dim.rows - 1u);\n  let theta = (u + ctx.params.turn / 360.0) * 6.28318530718;\n  /* The height sampled from the texture arrives on z (pointsFromTexture grid mode centres\n     it on zero), and here it is RADIUS: the picture pushes the skin out of the tube. */\n  let r = ctx.params.radius + p.position.z * ctx.params.relief;\n  q.position = vec3f(\n    ctx.params.offsetX + r * sin(theta),\n    (0.5 - v) * ctx.params.height,\n    r * cos(theta),\n  );\n  return q;\n}",
+          "offsetX": -1.42,
+          "radius": 0.5,
+          "relief": 0.62,
+          "seed": 63,
+          "turn": 0
+        },
+        "position": {
+          "x": -1120,
+          "y": -320
+        },
+        "type": "pointKernel"
+      },
+      "standB": {
+        "definitionVersion": 1,
+        "id": "standB",
+        "label": "standB1",
+        "parameters": {
+          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]}]",
+          "capacity": 9216,
+          "height": 2.35,
+          "kernel": "struct Params {\n  offsetX: f32,   // where this copy of the tube stands, in world x\n  radius: f32,    // rest radius, before the relief\n  height: f32,    // rim to rim\n  relief: f32,    // how far the sampled height pushes the skin out\n  turn: f32,      // bearing of column 0, degrees — the seam faces the camera at 0\n};\n\nfn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  /* ctx.dim IS the incoming edge's grid (T472): cols, rows and this slot's cell, read off\n     the topology pointsFromTexture published. Turn the Columns knob upstream and this\n     follows, which a hard-coded 96u could not do. */\n  let u = f32(ctx.dim.i) / f32(ctx.dim.cols);\n  let v = f32(ctx.dim.j) / f32(ctx.dim.rows - 1u);\n  let theta = (u + ctx.params.turn / 360.0) * 6.28318530718;\n  /* The height sampled from the texture arrives on z (pointsFromTexture grid mode centres\n     it on zero), and here it is RADIUS: the picture pushes the skin out of the tube. */\n  let r = ctx.params.radius + p.position.z * ctx.params.relief;\n  q.position = vec3f(\n    ctx.params.offsetX + r * sin(theta),\n    (0.5 - v) * ctx.params.height,\n    r * cos(theta),\n  );\n  return q;\n}",
+          "offsetX": 0,
+          "radius": 0.5,
+          "relief": 0.62,
+          "seed": 63,
+          "turn": 0
+        },
+        "position": {
+          "x": -1120,
+          "y": 0
+        },
+        "type": "pointKernel"
+      },
+      "standC": {
+        "definitionVersion": 1,
+        "id": "standC",
+        "label": "standC1",
+        "parameters": {
+          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]}]",
+          "capacity": 9216,
+          "height": 2.35,
+          "kernel": "struct Params {\n  offsetX: f32,   // where this copy of the tube stands, in world x\n  radius: f32,    // rest radius, before the relief\n  height: f32,    // rim to rim\n  relief: f32,    // how far the sampled height pushes the skin out\n  turn: f32,      // bearing of column 0, degrees — the seam faces the camera at 0\n};\n\nfn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  /* ctx.dim IS the incoming edge's grid (T472): cols, rows and this slot's cell, read off\n     the topology pointsFromTexture published. Turn the Columns knob upstream and this\n     follows, which a hard-coded 96u could not do. */\n  let u = f32(ctx.dim.i) / f32(ctx.dim.cols);\n  let v = f32(ctx.dim.j) / f32(ctx.dim.rows - 1u);\n  let theta = (u + ctx.params.turn / 360.0) * 6.28318530718;\n  /* The height sampled from the texture arrives on z (pointsFromTexture grid mode centres\n     it on zero), and here it is RADIUS: the picture pushes the skin out of the tube. */\n  let r = ctx.params.radius + p.position.z * ctx.params.relief;\n  q.position = vec3f(\n    ctx.params.offsetX + r * sin(theta),\n    (0.5 - v) * ctx.params.height,\n    r * cos(theta),\n  );\n  return q;\n}",
+          "offsetX": 1.42,
+          "radius": 0.5,
+          "relief": 0.62,
+          "seed": 63,
+          "turn": 0
+        },
+        "position": {
+          "x": -1120,
+          "y": 320
+        },
+        "type": "pointKernel"
+      },
+      "swatch": {
+        "definitionVersion": 2,
+        "id": "swatch",
+        "label": "swatch1",
+        "parameters": {
+          "interp": "smooth",
+          "period": 1,
+          "phase": 0,
+          "stops": [
+            {
+              "color": [
+                0.02,
+                0.028,
+                0.06,
+                1
+              ],
+              "position": 0
+            },
+            {
+              "color": [
+                0.055,
+                0.08,
+                0.155,
+                1
+              ],
+              "position": 0.5
+            },
+            {
+              "color": [
+                0.2,
+                0.17,
+                0.23,
+                1
+              ],
+              "position": 0.82
+            },
+            {
+              "color": [
+                0.44,
+                0.31,
+                0.24,
+                1
+              ],
+              "position": 1
+            }
+          ],
+          "type": "horizontal"
+        },
+        "position": {
+          "x": -820,
+          "y": 700
+        },
+        "type": "ramp"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E63 Skin",
+  "projectId": "example-e63-skin",
+  "schemaVersion": 3,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 63,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}
