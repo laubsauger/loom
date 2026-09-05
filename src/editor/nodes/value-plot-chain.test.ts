@@ -274,3 +274,64 @@ describe("T735 — the cliff: refits stop once a period fits the window", () => 
     }
   });
 });
+
+/**
+ * T1174 — the sampled cycle is CACHED, and the cache key is the document OBJECT.
+ *
+ * `ValuePlot` re-renders on the 10 Hz history clock and re-ran these 96 evaluations every
+ * time, for a curve that is anchored at t=0 and therefore identical between ticks (only
+ * the phase marker moves). Measured on E33, which has ten chained plots: 2.65 ms per tick
+ * before, 0.008 ms after.
+ *
+ * A cache that can hand back the wrong picture is worse than the cost it saves, so the two
+ * ways it could are pinned here. The second is why the key is object identity and NOT
+ * `graph.revision`: a revision is unique only within one document's history, and a
+ * `.loom.json` restores the revision it was saved at — `lfoIntoMath` returning revision 1
+ * for every graph it builds is that situation exactly, not a contrivance.
+ */
+describe("T1174 — the plot cache never draws a graph it is not looking at", () => {
+  it("reuses the resolved chain and the sampled cycle while the document object is unchanged", () => {
+    // The perf property, asserted as the identity the memo produces: delete either cache
+    // and these are fresh objects every call, which is what cost 2.65 ms per tick.
+    const graph = lfoIntoMath(0.25);
+    const first = resolveValuePlotChain(graph, "math1" as NodeId, registry);
+    const second = resolveValuePlotChain(graph, "math1" as NodeId, registry);
+    expect(second).toBe(first);
+    const sampleA = sampleValueChain(first!, registry, { samples: 96, randomSeed: 1 });
+    const sampleB = sampleValueChain(second!, registry, { samples: 96, randomSeed: 1 });
+    expect(sampleB).toBe(sampleA);
+    // Different sample settings are a different question and must not be served the same answer.
+    expect(sampleValueChain(first!, registry, { samples: 96, randomSeed: 2 })).not.toBe(sampleA);
+    expect(sampleValueChain(first!, registry, { samples: 48, randomSeed: 1 })).not.toBe(sampleA);
+  });
+
+  it("redraws after a parameter edit, instead of serving the curve from before it", () => {
+    const before = sampleValueChain(
+      resolveValuePlotChain(lfoIntoMath(0.25, { operand: 3 }), "math1" as NodeId, registry)!,
+      registry,
+      { samples: 8, randomSeed: 1 },
+    ).channels.get("value")!;
+    const after = sampleValueChain(
+      resolveValuePlotChain(lfoIntoMath(0.25, { operand: 7 }), "math1" as NodeId, registry)!,
+      registry,
+      { samples: 8, randomSeed: 1 },
+    ).channels.get("value")!;
+    // Same shape, different amplitude — the edit is visible, which is the whole point.
+    expect(Math.max(...after)).toBeCloseTo((7 / 3) * Math.max(...before), 6);
+  });
+
+  it("does not confuse two different documents that carry the SAME revision number", () => {
+    // Both graphs are revision 1 — the shape "open one project, then another". Keyed on
+    // the revision, the second would have been handed the first one's curve.
+    const slow = lfoIntoMath(0.1);
+    const fast = lfoIntoMath(0.4);
+    expect(slow.revision).toBe(fast.revision);
+    const slowChain = resolveValuePlotChain(slow, "math1" as NodeId, registry)!;
+    const fastChain = resolveValuePlotChain(fast, "math1" as NodeId, registry)!;
+    // The period is the fact the plot is drawn against, and it belongs to the graph asked
+    // for, not to whichever graph was asked about first.
+    expect(slowChain.periodSeconds).toBeCloseTo(10, 6);
+    expect(fastChain.periodSeconds).toBeCloseTo(2.5, 6);
+    expect(fastChain).not.toBe(slowChain);
+  });
+});

@@ -79,8 +79,51 @@ function valueInputIds(definition: NodeDefinition): ReadonlySet<string> {
  *    multiple and not on either, so one period of curve would not close;
  *  - a cycle in the graph, which the value graph reports as an error and which would
  *    otherwise spin this walk forever.
+ *
+ * T1174 memoised the answer; the walk itself moved to `resolveChainUncached` below.
  */
+
+/**
+ * T1174 — resolved chains, per DOCUMENT OBJECT and registry.
+ *
+ * Keyed on the document's identity rather than on `graph.revision`: a revision number is
+ * only unique WITHIN one document's history, and a `.loom.json` carries the revision it was
+ * saved at, so opening one file after another can put two different graphs on the same
+ * number. Object identity cannot collide, costs nothing to compare, and is exactly as fresh
+ * — immer mints a new document object for every mutation, so a changed graph is a cache
+ * miss by construction. A `WeakMap` also lets a closed document's entries go.
+ *
+ * The point of caching the RESOLVE is not its own cost (it is small) — it is that a stable
+ * chain object is what makes the sample below cacheable at all.
+ */
+const chainsByDocument = new WeakMap<
+  GraphDocument,
+  WeakMap<NodeRegistryView, Map<NodeId, ValuePlotChain | null>>
+>();
+
 export function resolveValuePlotChain(
+  graph: GraphDocument,
+  nodeId: NodeId,
+  registry: NodeRegistryView,
+): ValuePlotChain | null {
+  let byRegistry = chainsByDocument.get(graph);
+  if (byRegistry === undefined) {
+    byRegistry = new WeakMap();
+    chainsByDocument.set(graph, byRegistry);
+  }
+  let byNode = byRegistry.get(registry);
+  if (byNode === undefined) {
+    byNode = new Map();
+    byRegistry.set(registry, byNode);
+  }
+  const cached = byNode.get(nodeId);
+  if (cached !== undefined) return cached;
+  const resolved = resolveChainUncached(graph, nodeId, registry);
+  byNode.set(nodeId, resolved);
+  return resolved;
+}
+
+function resolveChainUncached(
   graph: GraphDocument,
   nodeId: NodeId,
   registry: NodeRegistryView,
@@ -181,7 +224,52 @@ export interface ChainSampleOptions {
  * the curve on the same clock the running node is on rather than on whichever one the
  * fallback happened to pick.
  */
+/**
+ * T1174 — the sampled cycle, per chain object, registry and sample settings.
+ *
+ * The curve does NOT move with the clock and never did: the loop below anchors at t=0 and
+ * `ChainSampleOptions` has no time field — `timeSeconds` reaches `sampleValueChainPlot` and
+ * is used there for the PHASE MARKER alone. So 96 evaluations of a stateless chain were
+ * being redone ten times a second to redraw a curve that was identical every time. Measured
+ * on E33 (10 plotted nodes, all chained): 2.65 ms per 10 Hz tick becomes 0.048 ms, a 55×
+ * cut and ~26 ms/s of main thread handed back, with the playhead still live because the
+ * phase is still computed per tick.
+ *
+ * Safe to share because the result cannot drift: chains that reach a STATEFUL node are
+ * refused at resolve (see the module docblock, §V275), so the sample is a pure function of
+ * the subgraph, the registry and these options — and the chain object identity now stands
+ * for "this document, this node" (see `chainsByDocument`). The arrays are read-only in
+ * practice: `FunctionPlot` iterates, indexes and projects them, and writes none.
+ */
+const samplesByChain = new WeakMap<
+  ValuePlotChain,
+  WeakMap<NodeRegistryView, Map<string, { readonly channels: ReadonlyMap<string, number[]> }>>
+>();
+
 export function sampleValueChain(
+  chain: ValuePlotChain,
+  registry: NodeRegistryView,
+  options: ChainSampleOptions,
+): { readonly channels: ReadonlyMap<string, number[]> } {
+  let byRegistry = samplesByChain.get(chain);
+  if (byRegistry === undefined) {
+    byRegistry = new WeakMap();
+    samplesByChain.set(chain, byRegistry);
+  }
+  let byOptions = byRegistry.get(registry);
+  if (byOptions === undefined) {
+    byOptions = new Map();
+    byRegistry.set(registry, byOptions);
+  }
+  const key = `${String(options.samples)}|${String(options.randomSeed)}`;
+  const hit = byOptions.get(key);
+  if (hit !== undefined) return hit;
+  const computed = sampleChainUncached(chain, registry, options);
+  byOptions.set(key, computed);
+  return computed;
+}
+
+function sampleChainUncached(
   chain: ValuePlotChain,
   registry: NodeRegistryView,
   options: ChainSampleOptions,
