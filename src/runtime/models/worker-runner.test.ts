@@ -565,7 +565,7 @@ describe("the export's per-frame wait survives the worker boundary", () => {
     });
 
     // Never delivered a `loaded` message: the run is parked inside `ensureLoaded`.
-    const running = runner.run("n1", { bytes: new Uint8Array([1, 2, 3, 4]), width: 1, height: 1 });
+    const running = runner.run("n1", new ArrayBuffer(2 * 2 * 16));
     const settled = running.then(
       () => "resolved" as const,
       () => "rejected" as const,
