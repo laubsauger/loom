@@ -1,7 +1,7 @@
 import { SHARED_UNIFORMS_WGSL } from "../../runtime/backend/shared-uniforms.ts";
 
 /**
- * E57 Forest — the walking hero-unit raymarcher (T1156).
+ * E57 Forest — the walking hero-unit raymarcher (T1156, deepened T1170).
  *
  * The owner's ask: a misty, creepy, mystical forest where the camera is infinitely slowly
  * but surely walking forward, towards the full moon. Very moody. Nice and adjustable.
@@ -20,6 +20,15 @@ import { SHARED_UNIFORMS_WGSL } from "../../runtime/backend/shared-uniforms.ts";
  * at all, its height, radius, lean, branch phase, its offset inside its cell — is a hash of
  * the CELL INDEX. The camera translates through it and never turns, so there is no loop
  * point, no seam and no wrap: the forest is different every metre and costs one tree.
+ *
+ * T1170: HOW MANY of them there are is a low-frequency FIELD over that same index rather
+ * than a constant probability (see 'standAt' and 'stemAt'), which is what stops a repeat
+ * reading as a lattice. That field is also the ground the trunk feet and the eye stand on.
+ * It is still a pure function of the cell index and the gate on it is still BINARY, and
+ * both of those are load-bearing rather than tidy: a smooth field multiplied into a tree's
+ * size, or a field read off the eye-relative position, is a tree that GROWS while you walk
+ * toward it — which is what the first draft of the second storey looked like, for a
+ * different reason, and what the owner saw.
  *
  * The camera's world position is rebased onto its own cell every frame (`o` below is the
  * eye's position INSIDE its cell, never its absolute z), so all ray arithmetic happens near
@@ -78,6 +87,17 @@ import { SHARED_UNIFORMS_WGSL } from "../../runtime/backend/shared-uniforms.ts";
  *   - AN UNCLAMPED CLOUD VEIL. Perlin is signed, so scaling it and adding an offset put part
  *     of the field below zero, and the sky was multiplied by a negative number over a big
  *     smooth blob whose ZERO CROSSING was a hard curved edge.
+ *   - (T1170) SAPLINGS as the second storey. A mature tree at a quarter scale is exactly the
+ *     picture of a tree that has not finished growing, and the owner read the frame and said
+ *     so. Replaced by BROKEN stems, which differ in form rather than in size — see 'stemAt'.
+ *   - (T1170) HEADING DRIFT, and any camera rotation at all. The gait and the ground swell
+ *     are both TRANSLATIONS and that is the only reason either was affordable here: the sky
+ *     direction has to stay constant per pixel for the veil, and the moon and the quiet zone
+ *     have to hold still for a headline.
+ *   - (T1170) A ROLLING GROUND PLANE. A height field needs a march where a plane needs one
+ *     divide, and the floor of every frame in this file is haze — see the fragment's note.
+ *   - (T1170) A FAR-FIELD BLUR in the defocus pass: the fog already does that, and two cues
+ *     for the same thing argue. 'FOREST_DOF_WGSL' is one-sided by construction.
  *
  * ## THE QUIET ZONE (the hero-unit requirement nobody states until it is wrong)
  *
@@ -91,25 +111,26 @@ import { SHARED_UNIFORMS_WGSL } from "../../runtime/backend/shared-uniforms.ts";
  *
  * E13 says its motion budget belongs entirely to the pointer; this one's belongs entirely
  * to the walk. `absTime * walkSpeed` is a free-running translation with no fixed point by
- * construction — it cannot settle, there is nothing for it to settle INTO — and the sway
- * and bob are position offsets on the same clock. Nothing here is an envelope. Anybody
- * adding a second motion source should know they are fighting the walk, which is why this
- * paragraph is here rather than in a commit message.
+ * construction — it cannot settle, there is nothing for it to settle INTO — and the wander,
+ * the gait and the ground swell are position offsets on the same clock. Nothing here is an
+ * envelope. Anybody adding a second motion source should know they are fighting the walk,
+ * which is why this paragraph is here rather than in a commit message — and why T1170's
+ * gait is DERIVED from `walkSpeed` rather than run at a rate of its own.
  *
  * THE CAMERA NEVER TURNS, and that is load-bearing twice over. The per-pixel sky direction
  * is therefore constant, which makes the screen-space cloud veil read off `inputTexture`
  * exactly correct rather than a cheat; and the moon and the quiet zone hold still, which is
  * what a headline needs.
  *
- * MEASURED (§V913 — the row AND the minute, the look instrument's own arithmetic at
- * 192x108 with its 120-frame gaps): the recorded f60→f180 row reads 0.0210; the whole
- * minute averages 0.0255 over 29 gaps, min 0.0184, max 0.0346, and the LAST gap
- * f3480→f3600 reads 0.0225 — above the row. Per FRAME the pace is 8.577e-4 at f59→60 and
- * 9.155e-4 at f3599→3600, which is 107% of the opening pace after a full minute; with the
- * walk cut the same measure reads 5.010e-7. Nothing decays because nothing here is an
- * envelope. There are NO driven parameters, so §V903 and §V914 have no lane to judge: a
- * hero background has no audio and no pointer, and every value in the file is its own
- * retained value.
+ * MEASURED (§V913). Per FRAME, averaged over four pairs across the first sixteen seconds
+ * and four across the last fifteen: 7.977e-4 opening, 7.855e-4 closing — 98% of the opening
+ * pace after a full minute; with the walk cut the closing figure is 6.130e-7. The averaging
+ * is not a nicety: T1170's gait and clumping between them make a SINGLE pair read anywhere
+ * from 2.9e-4 to 1.35e-3 on phase and stand alone, and the one-pair version of this claim
+ * failed at 0.54 — correctly, because it was measuring one draw rather than the pace.
+ * Nothing decays because nothing here is an envelope. There are NO driven parameters, so
+ * §V903 and §V914 have no lane to judge: a hero background has no audio and no pointer, and
+ * every value in the file is its own retained value.
  *
  * Deterministic (§V44/§V45): `frameU.absTime` is the only clock, and the march dither is a
  * hash of the pixel, fixed across frames — grain, never flicker (E55's finding).
@@ -124,6 +145,9 @@ struct Params {
   lens: f32,          // focal length: higher is a longer lens, so the forest stacks up and compresses
   spacing: f32,       // metres between tree cells — also the ceiling on how wide a tree may grow
   density: f32,       // share of cells that carry a tree at all, 0 to 1
+  clumping: f32,      // how far that share varies from place to place — 0 is an even field, 1 is thickets and clearings
+  relief: f32,        // metres the ground rolls under the wood — trunk feet and the eye ride the same slow swell
+  snags: f32,         // share of the stems that are BROKEN: a blunt, branchless column a fifth to a half the height
   treeHeight: f32,    // mean trunk height, metres
   heightVary: f32,    // how much heights differ tree to tree, 0 is a plantation
   trunkWidth: f32,    // trunk radius at the base, metres
@@ -213,6 +237,17 @@ fn vnoise2(x: vec2f) -> f32 {
   );
 }
 
+/* THE STAND FIELD. One low-frequency value noise over the grid, read at three places and
+   therefore written once: it decides how many cells in a neighbourhood carry a stem, and it
+   is also the GROUND — the eye and every trunk foot ride the same swell (see 'relief').
+   Sampled at an integer cell index for a tree and at a continuous position for the eye,
+   which is the same field either way, so a tree and the eye standing beside it agree.
+   'smoothstep' rather than the raw noise: bilinear value noise bunches around 0.5, and what
+   is wanted is places that are OPEN and places that are THICK, not a permanent middle. */
+fn standAt(cellish: vec2f) -> f32 {
+  return smoothstep(0.32, 0.70, vnoise2(cellish * 0.40 + vec2f(21.3, 7.9)));
+}
+
 // ---------------------------------------------------------------- one tree
 struct Tree {
   present: f32,   // 1 when this cell carries a tree
@@ -225,6 +260,7 @@ struct Tree {
   stem: f32,      // radius of the TRUNK's own, much tighter bound (see marchForest)
   limb: f32,      // height of the lowest branch: below this a ray needs the stem bound only
   reach: f32,     // longest branch, already clamped to the cell
+  snag: f32,      // 1 when this stem is broken: no branches, and a blunt top rather than a point
   seed: vec4f,    // the cell's four randoms
 };
 
@@ -241,12 +277,66 @@ fn stemAt(cellLocal: vec2f, cellAbs: vec2f) -> Tree {
   var t: Tree;
   let s = hash24(cellAbs);
   t.seed = s;
-  t.present = select(0.0, 1.0, s.x < clamp(params.density, 0.0, 1.0));
+  /* THE DENSITY IS A FIELD, NOT A NUMBER — and that is the answer to "the wood reads
+     repetitive", which per-tree variation could not give. Every tree here already differs
+     in height, radius, lean, branch phase and offset, and it did not help: at a CONSTANT
+     probability of one tree per cell the stand is a regular lattice however varied the
+     individuals are, and through this much fog the trunks reduce to an evenly spaced
+     rhythm of verticals — a picket fence. Real woods clump. So the share of cells that
+     carry a stem is a low-frequency value noise over the cell index: thickets you cannot
+     see into and clearings you can see across, and it is the DIFFERENCE between them that
+     the eye reads as depth.
+     It also pays for itself. A clearing walks the same cells with nothing in them, so the
+     bound tests still happen and every march inside a bound does not — measured against a
+     same-run control in the .md, and it comes out slightly CHEAPER than the even field it
+     replaced even after the four extra hashes.
+     BOTH ENDS OF THIS WERE FOUND BY LOOKING (§V912) AND BOTH WERE WRONG FIRST. At a scale
+     of 0.28 per cell the clump period is eighteen metres against a reach of about
+     twenty-six, and the camera walks INTO a clearing and stays there: frame 900 of the
+     first attempt was an empty grey wash with two trunks at the edge, which is worse than
+     the lattice it replaced. 0.40 — inside 'standAt' — is a clump every thirteen metres, so
+     two of them are always in shot and the picture is the contrast between them. And a
+     clearing must be THIN, not BARE: the floor is 0.42 of the density and the draft that
+     used 0.12 is the one that produced that empty frame, because a hole with nothing at all
+     in it stops reading as a wood and starts reading as the end of the geometry. The top
+     saturates against 1.0 on purpose — a thicket is every cell full — and the contrast
+     between the two ends is the only event this loop has.
+     ⚑ AND THE GATE IS BINARY AND A PURE FUNCTION OF THE CELL INDEX, which is not a detail:
+     a cell has a stem or it does not. Multiplying a smooth field into a tree's HEIGHT or
+     RADIUS instead would make a marginal cell's tree rise out of the ground as the field
+     shifted, and reading the field off the eye-relative position rather than 'cellAbs'
+     would make it change every time the camera crossed a cell wall. Either one is a tree
+     that grows while you watch, and neither is recoverable by tuning. */
+  let stand = standAt(cellAbs);
+  let share = clamp(params.density, 0.0, 1.0)
+            * mix(1.0, 0.42 + 1.15 * stand, clamp(params.clumping, 0.0, 1.0));
+  t.present = select(0.0, 1.0, s.x < share);
   let half = params.spacing * 0.5;
-  // Old thick trees and thin saplings in the same wood: the radius spread is wide on
+  /* A SECOND STOREY, because every stem in the first draft was a mature tree ten to
+     eighteen metres tall — so every vertical in the frame ran off the top of it and the
+     picture had exactly one scale in it. A share of the cells instead carry a BROKEN stem.
+     ⚑ AND IT IS BROKEN RATHER THAN YOUNG BECAUSE THE OWNER READ THE FIRST VERSION AND SAID
+     THE TREES WERE "GROWING". They were: a sapling here was a mature tree at a quarter
+     scale — same proportions, same branch pattern from 30% up the stem, same silhouette —
+     and a quarter-size copy of the tree next to it is exactly the picture of a tree that
+     has not finished growing. Nothing was animating; the FORM was wrong, and no amount of
+     hashing fixes a form that is a scale copy.
+     A snapped stem is a different object rather than a smaller one. It keeps the full trunk
+     radius of the tree it was — that is the whole point, a snag is the BOTTOM of a big tree
+     — it carries no branches at all, and it ends BLUNT where it broke instead of tapering
+     to a point. Three differences, none of them scale, and it suits a dead wood better than
+     a nursery did.
+     It is also the cheapest stem in the file: no branch table is ever built for it, its
+     bound is the stem bound, and the 'tall' test culls every ray passing over it.
+     The draw is a DECORRELATED scalar, not one of the four randoms the cell already
+     spends: 's.w' sets the lean direction and half the jitter, so drawing off it would
+     have made every snag in the wood lean the same way. */
+  t.snag = select(0.0, 1.0, fract(s.y * 31.71 + s.w * 13.13 + 0.37) < clamp(params.snags, 0.0, 1.0));
+  // Old thick trees and thin ones in the same wood: the radius spread is wide on
   // purpose, because a stand of identical poles is the thing that reads as procedural.
   t.r = max(params.trunkWidth, 0.01) * (0.5 + 1.15 * s.y * s.y);
-  t.h = max(params.treeHeight, 0.5) * (1.0 - 0.5 * params.heightVary + params.heightVary * s.z);
+  t.h = max(params.treeHeight, 0.5) * (1.0 - 0.5 * params.heightVary + params.heightVary * s.z)
+      * mix(1.0, 0.16 + 0.34 * s.z, t.snag);
   /* THE CELL IS A BUDGET, AND EVERYTHING THAT STICKS OUT SIDEWAYS SPENDS IT.
      The lean carries the upper trunk off the axis and the branches reach from wherever the
      lean has put them, so the tree's true half-width is leanLen + reach + trunk, and THAT
@@ -258,7 +348,9 @@ fn stemAt(cellLocal: vec2f, cellAbs: vec2f) -> Tree {
      the knob that grows a tree past that is 'spacing'. */
   let budget = max(half * 0.96 - t.r * 1.3, 0.0);
   t.leanLen = min(params.lean * t.h * 0.048, budget * 0.4);
-  t.reach = min(max(params.branchSpread, 0.0) * half * 1.35, max(budget - t.leanLen, 0.0));
+  // A snag has no branches: they went with the top of it.
+  t.reach = min(max(params.branchSpread, 0.0) * half * 1.35 * (1.0 - t.snag),
+                max(budget - t.leanLen, 0.0));
   t.bound = t.leanLen + t.reach + t.r * 1.3;
   t.stem = t.leanLen + t.r * 1.35;
   // The lowest point any branch can reach: they attach from 0.3 of the stem and the
@@ -268,9 +360,19 @@ fn stemAt(cellLocal: vec2f, cellAbs: vec2f) -> Tree {
   // Whatever room is left after the bound is where the tree may sit inside its cell.
   let room = max(half - t.bound, 0.0);
   let jitter = (s.zw - 0.5) * 2.0 * room;
+  /* THE GROUND ROLLS, and this one line is worth more to "I am walking through this" than
+     any number of extra trees. Everything stood on one flat plane, so every trunk met the
+     mist at the same altitude and the eye read a dead horizontal floor line across the
+     frame however varied the trees above it were.
+     The swell is the STAND FIELD ITSELF — free, because the cell has already paid for it —
+     and it is signed DOWNWARD only, into [-relief, 0]. Downward matters: a foot below the
+     ground plane is buried, which the mist swallows, whereas a foot above it would be a
+     tree visibly hovering over its own floor. So a thick stand sits in a hollow and a
+     clearing stands on the rise, which is also the more interesting way round to walk
+     through: you come up out of the trees and can see. */
   t.base = vec3f(
     (cellLocal.x + 0.5) * params.spacing + jitter.x,
-    0.0,
+    -max(params.relief, 0.0) * stand,
     (cellLocal.y + 0.5) * params.spacing + jitter.y,
   );
   t.lean = vec2f(0.0);
@@ -332,7 +434,11 @@ fn buildTree(t: Tree, tbl: ptr<function, array<vec4f, 22>>) -> i32 {
   for (var j: i32 = 0; j < 4; j = j + 1) {
     let f = fs[j];
     let w = f * f * (0.35 + 0.65 * f);
-    let taper = t.r * mix(1.0, 0.09, f * (0.45 + 0.55 * f)) * (1.0 + 0.15 * sin(f * 9.0 + t.seed.z * 21.0));
+    // A whole tree tapers to a point; a SNAG ends where it snapped, so its top radius is
+    // more than half its base. That blunt end is most of what says "broken" rather than
+    // "small" from a distance, and it costs one mix.
+    let tip = mix(0.09, 0.62, t.snag);
+    let taper = t.r * mix(1.0, tip, f * (0.45 + 0.55 * f)) * (1.0 + 0.15 * sin(f * 9.0 + t.seed.z * 21.0));
     (*tbl)[j] = vec4f(t.base + vec3f(t.lean.x * w, t.h * f, t.lean.y * w), taper);
   }
   let n = i32(clamp(round(params.branches), 0.0, f32(MAX_BRANCH)));
@@ -467,8 +573,11 @@ fn marchForest(ro: vec3f, rd: vec3f, base: vec2f, reach: f32, jitter: f32) -> Hi
          through the whole lower half of the frame the ray is under every branch in the
          wood and only the trunk can be hit. That ray takes the STEM bound — a fifth of the
          width — and a trunk-only field, and never builds a branch table at all. */
-      let low = max(ro.y + rd.y * tEnter, ro.y + rd.y * tExit) < tree.limb;
-      let tall = min(ro.y + rd.y * tEnter, ro.y + rd.y * tExit) < tree.h;
+      // Both lines are relative to THIS tree's own foot, because the ground rolls: a tree
+      // in a hollow has its lowest branch and its crown a metre lower than one on the rise,
+      // and comparing either against an absolute altitude would cull the wrong ray.
+      let low = max(ro.y + rd.y * tEnter, ro.y + rd.y * tExit) < tree.base.y + tree.limb;
+      let tall = min(ro.y + rd.y * tEnter, ro.y + rd.y * tExit) < tree.base.y + tree.h;
       let span = cylinderSpan(ro.xz, rd.xz, tree.base.xz, select(tree.bound, tree.stem, low));
       let tA = max(max(span.x, tEnter), 0.0);
       let tB = min(span.y, tExit);
@@ -548,7 +657,7 @@ fn moonVisible(x: vec3f, l: vec3f, base: vec2f, u: f32) -> f32 {
   let y = x + l * (s * (0.45 + 2.4 * u));
   let cell = floor(y.xz / s);
   let tree = stemAt(cell, cell + base);
-  if (tree.present < 0.5 || y.y > tree.h) { return 1.0; }
+  if (tree.present < 0.5 || y.y > tree.base.y + tree.h) { return 1.0; }
   let dxz = length(y.xz - tree.base.xz);
   let w = max(tree.r, 0.02);
   return 1.0 - 0.92 * smoothstep(w * 7.0, w * 1.1, dxz);
@@ -589,15 +698,50 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   let t = frameU.absTime;
 
   // THE WALK. A free-running translation with no fixed point: this is the whole motion
-  // budget, and the sway and bob are offsets on the same clock, never envelopes.
+  // budget, and the wander and the gait are offsets on the same clock, never envelopes.
   let walk = t * params.walkSpeed;
-  let eyeX = params.sway * (sin(t * 0.083) * 0.7 + sin(t * 0.031) * 0.3);
-  let eyeY = params.eyeHeight + params.bob * sin(t * 1.6);
+  /* THE GAIT, and it is DERIVED FROM THE WALK rather than added beside it — which is the
+     only reason it is not the second motion source this file's docblock warns about. A
+     step is about 0.72 m, so the stride rate is the walk's own speed over that: 2*pi/0.72
+     is 8.727. The body rises twice a stride, once per foot, and rolls sideways once, onto
+     the left foot and then the right — and that 2:1 relationship IS the cue. The first
+     draft bobbed at a fixed 1.6 rad/s, four cycles a minute, which is breathing; a
+     sinusoid at a rate the walk does not know about reads as floating, however small.
+     Neither term turns the camera. Both are TRANSLATIONS of the eye, so the moon, the
+     quiet zone and the per-pixel sky direction hold exactly as still as they did before —
+     which is what the screen-space veil and the headline each need, and it is why gait was
+     affordable here when heading drift was not (see the docblock's refusals). */
+  let stride = t * max(params.walkSpeed, 0.0) * 8.727;
+  let eyeX = params.sway * (sin(t * 0.083) * 0.7 + sin(t * 0.031) * 0.3)
+           + params.bob * 0.7 * sin(stride * 0.5);
+  let eyeY = params.eyeHeight + params.bob * sin(stride);
   // Rebased onto the eye's own cell so every ray runs near the origin in f32 while the
   // hash still reads an exact integer cell index (see the docblock).
   let s = max(params.spacing, 0.4);
   let base = floor(vec2f(eyeX, walk) / s);
-  let o = vec3f(eyeX - base.x * s, eyeY, walk - base.y * s);
+  /* AND THE EYE RIDES THE SAME SWELL — at a QUARTER of the amplitude, centred, and against
+     a floor. Sinking the trunk feet alone would be a wood of trees at different heights
+     beside a camera that glides; walking is the eye going down with them and coming up on
+     the rise, and the horizon drifting as it does. It is the SAME field, read at the eye's
+     continuous position rather than at a cell index, so the eye and the tree beside it
+     agree about which way the ground goes. One value noise a pixel, all pixels agreeing —
+     it is a function of the eye, not of the ray.
+     ⚑ WHY A QUARTER, CENTRED, AND CLAMPED, all three found the hard way at 'relief' 1.8:
+     the eye took the full one-sided swell, dropped to a tenth of a metre and then BELOW the
+     ground plane, and the plane — which is at y = 0 and stays flat, see below — printed a
+     hard horizontal edge straight across the lower third of the frame. That is precisely
+     the dead floor line this term exists to remove, drawn much darker. Centred, a quarter
+     of it, and floored at a fifth of a metre, the eye can never reach the plane at any
+     value of the knob.
+     ⚑ AND THE GROUND PLANE ITSELF DOES NOT ROLL, which is a refusal rather than an
+     omission. Intersecting a height field needs a march where a plane needs one divide, and
+     the ground is NEVER SEEN: 'mist' pools over 'fogHeight' metres and the floor of every
+     frame in this file is haze. Marching a surface to render something invisible is the
+     exact trade the rest of the file exists to refuse. What the swell buys is what is
+     actually visible — trunk feet meeting the mist at different heights, a stand dipping
+     together rather than each tree differing on its own, and the eye's own rise and fall. */
+  let swell = -max(params.relief, 0.0) * (standAt(vec2f(eyeX, walk) / s) - 0.5) * 0.5;
+  let o = vec3f(eyeX - base.x * s, max(eyeY + swell, 0.2), walk - base.y * s);
 
   // The camera never turns. Fixed basis, pitched up so the horizon sits below centre and
   // the trees tower — and so the sky's per-pixel direction is constant, which is what
@@ -762,6 +906,131 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   // found by looking rather than by arithmetic (§V912). Ending past the corner keeps the
   // falloff monotone everywhere the viewer can see.
   let vig = mix(1.0, smoothstep(2.4, 0.2, length(q * vec2f(0.62, 1.0))), clamp(params.vignette, 0.0, 1.0));
-  return vec4f(col * params.exposure * vig, 1.0);
+  /* THE ALPHA CHANNEL CARRIES DEPTH IN METRES, for the defocus pass downstream. A
+     customWgsl node's contract is one texture in and one texture out — there is no second
+     render target to write — so the channel this picture does not use is where the
+     geometry the next pass needs has to travel. It is the distance the view ray ran, or
+     'reach' where it met nothing, and the target is rgba16float, which resolves a metre at
+     fifty to about a sixteenth of one: far finer than a circle of confusion needs.
+     'dof1' writes an opaque 1.0 back, so nothing outside this pair ever sees it — but a
+     preview tapped off THIS node rather than the output will show a non-opaque alpha, and
+     that is a real consequence of the trick rather than a bug to go hunting. */
+  return vec4f(col * params.exposure * vig, min(tHit, reach));
+}
+`;
+
+/**
+ * E57's DEFOCUS PASS (T1170) — the near field, and only the near field.
+ *
+ * ## Why this exists and why it is not a far-field blur
+ *
+ * The ask was depth of field. Half of depth of field is already in the forest pass and
+ * always was: `fog` attenuates everything with distance, and a far-field blur would
+ * duplicate what the fog does and then compete with it for the same pixels — two different
+ * "this is far away" cues arguing. What fog CANNOT do is soften something that is too
+ * CLOSE, and that is the half worth buying, because a trunk sliding past at arm's length
+ * out of focus is the difference between walking through a forest and looking at one. So
+ * the circle of confusion here is one-sided: zero at `focus` and beyond, opening as the
+ * surface comes toward the eye. There is no far knob and that is a decision (§V146 — a
+ * knob whose every value ships a worse picture is not a knob).
+ *
+ * ## It is a separate pass, not lens sampling in the march
+ *
+ * Sampling a lens aperture inside the raymarch means N rays a pixel and N times the DDA;
+ * the entire budget argument in `documents/forest.ts` dies at N = 2. A gather over the
+ * finished frame is nine texture reads within about twenty pixels of each other, which is
+ * cache-resident. The cost is in the .md, measured against a same-run control.
+ *
+ * ## SCATTER, WRITTEN AS A GATHER, which is the part that is easy to get wrong
+ *
+ * The naive version reads the CENTRE pixel's depth, picks a radius from it and averages.
+ * That blurs the inside of a near trunk and leaves its silhouette razor sharp, because the
+ * background pixels just outside the edge are far away and choose radius zero — so the
+ * defocused object still has a hard outline, which is the one thing defocus is supposed to
+ * remove. Here every tap is instead weighted by ITS OWN circle of confusion against ITS OWN
+ * distance from the centre: a tap contributes here only if its own blur circle is wide
+ * enough to reach here. Near geometry therefore spreads OUTWARD over the background, which
+ * is what a real lens does and what the eye is looking for.
+ *
+ * The disc is eight taps on the golden angle at sqrt-spaced radii — equal area per tap —
+ * rotated by a hash of the pixel that is FIXED across frames, so the sampling is grain and
+ * never flicker (E55's finding, and the forest pass's own dither is the same trick).
+ */
+export const FOREST_DOF_WGSL = `${SHARED_UNIFORMS_WGSL}
+struct Params {
+  focus: f32,   // metres: at this distance and beyond the picture is sharp; nearer than it softens
+  blur: f32,    // the widest circle of confusion, as a fraction of the frame width; 0 passes the frame straight through
+};
+
+@group(0) @binding(0) var inputSampler: sampler;
+@group(0) @binding(1) var inputTexture: texture_2d<f32>;
+@group(0) @binding(2) var<uniform> frameU: SharedFrame;
+@group(0) @binding(3) var<uniform> params: Params;
+
+const TAPS: i32 = 12;
+const GOLDEN: f32 = 2.39996;
+
+fn hash21(p: vec2f) -> f32 {
+  var q = fract(vec3f(p.xyx) * 0.1031);
+  q = q + vec3f(dot(q, q.yzx + 33.33));
+  return fract((q.x + q.y) * q.z);
+}
+
+/* One-sided: 1 at the eye, 0 at 'focus' and past it. SQUARED, and the square is what sets
+   where the effect actually lives: a linear ramp spreads a little blur over the whole
+   mid-ground, where the fog is already doing that job and doing it better, so the two
+   cues argue. Squared, the curve is flat for most of the range and only bites in the last
+   third — at 'focus' 8.5 that is a circle of 0.74 at two metres, 0.51 at three and under
+   0.01 at seven, which is "the trunk you are about to walk past" and nothing else.
+   The first draft had 'focus' at 4.2 with the same square and the effect was INVISIBLE on
+   every frame but the one that happened to have a trunk inside a metre — the square had
+   pushed the whole ramp inside the near cell wall. Read the curve, do not assume it. */
+fn coc(depth: f32) -> f32 {
+  let x = 1.0 - smoothstep(0.0, max(params.focus, 0.05), depth);
+  return x * x;
+}
+
+@fragment
+fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
+  let centre = textureSampleLevel(inputTexture, inputSampler, uv, 0.0);
+  let r = max(params.blur, 0.0);
+  // The alpha the forest pass wrote is DEPTH; what leaves here is an opaque frame.
+  if (r < 1.0e-5) { return vec4f(centre.rgb, 1.0); }
+  let aspect = frameU.resolution.x / max(frameU.resolution.y, 1.0);
+  // A fixed per-pixel rotation, so eight taps do not print an eight-pointed star on every
+  // out-of-focus edge in the frame. Hashed off the pixel, not the frame: grain, not flicker.
+  let rot = hash21(floor(uv * frameU.resolution) + 0.5) * 6.2831853;
+  let cr = cos(rot);
+  let sr = sin(rot);
+  var acc = centre.rgb;
+  var wsum = 1.0;
+  for (var i: i32 = 0; i < TAPS; i = i + 1) {
+    let a = f32(i) * GOLDEN;
+    let ca = cos(a);
+    let sa = sin(a);
+    // sqrt-spaced radii put equal area behind each tap instead of crowding the centre.
+    let k = sqrt((f32(i) + 0.5) / f32(TAPS));
+    let d = vec2f(ca * cr - sa * sr, sa * cr + ca * sr) * k;
+    let s = textureSampleLevel(inputTexture, inputSampler, uv + d * r * vec2f(1.0, aspect), 0.0);
+    // THE SCATTER, AS A GATHER: this tap reaches this pixel only if its own circle of
+    // confusion is at least as wide as the distance between them.
+    /* The band around that threshold is wide, and it is PROPORTIONAL to k rather than
+       added to it. Wide because a narrow one makes the weight very nearly binary and
+       twelve taps voting 0 or 1 print visible speckle on any partly defocused edge —
+       grain that reads as dirt on the lens rather than as defocus.
+       ⚠ PROPORTIONAL BECAUSE AN ADDITIVE BAND LEAKS. The first draft used k ± 0.34, whose
+       lower edge is NEGATIVE for the inner taps, so a tap with a circle of confusion of
+       exactly zero still landed with weight 0.10 — a permanent low-grade blur over the
+       whole frame, the far field included, which is precisely the "argues with the fog"
+       failure this pass was designed to avoid. It was invisible on every still and the
+       arithmetic found it: with 'focus' at 0, where nothing at all may be defocused,
+       twenty-seven thousand pixels of fifty-seven still differed from the pass switched
+       off. Scaled by k the lower edge cannot go below zero, so a zero circle contributes
+       exactly nothing and 'focus' at 0 is a byte-exact passthrough. */
+    let w = smoothstep(k * 0.55, k * 1.5, coc(s.a));
+    acc = acc + s.rgb * w;
+    wsum = wsum + w;
+  }
+  return vec4f(acc / wsum, 1.0);
 }
 `;
