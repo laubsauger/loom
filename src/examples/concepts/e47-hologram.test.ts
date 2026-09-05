@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { pointStorageId } from "../../nodes/definitions/point-storage.ts";
 import { listExamples } from "../catalogue.ts";
 import { requireExample } from "../runner.ts";
-import type { DrawPassDescriptor, DispatchPassDescriptor } from "../../runtime/backend/plan.ts";
+import type { DrawPassDescriptor } from "../../runtime/backend/plan.ts";
 
 /**
  * E47 Hologram — the document half of T956's claims (the kernels' physics live in
@@ -39,21 +39,46 @@ describe("E47 Hologram", () => {
     }
   });
 
-  it("feeds each carve its depth and each paint its source — never crossed, and the cut sits only on the zone's paint", () => {
-    const dispatches = plan.passes.filter(
-      (pass): pass is DispatchPassDescriptor => pass.kind === "dispatch",
-    );
-    const texturesOf = (prefix: string) =>
-      dispatches.find((pass) => pass.id.startsWith(prefix))?.textures?.map((t) => t.resourceId);
-    // T972: carve reads the switched DEPTH family, paint the SOURCE family; crossing
-    // either pair compiles fine and renders nonsense (§V655's family). T977 threads the
-    // zone's colour THROUGH the DepthCut component — the zone paints the background-cut
-    // picture — while the wall deliberately paints the RAW source: the cut on the wall
-    // would carve holes in the thing whose job is to be behind everything.
+  it("feeds each carve its depth and each paint its heat map — never crossed, and the cut sits only on the zone's", () => {
+    const texturesOf = (prefix: string): readonly string[] => {
+      const pass = plan.passes.find((entry) => entry.id.startsWith(prefix));
+      const textures = pass === undefined || !("textures" in pass) ? undefined : pass.textures;
+      return (textures ?? []).map((binding) => binding.resourceId);
+    };
+    // T972: carve reads the switched DEPTH family; crossing the pair compiles fine and
+    // renders nonsense (§V655's family).
     expect(texturesOf("holo/carve")).toContain("target:pick:out");
-    expect(texturesOf("holo/paint")).toContain("target:cut/cut:out");
     expect(texturesOf("holo2/carve")).toContain("target:soften2:out");
-    expect(texturesOf("holo2/paint")).toContain("target:src:out");
+
+    /* T1201 — THE COLOUR PORT CARRIES THE HEAT MAP, and the chain behind it is the claim.
+       Each paint reads a `lookup` of the palette KEYED ON THE SAME DEPTH TEXTURE its own
+       carve read, so a mote's colour is registered with its position by construction. The
+       subject's arrives through `braid1`, which is what still carries the §T977 cut —
+       rgb from the palette, ALPHA from the cut. Reading the palette straight into
+       `holo/paint` would compile, look almost identical in a still, and silently restore
+       every background mote to full coverage (B189's cohorts back to zero), so the BRAID
+       is the thing this line is holding down. */
+    expect(texturesOf("holo/paint")).toContain("target:braid:out");
+    expect(texturesOf("braid")).toEqual(
+      expect.arrayContaining(["target:coat:out", "target:cut/cut:out"]),
+    );
+    expect(texturesOf("coat")).toEqual(
+      expect.arrayContaining(["target:pick:out", "target:palette:out"]),
+    );
+
+    /* The wall paints its own segment of the same palette off its OWN depth chain, and it
+       is deliberately un-cut: a background cut on the thing whose job is to be behind
+       everything would carve holes in it. So no `cut/` texture may appear anywhere on the
+       wall's colour path — asserted, because the wall's own map and the subject's differ
+       only when `srcpick1` moves, which is exactly when a crossed wire stops being
+       invisible (§T979). */
+    expect(texturesOf("holo2/paint")).toContain("target:wcoat:out");
+    expect(texturesOf("wcoat")).toEqual(
+      expect.arrayContaining(["target:soften2:out", "target:palette:out"]),
+    );
+    for (const id of [...texturesOf("holo2/paint"), ...texturesOf("wcoat")]) {
+      expect(id.startsWith("target:cut/"), `wall colour reads ${id}`).toBe(false);
+    }
   });
 
   it("draws both clouds, each pairing ITS range's positions with ITS paint's tints", () => {

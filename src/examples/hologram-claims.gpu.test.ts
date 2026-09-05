@@ -350,6 +350,126 @@ describe("E47 Hologram — the zone and the wall (T983, §T979)", () => {
     // vacuously. Full coverage survives on a real cohort (the subject's bright core).
     expect(atOne).toBeGreaterThan(100);
   }, 240_000);
+
+  /**
+   * T1201 — THE PALETTE IS A HEAT MAP, WHICH MEANS ITS COLOUR IS A FUNCTION OF DEPTH.
+   *
+   * The owner's ask was aesthetic ("Relief's heat map pattern … Hologram is just blue and
+   * kind of boring"), and an aesthetic ask has an exact claim under it: a palette read
+   * through a `lookup` KEYED ON THE DEPTH MAP makes a mote's colour a monotone function
+   * of its distance. A palette lifted from E27 WITHOUT its key would tint every mote the
+   * same and look, in a screenshot, like a colour change — which is §V920's failure mode
+   * (E55 shipped `brightness: 0` copied from a document that drove it) pointed at hue
+   * instead of at brightness. So the assertion is not "the picture is colourful": it is
+   * that colour ORDERS BY DEPTH, and that it stops doing so the moment the key is cut.
+   *
+   * WHY RED, and why it is exact rather than a band. `paint` publishes
+   * `tint = vec4f(colour.rgb * gain * cover, cover)`, so `tint.r / tint.a` recovers
+   * `palette.r * gain` for any lit mote — coverage divides out, which is what lets the
+   * cut's own cohorts stay out of this. `palette1`'s red is non-decreasing across all six
+   * stops (0.004, 0.02, 0.08, 0.86, 1, 1) and `coat1`'s index is non-increasing in depth
+   * (brighter map = nearer = higher index), so composed, red must be NON-INCREASING in
+   * depthN. That is a property of the two, not a measurement of the picture.
+   *
+   * Measured on the shipped frame: 2508 lit motes, 370 distinct reds, span 0.349, and the
+   * per-octile means run 0.5500 0.5500 0.5500 0.5500 0.5297 0.4074 0.3173 0.2211 near to
+   * far — the four flat octiles are the orb's core, where the understudy map CLIPS at 1.0
+   * and the carve clamps the same sample, so a flat colour there agrees with a flat depth.
+   *
+   * THE MUTANT IS THE COPY-WITHOUT-THE-KEY. `coat1.scale = 0` leaves the ramp, the braid,
+   * the cut and every cohort exactly where they are and only stops the lookup READING the
+   * map: measured, the span collapses to exactly 0 and all 2508 motes publish one red. So
+   * this test cannot be satisfied by a prettier static tint, which is the whole point.
+   */
+  it("the subject's colour is its depth: red falls monotonically with depthN, and flattens when the key is cut", async () => {
+    if (dawnError !== undefined) throw new Error(`Dawn unavailable: ${dawnError}`);
+
+    /** Lit motes as (depth, un-premultiplied red, coverage), near to far. */
+    const litByDepth = (result: unknown): ReadonlyArray<{ depth: number; red: number; cover: number }> => {
+      const raw = (result as { buffers?: Record<string, ArrayBuffer> }).buffers?.[pointStorageId("holo/paint")];
+      expect(raw, "no tint probe").toBeDefined();
+      const tint = pointRegionSlice(raw!, DEPTH_POINT_SCHEMA, DEPTH_POINT_CAPACITY, "tint").floats;
+      const depthN = pointRegionSlice(raw!, DEPTH_POINT_SCHEMA, DEPTH_POINT_CAPACITY, "depthN").floats;
+      const lit: { depth: number; red: number; cover: number }[] = [];
+      for (let slot = 0; slot < tint.length / 4; slot += 1) {
+        const alpha = tint[slot * 4 + 3]!;
+        if (alpha === 0) continue;
+        lit.push({ depth: depthN[slot]!, red: tint[slot * 4]! / alpha, cover: alpha });
+      }
+      return lit.sort((a, b) => a.depth - b.depth);
+    };
+    /** Reds of the FULLY covered motes, undivided — so equality here is f32-exact. */
+    const opaqueReds = (lit: ReadonlyArray<{ red: number; cover: number }>): Set<number> =>
+      new Set(lit.filter((point) => point.cover === 1).map((point) => point.red));
+    /** Mean red per depth octile, near to far. */
+    const octiles = (lit: ReadonlyArray<{ red: number }>): number[] => {
+      const means: number[] = [];
+      for (let k = 0; k < 8; k += 1) {
+        const from = Math.floor((k * lit.length) / 8);
+        const to = Math.floor(((k + 1) * lit.length) / 8);
+        const slice = lit.slice(from, to);
+        means.push(slice.reduce((total, point) => total + point.red, 0) / slice.length);
+      }
+      return means;
+    };
+
+    const shipped = litByDepth(await renderE47());
+    // The frame has to contain a subject at all, or every ordering below is vacuous.
+    expect(shipped.length).toBeGreaterThan(1_000);
+
+    /* The one allowance in this test, and it is DERIVED rather than a band (§V147). The
+       octile means are computed from `tint.r / tint.a`, and the numerator was rounded to
+       f32 in the shader BEFORE the division — so one texel read at two coverages comes
+       back as two doubles differing by an f32 ulp at magnitude ~0.55, which is 6e-8. Four
+       of the eight octiles are the orb's clipped core and carry ONE texel between them,
+       so without this the ordering assertion would be reading round-off. It is three
+       orders of magnitude below the smallest real step the shipped picture has (0.02 —
+       octile 3 to 4), and the red-verify below drives the real steps to zero. */
+    const F32_ROUNDING = 1e-6;
+    const shippedOctiles = octiles(shipped);
+    // NON-INCREASING with depth, every step — the composition of two monotone functions,
+    // so this is exact and any inversion is a real break in the mapping.
+    for (let k = 1; k < shippedOctiles.length; k += 1) {
+      expect(shippedOctiles[k]!, `octile ${k} against ${k - 1}`).toBeLessThanOrEqual(
+        shippedOctiles[k - 1]! + F32_ROUNDING,
+      );
+    }
+    // And it must actually DESCEND, not merely fail to rise: the far half is where the
+    // map has range left after the orb's clipped core, and it spends most of the ramp.
+    expect(shippedOctiles[7]!).toBeLessThan(shippedOctiles[3]! * 0.6);
+
+    const reds = shipped.map((point) => point.red);
+    const span = Math.max(...reds) - Math.min(...reds);
+    // Measured 0.349 across a 0.55 gain — i.e. the lit cloud spends 63% of the palette's
+    // red travel. A floor well under it; the mutant below puts it at 0.
+    expect(span).toBeGreaterThan(0.25);
+    // 68 distinct reds among the fully covered motes alone (measured), so the mutant's
+    // "exactly one" below is a real collapse rather than a cohort that never varied.
+    expect(opaqueReds(shipped).size).toBeGreaterThan(10);
+
+    /* THE PALETTE WITHOUT ITS KEY (§V920). `scale: 0` makes the index the offset alone,
+       so every mote reads one texel of the same ramp: same nodes, same wires, same
+       cohorts, no heat map. `offset: 0.8` keeps it LIT — a mutant that also went black
+       would be caught by brightness and would not test the ordering. */
+    const flat = litByDepth(
+      await renderE47({
+        mutate: (graph) => {
+          Object.assign(graph.nodes["coat"]!.parameters as Record<string, unknown>, { scale: 0, offset: 0.8 });
+        },
+      }),
+    );
+    // The cut is untouched by the mutant, so the two runs light the SAME motes — which is
+    // what makes the comparison about colour and nothing else.
+    expect(flat.length).toBe(shipped.length);
+    /* EXACTLY ONE RED, exactly (§V147) — asserted on the FULLY COVERED motes and on
+       `tint.r` undivided, because that is where the equality is f32-exact. A mote at
+       partial coverage carries `red * gain * cover` and dividing the coverage back out
+       rounds, so the 999 rim motes read one texel as ~400 neighbouring floats: real
+       arithmetic noise, not a second colour, and asserting through it would have made
+       this an epsilon band instead of an identity. Measured: 68 distinct here shipped,
+       1 with the key cut. */
+    expect(opaqueReds(flat).size).toBe(1);
+  }, 240_000);
 });
 
 /** The output's colour space for a render result — shared by the diff helpers. */

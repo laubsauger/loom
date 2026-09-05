@@ -180,9 +180,9 @@
     "f0max": 0.6129
   },
   "E47-Hologram.loom.json": {
-    "motion": 0.02107,
-    "range": 0.9026,
-    "f0max": 0.9475,
+    "motion": 0.03552,
+    "range": 0.9991,
+    "f0max": 1,
     "cardFloor": 0.0009
   },
   "E48-Marionette.loom.json": {

@@ -59,6 +59,7 @@
               "id": "cut",
               "label": "cut1",
               "parameters": {
+                "apply": "colour",
                 "channel": "red"
               },
               "position": {
@@ -559,6 +560,17 @@
           "portId": "in1"
         }
       },
+      "e-braid-holo": {
+        "id": "e-braid-holo",
+        "source": {
+          "nodeId": "braid",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "holo",
+          "portId": "field"
+        }
+      },
       "e-cam-srcpick": {
         "id": "e-cam-srcpick",
         "order": 1,
@@ -571,15 +583,26 @@
           "portId": "inputs"
         }
       },
-      "e-cut-holo": {
-        "id": "e-cut-holo",
+      "e-coat-braid": {
+        "id": "e-coat-braid",
+        "source": {
+          "nodeId": "coat",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "braid",
+          "portId": "in1"
+        }
+      },
+      "e-cut-braid": {
+        "id": "e-cut-braid",
         "source": {
           "nodeId": "cut",
           "portId": "out"
         },
         "target": {
-          "nodeId": "holo",
-          "portId": "field"
+          "nodeId": "braid",
+          "portId": "in2"
         }
       },
       "e-depth-pick": {
@@ -649,6 +672,39 @@
           "portId": "in2"
         }
       },
+      "e-palette-coat": {
+        "id": "e-palette-coat",
+        "source": {
+          "nodeId": "palette",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "coat",
+          "portId": "lookup"
+        }
+      },
+      "e-palette-wcoat": {
+        "id": "e-palette-wcoat",
+        "source": {
+          "nodeId": "palette",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "wcoat",
+          "portId": "lookup"
+        }
+      },
+      "e-pick-coat": {
+        "id": "e-pick-coat",
+        "source": {
+          "nodeId": "pick",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "coat",
+          "portId": "source"
+        }
+      },
       "e-pick-cut": {
         "id": "e-pick-cut",
         "source": {
@@ -705,6 +761,17 @@
           "portId": "field_2"
         }
       },
+      "e-soften2-wcoat": {
+        "id": "e-soften2-wcoat",
+        "source": {
+          "nodeId": "soften2",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "wcoat",
+          "portId": "source"
+        }
+      },
       "e-src-flat2": {
         "id": "e-src-flat2",
         "source": {
@@ -714,17 +781,6 @@
         "target": {
           "nodeId": "flat2",
           "portId": "input"
-        }
-      },
-      "e-src-holo2": {
-        "id": "e-src-holo2",
-        "source": {
-          "nodeId": "src",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "holo2",
-          "portId": "field"
         }
       },
       "e-src-srcpick": {
@@ -783,6 +839,17 @@
           "portId": "points"
         }
       },
+      "e-wcoat-holo2": {
+        "id": "e-wcoat-holo2",
+        "source": {
+          "nodeId": "wcoat",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "holo2",
+          "portId": "field"
+        }
+      },
       "e-zone-dots": {
         "id": "e-zone-dots",
         "source": {
@@ -824,6 +891,22 @@
         },
         "type": "noise"
       },
+      "braid": {
+        "definitionVersion": 1,
+        "id": "braid",
+        "label": "braid1",
+        "parameters": {
+          "outa": "in2a",
+          "outb": "in1b",
+          "outg": "in1g",
+          "outr": "in1r"
+        },
+        "position": {
+          "x": -1020,
+          "y": -580
+        },
+        "type": "reorder"
+      },
       "cam": {
         "definitionVersion": 1,
         "id": "cam",
@@ -834,6 +917,34 @@
           "y": 140
         },
         "type": "webcam"
+      },
+      "coat": {
+        "definitionVersion": 1,
+        "id": "coat",
+        "label": "coat1",
+        "parameters": {
+          "channel": "luminance",
+          "offset": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "-0.06 + op('cycle1').chan.value"
+              },
+              "static": {
+                "kind": "static",
+                "value": -0.06
+              }
+            },
+            "mode": "expression"
+          },
+          "row": 0.5,
+          "scale": 1.06
+        },
+        "position": {
+          "x": -1320,
+          "y": -580
+        },
+        "type": "lookup"
       },
       "cut": {
         "definitionVersion": 1,
@@ -849,6 +960,23 @@
           "y": -280
         },
         "type": "component:depthCut@1"
+      },
+      "cycle": {
+        "definitionVersion": 1,
+        "id": "cycle",
+        "label": "cycle1",
+        "parameters": {
+          "amplitude": 0.05,
+          "frequency": 0.037,
+          "offset": 0,
+          "phase": 0,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -1920,
+          "y": -580
+        },
+        "type": "lfo"
       },
       "depth": {
         "definitionVersion": 1,
@@ -974,8 +1102,8 @@
         "label": "glowm1",
         "parameters": {
           "color": [
-            0.55,
-            0.85,
+            1,
+            1,
             1,
             1
           ]
@@ -995,7 +1123,7 @@
           "far": 2.6,
           "fov": 55,
           "gain": 0.55,
-          "heat": 0.45,
+          "heat": 0,
           "inverseDepth": 1,
           "near": 0.7,
           "resolution": 160,
@@ -1015,11 +1143,11 @@
           "displace": 1.2,
           "far": 4.4,
           "fov": 55,
-          "gain": 0.4,
-          "heat": 0.8,
+          "gain": 0.62,
+          "heat": 0,
           "inverseDepth": 1,
           "near": 2,
-          "resolution": 120,
+          "resolution": 176,
           "unproject": 1
         },
         "position": {
@@ -1116,6 +1244,78 @@
           "y": -60
         },
         "type": "output"
+      },
+      "palette": {
+        "definitionVersion": 2,
+        "id": "palette",
+        "label": "palette1",
+        "parameters": {
+          "interp": "smooth",
+          "period": 1,
+          "phase": 0,
+          "stops": [
+            {
+              "color": [
+                0.004,
+                0.01,
+                0.035,
+                1
+              ],
+              "position": 0
+            },
+            {
+              "color": [
+                0.02,
+                0.13,
+                0.3,
+                1
+              ],
+              "position": 0.34
+            },
+            {
+              "color": [
+                0.08,
+                0.5,
+                0.62,
+                1
+              ],
+              "position": 0.56
+            },
+            {
+              "color": [
+                0.86,
+                0.2,
+                0.6,
+                1
+              ],
+              "position": 0.76
+            },
+            {
+              "color": [
+                1,
+                0.46,
+                0.32,
+                1
+              ],
+              "position": 0.9
+            },
+            {
+              "color": [
+                1,
+                0.97,
+                0.9,
+                1
+              ],
+              "position": 1
+            }
+          ],
+          "type": "horizontal"
+        },
+        "position": {
+          "x": -1620,
+          "y": -580
+        },
+        "type": "ramp"
       },
       "pick": {
         "definitionVersion": 1,
@@ -1272,9 +1472,9 @@
         "label": "wallm1",
         "parameters": {
           "color": [
-            0.32,
-            0.5,
-            0.95,
+            1,
+            1,
+            1,
             1
           ]
         },
@@ -1284,6 +1484,34 @@
         },
         "type": "materialUnlit"
       },
+      "wcoat": {
+        "definitionVersion": 1,
+        "id": "wcoat",
+        "label": "wcoat1",
+        "parameters": {
+          "channel": "luminance",
+          "offset": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "-0.94 + op('cycle1').chan.value"
+              },
+              "static": {
+                "kind": "static",
+                "value": -0.94
+              }
+            },
+            "mode": "expression"
+          },
+          "row": 0.5,
+          "scale": 2.25
+        },
+        "position": {
+          "x": -1320,
+          "y": 1040
+        },
+        "type": "lookup"
+      },
       "wdots": {
         "definitionVersion": 1,
         "id": "wdots",
@@ -1292,7 +1520,7 @@
           "blend": "additive",
           "material": "wallm1",
           "mode": "points",
-          "scale": 0.005,
+          "scale": 0.007,
           "soft": 1,
           "spherical": false,
           "tint": {
