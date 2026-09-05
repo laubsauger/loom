@@ -142,6 +142,18 @@ export interface HeadlessRenderRequest {
 
 export interface HarnessControl {
   resize(outputId: string, size: readonly [number, number]): void;
+  /**
+   * B186 — THE DOCUMENT-BOUNDARY RITE (T552), reachable offline.
+   *
+   * `use-frame-loop` calls exactly this the moment a new document's plan is installed,
+   * and this harness never called it — so every offline render started every simulation
+   * from FRESH textures while the app started it from CLEARED ones. Those were different
+   * states (a clear wrote opaque black; an allocation is zeroed), and the gap is the
+   * whole of B186: E2 and E24 rendered healthy here and dead in the app from the day
+   * that rite started running, with every gate green. A harness that cannot do what the
+   * app does on open cannot see what the app sees on open.
+   */
+  resetTemporalHistory(): void;
   readonly outputResourceId: string;
   readonly plan: CompiledGraph;
 }
@@ -685,6 +697,10 @@ export async function renderHeadless(request: HeadlessRenderRequest): Promise<He
     const control: HarnessControl = {
       resize: (outputId, size) => {
         backend.resize(outputId, size);
+      },
+      // B186: byte for byte the call `use-frame-loop` makes at a document boundary.
+      resetTemporalHistory: () => {
+        backend.resetTemporalHistory(undefined, { buffers: true, silent: true });
       },
       outputResourceId,
       plan,

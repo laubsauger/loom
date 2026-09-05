@@ -97,6 +97,14 @@ export interface VgpuBackendOptions {
 /** A rendering exception storm means something structural broke; stop before attempt 4. */
 const MAX_CONSECUTIVE_FRAME_ERRORS = 3;
 
+/**
+ * B186 — what "history is gone" writes, and it is spelled out because vgpu's default is
+ * not it: a target with no `clearColor` clears to `[0, 0, 0, 1]`, and a pair that reads
+ * back opaque is not what a fresh allocation looks like (WebGPU zeroes new textures,
+ * alpha included). `clearTemporalHistory` promises the two are the same state.
+ */
+const CLEARED_HISTORY = [0, 0, 0, 0] as const;
+
 const defaultRetryDelay = (attempt: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, 250 * 2 ** attempt));
 
@@ -680,20 +688,33 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       boundaryExternals.length > 0
     ) {
       guard.assertOutsideFrame("temporal history clear");
+      /* B186 — THE CLEAR COLOUR IS NAMED, and it is named because the default is not it.
+         vgpu's `clear: true` uses the TARGET's own `clearColor`, which defaults to
+         `[0, 0, 0, 1]` (opaque black), and nothing here ever sets one — so "cleared"
+         history read back as rgb 0 with ALPHA 1 while a freshly allocated pair (which
+         WebGPU zero-initialises) reads back alpha 0. Reset and first run were therefore
+         DIFFERENT STATES, and the difference is exactly the channel a one-texture
+         simulation has left to carry its "history exists" flag in: E2/E24's Gray-Scott
+         kernel re-seeds on `alpha < 0.5`, so after any reset it stepped from U=0,V=0
+         instead of seeding, U ramped to 1 through the feed term, V stayed 0 and the
+         field sat on the dead fixed point — a black picture in the app, where the T552
+         load rite runs, and a healthy one under `renderHeadless`, which never resets.
+         §V22's "history is gone" has to mean the same thing at both entrances. */
       frame(gpu, (f) => {
         for (const pair of selected) {
-          f.pass({ target: pair.read, clear: true }, () => {});
-          f.pass({ target: pair.write, clear: true }, () => {});
+          f.pass({ target: pair.read, clear: CLEARED_HISTORY }, () => {});
+          f.pass({ target: pair.write, clear: CLEARED_HISTORY }, () => {});
         }
         for (const ring of selectedRings) {
-          f.pass({ target: ring.current(), clear: true }, () => {});
+          f.pass({ target: ring.current(), clear: CLEARED_HISTORY }, () => {});
         }
       });
       /* The plain targets clear through a RAW encoder pass (loadOp clear, storeOp
          store, no draws). Measured, not assumed: the frame()-idiom empty-pass clear
-         that works for ping-pong pairs (probed: a pair reads back 0 through it) left a
-         PLAIN target at 255 in this change's own gate — so do not unify these two
-         paths without re-running reset-boundary.gpu.test.ts against the unified one. */
+         that works for ping-pong pairs (probed: a pair reads back 0 through it — in
+         RGB, which is the half of that probe B186 had to finish) left a PLAIN target
+         at 255 in this change's own gate — so do not unify these two paths without
+         re-running reset-boundary.gpu.test.ts against the unified one. */
       if (boundaryTargets.length > 0 || boundaryExternals.length > 0) {
         const device = gpu.gpu as GPUDevice;
         const encoder = device.createCommandEncoder({ label: "boundary target clear" });

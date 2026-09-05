@@ -82,3 +82,113 @@ describe("the boundary rite clears plain targets (T764, §B142)", () => {
     }
   }, 120_000);
 });
+
+/**
+ * B186 — A CLEARED PAIR IS A FRESH PAIR, ALPHA INCLUDED.
+ *
+ * The rite above was probed in RGB and the fourth channel was never looked at. It was
+ * not zero: `clear: true` uses the vgpu target's own `clearColor`, which defaults to
+ * `[0, 0, 0, 1]`, and nothing in the backend ever set one — so "history is gone" wrote
+ * OPAQUE black over a pair while a freshly allocated pair (WebGPU zeroes new textures)
+ * reads back transparent. Two different states behind one word, and the difference sits
+ * in the one channel a single-texture simulation has left over to carry its "has this
+ * run before" flag in.
+ *
+ * That is not hypothetical: E2 and E24's Gray-Scott kernel re-seeds on `alpha < 0.5`
+ * (its own docblock: "Reset really is re-seed, and it is the same code path on frame 0
+ * as on the frame after a reset"). Under `renderHeadless`, which never reset, it seeded
+ * and lived. In the app, where T552's load rite runs before the first frame of every
+ * document opened, it never seeded once — U ramped to 1 through the feed term, V stayed
+ * 0, and the field sat on the dead fixed point. A black example, and every gate green.
+ *
+ * Asserted on the PAIR because that is the carrier the RGB probe missed, and by reading
+ * the pair's own resource rather than the output, so nothing downstream can launder it.
+ * `src/examples/reaction-diffusion-claims.gpu.test.ts` states the same property as a
+ * picture; this one states it as the byte.
+ */
+describe("a cleared ping-pong pair reads back zero in ALL FOUR channels (B186)", () => {
+  it("alpha is 0 after the boundary rite and after a scoped Feedback reset", async () => {
+    const probe = await probeDawn();
+    if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
+
+    const registry = createNodeRegistry(allNodeDefinitions).view();
+    const plan = compileGraph({
+      graph: {
+        revision: 1,
+        nodes: {
+          fill: {
+            id: "fill", type: "solid", definitionVersion: 1, label: "fill1",
+            position: { x: 0, y: 0 }, parameters: { color: [1, 1, 1, 1] },
+          },
+          // T350: the loop is a NAME. `source` points at the Solid's label.
+          state: {
+            id: "state", type: "feedback", definitionVersion: 1, label: "state1",
+            position: { x: 0, y: 0 },
+            parameters: { source: "fill1", persistence: 1, clearColor: [0, 0, 0, 0], substeps: 1 },
+          },
+          out: { id: "out", type: "output", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: {} },
+        },
+        edges: {
+          e1: { id: "e1", source: { nodeId: "state", portId: "out" }, target: { nodeId: "out", portId: "input" } },
+        },
+        groups: {},
+      } as never,
+      settings: {
+        outputResolution: { width: 32, height: 32 },
+        workingFormat: "rgba8unorm",
+        randomSeed: 7,
+        previewLongEdge: 192,
+        previewFps: 20,
+        limits: { maxResolution: 4096, maxDispatch: 65535, maxBufferBytes: 268_435_456, memoryBudgetBytes: 1_073_741_824 },
+      } as never,
+      registry,
+      capabilities: {
+        tier: "B",
+        features: [],
+        formats: ["rgba8unorm", "rgba8unorm-srgb", "rgba16float", "r32float"],
+        timestampQuery: false,
+        limits: { maxTextureDimension2D: 8192 },
+      } as never,
+    });
+    expect(plan.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    const pairId = plan.resources.find((resource) => resource.kind === "pingPong")?.id;
+    expect(pairId, "the fixture must actually build a ping-pong pair").toBeDefined();
+
+    const backend = createVgpuBackend({ host: nodeGpuHost() });
+    try {
+      await backend.initialize({});
+      const compiled = await backend.compile(plan);
+      const step = (frameIndex: number): void => {
+        backend.render(compiled, {
+          frame: { timeSeconds: frameIndex / 60, deltaSeconds: 1 / 60, frameIndex, mode: "offline", randomSeed: 7 },
+          pointer: { x: 0, y: 0, buttons: 0 },
+          resolution: [32, 32],
+        } as never);
+      };
+      const alphaOf = async (): Promise<number> => {
+        const read = await backend.readOutput(pairId as string);
+        let max = 0;
+        for (let at = 3; at < read.bytes.length; at += 4) max = Math.max(max, read.bytes[at] ?? 0);
+        return max;
+      };
+
+      step(0);
+      step(1);
+      // The Solid is opaque white, so the pair genuinely holds alpha before the reset —
+      // without this the assertions below would pass on a pair that was never written.
+      expect(await alphaOf()).toBe(255);
+
+      backend.resetTemporalHistory(undefined, { buffers: true, silent: true });
+      expect(await alphaOf(), "the load rite must leave the pair transparent").toBe(0);
+
+      step(2);
+      expect(await alphaOf()).toBe(255);
+
+      // §V126's per-node reset takes the same path and owes the same state.
+      backend.resetTemporalHistory([pairId as string], { silent: true });
+      expect(await alphaOf(), "a scoped Feedback reset must leave the pair transparent").toBe(0);
+    } finally {
+      backend.dispose();
+    }
+  }, 120_000);
+});
