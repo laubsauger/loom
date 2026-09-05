@@ -11,6 +11,7 @@ import {
   webcamNode,
 } from "./media.ts";
 import { compileContext, readNodePlan } from "./test-support.ts";
+import { PICTURE_FILE_ACCEPT, pictureFileKind } from "../../domain/media/picture-file.ts";
 
 /**
  * The external-texture family: Movie File In, Webcam, Text (T263, T243, §V135).
@@ -107,5 +108,61 @@ describe("Text (T243)", () => {
     // not carry, and a missing family falls back rather than failing.
     expect(textNode.category).toBe("generator");
     expect(textNode.resolutionPolicy).toEqual({ kind: "project" });
+  });
+});
+
+/**
+ * ⚑ T1223 — THE DESCRIPTION IS A CLAIM, AND THIS IS THE CLAIM'S GATE.
+ *
+ * `movieFileIn` opened with *"Plays a video or still image file"* from T493 until T1223,
+ * while `use-media-sources` built a `<video>` and nothing else. It was the fourth
+ * overclaiming description found in one day, and the worst kind: it names a capability
+ * that is not there, so someone who tries it gets black and assumes they held it wrong.
+ *
+ * So the text is not checked for wording — it is checked for TRUTH, by deriving the format
+ * names out of the sentence and asking the code whether it honours each one. Add "TIFF" to
+ * the description and this reddens until the classifier and the picker agree; drop a format
+ * from the accept list and it reddens the other way.
+ */
+describe("Movie File In's description is true of the code (T1223)", () => {
+  const description = movieFileInNode.description ?? "";
+
+  it("names the still formats it can actually show, and the picker offers each one", () => {
+    const named = ["PNG", "JPEG", "WebP", "AVIF", "GIF", "BMP"].filter((format) =>
+      description.includes(format),
+    );
+    // The sentence must name SOME stills, or this test passes by describing nothing.
+    expect(named.length).toBeGreaterThan(3);
+
+    for (const format of named) {
+      const extension = format === "JPEG" ? "jpg" : format.toLowerCase();
+      expect(pictureFileKind(`photo.${extension}`), format).toBe("still");
+      expect(PICTURE_FILE_ACCEPT, format).toContain(
+        format === "JPEG" ? "image/jpeg" : `image/${format.toLowerCase()}`,
+      );
+    }
+  });
+
+  /**
+   * The other half of honesty: what it says it CANNOT do must also be true, or the refusal
+   * is the next stale claim. EXR must classify as `hdr` — refused by name — and must not
+   * be quietly offered by the picker.
+   */
+  it("says EXR is refused, and EXR is refused", () => {
+    expect(description).toContain("EXR");
+    expect(description).toContain("REFUSED BY NAME");
+    expect(pictureFileKind("env.exr")).toBe("hdr");
+    expect(pictureFileKind("sky.hdr")).toBe("hdr");
+    expect(PICTURE_FILE_ACCEPT).not.toContain("exr");
+  });
+
+  /**
+   * The file slot has to be the kind whose accept string the picker reads, or every claim
+   * above is true of a dialog the user cannot reach (the owner's actual symptom).
+   */
+  it("declares the file slot as the kind that takes either", () => {
+    const file = movieFileInNode.parameters?.["file"];
+    expect(file?.type).toBe("asset");
+    expect((file as { kind?: string }).kind).toBe("picture");
   });
 });

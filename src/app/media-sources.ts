@@ -112,6 +112,67 @@ export interface VideoMediaSource {
 }
 
 /**
+ * A decoded still (T1223). Structural for the same reason `MediaElement` is: an
+ * `ImageBitmap` satisfies it, and a test satisfies it with three fields and no DOM.
+ *
+ * It is handed to `copyExternalImageToTexture` untouched, exactly as the video element is
+ * (§V7: no readback, no CPU copy), which is why nothing here reads its pixels.
+ */
+export interface StillImage {
+  readonly width: number;
+  readonly height: number;
+  /** `ImageBitmap.close` — frees the decoded bytes. Optional so a test needs no bitmap. */
+  close?(): void;
+}
+
+/**
+ * A STILL IS A ONE-FRAME STREAM (T1223) — the whole design, in eight lines.
+ *
+ * The owner asked for images "played back as a continuous video stream, so it becomes
+ * transparent for anyone who consumes it — it shouldn't matter, image or video". That
+ * transparency is not something built on top of the media contract; it is what the
+ * contract ALREADY says. `MediaSourceFrame` is `{ frameId, image }`, and §V136 makes an
+ * UNCHANGED `frameId` mean "nothing new". So a still whose id never advances satisfies the
+ * same interface as a 60fps video, uploads EXACTLY ONCE however long it is on screen, and
+ * every consumer downstream — the blit, the cook gate (T253), a preview, a readback —
+ * cannot tell the difference and needs no branch to handle it.
+ *
+ * The id is 1 rather than 0 because `currentFrame` may not answer 0: `uploadExternalTextures`
+ * seeds `lastFrameId` at 0, so a still numbered 0 would be "already uploaded" and the node
+ * would hold black forever — the same off-by-one that made T264's video path return
+ * `undefined` until the first decode.
+ *
+ * `ended` is true, which is the literal answer to "will another frame ever come" and the
+ * case the contract already describes: the source is done and the texture keeps its
+ * contents. Nothing about it means "show black".
+ */
+export function createStillMediaSource(image: StillImage): VideoMediaSource {
+  let disposed = false;
+  return {
+    source: {
+      currentFrame(): MediaSourceFrame | undefined {
+        // A zero-extent decode is not a picture, and `copyExternalImageToTexture` would
+        // fail the upload rather than the open. Same guard, same reason, as the video path.
+        if (disposed || image.width === 0 || image.height === 0) return undefined;
+        return { frameId: 1, image };
+      },
+      ended: true,
+    } as MediaSource,
+    size() {
+      if (image.width === 0 || image.height === 0) return null;
+      return { width: image.width, height: image.height };
+    },
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      // An ImageBitmap holds its decoded bytes until closed — a 4K still is 32 MB, and a
+      // document swap that left them alive would leak one per picked file.
+      image.close?.();
+    },
+  };
+}
+
+/**
  * Wraps an element as a pull-based source.
  *
  * Nothing here starts playback, picks a file or asks for a camera: the owner does that

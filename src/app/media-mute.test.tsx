@@ -123,6 +123,7 @@ function harnessFor() {
   const element = fakeElement();
   let opens = 0;
   const environment: MediaEnvironment = {
+    openStill: () => Promise.reject(new Error("no still in this test")),
     openFile: () => {
       opens += 1;
       return Promise.resolve(element as unknown as MediaElement);

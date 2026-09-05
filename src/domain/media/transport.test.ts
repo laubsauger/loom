@@ -319,12 +319,15 @@ describe("T493 — §V146: a control that cannot act says so", () => {
     expect(inactive("cuePulse", "timeline")).toBeTypeOf("string");
     expect(inactive("cuePulse", "freeRun")).toBeNull();
     // The distinction the whole clock argument rests on: holding is pure, jumping is not.
-    expect(MEDIA_TRANSPORT_PARAMETERS["cue"]?.inactiveWhen).toBeUndefined();
-    // T1190 gave `speed` an `inactiveWhen` and the claim moved below rather than away:
-    // it is inactive under a HELD CUE and active in every other state, which is stronger
-    // than "has none" and is the thing a user can actually be misled by.
-    expect(MEDIA_TRANSPORT_PARAMETERS["trimStart"]?.inactiveWhen).toBeUndefined();
-    expect(MEDIA_TRANSPORT_PARAMETERS["trimEnd"]?.inactiveWhen).toBeUndefined();
+    // T1223 MOVED THESE THREE FROM "has no gate" TO "the gate is silent here", for the
+    // same reason T1190 moved `speed`: a still has no clock, so EVERY verb dims for one,
+    // and "has no gate at all" would now be a claim about the implementation rather than
+    // about what the user is misled by. The claim itself is unchanged and is stronger
+    // asserted this way — under the lock, on a video, these three are live.
+    const video = { playMode: "timeline", file: "clip.mp4" };
+    expect(MEDIA_TRANSPORT_PARAMETERS["cue"]?.inactiveWhen?.(video) ?? null).toBeNull();
+    expect(MEDIA_TRANSPORT_PARAMETERS["trimStart"]?.inactiveWhen?.(video) ?? null).toBeNull();
+    expect(MEDIA_TRANSPORT_PARAMETERS["trimEnd"]?.inactiveWhen?.(video) ?? null).toBeNull();
   });
 
   /**
@@ -349,7 +352,7 @@ describe("T493 — §V146: a control that cannot act says so", () => {
     }
     // Cue Point and the trim are read UNDER a cue, so they must stay active.
     expect(MEDIA_TRANSPORT_PARAMETERS["cuePoint"]?.inactiveWhen?.(held) ?? null).toBeNull();
-    expect(MEDIA_TRANSPORT_PARAMETERS["cue"]?.inactiveWhen).toBeUndefined();
+    expect(MEDIA_TRANSPORT_PARAMETERS["cue"]?.inactiveWhen?.(held) ?? null).toBeNull();
 
     // And with the cue OFF, every one of them is live again.
     const running = { playMode: "freeRun", cue: false };

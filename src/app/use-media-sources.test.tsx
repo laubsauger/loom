@@ -139,6 +139,7 @@ describe("media sources reach the backend (T264)", () => {
     const { backend, registered } = fakeBackend();
     const element = fakeElement();
     const environment: MediaEnvironment = {
+      openStill: () => Promise.reject(new Error("no still in this test")),
       openFile: () => Promise.reject(new Error("not used")),
       openCamera: () => Promise.resolve(element as unknown as MediaElement),
     };
@@ -166,6 +167,7 @@ describe("media sources reach the backend (T264)", () => {
     const { backend, registered } = fakeBackend();
     const messages: string[][] = [];
     const environment: MediaEnvironment = {
+      openStill: () => Promise.reject(new Error("no still in this test")),
       openFile: () => Promise.reject(new Error("not used")),
       openCamera: () => Promise.reject(Object.assign(new Error("denied"), { name: "NotAllowedError" })),
     };
@@ -201,6 +203,7 @@ describe("media sources reach the backend (T264)", () => {
     const element = fakeElement();
     const askedFor: string[] = [];
     const environment: MediaEnvironment = {
+      openStill: () => Promise.reject(new Error("no still in this test")),
       openFile: () => Promise.reject(new Error("not used")),
       openCamera: (device: string) => {
         askedFor.push(device);
@@ -237,6 +240,7 @@ describe("media sources reach the backend (T264)", () => {
     const messages: string[][] = [];
     const askedFor: string[] = [];
     const environment: MediaEnvironment = {
+      openStill: () => Promise.reject(new Error("no still in this test")),
       openFile: () => Promise.reject(new Error("not used")),
       openCamera: (device: string) => {
         askedFor.push(device);
@@ -274,6 +278,7 @@ describe("media sources reach the backend (T264)", () => {
     const { backend, registered } = fakeBackend();
     let opens = 0;
     const environment: MediaEnvironment = {
+      openStill: () => Promise.reject(new Error("no still in this test")),
       openFile: () => {
         opens += 1;
         return Promise.reject(new Error("should not be called"));
@@ -313,6 +318,7 @@ describe("media sources reach the backend (T264)", () => {
     const { backend } = fakeBackend();
     const element = fakeElement(1920, 1080);
     const environment: MediaEnvironment = {
+      openStill: () => Promise.reject(new Error("no still in this test")),
       openFile: () => Promise.reject(new Error("not used")),
       openCamera: () => Promise.resolve(element as unknown as MediaElement),
     };
@@ -354,6 +360,7 @@ describe("media sources reach the backend (T264)", () => {
     const element = fakeElement();
     let wiring: MediaWiring | null = null;
     const environment: MediaEnvironment = {
+      openStill: () => Promise.reject(new Error("no still in this test")),
       openFile: () => Promise.resolve(element as unknown as MediaElement),
       openCamera: () => Promise.reject(new Error("not used")),
     };
@@ -419,6 +426,7 @@ describe("media sources reach the backend (T264)", () => {
     const element = fakeElement();
     let wiring: MediaWiring | null = null;
     const environment: MediaEnvironment = {
+      openStill: () => Promise.reject(new Error("no still in this test")),
       openFile: () => Promise.resolve(element as unknown as MediaElement),
       openCamera: () => Promise.reject(new Error("not used")),
     };
@@ -470,6 +478,7 @@ describe("media sources reach the backend (T264)", () => {
     const runtime = newRuntime();
     const { backend, registered, unregistered } = fakeBackend();
     const environment: MediaEnvironment = {
+      openStill: () => Promise.reject(new Error("no still in this test")),
       openFile: () => Promise.reject(new Error("not used")),
       openCamera: () => Promise.resolve(fakeElement() as unknown as MediaElement),
     };
@@ -583,6 +592,7 @@ describe("text sources reach the backend (T243)", () => {
   }
 
   const noMedia = (createTextSource: () => TextMediaSource): MediaEnvironment => ({
+    openStill: () => Promise.reject(new Error("no still in this test")),
     openFile: () => Promise.reject(new Error("not used")),
     openCamera: () => Promise.reject(new Error("not used")),
     createTextSource,
@@ -716,5 +726,314 @@ describe("text sources reach the backend (T243)", () => {
     expect(registered.size).toBe(0);
     expect(unregistered).toEqual([mediaSourceIdFor("title")]);
     expect(recorder.wasDisposed()).toBe(true);
+  });
+});
+
+/**
+ * ⚑ T1223 — A STILL IS A ONE-FRAME STREAM, and the node's description finally means it.
+ *
+ * `movieFileIn` opened with *"Plays a video or still image file"* since T493 while
+ * `browserMediaEnvironment` called `document.createElement("video")` and nothing else — no
+ * `createImageBitmap`, no image branch anywhere in `src/app` or `src/runtime`. A picked
+ * PNG therefore produced BLACK with no diagnostic, which is the worst failure an
+ * overclaiming description can produce: the user assumes their own mistake.
+ *
+ * These cases are about the seam the owner asked for — *"it shouldn't matter, image or
+ * video"* — and the transparency is asserted as what it is: the SAME `MediaSource`
+ * contract, a `frameId` that never advances (§V136 → uploaded exactly once), and no
+ * transport at all.
+ */
+describe("a still loads as a one-frame stream (T1223)", () => {
+  /** An `ImageBitmap` stand-in: three fields, no DOM, no decoder. */
+  function fakeBitmap(width = 800, height = 600) {
+    let closed = false;
+    return {
+      width,
+      height,
+      close() {
+        closed = true;
+      },
+      wasClosed: () => closed,
+    };
+  }
+
+  const stillEnvironment = (image: unknown, calls: string[] = []): MediaEnvironment => ({
+    openStill: (url) => {
+      calls.push(`still:${url}`);
+      return Promise.resolve(image as never);
+    },
+    openFile: (url) => {
+      calls.push(`video:${url}`);
+      return Promise.reject(new Error("a still must not open the video door"));
+    },
+    openCamera: () => Promise.reject(new Error("not used")),
+  });
+
+  it("registers the picked image under the key the compiler emits, as frame 1", async () => {
+    const runtime = newRuntime();
+    const { backend, registered } = fakeBackend();
+    const image = fakeBitmap();
+    const calls: string[] = [];
+
+    await act(async () => {
+      render(
+        <Harness
+          runtime={runtime}
+          backend={backend}
+          graph={graphWith({
+            photo: { type: "movieFileIn", parameters: { file: "blob:abc#holiday.png" } },
+          })}
+          environment={stillEnvironment(image, calls)}
+        />,
+      );
+    });
+    await waitFor(() => expect(registered.has(mediaSourceIdFor("photo"))).toBe(true));
+
+    // The IMAGE door, not the video one. Before T1223 the second entry was the only one
+    // that existed and it is what made a picked PNG black.
+    expect(calls).toEqual(["still:blob:abc#holiday.png"]);
+
+    const frame = registered.get(mediaSourceIdFor("photo"))?.currentFrame();
+    // `frameId` 0 would mean "already uploaded" to the backend's cursor and the node would
+    // hold black forever — the off-by-one that would make this feature look like the bug
+    // it replaces.
+    expect(frame?.frameId).toBe(1);
+    // The bitmap itself reaches `copyExternalImageToTexture` untouched (§V7).
+    expect(frame?.image).toBe(image);
+  });
+
+  /**
+   * ⚑ THE CLAIM THE OWNER MADE — "played back as a continuous video stream… transparent
+   * for anyone who consumes it" — and the §V136 claim, which are the same claim.
+   *
+   * A hundred frames later, through the same per-frame seam the frame loop drives, with a
+   * transport that would have moved a video by fifty seconds: the source still answers the
+   * IDENTICAL frame. An unchanged `frameId` is what tells the backend to upload nothing, so
+   * "it looks the same" and "it uploaded once" are one assertion here, not two.
+   */
+  it("answers the identical frame forever, whatever the transport says", async () => {
+    const runtime = newRuntime();
+    const { backend, registered } = fakeBackend();
+    const image = fakeBitmap();
+    let wiring: MediaWiring | null = null;
+
+    await act(async () => {
+      render(
+        <Harness
+          runtime={runtime}
+          backend={backend}
+          graph={graphWith({
+            photo: {
+              type: "movieFileIn",
+              // Every verb the transport has, set to something that would visibly move a
+              // video: speed 4, free run, playing, trimmed, mirroring.
+              parameters: {
+                file: "blob:abc#holiday.png",
+                playMode: "freeRun",
+                play: true,
+                speed: 4,
+                trimStart: 1,
+                trimEnd: 9,
+                extend: "mirror",
+              },
+            },
+          })}
+          environment={stillEnvironment(image)}
+          onWiring={(value) => {
+            wiring = value;
+          }}
+        />,
+      );
+    });
+    await waitFor(() => expect(registered.has(mediaSourceIdFor("photo"))).toBe(true));
+
+    const source = registered.get(mediaSourceIdFor("photo")) as MediaSource;
+    const first = source.currentFrame();
+    act(() => {
+      for (let index = 0; index < 100; index += 1) {
+        (wiring as unknown as MediaWiring).sync({
+          timeSeconds: index / 2,
+          deltaSeconds: 1 / 2,
+          frameIndex: index,
+          mode: "realtime",
+          randomSeed: 1,
+        } as FrameEvaluationInput);
+      }
+    });
+    const later = source.currentFrame();
+
+    expect(later?.frameId).toBe(first?.frameId);
+    expect(later?.image).toBe(first?.image);
+    // §V136's consequence, stated as the number the backend actually compares.
+    expect(later?.frameId).toBe(1);
+  });
+
+  /**
+   * T312 / the resolution match, for a source whose size is known at DECODE time rather
+   * than at `loadedmetadata`. `copyExternalImageToTexture` asserts matching extents, so a
+   * still that did not push its size would fail the upload rather than scale.
+   */
+  it("makes the node the image's own size", async () => {
+    const runtime = newRuntime();
+    // Seeded through the bus, like the video case: the patch is written against the STORE,
+    // so a node that only exists in a literal has nothing to set a resolution on.
+    await runtime.bus.execute(
+      "graph.applyPatch",
+      {
+        baseRevision: runtime.bus.store.getRevision(),
+        label: "seed",
+        operations: [
+          { op: "addNode", ref: "$photo", type: "movieFileIn", position: { x: 0, y: 0 } },
+        ],
+      },
+      runtime.invocation,
+    );
+    const nodeId = Object.keys(runtime.bus.store.getGraph().nodes)[0];
+    if (nodeId === undefined) throw new Error("expected a seeded movie node");
+    await runtime.bus.execute(
+      "graph.applyPatch",
+      {
+        baseRevision: runtime.bus.store.getRevision(),
+        label: "pick",
+        operations: [
+          {
+            op: "setParameters",
+            nodeId,
+            parameters: { file: "blob:abc#ladybrand_2k.jpg" },
+          },
+        ],
+      },
+      runtime.invocation,
+    );
+
+    const { backend, registered } = fakeBackend();
+
+    await act(async () => {
+      render(
+        <Harness
+          runtime={runtime}
+          backend={backend}
+          graph={runtime.bus.store.getGraph()}
+          environment={stillEnvironment(fakeBitmap(2048, 1024))}
+        />,
+      );
+    });
+    await waitFor(() => expect(registered.has(mediaSourceIdFor(nodeId))).toBe(true));
+
+    await waitFor(() => {
+      expect(runtime.bus.store.getGraph().nodes[nodeId]?.resolution).toEqual({
+        mode: "fixed",
+        width: 2048,
+        height: 1024,
+      });
+    });
+  });
+
+  /**
+   * ⚠ §T1222's BOUNDARY, and the rule this whole task turns on: do not accept a format and
+   * quietly hand back 8 bits. An EXR decoded into `rgba8unorm-srgb` is a very expensive
+   * JPEG, so it is refused — and refused BY NAME, with the format and the fix in the
+   * sentence, because "I picked my file and got a black frame" is the experience this task
+   * exists to end.
+   */
+  it("refuses an EXR by name instead of decoding it into 8 bits", async () => {
+    const runtime = newRuntime();
+    const { backend, registered } = fakeBackend();
+    const calls: string[] = [];
+    let messages: readonly string[] = [];
+
+    await act(async () => {
+      render(
+        <Harness
+          runtime={runtime}
+          backend={backend}
+          graph={graphWith({
+            env: {
+              type: "movieFileIn",
+              parameters: { file: "blob:abc#ladybrand_heritage_house_4k.exr" },
+            },
+          })}
+          environment={stillEnvironment(fakeBitmap(), calls)}
+          onDiagnostics={(value) => {
+            messages = value;
+          }}
+        />,
+      );
+    });
+
+    await waitFor(() => expect(messages.length).toBe(1));
+    expect(messages[0]).toContain("env");
+    expect(messages[0]).toContain("ladybrand_heritage_house_4k.exr");
+    expect(messages[0]).toContain("OpenEXR");
+    // NOT opened by either door: a refusal that still decoded would be the silent 8-bit
+    // hand-back with a warning stapled on.
+    expect(calls).toEqual([]);
+    expect(registered.size).toBe(0);
+  });
+
+  it("names a still it cannot decode, rather than holding black", async () => {
+    const runtime = newRuntime();
+    const { backend, registered } = fakeBackend();
+    let messages: readonly string[] = [];
+    const environment: MediaEnvironment = {
+      openStill: () => Promise.reject(new Error("The source image type is not supported.")),
+      openFile: () => Promise.reject(new Error("not used")),
+      openCamera: () => Promise.reject(new Error("not used")),
+    };
+
+    await act(async () => {
+      render(
+        <Harness
+          runtime={runtime}
+          backend={backend}
+          graph={graphWith({
+            photo: { type: "movieFileIn", parameters: { file: "blob:abc#photo.heic" } },
+          })}
+          environment={environment}
+          onDiagnostics={(value) => {
+            messages = value;
+          }}
+        />,
+      );
+    });
+
+    await waitFor(() => expect(messages.length).toBe(1));
+    expect(messages[0]).toContain("photo");
+    expect(messages[0]).toContain("could not be decoded");
+    expect(registered.size).toBe(0);
+  });
+
+  /**
+   * An `ImageBitmap` holds its decoded bytes until closed — a 4K still is ~32 MB. A
+   * document swap that unregistered without closing would leak one per picked file, which
+   * is invisible until the tab dies.
+   */
+  it("closes the decoded bitmap when the node goes away", async () => {
+    const runtime = newRuntime();
+    const { backend, registered, unregistered } = fakeBackend();
+    const image = fakeBitmap();
+    const environment = stillEnvironment(image);
+
+    const view = render(
+      <Harness
+        runtime={runtime}
+        backend={backend}
+        graph={graphWith({
+          photo: { type: "movieFileIn", parameters: { file: "blob:abc#holiday.png" } },
+        })}
+        environment={environment}
+      />,
+    );
+    await waitFor(() => expect(registered.size).toBe(1));
+
+    await act(async () => {
+      view.rerender(
+        <Harness runtime={runtime} backend={backend} graph={graphWith({})} environment={environment} />,
+      );
+    });
+
+    expect(registered.size).toBe(0);
+    expect(unregistered).toEqual([mediaSourceIdFor("photo")]);
+    expect(image.wasClosed()).toBe(true);
   });
 });

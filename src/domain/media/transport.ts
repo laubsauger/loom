@@ -1,9 +1,14 @@
 import type { GraphDocument } from "../types/graph.ts";
 import type { NodeId } from "../types/ids.ts";
 import type { NodeDefinition } from "../types/node-definition.ts";
-import type { ParameterSchema, ParameterValue } from "../types/parameters.ts";
+import type {
+  ParameterDefinition,
+  ParameterSchema,
+  ParameterValue,
+} from "../types/parameters.ts";
 import type { NodeRegistryView } from "../../nodes/registry/registry.ts";
 import { resolveParameters } from "../parameters/index.ts";
+import { isStillPictureFile } from "./picture-file.ts";
 
 /**
  * MEDIA TRANSPORT (T493, §V436, §V45, §V5) — one idea, two doors.
@@ -293,6 +298,45 @@ function cueHeldPosition(values: Readonly<Record<string, ParameterValue>>): stri
     : null;
 }
 
+/**
+ * T1223 — §V146 again, for the SECOND set of controls found dead on this node.
+ *
+ * §T1190 found `speed`, `play` and `extend` silently dead under a held cue and gave each
+ * an `inactiveWhen` naming the cue. A STILL kills the same set and more: there is no clock
+ * to read at all, because the still path builds no `MediaTransportRunner` — it registers a
+ * one-frame source and returns. So every transport verb is unread, and this says so in the
+ * same shape and the same voice as `cueHeldPosition` rather than inventing a second
+ * phrasing for the same idea.
+ *
+ * ⚑ IT CANNOT BECOME A LIE, which is the property §T1190 was careful about: the reason
+ * these are dead is that `use-media-sources` never creates a runner for a still, and
+ * `still-transport.test.ts` derives the dimmed set from `MEDIA_TRANSPORT_KEYS` itself. A
+ * twelfth transport parameter is dimmed by construction, and a still that DID grow a
+ * playhead would redden that gate rather than leaving a control dimmed while it works.
+ *
+ * `reload` is deliberately NOT dimmed: re-opening the file is the one File-group verb that
+ * still means something for a picture, and the still path registers it.
+ */
+function stillHasNoClock(values: Readonly<Record<string, ParameterValue>>): string | null {
+  return isStillPictureFile(values["file"])
+    ? "The file is a STILL IMAGE, so there is no clock to read — Play Mode, Play, Speed, Cue and At End do nothing. A still is a one-frame stream: it uploads once and holds. Pick a video file to use them."
+    : null;
+}
+
+/**
+ * The still gate, applied to every transport parameter but `reload` — a DERIVATION rather
+ * than eleven hand edits, so parameter N+1 gets the answer without anyone remembering.
+ * Composes in FRONT of whatever gate the parameter already had: "this is a still" is the
+ * outer truth, and a cue message about a picture that cannot move would be noise.
+ */
+function stillGated<T extends ParameterDefinition>(definition: T): T {
+  const existing = definition.inactiveWhen;
+  return {
+    ...definition,
+    inactiveWhen: (values) => stillHasNoClock(values) ?? existing?.(values) ?? null,
+  };
+}
+
 function timelineLockedJump(values: Readonly<Record<string, ParameterValue>>): string | null {
   return values["playMode"] === "freeRun"
     ? null
@@ -313,7 +357,7 @@ function timelineLockedJump(values: Readonly<Record<string, ParameterValue>>): s
  * node earns its pixels without a bespoke control strip (which would also have to be
  * built twice, once per node).
  */
-export const MEDIA_TRANSPORT_PARAMETERS: ParameterSchema = {
+const TRANSPORT_VERBS: ParameterSchema = {
   playMode: {
     type: "enum",
     label: "Play Mode",
@@ -415,6 +459,24 @@ export const MEDIA_TRANSPORT_PARAMETERS: ParameterSchema = {
   },
 };
 
+/**
+ * T1223 — the vocabulary, with the STILL answer applied to every verb but `reload`.
+ *
+ * Derived rather than hand-written onto eleven entries: the rule is "a still has no clock,
+ * so a clock verb is unread", and a rule stated once cannot be forgotten when the twelfth
+ * parameter lands. `reload` is the exception because it is the one verb that acts on the
+ * FILE rather than on a position, and the still path registers it.
+ */
+/** The one transport verb a still honours — re-open the file (T1223). */
+export const STILL_ACTIVE_KEY = "reload";
+
+export const MEDIA_TRANSPORT_PARAMETERS: ParameterSchema = Object.fromEntries(
+  Object.entries(TRANSPORT_VERBS).map(([key, definition]) => [
+    key,
+    key === STILL_ACTIVE_KEY ? definition : stillGated(definition),
+  ]),
+);
+
 /** Every key the transport owns — the one list the readers and the gate both derive from. */
 export const MEDIA_TRANSPORT_KEYS: readonly string[] = Object.keys(MEDIA_TRANSPORT_PARAMETERS);
 
@@ -464,6 +526,15 @@ export function freeRunMediaNodes(
     const definition = registry.get(node.type);
     if (definition === undefined || !hasMediaTransport(definition)) continue;
     const resolved = resolveParameters(node, definition, {});
+    /*
+     * T1223 — A STILL IN FREE RUN STILL REPRODUCES, so naming it here would be a NEW lie
+     * of exactly the kind T586 wrote this function to avoid. The warning's claim is "this
+     * node's playhead is not `f(frame)`, so your take will differ"; a still has no
+     * playhead at all — one frame, a constant `frameId`, uploaded once — and its pixels
+     * are identical on every frame of every render. Found by asking what dimming Play Mode
+     * for a still implies for the render warning that reads the same parameter.
+     */
+    if (isStillPictureFile(resolved.get("file")?.value)) continue;
     const transport = mediaTransportFrom((key) => resolved.get(key)?.value);
     if (transport.playMode !== "freeRun") continue;
     found.push({

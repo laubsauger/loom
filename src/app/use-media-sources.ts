@@ -20,8 +20,13 @@ import {
   type MediaTransportRunner,
   type PlayableMedia,
 } from "./media-playback.ts";
-import { awaitMediaReady, createVideoMediaSource } from "./media-sources.ts";
-import type { MediaElement, VideoMediaSource } from "./media-sources.ts";
+import {
+  hdrPictureRefusal,
+  pictureFileKind,
+  pictureFileUrl,
+} from "@domain/media/picture-file.ts";
+import { awaitMediaReady, createStillMediaSource, createVideoMediaSource } from "./media-sources.ts";
+import type { MediaElement, StillImage, VideoMediaSource } from "./media-sources.ts";
 import { createTextMediaSource } from "./text-source.ts";
 import type { TextAlign, TextMediaSource, TextRaster, TextVerticalAlign } from "./text-source.ts";
 
@@ -69,6 +74,17 @@ export interface MediaEnvironment {
   /** Creates a video element bound to `url`, already playing. Throws to report failure. */
   openFile(url: string): Promise<MediaElement>;
   /**
+   * T1223 — decodes a STILL at `url`. Throws to report failure, like the other two.
+   *
+   * A separate door rather than a union return from `openFile`, because the two produce
+   * genuinely different things: an element that decodes on its own schedule, and one
+   * decoded picture that never changes. It is REQUIRED, not optional, so an environment
+   * that cannot open a still has to say so at the type level — an optional member would
+   * let a test double answer "no image door" by silence, and a silently-video-only
+   * environment is exactly the bug this task fixes.
+   */
+  openStill(url: string): Promise<StillImage>;
+  /**
    * Opens a camera. T810: an empty `device` is the system default; a non-empty one is
    * an EXACT `deviceId` and a vanished device throws `OverconstrainedError` — the open
    * loop owns the retry-bare fallback and the diagnostic that names it, so the
@@ -100,16 +116,6 @@ interface MediaRequest {
   readonly device: string;
 }
 
-/** What a node's `file` parameter holds. Stored by whatever UI wrote it, so read widely. */
-function urlOf(value: unknown): string {
-  if (typeof value === "string") return value;
-  if (typeof value === "object" && value !== null) {
-    const url = (value as { url?: unknown }).url;
-    if (typeof url === "string") return url;
-  }
-  return "";
-}
-
 /**
  * Media nodes in document order, with the one input each needs.
  *
@@ -133,7 +139,10 @@ function mediaRequests(graph: GraphDocument): MediaRequest[] {
     requests.push({
       nodeId,
       type: node.type,
-      url: urlOf(node.parameters["file"]),
+      // T1223: one reader for what a `file` parameter holds, shared with the classifier
+      // and the transport's `inactiveWhen` — three surfaces that must agree about which
+      // file a node names, or the picker, the loader and the dimming disagree.
+      url: pictureFileUrl(node.parameters["file"]),
       // T810: raw read, like `url` above — the picker writes a plain string commit, and
       // driving a camera choice from an expression is not a thing this hook supports.
       device:
@@ -236,6 +245,31 @@ export function browserMediaEnvironment(): MediaEnvironment {
       video.crossOrigin = "anonymous";
       video.src = url;
       return prepare(video);
+    },
+    /**
+     * T1223 — the door that did not exist. This whole function is what "no
+     * `createImageBitmap`, no `HTMLImageElement`, no image branch anywhere" cost.
+     *
+     * `fetch` + `createImageBitmap` rather than an `<img>`: the decode failure is a
+     * REJECTION with the format's own name in it, where an `<img>`'s `error` event carries
+     * nothing useful; the result is a first-class `copyExternalImageToTexture` source; and
+     * it can be `close()`d, which an `<img>` cannot.
+     *
+     * `premultiplyAlpha: "none"` is load-bearing (§V56): `copyExternalImageToTexture`
+     * defaults to a NON-premultiplied destination, so a bitmap decoded the browser's usual
+     * way would upload a PNG's semi-transparent edges already multiplied and darken them.
+     * `colorSpaceConversion: "default"` leaves the file's own encoding alone, because the
+     * external texture is `rgba8unorm-srgb` and the one decode to linear happens in
+     * hardware at sample time — converting here would apply the curve twice.
+     */
+    async openStill(url) {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`The image could not be read (HTTP ${response.status}).`);
+      const blob = await response.blob();
+      return createImageBitmap(blob, {
+        premultiplyAlpha: "none",
+        colorSpaceConversion: "default",
+      });
     },
     async openCamera(device) {
       const media = navigator.mediaDevices;
@@ -371,6 +405,8 @@ export function useMediaSources(
       /** T577: what the cleanup has to STOP, not merely unhook. */
       element: MediaElement;
     }> = [];
+    /** T1223: stills, which have no element to stop — only a decoded bitmap to free. */
+    const stillOpened: Array<{ source: VideoMediaSource; unregister: () => void }> = [];
     const textOpened: Array<{ nodeId: NodeId; source: TextMediaSource; unregister: () => void }> = [];
     // Captured here rather than read in the cleanup: by teardown the ref may already point
     // at the next render's map, and this effect must only take down what IT registered.
@@ -428,6 +464,80 @@ export function useMediaSources(
           // saying so is more useful than a warning that reads like a fault.
           continue;
         }
+
+        /*
+         * T1223 — THE STILL BRANCH, and the reason this node's description was a lie.
+         *
+         * `pictureFileKind` decides from the file's own name (a `blob:` URL is opaque, so
+         * the extension lives in the fragment the picker appended). Three outcomes, and
+         * none of them is silence:
+         *
+         *  - `hdr`  — REFUSED BY NAME. An EXR decoded into this node's `rgba8unorm-srgb`
+         *             texture is a very expensive JPEG, and handing back 8-bit for a file
+         *             the user picked FOR its range is the failure this task exists to
+         *             close, not one to add. §T1222 builds the float path; until then the
+         *             diagnostic names the format and what would make it go away.
+         *  - `still`— a ONE-FRAME STREAM (see `createStillMediaSource`). No element, so
+         *             no transport: `playableMedia` would have returned null for it
+         *             anyway, and there is no playhead to derive for a picture that does
+         *             not move. `reload` still registers, because re-opening the file is
+         *             the one File-group verb that still means something.
+         *  - `video`— everything below, unchanged.
+         */
+        if (request.type === "movieFileIn") {
+          const refusal = hdrPictureRefusal(request.url);
+          if (refusal !== null) {
+            reported.push(
+              diagnostic(
+                request.nodeId,
+                `The file for "${request.nodeId}" is not supported: ${refusal}`,
+                "Pick a PNG, JPEG or video file, or wait for the float texture path (T1222).",
+              ),
+            );
+            if (live) setDiagnostics([...reported]);
+            continue;
+          }
+          if (pictureFileKind(request.url) === "still") {
+            let image: StillImage;
+            try {
+              image = await env.openStill(request.url);
+            } catch (error) {
+              reported.push(
+                diagnostic(
+                  request.nodeId,
+                  `The image for "${request.nodeId}" could not be decoded.`,
+                  error instanceof Error ? error.message : "The browser refused the request.",
+                ),
+              );
+              if (live) setDiagnostics([...reported]);
+              continue;
+            }
+            const still = createStillMediaSource(image);
+            if (!live) {
+              still.dispose();
+              return;
+            }
+            const unregisterStill = backend.registerMediaSource(
+              mediaSourceIdFor(request.nodeId),
+              still.source,
+            );
+            stillOpened.push({ source: still, unregister: unregisterStill });
+            // The size is known the moment the decode resolves — no `loadedmetadata` to
+            // wait for — and the node must adopt it for the same reason a video's node
+            // does: `copyExternalImageToTexture` asserts matching extents (T312).
+            const size = still.size();
+            if (size !== null) matchNodeResolution(request.nodeId, size.width, size.height);
+            const releaseStill = controls?.register(request.nodeId, {
+              // A still has no playhead to cue TO. Saying so is the honest answer; the
+              // parameter renders inactive for the same reason (see MEDIA_TRANSPORT_PARAMETERS).
+              cue: () => undefined,
+              reload: () => setReloadNonce((nonce) => nonce + 1),
+            });
+            if (releaseStill !== undefined) released.push(releaseStill);
+            continue;
+          }
+        }
+
         let element: MediaElement;
         try {
           if (request.type === "webcam") {
@@ -532,6 +642,12 @@ export function useMediaSources(
         // structurally through `playableMedia` for the same reason the transport does: it
         // is the one place that knows what "an element you can drive" means.
         playableMedia(entry.element)?.pause();
+      }
+      for (const entry of stillOpened) {
+        entry.unregister();
+        // T1223: `dispose` closes the ImageBitmap. A 4K still holds ~32 MB of decoded
+        // bytes, so a document swap that only unregistered would leak one per picked file.
+        entry.source.dispose();
       }
       for (const entry of textOpened) {
         entry.unregister();

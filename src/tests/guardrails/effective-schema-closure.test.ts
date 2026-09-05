@@ -329,7 +329,9 @@ const RAW_SCHEMA_READS: Readonly<Record<string, { readonly reason: string; reado
   "src/nodes/definitions/generators.test.ts": { reason: TYPE_ONLY_UNIT_TEST, reads: ["rampNode.parameters"] },
   "src/nodes/definitions/media.test.ts": {
     reason: TYPE_ONLY_UNIT_TEST,
-    reads: ["textNode.parameters", "textNode.parameters"],
+    // T1223 added the third: the file slot's declared KIND is what the picker's accept
+    // filter keys on, and it is a fact about the type, not about any placed node.
+    reads: ["textNode.parameters", "textNode.parameters", "movieFileInNode.parameters"],
   },
   "src/nodes/definitions/noise.test.ts": { reason: TYPE_ONLY_UNIT_TEST, reads: ["noiseNode.parameters"] },
   "src/nodes/definitions/output.test.ts": {
