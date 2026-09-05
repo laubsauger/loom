@@ -35,9 +35,10 @@ import type { InspectorProjectSettings } from "./inspector.tsx";
  *
  *   1. a NUMBER carried by an `op('other').par.x` expression — the cross-node case above;
  *   2. a COMPOUND, whose `value` is a new array and whose `components` are new records;
- *   3. a DIAGNOSTIC, a new object every read — including one that APPEARS where the
- *      previous render had none, which is the prop-key case a `prev`-keyed comparison
- *      would miss entirely.
+ *   3. a DIAGNOSTIC, a new object every read. (The comparator's union-of-keys rule, which
+ *      is what makes a prop that APPEARS count, is gated as a property in
+ *      `ui/controls/props-equal.test.ts` — see the §V910 note on that test below for why
+ *      it could not honestly be isolated here.)
  *
  * §B181's ruling is the reason none of these assert "a render was skipped": twenty-six
  * green tests all resolved a STATIC parameter while every driven one had been frozen for

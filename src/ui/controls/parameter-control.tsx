@@ -157,9 +157,9 @@ function isExpressionShortcut(event: KeyboardEvent): boolean {
  * Every commit to the document re-renders the inspector (it subscribes to the graph, and
  * an expression on one node reads parameters off another, so it MUST). What it does not
  * have to do is rebuild thirty-three rows whose values did not move. Measured on E55, 60
- * knob commits on an unrelated node: `reactor1` 2.02 -> 0.53 ms per commit, `cut1` 0.54 ->
- * 0.24. The saving is the rows, not the read — `resolveParameters` is 0.12 ms of a 3 ms
- * commit and the other 2.9 is React.
+ * knob commits on an unrelated node: `reactor1` 2.02 -> 0.48 ms per commit, `cut1` 0.50 ->
+ * 0.23, `haze1` 3.20 -> 1.64. The saving is the ROWS, not the read — `resolveParameters` is
+ * 0.12 ms of a 3.2 ms commit and the other 3.1 is React.
  *
  * The comparator is `props-equal.ts`, whose default answer is "re-render"; read its
  * docblock before touching this. The three things that make it HIT rather than merely
@@ -648,9 +648,12 @@ function ParameterControlImpl({
 }
 
 /**
- * §B181 is why the gate for this lives in `driven-fields.test.tsx` and drives a value from
- * a channel rather than asserting a render was skipped: a suite that only ever exercises a
- * static parameter cannot see a driven-case defect, and "it did not re-render" is true of
- * both the fix and the bug.
+ * The gates, and §B181 is why none of them counts renders: a suite that only ever exercises
+ * a STATIC parameter cannot see a driven-case defect, and "it did not re-render" is equally
+ * true of the fix and of the bug. Each of these reads a number on screen and requires it to
+ * MOVE — `editor/inspector/cross-node-liveness.test.tsx` (a value that moves because ANOTHER
+ * node was edited), `driven-fields.test.tsx` (a compound channel driven here), and
+ * `editor/inspector/driven-live-values.test.tsx` (the <=10 Hz live sample). `props-equal.test.ts`
+ * covers the comparator itself, mostly in the direction that hurts.
  */
 export const ParameterControl = memo(ParameterControlImpl, sameProps);
