@@ -152,8 +152,15 @@ Restart Claude, then ask it to call `bridge_status` and show the current pairing
 starting its own:
 
 ```bash
-pnpm helper
+pnpm helper --grant-export
 ```
+
+`--grant-export` is what enables the pixel and readback tools — `render_preview`,
+`describe_output`, `read_points`. It is **off by default and can only be granted by the
+invocation** (T334); nothing on the wire can turn it on, which is why an agent that was not
+given it reports that it can compile and validate but never see a frame. **A helper started
+without it refuses pixels for every client that attaches to it**, so pass it here rather than
+discovering it later.
 
 A second instance that finds the port already taken **stops being a server and becomes a
 client of the incumbent**, forwarding `tools/list` and `tools/call` over loopback — so two
@@ -174,7 +181,7 @@ To drive the visible editor:
 2. Open the **agent** pane and find **Connections**.
 3. Enter the pairing code from `bridge_status`.
 
-Until the tab is attached, the MCP server works on its own headless document. The bridge accepts local Loom tabs only, not the GitHub Pages site. For headless pixel and readback tools, append `--grant-export` to the config's `args`.
+Until the tab is attached, the MCP server works on its own headless document. The bridge accepts local Loom tabs only, not the GitHub Pages site. A config that spawns its own server needs `--grant-export` in its `args` for the same reason as above.
 
 The script was called `mcp:serve` until it was renamed to `helper`; the old name still works
 as an alias, so an existing config keeps running.
