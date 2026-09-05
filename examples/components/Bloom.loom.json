@@ -29,17 +29,6 @@
                 "portId": "input"
               }
             },
-            "e-floor-combine": {
-              "id": "e-floor-combine",
-              "source": {
-                "nodeId": "floor",
-                "portId": "out"
-              },
-              "target": {
-                "nodeId": "combine",
-                "portId": "in2"
-              }
-            },
             "e-glow-tint": {
               "id": "e-glow-tint",
               "source": {
@@ -93,6 +82,17 @@
               "target": {
                 "nodeId": "hot",
                 "portId": "input"
+              }
+            },
+            "in_picture_feed_2": {
+              "id": "in_picture_feed_2",
+              "source": {
+                "nodeId": "in_picture",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "combine",
+                "portId": "in2"
               }
             },
             "out_out_feed": {

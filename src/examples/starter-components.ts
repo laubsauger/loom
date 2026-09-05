@@ -19,6 +19,7 @@ import {
   feedbackEchoDocument,
   kaleidoscopeDocument,
 } from "./documents.ts";
+import { edge } from "./documents/builders.ts";
 import { DEPTH_CARVE_KERNEL, DEPTH_PAINT_KERNEL } from "./shaders/depth-points.wgsl.ts";
 import { TIME_GRID_BREAK_WGSL, TIME_GRID_MAP_WGSL, TIME_GRID_SWEEP_WGSL } from "./shaders/time-grid.wgsl.ts";
 import { SHARED_UNIFORMS_WGSL } from "../runtime/backend/shared-uniforms.ts";
@@ -1159,6 +1160,57 @@ export const timeGridHost: ProjectDocument = {
 };
 
 /**
+ * BLOOM'S HOST IS E4 WITH ONE EDGE MOVED, AND THE MOVE IS THE WHOLE OF B191b.
+ *
+ * ## What was wrong
+ *
+ * Bloom DOES add a source back — `combine.in2` has always been wired — but in E4 that
+ * second input comes from `floor`, and `floor` sits DOWNSTREAM of `hot`. `hot` is a Level
+ * with `blacklevel 0.605, whitelevel 0.65`: a 0.045-wide window, so everything below 0.605
+ * goes to black and everything above 0.65 saturates. That is a hard HIGHLIGHT ISOLATOR.
+ * Correct as the input to `bright`/`glow`; catastrophic as the BASE LAYER, because the
+ * component's output was then (the picture crushed to near-black) + glow. An agent read it
+ * as "Bloom emits only its glow" and it may as well have.
+ *
+ * The numbers are not the defect and are not touched (§V920 is the family, not the cause):
+ * they are correct values that were on the wrong branch.
+ *
+ * ## Why the component gets its own host instead of E4 being fixed
+ *
+ * E4 IS NOT BROKEN. It is "Drifting embers": a noise field that carries no visible cores
+ * of its own, `hot` MAKES the embers, and `floor` feeding the composite is what puts those
+ * white-hot cores in the picture. Rewiring E4's composite to its noise would delete the
+ * embers and leave a grey cloud with faint halos — a re-tune of a document the owner tuned,
+ * and `concepts/e4-bloom.test.ts` asserts that wiring on purpose.
+ *
+ * So the two are different effects that happen to share a chain: E4 extracts a picture out
+ * of a field, the component adds a glow to a picture you already have. This host is E4's
+ * graph — the same nodes, the same measured numbers, the same format overrides — with
+ * `combine.in2` fed from `source` instead of `floor`. It is a derivation rather than a copy
+ * so the tuned values still live in exactly one place.
+ *
+ * `source` therefore crosses the selection boundary TWICE (into `hot.input` and into
+ * `combine.in2`), which T607's fan-in rule collapses into ONE `picture` socket feeding both.
+ * The socket's NAME comes from whichever crossing edge is read first — edges are walked in
+ * sorted-id order — so both endpoints are named in `portNames` and the id sorts after
+ * `e-source-hot`; neither is load-bearing on its own, and together the name is `picture`
+ * however the ordering falls out.
+ */
+const bloomComponentHost: ProjectDocument = {
+  ...bloomDocument,
+  projectId: "component-bloom-host",
+  graph: {
+    ...bloomDocument.graph,
+    edges: {
+      ...Object.fromEntries(
+        Object.entries(bloomDocument.graph.edges).filter(([id]) => id !== "e-floor-combine"),
+      ),
+      "e-source-into-combine": edge("e-source-into-combine", ["source", "out"], ["combine", "in2"]),
+    },
+  },
+};
+
+/**
  * The specs.
  *
  * Ordered the way the library reads them: the two most-reached-for first, then the two
@@ -1221,15 +1273,17 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
     componentId: "bloom",
     name: "Bloom",
     description: "Threshold, blur and add back — highlight glow with the range to carry it.",
-    host: bloomDocument,
+    host: bloomComponentHost,
     // Every node carries E4's rgba16float overrides with it, which is the whole reason
     // the glow survives the threshold instead of clipping at the first target. T518 added
-    // three: `floor` (without which the composite SUBTRACTS the glow — a Level's black
-    // point is a subtraction, and a float target keeps the negatives an 8-bit one clamps),
-    // and `palette`/`tint`, which give the halo its chromatic falloff. The selection has
-    // to stay CONTIGUOUS or the carved component is a chain with holes in it.
+    // three: `floor` — a Level's black point is a SUBTRACTION and a float target keeps the
+    // negatives an 8-bit one clamps for free, so this is what stops the bright pass being
+    // fed a signal that runs to -5.9 (in E4 it also guards the composite; here the picture
+    // does that, B191b) — and `palette`/`tint`, which give the halo its chromatic falloff.
+    // The selection has to stay CONTIGUOUS or the carved component is a chain with holes.
     selection: ["hot", "floor", "bright", "glow", "palette", "tint", "combine"],
-    portNames: { "hot.input": "picture" },
+    // Both endpoints the picture crosses on (B191b) — one socket, named the same either way.
+    portNames: { "hot.input": "picture", "combine.in2": "picture" },
     publish: [
       {
         key: "threshold",
