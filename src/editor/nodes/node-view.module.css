@@ -591,31 +591,57 @@
  * Out feeds the outside — the lead is that statement drawn on the node, a short
  * dashed line ending in an open plug. Pseudo-elements, so the node's layout, hit
  * area and drag behaviour are untouched.
+ *
+ * ⚑ §B188 — IT HANGS OFF THE SOCKET'S ROW, NOT OFF THE NODE, AND THAT IS TWO FIXES.
+ *
+ * T607 drew it on `.node` itself, which collided with the STATUS HAIRLINE 470 lines up:
+ * `.node::before` is `inset: 0 0 auto 0` plus a `--status-color` background, and an
+ * element has exactly one `::before`. The two rules cascaded into one box, and the
+ * leftovers decided where it landed — measured in the running app, on E47's DepthPoints:
+ *
+ *   In  — `left: -24px` beat the inherited `left: 0`, so the lead drew outside on the
+ *         left, but at the NODE's 50% and painted SOLID by the inherited background
+ *         (the owner: "the line doesn't go to the socket, it just goes to the node").
+ *   Out — `right: -24px` and the inherited `left: 0` over-constrained the box, CSS
+ *         drops `right` in LTR, and the lead drew INSIDE the node's left edge. The plug
+ *         (`::after`, which nothing else claims) stayed correctly outside on the right
+ *         — hence the owner's exact sentence: a floating thing with no line to it.
+ *
+ * Anchoring both on the dangling port's own `<li>` (`.port` is already
+ * `position: relative`, and the handle sits on its left/right edge) fixes the collision
+ * by not sharing a pseudo-element with anything, and puts the lead at the SOCKET's y
+ * rather than the node's midpoint — which is what "connected to the socket" means.
+ * `100%` offsets, so the lead follows the socket rather than a hardcoded node width.
  */
 .node[data-boundary] {
   overflow: visible;
 }
 
-.node[data-boundary="in"]::before,
-.node[data-boundary="out"]::before {
+.node[data-boundary="in"] .portIn::before,
+.node[data-boundary="out"] .portOut::before {
   content: "";
   position: absolute;
   top: 50%;
   width: 22px;
+  /* The border IS the line; the box has no height, so centre it on the socket by half. */
+  margin-top: -1px;
   border-top: 2px dashed color-mix(in srgb, var(--status-color, currentColor) 55%, transparent);
   pointer-events: none;
 }
 
-.node[data-boundary="in"]::before {
-  left: -24px;
+/* 2px of air between the socket dot and the lead, at both ends. */
+.node[data-boundary="in"] .portIn::before {
+  right: 100%;
+  margin-right: 2px;
 }
 
-.node[data-boundary="out"]::before {
-  right: -24px;
+.node[data-boundary="out"] .portOut::before {
+  left: 100%;
+  margin-left: 2px;
 }
 
-.node[data-boundary="in"]::after,
-.node[data-boundary="out"]::after {
+.node[data-boundary="in"] .portIn::after,
+.node[data-boundary="out"] .portOut::after {
   content: "";
   position: absolute;
   top: 50%;
@@ -628,12 +654,14 @@
   pointer-events: none;
 }
 
-.node[data-boundary="in"]::after {
-  left: -33px;
+.node[data-boundary="in"] .portIn::after {
+  right: 100%;
+  margin-right: 26px;
 }
 
-.node[data-boundary="out"]::after {
-  right: -33px;
+.node[data-boundary="out"] .portOut::after {
+  left: 100%;
+  margin-left: 26px;
 }
 
 /* ---- diagnostics ------------------------------------------------------ */

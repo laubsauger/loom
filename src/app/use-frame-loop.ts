@@ -10,6 +10,7 @@ import type { FrameInputs } from "@domain/types/backend.ts";
 import type { AudioFeatures } from "@domain/types/frame.ts";
 import { createFrameDriver, createPointerSource } from "@runtime/execution/index.ts";
 import type { FrameDriver, PointerSource } from "@runtime/execution/index.ts";
+import { planStructureSignature } from "@runtime/backend/index.ts";
 import type { LoomBackend } from "@runtime/backend/index.ts";
 import { createUniformAnimator } from "./animate-parameters.ts";
 import { MAX_RETAINED_DIAGNOSTICS, retainDiagnostic } from "./diagnostic-buffer.ts";
@@ -37,6 +38,39 @@ const MAX_DIAGNOSTICS = MAX_RETAINED_DIAGNOSTICS;
 // applies the default in one place. What it must NOT become is two numbers: the clock and
 // the scheduler read the same one, or timeline time runs fast on a 120 Hz display.
 const NO_DIAGNOSTICS: readonly RuntimeDiagnostic[] = [];
+
+/**
+ * §B188 — what makes two installed plans DIFFERENT TO A CONSUMER of `installedPlan`.
+ *
+ * `plan.signature` covers `resources` and `passes`, and everything else a `ResolvedOutput`
+ * carries is derived from them: a row exists because its node is kept (passes), and its
+ * size, format and `resourceId` are the resource's (resources). The one field that is
+ * NOT is `synthesis` — the preview program owns the target and the draw passes, so the
+ * main plan carries neither and the signature cannot see them.
+ *
+ * So this is the signature plus exactly that gap, and it is deliberately built the same
+ * value-blind way (`planStructureSignature` over the synthesis's own passes): a scene
+ * payload's uniforms move with its parameters (§V5, T462) and must not re-render the App.
+ */
+function installedPlanKey(plan: CompiledGraph): string {
+  const synthesized = plan.outputs.flatMap((output) =>
+    output.synthesis === undefined
+      ? []
+      : [
+          `${output.nodeId}:${output.portId}:${output.synthesis.kind ?? ""}:${planStructureSignature(
+            [],
+            output.synthesis.passes,
+          )}`,
+        ],
+  );
+  // Escapes, never the raw bytes (`greppable-sources`), and two the key parts cannot
+  // hold: `planStructureSignature` joins with U+0000/U+0001, so these two stay free.
+  const SECTION = "\u0002";
+  const ENTRY = "\u0003";
+  return synthesized.length === 0
+    ? plan.signature
+    : `${plan.signature}${SECTION}${synthesized.join(ENTRY)}`;
+}
 
 export interface FrameLoopResult {
   readonly diagnostics: readonly RuntimeDiagnostic[];
@@ -199,16 +233,38 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
   /**
    * T1163 — written from inside the install and from nowhere else.
    *
-   * ANNOUNCED ONLY WHEN THE SIGNATURE MOVES, and that guard is not an optimisation.
+   * ANNOUNCED ONLY WHEN THE KEY MOVES, and that guard is not an optimisation.
    * `compiled` is a prop: a caller that rebuilds it every render — `value-graph-loop`'s
    * harness does, deliberately, to prove the compile effect is keyed on the plan — would
    * otherwise get install → setState → render → new plan object → install, forever. The
-   * signature is the compiler's own answer to "did anything structural change at all"
-   * (`compiler/types.ts`), and a plan that differs only in uniform VALUES carries the same
-   * one by construction (§V5), so a skipped announcement is invisible to every consumer:
-   * same passes, same resources, same outputs. The ref makes that at most one `setState`
-   * per distinct plan rather than a state-equality bail-out, which React is allowed to
-   * render through.
+   * key is a VALUE, never the plan's identity, which is what makes that impossible; the
+   * ref makes it at most one `setState` per distinct plan rather than a state-equality
+   * bail-out, which React is allowed to render through.
+   *
+   * ⚑ §B188 — THE KEY IS NOT THE PLAN SIGNATURE, AND THE SENTENCE THAT SAID IT WAS IS THE
+   * BUG. T1163 used `compiled.signature` and argued that a skipped announcement is
+   * invisible to every consumer — "same passes, same resources, same outputs". The first
+   * two hold by construction; **the third is false**. `planStructureSignature` is
+   * `(resources, passes)` — it is the key the vgpu backend rebuilds its GPU PROGRAM on
+   * (`vgpu-backend.ts`), so it must stay exactly that — while a SYNTHESIZED preview
+   * (`ResolvedOutput.synthesis`, T373/T462/T563) mints neither: the preview program owns
+   * its target and its passes. So the plan in which a watched pointset has a splat and
+   * the plan in which it does not are the SAME SIGNATURE, byte for byte (measured on
+   * E47-Hologram), and they differ in exactly the field the preview tiles read.
+   *
+   * The consequence was the owner's report: every pointset tile in the document read
+   * "no signal" for ever, over the marker row's own facts (`1280 × 720 · rgba16float`, a
+   * TEXTURE description on a node that produces points), while every texture tile beside
+   * it drew — because a texture output is materialized whether or not anyone previews it,
+   * and a pointset's picture exists only as a synthesis attached by the recompile the
+   * sink triggers. That compile ran, reached the backend, and was never announced, so
+   * `compiledOutputs` stayed one compile behind for ever. Bypassing any node moved
+   * `passes`, moved the signature, and let the whole accumulated backlog through at once
+   * — which is why it looked like "it works again if I toggle something".
+   *
+   * So the key is the signature PLUS the synthesis set, and the addition is value-blind
+   * for the same reason the signature is (`passStructureKey` excludes uniform VALUES):
+   * an orbiting light's preview must not re-render the App every frame.
    */
   const [installedPlan, setInstalledPlan] = useState<CompiledGraph | null>(null);
   const installedSignatureRef = useRef<string | null>(null);
@@ -644,6 +700,12 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
          * the same signature and the same rows — there is nothing here a consumer of
          * `installedPlan` could read differently, and announcing it would re-render the
          * whole App on every parameter edit for no observable change (§V16).
+         *
+         * §B188 checked rather than assumed, because "the same rows" is the claim that
+         * was false one branch down: `useGraphCompile` only classifies a change as
+         * values-only while `previous.sinks === scheduledPreviews`, so the SYNTHESIS SET
+         * cannot move under this branch — only the uniform values inside it, which
+         * `installedPlanKey` is blind to on purpose.
          */
         return;
       }
@@ -681,8 +743,10 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
         // T1163 — HERE, inside the `.then`, is the moment the backend actually holds it.
         // The generation guard above has already dropped a superseded install, so this
         // can only ever announce the newest plan that landed.
-        if (installedSignatureRef.current !== compiled.signature) {
-          installedSignatureRef.current = compiled.signature;
+        // §B188: keyed on what a CONSUMER can read, which the plan signature alone is not.
+        const key = installedPlanKey(compiled);
+        if (installedSignatureRef.current !== key) {
+          installedSignatureRef.current = key;
           setInstalledPlan(compiled);
         }
         animatorRef.current.reset();

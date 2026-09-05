@@ -50,8 +50,16 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const SRC = resolve(HERE, "../..");
 const REPO = resolve(SRC, "..");
 
-/** The §V5 structure keys: the ONE identity definition (§V62d, T144), excluding values. */
-const STRUCTURE_KEYS = ["passStructureKey", "resourceStructureKey"];
+/**
+ * The §V5 structure keys: the ONE identity definition (§V62d, T144), excluding values.
+ *
+ * §B188 added the third name. `planStructureSignature` is not a fourth key — T1176 defines
+ * it as the JOIN of exactly the two above — but a caller reaches §V5's exclusion through it
+ * WITHOUT naming either, which is how `use-frame-loop.ts` came to gate an install on a
+ * value-blind key while this census read clean. The gate is about the shape (§V819), and a
+ * derived name is the same shape.
+ */
+const STRUCTURE_KEYS = ["passStructureKey", "resourceStructureKey", "planStructureSignature"];
 
 /**
  * A declared push, checked in two cheap ways that do not rot on a refactor.
@@ -102,6 +110,33 @@ const SIGNATURE_SITES: Readonly<Record<string, Ledger>> = {
     },
   },
 
+  "src/runtime/backend/index.ts": {
+    gates:
+      "nothing. The backend barrel RE-EXPORTS `planStructureSignature`; it computes no key " +
+      "and installs nothing, so it owes no push. Listed rather than filtered out, because a " +
+      "census that quietly skips a file class is a census with a blind spot in it.",
+    pushSite: null,
+  },
+
+  "src/app/use-frame-loop.ts": {
+    gates:
+      "the ANNOUNCEMENT of `installedPlan` — which plan's `outputs` (and so which " +
+      "`synthesis` rows, §V521) the preview tiles bind against. §B188: this was keyed on " +
+      "`plan.signature` ALONE, which is `(resources, passes)`, and a synthesized preview " +
+      "mints neither — so the plan that first carried a watched pointset's splat was " +
+      "byte-identical under that key to the plan before it, was never announced, and every " +
+      "pointset tile in the document read \"no signal\" for ever. The key now folds in the " +
+      "synthesis set. It stays VALUE-BLIND on purpose, which is exactly why it owes a push.",
+    pushSite: {
+      // The same door §B176 built, and the reason this entry is not paperwork: a
+      // synthesized preview's uniforms move with its parameters and the announcement
+      // cannot carry them, so they must arrive through the preview system's own push.
+      file: "src/runtime/previews/system.ts",
+      carries: ["PreviewUniformUpdate", "uniforms.push("],
+      provenBy: "src/runtime/previews/synthesis-uniform-update.test.ts",
+    },
+  },
+
   "src/runtime/previews/program.ts": {
     gates:
       "the PREVIEW program's signature — the host reinstalls only when it changes (§V8), so " +
@@ -136,7 +171,10 @@ function productFiles(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) productFiles(full, out);
-    else if (/\.tsx?$/.test(entry) && !/\.test\.tsx?$/.test(entry)) out.push(full);
+    // §B188: `.spec.ts` too. The rule below already says tests are excluded and gave the
+    // reason; the filter only knew vitest's naming, so a Playwright spec that NAMES the key
+    // in its docblock was censused as product code and asked for a push it cannot owe.
+    else if (/\.tsx?$/.test(entry) && !/\.(test|spec)\.tsx?$/.test(entry)) out.push(full);
   }
   return out;
 }
