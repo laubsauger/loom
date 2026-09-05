@@ -211,7 +211,43 @@ function asNumber(value: ParameterValue | undefined, reference: string): NodeRef
 }
 
 export function createNodeReferenceReader(options: NodeReferenceOptions): NodeReferenceReader {
-  return readerWithin(options, new Set());
+  return readerWithin(options, new Set(), { index: null });
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ * THE NAME INDEX, BUILT ONCE PER READER (T1172)
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ *
+ * `nodeByName` calls `nodeNames`, which SORTS EVERY NODE ID AND BUILDS A FRESH `Map` —
+ * and it was called once per `op()` read. E55's `haze1` alone makes twenty-one of them a
+ * frame, so a graph's name index was rebuilt twenty-one times to answer twenty-one
+ * questions about the same unchanged graph. The index is a pure function of the graph, so
+ * building it once and asking it twenty-one times is the same answer for a twenty-first
+ * of the work.
+ *
+ * ⚠ WHY THE SCOPE IS THE READER AND NOT THE GRAPH, A REVISION, OR A MODULE-LEVEL MAP.
+ * A `GraphDocument` is not always a settled document: `apply-patch.ts` calls `nodeNames`
+ * on an immer DRAFT it is still mutating — two `addNode` ops in one patch, and the second
+ * one's `uniqueNodeName` MUST see the node the first one added. A memo keyed on graph
+ * identity would hand it the index from before the first add and mint a duplicate name,
+ * which §V127 says cannot exist. So this memo lives where the graph provably does not
+ * move: inside ONE reader, which is built by `createParameterReadOptions` per compile,
+ * per inspector render, per OSC event, and is only ever read from. A new frame builds a
+ * new reader and therefore a new index; there is nothing to invalidate and nothing that
+ * could forget to. `names.ts` itself is left alone, which is what keeps the draft path
+ * exactly as correct as it was.
+ *
+ * The scope is threaded through `readerWithin`'s recursion rather than captured per hop,
+ * because a chain of references (`a → b → c`) walks the same graph the whole way down.
+ */
+interface ReaderScope {
+  index: ReadonlyMap<string, NodeId> | null;
+}
+
+function nodeIdNamed(scope: ReaderScope, graph: GraphDocument, name: string): NodeId | undefined {
+  scope.index ??= nodeNames(graph);
+  return scope.index.get(name);
 }
 
 /** What a call site knows: the graph being read, the catalogue, and WHEN. */
@@ -277,6 +313,8 @@ export function createParameterReadOptions(
 function readerWithin(
   options: NodeReferenceOptions,
   visited: ReadonlySet<NodeId>,
+  /** T1172: the name index this whole read shares — see `nodeIdNamed`. */
+  scope: ReaderScope,
 ): NodeReferenceReader {
   return (name, path): NodeReferenceResult => {
     const reference = `op('${name}').${path.join(".")}`;
@@ -310,7 +348,7 @@ function readerWithin(
           reason: `${reference}: ${CHANNEL_RESOLVER_MISSING}, so "${name}"'s channels cannot be read`,
         };
       }
-      const channelTarget = nodeByName(options.graph, name);
+      const channelTarget = nodeIdNamed(scope, options.graph, name);
       const channelNode = channelTarget === undefined ? undefined : options.graph.nodes[channelTarget];
       if (channelNode === undefined) {
         return { ok: false, reason: `${reference}: there is no node named "${name}"` };
@@ -348,7 +386,7 @@ function readerWithin(
       };
     }
 
-    const targetId = nodeByName(options.graph, name);
+    const targetId = nodeIdNamed(scope, options.graph, name);
     if (targetId === undefined) {
       return { ok: false, reason: `${reference}: there is no node named "${name}"` };
     }
@@ -415,7 +453,7 @@ function readerWithin(
     // it would repeat rather than however many frames later the stack gives out.
     const resolved = resolveParameterSchema(target, schema, {
       ...options.base,
-      nodes: readerWithin(options, new Set([...visited, targetId])),
+      nodes: readerWithin(options, new Set([...visited, targetId]), scope),
     });
 
     /**

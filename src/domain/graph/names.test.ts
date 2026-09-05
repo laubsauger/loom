@@ -198,3 +198,48 @@ describe("rename rewrites EVERY reference kind (§V128, §V316)", () => {
     ).toBe("blend");
   });
 });
+
+/**
+ * T1172 — `nodeNames` IS DELIBERATELY NOT MEMOISED, AND THIS SAYS WHY.
+ *
+ * The obvious next optimisation after §T1172 is to cache the index here, keyed on the
+ * graph object or its revision. It would be wrong. `apply-patch.ts` calls these functions
+ * on an immer DRAFT it is in the middle of mutating: two `addNode` ops in one patch, and
+ * the second one's `uniqueNodeName` must see the node the first one added — same object,
+ * changed contents, no new revision between them. A memo keyed on identity would hand the
+ * second add the index from before the first, and it would mint a name that already
+ * exists, which §V127 says cannot happen.
+ *
+ * §T1172 therefore put its index in the READER (`node-references.ts`), where the graph
+ * provably does not move, and left this module alone. This is the gate that keeps it
+ * alone: it mutates the graph BETWEEN two reads, which is exactly what the draft path
+ * does, and demands that the second read see the mutation.
+ */
+describe("T1172 — the name index reflects a graph mutated between reads", () => {
+  it("gives a second added node a free name, having seen the first added in place", () => {
+    const graph = graphWith({ a: { label: "noise1" } });
+    const first = uniqueNodeName(graph, "noise");
+    expect(first).toBe("noise2");
+
+    // The draft path's move: the node is written straight into the same document object.
+    (graph.nodes as Record<string, GraphNode>)["b"] = {
+      id: "b" as NodeId,
+      type: "test.noise",
+      definitionVersion: 1,
+      position: { x: 0, y: 0 },
+      parameters: {},
+      label: first,
+    };
+
+    expect(uniqueNodeName(graph, "noise")).toBe("noise3");
+    expect(nodeByName(graph, "noise2")).toBe("b");
+  });
+
+  it("stops finding a name that was taken off the same graph object", () => {
+    const graph = graphWith({ a: { label: "gain1" } });
+    expect(nodeByName(graph, "gain1")).toBe("a");
+    (graph.nodes as Record<string, GraphNode>)["a"]!.label = "gain9";
+    expect(nodeByName(graph, "gain1")).toBeUndefined();
+    expect(nodeByName(graph, "gain9")).toBe("a");
+  });
+});

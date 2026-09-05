@@ -344,3 +344,89 @@ describe("T1129 — the parameter read options come from one factory", () => {
     ).toEqual(["src/domain/parameters/node-references.ts"]);
   });
 });
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ * T1172 — THE NAME INDEX IS BUILT ONCE PER READER, AND A READER IS ONE FRAME
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ *
+ * `nodeByName` calls `nodeNames`, which sorts every node id and builds a fresh `Map`, and
+ * it was called once per `op()` read — E55's `haze1` rebuilt the index twenty-one times a
+ * frame to ask twenty-one questions about the same graph. The index now lives for the
+ * lifetime of one reader.
+ *
+ * ⚠ THE HAZARD IS THE SCOPE, NOT THE INDEX. Keyed on the graph OBJECT, this memo would be
+ * wrong: `apply-patch.ts` calls `nodeNames` on an immer DRAFT it is still mutating, and
+ * two `addNode` ops in one patch need the second `uniqueNodeName` to see the first add.
+ * `names.ts` is therefore untouched, and the memo is confined to a reader — which is
+ * built per compile, per inspector render, per OSC event, and is only ever read from.
+ * So the gates below are about what a NEW reader sees, which is the only thing an edit
+ * can change.
+ */
+describe("T1172 — the reader's name index", () => {
+  it("answers many different names from one reader, interleaved", () => {
+    // A one-entry index answers the second name with the first name's node. Interleaved
+    // because a cache correct in blocks can still be wrong read alternately — which is
+    // how E55 reads it.
+    const a = node("n1", "a", { gain: 3 });
+    const b = node("n2", "b", { gain: 5 });
+    const subject = node("n3", "c", { gain: expression("op('a').par.gain") });
+    const other = node("n4", "d", { gain: expression("op('b').par.gain") });
+    const graph = graphOf(a, b, subject, other);
+
+    // One reader for all four reads, exactly as one compile resolves a whole graph.
+    const reader = readerFor(graph);
+    const read = (subjectNode: GraphNode) =>
+      resolveParameterSchema(subjectNode, SCHEMA, { nodes: reader }).get("gain")?.value;
+    expect(read(subject)).toBe(3);
+    expect(read(other)).toBe(5);
+    expect(read(subject)).toBe(3);
+    expect(read(other)).toBe(5);
+  });
+
+  it("resolves a RENAMED target through a new reader, and stops resolving the old name", () => {
+    // The edit the memo must not outlive. A reader is per frame, so the frame after a
+    // rename builds its own index; nothing carries the old one forward.
+    const before = graphOf(node("n1", "gain1", { gain: 7 }), node("n2", "x", { gain: expression("op('gain1').par.gain") }));
+    expect(resolve(before, before.nodes["n2"]!)?.value).toBe(7);
+
+    const after = graphOf(node("n1", "gain2", { gain: 7 }), node("n2", "x", { gain: expression("op('gain1').par.gain") }));
+    const stale = resolve(after, after.nodes["n2"]!);
+    expect(stale?.diagnostic?.message).toContain('there is no node named "gain1"');
+
+    const renamed = graphOf(node("n1", "gain2", { gain: 7 }), node("n2", "x", { gain: expression("op('gain2').par.gain") }));
+    expect(resolve(renamed, renamed.nodes["n2"]!)?.value).toBe(7);
+  });
+
+  it("shares one index between the `par` and the `chan` read, which are two call sites", () => {
+    // Both namespaces resolve the name through the same helper. A memo wired into one and
+    // not the other would answer `.chan` against a graph the `.par` read had already
+    // indexed, or the reverse — so both are exercised through ONE reader.
+    const lfo = node("n1", "lfo1", { gain: 4 });
+    const subject = node("n2", "x", {
+      gain: expression("op('lfo1').par.gain"),
+      enabled: expression("op('lfo1').chan.value"),
+    });
+    const graph = graphOf(lfo, subject);
+    const options = createParameterReadOptions({
+      graph,
+      registry: { get: () => ({ parameters: SCHEMA }) } as unknown as NodeRegistryView,
+      channels: (address: string) => (address === "lfo1:value" || address === "lfo1" ? 1 : undefined),
+    });
+    const resolved = resolveParameterSchema(subject, SCHEMA, options);
+    expect(resolved.get("gain")?.value).toBe(4);
+    expect(resolved.get("enabled")?.value).toBe(true);
+  });
+
+  it("still refuses a name that is not in the graph, from a reader that has answered others", () => {
+    // A lazily built index must be built at all: an absent name has to come back absent
+    // rather than as whatever the previous question found.
+    const graph = graphOf(node("n1", "a", { gain: 3 }), node("n2", "x", { gain: expression("op('a').par.gain") }));
+    const reader = readerFor(graph);
+    expect(resolveParameterSchema(graph.nodes["n2"]!, SCHEMA, { nodes: reader }).get("gain")?.value).toBe(3);
+    expect(reader("nope", ["par", "gain"])).toEqual({
+      ok: false,
+      reason: `op('nope').par.gain: there is no node named "nope"`,
+    });
+  });
+});
