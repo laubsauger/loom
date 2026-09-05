@@ -79,6 +79,8 @@ export { PipelineHost } from "./pipeline-host.tsx";
 export type { PipelineHostProps } from "./pipeline-host.tsx";
 export { PipelinePanel, PipelineReport } from "./pipeline-panel.tsx";
 export type { PipelinePanelProps } from "./pipeline-panel.tsx";
+export { PipelineTrackView } from "./pipeline-track.tsx";
+export type { PipelineTrackViewProps } from "./pipeline-track.tsx";
 export { buildPipelineView } from "./pipeline-model.ts";
 export type {
   PipelineFinding,
@@ -89,6 +91,11 @@ export type {
   PipelinePassRow,
   PipelineRequest,
   PipelineStats,
+  PipelineTrack,
+  PipelineTrackLane,
+  PipelineTrackLoop,
+  PipelineTrackMark,
+  PipelineTrackSegment,
   PipelineView,
 } from "./pipeline-model.ts";
 

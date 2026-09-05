@@ -1,34 +1,64 @@
-/** Pipeline inspector (T1188). Colours are tokens only (§V17). */
+/**
+ * Pipeline inspector (T1188). Colours are tokens only (§V17).
+ *
+ * The panel is built as an INSTRUMENT, not a document: the app's own chrome is a dense
+ * strip of mono values on hairline-separated panels (see the top bar), and this reads as
+ * part of it rather than as a generic modal. Hence the value strip instead of stat
+ * boxes, the 10-11px type, and the frame tape as the one place any weight is spent.
+ */
 
+/* The dialog primitive scrolls itself and pads on all four sides. Both are wrong here:
+   a fixed masthead over one scrolling body is what keeps the banner — the whole point of
+   this screen — on screen while the flow is read. */
 .panel {
   display: flex;
   flex-direction: column;
-  width: min(1040px, 94vw);
-  max-height: 86vh;
+  width: min(1180px, 94vw);
+  max-height: 88vh;
   min-height: 0;
+  overflow: hidden;
+  padding: 0;
+}
+
+.masthead {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-6);
+  border-bottom: var(--hairline) solid var(--line);
+  background: var(--bg-header);
 }
 
 .title {
-  flex: 0 0 auto;
+  margin: 0;
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+  font-weight: var(--weight-header);
+  font-stretch: var(--width-header);
+  letter-spacing: var(--tracking-display);
+  text-transform: uppercase;
 }
 
 .body {
   flex: 1 1 auto;
   min-height: 0;
-  overflow: auto;
-  padding: var(--space-3) 0 var(--space-4);
+  padding: var(--space-5) var(--space-6) var(--space-7);
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
-/* The install banner. It is the first thing on the screen because it is the one fact
-   that decides whether anything below is worth reading (§B179, §T1163). */
+/* ── The install banner. First, always, because it decides whether the rest is true. ── */
 
 .banner {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-  padding: var(--space-3);
+  padding: var(--space-4) var(--space-5);
   border: var(--hairline) solid var(--line);
-  border-left-width: var(--space-1);
+  border-left: var(--space-1) solid var(--line);
   border-radius: var(--radius);
   background: var(--bg-sunken);
 }
@@ -54,34 +84,40 @@
   font-family: var(--font-ui);
   font-size: var(--fs-body);
   font-weight: var(--weight-header);
+  letter-spacing: var(--tracking-display);
 }
 
 .bannerDetail {
+  max-width: 92ch;
   color: var(--text-dim);
   font-family: var(--font-ui);
   font-size: var(--fs-meta);
   line-height: var(--lh-prose);
 }
 
-.statRow {
+/* ── The value strip: the top bar's idiom, not five boxes. ── */
+
+.meters {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2);
-  margin-top: var(--space-3);
+  align-items: baseline;
+  gap: 0 var(--space-5);
 }
 
-.stat {
+.meter {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: var(--space-32);
-  padding: var(--space-2);
-  border: var(--hairline) solid var(--line);
-  border-radius: var(--radius-sm);
-  background: var(--bg-panel);
+  align-items: baseline;
+  gap: var(--space-2);
+  padding-right: var(--space-5);
+  border-right: var(--hairline) solid var(--divider-line);
 }
 
-.statLabel {
+.meter:last-child {
+  padding-right: 0;
+  border-right: none;
+}
+
+.meterLabel {
   color: var(--text-dim);
   font-family: var(--font-ui);
   font-size: var(--fs-micro);
@@ -89,15 +125,25 @@
   text-transform: uppercase;
 }
 
-.statValue {
+.meterValue {
   color: var(--text);
   font-family: var(--font-mono);
   font-size: var(--fs-ui);
+  font-variant-numeric: tabular-nums;
   letter-spacing: var(--tracking-mono);
 }
 
+.meterValue[data-tone="signal"] {
+  color: var(--signal);
+}
+
+/* ── Section headers ── */
+
 .sectionTitle {
-  margin: var(--space-4) 0 var(--space-2);
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  margin: var(--space-7) 0 var(--space-3);
   color: var(--text-dim);
   font-family: var(--font-ui);
   font-size: var(--fs-micro);
@@ -107,18 +153,318 @@
   text-transform: uppercase;
 }
 
+.sectionTitle:first-child {
+  margin-top: 0;
+}
+
+.sectionNote {
+  color: var(--text-disabled);
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* ── The frame tape ── */
+
+.tape {
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+}
+
+.tapeGrid {
+  display: grid;
+  /* The gutter gives way before the tape does: on a narrow panel a truncated resource
+     id with a tooltip beats a diagram two columns wide. */
+  grid-template-columns: minmax(0, clamp(112px, 26%, 200px)) minmax(0, 1fr);
+}
+
+.gutter {
+  min-width: 0;
+  border-right: var(--hairline) solid var(--line);
+}
+
+.gutterHead {
+  display: flex;
+  align-items: flex-end;
+  padding: 0 var(--space-3) var(--space-2);
+  color: var(--text-disabled);
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--tracking-display);
+  text-transform: uppercase;
+}
+
+.gutterLane {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
+  overflow: hidden;
+}
+
+.gutterLane:hover {
+  background: var(--bg-hover);
+}
+
+.gutterSwatch {
+  flex: 0 0 auto;
+  width: 3px;
+  height: 9px;
+  border-radius: var(--radius-sm);
+  background: var(--port-unknown);
+}
+
+.gutterName {
+  flex: 1 1 auto;
+  overflow: hidden;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--tracking-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+
+.gutterBadge {
+  flex: 0 0 auto;
+  color: var(--signal);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+}
+
+.gutterLane[data-stranded="true"] .gutterName {
+  color: var(--warn);
+}
+
+.tapeScroll {
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.tapeSvg {
+  display: block;
+}
+
+/*
+ * Storage and pass kinds wear the family colour that kind of data wears everywhere else
+ * in the app, so a lane here and a node on the canvas are the same colour for the same
+ * reason.
+ *
+ * ⚠ Every one of these selectors is anchored on a CLASS. CSS Modules hashes class names
+ * and NOTHING else, so a bare `[data-tone="texture"] { --tone: … }` would compile
+ * unscoped and repaint every `data-tone` in the product.
+ */
+.gutterSwatch[data-tone="texture"],
+.lane[data-tone="texture"] {
+  --tone: var(--family-texture);
+}
+
+.gutterSwatch[data-tone="temporal"],
+.lane[data-tone="temporal"],
+.passTick[data-tone="temporal"],
+.kindCell[data-tone="temporal"] {
+  --tone: var(--category-temporal);
+}
+
+.gutterSwatch[data-tone="points"],
+.lane[data-tone="points"],
+.passTick[data-tone="points"],
+.kindCell[data-tone="points"] {
+  --tone: var(--family-points);
+}
+
+.gutterSwatch[data-tone="input"],
+.lane[data-tone="input"] {
+  --tone: var(--category-input);
+}
+
+.passTick[data-tone="filter"],
+.kindCell[data-tone="filter"] {
+  --tone: var(--category-filter);
+}
+
+.passTick[data-tone="render"],
+.kindCell[data-tone="render"] {
+  --tone: var(--category-render);
+}
+
+.passTick[data-tone="utility"],
+.kindCell[data-tone="utility"] {
+  --tone: var(--category-utility);
+}
+
+.gutterSwatch {
+  background: var(--tone, var(--port-unknown));
+}
+
+.passTick {
+  fill: var(--tone, var(--port-unknown));
+  opacity: 0.85;
+}
+
+.passTick:hover {
+  opacity: 1;
+}
+
+.laneRule {
+  fill: transparent;
+}
+
+.lane:hover > .laneRule {
+  fill: var(--bg-hover);
+}
+
+.segment {
+  fill: var(--tone, var(--port-unknown));
+  fill-opacity: 0.2;
+  stroke: var(--tone, var(--port-unknown));
+  stroke-opacity: 0.45;
+  stroke-width: 1;
+}
+
+.handover {
+  fill: var(--signal);
+  opacity: 0.8;
+}
+
+.lane[data-aliased="true"] > .segment {
+  fill-opacity: 0.3;
+}
+
+.ruler {
+  fill: var(--text-disabled);
+  font-family: var(--font-mono);
+  font-size: 9px;
+}
+
+.mark {
+  fill: var(--tone, var(--port-unknown));
+}
+
+.mark[data-mark="read"] {
+  fill: none;
+  stroke: var(--tone, var(--port-unknown));
+  stroke-width: 1;
+  opacity: 0.9;
+}
+
+.mark[data-mark="use"] {
+  opacity: 0.55;
+}
+
+.mark[data-mark="swap"] {
+  fill: var(--signal);
+}
+
+.crossing {
+  fill: none;
+  stroke: var(--category-temporal);
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+}
+
+.exit {
+  fill: var(--text-dim);
+}
+
+.loopBracket {
+  fill: none;
+  stroke: var(--category-utility);
+  stroke-width: 1;
+  stroke-dasharray: 1 2;
+  opacity: 0.7;
+}
+
+.loopLabel {
+  fill: var(--category-utility);
+  font-family: var(--font-mono);
+  font-size: 9px;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
+  margin: 0;
+  padding: var(--space-3) var(--space-5);
+  border-top: var(--hairline) solid var(--divider-line);
+  color: var(--text-disabled);
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+  list-style: none;
+}
+
+.legend li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.key {
+  width: 9px;
+  height: 9px;
+  border-radius: var(--radius-sm);
+  background: var(--family-texture);
+}
+
+.key[data-key="read"] {
+  background: none;
+  border: 1px solid var(--family-texture);
+}
+
+.key[data-key="use"] {
+  opacity: 0.55;
+}
+
+.key[data-key="swap"] {
+  background: var(--signal);
+}
+
+.key[data-key="crossing"] {
+  width: 16px;
+  height: 0;
+  border-top: 1px dashed var(--category-temporal);
+  border-radius: 0;
+  background: none;
+}
+
+.key[data-key="alias"] {
+  width: 14px;
+  background: linear-gradient(
+    to right,
+    var(--family-points) 0 5px,
+    transparent 5px 8px,
+    var(--family-points) 8px
+  );
+}
+
+/* The kind colour also drives the flow table's kind column, so the tape and the table
+   agree without either restating the mapping. */
+.kindCell {
+  color: var(--tone, var(--text-disabled));
+}
+
+/* ── Findings ── */
+
 .finding {
-  margin-bottom: var(--space-1);
   border: var(--hairline) solid var(--line);
   border-radius: var(--radius);
   background: var(--bg-panel);
 }
 
+.finding + .finding {
+  margin-top: var(--space-1);
+}
+
 .findingSummary {
   display: flex;
   align-items: baseline;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
   color: var(--text);
   cursor: pointer;
   font-family: var(--font-ui);
@@ -136,27 +482,40 @@
 }
 
 .findingName {
-  min-width: var(--space-32);
+  flex: 0 0 auto;
+  min-width: 148px;
   color: var(--text);
   font-weight: var(--weight-header);
 }
 
 .findingText {
+  color: var(--text-disabled);
+}
+
+.finding[data-empty="false"] .findingText {
   color: var(--text-dim);
 }
 
-.finding[data-empty="false"] > .findingSummary > .findingText {
-  color: var(--text);
+.finding[data-empty="false"] .findingName::after {
+  content: "▸";
+  margin-left: var(--space-2);
+  color: var(--text-disabled);
+  font-size: var(--fs-micro);
+}
+
+.finding[open][data-empty="false"] .findingName::after {
+  content: "▾";
 }
 
 .rows {
   margin: 0;
-  padding: 0 var(--space-3) var(--space-3) var(--space-3);
+  padding: 0 var(--space-5) var(--space-4) calc(var(--space-5) + 148px + var(--space-3));
   list-style: none;
 }
 
 .row {
-  padding: 2px 0;
+  padding: var(--space-1) 0;
+  border-top: var(--hairline) solid var(--divider-line);
   color: var(--text-dim);
   font-family: var(--font-ui);
   font-size: var(--fs-meta);
@@ -168,13 +527,13 @@
 }
 
 .empty {
-  padding: 0 var(--space-3) var(--space-3);
+  padding: 0 var(--space-5) var(--space-4);
   color: var(--text-disabled);
   font-family: var(--font-ui);
   font-size: var(--fs-meta);
 }
 
-/* The flow: what the encoder does, in the order it does it. */
+/* ── The flow table ── */
 
 .tableScroll {
   overflow-x: auto;
@@ -186,17 +545,17 @@
   width: 100%;
   border-collapse: collapse;
   font-family: var(--font-mono);
-  font-size: var(--fs-meta);
+  font-size: var(--fs-micro);
   letter-spacing: var(--tracking-mono);
 }
 
 .table th {
   position: sticky;
   top: 0;
-  padding: var(--space-2);
+  padding: var(--space-2) var(--space-3);
   border-bottom: var(--hairline) solid var(--line);
   background: var(--bg-header);
-  color: var(--text-dim);
+  color: var(--text-disabled);
   font-family: var(--font-ui);
   font-size: var(--fs-micro);
   font-weight: var(--weight-header);
@@ -206,21 +565,51 @@
 }
 
 .table td {
-  padding: var(--space-1) var(--space-2);
+  padding: 2px var(--space-3);
   border-bottom: var(--hairline) solid var(--divider-line);
-  color: var(--text);
+  color: var(--text-dim);
   white-space: nowrap;
 }
 
+.table tbody tr:hover td {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
 .step {
-  color: var(--text-dim);
+  color: var(--text-disabled);
+  font-variant-numeric: tabular-nums;
   text-align: right;
 }
 
-.kind {
-  color: var(--text-dim);
+.kindCell {
+  color: var(--tone, var(--text-disabled));
+}
+
+.kindCell[data-tone="filter"] {
+  --tone: var(--category-filter);
+}
+
+.kindCell[data-tone="render"] {
+  --tone: var(--category-render);
+}
+
+.kindCell[data-tone="points"] {
+  --tone: var(--category-points);
+}
+
+.kindCell[data-tone="utility"] {
+  --tone: var(--category-utility);
+}
+
+.kindCell[data-tone="temporal"] {
+  --tone: var(--category-temporal);
+}
+
+.nodeCell {
+  color: var(--text);
 }
 
 .nested {
-  padding-left: var(--space-4);
+  padding-left: var(--space-6);
 }

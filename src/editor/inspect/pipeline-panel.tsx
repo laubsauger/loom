@@ -2,7 +2,13 @@ import { useMemo } from "react";
 import { DialogContent, DialogRoot, DialogTitle } from "@ui/primitives/dialog.tsx";
 import { formatBytes } from "./format.ts";
 import { buildPipelineView } from "./pipeline-model.ts";
-import type { PipelineFinding, PipelineRequest, PipelineView } from "./pipeline-model.ts";
+import type {
+  PipelineFinding,
+  PipelinePassRow,
+  PipelineRequest,
+  PipelineView,
+} from "./pipeline-model.ts";
+import { PipelineTrackView } from "./pipeline-track.tsx";
 import styles from "./pipeline.module.css";
 
 /**
@@ -11,22 +17,23 @@ import styles from "./pipeline.module.css";
  * A modal opened by `ui.showPipeline`, never a permanent pane (§V90): it answers a
  * question somebody asks at a moment, and the answer is long.
  *
- * ## The banner is the feature
+ * ## The reading order is the argument
  *
- * §B179 and §T1163 are the reason this screen exists at all in this shape. The banner
- * states which plan is being described and whether the GPU is holding it, BEFORE any
- * pass name — because "the graph does not compile and you are looking at an older
- * pipeline" is more valuable than every other row on the page put together, and it is
- * exactly the state somebody is in when they open this.
+ * 1. WHICH PLAN THIS IS. §B179 and §T1163 are the reason this screen exists in this
+ *    shape, so the banner is in the masthead and does not scroll away: "the graph does
+ *    not compile and you are looking at an older pipeline" outweighs every other row on
+ *    the page, and it is the state somebody is in when they open this.
+ * 2. THE FRAME, AS A PICTURE. Encode order, storage reuse and the loop that closes
+ *    across the frame boundary — see `pipeline-track.tsx` for why this is a Gantt chart
+ *    and deliberately not a second drawing of the node graph.
+ * 3. THE DECISIONS, in words. Every finding renders even when it found nothing, because
+ *    "every pass writes at the format it reads" is an answer and a missing section is
+ *    not.
+ * 4. THE FLOW. The pass table is a table of contents and it is last.
  *
- * ## Findings before the flow
- *
- * The pass list is a table of contents and it is last. What comes first is what the
- * compiler DECIDED: what it could not reach, where format and resolution move, where a
- * loop closed through an edge the canvas does not draw (§V285), where a component
- * flattened, where substeps expand, where resources alias. Every finding renders even
- * when it found nothing, because "every pass writes at the format it reads" is an answer
- * and a missing section is not.
+ * The masthead's meter strip is the app's own top bar idiom — dim uppercase label, mono
+ * tabular value, hairline divider — rather than a row of cards, because this panel is
+ * part of an instrument and should read like the rest of it.
  */
 
 export interface PipelinePanelProps extends PipelineRequest {
@@ -34,11 +41,22 @@ export interface PipelinePanelProps extends PipelineRequest {
   onOpenChange: (open: boolean) => void;
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+const PASS_TONE: Readonly<Record<PipelinePassRow["kind"], string>> = {
+  effect: "filter",
+  draw: "render",
+  dispatch: "points",
+  counter: "utility",
+  swap: "temporal",
+  loop: "utility",
+};
+
+function Meter({ label, value, tone }: { label: string; value: string; tone?: "signal" }) {
   return (
-    <div className={styles.stat}>
-      <span className={styles.statLabel}>{label}</span>
-      <span className={styles.statValue}>{value}</span>
+    <div className={styles.meter}>
+      <span className={styles.meterLabel}>{label}</span>
+      <span className={styles.meterValue} {...(tone === undefined ? {} : { "data-tone": tone })}>
+        {value}
+      </span>
     </div>
   );
 }
@@ -73,19 +91,16 @@ function Finding({ finding }: { finding: PipelineFinding }) {
 export function PipelineReport({ view }: { view: PipelineView }) {
   return (
     <div className={styles.body}>
-      <div className={styles.banner} data-kind={view.install.kind} data-testid="pipeline-install">
-        <span className={styles.bannerHeadline}>{view.install.headline}</span>
-        <span className={styles.bannerDetail}>{view.install.detail}</span>
-      </div>
-
-      {view.stats === null ? null : (
-        <div className={styles.statRow}>
-          <Stat label="passes" value={`${view.stats.passes}`} />
-          <Stat label="resources" value={`${view.stats.resources}`} />
-          <Stat label="nodes running" value={`${view.stats.nodes} of ${view.stats.documentNodes}`} />
-          <Stat label="texture memory" value={formatBytes(view.stats.estimatedBytes)} />
-          <Stat label="plan signature" value={view.stats.signature.slice(0, 12)} />
-        </div>
+      {view.track.lanes.length === 0 ? null : (
+        <>
+          <h3 className={styles.sectionTitle}>
+            One frame
+            <span className={styles.sectionNote}>
+              passes left to right in encode order, one lane per resource
+            </span>
+          </h3>
+          <PipelineTrackView track={view.track} passes={view.passes} />
+        </>
       )}
 
       {view.findings.length === 0 ? null : (
@@ -99,7 +114,10 @@ export function PipelineReport({ view }: { view: PipelineView }) {
 
       {view.passes.length === 0 ? null : (
         <>
-          <h3 className={styles.sectionTitle}>The flow — {view.passes.length} passes, in encode order</h3>
+          <h3 className={styles.sectionTitle}>
+            The flow
+            <span className={styles.sectionNote}>{view.passes.length} passes, in encode order</span>
+          </h3>
           <div className={styles.tableScroll}>
             <table className={styles.table}>
               <thead>
@@ -115,8 +133,14 @@ export function PipelineReport({ view }: { view: PipelineView }) {
                 {view.passes.map((pass) => (
                   <tr key={pass.id}>
                     <td className={styles.step}>{pass.step}</td>
-                    <td className={styles.kind}>{pass.kind}</td>
-                    <td className={pass.depth > 0 ? styles.nested : undefined}>{pass.label}</td>
+                    <td className={styles.kindCell} data-tone={PASS_TONE[pass.kind]}>
+                      {pass.kind}
+                    </td>
+                    <td
+                      className={`${styles.nodeCell} ${pass.depth > 0 ? styles.nested : ""}`.trim()}
+                    >
+                      {pass.label}
+                    </td>
                     <td>{pass.id}</td>
                     <td>{pass.detail}</td>
                   </tr>
@@ -140,7 +164,34 @@ export function PipelinePanel({ open, onOpenChange, ...request }: PipelinePanelP
   return (
     <DialogRoot open={open} onOpenChange={onOpenChange}>
       <DialogContent className={styles.panel} aria-describedby={undefined} data-testid="pipeline">
-        <DialogTitle className={styles.title}>Pipeline</DialogTitle>
+        <header className={styles.masthead}>
+          <DialogTitle className={styles.title}>Pipeline</DialogTitle>
+          <div
+            className={styles.banner}
+            data-kind={view.install.kind}
+            data-testid="pipeline-install"
+            {...(view.stats === null ? {} : { title: `plan ${view.stats.signature}` })}
+          >
+            <span className={styles.bannerHeadline}>{view.install.headline}</span>
+            <span className={styles.bannerDetail}>{view.install.detail}</span>
+          </div>
+          {view.stats === null ? null : (
+            <div className={styles.meters}>
+              <Meter label="passes" value={`${view.stats.passes}`} />
+              <Meter
+                label="encodes / frame"
+                value={`${view.stats.encodes}`}
+                {...(view.stats.encodes > view.stats.passes ? { tone: "signal" as const } : {})}
+              />
+              <Meter label="resources" value={`${view.stats.resources}`} />
+              <Meter
+                label="nodes running"
+                value={`${view.stats.nodes} of ${view.stats.documentNodes}`}
+              />
+              <Meter label="texture memory" value={formatBytes(view.stats.estimatedBytes)} />
+            </div>
+          )}
+        </header>
         <PipelineReport view={view} />
       </DialogContent>
     </DialogRoot>

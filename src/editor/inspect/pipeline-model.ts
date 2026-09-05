@@ -109,7 +109,110 @@ export interface PipelineStats {
   /** Nodes in the document the panel is comparing against. */
   readonly documentNodes: number;
   readonly estimatedBytes: number;
+  /**
+   * Pass encodes per DISPLAYED frame, with substep loops multiplied in (T387). Equals
+   * `passes` until a loop runs its body more than once, and then it is the number that
+   * explains the frame time — which `passes` alone never does.
+   */
+  readonly encodes: number;
   readonly signature: string;
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * THE FRAME TAPE (T1188)
+ *
+ * The diagram is a Gantt chart of one frame, and it is deliberately NOT a second
+ * drawing of the node graph. The graph pane already draws the DAG — live, in the user's
+ * own layout, with previews and parameters — so a smaller copy of it here would compete
+ * with the original and say nothing new. What a DAG structurally CANNOT say is exactly
+ * what this screen exists for:
+ *
+ *  - ENCODE ORDER. A DAG has no sequence; the plan is a strict list. "The swap happens
+ *    at column 15, and the pass that reads it is at column 17" is the fact that explains
+ *    a feedback delay, and there is nowhere in a graph to put it.
+ *  - STORAGE. Two node outputs sharing one texture is one of the compiler's most
+ *    surprising decisions (§V6, §V8) and it is invisible as an edge — there is no wire
+ *    to draw. Here it is two segments in one lane.
+ *  - THE SYNTHESIZED CLOSING EDGE. §V285's whole point is that the loop is NOT on the
+ *    canvas. Drawing it as a wire would make it look like every other wire, which is the
+ *    confusion the reference exists to remove. On a time axis it is what it actually is:
+ *    a read that happens BEFORE the write it reads, i.e. a span reaching backwards past
+ *    the start of the frame.
+ *
+ * So: time along the x axis (one column per pass, in encode order), storage down the y
+ * axis (one lane per resource). Everything above falls out of that geometry rather than
+ * being annotated onto it.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+/** One touch of a resource by one pass. */
+export interface PipelineTrackMark {
+  /** Index into `PipelineView.passes` — the column. */
+  readonly column: number;
+  /**
+   * `swap` is the ping-pong rotation: not a touch of the data, a change of which half is
+   * which. `use` is a BUFFER binding, where the plan genuinely does not say the
+   * direction — `BufferBindingDescriptor.half` names WHICH HALF a binding sees (§V231,
+   * T322: an ordinary producer names its write half, a compacted one names its read
+   * half), never whether the shader reads or writes it. Guessing there would have put a
+   * confident arrow on a fact the plan does not carry, so the mark says "touched".
+   */
+  readonly kind: "write" | "read" | "use" | "swap";
+}
+
+/**
+ * One continuous tenancy of a resource. A lane with more than one segment is a resource
+ * the compiler REUSED for two different node outputs, which is the picture of aliasing.
+ */
+export interface PipelineTrackSegment {
+  readonly id: string;
+  /** Who owns the resource across this span. */
+  readonly label: string;
+  readonly nodeId: NodeId | null;
+  /** First and last column this tenancy touches. Equal for a single-column tenancy. */
+  readonly from: number;
+  readonly to: number;
+  readonly marks: readonly PipelineTrackMark[];
+}
+
+export interface PipelineTrackLane {
+  readonly resourceId: string;
+  readonly label: string;
+  readonly kind: ResourceDescriptor["kind"];
+  /** Size and format, or stride and capacity — whatever this kind of storage is. */
+  readonly detail: string;
+  readonly segments: readonly PipelineTrackSegment[];
+  /** Two or more distinct nodes write this one resource (§V6, §V8). */
+  readonly aliased: boolean;
+  /**
+   * Written, read by no later pass, and named by a `ResolvedOutput`: its contents LEAVE
+   * the frame — presented, previewed, or read back. The end of the tape, not a defect.
+   */
+  readonly terminal: boolean;
+  /**
+   * Written, read by nothing, and named by no output either. §V25 prunes what no sink
+   * reaches, so this should be empty in a healthy plan — which is exactly why it is
+   * drawn: a lane here is work the frame paid for and nobody collected.
+   */
+  readonly stranded: boolean;
+  /**
+   * A read at or before the first write: the value came from the PREVIOUS frame, so the
+   * span reaches backwards past the start of the tape. §V285's closing edge, as geometry.
+   */
+  readonly loopBack: { readonly readColumn: number; readonly writeColumn: number } | null;
+}
+
+/** A substep loop: the tape rewinds over these columns `count` times (T387). */
+export interface PipelineTrackLoop {
+  readonly loopId: string;
+  readonly label: string;
+  readonly from: number;
+  readonly to: number;
+  readonly count: number;
+}
+
+export interface PipelineTrack {
+  readonly lanes: readonly PipelineTrackLane[];
+  readonly loops: readonly PipelineTrackLoop[];
 }
 
 export interface PipelineView {
@@ -118,6 +221,8 @@ export interface PipelineView {
   readonly stats: PipelineStats | null;
   readonly findings: readonly PipelineFinding[];
   readonly passes: readonly PipelinePassRow[];
+  /** The diagram. Columns are `passes` by index; lanes are the plan's resources. */
+  readonly track: PipelineTrack;
 }
 
 export interface PipelineRequest {
@@ -500,16 +605,198 @@ function passRows(plan: CompiledGraph, nameOf: (nodeId: NodeId) => string): Pipe
   return rows;
 }
 
+interface TrackEvent {
+  readonly column: number;
+  readonly kind: PipelineTrackMark["kind"];
+  readonly nodeId: NodeId | null;
+}
+
+/** What each pass touches, and how. Samplers are excluded: they hold nothing over time. */
+function trackEvents(plan: CompiledGraph): Map<string, TrackEvent[]> {
+  const events = new Map<string, TrackEvent[]>();
+  const push = (resourceId: string, event: TrackEvent): void => {
+    const list = events.get(resourceId);
+    if (list === undefined) events.set(resourceId, [event]);
+    else list.push(event);
+  };
+
+  for (const [column, pass] of plan.passes.entries()) {
+    const nodeId = "nodeId" in pass && pass.nodeId !== undefined ? (pass.nodeId as NodeId) : null;
+    if (pass.kind === "swap") {
+      push(pass.resourceId, { column, kind: "swap", nodeId });
+      continue;
+    }
+    if (pass.kind === "loop") continue;
+    if (pass.kind === "counter") {
+      push(pass.resourceId, { column, kind: pass.op === "scan" ? "read" : "write", nodeId });
+      if (pass.outputResourceId !== undefined) {
+        push(pass.outputResourceId, { column, kind: "write", nodeId });
+      }
+      continue;
+    }
+    if ("target" in pass) push(pass.target, { column, kind: "write", nodeId });
+    for (const binding of "textures" in pass ? (pass.textures ?? []) : []) {
+      push(binding.resourceId, { column, kind: "read", nodeId });
+    }
+    for (const binding of "buffers" in pass ? (pass.buffers ?? []) : []) {
+      push(binding.resourceId, { column, kind: "use", nodeId });
+    }
+  }
+  return events;
+}
+
+/**
+ * Cuts one resource's events into TENANCIES.
+ *
+ * A tenancy ends where a DIFFERENT node writes the resource — that is the moment the
+ * storage stops holding one thing and starts holding another, and two tenancies in one
+ * lane is the whole picture of reuse. Passes of the same node (a separable blur's two
+ * halves, say) are one tenancy, because the storage is holding one node's work
+ * throughout.
+ */
+function segmentsOf(
+  resourceId: string,
+  events: readonly TrackEvent[],
+  nameOf: (nodeId: NodeId) => string,
+): PipelineTrackSegment[] {
+  const ordered = [...events].sort((a, b) => a.column - b.column);
+  const segments: PipelineTrackSegment[] = [];
+  let owner: NodeId | null = null;
+  let from = ordered[0]?.column ?? 0;
+  let to = from;
+  let marks: PipelineTrackMark[] = [];
+
+  const close = (): void => {
+    if (marks.length === 0) return;
+    segments.push({
+      id: `${resourceId}#${segments.length}`,
+      label: owner === null ? resourceId : nameOf(owner),
+      nodeId: owner,
+      from,
+      to,
+      marks,
+    });
+  };
+
+  for (const event of ordered) {
+    // A READ never transfers tenancy — a consumer looking at a texture does not take it
+    // over — and neither does a swap. A write, or a point kernel's copy-on-write `use`
+    // (T1076/§V197: the next node in the chain takes over the regions it publishes),
+    // does.
+    const takesOver = event.kind === "write" || event.kind === "use";
+    if (takesOver && owner !== null && event.nodeId !== null && event.nodeId !== owner) {
+      close();
+      owner = event.nodeId;
+      from = event.column;
+      marks = [];
+    }
+    if (takesOver && owner === null) owner = event.nodeId;
+    to = event.column;
+    marks.push({ column: event.column, kind: event.kind });
+  }
+  close();
+  return segments;
+}
+
+function laneDetail(resource: ResourceDescriptor): string {
+  const sized = sizedResource(resource);
+  if (sized !== null) {
+    const frames = "frames" in resource ? ` ×${resource.frames}` : "";
+    return `${describeSize(sized.size)} ${sized.format}${frames}`;
+  }
+  if ("capacity" in resource) return `${resource.capacity} × ${resource.stride} B`;
+  return resource.kind;
+}
+
+function buildTrack(plan: CompiledGraph, nameOf: (nodeId: NodeId) => string): PipelineTrack {
+  const events = trackEvents(plan);
+  const outputResources = new Set(plan.outputs.map((output) => output.resourceId));
+  const lanes: PipelineTrackLane[] = [];
+
+  for (const resource of plan.resources) {
+    if (resource.kind === "sampler") continue;
+    const touched = events.get(resource.id) ?? [];
+    if (touched.length === 0) continue;
+    const writes = touched.filter((event) => event.kind === "write");
+    const reads = touched.filter((event) => event.kind === "read");
+    const holders = new Set(
+      touched
+        .filter((event) => event.kind === "write" || event.kind === "use")
+        .map((event) => event.nodeId)
+        .filter((id) => id !== null),
+    );
+    const firstWrite = writes[0]?.column ?? null;
+    const firstRead = reads[0]?.column ?? null;
+    /*
+     * Directional flags need a directional lane. A buffer lane carries only `use` marks
+     * (see `PipelineTrackMark`), so "written and never read" would be true of every one
+     * of them and would mean nothing — the flag is withheld rather than guessed.
+     */
+    const unread = firstWrite !== null && reads.length === 0;
+    lanes.push({
+      resourceId: resource.id,
+      label: resource.label ?? resource.id,
+      kind: resource.kind,
+      detail: laneDetail(resource),
+      segments: segmentsOf(resource.id, touched, nameOf),
+      aliased: holders.size > 1,
+      terminal: unread && outputResources.has(resource.id),
+      stranded: unread && !outputResources.has(resource.id),
+      /*
+       * STRICTLY earlier. A pass that reads and writes one resource in its own column is
+       * an in-frame ping-pong, not a frame boundary; only a reader that runs BEFORE the
+       * writer is looking at last frame's contents.
+       */
+      loopBack:
+        firstWrite !== null && firstRead !== null && firstRead < firstWrite
+          ? { readColumn: firstRead, writeColumn: firstWrite }
+          : null,
+    });
+  }
+
+  const loops: PipelineTrackLoop[] = [];
+  for (const [column, pass] of plan.passes.entries()) {
+    if (pass.kind !== "loop" || pass.edge !== "begin") continue;
+    const end = plan.passes.findIndex(
+      (other, index) =>
+        index > column && other.kind === "loop" && other.edge === "end" && other.loopId === pass.loopId,
+    );
+    loops.push({
+      loopId: pass.loopId,
+      label: pass.nodeId === undefined ? pass.loopId : nameOf(pass.nodeId),
+      from: column,
+      to: end === -1 ? plan.passes.length - 1 : end,
+      count: pass.count ?? 1,
+    });
+  }
+
+  return { lanes, loops };
+}
+
+/** Pass encodes per displayed frame, with each substep loop's body counted `count` times. */
+function encodeCount(plan: CompiledGraph, loops: readonly PipelineTrackLoop[]): number {
+  let total = 0;
+  for (const [column, pass] of plan.passes.entries()) {
+    if (pass.kind === "loop") continue;
+    const enclosing = loops.filter((loop) => column > loop.from && column < loop.to);
+    total += enclosing.reduce((factor, loop) => factor * loop.count, 1);
+  }
+  return total;
+}
+
 /**
  * Builds the pipeline inspector's model. Pure; hand it a fixture and it renders.
  */
 export function buildPipelineView(request: PipelineRequest): PipelineView {
   const install = installState(request);
   const plan = request.installed;
-  if (plan === null) return { install, stats: null, findings: [], passes: [] };
+  if (plan === null) {
+    return { install, stats: null, findings: [], passes: [], track: { lanes: [], loops: [] } };
+  }
 
   const nameOf = nodeNamer(plan, request.graph);
   const moved = transitions(plan);
+  const track = buildTrack(plan, nameOf);
 
   return {
     install,
@@ -519,6 +806,7 @@ export function buildPipelineView(request: PipelineRequest): PipelineView {
       nodes: plan.order.length,
       documentNodes: Object.keys(request.graph.nodes).length,
       estimatedBytes: plan.estimatedResourceBytes,
+      encodes: encodeCount(plan, track.loops),
       signature: plan.signature,
     },
     findings: [
@@ -531,5 +819,6 @@ export function buildPipelineView(request: PipelineRequest): PipelineView {
       aliasFinding(plan, nameOf),
     ],
     passes: passRows(plan, nameOf),
+    track,
   };
 }
