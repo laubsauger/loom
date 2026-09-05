@@ -119,30 +119,54 @@ Loom exposes its tools over stdio for desktop clients and through WebMCP in supp
 
 ### Claude
 
-Use this as `.mcp.json` with Claude Code, or merge the `mcpServers` block into your Claude Desktop config:
+Use this as `.mcp.json` with Claude Code, or merge the `mcpServers` block into your Claude
+Desktop config. The **agent → Agents** help tab generates this for you with the paths already
+filled in, which is the least error-prone way to get it:
 
 ```json
 {
   "mcpServers": {
     "loom": {
       "type": "stdio",
-      "command": "/ABSOLUTE/PATH/TO/pnpm",
+      "command": "node",
       "args": [
-        "--dir",
-        "/ABSOLUTE/PATH/TO/loom",
-        "helper"
+        "--import",
+        "/ABSOLUTE/PATH/TO/loom/src/tooling/alias-hooks.ts",
+        "/ABSOLUTE/PATH/TO/loom/src/mcp/serve.ts"
       ]
     }
   }
 }
 ```
 
-Replace both paths. `which pnpm` prints the first one. Restart Claude, then ask it to call `bridge_status` and show the current pairing code.
+Spawn `node` directly rather than going through pnpm. `pnpm run <script>` prints a startup
+banner **on stdout**, which is the same stream MCP speaks JSON-RPC over, so a pnpm-wrapped
+server prefixes the protocol with two non-JSON lines (B178). An existing pnpm config keeps
+working today, but it is working around that banner rather than avoiding it.
 
-The script was called `mcp:serve` until it was renamed to `helper`; the old name still works
-as an alias, so an existing config keeps running. The **agent → Agents** help tab generates a
-config that spawns `node` directly, which avoids pnpm's startup banner landing in the
-JSON-RPC stream.
+Restart Claude, then ask it to call `bridge_status` and show the current pairing code.
+
+### Pair once, not once per chat
+
+**Run the helper yourself and leave it up**, and every client attaches to that one instead of
+starting its own:
+
+```bash
+pnpm helper
+```
+
+A second instance that finds the port already taken **stops being a server and becomes a
+client of the incumbent**, forwarding `tools/list` and `tools/call` over loopback — so two
+Claude processes drive the same live tab rather than racing for it. The proxy authenticates
+with a token from a `0600` file in `~/.loom`, never with the pairing code.
+
+That is why this is worth doing: **the pairing code belongs to the running helper, so a
+long-lived helper means you pair a tab once and it stays paired across every new chat.** Let
+each client spawn its own and you get a fresh code every time.
+
+A proxy whose incumbent goes away **refuses** rather than falling back to its own headless
+copy of the project, so a dead helper is an honest error rather than a second agent quietly
+editing a different document.
 
 To drive the visible editor:
 
@@ -151,6 +175,9 @@ To drive the visible editor:
 3. Enter the pairing code from `bridge_status`.
 
 Until the tab is attached, the MCP server works on its own headless document. The bridge accepts local Loom tabs only, not the GitHub Pages site. For headless pixel and readback tools, append `--grant-export` to the config's `args`.
+
+The script was called `mcp:serve` until it was renamed to `helper`; the old name still works
+as an alias, so an existing config keeps running.
 
 [Claude MCP docs](https://code.claude.com/docs/en/mcp)
 
