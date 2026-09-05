@@ -191,6 +191,54 @@ describe("T990 — the pane supplies the node names it has always had (§V272)",
     expect(offered).toEqual([harness.labels.selected, harness.labels.other].sort());
   });
 
+  /**
+   * T1177 — THE MENU FOLLOWS THE DOCUMENT THOUGH ITS SOURCE OBJECT NEVER CHANGES.
+   *
+   * `references` used to be memoised on `graph`, so it was a NEW OBJECT PER REVISION —
+   * which reached every parameter row and made a `React.memo` on the row unable to bail out
+   * even once. It is now ONE object for the pane's lifetime, answering through a getter
+   * over the current graph, and this is the claim that makes that safe: an identity that
+   * never changes must not become an ANSWER that never changes. §V935's second question,
+   * asked of a cache that deliberately caches nothing.
+   *
+   * ⚠ MEASURED, NOT ASSUMED — WHAT THIS BUYS AND WHAT IT COSTS. `ParameterModePanel`
+   * memoises the candidate LIST on `[draft, caret, references, …]`, so with `references`
+   * stable a menu ALREADY OPEN when the graph moves under it keeps the list it had until
+   * the next keystroke or caret move. This test was first written to re-ask the same
+   * prefix and FAILED for exactly that reason. The window is one keystroke wide and only
+   * reachable when something other than the typist edits the document mid-completion; the
+   * interaction that matters — type, see the current graph — is what is asserted here.
+   *
+   * Renamed rather than added, because a rename is the harder half: the set of names stays
+   * the same size, so a stale source answers with a plausible list rather than a short one.
+   */
+  it("offers a name the document only just acquired, though `references` is one object", async () => {
+    const harness = await setup();
+    expect(await harness.offeredFor("op('")).toContain(harness.labels.other);
+
+    await act(async () => {
+      // The patch op rather than `node.rename`: this bus is `createDomainBus` alone, which
+      // carries the graph commands and not the editor ones. Both doors land the same
+      // `setNodeLabel`, and what is under test is the completion source.
+      await harness.bus.execute(
+        "graph.applyPatch",
+        {
+          baseRevision: harness.bus.store.getGraph().revision,
+          operations: [{ op: "setNodeLabel", nodeId: harness.ids.other, label: "renamedLate" }],
+        },
+        context,
+      );
+    });
+    await settle();
+    expect(harness.bus.store.getGraph().nodes[harness.ids.other]?.label).toBe("renamedLate");
+
+    // One keystroke later — the next thing that happens while a completion menu is open.
+    expect(await harness.offeredFor("op('renamed")).toEqual(["renamedLate"]);
+    // And the name that is gone is gone, so the first assertion is not satisfiable by a
+    // source that simply accumulates every name it has ever seen.
+    expect(await harness.offeredFor(`op('${harness.labels.other}`)).toEqual([]);
+  });
+
   it("offers the LABEL and never the id (§B170)", async () => {
     const harness = await setup();
     const offered = await harness.offeredFor("op('");

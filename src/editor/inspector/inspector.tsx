@@ -11,6 +11,8 @@ import { nodeHasAnimatedParameters } from "@domain/channels/graph-channels.ts";
 import type { FrameInputs } from "@domain/types/backend.ts";
 import type { FrameEvaluationInput } from "@domain/types/frame.ts";
 import type { TextureFormat } from "@domain/types/node-definition.ts";
+import type { ParameterValue, StoredParameter } from "@domain/types/parameters.ts";
+import type { EditPhase } from "@ui/controls/types.ts";
 import { ParameterControl } from "@ui/controls/parameter-control.tsx";
 import { CodeField } from "@editor/shader-editor/index.ts";
 import type { ControlVariant } from "@ui/controls/control-row.tsx";
@@ -199,6 +201,13 @@ export interface InspectorProps {
 export const LIVE_VALUE_INTERVAL_MS = 100;
 
 /**
+ * T492's injected code editor, hoisted to module scope (T1177). It closes over nothing, so
+ * the per-row arrow it used to be was a new identity per row per render and nothing more —
+ * four of those per row are what made a `React.memo` on `ParameterControl` unable to hit.
+ */
+const CODE_FIELD = (props: Parameters<typeof CodeField>[0]) => <CodeField {...props} />;
+
+/**
  * T893 — the live frame, sampled at <=10 Hz, and ONLY while something here animates.
  *
  * §V16 has both halves of this: per-frame state does not enter the document store, and a
@@ -287,23 +296,49 @@ export function Inspector({
    * Memoised on the document because it is read per KEYSTROKE — the panel recomputes its
    * candidate list on every edit and every caret move, and a new object each render would
    * re-run that memo on every unrelated render of an open panel.
+   *
+   * ⚑ T1177 — ONE OBJECT FOR THE PANE'S LIFETIME, READ THROUGH GETTERS. Memoising on
+   * `graph` meant a NEW OBJECT PER REVISION, and this prop reaches every parameter row: a
+   * `React.memo` on a row compares it, so a stable `references` is the difference between
+   * the row memo paying and the row memo being decoration. Both halves of the old memo were
+   * also EAGER — `nodeReferenceNames(graph)` ran on every render of every open panel for a
+   * menu almost nobody has open.
+   *
+   * WHAT MAKES A STABLE IDENTITY SAFE HERE, and it is the §V935 question. The object holds
+   * NO SNAPSHOT: `names` is a getter and `membersOf` a closure, and both read
+   * `sourceRef.current`, which this render has already written. So the identity is a
+   * constant while the ANSWERS are always this render's graph — a cache that cannot go
+   * stale because it caches nothing.
+   *
+   * ⚠ The one thing it does change: `ParameterModePanel` memoises its candidate LIST on
+   * `[draft, caret, references, …]`, so a menu already open when the graph moves under it
+   * keeps the list it had until the next keystroke or caret move — which is the next thing
+   * that happens, because a completion menu is open precisely while somebody is typing.
+   * `expression-references.test.tsx` holds that line: rename a node, type one character,
+   * and the new name is offered.
    */
+  const sourceRef = useRef({ graph, registry: bus.registry, channelNames });
+  sourceRef.current = { graph, registry: bus.registry, channelNames };
   const references = useMemo<ExpressionReferenceSource>(
     () => ({
-      names: nodeReferenceNames(graph),
-      membersOf: (name, path) =>
-        nodeReferenceMembers(
+      get names() {
+        return nodeReferenceNames(sourceRef.current.graph);
+      },
+      membersOf: (name, path) => {
+        const { graph: current, registry, channelNames: channelsOf } = sourceRef.current;
+        return nodeReferenceMembers(
           {
-            graph,
+            graph: current,
             schemaOf: (target) =>
-              effectiveParameterSchema(bus.registry.get(target.type), target.parameters),
-            ...(channelNames === undefined ? {} : { channelsOf: channelNames }),
+              effectiveParameterSchema(registry.get(target.type), target.parameters),
+            ...(channelsOf === undefined ? {} : { channelsOf }),
           },
           name,
           path,
-        ),
+        );
+      },
     }),
-    [graph, bus.registry, channelNames],
+    [],
   );
 
   /**
@@ -392,6 +427,47 @@ export function Inspector({
       : undefined,
     LIVE_VALUE_INTERVAL_MS,
   );
+
+  /**
+   * T1177 — THE ROW WRITERS, ONE SET PER (EDITOR, NODE) RATHER THAN PER RENDER.
+   *
+   * Every row used to be handed three fresh arrow functions and a fresh `codeField`, which
+   * is four guaranteed misses for a `React.memo` on the row. They are cached here instead,
+   * and the CACHE KEY IS THE DEPENDENCY LIST: `[editor, nodeId]` is exactly what a handler
+   * closes over, so a handler can never be holding a node the panel has moved off. That is
+   * the trap the obvious version walks into — freeze the callbacks with a ref and a row
+   * that happens to compare equal across a selection change goes on writing to the
+   * PREVIOUS node. Rebuilding them when the node changes costs one render of rows that
+   * were going to re-render anyway (a different node's values), and buys back correctness
+   * that is checkable by reading the deps.
+   *
+   * `onPulse` and `onStored` already take everything that varies as arguments, so they are
+   * one function each. `onChange` carries the parameter key, so it gets a per-key cache
+   * behind the same lifetime.
+   */
+  const rowWriters = useMemo(() => {
+    const changeByKey = new Map<string, (value: ParameterValue, phase: EditPhase) => void>();
+    return {
+      pulse: (key: string): void => {
+        if (editor === null || nodeId === null) return;
+        editor.pulse(nodeId, key);
+      },
+      stored: (entries: Readonly<Record<string, StoredParameter>>, phase: EditPhase): void => {
+        if (editor === null || nodeId === null) return;
+        editor.setStored(nodeId, entries, phase);
+      },
+      changeFor: (key: string) => {
+        const cached = changeByKey.get(key);
+        if (cached !== undefined) return cached;
+        const handler = (value: ParameterValue, phase: EditPhase): void => {
+          if (editor === null || nodeId === null) return;
+          editor.setParameter(nodeId, key, value, phase);
+        };
+        changeByKey.set(key, handler);
+        return handler;
+      },
+    };
+  }, [editor, nodeId]);
 
   if (node === undefined || editor === null) {
     return (
@@ -732,13 +808,15 @@ export function Inspector({
                 // undo entry.
                 // §V124: a pulse writes nothing to the document, so it travels its own
                 // path — one command, audited, never undoable, never saved.
-                onPulse={(key) => editor.pulse(node.id, key)}
+                onPulse={rowWriters.pulse}
                 // T492: the REAL editor for a code-valued parameter, injected here
                 // because the control kit cannot import CodeMirror. One editor (T356):
                 // the same component the code pane mounts, at inspector-row size.
-                codeField={(props) => <CodeField {...props} />}
-                onStoredChange={(entries, phase) => editor.setStored(node.id, entries, phase)}
-                onChange={(value, phase) => editor.setParameter(node.id, entry.key, value, phase)}
+                // T1177: module scope — it closes over nothing, and a fresh arrow per row
+                // per render was a guaranteed miss for the row memo.
+                codeField={CODE_FIELD}
+                onStoredChange={rowWriters.stored}
+                onChange={rowWriters.changeFor(entry.key)}
               />
             </div>
           ))}
