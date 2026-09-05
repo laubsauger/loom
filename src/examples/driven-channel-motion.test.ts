@@ -151,6 +151,33 @@ function motionOf(
     if (!isValueNode && node.label !== undefined) seams.add(node.label);
   }
 
+  /**
+   * ⚑ T1193 — THE SEAM A NODE READS, not only the seam a node IS.
+   *
+   * The partition above is "everything the registry does not call a value node", and it was
+   * total right up until a value node started reading an EXTERNAL channel. `oscIn` is a
+   * value node — it declares `valueEvaluate`, so the value graph evaluates it — and what it
+   * evaluates is `channels('osc:<address>')`, a reading only a live helper publishes. So it
+   * fell on the value-graph side of the partition, was handed no stimulus, published its
+   * declared Rest for all two thousand frames, and E64 Relay's three driven lanes read as
+   * structurally dead when they are nothing of the kind.
+   *
+   * Exempting them would have been the wrong repair twice over: this file's own argument is
+   * that a live seam is STIMULATED rather than exempted (that is where §T1078 found three
+   * broken expressions in a week), and a `DELIBERATELY_STILL` row means "a knob shipped at
+   * its off position", which an unattached device is not.
+   *
+   * So the NAMESPACE is stimulated instead, and it is derived from the registry rather than
+   * written down: any definition declaring `listensOn` names the channel prefix its readings
+   * arrive under (`osc:` today), so the next listening device is covered by landing rather
+   * than by somebody remembering this file. A prefixed address cannot collide with a node
+   * label — labels are identifiers and carry no colon — so the partition stays total.
+   */
+  const externalPrefixes = registry
+    .list()
+    .map((definition) => definition.listensOn?.channelPrefix)
+    .filter((prefix): prefix is string => prefix !== undefined);
+
   const session = createValueGraphSession(registry);
   const seen = new Map<string, Set<number>>();
   const unresolved = new Map<string, number>();
@@ -170,6 +197,9 @@ function motionOf(
       randomSeed,
     };
     const stimulus = (address: string): number | undefined => {
+      // T1193: the device namespaces first — `osc:/loom/relay` splits at its colon into a
+      // "name" of `osc` that is no node's label, so the seam test below cannot answer it.
+      if (externalPrefixes.some((prefix) => address.startsWith(prefix))) return stimulusAt(frameIndex);
       const colon = address.indexOf(":");
       const name = colon < 0 ? address : address.slice(0, colon);
       return seams.has(name) ? stimulusAt(frameIndex) : undefined;

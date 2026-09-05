@@ -1,0 +1,892 @@
+{
+  "assets": [],
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e-beam-field": {
+        "id": "e-beam-field",
+        "source": {
+          "nodeId": "beam",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "field",
+          "portId": "in1"
+        }
+      },
+      "e-bed-bedclip": {
+        "id": "e-bed-bedclip",
+        "source": {
+          "nodeId": "bed",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "bedclip",
+          "portId": "input"
+        }
+      },
+      "e-bedclip-field": {
+        "id": "e-bedclip-field",
+        "order": 0,
+        "source": {
+          "nodeId": "bedclip",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "field",
+          "portId": "in2"
+        }
+      },
+      "e-dim-plate": {
+        "id": "e-dim-plate",
+        "order": 1,
+        "source": {
+          "nodeId": "dim",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "plate",
+          "portId": "in2"
+        }
+      },
+      "e-dim-win": {
+        "id": "e-dim-win",
+        "source": {
+          "nodeId": "dim",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "win",
+          "portId": "input"
+        }
+      },
+      "e-field-dim": {
+        "id": "e-field-dim",
+        "source": {
+          "nodeId": "field",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "dim",
+          "portId": "input"
+        }
+      },
+      "e-gate-field": {
+        "id": "e-gate-field",
+        "order": 1,
+        "source": {
+          "nodeId": "gate",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "field",
+          "portId": "in2"
+        }
+      },
+      "e-hist-roll": {
+        "id": "e-hist-roll",
+        "source": {
+          "nodeId": "hist",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "roll",
+          "portId": "input"
+        }
+      },
+      "e-ink-tape": {
+        "id": "e-ink-tape",
+        "source": {
+          "nodeId": "ink",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "tape",
+          "portId": "in1"
+        }
+      },
+      "e-panel-plate": {
+        "id": "e-panel-plate",
+        "order": 0,
+        "source": {
+          "nodeId": "panel",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "plate",
+          "portId": "in2"
+        }
+      },
+      "e-pena-ink": {
+        "id": "e-pena-ink",
+        "source": {
+          "nodeId": "pena",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "ink",
+          "portId": "in1"
+        }
+      },
+      "e-penb-ink": {
+        "id": "e-penb-ink",
+        "order": 0,
+        "source": {
+          "nodeId": "penb",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "ink",
+          "portId": "in2"
+        }
+      },
+      "e-plate-out": {
+        "id": "e-plate-out",
+        "source": {
+          "nodeId": "plate",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      },
+      "e-roll-tape": {
+        "id": "e-roll-tape",
+        "order": 0,
+        "source": {
+          "nodeId": "roll",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "tape",
+          "portId": "in2"
+        }
+      },
+      "e-tape-plate": {
+        "id": "e-tape-plate",
+        "source": {
+          "nodeId": "tape",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "plate",
+          "portId": "in1"
+        }
+      },
+      "e-wash-field": {
+        "id": "e-wash-field",
+        "order": 2,
+        "source": {
+          "nodeId": "wash",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "field",
+          "portId": "in2"
+        }
+      },
+      "e-win-meter": {
+        "id": "e-win-meter",
+        "source": {
+          "nodeId": "win",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "meter",
+          "portId": "input"
+        }
+      },
+      "v-hear-ctl": {
+        "id": "v-hear-ctl",
+        "source": {
+          "nodeId": "hear",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "ctl",
+          "portId": "a"
+        }
+      },
+      "v-hear-penB": {
+        "id": "v-hear-penB",
+        "source": {
+          "nodeId": "hear",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "penB",
+          "portId": "a"
+        }
+      },
+      "v-probe-wire": {
+        "id": "v-probe-wire",
+        "source": {
+          "nodeId": "probe",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "wire",
+          "portId": "a"
+        }
+      },
+      "v-wire-penA": {
+        "id": "v-wire-penA",
+        "source": {
+          "nodeId": "wire",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "penA",
+          "portId": "a"
+        }
+      },
+      "v-wire-send": {
+        "id": "v-wire-send",
+        "source": {
+          "nodeId": "wire",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "send",
+          "portId": "in"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "beam": {
+        "definitionVersion": 1,
+        "id": "beam",
+        "label": "beam1",
+        "parameters": {
+          "aspectcorrect": true,
+          "bgcolor": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "center": [
+            0.5,
+            0.4
+          ],
+          "center.x": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('sweep1').chan.value"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.5
+              }
+            },
+            "mode": "expression"
+          },
+          "fillcolor": [
+            1,
+            0.72,
+            0.34,
+            1
+          ],
+          "mode": "fill",
+          "radius": [
+            0.045,
+            0.045
+          ],
+          "softness": 0.26
+        },
+        "position": {
+          "x": -2100,
+          "y": -340
+        },
+        "type": "circle"
+      },
+      "bed": {
+        "definitionVersion": 1,
+        "id": "bed",
+        "label": "bed1",
+        "parameters": {
+          "amp": 1,
+          "aspectcorrect": true,
+          "exp": 2.2,
+          "gain": 0.5,
+          "harmon": 3,
+          "mono": true,
+          "offset": -0.5,
+          "period": 0.19,
+          "rough": 0.5,
+          "s4d": 1,
+          "seed": 64,
+          "speed": 0.07,
+          "spread": 2,
+          "t4d": 0.37,
+          "type": "perlin4d"
+        },
+        "position": {
+          "x": -2400,
+          "y": -340
+        },
+        "type": "noise"
+      },
+      "bedclip": {
+        "definitionVersion": 1,
+        "id": "bedclip",
+        "label": "bedclip1",
+        "parameters": {
+          "high": 4,
+          "low": 0,
+          "mode": "clamp",
+          "steps": 4
+        },
+        "position": {
+          "x": -2100,
+          "y": -40
+        },
+        "type": "limit"
+      },
+      "ctl": {
+        "definitionVersion": 1,
+        "id": "ctl",
+        "label": "ctl1",
+        "parameters": {
+          "fromHigh": 1,
+          "fromLow": 0,
+          "operation": "range",
+          "outside": "clamp",
+          "toHigh": 0.86,
+          "toLow": 1.24
+        },
+        "position": {
+          "x": 300,
+          "y": -40
+        },
+        "type": "valueMath"
+      },
+      "dim": {
+        "definitionVersion": 1,
+        "id": "dim",
+        "label": "dim1",
+        "parameters": {
+          "blacklevel": 0,
+          "brightness": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('ctl1').chan.level"
+              },
+              "static": {
+                "kind": "static",
+                "value": 1.0804
+              }
+            },
+            "mode": "expression"
+          },
+          "contrast": 1,
+          "gamma1": 1,
+          "invert": 0,
+          "opacity": 1,
+          "whitelevel": 1
+        },
+        "position": {
+          "x": -1500,
+          "y": -340
+        },
+        "type": "level"
+      },
+      "field": {
+        "definitionVersion": 1,
+        "id": "field",
+        "label": "field1",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": -1800,
+          "y": -340
+        },
+        "type": "add"
+      },
+      "gate": {
+        "definitionVersion": 1,
+        "id": "gate",
+        "label": "gate1",
+        "parameters": {
+          "aspectcorrect": false,
+          "bgcolor": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "center": [
+            0.5,
+            0.4
+          ],
+          "fillcolor": [
+            0.05,
+            0.09,
+            0.13,
+            1
+          ],
+          "mode": "fill",
+          "roundness": 0,
+          "size": [
+            0.17,
+            0.26
+          ],
+          "softness": 0.02
+        },
+        "position": {
+          "x": -2400,
+          "y": -40
+        },
+        "type": "rectangle"
+      },
+      "hear": {
+        "definitionVersion": 1,
+        "id": "hear",
+        "label": "hear1",
+        "parameters": {
+          "controls": "level",
+          "levelAddress": "/loom/relay",
+          "levelRest": 0.42,
+          "port": 9107
+        },
+        "position": {
+          "x": 0,
+          "y": -40
+        },
+        "type": "oscIn"
+      },
+      "hist": {
+        "definitionVersion": 1,
+        "id": "hist",
+        "label": "hist1",
+        "parameters": {
+          "clearColor": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "persistence": 1,
+          "reset": false,
+          "source": "tape1",
+          "substeps": 1
+        },
+        "position": {
+          "x": 1200,
+          "y": 800
+        },
+        "type": "feedback"
+      },
+      "ink": {
+        "definitionVersion": 1,
+        "id": "ink",
+        "label": "ink1",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": 900,
+          "y": 460
+        },
+        "type": "over"
+      },
+      "meter": {
+        "definitionVersion": 1,
+        "id": "meter",
+        "label": "meter1",
+        "parameters": {
+          "channel": "luminance",
+          "operation": "maximum"
+        },
+        "position": {
+          "x": -900,
+          "y": -640
+        },
+        "type": "analyze"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "label": "out1",
+        "parameters": {},
+        "position": {
+          "x": 1800,
+          "y": -340
+        },
+        "type": "output"
+      },
+      "panel": {
+        "definitionVersion": 1,
+        "id": "panel",
+        "label": "panel1",
+        "parameters": {
+          "aspectcorrect": false,
+          "bgcolor": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "center": [
+            0.5,
+            0.835
+          ],
+          "fillcolor": [
+            0.012,
+            0.016,
+            0.028,
+            0.78
+          ],
+          "mode": "fill",
+          "roundness": 0,
+          "size": [
+            0.5,
+            0.135
+          ],
+          "softness": 0.004
+        },
+        "position": {
+          "x": 1200,
+          "y": -40
+        },
+        "type": "rectangle"
+      },
+      "penA": {
+        "definitionVersion": 1,
+        "id": "penA",
+        "label": "penA1",
+        "parameters": {
+          "fromHigh": 1,
+          "fromLow": 0,
+          "operation": "range",
+          "outside": "clamp",
+          "toHigh": 0.745,
+          "toLow": 0.925
+        },
+        "position": {
+          "x": -300,
+          "y": 300
+        },
+        "type": "valueMath"
+      },
+      "penB": {
+        "definitionVersion": 1,
+        "id": "penB",
+        "label": "penB1",
+        "parameters": {
+          "fromHigh": 1,
+          "fromLow": 0,
+          "operation": "range",
+          "outside": "clamp",
+          "toHigh": 0.745,
+          "toLow": 0.925
+        },
+        "position": {
+          "x": 300,
+          "y": 300
+        },
+        "type": "valueMath"
+      },
+      "pena": {
+        "definitionVersion": 1,
+        "id": "pena",
+        "label": "pena1",
+        "parameters": {
+          "aspectcorrect": false,
+          "bgcolor": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "center": [
+            0.94,
+            0.835
+          ],
+          "center.y": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('penA1').chan.value"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.15
+              }
+            },
+            "mode": "expression"
+          },
+          "fillcolor": [
+            1,
+            0.78,
+            0.3,
+            1
+          ],
+          "mode": "fill",
+          "radius": [
+            0.008,
+            0.011
+          ],
+          "softness": 0.024
+        },
+        "position": {
+          "x": 600,
+          "y": 620
+        },
+        "type": "circle"
+      },
+      "penb": {
+        "definitionVersion": 1,
+        "id": "penb",
+        "label": "penb1",
+        "parameters": {
+          "aspectcorrect": false,
+          "bgcolor": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "center": [
+            0.94,
+            0.835
+          ],
+          "center.y": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('penB1').chan.level"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.15
+              }
+            },
+            "mode": "expression"
+          },
+          "fillcolor": [
+            0.18,
+            0.72,
+            0.86,
+            1
+          ],
+          "mode": "fill",
+          "radius": [
+            0.013,
+            0.016
+          ],
+          "softness": 0.028
+        },
+        "position": {
+          "x": 600,
+          "y": 300
+        },
+        "type": "circle"
+      },
+      "plate": {
+        "definitionVersion": 1,
+        "id": "plate",
+        "label": "plate1",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": 1500,
+          "y": -340
+        },
+        "type": "over"
+      },
+      "probe": {
+        "definitionVersion": 1,
+        "id": "probe",
+        "label": "probe1",
+        "parameters": {
+          "channel": "meter1",
+          "fallback": 0.16125
+        },
+        "position": {
+          "x": -900,
+          "y": -40
+        },
+        "type": "channelIn"
+      },
+      "roll": {
+        "definitionVersion": 1,
+        "id": "roll",
+        "label": "roll1",
+        "parameters": {
+          "aspectcorrect": false,
+          "extend": "zero",
+          "p": [
+            0,
+            0
+          ],
+          "r": 0,
+          "s": [
+            1,
+            1
+          ],
+          "t": [
+            -0.00625,
+            0
+          ]
+        },
+        "position": {
+          "x": 900,
+          "y": 800
+        },
+        "type": "transform"
+      },
+      "send": {
+        "definitionVersion": 1,
+        "id": "send",
+        "label": "send1",
+        "parameters": {
+          "address": "/loom/relay",
+          "host": "127.0.0.1",
+          "port": 9107,
+          "rate": 60
+        },
+        "position": {
+          "x": -300,
+          "y": -40
+        },
+        "type": "oscOut"
+      },
+      "sweep": {
+        "definitionVersion": 1,
+        "id": "sweep",
+        "label": "sweep1",
+        "parameters": {
+          "amplitude": 0.42,
+          "frequency": 0.33,
+          "offset": 0.5,
+          "phase": 0,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -2400,
+          "y": 260
+        },
+        "type": "lfo"
+      },
+      "tape": {
+        "definitionVersion": 1,
+        "id": "tape",
+        "label": "tape1",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": 1200,
+          "y": 460
+        },
+        "type": "over"
+      },
+      "wash": {
+        "definitionVersion": 2,
+        "id": "wash",
+        "label": "wash1",
+        "parameters": {
+          "interp": "smooth",
+          "period": 1,
+          "stops": [
+            {
+              "color": [
+                0.03,
+                0.05,
+                0.11,
+                1
+              ],
+              "position": 0
+            },
+            {
+              "color": [
+                0.05,
+                0.08,
+                0.16,
+                1
+              ],
+              "position": 0.55
+            },
+            {
+              "color": [
+                0.02,
+                0.03,
+                0.07,
+                1
+              ],
+              "position": 1
+            }
+          ],
+          "type": "vertical"
+        },
+        "position": {
+          "x": -2400,
+          "y": -640
+        },
+        "type": "ramp"
+      },
+      "win": {
+        "definitionVersion": 1,
+        "id": "win",
+        "label": "win1",
+        "parameters": {
+          "bottom": 0.34,
+          "left": 0.33,
+          "right": 0.67,
+          "top": 0.86
+        },
+        "position": {
+          "x": -1200,
+          "y": -640
+        },
+        "type": "crop"
+      },
+      "wire": {
+        "definitionVersion": 1,
+        "id": "wire",
+        "label": "wire1",
+        "parameters": {
+          "fromHigh": 0.42,
+          "fromLow": 0.075,
+          "operation": "range",
+          "outside": "clamp",
+          "toHigh": 1,
+          "toLow": 0
+        },
+        "position": {
+          "x": -600,
+          "y": -40
+        },
+        "type": "valueMath"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E64 Relay",
+  "projectId": "example-e64-relay",
+  "schemaVersion": 3,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 64,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}

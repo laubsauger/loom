@@ -158,6 +158,7 @@ describe("examples with a temporal loop", () => {
       // than on the final output (§V471.5) — grading the field the agents SENSE would
       // make them chase the look instead of the signal.
       "E54-Quorum.loom.json",
+      "E64-Relay.loom.json",
       // T511: E9's loop is a SPARK STREAK. Two frames of an ember's own path, held so a
       // moving point reads as a moving point rather than a stipple — the loop's fourth
       // use in the set, after a smear, a simulation and a zoom. Its persistence is a
