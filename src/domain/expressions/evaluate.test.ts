@@ -233,3 +233,80 @@ describe("comparison operators (T628)", () => {
     expect(value("5 < 1 < 3")).toBe(1); // (5<1)=0, 0<3 -> 1
   });
 });
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ * T1172 — THE PARSE MEMO CACHES THE TREE, NEVER THE VALUE
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ *
+ * `parseExpression` is memoised on its own source text because the per-frame path
+ * (`resolveStored` → `evaluateExpression`) parsed every expression in an animated
+ * document sixty times a second, and §T1172 measured parse at 82% of the cost of
+ * evaluating one. The docblock on `evaluateAst` has promised "parse once, evaluate per
+ * frame" since T202; this is where the promise is finally kept for every caller.
+ *
+ * ⚠ There is exactly one way for this to be a bug: caching a VALUE instead of a TREE. An
+ * AST is a pure function of the characters; a value is a function of the AST and a SCOPE,
+ * and the scope carries the clock. §B181 is what that failure looks like from outside —
+ * a parameter frozen on one number while every static assertion stays green — so the
+ * gates below evaluate one memoised tree against many scopes and assert it MOVES.
+ */
+describe("T1172 — the expression parse memo", () => {
+  const value = (source: string, scope: Record<string, number> = {}): number => {
+    const result = evaluateExpression(source, scope);
+    if (!result.ok) throw new Error(`expected "${source}" to evaluate: ${result.reason}`);
+    return result.value;
+  };
+
+  it("hands back one tree for one source — the memo, stated as identity", () => {
+    // The one mechanism claim, and it earns its place: nothing else here fails if the
+    // memo is deleted, so without it a regression that restores the per-frame parse
+    // lands green.
+    const first = parseExpression("time * 2 + 1");
+    const second = parseExpression("time * 2 + 1");
+    expect(first.ok).toBe(true);
+    expect(first).toBe(second);
+  });
+
+  it("parses each source's OWN text, however they are interleaved", () => {
+    // A one-slot memo answers the second question with the first question's tree.
+    expect(value("a * 2", { a: 3 })).toBe(6);
+    expect(value("a * 10", { a: 3 })).toBe(30);
+    expect(value("a * 2", { a: 3 })).toBe(6);
+    expect(value("a * 10", { a: 3 })).toBe(30);
+  });
+
+  it("evaluates ONE memoised tree against MANY scopes (§B181)", () => {
+    // The whole risk of this memo in one claim: the tree is remembered, the number is
+    // not. Sixty evaluations of the same source, sixty different answers.
+    for (let frame = 0; frame < 60; frame += 1) {
+      expect(value("time * 2", { time: frame })).toBe(frame * 2);
+    }
+    // And still, after all of that, against a scope it has never seen.
+    expect(value("time * 2", { time: 1000 })).toBe(2000);
+  });
+
+  it("remembers a REFUSAL as its own reason, not as the last refusal it saw", () => {
+    // Failures are cached too — a document holding a typo re-parses it every frame
+    // exactly like a working one. The reason must still belong to the text.
+    const missing = parseExpression("2 +");
+    const unknown = parseExpression("a = 1");
+    expect(missing.ok).toBe(false);
+    expect(unknown.ok).toBe(false);
+    const missingAgain = parseExpression("2 +");
+    expect(missingAgain.ok).toBe(false);
+    if (!missing.ok && !missingAgain.ok) expect(missingAgain.reason).toBe(missing.reason);
+    if (!unknown.ok && !missingAgain.ok) expect(missingAgain.reason).not.toBe(unknown.reason);
+  });
+
+  it("keeps answering correctly once the cache is filled past its cap", () => {
+    // FIFO eviction. The hazard is not eviction but an entry surviving under the wrong
+    // key, so an evicted source and a fresh one must both still parse as themselves.
+    expect(value("a + 1", { a: 1 })).toBe(2);
+    for (let index = 0; index < 1200; index += 1) {
+      expect(value(`a + ${index}`, { a: 0 })).toBe(index);
+    }
+    expect(value("a + 1", { a: 1 })).toBe(2);
+    expect(value("a * 7", { a: 6 })).toBe(42);
+  });
+});

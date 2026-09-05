@@ -505,10 +505,54 @@ function parseOpReference(cursor: Cursor): ExpressionAst {
   return { kind: "opRef", name: name.value, path };
 }
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ * THE PARSE MEMO (T1172) — KEYED BY THE SOURCE TEXT, SO IT CANNOT OUTLIVE AN EDIT
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ *
+ * `evaluateAst` exists because "parse once, evaluate per frame" is the right shape, and
+ * the docblock below it has said so since T202. Nothing on the per-frame path ever did
+ * it: `resolveStored` calls `evaluateExpression`, which parses first, so every expression
+ * in an animated document was re-tokenised and re-parsed sixty times a second — and
+ * §T1172 measured PARSE AT 82% OF THE COST OF EVALUATING ONE. This is that docblock's
+ * promise, kept where every caller gets it instead of at one call site that remembers to.
+ *
+ * ⚠ The key is the trimmed source text and nothing else. An expression's AST is a pure
+ * function of the characters it was written with, so an edit is a different key and a hit
+ * can only ever be the parse of the very text asked about — there is no invalidation to
+ * forget. The FAILURE is cached too, and deliberately: a document holding a typo re-parses
+ * it every frame exactly like a working one, and the reason string is as pure a function
+ * of the input as the tree is.
+ *
+ * ⚠ THIS MAKES THE AST SHARED, AND IT IS ALREADY TREATED AS IMMUTABLE. `evaluateNode`
+ * reads it; `parameter-dependencies.ts` walks it; `reference.ts`, `validate.ts`,
+ * `expression-range.ts` and `parameter-mode.tsx` inspect it. Nothing writes to a node, and
+ * nothing may start — a mutation would now reach every later reader of the same text.
+ *
+ * FIFO past a cap, for the same reason the reflection memo (T1172) is: the working set is
+ * the distinct expressions in one document, and the only way past the cap is somebody
+ * TYPING one, where every keystroke mints a new key and the oldest entry is the coldest.
+ */
+const PARSE_CACHE_LIMIT = 512;
+const parsedBySource = new Map<string, ParseResult>();
+
 export function parseExpression(input: string): ParseResult {
   const trimmed = input.trim();
   if (trimmed === "") return { ok: false, reason: "empty" };
 
+  const hit = parsedBySource.get(trimmed);
+  if (hit !== undefined) return hit;
+
+  const parsed = parse(trimmed);
+  parsedBySource.set(trimmed, parsed);
+  if (parsedBySource.size > PARSE_CACHE_LIMIT) {
+    const oldest = parsedBySource.keys().next();
+    if (oldest.done !== true) parsedBySource.delete(oldest.value);
+  }
+  return parsed;
+}
+
+function parse(trimmed: string): ParseResult {
   const tokens = tokenize(trimmed);
   if (!Array.isArray(tokens)) return { ok: false, reason: tokens };
   if (tokens.length === 0) return { ok: false, reason: "empty" };
