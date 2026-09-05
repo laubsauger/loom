@@ -272,6 +272,27 @@ function timelineLockedPlay(values: Readonly<Record<string, ParameterValue>>): s
     : "Locked to Timeline, so the timeline's own play/pause is this node's play/pause. A media node that paused independently would make its position depend on how you reached the frame, which is exactly what stops a scrub and an offline render from reproducing (§V45). Switch Play Mode to Free Run to drive it by hand.";
 }
 
+/**
+ * T1190 — §V146, and it is the answer to a REPORTED confusion rather than a tidy-up.
+ *
+ * The owner, driving a `cuePoint` from audio: *"do we have reverse now? We don't have
+ * reverse play."* Reverse HAS shipped since T493 — `speed` is declared down to -4 and
+ * `applyMediaPlayhead` steps `currentTime` by hand because no browser plays a negative
+ * `playbackRate` — and it did nothing for him, because `mediaPlayhead` answers a held cue
+ * BEFORE it looks at the clock. With Cue on, `speed`, `play` and `extend` are not read at
+ * all. They were live, editable controls doing nothing, with nothing saying so, which is
+ * precisely the state §V123/§V146 exist to forbid: a capability that is present and
+ * undiscoverable is not delivered.
+ *
+ * `trimStart`/`trimEnd` are deliberately NOT listed — a cue is clamped INTO the trim
+ * window, so those two are read and do work.
+ */
+function cueHeldPosition(values: Readonly<Record<string, ParameterValue>>): string | null {
+  return values["cue"] === true
+    ? "Cue is on, so the position IS the Cue Point and no clock is read — Speed, Play and At End do nothing until you turn Cue off. Drive Cue Point instead, or turn Cue off to use them."
+    : null;
+}
+
 function timelineLockedJump(values: Readonly<Record<string, ParameterValue>>): string | null {
   return values["playMode"] === "freeRun"
     ? null
@@ -310,7 +331,7 @@ export const MEDIA_TRANSPORT_PARAMETERS: ParameterSchema = {
     label: "Play",
     group: "Transport",
     default: true,
-    inactiveWhen: timelineLockedPlay,
+    inactiveWhen: (values) => cueHeldPosition(values) ?? timelineLockedPlay(values),
     description: "Free Run only: advance the playhead, or hold it where it is.",
   },
   speed: {
@@ -322,7 +343,8 @@ export const MEDIA_TRANSPORT_PARAMETERS: ParameterSchema = {
     max: 4,
     range: "soft",
     step: 0.01,
-    description: "Rate multiplier. Negative runs backwards; 0 freezes.",
+    inactiveWhen: cueHeldPosition,
+    description: "Rate multiplier. NEGATIVE RUNS BACKWARDS — that is the reverse control, and it is a scrub rather than a reverse playback rate, because no browser plays one. 0 freezes.",
   },
   cue: {
     type: "boolean",
@@ -348,7 +370,7 @@ export const MEDIA_TRANSPORT_PARAMETERS: ParameterSchema = {
     group: "Transport",
     fires: "media.cue",
     input: { nodeIds: ["$node"] },
-    inactiveWhen: timelineLockedJump,
+    inactiveWhen: (values) => cueHeldPosition(values) ?? timelineLockedJump(values),
     description: "Free Run only: jump to the cue point once and carry on from there.",
   },
   trimStart: {
@@ -379,8 +401,9 @@ export const MEDIA_TRANSPORT_PARAMETERS: ParameterSchema = {
     group: "Trim",
     default: "loop",
     options: [...EXTEND_OPTIONS],
+    inactiveWhen: cueHeldPosition,
     description:
-      "What happens outside the trim window, in both directions: Loop cycles, Hold Last freezes, Mirror ping-pongs, Black shows and plays nothing.",
+      "What happens outside the trim window, in both directions: Loop cycles, Hold Last freezes, MIRROR PING-PONGS — a bounce, which is reverse applied automatically at the ends — and Black shows and plays nothing.",
   },
   reload: {
     type: "pulse",

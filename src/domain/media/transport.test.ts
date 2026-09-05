@@ -320,8 +320,60 @@ describe("T493 — §V146: a control that cannot act says so", () => {
     expect(inactive("cuePulse", "freeRun")).toBeNull();
     // The distinction the whole clock argument rests on: holding is pure, jumping is not.
     expect(MEDIA_TRANSPORT_PARAMETERS["cue"]?.inactiveWhen).toBeUndefined();
-    expect(MEDIA_TRANSPORT_PARAMETERS["speed"]?.inactiveWhen).toBeUndefined();
+    // T1190 gave `speed` an `inactiveWhen` and the claim moved below rather than away:
+    // it is inactive under a HELD CUE and active in every other state, which is stronger
+    // than "has none" and is the thing a user can actually be misled by.
     expect(MEDIA_TRANSPORT_PARAMETERS["trimStart"]?.inactiveWhen).toBeUndefined();
+    expect(MEDIA_TRANSPORT_PARAMETERS["trimEnd"]?.inactiveWhen).toBeUndefined();
+  });
+
+  /**
+   * ⚑ T1190 — THE OWNER'S SECOND SYMPTOM, and it is the same shape as T586's.
+   *
+   * Driving a `cuePoint` from audio, he asked *"do we have reverse now? We don't have
+   * reverse play."* Reverse HAS shipped since T493: `speed` goes to -4 and
+   * `applyMediaPlayhead` scrubs backwards by hand. It did nothing for him because
+   * `mediaPlayhead` answers a HELD CUE before it reads the clock at all — so Speed, Play
+   * and At End were live controls doing nothing, with nothing saying so.
+   *
+   * Asserted against `mediaPlayhead` itself rather than against the schema alone, because
+   * "this control is inactive" is only honest if the control really is not read. If a
+   * future change made a cue consult `speed`, the dimming would become the lie.
+   */
+  it("with Cue HELD, Speed / Play / At End say they do nothing — and really do nothing", () => {
+    const held = { playMode: "freeRun", cue: true };
+    for (const key of ["speed", "play", "extend", "cuePulse"]) {
+      const reason = MEDIA_TRANSPORT_PARAMETERS[key]?.inactiveWhen?.(held);
+      expect(reason, key).toBeTypeOf("string");
+      expect(reason, key).toContain("Cue");
+    }
+    // Cue Point and the trim are read UNDER a cue, so they must stay active.
+    expect(MEDIA_TRANSPORT_PARAMETERS["cuePoint"]?.inactiveWhen?.(held) ?? null).toBeNull();
+    expect(MEDIA_TRANSPORT_PARAMETERS["cue"]?.inactiveWhen).toBeUndefined();
+
+    // And with the cue OFF, every one of them is live again.
+    const running = { playMode: "freeRun", cue: false };
+    for (const key of ["speed", "play", "extend", "cuePulse"]) {
+      expect(MEDIA_TRANSPORT_PARAMETERS[key]?.inactiveWhen?.(running) ?? null, key).toBeNull();
+    }
+
+    // THE CLAIM THE DIMMING MAKES: under a cue the playhead ignores speed and extend
+    // entirely. Same cue point, three transports that differ in nothing else, one answer.
+    const base: MediaTransportValues = {
+      playMode: "freeRun", play: true, cue: true, cuePoint: 4,
+      trimStart: 0, trimEnd: 0, speed: 1, extend: "loop",
+    };
+    const at = (over: Partial<typeof base>) => mediaPlayhead({ ...base, ...over }, 3, 10).position;
+    expect(at({})).toBe(4);
+    expect(at({ speed: -4 })).toBe(4);
+    expect(at({ speed: 0 })).toBe(4);
+    expect(at({ extend: "mirror" })).toBe(4);
+    expect(at({ play: false })).toBe(4);
+    // ...and with the cue OFF the same three transports disagree, so the check above is
+    // not vacuous: it is a fact about the cue, not about these parameters being inert.
+    const running3 = { ...base, cue: false };
+    expect(mediaPlayhead(running3, 3, 10).position).toBe(3);
+    expect(mediaPlayhead({ ...running3, speed: -4 }, 3, 10).position).toBe(8);
   });
 });
 
