@@ -42,7 +42,41 @@ function code(file: string): string {
  * moved every device pump to `src/devices/` — a directory no hand-list had — and the
  * scan's old root list went blind without failing. A walk of `src` cannot go blind again.
  */
-const NOT_A_PUMP_SITE = ["src/domain/render", "src/nodes/definitions"];
+const NOT_A_PUMP_SITE = [
+  "src/domain/render",
+  "src/nodes/definitions",
+  /*
+   * T1193 — EXAMPLE DOCUMENTS NAME NODE TYPES AS DATA, and E64 Relay is the first one to
+   * place an emitting node (`oscOut`, wired to its own `oscIn` over the loopback).
+   *
+   * These modules export a `ProjectDocument` and nothing else; they are the SOURCE the
+   * `.loom.json` files are generated from, `sync.test.ts` holds the bytes to them, and
+   * nothing in a running session imports one. A node type spelled here is a type string in
+   * a document, exactly as it is in the shipped JSON — which this scan does not read and
+   * never should. A pump cannot hide in a document, and the alternative on offer was worse:
+   * writing `oscOutNode.type` instead of `"oscOut"` in the example, which is a file made
+   * less readable to slip past a gate.
+   */
+  "src/examples/documents",
+  /*
+   * T1162 — THE EXAMPLE CARD'S CAPABILITY VOCABULARY NAMES NODE TYPES AS DATA, and the
+   * `device` tag is the row that has to name `oscOut` and `laserOut`: the tag means "this
+   * example plans or drives hardware over the local bridge", and a row that left the two
+   * EMITTERS out would be a tag that goes quiet on exactly the file that talks to a laser.
+   *
+   * THE FILE, not the directory, so a real pump landing anywhere else under
+   * `src/editor/library/` is still caught. What it exports is `tagsOf`/`categoryOf` — pure
+   * predicates over a set of type STRINGS parsed out of a `.loom.json`, with no registry,
+   * no definition and no transport in reach. It is the read side of §T1193's exclusion one
+   * surface over: that one is the document that SPELLS `oscOut`, this one is the browser
+   * list that reads the same string back out of the shipped bytes and puts a badge on it.
+   *
+   * The alternative was dropping the emitters from the vocabulary, which is a gate quietly
+   * shaping a product decision — the thing §T1193 refused when it declined to write
+   * `oscOutNode.type` to slip past this scan.
+   */
+  "src/editor/library/example-catalogue.ts",
+];
 
 /** Every non-test source module a pump could hide in: all of `src`, minus the exclusions. */
 function sessionSources(): string[] {

@@ -23,13 +23,22 @@ import { entryScore } from "./search.ts";
  * search for "js" or "loo" would rank every example equally, which is a search box that
  * has stopped answering. The stem carries only what the author named.
  *
- * No `tags`: nothing authors them for examples, and an always-empty field is a tier that
- * silently never fires.
+ * `tags` was empty until T1162 — "nothing authors them for examples" — and the ladder's
+ * TAG tier therefore never fired. It fires now, and it is the reason the capability tags
+ * are worth more than a badge: `categoryOf` is single-label with precedence, so typing
+ * "points" used to reach the SIX examples filed under points, while 26 contain a point
+ * system. The tag tier reaches all 26. That is a capability filter through the box that is
+ * already there, which is why T1162 did not grow the toolbar a second dropdown.
+ *
+ * It ranks BELOW every match on the name or the file stem and ABOVE the category and the
+ * description, which is the node library's own ordering (§V748) — a tag is a stronger
+ * signal than a word that merely appears in a sentence.
  */
 function entryFor(example: ExampleProject): Parameters<typeof entryScore>[0] {
   return {
     title: example.name,
     key: example.fileName.replace(/\.loom\.json$/, ""),
+    tags: example.tags,
     category: example.category,
     description: example.description,
   };

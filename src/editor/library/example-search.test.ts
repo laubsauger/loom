@@ -31,6 +31,7 @@ function example(overrides: Partial<ExampleProject> = {}): ExampleProject {
     text: "{}",
     description: "",
     category: "image",
+    tags: ["image"],
     ...overrides,
   };
 }

@@ -5,7 +5,7 @@ import { alice, contextFor } from "@domain/commands/test-support.ts";
 import { createComponentHarness, graphOf } from "@domain/components/test-support.ts";
 import type { LoomBus } from "@domain/commands/bus.ts";
 import { installDomStubs } from "@ui/testing/install-dom-stubs.ts";
-import { listExampleProjects } from "./example-catalogue.ts";
+import { capabilityOf, listExampleProjects } from "./example-catalogue.ts";
 import { ExampleLibrary } from "./example-library.tsx";
 
 /**
@@ -32,6 +32,9 @@ const EXAMPLE = {
   text: "{}",
   description: "A fire front, breathing out of phase.",
   category: "points",
+  // T1162: the category is the first medium tag, and `wgsl` is a technique tag with no
+  // category counterpart — so this row exercises both halves of the card's badge strip.
+  tags: ["points", "feedback", "wgsl"],
   thumbnailUrl: "/examples/thumbs/E9-Test.png",
 } as const;
 
@@ -43,6 +46,7 @@ const OTHER = {
   text: "{}",
   description: "A velocity field carrying a dye.",
   category: "feedback",
+  tags: ["feedback"],
 } as const;
 
 /** A bus that answers `project.open` — the composition root registers the real one. */
@@ -253,6 +257,53 @@ describe("ExampleLibrary (T189, §V93)", () => {
     // independent, and what the owner actually asked for, is that the card stays on the
     // horizontal axis: "top" or "bottom" is a card sitting on the row it describes.
     expect(["left", "right"]).toContain(card.getAttribute("data-side"));
+  });
+
+  it("says WHAT THE EXAMPLE DEMONSTRATES on the card, labelled and defined (T1162)", async () => {
+    const { bus } = busWithOpen();
+    render(
+      <ExampleLibrary bus={bus} context={context} dirty={false} examples={[EXAMPLE, OTHER]} />,
+    );
+
+    screen.getByRole("button", { name: /E9 Test/ }).focus();
+    const card = await screen.findByRole("tooltip");
+
+    // The label, not the tag id: `3d` renders "3D" and `wgsl` renders "WGSL", and a card
+    // showing the raw union member would be the jargon the tags exist to replace.
+    for (const tag of EXAMPLE.tags) {
+      expect(within(card).getByText(capabilityOf(tag).label)).toBeDefined();
+    }
+
+    // And the DEFINITION travels with it. Read from the table rather than repeated here:
+    // a copy of the sentence in this file is a second place for it to be edited (§V487).
+    expect(
+      within(card).getByText(capabilityOf("wgsl").label).getAttribute("title"),
+    ).toBe(capabilityOf("wgsl").meaning);
+
+    // The row itself stays two columns wide (§T863): the badges are on the card, and a
+    // per-row badge strip is what that task refused for the categories.
+    expect(
+      within(screen.getByRole("button", { name: /E9 Test/ })).queryByText(
+        capabilityOf("wgsl").label,
+      ),
+    ).toBeNull();
+  });
+
+  it("finds an example by a capability its name and its description never mention", () => {
+    // The reason the tags are worth more than a badge. Neither "E9 Test" nor "A fire
+    // front, breathing out of phase." contains the string "wgsl"; the derived tag is the
+    // only thing in the record that does, so a hit here is the TAG tier firing and
+    // nothing else. Before T1162 the field was empty and this query returned no rows.
+    const { bus } = busWithOpen();
+    render(
+      <ExampleLibrary bus={bus} context={context} dirty={false} examples={[EXAMPLE, OTHER]} />,
+    );
+
+    const search = screen.getByRole("searchbox", { name: "Search examples" });
+    fireEvent.change(search, { target: { value: "wgsl" } });
+
+    expect(screen.getByRole("button", { name: /E9 Test/ })).toBeDefined();
+    expect(screen.queryByRole("button", { name: /E12 Other/ })).toBeNull();
   });
 
   it("renders no image at all for an example with no thumbnail — never a broken one", async () => {

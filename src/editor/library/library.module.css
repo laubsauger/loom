@@ -400,6 +400,42 @@
   font-weight: var(--weight-header);
 }
 
+/*
+ * T1162 — the capability tags.
+ *
+ * WHY PILLS AND NOT A DOTTED STRIP. The row has to read as a set of discrete facets rather
+ * than as one more line of metadata, because that is the whole claim: "3D · points · WGSL"
+ * beside "13 nodes" in the same mono micro dim reads as a continuation of the size line and
+ * gets skipped with it.
+ *
+ * WHY THEY ARE NOT `.chip`. `.chip` is the category FILTER — a control, `--control-h` tall,
+ * with a hover state and an `aria-pressed` signal colour. These are labels on a hover card
+ * and nothing here is clickable, so they borrow the pill's geometry (the app's one rounded
+ * vocabulary) and none of its affordances: no height, no hover, no signal. Giving a label
+ * a control's appearance is the affordance lie §V90 is about, one surface over.
+ *
+ * WHY NO PER-TAG COLOUR. Ten tags is ten hues, this dock has four line tokens, and a card
+ * showing three of them would be a small flag parade competing with the thumbnail directly
+ * above it — which is the one thing on the card that IS allowed to carry colour.
+ */
+.cardTags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.cardTag {
+  padding: 0 var(--space-2);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius-pill);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  /* The pill's height comes from the text, so a wrapped second row keeps the same rhythm. */
+  line-height: 1.7;
+  white-space: nowrap;
+}
+
 .cardMeta {
   color: var(--line-hot);
   font-family: var(--font-mono);

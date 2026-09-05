@@ -15,7 +15,7 @@ import {
   LibrarySearch,
   useLibraryHoverCard,
 } from "./library-panel.tsx";
-import { listExampleProjects } from "./example-catalogue.ts";
+import { capabilityOf, listExampleProjects } from "./example-catalogue.ts";
 import type { ExampleProject } from "./example-catalogue.ts";
 import { filterExamples } from "./example-search.ts";
 import { categoriesOf } from "./search.ts";
@@ -42,10 +42,15 @@ import styles from "./library.module.css";
  * rather than a second one: 38 rows is past the point where a flat list is browsable,
  * and this was already the answer to that question one pane over (§V90).
  *
- * The card carries the four things that decide "is this the one I mean": the picture,
- * the name, the size, and the sentence the example's own `.md` opens with. It stops
- * there. It is not a place to put the graph, the claims or the docs — the document is
- * one click away and says all of that better than a tooltip can.
+ * The card carries the five things that decide "is this the one I mean": the picture, the
+ * name, WHAT IT DEMONSTRATES (T1162), the size, and the sentence the example's own `.md`
+ * opens with. It stops there. It is not a place to put the graph, the claims or the docs
+ * — the document is one click away and says all of that better than a tooltip can.
+ *
+ * T1162 added the capability tags because the other four answer "what does it LOOK like"
+ * and none of them answers "what is this FOR": the descriptions are scene prose, and the
+ * category is one bucket chosen by precedence. Every tag is DERIVED from the node types in
+ * the file, so no card can claim a capability its graph does not have.
  */
 
 /**
@@ -153,6 +158,23 @@ export function ExampleLibrary({
             />
           )}
           <span className={styles.cardTitle}>{example.name}</span>
+          {/*
+            T1162 — the capability tags, second on the card because they are the answer to
+            the question the name and the picture do not answer. Each carries its own
+            DEFINITION on hover ("closes a temporal loop: this frame reads the frame before
+            it"), which is a sentence about the TAG and so cannot go stale against the file
+            the way a hand-written per-example claim would.
+          */}
+          <span className={styles.cardTags}>
+            {example.tags.map((tag) => {
+              const capability = capabilityOf(tag);
+              return (
+                <span className={styles.cardTag} key={tag} title={capability.meaning}>
+                  {capability.label}
+                </span>
+              );
+            })}
+          </span>
           <span className={styles.cardMeta}>{example.nodeCount} nodes</span>
           {example.description === "" ? null : (
             <span className={styles.cardText}>{example.description}</span>
