@@ -249,10 +249,22 @@
     "f0max": 0.752,
     "cardFloor": 0.0012
   },
+  "E58-Alembic.loom.json": {
+    "motion": 0.06073,
+    "range": 0.7612,
+    "f0max": 0.9994,
+    "cardFloor": 0.0002
+  },
   "E6-Displacement-Stack.loom.json": {
     "motion": 0.28359,
     "range": 0.7293,
     "f0max": 0.7341
+  },
+  "E63-Skin.loom.json": {
+    "motion": 0.02473,
+    "range": 0.4783,
+    "f0max": 0.5041,
+    "cardFloor": 0.0073
   },
   "E7-LFO-Dissolve.loom.json": {
     "motion": 0.49929,

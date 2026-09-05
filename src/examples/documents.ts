@@ -50,6 +50,8 @@ export { chorusDocument } from "./documents/chorus.ts";
 export { reactorDocument } from "./documents/reactor.ts";
 export { forestDocument } from "./documents/forest.ts";
 export { vesperDocument } from "./documents/vesper.ts";
+export { alembicDocument } from "./documents/alembic.ts";
+export { skinDocument } from "./documents/skin.ts";
 import { feedbackEchoDocument } from "./documents/feedback-echo.ts";
 import { reactionDiffusionDocument } from "./documents/reaction-diffusion.ts";
 import { animatedNoiseFieldDocument } from "./documents/animated-noise-field.ts";
@@ -100,6 +102,8 @@ import { chorusDocument } from "./documents/chorus.ts";
 import { reactorDocument } from "./documents/reactor.ts";
 import { forestDocument } from "./documents/forest.ts";
 import { vesperDocument } from "./documents/vesper.ts";
+import { alembicDocument } from "./documents/alembic.ts";
+import { skinDocument } from "./documents/skin.ts";
 
 export const EXAMPLE_DOCUMENTS: readonly ProjectDocument[] = [
   feedbackEchoDocument,
@@ -152,5 +156,7 @@ export const EXAMPLE_DOCUMENTS: readonly ProjectDocument[] = [
   reactorDocument,
   vesperDocument,
   forestDocument,
+  alembicDocument,
+  skinDocument,
 ];
 

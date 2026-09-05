@@ -1,0 +1,179 @@
+{
+  "assets": [],
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e-alembic-out": {
+        "id": "e-alembic-out",
+        "source": {
+          "nodeId": "alembic",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      },
+      "e-palette-alembic": {
+        "id": "e-palette-alembic",
+        "source": {
+          "nodeId": "palette",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "alembic",
+          "portId": "input"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "alembic": {
+        "definitionVersion": 1,
+        "id": "alembic",
+        "label": "alembic1",
+        "parameters": {
+          "baseFreq": 3,
+          "coil": 0.6,
+          "depthFade": 0.3,
+          "drift": 1,
+          "exposure": 0.02,
+          "flare": -0.15,
+          "flow": 0.6,
+          "grain": 1,
+          "lacunarity": 2,
+          "lens": 1,
+          "looseness": 3,
+          "minStep": 0.001,
+          "octaves": 6,
+          "paletteAxis": [
+            0.34,
+            0.86,
+            0.38
+          ],
+          "paletteBias": 0.4,
+          "paletteScale": 0.5,
+          "radius": 2,
+          "source": "struct SharedFrame {\n  time: f32,\n  deltaTime: f32,\n  frameIndex: f32,\n  randomSeed: f32,\n  wallTime: f32,\n  wallDelta: f32,\n  absTime: f32,\n  absFrame: f32,\n  resolution: vec2f,\n  pointer: vec4f,\n};\n/*\n * E58 Alembic — a domain-warped accumulation march.\n *\n * CREDIT: the technique is the one behind a family of golfed shaders by @Xor (x.com/XorDev)\n * — Cauldron, Dielectric, Archive, Coronal, Wave. An octave-doubling sine domain warp, under\n * a march that accumulates 'colour / d' from a cheap non-Euclidean estimate and tone-maps the\n * sum with tanh. The technique is common currency; his source is his, and none of it is\n * copied here — this is written from the technique and makes no attempt to match his frames.\n *\n * The ray never stops. At every step it takes an estimate of how far the wall is, steps by\n * it, and adds colour divided by it — so the ray lingers AND brightens exactly where it\n * grazes the surface. It is a density integral, not a lit solid, which is why an estimate\n * that is only roughly a distance is not a compromise but the whole trick.\n *\n * There is no palette in here. The connected texture is read as a 1-D lookup, so the colour\n * term of this shader is whatever gradient node you wire into it.\n */\nstruct Params {\n  octaves: f32,       // how many times the fold refines — the fibre count, and the cost\n  baseFreq: f32,      // the first octave's frequency: big soft folds, or small busy ones\n  lacunarity: f32,    // frequency growth per octave — 2 is the doubling, 1.25 is a dense stack\n  warpGain: f32,      // how far each octave pushes the domain sideways\n  twist: f32,         // axis rotation per octave, radians — 2.0944 is the classic zxy swizzle\n  flow: f32,          // how fast the fold's phase moves with time\n  drift: f32,         // how much marching depth enters that phase — shears the fold into a wake\n  radius: f32,        // where the vessel's wall sits, in march units\n  flare: f32,         // opens the tube into a funnel with depth (negative flares it outward)\n  squash: f32,        // elliptical cross-section: 0 is a circular throat\n  wander: f32,        // how far the vessel's axis strays from the ray's\n  coil: f32,          // how fast that stray winds around, per unit of depth\n  steps: f32,         // samples per ray — the integral's resolution\n  looseness: f32,     // how much of the estimate one step takes; larger is softer and dearer\n  minStep: f32,       // the floor under a step — this is the brightness of the wall's core\n  travel: f32,        // how fast the eye flies down the vessel\n  lens: f32,          // field of view: larger is wider\n  exposure: f32,      // gain into the tanh — the only thing between the sum and white\n  depthFade: f32,     // how fast far samples give up; the sense of a receding throat\n  paletteAxis: vec3f, // the direction hue runs in through the volume — the ramp's own axis\n  paletteScale: f32,  // how many times the ramp repeats along that axis\n  paletteBias: f32,   // slides the whole gradient along it\n  grain: f32,         // per-pixel dither on the first step — kills the banding, holds still\n};\n\n@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n@group(0) @binding(2) var<uniform> frameU: SharedFrame;\n@group(0) @binding(3) var<uniform> params: Params;\n\n/* The (1,1,1) diagonal, normalised. 'spin(p, 2.0944)' about it IS 'p.zxy'. */\nconst AXIS: vec3f = vec3f(0.5773502691896258);\n\n/**\n * Rotation about the diagonal by any angle (Rodrigues) — the swizzle, made continuous.\n *\n * The obvious optimisation is to hoist cos/sin of the angle out of the march: it is a\n * UNIFORM, and this runs once per octave per step, so the naive form asks for hundreds of\n * transcendentals a pixel where two would do. It was written that way, measured PAIRED against\n * this form in one alternation, and PUT BACK: 15.61 ms hoisted against 15.43 unhoisted, which\n * is no difference at all. Tint already hoists a loop-invariant read of a uniform, and the\n * hoisted version was one more argument threaded through two functions in exchange for\n * nothing. The measurement is in 'documents/alembic.ts' beside the rest of the cost work.\n */\nfn spin(p: vec3f, a: f32) -> vec3f {\n  let c = cos(a);\n  let s = sin(a);\n  return p * c + cross(AXIS, p) * s + AXIS * dot(AXIS, p) * (1.0 - c);\n}\n\n/**\n * THE FOLD. Each octave displaces the point by a sine of a rotated, scaled copy of itself,\n * with amplitude 1/f — so the first octave moves the domain in great slow arcs and the last\n * only combs it. Feeding the DISPLACED point into the next octave (rather than the original)\n * is what makes this a warp instead of a sum of noises: the fine detail rides the coarse\n * shape, which is why the fibres bundle and braid rather than lying in a flat weave.\n */\nfn fold(start: vec3f, phase: f32, octaves: i32) -> vec3f {\n  var p = start;\n  var f = max(params.baseFreq, 1.0e-3);\n  for (var k: i32 = 0; k < octaves; k = k + 1) {\n    p = p + (params.warpGain / f) * sin(spin(p, params.twist) * f + phase);\n    f = f * params.lacunarity;\n  }\n  return p;\n}\n\n/**\n * THE ESTIMATE — the vessel the march accumulates against, and the whole of its geometry.\n *\n * A surface of revolution about the marching axis: 'radius' sets the wall, 'flare' tapers\n * it with depth, 'squash' makes the throat elliptical, and 'wander'/'coil' let the axis\n * itself corkscrew away from the ray so the tunnel is never a straight pipe. 'abs' is what\n * makes it a WALL rather than a solid — the estimate falls to zero on the surface from both\n * sides, so the march glows on the shell and passes through it.\n *\n * It is not a true distance and does not need to be: nothing here sphere-traces.\n */\nfn wall(p: vec3f) -> f32 {\n  let stray = vec2f(cos(p.z * params.coil), sin(p.z * params.coil)) * params.wander;\n  let q = (p.xy - stray) * vec2f(1.0, 1.0 + params.squash);\n  return abs(length(q) + p.z * params.flare - params.radius);\n}\n\n/** A fixed per-pixel hash: grain that never moves, so the dither cannot read as flicker. */\nfn dither(pixel: vec2f) -> f32 {\n  return fract(sin(dot(pixel, vec2f(12.9898, 78.233))) * 43758.5453);\n}\n\n@fragment\nfn fs(@location(0) uv: vec2f) -> @location(0) vec4f {\n  let res = frameU.resolution;\n  let aspect = res.x / max(res.y, 1.0);\n  /* Screen to ray: y is flipped so the picture is right way up, and the horizontal extent\n     carries the aspect, so widening the frame widens the view instead of stretching it. */\n  let ndc = (uv - vec2f(0.5)) * vec2f(2.0 * aspect, -2.0);\n  let rd = normalize(vec3f(ndc * params.lens, 1.0));\n  let t = frameU.absTime;\n\n  let steps = i32(clamp(round(params.steps), 1.0, 200.0));\n  let octaves = i32(clamp(round(params.octaves), 0.0, 12.0));\n  let loose = max(params.looseness, 1.0e-3);\n  /* A FLOOR UNDER THE FLOOR. 'minStep' is an artistic knob and 0 is a value somebody will\n     type; at exactly 0 a ray that reaches the wall takes a step of zero for ever and divides\n     by zero to get there, so the sum is infinite and the pixel is a NaN. One hundred-\n     thousandth is four orders below anything the picture uses. */\n  let floorStep = max(params.minStep, 1.0e-5);\n  /* The phase is wrapped into one turn before it is used. 'sin' is exactly 2π-periodic, so\n     this changes NOTHING about the picture and everything about the arithmetic: an\n     unwrapped 't * flow' is an f32 that grows without bound, and after an hour its spacing\n     is coarser than the finest octave's period. Wrapped, the phase holds full precision for\n     as long as anybody leaves it running. */\n  let phase = fract(t * params.flow / 6.283185307) * 6.283185307;\n  /* THE EYE FLIES AND THE VESSEL DOES NOT. The warp is sampled in a world that slides past\n     — which is what makes the fibres stream toward the viewer and grow — while the vessel\n     itself is measured in EYE-RELATIVE coordinates, by subtracting the same slide back off.\n     Both halves matter: a warp that did not slide would be a still picture that merely\n     wobbles, and a vessel that slid would have its 'flare' term grow without limit until the\n     throat sealed shut and the file went dark some minutes in. */\n  let slide = vec3f(0.0, 0.0, t * params.travel);\n\n  /* The first step is dithered per pixel. A few dozen samples of a hard-edged shell would\n     otherwise lay down visible depth rings; offsetting each ray's start by a fraction of the\n     floor step scatters those rings into grain, and because the hash is of the PIXEL and\n     nothing else, the grain is fixed in place while the picture moves through it. */\n  var z = floorStep * params.grain * dither(uv * res);\n  var acc = vec3f(0.0);\n  for (var i: i32 = 0; i < steps; i = i + 1) {\n    let p = fold(rd * z + slide, phase + z * params.drift, octaves) - slide;\n    let d = floorStep + wall(p) / loose;\n    /* THE COLOUR TERM, and it lives in the graph: the connected ramp read as a 1-D LUT.\n       Hue runs along a DIRECTION through the warped volume ('paletteAxis' — the family's\n       'p.y' made into an axis you can point), and the read PING-PONGS rather than wrapping,\n       so a gradient may repeat as often as you like without ever drawing the seam a\n       'fract' would leave where its two ends meet. Luminance is not in here at all: the\n       accumulation supplies that, and 'tanh' whitens whatever burns hardest, which is why\n       the fibres' cores go pale while their skirts keep the ramp's colour.\n       'textureSampleLevel' rather than 'textureSample' because this is inside a loop, where\n       WGSL has no implicit derivatives to offer. */\n    let along = params.paletteBias + params.paletteScale * dot(p, params.paletteAxis);\n    let key = abs(fract(along * 0.5) * 2.0 - 1.0);\n    let tint = textureSampleLevel(inputTexture, inputSampler, vec2f(key, 0.5), 0.0).rgb;\n    acc = acc + tint / (d * (1.0 + params.depthFade * z * z));\n    z = z + d;\n  }\n\n  /* Normalised by the sample count so 'steps' is a QUALITY knob and not a brightness one —\n     doubling the samples must refine the picture, not double its exposure. Then tanh, which\n     is the family's signature: a soft shoulder that saturates toward white per channel and\n     never produces the flat clipped plateau a plain clamp would. */\n  /* ⚑ AND THE ARGUMENT IS CLAMPED, WHICH IS NOT PEDANTRY — IT IS A BUG THIS FILE HAD.\n     'tanh' is commonly evaluated as (e^2x − 1)/(e^2x + 1), and f32 exp overflows at 2x ≈ 88,\n     so a large enough argument returns Inf/Inf = NaN and the pixel comes out BLACK. Found by\n     the claim that raising 'exposure' may darken no pixel: at sixteen times the shipped\n     gain, six channels went from 255 to 0 — the brightest pixels in the picture, inverted.\n     tanh(16) is 1 to well inside f32, so this clamp changes no pixel at any usable exposure\n     and removes the cliff at the top of the knob's range. */\n  let col = tanh(min(acc * (params.exposure / f32(steps)), vec3f(16.0)));\n  return vec4f(col, 1.0);\n}",
+          "squash": 0.15,
+          "steps": 72,
+          "travel": 0.5,
+          "twist": 2.0944,
+          "wander": 0.4,
+          "warpGain": 1.6
+        },
+        "position": {
+          "x": -300,
+          "y": 0
+        },
+        "type": "customWgsl"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "label": "out1",
+        "parameters": {
+          "toneMap": "none"
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "type": "output"
+      },
+      "palette": {
+        "definitionVersion": 2,
+        "id": "palette",
+        "label": "palette1",
+        "parameters": {
+          "interp": "smooth",
+          "period": 1,
+          "phase": 0,
+          "stops": [
+            {
+              "color": [
+                1,
+                0.97,
+                0.9,
+                1
+              ],
+              "position": 0
+            },
+            {
+              "color": [
+                1,
+                0.76,
+                0.36,
+                1
+              ],
+              "position": 0.16
+            },
+            {
+              "color": [
+                0.86,
+                0.22,
+                0.3,
+                1
+              ],
+              "position": 0.38
+            },
+            {
+              "color": [
+                0.36,
+                0.1,
+                0.5,
+                1
+              ],
+              "position": 0.62
+            },
+            {
+              "color": [
+                0.05,
+                0.08,
+                0.3,
+                1
+              ],
+              "position": 0.84
+            },
+            {
+              "color": [
+                0.01,
+                0.01,
+                0.04,
+                1
+              ],
+              "position": 1
+            }
+          ],
+          "type": "horizontal"
+        },
+        "position": {
+          "x": -600,
+          "y": 0
+        },
+        "type": "ramp"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E58 Alembic",
+  "projectId": "example-e58-alembic",
+  "schemaVersion": 3,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 58,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}
