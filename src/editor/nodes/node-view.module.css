@@ -363,8 +363,12 @@
      configured aspect, as TouchDesigner's do — the graph pane publishes
      `--preview-aspect` from the document's own outputResolution, and node-box.ts
      models the same number through `previewAspectOf`. 16:9 is only the fallback for
-     a pane with no document. Re-layout after an aspect change is normal TD workflow. */
-  aspect-ratio: var(--preview-aspect, 16 / 9);
+     a pane with no document. Re-layout after an aspect change is normal TD workflow.
+
+     T1168: `--slot-aspect` is how a slot that is NOT showing the project's picture opts
+     out — see `.plotSlot` below. The project's aspect stays the default because the
+     overwhelming majority of slots do show it. */
+  aspect-ratio: var(--slot-aspect, var(--preview-aspect, 16 / 9));
   /*
     SEPARATION BY TONE, NOT BY A DRAWN LINE.
     A preview's content is frequently pure black, so the slot must read as its own well
@@ -388,6 +392,38 @@
   border-bottom: var(--border-hairline);
   background: var(--bg-sunken);
   overflow: hidden;
+}
+
+/*
+  T1168 — A VALUE NODE'S SLOT IS NOT SHOWING THE PROJECT'S PICTURE, SO IT DOES NOT TAKE
+  THE PROJECT'S SHAPE.
+
+  The owner, on E56 in a 720x1280 document: "somehow the value / audio nodes in Vesper are
+  super tall and stretched. Lots of empty space in them now." MEASURED at the time: an LFO
+  body went 148px -> 362px between 1280x720 and 720x1280, while the plot INSIDE it stayed
+  78px — 235px of `--bg-sunken` under the curve. Nothing here changed for the portrait
+  document; T668's rule simply never had a portrait document to be wrong in (43 of the 44
+  shipped examples are 16:9 or square), so this has been latent since T344.
+
+  The 22 node types that publish value channels (`publishesValueChannels`) put a PLOT in
+  this slot, not a tile: plain DOM whose size is a property of the plot, not of the output
+  resolution — a document with no texture output at all still draws the same curve. So the
+  slot keeps the 16:9 it was designed against and every value node reads the same height in
+  every document, which is what `value-plot.tsx` requires of a plot: two plots in one graph
+  must agree about what full height MEANS, and a scale that changed with the project's
+  aspect would be a third reading of it.
+
+  Why a RESERVED slot at all rather than sizing to the plot: the plot's own height is
+  RUNTIME state — measured, an unsampled Mouse renders the empty state at 22px and the same
+  node with history is 62px — and a node whose height moved when a signal arrived could not
+  be modelled by `node-box.ts` at all, which is the same reason the diagnostic row is not
+  modelled there.
+
+  `node-box.ts` carries this number as `PLOT_PREVIEW_ASPECT`; `node-box.spec.ts` measures
+  the pair in a real browser.
+*/
+.plotSlot {
+  --slot-aspect: 16 / 9;
 }
 
 .controls {

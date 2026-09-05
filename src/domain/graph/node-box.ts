@@ -70,7 +70,9 @@ const TITLE_HEIGHT = 24;
  * node width: content 176 × 99, border box 176 × 100.
  *
  * T668, decided twice and the second decision is the owner's: the slot FOLLOWS the
- * project's configured resolution, as TouchDesigner's do. The first pass recorded
+ * project's configured resolution, as TouchDesigner's do — every slot that shows the
+ * project's picture, which since T1168 is stated as the exception it always had
+ * (`PLOT_PREVIEW_ASPECT`, just below). The first pass recorded
  * §V622 ("stay 16:9") from the measured re-author cost; the owner overruled with the
  * costs on the table — consistency across nodes and with the configured output wins.
  * A graph reflowing when the project's aspect changes is therefore an ACCEPTED COST,
@@ -85,6 +87,33 @@ const TITLE_HEIGHT = 24;
  * a node dragged before any project exists): the parent guides us initially, 16:9.
  */
 export const DEFAULT_PREVIEW_ASPECT = 16 / 9;
+
+/**
+ * T1168 — THE ONE SLOT T668'S RULE DOES NOT GOVERN: A PLOT IS NOT THE PROJECT'S PICTURE.
+ *
+ * A node that publishes value channels draws a PLOT in its body, never a tile (the
+ * composition root's `renderPreview` takes that branch first, before the sink branch, so
+ * Analyze — a declared sink that also publishes channels — is a plot too). The plot is
+ * plain DOM whose size is a property of the plot; the output resolution has nothing to say
+ * about it. Following the project's aspect made a value node 148px tall in a 1280x720
+ * document and 362px in a 720x1280 one, around a curve that stayed 78px either way — the
+ * owner's "super tall and stretched, lots of empty space in them now" on E56, the first
+ * portrait example (T1159). Latent since T344: nothing else shipped was portrait.
+ *
+ * It is a CONSTANT rather than the plot's measured content because a plot's own height is
+ * runtime state — an unsampled Mouse renders the empty state, a sampled one renders three
+ * readings — and this model must predict a node's box from the DOCUMENT alone, for the same
+ * reason it does not model the diagnostic row. 16:9 is the shape the plot was designed
+ * against and the value every shipped example already lays out with, so the fix moves no
+ * landscape document by a pixel; `value-plot.tsx`'s own rule is the other half of the
+ * argument — two plots must agree about what full height means, and an aspect that moved
+ * with the project would make that a per-document answer.
+ *
+ * Equal to `DEFAULT_PREVIEW_ASPECT` today and NOT the same fact: that one means "no
+ * document in hand", this one means "this body is not showing the project's output". The
+ * CSS half is `.plotSlot` in `node-view.module.css`; `node-box.spec.ts` measures both.
+ */
+export const PLOT_PREVIEW_ASPECT = 16 / 9;
 
 /** The ONE derivation (§V437) from settings to slot aspect — every surface asks this. */
 export function previewAspectOf(settings: {
@@ -198,7 +227,11 @@ export function nodeBox(
   const contentWidth = NODE_WIDTH - NODE_BORDER * 2;
   let height = NODE_BORDER * 2 + TITLE_HEIGHT;
   if (nodeHasPreview(node, definition)) {
-    height += Math.floor(contentWidth / previewAspect) + PREVIEW_BORDER;
+    // T1168: a plot's slot is a constant, checked FIRST — `publishesValueChannels` is the
+    // same predicate, in the same order, that `renderPreview` and `node-view.tsx` use, so
+    // a node that is both a sink and a value source (Analyze) is a plot in all three.
+    const aspect = publishesValueChannels(definition) ? PLOT_PREVIEW_ASPECT : previewAspect;
+    height += Math.floor(contentWidth / aspect) + PREVIEW_BORDER;
   }
   const rows = nodePortRows(node, definition, graph);
   height += PORTS_PADDING + (rows === 0 ? 0 : rows * PORT_ROW_HEIGHT + (rows - 1) * PORT_ROW_GAP);

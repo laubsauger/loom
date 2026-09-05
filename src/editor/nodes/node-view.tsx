@@ -471,7 +471,16 @@ export const NodeView = memo(function NodeView({ id, selected }: NodeProps<LoomN
           // whether or not the node is pinned. §V28 still governs whether it is actually
           // LIVE right now (on screen or pinned) versus suspended; that state comes back
           // on the runtime channel and `NodePreview` renders it (§V16).
-          <div className={cx(styles.preview, "nodrag", "nopan")} data-testid={`node-preview-${id}`}>
+          //
+          // T1168: `producesValue` FIRST, exactly as the composition root's `renderPreview`
+          // decides it — a node that publishes channels gets a plot even when it is also a
+          // declared sink (Analyze is both). A plot is not a picture of the project's
+          // output, so its slot opts out of `--preview-aspect`; `node-box.ts` models the
+          // same precedence, or the layout gate would predict a box the browser never draws.
+          <div
+            className={cx(styles.preview, producesValue && styles.plotSlot, "nodrag", "nopan")}
+            data-testid={`node-preview-${id}`}
+          >
             {renderPreview?.(id)}
           </div>
         ) : null}
@@ -866,7 +875,8 @@ function useHandleBoundsInSync(id: string, portsRef: RefObject<HTMLElement | nul
    *
    *   - the preview slot's height follows `--preview-aspect`, a CSS variable the GRAPH PANE
    *     publishes from the document's output resolution. It changes with NO render of this
-   *     component, and it moves the ports block.
+   *     component, and it moves the ports block. (T1168: a PLOT slot pins its own aspect
+   *     and does not move with it — which is why this observes rather than enumerates.)
    *   - `renderPreview` / `renderControls` fill slots above the ports with subtrees this
    *     component does not own and does not re-render with (§V16 — they hold their own
    *     subscriptions, which is the whole point).

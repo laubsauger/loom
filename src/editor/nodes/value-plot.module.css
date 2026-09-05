@@ -3,6 +3,11 @@
  *
  * Sized like the texture preview above it so a value node and a texture node have the
  * same visual weight in a network — the point is that BOTH show what they produce.
+ *
+ * T1168: "like the texture preview" means the 16:9 slot this was designed against, NOT
+ * the project's aspect. The slot the plot sits in opts out of `--preview-aspect`
+ * (`.plotSlot` in `node-view.module.css`) — a plot is not a picture of the output, and in
+ * a portrait document the inherited slot reserved 235px of ground under a 78px curve.
  */
 
 .plot {
