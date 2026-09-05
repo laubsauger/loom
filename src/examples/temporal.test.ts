@@ -148,6 +148,16 @@ describe("examples with a temporal loop", () => {
       // physics, which is why both belong in this set rather than one standing for both.
       "E49-Lissajous.loom.json",
       "E50-Galvo.loom.json",
+      // T1070: the loop as a MEDIUM, and it is the set's seventh use — the first where
+      // what the loop carries is not a picture of the past but the STATE THE POPULATION
+      // COORDINATES THROUGH. E54's `trail` is deposited by the agents and read back by
+      // those same agents on the next frame, so the feedback is stigmergy rather than
+      // persistence: cut it and the colony does not merely stop smearing, it stops
+      // communicating and the territories never form. That is why its 0.72 is not a tail
+      // length but an evaporation rate, and why it closes on `mix1` (the deposit) rather
+      // than on the final output (§V471.5) — grading the field the agents SENSE would
+      // make them chase the look instead of the signal.
+      "E54-Quorum.loom.json",
       // T511: E9's loop is a SPARK STREAK. Two frames of an ember's own path, held so a
       // moving point reads as a moving point rather than a stipple — the loop's fourth
       // use in the set, after a smear, a simulation and a zoom. Its persistence is a
