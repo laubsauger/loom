@@ -237,11 +237,11 @@
     "phrase": 0.06594
   },
   "E56-Vesper.loom.json": {
-    "motion": 0.41959,
-    "range": 0.7498,
-    "f0max": 0.7498,
+    "motion": 0.38385,
+    "range": 0.7292,
+    "f0max": 0.7296,
     "cardFloor": 0,
-    "phrase": 0.25329
+    "phrase": 0.24149
   },
   "E57-Forest.loom.json": {
     "motion": 0.02013,

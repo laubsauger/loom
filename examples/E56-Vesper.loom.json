@@ -14,15 +14,15 @@
           "portId": "input"
         }
       },
-      "e-env-sun": {
-        "id": "e-env-sun",
+      "e-env-norm": {
+        "id": "e-env-norm",
         "source": {
           "nodeId": "env",
           "portId": "out"
         },
         "target": {
-          "nodeId": "sun",
-          "portId": "a"
+          "nodeId": "norm",
+          "portId": "in"
         }
       },
       "e-grade-mul": {
@@ -56,6 +56,28 @@
         "target": {
           "nodeId": "source",
           "portId": "in1"
+        }
+      },
+      "e-norm-rate": {
+        "id": "e-norm-rate",
+        "source": {
+          "nodeId": "norm",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "rate",
+          "portId": "a"
+        }
+      },
+      "e-rate-travel": {
+        "id": "e-rate-travel",
+        "source": {
+          "nodeId": "rate",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "travel",
+          "portId": "in"
         }
       },
       "e-source-env": {
@@ -116,17 +138,17 @@
             "bindings": {
               "expression": {
                 "kind": "expression",
-                "source": "op('sun1').chan.high"
+                "source": "op('travel1').chan.high"
               },
               "static": {
                 "kind": "static",
-                "value": 3.42
+                "value": 8
               }
             },
             "mode": "expression"
           },
           "extend": "hold",
-          "file": "media/portrait-sunset.mp4",
+          "file": "media/shibuya-crossing.mp4",
           "play": true,
           "playMode": "freeRun",
           "speed": 1,
@@ -134,13 +156,13 @@
           "trimStart": 0
         },
         "position": {
-          "x": -2100,
+          "x": -2400,
           "y": 0
         },
         "resolution": {
-          "height": 960,
+          "height": 720,
           "mode": "fixed",
-          "width": 540
+          "width": 1280
         },
         "type": "movieFileIn"
       },
@@ -149,11 +171,11 @@
         "id": "env",
         "label": "env1",
         "parameters": {
-          "lag": 0.6,
-          "releaseRatio": 8
+          "lag": 0.25,
+          "releaseRatio": 4
         },
         "position": {
-          "x": -1500,
+          "x": -1850,
           "y": 910
         },
         "type": "valueLag"
@@ -164,7 +186,7 @@
         "label": "grade1",
         "parameters": {
           "hueoffset": 0,
-          "saturation": 1.32,
+          "saturation": 0.88,
           "value": 1
         },
         "position": {
@@ -196,10 +218,23 @@
           "bpm": 112
         },
         "position": {
-          "x": -2100,
+          "x": -2400,
           "y": 700
         },
         "type": "audioPattern"
+      },
+      "norm": {
+        "definitionVersion": 1,
+        "id": "norm",
+        "label": "norm1",
+        "parameters": {
+          "window": 17
+        },
+        "position": {
+          "x": -1600,
+          "y": 910
+        },
+        "type": "valueNormalize"
       },
       "out": {
         "definitionVersion": 1,
@@ -214,6 +249,24 @@
         },
         "type": "output"
       },
+      "rate": {
+        "definitionVersion": 1,
+        "id": "rate",
+        "label": "rate1",
+        "parameters": {
+          "fromHigh": 1,
+          "fromLow": 0,
+          "operation": "range",
+          "outside": "clamp",
+          "toHigh": 5,
+          "toLow": 0.4
+        },
+        "position": {
+          "x": -1350,
+          "y": 910
+        },
+        "type": "valueMath"
+      },
       "source": {
         "definitionVersion": 1,
         "id": "source",
@@ -222,41 +275,23 @@
           "index": 0
         },
         "position": {
-          "x": -1800,
+          "x": -2100,
           "y": 910
         },
         "type": "valueSwitch"
-      },
-      "sun": {
-        "definitionVersion": 1,
-        "id": "sun",
-        "label": "sun1",
-        "parameters": {
-          "fromHigh": 0.45,
-          "fromLow": 0.33,
-          "operation": "range",
-          "outside": "clamp",
-          "toHigh": 0,
-          "toLow": 9.7
-        },
-        "position": {
-          "x": -1200,
-          "y": 910
-        },
-        "type": "valueMath"
       },
       "tone": {
         "definitionVersion": 1,
         "id": "tone",
         "label": "tone1",
         "parameters": {
-          "blacklevel": 0.055,
+          "blacklevel": 0.015,
           "brightness": 1,
-          "contrast": 1.3,
-          "gamma1": 0.9,
+          "contrast": 1,
+          "gamma1": 1.14,
           "invert": 0,
           "opacity": 1,
-          "whitelevel": 0.86
+          "whitelevel": 0.94
         },
         "position": {
           "x": -1700,
@@ -285,10 +320,25 @@
           "volume": 1
         },
         "position": {
-          "x": -2100,
+          "x": -2400,
           "y": 1120
         },
         "type": "audioFileIn"
+      },
+      "travel": {
+        "definitionVersion": 1,
+        "id": "travel",
+        "label": "travel1",
+        "parameters": {
+          "limit": "mirror",
+          "maximum": 14.6,
+          "minimum": 0.4
+        },
+        "position": {
+          "x": -1100,
+          "y": 910
+        },
+        "type": "valueSpeed"
       },
       "vign": {
         "definitionVersion": 1,
@@ -342,8 +392,8 @@
       "memoryBudgetBytes": 1073741824
     },
     "outputResolution": {
-      "height": 1280,
-      "width": 720
+      "height": 720,
+      "width": 1280
     },
     "previewFps": 30,
     "previewLongEdge": 192,
