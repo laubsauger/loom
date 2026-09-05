@@ -235,6 +235,12 @@ test("a component's interior POINTSET previews light, and so does the instance's
   expect(inLead.hairline).toBe(1);
   expect(outLead.hairline).toBe(1);
   // ...so the lead is a LINE, not a bar filled with the hairline's status colour.
+  //
+  // v17-allow-dynamic-color: this is not an authored colour, it is the browser's
+  // serialisation of "no background" read back off the live cascade. `getComputedStyle`
+  // returns `rgba(0, 0, 0, 0)` for `transparent` in every engine, and asserting a token
+  // here would assert nothing — the claim is that NOTHING painted this element, which is
+  // exactly the B188 defect (the lead inherited the status hairline's fill).
   expect(inLead.lineBackground).toBe("rgba(0, 0, 0, 0)");
   expect(outLead.lineBackground).toBe("rgba(0, 0, 0, 0)");
 
