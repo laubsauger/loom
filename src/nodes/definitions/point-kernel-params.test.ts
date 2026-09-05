@@ -469,6 +469,10 @@ const FRAME_ZERO_DIGESTS: Readonly<Record<string, string>> = {
      rewritten in the same commit — and by a re-measured §V885 look row (motion 0.02956 →
      0.05087, whole minute 0.03706 → 0.06468, both moving the same way, §V913). */
   "E54-Quorum.loom.json": "97543aa1ddcffb2f",
+  /* T1169: E63 Skin's kernels are the SKIN chain — one pointset rolled into a tube three
+     times, differing only in where each stands. The digest covers all three, which is why
+     one row stands for what reads on screen as three separate claims. */
+  "E63-Skin.loom.json": "069d88fac4e94e56",
 };
 
 const POINT_KERNEL_TYPES = new Set(["pointKernel", "pointKernelAdvanced"]);
@@ -491,7 +495,7 @@ describe("T900 — every shipped kernel resolves byte-equal at frame 0", () => {
 
   it("covers exactly the looms that carry kernels — a shrinking gate is a passing gate", () => {
     expect([...digests.keys()].sort()).toEqual(Object.keys(FRAME_ZERO_DIGESTS).sort());
-    expect(kernelCount).toBe(44);
+    expect(kernelCount).toBe(47);
   });
 
   it.each(Object.keys(FRAME_ZERO_DIGESTS))("%s is unchanged at frame 0", (fileName) => {

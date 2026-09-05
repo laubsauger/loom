@@ -66,6 +66,11 @@ export async function shootFamily(
   });
   const errors = result.diagnostics.filter((d) => d.severity === "error");
   if (errors.length > 0) throw new Error(errors.map((d) => d.message).join("; "));
+  // T497/§V436: `frameIndex` here is the KEY a captured frame is looked up BY, not a clock
+  // anything animates from — the same case as `thumbnail.ts`, and declared alongside it in
+  // `shipped-clock-audit.test.ts`. Nothing in this file moves on it; the shader's own motion
+  // reads `absTime`, the clock that does NOT wrap. Copying this line is safe; copying it
+  // into a shader, where `absTime` is the one you want, is not.
   const captured = result.frames.find((entry_) => entry_.frameIndex === frame);
   if (captured === undefined) throw new Error(`no captured frame ${frame}`);
   const space = result.plan.outputs.find((o) => o.nodeId === "out")?.space ?? "linear";

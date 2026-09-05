@@ -201,6 +201,10 @@ export function valueGraphRun(document: ProjectDocument) {
           components,
           resolution: { frame, channels: resolver },
         }),
+        // T497/§V436: a step LABEL, so a failure names the step it came from. A string in a
+        // diagnostic cannot anchor motion to the timeline because nothing reads it back —
+        // declared in `shipped-clock-audit.test.ts` for that reason. Anything that MOVES
+        // reads `absTime` instead, which does not reset at a timeline lap.
         `valueGraphRun step ${frame.frameIndex}`,
       );
       return { plan, frame };

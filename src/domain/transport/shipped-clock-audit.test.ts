@@ -224,6 +224,25 @@ const DECLARED: Readonly<
       "result list (`frameIndex === CARD_FRAME`) — an array lookup key, not a clock anything " +
       "animates from. The render itself runs on the harness's own transport.",
   },
+  "src/examples/alembic-family.ts": {
+    kind: "names-the-contrast",
+    reads: 1,
+    reason:
+      "T1171's shared measuring kit, and it is `thumbnail.ts`'s case exactly: `frameIndex` " +
+      "is the key it looks a captured frame up BY (`entry.frameIndex === frame`), not a " +
+      "clock anything moves on. Five example claims files share this one `shoot()` rather " +
+      "than carrying a copy each, which is why the read is here and not in five test files " +
+      "the scan would never have looked at.",
+  },
+  "src/examples/concepts/helpers.ts": {
+    kind: "names-the-contrast",
+    reads: 1,
+    reason:
+      "The same shape once more, and here it is not even a lookup: `frameIndex` is " +
+      "interpolated into a step LABEL (`valueGraphRun step ${frame.frameIndex}`) so a " +
+      "failure names the step it came from. A string in a diagnostic cannot anchor motion " +
+      "to the timeline, because nothing reads it back.",
+  },
   "src/nodes/definitions/values.ts": {
     kind: "timeline-anchored",
     reads: 1,
