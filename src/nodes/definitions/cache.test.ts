@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
+import { classifyEdit } from "../../compiler/recompile.ts";
 import { scratchResourceId } from "../../compiler/resources.ts";
-import { estimateResourceBytes } from "../../runtime/backend/plan.ts";
+import type { GraphDocument } from "../../domain/types/graph.ts";
+import type { PassDescriptor } from "../../runtime/backend/plan.ts";
+import { estimateResourceBytes, passStructureKey } from "../../runtime/backend/plan.ts";
 import { createNodeRegistry, validateNodeDefinition } from "../registry/registry.ts";
 import {
   CACHE_DEFAULT_FRAMES,
@@ -113,14 +116,50 @@ describe("Cache (T237)", () => {
     expect(bytes / (1024 * 1024)).toBeCloseTo(31.6, 1);
   });
 
-  it("makes the tap structural, so changing it recompiles", () => {
-    // The honest limit of the fixed-tap design: `index` chooses which slice the read pass
-    // BINDS, so it cannot move without a rebuild. Right for a delay of n frames, wrong for
-    // animating time — which is T321's job and needs a texture-array binding this
-    // deliberately does not have. The pass id carries the tap so the structure key differs.
-    expect(passes({ index: 1 })[1]?.id).not.toBe(passes({ index: 2 })[1]?.id);
-    const parameter = cacheNode.parameters["index"];
-    expect(parameter?.compileTime).toBe(true);
+  it("makes the tap a VALUE, so it can be driven without a rebuild (T1204)", () => {
+    // This test asserted the OPPOSITE for four months, and it was wrong for the whole of
+    // them: T425 moved the ring to an array binding with the tap in the uniform block, and
+    // neither the node's docblock nor this test came back. §T1153 recorded the pair —
+    // "the comment predicts work that HAS ALREADY LANDED and the test PINS the stale
+    // behaviour" — and §T1149 lost a session to believing them.
+    //
+    // Two things make a driven tap actually reach the GPU, and both are asserted because
+    // either alone is silent. THE PASS ID must not move with the tap: `pass.id` is in the
+    // pass structure key, so an id carrying the tap made every tap change a structurally
+    // different plan, which is exactly what `isUniformOnlyChange` compares — the per-frame
+    // animator would refuse to push and the driven value would go nowhere, with no error.
+    const shallow = passes({ index: 1 });
+    const deep = passes({ index: 5, frames: 8 });
+    expect(deep[1]?.id).toBe(shallow[1]?.id);
+    expect(passStructureKey(deep[1] as unknown as PassDescriptor)).toBe(
+      passStructureKey(shallow[1] as unknown as PassDescriptor),
+    );
+    // …and the VALUE must differ, or the two plans agree because nothing carries the tap.
+    expect([shallow[1]?.uniforms?.tap, deep[1]?.uniforms?.tap]).toEqual([1, 5]);
+
+    // AND the classifier must agree, or dragging the slider rebuilds the pipeline for what
+    // is now a four-byte write, and the row wears an "rc" badge that lies. `frames` keeps
+    // its badge honestly: it is the size of the allocation (§V228), and keeping the two
+    // apart is what stops a drivable tap making anyone pay for 64 frames of texture.
+    // One read of the declared schema, two questions of it — §T903's ledger counts reads,
+    // and a definition's own unit test is the case where the declared schema IS the answer.
+    const schema = cacheNode.parameters;
+    expect(schema["index"]?.compileTime).toBeUndefined();
+    expect(schema["frames"]?.compileTime).toBe(true);
+
+    const graph = {
+      revision: 1,
+      nodes: { c1: { id: "c1", type: "cache", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: {} } },
+      edges: {},
+      groups: {},
+    } as unknown as GraphDocument;
+    const context = { graph, registry: createNodeRegistry([cacheNode]).view() };
+    expect(classifyEdit({ kind: "parameter", nodeId: "c1", parameters: ["index"] }, context).work).toBe(
+      "uniform-update",
+    );
+    expect(classifyEdit({ kind: "parameter", nodeId: "c1", parameters: ["frames"] }, context).work).toBe(
+      "recompile-region",
+    );
   });
 
   it("declares its state and exposes a reset that reaches it (§V46, §V123)", () => {

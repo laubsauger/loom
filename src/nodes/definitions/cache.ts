@@ -24,12 +24,38 @@ import { CACHE_BLIT_WGSL, CACHE_READ_WGSL } from "../shaders/cache.wgsl.ts";
  * and full scale is 949 MiB, 93% of the default project budget, and the compiler's budget
  * warning will say so. Both are legitimate; only one of them should be the default.
  *
- * THE TAP IS STRUCTURAL, not a uniform, and this is the honest limit of the fixed-tap
- * design. `index` selects which slice the read pass BINDS, so changing it recompiles (the
- * same trade Composite's `operation` makes, §V141). That is right for what this node is
- * for — a delay of n frames, an echo at fixed offsets — and animating the index, or
- * giving every pixel its own offset, is per-pixel time displacement (T321), which needs a
- * texture-array binding this deliberately does not.
+ * THE TAP IS A VALUE, and `frames` is the allocation — the two are separate on purpose
+ * (T1204). Everything above this line said the opposite for four months: "the tap is
+ * STRUCTURAL … animating the index needs a texture-array binding this deliberately does
+ * not". T425 gave it exactly that binding — the read pass has bound the ring as ONE
+ * `texture_2d_array` with the tap resolved IN the shader from a uniform ever since — and
+ * nobody came back to the prose. It cost §T1149 a session and §T1153 a row; it is fixed
+ * here rather than annotated.
+ *
+ * So `index` is an ordinary per-frame uniform (§V5): an LFO, an audio band, or an async
+ * source publishing its own lag can drive it, and the picture moves without a rebuild.
+ * `frames` stays `compileTime` because it is the SIZE OF THE ALLOCATION, and that is the
+ * whole reason the two are different parameters — a drivable tap must not quietly make
+ * anyone pay for 64 frames of texture to reach a tap of 3. Per-PIXEL offsets are still a
+ * different node (slit-scan, T321); this is one offset for the whole image.
+ *
+ * WHY A DRIVABLE TAP IS THE LATENCY MECHANISM (T1204). An async source — a person matte,
+ * a monocular depth model, a pose solver — hands back a result computed from a frame that
+ * is already N frames old, and N is not a constant: matte inference measured 30-400 ms
+ * across execution providers (T1044, T1085). Compositing its output against a LIVE sibling
+ * branch puts the mask behind the picture. The fix is to delay the sibling by the same N,
+ * which is this node with `index` driven by the source's own reported lag. A hand-typed
+ * offset is wrong the moment the provider or the resolution changes; a driven one is not.
+ * At 60 fps, 400 ms is 24 frames — inside the 64-frame ceiling, at a cost the node states.
+ *
+ * ⚠ SIZE `frames` FOR THE DEEPEST LAG YOU EXPECT, not for the typical one. A tap beyond
+ * the history clamps to the oldest slice, and for a STATIC tap the compiler says so
+ * (`node.compile.tapClamped`, below). A DRIVEN one gets no such warning, because the
+ * structural compile only ever sees the retained static and the per-frame compiles are
+ * value pushes whose diagnostics nothing reads — so a 24-frame lag driving an 8-frame ring
+ * is a silent 7-frame delay. That is the one seam in this mechanism and it is stated here
+ * rather than papered over; the same applies to a lag of 0, which clamps up to a tap of 1
+ * (there is no tap 0), which is why `ready` exists beside `lagFrames` (T976).
  *
  * BEFORE THE RING HAS FILLED a tap reads the OLDEST slice written, never black (§V229).
  * Black would flash on every reset and, worse, would differ between a live session and a
@@ -91,10 +117,12 @@ export const cacheNode: NodeDefinition = {
       range: "bounded",
       // T1047: frames back is a count, so the step is 1. See the note on Switch's index.
       step: 1,
-      // Structural: `index` picks which slice the read pass BINDS (T237). Animating time
-      // is T321's job, and needs a different binding.
-      compileTime: true,
-      description: "How many frames back to read. 1 is the previous frame, like Feedback.",
+      // T1204: NOT compileTime. The tap is a number in the read pass's uniform block and
+      // has been since T425; driving it writes four bytes, never a pipeline (§V5). The
+      // shader clamps it, so a driven value beyond the history is the oldest frame rather
+      // than a never-written layer (§V229) — the same rule a static tap gets.
+      description:
+        "How many frames back to read. 1 is the previous frame, like Feedback. Drivable — point it at a source's reported latency to line two branches up.",
     },
     resetPulse: {
       type: "pulse",
@@ -172,7 +200,11 @@ export const cacheNode: NodeDefinition = {
     };
     const read: EffectPassDescriptor = {
       kind: "effect",
-      id: `${nodeId}:cache-read:${index}`,
+      // T1204: the id must NOT carry the tap. `pass.id` is in the pass structure key, so
+      // an id that moved with `index` made every tap change a different plan — which is
+      // what `isUniformOnlyChange` compares, so the per-frame animator would have refused
+      // to push rather than writing the four bytes it now writes.
+      id: `${nodeId}:cache-read`,
       shader: CACHE_READ_WGSL,
       target,
       // T425: the ring as ONE stable array view; the tap is a NUMBER in the uniform

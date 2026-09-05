@@ -1,14 +1,16 @@
 /**
  * Cache — the blit both of the node's passes use (T237).
  *
- * ONE shader for the write and the read, like the separable blur's two axes: what differs
- * is which texture is bound and which target is written. The write pass binds the node's
- * input and renders into the ring slice this frame owns; the read pass binds a TAP — the
- * slice `index` frames back — and renders into the node's output.
+ * TWO shaders, not one, and the split is the whole story of T425. The WRITE pass below is
+ * the plain blit it always was: bind the node's input, render into the ring slice this
+ * frame owns. The READ pass is `CACHE_READ_WGSL`, and it binds the ring as an ARRAY and
+ * resolves the tap from a uniform — this file's header claimed the opposite ("the read
+ * pass binds a TAP … no array indexing") for four months after T425 changed it, which is
+ * how §T1149 lost a session and §T1153 got a row. T1204 corrected both ends.
  *
- * Nothing here knows it is sampling a ring, which is the point of resolving taps as
- * ordinary `texture_2d` bindings: no WGSL feature, no array indexing, no capability
- * question. Per-pixel time displacement (T321) is where that stops being enough.
+ * That the tap is a uniform is what makes it DRIVABLE (T1204): a delay of n(t) frames, not
+ * merely of n — see `cache.ts` for why an async source's own reported lag is the thing you
+ * point it at. Per-PIXEL time displacement (slit-scan, T321) is a different shader still.
  */
 export const CACHE_BLIT_WGSL = `@group(0) @binding(0) var inputSampler: sampler;
 @group(0) @binding(1) var inputTexture: texture_2d<f32>;
