@@ -318,8 +318,34 @@ interface Cursor {
 
 const peek = (cursor: Cursor): Token | undefined => cursor.tokens[cursor.index];
 
-/** Thrown internally only; the public functions convert it into a rejection. */
-class ParseFailure extends Error {}
+/**
+ * Thrown internally only; the public functions convert it into a rejection.
+ *
+ * ⚠ NOT an `Error` subclass, and that is the whole point (T1176). Every failure here is
+ * ORDINARY CONTROL FLOW on the app's hottest path, not an exception: §V108 says an
+ * expression that cannot resolve falls back to its retained static, so a document is
+ * *expected* to produce one of these per unresolvable expression per compile. The
+ * frameless STRUCTURAL compile — the one a knob turn runs, sixty times a second — has no
+ * `time` and no `frame` in scope, so every clock-reading expression in the document fails
+ * by design on every commit.
+ *
+ * Constructing an `Error` captures a stack trace, and capturing one per expression per
+ * compile cost 21.2% OF E55'S ENTIRE COMPILE — measured without editing anything, by
+ * flipping `Error.stackTraceLimit` between 10 and 0 in alternating rounds of the same
+ * process (E13 1.4%, E33 12.3%, E55 21.2%: the effect scales with how many expressions
+ * the document holds, which is what makes it the stack and not the block's noise), and
+ * the `stackTraceLimit` lever buys 0% once this class stops extending `Error` — which is
+ * how the fix is known to be the same fix. Nothing ever reads the stack:
+ * both catch sites below convert this into `{ ok: false, reason }` immediately, and it
+ * cannot escape the module — `fail` is called only from the parser and the evaluator, and
+ * both of their entry points catch it.
+ */
+class ParseFailure {
+  readonly message: string;
+  constructor(message: string) {
+    this.message = message;
+  }
+}
 
 function fail(reason: string): never {
   throw new ParseFailure(reason);

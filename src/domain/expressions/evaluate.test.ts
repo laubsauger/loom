@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { FrameEvaluationInput } from "../types/frame.ts";
 import {
@@ -308,5 +308,55 @@ describe("T1172 — the expression parse memo", () => {
     }
     expect(value("a + 1", { a: 1 })).toBe(2);
     expect(value("a * 7", { a: 6 })).toBe(42);
+  });
+});
+
+describe("T1176 — a rejection is CONTROL FLOW, and must not cost an Error stack", () => {
+  /**
+   * The rejection path is the app's hot path, not an exceptional one.
+   *
+   * §V108 makes an unresolvable expression fall back to its retained static, and the
+   * frameless STRUCTURAL compile — the one a knob turn runs at frame rate — has no
+   * `time` and no `frame` in scope, so every clock-reading expression in a document is
+   * *expected* to be rejected on every commit. Capturing a stack trace for each was
+   * 21.2% of E55's whole compile.
+   *
+   * This guards the CAUSE — `new Error` on the rejection path — rather than the
+   * observable, which is CPU time and would make a flaky test. The global constructor is
+   * swapped BEFORE the module is loaded, because `class X extends Error` resolves the
+   * binding at module-evaluation time: a later swap would see nothing.
+   */
+  it("constructs no Error while rejecting, and still reports the same reasons", async () => {
+    const RealError = globalThis.Error;
+    let constructed = 0;
+    class Counting extends RealError {
+      constructor(message?: string) {
+        super(message);
+        constructed += 1;
+      }
+    }
+    globalThis.Error = Counting as unknown as ErrorConstructor;
+    try {
+      vi.resetModules();
+      const fresh = (await import("./evaluate.ts")) as typeof import("./evaluate.ts");
+
+      // A malformed source, rejected by the PARSER.
+      const parsed = fresh.parseExpression("1 +");
+      expect(parsed.ok).toBe(false);
+
+      // A well-formed source rejected by the EVALUATOR: `time` is not in scope, which is
+      // exactly what a frameless compile hands it.
+      const evaluated = fresh.evaluateExpression("time * 2", {});
+      expect(evaluated).toEqual({ ok: false, reason: 'unknown name "time"' });
+
+      // And a legitimate expression still evaluates — the guard must not be satisfied by
+      // a module that rejects everything.
+      expect(fresh.evaluateExpression("time * 2", { time: 3 })).toEqual({ ok: true, value: 6 });
+
+      expect(constructed).toBe(0);
+    } finally {
+      globalThis.Error = RealError;
+      vi.resetModules();
+    }
   });
 });
