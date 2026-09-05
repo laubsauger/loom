@@ -300,7 +300,9 @@ describe("T493 — the control registry is what makes the two pulses reach eithe
       reload: () => fired.push("reload"),
     });
     expect(registry.ids()).toEqual(["m"]);
-    registry.get("m")?.cue();
+    // T1223 made `cue` optional — a still registers `reload` alone — so the call is
+    // optional too. A node that HAS a playhead must still fire.
+    registry.get("m")?.cue?.();
     expect(fired).toEqual(["cue"]);
     release();
     expect(registry.get("m")).toBeUndefined();

@@ -528,9 +528,10 @@ export function useMediaSources(
             const size = still.size();
             if (size !== null) matchNodeResolution(request.nodeId, size.width, size.height);
             const releaseStill = controls?.register(request.nodeId, {
-              // A still has no playhead to cue TO. Saying so is the honest answer; the
-              // parameter renders inactive for the same reason (see MEDIA_TRANSPORT_PARAMETERS).
-              cue: () => undefined,
+              // NO `cue`, deliberately: a still has no playhead to cue TO, and a registered
+              // no-op would make `media.cue` report success while nothing moved (§V369).
+              // Absent, the command refuses BY NAME and says it is a still. `reload` is
+              // present because re-opening the file is real work on any picture.
               reload: () => setReloadNonce((nonce) => nonce + 1),
             });
             if (releaseStill !== undefined) released.push(releaseStill);

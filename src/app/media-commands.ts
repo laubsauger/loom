@@ -44,9 +44,17 @@ declare module "@domain/types/commands.ts" {
  * came through.
  */
 export interface MediaControl {
-  /** Jump to the cue point (free-run only; under the timeline lock there is nothing to move). */
-  cue(): void;
-  /** Re-open the file from source. */
+  /**
+   * Jump to the cue point (free-run only; under the timeline lock there is nothing to move).
+   *
+   * T1223 — ABSENT when the node has no playhead at all: a STILL IMAGE is one frame with a
+   * constant `frameId`, so there is nothing to cue TO. It is optional rather than a no-op
+   * because a registered no-op would make `media.cue` report SUCCESS while nothing moved,
+   * which is the "must not look like success" case §V369 names — the same reason this
+   * command refuses by name for a node whose file never loaded.
+   */
+  cue?(): void;
+  /** Re-open the file from source. Every media node has this, stills included. */
   reload(): void;
 }
 
@@ -74,9 +82,11 @@ function run(
   registry: MediaControlRegistry,
   nodeIds: readonly string[] | undefined,
   verb: "cue" | "reload",
-): { count: number; missing: readonly string[] } {
+): { count: number; missing: readonly string[]; unsupported: readonly string[] } {
   const wanted = nodeIds ?? registry.ids();
   const missing: string[] = [];
+  /** T1223: loaded, but this verb means nothing for what it loaded (a still has no cue). */
+  const unsupported: string[] = [];
   let count = 0;
   for (const nodeId of wanted) {
     const control = registry.get(nodeId);
@@ -84,10 +94,15 @@ function run(
       missing.push(nodeId);
       continue;
     }
-    control[verb]();
+    const handler = control[verb];
+    if (handler === undefined) {
+      unsupported.push(nodeId);
+      continue;
+    }
+    handler.call(control);
     count += 1;
   }
-  return { count, missing };
+  return { count, missing, unsupported };
 }
 
 export function useMediaCommands(bus: LoomBus, registry: MediaControlRegistry): void {
@@ -105,8 +120,13 @@ export function useMediaCommands(bus: LoomBus, registry: MediaControlRegistry): 
       name: "media.cue",
       description: "Jump a media node's playhead to its cue point.",
       handler: (input) => {
-        const { count, missing } = run(registryRef.current, input.nodeIds, "cue");
+        const { count, missing, unsupported } = run(registryRef.current, input.nodeIds, "cue");
         if (count === 0) {
+          // T1223: a loaded STILL is a different refusal from an unloaded node, and saying
+          // "no loaded media" about a picture that is on screen would send the user to
+          // re-pick a file that is already working.
+          const stills = [...unsupported].sort();
+          const named = stills.length > 0 ? stills : [...missing].sort();
           return {
             status: "rejected",
             output: { cued: 0 },
@@ -115,12 +135,16 @@ export function useMediaCommands(bus: LoomBus, registry: MediaControlRegistry): 
                 severity: "error",
                 code: "media.notLoaded",
                 message:
-                  missing.length > 0
-                    ? `No loaded media for ${[...missing].sort().join(", ")}.`
-                    : "No media node has a file loaded.",
-                ...(missing.length === 1 && missing[0] !== undefined ? { nodeId: missing[0] } : {}),
+                  stills.length > 0
+                    ? `${stills.join(", ")} holds a still image, which has no playhead to cue.`
+                    : missing.length > 0
+                      ? `No loaded media for ${[...missing].sort().join(", ")}.`
+                      : "No media node has a file loaded.",
+                ...(named.length === 1 && named[0] !== undefined ? { nodeId: named[0] } : {}),
                 suggestion:
-                  "Choose a file on the node first; a cue on a node that has not loaded has nowhere to go (§V369).",
+                  stills.length > 0
+                    ? "Pick a video file to use the transport; a still is one frame and holds."
+                    : "Choose a file on the node first; a cue on a node that has not loaded has nowhere to go (§V369).",
               },
             ],
           };

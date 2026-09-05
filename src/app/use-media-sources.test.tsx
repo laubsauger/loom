@@ -6,6 +6,8 @@ import type { MediaSource, LoomBackend } from "@runtime/backend/index.ts";
 import { mediaSourceIdFor } from "@nodes/definitions/index.ts";
 import { createAppRuntime } from "./app-runtime.ts";
 import type { AppRuntime } from "./app-runtime.ts";
+import { createMediaControlRegistry, useMediaCommands } from "./media-commands.ts";
+import type { MediaControlRegistry } from "./media-commands.ts";
 import { createVideoMediaSource } from "./media-sources.ts";
 import type { MediaElement } from "./media-sources.ts";
 import type { TextMediaSource, TextRaster } from "./text-source.ts";
@@ -109,18 +111,21 @@ function Harness({
   resolved,
   onDiagnostics,
   onWiring,
+  controls,
 }: {
   runtime: AppRuntime;
   backend: LoomBackend | null;
   graph: GraphDocument;
   environment: MediaEnvironment;
+  /** T493/T1223: where `media.cue` and `media.reload` find a node, when a test cares. */
+  controls?: MediaControlRegistry;
   /** Resolved output sizes (T312). Omitted where the test is only about video wiring. */
   resolved?: ResolvedSizeSource | null;
   onDiagnostics?: (messages: readonly string[]) => void;
   /** T493: the per-frame seam, so a test can drive a frame the way the loop does. */
   onWiring?: (wiring: MediaWiring) => void;
 }) {
-  const media = useMediaSources(runtime, backend, graph, resolved ?? null, environment);
+  const media = useMediaSources(runtime, backend, graph, resolved ?? null, environment, controls);
   onDiagnostics?.(media.diagnostics.map((entry) => entry.message));
   onWiring?.(media);
   return null;
@@ -1035,5 +1040,74 @@ describe("a still loads as a one-frame stream (T1223)", () => {
     expect(registered.size).toBe(0);
     expect(unregistered).toEqual([mediaSourceIdFor("photo")]);
     expect(image.wasClosed()).toBe(true);
+  });
+});
+
+/**
+ * ⚑ T1223 — `media.cue` ON A STILL REFUSES BY NAME, and does not report success.
+ *
+ * The first cut of this registered `cue: () => undefined` for a still so that `reload`
+ * could ride along. That is exactly the shape §V369 forbids: the command would have
+ * answered `applied` with `cued: 1` while nothing on screen moved, which is worse than the
+ * unloaded-file case it already refuses for. `MediaControl.cue` is optional instead, so the
+ * absence is the refusal — and the sentence names the still rather than sending the user
+ * off to re-pick a file that is working fine.
+ */
+describe("the media pulses on a still (T1223, §V369)", () => {
+  function CommandHarness({ runtime, controls }: { runtime: AppRuntime; controls: MediaControlRegistry }) {
+    useMediaCommands(runtime.bus, controls);
+    return null;
+  }
+
+  it("registers Reload but NOT Cue, and the command says which", async () => {
+    const runtime = newRuntime();
+    const { backend, registered } = fakeBackend();
+    const controls = createMediaControlRegistry();
+    const environment: MediaEnvironment = {
+      openStill: () => Promise.resolve({ width: 32, height: 32 } as never),
+      openFile: () => Promise.reject(new Error("not used")),
+      openCamera: () => Promise.reject(new Error("not used")),
+    };
+
+    await act(async () => {
+      render(
+        <>
+          <CommandHarness runtime={runtime} controls={controls} />
+          <Harness
+            runtime={runtime}
+            backend={backend}
+            graph={graphWith({
+              photo: { type: "movieFileIn", parameters: { file: "blob:abc#holiday.png" } },
+            })}
+            environment={environment}
+            controls={controls}
+          />
+        </>,
+      );
+    });
+    await waitFor(() => expect(registered.size).toBe(1));
+
+    // Reload is real work on a still — re-open and re-decode the file.
+    expect(typeof controls.get("photo")?.reload).toBe("function");
+    // Cue is not. Absent, rather than a no-op that would report success.
+    expect(controls.get("photo")?.cue).toBeUndefined();
+
+    const result = await runtime.bus.execute("media.cue", { nodeIds: ["photo"] }, runtime.invocation);
+    expect(result.status).toBe("rejected");
+    expect(result.output).toEqual({ cued: 0 });
+    expect(result.diagnostics[0]?.message).toContain("photo");
+    expect(result.diagnostics[0]?.message).toContain("still image");
+    // §V403 — and NOT the "choose a file first" line, which would be false here.
+    expect(result.diagnostics[0]?.suggestion).toContain("video file");
+
+    // The other pulse still applies, which is what makes the refusal above a statement
+    // about CUE rather than about stills being second-class.
+    const reloaded = await runtime.bus.execute(
+      "media.reload",
+      { nodeIds: ["photo"] },
+      runtime.invocation,
+    );
+    expect(reloaded.status).toBe("applied");
+    expect(reloaded.output).toEqual({ reloaded: 1 });
   });
 });
