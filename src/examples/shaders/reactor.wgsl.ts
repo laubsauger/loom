@@ -67,6 +67,7 @@ struct Params {
   haze: f32,          // density of the light-catching medium between and around the shells
   spin: f32,          // shell counter-rotation rate
   morph: f32,         // how far the cells drift and reshape over time — 0 holds the lattice still
+  wobble: f32,        // how far the outer shell breathes out of round, as a share of its radius — the silhouette evolves
   turbulence: f32,    // how hard the core churns
   frameColor: vec4f,  // the frame's own colour under the core's light
   shellHueStep: f32,  // degrees of hue each shell inward sits from the shared angle — colour deepening toward the core
@@ -75,7 +76,8 @@ struct Params {
   stations: f32,      // how far the camera travels: 0 holds the wide shot, 1 dives through the core and out the far side
   travel: f32,        // seconds for one tour of the three stations
   exposure: f32,      // master gain on the whole picture before the bloom
-  hueDrift: f32,      // degrees per minute the whole lit palette turns — core, glass and beams together, the sky stays
+  hueDrift: f32,      // degrees per minute the whole lit palette swings — core, glass and beams together, the sky stays
+  hueSwing: f32,      // how far the swing reaches either side of the base colours, in degrees — bounded so the arc stays in the family
 };
 
 @group(0) @binding(0) var inputSampler: sampler;
@@ -137,7 +139,10 @@ fn fbm3(x: vec3f) -> f32 {
    scheme turns — a YIQ rotation, free-running on absTime, minutes per revolution. The sky
    and the stars are not lit by the core and do not turn. */
 fn hueTurnBy(c: vec3f, extra: f32) -> vec3f {
-  let a = frameU.absTime * params.hueDrift * (PI / 180.0) / 60.0 + extra;
+  // A SWING, not a turn: the angle oscillates ±hueSwing about the base at the drift's rate,
+  // so the palette evolves through the family around orange and blue without passing
+  // through the yellow-greens a full circle lands on. Free-running on absTime.
+  let a = params.hueSwing * (PI / 180.0) * sin(frameU.absTime * params.hueDrift * (PI / 180.0) / 60.0) + extra;
   let y = dot(c, vec3f(0.299, 0.587, 0.114));
   let i = dot(c, vec3f(0.596, -0.274, -0.322));
   let q = dot(c, vec3f(0.211, -0.523, 0.312));
@@ -185,10 +190,10 @@ fn cellEdge(d0: vec3f, freq: f32, salt: f32) -> Cell {
   // costs three sines per read instead of a second hash per cell (which doubled the
   // frame's Worley bill, measured 13.8 → 23 ms, and was refused).
   let t = frameU.absTime;
-  let d = normalize(d0 + params.morph * 0.22 * vec3f(
-    sin(d0.y * 3.1 + t * 0.23 + salt),
-    sin(d0.z * 2.7 - t * 0.19 + salt * 2.0),
-    sin(d0.x * 3.3 + t * 0.17 + salt * 3.0)));
+  let d = normalize(d0 + params.morph * 0.3 * vec3f(
+    sin(d0.y * 3.1 + t * 0.41 + salt),
+    sin(d0.z * 2.7 - t * 0.34 + salt * 2.0),
+    sin(d0.x * 3.3 + t * 0.29 + salt * 3.0)));
   let p = d * freq + vec3f(salt * 7.31, salt * 3.17, salt * 5.53);
   let i = floor(p);
   var f1 = 8.0; var f2 = 8.0;
@@ -232,7 +237,7 @@ fn coreRadius() -> f32 {
   return select(0.72, shellRadius(n - 1) - 0.55 * params.shellGap, n > 0);
 }
 fn shellFreq(k: i32) -> f32 {
-  return max(1.0, params.divisions * (1.0 + 0.45 * f32(k)));
+  return max(1.0, params.divisions * (1.0 + 0.35 * f32(k)));
 }
 /* Each shell turns at its own rate and alternates direction, so the lattices slide over
    each other and the beams they gate never line up twice. */
@@ -454,12 +459,23 @@ fn hazeColour(w: vec2f) -> vec3f { return w.x * coreRGB() + w.y * edgeRGB(); }
    band), in world units, so a ray can be marched through it and a strut can stand proud of
    the faces, occlude the face behind it, and break the silhouette — the thing a shaded
    sphere cannot do. Only the outer shell pays for this. */
+/* The outer shell's radius by DIRECTION and time — the form breathing out of round, slow
+   and low-frequency (three travelling sines), so the silhouette evolves rather than the
+   pattern alone. Only the outer shell has this, because only its crossing is marched. */
+fn outerRadiusAt(dir: vec3f) -> f32 {
+  let t = frameU.absTime;
+  let w = sin(dir.x * 2.3 + t * 0.21) * sin(dir.y * 1.9 - t * 0.17) + 0.6 * sin(dir.z * 2.6 + t * 0.13);
+  return shellRadius(0) * (1.0 + params.wobble * w * 0.6);
+}
 fn strutSdf(p: vec3f, k: i32) -> vec2f {
-  let R = shellRadius(k);
+  let R = select(shellRadius(k), outerRadiusAt(normalize(p)), k == 0);
   let c = cellEdge(shellDir(p, k), shellFreq(k), f32(k));
   let w = barWidthAt(c, k);
   let dr = abs(length(p) - R) - params.strutDepth;
-  let de = (c.edge - w) * R / shellFreq(k);
+  // F2 − F1 is up to TWICE the true distance to a border, so it is halved here to keep the
+  // walk's step a lower bound; without that the march stepped over struts at grazing
+  // incidence and drew a sawtooth along every edge at the outer graze.
+  let de = (c.edge - w) * 0.5 * R / shellFreq(k);
   return vec2f(max(dr, de), select(0.0, 1.0, blockedFace(c, k)));
 }
 
@@ -522,7 +538,7 @@ fn trace(ro: vec3f, rd: vec3f, jitter: f32, uv: vec2f) -> vec3f {
     } else {
       col = col + tp * hazeColour(hazeSegment(o, d, 0.0, tNext, jitter, HAZE_PER_UNIT_BACK));
     }
-    let p = o + d * tNext;
+    var p = o + d * tNext;
 
     if (kind < 0) { col = col + tp * background(d); break; }
     if (kind == 9) { o = p + d * 2.0e-4; continue; }
@@ -537,7 +553,7 @@ fn trace(ro: vec3f, rd: vec3f, jitter: f32, uv: vec2f) -> vec3f {
       // the strut solid; a hit is a strut with a real normal (sphere-radial on its crown,
       // tangent on its flanks); no hit means the ray reached the face plane.
       let R = shellRadius(0);
-      let depth = params.strutDepth;
+      let depth = params.strutDepth + params.wobble * R * 0.6 + 0.005;
       let insideBand = length(o) < R + depth && length(o) > R - depth;
       let tIn = select(sphereHit(o, d, R + depth), 0.0, insideBand);
       var tw = max(tIn, 0.0);
@@ -546,14 +562,53 @@ fn trace(ro: vec3f, rd: vec3f, jitter: f32, uv: vec2f) -> vec3f {
       var hit = false;
       if (insideBand) { tw = 1.0e9; }
       var ph = p;
-      for (var st: i32 = 0; st < 10; st = st + 1) {
+      var sdLast = 1.0;
+      var faceHit = false;
+      let faceSign = select(-1.0, 1.0, dot(o, d) < 0.0 || length(o) > R); // approaching from outside: |p| − R(dir) falls
+      var twPrev = tw;
+      for (var st: i32 = 0; st < 14; st = st + 1) {
         ph = o + d * tw;
         let rr = length(ph);
         if (rr > R + depth + 1.0e-3 && dot(ph, d) > 0.0) { break; }
         if (rr < R - depth - 1.0e-3 && dot(ph, d) < 0.0) { break; }
-        let sd = strutSdf(ph, 0).x;
-        if (sd < 0.0015) { hit = true; break; }
-        tw = tw + max(sd, 0.004);
+        let sdStrut = strutSdf(ph, 0).x;
+        sdLast = sdStrut;
+        if (sdStrut < 0.0015) { hit = true; break; }
+        // The breathing face, positive while approaching. The step is the STRUT distance
+        // alone (throttling it by the face distance crawled every face pixel across the band
+        // at a Worley per step — 16 → 29 ms); an overshoot of the face is bisected below
+        // with the cheap radius function, no Worley.
+        let sdFace = (rr - outerRadiusAt(normalize(ph))) * faceSign;
+        if (sdFace < 0.0) {
+          var lo = twPrev; var hi = tw;
+          for (var b: i32 = 0; b < 4; b = b + 1) {
+            let mid = 0.5 * (lo + hi);
+            let pm = o + d * mid;
+            if ((length(pm) - outerRadiusAt(normalize(pm))) * faceSign < 0.0) { hi = mid; } else { lo = mid; }
+          }
+          tw = hi; ph = o + d * tw; faceHit = true; break;
+        }
+        twPrev = tw;
+        // The floor on the step stays small: a floor longer than the strut distance breaks
+        // the sphere-tracing guarantee and MISSES struts at grazing incidence (measured as a
+        // sawtooth along every strut edge at the outer graze; a sixth of the band was tried
+        // for cost and refused for that). The band's width is what the wobble costs.
+        tw = tw + max(sdStrut, 0.004);
+      }
+      // A march that ran out of steps while hugging the solid (grazing incidence) is a hit,
+      // not a fall-through: the fall-through was a staircase along the strut's edge.
+      if (!hit && sdLast < 0.008) { hit = true; }
+      if (hit) {
+        // Three bisections between the last free point and the hit: the stair-step of a
+        // marched edge at grazing incidence is the step size, and this halves it thrice.
+        var lo = max(tw - max(sdLast, 0.004), 0.0);
+        var hi = tw;
+        for (var b: i32 = 0; b < 3; b = b + 1) {
+          let mid = 0.5 * (lo + hi);
+          if (strutSdf(o + d * mid, 0).x < 0.0015) { hi = mid; } else { lo = mid; }
+        }
+        tw = hi;
+        ph = o + d * tw;
       }
       if (hit) {
         let rr = length(ph);
@@ -567,7 +622,13 @@ fn trace(ro: vec3f, rd: vec3f, jitter: f32, uv: vec2f) -> vec3f {
         tp = vec3f(0.0);
         break;
       }
-      // Reached the faces: continue at the sphere crossing as before.
+      // Reached the face: the BREATHING sphere the walk found, not the base one, so the
+      // glass sits where the struts are.
+      if (faceHit) {
+        p = ph;
+        sn = normalize(p);
+        entering = dot(d, sn) < 0.0;
+      }
     }
 
     let cell = cellEdge(shellDir(p, k), shellFreq(k), f32(k));
@@ -600,9 +661,11 @@ fn trace(ro: vec3f, rd: vec3f, jitter: f32, uv: vec2f) -> vec3f {
       let plate = shadeFrame(p2, n2, d, k, seam) * select(0.75, 0.35, wall)
                 + seam * seam * heat * 1.4 * mix(coreRGB(), vec3f(1.0, 0.9, 0.7), 0.3)
                 + select(heat * 0.035 * coreRGB() * max(dot(n2, -d), 0.0), vec3f(0.0), wall);
-      col = col + tp * plate;
-      tp = vec3f(0.0);
-      break;
+      // TRANSLUCENT: the plate is not opaque — it adds its own lit colour and lets a share
+      // of the ray through, so the core shows through a shut shell as a dull glow and a
+      // lit-from-behind panel at a grazing angle reads as transmission.
+      col = col + tp * plate * 0.8;
+      tp = tp * select(0.3, 0.06, wall) * mix(vec3f(1.0), glassRGBk(k), 0.5);
     }
 
     if (cell.edge < w) {
@@ -673,37 +736,48 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   // the surface → THROUGH the centre → out the far side (a negative distance is the
   // antipode) → wide again, looking back. Eased; struts sweep past the lens at the surface
   // and the core fills the frame at the centre — the parallax a shell cannot fake.
-  let wideD = max(params.distance, 1.2);
-  let u = fract(t / max(params.travel, 1.0)) * 4.0;
+  let wideD = max(params.distance, 0.3);
+  let u = fract(t / max(params.travel, 1.0)) * 6.0;
   let seg = floor(u);
   let fu = fract(u);
-  // Legs 0 and 2 dwell at their ends; leg 1 — the dive — is ONE continuous motion through
-  // the centre with no dwell there: the core is passed at speed, never parked in.
+  // Six legs. Two of them GRAZE: the eye sits just off a shell and looks ALONG its surface,
+  // the shell as the horizon — the viewpoint where Fresnel is strongest on every facet in
+  // view, which is the owner's ask for the effect and for the angle in one. Leg 3, the
+  // dive, is one continuous motion through the centre; the others dwell at their ends.
   let fDwell = smoothstep(0.2, 0.8, fu);
   let fThrough = fu * fu * (3.0 - 2.0 * fu);
-  var dA = wideD; var dB = wideD; var f = fDwell;
+  let grazeOuter = shellRadius(0) + params.strutDepth + 0.16;
+  let grazeMid = shellRadius(1) + 0.07;
+  var dA = wideD; var dB = wideD; var f = fDwell; var gA = 0.0; var gB = 0.0;
   if (seg == 0.0) { dA = wideD; dB = wideD * 0.55; }
-  else if (seg == 1.0) { dA = wideD * 0.55; dB = -wideD * 0.55; f = fThrough; }
-  else if (seg == 2.0) { dA = -wideD * 0.55; dB = -wideD; }
-  else { dA = -wideD; dB = -wideD; }
+  else if (seg == 1.0) { dA = wideD * 0.55; dB = grazeOuter; gA = 0.0; gB = 1.0; }
+  else if (seg == 2.0) { dA = grazeOuter; dB = grazeOuter; gA = 1.0; gB = 1.0; }
+  else if (seg == 3.0) { dA = grazeOuter; dB = -wideD * 0.55; f = fThrough; gA = 1.0; gB = 0.0; }
+  else if (seg == 4.0) { dA = -wideD * 0.55; dB = -grazeMid; gA = 0.0; gB = 1.0; }
+  else { dA = -grazeMid; dB = -wideD; gA = 1.0; gB = 0.0; }
   let stations = clamp(params.stations, 0.0, 1.0);
   let dist = mix(wideD, mix(dA, dB, f), stations);
-  // The last leg swings half a turn around the ball at wide distance, which brings the
-  // antipode back to the near side for the next tour.
-  let swing = select(0.0, fDwell * PI, seg == 3.0) * stations;
+  let gaze = mix(gA, gB, select(f, smoothstep(0.0, 0.35, fu), seg == 3.0)) * stations;
+  // The last leg swings half a turn around the ball, which brings the antipode back to the
+  // near side for the next tour.
+  let swing = select(0.0, fDwell * PI, seg == 5.0) * stations;
   let a2 = a + swing;
   let radial = vec3f(cos(a2) * cos(el), sin(el), sin(a2) * cos(el));
+  let tangent = normalize(vec3f(-sin(a2) * cos(el), 0.0, cos(a2) * cos(el)));
   let eye = radial * dist;
-  // Looking at the core from outside; through the dive the gaze holds its travel direction
-  // (a look-at through the centre would snap as the eye passes it), then eases back.
-  // Ahead only while INSIDE the ball; once out the far side the gaze turns back to the core
-  // over the next half unit of travel — "back out and around" is looking back at it.
-  let diving = smoothstep(1.25, 0.7, abs(dist));
+  let outward = radial * sign(dist + 1.0e-6);
+  // Through the ball the gaze holds its travel direction (a look-at through the centre
+  // snaps as the eye passes it), and turns back to the core once outside.
+  let diving = smoothstep(1.25, 0.7, abs(dist)) * select(0.0, 1.0, seg == 3.0);
   let aimCentre = vec3f(0.0, -0.08, 0.0) * clamp(abs(dist) - 1.0, 0.0, 1.0);
   let aimAhead = eye - radial * 2.0;
-  let aim = mix(aimCentre, aimAhead, diving);
+  // Grazing: along the surface, tilted a little toward the core so the shell curves away
+  // across the frame, with the surface normal as up so the shell is the ground.
+  let aimGraze = eye + normalize(tangent - outward * 0.5) * 2.0;
+  let aim = mix(mix(aimCentre, aimAhead, diving), aimGraze, gaze);
+  let upWorld = normalize(mix(vec3f(0.0, 1.0, 0.0), outward, gaze) + vec3f(1.0e-4, 0.0, 0.0));
   let fwd = normalize(aim - eye + vec3f(0.0, 1.0e-4, 0.0));
-  let right = normalize(cross(fwd, vec3f(0.0, 1.0, 0.0)));
+  let right = normalize(cross(fwd, upWorld));
   let upv = cross(right, fwd);
   let focal = 1.9;
   let rd = normalize(fwd * focal + right * q.x + upv * q.y);

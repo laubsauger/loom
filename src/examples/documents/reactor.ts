@@ -118,6 +118,33 @@ import { REACTOR_HAZE_WGSL, REACTOR_WGSL } from "../shaders/reactor.wgsl.ts";
  * windows: row 0.0326, whole minute 0.0851 (min 0.0302, max 0.1842, last gap 0.0650);
  * range 0.854 → 0.871. Every step on purpose.
  *
+ * THE GRAZING PASS (the owner: "Fresnel not perfect / hard to see … closed panels could be
+ * translucent … fewer but larger segments … more distance between the 3 spheres … colour
+ * evolution not coming through … camera sitting close to the surface looking along it";
+ * then "the outer shell feels very static — no warp or morph or evolution of its shape").
+ * Taken together, because they push the same way: shellGap 0.2 → 0.26 (lane 0.22..0.30),
+ * divisions 4 → 3 with ×1.35 inward, and two GRAZING camera legs — the eye just off a
+ * shell looking ALONG it with the shell as the ground, the outer one from outside and the
+ * middle one from inside the outer skeleton — which is the viewpoint where Fresnel is
+ * strongest on every facet in view (six legs now: wide, surface, graze outer, dive, graze
+ * middle, swing). Shut plates are TRANSLUCENT: they add their lit colour and pass 30% of
+ * the ray on. COLOUR: the base contrast restored (orange core, cyan-blue glass — the pink
+ * was the two mixing in the haze and bloom), and the hue is a SWING of ±55° at 150°/min
+ * rather than a 40°/min full turn: a nine-minute turn was invisible inside any viewing, and
+ * a full circle lands on yellow-greens; the swing stays in the family. FORM: the outer
+ * shell's radius now varies with direction and time (`wobble`, three slow sines) inside the
+ * same marched band, with the breathing face found by the walk and bisected without a
+ * Worley, so the SILHOUETTE evolves — the pattern morph alone (sped ×1.8 here) left a
+ * perfect circle. Two refusals from the numbers: a coarse march floor (a sixth of the band,
+ * for cost) stepped over struts at grazing incidence and drew a sawtooth on every edge —
+ * restored to 4 mm; and the sawtooth's real cause was F2−F1 being up to twice the border
+ * distance, so the strut SDF halves it and the step is a true lower bound. COST: the day's
+ * absolute numbers are unusable (two foreign GPU processes; the untouched shader read
+ * 54 ms); relative, on the same load: the wobble's wider band costs ~5 ms at the wide shot,
+ * relief and morph under 1 ms. Motion, both windows: row 0.0258, whole minute 0.0447 (min
+ * 0.0098, max 0.1002, last gap 0.0574); range 0.871 → 0.687 — the larger, emptier cells
+ * and the bounded hue read lower on the instrument, on purpose.
+ *
  * DUTY (§V903/§V914 — 3600 frames of the pattern through the lanes):
  *   coreGain    = 4.2·level    + 0.5   (env1) → 0.733..2.671, mean 1.14, above retained 75%, hold 0
  *   laserGain   = 4.7·low      − 3.0   (env1) → 0.307..1.583, mean 0.63, retained 0.6 ≈ mean, hold 0
@@ -182,15 +209,15 @@ export const reactorDocument = document(
         resolution: { mode: "scale", factor: 0.5 },
         parameters: {
           layers: expressionSlot("op('reactor1').par.layers", 3),
-          divisions: expressionSlot("op('reactor1').par.divisions", 4),
+          divisions: expressionSlot("op('reactor1').par.divisions", 3),
           shieldOuter: expressionSlot("op('reactor1').par.shieldOuter", 0),
           shieldInner: expressionSlot("op('reactor1').par.shieldInner", 0),
           stations: expressionSlot("op('reactor1').par.stations", 1),
-          travel: expressionSlot("op('reactor1').par.travel", 75),
+          travel: expressionSlot("op('reactor1').par.travel", 96),
           frameWidth: expressionSlot("op('reactor1').par.frameWidth", 0.12),
           blocked: expressionSlot("op('reactor1').par.blocked", 0.1),
           strutDepth: expressionSlot("op('reactor1').par.strutDepth", 0.04),
-          shellGap: expressionSlot("op('reactor1').par.shellGap", 0.2),
+          shellGap: expressionSlot("op('reactor1').par.shellGap", 0.26),
           swell: expressionSlot("op('reactor1').par.swell", 1),
           coreGain: expressionSlot("op('reactor1').par.coreGain", 1),
           laserGain: expressionSlot("op('reactor1').par.laserGain", 0.6),
@@ -198,6 +225,7 @@ export const reactorDocument = document(
           haze: expressionSlot("op('reactor1').par.haze", 0.35),
           spin: expressionSlot("op('reactor1').par.spin", 1),
           morph: expressionSlot("op('reactor1').par.morph", 0.6),
+          wobble: expressionSlot("op('reactor1').par.wobble", 0.035),
           orbit: expressionSlot("op('reactor1').par.orbit", 1),
           distance: expressionSlot("op('reactor1').par.distance", 3.2),
         },
@@ -206,32 +234,34 @@ export const reactorDocument = document(
       node("reactor", "customWgsl", [-600, 0], {
         source: REACTOR_WGSL,
         layers: 3,
-        divisions: 4,
+        divisions: 3,
         blocked: 0.1,
         strutDepth: 0.04,
         ior: 1.45,
         dispersion: 0.35,
-        glassColor: [0.35, 0.72, 1, 1],
-        coreColor: [1, 0.55, 0.2, 1],
-        edgeColor: [0.25, 0.62, 1, 1],
+        glassColor: [0.25, 0.75, 1, 1],
+        coreColor: [1, 0.5, 0.12, 1],
+        edgeColor: [0.15, 0.55, 1, 1],
         laserCount: 3,
         haze: 0.35,
         spin: 1,
         morph: 0.6,
+        wobble: 0.035,
         turbulence: 0.8,
         frameColor: [0.35, 0.3, 0.28, 1],
         shellHueStep: 25,
         orbit: 1,
         distance: 3.2,
         stations: 1,
-        travel: 75,
+        travel: 96,
         exposure: 1.9,
         /* Colour evolution (round three): one hue angle turns core, glass and beams
            together, inside the shader, so the sky stays deep and the core/glass contrast
-           is invariant — 40°/min is one revolution per nine minutes: moved when you look
+           is invariant — 150°/min is one revolution every two and a half minutes — a turn inside any real viewing (40°/min, nine minutes a turn, was "not coming through": nobody watches a loop for nine minutes): moved when you look
            back, never visibly cycling. A `hueoffset` LFO on `grade1` was tried first and
            refused: it turned the background olive with the ball. */
-        hueDrift: 40,
+        hueDrift: 150,
+        hueSwing: 55,
       }, {
         label: "reactor1",
         // The geometry pass draws at the PROJECT resolution; without this it would inherit
@@ -243,7 +273,7 @@ export const reactorDocument = document(
           facet: drivenSlot("highb1:highMid", 0.7),
           swell: drivenSlot("swellb1:level", 1),
           frameWidth: drivenSlot("barb1:low", 0.12),
-          shellGap: drivenSlot("gapb1:highMid", 0.2),
+          shellGap: drivenSlot("gapb1:highMid", 0.26),
           shieldOuter: drivenSlot("shieldo1:level", 0),
           shieldInner: drivenSlot("shieldi1:level", 0),
         },
@@ -311,8 +341,8 @@ export const reactorDocument = document(
       node("highb", "valueMath", [-300, 1000], { operand: -0.05, operation: "add" }, { label: "highb1" }),
       node("barx", "valueMath", [-600, 1200], { operand: 0.41, operation: "multiply" }, { label: "barx1" }),
       node("barb", "valueMath", [-300, 1200], { operand: -0.2, operation: "add" }, { label: "barb1" }),
-      node("gapx", "valueMath", [-600, 1400], { operand: 0.17, operation: "multiply" }, { label: "gapx1" }),
-      node("gapb", "valueMath", [-300, 1400], { operand: 0.118, operation: "add" }, { label: "gapb1" }),
+      node("gapx", "valueMath", [-600, 1400], { operand: 0.2, operation: "multiply" }, { label: "gapx1" }),
+      node("gapb", "valueMath", [-300, 1400], { operand: 0.16, operation: "add" }, { label: "gapb1" }),
       node("swellx", "valueMath", [-600, 1600], { operand: 0.23, operation: "multiply" }, { label: "swellx1" }),
       node("swellb", "valueMath", [-300, 1600], { operand: 0.96, operation: "add" }, { label: "swellb1" }),
       /* THE SHUTTERS (the owner's headline: "react much more aggressively to drops … contrast
