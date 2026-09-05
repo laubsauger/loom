@@ -49,6 +49,45 @@ export interface ReflectedField {
 }
 
 /**
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ * THE REFLECTION MEMO (T1172) — KEYED BY THE SOURCE ITSELF, SO IT CANNOT GO STALE
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ *
+ * Every function below is a PURE function of the WGSL text, and every one of them scans
+ * that text end to end — `maskComments` rewrites all 41 KB of E55's `reactor1`, then a
+ * regex runs over the copy. §T1172 measured **22 reflections per frame for two
+ * `customWgsl` nodes**, from FIVE per-frame call sites (`validate.ts`, `value-graph.ts`,
+ * `pulse.ts`, `graph-channels.ts`, `node-references.ts`), because by design (§V163) an
+ * animated document recompiles every frame and NOTHING on that path was memoised. Twenty
+ * of the twenty-two came from `op('reactor1').par.*` reads: a reference resolves the
+ * target's whole schema, and a `customWgsl`'s schema is this scan.
+ *
+ * ⚠ WHY THE KEY IS THE SOURCE STRING AND NOT A NODE, A REVISION OR A FRAME. A memo that
+ * outlives an edit is a stale-value bug, and a stale SCHEMA is the worst shape of it — the
+ * user adds a field, the control does not appear, and the shader binds a uniform nothing
+ * writes. Keying on the input makes that unspellable rather than merely unlikely: an edited
+ * source IS a different key, so a hit can only ever be an answer about the very bytes asked
+ * about. There is no invalidation path to forget to call, because there is no invalidation.
+ *
+ * FIFO, not LRU, and that is the right eviction here: the working set is the distinct
+ * sources in one document (a handful), so the cap is only ever reached by somebody TYPING
+ * in the shader editor — where every keystroke mints a new key and the oldest entry is the
+ * coldest. Reordering on hit would cost two Map writes per frame per node to defend against
+ * a case that does not arise.
+ */
+const REFLECTION_CACHE_LIMIT = 64;
+
+/** Remember `value` under `source`, dropping the oldest entry once the cap is reached. */
+function remember<T>(cache: Map<string, T>, source: string, value: T): T {
+  cache.set(source, value);
+  if (cache.size > REFLECTION_CACHE_LIMIT) {
+    const oldest = cache.keys().next();
+    if (oldest.done !== true) cache.delete(oldest.value);
+  }
+  return value;
+}
+
+/**
  * Comments blanked to SPACES OF THE SAME LENGTH, so a mention of `params` in prose is not a
  * declaration and index arithmetic on the masked text still addresses the original (which is
  * what lets `extractParamsStruct` slice a declaration back out of the author's own bytes).
@@ -80,8 +119,31 @@ function maskBlockComments(source: string): string {
  * making if it is checked with the same reader the compile path uses.
  */
 export function declaresUniformBlock(source: string, name: string): boolean {
-  return new RegExp(`var\\s*<\\s*uniform\\s*>\\s*${name}\\s*:`).test(maskComments(source));
+  /*
+   * T1172: one cache PER BINDING NAME, so the key stays the bare source and no 41 KB
+   * string has to be concatenated to look an answer up. The name set is bounded by the
+   * binding constants the two node families declare, so this outer map cannot grow.
+   * The pattern is hoisted for the same reason: it was a `new RegExp` per call, on a
+   * path that ran twenty-two times a frame.
+   */
+  let cache = uniformBlockAnswers.get(name);
+  if (cache === undefined) {
+    cache = new Map<string, boolean>();
+    uniformBlockAnswers.set(name, cache);
+  }
+  const hit = cache.get(source);
+  if (hit !== undefined) return hit;
+  let pattern = uniformBlockPatterns.get(name);
+  if (pattern === undefined) {
+    // No `g` flag: `test` is stateless, so one pattern is safe to share across calls.
+    pattern = new RegExp(`var\\s*<\\s*uniform\\s*>\\s*${name}\\s*:`);
+    uniformBlockPatterns.set(name, pattern);
+  }
+  return remember(cache, source, pattern.test(maskComments(source)));
 }
+
+const uniformBlockPatterns = new Map<string, RegExp>();
+const uniformBlockAnswers = new Map<string, Map<string, boolean>>();
 
 const PARAMS_STRUCT = /struct\s+Params\s*\{([^}]*)\}/;
 
@@ -93,6 +155,15 @@ const PARAMS_STRUCT = /struct\s+Params\s*\{([^}]*)\}/;
  * it), reflects to exactly that and no more.
  */
 export function reflectParamsStruct(source: string): readonly ReflectedField[] {
+  const hit = reflectedFieldsBySource.get(source);
+  if (hit !== undefined) return hit;
+  return remember(reflectedFieldsBySource, source, scanParamsStruct(source));
+}
+
+/** The fields are `readonly`, so a cached array is safe to hand to every caller. */
+const reflectedFieldsBySource = new Map<string, readonly ReflectedField[]>();
+
+function scanParamsStruct(source: string): readonly ReflectedField[] {
   const masked = maskComments(source);
   const match = PARAMS_STRUCT.exec(masked);
   if (match === null) return [];
@@ -161,15 +232,24 @@ function noteAt(source: string, visible: string, from: number, bodyEnd: number):
  * for character, so a `struct Params` written inside a comment is neither reflected nor cut.
  */
 export function extractParamsStruct(source: string): { declaration: string; rest: string } {
+  const hit = extractedBySource.get(source);
+  // T1172: a FRESH object over the cached strings. The declared return type is mutable, so
+  // handing the same object to every caller would let one of them poison the cache; the
+  // two strings — which are the whole cost — are shared, and the wrapper is two words.
+  if (hit !== undefined) return { ...hit };
   const match = PARAMS_STRUCT.exec(maskComments(source));
-  if (match === null) return { declaration: "", rest: source };
+  if (match === null) return { ...remember(extractedBySource, source, { declaration: "", rest: source }) };
   const start = match.index;
   const end = start + match[0].length;
   return {
-    declaration: source.slice(start, end),
-    rest: `${source.slice(0, start)}${source.slice(end)}`,
+    ...remember(extractedBySource, source, {
+      declaration: source.slice(start, end),
+      rest: `${source.slice(0, start)}${source.slice(end)}`,
+    }),
   };
 }
+
+const extractedBySource = new Map<string, { readonly declaration: string; readonly rest: string }>();
 
 /** A field whose NAME reads as colour intent gets an RGBA picker; every other vector stays one. */
 function looksLikeColour(name: string): boolean {
