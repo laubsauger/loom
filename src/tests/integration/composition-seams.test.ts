@@ -165,6 +165,11 @@ const NOT_CONSTRUCTED: ReadonlyArray<{ name: string; reason: string }> = [
       "Composed by `starterPreferenceStore()` in the SAME module — a single per-PERSON store, for the same reason `createNodeTypeLabelStore` is one: the settings dialog that writes it and the composition root's boot decision that reads it are nowhere near each other in the tree, and two identities over one `localStorage` key would only be a way for the switch and the boot to disagree. The product path is `starterPreferenceStore` in `project-settings.tsx` and in `app.tsx`, which feeds `useStarterProject`; `app/starter-boot.test.tsx` flips it and asserts which document is on screen after a boot, and that a starter never loads over an autosave.",
   },
   {
+    name: "createLastOpenedStore",
+    reason:
+      "Composed by `lastOpenedStore()` in the SAME module — a single per-PERSON store over one `localStorage` key, the same shape as `createStarterPreferenceStore` beside it and for a sharper version of the same reason: this one has THREE writers (the example library's `onOpened`, `startNewProject`, and the picker route's `onOpenedFromFile`) and one reader (the boot decision), and a second identity over the key would only be a way for a writer and the boot to disagree about what the user did (T1164). The product path is `lastOpenedStore` in `app.tsx`, which feeds `useStarterProject`'s `lastOpened`; `app/starter-boot.test.tsx` opens an example through the real library row, remounts, and asserts which document is on screen — plus that an autosave still wins over it and that a first visit still gets the starter.",
+  },
+  {
     name: "createWorkerCore",
     reason:
       "Constructed by `runtime/models/inference.worker.ts`, which is a WORKER entry point — a real product root that this scan does not walk, the same gap `createHeadlessMcpServer` sits in. The split is deliberate (T382): every decision lives in the core so it can be unit-tested without starting a thread, and the worker file is a shim over it. `worker-runner.test.ts` drives the core through the full protocol — load, run, out-of-order results, a model that throws, a run before its load — and the main-thread half against a fake worker.",

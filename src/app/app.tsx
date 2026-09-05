@@ -14,6 +14,7 @@ import { KeymapProvider } from "@editor/keymap/index.ts";
 import type { KeymapDispatch } from "@editor/keymap/index.ts";
 import type { KeymapEnvironment } from "@editor/keymap/index.ts";
 import { ComponentLibrary, ExampleLibrary, useDocumentDirty } from "@editor/library/index.ts";
+import type { ExampleProject } from "@editor/library/example-catalogue.ts";
 import { CommandPalette } from "@editor/palette/index.ts";
 import { ProblemsPanel } from "@editor/shader-editor/index.ts";
 import { Button, ErrorBoundary } from "@ui/index.ts";
@@ -60,6 +61,8 @@ import { useRuntimeCommands } from "./runtime-commands.ts";
 import { createPreviewSinkStore } from "./preview-sinks.ts";
 import { useAutosave } from "./use-autosave.ts";
 import { useStarterProject } from "./use-starter-project.ts";
+import { lastOpenedStore } from "./last-opened.ts";
+import type { LastOpened } from "./last-opened.ts";
 import { useGpuStatus } from "./use-gpu-status.ts";
 import { useGpuRecovery } from "./use-gpu-recovery.ts";
 import { useFrameLoop } from "./use-frame-loop.ts";
@@ -1021,6 +1024,18 @@ export function App({
     [clearBackendDiagnostics, clearFrameLoopDiagnostics, onRuntimeChange, storage],
   );
 
+  /**
+   * T1164 — WHAT THIS BROWSER LAST OPENED ON PURPOSE, read once and written from three
+   * places (`last-opened.ts` carries the argument).
+   *
+   * The VALUE is frozen at mount, deliberately. Everything below writes to this store as
+   * the session goes on — opening an example, opening a file, File → New — and the boot
+   * decision is about what was true BEFORE any of that. A live read would let the app's
+   * own boot answer its own question.
+   */
+  const lastOpened = lastOpenedStore();
+  const [bootLastOpened] = useState<LastOpened>(() => lastOpened.get());
+
   // T189/§V93: "is there unsaved work" is the one thing that makes OPEN ask first. The
   // example library asks it; `markSaved` after a successful write is the other half.
   const dirty = useDocumentDirty(runtime.bus);
@@ -1047,13 +1062,33 @@ export function App({
     setSelection([]);
     setHoveredNodeId(null);
     setRejection(NO_DIAGNOSTICS);
+    /*
+     * T1164 — an empty canvas is a DELIBERATE choice, so the next boot honours it.
+     * §T1123 already made File → New stick for the rest of the session; without this it
+     * came undone on the next reload, because "the user asked for nothing" and "this
+     * browser has never been used" looked identical from the boot decision.
+     */
+    lastOpened.rememberOther();
     // T792: same boundary, same emptying — see `adoptDocument`.
     clearBackendDiagnostics();
     clearFrameLoopDiagnostics();
     onRuntimeChange?.(next);
-  }, [clearBackendDiagnostics, clearFrameLoopDiagnostics, onRuntimeChange, storage]);
+  }, [clearBackendDiagnostics, clearFrameLoopDiagnostics, lastOpened, onRuntimeChange, storage]);
 
   const isDirty = useCallback(() => dirtyRef.current, []);
+
+  /*
+   * T1164 — a file from the picker is deliberate and UNREPRODUCIBLE: this holds a pointer,
+   * not bytes, and re-reading the file would mean a permission prompt on a boot. Recorded
+   * so the next boot answers with an empty canvas rather than with the starter, which is
+   * the same complaint as the example case wearing different clothes.
+   */
+  const rememberOpenedFile = useCallback(() => lastOpened.rememberOther(), [lastOpened]);
+  /* And an example, by name, because its bytes ship with the app and it CAN be reopened. */
+  const rememberOpenedExample = useCallback(
+    (example: ExampleProject) => lastOpened.rememberExample(example.fileName),
+    [lastOpened],
+  );
 
   const project = useProject(runtime, {
     flushAutosave: autosave.flush,
@@ -1061,6 +1096,7 @@ export function App({
     onNewProject: startNewProject,
     isDirty,
     onSaved: dirty.markSaved,
+    onOpenedFromFile: rememberOpenedFile,
   });
 
   /**
@@ -1097,6 +1133,9 @@ export function App({
     restoreChecked: autosave.restoreChecked,
     hasRestore: autosave.restore !== null,
     isDirty,
+    // T1164: where the user WAS, frozen at mount — asked after the autosave and before
+    // the starter (`use-starter-project.ts`, rule two).
+    lastOpened: bootLastOpened,
     projectId: runtime.invocation.projectId,
     openText: openProjectText,
   });
@@ -1522,6 +1561,13 @@ export function App({
                 bus={runtime.bus}
                 context={runtime.invocation}
                 dirty={dirty.dirty}
+                /*
+                 * T1164 — the pointer, written only once the open actually LANDED
+                 * (`example-library.tsx` fires this after the bus reports `opened`). A
+                 * refused open, or one the unsaved-work guard cancelled, leaves the user
+                 * where they were and must leave this where it was too.
+                 */
+                onOpened={rememberOpenedExample}
               />
             </ErrorBoundary>
           }

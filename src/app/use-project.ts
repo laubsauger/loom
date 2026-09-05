@@ -54,6 +54,19 @@ export interface ProjectWiringOptions {
    * toward asking before an open, which is the safe direction but a needless prompt.
    */
   readonly onSaved?: () => void;
+  /**
+   * A document came in through THE PICKER — a file this browser cannot reopen (T1164).
+   *
+   * The narrowest possible signal, and the routes it deliberately excludes are the point.
+   * `project.open` has two callers: the picker (no `text`, the user chose a file on their
+   * disk) and `openText` (bytes already in hand — the autosave RESTORE, the example
+   * library, the starter itself). Only the first is "the user deliberately opened
+   * something whose bytes are gone the moment this tab closes", which is what
+   * `last-opened.ts` records as `other` so that the next boot answers with an empty canvas
+   * rather than with a starter they did not ask for. Firing this for `openText` would make
+   * the starter's own boot look like a deliberate open and switch the starter off forever.
+   */
+  readonly onOpenedFromFile?: () => void;
   /** Test seams for the browser halves. */
   readonly write?: (file: ReturnType<typeof buildProjectFile>) => Promise<SaveOutcome>;
   readonly read?: () => Promise<OpenOutcome>;
@@ -101,6 +114,7 @@ export function useProject(runtime: AppRuntime, options: ProjectWiringOptions): 
     onNewProject,
     isDirty,
     onSaved,
+    onOpenedFromFile,
     write = writeProjectFile,
     read = readProjectFile,
   } = options;
@@ -132,6 +146,7 @@ export function useProject(runtime: AppRuntime, options: ProjectWiringOptions): 
     onNewProject,
     isDirty,
     onSaved,
+    onOpenedFromFile,
     write,
     read,
   });
@@ -142,6 +157,7 @@ export function useProject(runtime: AppRuntime, options: ProjectWiringOptions): 
     onNewProject,
     isDirty,
     onSaved,
+    onOpenedFromFile,
     write,
     read,
   };
@@ -309,7 +325,8 @@ export function useProject(runtime: AppRuntime, options: ProjectWiringOptions): 
       async open(input: { text?: string | undefined; fileName?: string | undefined }): Promise<ProjectOpenResult> {
         // Only the PICKER route asks. `openText` is the restore-a-snapshot path, where
         // the user has already answered this question by choosing Restore.
-        if (input.text === undefined) {
+        const fromPicker = input.text === undefined;
+        if (fromPicker) {
           const guard = await confirmDestructive("Open another project");
           if (guard !== null) return { opened: false, fileName: null, diagnostics: guard };
         }
@@ -318,6 +335,10 @@ export function useProject(runtime: AppRuntime, options: ProjectWiringOptions): 
           const result = await open(input);
           setDiagnostics(result.diagnostics);
           if (result.opened && result.fileName !== null) setFileName(result.fileName);
+          // T1164: only once a document is actually ON SCREEN. A cancelled picker and a
+          // file that failed to load both leave the user exactly where they were, so
+          // neither is a deliberate open to remember.
+          if (fromPicker && result.opened) latest.current.onOpenedFromFile?.();
           return result;
         } finally {
           setBusy(false);

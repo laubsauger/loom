@@ -439,3 +439,138 @@ describe("File → New means an empty canvas, and it stays empty", () => {
     expect(app.nodeTypes()).toEqual([]);
   });
 });
+
+/**
+ * T1164 — A REFRESH RETURNS YOU WHERE YOU WERE, AND THE STARTER IS FOR A FIRST VISIT.
+ *
+ * The owner: *"the example that we're loading by default now, which is actually kinda
+ * weird — because if I just loaded another thing and then refresh, I wouldn't want to end
+ * up here."*
+ *
+ * What makes this worth a describe of its own is that NOTHING ABOVE WAS BROKEN. Opening an
+ * example and not editing it commits nothing — that is this file's own §T1123 gate, three
+ * describes up, and it is the property that keeps a starter from becoming somebody's
+ * document. So the next boot correctly found no autosave and correctly loaded the starter.
+ * Every rule fired as designed. The rules model EDITED WORK; the missing concept was
+ * DELIBERATE INTENT, and `last-opened.ts` is that concept as a POINTER — a file name and a
+ * kind, never bytes, so it cannot become the user's work the way autosave-on-open would.
+ *
+ * A BOOT here is a fresh `mountApp` after `cleanup()`. The pointer lives in this browser's
+ * `localStorage`, which `beforeEach` clears and a remount does not, so the second mount is
+ * the same browser on a later day — which is exactly the claim.
+ */
+describe("T1164 — the starter does not override a document somebody deliberately opened", () => {
+  it("reopens the example the user chose, instead of the starter, on the next boot", async () => {
+    const { store, puts } = memorySnapshotStore();
+
+    // BOOT ONE. Nothing has ever been opened here, so this IS the first visit and the
+    // starter is right — asserted, because otherwise the second boot proves nothing.
+    const first = await mountApp(store);
+    await waitFor(() => {
+      expect(first.runtime()).not.toBeNull();
+    });
+    expect([...first.nodeTypes()].sort()).toEqual([...STARTER_NODE_TYPES].sort());
+
+    // The user opens something else, through the real row on the real examples tab, which
+    // executes `project.open` on the bus (§V29, §V88) — not a hand-rolled adopt.
+    const chosen = "E3 Animated Noise Field";
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: new RegExp(`^${chosen}`) }));
+    });
+    await waitFor(() => {
+      expect(first.nodeTypes()).not.toEqual([]);
+    });
+    const theirDocument = [...first.nodeTypes()].sort();
+    // Non-vacuity: they are genuinely somewhere else, so "the starter came back" and "we
+    // returned them" are distinguishable outcomes.
+    expect(theirDocument).not.toEqual([...STARTER_NODE_TYPES].sort());
+
+    // AND THEY DID NOT EDIT IT. This is the §T1123 property that caused the bug, held
+    // here on purpose: the pointer must not have been bought with a snapshot.
+    await settleAutosave();
+    expect(
+      puts,
+      "opening an example must still write NOTHING to the snapshot ring — a pointer, not a snapshot",
+    ).toEqual([]);
+
+    cleanup();
+
+    // BOOT TWO — same browser, still nothing to restore. The old behaviour was E6 here.
+    const second = await mountApp(store);
+    await waitFor(() => {
+      expect(second.runtime()).not.toBeNull();
+    });
+    expect(
+      [...second.nodeTypes()].sort(),
+      "a refresh put the user somewhere they did not choose",
+    ).toEqual(theirDocument);
+  }, 30_000);
+
+  it("still lets an existing autosave win over the remembered example (rule one)", async () => {
+    // The pointer is asked AFTER the autosave, never instead of it. If that order ever
+    // inverts, a reload would answer an evening of work with a pristine example.
+    const { store: firstStore } = memorySnapshotStore();
+    const first = await mountApp(firstStore);
+    await waitFor(() => {
+      expect(first.runtime()).not.toBeNull();
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /^E3 Animated Noise Field/ }));
+    });
+    await waitFor(() => {
+      expect(first.nodeTypes()).not.toEqual([]);
+    });
+    cleanup();
+
+    // The same browser, now with real work waiting.
+    const work = autosavedWork(PROJECT_ID);
+    const { store } = memorySnapshotStore([snapshotOf(work)]);
+    const second = await mountApp(store);
+
+    expect(await screen.findByText(/is newer than what is open/i)).toBeDefined();
+    // `onRuntimeChange` fires on every document swap, so a null runtime IS "nothing was
+    // opened over the boot document" — the remembered example included.
+    expect(second.runtime()).toBeNull();
+  }, 30_000);
+
+  it("keeps File → New empty across a boot, not just for the rest of the session", async () => {
+    const { store } = memorySnapshotStore();
+    const first = await mountApp(store);
+    await waitFor(() => {
+      expect(first.runtime()).not.toBeNull();
+    });
+    const started = first.runtime()!;
+    await act(async () => {
+      await started.bus.execute("project.new", {}, started.invocation);
+    });
+    await settleAutosave();
+    expect(first.nodeTypes()).toEqual([]);
+
+    cleanup();
+
+    /*
+     * BOOT TWO. §T1123 made "the user asked for nothing" stick for the rest of the
+     * SESSION; it came undone on the next reload, because from the boot decision's side
+     * "they asked for an empty canvas" and "this browser has never been used" were the
+     * same state. An empty canvas is a document somebody chose, so it survives a refresh
+     * the way any other chosen document does.
+     */
+    const second = await mountApp(store);
+    await settleAutosave();
+    expect(second.nodeTypes()).toEqual([]);
+  }, 30_000);
+
+  it("boots to the starter for someone who has genuinely never opened anything", async () => {
+    /*
+     * The other side of the same switch, and the reason it is a separate case: a pointer
+     * that answered "something" for everybody would silently retire the starter, and every
+     * assertion above would still pass. This is the first visit, and it is E6.
+     */
+    const { store } = memorySnapshotStore();
+    const app = await mountApp(store);
+    await waitFor(() => {
+      expect(app.runtime()).not.toBeNull();
+    });
+    expect([...app.nodeTypes()].sort()).toEqual([...STARTER_NODE_TYPES].sort());
+  });
+});

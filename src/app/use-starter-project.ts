@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { listExampleProjects } from "@editor/library/index.ts";
 import type { ExampleProject } from "@editor/library/example-catalogue.ts";
 import { STARTER_EXAMPLE_FILE } from "./starter-document.ts";
+import type { LastOpened } from "./last-opened.ts";
 
 /**
  * THE STARTER NETWORK — something on screen on a boot that has nothing to restore.
@@ -13,6 +14,18 @@ import { STARTER_EXAMPLE_FILE } from "./starter-document.ts";
  *
  *   **AN EXISTING AUTOSAVE ALWAYS WINS.** The starter is what happens when there is
  *   nothing to restore. It is never what happens instead of restoring.
+ *
+ * …and a second one since T1164, which is the first one's blind spot rather than an
+ * exception to it:
+ *
+ *   **AND SO DOES WHERE THE USER WAS.** Opening an example and not editing it commits
+ *   nothing — that is this module's own design, three paragraphs down — so the next boot
+ *   found no autosave and helpfully replaced the user's chosen document with the starter.
+ *   Every rule fired as written and the result was wrong, because the rules model EDITED
+ *   WORK and the missing concept was DELIBERATE INTENT. `last-opened.ts` holds that
+ *   concept as a POINTER (a file name and a kind, never bytes), so it cannot become the
+ *   user's work the way an autosave-on-open would; this module asks it after the autosave
+ *   and before the starter.
  *
  * ## The trap, stated, because it is the whole design
  *
@@ -90,8 +103,25 @@ export function starterProjectText(
   projectId: string,
   catalogue?: readonly ExampleProject[],
 ): StarterDocument | null {
+  return exampleProjectText(STARTER_EXAMPLE_FILE, projectId, catalogue);
+}
+
+/**
+ * ANY shipped example, restamped the same way (T1164).
+ *
+ * `starterProjectText` is this with the starter's file name filled in, rather than the
+ * other way round: the restamping argument above is about opening a SHIPPED example into
+ * this browser's autosave slot, and it applies word for word to the example the boot
+ * decision reopens because it is where the user was. Two copies of it would be two places
+ * to get the project id wrong.
+ */
+export function exampleProjectText(
+  fileName: string,
+  projectId: string,
+  catalogue?: readonly ExampleProject[],
+): StarterDocument | null {
   const example = (catalogue ?? listExampleProjects()).find(
-    (entry) => entry.fileName === STARTER_EXAMPLE_FILE,
+    (entry) => entry.fileName === fileName,
   );
   if (example === undefined) return null;
   try {
@@ -140,7 +170,15 @@ export interface StarterProjectOptions {
    * of the example — six nodes on screen where the spec wanted nine.
    */
   readonly openInFlight: boolean;
-  /** The persisted preference (`starterPreferenceStore`). */
+  /**
+   * The persisted preference (`starterPreferenceStore`) — "start on a starter network
+   * rather than an empty canvas".
+   *
+   * T1164: this gates THE STARTER and nothing else. Reopening the example the user was
+   * last on is not the starter — it is where they were — and someone who switched off
+   * "start me on a demo" has said nothing about whether a refresh should throw their
+   * document away.
+   */
   readonly enabled: boolean;
   /** `AutosaveWiring.restoreChecked` — the launch lookup has ANSWERED. */
   readonly restoreChecked: boolean;
@@ -148,6 +186,15 @@ export interface StarterProjectOptions {
   readonly hasRestore: boolean;
   /** The store's revision has moved: somebody is already working here. */
   readonly isDirty: () => boolean;
+  /**
+   * WHAT THIS BROWSER LAST OPENED ON PURPOSE (T1164, `last-opened.ts`).
+   *
+   * Read as a value rather than as a store so this stays a pure decision over facts —
+   * the same shape `hasRestore` and `isDirty` already have. It is consulted only after
+   * every guard above has passed, so it can never overrule an autosave, an open in
+   * flight, or work already on the canvas.
+   */
+  readonly lastOpened: LastOpened;
   /** The project id the starter is restamped with — the runtime's own. */
   readonly projectId: string;
   /** `useProject().openText`, i.e. `project.open` on the bus (§V29). */
@@ -177,6 +224,7 @@ export function useStarterProject(options: StarterProjectOptions): void {
     restoreChecked,
     hasRestore,
     isDirty,
+    lastOpened,
     projectId,
     openText,
     catalogue,
@@ -192,6 +240,7 @@ export function useStarterProject(options: StarterProjectOptions): void {
     enabled,
     hasRestore,
     isDirty,
+    lastOpened,
     projectId,
     openText,
     catalogue,
@@ -203,6 +252,7 @@ export function useStarterProject(options: StarterProjectOptions): void {
     enabled,
     hasRestore,
     isDirty,
+    lastOpened,
     projectId,
     openText,
     catalogue,
@@ -218,7 +268,6 @@ export function useStarterProject(options: StarterProjectOptions): void {
 
     const current = latest.current;
     if (!current.selfBooted) return;
-    if (!current.enabled) return;
     // RULE ONE. Restoring the user's work is not something a preference may override.
     if (current.hasRestore) return;
     // Somebody already opened something in the window the lookup was in flight — landed,
@@ -229,6 +278,36 @@ export function useStarterProject(options: StarterProjectOptions): void {
     // the empty canvas before it lands, and that is work too.
     if (current.isDirty()) return;
 
+    /**
+     * RULE TWO (T1164) — WHERE THEY WERE BEATS THE STARTER, and it is asked here, after
+     * every guard above and before the starter is even considered.
+     *
+     * `other` is an answer, not a gap: the user opened a file from disk, or asked for an
+     * empty canvas. Neither can be reproduced from a pointer, and the honest reply to a
+     * refresh is the empty canvas rather than a document they never chose — which is the
+     * complaint this row is about, with the starter cast as the intruder.
+     *
+     * An example that is no longer shipped falls THROUGH to the starter rather than
+     * returning: the pointer has gone stale, so there is genuinely nothing to return to,
+     * and the starter is what a boot with nothing to restore is for.
+     */
+    if (current.lastOpened.kind === "other") return;
+    if (current.lastOpened.kind === "example") {
+      const previous = exampleProjectText(
+        current.lastOpened.fileName,
+        current.projectId,
+        current.catalogue,
+      );
+      if (previous !== null) {
+        current.openText(previous.text);
+        return;
+      }
+    }
+
+    // Nothing was ever opened here, so this is the first visit the starter exists for.
+    // The preference is asked HERE and nowhere earlier: it is a preference about the
+    // starter, not about whether a refresh may discard a document (see `enabled`).
+    if (!current.enabled) return;
     const starter = starterProjectText(current.projectId, current.catalogue);
     if (starter === null) return;
     current.openText(starter.text);
