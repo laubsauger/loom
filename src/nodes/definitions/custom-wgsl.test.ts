@@ -5,6 +5,7 @@ import type { LogicalExecutionPlan } from "../../domain/types/backend.ts";
 import { readExecutionPlan } from "../../runtime/backend/plan.ts";
 import { createNodeRegistry, validateNodeDefinition } from "../registry/registry.ts";
 import { SHADER_SOURCE_PARAMETER } from "../../domain/commands/apply-patch.ts";
+import { effectiveParameterSchema } from "../../domain/parameters/resolve.ts";
 import {
   CUSTOM_WGSL_YIELDED_KEYS,
   customWgslNode,
@@ -279,6 +280,43 @@ struct Params { ${fields} };
       // The source editor is always present; a field the struct did not name is not.
       expect(schema[SHADER_SOURCE_PARAMETER]?.type).toBe("code");
       expect(schema["scalar9"]).toBeUndefined();
+    });
+
+    /**
+     * T1177 — THE MEMO'S TWO OBLIGATIONS, and they pull in opposite directions.
+     *
+     * `reflectedSchema` is memoised on the source STRING, which buys the inspector a
+     * `ParameterDefinition` whose IDENTITY survives a re-render — that is what a
+     * `React.memo` on a parameter row compares, and without it E55's two `customWgsl`
+     * nodes (33 rows each) were a guaranteed miss on every knob frame.
+     *
+     * The obligation that comes with it is the one §V935 names: a memo that outlives an
+     * edit is a stale-value bug, and a stale SCHEMA is its worst shape — you add a field,
+     * no control appears, and the shader binds a uniform nothing writes. So both halves are
+     * asserted here and neither is safe alone: the same bytes hand back the SAME OBJECT,
+     * and different bytes hand back a DIFFERENT ANSWER. Keying the memo on anything but the
+     * source (a node, a revision) passes the first and fails the second.
+     */
+    it("hands the same source the same object, and an edited source a new answer (§V935)", () => {
+      const before = withParams("orbitSpeed: f32,");
+      const after = withParams("orbitSpeed: f32, lightColor: vec4f,");
+
+      // Through the funnel (§T903), because the funnel is what the inspector reads and
+      // the identity claim is only worth anything at the seam that consumes it.
+      const first = effectiveParameterSchema(customWgslNode, { [SHADER_SOURCE_PARAMETER]: before });
+      const again = effectiveParameterSchema(customWgslNode, { [SHADER_SOURCE_PARAMETER]: before });
+      // Identity, not equality: `toEqual` would pass on a fresh object and the row memo
+      // would go on missing while this test stayed green.
+      expect(again).toBe(first);
+      expect(again["orbitSpeed"]).toBe(first["orbitSpeed"]);
+
+      const edited = effectiveParameterSchema(customWgslNode, { [SHADER_SOURCE_PARAMETER]: after });
+      expect(edited).not.toBe(first);
+      expect(first["lightColor"]).toBeUndefined();
+      expect(edited["lightColor"]?.type).toBe("color");
+      // …and the field that survived the edit is still there, so "new answer" is not
+      // "the cache was flushed and the reflection lost the rest of the struct".
+      expect(edited["orbitSpeed"]?.type).toBe("number");
     });
 
     /**

@@ -77,8 +77,16 @@ export interface ReflectedField {
  */
 const REFLECTION_CACHE_LIMIT = 64;
 
-/** Remember `value` under `source`, dropping the oldest entry once the cap is reached. */
-function remember<T>(cache: Map<string, T>, source: string, value: T): T {
+/**
+ * Remember `value` under `source`, dropping the oldest entry once the cap is reached.
+ *
+ * T1177 exported it: `customWgsl`'s ASSEMBLED schema wants the same cache under the same
+ * key for the same reason, and a second copy of this eviction rule is how the two would
+ * drift apart. Every caller must obey the docblock above — the key is the source string,
+ * the value is a pure function of it, and what comes back is SHARED, so nothing may mutate
+ * a remembered value.
+ */
+export function remember<T>(cache: Map<string, T>, source: string, value: T): T {
   cache.set(source, value);
   if (cache.size > REFLECTION_CACHE_LIMIT) {
     const oldest = cache.keys().next();

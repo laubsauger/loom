@@ -10,6 +10,7 @@ import {
   reflectedParamCollisions,
   reflectedParamSchema,
   reflectedUniforms,
+  remember,
   type ReflectedField,
 } from "./params-reflection.ts";
 import type { ParameterDefinition, ParameterSchema } from "../../domain/types/parameters.ts";
@@ -134,13 +135,35 @@ function reflectedFields(source: string): readonly ReflectedField[] {
  * second one — a field named after a key this node owns is dropped here and refused by name at
  * compile. The editor is seeded first and the reflection cannot reach it either way, so the way
  * out of a colliding shader is always still on the node.
+ *
+ * ⚑ T1177 — MEMOISED, AND WHAT IT BUYS IS OBJECT IDENTITY, NOT ARITHMETIC. §T1172 memoised
+ * every SCAN under this (`declaresUniformBlock`, `reflectParamsStruct`), so what was left
+ * here was three spreads — cheap, and it minted A FRESH `ParameterDefinition` PER KNOB PER
+ * CALL. That is what a `React.memo` on a parameter row compares, so with it the inspector's
+ * every row was a guaranteed miss and E55's two `customWgsl` nodes — 33 rows each — could
+ * not be skipped no matter what else was stabilised.
+ *
+ * Same key, same cache, same rule as `params-reflection.ts`'s own memos (its docblock is
+ * the reasoning, and this uses its `remember`): the key IS the bytes, so an edited source is
+ * a different key and a hit can only be an answer about what was asked. ⚠ The value is
+ * SHARED — a caller that mutated a returned schema would poison every other reader. That was
+ * already the contract for `definition.parameters`, which is one object for the whole
+ * process; this makes the reflected half behave the same way rather than differently.
  */
+const schemasBySource = new Map<string, ParameterSchema>();
+
 function reflectedSchema(source: string): ParameterSchema {
+  const hit = schemasBySource.get(source);
+  if (hit !== undefined) return hit;
   const own = customWgslOwnParameters();
-  return codeParametersLast({
-    ...own,
-    ...reflectedParamSchema(reflectedFields(source), new Set(Object.keys(own))),
-  });
+  return remember(
+    schemasBySource,
+    source,
+    codeParametersLast({
+      ...own,
+      ...reflectedParamSchema(reflectedFields(source), new Set(Object.keys(own))),
+    }),
+  );
 }
 
 export const customWgslNode: NodeDefinition = {
