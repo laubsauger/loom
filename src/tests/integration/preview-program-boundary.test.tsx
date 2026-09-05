@@ -10,6 +10,7 @@ import { App } from "../../app/app.tsx";
 import { createAppRuntime } from "../../app/app-runtime.ts";
 import type { AppRuntime } from "../../app/app-runtime.ts";
 import type { GpuStatus } from "../../app/gpu-status.ts";
+import { STARTER_EXAMPLE_FILE, starterProjectText } from "../../app/use-starter-project.ts";
 
 /**
  * B143 — the preview PROGRAM installed in the backend is the closed document's while the
@@ -708,5 +709,137 @@ describe("T1126 — the viewer presents from the plan the backend has", () => {
       `the viewer asked the backend to present ${unresolvedPresents(session.journal).join(", ")}, ` +
         `which the installed plan does not carry — it is reading the plan the app wanted.`,
     ).toEqual([]);
+  }, 30_000);
+});
+
+/**
+ * T1163 — THE THIRD MEMBER OF THIS FAMILY, AND THE ONE EVERY NEW USER MEETS: THE PLAN THE
+ * BACKEND HAS IS NOT YET *ANY* PLAN.
+ *
+ * ## The report, and what was actually measured
+ *
+ * The owner, on a fresh load of the starter (E6-Displacement-Stack): five
+ * `backend/unknown-resource`, one per node, `preview/pass/<node>` binding an unknown
+ * `target:<node>:out`. Measured in a real headed Chromium on a real Metal adapter it is
+ * SIX, not five — every node in the document, `warp` included; the sixth row sits below
+ * the fold of the problems pane and the report was a count of what was on screen. There is
+ * no absent node and so no asymmetry to explain.
+ *
+ * Two things that could have explained it, MEASURED AND RULED OUT, so nobody re-runs them:
+ *
+ *  1. **The document does not compile dirty, with or without preview sinks.** Compiled the
+ *     way `runner.ts` does it (declared sinks only, which is what `starter-document.test.ts`
+ *     gates) and the way the app does it (every previewable node a sink), E6 gives the
+ *     IDENTICAL plan: zero diagnostics, six passes, seven resources, and the same six
+ *     outputs — `target:{field,out,place,plate,shape,warp}`, i.e. including every id the
+ *     app then calls unknown. E6 is small and wholly output-reachable, so the preview sink
+ *     set adds nothing `pruneToActiveSinks` had not already kept. (§B179 measured the same
+ *     insensitivity on E54, which is a far larger graph.) Compiling the starter gate WITH
+ *     preview sinks would therefore change nothing about it: it is not vacuous, it is
+ *     simply not a gate on this.
+ *  2. **It is not §V9's refusal.** Nothing is refused. `compiled.ok` is true, the plan is
+ *     handed over, and it installs perfectly a moment later — the previews then render,
+ *     the viewer runs, and the six warnings never repeat. They are a one-shot burst that
+ *     the problems pane keeps forever.
+ *
+ * ## The cause
+ *
+ * `app.tsx`'s latch is named for the plan the backend HAS but is written from the plan the
+ * app COMPILED: `setInstalledPlan` fires from an effect on `compile.compiled`, while
+ * `use-frame-loop.ts` only *schedules* the install — `void backend.compile(compiled).then(…)`.
+ * §T1121 closed the half where the plan is never handed over at all (`!ok`); the half left
+ * open is the interval where it HAS been handed over and has not landed yet. In it the
+ * latch advertises six `target:` rows the backend has never heard of, the preview tick
+ * takes them, and every pass it pushes binds a resource the installed program lacks.
+ *
+ * That interval is normally shorter than a frame — `backend.compile` resolves on a
+ * microtask and the preview tick is a whole rAF away, which is why this is invisible on a
+ * warm reload and why ten consecutive headed boots reproduced it zero times. On a FIRST
+ * boot it is not: the very first install compiles every pipeline in the document from
+ * cold, which outlasts a display frame, and the tick gets there first. Hence "first boot",
+ * hence one warning per previewable node, hence never again for the rest of the session.
+ *
+ * ## Why this gate can see it (§V701)
+ *
+ * The window is owned rather than waited for, exactly as §B143's case above owns it: the
+ * backend does not finish a compile until this test says so, and the claim is checked while
+ * the install is provably outstanding. Nothing here depends on a race being lost.
+ *
+ * The document is THE STARTER'S OWN BYTES, read through the same constant the app boots
+ * from, so this is a gate on the thing that broke rather than on a fixture that resembles
+ * it — and pointing `STARTER_EXAMPLE_FILE` somewhere else re-aims it rather than stranding
+ * it. The claim is the backend's own test (`unresolvedBindings`), not a roster of node ids.
+ */
+
+/**
+ * The starter's bytes, through the app's OWN door — `starterProjectText` is the function
+ * `useStarterProject` calls on a first boot, restamped project id and all. A local copy of
+ * the catalogue lookup would have been a second thing to keep true.
+ */
+function starterText(): string {
+  const starter = starterProjectText("t1163-first-boot");
+  if (starter === null) {
+    throw new Error(`${STARTER_EXAMPLE_FILE} is not shipped — starter-document.test.ts gates that`);
+  }
+  return starter.text;
+}
+
+describe("T1163 — the starter previews nothing while its own plan is still being installed", () => {
+  it("binds no resource of the incoming document before the backend has installed it", async () => {
+    const session = await mount();
+
+    // From here the backend does not finish a compile until this test says so. Set BEFORE
+    // the open, so the starter's very first install is the one held — a first boot, not a
+    // steady state that happens to be interrupted.
+    session.journal.parking = true;
+    const callsBefore = session.journal.calls.length;
+
+    await session.open(starterText(), STARTER_EXAMPLE_FILE);
+    await pump();
+
+    // THE WINDOW IS OPEN, asserted rather than assumed (§V701): the starter's plan has been
+    // handed to the backend and has NOT landed.
+    const since = session.journal.calls.slice(callsBefore);
+    expect(since).toContain("compile");
+    expect(since).not.toContain("installed");
+    expect(session.journal.parked.length).toBeGreaterThan(0);
+    // And nothing of the starter is in the plan the backend HAS — which is what makes every
+    // `target:` row below a genuine `backend/unknown-resource` rather than a lucky miss.
+    expect(session.journal.planResources).toEqual([]);
+
+    // Now let the preview tick run INSIDE the window. This is the burst: on a cold first
+    // boot the pipelines outlast a display frame and the tick gets there before the install.
+    const presentsBefore = session.journal.presents;
+    await runFrames(6);
+    await pump();
+    await runFrames(6);
+
+    // NON-VACUITY: the preview tick really ran. Without this the claim below is free — a
+    // preview system that never ticked binds nothing and passes everything.
+    expect(session.journal.presents).toBeGreaterThan(presentsBefore);
+
+    // THE CLAIM. Every texture a preview pass binds resolves against the plan the backend
+    // has installed, or against the program's own resources — the backend's own test. With
+    // no plan installed yet, that means the previews wait rather than bind into the void.
+    expect(
+      unresolvedBindings(session.journal),
+      `the preview stack bound ${unresolvedBindings(session.journal).join(", ")} while the ` +
+        `starter's plan was still being installed — each one is a backend/unknown-resource ` +
+        `in the problems pane of a first boot, and it is the first thing a new user sees.`,
+    ).toEqual([]);
+
+    // AND THE PREVIEWS ARE NOT SIMPLY SWITCHED OFF: once the plan lands and the tick runs
+    // again, the starter's own tiles are live and binding its own targets. This is what
+    // makes the claim above a statement about ORDER rather than about a blank pane.
+    session.journal.parking = false;
+    for (const resolve of session.journal.parked.splice(0)) resolve();
+    await settle();
+    await waitFor(
+      () => {
+        expect(heldResourceIds(session.journal).length).toBeGreaterThan(0);
+      },
+      { timeout: 5_000 },
+    );
+    expect(unresolvedBindings(session.journal)).toEqual([]);
   }, 30_000);
 });

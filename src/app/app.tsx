@@ -596,52 +596,6 @@ export function App({
   const compile = useGraphCompile(runtime, capabilities, previewSinks, driverChannels, sessionNodeDiagnostics);
   const recovery = useGpuRecovery(status.kind === "ready" ? status.backend : null);
 
-  /**
-   * THE PLAN THE BACKEND HAS — not the plan this app wanted (T1121, B179, §V9).
-   *
-   * `useFrameLoop` refuses to install a plan carrying any compiler error, so the backend
-   * keeps the previously installed program. That refusal is §V9 and it is right. What was
-   * wrong is that the preview stack was fed `compile.compiled.outputs` UNCONDITIONALLY:
-   * the rows of a plan that was never handed over. Every row materialised only in the
-   * refused plan became a preview pass binding a resource the installed program does not
-   * have, and the backend said so — correctly — once per pass, re-reported every thirty
-   * frames by `retryDirtyPreviewHosts` (T311) for as long as the error stood. One node
-   * with a required input left unconnected was enough, on a document nobody had closed.
-   *
-   * So the latch is here rather than on `PreviewHostHandle` or `LoomBackend`: `graph-pane`
-   * passes this ONE array to `useNodePreviews`, `useGraphBackground` and the orbit/gizmo
-   * sets, and all four are "what the GPU currently holds" consumers. Asking the backend
-   * instead would have meant a new query on 34 hand-written `previewHost` fakes.
-   *
-   * ⚠ AN EFFECT, DELIBERATELY, AND NOT A RENDER-PHASE UPDATE (§V904). `useGraphCompile`'s
-   * memo writes `lastCompile.current` DURING RENDER, which makes React's sanctioned
-   * "adjust state during render" discard the pass and re-run the component against a ref
-   * that has already moved on — that is how §B106 came back from four files away. Nothing
-   * in `App` may classify anything during render while that is true.
-   */
-  const [installedPlan, setInstalledPlan] = useState<CompiledGraph | null>(null);
-  /*
-   * FIRST, so that when a load and a clean compile land in the same commit the latch
-   * below still wins: effects run in declaration order. A document boundary throws the
-   * whole program away (B143), so the closed document's rows cannot carry across — and if
-   * the INCOMING document is the one with the errors, holding nothing is the honest state.
-   */
-  useEffect(() => {
-    setInstalledPlan(null);
-  }, [runtime.documentIdentity]);
-  useEffect(() => {
-    const plan = compile.compiled;
-    if (plan === null || !plan.ok) return;
-    setInstalledPlan(plan);
-  }, [compile.compiled]);
-  /**
-   * The user-visible fact behind the latch: what is on screen is NOT what was just edited.
-   *
-   * Gated on there being an installed plan at all, because with none there is no picture
-   * to be stale — the viewer is black and the problems tab is the whole story.
-   */
-  const outputStale = installedPlan !== null && compile.compiled !== null && !compile.compiled.ok;
-
   // The tracked set is a function of the DOCUMENT (which nodes are Analyze) and of the
   // PLAN (whether the reduction buffer was actually allocated), so it is re-derived where
   // both are known — after every compile, never per frame.
@@ -870,6 +824,70 @@ export function App({
     resetFeedback: compile.resetFeedback,
     documentBoundary: compile.documentBoundary,
   });
+
+  /**
+   * THE PLAN THE BACKEND HAS — not the plan this app wanted (T1121, T1163, B179, §V9).
+   *
+   * `useFrameLoop` refuses to install a plan carrying any compiler error, so the backend
+   * keeps the previously installed program. That refusal is §V9 and it is right. What was
+   * wrong is that the preview stack was fed `compile.compiled.outputs` UNCONDITIONALLY:
+   * the rows of a plan that was never handed over. Every row materialised only in the
+   * refused plan became a preview pass binding a resource the installed program does not
+   * have, and the backend said so — correctly — once per pass, re-reported every thirty
+   * frames by `retryDirtyPreviewHosts` (T311) for as long as the error stood. One node
+   * with a required input left unconnected was enough, on a document nobody had closed.
+   *
+   * T1163 IS THE OTHER HALF OF THAT SAME SENTENCE, AND IT IS WHY THIS NOW READS
+   * `frameLoop.installedPlan` RATHER THAN `compile.compiled`. Handing a plan over is not
+   * installing it: `backend.compile` is awaited, so there is an interval in which the plan
+   * is on its way to the device and the backend still holds the previous program — or, on
+   * a FIRST BOOT, none at all. Latched on the compile, this said "the backend has these
+   * six rows" while the backend had nothing, and every preview pass pushed in that
+   * interval bound a resource that did not exist: the starter's own six
+   * `backend/unknown-resource` warnings, one per node, the first thing a new user saw.
+   * The interval is normally shorter than a display frame, which is why it only showed up
+   * on a cold boot — the first install compiles every pipeline from scratch and outlasts
+   * one. `useFrameLoop` writes its answer from inside the install itself, so this cannot
+   * be a frame ahead of the device again.
+   *
+   * So the latch is here rather than on `PreviewHostHandle` or `LoomBackend`: `graph-pane`
+   * passes this ONE array to `useNodePreviews`, `useGraphBackground` and the orbit/gizmo
+   * sets, and all four are "what the GPU currently holds" consumers. Asking the backend
+   * instead would have meant a new query on 34 hand-written `previewHost` fakes.
+   *
+   * ⚠ AN EFFECT, DELIBERATELY, AND NOT A RENDER-PHASE UPDATE (§V904). `useGraphCompile`'s
+   * memo writes `lastCompile.current` DURING RENDER, which makes React's sanctioned
+   * "adjust state during render" discard the pass and re-run the component against a ref
+   * that has already moved on — that is how §B106 came back from four files away. Nothing
+   * in `App` may classify anything during render while that is true.
+   */
+  const [installedPlan, setInstalledPlan] = useState<CompiledGraph | null>(null);
+  /*
+   * FIRST, so that when a load and an install land in the same commit the latch below
+   * still wins: effects run in declaration order. A document boundary throws the whole
+   * program away (B143), so the closed document's rows cannot carry across — and if the
+   * INCOMING document is the one with the errors, holding nothing is the honest state.
+   *
+   * T1163: a stale install cannot slip past this clear. The two effects flush in one
+   * commit with nothing awaited between them, and the second of them — `useFrameLoop`'s
+   * own — bumps the generation that makes any outstanding install of the closed
+   * document's plan a no-op when it lands.
+   */
+  useEffect(() => {
+    setInstalledPlan(null);
+  }, [runtime.documentIdentity]);
+  useEffect(() => {
+    const plan = frameLoop.installedPlan;
+    if (plan === null) return;
+    setInstalledPlan(plan);
+  }, [frameLoop.installedPlan]);
+  /**
+   * The user-visible fact behind the latch: what is on screen is NOT what was just edited.
+   *
+   * Gated on there being an installed plan at all, because with none there is no picture
+   * to be stale — the viewer is black and the problems tab is the whole story.
+   */
+  const outputStale = installedPlan !== null && compile.compiled !== null && !compile.compiled.ok;
 
   /**
    * T493 — a stopped timeline stops the media.

@@ -5,6 +5,7 @@ import { createMemoryStorage, installDomStubs } from "@ui/testing/install-dom-st
 import { installFlowStubs } from "@editor/graph-canvas/testing.tsx";
 import type { BackendCapabilities } from "@domain/types/backend.ts";
 import type { GraphPatchOperation } from "@domain/types/patch.ts";
+import type { LoomBackend } from "@runtime/backend/index.ts";
 import { App } from "../../app/app.tsx";
 import { createAppRuntime } from "../../app/app-runtime.ts";
 import type { AppRuntime } from "../../app/app-runtime.ts";
@@ -40,7 +41,62 @@ const CAPABILITIES: BackendCapabilities = {
   limits: { maxTextureDimension2D: 8192 },
 };
 
-const READY: GpuStatus = { kind: "ready", capabilities: CAPABILITIES, baseline: true };
+/**
+ * A device that accepts a plan and says so — the smallest backend the viewer readout needs.
+ *
+ * T1163: "with a device" used to be a `ready` status with NO backend on it, which the type
+ * permits only because a hand-built test status has no device to name. The readout it
+ * asserts reads the plan the backend HAS INSTALLED (T1121, T1126, T1163), and a status with
+ * no backend installs nothing — so the fixture had to acquire the device its own name
+ * claims. Everything below `compile` is the inert minimum: this file is about wiring, and
+ * the pixel path has its own suites.
+ */
+function stubBackend(): LoomBackend {
+  return {
+    status: {
+      initialized: true,
+      disposed: false,
+      halted: false,
+      deviceGeneration: 1,
+      temporalResets: 0,
+      resourceBuilds: 0,
+      framesSubmitted: 0,
+      readbacks: 0,
+      stale: false,
+      estimatedResourceBytes: 0,
+    },
+    onDiagnostic: () => () => {},
+    recover: async () => {},
+    loop: () => ({ stop: () => {} }),
+    previewHost: () => ({
+      setPreviewProgram() {},
+      presentPreviews() {},
+      dispose() {},
+    }),
+    present: (_canvas: unknown, options: { outputId: string }) => ({
+      id: "present-stub",
+      outputId: options.outputId,
+      setOutput: () => {},
+      dispose: () => {},
+    }),
+    onGpuTimings: () => () => {},
+    onCpuTimings: () => () => {},
+    compile: async (plan: unknown) => ({ id: "plan-stub", logical: plan, passes: [] }),
+    render: () => {},
+    resize: () => {},
+    updateUniforms: () => {},
+    resetTemporalHistory: () => {},
+    setCookPolicy() {},
+    dispose: () => {},
+  } as unknown as LoomBackend;
+}
+
+const READY: GpuStatus = {
+  kind: "ready",
+  capabilities: CAPABILITIES,
+  baseline: true,
+  backend: stubBackend(),
+};
 
 function newRuntime(): AppRuntime {
   // No ambient storage: identity must not leak between tests or into the real browser.

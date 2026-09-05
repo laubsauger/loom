@@ -45,6 +45,22 @@ export interface FrameLoopResult {
   /** True while the loop is running. Reflects the driver, not a request. */
   readonly playing: boolean;
   /**
+   * THE PLAN THE BACKEND HAS — the one whose `backend.compile` has RESOLVED (T1163, B179).
+   *
+   * Not "the plan that was handed over": `backend.compile` is awaited, so between handing
+   * a plan over and its install landing the backend still holds the previous program (or,
+   * on a first boot, none at all). §T1121 gave `app.tsx` a latch by this name but wrote it
+   * from `compile.compiled` — the plan the app WANTED — which is right about the half it
+   * was built for (a plan carrying an error is never handed over) and wrong about the
+   * interval where the handover has happened and the install has not. Every consumer that
+   * means "what the GPU currently holds" reads it through here, so there is one answer
+   * rather than a second copy that can be a frame ahead of the device.
+   *
+   * Null until the first install lands, which is the honest state on a cold boot: the
+   * backend holds nothing, so there is nothing to bind against.
+   */
+  readonly installedPlan: CompiledGraph | null;
+  /**
    * T433 — true while playback is cycling the document's frame range.
    *
    * Session state, like `playing`: it says what THIS playback is doing, and the range it
@@ -180,6 +196,22 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
 
   const [diagnostics, setDiagnostics] = useState<readonly RuntimeDiagnostic[]>(NO_DIAGNOSTICS);
   const [playing, setPlaying] = useState(false);
+  /**
+   * T1163 — written from inside the install and from nowhere else.
+   *
+   * ANNOUNCED ONLY WHEN THE SIGNATURE MOVES, and that guard is not an optimisation.
+   * `compiled` is a prop: a caller that rebuilds it every render — `value-graph-loop`'s
+   * harness does, deliberately, to prove the compile effect is keyed on the plan — would
+   * otherwise get install → setState → render → new plan object → install, forever. The
+   * signature is the compiler's own answer to "did anything structural change at all"
+   * (`compiler/types.ts`), and a plan that differs only in uniform VALUES carries the same
+   * one by construction (§V5), so a skipped announcement is invisible to every consumer:
+   * same passes, same resources, same outputs. The ref makes that at most one `setState`
+   * per distinct plan rather than a state-equality bail-out, which React is allowed to
+   * render through.
+   */
+  const [installedPlan, setInstalledPlan] = useState<CompiledGraph | null>(null);
+  const installedSignatureRef = useRef<string | null>(null);
   /**
    * T455 — TIMELINE MODE IS THE DEFAULT, so the frame counter is BOUNDED.
    *
@@ -578,13 +610,27 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
         // Later pushes diff against the newest values, so a slider dragged through ten
         // positions writes each block once, not ten times against a stale base.
         planRef.current = compiled;
+        /*
+         * T1163: deliberately NOT announced. This branch runs only for a plan `push` has
+         * verified to be a values-only variation of the installed one (§V5), so it carries
+         * the same signature and the same rows — there is nothing here a consumer of
+         * `installedPlan` could read differently, and announcing it would re-render the
+         * whole App on every parameter edit for no observable change (§V16).
+         */
         return;
       }
     }
 
     // T733/B141 — owed at SCHEDULE time, while the flags still belong to the plan being
     // built. Reading them after the await is what dropped the work.
-    if (documentBoundaryRef.current) boundaryOwedRef.current = true;
+    if (documentBoundaryRef.current) {
+      boundaryOwedRef.current = true;
+      // T1163: and the announced signature belongs to the document being closed. Two
+      // documents can compile to the same plan (two empty ones do), and without this the
+      // incoming one would be skipped as "unchanged" while `app.tsx` has already cleared
+      // the latch at the boundary — leaving it null for good.
+      installedSignatureRef.current = null;
+    }
     if (resetFeedbackRef.current) feedbackResetOwedRef.current = true;
 
     const generation = (generationRef.current += 1);
@@ -597,6 +643,13 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
         // The structural plan the per-frame push diffs against. Reset together, so a
         // recompile never leaves the animator comparing against a plan that is gone.
         planRef.current = compiled;
+        // T1163 — HERE, inside the `.then`, is the moment the backend actually holds it.
+        // The generation guard above has already dropped a superseded install, so this
+        // can only ever announce the newest plan that landed.
+        if (installedSignatureRef.current !== compiled.signature) {
+          installedSignatureRef.current = compiled.signature;
+          setInstalledPlan(compiled);
+        }
         animatorRef.current.reset();
         driftRef.current = false;
         driverRef.current?.setPlan(plan);
@@ -661,5 +714,5 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
   // T465: the problems tab's Clear empties every ACCUMULATING source; anything still
   // real re-reports on its own and thereby proves it is live.
   const clearDiagnostics = useCallback(() => setDiagnostics([]), []);
-  return { diagnostics, clearDiagnostics, playing, looping, latestFrame };
+  return { diagnostics, clearDiagnostics, playing, looping, latestFrame, installedPlan };
 }
