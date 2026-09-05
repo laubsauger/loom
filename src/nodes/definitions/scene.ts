@@ -353,9 +353,22 @@ export const geometryNode: NodeDefinition = {
   version: 1,
   title: "Geometry",
   category: "render",
+  /*
+   * T1214 — THE MODES ARE IN THE DESCRIPTION BECAUSE THE DESCRIPTION IS WHERE AN AGENT
+   * LOOKS. `list_node_definitions` ships `description` and `parameterKeys`; it does NOT
+   * ship a parameter's own description, nor a port's, so everything the four modes
+   * explain about themselves further down this file is invisible at the moment a caller
+   * is choosing a node. An agent was measured building SEVEN near-identical
+   * `geometry` → `render` chains for what is seven instances of one fin: the capability
+   * and its worked example (E10) both shipped, and nothing in the catalogue gave it a
+   * reason to consider either. One clause per mode, not a paragraph — this text is paid
+   * for on every call, for all 107 nodes.
+   */
   description:
-    "Binds a point set and a material into one nameable renderable object — a Render lists geometries by name. Tint multiplies the material's base colour per object (1,1,1,1 = inherit, visibly).",
-  tags: ["3d", "scene", "geometry", "material", "surface"],
+    "Binds a point set and a material into one nameable renderable object — a Render lists geometries by name. Mode decides what the points become: Surface skins them into a mesh over their grid topology; INSTANCES draws one primitive at every point — N copies of one shape from ONE node, never N nodes — with Scale, Orient and Tint taking per-point values in Map mode; Points draws a camera-facing billboard per point; Beam draws a quad spanning position to the Endpoint attribute, for streaks and rays. Tint multiplies the material's base colour per object (1,1,1,1 = inherit, visibly).",
+  // T1214: the tags named one of the four modes. A library search for "instances" or
+  // "beam" found Render Instances and nothing else — this node does both.
+  tags: ["3d", "scene", "geometry", "material", "surface", "instances", "points", "beam"],
   inputs: [
     {
       id: "points",

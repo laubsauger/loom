@@ -9,6 +9,9 @@ import type { Actor, InvocationContext } from "@domain/types/commands.ts";
 import type { NodeDefinition } from "@domain/types/node-definition.ts";
 import { createNodeRegistry } from "@nodes/registry/registry.ts";
 import { blurNode, compositeNode, solidNode } from "@nodes/registry/test-nodes.ts";
+// T1214: the REAL catalogue, so the description gate at the foot of this file reads the
+// text an agent actually receives rather than a fixture's stand-in.
+import { allNodeDefinitions } from "@nodes/definitions/index.ts";
 
 import {
   createAgentToolSurface,
@@ -687,5 +690,171 @@ describe("tool claims match the product (T1146)", () => {
     // The load-bearing assertion: with `project.get` registered the note is GONE. It rode
     // on every call of the tool the surface tells agents to call first, and it was false.
     expect(answered.diagnostics).toEqual([]);
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ * §T1214 — A NODE WITH MODES IS SEVERAL NODES WEARING ONE NAME
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ *
+ * An agent was measured building SEVEN near-identical `geometry` → `render` chains for
+ * what was plainly seven instances of one fin. `geometry` has had a `mode: "instances"`
+ * that draws one primitive at every point since T428, and E10-Instanced-Torus is the
+ * shipped worked example. Neither was missing; a REASON TO CONSIDER EITHER was.
+ *
+ * The reason has to live in `description`, because `description` is the whole of what a
+ * caller reads before it picks a node: `list_node_definitions` ships the type, title,
+ * category, description, port kinds and parameter KEYS — and nothing else. A parameter's
+ * own description does not cross (`definitionSummary`), and neither does a port's
+ * (`portSummary`). `geometry`'s four modes each explained themselves beautifully, in
+ * `inactiveWhen` reasons and parameter descriptions that reach a human in the inspector
+ * and no agent anywhere.
+ *
+ * ## What this gate asserts, and why it probes rather than lists
+ *
+ * The mode-shaped enums are DERIVED, not enumerated: an enum is mode-shaped when
+ * switching it changes which OTHER parameters apply — the node's control surface is a
+ * different shape per option, which is the mechanical form of "several nodes wearing one
+ * name". That is found by calling each parameter's `inactiveWhen` predicate under every
+ * option of the enum and watching the answer move, so a node that grows a mode next week
+ * is in scope the day it is written and no roster goes stale (§V814).
+ *
+ * The claim is then made against the text a CONSUMER receives — the description as it
+ * comes back out of `list_node_definitions` — and not against a string literal in the
+ * source, because the source is not what an agent reads.
+ *
+ * ## Keep it a clause per mode
+ *
+ * These descriptions ship on every call, for all 107 nodes. The gate asks that each mode
+ * be NAMED and does not ask for a paragraph: a wall of prose is a token cost on every
+ * session and it buries the useful sentence rather than surfacing it (§T1053 — the
+ * description is where the explanation already is; do not open a second place for it).
+ */
+describe("the catalogue names what each mode DOES (§T1214)", () => {
+  /**
+   * Mode-shaped enums whose description deliberately does NOT spell every option, with
+   * the reason each one is. Adding a row is a decision, which is the point.
+   */
+  const NAMED_ELSEWHERE: Readonly<Record<string, string>> = {
+    "valueMath.operation":
+      "six of the seven options are plain arithmetic that their own labels exhaust — Add, " +
+      "Subtract, Multiply, Divide, Minimum, Maximum — and listing them would say nothing " +
+      "the word `arithmetic` does not. The seventh, Range, is the only one that reshapes " +
+      "the control surface (it turns on fromLow/fromHigh/toLow/toHigh/outside), and the " +
+      "description names it.",
+  };
+
+  /** Lowercase, alphanumerics only: prose punctuation must not decide whether a mode is named. */
+  const squash = (text: string): string => text.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+  /**
+   * A mode counts as named when the description carries its stored value, its label, or
+   * the label's distinctive word — "Locked to Timeline" is named by "timeline", and
+   * `perlin2d`/`perlin3d`/`perlin4d` by "Perlin (2D/3D/4D)". The looseness is deliberate:
+   * the gate is about whether a reader is TOLD, not about matching an identifier.
+   *
+   * It buys that with a known false negative, stated rather than hidden: a short mode name
+   * can be satisfied INCIDENTALLY by an unrelated phrase — `geometry`'s `points` mode is
+   * "named" by the words "a point set". This gate is therefore a floor, not a proof; the
+   * per-node assertion below is what holds `geometry` to saying something.
+   */
+  function isNamed(option: { readonly value: string; readonly label: string }, description: string): boolean {
+    const haystack = squash(description);
+    const words = option.label.split(/\s+/).filter((word) => word.length >= 4);
+    const longest = words.reduce((best, word) => (word.length > best.length ? word : best), "");
+    return [option.value, option.label, longest]
+      .filter((candidate) => candidate.length > 0)
+      .some((candidate) => haystack.includes(squash(candidate)));
+  }
+
+  /**
+   * The enums whose option decides which OTHER parameters apply, found by asking every
+   * sibling's `inactiveWhen` under every option rather than by keeping a list.
+   */
+  function modeShapedEnums(
+    definition: NodeDefinition,
+  ): readonly { readonly key: string; readonly options: readonly { value: string; label: string }[] }[] {
+    const entries = Object.entries(definition.parameters);
+    const defaults: Record<string, unknown> = {};
+    // An asset parameter declares no default (it names a file, and there is no such file
+    // until one is attached); every other kind does, and a predicate reads it.
+    for (const [key, parameter] of entries) {
+      if ("default" in parameter) defaults[key] = parameter.default;
+    }
+
+    const found: { key: string; options: readonly { value: string; label: string }[] }[] = [];
+    for (const [key, parameter] of entries) {
+      if (parameter.type !== "enum" || parameter.options.length < 2) continue;
+      const gates = entries.some(([siblingKey, sibling]) => {
+        if (siblingKey === key || sibling.inactiveWhen === undefined) return false;
+        const answers = new Set(
+          parameter.options.map((option) => {
+            const values = { ...defaults, [key]: option.value } as Parameters<
+              NonNullable<typeof sibling.inactiveWhen>
+            >[0];
+            return sibling.inactiveWhen?.(values) == null ? "applies" : "inactive";
+          }),
+        );
+        return answers.size > 1;
+      });
+      if (gates) found.push({ key, options: parameter.options.map(({ value, label }) => ({ value, label })) });
+    }
+    return found;
+  }
+
+  /** The real catalogue behind the real surface: the text under test is what an agent gets. */
+  function catalogueSurface(): AgentToolSurface {
+    const store = createGraphStore({
+      ids: createSequentialIdFactory("n"),
+      now: () => "2026-08-29T00:00:00.000Z",
+    });
+    const registry = createNodeRegistry(allNodeDefinitions).view();
+    const { bus } = createDomainBus({ store, registry });
+    return createAgentToolSurface({ bus, actor: agent, projectId: "project-1", now: () => 1_000 });
+  }
+
+  it("names every mode of every mode-shaped node in the description it publishes", async () => {
+    const listed = await catalogueSurface().callTool("list_node_definitions", {});
+    const published = new Map(
+      (listed.data as { definitions: readonly { type: string; description: string | null }[] }).definitions.map(
+        (entry) => [entry.type, entry.description ?? ""],
+      ),
+    );
+
+    const unnamed: string[] = [];
+    for (const definition of allNodeDefinitions) {
+      const description = published.get(definition.type);
+      // A registered type the catalogue does not publish is its own failure, reported here
+      // rather than passing as "no modes to name".
+      expect(description, `${definition.type} is not in list_node_definitions`).toBeTypeOf("string");
+      for (const { key, options } of modeShapedEnums(definition)) {
+        if (NAMED_ELSEWHERE[`${definition.type}.${key}`] !== undefined) continue;
+        const missing = options.filter((option) => !isNamed(option, description ?? ""));
+        if (missing.length > 0) {
+          unnamed.push(`${definition.type}.${key}: ${missing.map((option) => option.value).join(", ")}`);
+        }
+      }
+    }
+
+    expect(unnamed, "a mode an agent is never told about is a mode it will rebuild by hand").toEqual([]);
+  });
+
+  /**
+   * The one that started it. Named separately from the sweep because the sweep would go
+   * green if `geometry` lost its modes, and because "instances draws one primitive many
+   * times" is the specific sentence that would have prevented the seven-fin graph.
+   */
+  it("tells a caller that instances draws one primitive at many points", async () => {
+    const listed = await catalogueSurface().callTool("list_node_definitions", {});
+    const geometry = (
+      listed.data as { definitions: readonly { type: string; description: string | null }[] }
+    ).definitions.find((entry) => entry.type === "geometry");
+
+    const description = (geometry?.description ?? "").toLowerCase();
+    expect(description).toContain("instances");
+    // Not just the word: the description has to say what instancing IS, or a caller reads
+    // a mode name and learns nothing it did not already have from the enum's own labels.
+    expect(description).toMatch(/instances draws one primitive at every point/);
   });
 });

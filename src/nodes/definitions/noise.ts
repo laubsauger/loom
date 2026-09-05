@@ -87,8 +87,15 @@ export const noiseNode: NodeDefinition = {
   version: 1,
   title: "Noise",
   category: "generator",
+  /*
+   * T1214 — "cellular" named no Type this node has: the option is ALLIGATOR, and a
+   * reader who went looking for the word it advertised found no such option. The
+   * second half is the one that gates three controls, and `fourthDimensionMissing` above
+   * already says it in the words reused here — only Perlin 4D and Random have a fourth
+   * dimension for Time Speed to move along.
+   */
   description:
-    "Procedural noise field: perlin/simplex/cellular/random, fractal harmonics, 4D time evolution. TD Noise TOP parameter names.",
+    "Procedural noise field with fractal harmonics: Perlin (2D/3D/4D), Simplex (2D/3D), Alligator (cellular) or Random. Only Perlin 4D and Random carry a fourth dimension for Time Speed to move along; the rest are a still slice you have to transform yourself. TD Noise TOP parameter names.",
   inputs: [],
   outputs: [
     {

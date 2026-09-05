@@ -252,7 +252,17 @@ const RAW_SCHEMA_READS: Readonly<Record<string, { readonly reason: string; reado
   "src/editor/help/help-reference.test.ts": { reason: COMPONENT_MANIFEST, reads: ["manifest.parameters"] },
 
   // ── A definition's own unit test ───────────────────────────────────────────────────
-  "src/agent/surface.test.ts": { reason: TYPE_ONLY_UNIT_TEST, reads: ["solidNode.parameters", "solidNode.parameters"] },
+  "src/agent/surface.test.ts": {
+    reason:
+      `${TYPE_ONLY_UNIT_TEST} And one CATALOGUE-WIDE audit beside them: §T1214 derives which ` +
+      "enums are mode-shaped instead of listing the ones anybody would name (§V316), by " +
+      "calling every sibling parameter's declared `inactiveWhen` under every option of the " +
+      "enum and keeping the ones whose answer moves — the mechanical form of 'switching this " +
+      "changes which other controls apply'. No node is placed there either: the subject is " +
+      "what a manifest DECLARES about itself, and the assertion is then made against the " +
+      "description `list_node_definitions` publishes for that type.",
+    reads: ["solidNode.parameters", "solidNode.parameters", "definition.parameters"],
+  },
   "src/domain/channels/graph-channels.test.ts": { reason: TYPE_ONLY_UNIT_TEST, reads: ["blurNode.parameters"] },
   "src/domain/channels/value-graph.test.ts": {
     reason: TYPE_ONLY_UNIT_TEST,
