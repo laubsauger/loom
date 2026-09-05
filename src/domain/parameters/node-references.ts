@@ -11,6 +11,7 @@ import {
   effectiveParameterSchema,
   resolveParameterSchema,
   type ChannelResolver,
+  type ResolvedParameters,
   type ResolveParametersOptions,
 } from "./resolve.ts";
 
@@ -211,7 +212,7 @@ function asNumber(value: ParameterValue | undefined, reference: string): NodeRef
 }
 
 export function createNodeReferenceReader(options: NodeReferenceOptions): NodeReferenceReader {
-  return readerWithin(options, new Set(), { index: null });
+  return readerWithin(options, new Set(), { index: null, resolved: new Map(), cycles: 0 });
 }
 
 /**
@@ -243,11 +244,68 @@ export function createNodeReferenceReader(options: NodeReferenceOptions): NodeRe
  */
 interface ReaderScope {
   index: ReadonlyMap<string, NodeId> | null;
+  /** T1172: what each target node resolved to, for this reader's lifetime. See `targetOf`. */
+  readonly resolved: Map<NodeId, ResolvedParameters>;
+  /** T1172: how many times §V152's cycle guard has fired. See `targetOf`. */
+  cycles: number;
 }
 
 function nodeIdNamed(scope: ReaderScope, graph: GraphDocument, name: string): NodeId | undefined {
   scope.index ??= nodeNames(graph);
   return scope.index.get(name);
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ * THE TARGET MEMO (T1172) — THE ONE THAT CHANGES THE COMPLEXITY CLASS
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ *
+ * A read is a RESOLVE, and it resolves the target's WHOLE parameter set — recursively,
+ * through the target's own expressions. That is the right semantics (it is what makes
+ * `op('a').par.x` worth whatever `a.x` is worth) and it was being paid once PER READ, so a
+ * chain of references was quadratic and E55's twenty-one reads of `reactor1` resolved
+ * `reactor1` twenty-one times a frame. §T1172 measured it, render cost held constant: 20
+ * chained refs 5.4 ms/frame, 40 chained 15.3, 160 nodes + 160 chained **306 ms**.
+ *
+ * The memo is per READER, which is per frame — the same scope the name index lives in, and
+ * for the same reason: a reader is built by `createParameterReadOptions` and only ever read
+ * from, so there is no window in which the graph it was built over can change underneath it.
+ * A new frame builds a new reader and resolves everything again, which is what keeps a
+ * driven value MOVING (§B181: a memo that survived the frame would freeze every reference
+ * on the number it had when the memo was minted, and every static assertion would stay
+ * green while the picture stopped).
+ *
+ * ⚠ WHY A CYCLE FORBIDS THE ENTRY. The result of a resolve depends on `visited` — but only
+ * through §V152's guard, which is the sole place `visited` is read. So a resolve during
+ * which the guard never fired is PATH-INDEPENDENT and safe to reuse under any other chain:
+ * if a longer chain could make the guard fire inside this subtree, some node of that chain
+ * is reachable from this target and also reaches it, which is a graph cycle — and that same
+ * cycle fires the guard under the shorter chain too, one hop further down. So "no fire in
+ * this subtree" is exactly the condition, and the counter around the resolve is how it is
+ * read. Cycle-carrying documents (which §V152 refuses at authoring time and
+ * `referenceCycleDiagnostics` reports on load) therefore keep resolving exactly as they
+ * did, path by path, and go on naming the loop rather than a memo of it.
+ */
+function targetOf(
+  options: NodeReferenceOptions,
+  scope: ReaderScope,
+  visited: ReadonlySet<NodeId>,
+  targetId: NodeId,
+  target: GraphNode,
+  schema: ParameterSchema,
+): ResolvedParameters {
+  const hit = scope.resolved.get(targetId);
+  if (hit !== undefined) return hit;
+  const firesBefore = scope.cycles;
+  // The recursive step. The target resolves with the same frame and channels, and with
+  // a reader that remembers we came through here — so a loop is caught one hop before
+  // it would repeat rather than however many frames later the stack gives out.
+  const resolved = resolveParameterSchema(target, schema, {
+    ...options.base,
+    nodes: readerWithin(options, new Set([...visited, targetId]), scope),
+  });
+  if (scope.cycles === firesBefore) scope.resolved.set(targetId, resolved);
+  return resolved;
 }
 
 /** What a call site knows: the graph being read, the catalogue, and WHEN. */
@@ -392,7 +450,9 @@ function readerWithin(
     }
     if (visited.has(targetId)) {
       // §V152. Named, not "maximum call stack exceeded": the user joined two specific
-      // nodes and has to be told which.
+      // nodes and has to be told which. T1172: counted, because a resolve whose subtree
+      // fired this guard is path-dependent and may not be memoised — see `targetOf`.
+      scope.cycles += 1;
       return {
         ok: false,
         reason: `${reference}: that reference is a cycle (${[...visited, targetId].join(" → ")})`,
@@ -448,13 +508,8 @@ function readerWithin(
       }
     }
 
-    // The recursive step. The target resolves with the same frame and channels, and with
-    // a reader that remembers we came through here — so a loop is caught one hop before
-    // it would repeat rather than however many frames later the stack gives out.
-    const resolved = resolveParameterSchema(target, schema, {
-      ...options.base,
-      nodes: readerWithin(options, new Set([...visited, targetId]), scope),
-    });
+    // T1172: through the per-frame memo, so a chain of references stops being quadratic.
+    const resolved = targetOf(options, scope, visited, targetId, target, schema);
 
     /**
      * The referenced parameter has to have resolved, not merely produced a number.

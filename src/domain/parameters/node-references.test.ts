@@ -430,3 +430,167 @@ describe("T1172 — the reader's name index", () => {
     });
   });
 });
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ * T1172 — THE TARGET MEMO: THE ONE THAT CHANGES THE COMPLEXITY CLASS
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ *
+ * A read is a RESOLVE of the target's WHOLE parameter set, recursively through the
+ * target's own expressions — right semantics, paid once per read. §T1172 measured a chain
+ * of references as quadratic: 20 chained refs 0.9 ms/frame, 40 chained 4.2, 80 chained
+ * 25.3, 160 chained 171.6, with render cost held at zero on the mock backend. Memoised per
+ * READER it is linear: 0.40, 0.71, 1.40, 3.11 — a 55x cut at 160, and E55 4.7x faster
+ * end to end.
+ *
+ * ⚠ TWO WAYS THIS COULD BE A BUG AND BOTH ARE GATED HERE.
+ *
+ * (1) A MEMO THAT OUTLIVES THE FRAME. Then every reference freezes on the number it had
+ *     when the memo was minted, and the picture stops while every static assertion stays
+ *     green — §B181 exactly, whose 26 tests were all green for months because every one
+ *     of them resolved a STATIC. So the gates below drive references from the frame clock
+ *     and from a channel, and assert the value MOVES when its driver moves.
+ *
+ * (2) A MEMO SERVED ACROSS DIFFERENT `visited` CHAINS. `visited` is read in exactly one
+ *     place — §V152's cycle guard — so a resolve during which the guard never fired is
+ *     path-independent, and an entry is only stored when that holds. The cycle gates are
+ *     what hold that line: a loop must still be NAMED, and a node reachable both through
+ *     a cycle and cleanly must still answer correctly on the clean path.
+ */
+describe("T1172 — the per-reader memo of a referenced node's parameters", () => {
+  it("resolves a CHAIN to the same values it did unmemoised", () => {
+    // The arithmetic is the point: every hop must still be worth what it computes, not
+    // what some earlier hop computed. Four deep, each hop a different multiplier.
+    const a = node("n1", "a", { gain: 2 });
+    const b = node("n2", "b", { gain: expression("op('a').par.gain * 3") });
+    const c = node("n3", "c", { gain: expression("op('b').par.gain * 5") });
+    const d = node("n4", "d", { gain: expression("op('c').par.gain * 7") });
+    const graph = graphOf(a, b, c, d);
+    expect(resolve(graph, b)?.value).toBe(6);
+    expect(resolve(graph, c)?.value).toBe(30);
+    expect(resolve(graph, d)?.value).toBe(210);
+  });
+
+  it("gives two readers of two FRAMES two different numbers through a chain (§B181)", () => {
+    // The memo is per reader and a reader is per frame. If one outlived the frame, this
+    // is the assertion that would go flat — and nothing else here would notice.
+    const clock = node("n1", "clock", { gain: expression("time * 2") });
+    const relay = node("n2", "relay", { gain: expression("op('clock').par.gain + 1") });
+    const sink = node("n3", "sink", { gain: expression("op('relay').par.gain * 10") });
+    const graph = graphOf(clock, relay, sink);
+    const at = (timeSeconds: number) =>
+      resolveParameterSchema(sink, SCHEMA, {
+        frame: { timeSeconds, deltaSeconds: 1 / 60, frameIndex: timeSeconds * 60, mode: "realtime", randomSeed: 1 },
+        nodes: createNodeReferenceReader({
+          graph,
+          schemaOf: () => SCHEMA,
+          base: { frame: { timeSeconds, deltaSeconds: 1 / 60, frameIndex: timeSeconds * 60, mode: "realtime", randomSeed: 1 } },
+        }),
+      }).get("gain");
+
+    expect(at(0)?.value).toBe(10); // (0 * 2 + 1) * 10
+    expect(at(1)?.value).toBe(30); // (2 + 1) * 10
+    expect(at(2)?.value).toBe(50); // (4 + 1) * 10
+    expect(at(0)?.driven).toBe(true);
+    expect(at(2)?.driven).toBe(true);
+  });
+
+  it("follows a CHANNEL through the chain, and moves when the channel moves (§B181)", () => {
+    // The §B181 shape proper: a reference whose target is driven by a live channel. A
+    // memo carried between readers would pin the whole chain on one sample of the wire.
+    const lfo = node("n1", "lfo1");
+    const relay = node("n2", "relay", { gain: expression("op('lfo1').chan.value") });
+    const sink = node("n3", "sink", { gain: expression("op('relay').par.gain * 4") });
+    const graph = graphOf(lfo, relay, sink);
+    const registry = { get: () => ({ parameters: SCHEMA }) } as unknown as NodeRegistryView;
+    const at = (level: number) =>
+      resolveParameterSchema(
+        sink,
+        SCHEMA,
+        createParameterReadOptions({
+          graph,
+          registry,
+          channels: (address: string) => (address === "lfo1" || address === "lfo1:value" ? level : undefined),
+        }),
+      ).get("gain");
+
+    expect(at(0.25)?.value).toBe(1);
+    expect(at(0.5)?.value).toBe(2);
+    expect(at(0.75)?.value).toBe(3);
+    // Not §V108's retained static (SCHEMA's `gain` default is 1) — actually driven.
+    expect(at(0.5)?.driven).toBe(true);
+  });
+
+  it("serves ONE reader's repeated reads of one target consistently", () => {
+    // The steady state E55 is in: twenty-one reads of one target inside one resolve.
+    // Every one must still be the target's own value.
+    const source = node("n1", "src", { gain: 6 });
+    const subject = node("n2", "many", {
+      gain: expression("op('src').par.gain + op('src').par.gain + op('src').par.gain"),
+    });
+    expect(resolve(graphOf(source, subject), subject)?.value).toBe(18);
+  });
+
+  it("still NAMES a cycle rather than memoising one hop of it (§V152)", () => {
+    // The memo refuses to store an entry whose resolve fired the cycle guard, so the
+    // loop is still reported with the path in it — which is the only thing that tells a
+    // user which two nodes they joined.
+    const a = node("n1", "a", { gain: expression("op('b').par.gain") });
+    const b = node("n2", "b", { gain: expression("op('a').par.gain") });
+    const resolved = resolve(graphOf(a, b), a);
+    expect(resolved?.diagnostic?.message).toContain("cycle");
+    expect(resolved?.diagnostic?.message).toContain("n1");
+    expect(resolved?.value).toBe(1);
+  });
+
+  it("does not let a cyclic read poison a clean one that was made after it", () => {
+    /*
+     * THE CASE THE CYCLE CONDITION EXISTS FOR, and it is genuinely path-dependent — which
+     * most cycle shapes are not, because a diagnostic propagates and taints every caller
+     * equally. This one does not:
+     *
+     *   x.gain   = 5                       x.other = op('b').par.gain
+     *   b.gain   = op('x').par.gain        n.gain  = op('b').par.gain
+     *   t.gain   = op('x').par.other
+     *
+     * `x` and `b` close a loop THROUGH `x.other`, so `t` (which reads `other`) is inside
+     * it and reports the loop. `n` reads `b.gain`, which resolves through `x.gain` — a
+     * static — and is worth 5 with no diagnostic at all. But `b`'s resolve does fire the
+     * guard, one level down in `x.other`, so a memo that stored it anyway would hand `n`
+     * the loop's fallback.
+     *
+     * MEASURED with the condition removed: reading `t` and then `n` through one reader
+     * gives `n = 1` and reports `n` as part of a cycle it is not in — a correct reference
+     * broken by nothing but the order somebody else was read in. Both orders are asserted
+     * here because only one of them poisons.
+     */
+    const two: ParameterSchema = {
+      gain: { type: "number", label: "Gain", default: 1 },
+      other: { type: "number", label: "Other", default: 2 },
+    };
+    const graph = graphOf(
+      node("nx", "x", { gain: 5, other: expression("op('b').par.gain") }),
+      node("nb", "b", { gain: expression("op('x').par.gain") }),
+      node("nn", "n", { gain: expression("op('b').par.gain") }),
+      node("nt", "t", { gain: expression("op('x').par.other") }),
+    );
+    const readsOf = (order: readonly string[]) => {
+      const reader = createNodeReferenceReader({ graph, schemaOf: () => two });
+      return order.map((id) =>
+        resolveParameterSchema(graph.nodes[id]!, two, { nodes: reader }).get("gain"),
+      );
+    };
+
+    // The poisoning order: the cyclic read first, the clean one second, one reader.
+    const [cyclicFirst, cleanSecond] = readsOf(["nt", "nn"]);
+    expect(cyclicFirst?.diagnostic?.message).toContain("cycle");
+    expect(cleanSecond?.value).toBe(5);
+    expect(cleanSecond?.diagnostic).toBeNull();
+
+    // And the other way round, where nothing could have poisoned anything.
+    const [cleanFirst, cyclicSecond] = readsOf(["nn", "nt"]);
+    expect(cleanFirst?.value).toBe(5);
+    expect(cleanFirst?.diagnostic).toBeNull();
+    expect(cyclicSecond?.diagnostic?.message).toContain("cycle");
+  });
+});
