@@ -69,6 +69,12 @@ function noBloom(graph: GraphDocument): void {
   (graph.nodes["gain"]!.parameters as Record<string, unknown>)["brightness"] = 0;
   (graph.nodes["gain2"]!.parameters as Record<string, unknown>)["brightness"] = 0;
 }
+/** Neutralise the saturation grade: an HSV saturation boost after the composite is not monotone in
+    luma (adding a pale bloom to a saturated blue pixel desaturates it, and re-saturating lowers
+    its luma), so a claim about the BLOOM reads the frame before the grade's non-monotone step. */
+function noGrade(graph: GraphDocument): void {
+  (graph.nodes["grade"]!.parameters as Record<string, unknown>)["saturation"] = 1;
+}
 
 async function shoot(overrides: Record<string, unknown>, frames: readonly number[], mutate?: (graph: GraphDocument) => void): Promise<Shot[]> {
   const { graph, settings } = e55();
@@ -219,12 +225,12 @@ describe("E55 Reactor — claims", () => {
     expect(dawnError, dawnError ?? "").toBeUndefined();
     // The branch shipped DEAD for three rounds (cut1.brightness was 0, a multiplier) and no
     // gate noticed, because add(x, 0) = x. This is the wire-cut claim that would have.
-    const [lit] = await shoot({}, [60]);
+    const [lit] = await shoot({}, [60], noGrade);
     const { graph, settings } = e55();
     // `add` requires both inputs, so the branch is cut the way the defect cut it: both gains
     // at zero (gain1's brightness is a driven slot; the static 0 replaces it).
-    (graph.nodes["gain"]!.parameters as Record<string, unknown>)["brightness"] = 0;
-    (graph.nodes["gain2"]!.parameters as Record<string, unknown>)["brightness"] = 0;
+    noBloom(graph);
+    noGrade(graph);
     const result = await renderHeadless({ host: nodeGpuHost(), graph, settings, frames: 61, capture: [60], animate: true, fps: 60, outputNodeId: "out" });
     const errors = result.diagnostics.filter((d) => d.severity === "error");
     if (errors.length > 0) throw new Error(errors.map((d) => d.message).join("; "));

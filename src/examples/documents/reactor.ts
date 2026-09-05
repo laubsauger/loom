@@ -155,11 +155,26 @@ import { REACTOR_HAZE_WGSL, REACTOR_WGSL } from "../shaders/reactor.wgsl.ts";
  * 0.1002, last gap 0.0574); range 0.871 → 0.687 — the larger, emptier cells and the
  * bounded hue read lower on the instrument, on purpose, and the drop is not a regression.
  *
+ * THE JUNCTION (the owner: "the Fresnel relief or structure of the glass makes it look
+ * jagged where it meets the frame … the frame may be too thick"). Struts thinned:
+ * frameWidth lane 0.10..0.20 → 0.06..0.12 (width; `strutDepth` is protrusion and stays,
+ * and thinning gave back none of the relief). The jaggedness took four wrong fixes and an
+ * isolation to find — a normal fillet at the glass/strut junction (kept, small: 0.22 tilt
+ * over a 25 mm band; a bigger one turned every border into a grazing-Fresnel rim), a
+ * field-based strut/face decision at the found face point (kept), the strut rim term cut
+ * (kept, it was saturating on tangent flanks) — and the band survived every one of them.
+ * Forcing the plates OPEN removed it entirely: the band was the SEAM GLOW of the middle
+ * shell's shut plates during a collapse, seen through the outer shell's refracting facets,
+ * which break its edge. The seam is now a third as wide and half as bright. Timing with a
+ * control in the same run, under a load that doubled everything: wide 1.01× control,
+ * graze outer 1.05×, graze middle 1.24×, dive centre 1.55× (quiet-day absolutes: 17.1,
+ * 16.0, 19.0, 28.7 against 17.0/20.1).
+ *
  * DUTY (§V903/§V914 — 3600 frames of the pattern through the lanes):
  *   coreGain    = 4.2·level    + 0.5   (env1) → 0.733..2.671, mean 1.14, above retained 75%, hold 0
  *   laserGain   = 4.7·low      − 3.0   (env1) → 0.307..1.583, mean 0.63, retained 0.6 ≈ mean, hold 0
  *   facet       = 1.5·highMid  − 0.05  (env1) → 0.393..1.018, mean 0.71, above retained 74%, hold 0
- *   frameWidth  = 0.41·low     − 0.2   (env2) → 0.101..0.200, mean 0.12, above retained 34%, hold 1
+ *   frameWidth  = 0.25·low     − 0.12  (env2) → 0.064..0.124, mean 0.074, retained 0.07 ≈ median, hold 1
  *   shellGap    = 0.17·highMid + 0.118 (env2) → 0.170..0.239, mean 0.20, above retained 73%, hold 1
  *   swell       = 0.23·level   + 0.96  (env3) → 0.980..1.079, mean 1.00, above retained 28%, hold 1
  *   gain1.brightness = 6·level + 0.1   (env3) → the escalation; retained 1.3 inside the range
@@ -224,7 +239,7 @@ export const reactorDocument = document(
           shieldInner: expressionSlot("op('reactor1').par.shieldInner", 0),
           stations: expressionSlot("op('reactor1').par.stations", 1),
           travel: expressionSlot("op('reactor1').par.travel", 96),
-          frameWidth: expressionSlot("op('reactor1').par.frameWidth", 0.12),
+          frameWidth: expressionSlot("op('reactor1').par.frameWidth", 0.07),
           blocked: expressionSlot("op('reactor1').par.blocked", 0.1),
           strutDepth: expressionSlot("op('reactor1').par.strutDepth", 0.04),
           shellGap: expressionSlot("op('reactor1').par.shellGap", 0.26),
@@ -282,7 +297,7 @@ export const reactorDocument = document(
           laserGain: drivenSlot("lowb1:low", 0.6),
           facet: drivenSlot("highb1:highMid", 0.7),
           swell: drivenSlot("swellb1:level", 1),
-          frameWidth: drivenSlot("barb1:low", 0.12),
+          frameWidth: drivenSlot("barb1:low", 0.07),
           shellGap: drivenSlot("gapb1:highMid", 0.26),
           shieldOuter: drivenSlot("shieldo1:level", 0),
           shieldInner: drivenSlot("shieldi1:level", 0),
@@ -349,8 +364,8 @@ export const reactorDocument = document(
       node("lowb", "valueMath", [-300, 800], { operand: -3.0, operation: "add" }, { label: "lowb1" }),
       node("highx", "valueMath", [-600, 1000], { operand: 1.5, operation: "multiply" }, { label: "highx1" }),
       node("highb", "valueMath", [-300, 1000], { operand: -0.05, operation: "add" }, { label: "highb1" }),
-      node("barx", "valueMath", [-600, 1200], { operand: 0.41, operation: "multiply" }, { label: "barx1" }),
-      node("barb", "valueMath", [-300, 1200], { operand: -0.2, operation: "add" }, { label: "barb1" }),
+      node("barx", "valueMath", [-600, 1200], { operand: 0.25, operation: "multiply" }, { label: "barx1" }),
+      node("barb", "valueMath", [-300, 1200], { operand: -0.12, operation: "add" }, { label: "barb1" }),
       node("gapx", "valueMath", [-600, 1400], { operand: 0.2, operation: "multiply" }, { label: "gapx1" }),
       node("gapb", "valueMath", [-300, 1400], { operand: 0.16, operation: "add" }, { label: "gapb1" }),
       node("swellx", "valueMath", [-600, 1600], { operand: 0.23, operation: "multiply" }, { label: "swellx1" }),

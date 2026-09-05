@@ -446,8 +446,11 @@ fn shadeFrame(p: vec3f, n: vec3f, d: vec3f, k: i32, edge01: f32) -> vec3f {
           + light * 0.09 * mix(coreRGB(), vec3f(1.0), 0.5) * (0.5 + 0.5 * max(dot(n, -d), 0.0))
           + base * 0.25 * back * light * edgeRGB()
           + spec * light * 0.6 * mix(coreRGB(), vec3f(1.0), 0.5)
-          + rim * light * 0.35 * edgeRGB()
-          + env * (0.15 + 0.5 * rim);
+          // The rim term is small on purpose: a strut's flank is tangent to the view, so a
+          // strong rim saturated along every strut side and drew the band the owner read as
+          // "jagged where the glass meets the frame" (isolated with the relief off).
+          + rim * light * 0.08 * edgeRGB()
+          + env * (0.15 + 0.15 * rim);
   let bleed = smoothstep(0.55, 1.0, edge01) * light * 0.3 * coreRGB();
   return lit + bleed;
 }
@@ -586,12 +589,17 @@ fn trace(ro: vec3f, rd: vec3f, jitter: f32, uv: vec2f) -> vec3f {
         let sdFace = (rr - outerRadiusAt(normalize(ph))) * faceSign;
         if (sdFace < 0.0) {
           var lo = twPrev; var hi = tw;
-          for (var b: i32 = 0; b < 4; b = b + 1) {
+          for (var b: i32 = 0; b < 6; b = b + 1) {
             let mid = 0.5 * (lo + hi);
             let pm = o + d * mid;
             if ((length(pm) - outerRadiusAt(normalize(pm))) * faceSign < 0.0) { hi = mid; } else { lo = mid; }
           }
-          tw = hi; ph = o + d * tw; faceHit = true; break;
+          tw = hi; ph = o + d * tw;
+          // Strut or face is decided by the FIELD at the found face point, not by which
+          // threshold the walk tripped first: the walk-order decision cut the strut's base
+          // against the face in a ragged band.
+          if (strutSdf(ph, 0).x < 0.002) { hit = true; sdLast = 0.0; } else { faceHit = true; }
+          break;
         }
         twPrev = tw;
         // The floor on the step stays small: a floor longer than the strut distance breaks
@@ -621,7 +629,10 @@ fn trace(ro: vec3f, rd: vec3f, jitter: f32, uv: vec2f) -> vec3f {
         let c = cellEdge(shellDir(ph, 0), shellFreq(0), 0.0);
         let across = normalize(c.across - radial * dot(c.across, radial) + vec3f(1.0e-5));
         let onCrown = smoothstep(0.0, depth * 0.6, abs(rr - R));
-        let ns = normalize(radial * sign(rr - R) * (0.35 + onCrown) + across * (1.0 - onCrown) * 0.9);
+        // The flank leans back toward the shell normal at its base — the strut side of the
+        // same fillet the glass side rotates into — so the two normals meet, not step.
+        let base = smoothstep(depth * 0.5, depth * 1.0, abs(rr - R));
+        let ns = normalize(radial * sign(rr - R) * (0.35 + onCrown) + mix(radial * 0.35 + across * 0.65, across, base) * (1.0 - onCrown) * 0.9);
         let prof = 1.0 - clamp((c.edge - 0.0) / max(barWidthAt(c, 0), 1.0e-4), 0.0, 1.0);
         col = col + tp * shadeFrame(ph, ns, d, 0, prof);
         tp = vec3f(0.0);
@@ -661,10 +672,13 @@ fn trace(ro: vec3f, rd: vec3f, jitter: f32, uv: vec2f) -> vec3f {
       let w2 = barWidthAt(c2, k);
       let wall = c2.edge < w2 * 1.6;
       let n2 = select(nOut, normalize(c2.across - nOut * dot(c2.across, nOut) + vec3f(1.0e-5)) * -1.0, wall);
-      let seam = smoothstep(w2 + 0.3, w2, c2.edge);
+      // The seam is NARROW: a wide one, seen through the outer shell's refracting facets
+      // during a collapse, was the "jagged where the glass meets the frame" band — isolated
+      // by forcing the plates open, which removed it entirely.
+      let seam = smoothstep(w2 + 0.1, w2, c2.edge);
       let heat = coreLightBare(p2) * 0.6;
       let plate = shadeFrame(p2, n2, d, k, seam) * select(0.75, 0.35, wall)
-                + seam * seam * heat * 1.4 * mix(coreRGB(), vec3f(1.0, 0.9, 0.7), 0.3)
+                + seam * seam * heat * 0.7 * mix(coreRGB(), vec3f(1.0, 0.9, 0.7), 0.3)
                 + select(heat * 0.035 * coreRGB() * max(dot(n2, -d), 0.0), vec3f(0.0), wall);
       // TRANSLUCENT: the plate is not opaque — it adds its own lit colour and lets a share
       // of the ray through, so the core shows through a shut shell as a dull glow and a
@@ -683,9 +697,18 @@ fn trace(ro: vec3f, rd: vec3f, jitter: f32, uv: vec2f) -> vec3f {
       break;
     }
 
-    // Glass face: a per-cell facet, Fresnel-split.
+    // Glass face: a per-cell facet, Fresnel-split. THE JUNCTION (the owner: "jagged where
+    // the glass meets the frame"): Fresnel is a steep power of the normal, so a normal STEP
+    // at the strut border became a bright/dark stair, worst at grazing incidence. The facet
+    // tilt fades to nothing over a fillet band beside the strut and the glass normal rotates
+    // into the strut's flank there, so the normal is continuous across the junction.
     let tilt = (hash33(cell.id) - 0.5) * 2.0;
-    let nf = normalize(nOut + (tilt - nOut * dot(tilt, nOut)) * params.facet * 0.35);
+    let border = clamp((cell.edge - w) * 0.5 * shellRadius(k) / shellFreq(k) / 0.025, 0.0, 1.0);
+    let flank = normalize(cell.across - nOut * dot(cell.across, nOut) + vec3f(1.0e-5));
+    let nFacet = normalize(nOut + (tilt - nOut * dot(tilt, nOut)) * params.facet * 0.35 * border);
+    // A fillet is a SMALL rotation (~20°) — a bigger one turned every border into a grazing
+    // Fresnel rim, brighter than the stair it replaced.
+    let nf = normalize(mix(normalize(nOut + flank * 0.22), nFacet, smoothstep(0.0, 1.0, border)));
     let cosI = clamp(dot(-d, nf), 0.0, 1.0);
     let etaHere = select(1.0 / eta, eta, entering);
     // Schlick alone is ~3% head-on and only grows at grazing, so a colour that lives in it
@@ -700,7 +723,7 @@ fn trace(ro: vec3f, rd: vec3f, jitter: f32, uv: vec2f) -> vec3f {
     let lightHere = coreLightBare(p) * 0.6;
     col = col + tp * glassRGBk(k) * select(0.008, 0.02, k == 0) * lightHere;
     // The reflected share reads the core's glow, per channel offset by dispersion.
-    let dsp = params.dispersion * 0.6;
+    let dsp = params.dispersion * 0.35;
     let gR = coreGlow(p, normalize(refl + across3(nf) * dsp)).r;
     let gG = coreGlow(p, refl).g;
     let gB = coreGlow(p, normalize(refl - across3(nf) * dsp)).b;
