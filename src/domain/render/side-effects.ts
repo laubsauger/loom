@@ -200,6 +200,7 @@ export const NODE_SIDE_EFFECTS: Readonly<Record<string, SideEffect>> = {
   pointProximity: "none",
   pointGather: "none",
   pointRange: "none",
+  pointTransform: "none",
   /*
    * T947. THE PLANNER, NOT THE TRANSPORT — and this row is the first real exercise of the
    * split T949 exists to make, so it is argued rather than filled in.

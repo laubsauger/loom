@@ -619,3 +619,220 @@ ${finish}
   out_value[index] = result;
 }`;
 }
+
+/**
+ * Transform (T1205) — MOVE, TURN AND SCALE A CLOUD AS A WHOLE, about a pivot.
+ *
+ * ⚑ WHY THIS IS A POINT NODE AND NOT A PARAMETER ON `geometry`. The owner reached for
+ * `geometry.scale` and got points that "freak out", which is the honest reading of what
+ * that parameter is: `scale` there is PER-POINT SIZE — the billboard's, the instance
+ * primitive's — and `scene.ts` says so in its own refusal ("a surface spans its grid and
+ * has no per-point size"). The same file also refuses a per-object ORIENTATION by name
+ * ("a geometry has no per-object orientation to apply it to"), which is a stated design
+ * position, not a hole. So the transform belongs where TD puts it: on THE DATA, as a
+ * Transform SOP does, where it composes with the rest of the point chain and serves every
+ * downstream consumer — export, laser, proximity, topology, a second render — instead of
+ * only the one renderer that would have owned an object matrix.
+ *
+ * ⚑⚑ THE PIVOT IS THE WHOLE FEATURE. Scaling about the ORIGIN moves the cloud off screen
+ * as it grows; scaling about its own CENTROID grows it IN PLACE, and "make it take up more
+ * of the screen" is the second one. The centroid is therefore the DEFAULT, with origin and
+ * an explicit point available for the cases where the frame, not the cloud, is the anchor.
+ *
+ * ⚑ THE CENTROID IS A REAL REDUCTION, COMPUTED THIS FRAME, NOT ESTIMATED. Two extra
+ * dispatches ahead of the apply pass: a workgroup tree reduction into one partial per
+ * block, then a single-thread serial sum over the partials. Both are the shape
+ * `lifecycle.ts`'s scan already uses and for the same reason — fixed order, no atomics,
+ * so the answer is bit-identical run to run and device to device (§V74/§V147). A RUNNING
+ * ESTIMATE was the alternative and it is refused: its lag is a cloud that visibly SLIDES
+ * while the true centroid moves, which is exactly the artefact this node exists to remove.
+ * The full reduction is cheap enough that the trade never had to be made — see the node's
+ * docblock for the measured number.
+ *
+ * ⚑ PARKED POINTS ARE EXCLUDED FROM THE CENTROID AND PASS THROUGH UNTRANSFORMED. A parked
+ * point sits at exactly `PARKED` (z = -1e6), which is 40 000 scene units from anything
+ * real: average one of them into a 25k-point centroid and the cloud jumps. And a parked
+ * point that got TRANSFORMED would be dragged back toward the camera by a large enough
+ * translate — a point `pointRange` deleted, reappearing. Both are the same test, and it is
+ * an EXACT comparison against the whole sentinel vector rather than a threshold on z:
+ * -1e6 is exactly representable in f32 and is written as a literal, so it reads back bit
+ * for bit, while a threshold would silently swallow a legitimately distant point.
+ */
+export const TRANSFORM_REDUCE_WORKGROUP_SIZE = 256;
+
+/** The park spot, shared by every pass below. Matches `pointRangeWgsl` and points-from-texture. */
+const PARKED_WGSL = "const PARKED: vec3f = vec3f(0.0, 0.0, -1.0e6);";
+
+/**
+ * Pass 1 of the centroid: one `vec4f(sum.xyz, liveCount)` per workgroup.
+ *
+ * The tree halves in shared memory with the barrier OUTSIDE the branch, so control flow at
+ * every barrier is uniform. Summation order is fixed by the tree, so two runs agree to the
+ * bit — the property a "roughly the middle" reduction would have thrown away for nothing.
+ */
+export function pointCentroidPartialsWgsl(options: { counted: boolean }): string {
+  const size = TRANSFORM_REDUCE_WORKGROUP_SIZE;
+  const countDeclaration = options.counted
+    ? "@group(0) @binding(3) var<storage, read> in_count: array<u32>;\n"
+    : "";
+  const liveExpression = options.counted ? "min(params.count, in_count[0])" : "params.count";
+  return `struct CentroidParams {
+  count: u32,
+};
+
+@group(0) @binding(0) var<uniform> params: CentroidParams;
+@group(0) @binding(1) var<storage, read> in_position: array<vec3f>;
+@group(0) @binding(2) var<storage, read_write> partials: array<vec4f>;
+${countDeclaration}
+${PARKED_WGSL}
+
+var<workgroup> sums: array<vec4f, ${size}>;
+
+@compute @workgroup_size(${size})
+fn main(
+  @builtin(global_invocation_id) gid: vec3u,
+  @builtin(local_invocation_id) lid: vec3u,
+  @builtin(workgroup_id) wid: vec3u,
+) {
+  let index = gid.x;
+  var contribution = vec4f(0.0);
+  if (index < ${liveExpression}) {
+    let p = in_position[index];
+    /* A parked point is not a member of the cloud; averaging it in moves the centroid
+       40 000 units. The w lane counts the members, so the divisor agrees by construction. */
+    if (!all(p == PARKED)) {
+      contribution = vec4f(p, 1.0);
+    }
+  }
+  sums[lid.x] = contribution;
+  workgroupBarrier();
+
+  var stride = ${size / 2}u;
+  loop {
+    if (stride == 0u) {
+      break;
+    }
+    if (lid.x < stride) {
+      sums[lid.x] = sums[lid.x] + sums[lid.x + stride];
+    }
+    workgroupBarrier();
+    stride = stride >> 1u;
+  }
+
+  if (lid.x == 0u) {
+    partials[wid.x] = sums[0];
+  }
+}`;
+}
+
+/**
+ * Pass 2 of the centroid: one thread, serial over the block partials, into `centroid[0]`.
+ *
+ * `xyz` is the mean, `w` is the member count kept alongside it — an EMPTY set (every point
+ * parked, or a zero-length input) yields the ORIGIN and a count of zero, which makes the
+ * transform a scale about the origin rather than a NaN. The mean of no points is undefined
+ * and the origin is the one answer that renders as "nothing moved" instead of as nothing.
+ */
+export function pointCentroidFinalizeWgsl(): string {
+  return `struct FinalizeParams {
+  blocks: u32,
+};
+
+@group(0) @binding(0) var<uniform> params: FinalizeParams;
+@group(0) @binding(1) var<storage, read> partials: array<vec4f>;
+@group(0) @binding(2) var<storage, read_write> centroid: array<vec4f>;
+
+@compute @workgroup_size(1)
+fn main(@builtin(global_invocation_id) gid: vec3u) {
+  if (gid.x != 0u) {
+    return;
+  }
+  /* Serial, one thread, fixed order — the same determinism argument the block scan in
+     lifecycle.ts makes, and the block count is small enough that it costs nothing. */
+  var acc = vec4f(0.0);
+  var block = 0u;
+  while (block < params.blocks) {
+    acc = acc + partials[block];
+    block = block + 1u;
+  }
+  if (acc.w > 0.0) {
+    centroid[0] = vec4f(acc.xyz / acc.w, acc.w);
+  } else {
+    centroid[0] = vec4f(0.0);
+  }
+}`;
+}
+
+/**
+ * Pass 3: apply. `p' = pivot + R · (S ⊙ (p − pivot)) + T`.
+ *
+ * ⚑ ROTATION IS EULER XYZ IN A DECLARED ORDER, AND THAT IS NOT THE MISTAKE `scene.ts:504`
+ * NAMES. That note refuses Euler angles for a per-point ORIENTATION ATTRIBUTE, because
+ * "adding angles is not composing rotations" and a per-point frame has to interpolate. Two
+ * of this node in a chain do not add angles — each builds its own matrix and the matrices
+ * MULTIPLY, which is composition. What Euler still costs here is gimbal lock and the
+ * absence of a slerp between two authored orientations; against that, a quaternion is a
+ * control no one can author by hand in an inspector, and every DCC's Transform SOP made
+ * the same call. The order is X then Y then Z (`R = Rz·Ry·Rx`) and it is written down
+ * because an undeclared order is the thing that makes two tools disagree.
+ *
+ * Scale is a vec3f rather than a scalar because it costs the same instruction and a
+ * flattened cloud is a real look; the default is (1,1,1) so it is inert until set.
+ */
+export function pointTransformWgsl(options: {
+  /** 0 = centroid (the reduction runs), 1 = origin, 2 = the authored point. */
+  pivot: "centroid" | "origin" | "point";
+}): string {
+  const centroidDeclaration =
+    options.pivot === "centroid"
+      ? "@group(0) @binding(3) var<storage, read> centroid: array<vec4f>;\n"
+      : "";
+  const pivotExpression =
+    options.pivot === "centroid"
+      ? "centroid[0].xyz"
+      : options.pivot === "point"
+      ? "params.pivotPoint"
+      : "vec3f(0.0)";
+  return `struct TransformParams {
+  translate: vec3f,
+  scale: vec3f,
+  rotate: vec3f,
+  pivotPoint: vec3f,
+  count: u32,
+};
+
+@group(0) @binding(0) var<uniform> params: TransformParams;
+@group(0) @binding(1) var<storage, read> in_position: array<vec3f>;
+@group(0) @binding(2) var<storage, read_write> out_position: array<vec3f>;
+${centroidDeclaration}
+${PARKED_WGSL}
+
+/* R = Rz(z) * Ry(y) * Rx(x): X first, then Y, then Z. Columns, as WGSL wants them. */
+fn rotation(r: vec3f) -> mat3x3f {
+  let c = cos(r);
+  let s = sin(r);
+  return mat3x3f(
+    vec3f(c.y * c.z, c.y * s.z, -s.y),
+    vec3f(s.x * s.y * c.z - c.x * s.z, s.x * s.y * s.z + c.x * c.z, s.x * c.y),
+    vec3f(c.x * s.y * c.z + s.x * s.z, c.x * s.y * s.z - s.x * c.z, c.x * c.y),
+  );
+}
+
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid: vec3u) {
+  let index = gid.x;
+  if (index >= params.count) {
+    return;
+  }
+  let p = in_position[index];
+  /* A parked point stays parked. Transforming it would drag a DELETED point back into
+     shot under any large enough translate — see the docblock. */
+  if (all(p == PARKED)) {
+    out_position[index] = p;
+    return;
+  }
+  let pivot = ${pivotExpression};
+  let local = (p - pivot) * params.scale;
+  out_position[index] = pivot + rotation(params.rotate) * local + params.translate;
+}`;
+}

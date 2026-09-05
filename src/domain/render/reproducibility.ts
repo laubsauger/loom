@@ -252,6 +252,11 @@ export const NODE_REPRODUCIBILITY: Readonly<Record<string, Reproducibility>> = {
   // T983. PURE: one dispatch that keeps or parks each point by an attribute range —
   // a function of the input buffers and the range uniforms, no clock, no RNG, no async.
   pointRange: "pure",
+  // T1205. PURE, and the centroid reduction is the part that needs saying: it is a
+  // workgroup tree plus a ONE-THREAD serial sum over the block partials, so the summation
+  // order is fixed by the tree and by the loop rather than by the scheduler — no atomics
+  // (§V74), same answer run to run and device to device. No clock, no RNG, no async.
+  pointTransform: "pure",
   // T947. PURE, and the frame clock is the reason that needs saying: the scan-window
   // cursor reads the SHARED FRAME TIME (timeSeconds/deltaSeconds through the T172
   // uniform merge), which is timeline state, not a wall clock — the same frame inputs
