@@ -47,6 +47,27 @@ export interface SaveSelectionInput {
   name: string;
   description?: string;
   nodes: NodeRegistryView;
+  /**
+   * Author-chosen SOCKET NAMES, keyed by the internal endpoint that crosses the boundary
+   * (`"<nodeId>.<portId>"`) — `{ "matte.input": "depth" }` (T1194).
+   *
+   * The default names a socket after the port it happens to FEED, which says what the
+   * signal is plugged INTO, never what it IS: two `pointKernel.field` inputs come out as
+   * `field` and `field_2` when one is a colour map and the other a depth map. No default
+   * can fix that — the outer source node's label describes one particular signal (Bloom's
+   * demo plate is a noise field; its socket is not "noise"), and the target port's own
+   * LABEL is "Input"/"Field" across the catalogue. The name is a fact only the author
+   * holds, so this is where it enters: ONCE, AT BIRTH.
+   *
+   * At birth, and nowhere else, on purpose. `externalId` is the ADDRESS the parent's edges
+   * are wired by, and §B170/T1046 froze it against later renames — a rename moves what a
+   * socket SAYS (its label), never what it is wired BY. A name supplied here precedes any
+   * wiring, so it re-addresses nothing.
+   *
+   * A key naming an endpoint that does not cross the boundary is simply unused: an author
+   * revising a selection must not have the save refused over a stale hint.
+   */
+  portNames?: Readonly<Record<string, string>>;
 }
 
 function uniqueId(taken: Set<PortId>, preferred: PortId): PortId {
@@ -63,6 +84,11 @@ function uniqueId(taken: Set<PortId>, preferred: PortId): PortId {
 
 export function buildComponentFromSelection(input: SaveSelectionInput): ComponentFromSelection {
   const diagnostics: RuntimeDiagnostic[] = [];
+  /** The author's name for the socket this endpoint crosses on, else the port id (T1194). */
+  const socketName = (endpoint: { nodeId: NodeId; portId: PortId }): PortId => {
+    const authored = input.portNames?.[`${endpoint.nodeId}.${endpoint.portId}`];
+    return authored !== undefined && authored.trim() !== "" ? authored.trim() : endpoint.portId;
+  };
   // Sorted and deduplicated: two actors running the same command must build the same
   // component, down to the order of the exposed ports (§V40).
   const selected = [...new Set(input.nodeIds)].sort();
@@ -170,7 +196,7 @@ export function buildComponentFromSelection(input: SaveSelectionInput): Componen
         continue;
       }
       if (standing === undefined && boundaryFits(variantType, outerPort?.type, targetPort?.type)) {
-        const name = uniqueId(takenIds, edge.target.portId);
+        const name = uniqueId(takenIds, socketName(edge.target));
         const boundaryId = freshBoundaryId("in", name);
         // Left of the consumer it feeds, so the entry reads left-to-right; stacked by
         // creation order, which the y-sorted derivation then reads back as socket order.
@@ -200,7 +226,7 @@ export function buildComponentFromSelection(input: SaveSelectionInput): Componen
       }
 
       // Legacy path: exotic or mismatched port types keep the direct exposure.
-      const externalId = uniqueId(takenIds, edge.target.portId);
+      const externalId = uniqueId(takenIds, socketName(edge.target));
       inputs.push({
         externalId,
         label: targetPort?.label ?? edge.target.portId,
@@ -229,7 +255,7 @@ export function buildComponentFromSelection(input: SaveSelectionInput): Componen
       continue;
     }
     if (boundaryFits(outVariant, sourcePort?.type, outerInputPort?.type)) {
-      const name = uniqueId(takenIds, edge.source.portId);
+      const name = uniqueId(takenIds, socketName(edge.source));
       const boundaryId = freshBoundaryId("out", name);
       const anchor = input.graph.nodes[edge.source.nodeId];
       nodes[boundaryId] = {
@@ -256,7 +282,7 @@ export function buildComponentFromSelection(input: SaveSelectionInput): Componen
 
     let externalId = outputByInternal.get(internalKey);
     if (externalId === undefined) {
-      externalId = uniqueId(takenIds, edge.source.portId);
+      externalId = uniqueId(takenIds, socketName(edge.source));
       outputByInternal.set(internalKey, externalId);
       outputs.push({
         externalId,

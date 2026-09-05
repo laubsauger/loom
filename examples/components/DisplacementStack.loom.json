@@ -40,10 +40,10 @@
                 "portId": "input"
               }
             },
-            "in_source_feed_1": {
-              "id": "in_source_feed_1",
+            "in_picture_feed_1": {
+              "id": "in_picture_feed_1",
               "source": {
-                "nodeId": "in_source",
+                "nodeId": "in_picture",
                 "portId": "out"
               },
               "target": {
@@ -91,10 +91,10 @@
               },
               "type": "noise"
             },
-            "in_source": {
+            "in_picture": {
               "definitionVersion": 1,
-              "id": "in_source",
-              "label": "source",
+              "id": "in_picture",
+              "label": "picture",
               "parameters": {},
               "position": {
                 "x": 0,
@@ -194,9 +194,9 @@
         },
         "inputs": [
           {
-            "externalId": "source",
-            "label": "source",
-            "nodeId": "in_source",
+            "externalId": "picture",
+            "label": "picture",
+            "nodeId": "in_picture",
             "portId": "in"
           }
         ],
@@ -299,7 +299,7 @@
         },
         "target": {
           "nodeId": "nd_displacementStack1",
-          "portId": "source"
+          "portId": "picture"
         }
       },
       "ed_displacementStack3": {

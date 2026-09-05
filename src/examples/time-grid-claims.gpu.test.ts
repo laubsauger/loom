@@ -180,15 +180,15 @@ function probeGraph(wall: WallParameters, card: Card = "stamp"): GraphDocument {
       }),
       /* The MATTE input, deterministic: a luma key on the same card. Two of the claims
          below (the dropout, and the matte travelling through the ring) are about what
-         arrives on `in2`, so the probe has to supply it rather than leave it dark. */
+         arrives on `matte`, so the probe has to supply it rather than leave it dark. */
       node("key", "threshold", { threshold: 0.5, softness: 0.05, channel: "luminance", compare: "greater" }),
       node("out", "output", { toneMap: "none" }),
     ]) as GraphDocument["nodes"],
     edges: Object.fromEntries([
       edge("e-bed-src", ["bed", "out"], ["src", "input"]),
       edge("e-src-key", ["src", "out"], ["key", "input"]),
-      edge("e-src-wall", ["src", "out"], ["wall", "in1"]),
-      edge("e-key-wall", ["key", "out"], ["wall", "in2"]),
+      edge("e-src-wall", ["src", "out"], ["wall", "picture"]),
+      edge("e-key-wall", ["key", "out"], ["wall", "matte"]),
       edge("e-wall-out", ["wall", "out"], ["out", "input"]),
     ]) as GraphDocument["edges"],
   };
@@ -905,14 +905,14 @@ describe("TimeGrid — one stream, many moments", () => {
    * the wall. The owner changed its model, its backend and its resolution and the picture
    * never moved, because the thing he was tuning was not on the path the output takes. The
    * claim above — nine cells holding nine moments — could not have caught it: it says
-   * nothing about `in2`, and it is green either way.
+   * nothing about `matte`, and it is green either way.
    *
    * ## Why this is two assertions and not one
    *
    * THE ROUTE is structural and must be asserted structurally, because the pixel half is
    * nearly blind. TimeGrid consumes its matte in exactly ONE place — the per-cell dropout —
    * and a dropout is rare on purpose (period 47, life 12, share 0.30, odds scaling with
-   * cell brightness). MEASURED over frames 60-479 of this document: driving `wall1.in2`
+   * cell brightness). MEASURED over frames 60-479 of this document: driving `wall1.matte`
    * from all-white to all-black moves SIX frames out of 420 and not one component
    * elsewhere. A pixel gate alone would therefore pass on 414 of every 420 frames with the
    * matte severed — which is exactly the state that shipped.
@@ -948,7 +948,7 @@ describe("TimeGrid — one stream, many moments", () => {
     ).toBe("matte");
     expect(
       Object.values(graph.edges).some(
-        (edge) => edge.source.nodeId === "mpick" && edge.target.nodeId === "wall" && edge.target.portId === "in2",
+        (edge) => edge.source.nodeId === "mpick" && edge.target.nodeId === "wall" && edge.target.portId === "matte",
       ),
       "mpick1 must reach the wall's matte input",
     ).toBe(true);

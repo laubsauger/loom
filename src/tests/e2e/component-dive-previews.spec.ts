@@ -178,10 +178,12 @@ test("a component's interior POINTSET previews light, and so does the instance's
   await page.mouse.dblclick(box.x + box.width / 2, box.y + Math.min(box.height / 2, 200));
   await expect(page.locator('.react-flow__node[data-id="grid"]')).toBeVisible();
 
-  // THE SPLIT, asserted as a split. `in_field`/`in_field_2` are the component's TEXTURE
+  // THE SPLIT, asserted as a split. `in_colour`/`in_depth` are the component's TEXTURE
   // input boundaries and they drew fine throughout the defect; the four pointset tiles
   // are the ones that were dark. Both are named so a regression says which half moved.
-  for (const key of ["in_field:out", "in_field_2:out"]) await expectSignal(key);
+  // T1194 renamed them from `in_field`/`in_field_2` — same two boundaries, and the names
+  // now say which is which instead of which port they happen to feed.
+  for (const key of ["in_colour:out", "in_depth:out"]) await expectSignal(key);
   // `out_out` is the component's Out boundary: its own flat row is a bare marker, so its
   // tile resolves THROUGH the boundary to the producer wired into it (T1019) — which is
   // a synthesized pointset preview like the other three.
@@ -225,7 +227,7 @@ test("a component's interior POINTSET previews light, and so does the instance's
         hairline: px(getComputedStyle(node, "::before").height),
       };
     };
-    return { in: read("in_field", "portIn"), out: read("out_out", "portOut") };
+    return { in: read("in_colour", "portIn"), out: read("out_out", "portOut") };
   });
   const inLead = leads.in;
   const outLead = leads.out;

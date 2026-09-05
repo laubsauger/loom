@@ -74,6 +74,20 @@ export interface StarterComponentSpec {
   /** What the author selected before hitting "save selection as component". */
   readonly selection: readonly NodeId[];
   /**
+   * What each boundary socket is CALLED, keyed by the internal endpoint it crosses on
+   * (`"<nodeId>.<portId>"`) — T1194.
+   *
+   * Mandatory in the shipped set, and the reason is the owner's: a socket named after the
+   * port it feeds says what the signal is plugged INTO, not what it IS. `DepthPoints` shipped
+   * `field` and `field_2` because `pointKernel` calls both inputs `field`; one is the colour
+   * map the paint kernel tints from, the other the depth map the carve kernel unprojects.
+   * Only the author knows which, so the author says so, here, once, before anything is wired.
+   *
+   * Outputs keep `out`. A component with exactly one output has nothing to disambiguate, and
+   * `out` is what every node in the catalogue calls its result.
+   */
+  readonly portNames: Readonly<Record<string, string>>;
+  /**
    * The parameter page, re-authored rather than copied (§V80).
    *
    * Every `definition.default` MUST equal the value the internal target already holds. A
@@ -1160,6 +1174,7 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
     // The circle stays outside. What makes this reusable is the LOOP, not the thing
     // being echoed — a component that shipped its own source could only echo that.
     selection: ["over", "echo", "drift", "soften", "decay"],
+    portNames: { "over.in1": "picture" },
     publish: [
       {
         key: "persistence",
@@ -1214,6 +1229,7 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
     // and `palette`/`tint`, which give the halo its chromatic falloff. The selection has
     // to stay CONTIGUOUS or the carved component is a chain with holes in it.
     selection: ["hot", "floor", "bright", "glow", "palette", "tint", "combine"],
+    portNames: { "hot.input": "picture" },
     publish: [
       {
         key: "threshold",
@@ -1250,6 +1266,7 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
     description: "Fold, mirror-tile and spin — three extend modes doing one job.",
     host: kaleidoscopeDocument,
     selection: ["fold", "facets", "spin"],
+    portNames: { "fold.input": "picture" },
     publish: [
       {
         key: "segments",
@@ -1306,6 +1323,7 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
     // shape it, place it, then displace — and a component that took the field as an input
     // would hand the user back the two nodes the stack is about.
     selection: ["field", "shape", "place", "warp"],
+    portNames: { "warp.source": "picture" },
     publish: [
       {
         key: "amount",
@@ -1364,6 +1382,7 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
     description: "Range, tone and a legal-range tail — the grade you reach for on any input.",
     host: mediaGradeHost,
     selection: ["range", "tone", "legal"],
+    portNames: { "range.input": "picture" },
     publish: [
       {
         key: "blacklevel",
@@ -1413,6 +1432,7 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
     // and reads its normalised channels, not a seven-node chain rebuilt by hand (T821). The
     // probe stays outside — the cut clamp→probe value edge synthesizes the value output.
     selection: ["beat", "peak", "floor", "num", "den", "norm", "clamp"],
+    portNames: {},
     publish: [
       {
         key: "bpm",
@@ -1458,6 +1478,7 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
     // TEXTURE, which is what lets the ML depth node, a depth camera, a rendered depth
     // buffer or a hand-drawn gradient all feed the same unit (T958).
     selection: ["grid", "carve", "paint"],
+    portNames: { "paint.field": "colour", "carve.field": "depth" },
     publish: [
       {
         key: "resolution",
@@ -1555,6 +1576,7 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
       "Model-free background cut: a depth map thresholds into a soft matte and masks the picture. Removes things further away — a real matte knows who the person is; this never needs to.",
     host: depthCutHost,
     selection: ["matte", "cut"],
+    portNames: { "matte.input": "depth", "cut.input": "picture" },
     publish: [
       {
         key: "threshold",
@@ -1605,6 +1627,7 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
        just a texture at this boundary, which is the whole reason this is a component and
        not a document (T956's lesson, DepthPoints' precedent). */
     selection: ["churnx", "churny", "pack", "fit", "grid", "map", "scan", "break", "sweep", "crush", "guard", "palette", "tone", "paint", "tint", "mix"],
+    portNames: { "pack.in1": "picture", "pack.in2": "matte" },
     publish: [
       /*
        * THE PERFORMANCE PAGE. Eight knobs, and the ones that decide the LAYOUT are
@@ -1842,6 +1865,7 @@ async function authorComponent(
       name: spec.name,
       componentId: spec.componentId,
       description: spec.description,
+      portNames: spec.portNames,
     },
     AUTHORING_CONTEXT,
   );
@@ -1871,7 +1895,8 @@ async function authorComponent(
      * held in the host and then ADDS boundary nodes for the ports it exposed — which have
      * nowhere to go but on top of what is already there. Measured before this line
      * existed: `depthPoints` had `in_field` overlapping `carve` by 158x148px and
-     * `in_field_2` overlapping `grid` by 158x140, `audioLevel` had `den` and `num` stacked
+     * `in_field_2` overlapping `grid` by 158x140 (T1194 renamed those two to `in_colour`
+     * and `in_depth`), `audioLevel` had `den` and `num` stacked
      * on one point, `feedbackEcho` had `decay` under `in_in1`. That is the "bunched up
      * mess" the owner found by digging into `holo1`, and it is what §V389's gate never saw
      * because `layout.test.ts` iterated `EXAMPLE_DOCUMENTS` only.

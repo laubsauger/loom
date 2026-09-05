@@ -18,25 +18,25 @@
                 "portId": "mask"
               }
             },
-            "in_input_2_feed_1": {
-              "id": "in_input_2_feed_1",
+            "in_depth_feed_1": {
+              "id": "in_depth_feed_1",
               "source": {
-                "nodeId": "in_input_2",
-                "portId": "out"
-              },
-              "target": {
-                "nodeId": "cut",
-                "portId": "input"
-              }
-            },
-            "in_input_feed_1": {
-              "id": "in_input_feed_1",
-              "source": {
-                "nodeId": "in_input",
+                "nodeId": "in_depth",
                 "portId": "out"
               },
               "target": {
                 "nodeId": "matte",
+                "portId": "input"
+              }
+            },
+            "in_picture_feed_1": {
+              "id": "in_picture_feed_1",
+              "source": {
+                "nodeId": "in_picture",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "cut",
                 "portId": "input"
               }
             },
@@ -68,10 +68,10 @@
               },
               "type": "mask"
             },
-            "in_input": {
+            "in_depth": {
               "definitionVersion": 1,
-              "id": "in_input",
-              "label": "input",
+              "id": "in_depth",
+              "label": "depth",
               "parameters": {},
               "position": {
                 "x": 0,
@@ -79,10 +79,10 @@
               },
               "type": "componentIn"
             },
-            "in_input_2": {
+            "in_picture": {
               "definitionVersion": 1,
-              "id": "in_input_2",
-              "label": "input_2",
+              "id": "in_picture",
+              "label": "picture",
               "parameters": {},
               "position": {
                 "x": 0,
@@ -122,15 +122,15 @@
         },
         "inputs": [
           {
-            "externalId": "input",
-            "label": "input",
-            "nodeId": "in_input",
+            "externalId": "depth",
+            "label": "depth",
+            "nodeId": "in_depth",
             "portId": "in"
           },
           {
-            "externalId": "input_2",
-            "label": "input_2",
-            "nodeId": "in_input_2",
+            "externalId": "picture",
+            "label": "picture",
+            "nodeId": "in_picture",
             "portId": "in"
           }
         ],
@@ -213,7 +213,7 @@
         },
         "target": {
           "nodeId": "nd_depthCut1",
-          "portId": "input"
+          "portId": "depth"
         }
       },
       "ed_depthCut3": {
@@ -224,7 +224,7 @@
         },
         "target": {
           "nodeId": "nd_depthCut1",
-          "portId": "input_2"
+          "portId": "picture"
         }
       },
       "ed_depthCut4": {

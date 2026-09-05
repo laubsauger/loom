@@ -51,10 +51,10 @@
                 "portId": "input"
               }
             },
-            "in_in1_feed_1": {
-              "id": "in_in1_feed_1",
+            "in_picture_feed_1": {
+              "id": "in_picture_feed_1",
               "source": {
-                "nodeId": "in_in1",
+                "nodeId": "in_picture",
                 "portId": "out"
               },
               "target": {
@@ -136,10 +136,10 @@
               },
               "type": "feedback"
             },
-            "in_in1": {
+            "in_picture": {
               "definitionVersion": 1,
-              "id": "in_in1",
-              "label": "in1",
+              "id": "in_picture",
+              "label": "picture",
               "parameters": {},
               "position": {
                 "x": 0,
@@ -190,9 +190,9 @@
         },
         "inputs": [
           {
-            "externalId": "in1",
-            "label": "in1",
-            "nodeId": "in_in1",
+            "externalId": "picture",
+            "label": "picture",
+            "nodeId": "in_picture",
             "portId": "in"
           }
         ],
@@ -318,7 +318,7 @@
         },
         "target": {
           "nodeId": "nd_feedbackEcho1",
-          "portId": "in1"
+          "portId": "picture"
         }
       },
       "ed_feedbackEcho3": {

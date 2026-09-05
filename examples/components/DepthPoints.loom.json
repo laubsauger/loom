@@ -29,25 +29,25 @@
                 "portId": "in"
               }
             },
-            "in_field_2_feed_1": {
-              "id": "in_field_2_feed_1",
+            "in_colour_feed_1": {
+              "id": "in_colour_feed_1",
               "source": {
-                "nodeId": "in_field_2",
-                "portId": "out"
-              },
-              "target": {
-                "nodeId": "carve",
-                "portId": "field"
-              }
-            },
-            "in_field_feed_1": {
-              "id": "in_field_feed_1",
-              "source": {
-                "nodeId": "in_field",
+                "nodeId": "in_colour",
                 "portId": "out"
               },
               "target": {
                 "nodeId": "paint",
+                "portId": "field"
+              }
+            },
+            "in_depth_feed_1": {
+              "id": "in_depth_feed_1",
+              "source": {
+                "nodeId": "in_depth",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "carve",
                 "portId": "field"
               }
             },
@@ -104,10 +104,10 @@
               },
               "type": "pointGrid"
             },
-            "in_field": {
+            "in_colour": {
               "definitionVersion": 1,
-              "id": "in_field",
-              "label": "field",
+              "id": "in_colour",
+              "label": "colour",
               "parameters": {},
               "position": {
                 "x": 0,
@@ -115,10 +115,10 @@
               },
               "type": "componentIn"
             },
-            "in_field_2": {
+            "in_depth": {
               "definitionVersion": 1,
-              "id": "in_field_2",
-              "label": "field_2",
+              "id": "in_depth",
+              "label": "depth",
               "parameters": {},
               "position": {
                 "x": 0,
@@ -160,15 +160,15 @@
         },
         "inputs": [
           {
-            "externalId": "field",
-            "label": "field",
-            "nodeId": "in_field",
+            "externalId": "colour",
+            "label": "colour",
+            "nodeId": "in_colour",
             "portId": "in"
           },
           {
-            "externalId": "field_2",
-            "label": "field_2",
-            "nodeId": "in_field_2",
+            "externalId": "depth",
+            "label": "depth",
+            "nodeId": "in_depth",
             "portId": "in"
           }
         ],
@@ -371,7 +371,7 @@
         },
         "target": {
           "nodeId": "nd_depthPoints1",
-          "portId": "field"
+          "portId": "colour"
         }
       },
       "ed_depthPoints3": {
@@ -382,7 +382,7 @@
         },
         "target": {
           "nodeId": "nd_depthPoints1",
-          "portId": "field_2"
+          "portId": "depth"
         }
       },
       "ed_depthPoints4": {

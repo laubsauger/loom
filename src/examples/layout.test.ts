@@ -97,7 +97,8 @@ for (const built of STARTER_COMPONENTS) components.register(built.definition);
  * our usual pretty and structured patch layouts", and the cause was this file's ITERATION:
  * it read `EXAMPLE_DOCUMENTS` and nothing else, so no component definition had ever been
  * held to §V389 at all. Measured at the time: `depthPoints` had `in_field` overlapping
- * `carve` by 158x148px and `in_field_2` overlapping `grid` by 158x140, `audioLevel` had
+ * `carve` by 158x148px and `in_field_2` overlapping `grid` by 158x140 (T1194 renamed that
+ * pair to `in_colour`/`in_depth`), `audioLevel` had
  * `den` and `num` on the same point, `feedbackEcho` had `decay` under `in_in1` by 18x28.
  * Three of seven, none of them visible to a gate that never looked.
  *
@@ -302,7 +303,21 @@ describe("§V389 — component internals are held to the same rules (T969)", () 
  * for the next component and the next layout change.
  */
 describe("§T886 — the component tidy changed layout only (T969)", () => {
-  /** Everything a `moveNodes` patch is permitted to touch, removed. */
+  /**
+   * Everything a `moveNodes` patch is permitted to touch, removed.
+   *
+   * T1194 added the third thing, and it is still geometry: SOCKET ORDER. §V109 defines a
+   * boundary socket's place in the list as CANVAS ORDER — `position.y`, then x, then id —
+   * so `deriveBoundaryPorts` reads the order back out of the coordinates the tidy just
+   * rewrote. `timeGrid` is the live case: synthesis stacks `in_picture` above `in_matte`
+   * (edge-id order), the layout ranks both as sources and sorts sources by node id, and
+   * `in_matte` sorts first. Nothing was smuggled in — the same two rows, the same
+   * addresses, the same labels, read off a canvas that legitimately moved.
+   *
+   * So the rows are compared BY CONTENT, sorted; excluding a pure function of the
+   * positions this gate already excludes is the gate's own premise, not a hole in it. A
+   * renamed, retyped, added or dropped socket still fails here, which is what §T886 is for.
+   */
   function withoutGeometry(definition: GraphComponentDefinition): unknown {
     const nodes = Object.fromEntries(
       Object.entries(definition.graph.nodes).map(([id, node]) => {
@@ -311,7 +326,14 @@ describe("§T886 — the component tidy changed layout only (T969)", () => {
       }),
     );
     const { revision: _revision, ...graph } = definition.graph;
-    return { ...definition, graph: { ...graph, nodes } };
+    const byAddress = (rows: readonly { externalId: string }[]): unknown[] =>
+      [...rows].sort((a, b) => a.externalId.localeCompare(b.externalId));
+    return {
+      ...definition,
+      inputs: byAddress(definition.inputs),
+      outputs: byAddress(definition.outputs),
+      graph: { ...graph, nodes },
+    };
   }
 
   it("is byte-identical to the untidied authoring, apart from node positions", async () => {

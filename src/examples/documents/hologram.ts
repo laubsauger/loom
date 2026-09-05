@@ -21,11 +21,11 @@ const WALL_SWEEP = `${String(WALL_BASE)} + op('cycle1').chan.value`;
  *   bed1(noise) ─┬─► src1(add) ─┬─► cut1(component:depthCut@1) ─► braid1.in2  (coverage)
  *   orb1(circle)─┘              ├─► flat1(hsv, sat 0) ─► soften1(blur) ─► pick1(switch)
  *                               └─► depth1(depth) ────────── index 1 ──────┘   │
- *                     pick1 ─► holo1.field_2 (depth) ─and─► coat1.source (the heat key)
- *   palette1(ramp) ─► coat1(lookup) ─► braid1(reorder) ─► holo1.field       (colour)
+ *                     pick1 ─► holo1.depth ─and─► coat1.source (the heat key)
+ *   palette1(ramp) ─► coat1(lookup) ─► braid1(reorder) ─► holo1.colour
  *   holo1(component:depthPoints@1) ─► zone1(pointRange, inside) ─► dots1 ─┐
- *   src1 ─► flat2 ─► soften2 ─┬─► holo2.field_2                           │
- *                            └─► wcoat1(lookup) ◄─ palette1 ─► holo2.field│
+ *   src1 ─► flat2 ─► soften2 ─┬─► holo2.depth                             │
+ *                            └─► wcoat1(lookup) ◄─palette1 ─► holo2.colour│
  *   holo2 ─► wall1(pointRange, OUTSIDE) ─► wdots1 ────────────────────────┴► shot1 ─► out1
  *   orbit1(lfo) ┄drives┄► eye1.eye.x     cycle1(lfo) ┄drives┄► both lookups' offset
  *
@@ -468,15 +468,16 @@ export const hologramDocument = document(
       edge("e-soften-pick", ["soften", "out"], ["pick", "inputs"], 0),
       edge("e-srcpick-depth", ["srcpick", "out"], ["depth", "input"]),
       edge("e-depth-pick", ["depth", "out"], ["pick", "inputs"], 1),
-      /* The component's two texture ports (boundary-derived): `field` is the PAINT
-         kernel's colour, `field_2` the CARVE kernel's depth — verified against the
-         flattened plan's texture bindings, not assumed from the names. */
-      /* §T977: the cut's two texture ports (boundary-derived, verified against the
-         flattened plan's bindings): `input` is the MATTE's depth map, `input_2` the
-         picture being masked. The ACTIVE depth map drives the matte, so the cut follows
-         whichever source pick1 selects — understudy or ML. */
-      edge("e-pick-cut", ["pick", "out"], ["cut", "input"]),
-      edge("e-srcpick-cut", ["srcpick", "out"], ["cut", "input_2"]),
+      /* T1194: the component's texture ports SAY what they carry now — `colour` feeds the
+         PAINT kernel, `depth` the CARVE kernel. They shipped as `field`/`field_2` (the
+         port they happen to feed, auto-suffixed) and the mapping had to be verified
+         against the flattened plan's texture bindings to be trusted at all. */
+      /* §T977, T1194: the cut's two texture ports, likewise — `depth` is the MATTE's depth
+         map and `picture` the thing being masked, where they shipped as `input`/`input_2`.
+         The ACTIVE depth map drives the matte, so the cut follows whichever source pick1
+         selects — understudy or ML. */
+      edge("e-pick-cut", ["pick", "out"], ["cut", "depth"]),
+      edge("e-srcpick-cut", ["srcpick", "out"], ["cut", "picture"]),
       /* T1201 — the colour port carries the HEAT MAP now, braided with the cut's coverage.
          `coat1` reads the ACTIVE depth map (`pick1`, the same texture at the same uv the
          carve kernel placed the point from) through `palette1`; `braid1` puts that in rgb
@@ -486,8 +487,8 @@ export const hologramDocument = document(
       edge("e-palette-coat", ["palette", "out"], ["coat", "lookup"]),
       edge("e-coat-braid", ["coat", "out"], ["braid", "in1"]),
       edge("e-cut-braid", ["cut", "out"], ["braid", "in2"]),
-      edge("e-braid-holo", ["braid", "out"], ["holo", "field"]),
-      edge("e-pick-holo", ["pick", "out"], ["holo", "field_2"]),
+      edge("e-braid-holo", ["braid", "out"], ["holo", "colour"]),
+      edge("e-pick-holo", ["pick", "out"], ["holo", "depth"]),
       /* T983: the subject's cloud passes through its zone before it is drawn. */
       edge("e-holo-zone", ["holo", "out"], ["zone", "points"]),
       edge("e-zone-dots", ["zone", "out"], ["dots", "points"]),
@@ -496,10 +497,10 @@ export const hologramDocument = document(
          own depth chain, so one thermal field spans both clouds. */
       edge("e-src-flat2", ["src", "out"], ["flat2", "input"]),
       edge("e-flat2-soften2", ["flat2", "out"], ["soften2", "input"]),
-      edge("e-soften2-holo2", ["soften2", "out"], ["holo2", "field_2"]),
+      edge("e-soften2-holo2", ["soften2", "out"], ["holo2", "depth"]),
       edge("e-soften2-wcoat", ["soften2", "out"], ["wcoat", "source"]),
       edge("e-palette-wcoat", ["palette", "out"], ["wcoat", "lookup"]),
-      edge("e-wcoat-holo2", ["wcoat", "out"], ["holo2", "field"]),
+      edge("e-wcoat-holo2", ["wcoat", "out"], ["holo2", "colour"]),
       edge("e-holo2-wall", ["holo2", "out"], ["wall", "points"]),
       edge("e-wall-wdots", ["wall", "out"], ["wdots", "points"]),
       edge("e-shot-out", ["shot", "out"], ["out", "input"]),

@@ -94,6 +94,12 @@ export interface SaveSelectionCommandInput {
   description?: string;
   /** Supply to overwrite a specific component; otherwise a fresh id is minted. */
   componentId?: ComponentId;
+  /**
+   * Author-chosen socket names, keyed by the internal endpoint that crosses the boundary
+   * (`"<nodeId>.<portId>"`). T1194 — the ONE moment a socket can be named, because after
+   * this the name is an address parents are wired by (§B170). See `SaveSelectionInput`.
+   */
+  portNames?: Readonly<Record<string, string>>;
 }
 
 export interface SaveSelectionOutput {
@@ -436,6 +442,7 @@ export function registerComponentCommands(bus: LoomBus, options: ComponentComman
         version,
         name: input.name,
         ...(input.description === undefined ? {} : { description: input.description }),
+        ...(input.portNames === undefined ? {} : { portNames: input.portNames }),
         nodes: context.registry,
       });
       diagnostics.push(...built.diagnostics);

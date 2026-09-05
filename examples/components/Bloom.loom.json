@@ -84,10 +84,10 @@
                 "portId": "in1"
               }
             },
-            "in_input_feed_1": {
-              "id": "in_input_feed_1",
+            "in_picture_feed_1": {
+              "id": "in_picture_feed_1",
               "source": {
-                "nodeId": "in_input",
+                "nodeId": "in_picture",
                 "portId": "out"
               },
               "target": {
@@ -199,10 +199,10 @@
               },
               "type": "level"
             },
-            "in_input": {
+            "in_picture": {
               "definitionVersion": 1,
-              "id": "in_input",
-              "label": "input",
+              "id": "in_picture",
+              "label": "picture",
               "parameters": {},
               "position": {
                 "x": 0,
@@ -316,9 +316,9 @@
         },
         "inputs": [
           {
-            "externalId": "input",
-            "label": "input",
-            "nodeId": "in_input",
+            "externalId": "picture",
+            "label": "picture",
+            "nodeId": "in_picture",
             "portId": "in"
           }
         ],
@@ -416,7 +416,7 @@
         },
         "target": {
           "nodeId": "nd_bloom1",
-          "portId": "input"
+          "portId": "picture"
         }
       },
       "ed_bloom3": {

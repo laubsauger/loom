@@ -18,25 +18,25 @@
                 "portId": "mask"
               }
             },
-            "in_input_2_feed_1": {
-              "id": "in_input_2_feed_1",
+            "in_depth_feed_1": {
+              "id": "in_depth_feed_1",
               "source": {
-                "nodeId": "in_input_2",
-                "portId": "out"
-              },
-              "target": {
-                "nodeId": "cut",
-                "portId": "input"
-              }
-            },
-            "in_input_feed_1": {
-              "id": "in_input_feed_1",
-              "source": {
-                "nodeId": "in_input",
+                "nodeId": "in_depth",
                 "portId": "out"
               },
               "target": {
                 "nodeId": "matte",
+                "portId": "input"
+              }
+            },
+            "in_picture_feed_1": {
+              "id": "in_picture_feed_1",
+              "source": {
+                "nodeId": "in_picture",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "cut",
                 "portId": "input"
               }
             },
@@ -68,10 +68,10 @@
               },
               "type": "mask"
             },
-            "in_input": {
+            "in_depth": {
               "definitionVersion": 1,
-              "id": "in_input",
-              "label": "input",
+              "id": "in_depth",
+              "label": "depth",
               "parameters": {},
               "position": {
                 "x": 0,
@@ -79,10 +79,10 @@
               },
               "type": "componentIn"
             },
-            "in_input_2": {
+            "in_picture": {
               "definitionVersion": 1,
-              "id": "in_input_2",
-              "label": "input_2",
+              "id": "in_picture",
+              "label": "picture",
               "parameters": {},
               "position": {
                 "x": 0,
@@ -122,15 +122,15 @@
         },
         "inputs": [
           {
-            "externalId": "input",
-            "label": "input",
-            "nodeId": "in_input",
+            "externalId": "depth",
+            "label": "depth",
+            "nodeId": "in_depth",
             "portId": "in"
           },
           {
-            "externalId": "input_2",
-            "label": "input_2",
-            "nodeId": "in_input_2",
+            "externalId": "picture",
+            "label": "picture",
+            "nodeId": "in_picture",
             "portId": "in"
           }
         ],
@@ -226,25 +226,25 @@
                 "portId": "in"
               }
             },
-            "in_field_2_feed_1": {
-              "id": "in_field_2_feed_1",
+            "in_colour_feed_1": {
+              "id": "in_colour_feed_1",
               "source": {
-                "nodeId": "in_field_2",
-                "portId": "out"
-              },
-              "target": {
-                "nodeId": "carve",
-                "portId": "field"
-              }
-            },
-            "in_field_feed_1": {
-              "id": "in_field_feed_1",
-              "source": {
-                "nodeId": "in_field",
+                "nodeId": "in_colour",
                 "portId": "out"
               },
               "target": {
                 "nodeId": "paint",
+                "portId": "field"
+              }
+            },
+            "in_depth_feed_1": {
+              "id": "in_depth_feed_1",
+              "source": {
+                "nodeId": "in_depth",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "carve",
                 "portId": "field"
               }
             },
@@ -301,10 +301,10 @@
               },
               "type": "pointGrid"
             },
-            "in_field": {
+            "in_colour": {
               "definitionVersion": 1,
-              "id": "in_field",
-              "label": "field",
+              "id": "in_colour",
+              "label": "colour",
               "parameters": {},
               "position": {
                 "x": 0,
@@ -312,10 +312,10 @@
               },
               "type": "componentIn"
             },
-            "in_field_2": {
+            "in_depth": {
               "definitionVersion": 1,
-              "id": "in_field_2",
-              "label": "field_2",
+              "id": "in_depth",
+              "label": "depth",
               "parameters": {},
               "position": {
                 "x": 0,
@@ -357,15 +357,15 @@
         },
         "inputs": [
           {
-            "externalId": "field",
-            "label": "field",
-            "nodeId": "in_field",
+            "externalId": "colour",
+            "label": "colour",
+            "nodeId": "in_colour",
             "portId": "in"
           },
           {
-            "externalId": "field_2",
-            "label": "field_2",
-            "nodeId": "in_field_2",
+            "externalId": "depth",
+            "label": "depth",
+            "nodeId": "in_depth",
             "portId": "in"
           }
         ],
@@ -568,7 +568,7 @@
         },
         "target": {
           "nodeId": "holo",
-          "portId": "field"
+          "portId": "colour"
         }
       },
       "e-cam-srcpick": {
@@ -713,7 +713,7 @@
         },
         "target": {
           "nodeId": "cut",
-          "portId": "input"
+          "portId": "depth"
         }
       },
       "e-pick-holo": {
@@ -724,7 +724,7 @@
         },
         "target": {
           "nodeId": "holo",
-          "portId": "field_2"
+          "portId": "depth"
         }
       },
       "e-shot-out": {
@@ -758,7 +758,7 @@
         },
         "target": {
           "nodeId": "holo2",
-          "portId": "field_2"
+          "portId": "depth"
         }
       },
       "e-soften2-wcoat": {
@@ -803,7 +803,7 @@
         },
         "target": {
           "nodeId": "cut",
-          "portId": "input_2"
+          "portId": "picture"
         }
       },
       "e-srcpick-depth": {
@@ -847,7 +847,7 @@
         },
         "target": {
           "nodeId": "holo2",
-          "portId": "field"
+          "portId": "colour"
         }
       },
       "e-zone-dots": {

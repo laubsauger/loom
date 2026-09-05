@@ -172,26 +172,26 @@
                 "portId": "in1"
               }
             },
-            "in_in1_feed_1": {
-              "id": "in_in1_feed_1",
+            "in_matte_feed_1": {
+              "id": "in_matte_feed_1",
               "source": {
-                "nodeId": "in_in1",
-                "portId": "out"
-              },
-              "target": {
-                "nodeId": "pack",
-                "portId": "in1"
-              }
-            },
-            "in_in2_feed_1": {
-              "id": "in_in2_feed_1",
-              "source": {
-                "nodeId": "in_in2",
+                "nodeId": "in_matte",
                 "portId": "out"
               },
               "target": {
                 "nodeId": "pack",
                 "portId": "in2"
+              }
+            },
+            "in_picture_feed_1": {
+              "id": "in_picture_feed_1",
+              "source": {
+                "nodeId": "in_picture",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "pack",
+                "portId": "in1"
               }
             },
             "out_out_feed": {
@@ -430,10 +430,10 @@
               },
               "type": "limit"
             },
-            "in_in1": {
+            "in_matte": {
               "definitionVersion": 1,
-              "id": "in_in1",
-              "label": "in1",
+              "id": "in_matte",
+              "label": "matte",
               "parameters": {},
               "position": {
                 "x": 0,
@@ -441,10 +441,10 @@
               },
               "type": "componentIn"
             },
-            "in_in2": {
+            "in_picture": {
               "definitionVersion": 1,
-              "id": "in_in2",
-              "label": "in2",
+              "id": "in_picture",
+              "label": "picture",
               "parameters": {},
               "position": {
                 "x": 0,
@@ -758,15 +758,15 @@
         },
         "inputs": [
           {
-            "externalId": "in1",
-            "label": "in1",
-            "nodeId": "in_in1",
+            "externalId": "matte",
+            "label": "matte",
+            "nodeId": "in_matte",
             "portId": "in"
           },
           {
-            "externalId": "in2",
-            "label": "in2",
-            "nodeId": "in_in2",
+            "externalId": "picture",
+            "label": "picture",
+            "nodeId": "in_picture",
             "portId": "in"
           }
         ],
@@ -1061,7 +1061,7 @@
         },
         "target": {
           "nodeId": "nd_timeGrid1",
-          "portId": "in1"
+          "portId": "picture"
         }
       },
       "ed_timeGrid3": {
@@ -1072,7 +1072,7 @@
         },
         "target": {
           "nodeId": "nd_timeGrid1",
-          "portId": "in2"
+          "portId": "matte"
         }
       },
       "ed_timeGrid4": {

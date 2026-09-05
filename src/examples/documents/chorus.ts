@@ -386,12 +386,12 @@ export const chorusDocument = document(
       edge("e-clip-pick", ["clip", "out"], ["pick", "inputs"], 2),
       edge("e-pick-flare", ["pick", "out"], ["flare", "input"]),
       // ONE lit source, THREE consumers (§V6): the wall, the luma key and the ML matte.
-      edge("e-flare-wall", ["flare", "out"], ["wall", "in1"]),
+      edge("e-flare-wall", ["flare", "out"], ["wall", "picture"]),
       edge("e-flare-key", ["flare", "out"], ["key", "input"]),
       edge("e-flare-cut", ["flare", "out"], ["cut", "input"]),
       edge("e-key-mpick", ["key", "out"], ["mpick", "inputs"], 0),
       edge("e-cut-mpick", ["cut", "out"], ["mpick", "inputs"], 1),
-      edge("e-mpick-wall", ["mpick", "out"], ["wall", "in2"]),
+      edge("e-mpick-wall", ["mpick", "out"], ["wall", "matte"]),
       edge("e-wall-out", ["wall", "out"], ["out", "input"]),
       // The audio chain, with real wires all the way to the envelopes.
       edge("e-music-source", ["music", "out"], ["source", "in1"]),
