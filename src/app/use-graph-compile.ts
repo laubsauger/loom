@@ -527,12 +527,75 @@ export function useGraphCompile(
     view: CompileResultView;
   } | null>(null);
 
+  /**
+   * THE MEMO'S OWN ANSWER, REMEMBERED — so that CALLING IT TWICE SAYS THE SAME THING (B185).
+   *
+   * The body below writes `lastCompile.current` DURING RENDER, which makes it a factory
+   * whose answer depends on how many times it has been called: the second invocation
+   * classifies the revision against the `previous` the first one just advanced — against
+   * ITSELF — so `classifyGraphChange` compares the incoming document with the incoming
+   * document and answers "editor-only". A LOAD then reports `documentBoundary: false`.
+   *
+   * React is explicitly allowed to call a `useMemo` factory more than once for the same
+   * inputs, and two things in this app do it. `<StrictMode>` (`main.tsx`) always does in
+   * development — MEASURED live on E58-Alembic → E60-Snarl: one `boundary: true`
+   * classification followed by two `editor-only` ones, all before a single effect ran. And
+   * the §V904 hazard this file already carries is the other: a render pass that React
+   * DISCARDS and retries re-runs this factory against a ref that has already moved on,
+   * which is how §B106 came back from four files away.
+   *
+   * ⚠ THIS ALONE DOES NOT FIX §B185, AND THAT WAS MEASURED, NOT ASSUMED. With the guard in
+   * and `use-frame-loop`'s latch reverted, the gate is still red: renders that are not
+   * rehearsals — a fresh `graph` object arriving between the boundary compile and the
+   * effect flush — legitimately classify as in-document edits and legitimately say
+   * `documentBoundary: false`. Nothing here can prevent that, which is why the flag is
+   * ACCUMULATED at the consumer rather than observed. What this guard fixes is narrower and
+   * still worth having: the value this hook COMMITS is now the one it computed, so a reader
+   * of `GraphCompileResult.documentBoundary` is told the truth about a load.
+   *
+   * The guard is idempotence, not a second copy of the classification: identical inputs
+   * return the IDENTICAL result object, which is what `useMemo` already promises in
+   * production. Nothing here decides what the answer is — only that asking twice cannot
+   * change it.
+   *
+   * ⚠ `deps` MIRRORS THE DEPENDENCY ARRAY AT THE BOTTOM OF THE MEMO AND MUST BE EDITED WITH
+   * IT. A dependency added to one and not the other would hold a stale answer past a real
+   * input change; `deps.length` catches the arity half of that mistake.
+   */
+  const memoized = useRef<{ deps: readonly unknown[]; result: GraphCompileResult } | null>(null);
+
   const result = useMemo<GraphCompileResult>(() => {
+    const deps: readonly unknown[] = [
+      animate,
+      channels,
+      flatGraph,
+      flattened,
+      graph,
+      runtime,
+      capabilities,
+      previewSinks,
+      scheduledPreviews,
+      catalogueRevision,
+    ];
+    const remembered = memoized.current;
+    if (
+      remembered !== null &&
+      remembered.deps.length === deps.length &&
+      remembered.deps.every((value, index) => value === deps[index])
+    ) {
+      return remembered.result;
+    }
+    /** Every exit from the body below goes through here, so none of them can be forgotten. */
+    const remember = (answer: GraphCompileResult): GraphCompileResult => {
+      memoized.current = { deps, result: answer };
+      return answer;
+    };
+
     if (capabilities === null) {
       // No device, no plan (§V12) — but the panel still resolves, so the resolver still
       // travels. Dropping it here would make "the inspector says lfo1 is not attached"
       // true again on exactly the machines that cannot compile.
-      return {
+      return remember({
         graph,
         flatGraph,
         channels,
@@ -543,7 +606,7 @@ export function useGraphCompile(
         valuesOnly: false,
         resetFeedback: false,
         documentBoundary: false,
-      };
+      });
     }
     const previous = lastCompile.current;
     const settingsKey = structuralSettingsKey(runtime.settings);
@@ -575,7 +638,7 @@ export function useGraphCompile(
     if (sameInputs && previous !== null && change !== null && change.work === "editor-only") {
       cacheRef.current = { documentIdentity: runtime.documentIdentity, revision: graph.revision, view: previous.view };
       lastCompile.current = { ...previous, graph };
-      return {
+      return remember({
         graph,
         flatGraph,
         channels,
@@ -587,7 +650,7 @@ export function useGraphCompile(
         // The plan is the one already installed, so there is nothing new to land on.
         resetFeedback: false,
         documentBoundary: false,
-      };
+      });
     }
 
     const { compiled, diagnostics: rawDiagnostics } = compileSafely(
@@ -613,7 +676,7 @@ export function useGraphCompile(
       catalogue: catalogueRevision,
       view: { compiled, diagnostics },
     };
-    return {
+    return remember({
       graph,
       flatGraph,
       channels,
@@ -627,7 +690,7 @@ export function useGraphCompile(
       // into nothing.
       resetFeedback: change?.resetFeedback === true,
       documentBoundary: change?.documentBoundary === true,
-    };
+    });
   }, [animate, channels, flatGraph, flattened, graph, runtime, capabilities, previewSinks, scheduledPreviews, catalogueRevision]);
 
   const capabilitiesRef = useRef(capabilities);

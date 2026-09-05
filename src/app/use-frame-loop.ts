@@ -246,11 +246,39 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
   // accompanies one.
   const valuesOnlyRef = useRef(valuesOnly);
   valuesOnlyRef.current = valuesOnly;
-  // Same reason as `valuesOnlyRef`: it accompanies a `compiled`, it does not trigger one.
-  const resetFeedbackRef = useRef(resetFeedback);
-  resetFeedbackRef.current = resetFeedback;
-  const documentBoundaryRef = useRef(documentBoundary);
-  documentBoundaryRef.current = documentBoundary;
+  /**
+   * THESE TWO ONLY EVER TURN ON HERE. They are turned OFF where the work is taken (B185).
+   *
+   * `valuesOnlyRef` above may be overwritten every render because it is a SUGGESTION that
+   * `push` re-checks against the two real plans — the worst a stale one can do is cost a
+   * comparison. These two are not suggestions. Each names work that must happen EXACTLY
+   * ONCE for a revision, and a render that overwrites one with `false` before the effect
+   * below has read it does not delay the work, it CANCELS it — silently, with the picture
+   * left standing. §B141 is that sentence about the `.then`; §T733 answered it with a
+   * latch INSIDE the effect and left the read that feeds the latch exposed.
+   *
+   * ⚑ §B185 IS WHAT CAME THROUGH THE GAP, AND IT IS THE OWNER'S "EVERYTHING SAYS NO
+   * SIGNAL". Loading E60-Snarl over E58-Alembic: `useGraphCompile` announced
+   * `documentBoundary: true`, two further renders committed `false` before this effect ran
+   * (they are ordinary in-document classifications and they are not wrong), and the effect
+   * read the last one. So `installedSignatureRef` was never cleared — and the five §T1171
+   * documents are ONE instrument at five parameter coordinates, same three node ids over
+   * byte-identical WGSL, so their plan signatures match BYTE FOR BYTE. The incoming plan
+   * was skipped as "already installed" while `app.tsx` had already cleared its latch at the
+   * boundary, and `installedPlan` stayed null for good: viewer "no outputs", every tile
+   * "no signal", zero compile diagnostics to explain any of it. The signature short-circuit
+   * was right about everything it can see; nothing told it a document had ended.
+   *
+   * `useEffect` is not guaranteed to flush before the next render, so "the ref changes in
+   * lockstep with `compiled`" was never a property this hook could rely on. Accumulating
+   * instead of assigning removes the reliance rather than tightening it: whatever order the
+   * renders and the flush interleave, a boundary that was ever announced is still owed when
+   * the effect looks. `document-swap.spec.ts` is the gate, and it goes red on the assignment.
+   */
+  const resetFeedbackRef = useRef(false);
+  if (resetFeedback) resetFeedbackRef.current = true;
+  const documentBoundaryRef = useRef(false);
+  if (documentBoundary) documentBoundaryRef.current = true;
   /**
    * WORK OWED, not a flag observed (T733, B141).
    *
@@ -624,6 +652,10 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
     // T733/B141 — owed at SCHEDULE time, while the flags still belong to the plan being
     // built. Reading them after the await is what dropped the work.
     if (documentBoundaryRef.current) {
+      // B185: taken, so it stops being owed HERE — the debt now lives in
+      // `boundaryOwedRef`, which survives a superseding compile. Leaving it set would
+      // make the NEXT edit in this document reset feedback and seek to zero as well.
+      documentBoundaryRef.current = false;
       boundaryOwedRef.current = true;
       // T1163: and the announced signature belongs to the document being closed. Two
       // documents can compile to the same plan (two empty ones do), and without this the
@@ -631,7 +663,10 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
       // the latch at the boundary — leaving it null for good.
       installedSignatureRef.current = null;
     }
-    if (resetFeedbackRef.current) feedbackResetOwedRef.current = true;
+    if (resetFeedbackRef.current) {
+      resetFeedbackRef.current = false;
+      feedbackResetOwedRef.current = true;
+    }
 
     const generation = (generationRef.current += 1);
     void backend
