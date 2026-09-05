@@ -124,3 +124,82 @@ test("Shift+F frames the interior once the canvas is inside a component (T1195)"
     })
     .toBe(displaced.total);
 });
+
+/**
+ * T1195(b) — AND HE SHOULD NOT HAVE TO PRESS IT.
+ *
+ * Owner, after the fix above landed: *"The DepthCut component needs me to hit Shift+F to
+ * have the nodes centered in view in the subgraph."* His original report was *"when going
+ * into the subgraph we always have to go to the right with our view, we never have the
+ * actual nodes in view and have to go find them first"* — so a working key was never the
+ * ask, it was the workaround.
+ *
+ * The cause is `<ReactFlow fitView>`: it fits ON MOUNT, and a dive remounts nothing. The
+ * pane keeps the PARENT's camera and points it at coordinates the interior has never
+ * heard of.
+ *
+ * NO KEY IS PRESSED ANYWHERE IN THIS TEST. That is the whole assertion.
+ */
+test("diving frames the interior with no key pressed (T1195b)", async ({ page }) => {
+  await page.addInitScript(() => {
+    const win = window as unknown as Record<string, unknown>;
+    win["showSaveFilePicker"] = undefined;
+    win["showOpenFilePicker"] = undefined;
+  });
+  await page.goto("/");
+  await expect(page.getByTestId("graph-canvas")).toBeVisible();
+
+  const chooser = page.waitForEvent("filechooser");
+  await page.getByTestId("project-open").click();
+  await (await chooser).setFiles("examples/E51-Chorus.loom.json");
+  const wall = page.locator('.react-flow__node[data-id="wall"]');
+  await expect(wall).toBeVisible();
+
+  /*
+   * The PARENT camera, positioned deliberately so the restore below has something real to
+   * put back. Wheel over the canvas rather than a drag: `selectionOnDrag` is on, so a drag
+   * here marquee-selects instead of panning.
+   */
+  const canvasBox = await page.getByTestId("graph-canvas").boundingBox();
+  if (canvasBox === null) throw new Error("the graph canvas has no bounding box");
+  await page.mouse.move(canvasBox.x + canvasBox.width / 2, canvasBox.y + canvasBox.height / 2);
+  // Zoom OUT, not in: the dive below is a double-click on the instance BODY, and zooming
+  // in walks it off the canvas so the coordinate lands on nothing. Zooming out changes the
+  // camera just as much and keeps the target reachable.
+  for (let step = 0; step < 3; step += 1) await page.mouse.wheel(0, 240);
+  const parentCamera = await viewportTransform(page);
+  expect(parentCamera).not.toBe("");
+
+  // Dive. Double-click on the instance BODY is TD's gesture (T602), and the coordinate is
+  // honest because nothing has re-framed since the node was located.
+  const box = await wall.boundingBox();
+  if (box === null) throw new Error("the wall instance has no bounding box");
+  await page.mouse.dblclick(box.x + box.width / 2, box.y + Math.min(box.height / 2, 200));
+  await expect(page.locator('.react-flow__node[data-id="grid"]')).toBeVisible();
+
+  /*
+   * THE REPORT, inverted into a claim: the interior is IN VIEW, unaided.
+   *
+   * Polled because the frame is owed until React Flow has measured the new nodes — the
+   * pane deliberately waits rather than fitting zero-sized points at 8× zoom.
+   */
+  await expect
+    .poll(
+      async () => {
+        const { inside, total } = await nodesOnScreen(page);
+        // Reported as a pair so a failure says "3 of 9 in view" rather than "false".
+        return total > 1 && inside === total ? "all in view" : `${inside} of ${total} in view`;
+      },
+      { timeout: 5_000, message: "diving did not bring the component's interior into view" },
+    )
+    .toBe("all in view");
+
+  /*
+   * And UP restores the parent's camera rather than re-framing it. The chosen asymmetry:
+   * a dive has no camera history, a parent has one the user set seconds ago.
+   */
+  await page.locator('[data-keymap-context="graph"]').first().focus();
+  await page.keyboard.press("u");
+  await expect(wall).toBeVisible();
+  await expect.poll(async () => viewportTransform(page)).toBe(parentCamera);
+});

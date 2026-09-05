@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, DragEvent as ReactDragEvent, ReactNode, RefObject } from "react";
-import { ReactFlowProvider, useConnection, useReactFlow } from "@xyflow/react";
+import { ReactFlowProvider, useConnection, useNodesInitialized, useReactFlow } from "@xyflow/react";
+import type { Viewport } from "@xyflow/react";
 import type { CommandResult } from "@domain/types/commands.ts";
 import type { LoomBus } from "@domain/commands/index.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
@@ -125,6 +126,15 @@ const EMPTY_GRAPH: GraphDocument = { revision: 0, nodes: {}, edges: {}, groups: 
 const EMPTY_OUTPUTS: ReadonlyArray<ResolvedOutput> = [];
 
 /**
+ * The camera each DEPTH was left at, so walking back up restores it (T1195(b)).
+ *
+ * Keyed by `componentPath.length` and minted per DOCUMENT, because a viewport belongs to
+ * the graph it was aimed at: `usePerDocument`'s whole subject is state that must not
+ * outlive the document that filled it, and "depth 0 of the last project" is exactly that.
+ */
+const createDepthCameras = (): Map<number, Viewport> => new Map();
+
+/**
  * Same membership, same object (T714, §V16).
  *
  * A set derived from the COMPILE is recomputed on every document revision, so it is a new
@@ -202,6 +212,10 @@ function GraphPaneInner({
   // `NodePreviewSlot` writes each node's measured slot rect, the preview tick below reads
   // it every frame (T185, design note §3).
   const previewBounds = usePerDocument(documentIdentity, createPreviewSlotBounds);
+  // T1195(b): the camera each depth was left at, and whether a dive is still owed its
+  // opening frame. See the depth-transition effect below for both.
+  const cameras = usePerDocument(documentIdentity, createDepthCameras);
+  const [framePending, setFramePending] = useState(false);
   // T561: per-PANE inspection orbits. T379 hoisted the app's instance so the VIEWER
   // pane shares this camera — both surfaces show the same preview target per node, so
   // one camera per node is the truthful model. A caller that passes none (tests, a
@@ -790,14 +804,95 @@ function GraphPaneInner({
     if (before === undefined || componentPath === undefined) return;
     if (before.length === componentPath.length) return;
     surfaceRef.current?.focus();
-    if (componentPath.length < before.length) {
-      const exited = before[componentPath.length];
-      if (exited !== undefined) {
-        flow.setNodes((nodes) => nodes.map((node) => ({ ...node, selected: node.id === exited })));
-        onSelectionChange([exited]);
-      }
+
+    /*
+     * T1195(b) — DOWN: stash the camera we are leaving, and owe the new depth a frame.
+     *
+     * Owner, the other half of the Shift+F report: *"the DepthCut component needs me to
+     * hit Shift+F to have the nodes centered in view in the subgraph"*, and originally
+     * *"when going into the subgraph we always have to go to the right with our view, we
+     * never have the actual nodes in view and have to go find them first"*. Pressing a
+     * key is the workaround; the fix is not needing to.
+     *
+     * The cause is one line of React Flow's: `<ReactFlow fitView>` (graph-canvas.tsx)
+     * fits ON MOUNT, and a dive REMOUNTS NOTHING — it is the same pane with a new `graph`
+     * prop. So the camera you keep is the PARENT's, aimed at coordinates the interior
+     * knows nothing about, and the interior is wherever its authors happened to lay it
+     * out. The tell that this belongs in the product: T1195's own e2e has to re-frame
+     * before it can click anything.
+     */
+    if (componentPath.length > before.length) {
+      cameras.set(before.length, flow.getViewport());
+      setFramePending(true);
+      return;
     }
-  }, [componentPath, flow, onSelectionChange]);
+
+    const exited = before[componentPath.length];
+    if (exited !== undefined) {
+      flow.setNodes((nodes) => nodes.map((node) => ({ ...node, selected: node.id === exited })));
+      onSelectionChange([exited]);
+    }
+
+    /*
+     * UP: restore, do not re-frame. Chosen rather than fallen into.
+     *
+     * A dive has no camera history — nobody has ever positioned this graph — so framing
+     * is the only sensible opening state. Coming back up is the opposite case: the parent
+     * is a graph the user DID position, seconds ago, and re-fitting it would throw that
+     * away every time they glanced inside a component. Two different situations, and the
+     * only thing they share is that the camera must not be arbitrary.
+     *
+     * NOTE this is not merely "the old behaviour, kept". Before T1195(b) the pane held ONE
+     * camera across every depth, so coming up left you wherever you had panned to INSIDE
+     * the component, applied to the parent's coordinates — the owner's complaint pointing
+     * the other way, and now impossible in both directions.
+     *
+     * `flow.setViewport` rather than a bus command, beside the `flow.setNodes` selection
+     * restore three lines up and for the same reason: this is navigation restoring its own
+     * state, not a camera move anyone can ask for. `view.frameAll` is a command because a
+     * human presses `F`; there is no key that means "put the camera back where I left it".
+     *
+     * A missing stash — a path restored from storage, a document opened while dived —
+     * frames instead of guessing, because an arbitrary camera IS the reported bug.
+     */
+    const saved = cameras.get(componentPath.length);
+    if (saved === undefined) setFramePending(true);
+    else void flow.setViewport(saved);
+  }, [cameras, componentPath, flow, onSelectionChange]);
+
+  /**
+   * T1195(b) — the frame a dive is owed, paid once the canvas can honour it.
+   *
+   * Two conditions, and both were measured to matter rather than added defensively:
+   *
+   *  - `nodesInitialized`, React Flow's own "every node has been MEASURED". Fitting
+   *    unmeasured nodes computes the bounds of zero-sized points, which is a centre with
+   *    no extent, and the zoom clamps to `maxZoom` (8). "Centred, at 8×" is a new
+   *    complaint, not a fix.
+   *  - the fit covered THE GRAPH THIS PANE WAS GIVEN. The dive changes `componentPath`
+   *    and `graph` in one commit while React Flow catches up in its own, so an eager fit
+   *    can frame the PARENT's nodes perfectly and report success — §V123's silence again,
+   *    one layer up. Counting is what tells the two apart, so the debt stays owed until
+   *    the count agrees and is retried by the next commit that changes either input.
+   *
+   * Through the command, not `flow.fitView`: `view.frameAll` is already the one correct
+   * handler on the right bus (T1195), so this is the same code path a keystroke takes and
+   * the derived gate in `component-boundary-surfaces.test.tsx` keeps covering it.
+   */
+  const nodesInitialized = useNodesInitialized();
+  useEffect(() => {
+    if (!framePending || !nodesInitialized) return;
+    let cancelled = false;
+    // An empty component has nothing to frame and answers 0 === 0, so the debt is settled
+    // rather than retried for ever against a graph that will never satisfy it.
+    const wanted = Object.keys(graph.nodes).length;
+    void bus.execute("view.frameAll", {}, invocation).then((result) => {
+      if (!cancelled && result.output.framed === wanted) setFramePending(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [bus, framePending, graph, invocation, nodesInitialized]);
 
   const onDragOver = useCallback((event: ReactDragEvent<HTMLDivElement>) => {
     // Without this the browser refuses the drop and the library drag does nothing.
