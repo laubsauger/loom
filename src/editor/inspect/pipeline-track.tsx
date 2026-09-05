@@ -1,5 +1,10 @@
 import { Fragment, useMemo } from "react";
-import type { PipelinePassRow, PipelineTrack, PipelineTrackLane } from "./pipeline-model.ts";
+import type {
+  PipelinePassRow,
+  PipelineSelection,
+  PipelineTrack,
+  PipelineTrackLane,
+} from "./pipeline-model.ts";
 import styles from "./pipeline.module.css";
 
 /**
@@ -83,9 +88,11 @@ function laneNote(lane: PipelineTrackLane): string {
 export interface PipelineTrackViewProps {
   readonly track: PipelineTrack;
   readonly passes: readonly PipelinePassRow[];
+  readonly selection: PipelineSelection | null;
+  readonly onSelect: (selection: PipelineSelection | null) => void;
 }
 
-export function PipelineTrackView({ track, passes }: PipelineTrackViewProps) {
+export function PipelineTrackView({ track, passes, selection, onSelect }: PipelineTrackViewProps) {
   const lanes = useMemo(
     () =>
       [...track.lanes].sort(
@@ -108,12 +115,16 @@ export function PipelineTrackView({ track, passes }: PipelineTrackViewProps) {
             storage
           </div>
           {lanes.map((lane) => (
-            <div
+            <button
               key={lane.resourceId}
+              type="button"
               className={styles.gutterLane}
               style={{ height: LANE }}
               title={`${lane.resourceId} — ${laneNote(lane)}`}
+              onClick={() => onSelect({ kind: "resource", id: lane.resourceId })}
+              aria-pressed={selection?.kind === "resource" && selection.id === lane.resourceId}
               data-lane-row={lane.resourceId}
+              data-selected={selection?.kind === "resource" && selection.id === lane.resourceId}
               data-aliased={lane.aliased}
               data-loopback={lane.loopBack !== null}
               data-terminal={lane.terminal}
@@ -122,7 +133,7 @@ export function PipelineTrackView({ track, passes }: PipelineTrackViewProps) {
               <span className={styles.gutterSwatch} data-tone={LANE_TONE[lane.kind]} />
               <span className={styles.gutterName}>{lane.resourceId}</span>
               {lane.aliased ? <span className={styles.gutterBadge}>×{lane.segments.length}</span> : null}
-            </div>
+            </button>
           ))}
         </div>
 
@@ -149,6 +160,8 @@ export function PipelineTrackView({ track, passes }: PipelineTrackViewProps) {
                     data-pass={pass.id}
                     data-kind={pass.kind}
                     className={styles.passTick}
+                    data-selected={selection?.kind === "pass" && selection.id === pass.id}
+                    onClick={() => onSelect({ kind: "pass", id: pass.id })}
                     data-tone={PASS_TONE[pass.kind]}
                     x={x(column)}
                     y={HEADER - TICK - 4}
@@ -195,7 +208,17 @@ export function PipelineTrackView({ track, passes }: PipelineTrackViewProps) {
                   data-aliased={lane.aliased}
                   data-stranded={lane.stranded}
                 >
-                  <rect className={styles.laneRule} x={0} y={top} width={width} height={LANE} />
+                  <rect
+                    className={styles.laneRule}
+                    data-selected={selection?.kind === "resource" && selection.id === lane.resourceId}
+                    onClick={() => onSelect({ kind: "resource", id: lane.resourceId })}
+                    x={0}
+                    y={top}
+                    width={width}
+                    height={LANE}
+                  >
+                    <title>{`${lane.resourceId} — ${laneNote(lane)}`}</title>
+                  </rect>
 
                   {/* Arrives from before the frame started: §V285's closing edge. */}
                   {lane.loopBack === null ? null : (

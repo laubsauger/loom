@@ -1780,6 +1780,8 @@ export function App({
           compiled={compile.compiled}
           graph={compile.flatGraph}
           registry={runtime.registry}
+          telemetry={runtime.telemetry}
+          {...(capabilities === null ? {} : { capabilities })}
         />
         {/* §V166: three outcomes, Save first. One dialog for every destructive verb, so
             New and Open cannot drift into asking two different questions. */}

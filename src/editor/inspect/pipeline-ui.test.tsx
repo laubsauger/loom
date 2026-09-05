@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createMemoryStorage, installDomStubs } from "@ui/testing/install-dom-stubs.ts";
 import { installFlowStubs } from "@editor/graph-canvas/testing.tsx";
@@ -333,5 +333,128 @@ describe("T1188 — the frame tape draws what the graph cannot show", () => {
     const target = presented !== undefined && "target" in presented ? presented.target : "";
     expect(target).not.toBe("");
     expect(panel().querySelector(`[data-terminal="${target}"]`)).not.toBeNull();
+  });
+});
+
+function rail(): HTMLElement {
+  return screen.getByTestId("pipeline-rail");
+}
+
+/**
+ * THE DETAIL RAIL (T1188).
+ *
+ * The rail has three states and none of them is blank — including the one where the
+ * thing you selected has left the plan, which is the same class of honesty the install
+ * banner exists for.
+ */
+describe("T1188 — clicking the tape reads out the plan", () => {
+  it("invites a click before anything is selected, rather than showing an empty box", () => {
+    showPipeline(chainDocument());
+    expect(rail().getAttribute("data-state")).toBe("empty");
+    expect(rail().textContent).toContain("Click a column to read a pass");
+  });
+
+  it("reads out a pass when its column is clicked", () => {
+    const { plan } = showPipeline(chainDocument());
+    const blur = plan.passes.find((pass) => "nodeId" in pass && pass.nodeId === "blur");
+    const tick = panel().querySelector(`[data-pass="${blur?.id}"]`);
+    expect(tick).not.toBeNull();
+
+    fireEvent.click(tick!);
+
+    expect(rail().getAttribute("data-state")).toBe("detail");
+    expect(rail().getAttribute("data-detail")).toBe(blur?.id);
+    expect(rail().textContent).toContain("blur");
+    expect(rail().textContent).toContain("writes");
+    // No telemetry attached: an absent measurement is a word, never a digit (§V86).
+    expect(rail().textContent).toContain("not measured");
+  });
+
+  it("reads out a resource when its lane is clicked, and the lane shows as selected", () => {
+    showPipeline(pointChain());
+    const shared = "scratch:grid:@points";
+    const laneRow = panel().querySelector(`[data-lane-row="${shared}"]`);
+
+    fireEvent.click(laneRow!);
+
+    expect(rail().getAttribute("data-detail")).toBe(shared);
+    expect(rail().textContent).toContain("Through the frame");
+    // The reuse story, in words, beside the picture of it.
+    expect(rail().textContent).toContain("hold this one resource in turn");
+    // And the direction the plan does not state is NAMED, not guessed (§V231).
+    expect(rail().textContent).toContain("not stated by the plan");
+    expect(panel().querySelector(`[data-lane-row="${shared}"]`)?.getAttribute("data-selected")).toBe("true");
+  });
+
+  it("is reachable from the keyboard through the flow table, not only the pointer", () => {
+    const { plan } = showPipeline(chainDocument());
+    const first = plan.passes[0]?.id ?? "";
+    const row = [...panel().querySelectorAll("tr")].find((tr) => tr.textContent?.includes(first));
+
+    fireEvent.keyDown(row!, { key: "Enter" });
+
+    expect(rail().getAttribute("data-detail")).toBe(first);
+    expect(row?.getAttribute("data-selected")).toBe("true");
+  });
+
+  it("says a selection has LEFT the plan rather than clearing silently", () => {
+    const graph = chainDocument();
+    const plan = compileGraph({ graph, settings, registry, capabilities });
+    const blur = plan.passes.find((pass) => "nodeId" in pass && pass.nodeId === "blur");
+
+    const view = render(
+      <PipelinePanel open onOpenChange={() => {}} installed={plan} compiled={plan} graph={graph} registry={registry} />,
+    );
+    fireEvent.click(panel().querySelector(`[data-pass="${blur?.id}"]`)!);
+    expect(rail().getAttribute("data-state")).toBe("detail");
+
+    // An edit lands while the rail is open: Blur is gone, so its pass is gone.
+    const edited: GraphDocument = {
+      ...graph,
+      revision: 2,
+      nodes: { solid: graph.nodes["solid"]!, out: graph.nodes["out"]! },
+      edges: {
+        e1: { id: "e1", source: { nodeId: "solid", portId: "out" }, target: { nodeId: "out", portId: "input" } },
+      },
+    };
+    const next = compileGraph({ graph: edited, settings, registry, capabilities });
+    expect(next.passes.some((pass) => pass.id === blur?.id)).toBe(false);
+
+    view.rerender(
+      <PipelinePanel open onOpenChange={() => {}} installed={next} compiled={next} graph={edited} registry={registry} />,
+    );
+
+    expect(rail().getAttribute("data-state")).toBe("gone");
+    expect(rail().textContent).toContain("no longer in the running pipeline");
+    expect(rail().textContent).toContain(blur?.id);
+  });
+});
+
+describe("T1188 — the limits table on screen", () => {
+  it("does not read as a clean bill of health when no device is attached", () => {
+    showPipeline(chainDocument());
+    expect(screen.getByTestId("pipeline-limits-absent").textContent).toContain(
+      "not a clean bill of health",
+    );
+    expect(screen.queryByTestId("pipeline-limits")).toBeNull();
+  });
+
+  it("marks the row that exceeds what the device grants", () => {
+    const graph = chainDocument();
+    const plan = compileGraph({ graph, settings, registry, capabilities });
+    render(
+      <PipelinePanel
+        open
+        onOpenChange={() => {}}
+        installed={plan}
+        compiled={plan}
+        graph={graph}
+        registry={registry}
+        capabilities={{ ...capabilities, limits: { maxTextureDimension2D: 64 } }}
+      />,
+    );
+    const row = panel().querySelector('[data-limit="dimension"]');
+    expect(row?.getAttribute("data-ok")).toBe("false");
+    expect(row?.textContent).toContain("OVER THE DEVICE LIMIT");
   });
 });

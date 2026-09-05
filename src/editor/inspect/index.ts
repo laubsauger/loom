@@ -81,7 +81,9 @@ export { PipelinePanel, PipelineReport } from "./pipeline-panel.tsx";
 export type { PipelinePanelProps } from "./pipeline-panel.tsx";
 export { PipelineTrackView } from "./pipeline-track.tsx";
 export type { PipelineTrackViewProps } from "./pipeline-track.tsx";
-export { buildPipelineView } from "./pipeline-model.ts";
+export { PipelineRail } from "./pipeline-rail.tsx";
+export type { PipelineRailProps } from "./pipeline-rail.tsx";
+export { buildPipelineDetail, buildPipelineView } from "./pipeline-model.ts";
 export type {
   PipelineFinding,
   PipelineFindingKind,
@@ -90,6 +92,11 @@ export type {
   PipelineInstallState,
   PipelinePassRow,
   PipelineRequest,
+  PipelineDetail,
+  PipelineDetailField,
+  PipelineDetailGroup,
+  PipelineLimit,
+  PipelineSelection,
   PipelineStats,
   PipelineTrack,
   PipelineTrackLane,

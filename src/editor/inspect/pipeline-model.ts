@@ -1,8 +1,10 @@
 import type { CompiledGraph } from "@compiler/index.ts";
+import type { BackendCapabilities } from "@domain/types/backend.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
 import type { NodeId } from "@domain/types/ids.ts";
 import { isValueSourceDefinition } from "@domain/graph/liveness.ts";
 import type { NodeRegistryView } from "@nodes/registry/registry.ts";
+import { estimateResourceBytes } from "@runtime/backend/plan.ts";
 import type { PassDescriptor, ResourceDescriptor } from "@runtime/backend/plan.ts";
 
 /**
@@ -63,7 +65,8 @@ export type PipelineFindingKind =
   | "flattened"
   | "temporal"
   | "substeps"
-  | "alias";
+  | "alias"
+  | "synthesis";
 
 export interface PipelineFindingRow {
   /** Stable key; also the node or plan entity the row is about. */
@@ -215,6 +218,63 @@ export interface PipelineTrack {
   readonly loops: readonly PipelineTrackLoop[];
 }
 
+/* ────────────────────────────────────────────────────────────────────────────
+ * WILL THE DEVICE TAKE IT (T1188, §T1153)
+ *
+ * The performance pane answers "why is it slow". This answers "what did the compiler
+ * decide, and will the machine accept it" — and a limit breach is a compiler decision
+ * that failed, not a cost. §T1153 is the case that earned the section: a ring whose
+ * `frames` exceeds the device's `maxTextureArrayLayers` fails at `createTexture` ON THE
+ * UNCAPTURED-ERROR PATH — silently, with no diagnostic anywhere — and the user sees a
+ * blank frame with nothing to read. One row ends that.
+ *
+ * `grants` is null when the device did not report the limit. Null is rendered as "not
+ * reported" and never compared: a fabricated ceiling would be worse than no row.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+export interface PipelineLimit {
+  readonly id: string;
+  readonly label: string;
+  /** What this plan asks for. */
+  readonly asks: number;
+  /** What the device grants, or null when it reported no such limit. */
+  readonly grants: number | null;
+  /** False only when both numbers exist and the ask exceeds the grant. */
+  readonly ok: boolean;
+  /** What in the plan asks for it — the thing to go and change. */
+  readonly note: string;
+}
+
+/** One `label: value` line in the detail rail. */
+export interface PipelineDetailField {
+  readonly label: string;
+  readonly value: string;
+  /**
+   * True when the value is a WORD standing in for a fact the plan does not carry.
+   * Rendered dimmed, never as data (§V86's rule, applied past timing).
+   */
+  readonly absent?: boolean;
+}
+
+export interface PipelineDetailGroup {
+  readonly title: string;
+  readonly rows: readonly PipelineDetailField[];
+}
+
+export interface PipelineDetail {
+  readonly kind: "pass" | "resource";
+  readonly id: string;
+  readonly title: string;
+  readonly subtitle: string;
+  readonly groups: readonly PipelineDetailGroup[];
+}
+
+/** What the reader clicked. Ids are the installed plan's own. */
+export interface PipelineSelection {
+  readonly kind: "pass" | "resource";
+  readonly id: string;
+}
+
 export interface PipelineView {
   readonly install: PipelineInstallState;
   /** Null when nothing is installed: there is no pipeline to describe, and it says so. */
@@ -223,6 +283,21 @@ export interface PipelineView {
   readonly passes: readonly PipelinePassRow[];
   /** The diagram. Columns are `passes` by index; lanes are the plan's resources. */
   readonly track: PipelineTrack;
+  /**
+   * What this plan asks of the device against what the device grants. Empty when no
+   * device is attached — the surface says so rather than showing an empty table.
+   */
+  readonly limits: readonly PipelineLimit[];
+  /** False when no `capabilities` was supplied, so "no rows" is not read as "all clear". */
+  readonly limitsMeasured: boolean;
+  /** The limits section's one-line verdict. */
+  readonly limitsSummary: string;
+  /**
+   * What to say when there is no device. Copy lives here with every other sentence on
+   * this screen — `install.headline`, the finding summaries, the detail rows — rather
+   * than inline in a component, which is also what keeps §V90's copy guard green.
+   */
+  readonly limitsNote: string | null;
 }
 
 export interface PipelineRequest {
@@ -236,6 +311,78 @@ export interface PipelineRequest {
   /** The FLATTENED document — the graph whose ids the plan speaks (§V82). */
   readonly graph: GraphDocument;
   readonly registry: NodeRegistryView;
+  /**
+   * The DEVICE, for the limits section. Omitted — no GPU attached — the section says so
+   * rather than comparing the plan against numbers nobody measured.
+   */
+  readonly capabilities?: BackendCapabilities | undefined;
+}
+
+/**
+ * §V944 — THE STALENESS KEY IS DERIVED FROM WHAT *THIS* SCREEN READS, never borrowed.
+ *
+ * §B188 is the reason this function exists instead of a `signature !== signature`
+ * comparison. `planStructureSignature` is built for ONE consumer — the vgpu backend
+ * deciding when to rebuild its GPU program — so it names resources and passes and
+ * nothing else. That is correct for the backend and §V5 requires it to stay blind to
+ * uniform values. But a SYNTHESIZED PREVIEW (`ResolvedOutput.synthesis`, T563) mints
+ * neither a resource nor a pass, so two plans differing only in `outputs[].synthesis`
+ * have byte-identical signatures — measured on E47, 30 resources and 37 passes with and
+ * without preview sinks. `use-frame-loop` borrowed that key to decide "is this plan worth
+ * announcing" and never announced the second one; every pointset tile read "no signal".
+ *
+ * ⚑ And the same borrowing put the bug INSIDE the screen built to catch it: this module
+ * compared the two signatures and would have reported "in sync" for the whole defect. A
+ * banner that says "running" while the app is a compile behind is worse than no banner,
+ * because it is trusted.
+ *
+ * So the key below is a projection of exactly the fields the sections of this screen
+ * read, and `plan.signature` is ONE component of it rather than the whole test. Adding a
+ * section that reads a new field means adding it here. What it deliberately ignores:
+ * uniform VALUES (§V5 — they are pushed per frame and this screen never renders them) and
+ * shader TEXT (folded in already, via `passSignatures`).
+ *
+ * It is NOT folded back into `planStructureSignature`: that key must stay exactly what
+ * the backend needs, which is §V944's whole point.
+ */
+function viewIdentity(plan: CompiledGraph): string {
+  const outputs = plan.outputs
+    .map((output) => {
+      const synthesis =
+        output.synthesis === undefined
+          ? "-"
+          : [
+              output.synthesis.kind ?? "?",
+              output.synthesis.passes.map((pass) => pass.id).join(","),
+              output.synthesis.depth ? "depth" : "",
+              output.synthesis.orbit === undefined ? "" : "orbit",
+            ].join("/");
+      return [
+        output.nodeId,
+        output.portId,
+        output.resourceId,
+        output.resourceKind,
+        output.size.join("x"),
+        output.format,
+        output.space,
+        output.temporal ? "t" : "",
+        output.depth === true ? "d" : "",
+        output.msaa === true ? "m" : "",
+        synthesis,
+      ].join(":");
+    })
+    .join("|");
+
+  return [
+    plan.signature,
+    plan.ok ? "ok" : "errors",
+    outputs,
+    plan.order.join(","),
+    plan.pruned.join(","),
+    plan.feedback.map((pair) => `${pair.resourceId}@${pair.resetSignature}`).join(","),
+    plan.sources.map((source) => `${source.nodeId}=${source.sourcePath}`).join(","),
+    `${plan.estimatedResourceBytes}`,
+  ].join("\n");
 }
 
 function installState(request: PipelineRequest): PipelineInstallState {
@@ -261,13 +408,13 @@ function installState(request: PipelineRequest): PipelineInstallState {
       diverged: true,
     };
   }
-  if (compiled !== null && compiled.signature !== installed.signature) {
+  if (compiled !== null && viewIdentity(compiled) !== viewIdentity(installed)) {
     return {
       kind: "waiting",
       headline: "Waiting to install",
       detail:
-        "A newer plan compiled cleanly and is on its way to the device. What is described below is what the GPU " +
-        "still holds.",
+        "A newer plan compiled cleanly. What is described below is the last plan this app saw installed — " +
+        "either it has not landed on the device yet, or nothing announced that it had.",
       diverged: true,
     };
   }
@@ -495,6 +642,48 @@ function temporalFinding(
       rows.length === 0
         ? "No output in this plan carries a previous frame."
         : `${rows.length} output${rows.length === 1 ? "" : "s"} carr${rows.length === 1 ? "ies" : "y"} the previous frame, so the graph that runs is not the DAG on the canvas.`,
+    rows,
+  };
+}
+
+/**
+ * §B188's row — the synthesized previews the INSTALLED plan carries (T563, §V944).
+ *
+ * A preview of a pointset or a scene is not drawn by the main plan: the compiler
+ * publishes `ResolvedOutput.synthesis`, a set of draw passes the PREVIEW PROGRAM owns and
+ * runs on its own cadence. That makes it invisible to `planStructureSignature` — it mints
+ * neither a resource nor a pass — which is exactly how a whole document's pointset tiles
+ * came to read "no signal" with every other surface reporting health. Nothing else in the
+ * product says whether the running plan carries them, so this does.
+ */
+function synthesisFinding(
+  plan: CompiledGraph,
+  nameOf: (nodeId: NodeId) => string,
+): PipelineFinding {
+  const rows: PipelineFindingRow[] = [];
+  for (const output of plan.outputs) {
+    if (output.synthesis === undefined) continue;
+    const synthesis = output.synthesis;
+    rows.push({
+      id: `${output.nodeId}:${output.portId}`,
+      nodeId: output.nodeId,
+      text:
+        `${nameOf(output.nodeId)}:${output.portId} — ${synthesis.kind ?? "preview"} drawn by ` +
+        `${synthesis.passes.length} synthesized pass${synthesis.passes.length === 1 ? "" : "es"}` +
+        `${synthesis.orbit === undefined ? "" : ", orbitable"}. The main plan carries neither ` +
+        `those passes nor their target.`,
+    });
+  }
+  const pointsets = plan.outputs.filter((output) => output.resourceKind === "pointset").length;
+  return {
+    kind: "synthesis",
+    title: "Previews synthesized",
+    summary:
+      rows.length === 0
+        ? pointsets === 0
+          ? "No output in this plan needs a synthesized preview."
+          : `No output carries a synthesized preview, and ${pointsets} pointset output${pointsets === 1 ? "" : "s"} would need one to show a picture.`
+        : `${rows.length} of ${plan.outputs.length} outputs carry a preview program the main plan does not draw.`,
     rows,
   };
 }
@@ -784,19 +973,362 @@ function encodeCount(plan: CompiledGraph, loops: readonly PipelineTrackLoop[]): 
   return total;
 }
 
+/** What the rail says when the thing you selected has left the installed plan. */
+export function missingSelectionNote(selection: PipelineSelection): string {
+  const what = selection.kind === "pass" ? "That pass" : "That resource";
+  return `${what} is no longer in the running pipeline. It was here when you selected it, and the installed plan has since changed.`;
+}
+
+const NO_DEVICE_NOTE =
+  "No GPU is attached to this session, so the plan has nothing to be measured against. This is not a clean bill of health.";
+
+function limitsSummary(measured: boolean, limits: readonly PipelineLimit[]): string {
+  if (!measured) return "no device attached, so nothing here is compared";
+  const breaches = limits.filter((limit) => !limit.ok).length;
+  if (breaches === 0) return "every ask is inside what this device grants";
+  return `${breaches} ask${breaches === 1 ? "" : "s"} exceed what this device grants`;
+}
+
+/** The largest thing of one shape the plan asks for, and what asks for it. */
+interface Ask {
+  readonly asks: number;
+  readonly note: string;
+}
+
+function largest(entries: ReadonlyArray<Ask>): Ask | null {
+  let best: Ask | null = null;
+  for (const entry of entries) {
+    if (best === null || entry.asks > best.asks) best = entry;
+  }
+  return best;
+}
+
+function buildLimits(plan: CompiledGraph, capabilities: BackendCapabilities): PipelineLimit[] {
+  const grantOf = (name: string): number | null => {
+    const value = capabilities.limits[name];
+    return typeof value === "number" && Number.isFinite(value) ? value : null;
+  };
+
+  const dimensions: Ask[] = [];
+  const layers: Ask[] = [];
+  const bytes: Ask[] = [];
+  for (const resource of plan.resources) {
+    const sized = sizedResource(resource);
+    if (sized !== null) {
+      dimensions.push({
+        asks: Math.max(sized.size[0], sized.size[1]),
+        note: `${resource.id} is ${describeSize(sized.size)}`,
+      });
+    }
+    if ("frames" in resource) {
+      layers.push({ asks: resource.frames, note: `${resource.id} holds ${resource.frames} frames` });
+    }
+    if ("capacity" in resource) {
+      bytes.push({
+        asks: resource.stride * resource.capacity,
+        note: `${resource.id} is ${resource.capacity} × ${resource.stride} B`,
+      });
+    }
+  }
+
+  const textures: Ask[] = [];
+  const buffers: Ask[] = [];
+  const workgroups: Ask[] = [];
+  for (const pass of plan.passes) {
+    if ("textures" in pass && (pass.textures ?? []).length > 0) {
+      textures.push({ asks: (pass.textures ?? []).length, note: `${pass.id} binds ${(pass.textures ?? []).length}` });
+    }
+    if ("buffers" in pass && (pass.buffers ?? []).length > 0) {
+      buffers.push({ asks: (pass.buffers ?? []).length, note: `${pass.id} binds ${(pass.buffers ?? []).length}` });
+    }
+    if (pass.kind === "dispatch" && Array.isArray(pass.workgroups)) {
+      workgroups.push({
+        asks: Math.max(...pass.workgroups),
+        note: `${pass.id} dispatches ${pass.workgroups.join(" × ")}`,
+      });
+    }
+  }
+
+  const rows: PipelineLimit[] = [];
+  const add = (id: string, label: string, limit: string, entries: ReadonlyArray<Ask>): void => {
+    const ask = largest(entries);
+    if (ask === null) return;
+    const grants = grantOf(limit);
+    rows.push({
+      id,
+      label,
+      asks: ask.asks,
+      grants,
+      ok: grants === null || ask.asks <= grants,
+      note: ask.note,
+    });
+  };
+
+  add("dimension", "largest texture edge", "maxTextureDimension2D", dimensions);
+  // §T1153: the one that fails on the uncaptured-error path with no diagnostic at all.
+  add("layers", "deepest ring", "maxTextureArrayLayers", layers);
+  add("buffer", "largest buffer", "maxStorageBufferBindingSize", bytes);
+  add("textures", "textures bound by one pass", "maxSampledTexturesPerShaderStage", textures);
+  add("buffers", "storage buffers bound by one pass", "maxStorageBuffersPerShaderStage", buffers);
+  add("workgroups", "largest dispatch dimension", "maxComputeWorkgroupsPerDimension", workgroups);
+  return rows;
+}
+
+const NOT_STATED = "not stated by the plan";
+
+function field(label: string, value: string): PipelineDetailField {
+  return { label, value };
+}
+
+function absentField(label: string, value: string): PipelineDetailField {
+  return { label, value, absent: true };
+}
+
+function describeBindingTarget(resourceId: string, byId: Map<string, ResourceDescriptor>): string {
+  const resource = byId.get(resourceId);
+  if (resource === undefined) return `${resourceId} (no such resource in this plan)`;
+  return `${resourceId} — ${laneDetail(resource)}`;
+}
+
+function passGroups(
+  pass: PassDescriptor,
+  byId: Map<string, ResourceDescriptor>,
+): PipelineDetailGroup[] {
+  const groups: PipelineDetailGroup[] = [];
+  const what: PipelineDetailField[] = [];
+
+  if ("target" in pass) what.push(field("writes", describeBindingTarget(pass.target, byId)));
+  if (pass.kind === "swap") {
+    what.push(field("rotates", describeBindingTarget(pass.resourceId, byId)));
+    what.push(field("effect", "the half written this frame becomes the half read next frame (§V22)"));
+  }
+  if (pass.kind === "counter") {
+    what.push(field("operation", pass.op));
+    what.push(field("counter", describeBindingTarget(pass.resourceId, byId)));
+    if (pass.outputResourceId !== undefined) {
+      what.push(field("writes", describeBindingTarget(pass.outputResourceId, byId)));
+    }
+  }
+  if (pass.kind === "loop") {
+    what.push(field("edge", pass.edge));
+    if (pass.count !== undefined) what.push(field("iterations", `${pass.count}`));
+  }
+  if (pass.kind === "dispatch") {
+    what.push(field("entry point", pass.entryPoint));
+    what.push(
+      field(
+        "workgroups",
+        Array.isArray(pass.workgroups)
+          ? pass.workgroups.join(" × ")
+          : `indirect from ${(pass.workgroups as { readonly indirect: string }).indirect}`,
+      ),
+    );
+  }
+  if (pass.kind === "draw") {
+    what.push(field("topology", pass.topology));
+    what.push(
+      field(
+        "instances",
+        typeof pass.instances === "number" ? `${pass.instances}` : `indirect from ${pass.instances.indirect}`,
+      ),
+    );
+    if (pass.vertexCount !== undefined) what.push(field("vertices", `${pass.vertexCount}`));
+    what.push(field("blend", pass.blend ?? "none"));
+    what.push(field("depth write", pass.depthWrite === false ? "off" : "on"));
+  }
+  if ("clear" in pass) what.push(field("clears first", pass.clear === false ? "no — accumulates" : "yes"));
+  if (what.length > 0) groups.push({ title: "What it does", rows: what });
+
+  const reads: PipelineDetailField[] = [];
+  for (const binding of "textures" in pass ? (pass.textures ?? []) : []) {
+    const how = binding.live === true
+      ? "the frame being written now (B160)"
+      : binding.array === true
+        ? "the whole history as an array (T321)"
+        : binding.tap !== undefined
+          ? `${binding.tap} frame(s) back (T237)`
+          : "current";
+    reads.push(
+      field(binding.binding, `${describeBindingTarget(binding.resourceId, byId)} · ${binding.sampled ?? "filtered"} · ${how}`),
+    );
+  }
+  if (reads.length > 0) groups.push({ title: "Texture bindings", rows: reads });
+
+  const buffers: PipelineDetailField[] = [];
+  for (const binding of "buffers" in pass ? (pass.buffers ?? []) : []) {
+    const region =
+      binding.offset === undefined
+        ? "whole buffer"
+        : `bytes ${binding.offset}–${binding.offset + (binding.bytes ?? 0)} (T1076)`;
+    buffers.push(
+      field(binding.binding, `${describeBindingTarget(binding.resourceId, byId)} · ${binding.half ?? "read"} half · ${region}`),
+    );
+  }
+  if (buffers.length > 0) {
+    buffers.push(
+      absentField(
+        "access direction",
+        `${NOT_STATED} — \`half\` names WHICH half a binding sees, never whether the shader reads or writes it (§V231, T322)`,
+      ),
+    );
+    groups.push({ title: "Buffer bindings", rows: buffers });
+  }
+
+  const identity: PipelineDetailField[] = [];
+  if ("shader" in pass) identity.push(field("shader", `${pass.shader.length} chars of WGSL`));
+  if ("uniformBinding" in pass && pass.uniformBinding !== undefined) {
+    const names = "uniforms" in pass && pass.uniforms !== undefined ? Object.keys(pass.uniforms).sort() : [];
+    identity.push(field("uniform block", pass.uniformBinding));
+    identity.push(
+      names.length === 0
+        ? absentField("uniform members", "none declared")
+        : field("uniform members", names.join(", ")),
+    );
+    // §V5: values are pushed with `updateUniforms` and never reach the compile key, so what
+    // the installed plan carries is the value at INSTALL time. Rendering it as live would
+    // be a fresh lie inside the screen built to avoid exactly that.
+    identity.push(absentField("uniform values", "pushed every frame — not read here"));
+  }
+  if ("sharedBinding" in pass && pass.sharedBinding !== undefined) {
+    identity.push(field("frame block", pass.sharedBinding));
+  }
+  /*
+   * No signature row. `passSignatures` embeds the whole WGSL, so it renders as a wall of
+   * shader text — and the question it answers ("did this pass change between two plans")
+   * cannot be asked with one plan on screen. The shader size and the uniform block are
+   * the identity a reader can actually use here.
+   */
+  if (identity.length > 0) groups.push({ title: "Identity", rows: identity });
+
+  return groups;
+}
+
+function resourceGroups(
+  resource: ResourceDescriptor,
+  plan: CompiledGraph,
+  lane: PipelineTrackLane | undefined,
+  passes: readonly PipelinePassRow[],
+  nameOf: (nodeId: NodeId) => string,
+): PipelineDetailGroup[] {
+  const groups: PipelineDetailGroup[] = [];
+  const storage: PipelineDetailField[] = [field("kind", resource.kind), field("shape", laneDetail(resource))];
+  if ("depth" in resource && resource.depth === true) storage.push(field("depth attachment", "yes"));
+  if ("msaa" in resource && resource.msaa === true) storage.push(field("multisampled", "4×"));
+  if ("sourceId" in resource) storage.push(field("supplied by", resource.sourceId));
+  if ("usage" in resource) storage.push(field("usage", resource.usage));
+  storage.push(field("estimated memory", `${estimateResourceBytes([resource])} B`));
+  groups.push({ title: "Storage", rows: storage });
+
+  const outputs = plan.outputs.filter((output) => output.resourceId === resource.id);
+  if (outputs.length > 0) {
+    groups.push({
+      title: outputs.length > 1 ? "Node outputs sharing it" : "Node output",
+      rows: outputs.map((output) =>
+        field(`${nameOf(output.nodeId)}:${output.portId}`, `${output.format} · ${output.space}${output.temporal ? " · temporal" : ""}`),
+      ),
+    });
+  }
+
+  if (lane !== undefined) {
+    const at = (column: number): string => `pass ${column + 1} · ${passes[column]?.id ?? "?"}`;
+    const timeline: PipelineDetailField[] = [];
+    for (const segment of lane.segments) {
+      const marks = segment.marks.map((mark) => `${mark.kind} at ${mark.column + 1}`).join(", ");
+      timeline.push(field(segment.label, `passes ${segment.from + 1}–${segment.to + 1} · ${marks}`));
+    }
+    if (lane.aliased) {
+      timeline.push(
+        field("reuse", `${lane.segments.length} nodes hold this one resource in turn (§V6, §V8)`),
+      );
+    }
+    if (lane.loopBack !== null) {
+      timeline.push(
+        field(
+          "crosses the frame",
+          `read at ${at(lane.loopBack.readColumn)} before it is written at ${at(lane.loopBack.writeColumn)} — that read is LAST frame's value (§V22, §V285)`,
+        ),
+      );
+    }
+    if (lane.terminal) timeline.push(field("ends", "nothing downstream reads it: its contents leave the frame"));
+    if (lane.stranded) timeline.push(field("stranded", "written, and read by nothing — work nobody collects"));
+    if (lane.segments.every((segment) => segment.marks.every((mark) => mark.kind === "use" || mark.kind === "swap"))) {
+      timeline.push(absentField("read / write", `${NOT_STATED} for buffer bindings (§V231, T322)`));
+    }
+    groups.push({ title: "Through the frame", rows: timeline });
+  }
+
+  return groups;
+}
+
+/**
+ * The detail rail's content for one selection, or null when the installed plan no longer
+ * has it.
+ *
+ * Null is a REPORTED state, not a cleared one: an edit can land while the rail is open,
+ * and silently blanking would be the same dishonesty the install banner exists to
+ * prevent. The surface says the thing is gone.
+ */
+export function buildPipelineDetail(
+  request: PipelineRequest,
+  selection: PipelineSelection,
+): PipelineDetail | null {
+  const plan = request.installed;
+  if (plan === null) return null;
+  const nameOf = nodeNamer(plan, request.graph);
+  const byId = new Map(plan.resources.map((resource) => [resource.id, resource] as const));
+
+  if (selection.kind === "pass") {
+    const column = plan.passes.findIndex((pass) => pass.id === selection.id);
+    const pass = plan.passes[column];
+    if (pass === undefined) return null;
+    const nodeId = "nodeId" in pass && pass.nodeId !== undefined ? (pass.nodeId as NodeId) : null;
+    return {
+      kind: "pass",
+      id: pass.id,
+      title: pass.id,
+      subtitle: `pass ${column + 1} of ${plan.passes.length} · ${pass.kind}${nodeId === null ? "" : ` · ${nameOf(nodeId)}`}`,
+      groups: passGroups(pass, byId),
+    };
+  }
+
+  const resource = byId.get(selection.id);
+  if (resource === undefined) return null;
+  const track = buildTrack(plan, nameOf);
+  const lane = track.lanes.find((entry) => entry.resourceId === selection.id);
+  return {
+    kind: "resource",
+    id: resource.id,
+    title: resource.id,
+    subtitle: `${resource.kind} · ${laneDetail(resource)}`,
+    groups: resourceGroups(resource, plan, lane, passRows(plan, nameOf), nameOf),
+  };
+}
+
 /**
  * Builds the pipeline inspector's model. Pure; hand it a fixture and it renders.
  */
 export function buildPipelineView(request: PipelineRequest): PipelineView {
   const install = installState(request);
   const plan = request.installed;
+  const limitsMeasured = request.capabilities !== undefined;
   if (plan === null) {
-    return { install, stats: null, findings: [], passes: [], track: { lanes: [], loops: [] } };
+    return {
+      install,
+      stats: null,
+      findings: [],
+      passes: [],
+      track: { lanes: [], loops: [] },
+      limits: [],
+      limitsMeasured,
+      limitsSummary: limitsSummary(limitsMeasured, []),
+      limitsNote: limitsMeasured ? null : NO_DEVICE_NOTE,
+    };
   }
 
   const nameOf = nodeNamer(plan, request.graph);
   const moved = transitions(plan);
   const track = buildTrack(plan, nameOf);
+  const limits = request.capabilities === undefined ? [] : buildLimits(plan, request.capabilities);
 
   return {
     install,
@@ -814,11 +1346,16 @@ export function buildPipelineView(request: PipelineRequest): PipelineView {
       transitionFinding("format", moved.format, nameOf),
       transitionFinding("resolution", moved.resolution, nameOf),
       temporalFinding(plan, request.graph, nameOf),
+      synthesisFinding(plan, nameOf),
       flattenedFinding(plan),
       substepFinding(plan, nameOf),
       aliasFinding(plan, nameOf),
     ],
     passes: passRows(plan, nameOf),
     track,
+    limits,
+    limitsMeasured,
+    limitsSummary: limitsSummary(limitsMeasured, limits),
+    limitsNote: limitsMeasured ? null : NO_DEVICE_NOTE,
   };
 }

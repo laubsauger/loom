@@ -5,7 +5,7 @@ import { createNodeRegistry } from "@nodes/registry/registry.ts";
 import { allNodeDefinitions } from "@nodes/definitions/index.ts";
 import type { BackendCapabilities } from "@domain/types/backend.ts";
 import type { GraphDocument, ProjectSettings } from "@domain/types/graph.ts";
-import { buildPipelineView } from "./pipeline-model.ts";
+import { buildPipelineDetail, buildPipelineView } from "./pipeline-model.ts";
 import type { PipelineFindingKind, PipelineView } from "./pipeline-model.ts";
 
 /**
@@ -319,3 +319,267 @@ describe("T1188 — the decisions the compiler made", () => {
     expect(view.stats?.passes).toBe(view.passes.length);
   });
 });
+
+/**
+ * §B188 / §V944 — THE STALENESS CHECK IS DERIVED FROM WHAT THIS SCREEN READS.
+ *
+ * The bug: `planStructureSignature` names resources and passes and nothing else, because
+ * that is what the vgpu backend rebuilds its GPU program on. A SYNTHESIZED PREVIEW mints
+ * neither, so a plan compiled WITH preview sinks and the same plan compiled WITHOUT them
+ * have byte-identical signatures while differing in `outputs[].synthesis`.
+ * `use-frame-loop` borrowed that key to decide what to announce and never announced the
+ * second plan — and this module borrowed it too, so the banner said "running" for the
+ * whole defect. A banner that is trusted and wrong is worse than no banner.
+ */
+describe("§B188 — a plan that differs only in a synthesized preview is NOT in sync", () => {
+  /** grid → kernel → renderPoints → out, which gives the pointset outputs a sink can watch. */
+  function pointGraph(): GraphDocument {
+    return {
+      revision: 1,
+      nodes: {
+        grid: { id: "grid", type: "pointGrid", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: {}, label: "grid" },
+        drift: { id: "drift", type: "pointKernel", definitionVersion: 1, position: { x: 200, y: 0 }, parameters: {}, label: "drift" },
+        dots: { id: "dots", type: "renderPoints", definitionVersion: 1, position: { x: 400, y: 0 }, parameters: {}, label: "dots" },
+        out: { id: "out", type: "output", definitionVersion: 1, position: { x: 600, y: 0 }, parameters: {}, label: "out" },
+      },
+      edges: {
+        e1: { id: "e1", source: { nodeId: "grid", portId: "out" }, target: { nodeId: "drift", portId: "in" } },
+        e2: { id: "e2", source: { nodeId: "drift", portId: "out" }, target: { nodeId: "dots", portId: "points" } },
+        e3: { id: "e3", source: { nodeId: "dots", portId: "out" }, target: { nodeId: "out", portId: "input" } },
+      },
+      groups: {},
+    };
+  }
+
+  it("reports WAITING where the borrowed signature said in sync", () => {
+    const graph = pointGraph();
+    const withoutPreviews = compile(graph);
+    const withPreviews = compileGraph({
+      graph,
+      settings,
+      registry,
+      capabilities,
+      sinks: [
+        { nodeId: "grid", kind: "preview" },
+        { nodeId: "drift", kind: "preview" },
+      ],
+    });
+
+    // THE PREMISE, MEASURED — not assumed. The two plans are byte-identical to the key
+    // `use-frame-loop` and this module both used to borrow…
+    expect(withPreviews.signature).toBe(withoutPreviews.signature);
+    expect(withPreviews.passes.length).toBe(withoutPreviews.passes.length);
+    expect(withPreviews.resources.length).toBe(withoutPreviews.resources.length);
+    // …and they differ in the one field that decides whether a pointset tile draws.
+    const synthesized = (plan: CompiledGraph) =>
+      plan.outputs.filter((output) => output.synthesis !== undefined).length;
+    expect(synthesized(withPreviews)).toBeGreaterThan(synthesized(withoutPreviews));
+
+    // The claim: the screen must NOT call this in sync.
+    const view = buildPipelineView({
+      installed: withoutPreviews,
+      compiled: withPreviews,
+      graph,
+      registry,
+    });
+    expect(view.install.kind).toBe("waiting");
+    expect(view.install.diverged).toBe(true);
+  });
+
+  it("still reports RUNNING when the two plans really are the same", () => {
+    const graph = pointGraph();
+    const plan = compile(graph);
+    const same = compile(graph);
+    expect(buildPipelineView({ installed: plan, compiled: same, graph, registry }).install.kind).toBe(
+      "running",
+    );
+  });
+
+  it("names the synthesized previews the installed plan carries", () => {
+    const graph = pointGraph();
+    const plan = compileGraph({
+      graph,
+      settings,
+      registry,
+      capabilities,
+      sinks: [{ nodeId: "drift", kind: "preview" }],
+    });
+    const view = buildPipelineView({ installed: plan, compiled: plan, graph, registry });
+    const said = saidAbout(view, "synthesis");
+    expect(said).toContain("outputs carry a preview program the main plan does not draw");
+    expect(said).toContain("drift:out");
+
+    // And the plan WITHOUT them says the pointsets have none — which is the sentence that
+    // would have made §B188 obvious on sight.
+    const bare = buildPipelineView({ installed: compile(graph), compiled: compile(graph), graph, registry });
+    expect(saidAbout(bare, "synthesis")).toContain("would need one to show a picture");
+  });
+});
+
+describe("T1188 — will the device take it (§T1153)", () => {
+  it("says a ring deeper than the device's array limit is over it, and what asks", () => {
+    const graph = chain();
+    graph.nodes["hold"] = {
+      id: "hold",
+      type: "cache",
+      definitionVersion: 1,
+      position: { x: 300, y: 0 },
+      parameters: { frames: 60 },
+      label: "hold",
+    };
+    graph.edges["e3"] = {
+      id: "e3",
+      source: { nodeId: "blur", portId: "out" },
+      target: { nodeId: "hold", portId: "input" },
+    };
+    graph.edges["e2"] = {
+      id: "e2",
+      source: { nodeId: "hold", portId: "out" },
+      target: { nodeId: "out", portId: "input" },
+    };
+    const plan = compile(graph);
+    // The premise: a ring really is allocated, with the depth the user asked for.
+    const ring = plan.resources.find((resource) => resource.kind === "ring");
+    expect(ring).toBeDefined();
+
+    const view = buildPipelineView({
+      installed: plan,
+      compiled: plan,
+      graph,
+      registry,
+      // §T1153: reported by every real device, enforced nowhere — a ring past it dies at
+      // `createTexture` on the uncaptured-error path with no diagnostic at all.
+      capabilities: { ...capabilities, limits: { maxTextureDimension2D: 8192, maxTextureArrayLayers: 32 } },
+    });
+    const layers = view.limits.find((limit) => limit.id === "layers");
+    expect(layers?.asks).toBe(60);
+    expect(layers?.grants).toBe(32);
+    expect(layers?.ok).toBe(false);
+    expect(layers?.note).toContain("holds 60 frames");
+
+    // A device that does grant it is clean, so the row is a comparison and not a warning.
+    const roomy = buildPipelineView({
+      installed: plan,
+      compiled: plan,
+      graph,
+      registry,
+      capabilities: { ...capabilities, limits: { maxTextureArrayLayers: 256 } },
+    });
+    expect(roomy.limits.find((limit) => limit.id === "layers")?.ok).toBe(true);
+  });
+
+  it("never invents a ceiling the device did not report", () => {
+    const graph = chain();
+    const plan = compile(graph);
+    const view = buildPipelineView({
+      installed: plan,
+      compiled: plan,
+      graph,
+      registry,
+      capabilities: { ...capabilities, limits: {} },
+    });
+    expect(view.limitsMeasured).toBe(true);
+    expect(view.limits.length).toBeGreaterThan(0);
+    for (const limit of view.limits) {
+      expect(limit.grants).toBeNull();
+      // Unknown is never a breach, and never a pass either — it is unknown.
+      expect(limit.ok).toBe(true);
+    }
+  });
+
+  it("distinguishes 'no device' from 'all clear'", () => {
+    const graph = chain();
+    const plan = compile(graph);
+    const view = buildPipelineView({ installed: plan, compiled: plan, graph, registry });
+    expect(view.limitsMeasured).toBe(false);
+    expect(view.limits).toEqual([]);
+  });
+});
+
+describe("T1188 — the detail a click gives you", () => {
+  it("describes a pass by its target, its bindings and its identity", () => {
+    const graph = chain();
+    const plan = compile(graph);
+    const request = { installed: plan, compiled: plan, graph, registry };
+    const blur = plan.passes.find((pass) => "target" in pass && "nodeId" in pass && pass.nodeId === "blur");
+    const detail = buildPipelineDetail(request, { kind: "pass", id: blur?.id ?? "" });
+
+    expect(detail?.subtitle).toContain("blur");
+    const text = (detail?.groups ?? []).flatMap((group) => group.rows.map((row) => `${row.label}=${row.value}`));
+    expect(text.some((row) => row.startsWith("writes="))).toBe(true);
+    expect(text.some((row) => row.includes("filtered"))).toBe(true);
+    // §V5: the values are pushed every frame, so the rail refuses to render install-time
+    // numbers as if they were live.
+    expect(text.some((row) => row === "uniform values=pushed every frame — not read here")).toBe(true);
+  });
+
+  it("describes a resource by who holds it and what crosses the frame", () => {
+    const graph = loopGraph();
+    const plan = compile(graph);
+    const pair = plan.feedback[0]?.resourceId ?? "";
+    const detail = buildPipelineDetail(
+      { installed: plan, compiled: plan, graph, registry },
+      { kind: "resource", id: pair },
+    );
+    const text = (detail?.groups ?? []).flatMap((group) => group.rows.map((row) => `${row.label}=${row.value}`));
+    expect(text.some((row) => row.startsWith("crosses the frame="))).toBe(true);
+    expect(text.join("\n")).toContain("LAST frame's value");
+  });
+
+  it("says the plan does not state buffer access direction, rather than guessing", () => {
+    const graph = pointChainGraph();
+    const plan = compile(graph);
+    const detail = buildPipelineDetail(
+      { installed: plan, compiled: plan, graph, registry },
+      { kind: "resource", id: "scratch:grid:@points" },
+    );
+    const text = (detail?.groups ?? []).flatMap((group) => group.rows.map((row) => `${row.label}=${row.value}`));
+    expect(text.join("\n")).toContain("not stated by the plan");
+    expect(text.join("\n")).toContain("§V231");
+  });
+
+  it("returns nothing for a selection the installed plan no longer has", () => {
+    const graph = chain();
+    const plan = compile(graph);
+    const request = { installed: plan, compiled: plan, graph, registry };
+    expect(buildPipelineDetail(request, { kind: "pass", id: "gone#nope" })).toBeNull();
+    expect(buildPipelineDetail(request, { kind: "resource", id: "target:gone:out" })).toBeNull();
+  });
+});
+
+/** Solid → Cross → Output with a Feedback naming Cross. Shared by the detail tests. */
+function loopGraph(): GraphDocument {
+  return {
+    revision: 1,
+    nodes: {
+      solid: { id: "solid", type: "solid", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: {}, label: "solid" },
+      mix: { id: "mix", type: "cross", definitionVersion: 1, position: { x: 200, y: 0 }, parameters: {}, label: "mix" },
+      fb: { id: "fb", type: "feedback", definitionVersion: 1, position: { x: 200, y: 200 }, parameters: { source: "mix" }, label: "fb" },
+      out: { id: "out", type: "output", definitionVersion: 1, position: { x: 400, y: 0 }, parameters: {}, label: "out" },
+    },
+    edges: {
+      e1: { id: "e1", source: { nodeId: "solid", portId: "out" }, target: { nodeId: "mix", portId: "in1" } },
+      e2: { id: "e2", source: { nodeId: "fb", portId: "out" }, target: { nodeId: "mix", portId: "in2" } },
+      e3: { id: "e3", source: { nodeId: "mix", portId: "out" }, target: { nodeId: "out", portId: "input" } },
+    },
+    groups: {},
+  };
+}
+
+function pointChainGraph(): GraphDocument {
+  return {
+    revision: 1,
+    nodes: {
+      grid: { id: "grid", type: "pointGrid", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: {}, label: "grid" },
+      drift: { id: "drift", type: "pointKernel", definitionVersion: 1, position: { x: 200, y: 0 }, parameters: {}, label: "drift" },
+      dots: { id: "dots", type: "renderPoints", definitionVersion: 1, position: { x: 400, y: 0 }, parameters: {}, label: "dots" },
+      out: { id: "out", type: "output", definitionVersion: 1, position: { x: 600, y: 0 }, parameters: {}, label: "out" },
+    },
+    edges: {
+      e1: { id: "e1", source: { nodeId: "grid", portId: "out" }, target: { nodeId: "drift", portId: "in" } },
+      e2: { id: "e2", source: { nodeId: "drift", portId: "out" }, target: { nodeId: "dots", portId: "points" } },
+      e3: { id: "e3", source: { nodeId: "dots", portId: "out" }, target: { nodeId: "out", portId: "input" } },
+    },
+    groups: {},
+  };
+}

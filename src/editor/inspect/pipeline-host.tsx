@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import type { LoomBus } from "@domain/commands/bus.ts";
 import type { CompiledGraph } from "@compiler/index.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
+import type { BackendCapabilities } from "@domain/types/backend.ts";
 import type { NodeRegistryView } from "@nodes/registry/registry.ts";
+import type { TelemetrySource } from "@runtime/telemetry/index.ts";
 import { PipelinePanel } from "./pipeline-panel.tsx";
 import { registerPipelineCommand } from "./pipeline-command.ts";
 
@@ -29,9 +31,21 @@ export interface PipelineHostProps {
   /** The FLATTENED document, whose ids the plan speaks (§V82). */
   graph: GraphDocument;
   registry: NodeRegistryView;
+  /** The DEVICE, for the limits section (§T1153). Absent, that section says so. */
+  capabilities?: BackendCapabilities | undefined;
+  /** Per-pass GPU spans for the detail rail. */
+  telemetry?: TelemetrySource | null | undefined;
 }
 
-export function PipelineHost({ bus, installed, compiled, graph, registry }: PipelineHostProps) {
+export function PipelineHost({
+  bus,
+  installed,
+  compiled,
+  graph,
+  registry,
+  capabilities,
+  telemetry,
+}: PipelineHostProps) {
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
@@ -55,6 +69,8 @@ export function PipelineHost({ bus, installed, compiled, graph, registry }: Pipe
       compiled={compiled}
       graph={graph}
       registry={registry}
+      {...(capabilities === undefined ? {} : { capabilities })}
+      {...(telemetry === undefined ? {} : { telemetry })}
     />
   );
 }

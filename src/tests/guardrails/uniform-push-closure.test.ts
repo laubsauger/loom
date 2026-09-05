@@ -118,6 +118,23 @@ const SIGNATURE_SITES: Readonly<Record<string, Ledger>> = {
     pushSite: null,
   },
 
+  "src/editor/inspect/pipeline-model.ts": {
+    gates:
+      "the pipeline inspector's INSTALL BANNER — \"this is the running pipeline\" versus " +
+      "\"waiting to install\" (§T1188). §B188 caught this module borrowing `plan.signature` " +
+      "for that verdict, which made the debug screen built to catch §B179 report \"in sync\" " +
+      "throughout §B188 itself. It now derives its own key (`viewIdentity`) from exactly the " +
+      "fields the screen renders — `outputs`, synthesis included — with `plan.signature` as " +
+      "ONE component rather than the whole test, and it is deliberately NOT folded back into " +
+      "`planStructureSignature`, which must stay exactly what the backend needs (§V944).",
+    // No push, and this is the one entry where that is a POSITIVE claim rather than an
+    // absence: the module installs nothing on a device, and its value-blindness is a
+    // rendering decision it states on screen — the detail rail prints "uniform values:
+    // pushed every frame — not read here" instead of the install-time numbers. There is
+    // nothing for a push to carry because nothing here is uploaded.
+    pushSite: null,
+  },
+
   "src/app/use-frame-loop.ts": {
     gates:
       "the ANNOUNCEMENT of `installedPlan` — which plan's `outputs` (and so which " +
