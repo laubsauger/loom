@@ -138,6 +138,8 @@ export interface AgentToolSurface {
   /** Groups the following calls into one revertible unit (§V34). */
   beginTransaction(label: string): string;
   endTransaction(): void;
+  /** B191: the transaction edits are being grouped into, opened implicitly on the first. */
+  currentTransaction(): string | undefined;
   /** Undoes a transaction as ONE unit, newest group first (§V42, T60). */
   revertTransaction(transactionId: string): Promise<ToolResult<RevertData>>;
   /** Human approves a held mutation; it then runs exactly as it would have (§V42). */
@@ -178,6 +180,8 @@ export function createAgentToolSurface(options: AgentSurfaceOptions): AgentToolS
   const held = new Map<string, { tool: AgentTool; input: unknown }>();
 
   let transactionId: string | undefined;
+  /** B191: the session's own unit, opened on the first edit. Presence only — see below. */
+  let sessionTransactionId: string | undefined;
   let transactionCount = 0;
   let proposalCount = 0;
 
@@ -273,21 +277,68 @@ export function createAgentToolSurface(options: AgentSurfaceOptions): AgentToolS
     return (input as { dryRun?: unknown }).dryRun === true;
   }
 
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════════════
+   * B191 — THE AGENT-TRANSACTIONS PANEL WAS ALWAYS EMPTY, AND NOTHING WAS BROKEN
+   * ═══════════════════════════════════════════════════════════════════════════════════
+   *
+   * Owner: *"Agent transactions — no agent edits to revert. Always empty. Nothing shows up
+   * even after the MCP agent dropped a bunch of nodes in here already."*
+   *
+   * MEASURED, and the cause is not the one it looks like. `openTransaction` fills
+   * `undoGroupIds` only as each edit registers one, and the panel filters to transactions
+   * with at least one — so an unopened transaction and an empty one are indistinguishable
+   * on screen. But the panel was not filtering anything out: **`beginTransaction` was
+   * called from NOWHERE in the product.** Not the stdio bridge, not the page, not the
+   * WebMCP adapter — only from its own tests. This is not a second entrance skipping a
+   * rite (§V941); it is "built, tested, never wired", which is this project's dominant bug
+   * class, and `composition-seams` cannot see it because it derives FACTORIES and this is
+   * a method on one.
+   *
+   * So the rite stops being something a caller has to perform. A mutating tool opens the
+   * session's transaction itself, once, on its first real edit — which is what the panel's
+   * own docblock has always claimed the unit is: *"an agent session is a transaction, not N
+   * unrelated edits, so undoing it is one button rather than N presses of undo."* One
+   * surface is one session by construction (the stdio server builds one, the page builds
+   * one), so the implicit unit and the documented unit are the same unit.
+   *
+   * ⚠ THE IMPLICIT UNIT IS DELIBERATELY NOT AN `InvocationContext.transactionId`, AND THIS
+   * IS THE PART THAT WOULD HAVE BEEN A BUG. The store coalesces every mutation sharing a
+   * transaction id into ONE undo group (§V15/§V34, `store.ts`) — which is right for the
+   * gesture that rule was written for, a drag, and wrong for a session that may run for
+   * hours: a human pressing undo once would lose the agent's entire visit, with no finer
+   * step available. So the session unit lives in PRESENCE only. Each edit keeps its own
+   * undo group, the panel counts them honestly, and `revertTransaction` already pops N
+   * groups newest-first — it was written for exactly this.
+   *
+   * An EXPLICIT `beginTransaction` still does reach the invocation and still coalesces,
+   * because a caller that asks to group is asking for that, and it still wins over the
+   * implicit unit.
+   *
+   * NOT for a dry run (§V36 mutates nothing, so there is nothing to revert) and not for a
+   * read: `tool.mutates` is the same flag the rest of this file gates writes on. An empty
+   * unit in front of the human is the same lie in the other direction.
+   */
+  function openSessionTransaction(): void {
+    if (transactionId !== undefined || sessionTransactionId !== undefined) return;
+    transactionCount += 1;
+    sessionTransactionId = `txn-${transactionCount}`;
+    presence.openTransaction(sessionTransactionId, `Edits by ${actor.id}`);
+  }
+
   async function runTool(tool: AgentTool, parsed: unknown): Promise<ToolResult> {
     const dryRun = readDryRun(parsed);
     presence.setActivity(ACTIVITY[tool.kind], tool.name);
+    if (tool.mutates && !dryRun) openSessionTransaction();
     try {
       const outcome = (await tool.run(parsed, runtimeFor(dryRun))) as ToolResult;
       if (outcome.revision !== null) presence.observeRevision(outcome.revision);
-      if (
-        transactionId !== undefined &&
-        outcome.undoGroupId !== undefined &&
-        outcome.status === "ok"
-      ) {
-        presence.recordUndoGroup(transactionId, outcome.undoGroupId);
+      const unit = transactionId ?? sessionTransactionId;
+      if (unit !== undefined && outcome.undoGroupId !== undefined && outcome.status === "ok") {
+        presence.recordUndoGroup(unit, outcome.undoGroupId);
       }
-      return outcome.transactionId === undefined && transactionId !== undefined
-        ? { ...outcome, transactionId }
+      return outcome.transactionId === undefined && unit !== undefined
+        ? { ...outcome, transactionId: unit }
         : outcome;
     } catch (thrown) {
       // A transport boundary that throws loses its diagnostics. Everything is reported.
@@ -461,6 +512,9 @@ export function createAgentToolSurface(options: AgentSurfaceOptions): AgentToolS
       presence.openTransaction(transactionId, label);
       return transactionId;
     },
+
+    /** B191: what the session is currently grouping edits into, or undefined before the first. */
+    currentTransaction: () => transactionId ?? sessionTransactionId,
 
     endTransaction() {
       if (transactionId !== undefined) presence.closeTransaction(transactionId, "committed");

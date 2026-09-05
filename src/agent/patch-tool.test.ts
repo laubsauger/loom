@@ -411,3 +411,78 @@ describe("the retired driven mode cannot be written through a patch (T1208, T897
     expect(outcome.status).toBe("ok");
   });
 });
+
+/**
+ * B191 — "Agent transactions: no agent edits to revert", forever.
+ *
+ * The owner watched an MCP agent drop a graph of nodes into his document and the panel
+ * that is supposed to show what an agent did stayed empty. It was not filtering anything
+ * out: `beginTransaction` was called from nowhere in the product — not the bridge, not the
+ * page, not the WebMCP adapter — so there was never a transaction for an undo group to be
+ * recorded against. Built, tested, never wired.
+ *
+ * These assert what the PANEL reads: a transaction that exists, carrying the undo groups
+ * the edits produced, so `revertible` (status not reverted AND at least one group) is
+ * non-empty and the Revert button has something to press. Asserting "openTransaction was
+ * called" would be the mechanism; the panel's filter is the consumer.
+ */
+describe("an agent's edits land in a revertible transaction without anyone opening one (B191)", () => {
+  const revertible = () =>
+    fixture.surface.presence
+      .snapshot()
+      .transactions.filter(
+        (transaction) => transaction.status !== "reverted" && transaction.undoGroupIds.length > 0,
+      );
+
+  it("shows the session's edits in the panel's own terms", async () => {
+    expect(revertible()).toEqual([]);
+
+    await fixture.surface.callTool("add_node", { type: "test.solid" });
+    await fixture.surface.callTool("add_node", { type: "test.blur" });
+
+    // ONE unit for the session, not one per call: "an agent session is a transaction, not
+    // N unrelated edits" is the panel's stated contract and this is it holding.
+    expect(revertible()).toHaveLength(1);
+    // TWO undo groups inside it, and that number is the design decision, not a detail: the
+    // store coalesces mutations sharing an InvocationContext transaction id into ONE undo
+    // group, so a session unit that reached the invocation would read `1` here and a human
+    // pressing undo once would lose the agent's whole visit. The unit is presence-side.
+    expect(revertible()[0]?.undoGroupIds).toHaveLength(2);
+    expect(revertible()[0]?.label).toContain("claude");
+  });
+
+  it("reverts that transaction as one unit, which is what the button does", async () => {
+    await fixture.surface.callTool("add_node", { type: "test.solid" });
+    await fixture.surface.callTool("add_node", { type: "test.blur" });
+    expect(nodeCount()).toBe(2);
+
+    const id = fixture.surface.currentTransaction() ?? "";
+    const outcome = await fixture.surface.revertTransaction(id);
+
+    expect(outcome.status).toBe("ok");
+    expect(nodeCount()).toBe(0);
+    expect(revertible()).toEqual([]);
+  });
+
+  it("opens nothing for a READ, and nothing for a dry run (§V36)", async () => {
+    // The legitimate cases the guard could swallow. A session that only looked at the
+    // document has nothing to revert, and a dry run mutates nothing by definition — a
+    // transaction for either would put an empty unit in front of the human, which is the
+    // same lie in the other direction.
+    await fixture.surface.callTool("get_graph", {});
+    await fixture.surface.callTool("add_node", { type: "test.solid", dryRun: true });
+
+    expect(fixture.surface.presence.snapshot().transactions).toEqual([]);
+    expect(nodeCount()).toBe(0);
+  });
+
+  it("still lets a caller group edits deliberately, and does not open a second unit", async () => {
+    const id = fixture.surface.beginTransaction("Building the chain");
+    await fixture.surface.callTool("add_node", { type: "test.solid" });
+
+    const transactions = fixture.surface.presence.snapshot().transactions;
+    expect(transactions).toHaveLength(1);
+    expect(transactions[0]?.id).toBe(id);
+    expect(transactions[0]?.label).toBe("Building the chain");
+  });
+});
