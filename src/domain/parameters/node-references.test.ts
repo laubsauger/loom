@@ -594,3 +594,83 @@ describe("T1172 — the per-reader memo of a referenced node's parameters", () =
     expect(cyclicSecond?.diagnostic?.message).toContain("cycle");
   });
 });
+
+/**
+ * T1207 — the failure the owner watched an agent hit, as the agent hit it.
+ *
+ * An agent holding the pair `constant1` / `value` set `solid1.color` to BIND mode with
+ * ref `constant1.value`, because of the five mode names `bind` is the one that sounds
+ * like "connect to a source". It is the one that means the opposite: bind reaches a
+ * parameter IN SCOPE (a sibling, or `parent.*` per §V81), and a cross-NODE reference is
+ * `expression`. The message it got back listed what the node HAS, which says what is
+ * wrong and not what to write — so these assert the REPLACEMENT, in the caller's own
+ * names, because that is the sentence that ends the loop.
+ *
+ * The namespace is probed rather than guessed, and both directions are pinned: a node
+ * that declares the key answers `.par`, a node that only PUBLISHES it answers `.chan`.
+ * Naming one form for both would be wrong half the time, and wrong advice at the moment
+ * of the mistake is worse than the bare complaint it replaces.
+ */
+describe("a bind that names a NODE says what to write instead (T1207)", () => {
+  const bind = (ref: string) => ({
+    mode: "bind" as const,
+    bindings: { bind: { kind: "bind" as const, ref } },
+  });
+
+  const channels = (address: string) => (address === "lfo1" || address === "lfo1:value" ? 0.5 : undefined);
+
+  function bound(graph: GraphDocument, subject: GraphNode, withChannels = false) {
+    const base = withChannels ? { channels } : {};
+    const reader = createNodeReferenceReader({ graph, schemaOf: () => SCHEMA, base });
+    return resolveParameterSchema(subject, SCHEMA, { nodes: reader, ...base }).get("gain");
+  }
+
+  it("names expression mode and the exact op() the ref meant — .par when the node declares it", () => {
+    const source = node("n1", "constant1", { gain: 7 });
+    const subject = node("n2", "solid1", { gain: bind("constant1.gain") });
+    const message = bound(graphOf(source, subject), subject)?.diagnostic?.message ?? "";
+
+    expect(message).toContain('is bound to "constant1.gain"');
+    expect(message).toContain("expression mode");
+    expect(message).toContain("op('constant1').par.gain");
+  });
+
+  it("answers .chan when the name is only PUBLISHED, never .par (T901)", () => {
+    // `lfo1` has no `value` parameter at all; its `value` is a channel. The advice has to
+    // follow the node, or it sends the reader from one dead end to another.
+    const source = node("n1", "lfo1");
+    const subject = node("n2", "solid1", { gain: bind("lfo1.value") });
+    const message = bound(graphOf(source, subject), subject, true)?.diagnostic?.message ?? "";
+
+    expect(message).toContain("op('lfo1').chan.value");
+    expect(message).not.toContain(".par.value");
+  });
+
+  it("stays quiet about nodes when the ref is a plain misspelt sibling", () => {
+    // The guard has to survive the legitimate case it could swallow: `gian` is a typo for
+    // a parameter on this node, not a reference to a node called `gian`, and telling its
+    // author to write `op('gian')` would be a second wrong turn.
+    const subject = node("n2", "solid1", { gain: bind("gian") });
+    const message = bound(graphOf(subject), subject)?.diagnostic?.message ?? "";
+
+    expect(message).toContain("it names no parameter on this node");
+    expect(message).not.toContain("op(");
+  });
+
+  it("stays quiet on a component path, which is dotted and is not a node reference", () => {
+    // `tint.r` resolves; `tint.q` does not, and its complaint is about COMPONENTS. Reading
+    // the dot as a node name here would rename this node's own colour channel to a node.
+    const shallow = node("n2", "solid1", { gain: bind("tint.q") });
+    const first = bound(graphOf(shallow), shallow)?.diagnostic?.message ?? "";
+    expect(first).toContain('"tint" has no component "q"');
+    expect(first).not.toContain("op(");
+
+    // The case that actually reaches the guard: two dots put the whole thing past the
+    // component branch and into the "names no parameter" fallback, where a leading
+    // segment this node DECLARES must still not be read as somebody else's node name.
+    const deep = node("n2", "solid1", { gain: bind("tint.q.x") });
+    const second = bound(graphOf(deep), deep)?.diagnostic?.message ?? "";
+    expect(second).toContain("it names no parameter on this node");
+    expect(second).not.toContain("op(");
+  });
+});

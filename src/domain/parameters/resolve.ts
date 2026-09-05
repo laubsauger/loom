@@ -828,10 +828,60 @@ function resolveBindRef(
   }
 
   const known = Object.keys(schema).sort();
+  const crossNode = crossNodeRemedy(context, schema, ref);
   return {
     ok: false,
-    message: `it names no parameter on this node${known.length === 0 ? "" : ` (it has ${known.join(", ")})`}.`,
+    message: `it names no parameter on this node${
+      known.length === 0 ? "" : ` (it has ${known.join(", ")})`
+    }.${crossNode === null ? "" : ` ${crossNode}`}`,
   };
+}
+
+/**
+ * T1207 — the mode whose name reads like "connect to a source" and means the opposite.
+ *
+ * `bind` names another parameter IN SCOPE: a sibling on this node, or `parent.blur`
+ * (§V81). A CROSS-NODE reference is `expression` mode, `op('constant1').par.value`. An
+ * agent handed a dotted `node.param` pair picks `bind` on the name alone — the owner
+ * watched one do it — and the message it got back said only what the node HAS, which
+ * answers "what did I get wrong" and not "what do I write instead".
+ *
+ * So a ref SHAPED like a node reference names the exact replacement, in the caller's own
+ * text. This beats a document on reach: it arrives at the moment of the mistake, to every
+ * agent (MCP, WebMCP, the next one) and to the human reading the same string in the
+ * inspector's mode panel, which renders `diagnostic.message` and nothing else.
+ *
+ * WHICH namespace is PROBED, never guessed. `par` and `chan` are both real (T316, T901)
+ * and neither is right for every node: `constant1.value` is a parameter AND a published
+ * channel, while `lfo1.value` is only a channel. The reader is the same one the
+ * expression would use, so a form named here is a form that resolves. Without a reader
+ * (a caller that omits `nodes`) the general answer stands — every node has parameters,
+ * only value nodes publish channels.
+ */
+function crossNodeRemedy(
+  context: ResolveContext,
+  schema: ParameterSchema,
+  ref: string,
+): string | null {
+  const dot = ref.indexOf(".");
+  if (dot <= 0 || dot === ref.length - 1) return null;
+  const name = ref.slice(0, dot);
+  const path = ref.slice(dot + 1);
+  // A leading segment this node DECLARES is a component path (`color.r.x`), not a node
+  // name, and the two must not be confused: `parent.*` never reaches here at all.
+  if (Object.hasOwn(schema, name)) return null;
+  if (!/^[A-Za-z_][\w-]*$/.test(name)) return null;
+  if (!/^[A-Za-z_][\w.]*$/.test(path)) return null;
+
+  const segments = path.split(".");
+  const reader = context.options.nodes;
+  const namespace =
+    reader === undefined || reader(name, ["par", ...segments]).ok
+      ? "par"
+      : reader(name, ["chan", ...segments]).ok
+        ? "chan"
+        : "par";
+  return `That is a NODE reference — use expression mode: op('${name}').${namespace}.${path}`;
 }
 
 /** Full effective value of a sibling, compound assembly included, cycle-guarded. */

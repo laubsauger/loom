@@ -995,3 +995,45 @@ describe("the bridge survives a reload (T925)", () => {
     expect(details.filter((detail) => detail.includes(code))).toEqual([]);
   });
 });
+
+/**
+ * T1207 — the two surfaces a pure-MCP client actually reads.
+ *
+ * An agent set a parameter to `bind` mode with a cross-node ref and got a refusal it
+ * could not act on, because nothing in this surface had ever said what the five mode
+ * names REACH. A client over stdio has no repo and no `AGENTS.md`; it has `instructions`
+ * at initialize and the tool schemas at `tools/list`, and that is all. So both are
+ * asserted the way the client receives them — off a real JSON-RPC round trip — rather
+ * than by reading the constant back out of the module that defines it.
+ */
+describe("the parameter modes reach an MCP client (T1207)", () => {
+  it("says what `bind` reaches, and what to use instead, in the initialize instructions", async () => {
+    const harness = await bridgedServer();
+    const init = await harness.request("initialize", {}, 1);
+    const instructions = String(init.result?.["instructions"]);
+
+    // The trap, named: bind is scope-local, and the cross-node route is an expression.
+    expect(instructions).toContain("`bind` a parameter ALREADY IN SCOPE");
+    expect(instructions).toContain("NOTHING on another node");
+    expect(instructions).toContain("op('constant1').par.value");
+    expect(instructions).toContain("op('lfo1').chan.value");
+    // The mechanism that shipped and nobody found (T1204).
+    expect(instructions).toContain("op('mask1').chan.lagFrames");
+  });
+
+  it("publishes the same mode list on the schema of the tool that sets parameters", async () => {
+    const harness = await bridgedServer();
+    const list = await harness.request("tools/list", {}, 1);
+    const tools = list.result?.["tools"] as Array<Record<string, unknown>>;
+    const schema = tools.find((tool) => tool["name"] === "set_parameters")?.["inputSchema"] as
+      | { properties?: Record<string, { description?: string }> }
+      | undefined;
+    const described = schema?.properties?.["parameters"]?.description ?? "";
+
+    expect(described).toContain("`bind` a parameter ALREADY IN SCOPE");
+    expect(described).toContain("op('constant1').par.value");
+    // `driven` is authorable through this very schema and consumed by nothing, so the one
+    // thing the description must not do is let it read as a working choice.
+    expect(described).toContain("`driven` nothing at all");
+  });
+});

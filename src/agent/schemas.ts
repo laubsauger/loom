@@ -48,8 +48,24 @@ const portRef = z.object({ nodeId: nodeRef, portId }).strict();
  * named for setting parameters, while `apply_graph_patch` (which shares the document's
  * own operation schema) accepted both. A mode V107 promises every parameter has was
  * reachable by one agent route and not the other, which is a difference nobody chose.
+ *
+ * T1207 — AND THE MODES ARE NAMED HERE, because five bare enum values were all an agent
+ * ever got. One picked `bind` for a cross-node reference (it is the one name that sounds
+ * like "connect to a source" and it means the opposite), and nothing in this surface
+ * could have told it otherwise. What each mode REACHES is the whole distinction, so that
+ * is what the sentence carries — one clause each, paid on every `tools/list`.
  */
-const parameters = z.record(storedParameterSchema);
+export const PARAMETER_MODES =
+  "A parameter is either a bare value or a mode envelope {mode, bindings}. " +
+  "What each mode can reach: `static` a literal; " +
+  "`expression` any node, in Loom's own grammar (`op('constant1').par.value` for a parameter, " +
+  "`op('lfo1').chan.value` for a published channel) plus `time`, `abstime`, maths; " +
+  "`bind` a parameter ALREADY IN SCOPE — a sibling on this same node (`radius`, `color.r`) " +
+  "or `parent.<key>` inside a component — and NOTHING on another node; " +
+  "`map` a per-point attribute on a points input; " +
+  "`driven` nothing at all — it is reserved and unconsumed, so use `expression` instead.";
+
+const parameters = z.record(storedParameterSchema).describe(PARAMETER_MODES);
 
 /**
  * The domain's operation shape, plus the one rule that is specific to an AGENT.

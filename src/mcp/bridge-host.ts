@@ -28,6 +28,7 @@ import {
   type LoopbackWebSocketServer,
 } from "@devices/transport/loopback-ws.ts";
 import type { McpToolListing, McpToolSource } from "./server.ts";
+import { PARAMETER_MODES } from "@agent/schemas.ts";
 
 /**
  * THE NODE HALF OF THE BRIDGE (T451, T921, §V288, §V338).
@@ -1174,6 +1175,19 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
   return {
     source,
     pairingCode,
+    /**
+     * T1207 — WHAT A PURE-MCP CLIENT KNOWS ABOUT THIS DOCUMENT, AND WHERE IT LEARNS IT.
+     *
+     * `instructions` plus the tool schemas is the ENTIRE text a client over stdio ever
+     * receives: no repo, no `AGENTS.md`, no source. So the guidance that stopped an agent
+     * from reaching for `bind` where it wanted `expression` has to live here, in the app's
+     * own vocabulary — nodes, parameters, modes. A sentence naming a file, a script or a
+     * test would be in the wrong document, because this reader can act on none of them.
+     *
+     * `PARAMETER_MODES` is the SAME string the `parameters` schema publishes, imported
+     * rather than restated: two copies of the mode list is two things to keep in step, and
+     * the one that goes stale is always the one nobody is looking at.
+     */
     instructions() {
       const current = status();
       if (!agentDoor) {
@@ -1185,13 +1199,24 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
       const readTheTool =
         `Call \`${BRIDGE_STATUS_TOOL}\` to read the CURRENT pairing code, port and attach state; ` +
         "never repeat a pairing code from earlier in this conversation, because it may name a server that has exited.";
+      /**
+       * The one recipe a schema cannot carry, because it is a RELATIONSHIP between two
+       * nodes rather than a field: an async source (a matte, a depth model, a pose solver)
+       * publishes how many frames behind its own result is, and a `cache` on the sibling
+       * branch can read exactly that. The whole mechanism shipped and nothing used it,
+       * because nowhere said it was there.
+       */
+      const document =
+        `${PARAMETER_MODES} ` +
+        "An async source publishes its own latency, so `cache.index` as an expression " +
+        "`op('mask1').chan.lagFrames` delays a sibling branch by exactly the lag the mask introduced.";
       if (current.mode === "proxying") {
         if (current.pairingCode === null) {
           return (
             `Loom MCP server, PID ${current.pid}. This process did NOT bind the bridge port: another Loom server owns ` +
             `${BRIDGE_HOST}:${current.port}, and this one is proxying it but is NOT connected right now (${current.detail}). ` +
             "Every tool call below is REFUSED rather than answered from a HEADLESS copy the user cannot see. " +
-            `${readTheTool}`
+            `${readTheTool} ${document}`
           );
         }
         return (
@@ -1200,14 +1225,15 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
           "calls reach the same document that bridge serves. There is no second HEADLESS copy in play. " +
           `The pairing code for that bridge is ${current.pairingCode}; tell the user to open the agent panel's Connections section and enter it. ` +
           `${readTheTool} ` +
-          "Every tool result carries a `bridge` field saying which document it touched."
+          "Every tool result carries a `bridge` field saying which document it touched. " +
+          document
         );
       }
       if (current.mode === "unavailable") {
         return (
           `Loom MCP server, PID ${current.pid}. The loopback bridge could NOT start (${listenError ?? "no reason given"}), so every tool below ` +
           "runs against a HEADLESS in-memory document the user cannot see. Tell the user: another Loom " +
-          `bridge is probably already running. ${readTheTool}`
+          `bridge is probably already running. ${readTheTool} ${document}`
         );
       }
       return (
@@ -1216,7 +1242,8 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
         `are actually looking at, tell them to open the agent panel's Connections section and enter the pairing code ${pairingCode}. ` +
         `${readTheTool} ` +
         "Every tool result carries a `bridge` field saying which document it touched; if it says attached:false, say so " +
-        "rather than reporting a change the user cannot find."
+        "rather than reporting a change the user cannot find. " +
+        document
       );
     },
     status,
