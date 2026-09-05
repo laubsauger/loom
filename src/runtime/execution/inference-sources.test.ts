@@ -707,3 +707,208 @@ describe("uploads and tracking", () => {
     expect(sources.currentFrame("b")!.bytes[0]).toBe(2);
   });
 });
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════════════
+ * B190 — A FEED THAT WENT QUIET MUST COME BACK
+ * ═══════════════════════════════════════════════════════════════════════════════════════
+ *
+ * The owner: *"the depth feed seems to have a habit to get stuck. I don't know really
+ * when, but after a certain amount of time it just kinda gets stuck occasionally."* Thin,
+ * but the shape is not: an async source that works and then stops, INTERMITTENTLY, after
+ * TIME rather than after an edit. That is a latch that can be set and not cleared, and
+ * `inFlight` is the only latch in this module.
+ *
+ * ⚠ EVERY ONE OF THESE ASSERTS A FRESH PICTURE, NEVER A FLAG. `ready` going true and the
+ * latch map being empty are both satisfiable by a fix that never runs the model again, and
+ * "the depth map is moving" is the only claim the owner would recognise as the bug being
+ * gone. So each test wedges the producer, releases it, and demands NEW BYTES on the other
+ * side.
+ *
+ * ⚠ AND WHY THE SUITE ABOVE MISSED ALL OF IT: every runner in it resolves on a MICROTASK.
+ * The two faults here need a producer that settles on a macrotask, or does not settle at
+ * all — which is what a worker message, a GPU readback and a terminated worker actually
+ * are. A test double that resolves synchronously cannot express the failure.
+ */
+describe("a wedged producer does not take the feed with it (B190)", () => {
+  /**
+   * THE `settle` SPIN, AS THE LITERAL HANG IT WAS.
+   *
+   * The code read `while (inFlight.has(id)) await Promise.resolve();` under a comment
+   * asserting it "cannot spin forever" because `inFlight` is cleared in a `finally`. The
+   * clearing is guaranteed; the loop terminating is a different claim. `await
+   * Promise.resolve()` yields only to the microtask queue, which is drained to empty
+   * before the runtime takes another task — so the spin starved the macrotask boundary
+   * that its own exit condition waited on.
+   *
+   * This is the same take-drains-then-reruns scenario the suite already covers, with ONE
+   * change: the model resolves on a timer instead of synchronously.
+   *
+   * ⚠ RED-VERIFIED, AND THE RED IS A HANG RATHER THAN A FAILURE — measured, not assumed.
+   * Restoring the spin does not fail this assertion: the run never returns, and vitest's
+   * own per-test timeout is a `setTimeout`, so the spin starves THAT too and the whole
+   * suite wedges until it is killed. A microtask spin cannot be observed from inside the
+   * thread it is starving, which is exactly why nothing caught this for as long as it
+   * stood. If this file ever hangs, this is the line to suspect.
+   */
+  it("finishes a take whose model completes on a macrotask", async () => {
+    let currentByte = 1;
+    const sources = createInferenceSources({
+      readBuffer: async () => frameBuffer(currentByte),
+      run: async (_nodeId, input) => {
+        const first = new Uint8Array(input)[0] ?? 0;
+        return await new Promise<Uint8Array>((resolve) => {
+          setTimeout(() => resolve(new Uint8Array([first, first, first, 255])), 0);
+        });
+      },
+    });
+    sources.track([entry("depth1")]);
+
+    sources.sample(0); // live, fire-and-forget — outstanding, and settling on a timer
+    currentByte = 2;
+
+    await sources.settle(1);
+
+    // Frame 1's own input, not frame 0's: the take drained the outstanding run and then
+    // ran for itself, which is the contract `settle` documents and the spin made
+    // unreachable.
+    expect([...sources.currentFrame("depth1")!.bytes]).toEqual([2, 2, 2, 255]);
+    expect(sources.resultAges(1)).toEqual([{ nodeId: "depth1", ageFrames: 0 }]);
+  });
+
+  /**
+   * THE OWNER'S BUG. A producer that stops answering — a worker terminated mid-load, a
+   * wasm instance that went silent, a message that was dropped — never settles, so
+   * `runOnce`'s `finally` never runs, so `sample` skips the node every frame for the life
+   * of the tab. The feed freezes and nothing recovers it.
+   *
+   * ⚠ THE 29-SECOND ASSERTION IS THE HALF THAT MAKES THE GUARD HONEST. A model this app
+   * ships is measured at 2599 ms and a slow machine multiplies that; abandoning a run that
+   * was going to land would make the node thrash and would be a worse bug than the one
+   * being fixed. So the legitimate case is asserted in the same test: while the run is
+   * merely outstanding the node stays latched and keeps its old picture, exactly as §V144
+   * asks. Drop the threshold and this line goes red.
+   */
+  it("re-issues after a producer stops answering, and not before", async () => {
+    let currentByte = 1;
+    let silent = true;
+    const sources = createInferenceSources({
+      readBuffer: async () => frameBuffer(currentByte),
+      run: async (_nodeId, input) => {
+        const first = new Uint8Array(input)[0] ?? 0;
+        // The wedge: a promise with no resolve and no reject, which is what a terminated
+        // worker leaves behind. No `finally` anywhere can run on the other side of this.
+        if (silent) return await new Promise<Uint8Array>(() => undefined);
+        return new Uint8Array([first, first, first, 255]);
+      },
+    });
+    sources.track([entry("depth1")]);
+
+    sources.sample(0, 0);
+    await settled();
+    expect(sources.ready("depth1")).toBe(false);
+
+    // The producer is healthy again from here — only the latch is holding the node down.
+    silent = false;
+    currentByte = 2;
+    for (let second = 1; second <= 29; second += 1) {
+      sources.sample(second, second);
+      await settled();
+    }
+    // STILL the fallback. The run could yet land, so the node is not disturbed.
+    expect([...sources.currentFrame("depth1")!.bytes]).toEqual([GREY, GREY, GREY, 255]);
+
+    sources.sample(30, 30);
+    await settled();
+
+    // A MOVING PICTURE, from a run this frame issued. Not a cleared flag.
+    expect([...sources.currentFrame("depth1")!.bytes]).toEqual([2, 2, 2, 255]);
+    expect(sources.ready("depth1")).toBe(true);
+    // And it says why it went quiet, rather than restarting in silence (B156's rule):
+    // a producer dying every thirty seconds must be visible, not merely survived.
+    expect(sources.lastFailure("depth1")).toBeUndefined(); // cleared by the success above
+  });
+
+  /**
+   * §T978's Reset is the gesture whose own description promises to clear "every run in
+   * flight", and it could not: `forget` dropped the seven result maps and left `inFlight`
+   * holding the node, so the one button that exists to recover a wedged model recovered
+   * everything except the wedge. The user's escape hatch was a tab reload.
+   */
+  it("lets Reset clear a wedged run, which is the state Reset exists to clear", async () => {
+    let currentByte = 1;
+    let silent = true;
+    const sources = createInferenceSources({
+      readBuffer: async () => frameBuffer(currentByte),
+      run: async (_nodeId, input) => {
+        const first = new Uint8Array(input)[0] ?? 0;
+        if (silent) return await new Promise<Uint8Array>(() => undefined);
+        return new Uint8Array([first, first, first, 255]);
+      },
+    });
+    sources.track([entry("depth1")]);
+
+    sources.sample(0, 0);
+    await settled();
+
+    // The gesture: the hook drops the worker and its sessions, then calls this.
+    silent = false;
+    currentByte = 3;
+    sources.reset("depth1");
+
+    sources.sample(1, 1);
+    await settled();
+
+    // Immediately, on the next frame — not thirty seconds later. A user who reaches for
+    // Reset is telling us the feed is dead, and the answer to that is a new picture.
+    expect([...sources.currentFrame("depth1")!.bytes]).toEqual([3, 3, 3, 255]);
+  });
+
+  /**
+   * `InferenceRunner` is "bytes in, bytes out" and carries no abort, so a released run
+   * cannot be stopped — only disowned. This is the cost of that: the abandoned run is
+   * still out there, and one day it returns.
+   *
+   * Publishing it would be worse than the freeze. It carries the frame index it was issued
+   * for, so a result from sixty seconds ago would overwrite a current one and stamp it
+   * with the OLD frame — the age channel jumps from 0 to 60 and `lagFrames`, the number
+   * §T976 exists to make a lerp honest, walks backwards. The age assertion is the real
+   * one here; the bytes alone would pass on a fix that only guarded the bytes.
+   */
+  it("discards the result of a run it already let go", async () => {
+    const zombie = deferred();
+    let first = true;
+    let currentByte = 1;
+    const sources = createInferenceSources({
+      readBuffer: async () => frameBuffer(currentByte),
+      run: async (_nodeId, input) => {
+        const byte = new Uint8Array(input)[0] ?? 0;
+        if (first) {
+          first = false;
+          return await zombie.promise;
+        }
+        return new Uint8Array([byte, byte, byte, 255]);
+      },
+    });
+    sources.track([entry("depth1")]);
+
+    sources.sample(0, 0);
+    await settled();
+
+    currentByte = 5;
+    sources.sample(60, 60); // past the threshold: the silent run is let go, a fresh one runs
+    await settled();
+    expect([...sources.currentFrame("depth1")!.bytes]).toEqual([5, 5, 5, 255]);
+    const published = sources.currentFrame("depth1")!.frameId;
+
+    zombie.resolve(new Uint8Array([1, 1, 1, 255])); // ...and now the old run comes back
+    await settled();
+
+    expect([...sources.currentFrame("depth1")!.bytes]).toEqual([5, 5, 5, 255]);
+    // §V136: no re-upload either. A generation bump for bytes nobody wanted would push a
+    // texture upload per zombie.
+    expect(sources.currentFrame("depth1")!.frameId).toBe(published);
+    // The one that matters: still frame 60's result, not frame 0's wearing its stamp.
+    expect(sources.resultAges(60)).toEqual([{ nodeId: "depth1", ageFrames: 0 }]);
+  });
+});

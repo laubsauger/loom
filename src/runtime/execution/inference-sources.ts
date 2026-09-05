@@ -296,7 +296,34 @@ export function createInferenceSources(options: {
   const sourceFrame = new Map<NodeId, number>();
   /** nodeId -> upload generation. Bumped only when the bytes change (§V136). */
   const generation = new Map<NodeId, number>();
-  const inFlight = new Set<NodeId>();
+  /**
+   * nodeId -> the OUTSTANDING run, as a promise rather than a bare presence flag (B190).
+   *
+   * A Set said "something is running" and nothing else, which left `settle` with no handle
+   * to wait on and only a spin to poll with. The promise IS the handle, so waiting on the
+   * outstanding run is an ordinary `await` — see `settle`, and the comment that used to
+   * defend the spin.
+   */
+  const inFlight = new Map<NodeId, Promise<void>>();
+  /**
+   * nodeId -> the absolute time the OUTSTANDING run was issued at (B190's wedge guard).
+   *
+   * Deliberately not `issuedAt`, which the rate limit owns: that one records the last
+   * ATTEMPT whether or not it is still running, and this one has to disappear the moment a
+   * run lands or the guard would abandon a node that has nothing outstanding. Two policies,
+   * two clocks read off the same reading.
+   */
+  const inFlightSince = new Map<NodeId, number>();
+  /**
+   * nodeId -> which run generation may still publish (B190).
+   *
+   * `InferenceRunner` is "bytes in, bytes out" and carries no abort, so a run that has been
+   * let go cannot be STOPPED — only disowned. Bumping this is what disowns it: a zombie
+   * that finally lands after its node was abandoned, reset or untracked finds its epoch
+   * stale and writes nothing, rather than stamping an old frame's result over a newer one
+   * and making `lagFrames` walk backwards.
+   */
+  const runEpoch = new Map<NodeId, number>();
   /** nodeId -> why the most recent run failed. Cleared by the next success (B156). */
   const failure = new Map<NodeId, string>();
   /** nodeId -> how much of the frame the CURRENT result claims (§V288). */
@@ -320,7 +347,27 @@ export function createInferenceSources(options: {
   /** Seconds per DISPLAYED frame, from consecutive samples. 0 until two have arrived. */
   let displayInterval = 0;
 
+  /**
+   * Stop waiting on this node's outstanding run and disown whatever it eventually returns.
+   *
+   * B190: the only lever there is over a wedged producer. A worker that was terminated
+   * mid-load, a wasm instance that stopped answering — nothing rejects those, so the
+   * `finally` that clears `inFlight` never runs and the node is latched out of `sample`
+   * for the life of the tab. Releasing the latch is what lets the next frame issue a fresh
+   * run; bumping the epoch is what stops the released one coming back to haunt it.
+   */
+  const abandon = (nodeId: NodeId): void => {
+    runEpoch.set(nodeId, (runEpoch.get(nodeId) ?? 0) + 1);
+    inFlight.delete(nodeId);
+    inFlightSince.delete(nodeId);
+  };
+
   const forget = (nodeId: NodeId): void => {
+    // §T978's Reset and `track`'s prune both land here, and BOTH need the latch released
+    // (B190). Reset exists to recover a wedged model and could not: it dropped the seven
+    // maps below and left `inFlight` holding the node, so the gesture that promised to
+    // clear "every run in flight" cleared the results and left the wedge exactly as it was.
+    abandon(nodeId);
     latest.delete(nodeId);
     sourceFrame.delete(nodeId);
     generation.delete(nodeId);
@@ -408,10 +455,16 @@ export function createInferenceSources(options: {
    */
   const runOnce = async (entry: InferenceEntry, frameIndex: number): Promise<void> => {
     const { nodeId } = entry;
-    inFlight.add(nodeId);
+    // B190: the generation this run belongs to, read ONCE at the top. Everything below is
+    // conditional on it still being current — an abandoned, reset or untracked run has
+    // nothing left to say, and saying it anyway would publish a result for a frame the
+    // document has moved on from.
+    const epoch = runEpoch.get(nodeId) ?? 0;
+    const disowned = (): boolean => (runEpoch.get(nodeId) ?? 0) !== epoch;
     try {
       const input = await options.readBuffer(entry.inputResourceId);
       const bytes = await options.run(nodeId, input);
+      if (disowned()) return;
       // Stamped with the frame the run was ISSUED for, not the frame it landed on: the
       // buffer held that frame's input whenever the model finishes with it.
       latest.set(nodeId, bytes);
@@ -440,10 +493,64 @@ export function createInferenceSources(options: {
       // model that downloaded and then could not run indistinguishable from a machine
       // with no model — both serve mid-grey, and neither said anything. The acquisition
       // path cannot raise this one: acquisition succeeded. Only the run knows.
+      if (disowned()) return;
       failure.set(nodeId, error instanceof Error ? error.message : String(error));
     } finally {
-      inFlight.delete(nodeId);
+      // Only if this run is still the one being waited on: a disowned run's node may
+      // already hold a FRESH run, and clearing the latch here would let a second issue on
+      // top of it (B190).
+      if (!disowned()) {
+        inFlight.delete(nodeId);
+        inFlightSince.delete(nodeId);
+      }
     }
+  };
+
+  /**
+   * Issue a run, or hand back the one already outstanding for this node (B190).
+   *
+   * The single door into `runOnce`, so a node can never have two runs racing to fill one
+   * media source, and so the promise a waiter needs is recorded in exactly one place.
+   *
+   * The `set` cannot lose a race with `runOnce`'s `finally`: an async function runs
+   * synchronously up to its first `await`, and the earliest a `finally` can execute is a
+   * microtask after that — so the entry is always in the map before anything removes it.
+   */
+  const issue = (entry: InferenceEntry, frameIndex: number): Promise<void> => {
+    const outstanding = inFlight.get(entry.nodeId);
+    if (outstanding !== undefined) return outstanding;
+    const started = runOnce(entry, frameIndex);
+    inFlight.set(entry.nodeId, started);
+    if (clockSeconds !== undefined) inFlightSince.set(entry.nodeId, clockSeconds);
+    return started;
+  };
+
+  /**
+   * Has this node's outstanding run stopped being a slow run and become a WEDGED one?
+   *
+   * ⚠ THE THRESHOLD IS A DIAGNOSIS, NOT A DEADLINE, and the arithmetic is why it can be a
+   * constant. The slowest model this app ships is Depth Anything at a MEASURED 2599 ms
+   * (`worker-runner.ts`, M3 Max, single-threaded wasm — the figure that applies, since the
+   * page is not cross-origin isolated). Thirty seconds is eleven times that, so no machine
+   * anyone runs this on can trip it by being slow; only a producer that has stopped
+   * answering can. Erring long is deliberate — abandoning a run that was going to land
+   * would make the node thrash, and §V144 already says stale beats stalled.
+   *
+   * Measured on the transport's ABSOLUTE clock, never a wall reading (§V44 — this module
+   * reads no clock), which is what keeps it reproducible: a take measures the same numbers
+   * twice, and a test moves it by passing a different number rather than by waiting. With
+   * no clock reported there is no guard, on the same terms as the rate limit.
+   *
+   * The backwards-clock guard is `rateLimited`'s, for its reason verbatim: `absTimeSecondsOf`
+   * falls back to the TIMELINE clock on a transport that publishes no absolute one, and
+   * that clock wraps at every lap. A lap must not read as thirty seconds of silence.
+   */
+  const WEDGED_AFTER_SECONDS = 30;
+
+  const wedged = (nodeId: NodeId, absSeconds: number | undefined): boolean => {
+    const since = inFlightSince.get(nodeId);
+    if (since === undefined || absSeconds === undefined) return false;
+    return absSeconds >= since && absSeconds - since >= WEDGED_AFTER_SECONDS;
   };
 
   return {
@@ -470,10 +577,37 @@ export function createInferenceSources(options: {
         clockSeconds = absSeconds;
       }
       for (const entry of tracked) {
-        if (inFlight.has(entry.nodeId)) continue;
+        if (inFlight.has(entry.nodeId)) {
+          /*
+           * B190 — THE LATCH, AND THE ONE PLACE IT CAN BE RELEASED.
+           *
+           * This skip is correct and is also the whole failure mode the owner reported:
+           * an async source that works and then stops, after TIME rather than after an
+           * edit. `runOnce` clears `inFlight` in a `finally`, which is unconditional but
+           * not unreachable-proof — a `finally` does not run if the promise never SETTLES,
+           * and a terminated worker, a wasm instance that stopped answering and a dropped
+           * message all produce exactly that. The node is then skipped here every frame
+           * for the life of the tab, serving its last result while its age climbs, which
+           * is precisely "the depth feed gets stuck".
+           *
+           * So the skip is now conditional on the run still being plausibly alive. A run
+           * past the threshold is disowned and this frame issues a fresh one, which is the
+           * difference between a feed that recovers by itself and one that needs the tab
+           * reloaded.
+           */
+          if (!wedged(entry.nodeId, absSeconds)) continue;
+          abandon(entry.nodeId);
+          // RECORDED, not swallowed (B156's rule): a feed that silently restarted every
+          // thirty seconds would hide a producer that is dying repeatedly, and `notices`
+          // is where the user learns the model needs a Reset rather than more patience.
+          failure.set(
+            entry.nodeId,
+            `The model stopped responding — no result for ${WEDGED_AFTER_SECONDS}s. Restarted it.`,
+          );
+        }
         if (heldBack(entry) || rateLimited(entry, absSeconds)) continue;
         if (absSeconds !== undefined) issuedAt.set(entry.nodeId, absSeconds);
-        void runOnce(entry, frameIndex);
+        void issue(entry, frameIndex);
       }
     },
 
@@ -483,16 +617,41 @@ export function createInferenceSources(options: {
       // recorder's own backlog lesson — a capture that completes late encodes the wrong
       // pixels. Awaiting the in-flight one first drains it, then this frame's run issues.
       for (const entry of tracked) {
-        if (inFlight.has(entry.nodeId)) {
-          // Yield until the outstanding run clears. It resolves or rejects; either way
-          // `inFlight` is cleared in a `finally`, so this cannot spin forever.
-          while (inFlight.has(entry.nodeId)) await Promise.resolve();
-        }
+        /*
+         * ⚠ B190 — THIS WAS A SPIN, AND THE COMMENT DEFENDING IT ANSWERED THE WRONG
+         * QUESTION. It read:
+         *
+         *     while (inFlight.has(entry.nodeId)) await Promise.resolve();
+         *     // ...either way `inFlight` is cleared in a `finally`, so this cannot spin
+         *     // forever.
+         *
+         * The clearing being GUARANTEED is not the same claim as the loop TERMINATING.
+         * `await Promise.resolve()` yields only to the MICROTASK queue, and the queue is
+         * drained to empty before the runtime takes another task — so a loop that enqueues
+         * a microtask per turn never lets a macrotask run. The `finally` clears `inFlight`
+         * after an awaited inference, and an inference settles on a worker message or a
+         * GPU readback, both macrotasks. The spin therefore starved the very boundary its
+         * own exit condition depended on: the `finally` was real and unreachable.
+         *
+         * Measured rather than argued — a probe issuing one run whose `run` resolved on a
+         * 5 ms `setTimeout`, then calling `settle`, hung until SIGKILL. Its own watchdog
+         * timer never fired, because a `setTimeout` is a macrotask too. The suite never
+         * caught it because every test double here resolves on a microtask, where the spin
+         * happens to terminate.
+         *
+         * `inFlight` now holds the run's PROMISE, so the wait is the ordinary await it
+         * always should have been: it yields to the event loop, the inference completes,
+         * and the fill below issues this frame's run against this frame's input.
+         */
+        const outstanding = inFlight.get(entry.nodeId);
+        if (outstanding !== undefined) await outstanding;
         // A HELD entry that already has its result keeps it — the take must render the
         // document the author froze. It still runs ONCE if nothing has landed yet, so a
         // held node in an export is stale by choice rather than blank by accident.
         if (heldBack(entry)) continue;
-        await runOnce(entry, frameIndex);
+        // Through the same door the live path uses (B190), so a `sample` that lands
+        // between the await above and this line cannot start a second run for one node.
+        await issue(entry, frameIndex);
       }
     },
 
