@@ -48,6 +48,7 @@ interface HolderEntry {
 const MODULES: readonly HolderEntry[] = [
   { label: "ui.showNodeInfo", path: "src/editor/inspect/command.ts", load: () => import("@editor/inspect/command.ts"), accessor: "nodeInfoHolderFor" },
   { label: "ui.openSettings", path: "src/editor/inspect/settings-command.ts", load: () => import("@editor/inspect/settings-command.ts"), accessor: "projectSettingsHolderFor" },
+  { label: "ui.showPipeline", path: "src/editor/inspect/pipeline-command.ts", load: () => import("@editor/inspect/pipeline-command.ts"), accessor: "pipelineHolderFor" },
   { label: "ui.openNodeSearch", path: "src/editor/library/node-search-command.ts", load: () => import("@editor/library/node-search-command.ts"), accessor: "nodeSearchHolderFor" },
   { label: "ui.setPreviewView#target", path: "src/editor/viewer/preview-view-command.ts", load: () => import("@editor/viewer/preview-view-command.ts"), accessor: "previewViewTargetFor" },
   { label: "ui.openCommandPalette", path: "src/editor/palette/palette-commands.ts", load: () => import("@editor/palette/palette-commands.ts"), accessor: "paletteHolderFor" },

@@ -28,6 +28,7 @@ import { AppShell } from "./app-shell.tsx";
 import { AgentPane, PerformancePane, ShaderPane } from "./dock-panes.tsx";
 import {
   OPEN_SETTINGS_COMMAND,
+  PipelineHost,
   ProjectSettingsHost,
   starterPreferenceStore,
 } from "@editor/inspect/index.ts";
@@ -1766,6 +1767,19 @@ export function App({
           bus={runtime.bus}
           settings={runtime.settings}
           onChange={onSettingsChange}
+        />
+        {/* T1188/§V307: the pipeline inspector, opened by `ui.showPipeline`.
+            ⚑ `installed` is the latch, NOT `compile.compiled` — §B179 and §T1163 are the
+            story of this app describing a plan the backend never installed, and a screen
+            that explains the pipeline is opened precisely when those two have diverged.
+            `compiled` rides alongside so the panel can SAY they have. The graph is the
+            FLAT one (§V82): the plan's ids name flattened inner nodes. */}
+        <PipelineHost
+          bus={runtime.bus}
+          installed={installedPlan}
+          compiled={compile.compiled}
+          graph={compile.flatGraph}
+          registry={runtime.registry}
         />
         {/* §V166: three outcomes, Save first. One dialog for every destructive verb, so
             New and Open cannot drift into asking two different questions. */}

@@ -10,6 +10,11 @@
  *    node context menu must reference so all three routes open the same thing (§V52,
  *    §V78). Neither of those directories is ours to edit; this export is the contract.
  *  - `<PerformancePanel telemetry>` for the bottom dock's `performance` slot.
+ *  - `<PipelineHost bus installed compiled graph registry>` — mount once. It registers
+ *    `ui.showPipeline` and shows the pipeline inspector (T1188). ⚑ `installed` is the
+ *    composition root's `installedPlan` latch, NOT `compile.compiled`: this screen
+ *    describes the plan the GPU holds, which is the only reading that is true in the
+ *    situation somebody opens it (§B179, §T1163).
  *  - `<ProjectSettingsHost bus settings onChange>` — mount once. It registers
  *    `ui.openSettings`, the name `mod+,`, the palette and the top bar button all execute
  *    so the dialog has one route and three doors (§V307, §V78). Nothing opens it by
@@ -64,6 +69,29 @@ export {
   registerProjectSettingsCommand,
 } from "./settings-command.ts";
 export type { ProjectSettingsHandlers, ProjectSettingsHolder } from "./settings-command.ts";
+export {
+  SHOW_PIPELINE_COMMAND,
+  pipelineHolderFor,
+  registerPipelineCommand,
+} from "./pipeline-command.ts";
+export type { PipelineHandlers, PipelineHolder } from "./pipeline-command.ts";
+export { PipelineHost } from "./pipeline-host.tsx";
+export type { PipelineHostProps } from "./pipeline-host.tsx";
+export { PipelinePanel, PipelineReport } from "./pipeline-panel.tsx";
+export type { PipelinePanelProps } from "./pipeline-panel.tsx";
+export { buildPipelineView } from "./pipeline-model.ts";
+export type {
+  PipelineFinding,
+  PipelineFindingKind,
+  PipelineFindingRow,
+  PipelineInstallKind,
+  PipelineInstallState,
+  PipelinePassRow,
+  PipelineRequest,
+  PipelineStats,
+  PipelineView,
+} from "./pipeline-model.ts";
+
 export { TimingUnavailableNote } from "./timing-note.tsx";
 export { PerformancePanel, PerformanceView } from "./performance-panel.tsx";
 export type { PerformancePanelProps, PerformanceViewProps } from "./performance-panel.tsx";

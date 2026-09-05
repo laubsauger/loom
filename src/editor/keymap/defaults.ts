@@ -406,6 +406,20 @@ const APP_BINDINGS: readonly KeyBinding[] = [
     label: "Settings",
   },
   {
+    /**
+     * T1188. `p` alone is free but single letters belong to the graph context, and this
+     * is a global question — "what is the GPU actually running" is asked from the viewer
+     * and the shader editor as often as from the canvas. `mod+shift+p` is the free chord
+     * beside `mod+k`'s palette.
+     */
+    id: "ui.pipeline",
+    keys: "mod+shift+p",
+    context: "global",
+    command: "ui.showPipeline",
+    label: "Pipeline",
+    description: "The passes, resources and decisions of the plan the backend installed.",
+  },
+  {
     id: "transport.playPause",
     keys: "space",
     context: "global",
