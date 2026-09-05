@@ -43,37 +43,35 @@ import { ALEMBIC_WGSL } from "../shaders/alembic.wgsl.ts";
  * ## MEASURED, on the shipped file
  *
  * COST, Dawn/Metal, whole graph, alternating short runs at two frame counts and keeping the
- * minimum of each cell (§T1156's instrument, reused verbatim). ⚠ THE CALIBRATION IS E13, AND
- * IT IS WHAT MAKES THE ROW BELOW REPORTABLE AT ALL: a block that does not reproduce E13's
- * recorded figure was measuring the machine, and exactly ONE block of the evening did.
+ * minimum of each cell (§T1156's instrument, reused verbatim). ⚠ THE CALIBRATION IS THE OTHER
+ * ROWS, AND IT IS WHAT MAKES THIS REPORTABLE AT ALL: a block that does not reproduce E13's
+ * and E57's recorded figures was measuring the machine. Two blocks out of a dozen did.
  *
- *                              1280x720
- *   E13 Prism (the datum)         2.81 ms   (§T1156 recorded 2.8)
- *   E57 Forest                    3.67 ms   (recorded 3.3)
- *   E58 Alembic (this file)       8.38 ms
- *   E55 Reactor                  13.5  ms   (§T1156's figure, not re-measured)
+ *                              1920x1080            1280x720
+ *   E13 Prism (the datum)       3.95 (rec 3.6)      2.81 (rec 2.8)
+ *   E57 Forest                  7.38 (rec 6.6)      3.67 (rec 3.3)
+ *   E58 Alembic (this file)    14.47                8.38
+ *   E55 Reactor                32.49 (rec 24.3)    13.5 (§T1156's, not re-measured)
  *
- * 3.0x E13 and 2.3x E57 at the resolution it ships at — between Forest and Reactor. E57 reads
- * 11% over its recorded value even in the good block, so there was still some contention and
- * 8.38 is an UPPER BOUND rather than a cost.
+ * READ IT WITH ITS OWN ERROR BAR. At 720p E13 lands on its recorded value to 0.4%, so that
+ * column is trustworthy and 8.38 is the number. At 1080p E13 and E57 read +10% and +12% — a
+ * CONSISTENT offset, which is a lightly loaded machine rather than a broken measurement — so
+ * 14.47 is about 10% high too and the honest figure is near 13 ms. E55's +34% in the same
+ * block is the bias below. The RATIOS are the robust part: 3.0x E13 and 2.3x E57 at 720p,
+ * 3.7x and 2.0x at 1080p, which puts this file between Forest and Reactor at both.
  *
- * ⚠ 1080p COULD NOT BE MEASURED IN A CALIBRATED WINDOW and the honest thing is to say so
- * rather than publish the number. Every attempt ran against a peer's twelve-worker suite at
- * load averages between 4 and 39; E13 came back anywhere from 3.9 to 29 ms against its
- * recorded 3.6. The lowest this file produced at 1080p was 20.7 ms in a block where E13 read
- * 4.05, so ~20 ms is a bound. §T1156 took three attempts at this instrument and warned that a
- * single reading under load is worthless; the further lesson from tonight is that the LO/HI
- * difference is BIASED under bursty load — a cheap configuration's long run fits in a quiet
- * gap and an expensive one's does not, which is how a block came back with E13 at 3.93 and
- * E57 at 20.45 in the same alternation.
+ * ⚠ AND THE INSTRUMENT HAS A BIAS §T1156 DID NOT NAME. The LO/HI difference needs BOTH runs
+ * to catch a quiet gap, and a cheap configuration's long run fits in a gap that an expensive
+ * one's does not — so under bursty load the cheap rows come back calibrated and the dear ones
+ * do not. One block read E13 at 3.93 (right) and E57 at 20.45 (three times its recorded 6.6)
+ * in the same alternation. E13 alone is NOT a sufficient calibration; check a dear row too.
  *
- * THE TWO LEVERS are `steps` and `octaves`, and the marching cost is their product. Measured
- * as RATIOS inside one alternating block (its absolutes are not trustworthy; ratios inside one
- * block are): `steps` 72 -> 40 takes 30% off the frame, `octaves` 6 -> 4 takes 21%. Both
- * sub-linear, because the ray setup and the palette read are per-pixel constants neither
- * touches. Two further measurements, both NEGATIVE RESULTS worth having — taken at 1080p on
- * the pre-trim 100-step draft, and PAIRED inside one alternation, which is the part that
- * survives contention even when the absolutes do not:
+ * THE TWO LEVERS are `steps` and `octaves`, and the marching cost is their product. In the
+ * calibrated 1080p block: `steps` 72 -> 36 takes 14.47 to 6.82 (-53%), `octaves` 6 -> 3 takes
+ * it to 8.28 (-43%). Near-linear in the march, with the ray setup and the palette read as the
+ * per-pixel constants neither touches. Two further measurements, both NEGATIVE RESULTS worth
+ * having — taken at 1080p on the pre-trim 100-step draft, and PAIRED inside one alternation,
+ * which is the part that survives contention even when the absolutes do not:
  *   - the 1-D PALETTE LOOKUP IS FREE. One dependent texture read per march step measured
  *     15.50 ms against the same shader with the read replaced by a constant at 15.61 — no
  *     difference. "The colour term is a node" costs no frame time, which is the measurement

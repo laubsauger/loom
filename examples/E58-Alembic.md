@@ -60,20 +60,22 @@ Every row is a set of overrides on `alembic1`, on the shipped ramp, at the shipp
 
 ## Cost
 
-Dawn/Metal, whole graph, alternating short runs at two frame counts and keeping the minimum of each cell (T1156's instrument, reused). **The calibration is E13 Prism**: if a block does not reproduce E13's recorded 2.8 ms at 720p, that block was measuring the machine and not the file, and this one is the only block of the evening that did.
+Dawn/Metal, whole graph, alternating short runs at two frame counts and keeping the minimum of each cell (T1156's instrument, reused). **The calibration is the other rows**: a block that does not reproduce E13's and E57's recorded figures was measuring the machine rather than the file, and two blocks out of a dozen did.
 
-| example | 1280×720 |
-| --- | --- |
-| **E13 Prism** (the datum) | **2.81 ms** (recorded 2.8) |
-| E57 Forest | 3.67 ms (recorded 3.3) |
-| **E58 Alembic** (this file) | **8.38 ms** |
-| E55 Reactor | 13.5 ms (T1156's figure; not re-measured here) |
+| example | 1920×1080 | 1280×720 |
+| --- | --- | --- |
+| **E13 Prism** (the datum) | 3.95 ms (recorded 3.6) | **2.81 ms** (recorded 2.8) |
+| E57 Forest | 7.38 ms (recorded 6.6) | 3.67 ms (recorded 3.3) |
+| **E58 Alembic** (this file) | **14.47 ms** | **8.38 ms** |
+| E55 Reactor | 32.49 ms (recorded 24.3) | 13.5 ms (T1156's, not re-measured) |
 
-So this file is 3.0× E13 and 2.3× E57 at the resolution it ships at, and it sits between Forest and Reactor. E57's row reads 11% over its recorded value even in the good block, which means there was still a little contention and 8.38 is an **upper bound** rather than a cost.
+Read it with its own error bar. At 720p E13 lands on its recorded value to 0.4%, so that column is trustworthy. At 1080p E13 and E57 read 10% and 12% over — a *consistent* offset, which is a lightly loaded machine rather than a broken measurement — so 14.47 is about 10% high as well and the honest figure is near 13 ms. The **ratios** are the robust part: 3.0× E13 and 2.3× E57 at 720p, 3.7× and 2.0× at 1080p. This file sits between Forest and Reactor at both resolutions.
 
-**1080p could not be measured in a calibrated window.** Every attempt ran against a peer session's twelve-worker suite at load averages between 4 and 39, and E13 came back anywhere from 3.9 to 29 ms against its recorded 3.6. The lowest reading this file produced at 1080p was 20.7 ms in a block where E13 read 4.05 — so ~20 ms is a bound, not a number, and the honest expectation is around 2.25× the 720p figure, because almost everything here is per-pixel.
+The instrument has a bias worth knowing: the LO/HI difference needs *both* its runs to land in a quiet gap, and a cheap configuration's long run fits in a gap that an expensive one's does not — so under bursty load the cheap rows come back calibrated and the dear ones do not. One block read E13 at 3.93 (right) and E57 at 20.45, three times its recorded value, in the same alternation. E13 alone is not a sufficient calibration.
 
-The two levers are `steps` and `octaves`, and the marching cost is the product of them. Measured as ratios inside one alternating block (absolutes from that block are not trustworthy, the ratios are): `steps` 72 → 40 takes 30% off the frame, `octaves` 6 → 4 takes 21%. Both sub-linear, because the ray setup and the palette read are per-pixel constants that neither touches. The *Skein* look below, at nine octaves, is the dearest coordinate in the table — about 1.3× the shipped one.
+The two levers are `steps` and `octaves`, and the marching cost is their product. In the calibrated 1080p block, `steps` 72 → 36 takes the frame from 14.47 to 6.82 (−53%) and `octaves` 6 → 3 takes it to 8.28 (−43%) — near-linear in the march, with the ray setup and the palette read as the per-pixel constants neither touches. The *Skein* look above, at nine octaves, is the dearest coordinate in the table.
+
+And the palette lookup, the thing the whole design rests on, is **free**: one dependent texture read per march step measured 15.50 ms against 15.61 for the same shader with the read replaced by a constant — no difference at all.
 
 ## Two bugs this file had, both worth knowing if you write one
 
