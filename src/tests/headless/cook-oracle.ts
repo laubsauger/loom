@@ -17,6 +17,7 @@ import type { CookPolicy, LoomBackend } from "../../runtime/backend/backend-type
 import { createVgpuBackend } from "../../runtime/backend/vgpu/vgpu-backend.ts";
 import { nodeGpuHost } from "../../runtime/backend/vgpu/node-gpu-host.ts";
 import type { NodeRegistryView } from "../../nodes/registry/registry.ts";
+import { registerSyntheticMediaSources } from "./render-harness.ts";
 
 /**
  * The cook oracle (T249, §V157, §V147).
@@ -321,6 +322,29 @@ export async function renderUnderPolicy(request: OracleRunRequest): Promise<stri
 
     let plan = compileNow();
     let compiled = await backend.compile(plan);
+    /*
+     * B186 — THE MEDIA FEED, and this oracle is the fourth place to learn the same
+     * lesson (T630, T633, T650, §V854's `components`).
+     *
+     * `renderHeadless` has registered a test card for every `media:` external texture
+     * since T650; this file never did. So E56 Vesper — whose entire picture is one movie
+     * clip through a Level, an HSV and a vignette — rendered a target NOTHING HAD
+     * WRITTEN: 80 frames of pure black, maxRGB 0, both policies agreeing perfectly
+     * about it. That is a vacuous pass of exactly the kind the non-vacuity guard at the
+     * foot of the gate exists to refuse, and it is the guard that failed ("expected 1 to
+     * be greater than 1"), not the auto ≡ always claim. Measured before fixing: frame 0
+     * maxRGB = 0 with zero compile errors, so the picture was never a frozen transport
+     * — nothing was ever uploaded to freeze.
+     *
+     * Re-registered after every recompile rather than once: an edit can change an
+     * external texture's declared size, and a card sized to the old plan is bytes Dawn
+     * refuses. Registration is order-free and replacement-safe by contract (T229).
+     */
+    let mediaFrame = 0;
+    const feedMedia = (): void => {
+      registerSyntheticMediaSources(backend, plan, store.view.getGraph(), () => mediaFrame);
+    };
+    feedMedia();
     const outputId = (): string => {
       // T408 follow-up: "$target" is not unique — ANY sink owns one, and E14 is the
       // first example with two (its analyze meter and its output). Alphabetical find()
@@ -336,6 +360,7 @@ export async function renderUnderPolicy(request: OracleRunRequest): Promise<stri
     };
 
     for (let frameIndex = 0; frameIndex < request.frames; frameIndex += 1) {
+      mediaFrame = frameIndex;
       let edited = false;
       for (const edit of request.script) {
         if (edit.frame !== frameIndex) continue;
@@ -355,6 +380,7 @@ export async function renderUnderPolicy(request: OracleRunRequest): Promise<stri
       if (edited) {
         plan = compileNow();
         compiled = await backend.compile(plan);
+        feedMedia();
         // The per-frame push below diffs against the newest structural plan (§V5) —
         // reset together with it, as the live frame loop does.
         animator.reset();
