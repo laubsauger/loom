@@ -236,7 +236,15 @@ export function kernelParamsFor(stored: Readonly<Record<string, unknown>>): {
   fields: ReadonlyArray<ReflectedField>;
 } {
   const source = storedStaticValue(stored["kernel"] as never);
-  const { declaration } = extractParamsStruct(typeof source === "string" ? source : "");
+  /* T1210: a node with NO stored kernel reflects the SHIPPED DEFAULT's struct, which is the
+     source it would compile with — `compile()` has always applied that same fallback, and
+     `customWgsl.parametersFor` has always applied it too. Without it the two halves
+     disagreed: the schema had no `jitter`, so a value set for it resolved to nothing while
+     the pass bound the default anyway — a knob that reads back as absent and writes as
+     ignored. An EMPTY STRING is a string and stays one: a user who deletes the block gets no
+     controls, because deleting is an edit and only an ABSENT key means "never edited". */
+  const text = typeof source === "string" ? source : DEFAULT_POINT_KERNEL;
+  const { declaration } = extractParamsStruct(text);
   return { declaration, fields: declaration === "" ? [] : reflectParamsStruct(declaration) };
 }
 
@@ -401,7 +409,7 @@ export const pointKernelNode: NodeDefinition = {
       default: DEFAULT_POINT_KERNEL,
       compileTime: true,
       description:
-        "fn process(p: Point, ctx: PointCtx) -> Point. Clocks first: ctx.absTime (f32 seconds) and ctx.absFrame (u32 — a texture shader's frameU.absFrame is f32) keep counting across a timeline loop, so reach for these for anything that should simply keep going. ctx.time and ctx.frameIndex are timeline readings and reset to the in point at every lap — take them only when where you are IN the piece is the point (a sweep, a scrubbed envelope), and write \"timeline-anchored\" in a comment when you do. ctx also carries index, count and delta — plus pointer (vec4f: x, y, buttons) and dim (cols, rows, i, j — the grid off the incoming edge, T472) for a kernel that names them. YOUR OWN KNOBS (T900): declare a `struct Params { orbitSpeed: f32, tint: vec4f }` in this text and each field becomes a named, typed, drivable control on this node, read as ctx.params.orbitSpeed — a uniform write, never a rebuild. That replaces ctx.value1..value4, which still work for kernels that already read them. pointRand(pointId, salt) is available, and fieldAt(position) samples the field input when one is wired (T477).",
+        "fn process(p: Point, ctx: PointCtx) -> Point. Clocks first: ctx.absTime (f32 seconds) and ctx.absFrame (u32 — a texture shader's frameU.absFrame is f32) keep counting across a timeline loop, so reach for these for anything that should simply keep going. ctx.time and ctx.frameIndex are timeline readings and reset to the in point at every lap — take them only when where you are IN the piece is the point (a sweep, a scrubbed envelope), and write \"timeline-anchored\" in a comment when you do. ctx also carries index, count and delta — plus pointer (vec4f: x, y, buttons) and dim (cols, rows, i, j — the grid off the incoming edge, T472) for a kernel that names them. YOUR OWN KNOBS (T900): the kernel this node ships with ALREADY declares a `struct Params`, with a `// @default <literal>` and a describing comment per field (T1210) — keep the block and add to it. Every field becomes a named, typed, drivable control on this node, read as ctx.params.<name> — a uniform write, never a rebuild. A kernel with no such block has no knobs at all. That replaces ctx.value1..value4, which still work for kernels that already read them. pointRand(pointId, salt) is available, and fieldAt(position) samples the field input when one is wired (T477).",
     },
     group: {
       type: "code",

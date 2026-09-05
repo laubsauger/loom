@@ -159,6 +159,17 @@ const RAW_SCHEMA_READS: Readonly<Record<string, { readonly reason: string; reado
       "goes through the funnel, which is why there is exactly one.",
     reads: ["depthNode.parameters"],
   },
+  "src/nodes/definitions/starter-shaders.test.ts": {
+    reason:
+      `${CATALOGUE_AUDIT} T1210's two reads are both SUBTRACTIONS of the manifest, not ` +
+      "lookups in place of it. The first derives the subjects — every definition that ships a " +
+      "non-empty `wgsl` code default is a starter shader, which is a property of the type and " +
+      "the reason the list cannot go stale (§V453). The second asks which of the funnel's own " +
+      "keys the MANIFEST does not declare, i.e. which controls reflection produced: the claim " +
+      "is the DIFFERENCE between the two schemas, so both sides have to be read. Every schema " +
+      "the assertions are made against comes from `effectiveParameterSchema`.",
+    reads: ["definition.parameters", "definition.parameters"],
+  },
   "src/nodes/definitions/point-kernel-params.test.ts": {
     reason: HOOK_UNDER_TEST,
     reads: [

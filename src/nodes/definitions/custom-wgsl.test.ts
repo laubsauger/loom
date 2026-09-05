@@ -127,7 +127,10 @@ describe("custom kernels receive uniforms and time (B7/T166)", () => {
   it("binds this node's parameters as `params` on the emitted pass", () => {
     const pass = firstPass(contextFor({ parameters: { [SHADER_SOURCE_PARAMETER]: CUSTOM_WGSL_DEFAULT_SOURCE, amount: 0.25 } }));
     expect(pass.uniformBinding).toBe(CUSTOM_WGSL_UNIFORM_BINDING);
-    expect(pass.uniforms).toEqual({ amount: 0.25 });
+    // T1210: `tint` joined the default's own struct, so the default's bound set is both
+    // fields. Unset here, it falls back to the `@default 1` the source declares — the vec3f
+    // takes rgb, and white is the identity the starter's passthrough depends on.
+    expect(pass.uniforms).toEqual({ amount: 0.25, tint: [1, 1, 1] });
   });
 
   /**

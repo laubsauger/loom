@@ -10,12 +10,51 @@ import { SHARED_UNIFORMS_WGSL } from "../../runtime/backend/shared-uniforms.ts";
  * per-frame arrives through that block, nothing else).
  */
 
-export const DEFAULT_POINT_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
+/**
+ * The kernel a fresh point kernel node ships with — and, since T1210, THE STRUCT IS PART OF
+ * THE STARTING POINT rather than something the author has to know to add.
+ *
+ * ⚑ WHY THE `struct Params` IS HERE AND NOT IN A SENTENCE SOMEWHERE. The reflection (T880,
+ * T900) is what turns a field into a KNOB: `jitter: f32` becomes a named, typed, drivable,
+ * publishable control on the node, read back here as `ctx.params.jitter`. A kernel with no
+ * such block is a DEAD END THAT LOOKS FINE — it compiles, it renders, and there is nothing
+ * to turn — which is the silent-success failure the owner named: *"we need to instruct for
+ * it to write struct params… this needs to become something that ideally is INHERENT. For
+ * both user and agents."* A default that ships with the block serves both identically, where
+ * a line in a tool description reaches only the agents that read it.
+ *
+ * The two fields are DIRECTION, not implementation (§T1053's test): `jitter` is how hard the
+ * random walk shoves, `gravity` is the steady pull. Neither can be dragged into breaking the
+ * kernel, both are visible on the first drag, and each carries the `// @default <literal>`
+ * (T1184) and the trailing sentence (T1053) that this file wants copied — the source is the
+ * convention's own worked example.
+ *
+ * ⚠ THE DEFAULTS REPRODUCE THE OLD MOTION EXACTLY. `jitter` 1 and `gravity` 0.05 make the
+ * push `vec3f(jitterX, jitterY - 0.05, 0)` term for term, so promoting the constants moved
+ * no point of any document that stores this text and none of any that omits `kernel` and
+ * falls back to it. `x * 1.0` is exact in f32; this is arithmetic, not a tolerance.
+ *
+ * ⚠ AND IT IS A STARTING POINT, NOT AN ENFORCEMENT. The kernel is STORED on the node at
+ * creation (`addNode` spreads `defaultParameters` into the document), so a user who deletes
+ * the struct is editing their own stored text and reflection honestly reports no fields.
+ * Nothing re-derives the block behind them. Refusing to compile a kernel without one was
+ * never on the table either — the editor recompiles per keystroke, so a hard refusal blacks
+ * the node out mid-typing (§V940).
+ */
+export const DEFAULT_POINT_KERNEL = `struct Params {
+  jitter: f32,   // @default 1  How hard the random walk shoves each point; 0 is a clean fall.
+  gravity: f32,  // @default 0.05  The steady downward pull, in clip units per second squared.
+}
+
+fn process(p: Point, ctx: PointCtx) -> Point {
   var q = p;
   // Deterministic drift: same seed, same point, same frame, same motion (§V74).
   let jitterX = pointRand(p.id, 1u) - 0.5;
   let jitterY = pointRand(p.id, 2u) - 0.5;
-  q.velocity = q.velocity + vec3f(jitterX, jitterY - 0.05, 0.0) * ctx.delta;
+  // Every field of the struct above is a control on this node, read here as ctx.params.<name>.
+  // Add a field and the knob appears; delete the struct and the knobs go with it.
+  let push = (vec3f(jitterX, jitterY, 0.0) * ctx.params.jitter) - vec3f(0.0, ctx.params.gravity, 0.0);
+  q.velocity = q.velocity + push * ctx.delta;
   q.position = q.position + q.velocity * ctx.delta;
   // Wrap in clip space so the system never drifts off screen.
   if (q.position.y < -1.1) { q.position.y = 1.1; }

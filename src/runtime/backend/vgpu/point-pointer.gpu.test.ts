@@ -236,10 +236,17 @@ describe("the pointer in PointCtx, on Dawn (T367, §V182)", () => {
       (pass) => pass.kind === "dispatch" && pass.nodeId === "sim",
     ) as { shader: string; uniforms: Record<string, unknown> };
     expect(kernelPass.shader).not.toContain("pointer");
+    /* The set is asserted EXACTLY rather than by absence, so a pointer arriving under any
+       other spelling still fails. T1210 added `p_gravity`/`p_jitter`: the shipped default
+       kernel — which is what this node runs, having no `kernel` of its own — now declares
+       its own `struct Params`, so those two are its author's knobs and not the pointer
+       leaking in. The claim is unchanged: nothing here is `pointer`. */
     expect(Object.keys(kernelPass.uniforms).sort()).toEqual([
       "count",
       "deltaSeconds",
       "frameIndex",
+      "p_gravity",
+      "p_jitter",
       "seed",
       "timeSeconds",
     ]);

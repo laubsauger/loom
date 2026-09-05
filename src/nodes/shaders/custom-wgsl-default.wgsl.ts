@@ -41,10 +41,37 @@ import { SHARED_UNIFORMS_WGSL } from "../../runtime/backend/shared-uniforms.ts";
  * Both blocks are READ, not merely declared, on purpose: the runtime binds by NAME, and a
  * binding a shader declares but never uses can be optimised out of the pipeline layout.
  * Keeping the reads makes the default's promise true at every layer.
+ *
+ * ⚑ WHY `tint` IS IN THE STRUCT (T1210). The `Params` block was already here — this node has
+ * never had the point kernels' empty-start problem — but it declared ONE field whose control
+ * is hand-written in `paramForField` (`amount` keeps a 0..1 slider that cannot be spelled in a
+ * comment, and is ledgered as such in `declared-defaults.test.ts`). So the source anybody
+ * copies demonstrated the block and NOT the two conventions that make a block worth writing:
+ * `// @default <literal>` (T1184, what "Reset to default" hands back) and the trailing
+ * sentence that becomes the control's own help (T1053). `tint` demonstrates both, and it
+ * demonstrates the third thing that is invisible from an f32: the control's TYPE comes from
+ * the field's — a `vec3f` whose NAME reads as colour becomes a display-space picker, so
+ * dropping the node and dragging a swatch is the whole of §T880's *"the colour term is a
+ * node"*. That is the point of putting it in the default rather than in a sentence an agent
+ * may or may not read: it serves the user and the agent identically.
+ *
+ * WHITE, AND THEREFORE STILL A PASSTHROUGH. The starter's promise above — input unchanged,
+ * both uniforms genuinely read — survives: `@default 1` splats to `[1, 1, 1]`, sRGB decode
+ * of 1.0 is exactly 1.0, and multiplying by white is the identity. A knob that had to move a
+ * pixel to prove it exists would have made the first thing anybody sees a picture they did
+ * not ask for.
+ *
+ * ⚠ NOTHING RE-DERIVES THIS. `addNode` spreads `defaultParameters` into the document, so the
+ * text is STORED on the node from the moment it is created; a user who deletes the struct is
+ * editing their own bytes and reflection then honestly reports no fields. The default is a
+ * starting point, not an enforcement, and there is deliberately no validation refusing a
+ * shader that lacks a `Params` block (§V940: the editor recompiles per keystroke, so a hard
+ * refusal blacks the node out mid-typing).
  */
 export const CUSTOM_WGSL_DEFAULT_SOURCE = `${SHARED_UNIFORMS_WGSL}
 struct Params {
   amount: f32,
+  tint: vec3f, // @default 1  Multiplies the image — white leaves it alone, anything else colours it.
 };
 
 @group(0) @binding(0) var inputSampler: sampler;
@@ -68,7 +95,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   // FREE-RUNNING: absTime keeps counting across a timeline loop, so this pulse has no seam
   // at the out point. Swap it for frameU.time when the motion IS the position in the piece.
   let pulse = 1.0 + (PULSE_DEPTH * sin(frameU.absTime));
-  return vec4f(color.rgb * params.amount * pulse, color.a);
+  return vec4f(color.rgb * params.amount * params.tint * pulse, color.a);
 }`;
 
 /**

@@ -71,6 +71,11 @@ const SOURCE_PARAM: ParameterDefinition = {
   label: "Source",
   default: CUSTOM_WGSL_DEFAULT_SOURCE,
   compileTime: true,
+  // T1210: the shipped default already declares the block, so this says what the block IS
+  // rather than asking anybody to remember to write one — the point kernels' `kernel`
+  // description has carried the same sentence since T900, and this node had none at all.
+  description:
+    "The fragment shader. YOUR OWN KNOBS: the source this node ships with ALREADY declares a `struct Params`, with a `// @default <literal>` and a describing comment per field — keep the block and add to it. Every field becomes a named, typed, drivable control on this node (`orbitSpeed: f32` a number, `lightColor: vec4f` a colour picker), read in the shader as params.<name>. A shader with no such block has no knobs at all. Time arrives only through the shared `frameU` block (§V44).",
 };
 
 /**
