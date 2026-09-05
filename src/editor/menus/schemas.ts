@@ -267,6 +267,20 @@ export const PARAMETER_MENU: MenuSchema = {
     { command: "parameter.paste", input: { as: "binding" }, label: "Paste binding" },
     { separator: true },
     { command: "parameter.reset", label: "Reset to default", when: "isOverridden" },
+    /*
+     * T1184 — THE PAIR, and the labels are where the distinction has to land: "default"
+     * is a claim about the NODE TYPE, "opened value" a claim about THIS FILE. Resetting
+     * E59 Vault's `octaves` gives the shader's own default, the same number in all five
+     * documents of that family; reverting it gives Vault's authored 4.
+     *
+     * No `when` guard, for the reason the paste rows above have none: the honest guard
+     * would have to ask what the document looked like when it was OPENED, and
+     * `MenuContext` is a snapshot of the document as it is now with no store in it. So
+     * the row is offered and refuses BY NAME on a node created this session (§V288) —
+     * "there is no opened value to return to" teaches; a row that quietly vanished the
+     * moment you added a node does not.
+     */
+    { command: "parameter.revert", label: "Revert to opened value" },
     { separator: true },
     {
       // §V107: every parameter takes every mode, so the switch belongs on every

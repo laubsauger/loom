@@ -160,6 +160,8 @@ declare module "../types/commands.ts" {
     "parameter.paste": { input: ParameterPasteInput; output: GraphPatchResult };
     /** Restore the manifest default AND the Constant mode (§V149). */
     "parameter.reset": { input: ParameterRef; output: ParameterResetOutput };
+    /** Restore the value THIS DOCUMENT WAS OPENED WITH, whole — value, mode and all (T1184). */
+    "parameter.revert": { input: ParameterRef; output: GraphPatchResult };
     /** Switch which binding is in effect, keeping every other mode's payload (§V108). */
     "parameter.setMode": { input: ParameterSetModeInput; output: GraphPatchResult };
   }
@@ -861,6 +863,132 @@ export function registerParameterCommands(
       ...rejectedPatch(revision, diagnostics),
       clearedMode: null,
     }),
+  });
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════════════
+   * `parameter.revert` — THE OTHER HALF OF THE PAIR (T1184)
+   * ═══════════════════════════════════════════════════════════════════════════════════
+   *
+   * ⚑ THE DISTINCTION IS THE WHOLE FEATURE, so it is stated once, here, and the two menu
+   * labels are written to carry it: **reset is a claim about the NODE TYPE; revert is a
+   * claim about THIS FILE.** Resetting E59 Vault's `octaves` gives the shader's declared
+   * default — the same number in all five documents of that family, and the same number on
+   * a node dropped in fresh. Reverting it gives Vault's own authored 4. Collapsing them
+   * into one command was the first ruling and the owner reopened it himself: *"where is
+   * Vault's override stored then? It's stored somewhere and that means we should be able
+   * to recall that."* He is right; it is in the file, and this is the recall.
+   *
+   * ## WHERE "the value this document was opened with" COMES FROM, and why it cannot decay
+   *
+   * `GraphStore` takes `initialGraph` at construction and has NO `replaceGraph`, so
+   * `app.tsx` opens a document by building a fresh runtime around it and dropping the old
+   * one (its own docblock says so). That makes `store.getInitialState().graph` exactly the
+   * document as opened — not a snapshot somebody has to remember to take, and not something
+   * an edit can move, because every edit produces a NEW state and leaves the initial one
+   * alone.
+   *
+   * ⚠ IT IS NOT "the value at last autosave", which is the failure this would otherwise
+   * decay into. Autosave writes bytes OUT; it never reconstructs the store, so it cannot
+   * move this baseline. Booting FROM an autosave does construct the runtime from those
+   * bytes — and that is correct rather than a leak: the restored document IS the document
+   * you opened. §T1164's pointer is a file name and a kind with no bytes in it, so it is
+   * not, and could not be, the baseline either.
+   *
+   * ## WHAT IS RESTORED: the stored parameter WHOLE, not merely its number
+   *
+   * The opened `StoredParameter` goes back verbatim — its value, its active mode and every
+   * retained per-mode payload. Reverting an expression you replaced with a constant returns
+   * the expression, which is what "the value this document was opened with" means when the
+   * thing stored was not a bare number. §V113's per-channel slots ride along in the same
+   * patch, so one undo entry (§V34) however many channels moved.
+   *
+   * ## THE FRESH NODE, decided rather than defaulted
+   *
+   * A node created in this session has no opened value, and this REFUSES BY NAME rather
+   * than quietly handing back the type default — that would make the two commands
+   * indistinguishable exactly where the difference matters most, which is the one outcome
+   * the pair exists to prevent. It refuses rather than hiding the row because `MenuContext`
+   * is a document snapshot with no store in it (`menus/schemas.ts` states this for the
+   * paste rows), so a `when` guard cannot ask what the document looked like at open. A
+   * named refusal teaches; a vanished row does not (§V288).
+   *
+   * A key the opened node did NOT store is a different case and is not a refusal: what that
+   * parameter was opened showing IS its default, so the default is what goes back — resolved
+   * against the OPENED node's own parameters, so a shader edited since open cannot make this
+   * answer with a default that was never on screen.
+   */
+  bus.registerCommand({
+    name: "parameter.revert",
+    description: "Restore the value this document was opened with (T1184).",
+    handler: (input, context) => {
+      const revision = context.store.getRevision();
+      // Every refusal below carries its diagnostics on the OUTCOME as well as in the patch
+      // result: the bus reports `outcome.diagnostics`, so a refusal that only filled the
+      // output would reject with an empty reason — a named refusal nobody can read (§V288).
+      const reject = (diagnostic: RuntimeDiagnostic): CommandOutcome<GraphPatchResult> => ({
+        status: "rejected",
+        output: rejectedPatch(revision, [diagnostic]),
+        diagnostics: [diagnostic],
+      });
+
+      const found = locate(context, input);
+      if (isDiagnostic(found)) return reject(found);
+      const { node } = found;
+
+      const opened = context.store.getInitialState().graph.nodes[node.id];
+      if (opened === undefined) {
+        return reject(
+          refuse(
+            "parameter.revert.created",
+            `"${nodeName(node) ?? node.id}" was created in this session, so there is no opened value to return to.`,
+            node.id,
+            "Reset to default gives the node type's own default (§V149).",
+          ),
+        );
+      }
+
+      const openedSchema = effectiveParameterSchema(
+        context.registry.get(opened.type),
+        opened.parameters,
+      );
+      const openedValue = (key: string): StoredParameter | undefined => {
+        const stored = opened.parameters[key];
+        if (stored !== undefined) return stored;
+        const definition =
+          openedSchema[key] ?? componentAddressedDefinition(openedSchema, key);
+        return definition === undefined ? undefined : defaultParameterValue(definition);
+      };
+
+      const restored = openedValue(input.parameterKey);
+      if (restored === undefined) {
+        return reject(
+          refuse(
+            "parameter.revert.unopened",
+            `"${input.parameterKey}" did not exist on "${node.id}" when this document was opened.`,
+            node.id,
+            "Reset to default gives the node type's own default (§V149).",
+          ),
+        );
+      }
+
+      const parameters: Record<string, StoredParameter> = { [input.parameterKey]: restored };
+      // §V113/§V114, the same fan-out `parameter.reset` does: a compound's CHANNELS carry
+      // their own slots, so reverting only the bare key would leave `color.g` on whatever
+      // this session put there and the swatch showing a colour the file never held.
+      const names = componentNamesFor(found.definition);
+      if (names !== null) {
+        for (const name of names) {
+          const key = componentKey(input.parameterKey, name);
+          if (node.parameters[key] === undefined) continue;
+          const channel = openedValue(key);
+          if (channel !== undefined) parameters[key] = channel;
+        }
+      }
+
+      return writeParameters(context, "Revert parameter", node.id, parameters);
+    },
+    rejectionOutput: (_input, diagnostics, revision) => rejectedPatch(revision, diagnostics),
   });
 
   bus.registerCommand({

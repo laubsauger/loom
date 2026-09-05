@@ -9,6 +9,8 @@ import type { NodeDefinition } from "../types/node-definition.ts";
 import { createNodeRegistry } from "../../nodes/registry/registry.ts";
 import { createSequentialIdFactory } from "../graph/ids.ts";
 import { createGraphStore } from "../graph/store.ts";
+import { customWgslNode } from "../../nodes/definitions/custom-wgsl.ts";
+import { SHADER_SOURCE_PARAMETER } from "./apply-patch.ts";
 import { createDomainBus } from "./index.ts";
 import type { LoomBus } from "./bus.ts";
 import { alice, contextFor, createHarness, patch, type Harness } from "./test-support.ts";
@@ -1273,5 +1275,186 @@ describe("compound component addressing (T1008)", () => {
     );
     expect(scalarDot.status).toBe("rejected");
     expect(scalarDot.diagnostics[0]?.code).toBe("parameter.unknown");
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ * T1184 — RESET IS ABOUT THE NODE TYPE, REVERT IS ABOUT THIS FILE
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ *
+ * The owner named the defect — *"auto-derived fields should reset to whatever is actually
+ * the default instead of just defaulting to 0 or 1"* — and then reopened the fork himself:
+ * *"where is Vault's override stored then? It's stored somewhere and that means we should
+ * be able to recall that."* Both are true at once, and the only way that is coherent is two
+ * commands answering two different questions.
+ *
+ * ⚑ This is the E58/E59 case as a test, because it is the case that makes the pair
+ * necessary: ONE shader (`@default 6`) opened in a document that overrides it (4). Reset
+ * must give 6 — the shader's, the same in every file — and revert must give 4 — this file's.
+ * A single-command design cannot be right about both, which is why asserting them TOGETHER
+ * on the same parameter is the claim rather than two separate happy paths.
+ */
+describe("T1184 — reset gives the shader's default, revert gives the file's", () => {
+  const SHADER = `struct Params {
+  octaves: f32,  // @default 6  how many times the fold refines
+};
+@group(0) @binding(3) var<uniform> params: Params;
+@fragment fn fs() -> @location(0) vec4f { return vec4f(params.octaves); }`;
+
+  /** A store OPENED on a document, which is the only way `getInitialState` means anything. */
+  function opened(parameters: Record<string, unknown>): Harness {
+    const store = createGraphStore({
+      ids: createSequentialIdFactory("v"),
+      now: () => "2026-08-30T00:00:00.000Z",
+      initialGraph: {
+        revision: 1,
+        nodes: {
+          vault: {
+            id: "vault",
+            type: "customWgsl",
+            definitionVersion: customWgslNode.version,
+            position: { x: 0, y: 0 },
+            label: "alembic1",
+            parameters: { [SHADER_SOURCE_PARAMETER]: SHADER, ...parameters } as GraphNode["parameters"],
+          },
+        },
+        edges: {},
+        groups: {},
+        viewport: { x: 0, y: 0, zoom: 1 },
+      },
+    });
+    const { bus } = createDomainBus({ store, registry: createNodeRegistry([customWgslNode]).view() });
+    return { bus, store };
+  }
+
+  const set = async (harness: Harness, value: number): Promise<void> => {
+    await harness.bus.execute(
+      "graph.applyPatch",
+      patch(harness.bus.store.getRevision(), [
+        { op: "setParameters", nodeId: "vault", parameters: { octaves: value } },
+      ]),
+      context,
+    );
+  };
+
+  it("resets a reflected knob to the SHADER's declared default, not to zero", async () => {
+    const harness = opened({ octaves: 4 });
+    await set(harness, 11);
+
+    const result = await harness.bus.execute(
+      "parameter.reset",
+      { nodeId: "vault", parameterKey: "octaves" },
+      context,
+    );
+
+    expect(result.status).toBe("applied");
+    // The whole bug in one number: this was 0 before T1184, on every reflected knob there is.
+    expect(storedOf(harness, "vault", "octaves")).toBe(6);
+  });
+
+  it("reverts the same knob to what THIS DOCUMENT was opened with", async () => {
+    const harness = opened({ octaves: 4 });
+    await set(harness, 11);
+
+    const result = await harness.bus.execute(
+      "parameter.revert",
+      { nodeId: "vault", parameterKey: "octaves" },
+      context,
+    );
+
+    expect(result.status).toBe("applied");
+    expect(storedOf(harness, "vault", "octaves")).toBe(4);
+  });
+
+  /*
+   * The distinction stated as the thing it protects: reverting must NOT land on the shader's
+   * number, and resetting must NOT land on the file's. A future implementation that quietly
+   * made one call the other would pass both tests above only if they happened to differ —
+   * so they are asserted against each other here.
+   */
+  it("keeps the two answers apart on the same parameter", async () => {
+    const harness = opened({ octaves: 4 });
+    await set(harness, 11);
+    await harness.bus.execute("parameter.revert", { nodeId: "vault", parameterKey: "octaves" }, context);
+    expect(storedOf(harness, "vault", "octaves")).toBe(4);
+    await harness.bus.execute("parameter.reset", { nodeId: "vault", parameterKey: "octaves" }, context);
+    expect(storedOf(harness, "vault", "octaves")).toBe(6);
+    expect(storedOf(harness, "vault", "octaves")).not.toBe(4);
+  });
+
+  it("gives back an EXPRESSION the document was opened with, not just a number", async () => {
+    const harness = opened({
+      octaves: {
+        mode: "expression",
+        bindings: {
+          expression: { kind: "expression", source: "time * 2" },
+          static: { kind: "static", value: 4 },
+        },
+      },
+    });
+    await set(harness, 11);
+    // The write lands on the STATIC binding and leaves the mode alone — which is exactly
+    // why revert has to restore the slot whole rather than a number.
+    expect(storedOf(harness, "vault", "octaves")).toMatchObject({
+      mode: "expression",
+      bindings: { static: { value: 11 } },
+    });
+
+    await harness.bus.execute("parameter.revert", { nodeId: "vault", parameterKey: "octaves" }, context);
+
+    expect(storedOf(harness, "vault", "octaves")).toMatchObject({
+      mode: "expression",
+      bindings: { expression: { source: "time * 2" } },
+    });
+  });
+
+  /*
+   * ⚠ THE DECIDED CASE. A node created in this session has no opened value, and falling back
+   * to the type default would make the two commands indistinguishable exactly where the
+   * difference matters. It refuses BY NAME instead, and the refusal points at the command
+   * that CAN answer.
+   */
+  it("refuses by name on a node created in this session rather than acting like reset", async () => {
+    const harness = opened({ octaves: 4 });
+    const fresh = await harness.bus.execute(
+      "graph.applyPatch",
+      patch(harness.bus.store.getRevision(), [
+        {
+          op: "addNode",
+          ref: "fresh",
+          type: "customWgsl",
+          position: { x: 10, y: 10 },
+          parameters: { [SHADER_SOURCE_PARAMETER]: SHADER, octaves: 9 },
+        },
+      ]),
+      context,
+    );
+    expect(fresh.status).toBe("applied");
+    const nodeId = fresh.output.createdIds["fresh"] ?? "fresh";
+
+    const result = await harness.bus.execute(
+      "parameter.revert",
+      { nodeId, parameterKey: "octaves" },
+      context,
+    );
+
+    expect(result.status).toBe("rejected");
+    expect(result.diagnostics[0]?.code).toBe("parameter.revert.created");
+    // Refused, not silently reset — the value the session put there is still there.
+    expect(storedOf(harness, nodeId, "octaves")).toBe(9);
+  });
+
+  /*
+   * §V920's hazard, read forwards: a document that stored the value the OLD synthesised
+   * default happened to be must keep meaning that value. Nothing here reads a stored value
+   * as "unset", so a stored 0 survives a declared default of 6 — which is what makes the
+   * shipped examples safe (`guardrails/declared-defaults.test.ts` proves they are all stored).
+   */
+  it("leaves a stored value that equals the OLD type default alone", async () => {
+    const harness = opened({ octaves: 0 });
+    expect(storedOf(harness, "vault", "octaves")).toBe(0);
+    await harness.bus.execute("parameter.revert", { nodeId: "vault", parameterKey: "octaves" }, context);
+    expect(storedOf(harness, "vault", "octaves")).toBe(0);
   });
 });

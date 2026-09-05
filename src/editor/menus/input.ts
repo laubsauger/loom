@@ -173,6 +173,7 @@ const BUILDERS: Record<string, InputBuilder> = {
   // (T1004) — the B87 shape, one level in.
   "parameter.paste": parameterRefWith,
   "parameter.reset": parameterRef,
+  "parameter.revert": parameterRef,
   "parameter.setMode": parameterRefWith,
   "component.publishParameter": parameterRef,
 };
