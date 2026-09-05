@@ -471,9 +471,24 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
       // materialized output (`ResolvedOutput`'s own docblock) — one node can emit several.
       // Keyed by node alone, a two-output node reported whichever row landed LAST under
       // both ports, so the slot's stated size and format belonged to a port nobody asked for.
+      /*
+       * T1174: the same rows, indexed the way the per-candidate lookup below reads them.
+       *
+       * That lookup used to be a `compiledOutputs.find` PER CANDIDATE while this map was
+       * already being built one loop above — O(candidates × outputs) per preview tick, on
+       * a path that runs every frame. Keyed identically to `facts` (`nodeId:portId`,
+       * T527's rule) but FIRST-wins and pointset-free, because that is exactly what the
+       * `find` it replaces returned: `find` stops at the first match, and a pointset row
+       * is a marker with no bindable target (T373). `facts` is last-wins and keeps every
+       * kind on purpose — it answers "what did the compiler resolve for this slot", which
+       * is a different question — so the two indexes are not interchangeable.
+       */
+      const bindable = new Map<string, ResolvedOutput>();
       const facts = new Map<string, { width: number; height: number; format: string }>();
       for (const output of current.compiledOutputs) {
-        facts.set(`${output.nodeId}:${output.portId}`, {
+        const key = `${output.nodeId}:${output.portId}`;
+        if (output.resourceKind !== "pointset" && !bindable.has(key)) bindable.set(key, output);
+        facts.set(key, {
           width: output.size[0],
           height: output.size[1],
           format: output.format,
@@ -518,12 +533,7 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
         // whichever row happened to come first and then bound the tile under THAT row's
         // `output.portId`, so a node with two previewable outputs previewed the wrong
         // one. `compiledOutputs` carries no ordering guarantee, so the port is the match.
-        const output = current.compiledOutputs.find(
-          (entry) =>
-            entry.nodeId === sinkNodeId &&
-            entry.portId === sinkPortId &&
-            entry.resourceKind !== "pointset",
-        );
+        const output = bindable.get(`${sinkNodeId}:${sinkPortId}`);
         // §V111: the offset within the node (never re-measured mid-drag). §V112: the
         // node's LIVE position, read fresh every tick — the two combine into the slot's
         // current graph-space box without a single DOM measurement this frame.
