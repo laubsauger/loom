@@ -180,9 +180,10 @@
     "f0max": 0.6129
   },
   "E47-Hologram.loom.json": {
-    "motion": 0.03751,
-    "range": 0.908,
-    "f0max": 0.9475
+    "motion": 0.02107,
+    "range": 0.9026,
+    "f0max": 0.9475,
+    "cardFloor": 0.0009
   },
   "E48-Marionette.loom.json": {
     "motion": 0.01205,
@@ -289,6 +290,12 @@
     "range": 0.4783,
     "f0max": 0.5041,
     "cardFloor": 0.0073
+  },
+  "E64-Relay.loom.json": {
+    "motion": 0.03841,
+    "range": 0.4071,
+    "f0max": 0.3945,
+    "cardFloor": 0.0018
   },
   "E7-LFO-Dissolve.loom.json": {
     "motion": 0.49929,

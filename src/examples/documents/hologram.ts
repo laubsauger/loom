@@ -70,13 +70,23 @@ import { settings, node, edge, graph, document, drivenSlot } from "./builders.ts
  * ## The cut (§T977) — the model-less 2D spelling, riding the same picture
  *
  * `cut1` (DepthCut) mattes the subject's COLOUR by the active depth map before it
- * becomes paint: far pixels lose their light softly (threshold 0.6, feather 0.1 over
- * the understudy's luma), so the slab's far fringe dims before the zone parks it — a
- * depth cue the geometric cut alone does not give, and the owner's "model-less bg cut
- * … part of the hologram thing" made real. This chain only carries light because the
- * paint kernel honours the map's alpha as premultiplied coverage (the §T977 follow-up
- * fix); the claims test holds that open with a cut-open vs cut-closed render diff, so
- * a kernel edit that re-discards alpha reds instead of going silently dark.
+ * becomes paint: everything past the cut plane loses its light entirely (threshold 0.8,
+ * feather 0.12 over the understudy's luma), so the backdrop goes DARK and the subject
+ * stands alone in its own cloud — the owner's "model-less bg cut … part of the hologram
+ * thing" made real. This chain only carries light because the paint kernel honours the
+ * map's alpha as premultiplied coverage (the §T977 follow-up fix).
+ *
+ * B189 — WHY THE NUMBERS ARE WHAT THEY ARE, and the lesson under them. A threshold is
+ * only meaningful against the RANGE OF THE MAP IT READS, and this one shipped tuned for
+ * a map that does not exist here: 0.6/0.1 sat entirely below the understudy's squashed
+ * luma, so the matte never closed on ANY point and the cut was a 2.3% dim that looked
+ * exactly like no cut at all. It also looked exactly like no cut in the node's PREVIEW,
+ * for a second and unrelated reason — `mask` writes the coverage into ALPHA and leaves
+ * rgb untouched (measured: the cut's rgb is byte-identical to its input), while the
+ * default preview lens draws `vec4f(rgb, 1.0)`. Three surfaces agreed on a picture that
+ * was correct arithmetic and a dead operator. The gate below now asserts the two POINT
+ * COHORTS (fully cut, fully kept) rather than only that the extremes differ, because
+ * "open vs closed differs" was true throughout the defect.
  */
 export const hologramDocument = document(
   "e47-hologram",
@@ -121,9 +131,20 @@ export const hologramDocument = document(
          subject's picture (soft, luma-thresholded), and the paint kernel now honours
          that alpha as premultiplied coverage. Removes things further away, not
          "not-the-person" — the copy's own distinction. */
+      /* B189 — THE THRESHOLD IS CALIBRATED TO THE MAP IT ACTUALLY GETS, and it was not.
+         The understudy depth is the source's own blurred luma, and that luma is SQUASHED:
+         measured over the shipped animation it occupies [0.555, 1.0] with 84% of pixels
+         inside [0.60, 0.65] (the bed) and the top 7.3% at 1.0 (the orb). Against that map
+         the old 0.6/0.1 window [0.5, 0.7] sits entirely BELOW the bed, so the matte's
+         floor was coverage ~0.65 and NOT ONE of the cloud's 25600 live points was ever
+         fully cut — the whole visible effect was a 2.3% dim, which is exactly the owner's
+         "it is not doing a background removal". 0.8/0.12 puts the window at [0.68, 0.92],
+         in the empty gap between the bed and the orb: 23092 points publish tint.a exactly
+         0, 1509 exactly 1, 999 in the soft rim. Stable to ±1.5% of the frame across the
+         orbit — see `hologram-claims.gpu.test.ts`, which holds both cohorts open. */
       node("cut", "component:depthCut@1", [-1020, -280], {
-        threshold: 0.6,
-        feather: 0.1,
+        threshold: 0.8,
+        feather: 0.12,
         invert: 0,
       }, { label: "cut1" }),
 

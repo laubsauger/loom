@@ -202,15 +202,37 @@ describe("E47 Hologram — the zone and the wall (T983, §T979)", () => {
     const wallPixels = differingPixels(shippedImage.data, rgba(withoutWall.frames[0]!, space).data);
     expect(wallPixels).toBeGreaterThan(500);
 
-    // Open the subject's zone to keep everything: the cut room must have been absent.
+    /* Open the subject's zone to keep everything: the parked room must have been absent.
+       B189 — AND THIS ONE HAS TO OPEN THE CUT TOO, for a reason worth stating rather
+       than working around. Both operators key off the SAME depth map, and once the cut
+       is calibrated to actually close (B189: threshold 0.8 over a map whose bed sits at
+       0.60–0.65) it zeroes the light of every point at depthN > 0.112 — which is INSIDE
+       the zone's own 0.13 boundary. So on the shipped graph the zone parks points that
+       already carry no light, and opening it changes not one pixel: a matte is
+       monotonic in depth, so any cut that removes the background necessarily subsumes a
+       looser geometric one. Held open with the cut open, the zone's selection is the
+       only thing left varying and the render diff is again its own. The per-slot claim
+       above is what proves the selection itself, on the shipped numbers. */
+    const openCut = (graph: GraphDocument) => {
+      Object.assign(graph.nodes["cut"]!.parameters as Record<string, unknown>, {
+        threshold: 0,
+        feather: 0,
+        invert: 0,
+      });
+    };
+    const zoneShut = await renderE47({ probe: false, mutate: openCut });
     const zoneOpen = await renderE47({
       probe: false,
       mutate: (graph) => {
+        openCut(graph);
         const zone = graph.nodes["zone"]!;
         (zone.parameters as Record<string, unknown>)["to"] = 1;
       },
     });
-    const zonePixels = differingPixels(shippedImage.data, rgba(zoneOpen.frames[0]!, space).data);
+    const zonePixels = differingPixels(
+      rgba(zoneShut.frames[0]!, space).data,
+      rgba(zoneOpen.frames[0]!, space).data,
+    );
     expect(zonePixels).toBeGreaterThan(500);
   }, 240_000);
 
@@ -222,6 +244,13 @@ describe("E47 Hologram — the zone and the wall (T983, §T979)", () => {
    * both renders below are the SAME picture and this test fails (red-verified by
    * restoring the literal), so the next kernel edit that re-discards alpha reds
    * instead of shipping a silently dead cut.
+   *
+   * B189 — AND IT IS NOT ENOUGH, which is the row's whole lesson. This test drives the
+   * matte to its two EXTREMES, and both extremes worked throughout a defect in which the
+   * SHIPPED cut removed nothing: the shipped threshold sat below the whole range of the
+   * map it read, so the matte's floor was coverage ~0.65 and not one point was ever cut.
+   * A claim about the extremes cannot see a mis-calibrated middle. The cohort test below
+   * is the one that can.
    */
   it("the cut carries light: fully open vs fully closed changes the subject's picture", async () => {
     if (dawnError !== undefined) throw new Error(`Dawn unavailable: ${dawnError}`);
@@ -235,6 +264,64 @@ describe("E47 Hologram — the zone and the wall (T983, §T979)", () => {
     const closed = await renderE47({ probe: false, mutate: cutAt(1) });
     const cutPixels = differingPixels(rgba(open.frames[0]!, space2(open)).data, rgba(closed.frames[0]!, space2(closed)).data);
     expect(cutPixels).toBeGreaterThan(500);
+  }, 240_000);
+
+  /**
+   * B189 — THE SHIPPED CUT ACTUALLY CUTS, asserted on the two cohorts a background
+   * removal is made of.
+   *
+   * The owner's report was "the DepthCut is not doing a background removal", and he was
+   * right: with threshold 0.6 / feather 0.12 the matte window [0.5, 0.7] sat entirely
+   * BELOW the understudy depth map's range — measured [0.555, 1.0], 84% of the frame
+   * packed into [0.60, 0.65] — so every background point kept ~65% of its light and
+   * EXACTLY ZERO of the cloud's 25600 live points was ever fully cut. The picture was a
+   * 2.3% dim, indistinguishable from no cut at all, and every gate was green.
+   *
+   * So the claim here is the one a viewer makes: the background is GONE and the subject
+   * is UNTOUCHED. Both numbers are exact, not banded (§V147) — `smoothstep` returns
+   * literal 0 below its low edge and literal 1 above its high edge, the mask multiplies
+   * the source's alpha by that, and the paint kernel's `clamp` lands the product on
+   * literal 0 or literal 1 (even where the additive source's alpha reads 2, the case
+   * the §V833 test below owns) — so a cut point publishes tint.a === 0 and a kept point
+   * tint.a === 1 with no rounding in between. Only the two cohort SIZES are floors, and
+   * they are far from the measured
+   * 23092 / 1509: the failure this catches moves them to 0 and 2234.
+   *
+   * Red-verified by restoring threshold 0.6 / feather 0.1 in the document: the cut
+   * cohort goes to zero and the first expectation reds.
+   */
+  it("the shipped cut removes the background from the points: one cohort at coverage 0, one at 1", async () => {
+    if (dawnError !== undefined) throw new Error(`Dawn unavailable: ${dawnError}`);
+    const { document } = e47();
+    /* The live cloud is the published `resolution` knob squared — derived from the
+       document, so re-tuning density moves this with it. Slots past it are the
+       generator's spares, which the carve kernel parks and the paint kernel zeroes;
+       they are tint.a === 0 for a reason that has nothing to do with the cut. */
+    const grid = Number((document.graph.nodes["holo"]!.parameters as Record<string, unknown>)["resolution"]);
+    const live = grid * grid;
+    expect(live).toBeLessThanOrEqual(DEPTH_POINT_CAPACITY);
+
+    const result = await renderE47();
+    const raw = (result as { buffers?: Record<string, ArrayBuffer> }).buffers?.[pointStorageId("holo/paint")];
+    expect(raw, "no tint probe").toBeDefined();
+    const tint = pointRegionSlice(raw!, DEPTH_POINT_SCHEMA, DEPTH_POINT_CAPACITY, "tint").floats;
+
+    let cut = 0;
+    let kept = 0;
+    let partial = 0;
+    for (let slot = 0; slot < live; slot += 1) {
+      const alpha = tint[slot * 4 + 3]!;
+      if (alpha === 0) cut += 1;
+      else if (alpha === 1) kept += 1;
+      else partial += 1;
+    }
+    // The background is gone: most of the frame is bed, and the bed publishes no light.
+    expect(cut, "points fully cut").toBeGreaterThan(20_000);
+    // The subject is untouched: the orb's core keeps its colour at full coverage.
+    expect(kept, "points fully kept").toBeGreaterThan(1_000);
+    // And the edge is still SOFT — a hard step would mean `feather` stopped mattering.
+    expect(partial, "points on the feathered rim").toBeGreaterThan(100);
+    expect(cut + kept + partial).toBe(live);
   }, 240_000);
 
   /**

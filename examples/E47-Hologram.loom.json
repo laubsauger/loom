@@ -840,9 +840,9 @@
         "id": "cut",
         "label": "cut1",
         "parameters": {
-          "feather": 0.1,
+          "feather": 0.12,
           "invert": 0,
-          "threshold": 0.6
+          "threshold": 0.8
         },
         "position": {
           "x": -1020,

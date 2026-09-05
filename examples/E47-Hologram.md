@@ -42,7 +42,7 @@ srcpick1 ─┬─────────────────────�
           └─► depth1(depth) ── index 1 ────────┘   │
                                   pick1 ─► holo1 (depth map)
 srcpick1 ─► cut1(component:depthCut@1) ◄─ pick1 (the active depth map drives the matte)
-cut1 ─► holo1 (colour, background softly cut)
+cut1 ─► holo1 (colour, background cut away)
 holo1(component:depthPoints@1) ─► zone1(pointRange) ─► dots1(geometry) ─┐
 src1 ─┬─► holo2 (colour)                                                ├─► shot1(render) ─► out1
       └─► flat2(hsv) ─► soften2(blur) ─► holo2 (depth map)              │
@@ -53,13 +53,19 @@ orbit1(lfo) ┄drives┄► eye1.eye.x
 ## The cut — the model-less 2D spelling
 
 `cut1` (DepthCut) mattes the subject's COLOUR by the active depth map before it becomes
-paint: far pixels lose their light softly (threshold 0.6, feather 0.1 over the
-understudy's luma), so the slab's far fringe dims before the zone parks it. It removes
-things further away, not "not-the-person" — a real matte knows the difference; this
-never needs to, and it costs no download. The chain carries light because the
-component's paint kernel honours the map's alpha as premultiplied, CLAMPED coverage —
-an additive composite's alpha reads 2 where the orb crosses the opaque bed, and
-coverage is [0, 1] by meaning, not by storage.
+paint: everything past the cut plane loses its light entirely (threshold 0.8, feather
+0.12 over the understudy's luma), so the backdrop goes dark and the subject stands alone
+in its own cloud. It removes things further away, not "not-the-person" — a real matte
+knows the difference; this never needs to, and it costs no download. The chain carries
+light because the component's paint kernel honours the map's alpha as premultiplied,
+CLAMPED coverage — an additive composite's alpha reads 2 where the orb crosses the
+opaque bed, and coverage is [0, 1] by meaning, not by storage.
+
+A threshold means nothing on its own: it is only meaningful against the RANGE of the map
+it reads. The understudy's blurred luma occupies [0.555, 1.0] with 84% of the frame in
+[0.60, 0.65], so 0.8/0.12 puts the cut in the empty gap between the bed and the orb.
+Feed a real depth model here (flip `pick1` to 1) and this number wants retuning — that
+is what the knob is for.
 
 ## The zone and the wall
 
