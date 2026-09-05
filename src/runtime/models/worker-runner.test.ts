@@ -541,4 +541,43 @@ describe("the export's per-frame wait survives the worker boundary", () => {
     await waiting;
     expect([...(sources.currentFrame("n1")?.bytes ?? [])]).toEqual([1, 2, 3, 4]);
   });
+
+  it("rejects a load still waiting when it is disposed mid-load (B190)", async () => {
+    /*
+     * The owner's "the depth feed gets stuck after a while", at its producer.
+     *
+     * `run` awaits `ensureLoaded` BEFORE it enters `pending`, so a dispose that rejected
+     * only `pending` left a mid-load run settling NEVER — `terminate()` fires no `error`
+     * event, so nothing else was going to reject it. Upstream that wedged `inFlight`
+     * permanently, and `dispose()` is what the RESET gesture calls: the recovery was the
+     * producer of the state it could not clear, and a tab reload was the only way out.
+     *
+     * The claim is that the promise SETTLES, not what it settles to. A run that rejects
+     * is recoverable — §V144 keeps the previous value and the frame proceeds. A run that
+     * never settles is not recoverable by anything short of reloading the page, which is
+     * why this asserts against a race with a timer rather than just awaiting.
+     */
+    const fake = fakeWorker();
+    const runner = createWorkerRunner({
+      worker: fake.worker,
+      describe: () => target,
+      weightsFor: async () => new ArrayBuffer(8),
+    });
+
+    // Never delivered a `loaded` message: the run is parked inside `ensureLoaded`.
+    const running = runner.run("n1", { bytes: new Uint8Array([1, 2, 3, 4]), width: 1, height: 1 });
+    const settled = running.then(
+      () => "resolved" as const,
+      () => "rejected" as const,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    runner.dispose();
+
+    const outcome = await Promise.race([
+      settled,
+      new Promise<"hung">((resolve) => setTimeout(() => resolve("hung"), 50)),
+    ]);
+    expect(outcome).toBe("rejected");
+  });
 });

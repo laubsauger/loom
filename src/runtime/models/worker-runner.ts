@@ -194,6 +194,23 @@ export function createWorkerRunner(options: WorkerRunnerOptions): WorkerRunner {
       const gone = new Error("the inference worker was disposed");
       for (const [, waiter] of pending) waiter.reject(gone);
       pending.clear();
+      /*
+       * B190: the LOAD waiters too, and the `loads` cache with them.
+       *
+       * `run` awaits `ensureLoaded` BEFORE it enters `pending`, so a worker terminated
+       * mid-load left its load promise settling NEVER — `terminate()` fires no `error`
+       * event, so nothing else was ever going to reject it. That wedged the caller's
+       * `inFlight` latch permanently, and since `dispose()` is what the Reset gesture
+       * calls, the recovery gesture was the producer of the state it could not clear.
+       * A tab reload was the only way out.
+       *
+       * The worker-death path twenty lines above already rejected both maps; this one
+       * did half the job. `loads` is cleared as well because a settled-never entry there
+       * would hand the next `ensureLoaded` the same dead promise.
+       */
+      for (const [, waiter] of loadWaiters) waiter.reject(gone);
+      loadWaiters.clear();
+      loads.clear();
     },
   };
 }
