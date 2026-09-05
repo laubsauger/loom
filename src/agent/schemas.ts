@@ -4,6 +4,7 @@ import {
   graphPatchOperationSchema as domainGraphPatchOperationSchema,
   storedParameterSchema,
 } from "@domain/types/schemas.ts";
+import { channelExpression } from "@domain/parameters/slots.ts";
 
 /**
  * Tool input schemas — the "schema" half of "transport plus schema" (§V39, §V66).
@@ -63,9 +64,64 @@ export const PARAMETER_MODES =
   "`bind` a parameter ALREADY IN SCOPE — a sibling on this same node (`radius`, `color.r`) " +
   "or `parent.<key>` inside a component — and NOTHING on another node; " +
   "`map` a per-point attribute on a points input; " +
-  "`driven` nothing at all — it is reserved and unconsumed, so use `expression` instead.";
+  "`driven` is RETIRED and refused here — a channel read is an expression, `op('lfo1').chan.value`.";
 
-const parameters = z.record(storedParameterSchema).describe(PARAMETER_MODES);
+/**
+ * T1208 — `driven` IS REFUSED AT THIS BOUNDARY, and the owner's question is why it needed
+ * to be: *"we should have absolutely and totally removed that. How can the agent still do
+ * that?"*
+ *
+ * §T897 retired the mode and put three guards on it — it is off the mode buttons
+ * (`AUTHORABLE_PARAMETER_MODES`), `parameter.setMode` refuses switching into it, and a
+ * loaded document is upgraded (`upgradeDrivenSlot`, one mapping, parse forever emit never).
+ * Every one of those sits on a route that changes ONE mode. A patch writes the WHOLE SLOT
+ * in a single operation and asks none of them, so the surface that publishes the mode enum
+ * was also the one surface that would still take it.
+ *
+ * ⚠ WHY HERE AND NOT IN THE DOMAIN VALIDATOR, WHICH WOULD COVER EVERY ENTRANCE. Measured
+ * before choosing: `driven` slots are still authored through `graph.applyPatch` by ~10 test
+ * files across four tracks, because the RESOLVER still reads the mode (`resolve.ts` case
+ * "driven"), as do liveness, parameter-dependencies, names and the reference lines.
+ * Refusing the write while nine other files still speak the mode is half a removal, and it
+ * breaks its own suite. The total removal the owner asked for is a real piece of work with
+ * a versioned-load decision in it; this closes the AGENT hole he actually reported, and the
+ * residual is named rather than implied.
+ *
+ * The refusal carries the replacement, built from the caller's own channel through the same
+ * mapping the load-time upgrade uses (T1207: a refusal with no next move is a dead end).
+ */
+function drivenRefusal(value: unknown): string | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const slot = value as { mode?: unknown; bindings?: Record<string, unknown> };
+  if (slot.mode !== "driven") return null;
+  const binding = slot.bindings?.["driven"] as { channel?: unknown } | undefined;
+  const channel = typeof binding?.channel === "string" ? binding.channel : null;
+  const replacement = channel === null ? "op('name').chan.value" : channelExpression(channel);
+  return `The "driven" mode is retired (§T897). Use expression mode with source ${replacement}.`;
+}
+
+function refuseDrivenSlots(
+  values: Record<string, unknown>,
+  context: z.RefinementCtx,
+  path: readonly (string | number)[] = [],
+): void {
+  for (const key of Object.keys(values).sort()) {
+    const message = drivenRefusal(values[key]);
+    if (message !== null) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message, path: [...path, key] });
+    }
+  }
+}
+
+// `.describe` INSIDE the refinement: `zodToJsonSchema` unwraps a `ZodEffects` to its inner
+// schema without carrying the wrapper's description, so a description on the outside would
+// publish as nothing at all — the exact silence T1207 is about.
+const parameters = z
+  .record(storedParameterSchema)
+  .describe(PARAMETER_MODES)
+  .superRefine((values, context) => {
+    refuseDrivenSlots(values, context);
+  });
 
 /**
  * The domain's operation shape, plus the one rule that is specific to an AGENT.
@@ -77,11 +133,20 @@ const parameters = z.record(storedParameterSchema).describe(PARAMETER_MODES);
  * shape; this refinement is the boundary's policy, stated once and testable, rather than
  * a divergence hidden inside a second copy of seventeen operations.
  */
-export const graphPatchOperationSchema = domainGraphPatchOperationSchema.refine(
-  (operation) =>
-    (operation.op !== "addNode" && operation.op !== "addGroup") || operation.ref.startsWith("$"),
-  { message: "A patch-local ref must start with `$`.", path: ["ref"] },
-);
+export const graphPatchOperationSchema = domainGraphPatchOperationSchema
+  .refine(
+    (operation) =>
+      (operation.op !== "addNode" && operation.op !== "addGroup") || operation.ref.startsWith("$"),
+    { message: "A patch-local ref must start with `$`.", path: ["ref"] },
+  )
+  // T1208: the same refusal on the OTHER agent route. `apply_graph_patch` carries the
+  // document's own operation schema, so a rule stated only on the convenience tools' record
+  // above would be a rule with a door beside it — which is how `driven` survived §T897.
+  .superRefine((operation, context) => {
+    const carrying = operation as { parameters?: Record<string, unknown> };
+    if (carrying.parameters === undefined) return;
+    refuseDrivenSlots(carrying.parameters, context, ["parameters"]);
+  });
 
 /**
  * `baseRevision` is REQUIRED here, unlike on the single-edit convenience tools.

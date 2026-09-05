@@ -384,11 +384,19 @@ export function createAgentToolSurface(options: AgentSurfaceOptions): AgentToolS
     const parsed = tool.inputSchema.safeParse(input ?? {});
     if (!parsed.success) {
       return result(tool.name, "error", null, {
+        /**
+         * T1208 — the ISSUE'S MESSAGE, not only its code. This reported `issue.code`
+         * alone, so every schema failure an agent got was a shape name: "invalid at
+         * parameters.radius: custom". A refinement's whole content is its message — the
+         * driven refusal below names the expression that replaces the mode — and it was
+         * being thrown away one line before the transport. The code is kept beside it
+         * because it is the machine-readable half.
+         */
         diagnostics: parsed.error.issues.map((issue) =>
           diagnostic(
             "error",
             "tool.input",
-            `Input to "${tool.name}" is invalid at ${issue.path.join(".") || "(root)"}: ${issue.code}.`,
+            `Input to "${tool.name}" is invalid at ${issue.path.join(".") || "(root)"} (${issue.code}): ${issue.message}`,
           ),
         ),
       });

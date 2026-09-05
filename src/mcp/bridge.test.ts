@@ -1032,8 +1032,9 @@ describe("the parameter modes reach an MCP client (T1207)", () => {
 
     expect(described).toContain("`bind` a parameter ALREADY IN SCOPE");
     expect(described).toContain("op('constant1').par.value");
-    // `driven` is authorable through this very schema and consumed by nothing, so the one
-    // thing the description must not do is let it read as a working choice.
-    expect(described).toContain("`driven` nothing at all");
+    // T1208: `driven` was writable through this very schema until the write boundary
+    // started refusing it, so the one thing the description must not do is let it read as
+    // a working choice.
+    expect(described).toContain("`driven` is RETIRED and refused");
   });
 });

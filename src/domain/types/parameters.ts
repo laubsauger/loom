@@ -294,13 +294,28 @@ export type ParameterValue =
  * One way a parameter (or one COMPONENT of a compound parameter, §V113) gets its value
  * (T202, §V107).
  *
- * TouchDesigner's four parameter modes, as data. `static` is the plain stored value;
+ * TouchDesigner's parameter modes, as data. `static` is the plain stored value;
  * `expression` is a source string in OUR grammar (§V71, never Python); `bind` names
  * another value to read — a sibling parameter (`radius`, `color.r`) or a component
- * scope value (`parent.blur`, §V81); `driven` names an external channel (audio, MIDI,
- * LFO — the TD Export analog) and is declared-but-reserved until Phase 2 consumers
- * exist. Every kind carries its own payload so a future kind can carry a richer one
- * without disturbing these (§V69).
+ * scope value (`parent.blur`, §V81). Every kind carries its own payload so a future kind
+ * can carry a richer one without disturbing these (§V69).
+ *
+ * ⚠ `driven` IS RETIRED (§T897): parse forever, emit never. A channel read is an expression
+ * term now — `op('name').chan.value` — and `channelExpression` is the one mapping, applied
+ * to documents from before the retirement at LOAD (`upgradeDrivenSlot`). No authoring
+ * surface offers it: it is off the mode buttons (`AUTHORABLE_PARAMETER_MODES`), refused by
+ * `parameter.setMode`, and refused at the agent boundary (`src/agent/schemas.ts`, T1208 —
+ * a patch writes the whole slot in one operation and asked neither of the other two).
+ *
+ * ⚠ IT IS NOT GONE, AND THE DIFFERENCE MATTERS TO ANYONE READING THIS. The RESOLVER still
+ * reads the mode (`resolve.ts`), as do liveness, parameter-dependencies, names and the
+ * reference lines, and ~10 test files still author driven slots straight onto the domain
+ * bus. Removing the mode from this union is a real piece of work with a versioned-load
+ * decision in it, not a line to delete.
+ *
+ * This docblock said `driven` was "declared-but-reserved until Phase 2 consumers exist"
+ * long after the retirement landed, and it cost T1208 a wrong premise — the reserved-mode
+ * reading was read back as a live decision to KEEP the mode.
  */
 export type ParameterBinding =
   | { kind: "static"; value: ParameterValue }

@@ -304,3 +304,110 @@ describe("the single-edit tools are the same patch path", () => {
     expect(outcome.diagnostics[0]?.code).toBe("history.empty");
   });
 });
+
+/**
+ * T1208 — the mode the owner thought was gone, through the door that was still open.
+ *
+ * §T897 retired `driven`: the mode buttons stopped offering it, `parameter.setMode`
+ * refuses switching into it, and a document holding one is upgraded at LOAD. Every one of
+ * those guards is on a route that changes ONE mode, and none of them is on a PATCH — so an
+ * agent could write the whole slot in one operation and land the retired mode past all
+ * three. That is §V941's shape: several entrances, and the rite lived on some of them.
+ *
+ * BOTH agent routes are pinned, because they do not share a schema: the convenience tools
+ * carry this boundary's own `parameters` record, `apply_graph_patch` carries the document's
+ * operation union. A rule on one of those is a rule with a door beside it.
+ *
+ * The refusal names the expression that replaces it, built from the caller's OWN channel,
+ * because "retired" without a replacement is a dead end (T1207).
+ */
+describe("the retired driven mode cannot be written through a patch (T1208, T897)", () => {
+  it("refuses a driven slot through apply_graph_patch, the other route", async () => {
+    const added = await fixture.surface.callTool("add_node", { type: "test.blur" });
+    const nodeId = patchData(added).createdIds["$node"] ?? "";
+    const before = revision();
+
+    const outcome = await fixture.surface.callTool("apply_graph_patch", {
+      baseRevision: before,
+      operations: [
+        {
+          op: "setParameters",
+          nodeId,
+          parameters: {
+            radius: { mode: "driven", bindings: { driven: { kind: "driven", channel: "lfo1:low" } } },
+          },
+        },
+      ],
+    });
+
+    // A schema refusal is `error` at this surface, not `rejected`: the input never
+    // reached the bus, so there is no revision to have conflicted with.
+    expect(outcome.status).toBe("error");
+    expect(revision()).toBe(before);
+    const messages = outcome.diagnostics.map((entry) => entry.message);
+    expect(messages.join(" ")).toContain("op('lfo1').chan.low");
+  });
+
+  it("refuses a driven slot and names the expression that replaces it", async () => {
+    const added = await fixture.surface.callTool("add_node", { type: "test.blur" });
+    const nodeId = patchData(added).createdIds["$node"] ?? "";
+    const before = revision();
+
+    const outcome = await fixture.surface.callTool("set_parameters", {
+      nodeId,
+      parameters: {
+        radius: { mode: "driven", bindings: { driven: { kind: "driven", channel: "lfo1:value" } } },
+      },
+    });
+
+    expect(outcome.status).toBe("error");
+    // Nothing landed: a refused input is an input that never reached the bus (§V32).
+    expect(revision()).toBe(before);
+    // The REPLACEMENT reaches the caller, which is the whole point — a refinement's
+    // content is its message, and the surface used to publish only the issue's code.
+    const messages = outcome.diagnostics.map((entry) => entry.message);
+    expect(messages.join(" ")).toContain("op('lfo1').chan.value");
+    expect(messages.join(" ")).toContain("retired");
+  });
+
+  it("accepts the expression the refusal names, so the advice is not a dead end", async () => {
+    const added = await fixture.surface.callTool("add_node", { type: "test.blur" });
+    const nodeId = patchData(added).createdIds["$node"] ?? "";
+
+    const outcome = await fixture.surface.callTool("set_parameters", {
+      nodeId,
+      parameters: {
+        radius: {
+          mode: "expression",
+          bindings: { expression: { kind: "expression", source: "op('lfo1').chan.value" } },
+        },
+      },
+    });
+
+    expect(outcome.status).toBe("ok");
+  });
+
+  it("still accepts a slot that merely RETAINS a driven payload under another mode (§V108)", async () => {
+    // The legitimate case this guard could swallow. `upgradeDrivenSlot` leaves a shadowed
+    // driven payload in place beside an authored expression, so a document loaded from the
+    // wild carries one — and refusing every write that touches such a node would make a
+    // loaded document uneditable to fix a mode nobody is using.
+    const added = await fixture.surface.callTool("add_node", { type: "test.blur" });
+    const nodeId = patchData(added).createdIds["$node"] ?? "";
+
+    const outcome = await fixture.surface.callTool("set_parameters", {
+      nodeId,
+      parameters: {
+        radius: {
+          mode: "expression",
+          bindings: {
+            expression: { kind: "expression", source: "time" },
+            driven: { kind: "driven", channel: "lfo1:value" },
+          },
+        },
+      },
+    });
+
+    expect(outcome.status).toBe("ok");
+  });
+});
