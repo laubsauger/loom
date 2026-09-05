@@ -6,6 +6,9 @@ export type { BreadcrumbTrailProps } from "./breadcrumb-trail.tsx";
 export { ComponentPage } from "./component-page.tsx";
 export type { ComponentPageProps } from "./component-page.tsx";
 
+export { InspectorSubjects } from "./inspector-subjects.tsx";
+export type { InspectorSubject, InspectorSubjectsProps } from "./inspector-subjects.tsx";
+
 export { installStarterComponents, readStarterComponents } from "./starter-set.ts";
 export type { StarterSetInstall } from "./starter-set.ts";
 

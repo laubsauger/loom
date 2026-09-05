@@ -11,6 +11,7 @@ import { internalParameterOf } from "@domain/components/definition.ts";
 import { effectiveParameterSchema } from "@domain/parameters/resolve.ts";
 import type { ComponentRegistryView } from "@domain/components/registry.ts";
 import type { NodeRegistryView } from "@nodes/registry/registry.ts";
+import { resolveParameters } from "@editor/inspector/parameter-resolver.ts";
 import { ParameterControl } from "@ui/controls/parameter-control.tsx";
 import { Button } from "@ui/primitives/button.tsx";
 import styles from "./component.module.css";
@@ -65,6 +66,39 @@ const NUMBER_FIELDS = [
   { field: "step", label: "Step" },
 ] as const;
 
+/**
+ * WHAT THE KNOB IS SET TO — read back, not assumed (T1192).
+ *
+ * This control's `value` was `defaultParameterValue(published.definition)`, which is a
+ * constant of the DEFINITION and never a fact about the graph. So the page's own knob was
+ * write-only: turn Resolution to 64, `grid.cols` becomes 64, and the slider snaps back to
+ * 128 on the next render. It only looked right on E47 because that component's authored
+ * default happens to equal its stored value.
+ *
+ * That is B8's shape inside one file — a value written down one path and read down
+ * another — so the read goes through §V61's ONE resolver, the same call the inspector
+ * makes for an ordinary node, in the same STORED space `ParameterControl` expects.
+ *
+ * The FIRST target answers, deliberately. `component.setPublishedParameter` fans one
+ * value out to every target in one patch (§V80), so the targets agree unless something
+ * edited an internal node behind the knob's back — and then the honest thing to show is
+ * what one of them holds rather than a synthesised average. A knob with no target at all
+ * drives nothing and has no value to read; the authored default is the truth there.
+ */
+function publishedValue(
+  published: PublishedParameter,
+  graph: GraphDocument,
+  nodes: NodeRegistryView,
+): ParameterValue {
+  const target = published.targets[0];
+  const node = target === undefined ? undefined : graph.nodes[target.nodeId];
+  if (target === undefined || node === undefined) {
+    return defaultParameterValue(published.definition);
+  }
+  const resolved = resolveParameters(node, nodes.get(node.type)).get(target.key);
+  return resolved?.value ?? defaultParameterValue(published.definition);
+}
+
 export function ComponentPage({
   bus,
   context,
@@ -88,6 +122,12 @@ export function ComponentPage({
   );
 
   const [message, setMessage] = useState<string | null>(null);
+  /*
+   * T1192 — which row has its authoring fields open, and only ever one. Label/min/max/step
+   * are what you set once when you publish a knob; leaving all four open on every row was
+   * two thirds of a page nobody could read.
+   */
+  const [authoring, setAuthoring] = useState<string | null>(null);
   const live = components.get(definition.componentId, definition.version) ?? definition;
 
   const run = (promise: Promise<{ diagnostics: readonly { message: string }[] }>): void => {
@@ -128,7 +168,23 @@ export function ComponentPage({
             {live.parameters.map((published, index) => (
               <li className={styles.row} key={published.key}>
                 <div className={styles.rowHead}>
-                  <span className={styles.rowKey}>{published.key}</span>
+                  {/* The key IS the disclosure: no extra button, and the thing you click
+                      is the thing you are about to re-author (T1192). */}
+                  <button
+                    type="button"
+                    className={styles.rowKeyButton}
+                    aria-expanded={authoring === published.key}
+                    aria-label={`Re-author ${published.key}`}
+                    title="Label, range and step"
+                    onClick={() =>
+                      setAuthoring((current) => (current === published.key ? null : published.key))
+                    }
+                  >
+                    <span className={styles.rowCaret} aria-hidden>
+                      {authoring === published.key ? "▾" : "▸"}
+                    </span>
+                    {published.key}
+                  </button>
                   <div className={styles.rowActions}>
                     <Button
                       aria-label={`Move ${published.definition.label} earlier`}
@@ -181,54 +237,65 @@ export function ComponentPage({
                   </div>
                 </div>
 
-                <label className={styles.field}>
-                  <span>Label</span>
-                  <input
-                    className={styles.input}
-                    value={published.definition.label}
-                    onChange={(event) =>
-                      republish(published, {
-                        ...published.definition,
-                        label: event.target.value,
-                      } as ParameterDefinition)
-                    }
-                  />
-                </label>
+                {authoring !== published.key ? null : (
+                  <>
+                    <label className={styles.field}>
+                      <span>Label</span>
+                      <input
+                        className={styles.input}
+                        value={published.definition.label}
+                        onChange={(event) =>
+                          republish(published, {
+                            ...published.definition,
+                            label: event.target.value,
+                          } as ParameterDefinition)
+                        }
+                      />
+                    </label>
 
-                {published.definition.type === "number" || published.definition.type === "vector"
-                  ? NUMBER_FIELDS.map(({ field, label }) => (
-                      <label className={styles.field} key={field}>
-                        <span>{label}</span>
-                        <input
-                          className={styles.input}
-                          type="number"
-                          value={
-                            (published.definition as unknown as Record<string, unknown>)[field] as
-                              | number
-                              | undefined ?? ""
-                          }
-                          onChange={(event) => {
-                            const raw = event.target.value;
-                            const next = { ...published.definition } as unknown as Record<
-                              string,
-                              unknown
-                            >;
-                            // An empty box means "no bound", which is a DIFFERENT statement
-                            // from a bound of zero — writing 0 for a cleared field would
-                            // silently pin a slider to the origin.
-                            if (raw === "") delete next[field];
-                            else next[field] = Number(raw);
-                            republish(published, next as unknown as ParameterDefinition);
-                          }}
-                        />
-                      </label>
-                    ))
-                  : null}
+                    {published.definition.type === "number" ||
+                    published.definition.type === "vector" ? (
+                      // One range, so one line of three (T1192) — stacked, they were three
+                      // of the four rows that made a nine-knob page 1584px tall.
+                      <div className={styles.rangeFields}>
+                        {NUMBER_FIELDS.map(({ field, label }) => (
+                          <label className={styles.field} key={field}>
+                            <span>{label}</span>
+                            <input
+                              className={styles.input}
+                              type="number"
+                              value={
+                                (published.definition as unknown as Record<string, unknown>)[
+                                  field
+                                ] as number | undefined ?? ""
+                              }
+                              onChange={(event) => {
+                                const raw = event.target.value;
+                                const next = { ...published.definition } as unknown as Record<
+                                  string,
+                                  unknown
+                                >;
+                                // An empty box means "no bound", which is a DIFFERENT
+                                // statement from a bound of zero — writing 0 for a cleared
+                                // field would silently pin a slider to the origin.
+                                if (raw === "") delete next[field];
+                                else next[field] = Number(raw);
+                                republish(published, next as unknown as ParameterDefinition);
+                              }}
+                            />
+                          </label>
+                        ))}
+                      </div>
+                    ) : null}
+                  </>
+                )}
 
                 <ParameterControl
                   parameterKey={published.key}
                   definition={published.definition}
-                  value={defaultParameterValue(published.definition)}
+                  /* T1192: what the targets HOLD, not the authored default — see
+                     `publishedValue`. The knob used to be write-only. */
+                  value={publishedValue(published, graph, nodes)}
                   variant="inspector"
                   onChange={(value: ParameterValue) =>
                     run(

@@ -225,9 +225,16 @@
   section headers in the stack, because a group heading sliding over the tabs would read
   as the tabs having scrolled away.
 */
+/*
+  T1192: `top` is a variable because inside a component there is a SECOND sticky strip
+  above this one — the subject trail, which chooses between the component and the selected
+  node. It publishes its own height as `--inspector-page-top` on the element that wraps
+  this panel; at the root nothing declares it and the fallback puts this back at the top,
+  byte for byte as it was.
+*/
 .pageList.pageList {
   position: sticky;
-  top: 0;
+  top: var(--inspector-page-top, 0);
   z-index: 2;
   height: auto;
   margin: 0 calc(-1 * var(--space-4));

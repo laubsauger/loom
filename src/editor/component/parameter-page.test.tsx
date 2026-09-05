@@ -63,6 +63,20 @@ function setup(published = [blurKnob]) {
 const pageKeys = (harness: ComponentHarness): string[] =>
   (harness.components.get("bloom", 1)?.parameters ?? []).map((published) => published.key);
 
+/**
+ * T1192 — label/min/max/step live behind the row's own disclosure, because they are set
+ * once per published knob and were two thirds of the page's height on every render. The
+ * knob, the key and the target list stay in the open.
+ */
+async function openAuthoring(key: string): Promise<void> {
+  const disclosure = screen.getByRole("button", { name: `Re-author ${key}` });
+  expect(disclosure.getAttribute("aria-expanded")).toBe("false");
+  await act(async () => {
+    fireEvent.click(disclosure);
+  });
+  expect(disclosure.getAttribute("aria-expanded")).toBe("true");
+}
+
 describe("order is authored", () => {
   const gain = {
     key: "gain",
@@ -102,6 +116,7 @@ describe("order is authored", () => {
   it("re-authoring a LABEL keeps the control where its author put it", async () => {
     const { harness, session } = setup([blurKnob, gain]);
     mountPage(harness, session, null);
+    await openAuthoring("blur");
 
     const label = screen.getAllByDisplayValue("Blur")[0] as HTMLInputElement;
     await act(async () => {
@@ -118,6 +133,7 @@ describe("ranges are re-authored for the component's user, not inherited (§V80)
   it("writes a narrower max onto the published definition", async () => {
     const { harness, session } = setup();
     mountPage(harness, session, null);
+    await openAuthoring("blur");
 
     const max = screen.getByLabelText("Max", { selector: "input" }) as HTMLInputElement;
     await act(async () => {
@@ -132,6 +148,7 @@ describe("ranges are re-authored for the component's user, not inherited (§V80)
   it("clearing a bound REMOVES it rather than pinning the slider to zero", async () => {
     const { harness, session } = setup();
     mountPage(harness, session, null);
+    await openAuthoring("blur");
 
     const min = screen.getByLabelText("Min", { selector: "input" }) as HTMLInputElement;
     await act(async () => {

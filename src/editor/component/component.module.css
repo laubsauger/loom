@@ -196,12 +196,6 @@
   gap: var(--space-2);
 }
 
-.rowKey {
-  color: var(--text);
-  font-family: var(--font-mono);
-  font-size: var(--chrome-meta);
-}
-
 .rowActions {
   display: flex;
   gap: var(--space-1);
@@ -244,4 +238,114 @@
   color: var(--text-dim);
   font-family: var(--font-mono);
   font-size: var(--fs-micro);
+}
+
+/**
+ * The row's authoring disclosure (T1192).
+ *
+ * Label, min, max and step were four permanently-open fields on every row: 112px of the
+ * row's 176px, spent on the ONE thing you do once per published knob. The key becomes the
+ * button that opens them, so re-authoring costs a click and reading the page costs
+ * nothing. Nine rows: 1584px -> ~610px.
+ */
+
+.rowKeyButton {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--chrome-meta);
+  cursor: pointer;
+}
+
+.rowKeyButton:hover {
+  color: var(--signal);
+}
+
+.rowKeyButton:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.rowCaret {
+  color: var(--text-dim);
+  font-size: var(--fs-micro);
+}
+
+/* Min/max/step are one statement about a range, so they read as one line of three. */
+.rangeFields {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.rangeFields .field {
+  flex: 1;
+  min-width: 0;
+}
+
+.rangeFields .field > span {
+  min-width: 0;
+}
+
+/**
+ * The subject trail (T1192) — see `inspector-subjects.tsx`.
+ *
+ * It rides the tab primitive so it inherits the roving tabindex, `aria-selected` and the
+ * amber active marker (§V19). What is overridden here is only what the primitive assumes
+ * about the bottom dock: a panel that owns its own scroll box of a fixed height. This
+ * panel is a document that grows and the PANE scrolls it — the same correction
+ * `inspector.module.css` makes for the node's own page tabs, and for the same reason.
+ *
+ * The doubled class names beat the primitive's own stylesheet (0-2-0 against 0-1-0)
+ * regardless of which module the bundler emits first.
+ */
+
+.subjectPages.subjectPages {
+  /*
+   * Read by `inspector.module.css`'s `.pageList`: the node's `Parameters | Common` strip
+   * is sticky too, and without the offset it would stick UNDER this one and vanish.
+   */
+  --inspector-page-top: var(--pane-header-h);
+
+  flex: 0 0 auto;
+  height: auto;
+  min-height: 0;
+}
+
+.subjectTrail.subjectTrail {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  align-items: center;
+  gap: var(--space-1);
+  /* Long names scroll rather than truncate — the same choice `.trail` makes above it. */
+  overflow-x: auto;
+  padding: 0 var(--space-3);
+}
+
+.subject.subject {
+  gap: var(--space-2);
+  padding: 0 var(--space-2);
+}
+
+.subject:disabled {
+  cursor: default;
+}
+
+.subjectSeparator {
+  color: var(--line-hot);
+  font-family: var(--font-ui);
+  font-size: var(--fs-meta);
+  user-select: none;
+}
+
+.subjectPanel.subjectPanel {
+  flex: 0 0 auto;
+  min-height: 0;
+  overflow: visible;
+  background: transparent;
 }

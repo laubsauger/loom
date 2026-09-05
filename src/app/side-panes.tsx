@@ -14,7 +14,7 @@ import type { GraphDocument } from "@domain/types/graph.ts";
 import type { NodeId } from "@domain/types/ids.ts";
 import type { ChannelResolver } from "@domain/parameters/resolve.ts";
 import type { FrameInputs } from "@domain/types/backend.ts";
-import { ComponentPage } from "@editor/component/index.ts";
+import { ComponentPage, InspectorSubjects } from "@editor/component/index.ts";
 import type { GraphComponentDefinition } from "@domain/types/components.ts";
 import type { ComponentRegistryView } from "@domain/components/registry.ts";
 import { Inspector } from "@editor/inspector/index.ts";
@@ -99,9 +99,14 @@ export interface InspectorPaneProps {
    * Set while the editor is INSIDE a component (T423): the definition being edited, and
    * the catalogue to watch for changes to it.
    *
-   * The page editor sits ABOVE the node inspector rather than replacing it, because both
-   * are true at once — you are editing a component AND you have one of its nodes
-   * selected, and publishing a parameter needs to see both.
+   * T1192 — the page editor no longer sits ABOVE the node inspector. It used to, on the
+   * grounds that "both are true at once — you are editing a component AND you have one of
+   * its nodes selected, and publishing a parameter needs to see both". Both are still
+   * true; one scroll box was the wrong way to say it. Measured on E47's `DepthPoints_1`:
+   * 2092px of component page above the selected node's first parameter, in a 366px pane.
+   * The two are SUBJECTS now, one at a time, behind `InspectorSubjects` — and the publish
+   * rows still see the selected node, because they live on the component page beside the
+   * knobs they create.
    */
   /** T1065 — the registry view, ALWAYS (not only inside a dive): the instance's
    *  Component section (version/upgrade/enter/detach) and the Common page's inner
@@ -258,6 +263,35 @@ export function InspectorPane({
     );
   }
 
+  const nodeInspector = (
+    <Inspector
+      bus={bus}
+      context={invocation}
+      components={components}
+      nodeId={nodeId}
+      settings={settings}
+      diagnostics={diagnostics}
+      capabilities={
+        status.kind === "ready"
+          ? {
+              formats: status.capabilities.formats,
+              // The device ceiling, so the size readout clamps the way the plan does.
+              // Was omitted, and the panel showed sizes no node on this device has.
+              maxTextureDimension2D: status.capabilities.limits["maxTextureDimension2D"],
+            }
+          : undefined
+      }
+      inputResolutions={inputResolutions}
+      planned={planned ?? null}
+      {...(channels === undefined ? {} : { channels })}
+      {...(latestFrame === undefined ? {} : { latestFrame })}
+      {...(channelNames === undefined ? {} : { channelNames })}
+      {...(audioStatus === undefined ? {} : { audioStatus })}
+      {...(midi === undefined ? {} : { midi })}
+      {...(laser === undefined ? {} : { laser })}
+    />
+  );
+
   // `scrollFill`, not `fill`: a node with twenty parameters is taller than the right dock,
   // and a pane that grows past its dock has its overflow clipped rather than scrolled —
   // the parameters below the fold simply cannot be reached. See `panes.module.css`.
@@ -273,42 +307,35 @@ export function InspectorPane({
   return (
     <ContextMenuHost bus={bus}>
       <div {...paneProps} className={styles.scrollFill} data-testid="inspector-scroll">
-        {componentPage === undefined ? null : (
-          <ComponentPage
-            bus={bus}
-            context={invocation}
-            definition={componentPage.definition}
-            components={componentPage.components}
-            nodes={registry}
-            selectedNodeId={nodeId}
+        {componentPage === undefined ? (
+          nodeInspector
+        ) : (
+          /*
+           * T1192 — inside a component the pane has two subjects and shows one. `node` is
+           * resolved against the COMPONENT's graph, not merely non-null: diving in leaves
+           * the selection pointing at the instance, whose id belongs to the document one
+           * level out, and a bare null check would open an empty node panel on the way in.
+           */
+          <InspectorSubjects
+            component={{ name: componentPage.definition.name }}
+            node={
+              node === undefined
+                ? null
+                : { id: node.id, name: node.label ?? node.id }
+            }
+            componentPage={
+              <ComponentPage
+                bus={bus}
+                context={invocation}
+                definition={componentPage.definition}
+                components={componentPage.components}
+                nodes={registry}
+                selectedNodeId={nodeId}
+              />
+            }
+            nodeInspector={nodeInspector}
           />
         )}
-        <Inspector
-          bus={bus}
-          context={invocation}
-          components={components}
-          nodeId={nodeId}
-          settings={settings}
-          diagnostics={diagnostics}
-          capabilities={
-            status.kind === "ready"
-              ? {
-                  formats: status.capabilities.formats,
-                  // The device ceiling, so the size readout clamps the way the plan does.
-                  // Was omitted, and the panel showed sizes no node on this device has.
-                  maxTextureDimension2D: status.capabilities.limits["maxTextureDimension2D"],
-                }
-              : undefined
-          }
-          inputResolutions={inputResolutions}
-          planned={planned ?? null}
-          {...(channels === undefined ? {} : { channels })}
-          {...(latestFrame === undefined ? {} : { latestFrame })}
-          {...(channelNames === undefined ? {} : { channelNames })}
-          {...(audioStatus === undefined ? {} : { audioStatus })}
-          {...(midi === undefined ? {} : { midi })}
-          {...(laser === undefined ? {} : { laser })}
-        />
       </div>
     </ContextMenuHost>
   );
