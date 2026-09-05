@@ -46,8 +46,22 @@ export interface GraphCanvasContextValue {
   edgeGeometry: EdgeGeometryStore;
   /** Every semantic edit the view makes, as one atomic patch on the bus (§V29, §V32). */
   dispatch: GraphDispatch;
-  /** Current canvas selection (§V101): a per-node toggle acts on it when the node is in it. */
-  selection: readonly NodeId[];
+  /**
+   * Current canvas selection (§V101): a per-node toggle acts on it when the node is in it.
+   *
+   * ⚑ T1177 — A GETTER, AND THE FUNCTION SIGNATURE IS THE FIX. This was the array, which
+   * meant the canvas context value changed identity on every selection change, which meant
+   * EVERY `NodeView` AND EVERY `SignalEdge` REPAINTED WHEN YOU CLICKED A NODE — a context
+   * read is not something `React.memo` can protect a component from.
+   *
+   * Splitting selection into a second context (the obvious move) buys nothing: every node
+   * consumes it, so every node still wakes. Nothing here RENDERS from the selection —
+   * React Flow already hands each node its own `selected` prop, so the highlight repaints
+   * exactly the two nodes whose flag moved. The list is read at EVENT time, by the one
+   * caller that has ever wanted it, to decide whether a badge press acts on this node or
+   * on the whole selection. A read at event time wants a getter, not a subscription.
+   */
+  selection: () => readonly NodeId[];
   /**
    * Runs a selection-scoped node toggle through the bus command the keymap and the
    * context menu already use, never a raw patch (§V101, §V102, §V29, §V52) — so the

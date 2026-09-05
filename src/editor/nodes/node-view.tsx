@@ -122,7 +122,10 @@ export const NodeView = memo(function NodeView({ id, selected }: NodeProps<LoomN
    */
   const toggle = useCallback(
     (command: NodeToggleCommand) => {
-      const targets = selection.includes(id) ? selection : [id];
+      // T1177: read at press time. The context hands down a getter, so the canvas can
+      // change its selection without waking every node on screen.
+      const current = selection();
+      const targets = current.includes(id) ? current : [id];
       toggleUi(command, targets);
     },
     [id, selection, toggleUi],

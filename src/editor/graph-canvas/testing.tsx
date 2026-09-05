@@ -226,7 +226,7 @@ export function fixtureContext(options: FixtureContextOptions): {
       runtime,
       edgeGeometry: options.edgeGeometry ?? createEdgeGeometry(),
       dispatch: options.dispatch ?? (() => {}),
-      selection: options.selection ?? [],
+      selection: options.selection ?? (() => []),
       toggleUi: options.toggleUi ?? (() => {}),
       showProblems: options.showProblems ?? (() => {}),
       diveIn: options.diveIn ?? (() => {}),

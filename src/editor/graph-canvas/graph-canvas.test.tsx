@@ -184,6 +184,99 @@ describe("selection and hover leave the canvas for the keymap (T77)", () => {
   });
 });
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ * T1177 — THE BADGE READS THE SELECTION AS IT IS *NOW*, THOUGH NOTHING RE-RENDERED
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ *
+ * The canvas context used to hand every node the selection ARRAY, so clicking a node
+ * changed the context value's identity and repainted every `NodeView` and every
+ * `SignalEdge` on screen — a context read is not something `React.memo` can protect a
+ * component from, and at 120 nodes that was 6.3x the cost of the same click at 4.
+ *
+ * It hands down a GETTER now, and nothing above a node re-renders when the selection
+ * moves. Which is the whole risk: a node that does not re-render is a node that could be
+ * holding a selection from two clicks ago, and §V101's rule ("a badge press acts on the
+ * whole selection when this node is in it") would then act on the WRONG SET — quietly, and
+ * on somebody else's nodes.
+ *
+ * So this asserts the behaviour rather than the render count (§B181: "it did not
+ * re-render" is equally true of the fix and of the bug). Select two, press a badge, and
+ * both flip; select one, press it again WITH NO RE-RENDER IN BETWEEN, and only that one
+ * does. A captured array passes the first half and fails the second.
+ */
+describe("T1177 — a badge press reads the CURRENT selection (§V101)", () => {
+  it("follows the selection from two nodes down to one", async () => {
+    const { bus } = createHarness("sel");
+    await apply(
+      bus,
+      [
+        { op: "addNode", ref: "$a", type: "test.blur", position: { x: 0, y: 0 } },
+        { op: "addNode", ref: "$b", type: "test.blur", position: { x: 240, y: 0 } },
+      ],
+      "seed",
+    );
+    const seen: Array<readonly string[]> = [];
+    const { container } = render(<GraphCanvas bus={bus} invocation={invocation} onSelectionChange={(ids) => seen.push(ids)} />);
+    await waitFor(() => {
+      expect(container.querySelectorAll(".react-flow__node")).toHaveLength(2);
+    });
+    const nodes = [...container.querySelectorAll(".react-flow__node")] as HTMLElement[];
+    const idOf = (element: HTMLElement) => element.getAttribute("data-id") ?? "";
+    const [first, second] = nodes as [HTMLElement, HTMLElement];
+    const bypassedIn = (element: HTMLElement) =>
+      bus.store.getGraph().nodes[idOf(element)]?.ui?.bypassed === true;
+
+    // Both selected, through `graph.selectNodes` — the command the palette, the keymap and
+    // "select what was just pasted" all run (§V78). A multi-select is what §V101 is about,
+    // and this is the door that produces one without depending on a modifier key.
+    await act(async () => {
+      await bus.execute(
+        "graph.selectNodes",
+        { nodeIds: [idOf(first), idOf(second)] as never },
+        invocation,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 4));
+    });
+
+    const badgeIn = (element: HTMLElement) => {
+      const button = [...element.querySelectorAll("button")].find(
+        (candidate) => candidate.getAttribute("aria-label") === "Bypass",
+      );
+      if (button === undefined) throw new Error("no Bypass badge on that node");
+      return button;
+    };
+
+    expect(seen.at(-1)).toHaveLength(2);
+    await act(async () => {
+      fireEvent.click(badgeIn(first));
+      await new Promise((resolve) => setTimeout(resolve, 2));
+    });
+    await waitFor(() => {
+      expect(bypassedIn(first)).toBe(true);
+      // §V101: the press reached the OTHER node because both were selected.
+      expect(bypassedIn(second)).toBe(true);
+    });
+
+    // Now select only the second, and press ITS badge. Nothing above the node re-rendered
+    // when the selection changed — a node holding the previous array would flip both back.
+    await act(async () => {
+      await bus.execute("graph.selectNodes", { nodeIds: [idOf(second)] as never }, invocation);
+      await new Promise((resolve) => setTimeout(resolve, 4));
+    });
+    await act(async () => {
+      fireEvent.click(badgeIn(second));
+      await new Promise((resolve) => setTimeout(resolve, 2));
+    });
+    await waitFor(() => {
+      expect(bypassedIn(second)).toBe(false);
+    });
+    // The load-bearing half: the first node kept the state it had, because it was no
+    // longer in the selection the press acted on.
+    expect(bypassedIn(first)).toBe(true);
+  });
+});
+
 describe("V26 — the projected edge carries the source port's family", () => {
   it("paints the rendered edge with the source output port's token", async () => {
     const { container } = await mountCanvas();

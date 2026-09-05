@@ -95,6 +95,8 @@ const EDGE_TYPES: EdgeTypes = { [SIGNAL_EDGE_TYPE]: SignalEdge as EdgeTypes[stri
 const DEFAULT_EDGE_OPTIONS = { type: SIGNAL_EDGE_TYPE } as const;
 /** §I.ui: middle-drag pans, alt-drag pans, left-drag rubber-band selects, scroll zooms. */
 const PAN_MOUSE_BUTTONS = [1] as const;
+/** Module scope so "nothing is selected" is one array rather than one per canvas mount. */
+const EMPTY_SELECTION: readonly NodeId[] = [];
 
 export interface GraphCanvasProps {
   bus: LoomBus;
@@ -557,13 +559,29 @@ export function GraphCanvas({
    * Selection and hover leave the canvas as plain node ids. They are not document state
    * — the graph document models neither — but the keymap resolves selection-driven
    * command input against them (T77), so this is the seam.
+   *
+   * ⚑ T1177 — A REF, NOT STATE, AND NOTHING ON THIS PAGE RE-RENDERS WHEN IT MOVES.
+   *
+   * This was `useState`, and its ONLY reader was the canvas context below — so a click on
+   * a node re-rendered `GraphCanvas`, minted a new context value, and repainted every
+   * `NodeView` and every `SignalEdge` on the canvas, however many there were. §V16 is
+   * explicit that view state which nothing renders from does not belong in a render path,
+   * and this is that case exactly: React Flow already gives each node its own `selected`
+   * prop (`withSelection`/`projectNodes` above), so the two nodes whose highlight actually
+   * changed repaint on their own and needed none of this.
+   *
+   * What reads it is `NodeView`'s badge press, at PRESS time, through the getter on the
+   * context (§V101: act on the whole selection when this node is in it). A getter is what a
+   * read at event time wants; a subscription would be paying every frame for an answer
+   * needed on a click.
    */
-  const [selectedIds, setSelectedIds] = useState<readonly NodeId[]>([]);
+  const selectedRef = useRef<readonly NodeId[]>(EMPTY_SELECTION);
+  const getSelection = useCallback(() => selectedRef.current, []);
 
   const reportSelection = useCallback(
     ({ nodes }: { nodes: LoomNode[] }) => {
       const ids = nodes.map((node) => node.id);
-      setSelectedIds(ids);
+      selectedRef.current = ids;
       onSelectionChange?.(ids);
     },
     [onSelectionChange],
@@ -714,7 +732,7 @@ export function GraphCanvas({
       runtime: runtimeSource,
       edgeGeometry,
       dispatch,
-      selection: selectedIds,
+      selection: getSelection,
       toggleUi,
       renameSession,
       beginRename,
@@ -735,7 +753,7 @@ export function GraphCanvas({
       runtimeSource,
       edgeGeometry,
       dispatch,
-      selectedIds,
+      getSelection,
       toggleUi,
       renameSession,
       beginRename,

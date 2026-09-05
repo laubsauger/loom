@@ -75,7 +75,7 @@ function mountNode(type: string, options: Options = {}) {
         invocation,
       );
     },
-    selection: options.selection ?? [],
+    selection: () => (options.selection ?? []) as never,
     // Mirrors `graph-canvas.tsx`'s real `toggleUi` (§V101/§V102/§V29): a badge press
     // runs the SAME bus command the keymap and the context menu use, never a raw patch.
     toggleUi: (command, nodeIds) => {
