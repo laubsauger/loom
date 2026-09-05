@@ -403,15 +403,16 @@ fn hazeSegment(o: vec3f, d: vec3f, t0: f32, t1: f32, jitter: f32, perUnit: f32) 
 }
 
 /* The emissive core from t0 to t1 along the ray. Returns rgb and the surviving throughput. */
-fn coreSegment(o: vec3f, d: vec3f, t0: f32, t1: f32, jitter: f32) -> vec4f {
+fn coreSegment(o: vec3f, d: vec3f, t0: f32, t1: f32, jitter: f32, steps: i32) -> vec4f {
   let len = t1 - t0;
   if (len <= 0.0) { return vec4f(0.0, 0.0, 0.0, 1.0); }
-  let dt = len / f32(CORE_STEPS);
+  let dt = len / f32(steps);
   let rc = coreRadius();
   let tm = frameU.absTime;
   var acc = vec3f(0.0);
   var tr = 1.0;
   for (var s: i32 = 0; s < CORE_STEPS; s = s + 1) {
+    if (s >= steps) { break; }
     let t = t0 + (f32(s) + jitter) * dt;
     let x = o + d * t;
     let rn = clamp(length(x) / rc, 0.0, 1.0);
@@ -523,7 +524,11 @@ fn trace(ro: vec3f, rd: vec3f, jitter: f32, uv: vec2f) -> vec3f {
 
     if (r < rc - 1.0e-4) {
       // Inside the core: march the emissive volume to its far boundary.
-      let seg = coreSegment(o, d, 0.0, tNext, jitter);
+      // From INSIDE the core (the dive's centre) every pixel walks the whole volume, and the
+      // volume is a fog from there: half the steps read the same, at half the frame's cost
+      // (measured 33 ms at the centre against a 17 ms control).
+      let steps = select(CORE_STEPS, CORE_STEPS / 2, length(ro) < rc);
+      let seg = coreSegment(o, d, 0.0, tNext, jitter, steps);
       col = col + tp * seg.rgb;
       tp = tp * seg.a;
       o = o + d * (tNext + 2.0e-4);

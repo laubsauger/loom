@@ -138,12 +138,22 @@ import { REACTOR_HAZE_WGSL, REACTOR_WGSL } from "../shaders/reactor.wgsl.ts";
  * perfect circle. Two refusals from the numbers: a coarse march floor (a sixth of the band,
  * for cost) stepped over struts at grazing incidence and drew a sawtooth on every edge —
  * restored to 4 mm; and the sawtooth's real cause was F2−F1 being up to twice the border
- * distance, so the strut SDF halves it and the step is a true lower bound. COST: the day's
- * absolute numbers are unusable (two foreign GPU processes; the untouched shader read
- * 54 ms); relative, on the same load: the wobble's wider band costs ~5 ms at the wide shot,
- * relief and morph under 1 ms. Motion, both windows: row 0.0258, whole minute 0.0447 (min
- * 0.0098, max 0.1002, last gap 0.0574); range 0.871 → 0.687 — the larger, emptier cells
- * and the bounded hue read lower on the instrument, on purpose.
+ * distance, so the strut SDF halves it and the step is a true lower bound.
+ *
+ * COST, measured the only honest way on a shared machine — a CONTROL in the same run (the
+ * wide shot with wobble, relief and morph off) and the legs against it, twice, 720p:
+ *   control                       17.0
+ *   wide, as shipped              17.1   (the wobble and the relief are free at the wide shot)
+ *   graze outer, leg 2 pinned     16.0
+ *   graze middle, leg 4 pinned    19.0
+ *   dive centre, leg 3 pinned     32–34 → 28.7 against a 20.1 control after the core march
+ *                                 halves its steps when the eye is inside the core (a fog
+ *                                 from there; the halving reads the same)
+ * The earlier "two foreign GPU processes" story was wrong (they were idle file servers; the
+ * spikes were transient system load) — the control is what makes a reading usable, not a
+ * quiet machine. Motion, both windows: row 0.0258, whole minute 0.0447 (min 0.0098, max
+ * 0.1002, last gap 0.0574); range 0.871 → 0.687 — the larger, emptier cells and the
+ * bounded hue read lower on the instrument, on purpose, and the drop is not a regression.
  *
  * DUTY (§V903/§V914 — 3600 frames of the pattern through the lanes):
  *   coreGain    = 4.2·level    + 0.5   (env1) → 0.733..2.671, mean 1.14, above retained 75%, hold 0
