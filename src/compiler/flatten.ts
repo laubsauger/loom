@@ -21,12 +21,14 @@ import { isParameterSlot, storedStaticValue } from "../domain/parameters/slots.t
 import { storedValues } from "../domain/parameters/stored-values.ts";
 import type { NodeRegistryView } from "../nodes/registry/registry.ts";
 import {
+  PARENT_BINDINGS_STATE_KEY,
   buildParentScope,
   componentSourcePath,
   describeRecursion,
   detectComponentRecursion,
   effectiveInternalOverrides,
   instanceDisplayNames,
+  isComponentInstance,
   parentBindResolver,
   parentScopeDrivers,
   parseInternalParameterPath,
@@ -298,13 +300,118 @@ interface LevelResult {
 }
 
 /**
+ * Is flattening this document the IDENTITY? (T1176)
+ *
+ * ## Why the question is worth asking
+ *
+ * `flattenComponents` runs on every document revision — every knob turn, every commit —
+ * and the overwhelming majority of documents contain no component instance at all. For
+ * those, the whole walk below is an elaborate way of producing the graph it was given:
+ * every node comes back as `{ ...node, id: node.id, parameters: { ...node.parameters } }`
+ * and every edge as a field-for-field copy of itself. The costly part is not the copying
+ * — it is `effectiveParameterSchema`, which REFLECTS a `customWgsl` node's schema out of
+ * its WGSL source, and which the walk computes for every node whether or not anything
+ * needs it. (It is read in exactly one place: the `parent.<key>` driver loop in
+ * `effectiveParameters`. With no drivers, nothing reads it.)
+ *
+ * ## The three things that make the walk NOT the identity
+ *
+ * All three are checked, and any of them sends the document down the full walk:
+ *
+ *  1. a COMPONENT INSTANCE — the whole point of the walk;
+ *  2. `state.parentBindings` on a node — at the root there is no parent scope, so
+ *     `parentScopeDrivers` reports `component.parentScope.notFound` and the diagnostic
+ *     is the answer. Legal to author (a node cut out of a component and pasted into the
+ *     root graph has one), and silently dropping the diagnostic would leave a parameter
+ *     reading a value that no longer exists with nothing said;
+ *  3. a `bind`-mode slot whose ref starts `parent.` — the same case through §V107's
+ *     slot, where the walk warns and falls back to §V108's retained static.
+ *
+ * §V83's recursion detector is skipped with them, and provably: it walks the document's
+ * component references, and a document with no instance has none.
+ *
+ * The scan is a reference walk over `node.parameters`, so it costs a fraction of the one
+ * reflection it saves.
+ */
+function flatteningIsIdentity(graph: GraphDocument): boolean {
+  for (const nodeId of Object.keys(graph.nodes)) {
+    const node = graph.nodes[nodeId];
+    if (node === undefined) continue;
+    if (isComponentInstance(node)) return false;
+    if (node.state?.[PARENT_BINDINGS_STATE_KEY] !== undefined) return false;
+    for (const key of Object.keys(node.parameters ?? {})) {
+      const stored = node.parameters?.[key];
+      if (!isParameterSlot(stored) || stored.mode !== "bind") continue;
+      const binding = stored.bindings.bind;
+      if (binding?.kind === "bind" && binding.ref.startsWith("parent.")) return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * The flattening of a document with nothing to flatten (T1176).
+ *
+ * Every field is what the full walk below produces for that document, and the two are
+ * held together by `flatten-identity.test.ts`, which flattens each shipped example BOTH
+ * ways — as the root document (here) and as the graph of a component instantiated once
+ * (the walk) — and requires the results to agree node for node.
+ *
+ * Two details are load-bearing rather than incidental:
+ *
+ *  - the records are rebuilt in SORTED KEY ORDER, because the walk builds them that way
+ *    (`Object.keys(...).sort()`), and key order is diagnostic order in the problems pane;
+ *  - the node and edge OBJECTS are the document's own. The walk minted copies; nothing
+ *    downstream ever wrote to one, and sharing them means a reference comparison against
+ *    the raw document now answers correctly instead of always "different".
+ */
+function identityFlattening(graph: GraphDocument): FlattenedGraph {
+  const nodes: Record<NodeId, GraphNode> = {};
+  const sources = new Map<NodeId, ComponentSource>();
+  for (const nodeId of Object.keys(graph.nodes).sort()) {
+    const node = graph.nodes[nodeId];
+    if (node === undefined) continue;
+    nodes[nodeId] = node;
+    sources.set(nodeId, {
+      nodeId,
+      path: [],
+      internalNodeId: node.id,
+      sourcePath: componentSourcePath([], {}, node.label ?? nodeId),
+    });
+  }
+
+  const edges: Record<string, GraphEdge> = {};
+  for (const edgeId of Object.keys(graph.edges).sort()) {
+    const edge = graph.edges[edgeId];
+    if (edge !== undefined) edges[edgeId] = edge;
+  }
+
+  return {
+    graph: { revision: graph.revision, nodes, edges, groups: {} },
+    sources,
+    instanceOutputs: new Map(),
+    sinks: [],
+    recursion: null,
+    diagnostics: [],
+    changed: false,
+  };
+}
+
+/**
  * Flattens a graph, recursively.
  *
  * `detectComponentRecursion` runs first and the walk is abandoned when it fires, so this
  * function terminates by construction rather than by a depth counter — one detector,
  * shared with the editor, so the two can never disagree about what is legal (§V83).
+ *
+ * T1176: `flatteningIsIdentity` answers first, for the documents that have no component
+ * in them at all — which is most of them, on every commit.
  */
 export function flattenComponents(request: FlattenRequest): FlattenedGraph {
+  // T1176: the overwhelming majority of documents have nothing to flatten. See
+  // `flatteningIsIdentity`.
+  if (flatteningIsIdentity(request.graph)) return identityFlattening(request.graph);
+
   const diagnostics: RuntimeDiagnostic[] = [];
 
   const recursion = detectComponentRecursion({
