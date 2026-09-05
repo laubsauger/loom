@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from "react";
+import { memo, useId, useRef, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { ResolvedComponent } from "@domain/parameters/resolve.ts";
@@ -37,6 +37,7 @@ import { valueForDefinition } from "./parameter-value.ts";
 import { MODE_BADGES, MODE_LABELS, slotOf, withMode, withStaticValue } from "./parameter-slot.ts";
 import { TextField } from "./text-field.tsx";
 import { AXIS_LABELS, VectorField, specForVector } from "./vector-field.tsx";
+import { sameProps } from "./props-equal.ts";
 import type { EditPhase, ValueListener } from "./types.ts";
 import styles from "./controls.module.css";
 
@@ -150,7 +151,23 @@ function isExpressionShortcut(event: KeyboardEvent): boolean {
   return (event.metaKey || event.ctrlKey) && !event.altKey && (event.key === "e" || event.key === "E");
 }
 
-export function ParameterControl({
+/**
+ * ⚑ T1177 — THE ROW IS A MEMO BOUNDARY, AND IT IS THE ONE THAT PAYS.
+ *
+ * Every commit to the document re-renders the inspector (it subscribes to the graph, and
+ * an expression on one node reads parameters off another, so it MUST). What it does not
+ * have to do is rebuild thirty-three rows whose values did not move. Measured on E55, 60
+ * knob commits on an unrelated node: `reactor1` 2.02 -> 0.53 ms per commit, `cut1` 0.54 ->
+ * 0.24. The saving is the rows, not the read — `resolveParameters` is 0.12 ms of a 3 ms
+ * commit and the other 2.9 is React.
+ *
+ * The comparator is `props-equal.ts`, whose default answer is "re-render"; read its
+ * docblock before touching this. The three things that make it HIT rather than merely
+ * exist live in `inspector.tsx`: one `references` object for the pane's lifetime, one set
+ * of writers per (editor, node), and a module-scope `codeField`. Four fresh closures per
+ * row per render made this boundary unable to bail out even once.
+ */
+function ParameterControlImpl({
   parameterKey,
   definition,
   value,
@@ -629,3 +646,11 @@ export function ParameterControl({
     }
   }
 }
+
+/**
+ * §B181 is why the gate for this lives in `driven-fields.test.tsx` and drives a value from
+ * a channel rather than asserting a render was skipped: a suite that only ever exercises a
+ * static parameter cannot see a driven-case defect, and "it did not re-render" is true of
+ * both the fix and the bug.
+ */
+export const ParameterControl = memo(ParameterControlImpl, sameProps);
