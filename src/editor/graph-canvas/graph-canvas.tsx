@@ -101,12 +101,18 @@ const EMPTY_SELECTION: readonly NodeId[] = [];
 export interface GraphCanvasProps {
   bus: LoomBus;
   /**
-   * Other buses whose `graph.selectNodes` must reach THIS canvas — T969(b)'s reason,
-   * unchanged: inside a component `bus` is the session bus, while the keymap, the
-   * menubar, the palette and the right-click menus all keep dispatching on the ROOT bus.
-   * There is one canvas, so every door that can reach it gets the same handlers.
+   * The OTHER buses the app's doors dispatch on — T969(b)'s reason, unchanged: inside a
+   * component `bus` is the session bus, while the keymap, the menubar, the palette and
+   * the right-click menus all keep dispatching on the ROOT bus. There is one canvas, so
+   * every door that can reach it gets the same handlers.
+   *
+   * T1195 renamed this from `selectionBuses`, and the name is the fix's other half. Two
+   * of the three surfaces it should have covered were missed — `view.frameAll` (the
+   * owner's dead Shift+F) and `ui.openNodeSearch` — because a list called "selection
+   * buses" reads as a detail of one command rather than as THE rule for every view-state
+   * surface the canvas owns. Anything registered off `bus` in this file belongs here too.
    */
-  selectionBuses?: readonly LoomBus[];
+  doorBuses?: readonly LoomBus[];
   /** Actor identity for every mutation this canvas makes (§V30). */
   invocation: InvocationContext;
   /**
@@ -142,7 +148,7 @@ export interface GraphCanvasProps {
 
 export function GraphCanvas({
   bus,
-  selectionBuses,
+  doorBuses,
   components,
   invocation,
   runtime,
@@ -291,13 +297,13 @@ export function GraphCanvas({
     // inside a component; registration itself is idempotent on each.
     const holders = new Set([
       registerSelectNodesCommand(bus),
-      ...(selectionBuses ?? []).map(registerSelectNodesCommand),
+      ...(doorBuses ?? []).map(registerSelectNodesCommand),
     ]);
     for (const holder of holders) holder.current = handlers;
     return () => {
       for (const holder of holders) if (holder.current === handlers) holder.current = null;
     };
-  }, [bus, selectNodes, selectionBuses]);
+  }, [bus, selectNodes, doorBuses]);
 
   /** The canvas element — the double-click boundary and the viewport-centre fallback. */
   const canvasRef = useRef<HTMLDivElement | null>(null);
@@ -665,13 +671,28 @@ export function GraphCanvas({
     return settled;
   }, []);
 
-  const nodeSearch = useMemo(() => registerNodeSearchCommand(bus), [bus]);
+  /**
+   * T1195 — `tab` inside a component, found by the audit rather than reported. Same
+   * mechanism as the Shift+F the owner DID report: registered on `bus` alone, so one
+   * `graph.diveIn` moved the holder to the session bus and left the root one — the bus
+   * `KeymapProvider` and the palette dispatch on — holding `null`. Measured through the
+   * real app: `applied` at the root, `rejected library.noSurface` after one dive, and
+   * `library.noSurface` is `info`, which no surface shows.
+   *
+   * The double-click below never broke, because it executes on this canvas's OWN bus —
+   * which is exactly why a keyboard-only defect can live behind a working gesture.
+   */
+  const nodeSearchHolders = useMemo(
+    () => new Set([registerNodeSearchCommand(bus), ...(doorBuses ?? []).map(registerNodeSearchCommand)]),
+    [bus, doorBuses],
+  );
   useEffect(() => {
-    nodeSearch.current = { open: openNodeSearch };
+    const handlers = { open: openNodeSearch };
+    for (const holder of nodeSearchHolders) holder.current = handlers;
     return () => {
-      if (nodeSearch.current?.open === openNodeSearch) nodeSearch.current = null;
+      for (const holder of nodeSearchHolders) if (holder.current === handlers) holder.current = null;
     };
-  }, [nodeSearch, openNodeSearch]);
+  }, [nodeSearchHolders, openNodeSearch]);
 
   /**
    * The gesture. It does not open anything itself — it names the command, the way the

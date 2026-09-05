@@ -191,7 +191,7 @@ function GraphPaneInner({
   const { bus, components, documentIdentity, invocation, nodeRuntime, registry, settings } = useAppRuntime();
   // T969(b): the same object as `bus` unless the caller is showing a component's internals.
   const rootBus = rootBusProp ?? bus;
-  const selectionBuses = useMemo(() => [rootBus], [rootBus]);
+  const doorBuses = useMemo(() => [rootBus], [rootBus]);
   // T601: the component catalogue view, for resolving an instance's preview target.
   const componentsView = useMemo(() => components.view(), [components]);
   const flow = useReactFlow();
@@ -718,9 +718,26 @@ function GraphPaneInner({
    * The count comes from the nodes React Flow ACTUALLY holds, not from the ids asked for.
    * `fitView` silently ignores an id it does not know, so counting the request would let
    * a stale selection report a camera move that never happened (§V123).
+   *
+   * ## T1195 — AND ON BOTH BUSES, which the effect above has said since T969(b)
+   *
+   * Owner: *"Shift+F doesn't even work in a subgraph — doesn't do anything, definitely
+   * doesn't bring it into the center, while it works perfectly outside."*
+   *
+   * The handler was never the fault: `flow.getNodes()` is whatever the pane holds, so it
+   * is right at any depth. The fault was WHICH BUS OWNED IT. Inside a component `bus` is
+   * the session bus, while `KeymapProvider`, the palette and the menubar keep dispatching
+   * on the ROOT one — so one `graph.diveIn` moved the handlers to a bus no door speaks to
+   * and VACATED the root holder on the way (the cleanup below). `view.frameAll` then
+   * answered `view.noCanvas`, a `warning` nothing surfaces.
+   *
+   * MEASURED, before the fix, through the real app: `applied {framed: 1}` at the root and
+   * `rejected view.noCanvas` after one dive — the same two readings T969(b) recorded for
+   * `graph.selectAll`, and §V123's silence is what kept them apart. The docblock one
+   * effect above already said "the same shape as `graph.selectAll` and `view.frameAll`"
+   * while `view.frameAll` was the one still on a single bus.
    */
   useEffect(() => {
-    const holder = registerViewCommands(bus);
     const handlers = {
       frame: (nodeIds: readonly string[] | null): number => {
         if (nodeIds === null) {
@@ -744,11 +761,14 @@ function GraphPaneInner({
         return all.length;
       },
     };
-    holder.current = handlers;
+    // One holder at the root (`bus === rootBus`), two inside a component; registration
+    // itself is idempotent on each. Same construction as select-all above.
+    const holders = new Set([registerViewCommands(bus), registerViewCommands(rootBus)]);
+    for (const holder of holders) holder.current = handlers;
     return () => {
-      if (holder.current === handlers) holder.current = null;
+      for (const holder of holders) if (holder.current === handlers) holder.current = null;
     };
-  }, [bus, flow]);
+  }, [bus, flow, rootBus]);
 
   // §V351/B66/B67: declaring the `graph` context and being able to hold focus are one
   // call. See `useKeymapPane` for why neither half works without the other.
@@ -840,13 +860,14 @@ function GraphPaneInner({
         <GraphCanvas
           bus={bus}
           /*
-           * T969(b)'s list, applied to `graph.selectNodes`: inside a component `bus` is
-           * the session bus, while the keymap, the palette and the right-click menus keep
-           * dispatching on the ROOT one — so a paste run from a hotkey while dived would
-           * select on a bus no canvas was answering. Memoised in `selectionBuses` above so
-           * the registration effect does not re-run every render.
+           * T969(b)'s list, now serving `graph.selectNodes` AND `ui.openNodeSearch`
+           * (T1195): inside a component `bus` is the session bus, while the keymap, the
+           * palette and the right-click menus keep dispatching on the ROOT one — so a
+           * paste run from a hotkey while dived would select on a bus no canvas was
+           * answering, and `tab` opened nothing at all. Memoised so the registration
+           * effects do not re-run every render.
            */
-          selectionBuses={selectionBuses}
+          doorBuses={doorBuses}
           components={componentsView}
           invocation={invocation}
           runtime={nodeRuntime}
