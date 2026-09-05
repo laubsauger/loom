@@ -59,6 +59,7 @@
               "id": "cut",
               "label": "cut1",
               "parameters": {
+                "apply": "colour",
                 "channel": "red"
               },
               "position": {

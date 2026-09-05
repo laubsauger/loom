@@ -454,7 +454,9 @@ const depthPointsHost: ProjectDocument = {
 
 /**
  * DepthCut's host (T977): the MODEL-FREE background cut. A depth map thresholds into a
- * soft matte and the compositing `mask` applies it to the picture — no download, no
+ * soft matte and the compositing `mask` applies it to the picture, in its COLOUR mode
+ * (B189 — the default carves alpha only, which is invisible in every RGB view) — no
+ * download, no
  * inference, works on any depth source including the fourth fallback cell (webcam
  * understudy). The copy is honest about what it is: it removes things FURTHER AWAY,
  * not "not-the-person" — a real matte (§T957) knows the difference; this never has to.
@@ -518,12 +520,35 @@ const depthCutHost: ProjectDocument = {
         parameters: { [SHADER_SOURCE_PARAMETER]: DEPTH_CUT_MATTE_WGSL, threshold: 0.5, feather: 0.12, invert: 0 },
         label: "matte1",
       },
+      /**
+       * B189 — `apply: "colour"`, AND THAT ONE WORD IS THE WHOLE FIX.
+       *
+       * `mask`'s default carve lands in ALPHA and leaves colour untouched, so this
+       * node's output was BYTE-IDENTICAL to its input in rgb (measured: 0 of 43200
+       * components differ) — and every RGB view in the app shows rgb. The owner opened
+       * this tile three times, saw his input, and was reading it correctly. A component
+       * called DepthCut whose carve is invisible in colour is not delivering its name,
+       * whatever its alpha says.
+       *
+       * `mask`'s DEFAULT is not wrong and did not move. Loom is a STRAIGHT-alpha
+       * compositor — `PORTER_DUFF_WGSL` premultiplies on the way in and divides back out
+       * and says so — so writing coverage into alpha and leaving colour valid is exactly
+       * right when a Porter-Duff op will read that alpha later. DepthCut never
+       * composites: it hands a texture to a point kernel that reads rgb AND alpha, so it
+       * wants the coverage IN THE COLOUR. That is what the mode selects, and it is why
+       * the mode is a mode rather than a new default (§B189's census: `mask` is used
+       * exactly once in this catalogue — here — while 90 uses reach for `multiply`).
+       *
+       * ALPHA IS UNTOUCHED BY THE MODE, so §B189's measured point cohorts survive it
+       * exactly: 23092 motes at coverage 0, 1509 at 1. What is new is that rgb carries
+       * the coverage too, so the cut is finally visible where he was looking.
+       */
       cut: {
         id: "cut",
         type: "mask",
         definitionVersion: 1,
         position: { x: 0, y: 0 },
-        parameters: { channel: "red" },
+        parameters: { channel: "red", apply: "colour" },
         label: "cut1",
       },
       out: { id: "out", type: "output", definitionVersion: 1, position: { x: 260, y: 0 }, parameters: {}, label: "out1" },

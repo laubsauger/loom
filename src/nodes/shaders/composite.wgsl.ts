@@ -12,6 +12,15 @@ import { WGSL_CHANNEL } from "./common.wgsl.ts";
  * a survey of all 149 TOPs found does not exist — §V186. Our equivalent is the Premultiply
  * node, T281.) Every node in this catalogue that writes alpha writes it straight.
  *
+ * ONE DECLARED EXCEPTION, and it is opt-in: Mask's `apply: "colour"` (B189) multiplies rgb
+ * by the coverage as well, which is premultiplied output by definition. It exists because
+ * straight alpha has a cost the convention does not mention — a carve that lives only in
+ * alpha is INVISIBLE to every consumer that reads rgb, which is every preview in this app
+ * and most kernels — and a DepthCut shipped for two task rows looking exactly like its own
+ * input because of it. The default is still straight, so the convention above holds for
+ * every node and every existing document; this is a switch a user throws when the thing
+ * downstream reads colour, not a drift.
+ *
  * COLOUR (§V56): all six operate on LINEAR working-space values. Adding or multiplying
  * encoded values would give a different (and wrong) picture, which is the practical reason
  * the working space is linear in the first place.
@@ -179,10 +188,22 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
  * Mask — multiply an image's coverage by a mask channel.
  *
  * The mask input is DATA: a coverage value, not light. It is read from one channel and
- * multiplies alpha only, leaving colour alone — with straight alpha that is exactly what
- * "mask" means, and it keeps the colour valid where coverage is partial.
+ * multiplies alpha — with straight alpha that is exactly what "mask" means, and it keeps
+ * the colour valid where coverage is partial.
+ *
+ * B189 — AND WHETHER IT TOUCHES COLOUR IS NOW A MODE, because "keeps the colour valid"
+ * has a cost nobody had priced. Alpha-only is right when a Porter-Duff operator will
+ * read that alpha downstream and divide the premultiply back out (which is this app's
+ * stated convention — see `PORTER_DUFF_WGSL` above). It is WRONG when the consumer reads
+ * colour: every RGB view in the editor, and any kernel or shader sampling rgb. In that
+ * case the carve is arithmetically perfect and completely invisible, which is how a
+ * DepthCut shipped for two task-rows looking exactly like its own input.
+ *
+ * Two shaders, not a branch on a uniform (§V141, `output.toneMap`'s precedent): the mode
+ * changes approximately never, and `alpha` keeps the text it has always had so upgrading
+ * moves no existing project's pixels OR its structural key.
  */
-export const MASK_FRAGMENT_WGSL = `${WGSL_CHANNEL}
+const maskShader = (carveColour: boolean) => `${WGSL_CHANNEL}
 
 struct Params {
   channel: f32,
@@ -199,5 +220,27 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   let field = textureSampleLevel(maskTexture, inputSampler, uv, 0.0);
   let raw = clamp(channelValue(field, params.channel), 0.0, 1.0);
   let coverage = mix(raw, 1.0 - raw, clamp(params.invert, 0.0, 1.0));
-  return vec4f(source.rgb, source.a * coverage);
+  return vec4f(source.rgb${carveColour ? " * coverage" : ""}, source.a * coverage);
 }`;
+
+/** Coverage into alpha alone — the straight-alpha reading, and the shipped default. */
+export const MASK_FRAGMENT_WGSL = maskShader(false);
+
+/** Coverage into colour AND alpha — a carve you can see in an RGB view (B189). */
+export const MASK_COLOUR_FRAGMENT_WGSL = maskShader(true);
+
+/** The two modes, as the parameter spells them. */
+export const MASK_APPLY_OPTIONS = [
+  { value: "alpha", label: "Alpha only" },
+  { value: "colour", label: "Colour and alpha" },
+] as const;
+
+export type MaskApply = (typeof MASK_APPLY_OPTIONS)[number]["value"];
+
+export function isMaskApply(value: unknown): value is MaskApply {
+  return MASK_APPLY_OPTIONS.some((option) => option.value === value);
+}
+
+export function maskShaderFor(apply: MaskApply): string {
+  return apply === "colour" ? MASK_COLOUR_FRAGMENT_WGSL : MASK_FRAGMENT_WGSL;
+}

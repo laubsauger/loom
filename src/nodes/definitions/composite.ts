@@ -8,7 +8,10 @@ import {
   isBlendType,
   type BlendType,
   CROSS_FRAGMENT_WGSL,
-  MASK_FRAGMENT_WGSL,
+  MASK_APPLY_OPTIONS,
+  isMaskApply,
+  maskShaderFor,
+  type MaskApply,
 } from "../shaders/composite.wgsl.ts";
 
 /**
@@ -326,10 +329,21 @@ export const crossNode: NodeDefinition = {
  *
  * COLOUR (§V56/§V57): `mask` is DATA — a coverage value, not light — declared
  * `space: "data"` (T768) while `input` stays colour. One of its channels multiplies the
- * source's ALPHA and nothing else, which is what masking means under a straight-alpha
- * convention and keeps the colour valid where coverage is partial. §V57c is what lets a
- * Threshold, a Ramp or any linear image feed this port unconverted: taking a channel as
- * coverage is a read, not a conversion.
+ * source's ALPHA, which is what masking means under a straight-alpha convention and
+ * keeps the colour valid where coverage is partial. §V57c is what lets a Threshold, a
+ * Ramp or any linear image feed this port unconverted: taking a channel as coverage is a
+ * read, not a conversion.
+ *
+ * B189 — AND WHETHER THE CARVE TOUCHES COLOUR IS A MODE, `apply`, because alpha-only had
+ * a cost nobody had priced. It is right when a Porter-Duff operator downstream will read
+ * that alpha (this app's stated straight-alpha convention). It is WRONG when the consumer
+ * reads colour — which is every RGB view in the editor, and any kernel sampling rgb — and
+ * there the carve is arithmetically perfect and completely invisible. DepthCut shipped
+ * that way for two task rows and its output was byte-identical to its input in rgb, with
+ * the owner reporting three times that the node "just passes the input through". He was
+ * right. `alpha` remains the default so no existing project moves a pixel; the census is
+ * what says the default is nonetheless the wrong one to reach for by reflex — `mask` is
+ * used ONCE in the shipped catalogue while `multiply` is used 90 times for the same job.
  *
  * TD's nearest equivalent is the Matte TOP, but it is NOT the same operator — TD's Matte
  * is a three-input over-with-matte, where this is a two-input alpha multiply. Called Mask
@@ -340,7 +354,8 @@ export const maskNode: NodeDefinition = {
   version: 1,
   title: "Mask",
   category: "composite",
-  description: "Multiplies the source's alpha by a channel of the mask input.",
+  description:
+    "Multiplies the source by a channel of the mask input — its alpha alone by default, or its colour too (see Apply To).",
   inputs: [
     { id: "input", label: "Input", type: RGBA_TEXTURE, description: "The image being masked." },
     {
@@ -359,6 +374,18 @@ export const maskNode: NodeDefinition = {
       options: [...CHANNEL_OPTIONS],
     },
     invert: { type: "number", label: "Invert", default: 0, min: 0, max: 1, range: "bounded" },
+    apply: {
+      type: "enum",
+      label: "Apply To",
+      default: "alpha",
+      options: [...MASK_APPLY_OPTIONS],
+      // §V141: this selects the SHADER, not a per-pixel branch on a value that changes
+      // approximately never — and it keeps `alpha` byte-identical to every frame this
+      // app has rendered, because the shader text is unchanged rather than equivalent.
+      compileTime: true,
+      description:
+        "Alpha only keeps the colour valid where coverage is partial — the straight-alpha reading, and what a Porter-Duff composite downstream expects. It is also INVISIBLE in any colour view: the rgb it outputs is identical to the rgb it was given. Choose Colour and alpha when what reads this is looking at rgb — a preview, a point kernel, a shader sampling the texture (B189).",
+    },
   },
   resolutionPolicy: { kind: "inherit", input: "input" },
   formatPolicy: { kind: "inherit", input: "input" },
@@ -376,10 +403,15 @@ export const maskNode: NodeDefinition = {
             : 'input port "mask"';
       return { passes: [], diagnostics: [missingCompileResource(nodeId, what)] };
     }
+    const apply: MaskApply = isMaskApply(parameters["apply"]) ? parameters["apply"] : "alpha";
     const pass: EffectPassDescriptor = {
       kind: "effect",
-      id: `${nodeId}:mask`,
-      shader: MASK_FRAGMENT_WGSL,
+      // The mode is part of the structure, so it belongs in the key the pipeline rebuilds
+      // on (§V5). SUFFIXED ONLY WHEN IT IS NOT THE DEFAULT, on `output.toneMap`'s
+      // precedent: `alpha` keeps the id it has always had, so upgrading moves no existing
+      // project's structural key. The two ids are still distinct, which is all §V5 asks.
+      id: apply === "alpha" ? `${nodeId}:mask` : `${nodeId}:mask:${apply}`,
+      shader: maskShaderFor(apply),
       target,
       textures: [
         { binding: "inputTexture", resourceId: source.resource },

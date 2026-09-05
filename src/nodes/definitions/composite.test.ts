@@ -233,6 +233,36 @@ describe("compositing nodes (T40)", () => {
     it("multiplies alpha only, leaving colour untouched", () => {
       expect(firstPass(maskNode).shader).toContain("vec4f(source.rgb, source.a * coverage)");
     });
+
+    /**
+     * B189 — THE MODE, and why each half of this is asserted.
+     *
+     * Alpha-only is correct arithmetic and INVISIBLE to every consumer that reads rgb:
+     * a preview tile, a node body, a point kernel sampling the texture. DepthCut shipped
+     * on it and its output was byte-identical to its input in colour, which is what the
+     * owner reported three times. So the colour mode carves rgb as well — and it must
+     * still carve alpha identically, because §B189's point cohorts (23092 motes at
+     * coverage 0, 1509 at 1) are read off ALPHA and must not move when the mode does.
+     */
+    it("carves colour too in the colour mode, and carves alpha identically either way", () => {
+      const carved = firstPass(maskNode, { apply: "colour" }).shader;
+      expect(carved).toContain("vec4f(source.rgb * coverage, source.a * coverage)");
+      // The alpha term is the SAME expression in both shaders — the mode adds a factor to
+      // rgb, it does not re-derive coverage.
+      expect(carved).toContain("source.a * coverage");
+      expect(firstPass(maskNode).shader).toContain("source.a * coverage");
+    });
+
+    /**
+     * §V5: the mode picks the shader, so it has to move the pass id or a switched node
+     * would keep the pipeline built for the other one. Suffixed only when it is NOT the
+     * default, so upgrading moves no existing project's structural key (`output.toneMap`
+     * set that precedent).
+     */
+    it("keys the pipeline on the mode, without moving the default's id", () => {
+      expect(firstPass(maskNode).id).toBe("n1:mask");
+      expect(firstPass(maskNode, { apply: "colour" }).id).toBe("n1:mask:colour");
+    });
   });
 });
 
