@@ -628,9 +628,26 @@ export function ViewerPane({
   const { probeAt, clear } = readout;
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
 
+  // §T1178: the cursor state is written once per animation frame, not once per pointer
+  // event — a 120 Hz pointer was 120 React commits a second for a crosshair that paints
+  // at most 60 times. The probe keeps its own 10 Hz limiter.
+  const pendingCursor = useRef<{ x: number; y: number } | null>(null);
+  const cursorFrame = useRef<number | null>(null);
+  useEffect(
+    () => () => {
+      if (cursorFrame.current !== null) window.cancelAnimationFrame(cursorFrame.current);
+    },
+    [],
+  );
   const probePixel = useCallback(
     (x: number, y: number) => {
-      setCursor({ x, y });
+      pendingCursor.current = { x, y };
+      if (cursorFrame.current === null) {
+        cursorFrame.current = window.requestAnimationFrame(() => {
+          cursorFrame.current = null;
+          if (pendingCursor.current !== null) setCursor(pendingCursor.current);
+        });
+      }
       probeAt(x, y);
     },
     [probeAt],
@@ -652,9 +669,8 @@ export function ViewerPane({
   );
 
   const publishPointer = useCallback(
-    (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    (event: ReactPointerEvent<HTMLCanvasElement>, box: PointerRect) => {
       if (pointer === null) return;
-      const box = event.currentTarget.getBoundingClientRect();
       const normalized = normalizedPointer({ x: event.clientX, y: event.clientY }, box);
       if (normalized === null) return;
       pointer.set({ x: normalized.x, y: normalized.y, buttons: event.buttons });
@@ -807,8 +823,11 @@ export function ViewerPane({
 
   const onCanvasPointer = useCallback(
     (event: ReactPointerEvent<HTMLCanvasElement>) => {
-      publishPointer(event);
-      const pixel = pixelAt(event.clientX, event.clientY, event.currentTarget.getBoundingClientRect());
+      // §T1178: ONE layout read per event, shared by the publish and the probe — each used
+      // to take its own, two forced layouts per pointer move.
+      const box = event.currentTarget.getBoundingClientRect();
+      publishPointer(event, box);
+      const pixel = pixelAt(event.clientX, event.clientY, box);
       if (pixel !== null) probePixel(pixel.x, pixel.y);
     },
     [pixelAt, probePixel, publishPointer],

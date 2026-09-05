@@ -11,6 +11,7 @@ import type { CookPolicyValue } from "@editor/inspect/index.ts";
 import type { TimingUnavailableReason } from "@runtime/telemetry/index.ts";
 import { KEYMAP_CONTEXT_ATTRIBUTE } from "@editor/keymap/index.ts";
 import { ShaderEditor, commitShaderSource, diagnosticsToMarkers } from "@editor/shader-editor/index.ts";
+import type { ShaderEditorMarker } from "@editor/shader-editor/index.ts";
 import { codeParametersOf } from "@domain/parameters/index.ts";
 import { effectiveParameterSchema } from "@domain/parameters/resolve.ts";
 import { isParameterSlot } from "@domain/parameters/slots.ts";
@@ -58,6 +59,9 @@ export interface ShaderPaneProps {
  * clobbered by the reset that follows it in the same pass — so leaving a node, by any
  * route, never discards what was typed for it.
  */
+/** §T1178: one identity for "no markers", so an empty set never re-dispatches into the editor. */
+const NO_MARKERS: readonly ShaderEditorMarker[] = [];
+
 export function ShaderPane({ nodeId, graph, diagnostics, stale = false }: ShaderPaneProps) {
   const { bus, invocation, registry } = useAppRuntime();
 
@@ -250,8 +254,20 @@ export function ShaderPane({ nodeId, graph, diagnostics, stale = false }: Shader
     // Gutter positions are offsets into the SOURCE text; other code parameters keep the
     // node-level counts above but take no ranged markers until their diagnostics carry
     // spans of their own.
-    () => (activeKey === SHADER_SOURCE_PARAMETER ? diagnosticsToMarkers(draft, nodeDiagnostics) : []),
-    [activeKey, draft, nodeDiagnostics],
+    //
+    // §T1178: keyed on the DIAGNOSTICS, not on the draft. The diagnostics belong to the
+    // last committed source, and recomputing their offsets against every keystroke's draft
+    // was a fresh markers array per keystroke — and so a CodeMirror lint transaction per
+    // keystroke, even with zero diagnostics. The editor's lint state maps its existing
+    // ranges through document changes on its own, which is the better behaviour: a marker
+    // moves with the text above it instead of being re-derived from stale line numbers.
+    // The draft is read through the ref so the offsets are laid against the text the
+    // diagnostics arrived on.
+    () =>
+      activeKey === SHADER_SOURCE_PARAMETER && nodeDiagnostics.length > 0
+        ? diagnosticsToMarkers(draftRef.current, nodeDiagnostics)
+        : NO_MARKERS,
+    [activeKey, nodeDiagnostics],
   );
 
   if (!authorable) {

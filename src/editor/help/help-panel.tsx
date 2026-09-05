@@ -98,18 +98,25 @@ export function HelpPanel({
     [keymap],
   );
 
+  // §T1178: the references are built ONCE per registry and the search filters the built
+  // sections — a keystroke used to rebuild every matching definition's reference (ports,
+  // parameters, descriptions for up to 92 types). No debounce: with the build hoisted the
+  // filter is a string test per node, and a search that lags its keystroke reads as broken.
+  const allSections = useMemo(() => nodeReferenceSections(nodes), [nodes]);
   const nodeSections = useMemo(() => {
     const needle = nodeQuery.trim().toLowerCase();
-    const pool =
-      needle === ""
-        ? nodes
-        : nodes.filter(
-            (definition) =>
-              definition.title.toLowerCase().includes(needle) ||
-              definition.type.toLowerCase().includes(needle),
-          );
-    return nodeReferenceSections(pool);
-  }, [nodeQuery, nodes]);
+    if (needle === "") return allSections;
+    return allSections
+      .map((section) => ({
+        category: section.category,
+        nodes: section.nodes.filter(
+          (reference) =>
+            reference.title.toLowerCase().includes(needle) ||
+            reference.type.toLowerCase().includes(needle),
+        ),
+      }))
+      .filter((section) => section.nodes.length > 0);
+  }, [nodeQuery, allSections]);
 
   const store: KeymapStore | null = keymap?.store ?? null;
 

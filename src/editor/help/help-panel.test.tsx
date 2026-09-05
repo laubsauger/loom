@@ -6,6 +6,7 @@ import { evaluateExpression, scopeFromFrame } from "@domain/expressions/index.ts
 import type { FrameEvaluationInput } from "@domain/types/frame.ts";
 import { createComponentHarness, graphOf } from "@domain/components/test-support.ts";
 import { createTestRegistry } from "@nodes/registry/test-nodes.ts";
+import { nodeReferenceSections } from "./node-reference.ts";
 import { DEFAULT_BINDINGS } from "@editor/keymap/defaults.ts";
 import { KeymapProvider } from "@editor/keymap/keymap-provider.tsx";
 import { KEYMAP_STORAGE_KEY } from "@editor/keymap/storage.ts";
@@ -328,6 +329,33 @@ describe("ExpressionHelp (T201)", () => {
     const variables = screen.getByRole("region", { name: "Variables" });
     for (const button of within(variables).getAllByRole("button")) {
       expect(button.hasAttribute("disabled")).toBe(true);
+    }
+  });
+});
+
+describe("§T1178 — the node search filters built references", () => {
+  it("shows exactly the nodes a fresh build over the filtered registry would, for every prefix of a title", async () => {
+    const store = createKeymapStore({ defaults: DEFAULT_BINDINGS, storage: null, platform: "mac" });
+    await openHelp(store);
+    const dialog = await screen.findByRole("dialog");
+    selectTab(dialog, "Nodes");
+    const input = within(dialog).getByLabelText("Search node reference") as HTMLInputElement;
+    const all = registry.list();
+    const title = registry.require("test.blur").title;
+    for (let n = 1; n <= title.length; n += 1) {
+      const needle = title.slice(0, n);
+      fireEvent.change(input, { target: { value: needle } });
+      const expected = nodeReferenceSections(
+        all.filter(
+          (d) =>
+            d.title.toLowerCase().includes(needle.toLowerCase()) ||
+            d.type.toLowerCase().includes(needle.toLowerCase()),
+        ),
+      ).flatMap((s) => s.nodes.map((r) => r.type));
+      expect(expected.length).toBeGreaterThan(0);
+      // Every expected type is on screen, and nothing else is: the article count matches.
+      for (const type of expected) expect(within(dialog).getByText(type)).toBeDefined();
+      expect(within(dialog).getAllByRole("article")).toHaveLength(expected.length);
     }
   });
 });

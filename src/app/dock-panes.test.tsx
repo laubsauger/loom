@@ -25,6 +25,9 @@ import { ShaderPane } from "./dock-panes.tsx";
  * the fix are in `ShaderPane`'s own state machine, not in CodeMirror's DOM.
  */
 
+/** §T1178: every `markers` array the pane hands the editor, in render order. */
+const markersSeen = vi.hoisted(() => [] as unknown[]);
+
 vi.mock("@editor/shader-editor/index.ts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@editor/shader-editor/index.ts")>();
   return {
@@ -34,19 +37,24 @@ vi.mock("@editor/shader-editor/index.ts", async (importOriginal) => {
       onChange,
       onBlur,
       label,
+      markers,
     }: {
       value: string;
       onChange?: (value: string) => void;
       onBlur?: () => void;
       label?: string;
-    }) => (
-      <textarea
-        aria-label={label}
-        value={value}
-        onChange={(event) => onChange?.(event.target.value)}
-        onBlur={onBlur}
-      />
-    ),
+      markers?: unknown;
+    }) => {
+      markersSeen.push(markers);
+      return (
+        <textarea
+          aria-label={label}
+          value={value}
+          onChange={(event) => onChange?.(event.target.value)}
+          onBlur={onBlur}
+        />
+      );
+    },
   };
 });
 
@@ -229,5 +237,40 @@ describe("ShaderPane — the status strip (§V9, §V27)", () => {
       ],
     });
     expect(screen.getByLabelText("1 errors")).toBeDefined();
+  });
+});
+
+describe("§T1178 — markers are keyed on the diagnostics, not on the keystroke", () => {
+  function paneWith(diagnostics: RuntimeDiagnostic[]) {
+    const runtime = fakeRuntime();
+    render(
+      <AppRuntimeContext.Provider value={runtime}>
+        <ShaderPane nodeId={"n1" as never} graph={runtime.bus.store.getGraph()} diagnostics={diagnostics} />
+      </AppRuntimeContext.Provider>,
+    );
+    return screen.getByRole("textbox") as HTMLTextAreaElement;
+  }
+
+  it("hands the editor the SAME markers array across keystrokes while the diagnostics stand", () => {
+    const editor = paneWith([
+      { severity: "error", code: "shader", message: "boom", nodeId: "n1", source: { line: 1, column: 1 } } as RuntimeDiagnostic,
+    ]);
+    markersSeen.length = 0;
+    fireEvent.change(editor, { target: { value: "// a" } });
+    fireEvent.change(editor, { target: { value: "// ab" } });
+    fireEvent.change(editor, { target: { value: "// abc" } });
+    expect(markersSeen.length).toBeGreaterThanOrEqual(3);
+    const identities = new Set(markersSeen);
+    expect(identities.size).toBe(1);
+    expect((markersSeen[0] as unknown[]).length).toBe(1);
+  });
+
+  it("hands the editor one stable empty array when there are no diagnostics — never a fresh [] per keystroke", () => {
+    const editor = paneWith([]);
+    markersSeen.length = 0;
+    fireEvent.change(editor, { target: { value: "x" } });
+    fireEvent.change(editor, { target: { value: "xy" } });
+    expect(new Set(markersSeen).size).toBe(1);
+    expect(markersSeen[0]).toEqual([]);
   });
 });

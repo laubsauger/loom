@@ -439,3 +439,24 @@ describe("the viewer's default output is the one that draws (E14, §V25)", () =>
     runtime.dispose();
   });
 });
+
+describe("§T1178 — one layout read per pointer move", () => {
+  it("reads the canvas rect exactly once per pointermove, shared by the publish and the probe", async () => {
+    const runtime = newRuntime();
+    await seedTwoOutputs(runtime);
+    const gpu = fixture();
+    const canvas = await mountViewer(runtime, gpu.backend);
+    let reads = 0;
+    const rect = canvas.getBoundingClientRect;
+    canvas.getBoundingClientRect = () => {
+      reads += 1;
+      return rect();
+    };
+    await act(async () => {
+      for (let step = 0; step < 10; step += 1) {
+        fireEvent.pointerMove(canvas, { clientX: 110 + step, clientY: 60, buttons: 0 });
+      }
+    });
+    expect(reads).toBe(10);
+  });
+});

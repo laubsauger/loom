@@ -113,6 +113,12 @@ export interface SourceRange {
 export function messageRange(
   source: string,
   message: ShaderCompilationMessage,
+  /**
+   * §T1178: the line-start table, computed ONCE by a caller mapping many messages over one
+   * source. Absent, it is computed here — one full scan of the source per call, which was
+   * the per-diagnostic cost on every keystroke.
+   */
+  starts?: readonly number[],
 ): SourceRange {
   const length = source.length;
   const span = Number.isFinite(message.length) ? Math.max(0, Math.floor(message.length ?? 0)) : 0;
@@ -123,11 +129,11 @@ export function messageRange(
     }
     if (!Number.isFinite(message.lineNum) || message.lineNum < 1) return 0;
 
-    const starts = lineStartOffsets(source);
+    const lineStarts = starts ?? lineStartOffsets(source);
     // 1-based line → 0-based index. Clamped: a message can outlive the edit that made it.
-    const lineIndex = Math.min(Math.floor(message.lineNum) - 1, starts.length - 1);
-    const lineStart = starts[lineIndex] ?? 0;
-    const nextStart = starts[lineIndex + 1];
+    const lineIndex = Math.min(Math.floor(message.lineNum) - 1, lineStarts.length - 1);
+    const lineStart = lineStarts[lineIndex] ?? 0;
+    const nextStart = lineStarts[lineIndex + 1];
     const lineEnd = nextStart === undefined ? length : nextStart - 1;
     // 1-based column → 0-based offset within the line.
     const column = Number.isFinite(message.linePos) ? Math.max(0, Math.floor(message.linePos) - 1) : 0;
@@ -148,13 +154,21 @@ export function diagnosticsToMarkers(
   source: string,
   diagnostics: readonly RuntimeDiagnostic[],
 ): ShaderEditorMarker[] {
+  if (diagnostics.length === 0) return [];
+  // §T1178: one line-start scan for the whole set, not one per diagnostic — twenty
+  // diagnostics over a 40 KB shader were twenty full scans per keystroke.
+  const starts = lineStartOffsets(source);
   return diagnostics.map((diagnostic) => {
-    const { from, to } = messageRange(source, {
-      type: diagnostic.severity,
-      message: diagnostic.message,
-      lineNum: diagnostic.source?.line ?? 0,
-      linePos: diagnostic.source?.column ?? 0,
-    });
+    const { from, to } = messageRange(
+      source,
+      {
+        type: diagnostic.severity,
+        message: diagnostic.message,
+        lineNum: diagnostic.source?.line ?? 0,
+        linePos: diagnostic.source?.column ?? 0,
+      },
+      starts,
+    );
     return { severity: diagnostic.severity, message: diagnostic.message, from, to };
   });
 }

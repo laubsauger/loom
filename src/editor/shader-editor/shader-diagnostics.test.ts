@@ -148,3 +148,38 @@ describe("a compile call that threw", () => {
     expect(diagnostic.source).toEqual({ file: "custom.wgsl" });
   });
 });
+
+describe("§T1178 — one line-start scan for a whole set of diagnostics", () => {
+  const source = Array.from({ length: 400 }, (_, i) => `let v${i} = ${i};`).join("\n");
+  const messages = [3, 40, 120, 399, 1000].map((line, i) => ({
+    type: "error" as const,
+    message: `m${i}`,
+    lineNum: line,
+    linePos: 5,
+  }));
+
+  it("messageRange with a precomputed table is the same range as without one", () => {
+    const starts = lineStartOffsets(source);
+    for (const message of messages) {
+      expect(messageRange(source, message, starts)).toEqual(messageRange(source, message));
+    }
+  });
+
+  it("diagnosticsToMarkers scans the source once, and places every marker where the per-diagnostic scan did", () => {
+    const diagnostics = messages.map((m) => ({
+      severity: "error" as const,
+      code: "x",
+      message: m.message,
+      source: { line: m.lineNum, column: m.linePos },
+    }));
+    const markers = diagnosticsToMarkers(source, diagnostics as never);
+    expect(markers.map((m) => [m.from, m.to])).toEqual(
+      messages.map((m) => {
+        const r = messageRange(source, m);
+        return [r.from, r.to];
+      }),
+    );
+    // The gate's own guard: an empty set is an empty array, not a scan.
+    expect(diagnosticsToMarkers(source, [])).toEqual([]);
+  });
+});

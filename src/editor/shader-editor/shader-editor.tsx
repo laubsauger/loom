@@ -144,9 +144,14 @@ export function ShaderEditor({
     });
   }, [readOnly]);
 
+  const hadMarkers = useRef(false);
   useEffect(() => {
     const view = viewRef.current;
     if (view === null) return;
+    // §T1178: an empty set after an empty set is not a change — no lint transaction.
+    const has = (markers?.length ?? 0) > 0;
+    if (!has && !hadMarkers.current) return;
+    hadMarkers.current = has;
     const length = view.state.doc.length;
     const list: Diagnostic[] = (markers ?? []).map((marker) => ({
       from: Math.min(marker.from, length),
