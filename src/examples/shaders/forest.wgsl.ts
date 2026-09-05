@@ -60,12 +60,18 @@ import { SHARED_UNIFORMS_WGSL } from "../../runtime/backend/shared-uniforms.ts";
  * because in this much mist a distant tree is a silhouette.
  *
  * The volumetric is the other half of the same trade. Shafts are `SHAFT_STEPS` samples
- * along the view ray, importance-sampled by transmittance, each shadowed by ONE stochastic
- * occupancy probe toward the moon that tests the TRUNK COLUMN only — no branches, no
- * distance field. A soft, sparse result, which is what fog wants anyway (E55's exterior
- * haze was its entire cost, and its lesson was that sparse-and-blurred beats
- * dense-and-aliased). `shafts` at 0 skips the loop outright, so it is the second cost lever
- * and the .md says so.
+ * along the view ray, importance-sampled by transmittance, each shadowed by a SHORT WALK
+ * along the moon's own fixed direction that tests the TRUNK COLUMN only — no branches, no
+ * distance field. `shafts` at 0 skips the loop outright, so it is the second cost lever and
+ * the .md says so.
+ *
+ * ⚑ T1170b REBUILT THAT SHADOW AND THE MEASUREMENT IS WHY. The shafts were never missing —
+ * turning `shafts` off moves the frame's mean luma from 0.288 to 0.041, so the term is the
+ * whole illumination — but the OCCLUSION inside it, the only part that makes a shaft a
+ * shaft, was worth a mean of 1.5 to 3.1 of 255. One stochastic point probe per sample is a
+ * Bernoulli draw: shallow in expectation, maximal in variance. It is now an analytic walk
+ * (see 'moonVisible'), which is both deeper and quiet, and the picture is the alternation
+ * of lit and unlit slabs the eye reads as a god ray rather than a wash.
  *
  * ## WHAT WAS REFUSED, WITH THE PICTURE AS THE JUDGE (§V885, §V912)
  *
@@ -128,9 +134,14 @@ import { SHARED_UNIFORMS_WGSL } from "../../runtime/backend/shared-uniforms.ts";
  * is not a nicety: T1170's gait and clumping between them make a SINGLE pair read anywhere
  * from 2.9e-4 to 1.35e-3 on phase and stand alone, and the one-pair version of this claim
  * failed at 0.54 — correctly, because it was measuring one draw rather than the pace.
- * Nothing decays because nothing here is an envelope. There are NO driven parameters, so
- * §V903 and §V914 have no lane to judge: a hero background has no audio and no pointer, and
- * every value in the file is its own retained value.
+ * Nothing decays because nothing here is an envelope.
+ *
+ * ⚑ T1170b PUT AUDIO ON IT, AND THE OWNER'S CONSTRAINT WAS THE DESIGN: 'audio reactive in a
+ * way where it is not becoming flickery and weird'. So nothing drives a per-frame
+ * brightness. Two slow lanes — 'mist', the density of the air, and 'moonGain', the one gain
+ * everything else in this shader is measured against — both ranked through their own recent
+ * distribution so neither can pin or idle. The document's docblock carries the numbers. The
+ * walk is untouched: the drive moves the AIR and the KEY, never the camera.
  *
  * Deterministic (§V44/§V45): `frameU.absTime` is the only clock, and the march dither is a
  * hash of the pixel, fixed across frames — grain, never flicker (E55's finding).
@@ -199,10 +210,15 @@ const MAX_BRANCH: i32 = 6;
    drops together are worth about a third of the frame. */
 const NEAR_CELLS: f32 = 1.1;
 const FAR_CELLS: f32 = 3.4;
-/* The volumetric: samples along the view ray, one stochastic shadow probe each. Deliberately
-   small — sparse and soft is what fog wants, and dense-and-aliased is the
-   thing E55 measured and refused. The samples are IMPORTANCE-SAMPLED by transmittance
-   (below), which is what lets eight of them be enough where twenty uniform ones were not. */
+/* The volumetric: samples along the view ray, each carrying one short shadow walk toward
+   the moon. Deliberately small, and IMPORTANCE-SAMPLED by transmittance (below), which is
+   what lets seven of them be enough where twenty uniform ones were not.
+   ⚠ THIS IS NOW THE FILE'S EXPENSIVE NUMBER, because each step pays a walk rather than a
+   point test, and T1170b tried to cut it and could not: at five steps the grain in a flat
+   patch of fog goes from 0.0191 to 0.0303 — nearly triple the shipped file's 0.0109 — and
+   the frame only comes down from +23.5% to +21%. Two and a half points of frame time for
+   sixty percent more grain is the wrong side of the trade, and the number is here so the
+   next person does not re-run it. */
 const SHAFT_STEPS: i32 = 7;
 /* Where the reach is cut. NOT 2%: a tree at 2% transmittance changes its pixel by well
    under a display step against this fog, so the honest cut is 7% — ln(0.074) = -2.6 — and
@@ -643,24 +659,127 @@ fn density(y: f32) -> f32 {
        + max(params.mist, 0.0) * exp(-y / max(params.fogHeight, 0.15));
 }
 
-/* How much of the moon reaches x: ONE probe along the moon direction, at a distance that
-   is different for every sample on the view ray. A fixed pair of probe distances costs
-   twice as much and sees a fixed pair of slices of the light path; one STOCHASTIC probe,
-   integrated over the seven samples the shaft loop already takes, sees the whole path for
-   half the price. It tests the trunk COLUMN of whatever cell it lands in — no branches, no
-   distance field, no march — and the column is deliberately far wider and softer than the
-   trunk: a trunk-width shadow at this sample count is invisible structure, and a wide one
-   is both the shaft and most of the brightness control, because fog lit through wide
-   occluders is DARKER fog. */
-fn moonVisible(x: vec3f, l: vec3f, base: vec2f, u: f32) -> f32 {
+/* HOW MUCH OF THE MOON REACHES x — and this is the term that turns a glow into a god ray.
+ *
+ * ⚑ T1170b MEASURED WHAT WAS HERE BEFORE ANYTHING WAS ADDED, and the reading redirected the
+ * whole pass. The shafts were never missing: switching 'shafts' from its shipped value to 0
+ * moves the frame's mean luma from 0.288 to 0.041, so THIS BLOCK IS ESSENTIALLY THE ENTIRE
+ * ILLUMINATION OF THE PICTURE. What was missing was the only part of it that makes a shaft
+ * a shaft: THE OCCLUSION. Replacing this function's return with a constant 1.0 changed the
+ * frame by a mean of 1.5 to 3.1 of 255 and a MAXIMUM of 24 to 37 — about one percent of a
+ * frame the term supplies a hundred percent of. Amplified fourteen times the difference had
+ * the right SHAPE (vertical slabs radiating from the moon) buried in per-pixel noise of the
+ * same size. So the fix was never "add shafts"; it was to make the shadow deep, and then to
+ * make it QUIET enough to be seen.
+ *
+ * ## THE OLD SHAPE, AND WHY IT COULD NOT GET THERE
+ *
+ * One STOCHASTIC point probe per volumetric sample, testing whether that point sat inside a
+ * trunk column. A point test is a Bernoulli draw: its expectation is the shadowed FRACTION,
+ * which is small, and its variance is the largest a bounded estimator can have. Seven of
+ * them per pixel with a per-pixel hash therefore delivered a shallow average wrapped in
+ * salt-and-pepper grain — and every way of deepening the shadow (more taps, wider columns,
+ * full extinction) deepened the grain in exact proportion. Measured on the way through: at
+ * four stratified taps and a wide column the structure was unmistakable and the grain in a
+ * flat patch of fog had TRIPLED, from 0.0109 to 0.0326.
+ *
+ * ## WHAT IS HERE INSTEAD: NO SAMPLING ALONG THE LIGHT PATH AT ALL
+ *
+ * The moon direction is FIXED, so the shadow of a trunk is a fixed cylinder and the question
+ * "is x in shadow" is a question about the DISTANCE FROM THE LIGHT RAY TO A TRUNK AXIS — an
+ * analytic quantity, not one to be sampled. So this walks the grid along the moon's own XZ
+ * direction (the same Amanatides-Woo the view ray uses, and the setup is cheap because the
+ * direction is constant) and for each cell it enters computes the PERPENDICULAR distance
+ * from the light ray to that cell's trunk, with the ray's own height where it passes.
+ *
+ * That is smooth in x. There is no dither in it, no 'u', and therefore NO NOISE OF ITS OWN:
+ * measured in that same flat patch of fog, the sampled four-tap version read 0.0326 against
+ * the shipped file's 0.0109 and this reads 0.0191 — and what is left is not the shadow, it
+ * is the SEVEN-SAMPLE VIEW-RAY estimator finally being asked a question with structure in
+ * it. That residual is bought down by the dither the fragment picks for this loop and by
+ * nothing else here; see 'dither' at the call site.
+ *
+ * ⚠ THE FADE IS LOAD-BEARING, NOT A FLOURISH. A walk of a fixed number of CELLS reaches a
+ * distance that depends on where in its first cell the point started, so the far end of the
+ * walk enters and leaves as the camera moves — and a trunk arriving there at full strength
+ * would pop a shadow into existence. 'fade' takes the occlusion to zero before the shortest
+ * walk the cell count can produce (SHADOW_CELLS - 1 cells over the worst diagonal), so a
+ * cell can only ever join the walk contributing nothing. It is also the right picture: a
+ * shadow cast from far away through this much haze has no edge left.
+ *
+ * The column is still far wider than the trunk (SHADOW_WIDE/SHADOW_CORE), and for the same
+ * reason as before — a fog lit through wide occluders is a DARKER fog, and that darkness is
+ * most of the mood. What changed is that it can now be FULL extinction at the core without
+ * buying noise, so the picture is the alternation of lit and unlit slabs rather than a wash.
+ */
+const SHADOW_CELLS: i32 = 5;
+/* The column, in trunk radii: full extinction inside SHADOW_CORE, nothing past SHADOW_WIDE.
+   Deliberately much wider than the trunk — see the note above. */
+const SHADOW_CORE: f32 = 2.5;
+const SHADOW_WIDE: f32 = 7.0;
+/* Where the shadow has faded out, in cells. A DDA of SHADOW_CELLS steps is guaranteed to
+   reach (SHADOW_CELLS - 1) * spacing / sqrt(2) even on the worst diagonal, which is 2.12
+   cells at four; ending the fade inside that is what makes the walk's own far end
+   invisible. */
+const SHADOW_REACH: f32 = 2.6;
+fn moonVisible(x: vec3f, dxz: vec2f, slope: f32, base: vec2f, canopy: f32) -> f32 {
+  // Above the tallest stem the wood can grow there is nothing left to cast, and the taps
+  // only climb from here — so the whole walk is skipped for every sample over the canopy,
+  // which near the moon is most of them.
+  if (x.y > canopy) { return 1.0; }
   let s = params.spacing;
-  let y = x + l * (s * (0.45 + 2.4 * u));
-  let cell = floor(y.xz / s);
-  let tree = stemAt(cell, cell + base);
-  if (tree.present < 0.5 || y.y > tree.base.y + tree.h) { return 1.0; }
-  let dxz = length(y.xz - tree.base.xz);
-  let w = max(tree.r, 0.02);
-  return 1.0 - 0.92 * smoothstep(w * 7.0, w * 1.1, dxz);
+  var cell = floor(x.xz / s);
+  let stepDir = sign(dxz);
+  let inv = 1.0 / max(abs(dxz), vec2f(1.0e-5));
+  var tMax = ((cell + max(stepDir, vec2f(0.0))) * s - x.xz) * vec2f(
+    select(-inv.x, inv.x, dxz.x >= 0.0),
+    select(-inv.y, inv.y, dxz.y >= 0.0),
+  );
+  // sign(0) is 0, which would freeze the walk on an axis-aligned moon; push that axis out
+  // of reach so the other one carries it (the view ray's DDA does the same).
+  if (stepDir.x == 0.0) { tMax.x = 1.0e9; }
+  if (stepDir.y == 0.0) { tMax.y = 1.0e9; }
+  let tDelta = vec2f(s, s) * inv;
+  let far = s * SHADOW_REACH;
+  var vis = 1.0;
+  var tEnter = 0.0;
+  for (var i: i32 = 0; i < SHADOW_CELLS; i = i + 1) {
+    /* Three ways out, and every one of them is exact rather than a tolerance. Past 'far'
+       the fade below is already zero; above the canopy nothing can cast and the ray only
+       climbs; and once the light is gone it cannot be taken away again. Near the moon —
+       where the shafts are and where this loop would otherwise cost the most — the second
+       one retires the walk on the first step. */
+    if (tEnter > far || x.y + slope * tEnter > canopy || vis < 0.004) { break; }
+    let tree = stemAt(cell, cell + base);
+    if (tree.present > 0.5) {
+      let m = tree.base.xz - x.xz;
+      let along = dot(m, dxz);
+      /* The light ray's height where it passes this trunk. A trunk the ray clears overhead
+         casts nothing — which is why the shafts open out above the wood — but the test on
+         it may NOT be the obvious inequality: a binary one printed a hard HORIZONTAL edge
+         straight across the upper right of the frame, found by looking (§V912), because a
+         boolean over a continuous quantity is a step. The stem tapers, so the shadow tapers
+         with it: over the top third of a tree the column thins to nothing, which is both
+         smooth and the truth about the object. */
+      let taper = clamp((tree.base.y + tree.h - (x.y + slope * along)) / max(tree.h * 0.35, 0.5), 0.0, 1.0);
+      if (along > 0.0 && taper > 0.0) {
+        let perp = length(m - dxz * along);
+        let w = max(tree.r, 0.02);
+        let fade = 1.0 - smoothstep(far * 0.6, far, along);
+        vis = vis * (1.0 - fade * taper * smoothstep(w * SHADOW_WIDE, w * SHADOW_CORE, perp));
+      }
+    }
+    if (tMax.x < tMax.y) {
+      tEnter = tMax.x;
+      tMax.x = tMax.x + tDelta.x;
+      cell.x = cell.x + stepDir.x;
+    } else {
+      tEnter = tMax.y;
+      tMax.y = tMax.y + tDelta.y;
+      cell.y = cell.y + stepDir.y;
+    }
+  }
+  return vis;
 }
 
 // ---------------------------------------------------------------- sky and moon
@@ -757,7 +876,18 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   let l = normalize(vec3f(sin(az) * cos(el), sin(el), cos(az) * cos(el)));
 
   // Fixed per-pixel dither: grain, never flicker (E55's finding, kept).
-  let jitter = hash21(floor(uv * frameU.resolution) + 0.5);
+  let pxf = floor(uv * frameU.resolution) + 0.5;
+  let jitter = hash21(pxf);
+  /* THE VOLUMETRIC'S OWN DITHER, AND IT IS NOT THE MARCH'S (T1170b). Both are fixed per
+     pixel — grain, never flicker — but they want different distributions. The march wants
+     an uncorrelated hash: it dithers a silhouette by a hundredth of a metre and any
+     structure in it prints on an edge. The shaft loop wants the opposite: it offsets ONE
+     stratified sequence per pixel, so a white-noise offset makes neighbouring pixels
+     disagree at random and the residual is salt-and-pepper. Interleaved gradient noise
+     spreads the seven offsets EVENLY over a small neighbourhood, so the residual is a fine
+     even weave instead of speckle. Measured in a flat patch of fog, second differences:
+     0.0326 with a hash against 0.0191 with this, for the same picture. */
+  let dither = fract(52.9829189 * fract(0.06711056 * pxf.x + 0.00583715 * pxf.y));
 
   // THE REACH IS SOLVED FROM THE FOG, not authored: past REACH_OPACITY nothing can reach
   // the picture, so raising 'fog' marches fewer cells and the frame gets CHEAPER. The mist
@@ -853,7 +983,16 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
      because they are built from the same two altitude terms. Written the obvious way this
      loop read five transcendentals a sample and it is the third-largest thing in the frame;
      written this way it reads three. 'shafts' at 0 skips all of it and is the second cost
-     lever in the file. */
+     lever in the file.
+     ⚑ AND THE COEFFICIENT ON THE SHADOWED TERM IS 1.95 RATHER THAN T1170's 0.95, WHICH IS
+     NOT A BRIGHTNESS DECISION. A shadow that actually blocks removes light, and the deep
+     analytic occlusion below takes the frame's mean from 0.30 to about 0.18 on its own. The
+     gain puts the LIT fog back where it was, so what the change buys is contrast between
+     lit and unlit slabs rather than a darker picture — the same trade 'clumping' made
+     between thickets and clearings, one term further in. Measured across five frames spread
+     over forty seconds, the frame mean now swings 0.214 to 0.406 where the T1170 file swung
+     0.286 to 0.306: a fivefold wider swing about nearly the same average, which IS the
+     light coming and going as you walk. */
   let shaftGain = max(params.shafts, 0.0);
   if (shaftGain > 0.001) {
     var acc = 0.0;
@@ -868,9 +1007,19 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
       let kf = max(params.fog, 0.0);
       let km = max(params.mist, 0.0);
       let flat = abs(rd.y) < 1.0e-3;
+      /* The shadow ray, set up ONCE: the moon never moves, so its XZ direction, the height
+         it gains per metre of ground covered, and the ceiling above which nothing can cast
+         are all frame constants rather than per-sample work. The floor on the horizontal
+         length is what a moon at the zenith needs — the slope then goes huge, every trunk
+         is passed overhead, and the wood casts nothing, which is correct rather than a
+         guard. */
+      let lxz = max(length(l.xz), 1.0e-3);
+      let shadowDir = l.xz / lxz;
+      let shadowSlope = l.y / lxz;
+      let canopy = max(params.treeHeight, 0.5) * (1.0 + 0.5 * max(params.heightVary, 0.0));
       var sum = 0.0;
       for (var i: i32 = 0; i < SHAFT_STEPS; i = i + 1) {
-        let u = (f32(i) + jitter) / f32(SHAFT_STEPS);
+        let u = (f32(i) + dither) / f32(SHAFT_STEPS);
         let ts = -log(max(1.0 - u * (1.0 - tFar), 1.0e-6)) / sigma;
         let ea = ea0 * exp(-rd.y * ts / ha);
         let em = em0 * exp(-rd.y * ts / hm);
@@ -880,12 +1029,12 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
         // The estimator's weight: the true transmittance over the sampling density's,
         // which is near 1 by construction and carries only the altitude structure the
         // constant sigma does not know about.
-        sum = sum + dens * moonVisible(o + rd * ts, l, base, fract(jitter * 1.618 + u)) * exp(-od + sigma * ts);
+        sum = sum + dens * moonVisible(o + rd * ts, shadowDir, shadowSlope, base, canopy) * exp(-od + sigma * ts);
       }
       acc = sum * norm / f32(SHAFT_STEPS);
     }
     col = col + params.moonColor.rgb * params.moonGain * shaftGain
-              * (0.022 * (1.0 - tr) + 0.95 * phase * acc);
+              * (0.022 * (1.0 - tr) + 1.95 * phase * acc);
   }
 
   // THE QUIET ZONE. Text goes on top, so this dissolves a patch of the picture into the

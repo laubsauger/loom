@@ -1,4 +1,4 @@
-import { settings, node, edge, graph, document } from "./builders.ts";
+import { settings, node, edge, graph, document, drivenSlot } from "./builders.ts";
 import { FOREST_WGSL, FOREST_DOF_WGSL } from "../shaders/forest.wgsl.ts";
 
 /**
@@ -11,6 +11,11 @@ import { FOREST_WGSL, FOREST_DOF_WGSL } from "../shaders/forest.wgsl.ts";
  *
  *   veil1(noise) ─► forest1(customWgsl: the walking DDA raymarcher)
  *                   ─► dof1(customWgsl: the near-field defocus) ─► out1(output)
+ *
+ *   music1(audioPattern) ─┐
+ *   track1(audioFileIn)  ─┴► source1(valueSwitch)
+ *        ├► air1 ─► airRank1 ─► airSmooth1 ─► airMap1 ──drives──► forest1.mist
+ *        └► dim1 ─► dimRank1 ─► dimSmooth1 ─► dimMap1 ──drives──► forest1.moonGain
  *
  * T1170 DEEPENED IT, on the owner's reading that it was "a little bit lame, a little bit
  * repetitive" and wanted depth of field. Four changes and the section at the bottom of this
@@ -61,9 +66,9 @@ import { FOREST_WGSL, FOREST_DOF_WGSL } from "../shaders/forest.wgsl.ts";
  * the upscale is invisible on fog, which is a real property of the picture rather than an
  * excuse. Anybody who wants 1080p can have it at 6.6 ms and the .md says so.
  *
- * WHERE THE 6.6 GOES, and the two levers in order: the shafts are 0.25 ms (they were the
- * expensive half before the analytic split and the importance sampling), the branches about
- * 2.4, and the rest is the grid walk and the trunks. Raising `fog` from 0.03 to 0.09 takes
+ * WHERE THE 6.6 GOES, and the two levers in order: the shafts were 0.25 ms at T1156 and are
+ * the largest term in the file after T1170b (below), the branches about 2.4, and the rest is
+ * the grid walk and the trunks. Raising `fog` from 0.03 to 0.09 takes
  * the frame from 6.58 to 5.92 WITHOUT touching a quality knob, because the reach is solved
  * from the fog — which is the design note "the fog is the performance budget" turned into a
  * number.
@@ -88,8 +93,9 @@ import { FOREST_WGSL, FOREST_DOF_WGSL } from "../shaders/forest.wgsl.ts";
  * cannot change its pixel by a display step through this haze — so raising `fog` runs fewer
  * cells and the frame gets cheaper, measured above. Trees past `spacing * 3.4` lose their
  * branches and past `spacing * 1.5` lose the bend in them. The volumetric — the money shot —
- * is seven samples importance-sampled by transmittance with ONE stochastic trunk probe each,
- * sparse and soft, which is what fog wants; `shafts` at 0 skips it outright.
+ * is seven samples importance-sampled by transmittance, each carrying a short ANALYTIC walk
+ * toward the moon (T1170b, below); `shafts` at 0 skips it outright, and it is now the
+ * largest single line in the frame rather than the smallest.
  *
  * ⚑ **AND ONE MEASUREMENT THAT REDIRECTED THE WHOLE OPTIMISATION.** The first draft ran at
  * 11 ms and an EMPTY grid — no trees at all — ran at 12, which is the shape of a cull that
@@ -212,10 +218,12 @@ import { FOREST_WGSL, FOREST_DOF_WGSL } from "../shaders/forest.wgsl.ts";
  * and fall over the ground swell is a function of where the walk has got to rather than of
  * the clock.
  *
- * There are NO DRIVEN PARAMETERS in this file and that is a decision, not an omission: a
- * hero background has no audio and no pointer, so a drive lane would be a lane that never
- * fires (§V903's own failure mode), and §V914 has nothing to catch because every value here
- * IS its retained value.
+ * T1170b PUT TWO DRIVEN LANES ON IT — see the audio section below — and they do not break
+ * that, which is the reason they are the parameters they are. Neither drives a position, a
+ * rate or a per-frame brightness: one moves the DENSITY OF THE AIR and the other the MOON'S
+ * OWN GAIN, both on followers measured in seconds. The walk is still the only thing that
+ * moves the camera, and with no audio at all the file is exactly the picture its retained
+ * values describe.
  *
  * ## MEASURED, on the shipped file
  *
@@ -239,10 +247,125 @@ import { FOREST_WGSL, FOREST_DOF_WGSL } from "../shaders/forest.wgsl.ts";
  * 1.0%, 0.7% and a third of a thousandth from T1156's row, because a clumped wood puts less
  * of itself in the average frame than an even one does.
  *
- * DUTY (§V903) and RETAINED VALUES (§V914): nothing to report, and that is a decision
- * rather than an omission — there are NO driven parameters in this file. A hero background
- * has no audio and no pointer, so a drive lane would be a lane that never fires, and every
- * value here is its own retained value.
+ * ## T1170b — THE GOD RAYS, AND THE ONE MEASUREMENT THAT REFRAMED THE ASK
+ *
+ * The owner: "volumetric lights, god rays coming from the moon towards the camera, and
+ * shadows being cast into the fog by the trees... audio reactive in a way where it's not
+ * becoming flickery and weird... maybe some dimming. It's a great basis, but it needs some
+ * work."
+ *
+ * ⚑ THE FIRST THING DONE WAS TO MEASURE WHAT WAS ALREADY THERE, AND IT SAID SOMETHING
+ * DIFFERENT FROM BOTH READINGS OF THE ASK. The shafts were not missing and they were not
+ * weak: `shafts` from its shipped 0.85 to 0 takes the frame's mean luma from 0.288 to
+ * 0.041, so THAT ONE BLOCK IS ESSENTIALLY THE WHOLE ILLUMINATION OF THE PICTURE. Nor was
+ * the occlusion missing — a shadow probe toward the moon had been in the file since T1156.
+ * What was missing was its AMPLITUDE. Replacing the shadow term with a constant 1.0 changed
+ * the frame by a mean of 1.5 to 3.1 of 255 and a maximum of 24 to 37: about one percent of
+ * a frame the surrounding term supplies a hundred percent of. Amplified fourteen times, the
+ * difference had exactly the right SHAPE — vertical slabs radiating from the moon — sitting
+ * inside per-pixel noise of the same size.
+ *
+ * So the diagnosis was neither "add shafts" nor "turn them up". It was that ONE STOCHASTIC
+ * POINT PROBE IS A BERNOULLI DRAW: its expectation is the shadowed fraction, which is small,
+ * and its variance is the largest a bounded estimator can have. Every way of deepening it
+ * deepened the grain in proportion — four stratified taps and a wide column gave unmistakable
+ * structure and TRIPLED the grain in a flat patch of fog, 0.0109 to 0.0326.
+ *
+ * ⚑ **THE FIX IS THAT THE SHADOW STOPPED BEING SAMPLED AT ALL.** The moon never moves, so
+ * the shadow of a trunk is a fixed cylinder and "is this point in shadow" is a question
+ * about the DISTANCE FROM THE LIGHT RAY TO A TRUNK AXIS — analytic, not stochastic. The
+ * shader now walks the grid along the moon's own XZ direction (the same Amanatides-Woo the
+ * view ray uses; the setup is cheap because the direction is a frame constant) and takes the
+ * perpendicular distance to each trunk it passes. Deterministic, so it carries no noise of
+ * its own; deeper, because full extinction at the core costs nothing now; and sharper, so
+ * what the eye gets is the alternation of lit and unlit slabs that a god ray actually is.
+ *
+ * Three things were found by looking (§V912) and none by arithmetic: a BINARY height test
+ * ("does the ray clear the trunk top") printed a hard horizontal edge across the upper right
+ * — a boolean over a continuous quantity is a step — and is now the stem's own taper; the
+ * far end of a fixed-CELL-COUNT walk pops a shadow into existence as the camera moves, so
+ * the occlusion fades to zero before the shortest walk the count can produce; and the
+ * columns had to be NARROW ENOUGH TO LEAVE GAPS. At thirteen and four trunk radii every
+ * direction found an occluder and the picture was uniformly dark rather than striped; seven
+ * and two and a half leaves lit lanes between the shadows, which is the whole effect.
+ *
+ * The shadowed term's coefficient went 0.95 to 1.95 to put the LIT fog back where it was, so
+ * the change buys CONTRAST rather than darkness. Measured over five frames spread across
+ * forty seconds, the frame mean now swings 0.214 to 0.406 where the T1170 file swung 0.286
+ * to 0.306 — a fivefold wider swing about nearly the same average.
+ *
+ * ⚑ AND THE DITHER SPLIT IN TWO, which is worth more than it looks. The march's entry dither
+ * and the volumetric's sample offset had shared one hash; they want opposite distributions.
+ * The march dithers a silhouette by a hundredth of a metre and wants an uncorrelated hash.
+ * The shaft loop offsets ONE stratified sequence per pixel, so a white-noise offset makes
+ * neighbours disagree at random and the residual is salt-and-pepper; interleaved gradient
+ * noise spreads the offsets evenly over a small neighbourhood and the residual is a fine
+ * even weave. Same picture, 0.0326 against 0.0191.
+ *
+ * ## T1170b — THE AUDIO, AND HIS CONSTRAINT WAS THE SPECIFICATION
+ *
+ * "Audio reactive in a way where it's not becoming flickery and weird." That rules out the
+ * obvious build: an envelope on a luminance term strobes, and §T1190 measured exactly that
+ * on E56 the day before. So NOTHING HERE DRIVES A PER-FRAME BRIGHTNESS. Two lanes, both on
+ * quantities with mass, both slower than a bar:
+ *
+ *   `mist`     the density of the air   air1 (1.2 s) → airRank1 (18 s) → airSmooth1 (0.6 s)
+ *   `moonGain` the moon's own output    dim1 (3 s)   → dimRank1 (40 s) → dimSmooth1 (1 s)
+ *
+ * Both go through `valueNormalize` (§T1190), which is the reason there is no floor and no
+ * gain to eyeball per track: it maps a channel through its OWN recent distribution, so equal
+ * amounts of time map to equal amounts of range and the lane can neither pin nor idle.
+ *
+ * ⚑⚑ BUT NORMALIZE ALONE DOES NOT BUY "NOT FLICKERY", AND THAT IS THIS TASK'S SHARPEST
+ * FINDING. A percentile FLATTENS a distribution, and flattening it means STEEPENING THE MAP
+ * WHERE THE SIGNAL IS DENSE — so a signal that was already smooth going in can come out as a
+ * jump. Measured over 3600 frames with the follower only on the input side, `airRank1` moved
+ * 20.9% OF ITS OWN SPAN IN ONE FRAME — 1257% a second, and `mist` stepping 0.21 to 0.24
+ * between two frames is a visible lurch in the fog. Lengthening the input lag cannot fix it:
+ * the input was not the rough thing, the MAP was. So each lane carries a SECOND follower
+ * AFTER the rank, which bounds the output's step directly, and it costs about a tenth of the
+ * coverage at the tails:
+ *
+ *   lane                 per twentieth     max step / frame        mean     longest still
+ *   airMap1:low          1.3% to 7.9%      2.09% of span (126%/s)  0.2123   1 frame
+ *   dimMap1:lowMid       1.6% to 8.4%      0.78% of span  (47%/s)  0.9951   1 frame
+ *
+ * Before the second follower those steps were 20.9% and 8.6%. Neither lane ever repeats a
+ * value for two consecutive frames, so §V903 has no silent run to report at all.
+ *
+ * ⚠ AND THE CHANNEL CHOICE ON THE DIMMING LANE WAS A MEASUREMENT, NOT A TASTE. On `:level`
+ * the same lane put 18.9% of its run in the bottom twentieth and 0.8% in the nineteenth,
+ * because `audioPattern`'s level RESTS AT ITS FLOOR — and a percentile cannot spread a tie.
+ * Normalize removes skew, it does not remove ties. `:lowMid` never rests, so its rank is
+ * nearly flat. That is §V903's duty question asked of a node that is supposed to make duty
+ * a non-question, and it still had an answer worth having.
+ *
+ * RETAINED VALUES (§V914) are the MEASURED DRIVEN MEANS — 0.212 and 0.995 — not the lane
+ * midpoints, because absence is the common case: every headless render, every thumbnail and
+ * every first open has no track. Both sit inside the driven range (0.166..0.255 and
+ * 0.877..1.176), which is what §V914 actually asks.
+ *
+ * ⚑ AND THE AIR LANE PAYS PART OF THE GOD RAYS' BILL, which is why its floor is a budget
+ * number rather than a taste one. `reach` is solved from the fog, so thinner mist is more
+ * cells: at `mist` 0.155 the reach is 27.3 m against the T1170 file's 25.8, and at the
+ * lane's mean of 0.212 it is 22.2 — about 14% fewer cells than the constant it replaced.
+ * The floor sits a hair under the old shipped 0.17 so the WORST case the drive can reach is
+ * within 6% of what was measured before, and everything above it is cheaper.
+ *
+ * ## WHAT T1170b REFUSED
+ *
+ *   - DRIVING `walkSpeed`, `bob`, `sway` OR THE CAMERA FROM AUDIO. The gait is derived from
+ *     the walk (see above), so modulating the walk modulates the stride rate, and a stride
+ *     that speeds and slows with the music is a limp. The motion budget still belongs
+ *     entirely to the walk.
+ *   - DRIVING `quiet`, `quietAt` OR `exposure`. The headline's patch has to hold still, and
+ *     exposure is a per-frame brightness by definition — the exact thing he asked not to
+ *     have.
+ *   - FEWER SHAFT SAMPLES to pay for the walk. Five instead of seven takes the frame from
+ *     +23.5% to +21% and the grain from 0.0191 to 0.0303 — nearly triple the shipped file's
+ *     0.0109. Two and a half points of frame time for sixty percent more grain.
+ *   - WIND IN THE BRANCHES, again, and still DEFERRED rather than refused — it was not
+ *     attempted and not measured, so it remains a thing nobody may quote as a finding.
  */
 export const forestDocument = document(
   "e57-forest",
@@ -308,12 +431,23 @@ export const forestDocument = document(
         moonGain: 1,
         ambient: 0.5,
         /* The headline's patch. */
-        quiet: 0.7,
+        quiet: 0.85,
         quietAt: [0.3, 0.58],
         quietSize: 0.4,
         vignette: 0.55,
         exposure: 0.85,
-      }, { label: "forest1" }),
+      }, {
+        label: "forest1",
+        /* THE TWO DRIVEN SLOTS, and the retained figures are the MEASURED DRIVEN MEANS over
+           3600 frames of the deterministic pattern rather than the midpoints of the lanes
+           (§V914): the value that stands when no audio arrives has to be the value the drive
+           spends its time around, because absence is the common case — every headless
+           render, every thumbnail and every first open has no track. */
+        parameters: {
+          mist: drivenSlot("airMap1:low", 0.212),
+          moonGain: drivenSlot("dimMap1:lowMid", 0.995),
+        },
+      }),
 
       /* THE NEAR FIELD, OUT OF FOCUS (T1170). Fog already does the far half of depth of
          field, so a far blur would only argue with it; what fog cannot do is soften what
@@ -328,11 +462,92 @@ export const forestDocument = document(
       }, { label: "dof1" }),
 
       node("out", "output", [0, 0], { toneMap: "filmic" }, { label: "out1" }),
+
+      /* ─── THE AUDIO, AND THE CONSTRAINT IS THE DESIGN (T1170b) ────────────────────────
+       *
+       * The owner: "make the whole thing audio reactive in a way where it's not becoming
+       * flickery and weird — something interesting that happens with the sound, maybe some
+       * dimming." The second half of that sentence is a specification, and it rules out the
+       * obvious build: an envelope on a brightness term strobes, and §T1190 measured exactly
+       * that failure on E56 a day earlier.
+       *
+       * So NOTHING HERE DRIVES A PER-FRAME BRIGHTNESS. Two lanes, both on quantities with
+       * MASS — the density of the air and the moon's own output — and both slow enough that
+       * the eye reads a swell rather than a flicker. The catalogue's fixed drive shape
+       * (audio-rd.ts, reactor.ts, vesper.ts): a deterministic pattern at index 0 so the file
+       * plays on open with no track (§V363), and a real file at index 1.
+       *
+       * ⚑ AND BOTH LANES GO THROUGH `valueNormalize` (§T1190), WHICH IS THE WHOLE REASON
+       * THE FIRST HALF OF HIS SENTENCE HOLDS. A raw envelope needs a floor and a gain
+       * eyeballed per track, and gets them wrong: measured on E56, a best-calibrated raw
+       * envelope spent 61% of its run in the top tenth of its range. Normalize maps a
+       * channel through its OWN recent distribution, so equal amounts of time map to equal
+       * amounts of range and the lane can neither pin nor idle. Its `window` is the drift
+       * knob and it must exceed the cycle you want to see.
+       *
+       * THE TWO LANES ARE DELIBERATELY DIFFERENT LENGTHS, because one signal shaped two ways
+       * is one gesture. `air1` follows the phrase (1.2 s attack, an 18 s window — two 8.6 s
+       * phrases of the fixture) and `dim1` follows the section (3 s attack, a 40 s window).
+       * The air thickens with the bass while the moon rises and falls underneath it. */
+      node("music", "audioPattern", [-2100, 700], { bpm: 112, amount: 1, beatsPerBar: 4 }, { label: "music1" }),
+      node("track", "audioFileIn", [-2100, 1120], {
+        cue: false, cuePoint: 0, extend: "loop", file: "", monitor: true, play: true,
+        playMode: "freeRun", speed: 1, trimEnd: 0, trimStart: 0, volume: 1,
+      }, { label: "track1" }),
+      /* Index 0 is the deterministic pattern, so the file is audio-reactive on open with no
+         track at all; drop a file into `track1` and move this to 1 (§V363). */
+      node("source", "valueSwitch", [-1800, 910], { index: 0 }, { label: "source1" }),
+
+      /* THE AIR LANE. Slow on purpose: 1.2 s to rise and 2.4 s to fall, which is a lungful
+         of fog rather than a beat. */
+      node("air", "valueLag", [-1500, 700], { lag: 1.2, releaseRatio: 2 }, { label: "air1" }),
+      node("airRank", "valueNormalize", [-1200, 700], { window: 18 }, { label: "airRank1" }),
+      /* ⚑ AND A SECOND LAG *AFTER* THE RANK, WHICH IS THE FINDING OF THIS LANE AND NOT AN
+         EXTRA. A percentile flattens a distribution, and flattening it means STEEPENING THE
+         MAP WHERE THE SIGNAL IS DENSE — so a smoothed input can still come out of Normalize
+         as a jump, and this one did: measured over 3600 frames, `airRank1` moved 20.9% OF
+         ITS OWN SPAN IN A SINGLE FRAME, which is 1257% a second and is exactly the flicker
+         the owner asked not to have. Smoothing the input cannot fix it, because the input
+         was already smooth; the steepness is the map's. So the follower goes on BOTH sides
+         and this one bounds the OUTPUT's step directly. */
+      node("airSmooth", "valueLag", [-900, 700], { lag: 0.6, releaseRatio: 1 }, { label: "airSmooth1" }),
+      /* Into `mist`, and the range is bounded at the BOTTOM by the frame budget rather than
+         by taste: thinner mist is a longer reach and more cells, so the cheap end of this
+         lane is where the cost is measured. 0.155 is a hair under the shipped 0.17 and the
+         top end only ever makes the file cheaper. */
+      node("airMap", "valueMath", [-600, 700], {
+        operation: "range", fromLow: 0, fromHigh: 1, toLow: 0.155, toHigh: 0.285, outside: "clamp",
+      }, { label: "airMap1" }),
+
+      /* THE DIMMING LANE — his own suggestion, and the slowest thing in the file. 3 s to
+         rise, 4.5 s to fall, ranked against forty seconds of history, so what it carries is
+         the shape of a SECTION. `moonGain` is the one gain in the shader that everything
+         else is measured against — the shafts, the halo, the disc and the light on the bark
+         — so moving it slowly moves the whole picture's key together rather than making one
+         term twitch against the others. */
+      node("dim", "valueLag", [-1500, 1120], { lag: 3, releaseRatio: 1.5 }, { label: "dim1" }),
+      node("dimRank", "valueNormalize", [-1200, 1120], { window: 40 }, { label: "dimRank1" }),
+      // The same second follower, longer, because this lane is the slower of the two.
+      node("dimSmooth", "valueLag", [-900, 1120], { lag: 1, releaseRatio: 1 }, { label: "dimSmooth1" }),
+      node("dimMap", "valueMath", [-600, 1120], {
+        operation: "range", fromLow: 0, fromHigh: 1, toLow: 0.85, toHigh: 1.22, outside: "clamp",
+      }, { label: "dimMap1" }),
     ],
     [
       edge("e-veil-forest", ["veil", "out"], ["forest", "input"]),
       edge("e-forest-dof", ["forest", "out"], ["dof", "input"]),
       edge("e-dof-out", ["dof", "out"], ["out", "input"]),
+
+      edge("e-music-source", ["music", "out"], ["source", "in1"]),
+      edge("e-track-source", ["track", "out"], ["source", "in2"]),
+      edge("e-source-air", ["source", "out"], ["air", "in"]),
+      edge("e-air-airrank", ["air", "out"], ["airRank", "in"]),
+      edge("e-airrank-airsmooth", ["airRank", "out"], ["airSmooth", "in"]),
+      edge("e-airsmooth-airmap", ["airSmooth", "out"], ["airMap", "a"]),
+      edge("e-source-dim", ["source", "out"], ["dim", "in"]),
+      edge("e-dim-dimrank", ["dim", "out"], ["dimRank", "in"]),
+      edge("e-dimrank-dimsmooth", ["dimRank", "out"], ["dimSmooth", "in"]),
+      edge("e-dimsmooth-dimmap", ["dimSmooth", "out"], ["dimMap", "a"]),
     ],
   ),
 );

@@ -3,6 +3,10 @@ import { nodeGpuHost, probeDawn } from "../runtime/backend/vgpu/node-gpu-host.ts
 import { toRgba8 } from "../runtime/export/image.ts";
 import { BYTES_PER_PIXEL } from "../runtime/export/pixel-format.ts";
 import type { GraphDocument } from "../domain/types/graph.ts";
+import type { FrameEvaluationInput } from "../domain/types/frame.ts";
+import { createValueGraphSession } from "../domain/channels/value-graph.ts";
+import { createNodeRegistry } from "../nodes/registry/registry.ts";
+import { allNodeDefinitions } from "../nodes/definitions/index.ts";
 import { renderHeadless } from "../tests/headless/render-harness.ts";
 import { listExamples } from "./catalogue.ts";
 import { requireExample } from "./runner.ts";
@@ -49,6 +53,20 @@ import { requireExample } from "./runner.ts";
  *      the guard on "the camera never turns" — the invariant the veil and the headline
  *      both rest on — against the thing T1170 put next to it.
  *
+ * T1170b added three, for the god rays and the audio:
+ *
+ *  10. THE TREES CAST INTO THE FOG. Isolated from both the fog it lights and the trunks it
+ *      is cast by: on the pixels where the wood draws NOTHING (byte-identical with the
+ *      volumetric off), the shaft term is both dimmer and far more structured with a wood
+ *      standing than with an empty grid. "Visible shafts" was already true and is vacuous —
+ *      what this gates is the OCCLUSION, which is what a glow lacks and a god ray has.
+ *  11. THE AUDIO CANNOT JUMP. The claim is about the RATE, not the range: neither lane may
+ *      traverse more than a few percent of its own span in one frame. And the second
+ *      follower is gated by its own absence — re-pointed at the rank directly, the way the
+ *      file was built first, the air lane moves a fifth of its span in a single frame.
+ *  12. AND THE DRIVE REACHES THE PIXELS. Freezing both slots at exactly their own retained
+ *      values — the only change being that they stop listening — moves the picture.
+ *
  * Every bound is exact or derived (§V147): "no pixel brighter" allows exactly one 8-bit
  * quantisation step; the quiet window's edge is solved from the shipped parameters rather
  * than typed in; "differs" is byte inequality; and the ratios carry the measured value they
@@ -59,6 +77,33 @@ const WIDTH = 320;
 const HEIGHT = 180; // 16:9, the shipped aspect, so the screen-space derivations below hold
 const FILE = "E57-Forest.loom.json";
 const LSB = 1 / 255;
+
+/** A minute of the deterministic pattern, less the ten seconds Normalize needs to fill. */
+const DRIVE_FRAMES = 3600;
+const DRIVE_WARMUP = 600;
+
+/**
+ * T1170b's two audio lanes, and the bound each one is held to. The `maxStepFraction` is the
+ * anti-flicker claim written as a number: how much of its own span a lane may traverse in
+ * ONE frame. Both are set at roughly 1.5x the measured value, which is tight enough that
+ * lengthening a follower is a change and loose enough that retuning one is not a red.
+ */
+const DRIVEN_LANES = new Map<string, { parameter: string; retained: number; maxStepFraction: number }>([
+  // measured: mean 0.2123, max step 2.09% of span
+  ["airMap1:low", { parameter: "mist", retained: 0.212, maxStepFraction: 0.032 }],
+  // measured: mean 0.9951, max step 0.78% of span
+  ["dimMap1:lowMid", { parameter: "moonGain", retained: 0.995, maxStepFraction: 0.013 }],
+]);
+
+/** The static half of a driven slot — the value that stands when no drive arrives (§V914). */
+function retainedOf(graph: GraphDocument, parameter: string): number {
+  const slot = (graph.nodes["forest"]?.parameters ?? {})[parameter] as
+    | { bindings?: { static?: { value?: unknown } } }
+    | undefined;
+  const value = slot?.bindings?.static?.value;
+  if (typeof value !== "number") throw new Error(`E57's forest1.${parameter} is not a driven slot`);
+  return value;
+}
 
 let dawnError: string | undefined;
 beforeAll(async () => {
@@ -348,7 +393,18 @@ describe("E57 Forest — claims", () => {
   it("the motion is the walk, and a whole minute later it has not stopped", async () => {
     expect(dawnError, dawnError ?? "").toBeUndefined();
     const [a, b] = await shoot({}, [60, 180]);
-    const [stillA, stillB] = await shoot({ walkSpeed: 0, sway: 0, bob: 0 }, [60, 180]);
+    /* ⚑ T1170b HAD TO ADD THE DRIVE TO THIS FREEZE, AND THAT IS THE SAME LESSON THIS FILE
+       LEARNED TWICE ALREADY. T1156 found that "the frames differ" was vacuous because the
+       cloud veil drifts on its own clock; T1170b put a THIRD clock in the file — the two
+       audio lanes — and the freeze below stopped being a freeze: with the walk cut the
+       picture still moved by 0.00989, eighteen times the bound, because `mist` and
+       `moonGain` were still breathing. Freezing them at their own retained values is what
+       makes this an assertion about THE WALK rather than about "something moves". */
+    const frozenDrive = {
+      mist: retainedOf(e57().graph, "mist"),
+      moonGain: retainedOf(e57().graph, "moonGain"),
+    };
+    const [stillA, stillB] = await shoot({ walkSpeed: 0, sway: 0, bob: 0, ...frozenDrive }, [60, 180]);
     // Cut the walk and the picture stops: 0.02775 mean |Δ| over the look window becomes
     // 0.00004, which is the cloud drift and nothing else. The motion budget is the walk's.
     expect(meanAbsDelta(stillA!, stillB!)).toBeLessThan(meanAbsDelta(a!, b!) * 0.01);
@@ -382,9 +438,17 @@ describe("E57 Forest — claims", () => {
     const at = new Map(marks.map((index, i) => [index, shots[i]!]));
     const pace = (pairs: readonly (readonly [number, number])[]): number =>
       pairs.reduce((sum, [i, j]) => sum + meanAbsDelta(at.get(i)!, at.get(j)!), 0) / pairs.length;
-    // And the picture's own statistics have not drifted either — the world is a hashed
-    // repeat, not a scene being consumed.
-    expect(Math.abs(mean(at.get(3600)!) - mean(at.get(60)!))).toBeLessThan(mean(at.get(60)!) * 0.05);
+    /* AND THE PICTURE'S OWN STATISTICS HAVE NOT DRIFTED EITHER — the world is a hashed
+       repeat, not a scene being consumed.
+       ⚑ T1170b HAD TO AVERAGE THIS ONE TOO, for the same reason the pace above is averaged
+       and for two new sources on top of it. The god rays make the frame's own mean swing
+       0.214 to 0.406 across a walk BY DESIGN (that is the contrast between lit and unlit
+       stands), and the audio lanes move it again on a forty-second arc. A single frame at
+       each end therefore reads a difference of 0.068 on a mean of 0.247 — 27%, and about
+       nothing. Four frames a side is several stands and most of a drive cycle each. */
+    const level = (pairs: readonly (readonly [number, number])[]): number =>
+      pairs.reduce((sum, [, j]) => sum + mean(at.get(j)!), 0) / pairs.length;
+    expect(Math.abs(level(END) - level(START))).toBeLessThan(level(START) * 0.25);
     expect(pace(END)).toBeGreaterThan(pace(START) * 0.6);
   }, 180_000);
 
@@ -405,14 +469,30 @@ describe("E57 Forest — claims", () => {
        however different its trees are — which is the whole of "it reads as a lattice". So
        the measure is the dispersion of whole-frame local contrast ACROSS a walk. The
        vignette contributes to every frame equally and drops out of it. */
+    /* ⚑ AND T1170b HAD TO PUT `shafts: 0` ON ALL THREE ARMS, WHICH IS THE THIRD TIME THIS
+       FILE HAS CAUGHT A STATISTIC THAT QUIETLY CHANGED WHAT IT MEASURED WHEN THE WORLD
+       CHANGED UNDER IT (see the dark-tail note in claim 2). The measure is a COEFFICIENT of
+       variation — a spread divided by a mean — and T1170b's god rays put a large, structured
+       term into every frame's local contrast. That raises the clumped file's MEAN more than
+       its spread, so the ratio inverted: on the shipped configuration the clumped field now
+       reads 0.103 against an even field's 0.174, which says nothing at all about the stand.
+       The volumetric is not what this claim is about. With it switched off in all three arms
+       the density field is measured against itself and the original finding stands. */
     const walk = [60, 210, 360, 510, 660, 810, 960, 1110, 1260, 1410, 1560, 1710];
-    const clumped = await shoot({}, walk);
-    const even = await shoot({ clumping: 0 }, walk);
+    const still = {
+      shafts: 0,
+      // ...and the audio lanes with it: they move `mist` on their own clock, which lands in
+      // every arm's dispersion equally and drags the ratio toward one.
+      mist: retainedOf(e57().graph, "mist"),
+      moonGain: retainedOf(e57().graph, "moonGain"),
+    };
+    const clumped = await shoot({ ...still }, walk);
+    const even = await shoot({ ...still, clumping: 0 }, walk);
     /* THE ASSERTION THAT HAD TO BE FOUND (§V910): a thinner wood would also vary more just
        by sampling, so the honest control is one with the SAME AMOUNT OF WOOD in it. The
        clumped field's mean share is a measured 0.85 of cells against the shipped `density`
        of 1, so this is the even field carrying the same trees over the same walk. */
-    const evenMatched = await shoot({ clumping: 0, density: 0.85 }, walk);
+    const evenMatched = await shoot({ ...still, clumping: 0, density: 0.85 }, walk);
     const spread = (shots: Shot[]): number => {
       const series = shots.map((shot) => detail(shot, () => true));
       const m = series.reduce((a, b) => a + b, 0) / series.length;
@@ -546,6 +626,266 @@ describe("E57 Forest — claims", () => {
     for (let i = 0; i < frames.length; i += 1) {
       expect(differingPixels(walking[i]!, level[i]!, sky)).toBe(0);
       expect(differingPixels(walking[i]!, level[i]!, ground)).toBeGreaterThan(0);
+    }
+  }, 240_000);
+
+  it("the trees cast into the fog: the shaft term is darker AND more structured where a wood stands", async () => {
+    expect(dawnError, dawnError ?? "").toBeUndefined();
+    /* ⚑ T1170b's CENTRAL CLAIM, and it exists because the obvious version of it is vacuous.
+       "The shafts are visible" is trivially true and was true before this task: switching
+       `shafts` off takes the frame's mean from 0.288 to 0.041, so the term is the whole
+       illumination. What was NOT true was that the trees put any structure into it — the
+       occlusion was worth a mean of 1.5 of 255 — and a glow is not a god ray. So what has to
+       be gated is the OCCLUSION, in isolation from both the fog it lights and the trunks it
+       is cast by.
+
+       FOUR RENDERS, AND THE FOURTH IS WHAT MAKES IT AN ISOLATION.
+         woodShafts / woodPlain   the wood, with and without the volumetric
+         bareShafts / barePlain   an empty grid, with and without it
+       The per-pixel difference `shafts on − shafts off` is the shaft term itself. With no
+       trees it is the unshadowed in-scatter: an analytic function of the ray direction and
+       the altitude profile, smooth by construction. With trees it is the same thing minus
+       what the wood blocked.
+
+       ⚠ AND THE COMPARISON IS MADE ONLY WHERE THE WOOD CHANGES NOTHING ELSE. A trunk drawn
+       in front of the fog shortens `tHit`, so the shaft integral stops early and the
+       difference image carries a silhouette edge that has nothing to do with shadow. The
+       mask is exact rather than approximate: the pixels where `woodPlain` and `barePlain`
+       are BYTE-IDENTICAL are exactly the pixels whose surface the wood does not touch — with
+       the volumetric off, a tree can only reach a pixel by being drawn on it. Everything
+       below is measured on those pixels alone, and on their neighbours too where a gradient
+       is taken, so no statistic ever straddles the mask's own edge. */
+    const frames = [420, 900, 1500];
+    const woodShafts = await shoot({}, frames);
+    const woodPlain = await shoot({ shafts: 0 }, frames);
+    const bareShafts = await shoot({ density: 0 }, frames);
+    const barePlain = await shoot({ density: 0, shafts: 0 }, frames);
+
+    /** The shaft term itself, per pixel: what the volumetric added to this frame. */
+    const shaftOf = (on: Shot, off: Shot): Float64Array => {
+      const out = new Float64Array(WIDTH * HEIGHT);
+      for (let p = 0; p < out.length; p += 1) out[p] = (on.luma[p] ?? 0) - (off.luma[p] ?? 0);
+      return out;
+    };
+
+    /* ⚠ AND THE SCALE OF THE MEASURE HAD TO BE FOUND RATHER THAN ASSUMED, WHICH IS THE PART
+       WORTH KEEPING. The first draft took plain second differences — the same stencil the
+       shader's grain figures use — and read 5117 against 5129: EQUAL, on a picture where the
+       slabs are obvious by eye. The reason is that a one-pixel stencil measures the DITHER,
+       which both arms carry identically, while a shadow slab at this resolution is thirty
+       pixels wide and contributes almost nothing to it. A statistic can be blind to the only
+       thing in the frame it was pointed at. So the field is boxed over five pixels first —
+       which drops the weave by about five and leaves a slab untouched — and the gradient is
+       then taken at a four-pixel baseline, which is a fraction of a slab and several times
+       the dither's correlation length. */
+    const BOX = 2;
+    const BASE = 4;
+    const boxed = (field: Float64Array, x: number, y: number): number => {
+      let sum = 0;
+      let n = 0;
+      for (let j = -BOX; j <= BOX; j += 1) {
+        for (let i = -BOX; i <= BOX; i += 1) {
+          const yy = y + j;
+          const xx = x + i;
+          if (yy < 0 || yy >= HEIGHT || xx < 0 || xx >= WIDTH) continue;
+          sum += field[yy * WIDTH + xx] ?? 0;
+          n += 1;
+        }
+      }
+      return sum / n;
+    };
+    /* ⚠ AND IT IS A CURVATURE, NOT A GRADIENT, WHICH WAS THE SECOND WRONG INSTRUMENT. A
+       first difference on the boxed field read 4459 against 4195 — six percent — because the
+       shaft term's dominant structure with NO trees at all is the moon's own radial falloff,
+       which is a large smooth gradient everywhere near the disc and swamps a slab. A second
+       difference is blind to any linear ramp by construction, so what is left is the thing
+       that has an EDGE. */
+    const slabEnergy = (field: Float64Array, x: number, y: number): number =>
+      Math.abs(2 * boxed(field, x, y) - boxed(field, x + BASE, y) - boxed(field, x - BASE, y)) +
+      Math.abs(2 * boxed(field, x, y) - boxed(field, x, y + BASE) - boxed(field, x, y - BASE));
+
+    let woodLevel = 0;
+    let bareLevel = 0;
+    let woodStructure = 0;
+    let bareStructure = 0;
+    let maskedPixels = 0;
+    for (let i = 0; i < frames.length; i += 1) {
+      const sWood = shaftOf(woodShafts[i]!, woodPlain[i]!);
+      const sBare = shaftOf(bareShafts[i]!, barePlain[i]!);
+      // Byte-identical with the volumetric off ⇒ the wood draws nothing here.
+      const clear = new Uint8Array(WIDTH * HEIGHT);
+      for (let p = 0; p < clear.length; p += 1) {
+        const at = p * 4;
+        clear[p] =
+          woodPlain[i]!.data[at] === barePlain[i]!.data[at] &&
+          woodPlain[i]!.data[at + 1] === barePlain[i]!.data[at + 1] &&
+          woodPlain[i]!.data[at + 2] === barePlain[i]!.data[at + 2]
+            ? 1
+            : 0;
+      }
+      /* The lit band: below the top of the frame and above the mist floor, which is where
+         the moon's forward lobe actually puts light into air a trunk can stand in. */
+      // The stencil below reaches BOX + BASE pixels, so the walk starts that far in — a
+      // box that falls entirely outside the frame averages nothing and returns NaN.
+      const margin = BOX + BASE;
+      for (let y = margin; y < HEIGHT - margin; y += 1) {
+        const v = (y + 0.5) / HEIGHT;
+        if (v < 0.15 || v > 0.75) continue;
+        for (let x = margin; x < WIDTH - margin; x += 1) {
+          const p = y * WIDTH + x;
+          if (clear[p] !== 1 || clear[p - 1] !== 1 || clear[p + 1] !== 1) continue;
+          if (clear[p - WIDTH] !== 1 || clear[p + WIDTH] !== 1) continue;
+          maskedPixels += 1;
+          woodLevel += sWood[p] ?? 0;
+          bareLevel += sBare[p] ?? 0;
+          woodStructure += slabEnergy(sWood, x, y);
+          bareStructure += slabEnergy(sBare, x, y);
+        }
+      }
+    }
+    // The mask has to leave something to measure, or every ratio below is 0/0.
+    expect(maskedPixels).toBeGreaterThan(3000);
+    // 1. THE VOLUMETRIC IS THE LIGHT. Non-vacuous first: with no trees the term adds a
+    //    measured 0.4117 of luma to every one of the 78268 pixels this walks.
+    expect(bareLevel / maskedPixels).toBeGreaterThan(0.05);
+    /* 2. THE WOOD TAKES LIGHT OUT OF IT — 0.3205 against 0.4117, 22% of the shaft term gone.
+          Same pixels, same fog, same moon, same shafts gain; the only difference is that a
+          trunk stands somewhere along the path to the moon. RED-VERIFIED by making
+          `moonVisible` return a constant 1.0 and regenerating the example: this line is the
+          first to fail, at 32221 against a bound of 29002. (And the regeneration is the
+          point — the WGSL travels INSIDE the `.loom.json`, so a shader edit alone changes
+          nothing this suite can see, which cost one wasted red-verify to learn.) */
+    expect(woodLevel).toBeLessThan(bareLevel * 0.9);
+    /* 3. AND IT TAKES IT OUT IN SLABS, which is the half that separates a god ray from a
+          dimmer glow: measured 1289 against 634, so the wood roughly DOUBLES the boxed
+          curvature of the shaft term. With an empty grid what is left is the estimator's
+          own residual; with a wood in it, the shadow edges. */
+    expect(woodStructure).toBeGreaterThan(bareStructure * 1.5);
+  }, 300_000);
+
+  it("the audio moves the air and the moon, slowly, and neither lane can jump", () => {
+    /* ⚑ T1170b — THE OWNER'S CONSTRAINT WAS "audio reactive in a way where it's NOT BECOMING
+       FLICKERY AND WEIRD", so the claim has to be about the RATE, not about the range. A
+       lane that covers its whole span and gets there in one frame satisfies every duty and
+       coverage statistic in this project and is exactly the thing he asked not to have.
+
+       This half needs no GPU: the value graph is scalars on the CPU (§V183), so 3600 frames
+       of both lanes cost milliseconds. It lives here rather than in a headless file because
+       these are E57's claims and the seed they depend on is E57's. */
+    const registry = createNodeRegistry(allNodeDefinitions);
+    const graph = e57().graph;
+
+    const run = (subject: GraphDocument, addresses: readonly string[]): Map<string, number[]> => {
+      const session = createValueGraphSession(registry);
+      const series = new Map<string, number[]>(addresses.map((a) => [a, []]));
+      for (let frameIndex = 0; frameIndex < DRIVE_FRAMES; frameIndex += 1) {
+        const frame: FrameEvaluationInput = {
+          timeSeconds: frameIndex / 60,
+          deltaSeconds: 1 / 60,
+          frameIndex,
+          mode: "offline",
+          randomSeed: 57,
+        };
+        const evaluated = session.evaluate(subject, frame, {
+          pointer: { x: 0.5, y: 0.5, buttons: 0 },
+          channels: () => undefined,
+        });
+        for (const address of addresses) {
+          const value = evaluated.resolver(address, undefined as never);
+          if (typeof value === "number" && Number.isFinite(value)) series.get(address)!.push(value);
+        }
+      }
+      // `valueNormalize`'s window has to FILL before its rank means anything, so the first
+      // ten seconds are a statement about the warm-up rather than about the lane.
+      return new Map([...series].map(([k, v]) => [k, v.slice(DRIVE_WARMUP)]));
+    };
+
+    const lanes = [...DRIVEN_LANES.keys()];
+    const measured = run(graph, lanes);
+
+    for (const [address, lane] of DRIVEN_LANES) {
+      const v = measured.get(address) ?? [];
+      expect(v.length, `${address} never resolved`).toBeGreaterThan(2000);
+      const lo = Math.min(...v);
+      const hi = Math.max(...v);
+      const span = hi - lo;
+      const mean = v.reduce((a, b) => a + b, 0) / v.length;
+
+      /* §V914 — THE RETAINED VALUE IS THE DRIVEN MEAN, not the lane's midpoint. Absence is
+         the common case: every headless render, every thumbnail and every first open has no
+         track, so the value that stands then has to be the value the drive lives around. */
+      expect(lane.retained).toBeGreaterThan(lo);
+      expect(lane.retained).toBeLessThan(hi);
+      expect(Math.abs(lane.retained - mean)).toBeLessThan(span * 0.02);
+      // And it is the number the document actually ships in the slot.
+      expect(retainedOf(graph, lane.parameter)).toBeCloseTo(lane.retained, 5);
+
+      /* §V903 — THE DUTY. A percentile cannot pin (its extremes are exactly 0.5/N and
+         1−0.5/N), so what is left to check is that nothing downstream flattened it: every
+         twentieth of the lane's own span carries at least one percent of the run, and no
+         value is ever repeated on two consecutive frames. */
+      const bins = new Array<number>(20).fill(0);
+      for (const x of v) {
+        const at = Math.min(19, Math.floor(((x - lo) / span) * 20));
+        bins[at] = (bins[at] ?? 0) + 1;
+      }
+      expect(Math.min(...bins) / v.length).toBeGreaterThan(0.01);
+      let still = 1;
+      let longestStill = 1;
+      for (let i = 1; i < v.length; i += 1) {
+        still = v[i] === v[i - 1] ? still + 1 : 1;
+        longestStill = Math.max(longestStill, still);
+      }
+      expect(longestStill).toBe(1);
+
+      /* ⚑ THE ANTI-FLICKER BOUND, AND IT IS THE CLAIM THE OWNER ACTUALLY MADE. Measured:
+         2.09% of span a frame on the air lane and 0.78% on the moon's — 126% and 47% of the
+         span per second, which is a swell rather than a step. */
+      let step = 0;
+      for (let i = 1; i < v.length; i += 1) step = Math.max(step, Math.abs(v[i]! - v[i - 1]!));
+      expect(step / span).toBeLessThan(lane.maxStepFraction);
+    }
+
+    /* ⚑ AND THE SECOND FOLLOWER IS LOAD-BEARING, WHICH IS WHY IT IS GATED RATHER THAN
+       ASSUMED. `valueNormalize` flattens a distribution, and flattening it STEEPENS the map
+       wherever the signal is dense — so smoothing the INPUT does not bound the OUTPUT's
+       step. Re-point each map at its rank directly, exactly as the file was built first, and
+       the air lane jumps a fifth of its span in one frame. That is the measurement the
+       `*Smooth1` nodes exist for, and without this arm removing them would be silent. */
+    const unsmoothed = structuredClone(graph) as GraphDocument;
+    unsmoothed.edges["e-airsmooth-airmap"]!.source = { nodeId: "airRank", portId: "out" };
+    unsmoothed.edges["e-dimsmooth-dimmap"]!.source = { nodeId: "dimRank", portId: "out" };
+    const raw = run(unsmoothed, lanes);
+    for (const [address, lane] of DRIVEN_LANES) {
+      const v = raw.get(address) ?? [];
+      const span = Math.max(...v) - Math.min(...v);
+      let step = 0;
+      for (let i = 1; i < v.length; i += 1) step = Math.max(step, Math.abs(v[i]! - v[i - 1]!));
+      // Measured 20.9% and 8.6% of span — ten times and eleven times the shipped bound.
+      expect(step / span).toBeGreaterThan(lane.maxStepFraction * 3);
+    }
+  }, 120_000);
+
+  it("cutting the drive is a different picture, so the audio reaches the pixels", async () => {
+    expect(dawnError, dawnError ?? "").toBeUndefined();
+    /* §V88's dominant bug class is "built, tested, never wired", and the two claims above are
+       both about the SIGNAL. This one is about the picture: freeze both slots at exactly the
+       retained values they already carry — the only change is that they stop listening — and
+       the frames must move away from the driven ones. Late frames, because the lanes open
+       near their means and the warm-up is not the claim. */
+    const frames = [900, 1500, 2400];
+    const driven = await shoot({}, frames);
+    const frozen = await shoot(
+      { mist: retainedOf(e57().graph, "mist"), moonGain: retainedOf(e57().graph, "moonGain") },
+      frames,
+    );
+    for (let i = 0; i < frames.length; i += 1) {
+      /* Not "differs by a byte": the drive has to be worth seeing. Measured mean |Δ| of
+         0.0030 to 0.0121 over the whole frame across these three late frames — and the
+         SMALLEST of them is the bound, because a drive that only pays off on its own peaks
+         is a drive that mostly is not there. The spread is the point: the frame the lane
+         happens to catch near its mean is the one that barely moves. */
+      expect(meanAbsDelta(driven[i]!, frozen[i]!)).toBeGreaterThan(0.0025);
     }
   }, 240_000);
 });

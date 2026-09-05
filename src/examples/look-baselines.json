@@ -245,10 +245,11 @@
     "phrase": 0.24149
   },
   "E57-Forest.loom.json": {
-    "motion": 0.02013,
-    "range": 0.7132,
-    "f0max": 0.7466,
-    "cardFloor": 0.0009
+    "motion": 0.0281,
+    "range": 0.6279,
+    "f0max": 0.6505,
+    "cardFloor": 0.0007,
+    "phrase": 0.0528
   },
   "E58-Alembic.loom.json": {
     "motion": 0.06073,
