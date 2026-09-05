@@ -12,10 +12,9 @@ import type { PortType } from "../domain/types/ports.ts";
 import type { DrawPassDescriptor, PassDescriptor } from "../runtime/backend/plan.ts";
 import {
   estimateResourceBytes,
-  passStructureKey,
+  planStructureKeys,
   planStructureSignature,
   readExecutionPlan,
-  resourceStructureKey,
 } from "../runtime/backend/plan.ts";
 import { describeError } from "../runtime/backend/diagnostics.ts";
 // T675: orbit capability, and the stock framings it has to reproduce, decided in ONE
@@ -2211,6 +2210,11 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
   // §V82: every diagnostic that names a node inside a component carries its source path.
   const reported = stamp(diagnostics);
 
+  // T1176: per-entry keys and the whole-plan signature from ONE pass. The signature is
+  // derived from the very keys the per-entry rows carry, so computing them separately
+  // keyed every resource and every pass twice on every commit.
+  const structure = planStructureKeys(read.resources, read.passes);
+
   return {
     passes: read.passes,
     resources: read.resources,
@@ -2221,13 +2225,9 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
     outputs,
     feedback,
     sources: sourceRows,
-    resourceSignatures: read.resources
-      .map((resource) => ({ id: resource.id, signature: resourceStructureKey(resource) }))
-      .sort((a, b) => a.id.localeCompare(b.id)),
-    passSignatures: read.passes
-      .map((pass) => ({ id: pass.id, signature: passStructureKey(pass) }))
-      .sort((a, b) => a.id.localeCompare(b.id)),
-    signature: planStructureSignature(read.resources, read.passes),
+    resourceSignatures: structure.resourceSignatures,
+    passSignatures: structure.passSignatures,
+    signature: structure.signature,
     estimatedResourceBytes,
   };
 }
