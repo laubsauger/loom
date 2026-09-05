@@ -6,6 +6,7 @@ import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { Revision } from "@domain/types/ids.ts";
 import type { GraphPatchOperation } from "@domain/types/patch.ts";
 import type { LoomBus } from "@domain/commands/bus.ts";
+import type { LibraryEntry } from "../examples/library-entry.ts";
 
 /**
  * The agent tool surface vocabulary (§I.tools, T54–T60).
@@ -208,9 +209,28 @@ export interface PointsExport {
   }): Promise<PointsWindowData>;
 }
 
+/**
+ * The shipped corpus, as a read source (T1211).
+ *
+ * A PORT and not a bus query, for the same reason `preview` is one: this is not document
+ * state. It is a directory of files that ship with the build, and the two roots read that
+ * directory through mechanisms neither can borrow — `import.meta.glob` in the browser,
+ * `readdirSync` in the MCP server. The rows themselves come from ONE derivation
+ * (`src/examples/library-entry.ts`) so the two roots cannot describe the same file
+ * differently. A root that supplies no catalogue makes `list_examples` and `get_example`
+ * report `unavailable` by name, which is the surface's existing answer for an absent port.
+ */
+export interface LibraryCatalogue {
+  /** Every shipped example and starter component, examples first, in natural name order. */
+  list(): readonly LibraryEntry[];
+  /** The file's bytes, exactly as they ship (§V88). Undefined when no such file is shipped. */
+  read(fileName: string): string | undefined;
+}
+
 export interface AgentPorts {
   readonly preview?: PreviewExport | undefined;
   readonly points?: PointsExport | undefined;
+  readonly library?: LibraryCatalogue | undefined;
 }
 
 export type AgentPortName = keyof AgentPorts;

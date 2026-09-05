@@ -2,6 +2,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PROJECT_FILE_EXTENSION } from "../domain/project/index.ts";
+import { libraryEntry, type LibraryEntry } from "./library-entry.ts";
 
 /**
  * Discovery of the shipped examples (T157).
@@ -58,4 +59,72 @@ export function listExamples(): readonly ExampleFile[] {
 /** Every shipped starter component file, sorted by file name. Same discovery rule. */
 export function listStarterComponentFiles(): readonly ExampleFile[] {
   return listDirectory(STARTER_COMPONENTS_DIR);
+}
+
+/**
+ * The shipped corpus, as the HEADLESS MCP server reads it (T1211).
+ *
+ * The browser half is `createAgentLibraryCatalogue` in `src/editor/library/agent-library.ts`.
+ * The two cannot share a directory read — one is `import.meta.glob`, this one is
+ * `readdirSync` — so they share the DERIVATION instead (`libraryEntry`, over §T1162's tag
+ * table) and answer identically about the same file. §V941's rule: two entrances, one rite.
+ *
+ * Read once and cached. The corpus is 66 files that ship inside the build; re-walking the
+ * directory per tool call would let a listing change under a client mid-session for no
+ * reason a client could act on.
+ */
+export function createNodeLibraryCatalogue(): {
+  list(): readonly LibraryEntry[];
+  read(fileName: string): string | undefined;
+} {
+  let entries: readonly LibraryEntry[] | undefined;
+  let bytes: Map<string, string> | undefined;
+
+  const build = (): void => {
+    if (entries !== undefined) return;
+    const rows: LibraryEntry[] = [];
+    const texts = new Map<string, string>();
+    for (const file of listExamples()) {
+      texts.set(file.fileName, file.text);
+      rows.push(
+        libraryEntry({
+          fileName: file.fileName,
+          kind: "example",
+          text: file.text,
+          markdown: readMarkdownBeside(file.path),
+        }),
+      );
+    }
+    for (const file of listStarterComponentFiles()) {
+      texts.set(file.fileName, file.text);
+      rows.push(libraryEntry({ fileName: file.fileName, kind: "component", text: file.text }));
+    }
+    entries = rows;
+    bytes = texts;
+  };
+
+  return {
+    list() {
+      build();
+      return entries ?? [];
+    },
+    read(fileName) {
+      build();
+      return bytes?.get(fileName);
+    },
+  };
+}
+
+/**
+ * `E13-Prism.loom.json` → the bytes of `E13-Prism.md`, or undefined.
+ *
+ * Undefined and never a placeholder: an example whose prose has not landed yet gets an empty
+ * summary, which is honest, where an invented sentence would be a claim nothing checks.
+ */
+function readMarkdownBeside(loomPath: string): string | undefined {
+  try {
+    return readFileSync(loomPath.replace(new RegExp(`${PROJECT_FILE_EXTENSION}$`), ".md"), "utf8");
+  } catch {
+    return undefined;
+  }
 }

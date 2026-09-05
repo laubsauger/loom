@@ -188,6 +188,29 @@ export const listNodeDefinitionsInput = z.object({ category: z.string().optional
 
 export const getNodeDefinitionInput = z.object({ type: z.string().min(1) }).strict();
 
+/**
+ * T1211 — the shipped corpus. `tag` is §T1162's DERIVED vocabulary, not a free-text search:
+ * the listing publishes every tag with its meaning, so the filter is enumerable rather than
+ * guessed. Left open as a string rather than pinned to a `z.enum` here because the tag set is
+ * derived from the node registry one module away, and a second copy of it in this file is the
+ * "two lists that agree until someone edits one" §T1162 exists to refuse.
+ */
+export const listExamplesInput = z
+  .object({
+    tag: z.string().min(1).optional(),
+    /** §V93: an example is OPENED, a component is INSTANTIATED. Different verbs. */
+    kind: z.enum(["example", "component"]).optional(),
+  })
+  .strict();
+
+export const getExampleInput = z
+  .object({
+    /** A `fileName` from `list_examples`, e.g. `E13-Prism.loom.json`. */
+    fileName: z.string().min(1),
+    includeParameters: z.boolean().optional(),
+  })
+  .strict();
+
 export const getDiagnosticsInput = z
   .object({ severity: z.enum(["info", "warning", "error"]).optional(), limit: z.number().int().positive().max(500).optional() })
   .strict();
@@ -314,6 +337,8 @@ export type GetGraphInput = z.infer<typeof getGraphInput>;
 export type GetNodeInput = z.infer<typeof getNodeInput>;
 export type ListNodeDefinitionsInput = z.infer<typeof listNodeDefinitionsInput>;
 export type GetNodeDefinitionInput = z.infer<typeof getNodeDefinitionInput>;
+export type ListExamplesInput = z.infer<typeof listExamplesInput>;
+export type GetExampleInput = z.infer<typeof getExampleInput>;
 export type GetDiagnosticsInput = z.infer<typeof getDiagnosticsInput>;
 export type AddNodeInput = z.infer<typeof addNodeInput>;
 export type DescribeOutputInput = z.infer<typeof describeOutputInput>;

@@ -1206,10 +1206,54 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
        * branch can read exactly that. The whole mechanism shipped and nothing used it,
        * because nowhere said it was there.
        */
+      /**
+       * T1211 — THE ASSEMBLIES, NAMED WHERE A CLIENT CANNOT MISS THEM.
+       *
+       * The read surface could enumerate every node TYPE and reached NO example and NO
+       * component — the only two artefacts that show how nodes COMBINE. The tools now exist;
+       * §T1209's lesson is that an agent which must REMEMBER to call a discovery tool will
+       * forget, so what belongs here is not the catalogue but the sentence that says it is
+       * there. No count, deliberately: a number in prose is a claim that goes stale against a
+       * directory, and this text ships to readers who cannot check it.
+       */
+      const assemblies =
+        "`list_examples` lists every shipped example project and starter component with capability tags " +
+        "derived from each file's own graph (filter by `tag`), and `get_example` opens one as nodes and edges " +
+        "in the same shape `get_graph` returns. They are the WORKED ANSWERS for how nodes combine — read one " +
+        "before wiring a chain of a kind you have not wired here before.";
       const document =
         `${PARAMETER_MODES} ` +
         "An async source publishes its own latency, so `cache.index` as an expression " +
-        "`op('mask1').chan.lagFrames` delays a sibling branch by exactly the lag the mask introduced.";
+        "`op('mask1').chan.lagFrames` delays a sibling branch by exactly the lag the mask introduced. " +
+        assemblies;
+      /**
+       * T1211 — THE POINTER (AND EVERY OTHER LIVE SIGNAL) IS UNAVAILABLE HERE, BY NAME.
+       *
+       * The owner reported that an agent could not get a Mouse node to do anything, repeatedly.
+       * MEASURED, end to end over real JSON-RPC: it wires perfectly and nothing moves, because
+       * a HEADLESS session has no cursor and no value graph at all. This process renders one
+       * OFFLINE frame per edit with the shared-frame pointer pinned at (0,0,0) and never builds
+       * a `ValueGraphSession`, so every CHOP-side node produces nothing and every channel read
+       * fails. The resolver already says so per parameter (`parameter.channels.unavailable`,
+       * `resolve.ts`) — but only at `info`, only inside `get_diagnostics`, and only once an
+       * expression has already been written. Nothing said it BEFORE the attempt.
+       *
+       * §V941's shape: two entrances, one of which cannot supply a signal the other can, and
+       * this project's rule is that the unavailable case says so by name rather than looking
+       * like a working zero. A frozen (0,0) pointer is indistinguishable from a user whose
+       * cursor is at the origin, which is exactly how "this does not work" gets read as a bug
+       * in the graph.
+       *
+       * Only the two branches where THIS process's own document is what gets edited. While
+       * proxying, the calls reach another bridge and this process cannot speak for its state.
+       */
+      const noLiveInput =
+        "AND THIS PROCESS HAS NO LIVE INPUT: it renders one OFFLINE frame per edit, with the shared pointer " +
+        "frozen at (0,0) and no value graph at all. Mouse, LFO, Timer, Analyze, OSC and MIDI publish NOTHING " +
+        "here, so every `op('name').chan.x` expression reports `parameter.channels.unavailable` in " +
+        "`get_diagnostics` and the parameter stays on its retained value. That is a property of this process, " +
+        "not of your graph — attach a Loom tab and the same document runs against a real cursor and real " +
+        "channels. Do not report a pointer-driven graph as broken on the evidence of a headless frame.";
       if (current.mode === "proxying") {
         if (current.pairingCode === null) {
           return (
@@ -1233,7 +1277,7 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
         return (
           `Loom MCP server, PID ${current.pid}. The loopback bridge could NOT start (${listenError ?? "no reason given"}), so every tool below ` +
           "runs against a HEADLESS in-memory document the user cannot see. Tell the user: another Loom " +
-          `bridge is probably already running. ${readTheTool} ${document}`
+          `bridge is probably already running. ${noLiveInput} ${readTheTool} ${document}`
         );
       }
       return (
@@ -1243,6 +1287,7 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
         `${readTheTool} ` +
         "Every tool result carries a `bridge` field saying which document it touched; if it says attached:false, say so " +
         "rather than reporting a change the user cannot find. " +
+        `${noLiveInput} ` +
         document
       );
     },

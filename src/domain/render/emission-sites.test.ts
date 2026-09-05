@@ -65,17 +65,21 @@ const NOT_A_PUMP_SITE = [
    * EMITTERS out would be a tag that goes quiet on exactly the file that talks to a laser.
    *
    * THE FILE, not the directory, so a real pump landing anywhere else under
-   * `src/editor/library/` is still caught. What it exports is `tagsOf`/`categoryOf` — pure
+   * `src/examples/` is still caught. What it exports is `tagsOf`/`categoryOf` — pure
    * predicates over a set of type STRINGS parsed out of a `.loom.json`, with no registry,
    * no definition and no transport in reach. It is the read side of §T1193's exclusion one
-   * surface over: that one is the document that SPELLS `oscOut`, this one is the browser
-   * list that reads the same string back out of the shipped bytes and puts a badge on it.
+   * surface over: that one is the document that SPELLS `oscOut`, this one is the list that
+   * reads the same string back out of the shipped bytes and puts a badge on it.
    *
    * The alternative was dropping the emitters from the vocabulary, which is a gate quietly
    * shaping a product decision — the thing §T1193 refused when it declined to write
    * `oscOutNode.type` to slip past this scan.
+   *
+   * T1211 moved the table out of `src/editor/library/example-catalogue.ts`, which is now a
+   * glob and a re-export and names no node type: the MCP server derives the same tags in
+   * Node and cannot import a Vite transform, so one table serves both readers.
    */
-  "src/editor/library/example-catalogue.ts",
+  "src/examples/capabilities.ts",
 ];
 
 /** Every non-test source module a pump could hide in: all of `src`, minus the exclusions. */

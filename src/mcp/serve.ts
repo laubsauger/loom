@@ -13,6 +13,7 @@ import type { ProjectSettings } from "../domain/types/graph.ts";
 import { createVgpuBackend } from "../runtime/backend/vgpu/vgpu-backend.ts";
 import { nodeGpuHost, probeDawn } from "../runtime/backend/vgpu/node-gpu-host.ts";
 import { createAgentPorts } from "../runtime/export/agent-ports.ts";
+import { createNodeLibraryCatalogue } from "../examples/catalogue.ts";
 import { createMcpConnection, type McpConnection } from "./server.ts";
 import { createBridgeHost, type BridgeStatus } from "./bridge-host.ts";
 import { createDeviceDoors, type DeviceDoors } from "@devices/doors.ts";
@@ -169,6 +170,14 @@ export function createHeadlessMcpServer(options: HeadlessMcpServerOptions): Head
   // assigning the pixel ports once the GPU is up flips availability live — and
   // refreshTools() turns that flip into a tools/list_changed.
   const ports: Record<string, unknown> = {};
+  /*
+   * T1211: the shipped corpus, attached from the first call and never conditional on the
+   * GPU — an agent talking to a Dawn-less helper still gets the 57 examples and 9 starter
+   * components, which are the only two artefacts that show how nodes COMBINE. The browser
+   * builds the same catalogue from its own glob; both derive their rows from §T1162's tag
+   * table, so the two surfaces cannot describe one file differently.
+   */
+  ports["library"] = createNodeLibraryCatalogue();
   const surface = createAgentToolSurface({
     bus,
     actor: { kind: "agent", id: "mcp", label: "MCP client" },

@@ -32,6 +32,7 @@ export { DEFAULT_OUTPUT_PORT, outputKey } from "./types.ts";
 export type {
   AgentPortName,
   AgentPorts,
+  LibraryCatalogue,
   AgentRuntimeMetrics,
   AgentTool,
   AgentToolInfo,
@@ -55,6 +56,9 @@ export type {
   NodeDetail,
   ProjectSummary,
 } from "./tools/read.ts";
+export { libraryTools } from "./tools/library.ts";
+export type { ExampleDetail, LibraryListing, LibraryTagInfo } from "./tools/library.ts";
+export type { LibraryEntry } from "../examples/library-entry.ts";
 export type { PreviewImageData } from "./tools/preview.ts";
 export { encodeBase64 } from "./tools/preview.ts";
 export { graphPatchOperationSchema } from "./schemas.ts";

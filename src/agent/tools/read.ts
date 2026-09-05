@@ -149,7 +149,13 @@ function portSummary(port: PortDefinition): AgentPortSummary {
   };
 }
 
-function nodeView(node: GraphNode, includeParameters: boolean): AgentNodeView {
+/**
+ * T1211: exported so `get_example` projects a SHIPPED graph through the same shape
+ * `get_graph` returns for the live one. An agent that has learned to read one has learned
+ * to read the other, and a second projection of a node would be a second vocabulary for
+ * the same thing.
+ */
+export function nodeView(node: GraphNode, includeParameters: boolean): AgentNodeView {
   const view: AgentNodeView = {
     id: node.id,
     type: node.type,
@@ -163,7 +169,8 @@ function nodeView(node: GraphNode, includeParameters: boolean): AgentNodeView {
   return includeParameters ? { ...view, parameters: { ...node.parameters } } : view;
 }
 
-function edgeViews(graph: GraphDocument): AgentEdgeView[] {
+/** T1211: exported for the same reason as `nodeView`. */
+export function edgeViews(graph: GraphDocument): AgentEdgeView[] {
   return Object.keys(graph.edges)
     .sort()
     .flatMap((edgeId) => {
@@ -347,7 +354,12 @@ export const listNodeDefinitions: AgentTool<
 > = {
   name: "list_node_definitions",
   title: "List node definitions",
-  description: "The node catalogue: every type that can be added, with its ports and parameter keys.",
+  // T1211: the cross-reference is HERE because this is the parts bin — the one result an
+  // agent reads when it is about to build something, and the moment it would otherwise
+  // start guessing which of 100+ types combine. §T1209's lesson: naming the other tool at
+  // the point of the question beats hoping the caller remembers it exists.
+  description:
+    "The node catalogue: every type that can be added, with its ports and parameter keys. It says what the PARTS are, not how they combine — call list_examples for shipped graphs that already wire them together.",
   kind: "read",
   inputSchema: listNodeDefinitionsInput,
   requires: {},

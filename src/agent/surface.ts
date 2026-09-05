@@ -17,6 +17,7 @@ import { diagnostic, result, type ResultExtras } from "./tool-support.ts";
 import { mutationTools } from "./tools/mutate.ts";
 import { pointsTools } from "./tools/points.ts";
 import { previewTools } from "./tools/preview.ts";
+import { libraryTools } from "./tools/library.ts";
 import { readTools } from "./tools/read.ts";
 import { workflowTools } from "./tools/workflow.ts";
 import type {
@@ -150,6 +151,7 @@ export interface AgentToolSurface {
 
 const ALL_TOOLS: readonly AgentTool[] = [
   ...readTools,
+  ...libraryTools,
   ...previewTools,
   ...pointsTools,
   ...mutationTools,

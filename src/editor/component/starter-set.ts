@@ -41,6 +41,20 @@ function fileNameOf(path: string): string {
   return parts[parts.length - 1] ?? path;
 }
 
+/**
+ * The shipped component files as BYTES (T1211), sorted by file name.
+ *
+ * `readStarterComponents` below parses them into definitions, which is what the registry
+ * wants; the agent library wants the file — its name, its demo graph and its size — and
+ * re-globbing the same directory a second time is the "two registrations of one directory"
+ * this module's own docblock refuses. One glob, two readings.
+ */
+export function starterComponentFiles(): readonly { readonly fileName: string; readonly text: string }[] {
+  return Object.keys(RAW_COMPONENTS)
+    .sort()
+    .map((path) => ({ fileName: fileNameOf(path), text: RAW_COMPONENTS[path] as string }));
+}
+
 /** Every definition the shipped files carry, sorted by file name so order never drifts. */
 export function readStarterComponents(): StarterSetInstall {
   const installed: GraphComponentDefinition[] = [];

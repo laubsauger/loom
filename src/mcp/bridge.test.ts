@@ -15,6 +15,7 @@ import { createAgentToolSurface } from "../agent/surface.ts";
 import { createBridgeClient } from "./bridge-client.ts";
 import { createMcpTransportRegistry } from "./connections.ts";
 import { createHeadlessMcpServer } from "./serve.ts";
+import { tagsOf } from "../examples/capabilities.ts";
 import {
   isPermittedOrigin,
   mintPairingCode,
@@ -1036,5 +1037,205 @@ describe("the parameter modes reach an MCP client (T1207)", () => {
     // started refusing it, so the one thing the description must not do is let it read as
     // a working choice.
     expect(described).toContain("`driven` is RETIRED and refused");
+  });
+});
+
+/**
+ * T1211 — THE POINTER, AND THE ASSEMBLIES.
+ *
+ * The owner's report was that an agent repeatedly could not get a Mouse node to do anything,
+ * and read that as "the mouse integration is not accessible to it". The cause, measured here
+ * end to end rather than argued: a HEADLESS session has no cursor AND no value graph, so a
+ * perfectly wired pointer drive produces nothing and the only thing that ever said so was an
+ * `info` diagnostic nobody had a reason to fetch.
+ *
+ * Both halves are asserted the way a pure-MCP client receives them — `instructions` at
+ * initialize and a real `tools/call` round trip — because that is the entire text such a
+ * client ever gets. Reading the constants back out of the modules that define them would
+ * prove the modules, not the reach.
+ */
+describe("a headless session says what it cannot supply (T1211, §V941)", () => {
+  it("names the pointer as UNAVAILABLE in the instructions, rather than publishing a working zero", async () => {
+    const harness = await bridgedServer();
+    const instructions = String((await harness.request("initialize", {}, 1)).result?.["instructions"]);
+
+    // The claim the owner asked for: the unavailable case is NAMED, before any attempt.
+    expect(instructions).toContain("NO LIVE INPUT");
+    expect(instructions).toContain("Mouse, LFO, Timer, Analyze, OSC and MIDI publish NOTHING");
+    expect(instructions).toContain("parameter.channels.unavailable");
+    // And that it is the PROCESS, not the graph — the misreading that cost the owner the day.
+    expect(instructions).toContain("not of your graph");
+    expect(instructions).toContain("attach a Loom tab");
+  });
+
+  it("names the failure on the parameter when a pointer drive is wired through the real tools", async () => {
+    const harness = await bridgedServer();
+    const call = async (name: string, args: Record<string, unknown>, id: number) => {
+      const response = await harness.request("tools/call", { name, arguments: args }, id);
+      const content = (response.result?.["content"] as Array<{ text: string }>)[0];
+      return JSON.parse(content?.text ?? "{}") as { status: string; data: Record<string, unknown> };
+    };
+
+    // Wired the way the owner's agent wired it, through the shipped tools and nothing else.
+    await call("add_node", { type: "mouse" }, 1);
+    const blur = await call("add_node", { type: "blur" }, 2);
+    const blurId = (blur.data["createdIds"] as Record<string, string>)["$node"];
+    const set = await call(
+      "set_parameters",
+      {
+        nodeId: blurId,
+        parameters: {
+          size: { mode: "expression", bindings: { expression: { kind: "expression", source: "op('mouse1').chan.x * 40" } } },
+        },
+      },
+      3,
+    );
+    expect(set.status).toBe("ok");
+
+    const diagnostics = (await call("get_diagnostics", {}, 4)).data["diagnostics"] as Array<Record<string, string>>;
+    const pointer = diagnostics.find((entry) => entry.code === "parameter.channels.unavailable");
+
+    /*
+     * THE ASSERTION IS THAT THE STATE IS NAMED, NOT THAT A VALUE IS ZERO. A zero is exactly
+     * what a working pointer at the origin looks like, so "size resolved to 0" would pass
+     * whether the pointer were dead or parked, and that ambiguity IS the bug. The diagnostic
+     * names the parameter, the expression and the reason.
+     */
+    expect(pointer).toBeDefined();
+    expect(pointer?.["nodeId"]).toBe(blurId);
+    expect(pointer?.["message"]).toContain("no channel resolver");
+    expect(pointer?.["suggestion"]).toContain("headless caller has none");
+  });
+});
+
+/**
+ * T1211 — THE ASSEMBLIES ARE REACHABLE, AND THEIR TAGS COME OUT OF THE FILES.
+ *
+ * Before this, the read surface could enumerate every node TYPE and reached no example and
+ * no component: a parts bin and no assemblies. The listing is asserted over a real round
+ * trip, and the tags are checked against the graph `get_example` returns for the SAME file —
+ * so a row claiming `points` for a file whose graph carries no point system reddens here.
+ * Neither test names an example or a count, so a 58th example does not have to be
+ * remembered into a gate (§T675).
+ */
+describe("the shipped corpus is reachable over MCP (T1211, T1162)", () => {
+  const callTool = async (harness: Harness, name: string, args: Record<string, unknown>, id: number) => {
+    const response = await harness.request("tools/call", { name, arguments: args }, id);
+    const content = (response.result?.["content"] as Array<{ text: string }>)[0];
+    return JSON.parse(content?.text ?? "{}") as { status: string; data: Record<string, unknown> };
+  };
+
+  it("says the catalogue exists, in the one text a stdio client always reads", async () => {
+    const harness = await bridgedServer();
+    const instructions = String((await harness.request("initialize", {}, 1)).result?.["instructions"]);
+    expect(instructions).toContain("`list_examples`");
+    expect(instructions).toContain("`get_example`");
+    expect(instructions).toContain("WORKED ANSWERS");
+    // No count in the prose: a number here is a claim that goes stale against a directory.
+    expect(instructions).not.toMatch(/\d+ shipped example/);
+  });
+
+  it("publishes both tools with their filters on tools/list", async () => {
+    const harness = await bridgedServer();
+    const tools = (await harness.request("tools/list", {}, 1)).result?.["tools"] as Array<Record<string, unknown>>;
+    const listing = tools.find((tool) => tool["name"] === "list_examples");
+    const schema = listing?.["inputSchema"] as { properties?: Record<string, unknown> } | undefined;
+    expect(Object.keys(schema?.properties ?? {}).sort()).toEqual(["kind", "tag"]);
+    expect(tools.some((tool) => tool["name"] === "get_example")).toBe(true);
+    // The parts bin points at the assemblies, at the moment an agent is reading the parts.
+    const catalogue = tools.find((tool) => tool["name"] === "list_node_definitions");
+    expect(String(catalogue?.["description"])).toContain("list_examples");
+  });
+
+  it("lists examples AND components, each with the tag vocabulary that filters them", async () => {
+    const harness = await bridgedServer();
+    const listing = await callTool(harness, "list_examples", {}, 1);
+    const entries = listing.data["entries"] as Array<Record<string, unknown>>;
+    const tags = listing.data["tags"] as Array<Record<string, string>>;
+
+    expect(listing.status).toBe("ok");
+    expect(entries.some((entry) => entry["kind"] === "example")).toBe(true);
+    expect(entries.some((entry) => entry["kind"] === "component")).toBe(true);
+    // Every tag a row can carry is DEFINED in the same result: a filter vocabulary whose
+    // meanings live somewhere else is a guessing game (§T1209's lesson, one surface over).
+    const defined = new Set(tags.map((tag) => tag.tag));
+    expect(defined.size).toBe(tags.length);
+    for (const entry of entries) {
+      expect(entry["tags"]).not.toEqual([]);
+      for (const tag of entry["tags"] as string[]) expect(defined.has(tag)).toBe(true);
+    }
+    for (const tag of tags) expect(tag["meaning"]?.length).toBeGreaterThan(20);
+  });
+
+  it("filters by tag, and the filter is a real cut of the same corpus", async () => {
+    const harness = await bridgedServer();
+    const all = await callTool(harness, "list_examples", {}, 1);
+    const total = (all.data["entries"] as unknown[]).length;
+    const tag = (all.data["tags"] as Array<{ tag: string }>)[0]?.tag ?? "points";
+
+    const filtered = await callTool(harness, "list_examples", { tag }, 2);
+    const kept = filtered.data["entries"] as Array<{ tags: string[] }>;
+    expect(kept.length).toBeGreaterThan(0);
+    expect(kept.length).toBeLessThan(total);
+    // What differs if the filter were cut: nothing would be removed, and the count would lie.
+    expect(filtered.data["filteredOut"]).toBe(total - kept.length);
+    for (const entry of kept) expect(entry.tags).toContain(tag);
+  });
+
+  it("opens each one as a graph whose nodes earn exactly the tags its row claimed", async () => {
+    const harness = await bridgedServer();
+    const entries = (await callTool(harness, "list_examples", {}, 1)).data["entries"] as Array<{
+      fileName: string;
+      tags: string[];
+      nodeCount: number;
+    }>;
+    expect(entries.length).toBeGreaterThan(0);
+
+    /*
+     * THE WHOLE CORPUS, not a sample. A sampled version of this test passed with a bogus
+     * `audio` tag injected into every row, because the one file it sampled happened to carry
+     * audio already — which is exactly the hole a spot-check leaves.
+     *
+     * THE CLAIM THAT COSTS SOMETHING: each row's tags are what THAT graph earns. The listing
+     * derives them from the shipped bytes; this re-derives them from the graph the OTHER tool
+     * returned through the real parse path (migrations included), so a row still describing
+     * the file an example USED TO BE fails here. Neither side names a file or a tag, so a 58th
+     * example is covered the day it lands (§T675).
+     */
+    let id = 2;
+    let edgeBearing = 0;
+    for (const entry of entries) {
+      const opened = await callTool(harness, "get_example", { fileName: entry.fileName }, (id += 1));
+      const nodes = opened.data["nodes"] as Array<{ type: string }>;
+      expect(opened.status).toBe("ok");
+      expect(nodes).toHaveLength(entry.nodeCount);
+      // Parameters are the bulk of a document and are omitted unless asked for.
+      expect(nodes.every((node) => !("parameters" in node))).toBe(true);
+      expect([...entry.tags].sort()).toEqual([...tagsOf(nodes.map((node) => node.type))].sort());
+      if ((opened.data["edges"] as unknown[]).length > 0) edgeBearing += 1;
+    }
+    // Wiring is the question these files answer; a corpus of unconnected nodes would not.
+    expect(edgeBearing).toBe(entries.length);
+  });
+
+  it("returns the authored parameter slots when asked, which is where a technique lives", async () => {
+    const harness = await bridgedServer();
+    const entries = (await callTool(harness, "list_examples", {}, 1)).data["entries"] as Array<{
+      fileName: string;
+      nodeCount: number;
+    }>;
+    const biggest = [...entries].sort((a, b) => b.nodeCount - a.nodeCount)[0];
+    if (biggest === undefined) throw new Error("the catalogue listed nothing");
+    const opened = await callTool(harness, "get_example", { fileName: biggest.fileName, includeParameters: true }, 2);
+    const nodes = opened.data["nodes"] as Array<Record<string, unknown>>;
+    expect(nodes.every((node) => "parameters" in node)).toBe(true);
+    // What differs if `includeParameters` were ignored: nothing here would carry a value.
+    expect(nodes.some((node) => Object.keys(node["parameters"] as object).length > 0)).toBe(true);
+  });
+
+  it("refuses a name it does not ship, with the tool that would have told it", async () => {
+    const harness = await bridgedServer();
+    const missing = await callTool(harness, "get_example", { fileName: "E999-Nope.loom.json" }, 1);
+    expect(missing.status).toBe("error");
   });
 });
