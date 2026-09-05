@@ -106,29 +106,29 @@ export const ALEMBIC_WGSL = `${SHARED_UNIFORMS_WGSL}
  * term of this shader is whatever gradient node you wire into it.
  */
 struct Params {
-  octaves: f32,       // how many times the fold refines — the fibre count, and the cost
-  baseFreq: f32,      // the first octave's frequency: big soft folds, or small busy ones
-  lacunarity: f32,    // frequency growth per octave — 2 is the doubling, 1.25 is a dense stack
-  warpGain: f32,      // how far each octave pushes the domain sideways
-  twist: f32,         // axis rotation per octave, radians — 2.0944 is the classic zxy swizzle
-  flow: f32,          // how fast the fold's phase moves with time
-  drift: f32,         // how much marching depth enters that phase — shears the fold into a wake
-  radius: f32,        // where the vessel's wall sits, in march units
-  flare: f32,         // opens the tube into a funnel with depth (negative flares it outward)
-  squash: f32,        // elliptical cross-section: 0 is a circular throat
-  wander: f32,        // how far the vessel's axis strays from the ray's
-  coil: f32,          // how fast that stray winds around, per unit of depth
-  steps: f32,         // samples per ray — the integral's resolution
-  looseness: f32,     // how much of the estimate one step takes; larger is softer and dearer
-  minStep: f32,       // the floor under a step — this is the brightness of the wall's core
-  travel: f32,        // how fast the eye flies down the vessel
-  lens: f32,          // field of view: larger is wider
-  exposure: f32,      // gain into the tanh — the only thing between the sum and white
-  depthFade: f32,     // how fast far samples give up; the sense of a receding throat
-  paletteAxis: vec3f, // the direction hue runs in through the volume — the ramp's own axis
-  paletteScale: f32,  // how many times the ramp repeats along that axis
-  paletteBias: f32,   // slides the whole gradient along it
-  grain: f32,         // per-pixel dither on the first step — kills the banding, holds still
+  octaves: f32,       // @default 6  how many times the fold refines — the fibre count, and the cost
+  baseFreq: f32,      // @default 3  the first octave's frequency: big soft folds, or small busy ones
+  lacunarity: f32,    // @default 2  frequency growth per octave — 2 is the doubling, 1.25 is a dense stack
+  warpGain: f32,      // @default 1.6  how far each octave pushes the domain sideways
+  twist: f32,         // @default 2.0944  axis rotation per octave, radians — 2.0944 is the classic zxy swizzle
+  flow: f32,          // @default 0.6  how fast the fold's phase moves with time
+  drift: f32,         // @default 1  how much marching depth enters that phase — shears the fold into a wake
+  radius: f32,        // @default 2  where the vessel's wall sits, in march units
+  flare: f32,         // @default -0.15  opens the tube into a funnel with depth (negative flares it outward)
+  squash: f32,        // @default 0.15  elliptical cross-section: 0 is a circular throat
+  wander: f32,        // @default 0.4  how far the vessel's axis strays from the ray's
+  coil: f32,          // @default 0.6  how fast that stray winds around, per unit of depth
+  steps: f32,         // @default 72  samples per ray — the integral's resolution
+  looseness: f32,     // @default 3  how much of the estimate one step takes; larger is softer and dearer
+  minStep: f32,       // @default 0.001  the floor under a step — this is the brightness of the wall's core
+  travel: f32,        // @default 0.5  how fast the eye flies down the vessel
+  lens: f32,          // @default 1  field of view: larger is wider
+  exposure: f32,      // @default 0.02  gain into the tanh — the only thing between the sum and white
+  depthFade: f32,     // @default 0.3  how fast far samples give up; the sense of a receding throat
+  paletteAxis: vec3f, // @default [0.34, 0.86, 0.38]  the direction hue runs in through the volume — the ramp's own axis
+  paletteScale: f32,  // @default 0.5  how many times the ramp repeats along that axis
+  paletteBias: f32,   // @default 0.4  slides the whole gradient along it
+  grain: f32,         // @default 1  per-pixel dither on the first step — kills the banding, holds still
 };
 
 @group(0) @binding(0) var inputSampler: sampler;

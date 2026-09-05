@@ -94,11 +94,11 @@ const SKIN_ROWS = 96;
  * bottom rims are free edges and are meant to be.
  */
 const SKIN_TUBE_KERNEL = `struct Params {
-  offsetX: f32,   // where this copy of the tube stands, in world x
-  radius: f32,    // rest radius, before the relief
-  height: f32,    // rim to rim
-  relief: f32,    // how far the sampled height pushes the skin out
-  turn: f32,      // bearing of column 0, degrees — the seam faces the camera at 0
+  offsetX: f32,   // @default -1.42  where this copy of the tube stands, in world x
+  radius: f32,    // @default 0.5  rest radius, before the relief
+  height: f32,    // @default 2.35  rim to rim
+  relief: f32,    // @default 0.62  how far the sampled height pushes the skin out
+  turn: f32,      // @default 0  bearing of column 0, degrees — the seam faces the camera at 0
 };
 
 fn process(p: Point, ctx: PointCtx) -> Point {

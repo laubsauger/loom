@@ -43,9 +43,9 @@ import { SHARED_UNIFORMS_WGSL } from "../../runtime/backend/shared-uniforms.ts";
  *  11/12 hips, 13/14 knees, 15/16 ankles. */
 const DANCER_WGSL = `${SHARED_UNIFORMS_WGSL}
 struct Params {
-  stride: f32,
-  bob: f32,
-  tempo: f32,
+  stride: f32,  // @default 0.09
+  bob: f32,  // @default 0.012
+  tempo: f32,  // @default 0.55
 }
 
 @group(0) @binding(0) var inputSampler: sampler;
@@ -119,8 +119,8 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
 /** The skeleton, drawn from the SAME texture either source produces. */
 const BONES_WGSL = `${SHARED_UNIFORMS_WGSL}
 struct Params {
-  width: f32,
-  gain: f32,
+  width: f32,  // @default 0.0045
+  gain: f32,  // @default 0.7
 }
 
 @group(0) @binding(0) var inputSampler: sampler;

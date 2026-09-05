@@ -46,38 +46,38 @@ import { SHARED_UNIFORMS_WGSL } from "../../runtime/backend/shared-uniforms.ts";
  */
 const TEMPLATE = `${SHARED_UNIFORMS_WGSL}
 struct Params {
-  layers: f32,        // how many nested shells around the core, 0 to 4
-  divisions: f32,     // cells on the outermost shell — few and large, so adjacent facets differ in angle; inner shells carry more
-  frameWidth: f32,    // width of the organic frame bars, as a share of a cell
-  blocked: f32,       // share of the INNERMOST shell's faces that are plates at rest; each shell outward has fewer, the outer none — a skeleton you see through
-  strutDepth: f32,    // how far the outer shell's struts stand proud of its faces — the relief that makes the skeleton solid
-  shieldOuter: f32,   // the outer shell's shielding, 0 open to 1 shut — driven by drops in the music
-  shieldInner: f32,   // the inner shells' shielding, on a slower lag, so the shutters cascade inward
-  shellGap: f32,      // radial spacing between shells, as a share of the outer radius — driven by the high-mids
-  swell: f32,         // the outer shell's radius — driven by the music's level on the slowest lag, so the ball breathes
-  ior: f32,           // index of refraction of the faces — 1 is inert, 1.5 is glass
-  dispersion: f32,    // chromatic split of the reflected core glow per channel
-  facet: f32,         // per-cell tilt of each glass face — the disco glitter
-  glassColor: vec4f,  // the glass's own colour: its head-on reflectance, its scatter, and its transmission tint
-  coreGain: f32,      // the core's radiance — driven by the music's level
-  coreColor: vec4f,   // the core's hot colour
-  edgeColor: vec4f,   // the core's cool rim colour
-  laserGain: f32,     // brightness of the radial filaments — driven by the kick
-  laserCount: f32,    // how many filaments cut through the shells
-  haze: f32,          // density of the light-catching medium between and around the shells
-  spin: f32,          // shell counter-rotation rate
-  morph: f32,         // how far the cells drift and reshape over time — 0 holds the lattice still
-  wobble: f32,        // how far the outer shell breathes out of round, as a share of its radius — the silhouette evolves
-  turbulence: f32,    // how hard the core churns
-  frameColor: vec4f,  // the frame's own colour under the core's light
-  shellHueStep: f32,  // degrees of hue each shell inward sits from the shared angle — colour deepening toward the core
-  orbit: f32,         // camera orbit rate
-  distance: f32,      // camera distance at the wide station
-  stations: f32,      // how far the camera travels: 0 holds the wide shot, 1 dives through the core and out the far side
-  travel: f32,        // seconds for one tour of the three stations
-  exposure: f32,      // master gain on the whole picture before the bloom
-  hueDrift: f32,      // degrees per minute the whole lit palette swings — core, glass and beams together, the sky stays
-  hueSwing: f32,      // how far the swing reaches either side of the base colours, in degrees — bounded so the arc stays in the family
+  layers: f32,        // @default 3  how many nested shells around the core, 0 to 4
+  divisions: f32,     // @default 3  cells on the outermost shell — few and large, so adjacent facets differ in angle; inner shells carry more
+  frameWidth: f32,    // @default 0.07  width of the organic frame bars, as a share of a cell
+  blocked: f32,       // @default 0.1  share of the INNERMOST shell's faces that are plates at rest; each shell outward has fewer, the outer none — a skeleton you see through
+  strutDepth: f32,    // @default 0.04  how far the outer shell's struts stand proud of its faces — the relief that makes the skeleton solid
+  shieldOuter: f32,   // @default 0  the outer shell's shielding, 0 open to 1 shut — driven by drops in the music
+  shieldInner: f32,   // @default 0  the inner shells' shielding, on a slower lag, so the shutters cascade inward
+  shellGap: f32,      // @default 0.26  radial spacing between shells, as a share of the outer radius — driven by the high-mids
+  swell: f32,         // @default 1  the outer shell's radius — driven by the music's level on the slowest lag, so the ball breathes
+  ior: f32,           // @default 1.45  index of refraction of the faces — 1 is inert, 1.5 is glass
+  dispersion: f32,    // @default 0.35  chromatic split of the reflected core glow per channel
+  facet: f32,         // @default 0.7  per-cell tilt of each glass face — the disco glitter
+  glassColor: vec4f,  // @default [0.25, 0.75, 1, 1]  the glass's own colour: its head-on reflectance, its scatter, and its transmission tint
+  coreGain: f32,      // @default 1  the core's radiance — driven by the music's level
+  coreColor: vec4f,   // @default [1, 0.5, 0.12, 1]  the core's hot colour
+  edgeColor: vec4f,   // @default [0.15, 0.55, 1, 1]  the core's cool rim colour
+  laserGain: f32,     // @default 0.6  brightness of the radial filaments — driven by the kick
+  laserCount: f32,    // @default 3  how many filaments cut through the shells
+  haze: f32,          // @default 0.35  density of the light-catching medium between and around the shells
+  spin: f32,          // @default 1  shell counter-rotation rate
+  morph: f32,         // @default 0.6  how far the cells drift and reshape over time — 0 holds the lattice still
+  wobble: f32,        // @default 0.035  how far the outer shell breathes out of round, as a share of its radius — the silhouette evolves
+  turbulence: f32,    // @default 0.8  how hard the core churns
+  frameColor: vec4f,  // @default [0.35, 0.3, 0.28, 1]  the frame's own colour under the core's light
+  shellHueStep: f32,  // @default 25  degrees of hue each shell inward sits from the shared angle — colour deepening toward the core
+  orbit: f32,         // @default 1  camera orbit rate
+  distance: f32,      // @default 3.2  camera distance at the wide station
+  stations: f32,      // @default 1  how far the camera travels: 0 holds the wide shot, 1 dives through the core and out the far side
+  travel: f32,        // @default 96  seconds for one tour of the three stations
+  exposure: f32,      // @default 1.9  master gain on the whole picture before the bloom
+  hueDrift: f32,      // @default 150  degrees per minute the whole lit palette swings — core, glass and beams together, the sky stays
+  hueSwing: f32,      // @default 55  how far the swing reaches either side of the base colours, in degrees — bounded so the arc stays in the family
 };
 
 @group(0) @binding(0) var inputSampler: sampler;

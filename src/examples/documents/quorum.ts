@@ -265,12 +265,12 @@ const QUORUM_ATTRIBUTES = JSON.stringify([
  *             than taking one number for the whole layer.
  */
 const QUORUM_KERNEL = `struct Params {
-  speed: f32,      // World units a second an agent walks. Everything else is a turn; this is the only length it travels.
-  senseDist: f32,  // How far ahead the three sensors reach — AND the radius the drawn web uses. One number (§V349).
-  senseAngle: f32, // Half-angle between the outer two sensors and the middle one.
-  turn: f32,       // Radians a second an agent turns toward the better sensor. A FIXED turn, not a gain.
-  envoy: f32,      // Weight on the OTHER armies' trail. Negative keeps each to its own network; toward zero the fronts interpenetrate.
-  wander: f32,     // Random turn, radians a second — the disorder that stops the network consolidating and stopping.
+  speed: f32,      // @default 0.4  World units a second an agent walks. Everything else is a turn; this is the only length it travels.
+  senseDist: f32,  // @default 0.24  How far ahead the three sensors reach — AND the radius the drawn web uses. One number (§V349).
+  senseAngle: f32, // @default 0.42  Half-angle between the outer two sensors and the middle one.
+  turn: f32,       // @default 25  Radians a second an agent turns toward the better sensor. A FIXED turn, not a gain.
+  envoy: f32,      // @default -0.3  Weight on the OTHER armies' trail. Negative keeps each to its own network; toward zero the fronts interpenetrate.
+  wander: f32,     // @default 2  Random turn, radians a second — the disorder that stops the network consolidating and stopping.
 }
 
 /* ⚑ ONE SPACE, AND IT IS ISOTROPIC END TO END — WHICH IS WHY THE TRAIL GRID IS SQUARE.

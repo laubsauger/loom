@@ -26,14 +26,14 @@ import { SHARED_UNIFORMS_WGSL } from "../../runtime/backend/shared-uniforms.ts";
  */
 export const LANTERN_WGSL = `${SHARED_UNIFORMS_WGSL}
 struct Params {
-  amount: f32,          // the breath — master light gain, driven by a slow LFO
-  lightColor1: vec4f,   // the three lanterns' colours — RGBA pickers, reflected by name
-  lightColor2: vec4f,
-  lightColor3: vec4f,
-  orbitSpeed: f32,      // how fast the lanterns sweep
-  glowFalloff: f32,     // distance falloff — higher is tighter, moodier
-  shadowSoftness: f32,  // the penumbra constant — higher is a harder edge
-  floorLevel: f32,      // how much the lit floor shows (contrast of the dark room)
+  amount: f32,          // @default 0.8  the breath — master light gain, driven by a slow LFO
+  lightColor1: vec4f,   // @default [1, 0.62, 0.24, 1]  the three lanterns' colours — RGBA pickers, reflected by name
+  lightColor2: vec4f,  // @default [0.24, 0.7, 1, 1]
+  lightColor3: vec4f,  // @default [0.95, 0.32, 0.78, 1]
+  orbitSpeed: f32,      // @default 1  how fast the lanterns sweep
+  glowFalloff: f32,     // @default 12  distance falloff — higher is tighter, moodier
+  shadowSoftness: f32,  // @default 11  the penumbra constant — higher is a harder edge
+  floorLevel: f32,      // @default 1  how much the lit floor shows (contrast of the dark room)
 };
 
 @group(0) @binding(0) var inputSampler: sampler;

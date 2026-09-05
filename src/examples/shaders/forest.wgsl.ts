@@ -137,45 +137,45 @@ import { SHARED_UNIFORMS_WGSL } from "../../runtime/backend/shared-uniforms.ts";
  */
 export const FOREST_WGSL = `${SHARED_UNIFORMS_WGSL}
 struct Params {
-  walkSpeed: f32,     // metres a second the eye travels forward, forever — the whole motion budget
-  sway: f32,          // how far the walk wanders side to side, metres
-  bob: f32,           // rise and fall of the step, metres
-  eyeHeight: f32,     // the eye above the ground, metres
-  pitch: f32,         // degrees the view tilts up — raises the horizon's trees over the mist floor
-  lens: f32,          // focal length: higher is a longer lens, so the forest stacks up and compresses
-  spacing: f32,       // metres between tree cells — also the ceiling on how wide a tree may grow
-  density: f32,       // share of cells that carry a tree at all, 0 to 1
-  clumping: f32,      // how far that share varies from place to place — 0 is an even field, 1 is thickets and clearings
-  relief: f32,        // metres the ground rolls under the wood — trunk feet and the eye ride the same slow swell
-  snags: f32,         // share of the stems that are BROKEN: a blunt, branchless column a fifth to a half the height
-  treeHeight: f32,    // mean trunk height, metres
-  heightVary: f32,    // how much heights differ tree to tree, 0 is a plantation
-  trunkWidth: f32,    // trunk radius at the base, metres
-  lean: f32,          // how far a trunk leans off vertical by its top — the crooked, creepy reading
-  branches: f32,      // branches per tree, 0 to 6 — this IS the crown; there is no foliage (see the docblock)
-  branchSpread: f32,  // branch length as a share of the cell; it SATURATES at the cell (and squeezes out the tree's own jitter first, so a stand goes gridded before it goes wide) — widen spacing to grow them
-  branchRise: f32,    // negative droops the branches, positive reaches them up
-  gnarl: f32,         // irregularity of branch angle and length — 0 is a diagram, 1 is a thicket
-  barkColor: vec4f,   // the wood under the moon
-  groundColor: vec4f, // the forest floor under the mist
-  fog: f32,           // uniform haze density — the aerial perspective, and the cost lever: more fog is FEWER cells
-  mist: f32,          // extra density pooling on the ground, over and above the fog
-  fogHeight: f32,     // metres over which that pooling thins with height
-  fogColor: vec4f,    // what everything converges to at distance
-  shafts: f32,        // strength of the light shafts between the trunks; 0 skips the volumetric march entirely
-  skyColor: vec4f,    // the sky at the zenith, above the haze
-  cloud: f32,         // how much the cloud veil on the input dims the sky and the moon
-  moonSize: f32,      // angular radius of the disc, degrees — a real moon is 0.25, a hero moon is bigger
-  moonHeight: f32,    // the moon's elevation above the horizon, degrees
-  moonAzimuth: f32,   // degrees right of the walk direction — where the composition puts it
-  moonColor: vec4f,   // the moon and everything it lights
-  moonGain: f32,      // how hard the moon lights the scene
-  ambient: f32,       // sky fill on the bark, so a back-lit trunk is not a silhouette cut out of black
-  quiet: f32,         // how far the headline zone dissolves into mist — the hero unit's readable patch
-  quietAt: vec2f,     // where that zone sits, in screen fractions from the top left
-  quietSize: f32,     // its radius, in screen fractions
-  vignette: f32,      // corner falloff
-  exposure: f32,      // master gain before the display transform
+  walkSpeed: f32,     // @default 0.85  metres a second the eye travels forward, forever — the whole motion budget
+  sway: f32,          // @default 0.5  how far the walk wanders side to side, metres
+  bob: f32,           // @default 0.045  rise and fall of the step, metres
+  eyeHeight: f32,     // @default 1.7  the eye above the ground, metres
+  pitch: f32,         // @default 7  degrees the view tilts up — raises the horizon's trees over the mist floor
+  lens: f32,          // @default 1.45  focal length: higher is a longer lens, so the forest stacks up and compresses
+  spacing: f32,       // @default 5.2  metres between tree cells — also the ceiling on how wide a tree may grow
+  density: f32,       // @default 1  share of cells that carry a tree at all, 0 to 1
+  clumping: f32,      // @default 0.85  how far that share varies from place to place — 0 is an even field, 1 is thickets and clearings
+  relief: f32,        // @default 1.4  metres the ground rolls under the wood — trunk feet and the eye ride the same slow swell
+  snags: f32,         // @default 0.28  share of the stems that are BROKEN: a blunt, branchless column a fifth to a half the height
+  treeHeight: f32,    // @default 14  mean trunk height, metres
+  heightVary: f32,    // @default 0.55  how much heights differ tree to tree, 0 is a plantation
+  trunkWidth: f32,    // @default 0.26  trunk radius at the base, metres
+  lean: f32,          // @default 0.8  how far a trunk leans off vertical by its top — the crooked, creepy reading
+  branches: f32,      // @default 5  branches per tree, 0 to 6 — this IS the crown; there is no foliage (see the docblock)
+  branchSpread: f32,  // @default 0.4  branch length as a share of the cell; it SATURATES at the cell (and squeezes out the tree's own jitter first, so a stand goes gridded before it goes wide) — widen spacing to grow them
+  branchRise: f32,    // @default 0.15  negative droops the branches, positive reaches them up
+  gnarl: f32,         // @default 0.65  irregularity of branch angle and length — 0 is a diagram, 1 is a thicket
+  barkColor: vec4f,   // @default [0.13, 0.125, 0.12, 1]  the wood under the moon
+  groundColor: vec4f, // @default [0.11, 0.12, 0.11, 1]  the forest floor under the mist
+  fog: f32,           // @default 0.03  uniform haze density — the aerial perspective, and the cost lever: more fog is FEWER cells
+  mist: f32,          // @default 0.17  extra density pooling on the ground, over and above the fog
+  fogHeight: f32,     // @default 3.4  metres over which that pooling thins with height
+  fogColor: vec4f,    // @default [0.038, 0.048, 0.068, 1]  what everything converges to at distance
+  shafts: f32,        // @default 0.85  strength of the light shafts between the trunks; 0 skips the volumetric march entirely
+  skyColor: vec4f,    // @default [0.01, 0.016, 0.032, 1]  the sky at the zenith, above the haze
+  cloud: f32,         // @default 0.55  how much the cloud veil on the input dims the sky and the moon
+  moonSize: f32,      // @default 3.2  angular radius of the disc, degrees — a real moon is 0.25, a hero moon is bigger
+  moonHeight: f32,    // @default 24  the moon's elevation above the horizon, degrees
+  moonAzimuth: f32,   // @default 14  degrees right of the walk direction — where the composition puts it
+  moonColor: vec4f,   // @default [0.74, 0.82, 0.98, 1]  the moon and everything it lights
+  moonGain: f32,      // @default 1  how hard the moon lights the scene
+  ambient: f32,       // @default 0.5  sky fill on the bark, so a back-lit trunk is not a silhouette cut out of black
+  quiet: f32,         // @default 0.7  how far the headline zone dissolves into mist — the hero unit's readable patch
+  quietAt: vec2f,     // @default [0.3, 0.58]  where that zone sits, in screen fractions from the top left
+  quietSize: f32,     // @default 0.4  its radius, in screen fractions
+  vignette: f32,      // @default 0.55  corner falloff
+  exposure: f32,      // @default 0.85  master gain before the display transform
 };
 
 @group(0) @binding(0) var inputSampler: sampler;
@@ -958,8 +958,8 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
  */
 export const FOREST_DOF_WGSL = `${SHARED_UNIFORMS_WGSL}
 struct Params {
-  focus: f32,   // metres: at this distance and beyond the picture is sharp; nearer than it softens
-  blur: f32,    // the widest circle of confusion, as a fraction of the frame width; 0 passes the frame straight through
+  focus: f32,   // @default 8.5  metres: at this distance and beyond the picture is sharp; nearer than it softens
+  blur: f32,    // @default 0.016  the widest circle of confusion, as a fraction of the frame width; 0 passes the frame straight through
 };
 
 @group(0) @binding(0) var inputSampler: sampler;

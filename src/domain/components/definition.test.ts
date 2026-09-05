@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { createTestRegistry } from "../../nodes/registry/test-nodes.ts";
-import { componentNodeDefinition, pruneComponentDefinition, validateComponentDefinition } from "./definition.ts";
+import { componentNodeDefinition, internalParameterOf, pruneComponentDefinition, validateComponentDefinition } from "./definition.ts";
+import { defaultPublishedValues } from "./published-parameter.ts";
+import { createNodeRegistry } from "../../nodes/registry/registry.ts";
+import { customWgslNode } from "../../nodes/definitions/custom-wgsl.ts";
 import { buildComponentFromSelection } from "./save-selection.ts";
 import { componentSourcePath, effectiveInternalOverrides, internalParameterValues } from "./flatten.ts";
 import {
@@ -279,5 +282,55 @@ describe("publishing a compound component (T1008/§T1019b)", () => {
   it("still reports a component the compound does not have", () => {
     const codes = validateComponentDefinition(withComponentTarget("color.q"), nodes).map((d) => d.code);
     expect(codes).toContain("component.parameter.missingTarget");
+  });
+});
+
+/**
+ * T1184 — THE THIRD SURFACE. The owner named `customWgsl`, point kernels AND components,
+ * and the component half turns out to need no code of its own: a published parameter is a
+ * COPY of the internal definition (`component-page.tsx` says so, and §V80 says re-authoring
+ * it is the normal case), and `internalParameterOf` resolves that definition through
+ * `effectiveParameterSchema` — the reflected schema, not the static one (§T903).
+ *
+ * So the claim worth gating is not "components have defaults" but that the reflected
+ * DEFAULT survives the trip: publish `octaves` off a shader that declares `@default 6`, and
+ * the component's own parameter page — and every fresh instance of it — starts at 6 rather
+ * than at the 0 the type would have invented. Without T1184 this test is the same test and
+ * the number is 0, which is exactly the defect one level up.
+ */
+describe("T1184 — publishing a reflected knob carries the shader's declared default", () => {
+  const SHADER = `struct Params {
+  octaves: f32,  // @default 6  how many times the fold refines
+};
+@group(0) @binding(3) var<uniform> params: Params;
+@fragment fn fs() -> @location(0) vec4f { return vec4f(params.octaves); }`;
+
+  const registry = createNodeRegistry([customWgslNode]).view();
+  const graph = graphOf([
+    node("shader1", "customWgsl", { source: SHADER, octaves: 4 }, { position: { x: 0, y: 0 } }),
+  ]);
+
+  it("resolves the internal definition with the DECLARED default, not the type's zero", () => {
+    const internal = internalParameterOf(graph, { nodeId: "shader1", key: "octaves" }, registry);
+    expect(internal).toMatchObject({ type: "number", default: 6 });
+  });
+
+  it("gives a fresh instance of the component that same default", () => {
+    const internal = internalParameterOf(graph, { nodeId: "shader1", key: "octaves" }, registry);
+    if (internal === undefined) throw new Error("the reflected knob must resolve to publish at all");
+    const definition = {
+      ...bloomComponent("alembic", 1),
+      graph,
+      inputs: [],
+      outputs: [],
+      // The publish button hands the internal definition through verbatim; this is that copy.
+      parameters: [{ key: "octaves", definition: internal, targets: [{ nodeId: "shader1", key: "octaves" }] }],
+    };
+    // The SHADER's 6, never the document's 4 — reset is a claim about the type, and a
+    // component's published default is the type-level claim its users will reset to.
+    expect(defaultPublishedValues(definition)).toEqual({ octaves: 6 });
+    expect(validateComponentDefinition(definition, registry).map((d) => d.code)).not.toContain(
+      "component.parameter.missingTarget",
+    );
   });
 });

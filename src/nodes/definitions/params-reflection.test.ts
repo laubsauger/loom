@@ -6,7 +6,7 @@ import type { GraphNode } from "../../domain/types/graph.ts";
 import { SHARED_UNIFORMS_WGSL } from "../../runtime/backend/shared-uniforms.ts";
 import { CUSTOM_WGSL_UNIFORM_BINDING } from "../shaders/custom-wgsl-default.wgsl.ts";
 import { customWgslNode } from "./custom-wgsl.ts";
-import { declaresUniformBlock, extractParamsStruct, reflectParamsStruct } from "./params-reflection.ts";
+import { declaresUniformBlock, extractParamsStruct, reflectParamsStruct, reflectedUniforms } from "./params-reflection.ts";
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════════
@@ -221,5 +221,112 @@ describe("T1172 — a memoised schema still resolves a MOVING value (§B181)", (
     const late = resolveParameters(animated, customWgslNode, { frame: frameAt(120) }).get("gain");
     expect(late?.value).toBe(4);
     expect(late?.driven).toBe(true);
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ * T1184 — `// @default <literal>`, AND WHAT THE CONSUMER READS BACK
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ *
+ * The defect the owner named: *"auto-derived fields should reset to whatever is actually
+ * the default instead of just defaulting to 0 or 1"*. Reset writes
+ * `defaultParameterValue(definition)` and nothing else, so the ONLY thing worth asserting
+ * here is what lands on `definition.default` — the value the reset command will read. A
+ * test that asserted "the annotation parsed" would pass against a shaper that then dropped
+ * it, which is the bug wearing an annotation.
+ */
+describe("T1184 — a shader declares its own defaults", () => {
+  /*
+   * ONE FIELD A LINE, unlike `sourceWith` above — a trailing `//` runs to the end of its
+   * PHYSICAL line, so a struct written on one line would put the closing brace inside the
+   * comment. Written the way anybody writes a struct, which is also the only way an
+   * annotation on a note can be read at all.
+   */
+  const shader = (fields: string): string => sourceWith(`\n  ${fields}\n`);
+  const definitionOf = (fields: string, key: string) =>
+    effectiveParameterSchema(customWgslNode, { [SHADER_SOURCE_PARAMETER]: shader(fields) })[key];
+
+  it("resets a scalar to the DECLARED number, not the type's zero", () => {
+    expect(definitionOf("octaves: f32, // @default 6  how many times the fold refines", "octaves"))
+      .toMatchObject({ type: "number", default: 6, description: "how many times the fold refines" });
+  });
+
+  it("keeps the help text working when a field declares nothing", () => {
+    expect(definitionOf("octaves: f32, // how many times the fold refines", "octaves"))
+      .toMatchObject({ default: 0, description: "how many times the fold refines" });
+  });
+
+  it("takes a declaration with no sentence after it", () => {
+    expect(definitionOf("flare: f32, // @default -0.15", "flare")).toMatchObject({ default: -0.15 });
+  });
+
+  it("reads a bracketed literal into a vector, component for component", () => {
+    expect(definitionOf("paletteAxis: vec3f, // @default [0.34, 0.86, 0.38]  the hue axis", "paletteAxis"))
+      .toMatchObject({ type: "vector", size: 3, default: [0.34, 0.86, 0.38], description: "the hue axis" });
+  });
+
+  it("splats a bare number across a vector, as `vec3f(x)` does in WGSL", () => {
+    expect(definitionOf("wind: vec3f, // @default 0.5", "wind")).toMatchObject({ default: [0.5, 0.5, 0.5] });
+  });
+
+  it("fills alpha 1 for a vec3f COLOUR declared with three numbers", () => {
+    expect(definitionOf("glassColor: vec3f, // @default [0.25, 0.75, 1]", "glassColor"))
+      .toMatchObject({ type: "color", default: [0.25, 0.75, 1, 1] });
+  });
+
+  it("takes all four for a vec4f colour", () => {
+    expect(definitionOf("coreColor: vec4f, // @default [1, 0.5, 0.12, 0.8]", "coreColor"))
+      .toMatchObject({ type: "color", default: [1, 0.5, 0.12, 0.8] });
+  });
+
+  /*
+   * `amount` is the one field whose default lives in code (its 0..1 slider cannot be spelled
+   * in a comment, and §V147 pins E43/E45 to it). A source that declares another number must
+   * still win — E46's lantern ships `@default 0.8` — or the mechanism has a hole exactly where
+   * the oldest shaders are.
+   */
+  it("lets a source override the `amount` special case, slider and all", () => {
+    expect(definitionOf("amount: f32, // @default 0.8", "amount"))
+      .toMatchObject({ default: 0.8, min: 0, max: 1, range: "bounded" });
+    expect(definitionOf("amount: f32,", "amount")).toMatchObject({ default: 1 });
+  });
+
+  /*
+   * ⚠ A MALFORMED ANNOTATION MUST NOT BE SWALLOWED. The type default coming back is the OLD
+   * bug; what makes this survivable is that the raw text stays in the description, so the
+   * author sees their own typo in the control's help instead of a silent 0. Refusing the
+   * compile was rejected: the editor recompiles per keystroke, so it would black the node out
+   * while `// @default 6` is being typed.
+   */
+  it("leaves a literal it cannot read visible in the help rather than swallowing it", () => {
+    expect(definitionOf("octaves: f32, // @default six  refines the fold", "octaves"))
+      .toMatchObject({ default: 0, description: "@default six  refines the fold" });
+  });
+
+  it("refuses a list of the wrong length rather than padding one the author never wrote", () => {
+    expect(definitionOf("offset: vec3f, // @default [1, 0]", "offset"))
+      .toMatchObject({ default: [0, 0, 0], description: "@default [1, 0]" });
+  });
+
+  /*
+   * Anchored at the START of the note (§T1053's reader hands over the whole trailing comment):
+   * a sentence that MENTIONS the word must not have a chunk cut out of its middle.
+   */
+  it("does not read a `@default` from the middle of somebody's prose", () => {
+    expect(definitionOf("gain: f32, // 0 is the @default 6 people expect", "gain"))
+      .toMatchObject({ default: 0, description: "0 is the @default 6 people expect" });
+  });
+
+  /*
+   * The uniform mirror has to agree with the control, or an unset knob binds one number while
+   * the inspector shows another — the §V288 shape, one layer down.
+   */
+  it("binds the declared default as the uniform when nothing is stored", () => {
+    const source = shader("octaves: f32, // @default 6\n  tint: vec4f, // @default [0.2, 0.4, 0.6, 1]");
+    expect(reflectedUniforms(reflectParamsStruct(source), {})).toEqual({
+      octaves: 6,
+      tint: [0.2, 0.4, 0.6, 1],
+    });
   });
 });

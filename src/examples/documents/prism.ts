@@ -301,8 +301,8 @@ fn shell(u: f32, a: f32) -> vec3f {
 }
 
 struct Params {
-  tiltYaw: f32,
-  tiltNod: f32,
+  tiltYaw: f32,  // @default -0.1
+  tiltNod: f32,  // @default -0.05
 }
 
 fn process(p: Point, ctx: PointCtx) -> Point {
@@ -334,8 +334,8 @@ fn process(p: Point, ctx: PointCtx) -> Point {
  */
 const BEAM_ENV_WGSL = `${SHARED_UNIFORMS_WGSL}
 struct Params {
-  lampPhi: f32,
-  gain: f32,
+  lampPhi: f32,  // @default 3.2289
+  gain: f32,  // @default 2.2
 };
 
 @group(0) @binding(0) var inputSampler: sampler;
@@ -383,11 +383,11 @@ export const PRISM_DUST_KERNEL = `${PRISM_TRACE_KERNEL_HEAD}
 const RI: f32 = ${PRISM_RC} / 2.0;
 
 struct Params {
-  tiltYaw: f32,
-  tiltNod: f32,
+  tiltYaw: f32,  // @default -0.1
+  tiltNod: f32,  // @default -0.05
   /* T940c — the owner's knob: ONE number scales every mote's drift. 1 is the shipped
      pace (a mote crosses the frame in ~20 minutes); 10 is a draught; 0 freezes the air. */
-  driftSpeed: f32,
+  driftSpeed: f32,  // @default 1
 }
 
 fn scatterTo(p: vec3f, a: vec3f, b: vec3f, sigma: f32) -> f32 {

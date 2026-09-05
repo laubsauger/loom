@@ -46,6 +46,100 @@ export interface ReflectedField {
    * §V852 applies: this becomes the parameter's description, so it is ONE SENTENCE.
    */
   readonly note?: string;
+  /**
+   * T1184 — THE AUTHOR'S OWN DEFAULT, written `@default <literal>` at the head of that same
+   * trailing comment. `undefined` means the source declared none.
+   *
+   * WHY IT EXISTS. "Reset to default" on a reflected knob used to hand back a default nobody
+   * authored: `paramForField` synthesised one from the WGSL TYPE alone — `f32 → 0`, `vec4f →
+   * [1,1,1,1]` — because the shader had NOWHERE TO SAY OTHERWISE. Every ordinary node
+   * definition carries a real authored default in its param schema; only the reflected surface
+   * (a `customWgsl`'s `source`, a point kernel's `kernel`, and every component parameter
+   * published off one of them) had to invent one. Reset therefore meant "make it 0", which is
+   * not what the word means, and on a 39-knob shader like E57's it meant "black frame".
+   *
+   * WHY IT RIDES THE NOTE AND IS NOT A SECOND ANNOTATION BLOCK. The trailing `//` is already
+   * the one place a shader author writes about a field (§T1053), it already survives into the
+   * hoisted declaration, and it already reaches the inspector. A `@default` at its head is
+   * read by the same scan, on the same line, in the same pass — and what follows it is still
+   * the help text, so documenting a knob and defaulting it are one gesture rather than two
+   * that can disagree.
+   *
+   * WHY IT IS DECLARED RATHER THAN REMEMBERED. The owner ruled on the fork: reset returns the
+   * SHADER's default, never the value this document happens to store. So resetting `octaves`
+   * in E59 Vault gives `alembic.wgsl.ts`'s 6, the same in all five files of that family — and
+   * a node dropped in fresh, which has no stored value to return to, gets the same 6.
+   *
+   * ⚠ A MALFORMED ANNOTATION IS NOT A DECLARATION, AND STAYS VISIBLE. `@default six`, or a
+   * three-number literal on a `vec2f`, leaves this `undefined` AND leaves the raw text in
+   * `note` — so it shows up in the control's own help rather than being swallowed into a
+   * silent type default. Refusing the compile instead was rejected: the shader editor
+   * recompiles on every keystroke, so it would black out the node while `// @default 6` is
+   * being typed. `src/tests/guardrails/declared-defaults.test.ts` is what makes silence
+   * impossible on the SHIPPED shaders, where it would otherwise be discovered by a user.
+   */
+  readonly declaredDefault?: number | readonly number[];
+}
+
+/**
+ * `@default <literal>` split off the head of a note (T1184), or nothing.
+ *
+ * The literal is a bare number (`6`, `-0.15`, `2.0944`, `1e-3`) or a bracketed list
+ * (`[0.34, 0.86, 0.38]`). Both spellings are how the value is already written in the document
+ * source it is being lifted out of, which is the point: an author moving a magic number out of
+ * `documents/*.ts` and into the struct types the same characters.
+ *
+ * Anchored at the START of the note on purpose. Unanchored, a field whose prose happens to
+ * mention `@default` — a note explaining what the default means, say — would have a chunk cut
+ * out of the middle of its own sentence. The declaration comes first and the sentence follows,
+ * which is also how it reads.
+ */
+const DECLARED_DEFAULT = /^@default\s+(\[[^\]]*\]|[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)(?:\s+|$)/;
+
+/** How many numbers a WGSL type holds. Anything else reflects to no control at all. */
+function componentsOf(wgsl: string): number {
+  return wgsl === "vec2f" ? 2 : wgsl === "vec3f" ? 3 : wgsl === "vec4f" ? 4 : 1;
+}
+
+/**
+ * ⚠ THE ARITY CHECK BELONGS HERE, WITH THE STRIP, and that is not an implementation detail:
+ * whether the annotation is CONSUMED and whether it is USED have to be one decision. Split
+ * across two functions, a `// @default [1, 0]` on a `vec3f` was cut out of the note by the
+ * parser and then refused by the shaper, so it vanished from the help text AND from the
+ * default — a typo that erased its own evidence, which is the exact silence this whole task
+ * is about. So a literal that cannot mean anything for the declared type is NOT a
+ * declaration: nothing is stripped, and the author reads their own `@default [1, 0]` in the
+ * control's help.
+ *
+ * A BARE NUMBER on a vector splats, exactly as `vec3f(0.5)` does in WGSL — the common "all
+ * components the same" case needs no brackets. A list must match the WGSL type's own
+ * component count; a wrong length is refused rather than padded or truncated, because a
+ * guessed third component is a value the author never wrote.
+ */
+function splitDeclaredDefault(
+  note: string,
+  wgsl: string,
+): { declaredDefault?: number | readonly number[]; note?: string } {
+  const match = DECLARED_DEFAULT.exec(note);
+  const literal = match?.[1];
+  if (match === null || literal === undefined) return { note };
+  const components = componentsOf(wgsl);
+  const rest = note.slice(match[0].length).trim();
+  const kept = rest === "" ? {} : { note: rest };
+  if (!literal.startsWith("[")) {
+    const value = Number(literal);
+    if (!Number.isFinite(value)) return { note };
+    return {
+      declaredDefault: components === 1 ? value : new Array<number>(components).fill(value),
+      ...kept,
+    };
+  }
+  const inner = literal.slice(1, -1).trim();
+  const parts = inner === "" ? [] : inner.split(",").map((part) => Number(part.trim()));
+  if (parts.length !== components || parts.some((value) => !Number.isFinite(value))) return { note };
+  const only = parts[0];
+  if (components === 1) return only === undefined ? { note } : { declaredDefault: only, ...kept };
+  return { declaredDefault: parts, ...kept };
 }
 
 /**
@@ -195,7 +289,9 @@ function scanParamsStruct(source: string): readonly ReflectedField[] {
       // masked split puts a preceding block comment inside this segment, and a note is by
       // definition something written after the `name: type` it is about.
       const note = noteAt(source, visible, bodyStart + offset + field[0].length, bodyStart + body.length);
-      fields.push({ name: field[1], wgsl: field[2], ...(note === undefined ? {} : { note }) });
+      // T1184: the note carries BOTH the sentence and the author's default, so it is split
+      // here — one scan, one line, one reading of what the author wrote about this field.
+      fields.push({ name: field[1], wgsl: field[2], ...(note === undefined ? {} : splitDeclaredDefault(note, field[2])) });
     }
     // Every delimiter this splits on is one character wide, so the running offset stays exact.
     offset += line.length + 1;
@@ -259,6 +355,15 @@ export function extractParamsStruct(source: string): { declaration: string; rest
 
 const extractedBySource = new Map<string, { readonly declaration: string; readonly rest: string }>();
 
+/**
+ * A colour default as the FOUR-TUPLE the parameter type is (T1184). `vector` hands back a plain
+ * array; a `ColorParameter["default"]` is `[r, g, b, a]`, and the components are already known
+ * to be four — this is the shape, not a re-check.
+ */
+function colourDefault(rgba: readonly number[]): [number, number, number, number] {
+  return [rgba[0] ?? 1, rgba[1] ?? 1, rgba[2] ?? 1, rgba[3] ?? 1];
+}
+
 /** A field whose NAME reads as colour intent gets an RGBA picker; every other vector stays one. */
 function looksLikeColour(name: string): boolean {
   return /colou?r|tint|rgb|albedo|emissi/i.test(name);
@@ -282,31 +387,45 @@ export const REFLECTABLE_WGSL_TYPES = ["f32", "i32", "u32", "vec2f", "vec3f", "v
 export function paramForField(field: ReflectedField, description?: string): ParameterDefinition | undefined {
   const label = labelOf(field.name);
   /*
+   * T1184: the author's `@default` if the source declared one, the TYPE's otherwise — the
+   * fallbacks below are exactly what every reflected knob used to get unconditionally, and
+   * what "Reset to default" then handed back. `defaultParameterValue` reads `definition.default`
+   * and nothing else, so declaring it here is the whole of the fix: reset, a fresh drop, a
+   * published component parameter (`internalParameterOf` resolves through this schema) and the
+   * uniform mirror below all move together, because they were never separate answers.
+   */
+  const declared = field.declaredDefault;
+  const scalar = (fallback: number): number => (typeof declared === "number" ? declared : fallback);
+  const vector = (fallback: readonly number[]): number[] =>
+    Array.isArray(declared) ? [...(declared as readonly number[])] : [...fallback];
+  /*
    * T1053: the AUTHOR'S sentence wins over the caller's generic one. The caller's text says
    * where the value lands and how it invalidates — true for every field, and therefore worth
    * nothing to somebody who wants to know what this particular knob does.
    */
   const help = field.note ?? description ?? `Reaches the kernel as \`params.${field.name}\` (${field.wgsl}).`;
-  // `amount` keeps its historical 0..1 slider so E43/E45 read exactly as they always have.
+  // `amount` keeps its historical 0..1 slider so E43/E45 read exactly as they always have. Its
+  // 1 is the DEFAULT half of that, and T1184 lets a source override it the same way as any
+  // other field — the slider is what §V147 pins, not the number under it.
   if (field.name === "amount" && field.wgsl === "f32") {
-    return { type: "number", label: "Amount", default: 1, min: 0, max: 1, range: "bounded", description: "Reaches the kernel as `params.amount`. Whatever your shader makes of it." };
+    return { type: "number", label: "Amount", default: scalar(1), min: 0, max: 1, range: "bounded", description: "Reaches the kernel as `params.amount`. Whatever your shader makes of it." };
   }
   switch (field.wgsl) {
     case "f32":
-      return { type: "number", label, default: 0, description: help };
+      return { type: "number", label, default: scalar(0), description: help };
     case "i32":
     case "u32":
-      return { type: "number", label, default: 0, step: 1, description: help };
+      return { type: "number", label, default: scalar(0), step: 1, description: help };
     case "vec2f":
-      return { type: "vector", size: 2, label, default: [0, 0], description: help };
+      return { type: "vector", size: 2, label, default: vector([0, 0]), description: help };
     case "vec3f":
       return looksLikeColour(field.name)
-        ? { type: "color", label, default: [1, 1, 1, 1], space: "display", description: help }
-        : { type: "vector", size: 3, label, default: [0, 0, 0], description: help };
+        ? { type: "color", label, default: colourDefault(vector([1, 1, 1, 1])), space: "display", description: help }
+        : { type: "vector", size: 3, label, default: vector([0, 0, 0]), description: help };
     case "vec4f":
       return looksLikeColour(field.name)
-        ? { type: "color", label, default: [1, 1, 1, 1], space: "display", description: help }
-        : { type: "vector", size: 4, label, default: [0, 0, 0, 0], description: help };
+        ? { type: "color", label, default: colourDefault(vector([1, 1, 1, 1])), space: "display", description: help }
+        : { type: "vector", size: 4, label, default: vector([0, 0, 0, 0]), description: help };
     default:
       return undefined;
   }
@@ -392,12 +511,19 @@ export function reflectedUniforms(
     if (param.type === "number") {
       uniforms[key] = readNumber(parameters, field.name, typeof param.default === "number" ? param.default : 0);
     } else if (param.type === "color") {
-      const rgba = readColor(parameters, field.name, [1, 1, 1, 1]);
+      // T1184: the fallback is the DEFINITION's default, which is the author's `@default` when
+      // the source declared one. It used to be a bare `[1,1,1,1]` here and a `[1,1,1,1]` there,
+      // two spellings of the same guess — so an unset colour bound white however the shader
+      // described itself, and the control above it showed something else the moment a default
+      // was declared. One answer, read off the schema this same function built.
+      const rgba = readColor(parameters, field.name, param.default);
       // vec3f colour takes rgb; vec4f takes rgba — matched to the declared type.
       uniforms[key] = field.wgsl === "vec3f" ? [rgba[0] ?? 0, rgba[1] ?? 0, rgba[2] ?? 0] : rgba;
     } else if (param.type === "vector") {
-      const size = field.wgsl === "vec2f" ? 2 : field.wgsl === "vec3f" ? 3 : 4;
-      uniforms[key] = readVector(parameters, field.name, new Array<number>(size).fill(0));
+      // Same reason as the colour above, and the size is not re-derived here: `vector`
+      // built this default at the WGSL type's own component count, so the schema's default
+      // IS the right shape by construction rather than by a second agreeing calculation.
+      uniforms[key] = readVector(parameters, field.name, param.default);
     }
   }
   return uniforms;

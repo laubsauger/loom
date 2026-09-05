@@ -411,12 +411,22 @@ describe("T900 — migration: parse the legacy slots forever, emit them never (�
  * green across this change), never by these numbers.
  */
 const FRAME_ZERO_DIGESTS: Readonly<Record<string, string>> = {
+  /* ⚑ T1184 RE-STAMPED FOUR ROWS, AND THE MOVE IS PROVABLY TEXT AND NOT PICTURE.
+     `struct Params` fields now declare their own default in the trailing comment
+     (`octaves: f32, // @default 6`), so every kernel that gained an annotation gained
+     BYTES — and this digest hashes the resolved passes, whose kernel text is those bytes.
+     The check that says it is only a comment: strip every WGSL `//` comment and trailing
+     space from HEAD's thirteen regenerated `.loom.json` files and from the new ones, and
+     the two are byte-identical — nothing but comments moved, and WGSL comments cannot
+     reach a pixel. E13/E34/E54/E63 are the four with kernels among those thirteen. The
+     pictures are held where they always were: `quorum-claims`, `skin-claims`, `prism.gpu`
+     and `prism-trace.gpu` all green across this change. */
   "E9-Ember.loom.json": "a2450efd16233b11",
   // T915 (static aim: value1 0.5 → 1) and T918 (the wall kernel) both changed E13's
   // resolved kernel state deliberately, then T920 rebuilt the optics kernel as a
   // marched BEAM (SDF bevel boundary, 9x61x3 slots) and T915b handed the aim to the
   // pointer exclusively (y angle / x walk, no authority blend); re-pinned at each.
-  "E13-Prism.loom.json": "bc12d57b3409041f",
+  "E13-Prism.loom.json": "656c57dc06b65a3d",
   "E16-Murmuration.loom.json": "2b02e7a2f6ae8dc8",
   "E20-Gooeyball.loom.json": "ae38e4e6b4c4a6be",
   "E25-Stage.loom.json": "39f2763f1195dd59",
@@ -432,7 +442,7 @@ const FRAME_ZERO_DIGESTS: Readonly<Record<string, string>> = {
      carries the exact f32 the literal it replaced was, checked pass by pass against the
      HEAD file, and E34's other four kernels (unfold1, raise1, pool1, ricochet1) are
      byte-identical because nothing in them was artistic direction. */
-  "E34-Lidar.loom.json": "2cd2ebeb02adecc6",
+  "E34-Lidar.loom.json": "4ef176c1ad25ab03",
   "E35-Nova-Torus.loom.json": "738e4e77f2cf31d4",
   "E36-Facade.loom.json": "019eaf2401006054",
   "E37-Sirocco.loom.json": "2087d8858acc22c2",
@@ -468,11 +478,11 @@ const FRAME_ZERO_DIGESTS: Readonly<Record<string, string>> = {
      rewritten. The picture is asserted by the ten claims in `quorum-claims.gpu.test.ts` —
      rewritten in the same commit — and by a re-measured §V885 look row (motion 0.02956 →
      0.05087, whole minute 0.03706 → 0.06468, both moving the same way, §V913). */
-  "E54-Quorum.loom.json": "97543aa1ddcffb2f",
+  "E54-Quorum.loom.json": "1abe2f8d3023ef7f",
   /* T1169: E63 Skin's kernels are the SKIN chain — one pointset rolled into a tube three
      times, differing only in where each stands. The digest covers all three, which is why
      one row stands for what reads on screen as three separate claims. */
-  "E63-Skin.loom.json": "069d88fac4e94e56",
+  "E63-Skin.loom.json": "7c422382185bd253",
 };
 
 const POINT_KERNEL_TYPES = new Set(["pointKernel", "pointKernelAdvanced"]);

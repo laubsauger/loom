@@ -330,8 +330,8 @@ export function prismTraceKernel(ri: string): string {
 const RI: f32 = ${ri};
 
 struct Params {
-  tiltYaw: f32,
-  tiltNod: f32,
+  tiltYaw: f32,  // @default -0.1
+  tiltNod: f32,  // @default -0.05
 }
 
 fn process(p: Point, ctx: PointCtx) -> Point {

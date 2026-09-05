@@ -270,9 +270,9 @@ const LIDAR_AIM_ATTRIBUTES = JSON.stringify([
 
    see the ray node's comment. */
 const LIDAR_AIM_KERNEL = `struct Params {
-  sweepRate: f32,  // How fast the ring of rays turns, in radians a second.
-  tiltMin: f32,    // The shallowest tilt below horizontal the ring reaches, in radians.
-  tiltSpan: f32,   // How much steeper the ring breathes from there, capped by the cast's Max Distance.
+  sweepRate: f32,  // @default 0.22  How fast the ring of rays turns, in radians a second.
+  tiltMin: f32,    // @default 0.6  The shallowest tilt below horizontal the ring reaches, in radians.
+  tiltSpan: f32,   // @default 0.62  How much steeper the ring breathes from there, capped by the cast's Max Distance.
 }
 fn process(p: Point, ctx: PointCtx) -> Point {
   var q = p;
@@ -327,8 +327,8 @@ const LIDAR_SIGHT_ATTRIBUTES = JSON.stringify([
 
    rework does spend is attributable entirely to the BRIGHTNESS, measured separately. */
 const LIDAR_SIGHT_KERNEL = `struct Params {
-  beamBase: f32,  // How bright a beam is when its return sits at the far edge of range.
-  beamGain: f32,  // How much brighter a beam gets as its return comes closer.
+  beamBase: f32,  // @default 0.35  How bright a beam is when its return sits at the far edge of range.
+  beamGain: f32,  // @default 0.9  How much brighter a beam gets as its return comes closer.
 }
 fn process(p: Point, ctx: PointCtx) -> Point {
   var q = p;
@@ -382,11 +382,11 @@ const LIDAR_MARK_ATTRIBUTES = JSON.stringify([
 
    dark end instead of through khaki — a fade-out, not a hue rotation. */
 const LIDAR_MARK_KERNEL = `struct Params {
-  returnBase: f32,  // How bright a return is when it sits at the far edge of range.
-  returnGain: f32,  // How much brighter a return gets as it comes closer to the mast.
-  lostLevel: f32,   // How brightly the out-of-range markers hang in the air.
-  holdRate: f32,    // How fast a marker slides to a new reading: 0 freezes it, 1 snaps to it.
-  fadeRate: f32,    // How fast a marker crosses between the return colour and the out-of-range one.
+  returnBase: f32,  // @default 0.5  How bright a return is when it sits at the far edge of range.
+  returnGain: f32,  // @default 1.6  How much brighter a return gets as it comes closer to the mast.
+  lostLevel: f32,   // @default 0.32  How brightly the out-of-range markers hang in the air.
+  holdRate: f32,    // @default 0.22  How fast a marker slides to a new reading: 0 freezes it, 1 snaps to it.
+  fadeRate: f32,    // @default 0.1  How fast a marker crosses between the return colour and the out-of-range one.
 }
 fn process(p: Point, ctx: PointCtx) -> Point {
   var q = p;
@@ -467,8 +467,8 @@ const LIDAR_MARK2_ATTRIBUTES = JSON.stringify([
 
    from y = −80 and hits instantly below the field, so its hit y still betrays it. */
 const LIDAR_MARK2_KERNEL = `struct Params {
-  echoBase: f32,  // How bright the faintest echo is, so far scatter stays scatter and does not read as confetti.
-  echoGain: f32,  // How much brighter an echo gets as its round trip shortens.
+  echoBase: f32,  // @default 0.15  How bright the faintest echo is, so far scatter stays scatter and does not read as confetti.
+  echoGain: f32,  // @default 1.35  How much brighter an echo gets as its round trip shortens.
 }
 fn process(p: Point, ctx: PointCtx) -> Point {
   var q = p;
