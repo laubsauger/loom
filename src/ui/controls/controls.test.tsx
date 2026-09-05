@@ -647,6 +647,61 @@ describe("asset row layout (T543)", () => {
 });
 
 /**
+ * T1223 — THE FILE DIALOG'S OWN FILTER, which is where the owner's report starts:
+ * *"If I click Choose File I can only select movie files… I can't even select an image as
+ * of now."* The `accept` attribute is the wall, so it is asserted here rather than
+ * inferred from the constant — a test of `PICTURE_FILE_ACCEPT` alone would have passed
+ * with the map never reading it.
+ */
+describe("the picture slot takes a video OR a still (T1223)", () => {
+  const acceptFor = (kind: "picture" | "video" | "image" | "audio"): string => {
+    const { container } = render(
+      <ParameterControl
+        parameterKey="file"
+        definition={{ type: "asset", label: "File", kind }}
+        value={undefined}
+        onChange={vi.fn()}
+      />,
+    );
+    const input = container.querySelector("input[type=file]");
+    expect(input).not.toBeNull();
+    return input?.getAttribute("accept") ?? "";
+  };
+
+  it("offers still images as well as video", () => {
+    const accept = acceptFor("picture");
+    expect(accept).toContain("video/*");
+    expect(accept).toContain("image/png");
+    expect(accept).toContain("image/jpeg");
+  });
+
+  /**
+   * ⚠ The map is SHARED. Widening the wrong entry would let a JPEG into an audio slot and
+   * an MP4 into a texture slot, so the three existing kinds are pinned exactly.
+   */
+  it("leaves the audio, video and image slots exactly as they were", () => {
+    expect(acceptFor("audio")).toBe("audio/*");
+    expect(acceptFor("video")).toBe("video/*");
+    expect(acceptFor("image")).toBe("image/*");
+  });
+
+  /** §V403 — the tooltip is what someone about to choose a file actually reads. */
+  it("says what it takes, and that EXR is not it", () => {
+    render(
+      <ParameterControl
+        parameterKey="file"
+        definition={{ type: "asset", label: "File", kind: "picture" }}
+        value={undefined}
+        onChange={vi.fn()}
+      />,
+    );
+    const title = screen.getByRole("group", { name: "File" }).getAttribute("title") ?? "";
+    expect(title).toContain("PNG");
+    expect(title).toContain("EXR");
+  });
+});
+
+/**
  * T652 — clicking a numeric field and clicking away must not change its value.
  *
  * T648 fixed the MANIFESTS — every starter component's published default now declares a

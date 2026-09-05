@@ -98,7 +98,8 @@ export const parameterDefinitionSchema = z.discriminatedUnion("type", [
   z.object({
     ...parameterBase,
     type: z.literal("asset"),
-    kind: z.enum(["image", "video", "audio", "gltf", "binary"]),
+    // T1223: `picture` = a video or a still image, the Movie File In slot.
+    kind: z.enum(["image", "video", "picture", "audio", "gltf", "binary"]),
   }),
   z.object({
     ...parameterBase,

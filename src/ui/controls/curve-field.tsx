@@ -1,4 +1,5 @@
 import { useRef } from "react";
+import { PICTURE_FILE_ACCEPT, PICTURE_FILE_TAKES } from "@domain/media/picture-file.ts";
 import { cx } from "../cx.ts";
 import styles from "./controls.module.css";
 
@@ -68,10 +69,30 @@ export interface AssetFieldProps {
   onPick?: (url: string, fileName: string) => void;
 }
 
+/**
+ * What the file dialog offers, keyed by the parameter's declared KIND.
+ *
+ * T1223 — the owner's first symptom lived here: *"If I click Choose File I can only select
+ * movie files… I can't even select an image as of now."* `movieFileIn` declared kind
+ * `video`, so the dialog offered `video/*` and nothing else, while the node's own
+ * description claimed it played stills. `picture` is the "either" kind (§domain/media/
+ * picture-file.ts owns the list); `audio`, `video` and `image` are untouched, deliberately
+ * — widening one of those would let a JPEG into an audio slot.
+ */
 const ASSET_ACCEPT: Readonly<Record<string, string>> = {
   audio: "audio/*",
   video: "video/*",
   image: "image/*",
+  picture: PICTURE_FILE_ACCEPT,
+};
+
+/**
+ * What a slot takes, in words, for the tooltip — the one place someone CHOOSING a file
+ * reads before they open the dialog. `picture` says it because "no picture bound" alone
+ * does not tell you an EXR will be refused (T1223, §V403).
+ */
+const ASSET_TAKES: Readonly<Record<string, string>> = {
+  picture: PICTURE_FILE_TAKES,
 };
 
 /** A bound object URL's display name: the picked file's name survives in the fragment. */
@@ -92,6 +113,7 @@ function assetDisplayName(value: string): string {
  */
 export function AssetField({ label, value, kind, onPick }: AssetFieldProps) {
   const input = useRef<HTMLInputElement | null>(null);
+  const takes = ASSET_TAKES[kind];
   return (
     <div
       className={cx(styles.asset, "nodrag")}
@@ -106,7 +128,7 @@ export function AssetField({ label, value, kind, onPick }: AssetFieldProps) {
       */
       title={
         value === null || value === ""
-          ? `No ${kind} bound. A picked file lasts for this session only.`
+          ? `No ${kind} bound. A picked file lasts for this session only.${takes === undefined ? "" : ` ${takes}`}`
           : `${assetDisplayName(value)} — this session only`
       }
     >

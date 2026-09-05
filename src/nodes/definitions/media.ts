@@ -107,7 +107,12 @@ export const movieFileInNode: NodeDefinition = {
   inputs: [],
   outputs: [{ id: "out", label: "Out", type: RGBA_TEXTURE }],
   parameters: {
-    file: { type: "asset", label: "File", kind: "video", group: "File" },
+    /*
+     * T1223 — ONE SLOT THAT TAKES EITHER, which is how TD's Movie File In has always
+     * worked. It was `kind: "video"`, so the file dialog offered `video/*` and a still
+     * could not even be SELECTED while this node's description claimed it played one.
+     */
+    file: { type: "asset", label: "File", kind: "picture", group: "File" },
     ...MEDIA_TRANSPORT_PARAMETERS,
   },
   resolutionPolicy: { kind: "project" },

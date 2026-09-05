@@ -167,9 +167,20 @@ export interface CodeParameter extends ParameterBase {
   default: string;
 }
 
+/**
+ * A file slot. `kind` is what the slot TAKES, which is what the picker's filter and the
+ * loader both read.
+ *
+ * T1223 — `picture` is "a video OR a still image", one slot, the way TouchDesigner's Movie
+ * File In has always worked: the user picks a file and the node works out what it is. It
+ * is a KIND rather than a per-node widening of the `video` filter because the vocabulary
+ * is shared — widening `video` would let a JPEG into any other video slot, and widening
+ * `image` would let an MP4 into a texture slot. `PICTURE_FILE_ACCEPT` in
+ * `domain/media/picture-file.ts` is the one list of what it offers.
+ */
 export interface AssetParameter extends ParameterBase {
   type: "asset";
-  kind: "image" | "video" | "audio" | "gltf" | "binary";
+  kind: "image" | "video" | "picture" | "audio" | "gltf" | "binary";
 }
 
 export interface CurveParameter extends ParameterBase {
