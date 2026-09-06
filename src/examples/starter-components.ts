@@ -318,6 +318,115 @@ export const audioLevelHost: ProjectDocument = {
 };
 
 /**
+ * AudioAnalysis' host (T1230): the analysis a source's channels need before they drive
+ * anything, as ONE processing component — any audio source in, two conditioned bags out.
+ *
+ * Two lanes, because the record carries two KINDS of channel and one chain cannot serve
+ * both (§V952: "channel choice is a measurement"):
+ *
+ *  - `levels` is §V952's measured shape, `signal → lag → NORMALIZE → lag`: an envelope
+ *    follower, the sliding-window percentile that adapts any level or band to 0..1, and a
+ *    SECOND follower after the rank. The second one is not optional and lengthening the
+ *    first cannot replace it — a rank re-orders every frame, so its output steps by
+ *    whatever share of the window a frame's neighbours moved (E57 measured 20.9% of span
+ *    in one frame; 45–68% here on the pattern), and only a follower AFTER it bounds the
+ *    step: to `1 − exp(−Δt / settle)` of the span, analytically. Read `level`, the bands
+ *    and `centroid` here.
+ *  - `hits` is for the COUNTS — kickCount, snareCount, hatCount, onsetCount, beatCount —
+ *    which are 0 on almost every frame. A percentile cannot spread a tie: through the
+ *    levels lane a count RESTS at its mid-rank, 0.53 between kicks on the pattern, which
+ *    is no pulse at all. So the counts get a 1 ms attack / 250 ms release follower
+ *    instead: 1 on the hit's frame by construction (the count IS 1), a decaying tail after
+ *    it, no normaliser needed. Read the counts here.
+ *
+ * `audio-analysis-claims.test.ts` measures both findings on the shipped host, and fails
+ * when either lane loses its structure. The source stays OUTSIDE — this is the analysis,
+ * not an analyser with a pattern inside like AudioLevel, so a mic, a file and a pattern
+ * all take the same node — and the two probes stay outside because the cut value edges
+ * are what synthesize the input and the two output boundaries (T822). The demonstration:
+ * a plate whose brightness breathes with the normalised low band and whose contrast pops
+ * on every kick.
+ *
+ * What is NOT here: the detectors. §T821 ruled they live where the bins live, so the
+ * knobs that tune them sit on the source node's Analysis group and travel to the engine
+ * (T1230's other half); the component conditions what the source already counted.
+ */
+const AUDIO_ANALYSIS_TUNING = {
+  /** The first follower: the envelope on the levels lane. E24 used 0.12, E35 0.09. */
+  envelope: 0.08,
+  /** `valueNormalize`'s own default: 16 s of history behind the percentile. */
+  window: 16,
+  /** The second follower, after the rank: 1 − exp(−1/60/0.15) = 10.5% of span per frame at most. */
+  settle: 0.15,
+  /** The hits lane: 1 ms attack × ratio 250 = a 250 ms tail; 0.5 at 173 ms. */
+  hitAttack: 0.001,
+  hitDecay: 250,
+} as const;
+
+export const audioAnalysisHost: ProjectDocument = {
+  schemaVersion: SCHEMA_VERSION,
+  projectId: "component-audio-analysis",
+  name: "AudioAnalysis",
+  settings: AUDIO_LEVEL_SETTINGS,
+  assets: [],
+  createdAt: STARTER_COMPONENT_TIMESTAMP,
+  updatedAt: STARTER_COMPONENT_TIMESTAMP,
+  graph: {
+    revision: 1,
+    nodes: {
+      // Outside: the source. Any audio node takes this seat once the component is instanced.
+      beat: { id: "beat", type: "audioPattern", definitionVersion: 1, position: { x: -720, y: 240 }, parameters: { bpm: 112, amount: 1 } },
+      // Inside, the levels lane: §V952's chain.
+      smooth: { id: "smooth", type: "valueLag", definitionVersion: 1, position: { x: -480, y: 120 }, parameters: { lag: AUDIO_ANALYSIS_TUNING.envelope, releaseRatio: 1 } },
+      rank: { id: "rank", type: "valueNormalize", definitionVersion: 1, position: { x: -240, y: 120 }, parameters: { window: AUDIO_ANALYSIS_TUNING.window } },
+      settle: { id: "settle", type: "valueLag", definitionVersion: 1, position: { x: 0, y: 120 }, parameters: { lag: AUDIO_ANALYSIS_TUNING.settle, releaseRatio: 1 } },
+      // Inside, the hits lane: the decaying pulse.
+      decay: { id: "decay", type: "valueLag", definitionVersion: 1, position: { x: -480, y: 360 }, parameters: { lag: AUDIO_ANALYSIS_TUNING.hitAttack, releaseRatio: AUDIO_ANALYSIS_TUNING.hitDecay } },
+      // Outside: the two probes that read the lanes and drive the demo.
+      probe: { id: "probe", type: "valueLimit", definitionVersion: 1, position: { x: 240, y: 120 }, parameters: { minimum: 0, maximum: 1 }, label: "probe" },
+      hits: { id: "hits", type: "valueLimit", definitionVersion: 1, position: { x: 240, y: 360 }, parameters: { minimum: 0, maximum: 1 }, label: "hits" },
+      // The demonstration picture: brightness breathes with the low band, contrast pops on the kick.
+      swatch: {
+        id: "swatch",
+        type: "checker",
+        definitionVersion: 1,
+        position: { x: -240, y: -120 },
+        parameters: { size: [6, 4], offset: [0, 0], color1: [0.05, 0.07, 0.12, 1], color2: [0.85, 0.8, 0.62, 1] },
+      },
+      glow: {
+        id: "glow",
+        type: "level",
+        definitionVersion: 1,
+        position: { x: 480, y: -120 },
+        parameters: {
+          blacklevel: 0,
+          whitelevel: 1,
+          gamma1: 1,
+          contrast: drivenBy("hits:kickCount", 1),
+          brightness: drivenBy("probe:low", 1),
+          opacity: 1,
+        },
+      },
+      out: { id: "out", type: "output", definitionVersion: 1, position: { x: 720, y: -120 }, parameters: {} },
+    },
+    edges: {
+      // The boundary-defining edges. Both cut edges leave `beat`, so they synthesize ONE
+      // componentInValue (T607's fan-in rule); the first by id names it (`portNames`).
+      "e-beat-decay": { id: "e-beat-decay", source: { nodeId: "beat", portId: "out" }, target: { nodeId: "decay", portId: "in" } },
+      "e-beat-smooth": { id: "e-beat-smooth", source: { nodeId: "beat", portId: "out" }, target: { nodeId: "smooth", portId: "in" } },
+      "e-smooth-rank": { id: "e-smooth-rank", source: { nodeId: "smooth", portId: "out" }, target: { nodeId: "rank", portId: "in" } },
+      "e-rank-settle": { id: "e-rank-settle", source: { nodeId: "rank", portId: "out" }, target: { nodeId: "settle", portId: "in" } },
+      // Source inside, target outside: one componentOutValue each.
+      "e-settle-probe": { id: "e-settle-probe", source: { nodeId: "settle", portId: "out" }, target: { nodeId: "probe", portId: "in" } },
+      "e-decay-hits": { id: "e-decay-hits", source: { nodeId: "decay", portId: "out" }, target: { nodeId: "hits", portId: "in" } },
+      "e-swatch-glow": { id: "e-swatch-glow", source: { nodeId: "swatch", portId: "out" }, target: { nodeId: "glow", portId: "input" } },
+      "e-glow-out": { id: "e-glow-out", source: { nodeId: "glow", portId: "out" }, target: { nodeId: "out", portId: "input" } },
+    },
+    groups: {},
+  },
+};
+
+/**
  * DepthPoints' host (T958): a depth map from ANYWHERE — here a hand-authored radial
  * gradient, which is the point (the component takes a depth TEXTURE, not "the depth
  * node", so our ML `depth`, a depth camera, a rendered depth buffer and this gradient
@@ -1519,6 +1628,82 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
             "How slowly the peak-follower forgets a loud hit (its release ratio). 100 is a 500 ms tail; lower makes the normaliser chase level faster and sag harder between hits. T823 widened the travel to reach it.",
         },
         targets: [{ nodeId: "peak", key: "releaseRatio" }],
+      },
+    ],
+  },
+  {
+    componentId: "audioAnalysis",
+    name: "AudioAnalysis",
+    description:
+      "Any audio source in, two conditioned bags out. levels: every channel enveloped, ranked to 0..1 over a sliding window and settled — read level, the bands and centroid here. hits: every channel as a 1 ms attack / decaying release pulse — read kickCount, snareCount, hatCount, onsetCount and beatCount here; through levels a count rests at its mid-rank, not at 0.",
+    host: audioAnalysisHost,
+    // The source stays OUTSIDE (any audio node takes the seat); the two probes stay outside
+    // so the cut value edges synthesize one input and two output boundaries (T822).
+    selection: ["smooth", "rank", "settle", "decay"],
+    portNames: { "decay.in": "audio", "smooth.in": "audio", "settle.out": "levels", "decay.out": "hits" },
+    publish: [
+      {
+        key: "envelope",
+        definition: {
+          type: "number",
+          label: "Envelope",
+          default: AUDIO_ANALYSIS_TUNING.envelope,
+          min: 0,
+          max: 1,
+          step: 0.005,
+          range: "floor",
+          unit: "seconds",
+          description:
+            "The follower BEFORE the rank, on the levels lane: how long a channel takes to follow the source. Longer smooths what the rank sees; it cannot calm the rank's own steps — Settle does that.",
+        },
+        targets: [{ nodeId: "smooth", key: "lag" }],
+      },
+      {
+        key: "window",
+        definition: {
+          type: "number",
+          label: "Window",
+          default: AUDIO_ANALYSIS_TUNING.window,
+          min: 0.25,
+          max: 60,
+          step: 0.25,
+          range: "bounded",
+          unit: "seconds",
+          description:
+            "How much history the levels lane ranks against. Short adapts within a phrase and forgets the drop; long holds the whole track's shape and takes that long to re-centre after a change.",
+        },
+        targets: [{ nodeId: "rank", key: "window" }],
+      },
+      {
+        key: "settle",
+        definition: {
+          type: "number",
+          label: "Settle",
+          default: AUDIO_ANALYSIS_TUNING.settle,
+          min: 0,
+          max: 2,
+          step: 0.005,
+          range: "floor",
+          unit: "seconds",
+          description:
+            "The follower AFTER the rank (§V952). A rank re-orders every frame and can step most of its span in one; this bounds the step of levels to 1 − exp(−frame / Settle) of it — 10% at 0.15 s, 2.7% at 0.6 s. 0 hands you the raw rank.",
+        },
+        targets: [{ nodeId: "settle", key: "lag" }],
+      },
+      {
+        key: "hitDecay",
+        definition: {
+          type: "number",
+          label: "Hit Decay",
+          default: AUDIO_ANALYSIS_TUNING.hitDecay,
+          min: 10,
+          max: 1000,
+          step: 10,
+          range: "floor",
+          description:
+            "The hits lane's tail, in milliseconds: a count is 1 on the frame it happens and falls to 0.37 of that after this long. It is the release ratio of a 1 ms follower, which is why the number reads in ms.",
+        },
+        targets: [{ nodeId: "decay", key: "releaseRatio" }],
       },
     ],
   },

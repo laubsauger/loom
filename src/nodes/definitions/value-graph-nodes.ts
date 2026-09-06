@@ -411,7 +411,10 @@ const RELEASE_RATIO_PARAMETER: NumberParameter = {
   // 15.8% at 100 against 26.8% at 10 (T814's own measurement). `range: "floor"` always let
   // a typed or driven value go higher, but a component that PUBLISHES this parameter for the
   // user to drag needs the useful setting inside the travel, not past its end.
-  max: 100,
+  // T1230: 1000, for the same reason one order up. A count channel is 1 for one frame, so
+  // the pulse follower AudioAnalysis ships is a 1 ms attack — and its release is then the
+  // ratio in milliseconds: 250 for a quarter-second tail, 1000 for a one-second swell.
+  max: 1000,
   step: 0.01,
   range: "floor",
 };

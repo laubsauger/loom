@@ -179,6 +179,7 @@ const GENERIC = /^(?:in|input|in\d+|source|field|value|signal)(?:_\d+)?$/;
 
 /** What each shipped component publishes, in canvas order (§V109). */
 const PUBLISHED_INPUTS: Readonly<Record<string, readonly string[]>> = {
+  audioAnalysis: ["audio"],
   audioLevel: [],
   bloom: ["picture"],
   depthCut: ["depth", "picture"],
@@ -190,7 +191,7 @@ const PUBLISHED_INPUTS: Readonly<Record<string, readonly string[]>> = {
   timeGrid: ["matte", "picture"],
 };
 
-describe("the nine shipped components publish speaking input names (T1194)", () => {
+describe("the ten shipped components publish speaking input names (T1194)", () => {
   const shipped = shippedComponents();
 
   it("names every input for what the signal IS", () => {

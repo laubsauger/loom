@@ -46,6 +46,32 @@ export const AUDIO_ANALYSIS_OPTIONS: AudioAnalysisProcessorOptions = {
   picker: DETECTOR_EVENT_PICKER,
 };
 
+/** T1230 — the source node's detector knobs (`AUDIO_DETECTOR_DEFAULTS` in `audio.ts`), in seconds. */
+export interface DetectorSettings {
+  /** The picker's `delta`: how far above its recent mean a band's SuperFlux must rise. */
+  readonly threshold: number;
+  /** The picker's minimum gap between two events, in seconds. */
+  readonly retrigger: number;
+}
+
+/**
+ * T1230 — the engine's options for ONE capture: the shipped engine with the source node's
+ * knobs folded into the picker. Seconds become hops on the context's own grid, so a gap a
+ * user typed means the same milliseconds at 44.1 and 48 kHz. The shipped defaults at
+ * 48 kHz reproduce `DETECTOR_EVENT_PICKER` exactly (`use-audio-input.test.ts` pins it),
+ * which is what keeps a document that never touched the knobs on the recorded contract.
+ */
+export function analysisOptionsFor(detector: DetectorSettings, sampleRate: number): AudioAnalysisProcessorOptions {
+  return {
+    ...AUDIO_ANALYSIS_OPTIONS,
+    picker: {
+      historyHops: AUDIO_ANALYSIS_OPTIONS.picker.historyHops,
+      delta: Math.max(0, detector.threshold),
+      minGapHops: Math.max(0, Math.round((detector.retrigger * sampleRate) / AUDIO_ANALYSIS_OPTIONS.hop)),
+    },
+  };
+}
+
 /** Streams per hop: the whole spectrum plus one per detector band. */
 export const STREAM_COUNT = AUDIO_ANALYSIS_OPTIONS.bands.length + 1;
 

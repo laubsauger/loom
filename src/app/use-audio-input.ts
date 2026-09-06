@@ -10,8 +10,12 @@ import { createAudioHopReducer } from "./audio-analysis-frame.ts";
 import {
   AUDIO_ANALYSIS_OPTIONS,
   AUDIO_ANALYSIS_PROCESSOR_NAME,
+  analysisOptionsFor,
+  type AudioAnalysisProcessorOptions,
   type AudioAnalysisWorkletMessage,
+  type DetectorSettings,
 } from "./audio-analysis-protocol.ts";
+import { AUDIO_DETECTOR_DEFAULTS } from "@nodes/definitions/audio.ts";
 import { AUDIO_ANALYSIS_WORKLET_URL } from "./audio-analysis-worklet-url.ts";
 import type { AppRuntime } from "./app-runtime.ts";
 import type { MediaControlRegistry } from "./media-commands.ts";
@@ -68,16 +72,20 @@ type FeatureReader = () => AudioFeatures;
  * is fidelity and nothing else: one window per frame instead of four, and the picker's
  * hop-counted history and gap are counted in frames — which the status names.
  */
-function polledReader(context: AudioContext, analyser: AnalyserNode): FeatureReader {
+function polledReader(
+  context: AudioContext,
+  analyser: AnalyserNode,
+  options: AudioAnalysisProcessorOptions,
+): FeatureReader {
   const core = createHopAnalyser({
-    fftSize: AUDIO_ANALYSIS_OPTIONS.fftSize,
+    fftSize: options.fftSize,
     sampleRate: context.sampleRate,
-    bands: AUDIO_ANALYSIS_OPTIONS.bands,
-    eventThreshold: AUDIO_ANALYSIS_OPTIONS.eventThreshold,
-    superflux: AUDIO_ANALYSIS_OPTIONS.superflux,
-    picker: AUDIO_ANALYSIS_OPTIONS.picker,
+    bands: options.bands,
+    eventThreshold: options.eventThreshold,
+    superflux: options.superflux,
+    picker: options.picker,
   });
-  const reducer = createAudioHopReducer(AUDIO_ANALYSIS_OPTIONS.fftSize, context.sampleRate);
+  const reducer = createAudioHopReducer(options.fftSize, context.sampleRate);
   const samples = new Float32Array(analyser.fftSize);
   return () => {
     analyser.getFloatTimeDomainData(samples);
@@ -93,7 +101,10 @@ type EngineAttachment = { readonly node: AudioWorkletNode; readonly read: Featur
  * throws: a missing `audioWorklet` (an old WebView), a rejected `addModule` (the chunk
  * did not load) and a bad option all become the fallback's named reason.
  */
-async function attachAnalysisEngine(context: AudioContext): Promise<EngineAttachment> {
+async function attachAnalysisEngine(
+  context: AudioContext,
+  options: AudioAnalysisProcessorOptions,
+): Promise<EngineAttachment> {
   try {
     if (context.audioWorklet === undefined) throw new Error("AudioWorklet is not supported here");
     await context.audioWorklet.addModule(AUDIO_ANALYSIS_WORKLET_URL);
@@ -103,9 +114,9 @@ async function attachAnalysisEngine(context: AudioContext): Promise<EngineAttach
       // Mono, as the analyser hears it: its analysis down-mixes too.
       channelCount: 1,
       channelCountMode: "explicit",
-      processorOptions: AUDIO_ANALYSIS_OPTIONS,
+      processorOptions: options,
     });
-    const reducer = createAudioHopReducer(AUDIO_ANALYSIS_OPTIONS.fftSize, context.sampleRate);
+    const reducer = createAudioHopReducer(options.fftSize, context.sampleRate);
     node.port.onmessage = (event: MessageEvent<AudioAnalysisWorkletMessage>) => {
       if (event.data.type === "hop") reducer.push(event.data);
     };
@@ -148,6 +159,12 @@ export interface CaptureConfig {
    * a live input has no playhead, exactly as a webcam has none.
    */
   readonly nodeId: NodeId | null;
+  /**
+   * T1230 — the capturing node's detector knobs. Part of the config KEY, so a change
+   * re-acquires: the picker is built into the engine when the capture is, and rebuilding
+   * the capture is the one door every structural change already goes through.
+   */
+  readonly detector: DetectorSettings;
 }
 
 /** Static parameter value, mode-envelope tolerant. Capture config never animates. */
@@ -168,6 +185,22 @@ function urlOf(value: unknown): string {
     if (typeof url === "string") return url;
   }
   return "";
+}
+
+/** T1230: the node's detector knobs, or the shipped defaults where it never stored them. */
+function detectorOf(node: GraphNode): DetectorSettings {
+  const number = (key: keyof DetectorSettings): number => {
+    const value = staticValueOf(node, key);
+    return typeof value === "number" && Number.isFinite(value) ? value : AUDIO_DETECTOR_DEFAULTS[key];
+  };
+  return { threshold: number("threshold"), retrigger: number("retrigger") };
+}
+
+/** The string a capture is identified by: equal keys keep the capture, anything else rebuilds it. */
+export function captureKeyOf(config: CaptureConfig | null, reloadToken: number): string {
+  if (config === null) return "";
+  const { detector } = config;
+  return `${config.source}|${config.url}|${config.device}|${config.monitor}|${detector.threshold}|${detector.retrigger}|${reloadToken}`;
 }
 
 /**
@@ -218,6 +251,7 @@ export function captureConfigOf(graph: GraphDocument): CaptureConfig | null {
       device: "",
       monitor: staticValueOf(node, "monitor") !== false,
       nodeId: node.id,
+      detector: detectorOf(node),
     };
   }
   const mic = nodesOf("audioIn").find((node) => !isSilencedSource(node));
@@ -229,6 +263,7 @@ export function captureConfigOf(graph: GraphDocument): CaptureConfig | null {
     device: typeof device === "string" ? device : "",
     monitor: false,
     nodeId: null,
+    detector: detectorOf(mic),
   };
 }
 
@@ -306,11 +341,13 @@ export function useAudioInput(
        * every reason the live status has to name; there can be two (device AND worklet).
        */
       const messages: string[] = [];
-      const engine = await attachAnalysisEngine(context);
+      // T1230: the source's detector knobs, on this context's hop grid — both paths get the same picker.
+      const options = analysisOptionsFor(config.detector, context.sampleRate);
+      const engine = await attachAnalysisEngine(context, options);
       if ("failure" in engine) messages.push(workletFallbackMessage(engine.failure));
       const attachEngine = (input: AudioNode): void => {
         if ("failure" in engine) {
-          readerRef.current = polledReader(context, analyser);
+          readerRef.current = polledReader(context, analyser, options);
           return;
         }
         input.connect(engine.node);
@@ -319,7 +356,7 @@ export function useAudioInput(
           // The processor threw on the audio thread: it posts nothing from here on, and
           // a reader left on it would report silence forever. Same fallback, same name.
           if (readerRef.current !== engine.read) return;
-          readerRef.current = polledReader(context, analyser);
+          readerRef.current = polledReader(context, analyser, options);
           statusRef.current = { kind: "live", message: workletFallbackMessage("the processor failed") };
         };
       };
@@ -454,10 +491,7 @@ export function useAudioInput(
      */
     const refresh = () => {
       const config = captureConfigOf(getGraphRef.current());
-      const key =
-        config === null
-          ? ""
-          : `${config.source}|${config.url}|${config.device}|${config.monitor}|${reloadTokenRef.current}`;
+      const key = captureKeyOf(config, reloadTokenRef.current);
       if (key === configKeyRef.current) return;
       configKeyRef.current = key;
       teardown();

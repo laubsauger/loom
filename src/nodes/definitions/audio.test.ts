@@ -5,6 +5,8 @@ import { createValueGraphSession } from "../../domain/channels/value-graph.ts";
 import type { AudioFeatures, FrameEvaluationInput } from "../../domain/types/frame.ts";
 import type { GraphDocument } from "../../domain/types/graph.ts";
 import { createNodeRegistry } from "../registry/registry.ts";
+import { effectiveParameterSchema } from "../../domain/parameters/resolve.ts";
+import { AUDIO_DETECTOR_DEFAULTS } from "./audio.ts";
 import { allNodeDefinitions } from "./index.ts";
 
 /**
@@ -317,6 +319,38 @@ describe("declared tempo on audioIn / audioFileIn (T1228)", () => {
       // The description says what the confidence's THREE values mean, in the one place users read.
       expect(definition?.description).toContain("1 is a DECLARED tempo");
     }
+  });
+});
+
+/**
+ * T1230 — the detector knobs sit on BOTH doors, in the Analysis group, and their defaults
+ * are the constants the capture hook falls back to — so a node that never stored them and
+ * a node that stored the defaults build the same engine. What the knobs DO is pinned where
+ * they are read (`use-audio-input.test.ts`); here only that the schema and the fallback
+ * cannot drift apart, and that the one place users read names the group.
+ */
+describe("detector knobs on audioIn / audioFileIn (T1230)", () => {
+  it("both doors carry Hit Threshold and Retrigger, in Analysis, at the shipped defaults", () => {
+    for (const type of ["audioIn", "audioFileIn"] as const) {
+      const schema = effectiveParameterSchema(registry.get(type), {});
+      for (const key of ["threshold", "retrigger"] as const) {
+        expect(schema[key]?.group, `${type}.${key}`).toBe("Analysis");
+        expect(schema[key]?.type, `${type}.${key}`).toBe("number");
+        expect((schema[key] as { default?: unknown }).default, `${type}.${key}`).toBe(AUDIO_DETECTOR_DEFAULTS[key]);
+      }
+      expect(registry.get(type)?.description).toContain("Hit Threshold and Retrigger");
+    }
+  });
+
+  it("evaluation never reads them: the counts arrive already counted (§V352)", () => {
+    const channels = registry.get("audioIn")?.valueEvaluate?.({
+      inputs: {},
+      values: { threshold: 0.3, retrigger: 0.2 },
+      frame: frame(0),
+      audio: FEATURES,
+      state: {},
+    });
+    expect(channels).toEqual(FEATURES);
   });
 });
 
