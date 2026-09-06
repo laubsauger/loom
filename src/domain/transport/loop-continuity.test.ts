@@ -312,8 +312,15 @@ const CLOCK_OWNERSHIP: Readonly<Record<string, "free-running" | "timeline-anchor
   // different clock. An LFO in `noise` mode is the same sample-and-hold on a clock of its
   // OWN, and that is exactly why it could not be used for bars (B98 made it free-running).
   valueStep: "clockless",
-  audioIn: "clockless",
-  audioFileIn: "clockless",
+  // T1228: the ANALYSIS channels are clockless — they report what the analyser heard this
+  // frame, and a lap passes straight through them — but a DECLARED tempo counts beats along
+  // the timeline (audioIn) or the timeline-locked playhead (audioFileIn), and that beat
+  // clock wraps with the lap BY DESIGN: a declared BPM whose phase drifted would look
+  // authoritative and be wrong. As with the transport table below, the classification
+  // names the clock the node OFFERS, not the mode a fresh node arrives in (Auto claims no
+  // tempo and reads no clock). Both descriptions say both halves.
+  audioIn: "timeline-anchored",
+  audioFileIn: "timeline-anchored",
   // T942: MIDI In reports where the CONTROLS are, exactly as `mouse` reports where the
   // cursor is. There is no phase to lap and no position to wrap; a timeline loop passes
   // straight through it. Its one piece of state (a Toggle's latch) is a per-node bag that

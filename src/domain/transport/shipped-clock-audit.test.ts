@@ -254,11 +254,14 @@ const DECLARED: Readonly<
   },
   "src/nodes/definitions/audio.ts": {
     kind: "timeline-anchored",
-    reads: 2,
+    reads: 4,
     reason:
       "The deterministic BEAT. `beats` and `beatsBefore` are two reads of one decision: a " +
       "bar number is a POSITION IN THE PIECE, so beat 1 has to fall on the in point every " +
-      "lap or the pattern stops being a pattern. Classified `timeline-anchored` too.",
+      "lap or the pattern stops being a pattern. Classified `timeline-anchored` too. T1228 " +
+      "adds the same pair for a DECLARED tempo on the live doors (`declaredTempo`): the " +
+      "beat clock a user declares is the timeline's for the same reason, and a declared " +
+      "BPM whose phase drifted would look authoritative and be wrong.",
   },
   "src/nodes/definitions/point-kernel-advanced.ts": {
     kind: "names-the-contrast",

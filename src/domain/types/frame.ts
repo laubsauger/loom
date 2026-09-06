@@ -155,8 +155,12 @@ export interface AudioFeatures {
   /** T1227: the claimed tempo in beats per minute; 0 when `bpmConfidence` is 0. */
   readonly bpm: number;
   /**
-   * T1227: 0..1 — how much the tempo claim is worth. 0 is NO CLAIM, and every other tempo
-   * field is then 0. A declared tempo is 1; an estimator (T1228) reports its own.
+   * T1227: 0..1 — how much the tempo claim is worth, and it carries THREE distinct
+   * meanings a consumer branching on it needs to tell apart:
+   *  - 0 is NO CLAIM, and every other tempo field is then 0;
+   *  - 1 is a DECLARED tempo (T1228: the user said so, or `audioPattern` IS one) — it does
+   *    not mean an estimator is very sure;
+   *  - strictly between is an ESTIMATE, and the number is the estimator's own confidence.
    */
   readonly bpmConfidence: number;
   /** T1227: 0..1 ramp inside the current claimed beat; 0 without a claim. */

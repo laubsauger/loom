@@ -171,6 +171,155 @@ describe("audioIn (T414)", () => {
   });
 });
 
+/**
+ * T1228 — A DECLARED TEMPO on the two live doors: §T825's cheap half, and every claim here
+ * is the one that separates DECLARED from ESTIMATED — timeline-anchored (§V436), so the
+ * beat is a function of the frame and of nothing else. The numbers are exact by
+ * construction (120 bpm is a beat every half second) and each is checked against a
+ * neighbour that would differ if the arithmetic were off by a beat, a phase, or a clock.
+ */
+describe("declared tempo on audioIn / audioFileIn (T1228)", () => {
+  const evaluate = (
+    type: "audioIn" | "audioFileIn",
+    timeSeconds: number,
+    values: Record<string, number | string | boolean>,
+    deltaSeconds = 1 / 60,
+    audio: AudioFeatures = FEATURES,
+  ): Record<string, number> =>
+    registry.get(type)?.valueEvaluate?.({
+      inputs: {},
+      values,
+      frame: { timeSeconds, deltaSeconds, frameIndex: Math.round(timeSeconds * 60), mode: "offline", randomSeed: 7 },
+      audio,
+      state: {},
+    }) as Record<string, number>;
+
+  it("on Auto passes the RECORD's claim through untouched — the estimator's field, not the node's", () => {
+    // The fixture's claim is at confidence 0.6 with bpm 124; Auto is a projection and must
+    // not overwrite it with either a declaration or a zero. (`tempoMode` absent is Auto: a
+    // document that never touched the group reads as it did before T1228.)
+    for (const values of [{}, { tempoMode: "auto", bpm: 128 }]) {
+      const bag = evaluate("audioIn", 1.5, values);
+      expect([bag["bpm"], bag["bpmConfidence"], bag["beat"], bag["beatPhase"], bag["beatCount"]]).toEqual([124, 0.6, 17, 0.45, 5]);
+      expect(Object.keys(bag)).not.toContain("bar");
+    }
+  });
+
+  it("audioIn Declared counts beats from Beat Offset along the TIMELINE, at confidence 1, and the bar is then a fact", () => {
+    // 120 bpm, beat one at 0.25 s: t = 1.5 s is 1.25 s in, 2.5 beats — beat 2, half way,
+    // 0.625 of a four-beat bar. §V461: none of these is 0 or a default.
+    const bag = evaluate("audioIn", 1.5, { tempoMode: "declared", bpm: 120, beatOffset: 0.25, beatsPerBar: 4 });
+    expect(bag["bpm"]).toBe(120);
+    expect(bag["bpmConfidence"]).toBe(1);
+    expect(bag["beat"]).toBe(2);
+    expect(bag["beatPhase"]).toBeCloseTo(0.5, 12);
+    expect(bag["bar"]).toBe(0);
+    expect(bag["barPhase"]).toBeCloseTo(0.625, 12);
+    // The record's own claim (124 at 0.6) is overridden, and only the tempo fields are:
+    // the analysis channels are still the record's.
+    expect(bag["kickCount"]).toBe(2);
+    expect(bag["centroid"]).toBe(0.37);
+    // A different signature regroups the same beats: 3/4 puts beat 2.5 in bar 0 at 5/6.
+    const waltz = evaluate("audioIn", 1.5, { tempoMode: "declared", bpm: 120, beatOffset: 0.25, beatsPerBar: 3 });
+    expect(waltz["beat"]).toBe(2);
+    expect(waltz["barPhase"]).toBeCloseTo(2.5 / 3, 12);
+    // And the offset is where beat one FALLS, not a delay on the phase: a quarter second
+    // later than the offset is exactly half a beat in, whatever the offset was.
+    const shifted = evaluate("audioIn", 1.75, { tempoMode: "declared", bpm: 120, beatOffset: 0.5 });
+    expect(shifted["beat"]).toBe(2);
+    expect(shifted["beatPhase"]).toBeCloseTo(0.5, 12);
+  });
+
+  it("beatCount is the beats that fell in the frame INTERVAL — a pulse, T437-shaped", () => {
+    // t = 1.75 s at 120 bpm from 0.25 s is exactly beat 3; the frame before it was not.
+    const onBeat = evaluate("audioIn", 1.75, { tempoMode: "declared", bpm: 120, beatOffset: 0.25 });
+    expect(onBeat["beat"]).toBe(3);
+    expect(onBeat["beatCount"]).toBe(1);
+    // A sixtieth later the beat has passed: same beat, no pulse.
+    const after = evaluate("audioIn", 1.75 + 1 / 60, { tempoMode: "declared", bpm: 120, beatOffset: 0.25 });
+    expect(after["beat"]).toBe(3);
+    expect(after["beatCount"]).toBe(0);
+    // A slow frame under a fast tempo reports every beat it crossed, not the last one.
+    const slow = evaluate("audioIn", 2.0, { tempoMode: "declared", bpm: 180, beatOffset: 0 }, 1.0);
+    expect(slow["beatCount"]).toBe(3);
+  });
+
+  it("before Beat Offset nothing has happened: the claim stands, the count has not begun", () => {
+    const early = evaluate("audioIn", 0.1, { tempoMode: "declared", bpm: 120, beatOffset: 0.25 });
+    expect(early["bpm"]).toBe(120);
+    expect(early["bpmConfidence"]).toBe(1);
+    expect([early["beat"], early["beatPhase"], early["beatCount"], early["bar"], early["barPhase"]]).toEqual([0, 0, 0, 0, 0]);
+  });
+
+  it("is TIMELINE-ANCHORED (§V436): the same frame gives the same beat whatever was evaluated before it", () => {
+    // A scrub is an out-of-order sequence of frames. The claim is that order cannot matter,
+    // which an accumulator anywhere in the path would break.
+    const values = { tempoMode: "declared", bpm: 113, beatOffset: 0.37, beatsPerBar: 5 };
+    const straight = [2.0, 7.5, 3.25].map((t) => evaluate("audioIn", t, values));
+    const scrubbed = [7.5, 3.25, 2.0].map((t) => evaluate("audioIn", t, values));
+    expect(scrubbed[2]).toEqual(straight[0]);
+    expect(scrubbed[0]).toEqual(straight[1]);
+    expect(scrubbed[1]).toEqual(straight[2]);
+    // And it is the timeline, not the record: with the record silent the beat is unchanged.
+    expect(evaluate("audioIn", 7.5, values, 1 / 60, SILENCE)["beat"]).toBe(straight[1]?.["beat"]);
+  });
+
+  it("audioFileIn Declared counts along the FILE: Beat Offset is a second into the file, and trim, speed and cue move the beats with the sound", () => {
+    // In point 10 s, beat one at 10.5 s in the file, 120 bpm. One timeline second in at
+    // speed 1 the playhead is at 11.0 s: exactly beat 1, which the interval also crosses.
+    const base = { tempoMode: "declared", bpm: 120, beatOffset: 10.5, beatsPerBar: 4, playMode: "timeline", trimStart: 10 };
+    const unity = evaluate("audioFileIn", 1.0, { ...base, speed: 1 });
+    expect(unity["beat"]).toBe(1);
+    expect(unity["beatPhase"]).toBeCloseTo(0, 12);
+    expect(unity["beatCount"]).toBe(1);
+    // Double speed: the same timeline second is 12.0 s into the file — beat 3.
+    const double = evaluate("audioFileIn", 1.0, { ...base, speed: 2 });
+    expect(double["beat"]).toBe(3);
+    expect(double["bpm"]).toBe(120);
+    // Half speed: 10.5 s, beat one has just fallen.
+    const half = evaluate("audioFileIn", 1.0, { ...base, speed: 0.5 });
+    expect(half["beat"]).toBe(0);
+    expect(half["beatPhase"]).toBeCloseTo(0, 12);
+    // A held cue at 13.0 s is beat 5, and HELD: the interval crosses nothing.
+    const cued = evaluate("audioFileIn", 1.0, { ...base, speed: 1, cue: true, cuePoint: 13.0 });
+    expect(cued["beat"]).toBe(5);
+    expect(cued["beatCount"]).toBe(0);
+    // Without the in point the same timeline second is only 1.0 s into the file, before
+    // beat one — which is what makes the offset a FILE second and not a timeline one.
+    const untrimmed = evaluate("audioFileIn", 1.0, { ...base, speed: 1, trimStart: 0 });
+    expect([untrimmed["beat"], untrimmed["beatPhase"]]).toEqual([0, 0]);
+  });
+
+  it("Declared adds EXACTLY the bar channels, so a declared source and Audio Pattern are the same channel set", () => {
+    // The swap promise, with structure now included: nothing an Audio Pattern publishes is
+    // missing from a declared live source, and nothing extra appears.
+    const pattern = Object.keys(
+      registry.get("audioPattern")?.valueEvaluate?.({ inputs: {}, values: { bpm: 120 }, frame: frame(0), state: {} }) ?? {},
+    ).sort();
+    for (const type of ["audioIn", "audioFileIn"] as const) {
+      const declared = Object.keys(evaluate(type, 0, { tempoMode: "declared" })).sort();
+      expect(declared).toEqual(pattern);
+      const auto = Object.keys(evaluate(type, 0, {}));
+      expect(pattern.filter((name) => !auto.includes(name))).toEqual(["bar", "barPhase"]);
+    }
+  });
+
+  it("the Tempo controls say they are unread on Auto and name the mode that reads them (§V146)", () => {
+    for (const type of ["audioIn", "audioFileIn"] as const) {
+      const definition = registry.get(type);
+      const parameters = definition?.parameters ?? {};
+      expect(parameters["tempoMode"]?.type).toBe("enum");
+      for (const key of ["bpm", "beatOffset", "beatsPerBar"]) {
+        const reason = parameters[key]?.inactiveWhen?.({ tempoMode: "auto" });
+        expect(reason, `${type}.${key}`).toContain("Declared");
+        expect(parameters[key]?.inactiveWhen?.({ tempoMode: "declared" })).toBeNull();
+      }
+      // The description says what the confidence's THREE values mean, in the one place users read.
+      expect(definition?.description).toContain("1 is a DECLARED tempo");
+    }
+  });
+});
+
 describe("audioFileIn (T434)", () => {
   it("projects the same channel set as audioIn — one feature record, two doors", () => {
     const definition = registry.get("audioFileIn");

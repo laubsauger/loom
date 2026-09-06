@@ -1,7 +1,160 @@
 import type { CompiledNodeDescription, NodeDefinition } from "../../domain/types/node-definition.ts";
-import type { AudioFeatures } from "../../domain/types/frame.ts";
-import { MEDIA_TRANSPORT_PARAMETERS } from "../../domain/media/transport.ts";
+import type { AudioFeatures, FrameEvaluationInput } from "../../domain/types/frame.ts";
+import type { ParameterSchema, ParameterValue } from "../../domain/types/parameters.ts";
+import { MEDIA_TRANSPORT_PARAMETERS, mediaPlayhead, mediaTransportFrom } from "../../domain/media/transport.ts";
 import { VALUE_PORT } from "./common-ports.ts";
+
+/**
+ * T1228 — A DECLARED TEMPO, the cheap half of §T825, shipped before the estimator.
+ *
+ * Somebody who knows their track is 128 BPM should not wait on autocorrelation to be told
+ * so. `tempoMode: "declared"` makes the node claim the tempo it is given, at confidence 1,
+ * and count beats — and bars, because `beatsPerBar` is then a fact and not a guess — from
+ * `beatOffset`. `auto` publishes whatever claim the RECORD carries: none today
+ * (`bpmConfidence` 0), the estimator's once it exists.
+ *
+ * TIMELINE-ANCHORED, not free-running (§V436), and that is the entire value of DECLARED
+ * over ESTIMATED: a declared BPM whose phase drifted would look authoritative and be
+ * wrong. The beat clock here is a pure function of the frame, so beat one lands where
+ * `beatOffset` says on every lap, a scrub finds the same beat every time, and an offline
+ * render reproduces. What that clock is measured along differs per door, and each door's
+ * `beatOffset` says which:
+ *  - `audioIn` counts along the TIMELINE — the same clock `audioPattern` counts along, so
+ *    the two agree by construction and this is that node's mitigation folded into the
+ *    source.
+ *  - `audioFileIn` counts along the FILE: the transport's own position, from
+ *    `mediaPlayhead` at an unknown duration (so it is the in point plus elapsed × speed,
+ *    or the cue point while cued — the one transport function, not a second reading of
+ *    it). Beat one is therefore a second INTO THE FILE, which is what a person reading a
+ *    waveform has, and trim, speed and cue move the beats with the sound. The playhead is
+ *    that function of the frame under the timeline lock; under free run the beats still
+ *    count as if it were, and the description says so rather than dimming controls that
+ *    do work. Wrapping at the trim window is not modelled — the node cannot know the
+ *    duration — so a looped window that is not a whole number of beats drifts a lap.
+ *
+ * The claim overrides the RECORD's tempo fields in the published bag; the record itself
+ * stays what the reducer wrote. A recorded track therefore carries no declared tempo,
+ * and does not need to: the same parameters on the same frame make the same claim on
+ * replay, which is what "pure function of the frame" buys.
+ */
+const TEMPO_MODE_OPTIONS = [
+  { value: "auto", label: "Auto" },
+  { value: "declared", label: "Declared" },
+] as const;
+
+/** §V146: the declared-tempo controls do nothing in `auto`, and the sentence says what would make them apply. */
+function autoTempo(values: Readonly<Record<string, ParameterValue>>): string | null {
+  return values["tempoMode"] === "declared"
+    ? null
+    : "Tempo is Auto, so the tempo channels are whatever the analysis claims and this is not read. Switch Tempo to Declared to count beats from the BPM you know.";
+}
+
+function tempoParameters(offsetDescription: string): ParameterSchema {
+  return {
+    tempoMode: {
+      type: "enum",
+      label: "Tempo",
+      group: "Tempo",
+      default: "auto",
+      options: [...TEMPO_MODE_OPTIONS],
+      description:
+        "Auto publishes the tempo the analysis can claim — today none (bpmConfidence 0; an estimator is T1228's second half). Declared claims the BPM below at bpmConfidence 1 and counts beat / beatPhase / beatCount from Beat Offset, plus bar / barPhase in Beats / Bar — timeline-anchored (§V436), so a scrub finds the same beat every time and an offline render reproduces.",
+    },
+    bpm: {
+      type: "number",
+      label: "BPM",
+      group: "Tempo",
+      default: 120,
+      min: 20,
+      max: 300,
+      range: "floor",
+      step: 0.01,
+      inactiveWhen: autoTempo,
+      description: "Declared only: the tempo you know the material to be. Published as bpm at bpmConfidence 1 — a declaration, not a measurement.",
+    },
+    beatOffset: {
+      type: "number",
+      label: "Beat Offset",
+      group: "Tempo",
+      default: 0,
+      min: -10,
+      max: 10,
+      range: "soft",
+      step: 0.001,
+      unit: "seconds",
+      inactiveWhen: autoTempo,
+      description: offsetDescription,
+    },
+    beatsPerBar: {
+      type: "number",
+      label: "Beats / Bar",
+      group: "Tempo",
+      default: 4,
+      min: 1,
+      max: 32,
+      step: 1,
+      range: "floor",
+      inactiveWhen: autoTempo,
+      description: "Declared only: how many beats make a bar — what the bar and barPhase channels count in.",
+    },
+  };
+}
+
+/** The tempo claim plus the bar structure, as channels: the same arithmetic for every node that can make one. */
+interface TempoChannels {
+  readonly bpm: number;
+  readonly bpmConfidence: 1;
+  readonly beat: number;
+  readonly beatPhase: number;
+  readonly beatCount: number;
+  readonly bar: number;
+  readonly barPhase: number;
+}
+
+/**
+ * `beats` and `beatsBefore` are positions on a beat grid at the frame's end and start.
+ * `beat` and `bar` COUNT — 0 before the grid begins, monotonic integers after; `beatPhase`
+ * and `barPhase` RAMP 0..1 inside each; `beatCount` is the integers crossed in the
+ * interval, so a slow frame under a fast tempo honestly reports 2 (T437's shape).
+ */
+function tempoChannels(beats: number, beatsBefore: number, bpm: number, beatsPerBar: number): TempoChannels {
+  const position = Math.max(0, beats);
+  const before = Math.max(0, beatsBefore);
+  const beat = Math.floor(position);
+  const barPosition = position / beatsPerBar;
+  return {
+    bpm,
+    bpmConfidence: 1,
+    beat,
+    beatPhase: position - beat,
+    beatCount: Math.max(0, beat - Math.floor(before)),
+    bar: Math.floor(barPosition),
+    barPhase: barPosition - Math.floor(barPosition),
+  };
+}
+
+function numberOr(value: ParameterValue | undefined, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+/**
+ * The declared claim for a source node, or `null` in `auto`. `positionAt(seconds)` is the
+ * clock the door counts along (see the T1228 note above): identity for `audioIn`, the
+ * transport's position for `audioFileIn`. Beat one sits at `beatOffset` on that clock.
+ */
+function declaredTempo(
+  values: Readonly<Record<string, ParameterValue>>,
+  frame: FrameEvaluationInput,
+  positionAt: (seconds: number) => number,
+): TempoChannels | null {
+  if (values["tempoMode"] !== "declared") return null;
+  const bpm = Math.max(0, numberOr(values["bpm"], 120));
+  const beatOffset = numberOr(values["beatOffset"], 0);
+  const beatsPerBar = Math.max(1, Math.floor(numberOr(values["beatsPerBar"], 4)));
+  const beats = ((positionAt(frame.timeSeconds) - beatOffset) * bpm) / 60;
+  const beatsBefore = ((positionAt(frame.timeSeconds - frame.deltaSeconds) - beatOffset) * bpm) / 60;
+  return tempoChannels(beats, beatsBefore, bpm, beatsPerBar);
+}
 
 /**
  * T414 — Audio In: sound as channels, the way Mouse is the pointer as channels.
@@ -20,11 +173,12 @@ import { VALUE_PORT } from "./common-ports.ts";
  *  - smoothing. `valueLag` downstream gives both the raw transient AND the damped
  *    envelope; a source that smooths internally gives you neither, and a trigger wants
  *    the raw one.
- *  - a `bar` channel. A downbeat from live input is a CLAIM nobody can back; bar
- *    structure stays with the nodes that can count it (`audioPattern`, or a declared
- *    tempo, T1229). The tempo fields that ARE here (T1227) carry `bpmConfidence` for the
- *    same reason: 0 says no claim is being made, and a live input makes none until a
- *    tempo is declared or estimated (T1228).
+ *  - a GUESSED `bar` channel. A downbeat from live input is a CLAIM nobody can back; bar
+ *    structure stays with the nodes that can count it (`audioPattern`, this node under a
+ *    DECLARED tempo since T1228, or an offline pre-analysis, T1229). The tempo fields that
+ *    ARE always here (T1227) carry `bpmConfidence` for the same reason: 0 says no claim
+ *    is being made, and a live input makes none until a tempo is declared (T1228, the
+ *    Tempo group below) or estimated (T1228's second half).
  */
 export const audioInNode: NodeDefinition = {
   type: "audioIn",
@@ -32,7 +186,7 @@ export const audioInNode: NodeDefinition = {
   title: "Audio In",
   category: "input",
   description:
-    "The session's audio input as channels: level (RMS), low / lowMid / highMid / high band energies, and onset — a spectral-flux envelope that rises on ANY energy increase, not a beat detector; threshold it with Trigger, or read onsetCount (events this frame) and onsetMax (the frame's peak). kick / snare / hat and kickCount / snareCount / hatCount are BAND HEURISTICS: the same onset envelope and event count confined to the band each drum mostly lives in (30-150, 150-2500, 5000-16000 Hz) — on a mix a bass note or a consonant can fire them; on a drums stem they are a measurement. centroid is where the spectrum's weight sits, 0..1 over 20-16000 Hz — brightness. bpm, bpmConfidence, beatPhase, beat and beatCount are a TEMPO CLAIM and bpmConfidence says what it is worth: a live input makes no claim, so all five read 0 here until a tempo is declared or estimated. NO bar channels: a downbeat guessed from live input would be confidently wrong. For bar structure, run an Audio Pattern at the tempo you are playing to and take bar/beat from there. Silent (all zeros) when no audio input is live. CLOCKLESS (§V436): the numbers come from what the analyser heard this frame, so a timeline loop passes straight through them.",
+    "The session's audio input as channels: level (RMS), low / lowMid / highMid / high band energies, and onset — a spectral-flux envelope that rises on ANY energy increase, not a beat detector; threshold it with Trigger, or read onsetCount (events this frame) and onsetMax (the frame's peak). kick / snare / hat and kickCount / snareCount / hatCount are BAND HEURISTICS: the same onset envelope and event count confined to the band each drum mostly lives in (30-150, 150-2500, 5000-16000 Hz) — on a mix a bass note or a consonant can fire them; on a drums stem they are a measurement. centroid is where the spectrum's weight sits, 0..1 over 20-16000 Hz — brightness. bpm, bpmConfidence, beatPhase, beat and beatCount are a TEMPO CLAIM and bpmConfidence says what it is worth: 0 is no claim (all five read 0), 1 is a DECLARED tempo, anything between is an estimate. A live input estimates nothing yet, so with Tempo on Auto all five read 0. Set Tempo to Declared and give the BPM you are playing to: the node then claims it at 1 and counts beat / beatPhase / beatCount from Beat Offset along the TIMELINE — the same clock Audio Pattern counts along — and publishes bar / barPhase in Beats / Bar, because a declared tempo makes the bar a fact. On Auto there are NO bar channels: a downbeat guessed from live input would be confidently wrong. Silent (all zeros) when no audio input is live. The ANALYSIS channels are CLOCKLESS (§V436): the numbers come from what the analyser heard this frame, so a timeline loop passes straight through them; the declared beat clock is TIMELINE-ANCHORED, so it wraps with the lap by design.",
   tags: ["value", "input", "audio", "sound", "music", "fft"],
   inputs: [],
   outputs: [{ id: "out", label: "Out", type: VALUE_PORT }],
@@ -51,8 +205,15 @@ export const audioInNode: NodeDefinition = {
       description:
         "Microphone device id, from the inspector's device picker. Empty = the system default. Device names are hidden by the browser until microphone access is granted.",
     },
+    ...tempoParameters(
+      "Declared only: the second on the TIMELINE where beat one falls. Beats count from there; before it, beat and the phases read 0.",
+    ),
   },
-  valueEvaluate: ({ audio }) => projectFeatures(audio),
+  valueEvaluate: ({ audio, values, frame }) => ({
+    ...projectFeatures(audio),
+    // T1228: a declared tempo counts along the timeline, the clock `audioPattern` counts along.
+    ...declaredTempo(values, frame, (seconds) => seconds),
+  }),
   compile: (): CompiledNodeDescription => ({ passes: [] }),
 };
 
@@ -124,7 +285,7 @@ export const audioFileInNode: NodeDefinition = {
   title: "Audio File In",
   category: "input",
   description:
-    "Plays an audio file with a transport — play mode, speed, cue, trim, at-end behaviour and volume — and publishes its features as channels: level, low / lowMid / highMid / high, onset (an energy-rise envelope, not a beat detector — threshold it with Trigger) with onsetCount / onsetMax, the kick / snare / hat band heuristics with their counts (the onset envelope confined to each drum's band — a guess on a mix, a measurement on a drums stem), and centroid (brightness, 0..1). The tempo channels — bpm, bpmConfidence, beatPhase, beat, beatCount — are a CLAIM this node does not make: nothing here knows an arbitrary file's tempo, so bpmConfidence and the rest read 0 until a tempo is declared or estimated. NO bar channels: a bar count guessed from a file would be confidently wrong at exactly the moment you built a phrase on it. To get structure, run an Audio Pattern beside it set to the track's BPM and take bar/beat from there — lock this node's Play Mode to the timeline and the two stay in step across a lap, because Audio Pattern is timeline-anchored too. A bound file takes over the session's single audio capture. Its CHANNELS are clockless (§V436): they report what was heard this frame, so a timeline loop passes straight through them. Its PLAYHEAD is FREE RUN by default (T586): it keeps its own playhead, so Play and Cue Pulse drive it and a track you just dropped in plays as soon as you press Play, whatever the timeline is doing. Lock it to the timeline and the playhead becomes TIMELINE-ANCHORED instead: the position derives from the frame, so bar one of the track lands on the in point, a scrub finds the same second every time, and an offline render reproduces. Free run gives up all three of those, and a render says so by name rather than quietly handing you a take that differs from what you heard.",
+    "Plays an audio file with a transport — play mode, speed, cue, trim, at-end behaviour and volume — and publishes its features as channels: level, low / lowMid / highMid / high, onset (an energy-rise envelope, not a beat detector — threshold it with Trigger) with onsetCount / onsetMax, the kick / snare / hat band heuristics with their counts (the onset envelope confined to each drum's band — a guess on a mix, a measurement on a drums stem), and centroid (brightness, 0..1). The tempo channels — bpm, bpmConfidence, beatPhase, beat, beatCount — are a CLAIM, and bpmConfidence says what it is worth: 0 is no claim, 1 is a DECLARED tempo, anything between is an estimate. Nothing here estimates an arbitrary file's tempo yet, so with Tempo on Auto all five read 0. Set Tempo to Declared and give the track's BPM: the node claims it at 1 and counts beat / beatPhase / beatCount along the FILE — Beat Offset is the second into the file where beat one falls, and trim, speed and cue move the beats with the sound — and publishes bar / barPhase in Beats / Bar, because a declared tempo makes the bar a fact. Lock Play Mode to the timeline and that beat clock IS the playhead's; under Free Run the beats count as if it were locked, so they only line up with the sound while the free-run playhead does. Wrapping at the trim window is not counted, so loop a window that is a whole number of beats. On Auto there are NO bar channels: a bar count guessed from a file would be confidently wrong at exactly the moment you built a phrase on it. A bound file takes over the session's single audio capture. Its CHANNELS are clockless (§V436): they report what was heard this frame, so a timeline loop passes straight through them. Its PLAYHEAD is FREE RUN by default (T586): it keeps its own playhead, so Play and Cue Pulse drive it and a track you just dropped in plays as soon as you press Play, whatever the timeline is doing. Lock it to the timeline and the playhead becomes TIMELINE-ANCHORED instead: the position derives from the frame, so bar one of the track lands on the in point, a scrub finds the same second every time, and an offline render reproduces. Free run gives up all three of those, and a render says so by name rather than quietly handing you a take that differs from what you heard.",
   tags: ["value", "input", "audio", "music", "file", "fft", "transport"],
   inputs: [],
   outputs: [{ id: "out", label: "Out", type: VALUE_PORT }],
@@ -150,8 +311,19 @@ export const audioFileInNode: NodeDefinition = {
       default: true,
       description: "Play the file audibly while analysing it.",
     },
+    ...tempoParameters(
+      "Declared only: the second INTO THE FILE where beat one falls — read it off the waveform. Trim, speed and cue move the beats with the sound.",
+    ),
   },
-  valueEvaluate: ({ audio }) => projectFeatures(audio),
+  valueEvaluate: ({ audio, values, frame }) => {
+    // T1228: a declared tempo counts along the FILE — the transport's own position at an
+    // unknown duration, so the in point, speed and a held cue are honoured and a wrap is not.
+    const transport = mediaTransportFrom((key) => values[key]);
+    return {
+      ...projectFeatures(audio),
+      ...declaredTempo(values, frame, (seconds) => mediaPlayhead(transport, seconds, 0).position),
+    };
+  },
   compile: (): CompiledNodeDescription => ({ passes: [] }),
 };
 
@@ -443,8 +615,7 @@ export const audioPatternNode: NodeDefinition = {
      * where in the piece they are. That is the whole reason the count is derived HERE and
      * not by a downstream node with a clock of its own.
      */
-    const beatIndex = Math.floor(Math.max(0, beats));
-    const barPosition = Math.max(0, beats) / beatsPerBar;
+    const tempo = tempoChannels(beats, beatsBefore, bpm, beatsPerBar);
 
     return {
       level: 0.3 * lowAmplitude + 0.3 * lowMidAmplitude + 0.2 * highMidAmplitude + 0.2 * highAmplitude,
@@ -467,15 +638,10 @@ export const audioPatternNode: NodeDefinition = {
        * T1227 — the tempo claim, at confidence 1: this node does not estimate a tempo, it
        * IS one. `beatCount` is the pulse over the interval — the same integers-crossed
        * arithmetic as `onsetCount`, and in this pattern the same number, because every beat
-       * carries a kick. A live source publishes the same five fields at confidence 0.
+       * carries a kick. A live source publishes the same five fields at confidence 0, or
+       * claims a declared tempo through the same `tempoChannels` (T1228).
        */
-      bpm,
-      bpmConfidence: 1,
-      beat: beatIndex,
-      beatPhase: Math.max(0, beats) - beatIndex,
-      beatCount: onsetCount,
-      bar: Math.floor(barPosition),
-      barPhase: barPosition - Math.floor(barPosition),
+      ...tempo,
     };
   },
   compile: (): CompiledNodeDescription => ({ passes: [] }),
