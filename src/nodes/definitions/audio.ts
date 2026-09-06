@@ -460,9 +460,10 @@ const BAND_REFERENCE_DB = { low: 68.25, lowMid: 54.84, highMid: 58.96, high: 51.
  * bar and spends no time below it. Measured against three recorded tracks (N=2400 each),
  * the pattern's span (p99-p01) was `high` 0.181 vs music's 0.280-0.534 and `highMid` 0.145
  * vs 0.345-0.447 — roughly THREE TIMES too narrow — while `low` at 0.255 vs 0.150-0.281
- * already matched. That gap is the measured cause of §B154: a rest state fitted just under
- * a floor real music does not have sits INSIDE music's lower tail, and E24's lens weights
- * went negative for up to 99.9% of a track (§T738, §V756).
+ * already matched. That gap is the measured cause of §T738's finding: a rest state fitted
+ * just under a floor real music does not have sits INSIDE music's lower tail, and E24's
+ * lens weights went negative for up to 99.9% of a track (§T738, §V756; §T766 is the
+ * fixture-side root).
  *
  * The fix is STRUCTURE, not a smaller floor. Shrinking the constant term was tested and is
  * WRONG: in a log domain that term sets the median as much as the floor, so the whole
