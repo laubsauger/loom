@@ -5,6 +5,7 @@ import type { NodeId } from "@domain/types/ids.ts";
 import type { ChannelResolver } from "@domain/parameters/resolve.ts";
 import { isSilencedSource } from "@domain/graph/bypass.ts";
 import { createHopAnalyser } from "@domain/audio/analysis/hop-analyser.ts";
+import type { MediaTransportValues } from "@domain/media/transport.ts";
 import { awaitMediaReady } from "./media-sources.ts";
 import { createAudioHopReducer } from "./audio-analysis-frame.ts";
 import {
@@ -19,6 +20,8 @@ import { AUDIO_DETECTOR_DEFAULTS } from "@nodes/definitions/audio.ts";
 import { AUDIO_ANALYSIS_WORKLET_URL } from "./audio-analysis-worklet-url.ts";
 import type { AppRuntime } from "./app-runtime.ts";
 import type { MediaControlRegistry } from "./media-commands.ts";
+import { createPreAnalyser, readTrackAtPlayhead } from "./audio-pre-analysis.ts";
+import type { OfflineAnalysis } from "./audio-offline-analysis.ts";
 import {
   applyMediaPlayhead,
   createMediaTransportRunner,
@@ -54,6 +57,23 @@ import {
  * Failure is LOUD but not fatal: a denied microphone or an unloadable URL parks the
  * capture in an error status (readable for UI) and the reader returns null — the same
  * deterministic silence a session with no audio has, never a half-working stream.
+ *
+ * T1229 — a bound FILE is also PRE-ANALYSED (`audio-pre-analysis.ts`: the same engine
+ * walked over the decoded file into a playhead-indexed `FeatureTrack`). Under
+ * `playMode: timeline` `read(frame)` answers from that track at the frame the playhead is
+ * on, not from the live hops — so a scrub lands on the same record every time and an
+ * offline render of the timeline is exact (§T431's replay half, with a real consumer).
+ * Under `freeRun` the live path stays: a free-running element has no timeline position
+ * to index by.
+ *
+ * What "bit-exact scrub" covers, precisely: with a STATIC transport (no driven `speed`,
+ * `trimStart`, `cue`…) the record at timeline time t is a pure function of t, absolute.
+ * With a DRIVEN transport parameter the playhead for frame N is computed from the transport
+ * as resolved on frame N − 1's channels (§V887's Jacobi order — the only one that is not
+ * circular, since this frame's channels are themselves fed by this read), so a random
+ * scrub to N can differ from reaching N by playing. And §B187 stands: `mediaPlayhead`
+ * takes `elapsed × speed`, not the integral, so a driven speed already moves the
+ * position retroactively; this reads the same position the element is at.
  */
 
 /** §V288: the fallback is taken AND named. Anything reading "Live" with this beside it is on the polled path. */
@@ -131,9 +151,32 @@ export interface AudioInputStatus {
   readonly message?: string;
 }
 
+/** T1229: one cache for the session — a re-bound file is a hit, not a second walk. */
+const preAnalyser = createPreAnalyser();
+
+async function preAnalyseFile(config: CaptureConfig, fps: number): Promise<Awaited<ReturnType<typeof preAnalyser.analyse>>> {
+  const response = await fetch(config.url);
+  if (!response.ok) throw new Error(`the file could not be read (${String(response.status)})`);
+  return preAnalyser.analyse(await response.arrayBuffer(), fps, config.detector);
+}
+
+/**
+ * T1229 — the status line's sentence, numbers a person can copy into the node's Declared
+ * knobs (T1228): the bar estimate lives HERE and not in the record, on purpose.
+ */
+export function preAnalysisMessage(analysis: OfflineAnalysis): string {
+  const { tempo, bar } = analysis;
+  if (tempo.confidence <= 0) return "Pre-analysed: no tempo found.";
+  const parts = [`${tempo.bpm.toFixed(1)} BPM (confidence ${tempo.confidence.toFixed(2)})`];
+  if (bar.beatsPerBar > 0) parts.push(`${String(bar.beatsPerBar)} beats per bar, downbeat at ${bar.downbeatSeconds.toFixed(2)} s`);
+  return `Pre-analysed: ${parts.join(", ")}.`;
+}
+
 export interface AudioInputSource {
   /** Per-frame reader for the frame driver. Null while no capture is live. */
-  readonly read: () => AudioFeatures | null;
+  readonly read: (frame: FrameEvaluationInput) => AudioFeatures | null;
+  /** T1229: the detector knobs of the live capture, for a track's provenance. Null between captures. */
+  readonly detector: () => DetectorSettings | null;
   readonly status: () => AudioInputStatus;
   /**
    * T493 — put the file where its transport says, once per rendered frame.
@@ -288,8 +331,17 @@ export function useAudioInput(
   registry?: AppRuntime["registry"],
   /** T493: where `media.cue` and `media.reload` find the node that supplied the file. */
   controls?: MediaControlRegistry,
+  /** T1229: the project's frame rate — the grid a file is pre-analysed on. Absent, no file is pre-analysed. */
+  fps?: () => number,
 ): AudioInputSource {
   const captureRef = useRef<LiveCapture | null>(null);
+  const configRef = useRef<CaptureConfig | null>(null);
+  /** T1229: the bound file's playhead-indexed track, once the walk has finished. Null until then, and for a mic. */
+  const offlineRef = useRef<OfflineAnalysis | null>(null);
+  /** T1229: the transport as `sync` last resolved it — the previous frame's channels (§V887). */
+  const transportRef = useRef<MediaTransportValues | null>(null);
+  const fpsRef = useRef(fps);
+  fpsRef.current = fps;
   const statusRef = useRef<AudioInputStatus>({ kind: "idle" });
   /** T1226: the live path's reader — the worklet's reducer, or the polled engine. Null between captures. */
   const readerRef = useRef<FeatureReader | null>(null);
@@ -319,6 +371,9 @@ export function useAudioInput(
     const teardown = (): void => {
       captureRef.current?.dispose();
       captureRef.current = null;
+      configRef.current = null;
+      offlineRef.current = null;
+      transportRef.current = null;
       readerRef.current = null;
       runnerRef.current = null;
       releaseControlRef.current?.();
@@ -474,7 +529,31 @@ export function useAudioInput(
             runnerRef.current = null;
           }
         }
-        statusRef.current = messages.length === 0 ? { kind: "live" } : { kind: "live", message: messages.join(" ") };
+        configRef.current = config;
+        const publish = (extra: string | null): void => {
+          const all = extra === null ? messages : [...messages, extra];
+          statusRef.current = all.length === 0 ? { kind: "live" } : { kind: "live", message: all.join(" ") };
+        };
+        publish(null);
+        const rate = fpsRef.current?.();
+        if (config.source === "file" && rate !== undefined) {
+          publish("Pre-analysing file…");
+          const key = configKeyRef.current;
+          void preAnalyseFile(config, rate).then(
+            (outcome) => {
+              // The capture this walk was for may be gone: a re-bound file has its own walk.
+              if (cancelled || configKeyRef.current !== key || configRef.current !== config) return;
+              offlineRef.current = outcome.analysis;
+              publish([preAnalysisMessage(outcome.analysis), outcome.fallback].filter((part) => part !== null).join(" "));
+            },
+            (error: unknown) => {
+              if (cancelled || configKeyRef.current !== key) return;
+              // Named, never silent: the live path still runs, but a timeline scrub is now
+              // the live hops and not a record, and the panel has to say why (§V288).
+              publish(`Pre-analysis failed, so a timeline scrub reads the live hops: ${error instanceof Error ? error.message : String(error)}`);
+            },
+          );
+        }
       } catch (error) {
         void context.close();
         statusRef.current = {
@@ -519,14 +598,25 @@ export function useAudioInput(
     };
   }, []);
 
-  const read = useCallback((): AudioFeatures | null => {
-    if (captureRef.current === null) return null;
+  const read = useCallback((frame: FrameEvaluationInput): AudioFeatures | null => {
+    const capture = captureRef.current;
+    if (capture === null) return null;
+    // T1229: under the timeline lock, the pre-analysed track at the playhead — the same
+    // `mediaPlayhead` arithmetic `sync` applies to the element, on the transport it last
+    // resolved, at THIS frame's timeline time (under the lock elapsed IS the timeline).
+    const offline = offlineRef.current;
+    const transport = transportRef.current;
+    if (offline !== null && transport !== null && transport.playMode !== "freeRun" && capture.element !== undefined) {
+      return readTrackAtPlayhead(offline.track, transport, frame.timeSeconds, durationOf(capture.element));
+    }
     // T1226: the engine's hops since the last frame, or the polled engine — the named fallback.
     const reader = readerRef.current;
     return reader === null ? null : reader();
   }, []);
 
   const status = useCallback((): AudioInputStatus => statusRef.current, []);
+
+  const detector = useCallback((): DetectorSettings | null => configRef.current?.detector ?? null, []);
 
   /**
    * T493 — the per-frame half. Identical in shape to the movie node's, by construction.
@@ -543,6 +633,7 @@ export function useAudioInput(
     if (capture?.element === undefined || runner === null) return;
     const stepped = runner.step(frame, durationOf(capture.element));
     if (stepped === null) return;
+    transportRef.current = stepped.transport;
     applyMediaPlayhead(capture.element, stepped.transport, stepped.head);
     if (capture.gain !== undefined) {
       // Read from the SAME resolve the playhead came from, so volume and position can
@@ -561,5 +652,5 @@ export function useAudioInput(
     if (element !== undefined && !element.paused) element.pause();
   }, []);
 
-  return { read, status, sync, setRunning };
+  return { read, status, detector, sync, setRunning };
 }

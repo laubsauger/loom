@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { LoomBus } from "@domain/commands/bus.ts";
-import type { AudioFeatures } from "@domain/types/frame.ts";
+import type { AudioFeatures, FrameEvaluationInput } from "@domain/types/frame.ts";
 import {
   createFeatureTrackRecorder,
   serializeFeatureTrack,
 } from "@domain/audio/feature-track.ts";
-import type { FeatureTrackRecorder } from "@domain/audio/feature-track.ts";
+import type { FeatureTrackProvenance, FeatureTrackRecorder } from "@domain/audio/feature-track.ts";
 import { registerAudioTrackCommands } from "./audio-track-commands.ts";
 import { writeTextFile } from "./project-io.ts";
 import type { SaveOutcome, WriteProjectOptions } from "./project-io.ts";
@@ -40,7 +40,7 @@ export const AUDIO_TRACK_PICKER_TYPE = {
 
 export interface AudioTrackSession {
   /** Wrap the session's audio read with this; it captures while armed. */
-  readonly read: () => AudioFeatures | null;
+  readonly read: (frame: FrameEvaluationInput) => AudioFeatures | null;
   readonly recording: boolean;
   readonly frames: number;
 }
@@ -48,9 +48,15 @@ export interface AudioTrackSession {
 export interface UseAudioTrackOptions {
   readonly bus: LoomBus;
   /** The session's live feature read — `useAudioInput().read`. */
-  readonly source: () => AudioFeatures | null;
+  readonly source: (frame: FrameEvaluationInput) => AudioFeatures | null;
   /** True while a capture is actually live. Arming without one is refused by the command. */
   readonly hasSource: () => boolean;
+  /**
+   * T1229: the capture's detector knobs — `useAudioInput().detector`. Read at the arm and
+   * on every captured frame: a take is recorded WITH one setting, and if the knobs move
+   * while it is armed the track carries none (`disown`) rather than the first one.
+   */
+  readonly provenance?: () => FeatureTrackProvenance["detector"] | null;
   readonly fps: number;
   /** Suggested file name stem, normally the project's. */
   readonly name: () => string;
@@ -76,14 +82,26 @@ export function useAudioTrack(options: UseAudioTrackOptions): AudioTrackSession 
   nameRef.current = options.name;
   const writeOptionsRef = useRef(options.writeOptions);
   writeOptionsRef.current = options.writeOptions;
+  const provenanceRef = useRef(options.provenance);
+  provenanceRef.current = options.provenance;
+  /** The knobs the armed take started under; null once it has been disowned or had none. */
+  const armedDetectorRef = useRef<FeatureTrackProvenance["detector"] | null>(null);
 
-  const read = useCallback((): AudioFeatures | null => {
-    const features = sourceRef.current();
+  const read = useCallback((frame: FrameEvaluationInput): AudioFeatures | null => {
+    const features = sourceRef.current(frame);
     const recorder = recorderRef.current;
     if (recorder !== null && recordingRef.current) {
       const index = nextIndexRef.current;
       nextIndexRef.current = index + 1;
       recorder.capture(index, features);
+      const armed = armedDetectorRef.current;
+      if (armed !== null) {
+        const now = provenanceRef.current?.() ?? null;
+        if (now === null || now.threshold !== armed.threshold || now.retrigger !== armed.retrigger) {
+          recorder.disown();
+          armedDetectorRef.current = null;
+        }
+      }
       setFrames(index + 1);
     }
     return features;
@@ -97,7 +115,9 @@ export function useAudioTrack(options: UseAudioTrackOptions): AudioTrackSession 
         if (next) {
           // A fresh arm is a fresh take. Appending to the previous one would splice two
           // performances into a track that claims to be one continuous recording.
-          recorderRef.current = createFeatureTrackRecorder(fps);
+          const detector = provenanceRef.current?.() ?? null;
+          armedDetectorRef.current = detector;
+          recorderRef.current = createFeatureTrackRecorder(fps, detector === null ? undefined : { detector });
           nextIndexRef.current = 0;
           setFrames(0);
         }

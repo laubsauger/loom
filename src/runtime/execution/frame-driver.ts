@@ -1,5 +1,5 @@
 import type { CompiledExecutionPlan, FrameInputs } from "../../domain/types/backend.ts";
-import type { AudioFeatures } from "../../domain/types/frame.ts";
+import type { AudioFeatures, FrameEvaluationInput } from "../../domain/types/frame.ts";
 import type { TransportSource } from "../../domain/types/frame.ts";
 import type { FrameLoopControl, LoomBackend } from "../backend/backend-types.ts";
 import type { PointerSource } from "./pointer.ts";
@@ -25,8 +25,12 @@ export interface FrameDriverOptions {
    * T414: the frame's audio FEATURES, read per tick like the pointer — the ONE audio
    * source of the session (§V182's rule with sound). Absent or null = silence: the
    * field is simply left off FrameInputs and every consumer reads zeros.
+   *
+   * T1229: read AFTER the transport has produced the frame, and handed it. A live source
+   * ignores the argument; a playhead-indexed track (a pre-analysed file under
+   * `playMode: timeline`) needs the frame's time to know which of its frames to read.
    */
-  readonly audio?: () => AudioFeatures | null;
+  readonly audio?: (frame: FrameEvaluationInput) => AudioFeatures | null;
   /** Output resolution in pixels; read per frame so a resize needs no driver restart. */
   readonly resolution: () => readonly [number, number];
   /**
@@ -80,9 +84,10 @@ export function createFrameDriver(options: FrameDriverOptions): FrameDriver {
 
   function tick(): FrameInputs | null {
     if (!plan) return null;
-    const features = options.audio?.() ?? null;
+    const frame = transport.next();
+    const features = options.audio?.(frame) ?? null;
     const inputs: FrameInputs = {
-      frame: transport.next(),
+      frame,
       pointer: pointer.state,
       ...(features === null ? {} : { audio: features }),
       resolution: resolution(),

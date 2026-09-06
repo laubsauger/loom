@@ -748,12 +748,15 @@ export function App({
     () => runtime.flattened.current().graph,
     runtime.registry,
     mediaControls,
+    // T1229: the grid a bound file is pre-analysed on — the same rate the track below records at.
+    () => projectFps(runtime.settings),
   );
   // T452: the recorder WRAPS that read, so the track holds what the engine actually saw.
   const audioTrack = useAudioTrack({
     bus: runtime.bus,
     source: audioInput.read,
     hasSource: () => audioInput.status().kind === "live",
+    provenance: audioInput.detector,
     fps: projectFps(runtime.settings),
     name: () => project.fileName ?? runtime.project.name,
   });

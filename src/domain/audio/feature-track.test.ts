@@ -212,3 +212,43 @@ describe("a stored track refuses by name rather than replaying something plausib
     expect(text.length).toBeLessThan(100 * FEATURE_TRACK_STRIDE * 22);
   });
 });
+
+describe("T1229 — a track carries the detector settings it was recorded WITH, as provenance", () => {
+  const detector = { threshold: 0.25, retrigger: 0.08 };
+
+  it("round-trips the settings, and a track recorded without them has none", () => {
+    const recorder = createFeatureTrackRecorder(60, { detector });
+    recorder.capture(0, features(0.5));
+    const result = parseFeatureTrack(serializeFeatureTrack(recorder.track()));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.track.provenance).toEqual({ detector });
+
+    // Absent, not defaulted: a file from before T1229 does not know its knobs, and
+    // inventing the shipped defaults for it would be a claim the recording never made.
+    const old = parseFeatureTrack(JSON.stringify({ version: FEATURE_TRACK_VERSION, fps: 60, frames: [] }));
+    expect(old.ok).toBe(true);
+    if (old.ok) expect("provenance" in old.track).toBe(false);
+    expect("provenance" in createFeatureTrackRecorder(60).track()).toBe(false);
+  });
+
+  it("a take whose knobs moved while armed is disowned: the file carries no settings at all", () => {
+    const recorder = createFeatureTrackRecorder(60, { detector });
+    recorder.capture(0, features(0.5));
+    recorder.disown();
+    recorder.capture(1, features(0.6));
+    expect("provenance" in recorder.track()).toBe(false);
+  });
+
+  it("refuses provenance that is not a finite threshold and retrigger, by name", () => {
+    const stored = JSON.stringify({
+      version: FEATURE_TRACK_VERSION,
+      fps: 60,
+      frames: [],
+      provenance: { detector: { threshold: "high", retrigger: 0.08 } },
+    });
+    const result = parseFeatureTrack(stored);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe("audio.track.provenance");
+  });
+});

@@ -71,6 +71,19 @@ export const FEATURE_TRACK_FIELDS = [
 
 export const FEATURE_TRACK_STRIDE = FEATURE_TRACK_FIELDS.length;
 
+/**
+ * T1229 — what a track was recorded WITH. Provenance, not a version: the detector knobs
+ * change what `kickCount` and its siblings COUNT without changing what the fields mean,
+ * so two tracks of the same file under different thresholds are both valid version-2
+ * tracks that disagree — and this is how a reader tells which one it holds. Absent on a
+ * track that predates it, and on a live take whose knobs moved mid-recording (there is
+ * no single true answer, and a wrong one would be worse than none).
+ */
+export interface FeatureTrackProvenance {
+  /** The source node's picker knobs, in seconds — `DetectorSettings` in `app/audio-analysis-protocol.ts`. */
+  readonly detector: { readonly threshold: number; readonly retrigger: number };
+}
+
 export interface FeatureTrack {
   readonly version: number;
   /**
@@ -81,6 +94,7 @@ export interface FeatureTrack {
   readonly fps: number;
   /** Flat, `FEATURE_TRACK_STRIDE` numbers per frame, index 0 = frame 0. */
   readonly frames: readonly number[];
+  readonly provenance?: FeatureTrackProvenance;
 }
 
 /** T1227: no tempo claim — `bpmConfidence` 0 and, by the contract, every other tempo field 0. */
@@ -124,6 +138,11 @@ export interface FeatureTrackRecorder {
   capture(frameIndex: number, features: AudioFeatures | null): void;
   /** Frames captured so far, by highest index seen. */
   readonly length: number;
+  /**
+   * T1229: the take no longer has ONE provenance — the knobs moved while it was armed.
+   * The track then carries none; a claim that was true for part of it is not a claim.
+   */
+  disown(): void;
   track(): FeatureTrack;
 }
 
@@ -135,9 +154,10 @@ export interface FeatureTrackRecorder {
  * frame loop might never have sampled, and the replay would then differ from the
  * performance in exactly the frames where it mattered.
  */
-export function createFeatureTrackRecorder(fps: number): FeatureTrackRecorder {
+export function createFeatureTrackRecorder(fps: number, provenance?: FeatureTrackProvenance): FeatureTrackRecorder {
   const byIndex = new Map<number, AudioFeatures>();
   let highest = -1;
+  let known: FeatureTrackProvenance | undefined = provenance;
 
   return {
     capture(frameIndex, features) {
@@ -147,6 +167,9 @@ export function createFeatureTrackRecorder(fps: number): FeatureTrackRecorder {
     },
     get length() {
       return highest + 1;
+    },
+    disown() {
+      known = undefined;
     },
     track() {
       const frames: number[] = [];
@@ -160,7 +183,7 @@ export function createFeatureTrackRecorder(fps: number): FeatureTrackRecorder {
         last = features;
         for (const field of FEATURE_TRACK_FIELDS) frames.push(features[field]);
       }
-      return { version: FEATURE_TRACK_VERSION, fps, frames };
+      return known === undefined ? { version: FEATURE_TRACK_VERSION, fps, frames } : { version: FEATURE_TRACK_VERSION, fps, frames, provenance: known };
     },
   };
 }
@@ -248,6 +271,23 @@ export function parseFeatureTrack(text: string): TrackReadResult {
       ok: false,
       code: "audio.track.frames",
       message: `The feature track holds ${String(frames.length)} numbers, which is not a whole number of ${String(FEATURE_TRACK_STRIDE)}-field frames.`,
+    };
+  }
+  const provenance = record["provenance"];
+  if (provenance !== undefined) {
+    const detector = (provenance as { detector?: unknown } | null)?.detector as Record<string, unknown> | undefined;
+    const threshold = detector?.["threshold"];
+    const retrigger = detector?.["retrigger"];
+    if (typeof threshold !== "number" || !Number.isFinite(threshold) || typeof retrigger !== "number" || !Number.isFinite(retrigger)) {
+      return {
+        ok: false,
+        code: "audio.track.provenance",
+        message: "The feature track names its detector settings, but not as a finite threshold and retrigger.",
+      };
+    }
+    return {
+      ok: true,
+      track: { version: FEATURE_TRACK_VERSION, fps, frames: frames as number[], provenance: { detector: { threshold, retrigger } } },
     };
   }
   return { ok: true, track: { version: FEATURE_TRACK_VERSION, fps, frames: frames as number[] } };

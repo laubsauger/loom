@@ -189,9 +189,10 @@ export interface FrameLoopOptions {
   readonly pointer?: PointerSource | undefined;
   /**
    * T414: the session's ONE audio feature source (§V182's rule with sound). Read per
-   * rendered frame; null = silence, and the field stays off FrameInputs entirely.
+   * rendered frame, with the frame (T1229: a pre-analysed file is indexed by its playhead);
+   * null = silence, and the field stays off FrameInputs entirely.
    */
-  readonly audio?: (() => AudioFeatures | null) | undefined;
+  readonly audio?: ((frame: FrameEvaluationInput) => AudioFeatures | null) | undefined;
   /**
    * This revision changed VALUES ONLY (T308, §V5), from `useGraphCompile`.
    *
@@ -380,7 +381,7 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
   const animatorRef = useRef(createUniformAnimator());
   const driftRef = useRef(false);
   const pointerRef = useRef<PointerSource | null>(null);
-  const audioRef = useRef<(() => AudioFeatures | null) | null>(options.audio ?? null);
+  const audioRef = useRef<((frame: FrameEvaluationInput) => AudioFeatures | null) | null>(options.audio ?? null);
   audioRef.current = options.audio ?? null;
   const generationRef = useRef(0);
 
@@ -541,7 +542,7 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
       pointer,
       // Read through the ref PER TICK: an audio source that appears later (the user
       // adds an audioIn node mid-session) must not need a driver restart.
-      audio: () => audioRef.current?.() ?? null,
+      audio: (frame) => audioRef.current?.(frame) ?? null,
       resolution: () => {
         const { width, height } = resolutionRef.current;
         return [width, height] as const;

@@ -749,9 +749,9 @@ export async function renderHeadless(request: HeadlessRenderRequest): Promise<He
     // the ROUND TRIP rather than of two separate code paths.
     const audioAt = request.audio;
     const recorder = request.recordAudio;
-    // The driver reads its audio seam with no argument — it is a LIVE source there. The
-    // loop below publishes the index it is about to step so the closure knows which frame
-    // of the track it is standing in.
+    // The loop below publishes the index it is about to step so the closure knows which
+    // frame of the track it is standing in — its own counter, as before the driver started
+    // handing the seam the frame (T1229); a live source ignores that argument.
     let steppingFrame = 0;
     const audioSeam =
       audioAt === undefined && recorder === undefined
