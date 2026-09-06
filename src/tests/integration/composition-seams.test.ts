@@ -175,6 +175,16 @@ const NOT_CONSTRUCTED: ReadonlyArray<{ name: string; reason: string }> = [
       "Constructed by `runtime/models/inference.worker.ts`, which is a WORKER entry point — a real product root that this scan does not walk, the same gap `createHeadlessMcpServer` sits in. The split is deliberate (T382): every decision lives in the core so it can be unit-tested without starting a thread, and the worker file is a shim over it. `worker-runner.test.ts` drives the core through the full protocol — load, run, out-of-order results, a model that throws, a run before its load — and the main-thread half against a fake worker.",
   },
   {
+    name: "createHopAnalyser",
+    reason:
+      "Constructed by `app/audio-analysis.worklet.ts`, an AudioWorklet entry point loaded through `?worker&url` — a product root this scan does not walk, the same gap `createWorkerCore` sits in. The split is the same one (§V747, T1226): every decision lives in the core so it can be driven on synthetic windows without an audio thread, and the worklet file is a shim over it (ring, hop schedule, port). `hop-analyser.test.ts` pins the hop values analytically; `e2e/audio-engine.spec.ts` runs the shipped worklet in Chromium and then proves the product path reaches it — an `Audio In` node on a microphone shows live with no §V288 fallback message.",
+  },
+  {
+    name: "createPeakPicker",
+    reason:
+      "Constructed inside `createHopAnalyser`, one per SuperFlux stream — the same worklet entry point, the same gap. `peaks.test.ts` pins the bar semantics; `hop-analyser.test.ts` exercises it through the core.",
+  },
+  {
     name: "createRng",
     reason:
       "Determinism primitive (§V45), not a service: seeds reach shaders through the shared frame block, and nothing on the CPU draws from a stream.",

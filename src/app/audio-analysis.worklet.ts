@@ -1,23 +1,22 @@
 /**
- * T1225 — the audio analysis worklet: the analyser, on the AUDIO thread, at a fixed hop.
+ * T1225/T1226 — the audio analysis worklet: the engine, on the AUDIO thread, at a fixed hop.
  *
- * Today's engine is one `AnalyserNode` polled once per displayed frame: whatever 2048
+ * Today's polled path is one `AnalyserNode` read once per displayed frame: whatever 2048
  * samples it happens to hold when rAF fires. Transients that land between two polls are
  * never seen (`audio-features.ts` T437 note). This processor sees every render quantum,
- * keeps the last `fftSize` samples in a ring, and every `hop` samples runs the SAME
- * analysis the node runs (`@domain/audio/analysis/stft.ts`) — posting the two byte
- * arrays `computeAudioFeatures` already eats. The main thread accumulates hops between
- * displayed frames; nothing downstream of `FrameInputs.audio` learns how the bytes were
- * made.
+ * keeps the last `fftSize` samples in a ring, and every `hop` samples hands the window to
+ * the engine core (`@domain/audio/analysis/hop-analyser.ts`) — posting the analyser-shaped
+ * bytes `computeAudioFeatures` already eats plus the hop's flux and events. The main
+ * thread accumulates hops between displayed frames (`audio-analysis-frame.ts`); nothing
+ * downstream of `FrameInputs.audio` learns how the bytes were made.
  *
  * This file is the THREAD SHIM (§V747): ring, hop schedule, message port. No analysis
- * math lives here; the port protocol is `audio-analysis-protocol.ts` (nothing on the
- * main thread may import THIS file — evaluating it registers a processor). It is loaded
- * through `audio-analysis-worklet-url.ts`; T1226 wires it
- * into `use-audio-input.ts`, this row only proves it loads under Vite and matches the
- * node byte for byte (`src/tests/e2e/audio-worklet-parity.spec.ts`).
+ * math and no constants live here — every option arrives as `processorOptions` from
+ * `audio-analysis-protocol.ts` (nothing on the main thread may import THIS file —
+ * evaluating it registers a processor). Loaded through `audio-analysis-worklet-url.ts`
+ * by `use-audio-input.ts`.
  */
-import { analyserBytes, blackmanWindow } from "@domain/audio/analysis/stft.ts";
+import { createHopAnalyser } from "@domain/audio/analysis/hop-analyser.ts";
 import {
   AUDIO_ANALYSIS_PROCESSOR_NAME,
   type AudioAnalysisHopMessage,
@@ -28,7 +27,7 @@ import {
 
 /*
  * `lib.dom` types the node side of the worklet (`AudioWorkletNode`) and nothing of the
- * global scope this file runs in. The three names below are the whole surface it uses.
+ * global scope this file runs in. The four names below are the whole surface it uses.
  */
 declare class AudioWorkletProcessor {
   readonly port: MessagePort;
@@ -36,14 +35,15 @@ declare class AudioWorkletProcessor {
   process(inputs: Float32Array[][], outputs: Float32Array[][], parameters: Record<string, Float32Array>): boolean;
 }
 declare function registerProcessor(name: string, processor: typeof AudioWorkletProcessor): void;
+/** The context's sample rate, a global of `AudioWorkletGlobalScope`. */
+declare const sampleRate: number;
 
 class AudioAnalysisProcessor extends AudioWorkletProcessor {
   private readonly fftSize: number;
   private readonly hop: number;
   private readonly ring: Float32Array;
-  private readonly window: Float64Array;
   private readonly frame: Float64Array;
-  private readonly scratch: Float64Array;
+  private readonly engine: ReturnType<typeof createHopAnalyser>;
   /** Samples written so far; the ring index is `written % ring.length`. */
   private written = 0;
   /** The sample count at which the next window ends. */
@@ -51,18 +51,18 @@ class AudioAnalysisProcessor extends AudioWorkletProcessor {
 
   constructor(options?: { processorOptions?: unknown }) {
     super(options);
-    const { fftSize, hop } = (options?.processorOptions ?? {}) as Partial<AudioAnalysisProcessorOptions>;
-    if (!fftSize || !hop || (fftSize & (fftSize - 1)) !== 0 || hop <= 0) {
-      throw new Error(`audio analysis worklet: fftSize must be a power of two and hop positive, got ${fftSize}/${hop}`);
+    const { hop, ...analyser } = (options?.processorOptions ?? {}) as Partial<AudioAnalysisProcessorOptions>;
+    if (!hop || hop <= 0 || !analyser.fftSize) {
+      throw new Error(`audio analysis worklet: fftSize and a positive hop are required, got ${analyser.fftSize}/${hop}`);
     }
-    this.fftSize = fftSize;
+    // The core validates the rest and throws by name; a throw here surfaces as `processorerror`.
+    this.engine = createHopAnalyser({ ...(analyser as Omit<AudioAnalysisProcessorOptions, "hop">), sampleRate });
+    this.fftSize = analyser.fftSize;
     this.hop = hop;
     // Room for a whole window plus the quantum that completes it, at any hop alignment.
-    this.ring = new Float32Array(fftSize * 2);
-    this.window = blackmanWindow(fftSize);
-    this.frame = new Float64Array(fftSize);
-    this.scratch = new Float64Array(fftSize / 2);
-    this.nextEnd = fftSize;
+    this.ring = new Float32Array(this.fftSize * 2);
+    this.frame = new Float64Array(this.fftSize);
+    this.nextEnd = this.fftSize;
     this.port.onmessage = (event: MessageEvent<AudioAnalysisPingMessage>) => {
       if (event.data?.type === "ping") {
         const pong: AudioAnalysisPongMessage = { type: "pong", id: event.data.id };
@@ -86,11 +86,14 @@ class AudioAnalysisProcessor extends AudioWorkletProcessor {
       const end = this.nextEnd;
       const start = end - this.fftSize;
       for (let i = 0; i < this.fftSize; i += 1) this.frame[i] = ring[(start + i) & mask] as number;
-      const frequency = new Uint8Array(this.fftSize / 2);
-      const timeDomain = new Uint8Array(this.fftSize);
-      analyserBytes(this.frame, this.window, frequency, timeDomain, this.scratch);
-      const message: AudioAnalysisHopMessage = { type: "hop", end, frequency, timeDomain };
-      this.port.postMessage(message, [frequency.buffer, timeDomain.buffer]);
+      const hop = this.engine.analyse(this.frame);
+      const message: AudioAnalysisHopMessage = { type: "hop", end, ...hop };
+      this.port.postMessage(message, [
+        hop.frequency.buffer,
+        hop.timeDomain.buffer,
+        hop.bandFlux.buffer,
+        hop.bandEvents.buffer,
+      ]);
       this.nextEnd += this.hop;
     }
     return true;

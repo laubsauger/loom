@@ -7,6 +7,13 @@ import { isSilencedSource } from "@domain/graph/bypass.ts";
 import { computeAudioFeatures } from "./audio-features.ts";
 import { awaitMediaReady } from "./media-sources.ts";
 import type { AudioAnalysisState } from "./audio-features.ts";
+import { createAudioHopReducer, type AudioHopReducer } from "./audio-analysis-frame.ts";
+import {
+  AUDIO_ANALYSIS_OPTIONS,
+  AUDIO_ANALYSIS_PROCESSOR_NAME,
+  type AudioAnalysisWorkletMessage,
+} from "./audio-analysis-protocol.ts";
+import { AUDIO_ANALYSIS_WORKLET_URL } from "./audio-analysis-worklet-url.ts";
 import type { AppRuntime } from "./app-runtime.ts";
 import type { MediaControlRegistry } from "./media-commands.ts";
 import {
@@ -31,12 +38,59 @@ import {
  * value graph (`valueLag`), where the user can have both the raw transient and the
  * damped envelope. A pre-smoothed source would silently deny them the raw one.
  *
+ * T1226 — the ANALYSIS runs on the audio thread. The input feeds two things: the
+ * analyser, and an `AudioWorkletNode` running the engine (`audio-analysis.worklet.ts`)
+ * at a fixed 512-sample hop. `read()` reduces the hops that arrived since the previous
+ * frame (`audio-analysis-frame.ts`), so a transient between two rAFs is counted instead
+ * of missed. The analyser stays in the chain for two reasons: it is the NAMED fallback
+ * when the worklet cannot load (§V288 — the status says so, the polled path runs, and
+ * the features keep their v1 meaning because both paths produce the same bytes, T1225),
+ * and for a file it is where the monitoring gain hangs (see the placement note below).
+ *
  * Failure is LOUD but not fatal: a denied microphone or an unloadable URL parks the
  * capture in an error status (readable for UI) and the reader returns null — the same
  * deterministic silence a session with no audio has, never a half-working stream.
  */
 
 const ANALYSER_FFT_SIZE = 2048;
+
+/** §V288: the fallback is taken AND named. Anything reading "Live" with this beside it is on the polled path. */
+function workletFallbackMessage(reason: string): string {
+  return `Analysis worklet unavailable (${reason}); polling the analyser once per frame.`;
+}
+
+type EngineAttachment = { readonly node: AudioWorkletNode; readonly reducer: AudioHopReducer } | { readonly failure: string };
+
+/**
+ * T1226 — the engine on `context`'s audio thread, or the reason it could not be. Never
+ * throws: a missing `audioWorklet` (an old WebView), a rejected `addModule` (the chunk
+ * did not load) and a bad option all become the fallback's named reason.
+ */
+async function attachAnalysisEngine(context: AudioContext): Promise<EngineAttachment> {
+  try {
+    if (context.audioWorklet === undefined) throw new Error("AudioWorklet is not supported here");
+    await context.audioWorklet.addModule(AUDIO_ANALYSIS_WORKLET_URL);
+    const node = new AudioWorkletNode(context, AUDIO_ANALYSIS_PROCESSOR_NAME, {
+      numberOfInputs: 1,
+      numberOfOutputs: 0,
+      // Mono, as the analyser hears it: its analysis down-mixes too.
+      channelCount: 1,
+      channelCountMode: "explicit",
+      processorOptions: AUDIO_ANALYSIS_OPTIONS,
+    });
+    const reducer = createAudioHopReducer(
+      AUDIO_ANALYSIS_OPTIONS.fftSize,
+      context.sampleRate,
+      AUDIO_ANALYSIS_OPTIONS.bands.length + 1,
+    );
+    node.port.onmessage = (event: MessageEvent<AudioAnalysisWorkletMessage>) => {
+      if (event.data.type === "hop") reducer.push(event.data);
+    };
+    return { node, reducer };
+  } catch (error) {
+    return { failure: error instanceof Error ? error.message : String(error) };
+  }
+}
 
 export interface AudioInputStatus {
   readonly kind: "idle" | "live" | "error";
@@ -180,6 +234,8 @@ export function useAudioInput(
   const captureRef = useRef<LiveCapture | null>(null);
   const statusRef = useRef<AudioInputStatus>({ kind: "idle" });
   const stateRef = useRef<AudioAnalysisState>({ previousSpectrum: null, previousOnset: 0 });
+  /** T1226: the hop reducer while the worklet runs; null on the polled fallback. */
+  const engineRef = useRef<AudioHopReducer | null>(null);
   const configKeyRef = useRef<string>("");
   const frequencyRef = useRef<Uint8Array<ArrayBuffer> | null>(null);
   const timeDomainRef = useRef<Uint8Array<ArrayBuffer> | null>(null);
@@ -208,6 +264,7 @@ export function useAudioInput(
     const teardown = (): void => {
       captureRef.current?.dispose();
       captureRef.current = null;
+      engineRef.current = null;
       runnerRef.current = null;
       releaseControlRef.current?.();
       releaseControlRef.current = null;
@@ -223,6 +280,31 @@ export function useAudioInput(
       // Zero: valueLag downstream owns smoothing; the default 0.8 would pre-damp
       // every transient before a trigger could see it.
       analyser.smoothingTimeConstant = 0;
+
+      /*
+       * T1226: the engine first — it depends on nothing the source does, and a fallback
+       * message must be decided before the status goes "live" below. `messages` collects
+       * every reason the live status has to name; there can be two (device AND worklet).
+       */
+      const messages: string[] = [];
+      const engine = await attachAnalysisEngine(context);
+      if ("failure" in engine) messages.push(workletFallbackMessage(engine.failure));
+      const attachEngine = (input: AudioNode): void => {
+        if ("failure" in engine) return;
+        input.connect(engine.node);
+        engineRef.current = engine.reducer;
+        engine.node.onprocessorerror = () => {
+          // The processor threw on the audio thread: it posts nothing from here on, and
+          // a reader left on it would report silence forever. Same fallback, same name.
+          if (engineRef.current !== engine.reducer) return;
+          engineRef.current = null;
+          statusRef.current = { kind: "live", message: workletFallbackMessage("the processor failed") };
+        };
+      };
+      if (cancelled) {
+        void context.close();
+        return;
+      }
 
       try {
         if (config.source === "mic") {
@@ -243,10 +325,7 @@ export function useAudioInput(
             } catch (constrained) {
               if ((constrained as { name?: string }).name !== "OverconstrainedError") throw constrained;
               stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-              statusRef.current = {
-                kind: "live",
-                message: "The selected device is unavailable; using the system default.",
-              };
+              messages.push("The selected device is unavailable; using the system default.");
             }
           }
           if (cancelled) {
@@ -256,6 +335,7 @@ export function useAudioInput(
           }
           const input = context.createMediaStreamSource(stream);
           input.connect(analyser);
+          attachEngine(input);
           captureRef.current = {
             context,
             analyser,
@@ -279,6 +359,7 @@ export function useAudioInput(
           element.src = config.url;
           const input = context.createMediaElementSource(element);
           input.connect(analyser);
+          attachEngine(input);
           /*
            * T493 — VOLUME SITS AFTER THE ANALYSER, and that placement is the feature.
            *
@@ -334,7 +415,7 @@ export function useAudioInput(
             runnerRef.current = null;
           }
         }
-        if (statusRef.current.kind !== "live") statusRef.current = { kind: "live" };
+        statusRef.current = messages.length === 0 ? { kind: "live" } : { kind: "live", message: messages.join(" ") };
       } catch (error) {
         void context.close();
         statusRef.current = {
@@ -385,6 +466,9 @@ export function useAudioInput(
   const read = useCallback((): AudioFeatures | null => {
     const capture = captureRef.current;
     if (capture === null) return null;
+    // T1226: the engine's hops since the last frame; the analyser poll is the named fallback.
+    const engine = engineRef.current;
+    if (engine !== null) return engine.read().features;
     const bins = capture.analyser.frequencyBinCount;
     if (frequencyRef.current?.length !== bins) frequencyRef.current = new Uint8Array(bins);
     if (timeDomainRef.current?.length !== capture.analyser.fftSize) {

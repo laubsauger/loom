@@ -11,9 +11,8 @@ import { computeAudioFeatures } from "@/app/audio-features.ts";
  *    `audio-analysis-worklet-url.ts` commits to; if Vite serves it wrong, `addModule`
  *    rejects and this spec fails at the first await with the browser's own reason.
  *    (The production half of the same question is `pnpm build`: the module is emitted
- *    as its own ES chunk under `assets/`. It is not asserted here because until T1226
- *    wires the URL into `use-audio-input.ts` nothing in the product reaches it, and a
- *    build emits only what is reached.)
+ *    as its own ES chunk under `assets/` now that T1226 wired the URL into
+ *    `use-audio-input.ts`; `audio-engine.spec.ts` asserts the product path loads it.)
  *
  * 2. Do the bytes the worklet posts equal the bytes the analyser would have returned
  *    for THE SAME 2048 SAMPLES? Only identical samples make "within byte quantisation"
@@ -53,6 +52,7 @@ interface WorkletUrlModule {
 }
 interface ProtocolModule {
   readonly AUDIO_ANALYSIS_PROCESSOR_NAME: string;
+  readonly AUDIO_ANALYSIS_OPTIONS: { readonly fftSize: number; readonly hop: number };
 }
 
 const BANDS = ["low", "lowMid", "highMid", "high"] as const;
@@ -77,7 +77,9 @@ test.describe("T1225 — the analysis worklet against a live AnalyserNode on ide
         const urlModulePath = "/src/app/audio-analysis-worklet-url.ts";
         const protocolModulePath = "/src/app/audio-analysis-protocol.ts";
         const { AUDIO_ANALYSIS_WORKLET_URL } = (await import(/* @vite-ignore */ urlModulePath)) as WorkletUrlModule;
-        const { AUDIO_ANALYSIS_PROCESSOR_NAME } = (await import(/* @vite-ignore */ protocolModulePath)) as ProtocolModule;
+        const { AUDIO_ANALYSIS_PROCESSOR_NAME, AUDIO_ANALYSIS_OPTIONS } = (await import(
+          /* @vite-ignore */ protocolModulePath
+        )) as ProtocolModule;
 
         const length = fftSize + hop * hops + 128;
         const context = new OfflineAudioContext(1, length, sampleRate);
@@ -112,7 +114,8 @@ test.describe("T1225 — the analysis worklet against a live AnalyserNode on ide
           numberOfOutputs: 0,
           channelCount: 1,
           channelCountMode: "explicit",
-          processorOptions: { fftSize, hop },
+          // T1226: the shipped engine options, on this spec's grid.
+          processorOptions: { ...AUDIO_ANALYSIS_OPTIONS, fftSize, hop },
         });
         source.connect(node);
 
