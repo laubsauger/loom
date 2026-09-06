@@ -1,4 +1,5 @@
 import type { CompiledNodeDescription, NodeDefinition } from "../../domain/types/node-definition.ts";
+import type { AudioFeatures } from "../../domain/types/frame.ts";
 import { MEDIA_TRANSPORT_PARAMETERS } from "../../domain/media/transport.ts";
 import { VALUE_PORT } from "./common-ports.ts";
 
@@ -19,9 +20,11 @@ import { VALUE_PORT } from "./common-ports.ts";
  *  - smoothing. `valueLag` downstream gives both the raw transient AND the damped
  *    envelope; a source that smooths internally gives you neither, and a trigger wants
  *    the raw one.
- *  - a `beat` channel. Beat detection is a CLAIM, not a measurement; a confidently
- *    wrong beat is worse than the honest onset envelope below, thresholded by the user
- *    (`valueTrigger`) for the transients they mean.
+ *  - a `bar` channel. A downbeat from live input is a CLAIM nobody can back; bar
+ *    structure stays with the nodes that can count it (`audioPattern`, or a declared
+ *    tempo, T1229). The tempo fields that ARE here (T1227) carry `bpmConfidence` for the
+ *    same reason: 0 says no claim is being made, and a live input makes none until a
+ *    tempo is declared or estimated (T1228).
  */
 export const audioInNode: NodeDefinition = {
   type: "audioIn",
@@ -29,7 +32,7 @@ export const audioInNode: NodeDefinition = {
   title: "Audio In",
   category: "input",
   description:
-    "The session's audio input as channels: level (RMS), low / lowMid / highMid / high band energies, and onset — a spectral-flux envelope that rises on ANY energy increase, not a beat detector; threshold it with Trigger. NO beat or bar channels: a live input has no declared tempo, and a guessed one would be wrong. For musical structure, run an Audio Pattern at the tempo you are playing to and take bar/beat from there. Silent (all zeros) when no audio input is live. CLOCKLESS (§V436): the numbers come from what the analyser heard this frame, so a timeline loop passes straight through them.",
+    "The session's audio input as channels: level (RMS), low / lowMid / highMid / high band energies, and onset — a spectral-flux envelope that rises on ANY energy increase, not a beat detector; threshold it with Trigger, or read onsetCount (events this frame) and onsetMax (the frame's peak). kick / snare / hat and kickCount / snareCount / hatCount are BAND HEURISTICS: the same onset envelope and event count confined to the band each drum mostly lives in (30-150, 150-2500, 5000-16000 Hz) — on a mix a bass note or a consonant can fire them; on a drums stem they are a measurement. centroid is where the spectrum's weight sits, 0..1 over 20-16000 Hz — brightness. bpm, bpmConfidence, beatPhase, beat and beatCount are a TEMPO CLAIM and bpmConfidence says what it is worth: a live input makes no claim, so all five read 0 here until a tempo is declared or estimated. NO bar channels: a downbeat guessed from live input would be confidently wrong. For bar structure, run an Audio Pattern at the tempo you are playing to and take bar/beat from there. Silent (all zeros) when no audio input is live. CLOCKLESS (§V436): the numbers come from what the analyser heard this frame, so a timeline loop passes straight through them.",
   tags: ["value", "input", "audio", "sound", "music", "fft"],
   inputs: [],
   outputs: [{ id: "out", label: "Out", type: VALUE_PORT }],
@@ -53,8 +56,12 @@ export const audioInNode: NodeDefinition = {
   compile: (): CompiledNodeDescription => ({ passes: [] }),
 };
 
-/** Both audio nodes publish the SAME channels: the session has one feature record. */
-function projectFeatures(audio: { level: number; low: number; lowMid: number; highMid: number; high: number; onset: number; onsetCount: number; onsetMax: number } | undefined) {
+/**
+ * Both audio nodes publish the SAME channels: the session has one feature record. Every
+ * field of it, by name (T1227): a field the record carries and the node did not publish
+ * would be the "built, never wired" hole, and `audio.test.ts` pins the set.
+ */
+function projectFeatures(audio: AudioFeatures | undefined): Record<keyof AudioFeatures, number> {
   return {
     level: audio?.level ?? 0,
     low: audio?.low ?? 0,
@@ -63,10 +70,22 @@ function projectFeatures(audio: { level: number; low: number; lowMid: number; hi
     high: audio?.high ?? 0,
     onset: audio?.onset ?? 0,
     // T437: interval-shaped onset events — count of rising threshold crossings and the
-    // interval's peak. Per-frame analysis makes these 0|1 and == onset; a faster hop
-    // later refines fidelity, never meaning.
+    // interval's peak, at hop fidelity since T1226.
     onsetCount: audio?.onsetCount ?? 0,
     onsetMax: audio?.onsetMax ?? 0,
+    // T1227: the band heuristics, the centroid and the tempo claim, as the record makes them.
+    kick: audio?.kick ?? 0,
+    kickCount: audio?.kickCount ?? 0,
+    snare: audio?.snare ?? 0,
+    snareCount: audio?.snareCount ?? 0,
+    hat: audio?.hat ?? 0,
+    hatCount: audio?.hatCount ?? 0,
+    centroid: audio?.centroid ?? 0,
+    bpm: audio?.bpm ?? 0,
+    bpmConfidence: audio?.bpmConfidence ?? 0,
+    beatPhase: audio?.beatPhase ?? 0,
+    beat: audio?.beat ?? 0,
+    beatCount: audio?.beatCount ?? 0,
   };
 }
 
@@ -105,7 +124,7 @@ export const audioFileInNode: NodeDefinition = {
   title: "Audio File In",
   category: "input",
   description:
-    "Plays an audio file with a transport — play mode, speed, cue, trim, at-end behaviour and volume — and publishes its features as channels: level, low / lowMid / highMid / high, and onset (an energy-rise envelope, not a beat detector — threshold it with Trigger). NO beat or bar channels: nothing here knows an arbitrary file's tempo, and a bar count guessed from one would be confidently wrong at exactly the moment you built a phrase on it. To get structure, run an Audio Pattern beside it set to the track's BPM and take bar/beat from there — lock this node's Play Mode to the timeline and the two stay in step across a lap, because Audio Pattern is timeline-anchored too. A bound file takes over the session's single audio capture. Its CHANNELS are clockless (§V436): they report what was heard this frame, so a timeline loop passes straight through them. Its PLAYHEAD is FREE RUN by default (T586): it keeps its own playhead, so Play and Cue Pulse drive it and a track you just dropped in plays as soon as you press Play, whatever the timeline is doing. Lock it to the timeline and the playhead becomes TIMELINE-ANCHORED instead: the position derives from the frame, so bar one of the track lands on the in point, a scrub finds the same second every time, and an offline render reproduces. Free run gives up all three of those, and a render says so by name rather than quietly handing you a take that differs from what you heard.",
+    "Plays an audio file with a transport — play mode, speed, cue, trim, at-end behaviour and volume — and publishes its features as channels: level, low / lowMid / highMid / high, onset (an energy-rise envelope, not a beat detector — threshold it with Trigger) with onsetCount / onsetMax, the kick / snare / hat band heuristics with their counts (the onset envelope confined to each drum's band — a guess on a mix, a measurement on a drums stem), and centroid (brightness, 0..1). The tempo channels — bpm, bpmConfidence, beatPhase, beat, beatCount — are a CLAIM this node does not make: nothing here knows an arbitrary file's tempo, so bpmConfidence and the rest read 0 until a tempo is declared or estimated. NO bar channels: a bar count guessed from a file would be confidently wrong at exactly the moment you built a phrase on it. To get structure, run an Audio Pattern beside it set to the track's BPM and take bar/beat from there — lock this node's Play Mode to the timeline and the two stay in step across a lap, because Audio Pattern is timeline-anchored too. A bound file takes over the session's single audio capture. Its CHANNELS are clockless (§V436): they report what was heard this frame, so a timeline loop passes straight through them. Its PLAYHEAD is FREE RUN by default (T586): it keeps its own playhead, so Play and Cue Pulse drive it and a track you just dropped in plays as soon as you press Play, whatever the timeline is doing. Lock it to the timeline and the playhead becomes TIMELINE-ANCHORED instead: the position derives from the frame, so bar one of the track lands on the in point, a scrub finds the same second every time, and an offline render reproduces. Free run gives up all three of those, and a render says so by name rather than quietly handing you a take that differs from what you heard.",
   tags: ["value", "input", "audio", "music", "file", "fft", "transport"],
   inputs: [],
   outputs: [{ id: "out", label: "Out", type: VALUE_PORT }],
@@ -147,9 +166,10 @@ export const audioFileInNode: NodeDefinition = {
  * path cannot be, which is what a byte-identical replay gate needs (§V352 without even
  * a recorded track).
  *
- * It publishes the SAME channel set as audioIn/audioFileIn, so swapping a real source
- * in is replacing one node and keeping its label — every downstream edge and driven
- * channel reference survives untouched.
+ * It publishes the SAME channel set as audioIn/audioFileIn — every field of the v2
+ * record (T1227), plus `bar`/`barPhase` which only a node that knows its tempo can
+ * count — so swapping a real source in is replacing one node and keeping its label:
+ * every downstream edge and driven channel reference survives untouched.
  *
  * `onsetCount` is computed over the frame INTERVAL (floor(beats(t)) − floor(beats(t−Δ)))
  * — so a low display rate under a high bpm honestly reports 2 events in one frame,
@@ -244,6 +264,22 @@ const ARRANGEMENT_PULLBACK = { low: 0.9, lowMid: 0.4, highMid: 0.12, high: 0.07 
 /** T707: where a full strike's onset lands — real music's measured max (0.25-0.29, N=3). */
 const ONSET_REFERENCE = 0.28;
 
+/**
+ * T1227 — the pattern's `centroid` is made from the LINEAR band amplitudes, each placed at
+ * the geometric centre of its band (`AUDIO_BAND_EDGES_HZ`), and normalised over the same
+ * 20-16000 Hz span the live path uses (`CENTROID_RANGE_HZ`). Four impulses standing in for
+ * a spectrum: the value moves the right way (a hat strike brightens, the arrangement's
+ * quiet bar darkens) and sits in the range a live centroid sits in; nothing more is claimed.
+ */
+const BAND_CENTRE_HZ = {
+  low: Math.sqrt(20 * 250),
+  lowMid: Math.sqrt(250 * 2000),
+  highMid: Math.sqrt(2000 * 6000),
+  high: Math.sqrt(6000 * 16000),
+} as const;
+const CENTROID_LOW_HZ = 20;
+const CENTROID_HIGH_HZ = 16000;
+
 /** Linear band amplitude → the analyser's byte-fraction domain. Silence reads 0, as it does live. */
 function toAnalyserDomain(linear: number, referenceDb: number): number {
   if (linear <= 0) return 0;
@@ -258,7 +294,7 @@ export const audioPatternNode: NodeDefinition = {
   title: "Audio Pattern",
   category: "value",
   description:
-    "A deterministic test beat as audio channels — kick, off-beat snare, eighth hats — synthesized from the frame clock. Publishes the same level/band/onset channels as Audio In, so swapping in a live source is one node — the bands are published in the ANALYSER'S OWN DECIBEL DOMAIN (T701), calibrated so a full strike lands where real music's peaks land, which is what makes a parameter tuned here still have range under a real track. PLUS the musical structure only a node that knows its own tempo can publish: beat and bar count from the in point, beatPhase and barPhase ramp 0..1 inside each. Wire bar into Step to hold a value for a phrase. No microphone, no file, replayable by construction. TIMELINE-ANCHORED by design (§V436): it stands in for a track playing along the piece, so beat one lands at the in point and a scrub finds the same beat every time. A free-running version would drift out of step with the picture it is scoring.",
+    "A deterministic test beat as audio channels — kick, off-beat snare, eighth hats — synthesized from the frame clock. Publishes EVERY channel Audio In does, so swapping in a live source is one node: level, the four bands in the ANALYSER'S OWN DECIBEL DOMAIN (T701, calibrated so a full strike lands where real music's peaks land, which is what makes a parameter tuned here still have range under a real track), onset / onsetCount / onsetMax, kick / snare / hat with their counts (here each drum's own strike and event, where a live source has a band heuristic), centroid, and the tempo channels — bpm, beatPhase, beat and beatCount — claimed at bpmConfidence 1 because this node IS the tempo. PLUS the bar structure only a node that knows its own tempo can publish: bar counts from the in point and barPhase ramps 0..1 inside it. Wire bar into Step to hold a value for a phrase. No microphone, no file, replayable by construction. TIMELINE-ANCHORED by design (§V436): it stands in for a track playing along the piece, so beat one lands at the in point and a scrub finds the same beat every time. A free-running version would drift out of step with the picture it is scoring.",
   tags: ["value", "audio", "test", "beat", "pattern", "deterministic"],
   inputs: [],
   outputs: [{ id: "out", label: "Out", type: VALUE_PORT }],
@@ -353,6 +389,40 @@ export const audioPatternNode: NodeDefinition = {
     const onset = Math.max(kick, snare, hat) * amount * ONSET_REFERENCE;
 
     /*
+     * T1227 — the DETECTORS, per drum. On the live path each is the onset envelope and
+     * event count confined to a band; here the pattern knows which drum struck, so each
+     * detector is that drum's own strike envelope and its own events over the interval
+     * (the same interval arithmetic as `onsetCount`: integers in (beatsBefore, beats], the
+     * odd ones for the snare, the half-integers for the hats). The envelopes wear
+     * `onset`'s calibration (`ONSET_REFERENCE`, the strike's peak scaled like `onsetMax`)
+     * because a band's SuperFlux is in `onset`'s units — INHERITED, NOT MEASURED: no
+     * per-band max has been taken from a recorded track yet, and T1230 is where that
+     * measurement happens.
+     */
+    const before = Math.max(beatsBefore, 0);
+    // A kick on every beat: its events are the beats crossed, which is `onsetCount` already.
+    const kickCount = onsetCount;
+    const snareCount = Math.max(0, Math.floor((beats + 1) / 2) - Math.floor((before + 1) / 2));
+    const hatCount = Math.max(0, Math.floor(beats * 2) - Math.floor(before * 2));
+    const strike = (envelope: number, peak: number, count: number): number =>
+      (count > 0 ? peak : envelope) * amount * ONSET_REFERENCE;
+
+    /*
+     * T1227 — centroid from the linear amplitudes at the band centres; see BAND_CENTRE_HZ.
+     * `amount` cancels out of the ratio, as gain cancels out of a live centroid.
+     */
+    const weight = lowAmplitude + lowMidAmplitude + highMidAmplitude + highAmplitude;
+    const centroidHz =
+      weight > 0
+        ? (lowAmplitude * BAND_CENTRE_HZ.low +
+            lowMidAmplitude * BAND_CENTRE_HZ.lowMid +
+            highMidAmplitude * BAND_CENTRE_HZ.highMid +
+            highAmplitude * BAND_CENTRE_HZ.high) /
+          weight
+        : CENTROID_LOW_HZ;
+    const centroid = (centroidHz - CENTROID_LOW_HZ) / (CENTROID_HIGH_HZ - CENTROID_LOW_HZ);
+
+    /*
      * T548 — MUSICAL STRUCTURE AS CHANNELS, which is the middle TIMESCALE the value graph
      * had no way to address. E24 and E31 vary at two rates: per FRAME (the bands) and per
      * PIECE (a half-minute LFO). Nothing happened at PHRASE length, and that middle rate is
@@ -386,8 +456,24 @@ export const audioPatternNode: NodeDefinition = {
       onsetCount,
       // The interval peak is the same envelope's unit, so it wears the same calibration.
       onsetMax: onsetCount > 0 ? amount * ONSET_REFERENCE : onset,
+      kick: strike(kick, 1, kickCount),
+      kickCount,
+      snare: strike(snare, 0.8, snareCount),
+      snareCount,
+      hat: strike(hat, 0.5, hatCount),
+      hatCount,
+      centroid,
+      /*
+       * T1227 — the tempo claim, at confidence 1: this node does not estimate a tempo, it
+       * IS one. `beatCount` is the pulse over the interval — the same integers-crossed
+       * arithmetic as `onsetCount`, and in this pattern the same number, because every beat
+       * carries a kick. A live source publishes the same five fields at confidence 0.
+       */
+      bpm,
+      bpmConfidence: 1,
       beat: beatIndex,
       beatPhase: Math.max(0, beats) - beatIndex,
+      beatCount: onsetCount,
       bar: Math.floor(barPosition),
       barPhase: barPosition - Math.floor(barPosition),
     };

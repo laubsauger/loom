@@ -103,6 +103,18 @@ const AUDIO: AudioFeatures = {
   onset: 0.52,
   onsetCount: 2,
   onsetMax: 0.77,
+  kick: 0.61,
+  kickCount: 1,
+  snare: 0.58,
+  snareCount: 1,
+  hat: 0.55,
+  hatCount: 1,
+  centroid: 0.63,
+  bpm: 124,
+  bpmConfidence: 0.9,
+  beatPhase: 0.71,
+  beat: 3,
+  beatCount: 1,
 };
 
 const bag = (result: { byName: ReadonlyMap<string, Record<string, number>> }, name: string) => {

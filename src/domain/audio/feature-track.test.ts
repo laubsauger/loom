@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { AUDIO_BAND_EDGES_HZ, ONSET_EVENT_THRESHOLD } from "../../app/audio-features.ts";
+import {
+  AUDIO_BAND_EDGES_HZ,
+  AUDIO_DETECTOR_BANDS_HZ,
+  CENTROID_RANGE_HZ,
+  DETECTOR_EVENT_PICKER,
+  ONSET_EVENT_THRESHOLD,
+} from "../../app/audio-features.ts";
 import type { AudioFeatures } from "../types/frame.ts";
 import {
   FEATURE_TRACK_FIELDS,
@@ -15,6 +21,7 @@ import {
   serializeFeatureTrack,
 } from "./feature-track.ts";
 
+/** A different value in every one of the twenty fields, so a permuted or dropped field cannot round-trip. */
 const features = (level: number): AudioFeatures => ({
   level,
   low: level * 2,
@@ -24,6 +31,18 @@ const features = (level: number): AudioFeatures => ({
   onset: level * 6,
   onsetCount: 1,
   onsetMax: level * 7,
+  kick: level * 8,
+  kickCount: 2,
+  snare: level * 9,
+  snareCount: 3,
+  hat: level * 10,
+  hatCount: 4,
+  centroid: level * 11,
+  bpm: 120 + level,
+  bpmConfidence: level * 12,
+  beatPhase: level * 13,
+  beat: 5,
+  beatCount: 6,
 });
 
 describe("§V352 — the recorded CONTRACT is pinned, and changing it is a versioning event", () => {
@@ -36,7 +55,7 @@ describe("§V352 — the recorded CONTRACT is pinned, and changing it is a versi
    * fails. This test is what makes that tuning impossible without also moving the
    * version, which is what makes old tracks REFUSE instead of lie.
    */
-  it("fails if a band edge or the onset threshold moves without the version moving", () => {
+  it("fails if a band edge, a threshold, a detector band, the picker or the centroid span moves without the version moving", () => {
     expect(AUDIO_BAND_EDGES_HZ).toEqual({
       low: [20, 250],
       lowMid: [250, 2000],
@@ -44,7 +63,14 @@ describe("§V352 — the recorded CONTRACT is pinned, and changing it is a versi
       high: [6000, 16000],
     });
     expect(ONSET_EVENT_THRESHOLD).toBe(0.02);
-    // The field set and its ORDER are equally part of the layout this version describes.
+    // T1227 — the v2 contract: the detector bands, the adaptive bar their counts are
+    // taken against (first values; retuning them in T1230 is a versioning event, and
+    // this is the line that says so), and the span the centroid maps onto 0..1.
+    expect(AUDIO_DETECTOR_BANDS_HZ).toEqual({ kick: [30, 150], snare: [150, 2500], hat: [5000, 16000] });
+    expect(DETECTOR_EVENT_PICKER).toEqual({ historyHops: 96, delta: 0.05, minGapHops: 3 });
+    expect(CENTROID_RANGE_HZ).toEqual([20, 16000]);
+    // The field set and its ORDER are equally part of the layout this version describes:
+    // the eight v1 fields verbatim and in place, then what v2 added.
     expect([...FEATURE_TRACK_FIELDS]).toEqual([
       "level",
       "low",
@@ -54,9 +80,32 @@ describe("§V352 — the recorded CONTRACT is pinned, and changing it is a versi
       "onset",
       "onsetCount",
       "onsetMax",
+      "kick",
+      "kickCount",
+      "snare",
+      "snareCount",
+      "hat",
+      "hatCount",
+      "centroid",
+      "bpm",
+      "bpmConfidence",
+      "beatPhase",
+      "beat",
+      "beatCount",
     ]);
     // Change any of the above and this line is the one you must change too.
-    expect(FEATURE_TRACK_VERSION).toBe(1);
+    expect(FEATURE_TRACK_VERSION).toBe(2);
+  });
+
+  it("T1227 — a version 1 track refuses by name, and the reader never widens it into twenty fields", () => {
+    // Eight numbers per frame under version 1. Reading it as v2 would be a stride error
+    // that parses: 20 frames of eight would become 8 frames of twenty, each field wrong.
+    const stored = JSON.stringify({ version: 1, fps: 60, frames: new Array(8 * 20).fill(0.5) });
+    const result = parseFeatureTrack(stored);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe("audio.track.version");
+    expect(result.message).toContain("version 1");
   });
 
   it("§V357 — the fields are named for the INTERVAL they describe, not the analyser", () => {

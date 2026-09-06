@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { SILENCE } from "../../domain/audio/feature-track.ts";
 import { createValueGraphSession } from "../../domain/channels/value-graph.ts";
 import type { AudioFeatures, FrameEvaluationInput } from "../../domain/types/frame.ts";
 import type { GraphDocument } from "../../domain/types/graph.ts";
@@ -25,6 +26,7 @@ const frame = (frameIndex: number): FrameEvaluationInput => ({
   randomSeed: 7,
 });
 
+/** Every field of the v2 record (T1227), each a different non-zero number (§V461): a dropped or crossed field cannot pass. */
 const FEATURES: AudioFeatures = {
   level: 0.5,
   low: 0.9,
@@ -34,6 +36,18 @@ const FEATURES: AudioFeatures = {
   onset: 0.75,
   onsetCount: 1,
   onsetMax: 0.8,
+  kick: 0.31,
+  kickCount: 2,
+  snare: 0.22,
+  snareCount: 3,
+  hat: 0.13,
+  hatCount: 4,
+  centroid: 0.37,
+  bpm: 124,
+  bpmConfidence: 0.6,
+  beatPhase: 0.45,
+  beat: 17,
+  beatCount: 5,
 };
 
 function audioGraph(extra: GraphDocument["nodes"] = {}, edges: GraphDocument["edges"] = {}): GraphDocument {
@@ -59,16 +73,7 @@ describe("audioIn (T414)", () => {
   it("projects the frame's features as channels, verbatim", () => {
     const session = createValueGraphSession(registry);
     const result = session.evaluate(audioGraph(), frame(0), { audio: FEATURES });
-    expect(result.byName.get("audio1")).toEqual({
-      level: 0.5,
-      low: 0.9,
-      lowMid: 0.4,
-      highMid: 0.2,
-      high: 0.05,
-      onset: 0.75,
-      onsetCount: 1,
-      onsetMax: 0.8,
-    });
+    expect(result.byName.get("audio1")).toEqual(FEATURES);
   });
 
   it("is SILENT — all zeros, not absent — when the session has no audio (§V329)", () => {
@@ -76,16 +81,7 @@ describe("audioIn (T414)", () => {
     const result = session.evaluate(audioGraph(), frame(0));
     // Zeros, so every downstream stage keeps evaluating deterministically; a missing
     // bag would make `driven` parameters dangle instead.
-    expect(result.byName.get("audio1")).toEqual({
-      level: 0,
-      low: 0,
-      lowMid: 0,
-      highMid: 0,
-      high: 0,
-      onset: 0,
-      onsetCount: 0,
-      onsetMax: 0,
-    });
+    expect(result.byName.get("audio1")).toEqual(SILENCE);
   });
 
   it("REPLAY: the same feature track produces the same numbers — determinism by construction (§V45)", () => {
@@ -138,18 +134,40 @@ describe("audioIn (T414)", () => {
     expect(result.resolver("audio1:onset", { frame: frame(0) } as never)).toBe(0.75);
   });
 
-  it("says what onset IS in the one place users read — and never claims 'beat'", () => {
-    const definition = registry.get("audioIn");
-    expect(definition?.description).toContain("onset");
-    expect(definition?.description).toContain("not a beat detector");
-    const channels = definition?.valueEvaluate?.({
-      inputs: {},
-      values: {},
-      frame: frame(0),
-      audio: FEATURES,
-      state: {},
-    });
-    expect(Object.keys(channels ?? {})).not.toContain("beat");
+  it("says what onset IS in the one place users read, names the drums as heuristics, and never claims 'bar'", () => {
+    for (const type of ["audioIn", "audioFileIn"] as const) {
+      const definition = registry.get(type);
+      expect(definition?.description).toContain("onset");
+      expect(definition?.description).toContain("not a beat detector");
+      // T1227: the detectors are named for what they are FOR and described as what they ARE.
+      expect(definition?.description).toContain("kick / snare / hat");
+      expect(definition?.description?.toLowerCase()).toContain("heuristic");
+      // The tempo fields are a claim the live doors do not make, and the description says which field says so.
+      expect(definition?.description).toContain("bpmConfidence");
+      expect(definition?.description).toContain("NO bar channels");
+      const channels = definition?.valueEvaluate?.({
+        inputs: {},
+        values: {},
+        frame: frame(0),
+        audio: FEATURES,
+        state: {},
+      });
+      expect(Object.keys(channels ?? {})).not.toContain("bar");
+      expect(Object.keys(channels ?? {})).not.toContain("barPhase");
+    }
+  });
+
+  it("T1227 — with no tempo claim, bpmConfidence is 0 and so is every other tempo channel", () => {
+    // What a live door reads until T1228: the reducer writes NO_TEMPO_CLAIM. The node is a
+    // projection, so this is pinned at the seam it crosses — a claim with confidence 0 and
+    // a non-zero bpm would be the record contradicting itself.
+    const session = createValueGraphSession(registry);
+    const live = { ...FEATURES, bpm: 0, bpmConfidence: 0, beatPhase: 0, beat: 0, beatCount: 0 };
+    const bag = session.evaluate(audioGraph(), frame(0), { audio: live }).byName.get("audio1") ?? {};
+    expect([bag["bpm"], bag["bpmConfidence"], bag["beatPhase"], bag["beat"], bag["beatCount"]]).toEqual([0, 0, 0, 0, 0]);
+    // While the detectors, which are measurements of the interval, still come through.
+    expect(bag["kickCount"]).toBe(2);
+    expect(bag["centroid"]).toBe(0.37);
   });
 });
 
@@ -163,16 +181,7 @@ describe("audioFileIn (T434)", () => {
       audio: FEATURES,
       state: {},
     });
-    expect(channels).toEqual({
-      level: 0.5,
-      low: 0.9,
-      lowMid: 0.4,
-      highMid: 0.2,
-      high: 0.05,
-      onset: 0.75,
-      onsetCount: 1,
-      onsetMax: 0.8,
-    });
+    expect(channels).toEqual(FEATURES);
     // The movieFileIn analogy is the CONTRACT: one asset parameter, kind "audio".
     const file = definition?.parameters["file"];
     expect(file?.type).toBe("asset");
@@ -289,8 +298,10 @@ describe("audioPattern (T442)", () => {
    * guessed bar count that would be confidently wrong.
    *
    * So the assertion is two-sided and neither side is slack: the shared set is EQUAL to
-   * audioIn's, and the extra set is EXACTLY the four structure channels. A fifth channel
-   * added to either node lands in one of those two lists and has to be argued for.
+   * audioIn's, and the extra set is EXACTLY the bar channels. A channel added to either
+   * node lands in one of those two lists and has to be argued for. T1227 moved `beat`
+   * and `beatPhase` from the extra list into the shared one: the record now carries a
+   * tempo claim with its confidence, so a live source publishes them too (at 0, honestly).
    */
   it("publishes every audioIn channel under the same name, so a live source still swaps in", () => {
     const pattern = Object.keys(channelsAt(0));
@@ -300,12 +311,95 @@ describe("audioPattern (T442)", () => {
     expect(pattern.filter((name) => live.includes(name)).sort()).toEqual(live);
   });
 
-  it("adds EXACTLY the structure channels a live source cannot know (T548, §V403)", () => {
+  it("adds EXACTLY the bar channels a live source cannot know (T548, §V403, T1227)", () => {
     const pattern = Object.keys(channelsAt(0));
     const live = Object.keys(
       registry.get("audioIn")?.valueEvaluate?.({ inputs: {}, values: {}, frame: frame(0), state: {} }) ?? {},
     );
-    expect(pattern.filter((name) => !live.includes(name)).sort()).toEqual(["bar", "barPhase", "beat", "beatPhase"]);
+    expect(pattern.filter((name) => !live.includes(name)).sort()).toEqual(["bar", "barPhase"]);
+  });
+
+  /**
+   * T1227 — the detectors and the tempo claim, by exact value. The pattern knows which
+   * drum struck, so each detector is that drum's strike (at `onset`'s calibration: a
+   * full strike is 0.28, the snare's 0.8 of it, the hat's 0.5) and each count is that
+   * drum's events over the frame interval. At 120 bpm t = 1.5 s is beat 3: an ODD beat,
+   * so kick AND snare strike, and a hat with them (eighths land on every beat).
+   */
+  it("strikes kick, snare and hat as their own detectors, and claims its tempo at confidence 1", () => {
+    const onThree = channelsAt(1.5);
+    expect(onThree.kick).toBeCloseTo(0.28, 12);
+    expect(onThree.kickCount).toBe(1);
+    expect(onThree.snare).toBeCloseTo(0.8 * 0.28, 12);
+    expect(onThree.snareCount).toBe(1);
+    expect(onThree.hat).toBeCloseTo(0.5 * 0.28, 12);
+    expect(onThree.hatCount).toBe(1);
+    expect(onThree.bpm).toBe(120);
+    expect(onThree.bpmConfidence).toBe(1);
+    expect(onThree.beat).toBe(3);
+    expect(onThree.beatCount).toBe(1);
+
+    // Beat 2 is EVEN: the kick and a hat strike, the snare does not — and its envelope is
+    // 0 rather than a decaying tail from beat 1, because the snare only sounds on odd beats.
+    const onTwo = channelsAt(1.0);
+    expect(onTwo.kickCount).toBe(1);
+    expect(onTwo.snareCount).toBe(0);
+    expect(onTwo.snare).toBe(0);
+    expect(onTwo.hatCount).toBe(1);
+
+    // The off-beat eighth (beat 2.5): ONLY the hat strikes; the kick is decaying from beat 2.
+    const offBeat = channelsAt(1.25);
+    expect(offBeat.hatCount).toBe(1);
+    expect(offBeat.hat).toBeCloseTo(0.5 * 0.28, 12);
+    expect(offBeat.kickCount).toBe(0);
+    expect(offBeat.kick).toBeCloseTo(Math.exp(-0.5 * 7) * 0.28, 12);
+    expect(offBeat.beatCount).toBe(0);
+
+    // Between events every envelope is its strike's decay, at the frame's phase.
+    const between = channelsAt(1.6);
+    expect(between.kick).toBeCloseTo(Math.exp(-0.2 * 7) * 0.28, 12);
+    expect(between.snare).toBeCloseTo(Math.exp(-0.2 * 9) * 0.8 * 0.28, 12);
+    expect(between.hat).toBeCloseTo(Math.exp(-0.4 * 14) * 0.5 * 0.28, 12);
+    expect([between.kickCount, between.snareCount, between.hatCount, between.beatCount]).toEqual([0, 0, 0, 0]);
+  });
+
+  it("counts every drum's events over the INTERVAL, like onsetCount (T437, T1227)", () => {
+    // One whole second at 120 bpm in a single frame, ending on beat 4: beats 3 and 4
+    // crossed (two kicks, two beats), one of them odd (one snare), four eighths (four hats).
+    const slow = channelsAt(2.0, 1.0);
+    expect(slow.kickCount).toBe(2);
+    expect(slow.snareCount).toBe(1);
+    expect(slow.hatCount).toBe(4);
+    expect(slow.beatCount).toBe(2);
+    // And the interval's envelope is the full strike, not the last frame's decay.
+    expect(slow.kick).toBeCloseTo(0.28, 12);
+    expect(slow.hat).toBeCloseTo(0.5 * 0.28, 12);
+  });
+
+  /**
+   * T1227 — the centroid, from the documented envelopes and the band centres. On the
+   * off-beat eighth (t = 1.25 s, beat 2.5) the hat has just struck and the kick is half a
+   * beat into its decay, so the amplitudes are known in closed form; the expected value is
+   * derived from THOSE, not read back from the node.
+   */
+  it("publishes a centroid that brightens on a hat, darkens on a kick, and ignores gain", () => {
+    const centre = { low: Math.sqrt(20 * 250), lowMid: Math.sqrt(250 * 2000), highMid: Math.sqrt(2000 * 6000), high: Math.sqrt(6000 * 16000) };
+    const kickTail = Math.exp(-0.5 * 7);
+    const amplitude = { low: 0.12 + 0.88 * kickTail, lowMid: 0.15 + 0.15 * kickTail, highMid: 0.1 + 0.5 * 0.5, high: 0.06 + 0.45 * 0.5 };
+    const weight = amplitude.low + amplitude.lowMid + amplitude.highMid + amplitude.high;
+    const hz =
+      (amplitude.low * centre.low + amplitude.lowMid * centre.lowMid + amplitude.highMid * centre.highMid + amplitude.high * centre.high) /
+      weight;
+    const hatStrike = channelsAt(1.25);
+    expect(hatStrike.centroid).toBeCloseTo((hz - 20) / (16000 - 20), 12);
+
+    // The kick's strike adds weight at the bottom: darker than the rest just before it.
+    const rest = channelsAt(1.45);
+    const kickStrike = channelsAt(1.5);
+    expect(hatStrike.centroid).toBeGreaterThan(rest.centroid as number);
+    expect(kickStrike.centroid).toBeLessThan(rest.centroid as number);
+    // Gain cancels out of a ratio, as it does on a live centroid.
+    expect(channelsAt(1.25, 1 / 60, { amount: 0.5 }).centroid).toBeCloseTo(hatStrike.centroid as number, 12);
   });
 
   /**

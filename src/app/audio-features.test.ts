@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { AUDIO_BAND_EDGES_HZ, computeAudioFeatures } from "./audio-features.ts";
+import { AUDIO_BAND_EDGES_HZ, CENTROID_RANGE_HZ, computeAudioFeatures } from "./audio-features.ts";
 import type { AudioAnalysisState } from "./audio-features.ts";
 
 /**
@@ -109,4 +109,44 @@ describe("computeAudioFeatures (T414, §V147)", () => {
     expect(second.onsetCount).toBe(1); // a fresh rise after a fall is a second event
   });
 
+  /**
+   * T1227 — the centroid, analytically. A bin-aligned tone through the analyser's
+   * Blackman window leaks SYMMETRICALLY (255 on k-1..k+1, 240 on k±2, measured in
+   * `hop-analyser.test.ts`), so its magnitude-weighted centroid is exactly k · binHz,
+   * whatever the leakage's shape — and that is what pins the value without re-deriving
+   * the weights. Silence is 0, not the range's midpoint.
+   */
+  it("centroid of a symmetric tone is EXACTLY the tone's bin frequency, mapped over CENTROID_RANGE_HZ; silence is 0", () => {
+    const binHz = SAMPLE_RATE / FFT_SIZE;
+    const base = { timeDomain: silence(), sampleRate: SAMPLE_RATE, fftSize: FFT_SIZE, state: freshState() };
+    const tone = (k: number): Uint8Array =>
+      spectrum((bin) => (Math.abs(bin - k) <= 1 ? 255 : Math.abs(bin - k) === 2 ? 240 : 0));
+    const [lowHz, highHz] = CENTROID_RANGE_HZ;
+    for (const k of [10, 100, 400]) {
+      const { centroid } = computeAudioFeatures({ ...base, frequency: tone(k) });
+      expect(centroid).toBeCloseTo((k * binHz - lowHz) / (highHz - lowHz), 12);
+    }
+    expect(computeAudioFeatures({ ...base, frequency: spectrum(() => 0) }).centroid).toBe(0);
+  });
+
+  it("centroid weighs MAGNITUDE, not the dB byte: a -65 dB bin barely moves a -30 dB one", () => {
+    // Byte 255 is -30 dB, byte 128 is -64.9 dB: 35 dB apart, a magnitude ratio of ~0.018.
+    // Weighted by the BYTE the quiet bin would pull the centroid a third of the way over
+    // (128/383); weighted by magnitude it pulls it 1.8% of the way. The test is the
+    // difference between "brightness" and "which bins are above the floor".
+    const binHz = SAMPLE_RATE / FFT_SIZE;
+    const loud = 100;
+    const quiet = 500;
+    const base = { timeDomain: silence(), sampleRate: SAMPLE_RATE, fftSize: FFT_SIZE, state: freshState() };
+    const { centroid } = computeAudioFeatures({
+      ...base,
+      frequency: spectrum((bin) => (bin === loud ? 255 : bin === quiet ? 128 : 0)),
+    });
+    const ratio = 10 ** (((128 / 255) * 70 - 70) / 20);
+    const [lowHz, highHz] = CENTROID_RANGE_HZ;
+    const expectedHz = (loud + quiet * ratio) / (1 + ratio) * binHz;
+    expect(centroid).toBeCloseTo((expectedHz - lowHz) / (highHz - lowHz), 12);
+    const byteWeightedHz = ((loud * 255 + quiet * 128) / (255 + 128)) * binHz;
+    expect(centroid).toBeLessThan((byteWeightedHz - lowHz) / (highHz - lowHz) / 2);
+  });
 });

@@ -10,7 +10,7 @@
  * size or a threshold is chosen (§V747).
  */
 import type { HopAnalyserOptions, HopFeatures } from "@domain/audio/analysis/hop-analyser.ts";
-import { AUDIO_BAND_EDGES_HZ, ONSET_EVENT_THRESHOLD } from "./audio-features.ts";
+import { AUDIO_DETECTOR_BANDS_HZ, DETECTOR_EVENT_PICKER, ONSET_EVENT_THRESHOLD } from "./audio-features.ts";
 
 export const AUDIO_ANALYSIS_PROCESSOR_NAME = "loom-audio-analysis";
 
@@ -21,23 +21,33 @@ export interface AudioAnalysisProcessorOptions extends Omit<HopAnalyserOptions, 
 }
 
 /**
+ * T1227 — which hop stream feeds which detector. Stream 0 is the whole spectrum (the
+ * adaptive whole-spectrum event, unused by the record so far); the detector bands follow
+ * in `AUDIO_DETECTOR_BANDS_HZ` order. The reducer reads the record's `kick`/`snare`/`hat`
+ * from these indices, so the layout is stated once, here, and not inferred twice.
+ */
+export const DETECTOR_STREAM = { kick: 1, snare: 2, hat: 3 } as const;
+
+/**
  * The engine as shipped. 2048/512 is a 42.7 ms window every 10.7 ms at 48 kHz — four
- * hops per 60 Hz frame, so §V357's count and max are real. The band edges and the v1
- * event level are `audio-features.ts`'s, so a hop's `flux`/`event` mean what a frame's
- * `onset`/`onsetCount` always meant. SuperFlux lag 2 (21 ms) with a ±1 bin (±23 Hz) max
- * filter is Böck's setting scaled to this grid. The picker's ~1 s history (96 hops),
- * 0.05 floor (≈13 byte-levels of mean rise in a band) and 32 ms gap are first values:
- * nothing consumes `bandEvents` until the v2 record (T1227), which is where they get
- * measured against material and retuned.
+ * hops per 60 Hz frame, so §V357's count and max are real. The v1 event level is
+ * `audio-features.ts`'s, so a hop's `flux`/`event` mean what a frame's `onset`/`onsetCount`
+ * always meant. SuperFlux lag 2 (21 ms) with a ±1 bin (±23 Hz) max filter is Böck's
+ * setting scaled to this grid. The per-band streams are the record's DETECTORS (T1227):
+ * their bands and the picker they count with are recorded contract, pinned with the
+ * band edges in `feature-track.test.ts`.
  */
 export const AUDIO_ANALYSIS_OPTIONS: AudioAnalysisProcessorOptions = {
   fftSize: 2048,
   hop: 512,
-  bands: [AUDIO_BAND_EDGES_HZ.low, AUDIO_BAND_EDGES_HZ.lowMid, AUDIO_BAND_EDGES_HZ.highMid, AUDIO_BAND_EDGES_HZ.high],
+  bands: [AUDIO_DETECTOR_BANDS_HZ.kick, AUDIO_DETECTOR_BANDS_HZ.snare, AUDIO_DETECTOR_BANDS_HZ.hat],
   eventThreshold: ONSET_EVENT_THRESHOLD,
   superflux: { lag: 2, halfWidth: 1 },
-  picker: { historyHops: 96, delta: 0.05, minGapHops: 3 },
+  picker: DETECTOR_EVENT_PICKER,
 };
+
+/** Streams per hop: the whole spectrum plus one per detector band. */
+export const STREAM_COUNT = AUDIO_ANALYSIS_OPTIONS.bands.length + 1;
 
 /** One analysed window, posted per hop. `end` is the processor's sample count at the window's end. */
 export interface AudioAnalysisHopMessage extends HopFeatures {

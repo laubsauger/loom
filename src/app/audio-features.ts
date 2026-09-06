@@ -20,6 +20,37 @@ export const AUDIO_BAND_EDGES_HZ = {
   high: [6000, 16000],
 } as const;
 
+/**
+ * T1227 — the DETECTOR bands: where each drum's onset is looked for. These are not the
+ * energy bands above (those are calibrated for what a band READS; these for what rises
+ * when a drum hits): a kick's fundamental and body, a snare's body and the low half of
+ * its crack, a hat's air above where vocals and guitars still live. Heuristics on a mix,
+ * and part of the recorded contract (§V352): a track's `kick` means "over these Hz".
+ */
+export const AUDIO_DETECTOR_BANDS_HZ = {
+  kick: [30, 150],
+  snare: [150, 2500],
+  hat: [5000, 16000],
+} as const;
+
+/**
+ * T1227 — the adaptive event bar the detector counts against: an event is a rising
+ * crossing of the recent mean (over `historyHops` analysis hops of 512 samples, ~1 s)
+ * plus `delta` (in the envelope's units: 0.05 ≈ 13 byte-levels of mean rise inside a
+ * band), at most one per `minGapHops` (32 ms). Recorded contract like the fixed onset
+ * level above — a different margin counts different events. FIRST VALUES (T1226): nothing
+ * has been measured against material yet; T1230 is where they get retuned, and that is
+ * a versioning event when it happens.
+ */
+export const DETECTOR_EVENT_PICKER = { historyHops: 96, delta: 0.05, minGapHops: 3 } as const;
+
+/** T1227 — the span `centroid` maps onto 0..1: the audible range the bands cover. */
+export const CENTROID_RANGE_HZ = [20, 16000] as const;
+
+/** The analyser's byte map, inverted: `getByteFrequencyData` puts [-100, -30] dB on 0..255. */
+const ANALYSER_MIN_DB = -100;
+const ANALYSER_DB_SPAN = 70;
+
 export interface AudioAnalysisState {
   /** Previous frame's frequency bytes, for spectral flux. Null on the first frame. */
   previousSpectrum: Uint8Array | null;
@@ -57,7 +88,44 @@ function bandAverage(frequency: Uint8Array, binHz: number, lowHz: number, highHz
   return sum / (last - first + 1) / 255;
 }
 
-export function computeAudioFeatures(input: AudioAnalysisInput): AudioFeatures {
+/**
+ * T1227 — spectral centroid over `CENTROID_RANGE_HZ`, weighted by linear MAGNITUDE.
+ *
+ * The bytes are decibels, so they are inverted first: weighting by the byte itself would
+ * give a quiet bin at −90 dB a third of the pull of a loud one at −30, and the centroid of
+ * a single tone would drift toward the middle of the range instead of sitting on the tone.
+ * Byte 0 is "at or below the floor" and weighs nothing, so silence reads 0 rather than the
+ * range's midpoint. A tone on bin k, whose leakage is symmetric, reads exactly k · binHz.
+ */
+function spectralCentroid(frequency: Uint8Array, binHz: number): number {
+  const [lowHz, highHz] = CENTROID_RANGE_HZ;
+  const first = Math.max(0, Math.ceil(lowHz / binHz));
+  const last = Math.min(frequency.length - 1, Math.floor(highHz / binHz));
+  let weighted = 0;
+  let total = 0;
+  for (let bin = first; bin <= last; bin += 1) {
+    const byte = frequency[bin] ?? 0;
+    if (byte === 0) continue;
+    const magnitude = 10 ** ((ANALYSER_MIN_DB + (byte / 255) * ANALYSER_DB_SPAN) / 20);
+    weighted += bin * binHz * magnitude;
+    total += magnitude;
+  }
+  if (total === 0) return 0;
+  const centroid = (weighted / total - lowHz) / (highHz - lowHz);
+  return centroid <= 0 ? 0 : centroid >= 1 ? 1 : centroid;
+}
+
+/**
+ * The fields one analysis window's BYTES determine. The detector and tempo fields of the
+ * record are not among them: those come from the hop stream (`audio-analysis-frame.ts`)
+ * and from a tempo claim, and this function is not where either is made.
+ */
+export type AudioSpectralFeatures = Pick<
+  AudioFeatures,
+  "level" | "low" | "lowMid" | "highMid" | "high" | "onset" | "onsetCount" | "onsetMax" | "centroid"
+>;
+
+export function computeAudioFeatures(input: AudioAnalysisInput): AudioSpectralFeatures {
   const { frequency, timeDomain, sampleRate, fftSize, state } = input;
   const binHz = sampleRate / fftSize;
 
@@ -91,10 +159,10 @@ export function computeAudioFeatures(input: AudioAnalysisInput): AudioFeatures {
   }
 
   /*
-   * T437, at per-frame fidelity: one analysis per interval means the max IS the
-   * reading, and the count is a single rising edge. A faster analysis hop later
-   * raises fidelity — several hops per interval, a true max and a real count —
-   * without changing either field's meaning.
+   * T437, at the fidelity of ONE window: the max IS the reading, and the count is a
+   * single rising edge. T1226 runs this on every hop and reduces several per frame
+   * interval into a true max and a real count (`audio-analysis-frame.ts`) — the same
+   * meaning, more readings.
    */
   const onsetCount = onset > ONSET_EVENT_THRESHOLD && state.previousOnset <= ONSET_EVENT_THRESHOLD ? 1 : 0;
   state.previousOnset = onset;
@@ -108,5 +176,6 @@ export function computeAudioFeatures(input: AudioAnalysisInput): AudioFeatures {
     onset,
     onsetCount,
     onsetMax: onset,
+    centroid: spectralCentroid(frequency, binHz),
   };
 }

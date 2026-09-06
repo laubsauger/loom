@@ -30,14 +30,19 @@ import type { AudioFeatures } from "../types/frame.ts";
 /**
  * Bumped when the MEANING of any field changes — a band edge, the onset threshold, the
  * field set, or the order below. Never for a performance change in the analyser.
+ *
+ * 2 (T1227): the eight v1 fields verbatim, then the detector heuristics, the centroid
+ * and the tempo claim — see `AudioFeatures`. Bumped while no `.loomtrack.json` had ever
+ * shipped and the app had no track load path, which is what made it free; version 1
+ * tracks (there are none) would refuse by name below.
  */
-export const FEATURE_TRACK_VERSION = 1;
+export const FEATURE_TRACK_VERSION = 2;
 
 /**
  * Field order IS part of the contract, which is why it lives in one exported constant
  * rather than in a hand-written encode and a hand-written decode that can disagree.
  *
- * Frames are stored flat — eight numbers per frame, not eight-key objects. A ten-minute
+ * Frames are stored flat — twenty numbers per frame, not twenty-key objects. A ten-minute
  * performance at 60fps is 36 000 frames: as objects that is a multi-megabyte JSON of
  * repeated key names, and as a flat array it is the numbers and nothing else.
  */
@@ -50,6 +55,18 @@ export const FEATURE_TRACK_FIELDS = [
   "onset",
   "onsetCount",
   "onsetMax",
+  "kick",
+  "kickCount",
+  "snare",
+  "snareCount",
+  "hat",
+  "hatCount",
+  "centroid",
+  "bpm",
+  "bpmConfidence",
+  "beatPhase",
+  "beat",
+  "beatCount",
 ] as const satisfies ReadonlyArray<keyof AudioFeatures>;
 
 export const FEATURE_TRACK_STRIDE = FEATURE_TRACK_FIELDS.length;
@@ -66,6 +83,15 @@ export interface FeatureTrack {
   readonly frames: readonly number[];
 }
 
+/** T1227: no tempo claim — `bpmConfidence` 0 and, by the contract, every other tempo field 0. */
+export const NO_TEMPO_CLAIM: Pick<AudioFeatures, "bpm" | "bpmConfidence" | "beatPhase" | "beat" | "beatCount"> = {
+  bpm: 0,
+  bpmConfidence: 0,
+  beatPhase: 0,
+  beat: 0,
+  beatCount: 0,
+};
+
 /** All-zero features: what silence is, and what a render past the end of a track gets. */
 export const SILENCE: AudioFeatures = {
   level: 0,
@@ -76,6 +102,14 @@ export const SILENCE: AudioFeatures = {
   onset: 0,
   onsetCount: 0,
   onsetMax: 0,
+  kick: 0,
+  kickCount: 0,
+  snare: 0,
+  snareCount: 0,
+  hat: 0,
+  hatCount: 0,
+  centroid: 0,
+  ...NO_TEMPO_CLAIM,
 };
 
 export function featureTrackLength(track: FeatureTrack): number {

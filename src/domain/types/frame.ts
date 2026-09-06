@@ -89,6 +89,25 @@ export interface FrameEvaluationInput {
  * Ranges are nominal 0..1 (levels can exceed 1 on hot signals; consumers clamp via
  * `valueLimit`). Smoothing is deliberately ABSENT — `valueLag` downstream gives both
  * the raw transient and the damped envelope, where a pre-smoothed source gives neither.
+ *
+ * T1227 — VERSION 2 of the record (`FEATURE_TRACK_VERSION`), written from what the T1226
+ * engine delivers. The eight v1 fields are verbatim. What is added, and how honest each
+ * addition is, in three tiers:
+ *
+ *  - `kick` / `snare` / `hat` and their counts are BAND HEURISTICS: an onset envelope
+ *    confined to the band a drum mostly lives in (`AUDIO_DETECTOR_BANDS_HZ`). On a mix
+ *    they are a guess that a bass note or a vocal consonant can trigger; on a drums stem
+ *    (T1231) the same fields become a measurement. The names say what they are FOR, the
+ *    descriptions say what they ARE.
+ *  - `centroid` is a measurement: where the spectrum's weight sits, the cheapest
+ *    "brightness" the value graph cannot make from four bands.
+ *  - the tempo fields are a CLAIM, and `bpmConfidence` is what makes them honest: 0 means
+ *    no claim is being made and every other tempo field reads 0. A live source makes no
+ *    claim until a tempo is declared or estimated (T1228); `audioPattern` knows its own
+ *    and claims it at 1. There is deliberately NO `bar` / `barPhase` here: a downbeat
+ *    from live input is a claim nobody can back, so bar structure stays with the nodes
+ *    that can count it (`audioPattern`, a declared `beatsPerBar` + reset, or an offline
+ *    pre-analysis, T1229).
  */
 export interface AudioFeatures {
   /** Broadband RMS of the current analysis window. */
@@ -113,8 +132,39 @@ export interface AudioFeatures {
    * recorded track exists (§V352's corollary: semantics are the recorded contract).
    */
   readonly onsetCount: number;
-  /** T437: the largest onset value observed within the frame interval (≥ `onset` once analysis outpaces the frame rate; equal to it today). */
+  /** T437: the largest onset value observed within the frame interval (≥ `onset` once analysis outpaces the frame rate; T1226 made it real). */
   readonly onsetMax: number;
+  /**
+   * T1227: the largest band-limited onset (SuperFlux over the kick band, in `onset`'s
+   * units) observed within the frame interval. A heuristic on a mix — see the type doc.
+   */
+  readonly kick: number;
+  /** T1227: kick-band events within the frame interval — rising crossings of an adaptive bar (recent mean + `DETECTOR_EVENT_PICKER.delta`). */
+  readonly kickCount: number;
+  /** T1227: as `kick`, over the snare band. */
+  readonly snare: number;
+  readonly snareCount: number;
+  /** T1227: as `kick`, over the hat band. */
+  readonly hat: number;
+  readonly hatCount: number;
+  /**
+   * T1227: spectral centroid — the magnitude-weighted mean frequency of the analysis
+   * window, mapped linearly from `CENTROID_RANGE_HZ` onto 0..1. Silence reads 0.
+   */
+  readonly centroid: number;
+  /** T1227: the claimed tempo in beats per minute; 0 when `bpmConfidence` is 0. */
+  readonly bpm: number;
+  /**
+   * T1227: 0..1 — how much the tempo claim is worth. 0 is NO CLAIM, and every other tempo
+   * field is then 0. A declared tempo is 1; an estimator (T1228) reports its own.
+   */
+  readonly bpmConfidence: number;
+  /** T1227: 0..1 ramp inside the current claimed beat; 0 without a claim. */
+  readonly beatPhase: number;
+  /** T1227: beats counted since the claim began (a lock, a reset, the in point) — monotonic integer; 0 without a claim. */
+  readonly beat: number;
+  /** T1227: beats that fell within the frame interval — the pulse, interval-shaped like `onsetCount`; 0 without a claim. */
+  readonly beatCount: number;
 }
 
 /** Wall time, falling back to the timeline when the transport supplied none (§V172). */

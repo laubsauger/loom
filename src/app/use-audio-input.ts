@@ -4,10 +4,9 @@ import type { GraphDocument, GraphNode } from "@domain/types/graph.ts";
 import type { NodeId } from "@domain/types/ids.ts";
 import type { ChannelResolver } from "@domain/parameters/resolve.ts";
 import { isSilencedSource } from "@domain/graph/bypass.ts";
-import { computeAudioFeatures } from "./audio-features.ts";
+import { createHopAnalyser } from "@domain/audio/analysis/hop-analyser.ts";
 import { awaitMediaReady } from "./media-sources.ts";
-import type { AudioAnalysisState } from "./audio-features.ts";
-import { createAudioHopReducer, type AudioHopReducer } from "./audio-analysis-frame.ts";
+import { createAudioHopReducer } from "./audio-analysis-frame.ts";
 import {
   AUDIO_ANALYSIS_OPTIONS,
   AUDIO_ANALYSIS_PROCESSOR_NAME,
@@ -43,23 +42,51 @@ import {
  * at a fixed 512-sample hop. `read()` reduces the hops that arrived since the previous
  * frame (`audio-analysis-frame.ts`), so a transient between two rAFs is counted instead
  * of missed. The analyser stays in the chain for two reasons: it is the NAMED fallback
- * when the worklet cannot load (§V288 — the status says so, the polled path runs, and
- * the features keep their v1 meaning because both paths produce the same bytes, T1225),
- * and for a file it is where the monitoring gain hangs (see the placement note below).
+ * when the worklet cannot load (§V288 — the status says so, and `polledReader` below
+ * runs the SAME engine core on the analyser's window once per frame, so every field of
+ * the record is produced by the same code on both paths, T1225/T1227), and for a file
+ * it is where the monitoring gain hangs (see the placement note below).
  *
  * Failure is LOUD but not fatal: a denied microphone or an unloadable URL parks the
  * capture in an error status (readable for UI) and the reader returns null — the same
  * deterministic silence a session with no audio has, never a half-working stream.
  */
 
-const ANALYSER_FFT_SIZE = 2048;
-
 /** §V288: the fallback is taken AND named. Anything reading "Live" with this beside it is on the polled path. */
 function workletFallbackMessage(reason: string): string {
-  return `Analysis worklet unavailable (${reason}); polling the analyser once per frame.`;
+  return `Analysis worklet unavailable (${reason}); polling the analyser's window once per frame.`;
 }
 
-type EngineAttachment = { readonly node: AudioWorkletNode; readonly reducer: AudioHopReducer } | { readonly failure: string };
+/** One frame's record, from whichever path is live. */
+type FeatureReader = () => AudioFeatures;
+
+/**
+ * T1227 — the polled path IS the engine, at frame rate. `getFloatTimeDomainData` returns
+ * the very window the analyser's own FFT would take, and `createHopAnalyser` turns it
+ * into the analyser-shaped bytes (T1225 measured the parity) AND the detector streams,
+ * so the v2 fields are never a silent hole when the worklet is missing. What degrades
+ * is fidelity and nothing else: one window per frame instead of four, and the picker's
+ * hop-counted history and gap are counted in frames — which the status names.
+ */
+function polledReader(context: AudioContext, analyser: AnalyserNode): FeatureReader {
+  const core = createHopAnalyser({
+    fftSize: AUDIO_ANALYSIS_OPTIONS.fftSize,
+    sampleRate: context.sampleRate,
+    bands: AUDIO_ANALYSIS_OPTIONS.bands,
+    eventThreshold: AUDIO_ANALYSIS_OPTIONS.eventThreshold,
+    superflux: AUDIO_ANALYSIS_OPTIONS.superflux,
+    picker: AUDIO_ANALYSIS_OPTIONS.picker,
+  });
+  const reducer = createAudioHopReducer(AUDIO_ANALYSIS_OPTIONS.fftSize, context.sampleRate);
+  const samples = new Float32Array(analyser.fftSize);
+  return () => {
+    analyser.getFloatTimeDomainData(samples);
+    reducer.push(core.analyse(samples));
+    return reducer.read().features;
+  };
+}
+
+type EngineAttachment = { readonly node: AudioWorkletNode; readonly read: FeatureReader } | { readonly failure: string };
 
 /**
  * T1226 — the engine on `context`'s audio thread, or the reason it could not be. Never
@@ -78,15 +105,11 @@ async function attachAnalysisEngine(context: AudioContext): Promise<EngineAttach
       channelCountMode: "explicit",
       processorOptions: AUDIO_ANALYSIS_OPTIONS,
     });
-    const reducer = createAudioHopReducer(
-      AUDIO_ANALYSIS_OPTIONS.fftSize,
-      context.sampleRate,
-      AUDIO_ANALYSIS_OPTIONS.bands.length + 1,
-    );
+    const reducer = createAudioHopReducer(AUDIO_ANALYSIS_OPTIONS.fftSize, context.sampleRate);
     node.port.onmessage = (event: MessageEvent<AudioAnalysisWorkletMessage>) => {
       if (event.data.type === "hop") reducer.push(event.data);
     };
-    return { node, reducer };
+    return { node, read: () => reducer.read().features };
   } catch (error) {
     return { failure: error instanceof Error ? error.message : String(error) };
   }
@@ -233,12 +256,9 @@ export function useAudioInput(
 ): AudioInputSource {
   const captureRef = useRef<LiveCapture | null>(null);
   const statusRef = useRef<AudioInputStatus>({ kind: "idle" });
-  const stateRef = useRef<AudioAnalysisState>({ previousSpectrum: null, previousOnset: 0 });
-  /** T1226: the hop reducer while the worklet runs; null on the polled fallback. */
-  const engineRef = useRef<AudioHopReducer | null>(null);
+  /** T1226: the live path's reader — the worklet's reducer, or the polled engine. Null between captures. */
+  const readerRef = useRef<FeatureReader | null>(null);
   const configKeyRef = useRef<string>("");
-  const frequencyRef = useRef<Uint8Array<ArrayBuffer> | null>(null);
-  const timeDomainRef = useRef<Uint8Array<ArrayBuffer> | null>(null);
   const getGraphRef = useRef(getGraph);
   getGraphRef.current = getGraph;
   const registryRef = useRef(registry);
@@ -264,19 +284,18 @@ export function useAudioInput(
     const teardown = (): void => {
       captureRef.current?.dispose();
       captureRef.current = null;
-      engineRef.current = null;
+      readerRef.current = null;
       runnerRef.current = null;
       releaseControlRef.current?.();
       releaseControlRef.current = null;
-      stateRef.current.previousSpectrum = null;
-      stateRef.current.previousOnset = 0;
       statusRef.current = { kind: "idle" };
     };
 
     const acquire = async (config: CaptureConfig): Promise<void> => {
       const context = new AudioContext();
       const analyser = context.createAnalyser();
-      analyser.fftSize = ANALYSER_FFT_SIZE;
+      // The engine's window, so the polled fallback analyses exactly what the worklet would.
+      analyser.fftSize = AUDIO_ANALYSIS_OPTIONS.fftSize;
       // Zero: valueLag downstream owns smoothing; the default 0.8 would pre-damp
       // every transient before a trigger could see it.
       analyser.smoothingTimeConstant = 0;
@@ -290,14 +309,17 @@ export function useAudioInput(
       const engine = await attachAnalysisEngine(context);
       if ("failure" in engine) messages.push(workletFallbackMessage(engine.failure));
       const attachEngine = (input: AudioNode): void => {
-        if ("failure" in engine) return;
+        if ("failure" in engine) {
+          readerRef.current = polledReader(context, analyser);
+          return;
+        }
         input.connect(engine.node);
-        engineRef.current = engine.reducer;
+        readerRef.current = engine.read;
         engine.node.onprocessorerror = () => {
           // The processor threw on the audio thread: it posts nothing from here on, and
           // a reader left on it would report silence forever. Same fallback, same name.
-          if (engineRef.current !== engine.reducer) return;
-          engineRef.current = null;
+          if (readerRef.current !== engine.read) return;
+          readerRef.current = polledReader(context, analyser);
           statusRef.current = { kind: "live", message: workletFallbackMessage("the processor failed") };
         };
       };
@@ -464,25 +486,10 @@ export function useAudioInput(
   }, []);
 
   const read = useCallback((): AudioFeatures | null => {
-    const capture = captureRef.current;
-    if (capture === null) return null;
-    // T1226: the engine's hops since the last frame; the analyser poll is the named fallback.
-    const engine = engineRef.current;
-    if (engine !== null) return engine.read().features;
-    const bins = capture.analyser.frequencyBinCount;
-    if (frequencyRef.current?.length !== bins) frequencyRef.current = new Uint8Array(bins);
-    if (timeDomainRef.current?.length !== capture.analyser.fftSize) {
-      timeDomainRef.current = new Uint8Array(capture.analyser.fftSize);
-    }
-    capture.analyser.getByteFrequencyData(frequencyRef.current);
-    capture.analyser.getByteTimeDomainData(timeDomainRef.current);
-    return computeAudioFeatures({
-      frequency: frequencyRef.current,
-      timeDomain: timeDomainRef.current,
-      sampleRate: capture.context.sampleRate,
-      fftSize: capture.analyser.fftSize,
-      state: stateRef.current,
-    });
+    if (captureRef.current === null) return null;
+    // T1226: the engine's hops since the last frame, or the polled engine — the named fallback.
+    const reader = readerRef.current;
+    return reader === null ? null : reader();
   }, []);
 
   const status = useCallback((): AudioInputStatus => statusRef.current, []);

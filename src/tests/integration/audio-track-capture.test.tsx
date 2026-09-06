@@ -150,6 +150,8 @@ describe("T452 — the track a save produces is a real, parseable artifact", () 
     recorder.capture(0, {
       level: 0.5, low: 0.4, lowMid: 0.3, highMid: 0.2, high: 0.1,
       onset: 0.6, onsetCount: 1, onsetMax: 0.7,
+      kick: 0.35, kickCount: 1, snare: 0.25, snareCount: 1, hat: 0.15, hatCount: 2,
+      centroid: 0.45, bpm: 120, bpmConfidence: 1, beatPhase: 0.5, beat: 8, beatCount: 1,
     });
 
     let written: { fileName: string; text: string; mime: string } | null = null;
