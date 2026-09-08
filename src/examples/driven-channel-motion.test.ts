@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import { flattenComponents } from "../compiler/flatten.ts";
 import { createValueGraphSession } from "../domain/channels/value-graph.ts";
-import type { FrameEvaluationInput } from "../domain/types/frame.ts";
+import { SILENCE } from "../domain/audio/feature-track.ts";
+import type { AudioFeatures, FrameEvaluationInput } from "../domain/types/frame.ts";
 import type { GraphDocument } from "../domain/types/graph.ts";
 import type { ParameterValue } from "../domain/types/parameters.ts";
 import type { NodeRegistryView } from "../nodes/registry/registry.ts";
@@ -114,6 +115,42 @@ function channelReads(graph: GraphDocument): ChannelRead[] {
  */
 const stimulusAt = (frameIndex: number): number => 0.5 + 0.4 * Math.sin(frameIndex * 0.037);
 
+/**
+ * T1236 — THE AUDIO SEAM IS A LIVE SEAM TOO, and it is stimulated for the same reason the
+ * `osc:` namespace is (T1193 below): `audioIn` and `audioFileIn` are value nodes, so they
+ * sit on the value-graph side of the partition, and what they evaluate is the frame's
+ * `audio` record — a capture only the app owns. Handed nothing they publish silence, and
+ * every lane read off a component that conditions them reads as structurally dead. Every
+ * audio example before E66 dodged this by shipping `audioPattern` at index 0 of a switch;
+ * E66's demonstrated path is the FILE, so the seam is stimulated instead of exempted.
+ *
+ * Continuous fields ride the stimulus; counts pulse once every 20 frames, which is what a
+ * count IS (0 on most frames, 1 on a few) and what the `hits` lane's follower needs to
+ * move. The tempo claim stays absent — a declared tempo overrides it on the node itself.
+ */
+const audioAt = (frameIndex: number): AudioFeatures => {
+  const level = stimulusAt(frameIndex);
+  const count = frameIndex % 20 === 0 ? 1 : 0;
+  return {
+    ...SILENCE,
+    level,
+    low: level,
+    lowMid: level,
+    highMid: level,
+    high: level,
+    onset: level,
+    onsetCount: count,
+    onsetMax: level,
+    kick: level,
+    kickCount: count,
+    snare: level,
+    snareCount: count,
+    hat: level,
+    hatCount: count,
+    centroid: level,
+  };
+};
+
 interface Motion {
   /** Distinct values over the horizon. 1 is the failure: the channel is a constant. */
   readonly distinct: number;
@@ -212,6 +249,7 @@ function motionOf(
         buttons: 0,
       },
       channels: stimulus,
+      audio: audioAt(frameIndex),
     });
     /* The app's ladder, in the app's order (`app.tsx`: external channels, then the value
        graph). The order matters for nothing here — the two halves are disjoint by

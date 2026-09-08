@@ -1,0 +1,1183 @@
+{
+  "assets": [],
+  "componentLibrary": {
+    "components": [
+      {
+        "componentId": "audioAnalysis",
+        "description": "Any audio source in, two conditioned bags out. levels: every channel enveloped, ranked to 0..1 over a sliding window and settled — read level, the bands and centroid here. hits: every channel as a 1 ms attack / decaying release pulse — read kickCount, snareCount, hatCount, onsetCount and beatCount here; through levels a count rests at its mid-rank, not at 0.",
+        "graph": {
+          "edges": {
+            "e-rank-settle": {
+              "id": "e-rank-settle",
+              "source": {
+                "nodeId": "rank",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "settle",
+                "portId": "in"
+              }
+            },
+            "e-smooth-rank": {
+              "id": "e-smooth-rank",
+              "source": {
+                "nodeId": "smooth",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "rank",
+                "portId": "in"
+              }
+            },
+            "in_audio_feed_1": {
+              "id": "in_audio_feed_1",
+              "source": {
+                "nodeId": "in_audio",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "decay",
+                "portId": "in"
+              }
+            },
+            "in_audio_feed_2": {
+              "id": "in_audio_feed_2",
+              "source": {
+                "nodeId": "in_audio",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "smooth",
+                "portId": "in"
+              }
+            },
+            "out_hits_feed": {
+              "id": "out_hits_feed",
+              "source": {
+                "nodeId": "decay",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "out_hits",
+                "portId": "in"
+              }
+            },
+            "out_levels_feed": {
+              "id": "out_levels_feed",
+              "source": {
+                "nodeId": "settle",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "out_levels",
+                "portId": "in"
+              }
+            }
+          },
+          "groups": {},
+          "nodes": {
+            "decay": {
+              "definitionVersion": 1,
+              "id": "decay",
+              "parameters": {
+                "lag": 0.001,
+                "releaseRatio": 250
+              },
+              "position": {
+                "x": 258,
+                "y": -168
+              },
+              "type": "valueLag"
+            },
+            "in_audio": {
+              "definitionVersion": 1,
+              "id": "in_audio",
+              "label": "audio",
+              "parameters": {},
+              "position": {
+                "x": 0,
+                "y": -74
+              },
+              "type": "componentInValue"
+            },
+            "out_hits": {
+              "definitionVersion": 1,
+              "id": "out_hits",
+              "label": "hits",
+              "parameters": {},
+              "position": {
+                "x": 516,
+                "y": -168
+              },
+              "type": "componentOutValue"
+            },
+            "out_levels": {
+              "definitionVersion": 1,
+              "id": "out_levels",
+              "label": "levels",
+              "parameters": {},
+              "position": {
+                "x": 1032,
+                "y": -74
+              },
+              "type": "componentOutValue"
+            },
+            "rank": {
+              "definitionVersion": 1,
+              "id": "rank",
+              "parameters": {
+                "window": 16
+              },
+              "position": {
+                "x": 516,
+                "y": 20
+              },
+              "type": "valueNormalize"
+            },
+            "settle": {
+              "definitionVersion": 1,
+              "id": "settle",
+              "parameters": {
+                "lag": 0.15,
+                "releaseRatio": 1
+              },
+              "position": {
+                "x": 774,
+                "y": -74
+              },
+              "type": "valueLag"
+            },
+            "smooth": {
+              "definitionVersion": 1,
+              "id": "smooth",
+              "parameters": {
+                "lag": 0.08,
+                "releaseRatio": 1
+              },
+              "position": {
+                "x": 258,
+                "y": 20
+              },
+              "type": "valueLag"
+            }
+          },
+          "revision": 1
+        },
+        "inputs": [
+          {
+            "externalId": "audio",
+            "label": "audio",
+            "nodeId": "in_audio",
+            "portId": "in"
+          }
+        ],
+        "name": "AudioAnalysis",
+        "outputs": [
+          {
+            "externalId": "hits",
+            "label": "hits",
+            "nodeId": "out_hits",
+            "portId": "out"
+          },
+          {
+            "externalId": "levels",
+            "label": "levels",
+            "nodeId": "out_levels",
+            "portId": "out"
+          }
+        ],
+        "parameters": [
+          {
+            "definition": {
+              "default": 0.08,
+              "description": "The follower BEFORE the rank, on the levels lane: how long a channel takes to follow the source. Longer smooths what the rank sees; it cannot calm the rank's own steps — Settle does that.",
+              "label": "Envelope",
+              "max": 1,
+              "min": 0,
+              "range": "floor",
+              "step": 0.005,
+              "type": "number",
+              "unit": "seconds"
+            },
+            "key": "envelope",
+            "targets": [
+              {
+                "key": "lag",
+                "nodeId": "smooth"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": 16,
+              "description": "How much history the levels lane ranks against. Short adapts within a phrase and forgets the drop; long holds the whole track's shape and takes that long to re-centre after a change.",
+              "label": "Window",
+              "max": 60,
+              "min": 0.25,
+              "range": "bounded",
+              "step": 0.25,
+              "type": "number",
+              "unit": "seconds"
+            },
+            "key": "window",
+            "targets": [
+              {
+                "key": "window",
+                "nodeId": "rank"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": 0.15,
+              "description": "The follower AFTER the rank (§V952). A rank re-orders every frame and can step most of its span in one; this bounds the step of levels to 1 − exp(−frame / Settle) of it — 10% at 0.15 s, 2.7% at 0.6 s. 0 hands you the raw rank.",
+              "label": "Settle",
+              "max": 2,
+              "min": 0,
+              "range": "floor",
+              "step": 0.005,
+              "type": "number",
+              "unit": "seconds"
+            },
+            "key": "settle",
+            "targets": [
+              {
+                "key": "lag",
+                "nodeId": "settle"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": 250,
+              "description": "The hits lane's tail, in milliseconds: a count is 1 on the frame it happens and falls to 0.37 of that after this long. It is the release ratio of a 1 ms follower, which is why the number reads in ms.",
+              "label": "Hit Decay",
+              "max": 1000,
+              "min": 10,
+              "range": "floor",
+              "step": 10,
+              "type": "number"
+            },
+            "key": "hitDecay",
+            "targets": [
+              {
+                "key": "releaseRatio",
+                "nodeId": "decay"
+              }
+            ]
+          }
+        ],
+        "version": 1
+      }
+    ],
+    "schemaVersion": 1
+  },
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e-analysis-hit": {
+        "id": "e-analysis-hit",
+        "source": {
+          "nodeId": "analysis",
+          "portId": "hits"
+        },
+        "target": {
+          "nodeId": "hit",
+          "portId": "in"
+        }
+      },
+      "e-analysis-lvl": {
+        "id": "e-analysis-lvl",
+        "source": {
+          "nodeId": "analysis",
+          "portId": "levels"
+        },
+        "target": {
+          "nodeId": "lvl",
+          "portId": "in"
+        }
+      },
+      "e-bg-flash": {
+        "id": "e-bg-flash",
+        "source": {
+          "nodeId": "bg",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "flash",
+          "portId": "input"
+        }
+      },
+      "e-clip-analysis": {
+        "id": "e-clip-analysis",
+        "source": {
+          "nodeId": "clip",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "analysis",
+          "portId": "audio"
+        }
+      },
+      "e-core-kick": {
+        "id": "e-core-kick",
+        "source": {
+          "nodeId": "core",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "kick",
+          "portId": "input"
+        }
+      },
+      "e-flash-mix": {
+        "id": "e-flash-mix",
+        "order": 4,
+        "source": {
+          "nodeId": "flash",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "mix",
+          "portId": "in2"
+        }
+      },
+      "e-glow-tint": {
+        "id": "e-glow-tint",
+        "source": {
+          "nodeId": "glow",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "tint",
+          "portId": "input"
+        }
+      },
+      "e-grain-spark": {
+        "id": "e-grain-spark",
+        "source": {
+          "nodeId": "grain",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "spark",
+          "portId": "input"
+        }
+      },
+      "e-halo-glow": {
+        "id": "e-halo-glow",
+        "source": {
+          "nodeId": "halo",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "glow",
+          "portId": "input"
+        }
+      },
+      "e-hand-sweep": {
+        "id": "e-hand-sweep",
+        "source": {
+          "nodeId": "hand",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "sweep",
+          "portId": "input"
+        }
+      },
+      "e-hats-mix": {
+        "id": "e-hats-mix",
+        "source": {
+          "nodeId": "hats",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "mix",
+          "portId": "in1"
+        }
+      },
+      "e-hole-ring": {
+        "id": "e-hole-ring",
+        "source": {
+          "nodeId": "hole",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "ring",
+          "portId": "in2"
+        }
+      },
+      "e-kick-halo": {
+        "id": "e-kick-halo",
+        "source": {
+          "nodeId": "kick",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "halo",
+          "portId": "input"
+        }
+      },
+      "e-kick-mix": {
+        "id": "e-kick-mix",
+        "order": 3,
+        "source": {
+          "nodeId": "kick",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "mix",
+          "portId": "in2"
+        }
+      },
+      "e-mix-out": {
+        "id": "e-mix-out",
+        "source": {
+          "nodeId": "mix",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      },
+      "e-ring-snap": {
+        "id": "e-ring-snap",
+        "source": {
+          "nodeId": "ring",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "snap",
+          "portId": "input"
+        }
+      },
+      "e-ringo-ring": {
+        "id": "e-ringo-ring",
+        "source": {
+          "nodeId": "ringo",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "ring",
+          "portId": "in1"
+        }
+      },
+      "e-snap-mix": {
+        "id": "e-snap-mix",
+        "order": 0,
+        "source": {
+          "nodeId": "snap",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "mix",
+          "portId": "in2"
+        }
+      },
+      "e-spark-hats": {
+        "id": "e-spark-hats",
+        "source": {
+          "nodeId": "spark",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "hats",
+          "portId": "input"
+        }
+      },
+      "e-sweep-tick": {
+        "id": "e-sweep-tick",
+        "source": {
+          "nodeId": "sweep",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "tick",
+          "portId": "input"
+        }
+      },
+      "e-tick-mix": {
+        "id": "e-tick-mix",
+        "order": 1,
+        "source": {
+          "nodeId": "tick",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "mix",
+          "portId": "in2"
+        }
+      },
+      "e-tint-mix": {
+        "id": "e-tint-mix",
+        "order": 2,
+        "source": {
+          "nodeId": "tint",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "mix",
+          "portId": "in2"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "analysis": {
+        "definitionVersion": 1,
+        "id": "analysis",
+        "label": "analysis1",
+        "parameters": {
+          "envelope": 0.08,
+          "hitDecay": 250,
+          "settle": 0.15,
+          "window": 16
+        },
+        "position": {
+          "x": -1200,
+          "y": 620
+        },
+        "type": "component:audioAnalysis@1"
+      },
+      "bg": {
+        "definitionVersion": 1,
+        "id": "bg",
+        "label": "bg1",
+        "parameters": {
+          "color": [
+            0.03,
+            0.035,
+            0.06,
+            1
+          ]
+        },
+        "position": {
+          "x": -600,
+          "y": 1000
+        },
+        "type": "solid"
+      },
+      "clip": {
+        "definitionVersion": 1,
+        "id": "clip",
+        "label": "clip1",
+        "parameters": {
+          "beatOffset": 0.484,
+          "beatsPerBar": 4,
+          "bpm": 124,
+          "cue": false,
+          "cuePoint": 0,
+          "extend": "loop",
+          "file": "media/showcase-beat.m4a",
+          "monitor": true,
+          "play": true,
+          "playMode": "timeline",
+          "speed": 1,
+          "tempoMode": "declared",
+          "trimEnd": 0,
+          "trimStart": 0,
+          "volume": 1
+        },
+        "position": {
+          "x": -1500,
+          "y": 620
+        },
+        "type": "audioFileIn"
+      },
+      "core": {
+        "definitionVersion": 1,
+        "id": "core",
+        "label": "core1",
+        "parameters": {
+          "aspectcorrect": true,
+          "bgcolor": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "center": [
+            0.5,
+            0.5
+          ],
+          "fillcolor": [
+            1,
+            0.62,
+            0.3,
+            1
+          ],
+          "mode": "fill",
+          "radius.x": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "0.05 + 0.16 * op('lvl1').chan.low"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.12
+              }
+            },
+            "mode": "expression"
+          },
+          "radius.y": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "0.05 + 0.16 * op('lvl1').chan.low"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.12
+              }
+            },
+            "mode": "expression"
+          },
+          "softness": 0.01
+        },
+        "position": {
+          "x": -600,
+          "y": 300
+        },
+        "type": "circle"
+      },
+      "flash": {
+        "definitionVersion": 1,
+        "id": "flash",
+        "label": "flash1",
+        "parameters": {
+          "blacklevel": 0,
+          "brightness": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "1 + 3 * op('hit1').chan.onsetCount"
+              },
+              "static": {
+                "kind": "static",
+                "value": 1
+              }
+            },
+            "mode": "expression"
+          },
+          "contrast": 1,
+          "gamma1": 1,
+          "invert": 0,
+          "opacity": 1,
+          "whitelevel": 1
+        },
+        "position": {
+          "x": -320,
+          "y": 1000
+        },
+        "type": "level"
+      },
+      "glow": {
+        "definitionVersion": 1,
+        "id": "glow",
+        "label": "glow1",
+        "parameters": {
+          "blacklevel": 0,
+          "brightness": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "0.2 + 1.4 * op('lvl1').chan.high"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.9
+              }
+            },
+            "mode": "expression"
+          },
+          "contrast": 1,
+          "gamma1": 1,
+          "invert": 0,
+          "opacity": 1,
+          "whitelevel": 1
+        },
+        "position": {
+          "x": 240,
+          "y": 300
+        },
+        "type": "level"
+      },
+      "grain": {
+        "definitionVersion": 1,
+        "id": "grain",
+        "label": "grain1",
+        "parameters": {
+          "amp": 1,
+          "aspectcorrect": true,
+          "exp": 1,
+          "gain": 0.5,
+          "harmon": 1,
+          "mono": true,
+          "offset": 0,
+          "period": 0.012,
+          "rough": 0.5,
+          "s4d": 1,
+          "seed": 66,
+          "speed": 1.5,
+          "spread": 2,
+          "t4d": 0.37,
+          "type": "perlin4d"
+        },
+        "position": {
+          "x": -600,
+          "y": -400
+        },
+        "type": "noise"
+      },
+      "halo": {
+        "definitionVersion": 1,
+        "id": "halo",
+        "label": "halo1",
+        "parameters": {
+          "extend": "hold",
+          "filter": "gaussian",
+          "size": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "4 + 56 * op('lvl1').chan.level"
+              },
+              "static": {
+                "kind": "static",
+                "value": 24
+              }
+            },
+            "mode": "expression"
+          }
+        },
+        "position": {
+          "x": -40,
+          "y": 300
+        },
+        "type": "blur"
+      },
+      "hand": {
+        "definitionVersion": 1,
+        "id": "hand",
+        "label": "hand1",
+        "parameters": {
+          "aspectcorrect": true,
+          "bgcolor": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "center": [
+            0.5,
+            0.365
+          ],
+          "fillcolor": [
+            0.85,
+            0.95,
+            1,
+            1
+          ],
+          "mode": "fill",
+          "size": [
+            0.003,
+            0.135
+          ],
+          "softness": 0.002
+        },
+        "position": {
+          "x": -600,
+          "y": 760
+        },
+        "type": "rectangle"
+      },
+      "hats": {
+        "definitionVersion": 1,
+        "id": "hats",
+        "label": "hats1",
+        "parameters": {
+          "blacklevel": 0,
+          "brightness": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "0.9 * op('hit1').chan.hatCount"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "expression"
+          },
+          "contrast": 1,
+          "gamma1": 1,
+          "invert": 0,
+          "opacity": 1,
+          "whitelevel": 1
+        },
+        "position": {
+          "x": -40,
+          "y": -400
+        },
+        "type": "level"
+      },
+      "hit": {
+        "definitionVersion": 1,
+        "id": "hit",
+        "label": "hit1",
+        "parameters": {
+          "maximum": 1,
+          "minimum": 0
+        },
+        "position": {
+          "x": -900,
+          "y": 720
+        },
+        "type": "valueLimit"
+      },
+      "hole": {
+        "definitionVersion": 1,
+        "id": "hole",
+        "label": "hole1",
+        "parameters": {
+          "aspectcorrect": true,
+          "bgcolor": [
+            1,
+            1,
+            1,
+            1
+          ],
+          "center": [
+            0.5,
+            0.5
+          ],
+          "fillcolor": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "mode": "fill",
+          "radius": [
+            0.285,
+            0.285
+          ],
+          "softness": 0.006
+        },
+        "position": {
+          "x": -600,
+          "y": -160
+        },
+        "type": "circle"
+      },
+      "kick": {
+        "definitionVersion": 1,
+        "id": "kick",
+        "label": "kick1",
+        "parameters": {
+          "aspectcorrect": true,
+          "extend": "zero",
+          "p": [
+            0,
+            0
+          ],
+          "r": 0,
+          "s.x": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "1 + 0.35 * op('hit1').chan.kickCount"
+              },
+              "static": {
+                "kind": "static",
+                "value": 1
+              }
+            },
+            "mode": "expression"
+          },
+          "s.y": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "1 + 0.35 * op('hit1').chan.kickCount"
+              },
+              "static": {
+                "kind": "static",
+                "value": 1
+              }
+            },
+            "mode": "expression"
+          },
+          "t": [
+            0,
+            0
+          ],
+          "xord": "srt"
+        },
+        "position": {
+          "x": -320,
+          "y": 300
+        },
+        "type": "transform"
+      },
+      "lvl": {
+        "definitionVersion": 1,
+        "id": "lvl",
+        "label": "lvl1",
+        "parameters": {
+          "maximum": 1,
+          "minimum": 0
+        },
+        "position": {
+          "x": -900,
+          "y": 540
+        },
+        "type": "valueLimit"
+      },
+      "mix": {
+        "definitionVersion": 1,
+        "id": "mix",
+        "label": "mix1",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": 820,
+          "y": 300
+        },
+        "type": "add"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "label": "output1",
+        "parameters": {
+          "toneMap": "none"
+        },
+        "position": {
+          "x": 1100,
+          "y": 300
+        },
+        "type": "output"
+      },
+      "ring": {
+        "definitionVersion": 1,
+        "id": "ring",
+        "label": "ring1",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": -320,
+          "y": 60
+        },
+        "type": "multiply"
+      },
+      "ringo": {
+        "definitionVersion": 1,
+        "id": "ringo",
+        "label": "ringo1",
+        "parameters": {
+          "aspectcorrect": true,
+          "bgcolor": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "center": [
+            0.5,
+            0.5
+          ],
+          "fillcolor": [
+            1,
+            1,
+            1,
+            1
+          ],
+          "mode": "fill",
+          "radius": [
+            0.31,
+            0.31
+          ],
+          "softness": 0.006
+        },
+        "position": {
+          "x": -600,
+          "y": 60
+        },
+        "type": "circle"
+      },
+      "snap": {
+        "definitionVersion": 1,
+        "id": "snap",
+        "label": "snap1",
+        "parameters": {
+          "blacklevel": 0,
+          "brightness": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('hit1').chan.snareCount"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "expression"
+          },
+          "contrast": 1,
+          "gamma1": 1,
+          "invert": 0,
+          "opacity": 1,
+          "whitelevel": 1
+        },
+        "position": {
+          "x": -40,
+          "y": 60
+        },
+        "type": "level"
+      },
+      "spark": {
+        "definitionVersion": 1,
+        "id": "spark",
+        "label": "spark1",
+        "parameters": {
+          "channel": "luminance",
+          "compare": "greater",
+          "softness": 0.03,
+          "threshold": 0.66
+        },
+        "position": {
+          "x": -320,
+          "y": -400
+        },
+        "type": "threshold"
+      },
+      "sweep": {
+        "definitionVersion": 1,
+        "id": "sweep",
+        "label": "sweep1",
+        "parameters": {
+          "aspectcorrect": true,
+          "extend": "zero",
+          "p": [
+            0,
+            0
+          ],
+          "r": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "360 * op('clip1').chan.barPhase"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "expression"
+          },
+          "s": [
+            1,
+            1
+          ],
+          "t": [
+            0,
+            0
+          ],
+          "xord": "srt"
+        },
+        "position": {
+          "x": -320,
+          "y": 760
+        },
+        "type": "transform"
+      },
+      "tick": {
+        "definitionVersion": 1,
+        "id": "tick",
+        "label": "tick1",
+        "parameters": {
+          "blacklevel": 0,
+          "brightness": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "0.35 + 1.4 * (1 - op('clip1').chan.beatPhase)"
+              },
+              "static": {
+                "kind": "static",
+                "value": 1
+              }
+            },
+            "mode": "expression"
+          },
+          "contrast": 1,
+          "gamma1": 1,
+          "invert": 0,
+          "opacity": 1,
+          "whitelevel": 1
+        },
+        "position": {
+          "x": -40,
+          "y": 760
+        },
+        "type": "level"
+      },
+      "tint": {
+        "definitionVersion": 1,
+        "id": "tint",
+        "label": "tint1",
+        "parameters": {
+          "hueoffset": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "-60 + 160 * op('lvl1').chan.centroid"
+              },
+              "static": {
+                "kind": "static",
+                "value": 20
+              }
+            },
+            "mode": "expression"
+          },
+          "saturation": 1,
+          "value": 1
+        },
+        "position": {
+          "x": 520,
+          "y": 300
+        },
+        "type": "hsv"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E66 Meter",
+  "projectId": "example-e66-meter",
+  "schemaVersion": 3,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 66,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}

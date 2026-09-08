@@ -57,6 +57,7 @@ export { skeinDocument } from "./documents/skein.ts";
 export { rakeDocument } from "./documents/rake.ts";
 export { skinDocument } from "./documents/skin.ts";
 export { relayDocument } from "./documents/relay.ts";
+export { meterDocument } from "./documents/meter.ts";
 import { feedbackEchoDocument } from "./documents/feedback-echo.ts";
 import { reactionDiffusionDocument } from "./documents/reaction-diffusion.ts";
 import { animatedNoiseFieldDocument } from "./documents/animated-noise-field.ts";
@@ -114,6 +115,7 @@ import { skeinDocument } from "./documents/skein.ts";
 import { rakeDocument } from "./documents/rake.ts";
 import { skinDocument } from "./documents/skin.ts";
 import { relayDocument } from "./documents/relay.ts";
+import { meterDocument } from "./documents/meter.ts";
 
 export const EXAMPLE_DOCUMENTS: readonly ProjectDocument[] = [
   feedbackEchoDocument,
@@ -173,5 +175,6 @@ export const EXAMPLE_DOCUMENTS: readonly ProjectDocument[] = [
   rakeDocument,
   skinDocument,
   relayDocument,
+  meterDocument,
 ];
 

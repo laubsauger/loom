@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 
+import { flattenComponents } from "../compiler/flatten.ts";
 import { createValueGraphSession } from "../domain/channels/value-graph.ts";
 import type { GraphDocument, GraphNode } from "../domain/types/graph.ts";
 import type { FrameEvaluationInput } from "../domain/types/frame.ts";
 import { allNodeDefinitions } from "../nodes/definitions/index.ts";
 import { createNodeRegistry } from "../nodes/registry/registry.ts";
+import type { ExampleFile } from "./catalogue.ts";
 import { listExamples, listStarterComponentFiles } from "./catalogue.ts";
+import { requireExample } from "./runner.ts";
 
 /**
  * ⚑ T1074 — every `op('X').chan.K` in every shipped document names a channel X ACTUALLY
@@ -46,6 +49,13 @@ import { listExamples, listStarterComponentFiles } from "./catalogue.ts";
  * ANYTHING ELSE — the live seams (vision, matte, depth, midi, osc) and component-internal
  * chains fed from outside the file — has no static enumeration to check against. Those are
  * listed in `UNVERIFIABLE` below and the list is asserted whole.
+ *
+ * An EXAMPLE is walked FLATTENED (T1236, §V437: the app's value graph reads the flattened
+ * document, never the raw one), so a Limit fed from a component INSTANCE's output — E66's
+ * `lvl1` and `hit1` behind `AudioAnalysis` — publishes the instance's lanes here exactly
+ * as it does live, and is checked rather than inventoried. A starter component FILE is
+ * still walked raw: its chain crosses the file's own boundary, and that is the case the
+ * inventory names.
  */
 
 const registry = createNodeRegistry(allNodeDefinitions).view();
@@ -102,8 +112,19 @@ function publishedChannels(graph: GraphDocument): Map<string, Set<string>> {
   return published;
 }
 
-function unresolvable(graph: GraphDocument, fileName: string, unverified: string[]): string[] {
-  const published = publishedChannels(graph);
+const EXAMPLE_PATHS = new Set(listExamples().map((file) => file.path));
+
+/** The graph the app evaluates for `file`: flattened for an example, raw for a component file. */
+function logicalGraphOf(file: ExampleFile, graph: GraphDocument): GraphDocument {
+  if (!EXAMPLE_PATHS.has(file.path)) return graph;
+  const { document, result } = requireExample(file);
+  if (result.components === undefined || result.nodes === undefined) return graph;
+  return flattenComponents({ graph: document.graph, registry: result.nodes, components: result.components }).graph;
+}
+
+function unresolvable(file: ExampleFile, graph: GraphDocument, unverified: string[]): string[] {
+  const fileName = file.fileName;
+  const published = publishedChannels(logicalGraphOf(file, graph));
   const problems: string[] = [];
   for (const reference of channelReferences(graph)) {
     const target = nodeByLabel(graph, reference.name);
@@ -185,7 +206,7 @@ describe("every shipped op().chan reference names a channel that is PUBLISHED (T
   it.each(files.map((file) => file.fileName))("%s drives every parameter from a real channel", (fileName) => {
     const file = files.find((entry) => entry.fileName === fileName);
     const parsed = JSON.parse(file?.text ?? "{}") as { graph?: GraphDocument };
-    expect(parsed.graph === undefined ? [] : unresolvable(parsed.graph, fileName, [])).toEqual([]);
+    expect(file === undefined || parsed.graph === undefined ? [] : unresolvable(file, parsed.graph, [])).toEqual([]);
   });
 
   /**
@@ -196,7 +217,7 @@ describe("every shipped op().chan reference names a channel that is PUBLISHED (T
     const unverified: string[] = [];
     for (const file of files) {
       const parsed = JSON.parse(file.text) as { graph?: GraphDocument };
-      if (parsed.graph !== undefined) unresolvable(parsed.graph, file.fileName, unverified);
+      if (parsed.graph !== undefined) unresolvable(file, parsed.graph, unverified);
     }
     expect(unverified.sort()).toEqual([...UNVERIFIABLE].sort());
   });

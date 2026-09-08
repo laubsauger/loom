@@ -3,6 +3,7 @@ import { toRgba8 } from "../runtime/export/image.ts";
 import { BYTES_PER_PIXEL } from "../runtime/export/pixel-format.ts";
 import { nodeGpuHost } from "../runtime/backend/vgpu/node-gpu-host.ts";
 import { renderHeadless } from "../tests/headless/render-harness.ts";
+import { shippedClipAudio } from "./shipped-clip-audio.ts";
 
 /**
  * THE look instrument (T521, T690) — extracted from `liveness.test.ts` so the liveness
@@ -126,6 +127,8 @@ export async function measure(
   const arranged = Object.values(graph.nodes).some((node) => node.type === "audioPattern");
   const capture = arranged ? ARRANGED_CAPTURE : CAPTURE;
   const lastCapture = arranged ? ARRANGED_LAST_CAPTURE : LAST_CAPTURE;
+  // T1236: a document that binds a shipped clip is measured HEARING it (`shipped-clip-audio.ts`).
+  const audio = shippedClipAudio(graph, 60);
   const result = await renderHeadless({
     host: nodeGpuHost(),
     graph,
@@ -136,6 +139,7 @@ export async function measure(
     fps: 60,
     animate: true,
     ...(components === undefined ? {} : { components }),
+    ...(audio === undefined ? {} : { audio }),
   });
   const errors = result.diagnostics.filter((diagnostic) => diagnostic.severity === "error");
   if (errors.length > 0) {

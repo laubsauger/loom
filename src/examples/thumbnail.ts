@@ -6,6 +6,7 @@ import { toRgba8 } from "../runtime/export/image.ts";
 import { BYTES_PER_PIXEL } from "../runtime/export/pixel-format.ts";
 import { PNG_SIGNATURE, pngChunk } from "../runtime/export/png.ts";
 import { CARD_FRAME } from "./look-instrument.ts";
+import { shippedClipAudio } from "./shipped-clip-audio.ts";
 
 /**
  * Example thumbnails (T847). ONE still per example, rendered at §T794's `CARD_FRAME` — the
@@ -77,6 +78,8 @@ export async function renderThumbnail(
   outputNodeId: string,
   components?: import("../domain/components/index.ts").ComponentRegistryView,
 ): Promise<Uint8Array> {
+  // T1236: the card of a document that binds a shipped clip is the picture WITH the sound.
+  const audio = shippedClipAudio(graph, 60);
   const result = await renderHeadless({
     host: nodeGpuHost(),
     graph,
@@ -87,6 +90,7 @@ export async function renderThumbnail(
     fps: 60,
     animate: true,
     ...(components === undefined ? {} : { components }),
+    ...(audio === undefined ? {} : { audio }),
   });
   const errors = result.diagnostics.filter((diagnostic) => diagnostic.severity === "error");
   if (errors.length > 0) {

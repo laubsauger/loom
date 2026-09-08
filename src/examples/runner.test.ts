@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { flattenComponents } from "../compiler/flatten.ts";
 import { SCHEMA_VERSION } from "../domain/types/schemas.ts";
 import { documentLiveness, isValueSourceDefinition } from "../domain/graph/liveness.ts";
 import { allNodeDefinitions } from "../nodes/definitions/index.ts";
@@ -94,6 +95,7 @@ describe("examples: the gate", () => {
       "E62-Rake.loom.json",
       "E63-Skin.loom.json",
       "E64-Relay.loom.json",
+      "E66-Meter.loom.json",
       "E7-LFO-Dissolve.loom.json",
       "E8-Slit-Scan.loom.json",
       "E9-Ember.loom.json",
@@ -146,7 +148,7 @@ describe.each(examples)("example $fileName", (file) => {
    * compiler quietly worked around.
    */
   it("has no dead nodes: every node reaches a sink", () => {
-    const { plan, document } = requireExample(file);
+    const { plan, document, result } = requireExample(file);
 
     expect(plan.pruned).toEqual([]);
     // Not every live node is a PLAN node. A value source (LFO, Constant, Timer) has no
@@ -156,9 +158,19 @@ describe.each(examples)("example $fileName", (file) => {
     // and everything that should compile did.
     const registry = createNodeRegistry(allNodeDefinitions);
     expect([...documentLiveness(document.graph, registry).dead]).toEqual([]);
-    const expectedOrder = Object.keys(document.graph.nodes)
+    /* T956: a component INSTANCE flattens into `<id>/<inner>` plan nodes (E47's holo1 is
+       the first shipped case), and the plan is compiled from that FLATTENED document — so
+       the flattened document is where the expected order is read from. T1236: an instance
+       of value nodes only (E66's AudioAnalysis) expands to NO plan node at all and is
+       alive the way a Constant is; asserting "every instance expands to something in the
+       order" made a working document fail, which is the §V173b mistake one level up. */
+    const logical =
+      result.components === undefined || result.nodes === undefined
+        ? document.graph
+        : flattenComponents({ graph: document.graph, registry: result.nodes, components: result.components }).graph;
+    const expectedOrder = Object.keys(logical.nodes)
       .filter((id) => {
-        const node = document.graph.nodes[id];
+        const node = logical.nodes[id];
         if (node === undefined) return true;
         const definition = registry.get(node.type);
         // `isValueSourceDefinition`, not a local `valueChannel === undefined` test. The
@@ -178,23 +190,7 @@ describe.each(examples)("example $fileName", (file) => {
         return definition?.passthrough === undefined;
       })
       .sort();
-    /* T956: a component INSTANCE flattens into `<id>/<inner>` plan nodes (E47's holo1 is
-       the first shipped case), so order membership is asserted through that mapping: the
-       instance id itself never compiles, its expansion must be non-empty, and nothing
-       else may appear that the document does not account for. */
-    const instanceIds = new Set(
-      Object.keys(document.graph.nodes).filter((id) =>
-        (document.graph.nodes[id]?.type ?? "").startsWith("component:"),
-      ),
-    );
-    const plainExpected = expectedOrder.filter((id) => !instanceIds.has(id));
-    const flattenedOf = (id: string) => [...plan.order].filter((entry) => entry.startsWith(`${id}/`));
-    for (const id of instanceIds) expect(flattenedOf(id).length).toBeGreaterThan(0);
-    const unexplained = [...plan.order].filter(
-      (entry) => !plainExpected.includes(entry) && ![...instanceIds].some((id) => entry.startsWith(`${id}/`)),
-    );
-    expect(unexplained).toEqual([]);
-    for (const id of plainExpected) expect([...plan.order]).toContain(id);
+    expect([...plan.order].sort()).toEqual(expectedOrder);
     expect(plan.passes.length).toBeGreaterThan(0);
   });
 
