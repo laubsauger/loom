@@ -183,5 +183,13 @@ export function readTrackAtPlayhead(
 ): AudioFeatures {
   const head = mediaPlayhead(transport, timelineSeconds, duration);
   if (!head.visible) return readFeatureFrame(track, -1);
-  return readFeatureFrame(track, Math.floor(head.position * track.fps));
+  // The timeline second arrives as `frame / fps`, and multiplying it back lands one ulp
+  // UNDER `frame` for 22 of the first 1900 frames at 60 fps. A bare floor read the
+  // previous record on those frames, and a count lane — 1 on exactly one record — lost
+  // its event (E66's snare on 2 of bar 3 never flashed the ring). A millionth of a frame
+  // is no position a transport can name, so the floor is taken past it.
+  return readFeatureFrame(track, Math.floor(head.position * track.fps + FRAME_EPSILON));
 }
+
+/** One millionth of a frame: far above a float's error at `frame / fps * fps`, far below any position the transport distinguishes. */
+const FRAME_EPSILON = 1e-6;

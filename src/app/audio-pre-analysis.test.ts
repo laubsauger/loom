@@ -119,6 +119,19 @@ describe("readTrackAtPlayhead — the timeline read is the transport's arithmeti
     expect(frameOf(readTrackAtPlayhead(track, timeline, 2.5 + 0.9 / FPS, DURATION))).toBe(150);
   });
 
+  it("reads frame N for timeline second N / fps, for EVERY N — one ulp under a boundary is not the frame before", () => {
+    // The app hands over `frame / fps`, and `(frame / fps) * fps` lands one ulp under
+    // `frame` for 22 of the first 1900 frames at 60 fps (123, 245, 246, 247, 490, …). A
+    // bare floor then read the PREVIOUS record on those frames, and a count lane — 1 on
+    // exactly one record — lost its event: E66's snare on 2 of bar 3 (frame 292) never
+    // flashed the ring, which is how `e66-meter-claims.gpu.test.ts` found it.
+    const missed: number[] = [];
+    for (let frame = 0; frame <= DURATION * FPS; frame += 1) {
+      if (frameOf(readTrackAtPlayhead(track, timeline, frame / FPS, DURATION)) !== frame) missed.push(frame);
+    }
+    expect(missed).toEqual([]);
+  });
+
   it("trim, cue, speed and loop move the read exactly as they move the sound", () => {
     expect(frameOf(readTrackAtPlayhead(track, { ...timeline, trimStart: 4 }, 1, DURATION))).toBe(300);
     expect(frameOf(readTrackAtPlayhead(track, { ...timeline, cue: true, cuePoint: 7 }, 1, DURATION))).toBe(420);
