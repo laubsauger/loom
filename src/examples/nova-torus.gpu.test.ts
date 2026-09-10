@@ -11,10 +11,26 @@ import { requireExample } from "./runner.ts";
  * The orchestration brief was explicit: E35 earns its slot because the audio drives the
  * TUBE'S THICKNESS (`radius2` ← lowMid) where Corona drives a sphere's whole radius —
  * "if that reactivity is not legible in the shipped render, it is Corona with a
- * different mesh and not worth a slot." So the gate measures legibility, not wiring:
- * the same document with the pattern muted renders a visibly thinner ring, and the
- * difference is large enough that no drift can hide it. Judged on the display-encoded
- * tile (§V618). Measured at build time: 16.7% of the frame lit against 6.3% muted.
+ * different mesh and not worth a slot." So the gate measures legibility, not wiring.
+ *
+ * T1271 CHANGED THE SHAPE OF THIS CLAIM, and §V955 is why. It used to compare one frame
+ * of the file against one frame with `music1.amount = 0` and demand `muted < loud × 0.25`.
+ * Muting hands the analysis a CONSTANT, and a constant ranks 0.5 (§V952) — so after the
+ * rebuild a muted E35 renders a MID-thickness tube, and the old gate would have failed on
+ * a file whose reactivity is intact. A mute arm cannot measure reactivity through a
+ * normaliser in either direction.
+ *
+ * What replaces it measures the thing the rank actually makes true: the ring BREATHES
+ * with the audio and STANDS STILL without it. The comparison arm CUTS the audio path
+ * (every driven parameter falls to its retained value) rather than muting it, and the
+ * quantity is the coefficient of variation of lit area across a window rather than its
+ * level at one frame — a rank cannot fake a variance, and a single frame cannot state one.
+ * Measured at build time over 10 s at 768×432: cv 0.2152 wired, 0.0369 cut, a factor of
+ * 5.8. The residual on the cut arm is the kernel's own tumble, which is not audio.
+ *
+ * The cut arm is also §V914's gate on this file: cutting the audio path on the SHIPPED
+ * (pre-T1271) document rendered 0.0000 of the frame lit — a black frame, because three
+ * retained values were 0 on parameters that draw. It renders a still torus now.
  */
 
 function e35() {
@@ -28,38 +44,54 @@ beforeAll(async () => {
   dawnError = (await probeDawn()).error;
 }, 60_000);
 
-async function litFraction(muted: boolean): Promise<number> {
-  const { document } = e35();
+/**
+ * Lit area per frame across a window. `muted` is gone on purpose (§V955); `cut` severs
+ * every edge out of an audio source, which is what leaves each driven parameter standing
+ * on its retained value.
+ */
+async function litSeries(cut: boolean): Promise<number[]> {
+  const { document, result } = e35();
   const graph = structuredClone(document.graph) as typeof document.graph;
-  if (muted) {
-    const music = Object.values(graph.nodes).find((node) => node.label === "music1");
-    if (music === undefined) throw new Error("E35 has no music1 — the T504 swap is gone");
-    (music.parameters as Record<string, unknown>)["amount"] = 0;
+  if (cut) {
+    for (const [id, edge] of Object.entries(graph.edges)) {
+      const source = graph.nodes[edge.source.nodeId];
+      if (source?.type === "audioPattern" || source?.type === "audioFileIn") {
+        delete (graph.edges as Record<string, unknown>)[id];
+      }
+    }
   }
   const output = Object.values(graph.nodes).find((node) => node.label === "output1");
   if (output === undefined) throw new Error("E35 has no output1");
-  const result = await renderHeadless({
+  const capture = [60, 120, 180, 240, 300, 360, 420, 480, 540];
+  const result2 = await renderHeadless({
     host: nodeGpuHost(),
     graph,
-    settings: document.settings,
-    frames: 41,
-    capture: [40],
+    settings: { ...document.settings, outputResolution: { width: 384, height: 216 } },
+    frames: 541,
+    capture,
     animate: true,
     outputNodeId: output.id,
+    ...(result.components ? { components: result.components } : {}),
   });
-  const frame = result.frames[0];
-  if (frame === undefined) throw new Error("no frame captured");
-  const space = result.plan.outputs.find((o) => o.resourceId === result.outputResourceId)?.space ?? "display";
-  const rgba = toRgba8(
-    { width: frame.width, height: frame.height, format: frame.format, rowStride: frame.bytes.length / frame.height, bytes: frame.bytes } as never,
-    { space } as never,
-  ).data;
-  let lit = 0;
-  for (let i = 0; i < rgba.length; i += 4) {
-    if ((rgba[i] ?? 0) + (rgba[i + 1] ?? 0) + (rgba[i + 2] ?? 0) > 45) lit += 1;
-  }
-  return lit / (rgba.length / 4);
+  const space = result2.plan.outputs.find((o) => o.resourceId === result2.outputResourceId)?.space ?? "display";
+  return result2.frames.map((frame) => {
+    const rgba = toRgba8(
+      { width: frame.width, height: frame.height, format: frame.format, rowStride: frame.bytes.length / frame.height, bytes: frame.bytes } as never,
+      { space } as never,
+    ).data;
+    let lit = 0;
+    for (let i = 0; i < rgba.length; i += 4) {
+      if ((rgba[i] ?? 0) + (rgba[i + 1] ?? 0) + (rgba[i + 2] ?? 0) > 45) lit += 1;
+    }
+    return lit / (rgba.length / 4);
+  });
 }
+
+const variation = (series: readonly number[]): number => {
+  const mean = series.reduce((total, value) => total + value, 0) / series.length;
+  const sd = Math.sqrt(series.reduce((total, value) => total + (value - mean) ** 2, 0) / series.length);
+  return sd / mean;
+};
 
 /**
  * T683 — THE TURNTABLE, gated the way the symmetry trap demands.
@@ -94,7 +126,7 @@ function centroidAngles(rgba: Uint8Array | Uint8ClampedArray, width: number, hei
 describe("E35 — the layers turn against each other (T683)", () => {
   it("relative phase between the colour populations sweeps, and survives a lap by construction", async () => {
     if (dawnError !== undefined) throw new Error(`Dawn did not start: ${dawnError}`);
-    const { document } = e35();
+    const { document, result: loaded } = e35();
     const kernelNode = Object.values(document.graph.nodes).find((node) => node.label === "pointkernel1");
     const kernel = String((kernelNode?.parameters as Record<string, unknown>)["kernel"]);
     // Lap survival is structural: the kernel's clock is ctx.absTime (seconds, keeps
@@ -116,6 +148,8 @@ describe("E35 — the layers turn against each other (T683)", () => {
       capture: [0, 120],
       animate: true,
       outputNodeId: output.id,
+      // T1271: E35 instances the AudioAnalysis component, so its library rides along.
+      ...(loaded.components ? { components: loaded.components } : {}),
     });
     const space = result.plan.outputs.find((o) => o.resourceId === result.outputResourceId)?.space ?? "display";
     const angles = result.frames.map((frame) => {
@@ -132,19 +166,19 @@ describe("E35 — the layers turn against each other (T683)", () => {
   }, 240_000);
 });
 
-describe("E35 — the audio drives the tube, visibly (T660, §V471)", () => {
-  it("muting the pattern thins the ring to well under half its lit area", async () => {
+describe("E35 — the audio drives the tube, visibly (T660, §V471, §V955)", () => {
+  it("the ring breathes with the audio and stands still with the path cut", async () => {
     if (dawnError !== undefined) throw new Error(`Dawn did not start: ${dawnError}`);
-    const [loud, muted] = await Promise.all([litFraction(false), litFraction(true)]);
-    // The driven tube: with the pattern playing, the lowMid band holds radius2 well
-    // above its 0.18 floor and the ring wears real thickness.
-    expect(loud).toBeGreaterThan(0.12);
-    // T701 sharpened this: in the analyser's domain SILENCE reads 0 — exactly as a
-    // silent live track does — so a muted pattern collapses the tube entirely instead
-    // of resting on the old linear bias floor. The reactivity IS the picture (§V461):
-    // a dead audio path cannot fake the loud frame, and the muted one going ~black is
-    // the same claim from the other side. (A host with NO channel resolver still draws
-    // a sane tube — radius2's retained static is 0.3, per §V107.)
-    expect(muted).toBeLessThan(loud * 0.25);
+    const [wired, cut] = await Promise.all([litSeries(false), litSeries(true)]);
+    // The cut arm must still DRAW: §V914, and the pre-T1271 file failed this at 0.0000 —
+    // three retained values were 0 on parameters that draw, so a host with no channel
+    // resolver got a black frame. This is the half a variance ratio alone cannot catch,
+    // because two black frames have no variance either.
+    const cutMean = cut.reduce((total, value) => total + value, 0) / cut.length;
+    expect(cutMean).toBeGreaterThan(0.1);
+    // And the audio must be what moves it. Measured 0.2152 wired against 0.0369 cut; the
+    // margin sits well inside that, and the cut arm's own residual is the kernel's tumble.
+    expect(variation(wired)).toBeGreaterThan(variation(cut) * 3);
+    expect(variation(wired)).toBeGreaterThan(0.12);
   }, 240_000);
 });

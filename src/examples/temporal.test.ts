@@ -26,11 +26,14 @@ interface TemporalExample {
   readonly file: ExampleFile;
   readonly document: ProjectDocument;
   readonly plan: CompiledGraph;
+  /* T1271: an example that INSTANCES a component carries its library, and every re-compile
+     below has to be handed the same one or it compiles a different graph. */
+  readonly loaded: ReturnType<typeof requireExample>["result"];
 }
 
 const temporalExamples: TemporalExample[] = examples.flatMap((file) => {
-  const { document, plan } = requireExample(file);
-  return plan.feedback.length === 0 ? [] : [{ file, document, plan }];
+  const { document, plan, result: loaded } = requireExample(file);
+  return plan.feedback.length === 0 ? [] : [{ file, document, plan, loaded }];
 });
 
 /**
@@ -89,12 +92,17 @@ function withUnrelatedBranch(graph: GraphDocument): GraphDocument {
   };
 }
 
-function compile(document: ProjectDocument, graph: GraphDocument): CompiledGraph {
+function compile(
+  document: ProjectDocument,
+  graph: GraphDocument,
+  loaded?: TemporalExample["loaded"],
+): CompiledGraph {
   return compileGraph({
     graph,
     settings: document.settings,
-    registry: exampleRegistry(),
+    registry: loaded?.nodes ?? exampleRegistry(),
     capabilities: TIER_B_CAPABILITIES,
+    ...(loaded?.components ? { components: loaded.components } : {}),
   });
 }
 
@@ -169,7 +177,7 @@ describe("examples with a temporal loop", () => {
   });
 });
 
-describe.each(temporalExamples)("$file.fileName temporal structure", ({ document, plan }) => {
+describe.each(temporalExamples)("$file.fileName temporal structure", ({ document, plan, loaded }) => {
   /**
    * §V4 → §V285: the LOOP is real, but since T350 the document no longer wires it —
    * Feedback NAMES its source, `edges` stays a DAG, and the compiler synthesizes the
@@ -241,7 +249,7 @@ describe.each(temporalExamples)("$file.fileName temporal structure", ({ document
    * it runs and one you have to restart.
    */
   it("keeps the pair across an unrelated but reachable edit", () => {
-    const edited = compile(document, withUnrelatedBranch(document.graph));
+    const edited = compile(document, withUnrelatedBranch(document.graph), loaded);
 
     // The edit has to actually be live, or this proves nothing: a pruned node never
     // reaches resource allocation, so the diff below would be trivially empty.
@@ -273,8 +281,9 @@ describe.each(temporalExamples)("$file.fileName temporal structure", ({ document
           height: document.settings.outputResolution.height + 64,
         },
       },
-      registry: exampleRegistry(),
+      registry: loaded.nodes ?? exampleRegistry(),
       capabilities: TIER_B_CAPABILITIES,
+      ...(loaded.components ? { components: loaded.components } : {}),
     });
 
     const pairsThatMoved = plan.feedback.filter((pair) => {

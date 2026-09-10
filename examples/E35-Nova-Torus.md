@@ -42,7 +42,7 @@ eight expressions, for reasons the last section sets out with the numbers.
   bounded 0..1 parameter, the *identical numbers* Corona shipped with and the owner
   found within minutes. Corona's retune applies wholesale: gain 0.30, trails topping
   out at 0.92, where a trail still ends.
-- **The dead pair is wired.** `valuemath15 ×9 → valuemath16 +1` drove nothing in the
+- **The dead pair is wired.** The saved ×9 → +1 pair drove nothing in the
   saved file. Corona's identical tipG/tip pair drives its third renderPoints' size on
   the cyan tips, and this file's third renderPoints is also the cyan sparkle group with
   its size sitting static — unfinished intent with a working precedent. It drives
@@ -64,8 +64,8 @@ display-encoded tile (§V618), where all of this file's look calls were made.
 
 ## One analysis instance, and eight expressions (T1271)
 
-What stood between `source1` and the picture was `valuelag1` (0.09 s) feeding eight
-gain·bias pairs — sixteen `valueMath` nodes conditioning one source's RAW band energy.
+What stood between `source1` and the picture was a 0.09 s Lag feeding eight
+gain·bias pairs — sixteen value-math nodes conditioning one source's RAW band energy.
 The rebuild replaces them with one `component:audioAnalysis@1`, two 0..1 bags (`lvl1` on
 its ranked levels, `hit1` on its drum counts) and one expression per property. The node
 count is the visible change; two measurements are the reason.

@@ -111,10 +111,11 @@
     "f0max": 0.8528
   },
   "E35-Nova-Torus.loom.json": {
-    "motion": 0.09784,
-    "range": 0.9962,
-    "f0max": 0.9872,
-    "phrase": 0.22236
+    "motion": 0.21816,
+    "range": 0.9981,
+    "f0max": 1,
+    "cardFloor": 0,
+    "phrase": 0.2768
   },
   "E36-Facade.loom.json": {
     "motion": 0.00578,
