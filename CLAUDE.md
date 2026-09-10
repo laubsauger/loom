@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Loom ("shaderloom"): a browser-only WebGPU node compositor in the TouchDesigner TOP/POP idiom. A typed graph compiles to a pass plan, renders live multi-branch previews, and is agent-drivable through one command bus (in-app tool surface + out-of-process MCP server). React 19 + TS strict + Vite, pnpm, `vgpu` 0.3.1 pinned, zustand+immer, `@xyflow/react` for the canvas, CodeMirror 6, Radix, CSS modules + CSS vars (no Tailwind), zod.
+Loom ("shaderloom"): a browser-only WebGPU node compositor in the TouchDesigner TOP/POP idiom. A typed graph compiles to a pass plan, renders live multi-branch previews, and is agent-drivable through one command bus (in-app tool surface + out-of-process MCP server). React 19 + TS strict + Vite, pnpm, `vgpu` 0.4.1 pinned (patched, see `docs/vgpu-patch-notes.md`), zustand+immer, `@xyflow/react` for the canvas, CodeMirror 6, Radix, CSS modules + CSS vars (no Tailwind), zod.
 
 ## SPEC.md is the law, and it is not yours to edit
 
