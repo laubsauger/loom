@@ -15,6 +15,12 @@
  *
  * Shared by `build-examples.ts` and `build-thumbnails.ts` so the two flags cannot drift:
  * B197 was one bug in two files.
+ *
+ * T1221: the same predicate selects STARTER COMPONENTS in `build-examples.ts`, matched
+ * against the file name it writes (`Bloom.loom.json`). Nothing extra is needed for that:
+ * a component file name is never `E` + digits, so the exact-match branch can only ever
+ * name an example, and a named argument reaches components through the substring branch
+ * exactly as a caller who typed `Bloom` meant it to.
  */
 
 /** `E` + digits and nothing else — the form that names exactly one example. */

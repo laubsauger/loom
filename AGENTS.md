@@ -33,7 +33,7 @@ node --import ./src/tooling/alias-hooks.ts src/examples/build-examples.ts --only
 
 An E-number argument (`--only E2`) matches that one example EXACTLY (T1267, after B197: it used to be a substring match, so `--only E2` also regenerated E20–E29 and swept seven sessions' in-flight documents). Any other argument is still a substring match — `--only Reaction` takes both files that carry the word. The same rule and the same flag apply to `build-thumbnails.ts`, and both scripts print the list they are about to overwrite before writing a byte; read it.
 
-Starter components are authored in `src/examples/starter-components.ts`. Their generator currently rewrites the complete generated set, so inspect the shared worktree before running it without `--only`.
+Starter components are authored in `src/examples/starter-components.ts` and regenerate through the same script and the same flag, addressed by the file name they ship under: `--only Bloom` writes `examples/components/Bloom.loom.json` — and, because that is the substring branch, also the two examples whose names carry "Bloom". One flag, one rule, both halves (T1221); the printed plan is what shows you the blast radius, and `--out <dir>` writes it somewhere harmless first. Regenerating a component no longer needs the unscoped run, which sweeps every peer's in-flight work.
 
 ## Working method
 
