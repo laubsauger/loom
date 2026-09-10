@@ -2,6 +2,8 @@ import type { NodeId } from "../../domain/types/ids.ts";
 import type {
   CpuSpanResults,
   CpuTimingSource,
+  FrameSpanExtent,
+  FrameTimingBucket,
   PassSpanResults,
   PassTimingRow,
   PassTimingSource,
@@ -235,6 +237,12 @@ export function createTelemetryHub(options: TelemetryHubOptions = {}): Telemetry
 
   /** Most recent GPU span per pass id, ms. Only ever written from `onPassTimings`. */
   const spans = new Map<string, number>();
+  /**
+   * T1243: the latest submitted frame's GPU extent, summed over the vgpu frames that
+   * share its submit number. Null until the source delivers one; a source that never
+   * does leaves `frameBucket` on the per-pass sum, labelled as such.
+   */
+  let frameExtent: { submit: number | null; gpuMs: number } | null = null;
   /** Most recent CPU span per pass id, ms. Only ever written from `onCpuTimings`. */
   const cpuSpans = new Map<string, number>();
   const counters = new Map<NodeId, NodeCounters>();
@@ -336,7 +344,43 @@ export function createTelemetryHub(options: TelemetryHubOptions = {}): Telemetry
     };
   }
 
-  function frameBucket(): TimingBucket {
+  /**
+   * The frame's cost (T1243).
+   *
+   * ## Why the per-pass spans are not summed into it any more
+   *
+   * They were, and the sum disagreed with the presented frame by ~10×: 88–105 ms on
+   * E24 at a 10 ms rAF interval, 243–357 ms on E55 at 20–27 ms, and 4.98 → 55.2 ms
+   * climbing with pass count on chain-200. Measured on Dawn/Metal with raw timestamps
+   * (`scratchpad/ts-probe.ts`, 24 dependent 512² passes in one command buffer): the
+   * BEGIN timestamp of every pass lands within ~0.1 ms of the command buffer's start
+   * (0.000, 0.014, 0.026, 0.080, …) while the END timestamps are sequential (1.45,
+   * 2.89, 4.32, …, 8.5). Apple GPUs sample pass timestamps at STAGE boundaries, and a
+   * tile-based deferred renderer schedules every encoder's vertex stage up front, so
+   * pass k's span is really "frame start → end of pass k". The spans NEST, and their
+   * sum is ≈ (N+1)/2 × the frame — 11.7× for N = 24, which is the ratio that was
+   * being shown. Not a queue wait inside a span (pass 0 begins at 0), and not preview
+   * ticks leaking in (preview passes carry no span and are not in `plan.passes`).
+   *
+   * An empty marker pass at the end of the frame does not fix it either: with nothing
+   * to wait for, its end timestamp landed at 1.5 ms of a 9 ms frame (`ts-probe2.ts`) —
+   * the GPU overlaps independent passes wholesale. The only figure that is the frame is
+   * earliest begin → latest end across the frame's spans, which vgpu now reports beside
+   * the durations (`patches/vgpu.patch`, `Timer.onResults` second argument) and the
+   * backend forwards as `FrameSpanExtent`.
+   *
+   * ## What the bucket carries
+   *
+   * `gpuMs` is that extent for the latest submit (`basis: "frame"`); `passSumMs` keeps
+   * the sum so the per-pass column still adds up to something on screen. A source that
+   * delivers no extent (a hand-driven fake) falls back to the sum and says so
+   * (`basis: "passes"`) rather than reading null forever — every span in it is still a
+   * measured GPU duration (§V86); it is the LABEL "frame" the sum never deserved.
+   *
+   * On a sequential GPU (no stage overlap) the two figures agree; the label costs
+   * nothing there and is what stops the number from lying here.
+   */
+  function frameBucket(): FrameTimingBucket {
     const passes = plan?.passes ?? [];
     let total = 0;
     let measured = 0;
@@ -348,12 +392,26 @@ export function createTelemetryHub(options: TelemetryHubOptions = {}): Telemetry
       total += span;
       measured += 1;
     }
+    const supported = timingSource.timestampQuery;
     // §V86: with no timestamp query the counts are still real and still worth showing —
     // it is only the DURATION that does not exist, and it says so rather than reading 0.
-    const has = timingSource.timestampQuery && (measured > 0 || passes.length === 0);
+    const hasSum = supported && (measured > 0 || passes.length === 0);
+    const passSumMs = hasSum ? total : null;
+    if (supported && frameExtent !== null) {
+      return {
+        availability: "measured",
+        gpuMs: frameExtent.gpuMs,
+        basis: "frame",
+        passSumMs,
+        passCount: passes.length,
+        nodeCount: nodes.size,
+      };
+    }
     return {
-      availability: !timingSource.timestampQuery ? "unavailable" : has ? "measured" : "pending",
-      gpuMs: has ? total : null,
+      availability: !supported ? "unavailable" : hasSum ? "measured" : "pending",
+      gpuMs: passSumMs,
+      basis: "passes",
+      passSumMs,
       passCount: passes.length,
       nodeCount: nodes.size,
     };
@@ -426,6 +484,8 @@ export function createTelemetryHub(options: TelemetryHubOptions = {}): Telemetry
       // keeps a recompile from reporting the previous plan's cost against a new pass id.
       const live = new Set((next?.passes ?? []).map((pass) => pass.id));
       for (const passId of [...spans.keys()]) if (!live.has(passId)) spans.delete(passId);
+      // T1243: the extent belongs to a frame of the previous plan for the same reason.
+      frameExtent = null;
       for (const passId of [...cpuSpans.keys()]) if (!live.has(passId)) cpuSpans.delete(passId);
       for (const nodeId of [...counters.keys()]) if (!activeNodes.has(nodeId)) counters.delete(nodeId);
       schedule();
@@ -468,7 +528,15 @@ export function createTelemetryHub(options: TelemetryHubOptions = {}): Telemetry
       detachTiming?.();
       timingSource = source;
       spans.clear();
-      const off = source.onPassTimings((results: PassSpanResults) => {
+      frameExtent = null;
+      const off = source.onPassTimings((results: PassSpanResults, frame?: FrameSpanExtent) => {
+        // T1243: halves of one render (same submit) add up; a new submit replaces.
+        if (frame !== undefined) {
+          frameExtent =
+            frameExtent !== null && frame.submit !== null && frame.submit === frameExtent.submit
+              ? { submit: frame.submit, gpuMs: frameExtent.gpuMs + frame.gpuMs }
+              : { submit: frame.submit, gpuMs: frame.gpuMs };
+        }
         /*
          * T387: a substepped pass is encoded several times in one frame and reports one
          * span per iteration (`pass`, `pass~1`, `pass~2`, …) because vgpu allows one span
@@ -491,6 +559,7 @@ export function createTelemetryHub(options: TelemetryHubOptions = {}): Telemetry
         detachTiming = null;
         timingSource = NO_PASS_TIMING;
         spans.clear();
+        frameExtent = null;
         schedule();
       };
       schedule();
@@ -564,6 +633,7 @@ export function createTelemetryHub(options: TelemetryHubOptions = {}): Telemetry
       timer = null;
       listeners.clear();
       spans.clear();
+      frameExtent = null;
       cpuSpans.clear();
       counters.clear();
     },

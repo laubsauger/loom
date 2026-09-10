@@ -6,7 +6,7 @@ settings:
 
 patchedDependencies:
   vgpu:
-    hash: cjsjlib3fopriggag4524i6dye
+    hash: fp5cunzchnnbwyhn5a36cnah3q
     path: patches/vgpu.patch
 
 importers:
@@ -81,7 +81,7 @@ importers:
         version: 2.1.9(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       vgpu:
         specifier: 0.3.1
-        version: 0.3.1(patch_hash=cjsjlib3fopriggag4524i6dye)
+        version: 0.3.1(patch_hash=fp5cunzchnnbwyhn5a36cnah3q)
       zod:
         specifier: ^3.24.1
         version: 3.25.76
@@ -4653,7 +4653,7 @@ snapshots:
     dependencies:
       react: 19.2.8
 
-  vgpu@0.3.1(patch_hash=cjsjlib3fopriggag4524i6dye):
+  vgpu@0.3.1(patch_hash=fp5cunzchnnbwyhn5a36cnah3q):
     dependencies:
       '@modelcontextprotocol/server': 2.0.0
       '@vgpu/adapter-mock': 0.3.1(@vgpu/adapter-node@0.3.1)

@@ -16,6 +16,9 @@ export { NO_CPU_TIMING, NO_PASS_TIMING, emptyBucket, emptyNodeTelemetry } from "
 export type {
   CpuSpanResults,
   CpuTimingSource,
+  FrameSpanExtent,
+  FrameTimingBasis,
+  FrameTimingBucket,
   NodeTelemetry,
   PassSpanResults,
   PassTimingRow,

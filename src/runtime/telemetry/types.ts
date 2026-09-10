@@ -23,6 +23,20 @@ import type { CategoryRollup, NodeCostRow } from "./cost.ts";
 export type PassSpanResults = Readonly<Record<string, number>>;
 
 /**
+ * T1243: the FRAME the spans of one result came from — its GPU extent (earliest pass
+ * begin to latest pass end, from the same timestamps the spans are cut from) and the
+ * submit it belongs to. Structurally the backend's `GpuFrameTiming`, restated here for
+ * the same §V3 reason as `PassTimingSource`. Two results with the same `submit` are
+ * halves of one render (the direct path splits a render around compute dispatches) and
+ * are summed; a new `submit` replaces. `null` = the source could not tie the frame to a
+ * submit, and every such result stands alone.
+ */
+export interface FrameSpanExtent {
+  readonly gpuMs: number;
+  readonly submit: number | null;
+}
+
+/**
  * The backend's GPU timing surface, as telemetry needs it.
  *
  * Declared here rather than imported because §V3 keeps `timer(gpu)` inside
@@ -39,7 +53,12 @@ export interface PassTimingSource {
    * = unknown, which reads as "not asked" rather than inventing a claim.
    */
   readonly timestampQueryRequested?: boolean | undefined;
-  onPassTimings(listener: (spans: PassSpanResults) => void): () => void;
+  /**
+   * T1243: `frame` rides beside the spans when the source can measure it. A source that
+   * omits it (a test's hand-driven fake) gets a frame figure built from the spans, and
+   * the bucket SAYS so (`FrameTimingBucket.basis`).
+   */
+  onPassTimings(listener: (spans: PassSpanResults, frame?: FrameSpanExtent) => void): () => void;
 }
 
 /** A device with no timestamp-query support. Emits nothing, ever (§V86). */
@@ -108,6 +127,31 @@ export interface TimingBucket {
   readonly gpuMs: number | null;
   readonly passCount: number;
   readonly nodeCount: number;
+}
+
+/**
+ * T1243: what `FrameTimingBucket.gpuMs` is made of.
+ *
+ * `frame`  — the frame's GPU extent, one pair of timestamps per submitted frame
+ *            (earliest pass begin → latest pass end). The honest frame figure.
+ * `passes` — the per-pass spans SUMMED, because the source delivered no extent. Only a
+ *            hand-driven source does that today; the real backend always delivers one.
+ *            The sum is not a frame duration on Apple GPUs (see `hub.ts frameBucket`),
+ *            which is why the basis is labelled rather than assumed.
+ */
+export type FrameTimingBasis = "frame" | "passes";
+
+/**
+ * The frame's cost (T1243). `gpuMs` is the frame figure and `basis` names what it is;
+ * `passSumMs` is the sum of the most recent span of every plan pass — the number that
+ * used to be shown AS the frame, kept because it is what the per-pass column adds up to.
+ *
+ * Both extra fields are optional in the type only so a snapshot literal built by hand
+ * (tests) stays a valid `TelemetrySnapshot`; the hub always fills them.
+ */
+export interface FrameTimingBucket extends TimingBucket {
+  readonly basis?: FrameTimingBasis;
+  readonly passSumMs?: number | null;
 }
 
 export function emptyBucket(availability: TimingAvailability): TimingBucket {
@@ -196,8 +240,12 @@ export interface TelemetrySnapshot {
   /** Frames the driver actually rendered since the hub was created. */
   readonly framesRendered: number;
   readonly lastFrameIndex: number | null;
-  /** Sum of the most recent span for every pass. Null unless at least one was measured. */
-  readonly frame: TimingBucket;
+  /**
+   * The frame's GPU cost (T1243): the extent of the latest submitted frame when the
+   * source measures one, else the per-pass sum — `basis` says which. Null unless
+   * measured.
+   */
+  readonly frame: FrameTimingBucket;
   readonly passes: ReadonlyArray<PassTimingRow>;
   /** True when `estimatedResourceBytes` exceeds the project budget (§V24). */
   readonly overBudget: boolean;

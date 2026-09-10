@@ -1,8 +1,8 @@
-# vgpu 0.3.1 — the three things we patch, and why
+# vgpu 0.3.1 — the four things we patch, and why
 
 Loom is a browser WebGPU node compositor built entirely on `vgpu` 0.3.1. We carry a
 patch against the published `dist` (pnpm `patchedDependencies` → `patches/vgpu.patch`,
-eight hunks across six files, three independent themes). We would rather not: a pinned
+sixteen hunks across twelve files, four independent themes). We would rather not: a pinned
 dependency's diff is maintenance forever, and a silently dropped patch returns each bug
 with no error.
 
@@ -12,9 +12,11 @@ today, why our workaround sits where it does, and — the part we actually want 
 inline as a `// shaderloom patch (Tnnn)` comment, so the code and this note cannot
 drift apart.
 
-Two of the three read to us like oversights rather than positions, and we say so. The
-third we suspect is a deliberate performance default that we are simply an unusual
-consumer of, and we say that too.
+Two of the first three read to us like oversights rather than positions, and we say so.
+The third we suspect is a deliberate performance default that we are simply an unusual
+consumer of, and we say that too. The fourth (T1243) is a missing figure: the timer
+resolves the raw timestamps and discards them after computing per-span durations, and
+the frame's extent cannot be recovered from the durations.
 
 ---
 
@@ -211,9 +213,45 @@ counter regardless.
 
 ---
 
+## 4. The timer discards the raw timestamps, and per-pass spans cannot be summed into a frame
+
+**What we needed.** One GPU figure for the frame: how long the GPU spent on the submit,
+first pass begin to last pass end. It sits beside the per-pass column in the performance
+panel and is what "is this document GPU-bound?" is answered from.
+
+**What 0.3.1 does.** `Timer` attaches one `timestampWrites` pair per span, resolves the
+query set once the frame's readback buffer maps, and `#dispatch` converts each pair to a
+duration in ms and hands listeners `Readonly<Record<string, number>>`. The raw
+timestamps are only ever seen inside `#dispatch`, and are dropped there.
+
+**Why the durations are not enough.** We measured on Dawn/Metal (Apple silicon), 24 render
+passes in one command buffer, each sampling the previous one's output: every pass's BEGIN
+timestamp lands within 0.1 ms of the command buffer's start (0.000, 0.014, 0.026, 0.080 …)
+while the ENDs are sequential (1.45, 2.89, 4.32 … 8.5 ms). Stage-boundary sampling on a
+tiler: the vertex stages of every pass run up front, the "begin" is where the encoder
+started, not where the fragment work did. The spans NEST, and their sum is ~(N+1)/2 × the
+frame — 11.7× for N = 24, which is the ~10× disagreement the row was opened on. An empty
+marker pass appended to the frame does not help either: it ENDS early (1.5 ms into a 9 ms
+frame), because the GPU overlaps independent passes. Only `max(end) − min(begin)` over the
+raw pairs is the frame, and only `#dispatch` has the raw pairs.
+
+**Our patch** (`dist/timer.js`, `dist/timer.d.ts`, plus the `TimerFrameExtent` re-export
+in the four entry `.d.ts` files): `#dispatch` computes the extent over the valid pairs of
+the frame and hands listeners a second argument, `{ extentMs, frame }`, where `frame` is
+the vgpu `Frame` the spans were attached to — that is how the caller ties a result back to
+the submit it encoded, since results arrive a frame or two behind. No behaviour changes
+for a listener that ignores the second argument.
+
+**What we would prefer.** Either the same second argument upstream, or an `onRawResults`
+that hands the resolved `BigUint64Array` with the span layout so the consumer computes
+whatever figure it needs. Exposing the timestamps is the smaller ask; the extent is one
+`min`/`max` away from them.
+
+---
+
 ## What we would delete
 
 Every hunk, immediately, for: an MSAA preserve opt-in (1), a first-class region binding
-with interval-based aliasing (2), and either an exported eviction call or a per-entry
-eviction subscription (3). We are happy to send patches upstream against any of these if
+with interval-based aliasing (2), either an exported eviction call or a per-entry
+eviction subscription (3), and a frame extent or raw-timestamp callback on the timer (4). We are happy to send patches upstream against any of these if
 the shapes above are close to what you would want.

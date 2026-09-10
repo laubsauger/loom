@@ -14,6 +14,7 @@ import type {
   BackendStatus,
   BuildStats,
   FrameLoopSettings,
+  GpuFrameTiming,
   // Ours, NOT the DOM's Media Source Extensions global of the same name — without this
   // import the code below would silently typecheck against the wrong interface.
   CookPolicy,
@@ -241,7 +242,17 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
   let presentSampler: GPUSampler | undefined;
   /** GPU pass timer (T163). Exists only when the device has timestamp-query (§V12). */
   let gpuTimer: Timer | undefined;
-  const timingListeners = new Set<(spans: Readonly<Record<string, number>>) => void>();
+  const timingListeners = new Set<
+    (spans: Readonly<Record<string, number>>, frame: GpuFrameTiming) => void
+  >();
+  /**
+   * T1243: which submit each timed vgpu frame belongs to, keyed by the frame object the
+   * spans were attached to. vgpu hands that object back with the results (patched
+   * `Timer.onResults`, second argument), which is what lets an asynchronous result be
+   * tied to the `render()` that encoded it without a FIFO that a dropped or abandoned
+   * frame could desynchronise. Weak: a frame that never reports is simply forgotten.
+   */
+  const timedFrames = new WeakMap<Frame, number>();
   /**
    * T256 (§V86, §V844) — the CPU half of a node's cost: how long ENCODING each pass took.
    *
@@ -868,6 +879,10 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
        * onto the pass. Dropping them would report a 50-substep loop as costing one substep.
        */
       const iterations = new Map<string, number>();
+      // T1243: `render()` counts this frame as submit N+1 once encoding returns; the
+      // loop path encodes every pass into the one open frame, the direct path may split
+      // a render across several frames that then share the number.
+      if (gpuTimer !== undefined) timedFrames.set(f, framesSubmitted + 1);
       const spanFor = (passId: string): TimerSpan | undefined => {
         if (gpuTimer === undefined) return undefined;
         const seen = iterations.get(passId) ?? 0;
@@ -1297,8 +1312,15 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
     try {
       const created = timer(active.gpu);
       gpuTimer = created;
-      unsubscribeTimer = created.onResults((spans) => {
-        for (const listener of timingListeners) listener(spans);
+      unsubscribeTimer = created.onResults((spans, extent) => {
+        // T1243: the frame figure is the extent vgpu measured from the same timestamps
+        // the spans came from — never a sum of the spans (they overlap; see hub.ts
+        // `frameBucket`). The submit number ties it to the render that encoded it.
+        const frame: GpuFrameTiming = {
+          gpuMs: extent.extentMs,
+          submit: timedFrames.get(extent.frame as Frame) ?? null,
+        };
+        for (const listener of timingListeners) listener(spans, frame);
       });
     } catch (error) {
       // Absence degrades to "no GPU timings", exactly like the capability being missing.

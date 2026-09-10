@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { NodeId } from "../../domain/types/ids.ts";
 import { TELEMETRY_TICK_MS, createTelemetryHub, telemetryPlan } from "./hub.ts";
 import type { NodeMetricSink, PlanLike } from "./hub.ts";
-import type { PassSpanResults, PassTimingSource } from "./types.ts";
+import type { FrameSpanExtent, PassSpanResults, PassTimingSource } from "./types.ts";
 
 /**
  * The metrics pipe (T41, T42, §V16, §V86).
@@ -15,18 +15,18 @@ import type { PassSpanResults, PassTimingSource } from "./types.ts";
 
 /** A controllable stand-in for the backend's vgpu timer surface. */
 function fakeTimingSource(timestampQuery: boolean): PassTimingSource & {
-  emit(spans: PassSpanResults): void;
+  emit(spans: PassSpanResults, frame?: FrameSpanExtent): void;
   listenerCount(): number;
 } {
-  const listeners = new Set<(spans: PassSpanResults) => void>();
+  const listeners = new Set<(spans: PassSpanResults, frame?: FrameSpanExtent) => void>();
   return {
     timestampQuery,
     onPassTimings(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
-    emit(spans) {
-      for (const listener of [...listeners]) listener(spans);
+    emit(spans, frame) {
+      for (const listener of [...listeners]) listener(spans, frame);
     },
     listenerCount: () => listeners.size,
   };
@@ -410,5 +410,99 @@ describe("T304 — the hub remembers when frames happened", () => {
     expect(times[1]).toBeGreaterThanOrEqual(times[0] ?? 0);
     const now = typeof performance === "undefined" ? Date.now() : performance.now();
     for (const at of times) expect(now - at).toBeLessThan(1000);
+  });
+});
+
+/**
+ * T1243 — THE FRAME FIGURE IS THE FRAME'S EXTENT, NOT THE SUM OF ITS PASSES.
+ *
+ * On Dawn/Metal the per-pass spans nest (every pass begins near the command buffer's
+ * start), so their sum read ~10× the presented frame. The backend now delivers the
+ * frame's extent beside the spans; this pins the bucket arithmetic on a hand-driven
+ * source, where the numbers can be chosen so that the two figures are unmistakably
+ * different — a sum that happened to equal the extent would pass the old code too.
+ */
+describe("T1243 — the frame bucket is the submitted frame's extent", () => {
+  const passes = [
+    { id: "a:p0", nodeId: "a" },
+    { id: "b:p0", nodeId: "b" },
+    { id: "c:p0", nodeId: "c" },
+  ];
+
+  it("reports the extent as gpuMs, labelled, and keeps the per-pass sum beside it", () => {
+    const hub = createTelemetryHub({ now });
+    const timing = fakeTimingSource(true);
+    hub.attachTimingSource(timing);
+    hub.setPlan(telemetryPlan(planOf(passes)));
+    // Nested spans as Apple reports them: 1, 2, 3 ms from a common start = a 3 ms frame.
+    timing.emit({ "a:p0": 1, "b:p0": 2, "c:p0": 3 }, { gpuMs: 3, submit: 7 });
+    advance(TELEMETRY_TICK_MS);
+
+    const frame = hub.snapshot().frame;
+    expect(frame.availability).toBe("measured");
+    expect(frame.basis).toBe("frame");
+    expect(frame.gpuMs).toBeCloseTo(3);
+    expect(frame.passSumMs).toBeCloseTo(6);
+    // The per-pass column is untouched: every span is still its own duration.
+    expect(hub.snapshot().passes.map((row) => row.gpuMs)).toEqual([1, 2, 3]);
+    expect(hub.nodeTelemetry("c").own.gpuMs).toBeCloseTo(3);
+    hub.dispose();
+  });
+
+  it("adds the halves of one segmented render (same submit) and replaces on the next", () => {
+    const hub = createTelemetryHub({ now });
+    const timing = fakeTimingSource(true);
+    hub.attachTimingSource(timing);
+    hub.setPlan(telemetryPlan(planOf(passes)));
+    // The direct path splits a render around a compute dispatch: two vgpu frames, one
+    // submit number. Their extents add; their spans land on different passes.
+    timing.emit({ "a:p0": 1 }, { gpuMs: 1.25, submit: 3 });
+    timing.emit({ "b:p0": 2, "c:p0": 0.5 }, { gpuMs: 2, submit: 3 });
+    advance(TELEMETRY_TICK_MS);
+    expect(hub.snapshot().frame.gpuMs).toBeCloseTo(3.25);
+    expect(hub.snapshot().frame.passSumMs).toBeCloseTo(3.5);
+
+    // The next submit is a new frame — nothing carries over from the last one.
+    timing.emit({ "a:p0": 1, "b:p0": 2, "c:p0": 0.5 }, { gpuMs: 2.5, submit: 4 });
+    advance(TELEMETRY_TICK_MS);
+    expect(hub.snapshot().frame.gpuMs).toBeCloseTo(2.5);
+
+    // A frame the source could not tie to a submit stands alone, twice.
+    timing.emit({ "a:p0": 1 }, { gpuMs: 0.75, submit: null });
+    timing.emit({ "a:p0": 1 }, { gpuMs: 0.5, submit: null });
+    advance(TELEMETRY_TICK_MS);
+    expect(hub.snapshot().frame.gpuMs).toBeCloseTo(0.5);
+    hub.dispose();
+  });
+
+  it("falls back to the labelled per-pass sum when the source delivers no extent", () => {
+    const hub = createTelemetryHub({ now });
+    const timing = fakeTimingSource(true);
+    hub.attachTimingSource(timing);
+    hub.setPlan(telemetryPlan(planOf(passes)));
+    timing.emit({ "a:p0": 1, "b:p0": 2, "c:p0": 3 });
+    advance(TELEMETRY_TICK_MS);
+    const frame = hub.snapshot().frame;
+    expect(frame.basis).toBe("passes");
+    expect(frame.gpuMs).toBeCloseTo(6);
+    expect(frame.passSumMs).toBeCloseTo(6);
+    hub.dispose();
+  });
+
+  it("drops the extent with the plan it was measured under", () => {
+    const hub = createTelemetryHub({ now });
+    const timing = fakeTimingSource(true);
+    hub.attachTimingSource(timing);
+    hub.setPlan(telemetryPlan(planOf(passes)));
+    timing.emit({ "a:p0": 1, "b:p0": 2, "c:p0": 3 }, { gpuMs: 3, submit: 1 });
+    advance(TELEMETRY_TICK_MS);
+    expect(hub.snapshot().frame.gpuMs).toBeCloseTo(3);
+
+    hub.setPlan(telemetryPlan(planOf([{ id: "d:p0", nodeId: "d" }])));
+    advance(TELEMETRY_TICK_MS);
+    // No span and no extent for the new plan yet: pending, not the old frame's number.
+    expect(hub.snapshot().frame.availability).toBe("pending");
+    expect(hub.snapshot().frame.gpuMs).toBeNull();
+    hub.dispose();
   });
 });

@@ -283,6 +283,42 @@ did not get one. Outside this row; a name map built once per resolver closure re
 belongs to T1238 and is not wired in `655b3c9`; the patch is in the T1182 report.
 Scenarios A and C on E24 are to be re-run once it lands.
 
+### 2026-09-10 — §T1243, hub frame "GPU time" (this commit)
+
+**Cause, measured** (Dawn/Metal, Apple silicon; scratchpad probes over raw timestamps):
+every pass's BEGIN timestamp samples within 0.1 ms of the command buffer's start while the
+ENDs are sequential — stage-boundary sampling on a tiler — so the per-pass spans NEST and
+their sum is ~(N+1)/2 × the frame (11.7× for N = 24). Not queue wait (pass 0 begins at
+0), not preview ticks (preview passes carry no span). An empty marker pass at the end of
+the frame ends EARLY (1.5 ms into a 9 ms frame — the GPU overlaps independent passes), so
+the only frame figure is `max(end) − min(begin)` over the raw pairs, which vgpu's timer
+discards; the vgpu patch now hands it out beside the spans (theme 4 in
+`docs/vgpu-patch-notes.md`).
+
+`hub.frame` now carries `basis: "frame"` with the extent, and `passSumMs` beside it; a
+source with no extent gets `basis: "passes"` and says so (§V86). Gate:
+`src/runtime/telemetry/frame-extent.gpu.test.ts` — on Dawn, E24, each frame's extent ≤ the
+frame's readback-bounded interval × 1.1, AND the pass sum fails the same bound on Metal.
+
+Headless on Dawn, output read back and awaited per frame (the interval is therefore an
+upper bound on the GPU's work), 30 frames after 10 warm-up, another session's Playwright
+run at 90 % CPU during the run:
+
+| fixture | passes | interval | frame extent (mean / max) | pass sum (old figure) | sum / extent |
+|---|---|---|---|---|---|
+| E24, 512² | 52 | 10.20 ms | 6.01 / 6.68 ms | 78.70 ms | 13.1× |
+| E55, 1280×720 | 15 | 20.12 ms | 17.79 / 20.91 ms | 202.75 ms | 11.4× |
+
+**Is E55 GPU-bound at idle?** Yes. Its spanned passes alone take 17.8 ms mean (20.9 max)
+of GPU per frame at 1280×720 — over the 16.7 ms budget before any compute dispatch,
+indirect draw or presentation blit (none of which carry a span; see below) and before the
+preview blits. The 20–27 ms presented interval the row cites is the GPU, not the main
+thread. E24 is not: 6 ms of GPU under a 10 ms interval.
+
+**Found, outside the row.** Compute dispatches and indirect draws attach no timer span
+in `vgpu-backend.ts`, so a compute-heavy document under-reports both the per-pass column
+and the extent; the extent docblock (`GpuFrameTiming`) says so.
+
 ## Appendix A — per-scenario frame budget, all fixtures, all passes
 
 Columns: N frames; interval p50 / p95; busy p50 / p95 / mean; script mean; style;

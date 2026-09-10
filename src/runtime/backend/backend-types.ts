@@ -213,8 +213,16 @@ export interface LoomBackend extends RenderBackend {
    * (§V12: `capabilities.timestampQuery`); without it, no listener ever fires and every
    * timing surface honestly reads "unavailable". Results arrive asynchronously, a few
    * frames after the work they measure.
+   *
+   * T1243: the second argument is the FRAME the spans came from — its GPU extent and
+   * which submit it was. The per-pass spans are not summable into a frame figure (they
+   * overlap on Apple GPUs, see `GpuFrameTiming`), so the frame figure arrives beside
+   * them, measured from the same timestamps. Optional in the signature only so a
+   * listener that wants the per-pass spans alone stays a one-argument function.
    */
-  onGpuTimings(listener: (spans: Readonly<Record<string, number>>) => void): () => void;
+  onGpuTimings(
+    listener: (spans: Readonly<Record<string, number>>, frame?: GpuFrameTiming) => void,
+  ): () => void;
 
   /**
    * Per-pass CPU ENCODE time in milliseconds, keyed by PASS ID (T256, §V86, §V844).
@@ -261,6 +269,26 @@ export interface LoomBackend extends RenderBackend {
 }
 
 /** §V157: "auto" must be byte-identical to "always" at EVERY frame index. */
+/**
+ * T1243: one submitted frame's GPU extent — the earliest pass begin to the latest pass
+ * end among the passes that carried a timer span in that vgpu frame, in milliseconds.
+ *
+ * `submit` is the backend's `status.framesSubmitted` value the frame counts as (the
+ * value AFTER the `render()` that encoded it). The direct headless path splits one
+ * `render()` into several vgpu frames around compute dispatches (`encodeSegmented`);
+ * those share one `submit`, and a consumer sums their extents to get the render's.
+ * `null` only if the frame was encoded outside `render()`, which no path does today.
+ *
+ * Not covered by the extent, by construction of what carries a span: compute
+ * dispatches and indirect draws (no span, see `encode`), presentation blits, and the
+ * gap between two vgpu frames of one segmented render. It is the plan's render-pass
+ * work, not the whole submit.
+ */
+export interface GpuFrameTiming {
+  readonly gpuMs: number;
+  readonly submit: number | null;
+}
+
 export type CookPolicy = "always" | "auto";
 
 /**
