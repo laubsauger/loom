@@ -386,6 +386,18 @@ export const audioRdDocument = document(
           morph: drivenSlot("band1", 0),
           shape: drivenSlot("stencil1", 0),
           anisotropy: drivenSlot("grain1", 0),
+          /* T1269 (B199) — THE SQUARES ARE GROWN, because the stencil alone cannot show them
+             here. T1237's `shape` squares a front through the 9-tap Laplacian's lattice error,
+             and that only shows on features a few texels wide; E24's spots are 8-10 px on this
+             512 plate, where every split of the weights looks round. Measured: `shape` pinned at
+             -1 or +1 for a whole run left the colony at f600/1800/3600 looking like the shipped
+             one. (Not a false claim in T1237's own Dawn tests: they measure grain-scale effects
+             on E2's bench, a scale E24's features never reach.) `facet` makes diffusion depend
+             on the FRONT's orientation, 1 + facet·cos4θ, so fronts grow flat faces at any size
+             and the colony keeps its density. It rides the same lane as `shape`, so the two
+             agree: -1 squares on the grid, +1 turns them 45°, 0 is round. 0.6 is the owner's
+             pick from the strength ladder (T1269); past 0.9 the colony dies back. */
+          facet: expressionSlot("0.6 * op('stencil1').chan.value", 0),
         },
       }),
 
@@ -645,7 +657,7 @@ export const audioRdDocument = document(
          diverged to inf and rendered as a hard magenta band. A clamp at 1 in the loop is
          the bound the persistence and the gamma cannot supply — bounded input, bounded
          state — and it costs nothing in [0,1] where the loop was already correct. */
-      node("cap", "limit", [1490, 1120], { mode: "clamp", low: 0, high: 1 }, { label: "cap1" }),
+      node("cap", "limit", [1490, 1420], { mode: "clamp", low: 0, high: 1 }, { label: "cap1" }),
       node("born", "add", [1620, 1120], {}, {
         label: "crest1",
         parameters: { opacity: expressionSlot(`0.02 + 0.6 * ${TRIG}`, 0.02) },

@@ -62,7 +62,7 @@ describe("E2 Reaction-Diffusion", () => {
     const declared = Object.fromEntries(reflectParamsStruct(source).map((field) => [field.name, field.declaredDefault]));
     expect(stored).toEqual(declared);
     expect(stored).toEqual(GRAY_SCOTT_DEFAULTS);
-    expect(stored).toEqual({ feedLow: 0.028, killLow: 0.0545, feedHigh: 0.042, killHigh: 0.068, morph: 0, shape: 0, anisotropy: 0 });
+    expect(stored).toEqual({ feedLow: 0.028, killLow: 0.0545, feedHigh: 0.042, killHigh: 0.068, morph: 0, shape: 0, anisotropy: 0, facet: 0 });
     // …and the old uniform constants are GONE, not merely unused.
     expect(source).not.toContain("const FEED: f32");
     expect(source).not.toContain("const KILL: f32");

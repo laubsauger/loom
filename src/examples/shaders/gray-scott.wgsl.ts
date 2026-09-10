@@ -109,6 +109,7 @@ export const GRAY_SCOTT_WGSL = `struct Params {
   morph: f32,      // @default 0  0..1 slides the band's LOW end toward the holes regime (F 0.039, k 0.058): the foam / Voronoi look. Drive it SLOWLY.
   shape: f32,      // @default 0  -1 lattice-aligned stencil (squarish blobs) · 0 isotropic (round) · 1 diagonal stencil (rotated square)
   anisotropy: f32, // @default 0  -1..1 how much faster diffusion runs along x (positive) or y (negative) than across — elongated, stripey. Past ±0.5 the stripes outlive the spot end of the band.
+  facet: f32,      // @default 0  4-fold growth anisotropy: fronts grow flat-faced at any feature size. Negative squares on the grid, positive turns the squares 45°. Past ±0.9 the colony dies back.
 };
 
 @group(0) @binding(0) var inputSampler: sampler;
@@ -207,7 +208,18 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   // at the ~5 px scale of these fronts the lattice decides the direction, and a knob that
   // answers only 0° and 90° is honest as a sign, not as an angle.
   let stretch = clamp(params.anisotropy, -1.0, 1.0) * ANISOTROPY_LIMIT;
-  let laplacian = isotropic + ((cross * stretch) * ((west + east) - (south + north)));
+  let laplacian0 = isotropic + ((cross * stretch) * ((west + east) - (south + north)));
+
+  // THE FACETS (T1269): diffusion scaled by the FRONT's orientation, 1 + facet·cos4θ with θ
+  // the direction of V's gradient, so a front advances faster along two axes than the other
+  // two and grows flat faces — at any feature size, which is what the stencil above cannot
+  // do (its lattice error only shows on features a few texels wide). At facet 0 the factor
+  // is exactly 1 and the step is the one before this term, bit for bit (E2 sets nothing).
+  let gx = (east.y - west.y) * 0.5;
+  let gy = (north.y - south.y) * 0.5;
+  let g2 = (gx * gx) + (gy * gy);
+  let c4 = select(0.0, ((gx * gx * gx * gx) - (6.0 * gx * gx * gy * gy) + (gy * gy * gy * gy)) / max(g2 * g2, 1e-12), g2 > 1e-7);
+  let laplacian = laplacian0 * (1.0 + (params.facet * c4));
 
   let reaction = state.x * state.y * state.y;
   let stepped = clamp(
@@ -238,4 +250,5 @@ export const GRAY_SCOTT_DEFAULTS = {
   morph: 0,
   shape: 0,
   anisotropy: 0,
+  facet: 0,
 } as const;

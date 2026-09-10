@@ -5,8 +5,12 @@ import { toRgba8 } from "../runtime/export/image.ts";
 import { BYTES_PER_PIXEL, decodeHalf } from "../runtime/export/pixel-format.ts";
 import { renderHeadless, type RenderedFrame } from "../tests/headless/render-harness.ts";
 import type { ColorSpace } from "../domain/types/ports.ts";
+import type { GraphDocument } from "../domain/types/graph.ts";
+import type { ParameterSlot } from "../domain/types/parameters.ts";
+import { SHOWCASE_BEAT_FILE } from "./build-showcase-beat.ts";
 import { listExamples } from "./catalogue.ts";
 import { requireExample } from "./runner.ts";
+import { shippedClipAudio } from "./shipped-clip-audio.ts";
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════════
@@ -409,4 +413,106 @@ describe("T1237 — the band holds along the whole morph path, and the high corn
     expect(alongX.grain, "+anisotropy did not lay the fronts along x").toBeGreaterThan(1.5);
     expect(alongY.grain, "−anisotropy did not lay the fronts along y").toBeLessThan(1 / 1.5);
   }, 600_000);
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ * T1269 (B199) — E24'S COLONY TURNS SQUARE ON AN ESTABLISHED PLATE, NOT ONLY ON A FRESH ONE
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ *
+ * The owner asked for the colony to swing between round spots and squares, and saw squares
+ * only on the first frame. `rd1.shape` (T1237) squares a front through the 9-tap
+ * Laplacian's lattice error, which only shows on features a few texels wide; E24's spots
+ * are 8–10 px. `rd1.facet` grows the squares instead (1 + facet·cos4θ on the front's
+ * orientation), riding the same `stencil1` lane.
+ *
+ * THE MEASURE IS MORPHOLOGY, NOT BRIGHTNESS. On `rd1`'s own output (the chemistry, before
+ * palette, rings and lenses), the energy-weighted cos 4θ of V's gradient:
+ * Σ (gx⁴ − 6gx²gy² + gy⁴)/|g|² ÷ Σ |g|². +1 is a field whose edges all face the grid (grid
+ * squares), −1 all diagonal (turned squares), 0 round. Scaling V scales numerator and
+ * denominator alike, so a brighter or busier colony cannot move it.
+ *
+ * THE CONTROL IS THE SAME FILE WITH `facet` CUT to its retained 0, rendered on the same
+ * source — the red for every line below, measured: cut, the colony at 90 s (stencil −1)
+ * reads +0.134 on the pattern and +0.160 on the clip, and at 30 s (stencil +1) −0.118 and
+ * −0.113. It is not 0 because `grain1`'s anisotropy lays fronts on the axes too; what
+ * `facet` must add is the difference. Shipped it reads +0.228 / +0.292 at 90 s and
+ * −0.161 / −0.143 at 30 s. The bounds sit well inside those gaps and well outside zero.
+ */
+describe("T1269 — E24's colony turns square on an established plate", () => {
+  const E24 = "E24-Audio-Reaction-Diffusion.loom.json";
+  const AT = { turned: 1800, round: 3600, grid: 5400 } as const;
+
+  async function morphology(source: "pattern" | "clip", facet: "shipped" | "cut") {
+    const { document, result: loaded } = example(E24);
+    const graph = structuredClone(document.graph) as GraphDocument;
+    if (source === "clip") {
+      // The clip the way T1234 measured "both sources": the showcase beat under the lock.
+      const track = graph.nodes["track"]!;
+      track.parameters = { ...track.parameters, file: SHOWCASE_BEAT_FILE, playMode: "timeline", play: true, extend: "loop" };
+      graph.nodes["source"]!.parameters = { ...graph.nodes["source"]!.parameters, index: 1 };
+    }
+    if (facet === "cut") {
+      const rd = graph.nodes["rd"]!;
+      const slot = rd.parameters["facet"] as ParameterSlot;
+      expect(slot.mode, "rd1.facet is not driven").toBe("expression");
+      rd.parameters = { ...rd.parameters, facet: { ...slot, mode: "static" } };
+    }
+    const audio = source === "clip" ? shippedClipAudio(graph, 60) : undefined;
+    if (source === "clip") expect(audio, "the clip is not heard").toBeDefined();
+    const result = await renderHeadless({
+      host: nodeGpuHost(),
+      graph,
+      settings: document.settings,
+      frames: AT.grid + 1,
+      capture: [AT.turned, AT.round, AT.grid],
+      fps: 60,
+      animate: true,
+      outputNodeId: "rd",
+      ...(loaded.components ? { components: loaded.components } : {}),
+      ...(audio === undefined ? {} : { audio }),
+    });
+    expect(result.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    const at = new Map<number, { cos4: number; nonFinite: number }>();
+    for (const frame of result.frames) {
+      expect(frame.format).toBe("rgba16float");
+      const halves = new Uint16Array(frame.bytes.buffer, frame.bytes.byteOffset, frame.bytes.byteLength / 2);
+      const W = frame.width;
+      const H = frame.height;
+      const v = (x: number, y: number): number => decodeHalf(halves[(y * W + x) * 4 + 1]!);
+      let num = 0;
+      let den = 0;
+      let nonFinite = 0;
+      for (let y = 1; y < H - 1; y += 1) {
+        for (let x = 1; x < W - 1; x += 1) {
+          if (!Number.isFinite(v(x, y))) nonFinite += 1;
+          const gx = (v(x + 1, y) - v(x - 1, y)) / 2;
+          const gy = (v(x, y + 1) - v(x, y - 1)) / 2;
+          const g2 = gx * gx + gy * gy;
+          if (!(g2 > 1e-8)) continue;
+          num += (gx ** 4 - 6 * gx * gx * gy * gy + gy ** 4) / g2;
+          den += g2;
+        }
+      }
+      at.set(frame.frameIndex, { cos4: num / den, nonFinite });
+    }
+    return at;
+  }
+
+  for (const source of ["pattern", "clip"] as const) {
+    it(`${source}: squarer on the grid at stencil −1, more turned at +1, and never diverges`, async () => {
+      if (dawnError !== undefined) throw new Error(`Dawn unavailable: ${dawnError}`);
+      const shipped = await morphology(source, "shipped");
+      const cut = await morphology(source, "cut");
+      // (4) No divergence on an established plate, on either source (T1234's cap1 holds).
+      for (const frame of [AT.turned, AT.round, AT.grid]) {
+        expect(shipped.get(frame)!.nonFinite, `${source} f${frame} diverged`).toBe(0);
+      }
+      // (1)+(2) On the live lane, the squares are there when the stencil says so.
+      const grid = shipped.get(AT.grid)!.cos4 - cut.get(AT.grid)!.cos4;
+      const turned = cut.get(AT.turned)!.cos4 - shipped.get(AT.turned)!.cos4;
+      expect(grid, `${source}: facet added no grid squareness at 90 s`).toBeGreaterThan(0.06);
+      expect(turned, `${source}: facet added no turned squareness at 30 s`).toBeGreaterThan(0.015);
+    }, 900_000);
+  }
 });

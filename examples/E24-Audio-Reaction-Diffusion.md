@@ -67,7 +67,7 @@ track1(audioFileIn — DROP    ─┘   0 = pattern, 1 = your file
                ├─► gate1.threshold     = 2 − 1.28·onsetCount
                └─► crest1.opacity      = 0.02 + 0.6·onsetCount
   CLOCKS (T1237, never on a beat):
-    band1(lfo 80 s) ─► rd1.morph     stencil1(lfo 120 s) ─► rd1.shape     grain1(lfo 164 s, ±0.3) ─► rd1.anisotropy
+    band1(lfo 80 s) ─► rd1.morph     stencil1(lfo 120 s) ─► rd1.shape, rd1.facet (0.6·)     grain1(lfo 164 s, ±0.3) ─► rd1.anisotropy
 
 WHERE THE ORGANISM LIVES — one disc, read twice, never drawn:
   bowl1(circle, off-centre) ─► rim1(invert) ─► dish1(screen) ◄─ shape1   ⇒ chemistry
@@ -675,3 +675,40 @@ Audio section reads "Waiting for a file" rather than an idle that looks finished
   resolution and the simulation is being low-passed through the output size once per frame.
 - Four fifths of the frame stopped being black → `chem1`'s invert came off, or `dish1` is
   reading `shape1` without `rim1`, and the dead field is being lifted onto the ramp.
+- The colony never turns square, or only on the first frame → `rd1.facet` lost its
+  `stencil1` expression. `shape` alone cannot square spots this size (T1269, below).
+
+## The squares are grown, not stenciled (T1269)
+
+The owner asked for the colony to swing between round spots and "squares of sorts", and
+T1237 built it: `stencil1` walks `rd1.shape` from −1 (the lattice stencil) to +1 (the
+diagonal one) every 120 s. It never showed after the first frame. The stencil squares a
+front through the 9-tap Laplacian's lattice error, and that error only shows on features
+a few texels wide. E24's spots are 8–10 px on its 512 plate, where every split of the
+weights looks round: pinned at −1 or +1 for a whole run, the colony at f600, f1800 and
+f3600 looked like the shipped one. (T1237's own Dawn claims hold; they measure
+grain-scale effects on E2's bench, a scale E24's features never reach.)
+
+`rd1.facet` fixes it in the chemistry. Diffusion is scaled by the front's orientation,
+1 + facet·cos4θ, with θ the direction of V's gradient, so a front advances faster along
+two axes than the other two and grows flat faces at any feature size. It rides the same
+lane as `shape` (`facet = 0.6 · stencil1`): −1 squares on the grid, +1 turns the squares
+45°, 0 is round. 0.6 is the owner's pick from a strength ladder; past 0.9 the colony dies
+back. At `facet` 0 the step is the one before this term, bit for bit, so E2 is unchanged.
+
+Measured on `rd1`'s V with an energy-weighted cos4θ of the gradient (+ grid-aligned, −
+turned, 0 round), shipped against the same file with `facet` cut:
+
+| | 30 s (stencil +1) | 90 s (stencil −1) |
+| --- | --- | --- |
+| pattern, cut | −0.118 | +0.134 |
+| pattern, shipped | −0.161 | +0.228 |
+| clip, cut | −0.113 | +0.160 |
+| clip, shipped | −0.143 | +0.292 |
+
+The price is density. The faceted colony covers about a third less of the plate at 30 s
+and about half as much at 90 s, where it is at its squarest (V above 0.25: 4.7% against
+7.0%, and 2.0% against 4.2%, on the pattern). It keeps the labyrinth's fingerprint
+texture between the squared passages, which the other candidate did not: shrinking the
+feature scale until the stencil showed (option A) turned the labyrinth into sparse
+dash-combs, and the owner chose this one over it from stills.
