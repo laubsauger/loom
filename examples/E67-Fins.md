@@ -30,6 +30,10 @@ Every driven parameter is the hand-built value times (1 + gain × lane), or plus
 
 `src/examples/e67-fins-claims.gpu.test.ts` asserts all of this from rendered pixels. At reactivity 0, and before the clip's first hit, the frame equals the frame with every light cut to its hand-built value. On the kick, cutting the kick lights changes the frame and darkens it. On the snare, cutting the glow does the same, and on the kick cutting the glow changes nothing. The same test checks on the document that the set of parameters reading `react1` is exactly the six lights.
 
+## Motion
+
+The camera circles the stack once every **four minutes**, at the hand-built distance and height (T1268). It starts at the hand-built angle, so the first frame is the composition approved when the piece shipped. Over a turn the fins go from facing you, through side-on (where the stack reads as a line of blades), and back. The hand-built orbit swung ±17° over eight minutes and read as a still. The owner picked the full circle from stills against two gentler swings. A turn is periodic, so it never shows a seam. Inside the stack, the slabs keep their own slow spin, spiral surges and beams, all on the absolute clock.
+
 ## What changed from the hand-built file
 
 - The room's input was a photo node holding a `blob:` URL, which dies with the tab. It never reached the picture: `envMix` was never set, so it sits at its default of 0, and the shader samples its input only above that. The file's own unconnected black `envSeed` feeds the input now. To light the glass with a real room, wire a latlong image into `glassRT` and raise `envMix`.

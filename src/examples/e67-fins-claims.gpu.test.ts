@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
 
+import { evaluateExpression } from "../domain/expressions/evaluate.ts";
 import type { GraphDocument } from "../domain/types/graph.ts";
 import type { ParameterSlot } from "../domain/types/parameters.ts";
 import { nodeGpuHost, probeDawn } from "../runtime/backend/vgpu/node-gpu-host.ts";
@@ -180,4 +181,95 @@ describe("E67 Fins: the lights on the beat", () => {
     const lift = (at: number) => brightness(shipped[at]!) - brightness(noSnare[at]!);
     expect(lift(frame)).toBeGreaterThan(3 * lift(MOMENTS.kick));
   }, 300_000);
+});
+
+/**
+ * T1268 — THE CAMERA CIRCLES THE STACK, and the composition changes because of it.
+ *
+ * The hand-built orbit swung ±0.30 rad over 503 s and read as a still. The owner picked a
+ * full circle every 240 s from stills (the period is theirs; these bounds guard what they
+ * chose rather than invent a target):
+ *
+ *   TRAVEL   the shipped eye expressions, evaluated by the app's own expression engine over
+ *            one period, unwrap to a whole turn at the hand-built radius.
+ *   REST     at abstime 0 the eye is the T1265 eye, so the approved first frame is unchanged
+ *            by construction: nothing else in the file moved.
+ *   MOTION   a quarter-turn in (60 s), the frame differs from the same frame with the eye
+ *            frozen at its t = 0 position over more than a stated share of the picture. The
+ *            frozen arm has the slabs' own spin, the surges and the beams, so what is left is
+ *            the camera's alone.
+ */
+describe("E67 Fins: the camera circles the stack", () => {
+  const PERIOD = 240;
+  const eyeAt = (t: number): { x: number; z: number } => {
+    const glass = e67().document.graph.nodes["glass"]!;
+    const read = (key: string): number => {
+      const slot = glass.parameters[key] as ParameterSlot;
+      const source = (slot as { bindings: { expression: { source: string } } }).bindings.expression.source;
+      const result = evaluateExpression(source, { abstime: t });
+      if (!result.ok) throw new Error(`${key}: ${result.reason}`);
+      return result.value;
+    };
+    return { x: read("eyeX"), z: read("eyeZ") };
+  };
+
+  it("travels a whole turn per period at the hand-built radius, and starts on the approved eye", () => {
+    let travel = 0;
+    let previous = Math.atan2(eyeAt(0).x, eyeAt(0).z);
+    for (let t = 1; t <= PERIOD; t += 1) {
+      const eye = eyeAt(t);
+      expect(Math.hypot(eye.x, eye.z)).toBeCloseTo(2.78, 6);
+      const angle = Math.atan2(eye.x, eye.z);
+      travel += Math.atan2(Math.sin(angle - previous), Math.cos(angle - previous));
+      previous = angle;
+    }
+    expect(travel).toBeCloseTo(2 * Math.PI, 3);
+    // The T1265 eye at t = 0: 2.78·sin(0.20), 2.78·cos(0.20) — the hand-built orbit's start.
+    expect(eyeAt(0).x).toBeCloseTo(2.78 * Math.sin(0.2), 9);
+    expect(eyeAt(0).z).toBeCloseTo(2.78 * Math.cos(0.2), 9);
+  });
+
+  it("a quarter-turn in, the camera has moved the picture, not only the slabs", async () => {
+    if (dawnError !== undefined) throw new Error(dawnError);
+    const frame = (PERIOD / 4) * FPS;
+    const render = async (frozen: boolean): Promise<Uint8Array> => {
+      const { document, result } = e67();
+      const graph = structuredClone(document.graph) as GraphDocument;
+      if (frozen) {
+        const glass = graph.nodes["glass"]!;
+        const start = eyeAt(0);
+        glass.parameters = { ...glass.parameters, eyeX: start.x, eyeZ: start.z };
+      }
+      const rendered = await renderHeadless({
+        host: nodeGpuHost(),
+        graph,
+        settings: { ...document.settings, outputResolution: { ...SIZE } },
+        frames: frame + 1,
+        capture: [frame],
+        outputNodeId: "out",
+        fps: FPS,
+        animate: true,
+        components: result.components!,
+        audio: shippedClipAudio(graph, FPS)!,
+      });
+      expect(rendered.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+      const space = rendered.plan.outputs.find((o) => o.nodeId === "out")?.space ?? "linear";
+      const f = rendered.frames[0]!;
+      return toRgba8(
+        { width: f.width, height: f.height, format: f.format, bytes: f.bytes, rowStride: f.width * (BYTES_PER_PIXEL[f.format] ?? 8) },
+        { space },
+      ).data;
+    };
+    const moving = await render(false);
+    const still = await render(true);
+    let moved = 0;
+    for (let i = 0; i < moving.length; i += 4) {
+      const d = Math.abs(moving[i]! - still[i]!) + Math.abs(moving[i + 1]! - still[i + 1]!) + Math.abs(moving[i + 2]! - still[i + 2]!);
+      if (d > 24) moved += 1;
+    }
+    const share = moved / (SIZE.width * SIZE.height);
+    // Measured 57.7% at 320x180; the bound is half of it, far above what a frozen camera
+    // (the same frame, exactly: 0%) could reach.
+    expect(share, `the orbit moved ${(share * 100).toFixed(1)}% of the picture`).toBeGreaterThan(0.3);
+  }, 600_000);
 });

@@ -308,8 +308,8 @@
     "cardFloor": 0.0105
   },
   "E67-Fins.loom.json": {
-    "motion": 0.10445,
-    "range": 0.659,
+    "motion": 0.10158,
+    "range": 0.6601,
     "f0max": 0.7421,
     "cardFloor": 0
   },

@@ -84,9 +84,13 @@ export const finsDocument = document(
       }, {
         label: "glassRT",
         parameters: {
-          // The owner's orbit. Retained values are the orbit at t = 0.
-          eyeX: expressionSlot("2.78*sin(0.20+0.30*sin(abstime*0.0125))", 0.5523),
-          eyeZ: expressionSlot("2.78*cos(0.20+0.30*sin(abstime*0.0125))", 2.7246),
+          /* T1268 — THE CAMERA CIRCLES THE STACK, once every four minutes. The hand-built
+             orbit swung ±0.30 rad over 503 s and read as a still; the owner picked a full
+             circle from stills against two swings. A turn is periodic, so there is no seam to
+             hide. It starts at the hand-built angle of 0.20 rad, so t = 0 is the composition
+             the owner approved at T1265, and the retained values are that frame. */
+          eyeX: expressionSlot("2.78*sin(0.20+abstime*6.2831853/240)", 0.5523),
+          eyeZ: expressionSlot("2.78*cos(0.20+abstime*6.2831853/240)", 2.7246),
           // The lights. Each one returns the owner's value when its lane is 0.
           stripLevel: expressionSlot(`4 * (1 + 0.8 * ${HIT("kickCount")})`, 4),
           laser: expressionSlot(`2.6 * (1 + 2 * ${HIT("kickCount")})`, 2.6),

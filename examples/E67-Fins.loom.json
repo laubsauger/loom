@@ -405,7 +405,7 @@
             "bindings": {
               "expression": {
                 "kind": "expression",
-                "source": "2.78*sin(0.20+0.30*sin(abstime*0.0125))"
+                "source": "2.78*sin(0.20+abstime*6.2831853/240)"
               },
               "static": {
                 "kind": "static",
@@ -419,7 +419,7 @@
             "bindings": {
               "expression": {
                 "kind": "expression",
-                "source": "2.78*cos(0.20+0.30*sin(abstime*0.0125))"
+                "source": "2.78*cos(0.20+abstime*6.2831853/240)"
               },
               "static": {
                 "kind": "static",
