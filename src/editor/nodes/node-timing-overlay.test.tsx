@@ -192,7 +192,16 @@ describe("the number is honest before it is useful (§V86)", () => {
     await settle(runtime, "dear", 8);
     await publish(runtime, "offscreen", { gpuMs: 100 });
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 5)); });
-    expect(screen.getAllByText("GPU spans · may overlap")).toHaveLength(2);
+    /*
+     * T1282 — the caveat lives in the tooltip and the accessible name, NOT as a caption
+     * repeated on every node. The honesty requirement is that nothing presents an
+     * overlapping span as an exclusive cost; a per-node banner was one way to say that
+     * and it made the graph unreadable. These two assertions are the requirement.
+     */
+    expect(screen.queryByText("GPU spans · may overlap")).toBeNull();
+    expect(
+      screen.getByTestId("node-timing-value-cheap").getAttribute("title"),
+    ).toBe("Smoothed GPU span sum · spans may overlap");
     expect(screen.getAllByRole("img", {
       name: "GPU span comparison: 50% of displayed span sum; not exclusive node cost",
     })).toHaveLength(2);

@@ -84,7 +84,6 @@ export const NodeTimingOverlay = memo(function NodeTimingOverlay({
 
   return (
     <div className={styles.overlay} data-testid={`node-timing-${nodeId}`}>
-      <span className={styles.value}>GPU spans · may overlap</span>
       <div
         className={styles.track}
         role="img"
@@ -104,7 +103,7 @@ export const NodeTimingOverlay = memo(function NodeTimingOverlay({
       <span
         className={styles.value}
         data-testid={`node-timing-value-${nodeId}`}
-        title="Smoothed GPU span sum; not exclusive node cost"
+        title="Smoothed GPU span sum · spans may overlap"
       >
         {formatGpuMs(smoothed)}
       </span>
