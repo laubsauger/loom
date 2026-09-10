@@ -1,6 +1,6 @@
 import { settings, node, edge, graph, document, drivenSlot } from "./builders.ts";
 import { SHADER_SOURCE_PARAMETER } from "../../domain/commands/apply-patch.ts";
-import { GRAY_SCOTT_WGSL } from "../shaders/gray-scott.wgsl.ts";
+import { GRAY_SCOTT_DEFAULTS, GRAY_SCOTT_WGSL } from "../shaders/gray-scott.wgsl.ts";
 
 /**
  * E24 — Audio-Reactive Reaction-Diffusion (T425). The CAPSTONE.
@@ -408,7 +408,10 @@ export const audioRdDocument = document(
       node("wind", "displace", [-440, 120], {
         weight: [0.0002, 0.0002], offset: [0.5, 0.5], sourcex: "red", sourcey: "green", extend: "hold",
       }, { label: "wind1", resolution: { mode: "fixed", width: 512, height: 512 } }),
-      node("rd", "customWgsl", [-200, 120], { [SHADER_SOURCE_PARAMETER]: GRAY_SCOTT_WGSL }, { label: "rd1" }),
+      node("rd", "customWgsl", [-200, 120], {
+        [SHADER_SOURCE_PARAMETER]: GRAY_SCOTT_WGSL,
+        ...GRAY_SCOTT_DEFAULTS,
+      }, { label: "rd1" }),
 
       /* ---- T560: THE BEAT SEEDS THE PLATE ---------------------------------------------
        *

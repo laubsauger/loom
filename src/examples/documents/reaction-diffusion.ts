@@ -1,6 +1,6 @@
 import { settings, node, edge, graph, document, drivenSlot } from "./builders.ts";
 import { SHADER_SOURCE_PARAMETER } from "../../domain/commands/apply-patch.ts";
-import { GRAY_SCOTT_WGSL } from "../shaders/gray-scott.wgsl.ts";
+import { GRAY_SCOTT_DEFAULTS, GRAY_SCOTT_WGSL } from "../shaders/gray-scott.wgsl.ts";
 
 /**
  * E2 — Reaction-Diffusion (T154, rebuilt compositionally by T388).
@@ -209,7 +209,16 @@ export const reactionDiffusionDocument = document(
         // simulation, and mirroring it folds chemistry back in as a phantom neighbour.
         extend: "hold",
       }, { label: "flow1", resolution: { mode: "fixed", width: 512, height: 512 } }),
-      node("rd", "customWgsl", [140, 120], { [SHADER_SOURCE_PARAMETER]: GRAY_SCOTT_WGSL }, { label: "rd1" }),
+      /*
+       * THE KNOBS (T1237) are stored, not inherited: every one is the constant it replaced,
+       * so E2 computes what it computed before (`reaction-diffusion-claims.gpu.test.ts`
+       * pins the pixels) and a later `@default` cannot move it (§V920). E2 keeps the
+       * isotropic stencil and the default band; E24 is where they are driven.
+       */
+      node("rd", "customWgsl", [140, 120], {
+        [SHADER_SOURCE_PARAMETER]: GRAY_SCOTT_WGSL,
+        ...GRAY_SCOTT_DEFAULTS,
+      }, { label: "rd1" }),
       /*
        * THE PACK. Red and green are the chemicals the kernel just stepped; blue is the
        * chemistry coordinate for the NEXT step, read from the noise chain's luminance;

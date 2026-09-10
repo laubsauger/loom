@@ -26,7 +26,8 @@
  * `state.b` is a 0..1 coordinate the GRAPH supplies per pixel, and it walks a straight line
  * through the interesting corner of Gray-Scott's (feed, kill) plane. Feed and kill are
  * famously sensitive — a thousandth in either direction is a different creature — so the
- * BAND stays here as named constants while WHERE each pixel sits inside it is a texture.
+ * BAND is a pair of endpoints in `Params` (constants until T1237) while WHERE each pixel
+ * sits inside it is a texture.
  * Neighbouring regions of the image therefore run different chemistries and grow into each
  * other, which is the cell-structure look; a constant map reduces exactly to the old
  * uniform behaviour, which is what the concept test pins.
@@ -65,20 +66,66 @@
  *
  * ## Contract (§I "custom WGSL node contract v1")
  *
- * A CustomWGSL node is wired exactly two bindings — `inputSampler` at 0 and `inputTexture`
- * at 1. It is NOT given a uniform block unless the source declares one, so this kernel
- * declares none and reads its grid spacing from `textureDimensions`.
+ * A CustomWGSL node is wired `inputSampler` at 0 and `inputTexture` at 1, and is handed a
+ * `params` block only because the source declares one (T880). This kernel takes no
+ * `frameU`: it has no clock, and must not — the simulation is a pure function of its own
+ * previous frame (§V45). Grid spacing comes from `textureDimensions`.
+ *
+ * ## The knobs (T1237) — two PHYSICAL axes, not a post-effect (§V427)
+ *
+ * The band endpoints and the stencil used to be compile-time constants, which fixed the
+ * pattern CLASS and the pattern's symmetry for every document carrying this kernel. They
+ * are `struct Params` now, and every `@default` is the constant it replaced (§T1184), so a
+ * document that sets nothing — E2 — computes exactly what it computed before: the stencil
+ * arithmetic below is written so that at `shape = 0`, `anisotropy = 0` it is the original
+ * expression term for term, and E2's claims pin its pixels.
+ *
+ * `morph` is THE BAND axis: it slides the band's LOW endpoint along a straight path from
+ * where the default puts it toward the HOLES regime at F 0.039, k 0.058 — negative spots
+ * in a foam, the Voronoi look. The HIGH endpoint does not move: it is the corner E24 pins
+ * its empty field to (chemistry 1 outside the dish decays to nothing), and a morph that
+ * carried it would either wake the dead corner or, going the other way, park the low end
+ * in the uniform-V fixed point two thousandths below the holes regime. The path was
+ * MEASURED, not inherited (§V554): the claim that the field is alive along all of it and
+ * dead at the high corner at every morph is in `reaction-diffusion-claims.gpu.test.ts`.
+ *
+ * `shape` is THE STENCIL axis. The 9-tap Laplacian's cross/diagonal split decides which
+ * directions a front finds cheapest: cross-heavy (0.25 / 0) is the 5-point stencil, whose
+ * discretisation error is lattice-aligned and squares the blobs; isotropic (0.2 / 0.05) is
+ * round; diagonal-heavy (0.05 / 0.2) rotates the square by 45°. `anisotropy` makes
+ * D_x ≠ D_y: cross weight moves from one pair of the cross to the other, so the MEAN
+ * diffusion (and the pattern scale) does not change, only its elongation — along x for
+ * positive values, along y for negative. It is a SIGN, not an angle: see the note at the
+ * term for the three angle formulations that were measured and rejected. The stretch is
+ * clamped inside the kernel to keep the explicit step stable, and past ±0.5 the stripes
+ * are stable where spots are not, so the high end of the band no longer dies (measured:
+ * at ±1 chemistry 1 keeps 12 % cover after 600 frames; at ±0.5 it is empty from 0.9 up).
  */
-export const GRAY_SCOTT_WGSL = `@group(0) @binding(0) var inputSampler: sampler;
-@group(0) @binding(1) var inputTexture: texture_2d<f32>;
+export const GRAY_SCOTT_WGSL = `struct Params {
+  feedLow: f32,    // @default 0.028  feed at chemistry 0 — the labyrinth end of the band
+  killLow: f32,    // @default 0.0545  kill at chemistry 0
+  feedHigh: f32,   // @default 0.042  feed at chemistry 1 — the spot end of the band
+  killHigh: f32,   // @default 0.068  kill at chemistry 1
+  morph: f32,      // @default 0  0..1 slides the band's LOW end toward the holes regime (F 0.039, k 0.058): the foam / Voronoi look. Drive it SLOWLY.
+  shape: f32,      // @default 0  -1 lattice-aligned stencil (squarish blobs) · 0 isotropic (round) · 1 diagonal stencil (rotated square)
+  anisotropy: f32, // @default 0  -1..1 how much faster diffusion runs along x (positive) or y (negative) than across — elongated, stripey. Past ±0.5 the stripes outlive the spot end of the band.
+};
 
-// The BAND the chemistry map walks. Feed/kill pairs are famously sensitive: these two
-// endpoints bracket the region where fronts keep breaking up and dividing rather than
-// settling into a fixed pattern, so no part of the image goes static.
-const FEED_LOW: f32 = 0.028;
-const KILL_LOW: f32 = 0.0545;
-const FEED_HIGH: f32 = 0.042;
-const KILL_HIGH: f32 = 0.0680;
+@group(0) @binding(0) var inputSampler: sampler;
+@group(0) @binding(1) var inputTexture: texture_2d<f32>;
+@group(0) @binding(2) var<uniform> params: Params;
+
+// Where \`morph = 1\` puts the band's LOW endpoint. Only the low end travels: the high end
+// is the corner E24 pins its empty field to (chemistry 1 outside the dish decays to
+// nothing), and it has to stay dead at every morph. Measured along the path (T1237):
+// the holes regime is narrow, and 0.002 lower in feed is the uniform-V fixed point.
+const HOLES_FEED: f32 = 0.039;
+const HOLES_KILL: f32 = 0.058;
+
+// The most \`anisotropy\` may move between the cross pairs: at 0.6 the slow pair keeps a
+// positive weight at every \`shape\` (cross · 0.4), and the explicit step stays inside its
+// stability margin at DIFFUSE_U with \`shape\` at either extreme (measured, T1237).
+const ANISOTROPY_LIMIT: f32 = 0.6;
 
 const DIFFUSE_U: f32 = 0.2097;
 const DIFFUSE_V: f32 = 0.105;
@@ -124,15 +171,43 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   let nw = textureSample(inputTexture, inputSampler, uv + vec2f(-texel.x, texel.y)).rg;
   let ne = textureSample(inputTexture, inputSampler, uv + vec2f(texel.x, texel.y)).rg;
 
+  // THE BAND (T1237). \`morph\` carries the band's LOW endpoint toward the holes regime and
+  // leaves the high one where it is; at morph 0 each mix returns its first argument
+  // exactly, which is the default band.
+  let morph = clamp(params.morph, 0.0, 1.0);
+  let feedLow = mix(params.feedLow, HOLES_FEED, morph);
+  let killLow = mix(params.killLow, HOLES_KILL, morph);
+
   // THE CHEMISTRY MAP. b is a 0..1 coordinate the graph paints per pixel; the band it
-  // walks is the constants above. A constant map is the old uniform behaviour exactly.
+  // walks is the pair of endpoints above. A constant map is uniform chemistry exactly.
   let chemistry = clamp(centre.b, 0.0, 1.0);
-  let feed = mix(FEED_LOW, FEED_HIGH, chemistry);
-  let kill = mix(KILL_LOW, KILL_HIGH, chemistry);
+  let feed = mix(feedLow, params.feedHigh, chemistry);
+  let kill = mix(killLow, params.killHigh, chemistry);
 
   let state = centre.rg;
-  let laplacian =
-    ((west + east + south + north) * 0.2) + ((sw + se + nw + ne) * 0.05) - state;
+
+  // THE STENCIL (T1237). Cross and diagonal weights always sum to 1 (four of each), so the
+  // operator still annihilates a constant field; at shape 0 the two products are 0.2 and
+  // 0.05 exactly and the expression is the isotropic 9-tap it replaced, term for term.
+  let shape = clamp(params.shape, -1.0, 1.0);
+  let swing = select(0.15, 0.05, shape < 0.0);
+  let cross = 0.2 - (swing * shape);
+  let diagonal = 0.05 + (swing * shape);
+  let isotropic =
+    ((west + east + south + north) * cross) + ((sw + se + nw + ne) * diagonal) - state;
+
+  // THE ANISOTROPY (T1237): cross weight moved from one pair of the cross to the other, so
+  // diffusion runs faster along x (positive) or y (negative) than across it while the
+  // total weight — the mean diffusion, and with it the pattern scale — stays what the
+  // isotropic split put there. At anisotropy 0 the term is zero and the sum above is
+  // untouched. Only the two lattice directions are offered: an axis ANGLE was built three
+  // ways (a traceless tensor on these taps, the whole stencil turned through linearly
+  // filtered taps, turned taps for this term alone at 1, 2 and 3 texels' reach) and in
+  // every one the stripes snapped to the lattice at 30° and 60° and went round at 45° —
+  // at the ~5 px scale of these fronts the lattice decides the direction, and a knob that
+  // answers only 0° and 90° is honest as a sign, not as an angle.
+  let stretch = clamp(params.anisotropy, -1.0, 1.0) * ANISOTROPY_LIMIT;
+  let laplacian = isotropic + ((cross * stretch) * ((west + east) - (south + north)));
 
   let reaction = state.x * state.y * state.y;
   let stepped = clamp(
@@ -148,3 +223,19 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   let next = select(seededState(uv), stepped, centre.a >= 0.5);
   return vec4f(next, 0.0, 1.0);
 }`;
+
+/**
+ * The knobs at their `@default`s — the constants they replaced (T1237). A shipped document
+ * STORES these rather than inheriting them (§V920, `declared-defaults.test.ts`), and this
+ * is the one place the numbers are spelled outside the struct; E2's concept test holds
+ * them to the source's own `@default`s.
+ */
+export const GRAY_SCOTT_DEFAULTS = {
+  feedLow: 0.028,
+  killLow: 0.0545,
+  feedHigh: 0.042,
+  killHigh: 0.068,
+  morph: 0,
+  shape: 0,
+  anisotropy: 0,
+} as const;

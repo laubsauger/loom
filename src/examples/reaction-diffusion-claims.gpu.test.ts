@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 
 import { nodeGpuHost, probeDawn } from "../runtime/backend/vgpu/node-gpu-host.ts";
 import { toRgba8 } from "../runtime/export/image.ts";
-import { BYTES_PER_PIXEL } from "../runtime/export/pixel-format.ts";
+import { BYTES_PER_PIXEL, decodeHalf } from "../runtime/export/pixel-format.ts";
 import { renderHeadless, type RenderedFrame } from "../tests/headless/render-harness.ts";
 import type { ColorSpace } from "../domain/types/ports.ts";
 import { listExamples } from "./catalogue.ts";
@@ -229,4 +229,182 @@ describe("B186 — the reaction-diffusion pair carries a pattern, on the app's o
     },
     600_000,
   );
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ * T1237 — THE BAND, MEASURED ALONG THE MORPH PATH (§V554: a band is measured, not inherited)
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ *
+ * The kernel's band endpoints and stencil became `Params` in T1237, with `morph` walking
+ * the low endpoint toward the holes regime and `shape` / `anisotropy` reshaping the
+ * stencil. §V474 is an existence condition, not a promise: a region of the band can die
+ * along the way and read as a bug, and E24 RELIES on the high corner being dead (its
+ * chemistry is pinned to 1 outside the dish, and that is what keeps the field inside it).
+ * So the bench below runs E2's loop with its chemistry map replaced by a horizontal ramp —
+ * chemistry IS x — and its advection off, and reads the STATE back at the shipped 512²
+ * (§V50: the pair is pinned, the ramp is sampled at that size), so a column of the field
+ * is one chemistry and the claim is per column.
+ *
+ * Measured on this bench, 240 frames of 20 substeps, every setting below: every column at
+ * chemistry ≤ 0.575 keeps cover (V > 0.1) above 0.19 and structure (|V − column mean| >
+ * 0.1) above 0.13, and every column at chemistry ≥ 0.9 is EXACTLY empty — cover 0, and
+ * that is the number E24's dish depends on. The stencil corners are held at ±0.35: at
+ * shape −1 (cross 0.25) an anisotropy of 0.5 already lets stripes along the ramp outlive
+ * chemistry 1 (cover 0.088 at 600 frames), which is why the kernel's help text says so
+ * and why E24 never drives it past 0.35.
+ */
+const BENCH = 512;
+const BENCH_FRAMES = 240;
+const BINS = 20;
+const ALIVE_BELOW = 0.6;
+const DEAD_FROM = 0.9;
+const COVER_FLOOR = 0.1;
+const STRUCTURE_FLOOR = 0.1;
+
+interface BinStats {
+  readonly chemistry: number;
+  readonly cover: number;
+  readonly structure: number;
+}
+
+/** E2's loop, chemistry = x, no advection, the state read back raw. */
+async function bench(knobs: Record<string, number>) {
+  const { document, result } = example("E2-Reaction-Diffusion.loom.json");
+  const graph = structuredClone(document.graph);
+  const rd = graph.nodes["rd"];
+  const flow = graph.nodes["flow"];
+  const palette = graph.nodes["palette"];
+  const shapeToPack = graph.edges["e-shape-pack"];
+  const tintToOut = graph.edges["e-tint-out"];
+  if (!rd || !flow || !palette || !shapeToPack || !tintToOut) throw new Error("E2's bench nodes moved");
+  rd.parameters = { ...rd.parameters, ...knobs };
+  flow.parameters = { ...flow.parameters, weight: [0, 0] };
+  graph.nodes["chem"] = {
+    ...palette,
+    id: "chem",
+    parameters: {
+      ...palette.parameters,
+      stops: [
+        { position: 0, color: [0, 0, 0, 1] },
+        { position: 1, color: [1, 1, 1, 1] },
+      ],
+    },
+  };
+  graph.edges["e-shape-pack"] = { ...shapeToPack, source: { nodeId: "chem", portId: "out" } };
+  graph.edges["e-tint-out"] = { ...tintToOut, source: { nodeId: "rd", portId: "out" } };
+
+  const rendered = await renderHeadless({
+    host: nodeGpuHost(),
+    graph,
+    settings: { ...document.settings, outputResolution: { width: BENCH, height: BENCH } },
+    frames: BENCH_FRAMES,
+    capture: [BENCH_FRAMES - 1],
+    fps: 60,
+    animate: true,
+    ...(result.components ? { components: result.components } : {}),
+  });
+  const errors = rendered.diagnostics.filter((diagnostic) => diagnostic.severity === "error");
+  expect(errors, `bench ${JSON.stringify(knobs)} rendered with errors`).toEqual([]);
+  const frame = rendered.frames[0] as RenderedFrame;
+  expect(frame.format, "the state is read raw, not through the output's format").toBe("rgba16float");
+
+  const v = new Float32Array(BENCH * BENCH);
+  const view = new DataView(frame.bytes.buffer, frame.bytes.byteOffset, frame.bytes.byteLength);
+  let nan = 0;
+  for (let index = 0; index < v.length; index += 1) {
+    const value = decodeHalf(view.getUint16(index * 8 + 2, true));
+    if (Number.isNaN(value)) nan += 1;
+    v[index] = value;
+  }
+  expect(nan, `bench ${JSON.stringify(knobs)}: the step produced NaN`).toBe(0);
+
+  const bins: BinStats[] = [];
+  for (let bin = 0; bin < BINS; bin += 1) {
+    const x0 = Math.floor((bin * BENCH) / BINS);
+    const x1 = Math.floor(((bin + 1) * BENCH) / BINS);
+    const count = (x1 - x0) * BENCH;
+    let cover = 0;
+    let sum = 0;
+    for (let y = 0; y < BENCH; y += 1)
+      for (let x = x0; x < x1; x += 1) {
+        const value = v[y * BENCH + x] ?? 0;
+        if (value > 0.1) cover += 1;
+        sum += value;
+      }
+    const mean = sum / count;
+    let structure = 0;
+    for (let y = 0; y < BENCH; y += 1)
+      for (let x = x0; x < x1; x += 1) if (Math.abs((v[y * BENCH + x] ?? 0) - mean) > 0.1) structure += 1;
+    bins.push({ chemistry: (bin + 0.5) / BINS, cover: cover / count, structure: structure / count });
+  }
+
+  // Front orientation, in the alive half only: how much of the field's gradient runs
+  // along x versus along y. Stripes along x have almost no x-gradient.
+  let alongX = 0;
+  let alongY = 0;
+  for (let y = 1; y < BENCH; y += 1)
+    for (let x = 1; x < BENCH * ALIVE_BELOW; x += 1) {
+      const here = v[y * BENCH + x] ?? 0;
+      alongX += Math.abs(here - (v[y * BENCH + x - 1] ?? 0));
+      alongY += Math.abs(here - (v[(y - 1) * BENCH + x] ?? 0));
+    }
+  return { bins, grain: alongY / alongX };
+}
+
+function expectAliveThenDead(bins: readonly BinStats[], label: string): void {
+  for (const bin of bins) {
+    if (bin.chemistry < ALIVE_BELOW) {
+      expect(bin.cover, `${label}: chemistry ${bin.chemistry} died (cover)`).toBeGreaterThan(COVER_FLOOR);
+      expect(bin.structure, `${label}: chemistry ${bin.chemistry} went uniform (structure)`).toBeGreaterThan(
+        STRUCTURE_FLOOR,
+      );
+    } else if (bin.chemistry > DEAD_FROM) {
+      expect(bin.cover, `${label}: chemistry ${bin.chemistry} is not empty — E24's dish leaks`).toBe(0);
+    }
+  }
+}
+
+describe("T1237 — the band holds along the whole morph path, and the high corner stays dead", () => {
+  const MORPHS = [0, 0.25, 0.5, 0.75, 1] as const;
+  for (const morph of MORPHS) {
+    it(`morph ${morph}, isotropic stencil: alive below ${ALIVE_BELOW}, empty from ${DEAD_FROM}`, async () => {
+      if (dawnError !== undefined) throw new Error(`Dawn unavailable: ${dawnError}`);
+      const { bins } = await bench({ morph });
+      expectAliveThenDead(bins, `morph ${morph}`);
+    }, 600_000);
+  }
+
+  const CORNERS = [
+    { shape: -1, anisotropy: 0.35 },
+    { shape: -1, anisotropy: -0.35 },
+    { shape: 1, anisotropy: 0.35 },
+    { shape: 1, anisotropy: -0.35 },
+  ] as const;
+  for (const morph of [0, 1] as const) {
+    for (const corner of CORNERS) {
+      it(`morph ${morph}, shape ${corner.shape}, anisotropy ${corner.anisotropy}: the stencil corner holds too`, async () => {
+        if (dawnError !== undefined) throw new Error(`Dawn unavailable: ${dawnError}`);
+        const { bins } = await bench({ morph, ...corner });
+        expectAliveThenDead(bins, `morph ${morph} shape ${corner.shape} anisotropy ${corner.anisotropy}`);
+      }, 600_000);
+    }
+  }
+
+  /**
+   * The knobs do what they say, or they are dead parameters that happen to be declared.
+   * `anisotropy` is a sign: positive stretches the fronts along x, negative along y, and
+   * the field's gradient grain (|∂y| / |∂x| over the alive half) flips with it. Measured:
+   * 0 → 1.00 (isotropic to two places), +0.6 → 2.7, −0.6 → 0.37.
+   */
+  it("anisotropy turns the fronts: the gradient grain flips with its sign", async () => {
+    if (dawnError !== undefined) throw new Error(`Dawn unavailable: ${dawnError}`);
+    const plain = await bench({});
+    const alongX = await bench({ anisotropy: 0.6 });
+    const alongY = await bench({ anisotropy: -0.6 });
+    expect(plain.grain, "the isotropic stencil has a grain").toBeGreaterThan(0.9);
+    expect(plain.grain, "the isotropic stencil has a grain").toBeLessThan(1.1);
+    expect(alongX.grain, "+anisotropy did not lay the fronts along x").toBeGreaterThan(1.5);
+    expect(alongY.grain, "−anisotropy did not lay the fronts along y").toBeLessThan(1 / 1.5);
+  }, 600_000);
 });

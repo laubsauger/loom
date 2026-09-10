@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { SHADER_SOURCE_PARAMETER } from "../../domain/commands/apply-patch.ts";
+import { reflectParamsStruct } from "../../nodes/definitions/params-reflection.ts";
+import { GRAY_SCOTT_DEFAULTS } from "../shaders/gray-scott.wgsl.ts";
 import { REORDER_SOURCE_OPTIONS } from "../../nodes/definitions/color.ts";
 import { CHANNEL_OPTIONS } from "../../nodes/definitions/parameter-readers.ts";
 import { NOISE_TYPE_OPTIONS } from "../../nodes/shaders/noise.wgsl.ts";
@@ -45,12 +47,22 @@ describe("E2 Reaction-Diffusion", () => {
    */
   it("drives feed/kill from ANIMATED NOISE, per pixel, rather than from a constant", () => {
     const source = String(document.graph.nodes["rd"]?.parameters[SHADER_SOURCE_PARAMETER]);
-    // The band is constants; WHERE a pixel sits in it is a texture read.
-    expect(source).toContain("const FEED_LOW");
-    expect(source).toContain("const FEED_HIGH");
+    // The band is a pair of endpoints in `Params` (T1237; constants before that), and the
+    // document sets none of them, so they are the `@default`s — the constants they
+    // replaced. WHERE a pixel sits in the band is a texture read.
+    expect(source).toContain("feedLow: f32,    // @default 0.028");
+    expect(source).toContain("feedHigh: f32,   // @default 0.042");
     expect(source).toContain("let chemistry = clamp(centre.b, 0.0, 1.0)");
-    expect(source).toContain("mix(FEED_LOW, FEED_HIGH, chemistry)");
-    expect(source).toContain("mix(KILL_LOW, KILL_HIGH, chemistry)");
+    expect(source).toContain("mix(feedLow, params.feedHigh, chemistry)");
+    expect(source).toContain("mix(killLow, params.killHigh, chemistry)");
+    // The document STORES every knob at the constant it replaced (§V920): the source's own
+    // `@default`s are the same numbers, so a declared default can never move E2, and the
+    // stored set is exactly the reflected set — no knob inherited, none invented.
+    const { [SHADER_SOURCE_PARAMETER]: _source, ...stored } = document.graph.nodes["rd"]?.parameters ?? {};
+    const declared = Object.fromEntries(reflectParamsStruct(source).map((field) => [field.name, field.declaredDefault]));
+    expect(stored).toEqual(declared);
+    expect(stored).toEqual(GRAY_SCOTT_DEFAULTS);
+    expect(stored).toEqual({ feedLow: 0.028, killLow: 0.0545, feedHigh: 0.042, killHigh: 0.068, morph: 0, shape: 0, anisotropy: 0 });
     // …and the old uniform constants are GONE, not merely unused.
     expect(source).not.toContain("const FEED: f32");
     expect(source).not.toContain("const KILL: f32");
@@ -228,16 +240,16 @@ describe("E2 Reaction-Diffusion", () => {
   });
 
   /**
-   * The kernel must not declare a uniform block. The CustomWGSL node's `compile()` sets no
-   * `uniformBinding` and no `sharedBinding` unless the source declares one, so a `params`
-   * block here would be bound to nothing at all on a real device — the kernel reads its
-   * grid spacing from `textureDimensions` for exactly that reason.
+   * The kernel declares ONE uniform block, `params`, and nothing else. The CustomWGSL node's
+   * `compile()` sets `uniformBinding` only because the source declares it (T880), and never
+   * a `sharedBinding`: the kernel has no clock and must not (§V45) — it reads its grid
+   * spacing from `textureDimensions`, and time never enters.
    */
   it("carries a kernel that matches the v1 CustomWGSL binding contract", () => {
     const pass = effectFor(plan, "rd");
-    expect(pass.uniformBinding).toBeUndefined();
+    expect(pass.uniformBinding).toBe("params");
     expect(pass.sharedBinding).toBeUndefined();
-    expect(pass.shader.includes("var<uniform>")).toBe(false);
+    expect(pass.shader.includes("frameU")).toBe(false);
     expect(pass.shader).toContain("textureDimensions(inputTexture)");
     expect(pass.textures?.map((binding) => binding.binding)).toEqual(["inputTexture"]);
 
