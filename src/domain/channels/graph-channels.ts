@@ -1,9 +1,10 @@
 import type { GraphDocument } from "../types/graph.ts";
 import type { FrameEvaluationInput } from "../types/frame.ts";
 import type { ParameterValue } from "../types/parameters.ts";
+import type { NodeId } from "../types/ids.ts";
 import type { NodeRegistryView } from "../../nodes/registry/registry.ts";
 import { effectiveParameterSchema, type ChannelResolver } from "../parameters/resolve.ts";
-import { nodeByName } from "../graph/names.ts";
+import { nodeNames } from "../graph/names.ts";
 import { storedStaticValue } from "../parameters/slots.ts";
 import { defaultParameterValue } from "../parameters/validate.ts";
 
@@ -31,8 +32,47 @@ export function graphChannelResolver(
   graph: GraphDocument,
   registry: NodeRegistryView,
 ): ChannelResolver {
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════════════
+   * THE NAME INDEX, BUILT ONCE PER RESOLVER (T1245)
+   * ═══════════════════════════════════════════════════════════════════════════════════
+   *
+   * `nodeByName` calls `nodeNames`, which SORTS EVERY NODE ID AND BUILDS A FRESH `Map` —
+   * and it was called once per `op('x').chan` read, which is once per driven parameter
+   * per frame. §T1182's fast-path profile measured `nodeNames` at 13.7% of a 3000-frame
+   * run, the largest self cost left in it. The index is a pure function of `graph`, so
+   * building it once and asking it N times is the same N answers for a fraction of the
+   * work. §T1172 did exactly this for the PARAMETER reader (`node-references.ts`); the
+   * channel resolver was the other half of the same call and did not get it.
+   *
+   * ⚠ WHY THE SCOPE IS THIS CLOSURE, AND WHY THAT CANNOT GO STALE. `graph` is captured
+   * ONCE, at construction, and this closure never reads any other document — so "the
+   * graph this index describes" and "the graph this resolver answers about" are the same
+   * object by construction, and there is no window between them for an edit to land in.
+   * Every document that reaches here is a settled one: the store hands out a NEW frozen
+   * object per revision (`setAutoFreeze(true)` in `store.ts`), and `flattenComponents`
+   * returns a new one per (revision, catalogue revision). So a rename, an add, a delete
+   * or a component re-flatten produces a new graph object, `use-graph-compile.ts`'s
+   * `channels` memo — keyed on `flatGraph` — builds a NEW resolver over it, and that
+   * resolver builds its own index on its first read. Nothing is invalidated because
+   * nothing outlives the thing it describes.
+   *
+   * This is also why the index is NOT in `names.ts` and NOT keyed on graph identity in a
+   * module-level map: `apply-patch.ts` calls `nodeNames` on an immer DRAFT it is still
+   * mutating (two `addNode` ops in one patch, and the second `uniqueNodeName` must see
+   * the first add), so a memo keyed on the object would hand it a pre-mutation index and
+   * mint a duplicate name (§V127). `names.test.ts` gates that. No channel resolver is
+   * ever built over a draft — `context.channels` comes down the bus from this one memo.
+   *
+   * `nodeNames` itself is the index, unchanged, so the two answers it has always given
+   * are preserved exactly: on a DUPLICATE label the node whose id sorts first wins
+   * (`Object.keys(...).sort()`, first-wins), and a name matching nothing is `undefined`,
+   * which the caller reads as "not my channel".
+   */
+  let index: ReadonlyMap<string, NodeId> | null = null;
   return (channel, context) => {
-    const nodeId = nodeByName(graph, channel);
+    index ??= nodeNames(graph);
+    const nodeId = index.get(channel);
     if (nodeId === undefined) return undefined;
     const node = graph.nodes[nodeId];
     if (node === undefined) return undefined;
