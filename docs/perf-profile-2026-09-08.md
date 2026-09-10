@@ -521,6 +521,110 @@ Plots culled by xyflow off the viewport are still `checkVisibility()`-visible an
 tick. T1243's row addition (`a9d2a43`): the Frame row shows the extent as "gpu time" and
 the nested-span sum as "pass sum", and names a `basis: "passes"` frame in its reading.
 
+### 2026-09-10 — §T1254 harness numbers, and §T1264's cost (`93049c7` → `0452af9`, `34f611f`)
+
+The two measurements both rows left owed. Neither arm ran on a machine that was quiet in
+the §V929 sense — parallel sessions ran `pnpm typecheck`, a full `vitest`, and a Dawn
+stills capture through the window, and the system itself contributed a Time Machine pass,
+a `mobileassetd` fetch and an `openAndSave` XPC service spinning at 175 %. What makes the
+pairs below readable anyway is the harness's own same-run calibration: the `control
+cheap / dear` spin reads 9.90–9.92 ms on both compared E24 windows and the two E55 arms
+saw near-identical load lines two minutes apart. Every window whose control read above
+10.5 ms, or whose rAF interval p50 exceeded 12 ms on a display that stamps 10, was
+discarded and re-run; four whole runs were thrown away (listed at the end).
+
+**The `PERF_REF=HEAD` arm the §T1254 row asks for cannot be used, and this is the reason.**
+`e559a68` (T1234) rebuilt E24 — 74 nodes / 76 edges → 53 / 52 — and it landed after
+`0452af9`. A `93049c7` vs `HEAD` pair compares two different graphs. The after-arm here is
+`0452af9` itself, the second of the row's two commits, which still carries the 74-node E24;
+`93049c7` vs `0452af9` is the pair, and nothing but T1254 moved between them.
+
+#### §T1254 — one full compile per revision. Target MET.
+
+E24, scenario C (one 120-move drag on `chem.Brightness`), pass 2 of each run — the pass
+whose control readings match to 0.02 ms. Inclusive sample weight per function over the
+window, off the kept CDP traces; "per drag" is the whole window, which holds exactly one
+drag.
+
+| E24 scenario C, pass 2 | before `93049c7` | after `0452af9` |
+|---|---|---|
+| `compile` category, ms per frame | 0.37 | **0.23** |
+| N frames / window ms | 498 / 5455 | 477 / 5297 |
+| `compileGraphRetaining` — every full compile, ms/drag | 319.2 | **183.9** |
+| `compileSafely` — the memo's own full compile, ms/drag | 171.3 | 186.0 |
+| `prepareFrameCompiler`, ms/drag | 154.5 | **4.6** |
+| `compileFrame` — the per-frame values-only splice, ms/drag | 64.6 | 76.5 |
+| control cheap / dear, ms | 0.36 / 9.92 | 0.37 / 9.90 |
+
+`compile` is **0.23 ms/frame against the ≤ 0.25 target — MET.** The mechanism is visible in
+one row: `prepareFrameCompiler` went from 154.5 ms per drag to 4.6, so the base it hands
+out is no longer a compile at all, and the sum of every full compile in the window halved
+(319 → 184 ms) because there is now one per revision instead of two. `compileSafely` and
+`compileFrame` are unchanged within run-to-run spread, as they should be — neither was
+touched. The row's verify clause reads "`prepareFrameCompiler` inclusive ≈ `compileFrame`
+cost"; it is in fact far *below* it (4.6 against 76.5), because `compileFrame` is now called
+on its own per frame rather than nested inside `prepare`. The intent — no second full
+compile — is what the numbers show.
+
+Pass 1 of the `93049c7` arm agrees (`compile` 0.39 ms/frame, `compileGraphRetaining` 356.7,
+`prepareFrameCompiler` 171.0, `compileFrame` 75.9). Pass 1 of the `0452af9` arm was
+disturbed (interval p50 70.9 ms) and is not quoted, though it carries the same structural
+result: `prepareFrameCompiler` 6.4 ms per drag.
+
+#### §T1264 — the reactor's deleted branch did not raise the frame.
+
+E55, all scenarios, `34f611f~1` (= `0452af9`) then `34f611f`, back to back, one headed
+browser at a time. §V86: the GPU figure the harness gives is the Frame row's **"gpu time",
+which is the frame EXTENT (a span), not an exclusive cost**, read from the panel DOM once at
+the end of each window; "pass sum" beside it is the nested-span sum and is ~(N+1)/2 × the
+frame on this tiler (§T1243). Both are quoted as the harness labels them.
+
+| E55 | before `0452af9` | after `34f611f` |
+|---|---|---|
+| Frame "gpu time" (extent), the five windows that read | 42.60, 26.87, 29.16, 41.35, 19.92 ms | 33.03, 37.62, 22.74, 22.35, 23.66 ms |
+| extent median | 29.16 | 23.66 |
+| Frame "pass sum" (nested-span sum, not a cost) | 212–529 ms | 270–470 ms |
+| rAF interval p50, the four A windows | 21.17, 29.19, 21.44, 27.73 | 27.34, 35.70, 21.32, 23.92 |
+| rAF interval p50, C (knob drag) | 22.59 / 28.84 | 23.72 / 27.69 |
+| rAF interval p50, D / E | 16.97, 29.77 / 19.09, 32.21 | 19.09, 31.00 / 18.64, 30.32 |
+| main-thread busy p50, C | 16.72 / 16.52 | 16.89 / 16.22 |
+| B paused, interval p50 | 10.00 / 10.00 | 10.00 / 10.00 |
+
+**The commit did not move the frame.** The extent median falls (29.2 → 23.7 ms) while the
+A-window interval median rises trivially (24.6 → 25.6 ms); the two instruments point in
+opposite directions and both differences are smaller than the pass-to-pass spread *inside*
+either arm (before: 19.9–42.6 ms extent; after: 22.3–37.6). Scenario C is the tightest pair
+in the run — 22.59 / 28.84 before against 23.72 / 27.69 after — and it does not move. Main
+thread busy is identical on both sides, which is the expected result: the change is
+fragment-shader work only. So the recessed-plate branch's removal neither paid for itself
+nor cost anything measurable here; §T1243's 17.8 ms extent is not reproduced by either arm
+because the GPU was shared with the user's own Chrome throughout (top-bar `gpu` read
+27.98–42.60 before, 22.35–37.29 after).
+
+**Raw output.** `scratchpad/perf/20260910-202812` (`93049c7`, E24 A/C/F),
+`20260910-204134` (`0452af9`, E24 A/C/F), `20260910-204258` (`0452af9`, E55),
+`20260910-204507` (`34f611f`, E55). Load lines the harness printed before each:
+
+| run | load avg 1m | processes above 20 % that were not the run |
+|---|---|---|
+| `93049c7` E24, 20:28 | 1.9 | `mobileassetd` 38.3, FSEvents 20.7 (Time Machine `backupd` 13.4) |
+| `0452af9` E24, 20:41 | 5.8 | user's Chrome 30.8, FSEvents 30.1, WindowServer 29.5, LitLink 20.3 |
+| `0452af9` E55, 20:43 | 4.6 | FSEvents 39.0, WindowServer 32.8, LitLink 20.3 |
+| `34f611f` E55, 20:45 | 3.9 | FSEvents 40.0, WindowServer 28.9, LitLink 27.7, Terminal 20.3 |
+
+**Discarded (§V929), and why**: `20260910-203044` and `20260910-203321` both ran
+`PERF_REF=HEAD`, i.e. the 53-node E24 — wrong fixture for this pair; the first also lost its
+browser mid-run (`Target page… has been closed` at C pass 2) and the second had the display
+throttled to an 80.7 ms rAF stamp through pass 1. `20260910-203613` is `0452af9` with
+`com.apple.appkit.xpc.openAndSave` at 174.6 % for its whole duration — every window there
+reads 125–145 ms interval; it is quoted nowhere above, though its C passes independently
+show `prepareFrameCompiler` at 5.9 / 6.0 ms per drag, which is the same structural result.
+
+**Still not measured.** Scenario B on E24 is excluded from both E24 arms by the harness bug
+the §T1254 row names (a `getByRole("button", { name: "Play" })` strict-mode ambiguity once F
+has selected `chem`), so the idle-paused compile cost at either commit is unknown. §V913's
+E55 motion numbers were not re-measured here either.
+
 
 ## Appendix A — per-scenario frame budget, all fixtures, all passes
 
