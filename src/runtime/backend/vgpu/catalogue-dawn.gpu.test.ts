@@ -4,7 +4,7 @@ import { renderHeadless } from "../../../tests/headless/render-harness.ts";
 import { nodeGpuHost, probeDawn } from "./node-gpu-host.ts";
 import { allNodeDefinitions, coreNodeDefinitions } from "../../../nodes/definitions/index.ts";
 import { createNodeRegistry } from "../../../nodes/registry/registry.ts";
-import { minimalGraphFor } from "../../../nodes/definitions/test-support.ts";
+import { minimalGraphFor, outsidePlanByConstruction } from "../../../nodes/definitions/test-support.ts";
 import type { GraphDocument } from "../../../domain/types/graph.ts";
 
 /**
@@ -25,12 +25,17 @@ import type { GraphDocument } from "../../../domain/types/graph.ts";
  * an example first wants the node.
  *
  * Value sources are skipped for catalogue-chain's own reason: no ports, no passes,
- * nothing for a device to compile (§V143). Everything else runs — including the types
- * no example carries, which is the entire point.
+ * nothing for a device to compile (§V143). So is a portless non-sink (`annotate`,
+ * T1262): the compiler prunes it by construction — the SAME predicate catalogue-chain
+ * uses — so there is no materialized output to read back. Everything else runs —
+ * including the types no example carries, which is the entire point.
  */
 
 const SWEPT = coreNodeDefinitions.filter(
-  (definition) => definition.valueChannel === undefined && definition.valueEvaluate === undefined,
+  (definition) =>
+    definition.valueChannel === undefined &&
+    definition.valueEvaluate === undefined &&
+    !outsidePlanByConstruction(definition),
 );
 
 describe("every catalogue type compiles and steps on Dawn (T751, §B146)", () => {
