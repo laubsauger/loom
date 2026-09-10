@@ -403,6 +403,29 @@ describe("copying a link to an example (T1278)", () => {
     expect(screen.getByText("Link to E9 Test copied.")).toBeDefined();
   });
 
+  it("says what it does before the click and what happened after it (T1281)", () => {
+    /*
+     * The owner could not tell the control was a copy button, or that a copy had happened:
+     * the label was the noun "link", and the pane's notice renders BELOW the list, off
+     * screen for any row but the last. Both halves are asserted here because both were
+     * the complaint — the verb, and a receipt where the eye already is.
+     */
+    const { bus } = busWithOpen();
+    render(
+      <ExampleLibrary
+        bus={bus}
+        context={context}
+        dirty={false}
+        examples={[EXAMPLE]}
+        copyLink={() => {}}
+      />,
+    );
+    const button = screen.getByRole("button", { name: "Copy a link to E9 Test" });
+    expect(button.textContent).toBe("copy link");
+    fireEvent.click(button);
+    expect(button.textContent).toBe("copied");
+  });
+
   it("copies without opening — the row's two actions are not one action (§V93)", () => {
     // The destructive verb and the harmless one sit on the same row; the harmless one must
     // not carry the destructive one along with it, dirty document or not.

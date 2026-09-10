@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { LoomBus } from "@domain/commands/bus.ts";
 import type { InvocationContext } from "@domain/types/commands.ts";
 import { Button } from "@ui/primitives/button.tsx";
@@ -114,6 +114,18 @@ export function ExampleLibrary({
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<string | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  /*
+   * T1281 — the copy's receipt lands ON THE BUTTON, because that is where the eye is.
+   * The pane's `notice` still fires (it is what a screen reader announces, §V148), but it
+   * renders BELOW a 59-row scrolling list: click a row near the top and the confirmation
+   * is off screen, which is exactly how the owner read a working copy as a dead button.
+   */
+  const [copiedFor, setCopiedFor] = useState<string | null>(null);
+  useEffect(() => {
+    if (copiedFor === null) return undefined;
+    const timer = setTimeout(() => setCopiedFor(null), 1600);
+    return () => clearTimeout(timer);
+  }, [copiedFor]);
 
   // The same derivation the node library's filter uses (§V754): the category list comes
   // out of the catalogue, so an example whose graph earns a new category gets a filter
@@ -254,9 +266,10 @@ export function ExampleLibrary({
                 onClick={() => {
                   copyLink(exampleLinkUrl(example.fileName, origin, base));
                   setMessage(`Link to ${example.name} copied.`);
+                  setCopiedFor(example.fileName);
                 }}
               >
-                link
+                {copiedFor === example.fileName ? "copied" : "copy link"}
               </Button>
             </div>
           )}
