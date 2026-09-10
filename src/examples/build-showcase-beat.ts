@@ -23,13 +23,14 @@
  *
  *   kick   every beat                      sine at the bar's bass note, 150 ms decay
  *   snare  beats 2 and 4                   400–2000 Hz noise burst + 400 Hz tone, 120 ms
- *   hat    every eighth (closed, 40 ms)    noise above 7 kHz; the open one decays 250 ms
- *                                          and rings through the next downbeat, which
- *                                          therefore has no closed hat (bars 12–16)
+ *   hat    every eighth (closed, 40 ms)    noise BANDED to 5.2–12 kHz; the open one decays
+ *                                          250 ms and rings through the next downbeat,
+ *                                          which therefore has no closed hat (bars 12–16)
  *   bass   one held note per bar           A1 A1 F1 G1 (55, 55, 43.65, 49 Hz) sine, 50 ms
  *                                          attack under the downbeat kick, held all bar
  *   bed    every played bar                600–2000 Hz noise, 30 dB under the snare
- *   ping   downbeat of every odd bar       three sines at 2.8–4.2 kHz, 60 ms swell
+ *   ping   downbeat of every odd bar       three sines at 2.8–4.2 kHz, 60 ms swell, each
+ *                                          decaying on its own (400/250/160 ms)
  *
  * So the shipped detector, at its defaults, counts EXACTLY: 56 kicks (14 bars × 4),
  * 28 snares (14 × 2), 75 hats (bars 1–4: 32; bar 11: 8; bars 12–16: 7 each).
@@ -46,6 +47,16 @@
  * empty counts a -60 dB sidelobe, and a pure sine is far louder per bin than a noise
  * burst of the same peak. Hence the quiet sines (kick 0.12, bass 0.04 against a snare
  * burst at 2), the noise bed under the snare band, and the fades.
+ *
+ * T1280 — AND THE EAR GETS A VOTE. That paragraph was the whole of the design, and it left
+ * a clip nobody wanted to listen to: the hat was a high-pass with no top, so most of its
+ * energy sat above 13 kHz as a flat hiss 75 times in 31 s, and the ping was three PURE
+ * phase-locked sines at full scale in the 3–4 kHz ear-canal resonance, ringing a second and
+ * a half on every odd downbeat. Both are retuned at their own definitions below, and the
+ * constraint on that work was that NOTHING the analyser sees may move: the three counts,
+ * the band separation and the false-count fixes above all still hold exactly. What the
+ * retune costs is one lane — `centroid`'s swing between a full bar and the hats-dropped
+ * bars is 54% of what it was, all of it from the ping's level, none from the hat.
  *
  * Deterministic: the noise comes from a seeded PRNG, so the WAV is the same bytes every
  * run. The .m4a is committed; ffmpeg is only the encoder, never a build step.
@@ -159,9 +170,29 @@ export function renderShowcaseBeat(): Float32Array {
     return (t: number): number =>
       2 * band.low(band.high(noise())) * Math.exp(-t / 0.12) + 0.3 * Math.sin(2 * Math.PI * 400 * t) * Math.exp(-t / 0.06);
   };
+  // T1280 — a BAND, not a shelf. This was `highPass(7000)` alone, which is ONE-SIDED: the
+  // cascade's magnitude RISES from -29 dB at 7 kHz to -19 dB at Nyquist, so 81% of the hat's
+  // energy sat above 13 kHz and 75 of them in 31 s read as a flat bright hiss with no
+  // roll-off anywhere — the "nasty high pitched" thing. The low-pass closes the band's top;
+  // eight poles, like the snare's, because ONE-POLE stages roll off very gently and four of
+  // them do not close the band at all: at four the chain's -3 dB band is 6510–22880 Hz and
+  // above 13 kHz is down only 4.5 dB, where eight give 5160–11970 Hz and -9.8 dB. And 12 kHz
+  // is the LOWEST corner whose band still clears the detector's floor — at 11000 it is
+  // 4860–11030, i.e. leaking under 5 kHz, where no count listens and the ear is at its worst.
+  //
+  // `HAT_BAND_TRIM` puts back what the low-pass costs the DETECTOR's band, so the counts see
+  // the hat they were tuned on. NOTE it is derived from the DIGITAL response, not the analog
+  // one: `onePole` is `y = a·y + (1-a)·x`, whose magnitude at Nyquist is (1-a)/(1+a), nothing
+  // like the analog -6 dB/octave — an analog-formula trim over-drove this by 4 dB.
+  //
+  // Measured on the rendered clip, hat alone (bar 4 has hats and no ping, bar 6 has neither,
+  // so the difference of the two bars' band power IS the hat): above 13 kHz -49.2 → -59.0
+  // dBFS, while 7–13 kHz holds at -55.9 → -54.4. The hat used to carry 6.7 dB MORE energy
+  // above 13 kHz than inside 7–13 kHz; now it carries 4.6 dB less.
+  const HAT_BAND_TRIM = 5.964;
   const hat = (decay: number, gain: number) => {
-    const high = highPass(7000);
-    return (t: number): number => gain * high(noise()) * Math.exp(-t / decay);
+    const band = { high: highPass(7000), low: lowPass(12000, 8) };
+    return (t: number): number => gain * HAT_BAND_TRIM * band.low(band.high(noise())) * Math.exp(-t / decay);
   };
   // Held for the bar with a 100 ms release: at 55 Hz the 5 ms fade below is a quarter
   // cycle, i.e. a cut, and the note's end counted as a kick on the silent downbeat of bar 9.
@@ -180,12 +211,28 @@ export function renderShowcaseBeat(): Float32Array {
       return 0.3 * band.low(band.high(noise())) * edge;
     };
   };
+  // T1280 — the other painful voice. This was three PURE sines sharing ONE 400 ms decay at
+  // `0.2 *` each: the three stay phase-locked, so they sum coherently to 3x and the ping was
+  // the loudest event in the clip (its band peaked at -2.7 dBFS against a -1.0 dBFS mix),
+  // holding a fixed chord for a second and a half, dead centre in the 3–4 kHz ear-canal
+  // resonance. Three repairs, none of which move it out of the 2.5–5 kHz gap the counts
+  // need it to sit in:
+  //   - PER-PARTIAL DECAY, shortest on top. A struck bar loses its high partials first: a
+  //     third of a second in, the top one is 11 dB under the low one instead of level with
+  //     it, so what SUSTAINS up at 4 kHz is gone while the strike keeps its shape. This is
+  //     the repair that matters — measured in the 2.5–5 kHz band on bar 3's downbeat, the
+  //     ring is 6.4 dB down at 250 ms and 7.9 dB down at 600 ms.
+  //   - A few cents of detune on the upper two, so they never re-align into that 3x peak.
+  //   - Level. On its own it bought only 4 dB of the 7 it was given, because the ping WAS
+  //     the peak the normaliser divides by, and everything else simply came up to meet it.
   const ping = (t: number): number => {
     let sum = 0;
-    for (const hz of [2793.83, 3520, 4186.01]) sum += Math.sin(2 * Math.PI * hz * t);
+    for (const [hz, decay] of [[2793.83, 0.4], [3526.2, 0.25], [4177.4, 0.16]] as const) {
+      sum += Math.sin(2 * Math.PI * hz * t) * Math.exp(-t / decay);
+    }
     // A 60 ms swell, not a hit: a sharp start this close above the snare band (2.5 kHz)
     // counted as a snare through the window's sidelobes. It moves the centroid either way.
-    return 0.2 * sum * Math.min(1, t / 0.06) * Math.exp(-t / 0.4);
+    return 0.09 * sum * Math.min(1, t / 0.06);
   };
 
   // The bed runs unbroken through each played stretch, and swells in over the beat BEFORE
