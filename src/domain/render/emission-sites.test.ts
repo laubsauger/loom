@@ -117,6 +117,7 @@ describe("T1005 — the pump ledger, held to the side-effect ledger", () => {
       // forcing exactly what it was built to force, before any transport exists.
       ["laserOut", "src/app/use-laser-bridge.ts"],
       ["oscOut", "src/app/use-osc-bridge.ts"],
+      ["syphonOut", "src/app/use-native-outputs.ts"],
     ]);
   });
 

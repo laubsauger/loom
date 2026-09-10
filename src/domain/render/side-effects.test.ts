@@ -73,6 +73,7 @@ describe("T949 — the scan is finding the real catalogue, or it is measuring no
       // T942 tier 3. UDP at a host and port the document names — a lighting desk as often
       // as a synth. `pure` in NODE_REPRODUCIBILITY, and correctly so; see the ledger.
       "oscOut:emits",
+      "syphonOut:emits",
     ]);
   });
 });

@@ -44,6 +44,7 @@ import { NODE_SIDE_EFFECTS } from "./side-effects.ts";
  * pump lands by adding ONE row here — and cannot land any other way.
  */
 export const EMISSION_PUMPS: Readonly<Record<string, string>> = {
+  syphonOut: "src/app/use-native-outputs.ts",
   /*
    * T942 tier 3 / T949. The OSC pump: reads the live value graph each frame, consults
    * `emissionRefusal` per node (a take, a headless export and every gate get the

@@ -382,7 +382,15 @@ describe("shadows land exactly (T481, §V147, §V361)", () => {
       const y = Math.round((0.5 - (clip[1] / clip[3]) * 0.5) * 64);
       return (y * 64 + x) * 4;
     };
-    const inShadow = texelOf([0.3, 0, 0.3]); // under the box's footprint, visible past its face
+    /* T1285 moved this sample from (0.3, 0, 0.3) to the footprint's CENTRE, and the claim
+       is stronger for it. The box's shadow is x, z ∈ [−0.5, 0.5]; `shadowExtent` 8 over a
+       128-texel map makes a texel 0.125 world units, so the old point sat 1.6 texels from
+       two edges — inside the shipped 5×5 PCF kernel's reach, i.e. genuinely half-lit. The
+       centre is 4 texels from every edge, so this still reads "the light is BLOCKED, to the
+       byte" under a kernel of any radius the knob offers, which is the thing T481 wanted
+       asserted. The camera at (0, 2, 4) clears the box's underside (y = 0.25 at the front
+       face, which starts at 0.5), so the centre is visible past it exactly as (0.3, 0.3) was. */
+    const inShadow = texelOf([0, 0, 0]); // the footprint's centre, visible past the box's face
     const inLight = texelOf([0, 0, 2]); // open ground
 
     const shadowed = await render(true);

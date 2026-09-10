@@ -38,6 +38,8 @@ import type { ComponentRegistryView } from "../domain/components/index.ts";
 import { CompilerDiagnosticCode, compilerDiagnostic } from "./diagnostics.ts";
 import { resolveNodeParameters } from "./validate.ts";
 import type { ActiveSink } from "./types.ts";
+import { COMPONENT_ID_SEPARATOR, flattenedNodeId, internalResolutions } from "../domain/components/internal-resolutions.ts";
+export { COMPONENT_ID_SEPARATOR, flattenedNodeId } from "../domain/components/internal-resolutions.ts";
 
 /**
  * Component flattening (T134, T135, §V82, §V83).
@@ -77,12 +79,6 @@ import type { ActiveSink } from "./types.ts";
  */
 
 /** Separator between an instance id and the ids it namespaces. */
-export const COMPONENT_ID_SEPARATOR = "/";
-
-export function flattenedNodeId(prefix: string, nodeId: NodeId): NodeId {
-  return prefix === "" ? nodeId : `${prefix}${COMPONENT_ID_SEPARATOR}${nodeId}`;
-}
-
 /** The instance chain a flattened id encodes, outermost first. Empty for a root node. */
 export function componentPathOf(flatNodeId: NodeId): ComponentPath {
   const segments = flatNodeId.split(COMPONENT_ID_SEPARATOR);
@@ -723,6 +719,18 @@ export function flattenComponents(request: FlattenRequest): FlattenedGraph {
         overrides: childOverrides,
         chain: [...input.chain, published],
       });
+      // Inner overrides land first; the outer instance can override one nested
+      // descendant without editing the shared definition or its sibling instance.
+      for (const [relativeId, resolution] of Object.entries(internalResolutions(resolved))) {
+        const targetId = flattenedNodeId(flatId, relativeId);
+        const target = nodes[targetId];
+        if (!target) {
+          diagnostics.push({ severity: "error", code: "component.resolutionTargetMissing", nodeId: flatId,
+            message: `Component resolution override names missing internal node "${relativeId}".` });
+          continue;
+        }
+        nodes[targetId] = { ...target, resolution };
+      }
       childInputs.set(nodeId, child.inputs);
       childOutputs.set(nodeId, child.outputs);
       instanceOutputs.set(flatId, child.outputs);

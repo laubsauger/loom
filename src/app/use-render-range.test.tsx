@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, renderHook } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { alice, contextFor, createHarness } from "@domain/commands/test-support.ts";
 import type { FrameInputs } from "@domain/types/backend.ts";
@@ -11,6 +11,7 @@ import { allNodeDefinitions } from "@nodes/definitions/index.ts";
 import { createNodeRegistry } from "@nodes/registry/registry.ts";
 import { transportHolderFor } from "./transport-commands.ts";
 import { useRenderRange } from "./use-render-range.ts";
+import { renderRangeHolderFor } from "./render-range.ts";
 
 /**
  * T586 — THE WIRING GUARD for the render-time honest edge.
@@ -37,6 +38,31 @@ import { useRenderRange } from "./use-render-range.ts";
  */
 
 afterEach(cleanup);
+
+it("blocks the take and awaits output shutdown before evaluating its first frame", async () => {
+  const { bus } = createHarness();
+  const seek = vi.fn((frame: number) => frame);
+  transportHolderFor(bus).current = { isPlaying: () => false, togglePlay() {}, resetAbsoluteClock() {}, seek,
+    stepOnce: () => frameInputs(1) } as never;
+  let release!: () => void;
+  const beforeRender = vi.fn(() => new Promise<void>(resolve => { release = resolve; }));
+  renderHook(() => useRenderRange({ bus, exports: fakeExports(), compiled: COMPILED, graph: graphWith("timeline"),
+    registry: REGISTRY, settings: { ...SETTINGS, frameRange: { start: 0, end: 0 } }, latestFrame: () => frameInputs(0),
+    name: () => "test", beforeRender, loadEncoder: async () => fakeEncoder(),
+    write: async () => ({ kind: "cancelled" }) }));
+  let pending!: Promise<unknown>;
+  await act(async () => { pending = bus.execute("export.renderRange", {}, contextFor(alice)); });
+  expect(beforeRender).toHaveBeenCalledOnce();
+  expect(renderRangeHolderFor(bus).current!.busy()).toBe(true);
+  expect(seek).not.toHaveBeenCalled();
+  await act(async () => { release(); await pending; });
+  expect(seek).toHaveBeenCalledOnce();
+  expect(renderRangeHolderFor(bus).current!.busy()).toBe(false);
+  beforeRender.mockRejectedValueOnce(new Error("GPU shutdown failed"));
+  await act(async () => { await bus.execute("export.renderRange", {}, contextFor(alice)); });
+  expect(seek).toHaveBeenCalledOnce();
+  expect(renderRangeHolderFor(bus).current!.busy()).toBe(false);
+});
 
 const REGISTRY = createNodeRegistry(allNodeDefinitions);
 

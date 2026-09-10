@@ -22,6 +22,10 @@ import { poseNode } from "./pose.ts";
 import { matteNode } from "./matte.ts";
 import { personMaskNode } from "./person-mask.ts";
 import { mediaNodeDefinitions } from "./media.ts";
+import { syphonInNode } from "./syphon-in.ts";
+import { syphonOutNode } from "./syphon-out.ts";
+export { syphonOutNode, SYPHON_OUT_TYPE } from "./syphon-out.ts";
+export { syphonInNode, SYPHON_IN_TYPE } from "./syphon-in.ts";
 import { valueGraphNodeDefinitions } from "./value-graph-nodes.ts";
 export { audioFileInNode, audioInNode, audioPatternNode } from "./audio.ts";
 export { cameraNode, geometryNode, lightNode, renderNode, sceneNodeDefinitions } from "./scene.ts";
@@ -235,6 +239,8 @@ export const coreNodeDefinitions: readonly NodeDefinition[] = [
   matteNode,
   personMaskNode,
   ...mediaNodeDefinitions,
+  syphonInNode,
+  syphonOutNode,
   ...valueGraphNodeDefinitions,
   audioInNode,
   audioFileInNode,

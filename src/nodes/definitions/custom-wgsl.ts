@@ -4,6 +4,7 @@ import { SHADER_SOURCE_PARAMETER } from "../../domain/commands/apply-patch.ts";
 import { codeParametersLast } from "../../domain/parameters/code.ts";
 import { RGBA_TEXTURE } from "./common-ports.ts";
 import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
+import { declaredNames, resolveSharedModules, SHARED_WGSL_MODULES } from "../shaders/shared-modules.ts";
 import {
   declaresUniformBlock,
   reflectParamsStruct,
@@ -122,6 +123,8 @@ export { CUSTOM_WGSL_YIELDED_KEYS };
 
 /** The diagnostic this node refuses a name-stealing field under (§V288). */
 const CUSTOM_WGSL_PARAM_CODE = "node.customWgsl.params";
+/** T1286: a `// @use` line that names nothing, or that collides with the source's own. */
+const CUSTOM_WGSL_MODULE_CODE = "node.customWgsl.module";
 
 /** The fields a source declares as controls — none at all unless it asks for the block. */
 function reflectedFields(source: string): readonly ReflectedField[] {
@@ -234,6 +237,60 @@ export const customWgslNode: NodeDefinition = {
     );
     if (collisions.length > 0) return { passes: [], diagnostics: collisions };
 
+    /*
+     * T1286 — `// @use <name>` pulls named shared WGSL in front of this source.
+     *
+     * Resolved HERE rather than anywhere upstream, because the source string is opaque to
+     * the compiler and that is load-bearing: everything above still sees one string, the
+     * reflected controls are still read from what the author wrote, and the shared-uniform
+     * contract is untouched (a module may not read `frameU`, see `shared-modules.ts`). What
+     * the pass carries is the expansion.
+     *
+     * Both failure modes are refused BY NAME rather than tolerated, and they are different
+     * bugs. A missing module means the author asked for code that does not exist and the
+     * shader would compile without it — §V288's silent absence, and the worst outcome here,
+     * because a Worley that is not there just makes a flat picture. A collision means the
+     * module and the source both declare a name, and WGSL would take one of them: whichever
+     * it takes, half the author's reading of their own file is wrong.
+     */
+    const shared = resolveSharedModules(shader);
+    if (shared.missing.length > 0) {
+      return {
+        passes: [],
+        diagnostics: shared.missing.map((name) => ({
+          severity: "error" as const,
+          code: CUSTOM_WGSL_MODULE_CODE,
+          message:
+            `Node "${nodeId}": \`// @use ${name}\` names a shared WGSL module that does not exist.`,
+          nodeId,
+          suggestion: `Shared modules: ${Object.keys(SHARED_WGSL_MODULES).join(", ")}.`,
+        })),
+      };
+    }
+    if (shared.names.length > 0) {
+      const own = new Set(declaredNames(shader));
+      const clashes = shared.names.flatMap((name) =>
+        declaredNames(SHARED_WGSL_MODULES[name]!.source)
+          .filter((declared) => own.has(declared))
+          .map((declared) => ({ module: name, declared })),
+      );
+      if (clashes.length > 0) {
+        return {
+          passes: [],
+          diagnostics: clashes.map(({ module, declared }) => ({
+            severity: "error" as const,
+            code: CUSTOM_WGSL_MODULE_CODE,
+            message:
+              `Node "${nodeId}": this source declares "${declared}", which the shared module ` +
+              `"${module}" also declares — one of the two would be silently shadowed.`,
+            nodeId,
+            suggestion: `Rename yours, or drop \`// @use ${module}\` and keep your own.`,
+          })),
+        };
+      }
+    }
+    const expanded = `${shared.prelude}${shader}`;
+
     // Bind EXACTLY the fields the shader's own `struct Params` declares (T880), each shaped to
     // its WGSL type. vgpu refuses a value with no matching field, and E43/E45's §V147 identity
     // depends on `amount` being the only thing bound to their kernels — so the set is read from
@@ -245,14 +302,14 @@ export const customWgslNode: NodeDefinition = {
     const pass: EffectPassDescriptor = {
       kind: "effect",
       id: `${nodeId}:custom`,
-      shader,
+      shader: expanded,
       target,
       textures: [{ binding: CUSTOM_WGSL_TEXTURE_BINDING, resourceId: source.resource }],
       samplers: [{ binding: CUSTOM_WGSL_SAMPLER_BINDING, resourceId: source.sampler }],
       ...(Object.keys(uniforms).length > 0
         ? { uniformBinding: CUSTOM_WGSL_UNIFORM_BINDING, uniforms }
         : {}),
-      ...(declaresUniformBlock(shader, CUSTOM_WGSL_SHARED_BINDING)
+      ...(declaresUniformBlock(expanded, CUSTOM_WGSL_SHARED_BINDING)
         ? { sharedBinding: CUSTOM_WGSL_SHARED_BINDING }
         : {}),
       nodeId,

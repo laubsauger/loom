@@ -49,6 +49,14 @@ export interface LightPayload {
      * beats a guess they cannot.
      */
     readonly shadowExtent: number;
+    /**
+     * T1285: the PCF kernel radius in SHADOW-MAP TEXELS — (2r+1)² taps in the main
+     * pass, box-averaged, so a straight edge gets a 2r+1 texel penumbra. Per light
+     * because the cost is per light: a key that frames a tight volume can afford a
+     * wider kernel than a fill that frames the whole set. 0 is one tap, the hard edge
+     * this shipped with before PCF.
+     */
+    readonly shadowSoftness: number;
   };
 }
 

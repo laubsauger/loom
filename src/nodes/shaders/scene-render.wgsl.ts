@@ -28,6 +28,13 @@ export interface SceneShadingOptions {
    */
   readonly shadows?: ReadonlyArray<number>;
   /**
+   * T1285: the PCF kernel radius in SHADOW-MAP TEXELS, parallel to `shadows` BY SLOT —
+   * the same slot-indexed shape `shadowMatrices` already has at the call site. Slot s
+   * takes (2r+1)² taps; a missing entry or 0 means one tap, i.e. the pre-T1285 text
+   * byte for byte (§V309), which is what the light's Shadow Softness knob at 0 buys.
+   */
+  readonly shadowSoftness?: ReadonlyArray<number>;
+  /**
    * T482: an equirect ENVIRONMENT is wired on the render. Phong (and pbr-through-
    * phong) adds its reflection — sampled along R, scaled by (1−roughness), the
    * specular tint and (T632) a SCHLICK FRESNEL factor, per T428's preserved IBL-lite
@@ -368,6 +375,99 @@ fn vs(@builtin(vertex_index) vertex: u32) -> VertexOut {
 }`;
 }
 
+/**
+ * T481/T1285 — the shadow term for one slot, SHARED VERBATIM by the surface and the
+ * instances generators (§V349, the rule FRESNEL_WGSL and INSTANCE_SHAPES_WGSL already
+ * live under). The two copies of this block were identical to the byte before PCF; a
+ * kernel that landed in one of them would have put a soft edge on E28's floor and a
+ * hard one on the three boxes standing in the middle of it.
+ *
+ * `radius` is the light's Shadow Softness in SHADOW-MAP TEXELS. r taps out to (2r+1)²
+ * loads on the integer texel grid, box-averaged, so the penumbra a straight edge gets
+ * is 2r+1 texels wide with 2r+1 distinct levels across it — a RAMP, not a dimming: the
+ * fully-occluded interior still reads 0 and the fully-lit side still reads 1, which is
+ * exactly what a uniformly darker shadow would not do. r = 0 emits the pre-T1285 text
+ * byte for byte (§V309): turning the knob down is turning the feature OFF, not
+ * approximating it with one tap of a loop.
+ *
+ * THE BIAS, AND WHAT PCF DID TO IT — said out loud rather than quietly retuned. T624's
+ * `0.0015 + 0.012·(1−λ)` is kept EXACTLY, and at r = 0 the emitted text is that line to
+ * the byte. But a wider kernel compares the receiver's OWN depth against stored depths up
+ * to r texels away, and on a planar receiver those differ by r × (the depth grown over one
+ * texel) — which is precisely what the slope term measures. Left unscaled it is not enough:
+ * measured on `scene-shadow-pcf.gpu.test.ts`'s flat floor under a 45° key, r = 2 speckled
+ * the lit floor and r = 3 darkened ALL of it by ~5%, both of them PCF self-shadowing, not
+ * penumbra. So the slope term — and only it, never the constant — is multiplied by the
+ * kernel's reach r+1. That is a derivation from the term's own meaning, not a fitted
+ * number, and the gate holds it: the lit floor's luma is identical at r = 0, 1, 2 and 3.
+ *
+ * The bias stays OUTSIDE the loop: it is a property of the receiver, and every tap
+ * comparing one receiver depth against a different stored depth is what makes the average
+ * a coverage fraction rather than a blur.
+ *
+ * Outside the volume (uv or depth out of range) means UNSHADOWED: the volume is
+ * explicit (V426), and beyond it the light simply shines.
+ */
+function shadowFactorWgsl(slot: number, radius: number): string {
+  const r = Math.max(0, Math.floor(radius));
+  /* The reach factor is r+1 texels — see the docblock. It is a substitution in CODE, never
+     inside the emitted comment (§V685's gate: a `${…}` hidden in a WGSL comment runs
+     without showing). The note below is therefore a fixed string, chosen rather than
+     interpolated. */
+  const reach = r === 0 ? "" : ` * ${r + 1}.0`;
+  const reachNote =
+    r === 0
+      ? ""
+      : `        /* T1285: the SLOPE TERM — and only it — is multiplied by the kernel's REACH
+           in texels. That term IS "depth grown over one texel"; a kernel that samples r
+           texels out compares the receiver's own depth against stored depths r texels
+           away, so the allowance has to cover r+1 of them or every planar receiver
+           self-shadows. Measured, not guessed: on scene-shadow-pcf.gpu.test.ts's flat
+           floor under a 45 degree key, r = 3 without this factor darkened the WHOLE lit
+           floor by 5% and r = 2 speckled it; with it both are clean, and the constant
+           T624 measured is untouched at r = 0. */
+`;
+  const bias = `${reachNote}        /* T624 look pass: a CONSTANT bias acnes at the terminator, and every curved
+           object has one. Depth per shadow texel grows as 1/|N·L|, so the bias has to
+           grow with it — measured on E33, where 0.002 flat put a dotted crescent across
+           the lit half of a medallion and this removes it without visible peter-panning
+           (the slope term only reaches its maximum where the light is already grazing
+           and the surface is dark anyway). */
+        let bias = 0.0015 + 0.012 * (1.0 - lambert)${reach};
+`;
+  const head = `    var shadow = 1.0;
+    {
+      let sc = params.shadow${slot}Matrix * vec4f(input.world, 1.0);
+      let suv = vec2f(sc.x * 0.5 + 0.5, 0.5 - sc.y * 0.5);
+      if (suv.x >= 0.0 && suv.x <= 1.0 && suv.y >= 0.0 && suv.y <= 1.0 && sc.z <= 1.0) {
+        let sdims = vec2f(textureDimensions(shadowMap${slot}, 0));
+`;
+  if (r === 0) {
+    return `${head}        let stored = textureLoad(shadowMap${slot}, vec2i(suv * (sdims - vec2f(1.0))), 0).r;
+${bias}        if (sc.z - bias > stored) { shadow = 0.0; }
+      }
+    }
+`;
+  }
+  const taps = (2 * r + 1) * (2 * r + 1);
+  /* Clamped to the map's own edge rather than treated as out-of-volume: a receiver one
+     texel inside the border would otherwise take a partly-lit average from taps that
+     fell off the map, which reads as a bright fringe all the way round the volume. */
+  return `${head}        let scentre = vec2i(suv * (sdims - vec2f(1.0)));
+        let slast = vec2i(sdims) - vec2i(1);
+${bias}        var slit = 0.0;
+        for (var oy = -${r}; oy <= ${r}; oy = oy + 1) {
+          for (var ox = -${r}; ox <= ${r}; ox = ox + 1) {
+            let stored = textureLoad(shadowMap${slot}, clamp(scentre + vec2i(ox, oy), vec2i(0), slast), 0).r;
+            slit = slit + select(1.0, 0.0, sc.z - bias > stored);
+          }
+        }
+        shadow = slit / ${taps}.0;
+      }
+    }
+`;
+}
+
 export function sceneSurfaceWgsl(options: SceneShadingOptions): string {
   const lightCount = Math.max(0, Math.floor(options.lightCount));
   const pointColor = options.pointColor === true;
@@ -379,30 +479,11 @@ export function sceneSurfaceWgsl(options: SceneShadingOptions): string {
   const shadowBindings = shadows
     .map((_, slot) => `@group(0) @binding(${5 + slot}) var shadowMap${slot}: texture_2d<f32>;\n`)
     .join("");
-  /* One textureLoad, constant bias, hard edge — PCF is a stated follow-up, not a
-     silent absence. Outside the volume (uv or depth out of range) means UNSHADOWED:
-     the volume is explicit (V426), and beyond it the light simply shines. */
+  /* T1285: the tap set is the light's own Shadow Softness, by slot. */
   const shadowFactor = (index: number): string => {
     const slot = shadowSlotOf(index);
     if (slot < 0) return "";
-    return `    var shadow = 1.0;
-    {
-      let sc = params.shadow${slot}Matrix * vec4f(input.world, 1.0);
-      let suv = vec2f(sc.x * 0.5 + 0.5, 0.5 - sc.y * 0.5);
-      if (suv.x >= 0.0 && suv.x <= 1.0 && suv.y >= 0.0 && suv.y <= 1.0 && sc.z <= 1.0) {
-        let sdims = vec2f(textureDimensions(shadowMap${slot}, 0));
-        let stored = textureLoad(shadowMap${slot}, vec2i(suv * (sdims - vec2f(1.0))), 0).r;
-        /* T624 look pass: a CONSTANT bias acnes at the terminator, and every curved
-           object has one. Depth per shadow texel grows as 1/|N·L|, so the bias has to
-           grow with it — measured on E33, where 0.002 flat put a dotted crescent across
-           the lit half of a medallion and this removes it without visible peter-panning
-           (the slope term only reaches its maximum where the light is already grazing
-           and the surface is dark anyway). */
-        let bias = 0.0015 + 0.012 * (1.0 - lambert);
-        if (sc.z - bias > stored) { shadow = 0.0; }
-      }
-    }
-`;
+    return shadowFactorWgsl(slot, options.shadowSoftness?.[slot] ?? 0);
   };
   const environment = options.environment === true && options.model === "phong";
   const envBinding = 5 + shadows.length;
@@ -662,6 +743,8 @@ export function sceneInstancesWgsl(options: {
   pointScale?: { type: string; channel?: string };
   /** T481: casting light indices — see SceneShadingOptions.shadows. */
   shadows?: ReadonlyArray<number>;
+  /** T1285: PCF kernel radius per slot — see SceneShadingOptions.shadowSoftness. */
+  shadowSoftness?: ReadonlyArray<number>;
   /** T482: equirect environment wired — see SceneShadingOptions.environment. */
   environment?: boolean;
   /** T624: an occlusion map is bound — see SceneShadingOptions.ambientOcclusion. */
@@ -802,27 +885,11 @@ ${FRESNEL_WGSL}  lit += envColor * params.specular.rgb * envFresnel * (1.0 - par
 ${IRRADIANCE_WGSL}  lit += irradiance * albedo.rgb * (1.0 - envFresnel) * (1.0 - params.material.x) * params.environment.x${aoTerm};
 `
     : "";
+  /* T1285: the same text the surface generator emits, from the same function (§V349). */
   const shadowFactor = (index: number): string => {
     const slot = shadowSlotOf(index);
     if (slot < 0) return "";
-    return `    var shadow = 1.0;
-    {
-      let sc = params.shadow${slot}Matrix * vec4f(input.world, 1.0);
-      let suv = vec2f(sc.x * 0.5 + 0.5, 0.5 - sc.y * 0.5);
-      if (suv.x >= 0.0 && suv.x <= 1.0 && suv.y >= 0.0 && suv.y <= 1.0 && sc.z <= 1.0) {
-        let sdims = vec2f(textureDimensions(shadowMap${slot}, 0));
-        let stored = textureLoad(shadowMap${slot}, vec2i(suv * (sdims - vec2f(1.0))), 0).r;
-        /* T624 look pass: a CONSTANT bias acnes at the terminator, and every curved
-           object has one. Depth per shadow texel grows as 1/|N·L|, so the bias has to
-           grow with it — measured on E33, where 0.002 flat put a dotted crescent across
-           the lit half of a medallion and this removes it without visible peter-panning
-           (the slope term only reaches its maximum where the light is already grazing
-           and the surface is dark anyway). */
-        let bias = 0.0015 + 0.012 * (1.0 - lambert);
-        if (sc.z - bias > stored) { shadow = 0.0; }
-      }
-    }
-`;
+    return shadowFactorWgsl(slot, options.shadowSoftness?.[slot] ?? 0);
   };
   const lightField = Array.from({ length: lightCount }, (_, index) =>
     `  light${index}Meta: vec4f,\n  light${index}Color: vec4f,\n  light${index}Vector: vec4f,\n`,

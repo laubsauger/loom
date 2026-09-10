@@ -51,7 +51,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   return textureSampleLevel(mediaTexture, mediaSampler, uv, 0.0);
 }`;
 
-function compileMedia(context: unknown): CompiledNodeDescription {
+export function compileMedia(context: unknown): CompiledNodeDescription {
   const { nodeId, outputs } = readCompileInputs(context as Parameters<typeof readCompileInputs>[0]);
   const target = outputs["out"];
   if (target === undefined) return { passes: [] };

@@ -67,6 +67,8 @@ export interface UseRenderRangeInputs {
    * node supplies nothing and the loop is unchanged.
    */
   readonly onFrameRendered?: ((frameIndex: number) => Promise<void>) | undefined;
+  /** Await external output shutdown before the first offline frame is evaluated. */
+  readonly beforeRender?: (() => Promise<void>) | undefined;
   /** Test seam. The real one is a `VideoEncoder` behind the WebCodecs loader. */
   readonly loadEncoder?: typeof loadVideoEncoder;
   /** Test seam for the file ladder. */
@@ -183,6 +185,7 @@ export function useRenderRange(inputs: UseRenderRangeInputs): RenderRangeSession
         const notReproducible = nonReproducibleRenderWarning(live.graph, live.registry);
         if (notReproducible !== null) onDiagnostic(notReproducible);
         try {
+          await live.beforeRender?.();
           const rendered = await renderFrameRange({
             api,
             ref,

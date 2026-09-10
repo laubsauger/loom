@@ -136,6 +136,8 @@ describe("core catalogue (T70, T40)", () => {
       "movieFileIn",
       "webcam",
       "text",
+      "syphonIn",
+      "syphonOut",
       "mouse",
       "channelIn",
       "valueMath",

@@ -159,7 +159,11 @@ export const graphNodeSchema = z.object({
   label: z.string().min(1).max(120).optional(),
   resolution: nodeResolutionOverrideSchema.optional(),
   format: nodeFormatOverrideSchema.optional(),
-  state: z.record(z.unknown()).optional(),
+  state: z.object({
+    componentResolutionOverrides: z.record(
+      z.string().regex(/^[^/]+(?:\/[^/]+)*$/), nodeResolutionOverrideSchema,
+    ).optional(),
+  }).catchall(z.unknown()).optional(),
   ui: z
     .object({
       collapsed: z.boolean().optional(),

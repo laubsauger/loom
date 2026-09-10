@@ -18,6 +18,7 @@ import {
   CUSTOM_WGSL_UNIFORM_BINDING,
 } from "../shaders/custom-wgsl-default.wgsl.ts";
 import { SHARED_UNIFORMS_WGSL } from "../../runtime/backend/shared-uniforms.ts";
+import { SHARED_WGSL_MODULES } from "../shaders/shared-modules.ts";
 
 /** CustomWGSL — user-authored fragment effect (T15). */
 
@@ -506,5 +507,105 @@ struct Params { ${fields} };
         });
       });
     });
+  });
+});
+
+/**
+ * T1286 — A SOURCE CAN PULL IN SHARED WGSL BY NAME, AND BOTH WAYS OF GETTING IT WRONG FAIL
+ * BY NAME.
+ *
+ * Until this row a `customWgsl` source reached exactly one thing, `SHARED_UNIFORMS_WGSL`,
+ * and every other piece of WGSL in the repo was private to the file it was typed into. The
+ * mechanism is a `// @use` comment — a comment because WGSL has no preprocessor and a
+ * directive that is not a comment would make the source invalid WGSL on its own, in a pane
+ * that highlights and validates it.
+ *
+ * The claims here are the row's own: an IMPORT is the same shader as a PASTE, a missing
+ * module fails by name, and a colliding name fails by name rather than shadowing. The
+ * pixel half of "the same shader" is `custom-wgsl.gpu.test.ts`; this is the string half,
+ * and the two together are what "byte-identical" means for a compile whose product is a
+ * shader.
+ */
+describe("shared WGSL modules (T1286)", () => {
+  const withUse = (body: string) => `// @use grid\n${body}`;
+  const BODY = `@fragment
+fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
+  let cell = gridCellAt(uv, vec2f(4.0, 3.0));
+  return vec4f(cell.local, cell.index / cell.count, 1.0);
+}`;
+
+  it("importing a module is pasting it: the expansion is the module then the author's own text", () => {
+    const imported = firstPass(
+      contextFor({ parameters: { [SHADER_SOURCE_PARAMETER]: withUse(BODY) } }),
+    ).shader;
+    /* The SAME BYTES a paste would have produced, stated as the concatenation rather than
+       by rendering two arms: the author's source survives verbatim (their line numbers, and
+       anything `reflectParamsStruct` reads, are unmoved) and the module is placed in front
+       of it unaltered. The pixel half of this claim is in `custom-wgsl.gpu.test.ts` — for a
+       compile whose product IS a shader, the two together are what byte-identical means. */
+    expect(imported).toBe(`${SHARED_WGSL_MODULES["grid"]!.source}\n\n${withUse(BODY)}`);
+  });
+
+  it("a source that asks for nothing is handed nothing", () => {
+    // The blanket-prelude failure mode, asserted as absence: an untouched source must not
+    // grow code it never mentioned, or every shader pays for every module forever.
+    const shader = firstPass(contextFor()).shader ?? "";
+    expect(shader).toBe(CUSTOM_WGSL_DEFAULT_SOURCE);
+    expect(shader).not.toContain("fn gridCellAt(");
+  });
+
+  it("a module that does not exist fails, and the message names it", () => {
+    const result = customWgslNode.compile(
+      contextFor({ parameters: { [SHADER_SOURCE_PARAMETER]: `// @use worley\n${BODY}` } }),
+    );
+    expect(result.passes).toEqual([]);
+    const [diagnostic] = result.diagnostics ?? [];
+    // By NAME: "a module is missing" would send the author reading their whole file.
+    expect(diagnostic?.message).toContain("worley");
+    expect(diagnostic?.code).toBe("node.customWgsl.module");
+    // And the suggestion says what there IS, because the author cannot grep for a table
+    // they do not know exists.
+    expect(diagnostic?.suggestion).toContain("grid");
+  });
+
+  it("a name the source already declares fails rather than being shadowed", () => {
+    const collides = `// @use grid
+fn gridCellAt(uv: vec2f, grid: vec2f) -> vec4f { return vec4f(uv, grid); }
+${BODY}`;
+    const result = customWgslNode.compile(
+      contextFor({ parameters: { [SHADER_SOURCE_PARAMETER]: collides } }),
+    );
+    expect(result.passes).toEqual([]);
+    const [diagnostic] = result.diagnostics ?? [];
+    expect(diagnostic?.message).toContain("gridCellAt");
+    expect(diagnostic?.message).toContain("grid");
+    expect(diagnostic?.code).toBe("node.customWgsl.module");
+  });
+
+  it("asking twice pulls the module in once", () => {
+    // WGSL refuses a duplicate declaration, so a source that names a module on two lines —
+    // or names two modules that share a dependency — would fail at Dawn with a driver
+    // message about a redefinition it never wrote.
+    const shader = firstPass(
+      contextFor({ parameters: { [SHADER_SOURCE_PARAMETER]: `// @use grid\n// @use grid\n${BODY}` } }),
+    ).shader ?? "";
+    expect(shader.match(/fn gridCellAt\(/g)).toHaveLength(1);
+  });
+
+  it("the reflected controls are still read from what the AUTHOR wrote", () => {
+    /* The mechanism must not change what the node's knobs are. A module's own declarations
+       are not the author's `struct Params`, and a source that imports one still reflects
+       exactly the fields it declares itself — otherwise sharing code would silently change
+       a node's control surface, which is §V288 with extra steps. */
+    const source = `// @use grid
+struct Params {
+  gain: f32,  // @default 0.5  the only knob here
+};
+@group(0) @binding(3) var<uniform> params: Params;
+${BODY}`;
+    const pass = firstPass(
+      contextFor({ parameters: { [SHADER_SOURCE_PARAMETER]: source, gain: 0.25 } }),
+    );
+    expect(pass.uniforms).toEqual({ gain: 0.25 });
   });
 });

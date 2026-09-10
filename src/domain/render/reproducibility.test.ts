@@ -101,6 +101,7 @@ describe("T645 — every registered node type is classified, or this fails (§V4
       // per-machine portability caveat carried on the table row and the node description.
       "personMask:async-cached",
       "pose:async-cached",
+      "syphonIn:external-live",
       "webcam:external-live",
     ]);
   });

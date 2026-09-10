@@ -323,6 +323,19 @@ export const lightNode: NodeDefinition = {
         "World-units half-extent of the shadow volume around the origin. Explicit on purpose: nothing knows your scene's bounds, and a guessed box would crop shadows plausibly-wrong (V426).",
       inactiveWhen: (values) => (values["shadows"] === true ? null : "Only a casting light frames a shadow volume."),
     },
+    shadowSoftness: {
+      type: "number",
+      label: "Shadow Softness",
+      default: 2,
+      min: 0,
+      max: 4,
+      step: 1,
+      range: "bounded",
+      compileTime: true,
+      description:
+        "T1285: PCF radius in SHADOW MAP TEXELS — (2r+1)² taps per lit fragment this light reaches, averaged, giving a penumbra 2r+1 texels wide instead of a hard staircase. Priced per tap in the MAIN pass, not a second sweep. 0 is the single-tap hard edge; turn it down if the shot cannot afford 25 loads.",
+      inactiveWhen: (values) => (values["shadows"] === true ? null : "Only a casting light has an edge to soften."),
+    },
   },
   compile(context): CompiledNodeDescription {
     const { parameters } = readCompileInputs(context);
@@ -337,6 +350,7 @@ export const lightNode: NodeDefinition = {
         position: vec3(parameters, "position", [1, 2, 1.5]),
         shadows: parameters["shadows"] === true,
         shadowExtent: readNumber(parameters, "shadowExtent", 8),
+        shadowSoftness: readNumber(parameters, "shadowSoftness", 2),
       },
     };
     return { passes: [], scene: { out: payload } } as CompiledNodeDescription;
@@ -1139,6 +1153,13 @@ export const renderNode: NodeDefinition = {
     );
     const shadowTargetOf = (slot: number): string => `scratch:${nodeId}:shadow${casting[slot]?.index ?? slot}`;
     const castingIndices = casting.map(({ index }) => index);
+    /* T1285: the PCF radius per casting slot, in the same slot order `shadowMatrices`
+       uses. Clamped to the parameter's own range here rather than in the shader, because
+       an expression can drive it past the slider and a generated loop is not a place to
+       discover that: 4 is 81 taps and the ceiling the knob declares. */
+    const shadowSoftness = casting.map(({ light }) =>
+      Math.min(4, Math.max(0, Math.round(light.shadowSoftness))),
+    );
 
     /* T482: the environment, wired or absent — presence is structural (a shader
        variant, like maps); intensity is a value. */
@@ -1709,7 +1730,7 @@ export const renderNode: NodeDefinition = {
                     ...(payload.scaleAttribute.channel === undefined ? {} : { channel: payload.scaleAttribute.channel }),
                   },
                 }),
-            ...(castingIndices.length === 0 ? {} : { shadows: castingIndices }),
+            ...(castingIndices.length === 0 ? {} : { shadows: castingIndices, shadowSoftness }),
             ...(environmentResource === undefined ? {} : { environment: true }),
             ...(aoActive ? { ambientOcclusion: true } : {}),
             ...(projActive ? { projectors: projectorOptions } : {}),
@@ -1885,7 +1906,7 @@ export const renderNode: NodeDefinition = {
           lightCount: lights.length,
           maps,
           ...(payload.colorAttribute === undefined ? {} : { pointColor: true }),
-          ...(castingIndices.length === 0 ? {} : { shadows: castingIndices }),
+          ...(castingIndices.length === 0 ? {} : { shadows: castingIndices, shadowSoftness }),
           ...(environmentResource === undefined ? {} : { environment: true }),
           ...(aoActive ? { ambientOcclusion: true } : {}),
           ...(projActive ? { projectors: projectorOptions } : {}),

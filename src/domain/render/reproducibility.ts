@@ -88,6 +88,8 @@ export const NODE_REPRODUCIBILITY: Readonly<Record<string, Reproducibility>> = {
   // is false, so `freeRunMediaNodes` never saw it and T586's warning returned null for a
   // document whose whole content was a live camera.
   webcam: "external-live",
+  syphonIn: "external-live",
+  syphonOut: "pure",
   // FOUND BY THIS EXERCISE, not by the brief. The session's microphone, read through
   // `valueEvaluate({ audio })`. §V353 makes the ABSENCE of a track deterministic — no
   // track replays all-zeros, the same silence every run — but a live mic during a take is

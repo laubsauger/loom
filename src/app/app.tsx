@@ -89,6 +89,8 @@ import { useLaserBridge } from "./use-laser-bridge.ts";
 import { useVisionBridge } from "./use-vision-bridge.ts";
 import type { LoomBackend } from "@runtime/backend/index.ts";
 import { useMediaSources } from "./use-media-sources.ts";
+import { useNativeInputs } from "./use-native-inputs.ts";
+import { useNativeOutputs } from "./use-native-outputs.ts";
 import { createMediaControlRegistry, useMediaCommands } from "./media-commands.ts";
 import { useProject } from "./use-project.ts";
 import { useRenderRange } from "./use-render-range.ts";
@@ -725,6 +727,7 @@ export function App({
     undefined,
     mediaControls,
   );
+  const nativeInputs = useNativeInputs(runtime, backend ?? null, compile.flatGraph, compile.compiled);
 
   // T214/§V125: an expression on a pulse parameter fires it on its rising edge. The
   // watcher needs a frame, so it rides the frame loop's observer seam.
@@ -1236,7 +1239,9 @@ export function App({
    * the readback counters (§V7, §V48) live on the instance, so two would split the
    * accounting and warn twice about the same read.
    */
+  const nativeOutputs = useNativeOutputs(runtime, backend ?? null, compile.flatGraph, frameLoop.installedPlan);
   const renderRange = useRenderRange({
+    beforeRender: nativeOutputs.suspend,
     bus: runtime.bus,
     exports: agentPorts.exports,
     compiled: compile.compiled,
@@ -1277,6 +1282,8 @@ export function App({
       ...compile.diagnostics,
       ...valueGraph.diagnostics,
       ...media.diagnostics,
+      ...nativeInputs.diagnostics,
+      ...nativeOutputs.diagnostics,
       // T942 tier 3 — why OSC is not working, keyed to the node it concerns. It joins the
       // ONE list rather than growing a panel of its own: the owner's ruling is that a
       // device's interface lives in its NODE, so its degraded reason belongs on the
@@ -1305,6 +1312,8 @@ export function App({
     frameLoop.diagnostics,
     valueGraph.diagnostics,
     media.diagnostics,
+    nativeInputs.diagnostics,
+    nativeOutputs.diagnostics,
     osc.diagnostics,
     laser.diagnostics,
     vision.diagnostics,

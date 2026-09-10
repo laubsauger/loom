@@ -64,7 +64,7 @@ export function useNativeOutput(backend: LoomBackend | null, selection: NativeOu
       name.current = outputName;
       const sender = nativeOutputSender(outputName);
       channel.current = sender; setActive(true);
-      await Promise.all([bridge.open(outputName, selection.size[0], selection.size[1]), sender.promise]);
+      await Promise.all([bridge.open(outputName, selection.size[0], selection.size[1], outputName), sender.promise]);
       if (generation.current !== epoch) { await bridge.close(outputName); return; }
       const canvas = new OffscreenCanvas(selection.size[0], selection.size[1]);
       session.current = attachNativeOutput(backend, selection, canvas);

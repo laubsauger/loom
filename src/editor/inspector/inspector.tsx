@@ -23,6 +23,8 @@ import { ConnectionsSection } from "./connections-section.tsx";
 import { connectionModel } from "./connections.ts";
 import { AudioSection, audioSectionParameters } from "./audio-section.tsx";
 import { WebcamSection, webcamSectionParameters } from "./webcam-section.tsx";
+import { SyphonSection, syphonSectionParameters } from "./syphon-section.tsx";
+import { SYPHON_IN_TYPE } from "@nodes/definitions/syphon-in.ts";
 import { MidiSection, midiSectionParameters } from "./midi-section.tsx";
 import { LaserSection, laserSectionParameters } from "./laser-section.tsx";
 import { ComponentSection, componentSectionParameters } from "./component-section.tsx";
@@ -573,6 +575,7 @@ export function Inspector({
   const showsAudioSection =
     audioStatus !== undefined && (node.type === "audioIn" || node.type === "audioFileIn");
   const showsWebcamSection = node.type === "webcam";
+  const showsSyphonSection = node.type === SYPHON_IN_TYPE;
   const showsMidiSection = midi !== undefined && node.type === "midiIn";
   // The CONSTANT, not the literal: §T1005's tripwire reads an emitting type's literal
   // in session code as an unregistered pump's tell, and this section is a surface.
@@ -584,6 +587,7 @@ export function Inspector({
   const presentedBySections = new Set<string>([
     ...(showsAudioSection ? audioSectionParameters(node.type as "audioIn" | "audioFileIn") : []),
     ...(showsWebcamSection ? webcamSectionParameters() : []),
+    ...(showsSyphonSection ? syphonSectionParameters() : []),
     ...(showsMidiSection ? midiSectionParameters() : []),
     ...(showsLaserSection ? laserSectionParameters() : []),
     ...(showsComponentSection ? componentSectionParameters() : []),
@@ -743,6 +747,8 @@ export function Inspector({
         editor={editor}
       />
     ) : null;
+  const syphonSection = showsSyphonSection ? <SyphonSection nodeId={node.id}
+    source={typeof resolved.values["source"] === "string" ? resolved.values["source"] as string : ""} editor={editor} /> : null;
 
   /* T942: the controller gets its learn table and its ONE honest sentence about why there
      is no MIDI — keyed on the node TYPE, as the mic and camera sections are. */
@@ -909,6 +915,7 @@ export function Inspector({
             backwards. */}
         {audioSection}
         {webcamSection}
+        {syphonSection}
         {midiSection}
         {laserSection}
         {componentSection}
@@ -932,6 +939,7 @@ export function Inspector({
           {/* Controls above the result they write — see the node variant above. */}
           {audioSection}
           {webcamSection}
+          {syphonSection}
           {midiSection}
           {laserSection}
         {componentSection}
@@ -947,4 +955,3 @@ export function Inspector({
     </div>
   );
 }
-

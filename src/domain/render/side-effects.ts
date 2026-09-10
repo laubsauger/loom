@@ -263,6 +263,8 @@ export const NODE_SIDE_EFFECTS: Readonly<Record<string, SideEffect>> = {
    * most benign answer on that axis and the only `"emits"` on this one.
    */
   webcam: "none",
+  syphonIn: "none",
+  syphonOut: "emits",
   audioIn: "none",
   mouse: "none",
   midiIn: "none",

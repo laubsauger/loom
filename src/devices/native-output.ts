@@ -8,7 +8,7 @@ export interface NativeOutputSelection {
 }
 export interface DesktopOutputBridge {
   readonly nativeOutput: true;
-  open(name: string, width: number, height: number): Promise<void>;
+  open(name: string, width: number, height: number, publisherName: string): Promise<void>;
   close(name: string): Promise<void>;
   resize(name: string, width: number, height: number): Promise<void>;
   status(name: string): Promise<{ copied: number; dropped: number; error: string | null }>;
