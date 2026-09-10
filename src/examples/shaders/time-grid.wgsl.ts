@@ -53,34 +53,7 @@ import { SHARED_UNIFORMS_WGSL } from "../../runtime/backend/shared-uniforms.ts";
  * still land in its own cell — a wall whose tear bled across a seam would look like a
  * broken tiling rather than sixteen broken monitors.
  */
-export const TIME_GRID_CELL_WGSL = `struct Cell {
-  index: f32,
-  count: f32,
-  last: f32,
-  local: vec2f,
-  origin: vec2f,
-  size: vec2f,
-};
-
-/* The SAME partition Tile uses: floor(uv * repeat), offset zero. Both round the count the
-   same way (Tile's \`repeat\` is a "floor"-ranged vector), so a cell here is exactly a cell
-   there and no delay or tear ever straddles a seam. */
-fn cellAt(uv: vec2f, grid: vec2f) -> Cell {
-  let cols = max(1.0, floor(grid.x + 0.5));
-  let rows = max(1.0, floor(grid.y + 0.5));
-  let ij = clamp(floor(uv * vec2f(cols, rows)), vec2f(0.0), vec2f(cols - 1.0, rows - 1.0));
-  var cell: Cell;
-  cell.index = (ij.y * cols) + ij.x;
-  cell.count = cols * rows;
-  /* One cell is a legal wall, and it must not divide by zero on its way to "now". */
-  cell.last = max(1.0, cell.count - 1.0);
-  cell.size = vec2f(1.0 / cols, 1.0 / rows);
-  cell.origin = ij * cell.size;
-  cell.local = clamp((uv - cell.origin) / cell.size, vec2f(0.0), vec2f(1.0));
-  return cell;
-}
-
-/*
+export const TIME_GRID_CELL_WGSL = `/*
  * Integer avalanche (the "lowbias32" family), and INTEGER on purpose: a float hash built
  * on fract(sin(x)) is a different number on every driver, and §V44's sibling promise — a
  * seeded look replays identically — would be a per-machine accident. u32 shifts and
@@ -100,7 +73,7 @@ fn hashU(value: u32) -> f32 {
    degradation obeys, because a tear or a fringe that crossed a seam would read as a
    broken TILING rather than as a broken monitor. The +4.0 is there because fract() of a
    negative is not the wrap we want and every shove is signed. */
-fn tap(cell: Cell, dx: f32) -> vec4f {
+fn tap(cell: GridCell, dx: f32) -> vec4f {
   let local = vec2f(fract(cell.local.x + dx + 4.0), cell.local.y);
   return textureSampleLevel(inputTexture, inputSampler, cell.origin + (local * cell.size), 0.0);
 }`;
@@ -121,13 +94,14 @@ struct Params {
 @group(0) @binding(2) var<uniform> frameU: SharedFrame;
 @group(0) @binding(3) var<uniform> params: Params;
 
+// @use grid
 ${TIME_GRID_CELL_WGSL}
 
 const SHOT_ANGLES: f32 = ${SHOT_ANGLES};
 
 @fragment
 fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
-  let cell = cellAt(uv, params.grid);
+  let cell = gridCellAt(uv, params.grid);
   let index = cell.index;
   let seed = u32(clamp(params.seed, 0.0, 65535.0));
   let mode = i32(params.mode + 0.5);
@@ -253,6 +227,7 @@ struct Params {
 @group(0) @binding(2) var<uniform> frameU: SharedFrame;
 @group(0) @binding(3) var<uniform> params: Params;
 
+// @use grid
 ${TIME_GRID_CELL_WGSL}
 
 /*
@@ -346,7 +321,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   let here = textureLoad(inputTexture, texel, 0);
   if (params.amount <= 0.0) { return vec4f(here.rgb, 1.0); }
 
-  let cell = cellAt(uv, params.grid);
+  let cell = gridCellAt(uv, params.grid);
   let index = u32(cell.index);
   let seed = u32(clamp(params.seed, 0.0, 65535.0));
   /* FRAMES, not seconds: an event two frames long has to be counted in the unit it is two
@@ -520,6 +495,7 @@ struct Params {
 @group(0) @binding(2) var<uniform> frameU: SharedFrame;
 @group(0) @binding(3) var<uniform> params: Params;
 
+// @use grid
 ${TIME_GRID_CELL_WGSL}
 
 /* Slow against everything else on the wall: one pass every ~7.7 s at Rate 1. The whole
@@ -543,7 +519,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   let band = 1.0 - smoothstep(0.0, SWEEP_HALF_WIDTH, wrapped);
   if (band <= 0.0) { return here; }
 
-  let cell = cellAt(uv, params.grid);
+  let cell = gridCellAt(uv, params.grid);
   /* 0.12 of a CELL width at full Chroma, measured against the picture rather than
      chosen: at 0.05 the fringe was under two texels on a 6-wide wall and did not read. */
   let shift = 0.12 * params.amount * band;
