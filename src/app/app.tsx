@@ -234,7 +234,19 @@ export function App({
   // Selection and hover are not document state — the graph models neither — but the
   // keymap resolves selection-driven command input against them (§T77).
   const [selection, setSelection] = useState<readonly NodeId[]>([]);
-  const [hoveredNodeId, setHoveredNodeId] = useState<NodeId | null>(null);
+  /**
+   * T1238 — HOVER IS A REF, NOT STATE. Nothing renders from it: its one reader is the
+   * keymap, which resolves `inputFrom: "hoveredNode"` at PRESS time through the getter on
+   * `environment` below. As state it re-rendered `App` on every node enter/leave, and
+   * §T1235 measured that as the pan/zoom tail on chain-200 — ~40 `App` commits per
+   * gesture as the canvas moved nodes under a stationary pointer, 14–17 per node drag —
+   * each one a re-render of every pane. Same shape as §T1177's selection fix on the
+   * canvas: ref + stable getter, read when a key is pressed.
+   */
+  const hoveredNodeRef = useRef<NodeId | null>(null);
+  const onHoveredNodeChange = useCallback((nodeId: NodeId | null) => {
+    hoveredNodeRef.current = nodeId;
+  }, []);
   const [portDrag, setPortDrag] = useState<PortDragOrigin | null>(null);
   const [rejection, setRejection] = useState<readonly RuntimeDiagnostic[]>(NO_DIAGNOSTICS);
   /** A pane the browser refused to open a window for (§V97). It is docked again. */
@@ -1008,7 +1020,7 @@ export function App({
       owned.current = true;
       setRuntime(next);
       setSelection([]);
-      setHoveredNodeId(null);
+      hoveredNodeRef.current = null;
       setRejection(NO_DIAGNOSTICS);
       /*
        * T792 — the ACCUMULATING diagnostic stores are about the outgoing document, so
@@ -1064,7 +1076,7 @@ export function App({
     owned.current = true;
     setRuntime(next);
     setSelection([]);
-    setHoveredNodeId(null);
+    hoveredNodeRef.current = null;
     setRejection(NO_DIAGNOSTICS);
     /*
      * T1164 — an empty canvas is a DELIBERATE choice, so the next boot honours it.
@@ -1415,8 +1427,105 @@ export function App({
   ]);
 
   const environment = useMemo<KeymapEnvironment>(
-    () => ({ context: "global", selection, hoveredNodeId }),
-    [hoveredNodeId, selection],
+    () => ({
+      context: "global",
+      selection,
+      // A getter, so the object is stable across hovers and still answers with the node
+      // under the pointer at the moment the keymap asks (T1238, see `hoveredNodeRef`).
+      get hoveredNodeId() {
+        return hoveredNodeRef.current;
+      },
+    }),
+    [selection],
+  );
+
+  /**
+   * T1238 — THE PANES THAT DO NOT READ THE DOCUMENT ARE BUILT ONCE PER CHANGE OF WHAT
+   * THEY DO READ, NOT ONCE PER RENDER OF `App`.
+   *
+   * `App` subscribes to the store (`useGraphCompile`) and re-renders on every revision;
+   * it also holds selection and port-drag state. That is its job. What it must not do is
+   * hand every pane a FRESH ELEMENT each time, because a fresh element is a re-render
+   * whatever its props say — and §T1235 measured what that cost: on E24 a 2 s knob drag
+   * committed `NodeIdentity×108 CostCell×94 Presence×44` 118 times at 15.7 ms each,
+   * 1.85 s of an 8.1 s window, with the 30 ms input latency to match; on chain-200 the
+   * same group fired ~40× per pan/zoom gesture (hover was `App` state then — see
+   * `hoveredNodeRef`) and 14–17× per node drag. Not one of those panes reads the
+   * document: the library renders the registry, the components and examples panes their
+   * own catalogues, the performance panel the hub, the agent panel the surface.
+   *
+   * The profile attributed the pan/zoom commits to "the viewport persists to the
+   * document". It does not: nothing in the product emits a `setViewport` patch (the op
+   * exists for agents, `apply-patch.ts`), so a wheel step never bumps the revision. The
+   * trigger was hover, and it is gone from the render path.
+   *
+   * So each is memoised on the props it is handed — §V939: the boundary is keyed on what
+   * the pane READS, and every key is a value the pane displays or calls. React sees the
+   * same element object and skips the subtree. The canvas, inspector, viewer, shader
+   * pane and problems pane are NOT here: they read the document and must re-render with
+   * it (the inspector's own boundary is §T1177's, on resolved values).
+   *
+   * Each `ErrorBoundary` is inside its memo on purpose: the boundary's `children` is the
+   * pane element, and a boundary rebuilt per render would re-render the pane through it.
+   * `pane-render-boundaries.test.tsx` counts the library's renders across revisions and
+   * a selection change and fails if any of these memos is lost.
+   */
+  const nodeLibrary = useMemo(
+    () => (
+      <ErrorBoundary name="Node library">
+        <LibraryPane portDrag={portDrag} onClearPortDrag={clearPortDrag} actions={graphActions} />
+      </ErrorBoundary>
+    ),
+    [clearPortDrag, graphActions, portDrag],
+  );
+  const componentLibrary = useMemo(
+    () => (
+      <ErrorBoundary name="Components">
+        <ComponentLibrary
+          bus={runtime.bus}
+          context={runtime.invocation}
+          components={componentsView}
+          selection={selection}
+          onPlaced={selectNodes}
+        />
+      </ErrorBoundary>
+    ),
+    [componentsView, runtime.bus, runtime.invocation, selectNodes, selection],
+  );
+  const exampleLibrary = useMemo(
+    () => (
+      <ErrorBoundary name="Examples">
+        <ExampleLibrary
+          bus={runtime.bus}
+          context={runtime.invocation}
+          dirty={dirty.dirty}
+          /*
+           * T1164 — the pointer, written only once the open actually LANDED
+           * (`example-library.tsx` fires this after the bus reports `opened`). A
+           * refused open, or one the unsaved-work guard cancelled, leaves the user
+           * where they were and must leave this where it was too.
+           */
+          onOpened={rememberOpenedExample}
+        />
+      </ErrorBoundary>
+    ),
+    [dirty.dirty, rememberOpenedExample, runtime.bus, runtime.invocation],
+  );
+  const performancePane = useMemo(
+    () => (
+      <ErrorBoundary name="Performance">
+        <PerformancePane status={status} cookPolicy={cookPolicy} onCookPolicyChange={setCookPolicy} />
+      </ErrorBoundary>
+    ),
+    [cookPolicy, status],
+  );
+  const agentPane = useMemo(
+    () => (
+      <ErrorBoundary name="Agent">
+        <AgentPane surface={agentSurface} transports={mcpTransports} onOpenSetup={openAgentHelp} />
+      </ErrorBoundary>
+    ),
+    [agentSurface, mcpTransports, openAgentHelp],
   );
 
   return (
@@ -1539,42 +1648,10 @@ export function App({
            * throws (a click, a blur) is not caught here — and does not white-screen either,
            * so it is a different failure with a different fix (§V288: say which one this is).
            */
-          nodeLibrary={
-            <ErrorBoundary name="Node library">
-              <LibraryPane
-                portDrag={portDrag}
-                onClearPortDrag={clearPortDrag}
-                actions={graphActions}
-              />
-            </ErrorBoundary>
-          }
-          componentLibrary={
-            <ErrorBoundary name="Components">
-              <ComponentLibrary
-                bus={runtime.bus}
-                context={runtime.invocation}
-                components={componentsView}
-                selection={selection}
-                onPlaced={selectNodes}
-              />
-            </ErrorBoundary>
-          }
-          exampleLibrary={
-            <ErrorBoundary name="Examples">
-              <ExampleLibrary
-                bus={runtime.bus}
-                context={runtime.invocation}
-                dirty={dirty.dirty}
-                /*
-                 * T1164 — the pointer, written only once the open actually LANDED
-                 * (`example-library.tsx` fires this after the bus reports `opened`). A
-                 * refused open, or one the unsaved-work guard cancelled, leaves the user
-                 * where they were and must leave this where it was too.
-                 */
-                onOpened={rememberOpenedExample}
-              />
-            </ErrorBoundary>
-          }
+          // T1238: the document-free panes are the memoised elements above.
+          nodeLibrary={nodeLibrary}
+          componentLibrary={componentLibrary}
+          exampleLibrary={exampleLibrary}
           graphCanvas={
             // T145: ONE popup for the pane, opened by ONE command. Middle click is
             // handled inside the host; the `?` binding and the node menu's Info item
@@ -1605,7 +1682,7 @@ export function App({
               <GraphPane
                 selection={selection}
                 onSelectionChange={onSelectionChange}
-                onHoveredNodeChange={setHoveredNodeId}
+                onHoveredNodeChange={onHoveredNodeChange}
                 portDrag={portDrag}
                 onPortDragChange={onPortDragChange}
                 onPatchResult={onPatchResult}
@@ -1769,20 +1846,8 @@ export function App({
               <ProblemsPanel diagnostics={problems} onClear={clearProblems} />
             </ErrorBoundary>
           }
-          performance={
-            <ErrorBoundary name="Performance">
-              <PerformancePane
-                status={status}
-                cookPolicy={cookPolicy}
-                onCookPolicyChange={setCookPolicy}
-              />
-            </ErrorBoundary>
-          }
-          agent={
-            <ErrorBoundary name="Agent">
-              <AgentPane surface={agentSurface} transports={mcpTransports} onOpenSetup={openAgentHelp} />
-            </ErrorBoundary>
-          }
+          performance={performancePane}
+          agent={agentPane}
         />
         {/* T359/§V307: opened by `ui.openSettings`, never by a flag set from here. The
             host owns the open state; the top bar, `mod+,` and the palette all execute the
