@@ -214,17 +214,20 @@ function planFor(modelId: string, nodeType: InferenceNodeType): ModelPlan {
 
 export function createWorkerCore(options: WorkerCoreOptions) {
   const sessions = new Map<string, Promise<LoadedSession>>();
-  // Weights are shared per session; image history is private to each node/session.
-  const previousMatte = new Map<string, Float32Array>();
+  // Node-owned containers are also lifetime tokens. Deletion removes the container;
+  // an already running inference may hold it, but cannot publish it into a new node.
+  const streams = new Map<string, {
+    previousMatte: Map<string, Float32Array>;
+    recurrent: Map<string, { ratio: number; side: number; tensors: Record<string, unknown> }>;
+  }>();
   /*
    * T1040/T1319 — recurrent state per node/session, never shared with another node.
    *
    * The tensors are the RUNTIME's own, held opaquely and handed straight back: on a GPU
    * execution provider they may never be CPU-resident at all, and touching `.data` would
    * force a download this loop exists to avoid. Both input side and downsample ratio
-   * decide their shape. Cleared with the session, like everything else here.
+   * decide their shape. Node deletion retires history without unloading shared weights.
    */
-  const recurrent = new Map<string, { ratio: number; side: number; tensors: Record<string, unknown> }>();
   const now = options.now ?? (() => (typeof performance === "undefined" ? 0 : performance.now()));
 
   /**
@@ -282,6 +285,15 @@ export function createWorkerCore(options: WorkerCoreOptions) {
   return {
     async handle(request: InferenceRequest): Promise<void> {
       try {
+        if (request.kind === "forget") {
+          for (const nodeId of request.nodeIds) {
+            const stream = streams.get(nodeId);
+            stream?.previousMatte.clear();
+            stream?.recurrent.clear();
+            streams.delete(nodeId);
+          }
+          return;
+        }
         if (request.kind === "load") {
           const { sessionKey } = request;
           let held = sessions.get(sessionKey);
@@ -317,9 +329,15 @@ export function createWorkerCore(options: WorkerCoreOptions) {
           return;
         }
 
+        let stream = streams.get(request.nodeId);
+        if (stream === undefined) {
+          stream = { previousMatte: new Map(), recurrent: new Map() };
+          streams.set(request.nodeId, stream);
+        }
         const { session, backend } = await pending;
-        // JSON tuple encoding preserves opaque IDs even when they contain separators.
-        const temporalKey = JSON.stringify([request.sessionKey, request.nodeId]);
+        if (streams.get(request.nodeId) !== stream) throw new Error("inference node was retired");
+        const { previousMatte, recurrent } = stream;
+        const temporalKey = request.sessionKey;
         const plan = planFor(request.modelId, request.nodeType);
         const side = request.side === 0 ? POSE_INPUT_SIDE : request.side;
         const packed = plan.pack(new Float32Array(request.texels), side);
@@ -369,6 +387,7 @@ export function createWorkerCore(options: WorkerCoreOptions) {
 
         const started = now();
         const outputs = await session.run(feeds);
+        if (streams.get(request.nodeId) !== stream) throw new Error("inference node was retired");
         const millis = now() - started;
 
         /* §V861 — BY NAME. The one line this whole task exists for; see MODEL_PLANS. */

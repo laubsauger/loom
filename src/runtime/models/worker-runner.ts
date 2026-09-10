@@ -84,6 +84,8 @@ export interface WorkerRunnerOptions {
 
 export interface WorkerRunner {
   run(nodeId: string, texels: ArrayBuffer): Promise<Uint8Array>;
+  /** All inference nodes still in the graph, including temporarily unused nodes. */
+  retainNodes(nodeIds: readonly string[]): void;
   dispose(): void;
 }
 
@@ -91,9 +93,10 @@ export function createWorkerRunner(options: WorkerRunnerOptions): WorkerRunner {
   let nextId = 1;
   // A terminated worker cannot accept another request. Reset creates a new runner.
   let stopped: Error | undefined;
+  const streams = new Map<string, object>();
   const pending = new Map<
     number,
-    { nodeId: string; resolve(bytes: Uint8Array): void; reject(error: Error): void }
+    { nodeId: string; request?: Extract<InferenceRequest, { kind: "run" }>; resolve(bytes: Uint8Array): void; reject(error: Error): void }
   >();
   const loads = new Map<string, Promise<void>>();
   const loadWaiters = new Map<string, { resolve(): void; reject(error: Error): void }>();
@@ -172,12 +175,12 @@ export function createWorkerRunner(options: WorkerRunnerOptions): WorkerRunner {
       const target = options.describe(nodeId);
       if (target === undefined) throw new Error(`no inference target for "${nodeId}"`);
       const sessionKey = sessionKeyFor(target.modelId, target.providers);
-      await ensureLoaded(target.modelId, sessionKey, target.providers);
-      if (stopped !== undefined) throw stopped;
+      let stream = streams.get(nodeId);
+      if (stream === undefined) {
+        stream = {};
+        streams.set(nodeId, stream);
+      }
       const requestId = nextId++;
-      const settled = new Promise<Uint8Array>((resolve, reject) => {
-        pending.set(requestId, { nodeId, resolve, reject });
-      });
       const request: InferenceRequest = {
         kind: "run",
         requestId,
@@ -196,19 +199,50 @@ export function createWorkerRunner(options: WorkerRunnerOptions): WorkerRunner {
         ratio: target.ratio,
         smoothing: target.smoothing,
       };
-      options.worker.postMessage(request, [texels]);
+      const settled = new Promise<Uint8Array>((resolve, reject) => {
+        pending.set(requestId, { nodeId, request, resolve, reject });
+      });
+      // Track the caller before loading so deletion can reject a stalled acquisition.
+      void ensureLoaded(target.modelId, sessionKey, target.providers).then(() => {
+        if (stopped !== undefined) throw stopped;
+        if (streams.get(nodeId) !== stream) throw new Error(`inference node "${nodeId}" was retired`);
+        const waiter = pending.get(requestId);
+        const queued = waiter?.request;
+        if (queued === undefined) throw new Error(`inference request ${requestId} is not pending`);
+        // Keep queued pixels only in pending, so deletion during loading drops them.
+        delete waiter!.request;
+        options.worker.postMessage(queued, [queued.texels]);
+      }).catch(error => {
+        const waiter = pending.get(requestId);
+        pending.delete(requestId);
+        waiter?.reject(error instanceof Error ? error : new Error(String(error)));
+      });
       return settled;
+    },
+    retainNodes(nodeIds) {
+      if (stopped !== undefined) return;
+      const keep = new Set(nodeIds);
+      const removed = [...streams.keys()].filter(nodeId => !keep.has(nodeId));
+      if (removed.length === 0) return;
+      for (const nodeId of removed) streams.delete(nodeId);
+      for (const [id, waiter] of pending) {
+        if (keep.has(waiter.nodeId)) continue;
+        pending.delete(id);
+        waiter.reject(new Error(`inference node "${waiter.nodeId}" was retired`));
+      }
+      options.worker.postMessage({ kind: "forget", nodeIds: removed });
     },
     dispose() {
       const gone = new Error("the inference worker was disposed");
       stopped = gone;
+      streams.clear();
       options.worker.terminate();
       for (const [, waiter] of pending) waiter.reject(gone);
       pending.clear();
       /*
        * B190: the LOAD waiters too, and the `loads` cache with them.
        *
-       * `run` awaits `ensureLoaded` BEFORE it enters `pending`, so a worker terminated
+       * Previously `run` awaited `ensureLoaded` before entering `pending`, so a worker terminated
        * mid-load left its load promise settling NEVER — `terminate()` fires no `error`
        * event, so nothing else was ever going to reject it. That wedged the caller's
        * `inFlight` latch permanently, and since `dispose()` is what the Reset gesture

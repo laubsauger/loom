@@ -809,6 +809,11 @@ export function useModelInference(
         });
       }
       targetsRef.current = targets;
+      // Demand pruning is not deletion: retain history for every inference node that
+      // still exists in the graph, including nodes with no allocated render resources.
+      workerRef.current?.retainNodes(
+        Object.keys(graph.nodes).filter(nodeId => kindFor(graph.nodes[nodeId]!.type) !== undefined),
+      );
       // Only when the SET changed: a values-only recompile re-derives the same targets
       // sixty times a second and must not re-render the notice strip (§V16).
       setTracked((prior) => (sameTargets(prior, targets) ? prior : targets));

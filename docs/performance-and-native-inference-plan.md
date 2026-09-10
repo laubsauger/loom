@@ -4,6 +4,18 @@ Investigation and implementation record: 2026-09-10. Original baseline HEAD: `cb
 
 ## Recommended direction
 
+**T1327/T1328 development follow-up:** the actual app now runs through
+`pnpm desktop:dev <explicit-electron-executable>`; see the
+[development-shell instructions](../experiments/electron-app/README.md).
+Owner requested current experimental releases: official Electron 45.0.0-alpha.5
+was downloaded and checksum-verified in the ignored worktree cache. Its app smoke
+passes WebGPU, real shared worker memory, sandbox/Node isolation, starter pixels
+and blank pane-window access. Its native pixel and early-release probes pass,
+but GPU-loss callback recovery still fails. The UI shell and synthetic Python
+transport are separate; no native-model frames enter graph nodes yet. Device/file
+permission UX, packaging and Windows validation remain open. Earlier 43.3.0
+results below are version-scoped historical evidence, not the selected current test binary.
+
 Implementation follow-up (SPEC T1249–T1253, T1300 onward): the isolated [Mac native-texture proof](../experiments/native-texture-bridge/README.md) carries synthetic Metal output from a separate Python 3.14.6 process through XPC IOSurface capability transfer, Electron 43.3.0, and sandboxed WebGPU. Twenty-four color/float frames, distinct peer PIDs, producer release acknowledgments, and temporary-service cleanup passed; ownership and producer/consumer/renderer-exit tests passed too. **T1317 GPU-process-loss gate fails reproducibly:** device loss and explicit renderer reference release arrive, but the final Electron release callback does not. The prototype fails closed, never acknowledges reuse, and verifies service cleanup on teardown. Fresh sessions pass afterward; neither safe in-session recovery nor the cause of the earlier startup stall is proven. Real model integration, browser GPU-input export, strict zero-copy internals, throughput and Windows remain unproven.
 
 Application-side work now includes corrected sRGB presentation, linear sampled-space metadata, sRGB8 defaults for new projects, explicit float numerical paths, optimized Noise, and four audited SDR examples plus two starters. Their resolution and required numerical precision are preserved. The [example audit](example-precision-audit.md) covers 58 examples and ten starters; it is not a blanket migration. T1315's frozen-production Alembic comparison was rejected because reference workloads drifted; lower allocation bytes are proven, a format speedup is not. T1316's Alembic rewrite was rejected for excessive image differences. Windows parity and worker scheduling remain separate follow-ups.
@@ -459,6 +471,16 @@ A native extension could map shared CPU pages and expose a managed buffer, but E
 
 ## Desktop recommendation and transport proof
 
+**T1330 narrows the adapter:** the existing backend `registerMediaSource` path
+already accepts VideoFrame through `copyExternalImageToTexture`. On current
+Electron 45 alpha, the isolated Python/IOSurface proof now exercises that exact
+API shape: 24 color/float frames pass with signed/above-one values preserved,
+including immediate renderer reference release after submission. This suggests
+reusing the media boundary before adding a separate external-texture shader
+adapter. It is one GPU copy into graph-owned storage, not strict zero-copy.
+App-level acquisition/replacement/unregistration lifetimes, explicit float targets
+for numerical data, other color spaces and full-resolution cost remain gates.
+
 Electron is the first candidate because it keeps a bundled Chromium runtime and exposes a native shared-texture import route. Tauri uses the platform's WebView, including WebKit on macOS and WebView2 on Windows, so adopting it would add a different rendering-engine compatibility problem to this work. This is an engineering fit recommendation, not a claim that Electron renders faster. [Tauri WebViews](https://v2.tauri.app/reference/webview-versions/).
 
 Electron's `sharedTexture` API is experimental. It imports platform texture handles, sends imported references to a renderer and exposes a VideoFrame. Mac handles are process-local IOSurface references; Windows handles are process-local NT handles. Transporting the ownership correctly requires native handle transfer, not sending a pointer value in JSON. [Electron API](https://www.electronjs.org/docs/latest/api/shared-texture), [handle types](https://www.electronjs.org/docs/latest/api/structures/shared-texture-handle), [native design](https://github.com/electron/electron/blob/v44.3.0/shell/common/api/shared_texture/README.md).
@@ -521,9 +543,15 @@ Raw reports are in `scratchpad/perf-worker-headless-native-validation.json` and
 `scratchpad/perf-worker-browser-validation.json`.
 
 The native early-release test passed all 24 frames and acknowledgments. GPU-loss
-remains a reproducible failing gate, with safe teardown and zero acknowledgments;
-one later normal run took 70 seconds despite eventually exiting cleanly. These
-experiments do not establish production native recovery or throughput.
+remains a reproducible failing gate. T1326 exposed a harness race: a release callback
+during timeout-driven app teardown could overwrite exit 1 with exit 0. A terminal
+failure latch and deterministic regression fix that false pass; a fresh native run
+exited 1 with zero acknowledgments and verified service cleanup. Explicitly killing
+the probe renderer after GPU loss unblocks Electron's dangling-reference cleanup
+and permits one callback-backed acknowledgment in a separate diagnostic. This is
+terminal renderer teardown, not in-session recovery. One earlier normal run took
+70 seconds despite eventually exiting cleanly. These experiments do not establish
+production native recovery or throughput.
 
 ### Proposed ownership boundary
 
@@ -539,8 +567,8 @@ Realtime execution retains the newest completed valid result, with explicit age 
 the real runner/protocol/core reproduced the earlier risk. Alternating RVM nodes
 received recurrent markers `[0,1,2,3]` instead of `[0,0,1,2]`; a new MODNet node's
 white matte blended with another node's black history to produce 0.5. The run
-protocol now requires node identity and both temporal maps use a node/session
-tuple. Both regressions pass while asserting that the model session loads only
+protocol now requires node identity and temporal maps are private to each node/session
+(T1323 groups session maps inside node-owned containers). Both regressions pass while asserting that the model session loads only
 once. The same-node history and ratio-reset tests remain green. These are fake
 model correctness proofs, not neural-quality or multi-model throughput results.
 
@@ -559,8 +587,17 @@ checks both input side and ratio before reuse; a shape change starts from zero
 state and subsequent frames resume recurrence. It does not alter the chosen
 input size or load another copy of the model.
 
-Further scheduler gates remain: node removal/model replacement must retire
-temporal state and prevent late state writes; concurrent sessions need bounded admission and queue
+**T1323 — deleted versus unused nodes:** the owner approved retaining worker history
+while a node remains in the graph, even when demand pruning stops its execution.
+The app reconciles all inference node IDs with the runner. Deletion clears that
+node's temporal maps and rejects pending requests, including requests waiting for
+weights. Per-node lifetime tokens prevent late completions from publishing into a
+recreated node. Shared model sessions stay loaded. Tests cover independent RVM and
+EMA history, deletion during acquisition and inference, recreation, and app-level
+demand pruning. This changes neither model precision nor rendered resolution.
+
+Further scheduler gates remain: source/model replacement policy needs explicit
+discontinuity handling; concurrent sessions need bounded admission and queue
 delay measurements. The current source layer gates outstanding work per node,
 but the worker starts each asynchronous request independently. That is not a
 global accelerator concurrency budget. Do not multiply workers or model sessions

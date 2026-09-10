@@ -1,5 +1,277 @@
 {
   "assets": [],
+  "componentLibrary": {
+    "components": [
+      {
+        "componentId": "audioAnalysis",
+        "description": "Any audio source in, two conditioned bags out. levels: every channel enveloped, ranked to 0..1 over a sliding window and settled — read level, the bands and centroid here. hits: every channel as a 1 ms attack / decaying release pulse — read kickCount, snareCount, hatCount, onsetCount and beatCount here; through levels a count rests at its mid-rank, not at 0.",
+        "graph": {
+          "edges": {
+            "e-rank-settle": {
+              "id": "e-rank-settle",
+              "source": {
+                "nodeId": "rank",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "settle",
+                "portId": "in"
+              }
+            },
+            "e-smooth-rank": {
+              "id": "e-smooth-rank",
+              "source": {
+                "nodeId": "smooth",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "rank",
+                "portId": "in"
+              }
+            },
+            "in_audio_feed_1": {
+              "id": "in_audio_feed_1",
+              "source": {
+                "nodeId": "in_audio",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "decay",
+                "portId": "in"
+              }
+            },
+            "in_audio_feed_2": {
+              "id": "in_audio_feed_2",
+              "source": {
+                "nodeId": "in_audio",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "smooth",
+                "portId": "in"
+              }
+            },
+            "out_hits_feed": {
+              "id": "out_hits_feed",
+              "source": {
+                "nodeId": "decay",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "out_hits",
+                "portId": "in"
+              }
+            },
+            "out_levels_feed": {
+              "id": "out_levels_feed",
+              "source": {
+                "nodeId": "settle",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "out_levels",
+                "portId": "in"
+              }
+            }
+          },
+          "groups": {},
+          "nodes": {
+            "decay": {
+              "definitionVersion": 1,
+              "id": "decay",
+              "parameters": {
+                "lag": 0.001,
+                "releaseRatio": 250
+              },
+              "position": {
+                "x": 258,
+                "y": -168
+              },
+              "type": "valueLag"
+            },
+            "in_audio": {
+              "definitionVersion": 1,
+              "id": "in_audio",
+              "label": "audio",
+              "parameters": {},
+              "position": {
+                "x": 0,
+                "y": -74
+              },
+              "type": "componentInValue"
+            },
+            "out_hits": {
+              "definitionVersion": 1,
+              "id": "out_hits",
+              "label": "hits",
+              "parameters": {},
+              "position": {
+                "x": 516,
+                "y": -168
+              },
+              "type": "componentOutValue"
+            },
+            "out_levels": {
+              "definitionVersion": 1,
+              "id": "out_levels",
+              "label": "levels",
+              "parameters": {},
+              "position": {
+                "x": 1032,
+                "y": -74
+              },
+              "type": "componentOutValue"
+            },
+            "rank": {
+              "definitionVersion": 1,
+              "id": "rank",
+              "parameters": {
+                "window": 16
+              },
+              "position": {
+                "x": 516,
+                "y": 20
+              },
+              "type": "valueNormalize"
+            },
+            "settle": {
+              "definitionVersion": 1,
+              "id": "settle",
+              "parameters": {
+                "lag": 0.15,
+                "releaseRatio": 1
+              },
+              "position": {
+                "x": 774,
+                "y": -74
+              },
+              "type": "valueLag"
+            },
+            "smooth": {
+              "definitionVersion": 1,
+              "id": "smooth",
+              "parameters": {
+                "lag": 0.08,
+                "releaseRatio": 1
+              },
+              "position": {
+                "x": 258,
+                "y": 20
+              },
+              "type": "valueLag"
+            }
+          },
+          "revision": 1
+        },
+        "inputs": [
+          {
+            "externalId": "audio",
+            "label": "audio",
+            "nodeId": "in_audio",
+            "portId": "in"
+          }
+        ],
+        "name": "AudioAnalysis",
+        "outputs": [
+          {
+            "externalId": "hits",
+            "label": "hits",
+            "nodeId": "out_hits",
+            "portId": "out"
+          },
+          {
+            "externalId": "levels",
+            "label": "levels",
+            "nodeId": "out_levels",
+            "portId": "out"
+          }
+        ],
+        "parameters": [
+          {
+            "definition": {
+              "default": 0.08,
+              "description": "The follower BEFORE the rank, on the levels lane: how long a channel takes to follow the source. Longer smooths what the rank sees; it cannot calm the rank's own steps — Settle does that.",
+              "label": "Envelope",
+              "max": 1,
+              "min": 0,
+              "range": "floor",
+              "step": 0.005,
+              "type": "number",
+              "unit": "seconds"
+            },
+            "key": "envelope",
+            "targets": [
+              {
+                "key": "lag",
+                "nodeId": "smooth"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": 16,
+              "description": "How much history the levels lane ranks against. Short adapts within a phrase and forgets the drop; long holds the whole track's shape and takes that long to re-centre after a change.",
+              "label": "Window",
+              "max": 60,
+              "min": 0.25,
+              "range": "bounded",
+              "step": 0.25,
+              "type": "number",
+              "unit": "seconds"
+            },
+            "key": "window",
+            "targets": [
+              {
+                "key": "window",
+                "nodeId": "rank"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": 0.15,
+              "description": "The follower AFTER the rank (§V952). A rank re-orders every frame and can step most of its span in one; this bounds the step of levels to 1 − exp(−frame / Settle) of it — 10% at 0.15 s, 2.7% at 0.6 s. 0 hands you the raw rank.",
+              "label": "Settle",
+              "max": 2,
+              "min": 0,
+              "range": "floor",
+              "step": 0.005,
+              "type": "number",
+              "unit": "seconds"
+            },
+            "key": "settle",
+            "targets": [
+              {
+                "key": "lag",
+                "nodeId": "settle"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": 250,
+              "description": "The hits lane's tail, in milliseconds: a count is 1 on the frame it happens and falls to 0.37 of that after this long. It is the release ratio of a 1 ms follower, which is why the number reads in ms.",
+              "label": "Hit Decay",
+              "max": 1000,
+              "min": 10,
+              "range": "floor",
+              "step": 10,
+              "type": "number"
+            },
+            "key": "hitDecay",
+            "targets": [
+              {
+                "key": "releaseRatio",
+                "nodeId": "decay"
+              }
+            ]
+          }
+        ],
+        "version": 1
+      }
+    ],
+    "schemaVersion": 1
+  },
   "createdAt": "2026-08-29T00:00:00.000Z",
   "graph": {
     "edges": {
@@ -14,15 +286,15 @@
           "portId": "in1"
         }
       },
-      "e1-source1-valuelag1": {
-        "id": "e1-source1-valuelag1",
+      "e1-source1-analysis1": {
+        "id": "e1-source1-analysis1",
         "source": {
           "nodeId": "source1",
           "portId": "out"
         },
         "target": {
-          "nodeId": "valuelag1",
-          "portId": "in"
+          "nodeId": "analysis1",
+          "portId": "audio"
         }
       },
       "e10-hsv1-null2": {
@@ -47,92 +319,26 @@
           "portId": "input"
         }
       },
-      "e12-valuelag1-valuemath1": {
-        "id": "e12-valuelag1-valuemath1",
+      "e12-analysis1-lvl1": {
+        "id": "e12-analysis1-lvl1",
         "source": {
-          "nodeId": "valuelag1",
-          "portId": "out"
+          "nodeId": "analysis1",
+          "portId": "levels"
         },
         "target": {
-          "nodeId": "valuemath1",
-          "portId": "a"
+          "nodeId": "lvl1",
+          "portId": "in"
         }
       },
-      "e13-valuemath1-valuemath2": {
-        "id": "e13-valuemath1-valuemath2",
+      "e13-analysis1-hit1": {
+        "id": "e13-analysis1-hit1",
         "source": {
-          "nodeId": "valuemath1",
-          "portId": "out"
+          "nodeId": "analysis1",
+          "portId": "hits"
         },
         "target": {
-          "nodeId": "valuemath2",
-          "portId": "a"
-        }
-      },
-      "e14-valuelag1-valuemath3": {
-        "id": "e14-valuelag1-valuemath3",
-        "source": {
-          "nodeId": "valuelag1",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "valuemath3",
-          "portId": "a"
-        }
-      },
-      "e15-valuemath3-valuemath4": {
-        "id": "e15-valuemath3-valuemath4",
-        "source": {
-          "nodeId": "valuemath3",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "valuemath4",
-          "portId": "a"
-        }
-      },
-      "e16-valuelag1-valuemath5": {
-        "id": "e16-valuelag1-valuemath5",
-        "source": {
-          "nodeId": "valuelag1",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "valuemath5",
-          "portId": "a"
-        }
-      },
-      "e17-valuemath5-valuemath6": {
-        "id": "e17-valuemath5-valuemath6",
-        "source": {
-          "nodeId": "valuemath5",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "valuemath6",
-          "portId": "a"
-        }
-      },
-      "e18-valuelag1-valuemath7": {
-        "id": "e18-valuelag1-valuemath7",
-        "source": {
-          "nodeId": "valuelag1",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "valuemath7",
-          "portId": "a"
-        }
-      },
-      "e19-valuemath7-valuemath8": {
-        "id": "e19-valuemath7-valuemath8",
-        "source": {
-          "nodeId": "valuemath7",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "valuemath8",
-          "portId": "a"
+          "nodeId": "hit1",
+          "portId": "in"
         }
       },
       "e2-audiofilein1-source1": {
@@ -144,94 +350,6 @@
         "target": {
           "nodeId": "source1",
           "portId": "in2"
-        }
-      },
-      "e20-valuelag1-valuemath9": {
-        "id": "e20-valuelag1-valuemath9",
-        "source": {
-          "nodeId": "valuelag1",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "valuemath9",
-          "portId": "a"
-        }
-      },
-      "e21-valuemath9-valuemath10": {
-        "id": "e21-valuemath9-valuemath10",
-        "source": {
-          "nodeId": "valuemath9",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "valuemath10",
-          "portId": "a"
-        }
-      },
-      "e22-valuelag1-valuemath11": {
-        "id": "e22-valuelag1-valuemath11",
-        "source": {
-          "nodeId": "valuelag1",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "valuemath11",
-          "portId": "a"
-        }
-      },
-      "e23-valuemath11-valuemath12": {
-        "id": "e23-valuemath11-valuemath12",
-        "source": {
-          "nodeId": "valuemath11",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "valuemath12",
-          "portId": "a"
-        }
-      },
-      "e24-valuelag1-valuemath13": {
-        "id": "e24-valuelag1-valuemath13",
-        "source": {
-          "nodeId": "valuelag1",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "valuemath13",
-          "portId": "a"
-        }
-      },
-      "e25-valuemath13-valuemath14": {
-        "id": "e25-valuemath13-valuemath14",
-        "source": {
-          "nodeId": "valuemath13",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "valuemath14",
-          "portId": "a"
-        }
-      },
-      "e26-valuelag1-valuemath15": {
-        "id": "e26-valuelag1-valuemath15",
-        "source": {
-          "nodeId": "valuelag1",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "valuemath15",
-          "portId": "a"
-        }
-      },
-      "e27-valuemath15-valuemath16": {
-        "id": "e27-valuemath15-valuemath16",
-        "source": {
-          "nodeId": "valuemath15",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "valuemath16",
-          "portId": "a"
         }
       },
       "e28-add1-multiply1": {
@@ -497,6 +615,22 @@
         },
         "type": "add"
       },
+      "analysis1": {
+        "definitionVersion": 1,
+        "id": "analysis1",
+        "label": "analysis1",
+        "parameters": {
+          "envelope": 0.09,
+          "hitDecay": 250,
+          "settle": 0.15,
+          "window": 16
+        },
+        "position": {
+          "x": -140,
+          "y": 700
+        },
+        "type": "component:audioAnalysis@1"
+      },
       "audiofilein1": {
         "definitionVersion": 1,
         "id": "audiofilein1",
@@ -550,11 +684,11 @@
             "bindings": {
               "expression": {
                 "kind": "expression",
-                "source": "op('valuemath14').chan.level"
+                "source": "0.62 + 0.16 * op('lvl1').chan.level"
               },
               "static": {
                 "kind": "static",
-                "value": 0
+                "value": 0.7
               }
             },
             "mode": "expression"
@@ -568,6 +702,20 @@
           "y": 220
         },
         "type": "feedback"
+      },
+      "hit1": {
+        "definitionVersion": 1,
+        "id": "hit1",
+        "label": "hit1",
+        "parameters": {
+          "maximum": 1,
+          "minimum": 0
+        },
+        "position": {
+          "x": 140,
+          "y": 800
+        },
+        "type": "valueLimit"
       },
       "hsv1": {
         "definitionVersion": 1,
@@ -606,11 +754,11 @@
             "bindings": {
               "expression": {
                 "kind": "expression",
-                "source": "op('valuemath8').chan.low"
+                "source": "0.4 + 1.2 * op('lvl1').chan.low"
               },
               "static": {
                 "kind": "static",
-                "value": 0
+                "value": 1
               }
             },
             "mode": "expression"
@@ -637,11 +785,11 @@
             "bindings": {
               "expression": {
                 "kind": "expression",
-                "source": "op('valuemath10').chan.high"
+                "source": "0.15 + 4 * op('hit1').chan.hatCount"
               },
               "static": {
                 "kind": "static",
-                "value": 0
+                "value": 0.15
               }
             },
             "mode": "expression"
@@ -668,11 +816,11 @@
             "bindings": {
               "expression": {
                 "kind": "expression",
-                "source": "op('valuemath4').chan.low"
+                "source": "0.9 + 1.1 * op('lvl1').chan.low"
               },
               "static": {
                 "kind": "static",
-                "value": 0
+                "value": 1.45
               }
             },
             "mode": "expression"
@@ -718,11 +866,11 @@
             "bindings": {
               "expression": {
                 "kind": "expression",
-                "source": "op('valuemath12').chan.highMid"
+                "source": "0.7 + 1.5 * op('lvl1').chan.highMid"
               },
               "static": {
                 "kind": "static",
-                "value": 0
+                "value": 1.45
               }
             },
             "mode": "expression"
@@ -733,6 +881,20 @@
           "y": 112
         },
         "type": "lookup"
+      },
+      "lvl1": {
+        "definitionVersion": 1,
+        "id": "lvl1",
+        "label": "lvl1",
+        "parameters": {
+          "maximum": 1,
+          "minimum": 0
+        },
+        "position": {
+          "x": 140,
+          "y": 620
+        },
+        "type": "valueLimit"
       },
       "multiply1": {
         "definitionVersion": 1,
@@ -852,11 +1014,11 @@
             "bindings": {
               "expression": {
                 "kind": "expression",
-                "source": "op('valuemath2').chan.lowMid"
+                "source": "0.18 + 0.3 * op('lvl1').chan.lowMid"
               },
               "static": {
                 "kind": "static",
-                "value": 0.3
+                "value": 0.33
               }
             },
             "mode": "expression"
@@ -994,11 +1156,11 @@
             "bindings": {
               "expression": {
                 "kind": "expression",
-                "source": "op('valuemath6').chan.level"
+                "source": "1.1 + 0.9 * op('lvl1').chan.level"
               },
               "static": {
                 "kind": "static",
-                "value": 0
+                "value": 1.55
               }
             },
             "mode": "expression"
@@ -1052,11 +1214,11 @@
             "bindings": {
               "expression": {
                 "kind": "expression",
-                "source": "op('valuemath16').chan.high"
+                "source": "0.6 + 2.6 * op('hit1').chan.hatCount"
               },
               "static": {
                 "kind": "static",
-                "value": 1.5
+                "value": 0.6
               }
             },
             "mode": "expression"
@@ -1119,243 +1281,6 @@
           "y": 570
         },
         "type": "valueSwitch"
-      },
-      "valuelag1": {
-        "definitionVersion": 1,
-        "id": "valuelag1",
-        "label": "valuelag1",
-        "parameters": {
-          "lag": 0.09
-        },
-        "position": {
-          "x": -140,
-          "y": 798
-        },
-        "type": "valueLag"
-      },
-      "valuemath1": {
-        "definitionVersion": 1,
-        "id": "valuemath1",
-        "label": "valuemath1",
-        "parameters": {
-          "operand": 1.0129,
-          "operation": "multiply"
-        },
-        "position": {
-          "x": 140,
-          "y": 700
-        },
-        "type": "valueMath"
-      },
-      "valuemath10": {
-        "definitionVersion": 1,
-        "id": "valuemath10",
-        "label": "valuemath10",
-        "parameters": {
-          "operand": -7.5588,
-          "operation": "add"
-        },
-        "position": {
-          "x": 340,
-          "y": 1484
-        },
-        "type": "valueMath"
-      },
-      "valuemath11": {
-        "definitionVersion": 1,
-        "id": "valuemath11",
-        "label": "valuemath11",
-        "parameters": {
-          "operand": 3.3773,
-          "operation": "multiply"
-        },
-        "position": {
-          "x": 140,
-          "y": 1680
-        },
-        "type": "valueMath"
-      },
-      "valuemath12": {
-        "definitionVersion": 1,
-        "id": "valuemath12",
-        "label": "valuemath12",
-        "parameters": {
-          "operand": -0.2697,
-          "operation": "add"
-        },
-        "position": {
-          "x": 340,
-          "y": 1680
-        },
-        "type": "valueMath"
-      },
-      "valuemath13": {
-        "definitionVersion": 1,
-        "id": "valuemath13",
-        "label": "valuemath13",
-        "parameters": {
-          "operand": 0.3,
-          "operation": "multiply"
-        },
-        "position": {
-          "x": 140,
-          "y": 1876
-        },
-        "type": "valueMath"
-      },
-      "valuemath14": {
-        "definitionVersion": 1,
-        "id": "valuemath14",
-        "label": "valuemath14",
-        "parameters": {
-          "operand": 0.62,
-          "operation": "add"
-        },
-        "position": {
-          "x": 340,
-          "y": 1876
-        },
-        "type": "valueMath"
-      },
-      "valuemath15": {
-        "definitionVersion": 1,
-        "id": "valuemath15",
-        "label": "valuemath15",
-        "parameters": {
-          "operand": 10.4737,
-          "operation": "multiply"
-        },
-        "position": {
-          "x": 140,
-          "y": 2072
-        },
-        "type": "valueMath"
-      },
-      "valuemath16": {
-        "definitionVersion": 1,
-        "id": "valuemath16",
-        "label": "valuemath16",
-        "parameters": {
-          "operand": -2.4465,
-          "operation": "add"
-        },
-        "position": {
-          "x": 340,
-          "y": 2072
-        },
-        "type": "valueMath"
-      },
-      "valuemath2": {
-        "definitionVersion": 1,
-        "id": "valuemath2",
-        "label": "valuemath2",
-        "parameters": {
-          "operand": -0.3241,
-          "operation": "add"
-        },
-        "position": {
-          "x": 340,
-          "y": 700
-        },
-        "type": "valueMath"
-      },
-      "valuemath3": {
-        "definitionVersion": 1,
-        "id": "valuemath3",
-        "label": "valuemath3",
-        "parameters": {
-          "operand": 5.0173,
-          "operation": "multiply"
-        },
-        "position": {
-          "x": 140,
-          "y": 896
-        },
-        "type": "valueMath"
-      },
-      "valuemath4": {
-        "definitionVersion": 1,
-        "id": "valuemath4",
-        "label": "valuemath4",
-        "parameters": {
-          "operand": -2.5418,
-          "operation": "add"
-        },
-        "position": {
-          "x": 340,
-          "y": 896
-        },
-        "type": "valueMath"
-      },
-      "valuemath5": {
-        "definitionVersion": 1,
-        "id": "valuemath5",
-        "label": "valuemath5",
-        "parameters": {
-          "operand": 2.2,
-          "operation": "multiply"
-        },
-        "position": {
-          "x": 140,
-          "y": 1092
-        },
-        "type": "valueMath"
-      },
-      "valuemath6": {
-        "definitionVersion": 1,
-        "id": "valuemath6",
-        "label": "valuemath6",
-        "parameters": {
-          "operand": 1.2,
-          "operation": "add"
-        },
-        "position": {
-          "x": 340,
-          "y": 1092
-        },
-        "type": "valueMath"
-      },
-      "valuemath7": {
-        "definitionVersion": 1,
-        "id": "valuemath7",
-        "label": "valuemath7",
-        "parameters": {
-          "operand": 7.3587,
-          "operation": "multiply"
-        },
-        "position": {
-          "x": 140,
-          "y": 1288
-        },
-        "type": "valueMath"
-      },
-      "valuemath8": {
-        "definitionVersion": 1,
-        "id": "valuemath8",
-        "label": "valuemath8",
-        "parameters": {
-          "operand": -4.7247,
-          "operation": "add"
-        },
-        "position": {
-          "x": 340,
-          "y": 1288
-        },
-        "type": "valueMath"
-      },
-      "valuemath9": {
-        "definitionVersion": 1,
-        "id": "valuemath9",
-        "label": "valuemath9",
-        "parameters": {
-          "operand": 23.2749,
-          "operation": "multiply"
-        },
-        "position": {
-          "x": 140,
-          "y": 1484
-        },
-        "type": "valueMath"
       }
     },
     "revision": 1

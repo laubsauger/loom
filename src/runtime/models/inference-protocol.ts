@@ -36,6 +36,8 @@ export function sessionKeyFor(modelId: string, providers: readonly string[]): st
 }
 
 export type InferenceRequest =
+  /** Retire deleted node histories; model/provider sessions remain shared. */
+  | { readonly kind: "forget"; readonly nodeIds: readonly string[] }
   /**
    * Hand the worker a model's weights, once per session key. It builds the session and
    * keeps it, so a second node on the same model AND ladder pays nothing and no weights

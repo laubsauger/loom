@@ -77,6 +77,38 @@ const runnerOver = (fake: ReturnType<typeof fakeWorker>) =>
   });
 
 describe("the main thread's half", () => {
+  it("retires a node during acquisition without cancelling shared weights or posting its stale run", async () => {
+    const fake = fakeWorker();
+    let acquired!: (weights: ArrayBuffer) => void;
+    let acquisitions = 0;
+    const runner = createWorkerRunner({
+      worker: fake.worker,
+      describe: () => target,
+      weightsFor: () => {
+        acquisitions++;
+        return new Promise(resolve => { acquired = resolve; });
+      },
+    });
+    const old = runner.run("n1", new ArrayBuffer(4)).then(() => "resolved", error => String(error));
+    runner.retainNodes([]);
+    expect(await old).toContain("retired");
+    runner.retainNodes([]);
+    expect(fake.sent).toEqual([{ kind: "forget", nodeIds: ["n1"] }]);
+    const fresh = runner.run("n1", new ArrayBuffer(4));
+    acquired(new ArrayBuffer(8));
+    await Promise.resolve();
+    const load = fake.sent.find(message => message.kind === "load");
+    if (load?.kind !== "load") throw new Error("expected shared load");
+    fake.deliver({ kind: "loaded", sessionKey: load.sessionKey, backend: "wasm", millis: 0, isolated: false });
+    await Promise.resolve();
+    const runs = fake.sent.filter(message => message.kind === "run");
+    expect(runs).toHaveLength(1);
+    expect(acquisitions).toBe(1);
+    const rejected = fresh.then(() => "resolved", error => String(error));
+    runner.dispose();
+    expect(await rejected).toContain("disposed");
+  });
+
   it.each(["crash", "dispose"] as const)("rejects new work after %s", async (end) => {
     const fake = fakeWorker();
     const runner = runnerOver(fake);
@@ -237,7 +269,10 @@ describe("the main thread's half", () => {
     fake.deliver({ kind: "loaded", sessionKey: sessionKeyFor("m", PROVIDERS), backend: "wasm", millis: 1, isolated: true });
     await Promise.resolve();
     await Promise.resolve();
-    fake.deliver({ kind: "result", requestId: 1, bytes: new ArrayBuffer(2), backend: "wasm", millis: 1, isolated: true });
+    const request = fake.sent.findLast(message => message.kind === "run");
+    expect(request?.kind).toBe("run");
+    if (request?.kind !== "run") throw new Error("Retry was not dispatched");
+    fake.deliver({ kind: "result", requestId: request.requestId, bytes: new ArrayBuffer(2), backend: "wasm", millis: 1, isolated: true });
     expect((await second).length).toBe(2);
     expect(attempts).toBe(2);
   });

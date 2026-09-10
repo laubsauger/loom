@@ -1,5 +1,8 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { InferenceRequest } from "@runtime/models/inference-protocol.ts";
+import type { LoomBackend } from "@runtime/backend/index.ts";
+import * as acquisitionModule from "@runtime/models/model-acquisition.ts";
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { compileGraph } from "@compiler/index.ts";
 import type { CompiledGraph } from "@compiler/index.ts";
@@ -52,6 +55,47 @@ async function settleRefresh(): Promise<void> {
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
+
+it("T1323: graph deletion retires worker history; lack of demand does not", async () => {
+  const createAcquisition = acquisitionModule.createModelAcquisition;
+  vi.spyOn(acquisitionModule, "createModelAcquisition").mockImplementation(options => ({
+    ...createAcquisition(options),
+    refresh: async descriptor => {
+      options.onStateChange?.(descriptor.id, { kind: "ready" });
+      return { kind: "ready" };
+    },
+    // Exercise worker construction, never download or run real model weights.
+    acquire: async () => undefined,
+  }));
+  const sent: InferenceRequest[] = [];
+  let workers = 0;
+  vi.stubGlobal("Worker", class {
+    constructor() { workers++; }
+    postMessage(message: InferenceRequest) { sent.push(message); }
+    addEventListener() {}
+    terminate() {}
+  });
+  const backend = {
+    readBuffer: async () => new ArrayBuffer(16),
+    registerMediaSource: () => () => undefined,
+  } as unknown as LoomBackend;
+  const graph = sounding!.graph as GraphDocument;
+  const plan = planFor(graph);
+  const view = renderHook(() => useModelInference(backend));
+  act(() => view.result.current.track(graph, plan));
+  await settleRefresh();
+  await act(async () => { await view.result.current.settle(0); });
+  expect(workers).toBe(1);
+  act(() => view.result.current.track(graph, { ...plan, resources: [], passes: [] }));
+  expect(sent.filter(message => message.kind === "forget")).toEqual([]);
+  act(() => view.result.current.track(EMPTY_GRAPH, planFor(EMPTY_GRAPH)));
+  const depthId = Object.keys(graph.nodes).find(id => graph.nodes[id]!.type === "depth");
+  expect(depthId).toBeDefined();
+  expect(sent.filter(message => message.kind === "forget"))
+    .toEqual([{ kind: "forget", nodeIds: [depthId] }]);
 });
 
 /**
