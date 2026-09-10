@@ -32,13 +32,13 @@ function oracleSettings(settings: Parameters<typeof renderUnderPolicy>[0]["setti
 // T956: the hologram embeds the DepthPoints definition — authored before the suite.
 const starterDefinitions = (await buildStarterComponents()).map((built) => built.definition);
 
-describe("cook oracle (T249, §V157)", () => {
-  const files: ExampleFile[] = buildExampleFiles(starterDefinitions).map((file) => ({
-    fileName: file.fileName,
-    path: file.fileName,
-    text: file.text,
-  }));
+const files: ExampleFile[] = buildExampleFiles(starterDefinitions).map((file) => ({
+  fileName: file.fileName,
+  path: file.fileName,
+  text: file.text,
+}));
 
+describe("cook oracle (T249, §V157)", () => {
   for (const file of files) {
     it(`${file.fileName}: "auto" is byte-identical to "always" at every frame`, async () => {
       const probe = await probeDawn();
@@ -117,6 +117,65 @@ describe("cook oracle (T249, §V157)", () => {
     for (let frame = 0; frame < FRAMES; frame += 1) {
       expect(auto[frame], `frame ${frame} diverged under fuzz`).toBe(always[frame]);
     }
+  }, 120_000);
+});
+
+describe("the oracle HEARS a shipped clip (B196)", () => {
+  /**
+   * E66 Meter is a picture OF a sound: every lane of one `AudioAnalysis` on a bound clip
+   * drives something visible, and the document says what a host without the clip sees —
+   * the picture at rest. The oracle was that host. It evaluated the raw document (so the
+   * value-only component never ran) and fed no audio, and the non-vacuity guard above
+   * refused the result: 80 identical frames under both policies, `expected 1 to be
+   * greater than 1`, from the day E66 landed.
+   *
+   * Flattening alone gets the guard past `> 1` — the `analysis` bypass at frame 40 moves
+   * the rest picture — so the guard cannot tell a deaf oracle from a hearing one. This
+   * can. The seam is cut where a user would cut it, by binding a file the harness does
+   * not ship (`shipped-clip-audio.ts` keys on the file parameter), and the two runs are
+   * compared at the moment the document names: beat one at `beatOffset` 0.484 s is the
+   * first kick and the first onset, so 50 ms later (frame 30 at 60 fps) the core is a
+   * third larger and the backdrop is lit ONLY if the oracle heard it. Before the grid
+   * begins the lead-in is silent, so frame 0 must agree — the difference is the sound,
+   * not the wiring.
+   */
+  it("E66's kick reaches the pixels with an EMPTY script, and an unshipped file is the picture at rest", async () => {
+    const probe = await probeDawn();
+    if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
+
+    const file = files.find((entry) => entry.fileName === "E66-Meter.loom.json");
+    if (file === undefined) throw new Error("E66-Meter.loom.json is not shipped");
+    const { document, result } = requireExample(file);
+    const registry = result.nodes ?? exampleRegistry();
+    const settings = oracleSettings(document.settings);
+    const base = {
+      settings,
+      registry,
+      ...(result.components === undefined ? {} : { components: result.components }),
+      policy: "always" as const,
+      script: [],
+      frames: 32,
+    };
+
+    const clip = document.graph.nodes["clip"];
+    if (clip === undefined || clip.type !== "audioFileIn") throw new Error("E66's source node moved");
+    const deafGraph = {
+      ...document.graph,
+      nodes: {
+        ...document.graph.nodes,
+        clip: { ...clip, parameters: { ...clip.parameters, file: "media/not-shipped.m4a" } },
+      },
+    };
+
+    const hearing = await renderUnderPolicy({ ...base, graph: document.graph });
+    const deaf = await renderUnderPolicy({ ...base, graph: deafGraph });
+
+    // The silent lead-in: nothing to hear yet, and the two hosts draw the same rest.
+    expect(hearing[0], "frame 0 (silent lead-in) should be the rest picture in both").toBe(deaf[0]);
+    // Beat one + 50 ms: the kick and the onset are in the picture only for the host that heard them.
+    expect(hearing[30], "frame 30 (50 ms after beat one) should show the kick").not.toBe(deaf[30]);
+    // And the hearing run is a moving picture, not a poster with one edited frame.
+    expect(new Set(hearing).size).toBeGreaterThan(2);
   }, 120_000);
 });
 

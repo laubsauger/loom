@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import { createUniformAnimator } from "../../app/animate-parameters.ts";
 import { compileGraph } from "../../compiler/compile.ts";
+import { flattenComponents } from "../../compiler/flatten.ts";
 import type { CompiledGraph } from "../../compiler/types.ts";
 import type { ParameterResolution } from "../../compiler/validate.ts";
 import { createGraphStore } from "../../domain/graph/store.ts";
@@ -17,6 +18,7 @@ import type { CookPolicy, LoomBackend } from "../../runtime/backend/backend-type
 import { createVgpuBackend } from "../../runtime/backend/vgpu/vgpu-backend.ts";
 import { nodeGpuHost } from "../../runtime/backend/vgpu/node-gpu-host.ts";
 import type { NodeRegistryView } from "../../nodes/registry/registry.ts";
+import { shippedClipAudio } from "../../examples/shipped-clip-audio.ts";
 import { registerSyntheticMediaSources } from "./render-harness.ts";
 
 /**
@@ -304,6 +306,44 @@ export async function renderUnderPolicy(request: OracleRunRequest): Promise<stri
     await backend.initialize({});
     backend.setCookPolicy(request.policy);
 
+    /*
+     * B196 — THE FLATTENED DOCUMENT, and THE AUDIO FEED. E66 Meter was the fifth example
+     * to teach this file a lesson it had learnt four times for pixels (T630, T633, T650,
+     * §V854, B186), this time for sound: the oracle hashed 80 identical frames under
+     * BOTH policies — the non-vacuity guard failed, never the auto ≡ always claim — for
+     * two reasons that each alone would have kept the picture at rest.
+     *
+     * (1) The value graph ran on the RAW store document, not the flattened one (T615,
+     *     §V437 — the live session and `renderHeadless` both evaluate the flattening).
+     *     E66's `AudioAnalysis` is a value-only component: it expands to no plan node,
+     *     so texture-side flattening inside `compileGraph` never touched it, and a
+     *     value session that sees `component:audioAnalysis@1` as an opaque node never
+     *     runs its internals. `lvl1`/`hit1` read nothing. Flattened once per structural
+     *     compile and handed to every per-frame compile, exactly as the harness does.
+     * (2) No audio was fed. `renderHeadless`, the look instrument, the thumbnail and the
+     *     E66 claims all hear the shipped clip through `shippedClipAudio`; this file
+     *     never did, so even a flattened analysis would have analysed silence. Re-derived
+     *     after every recompile, because the script's own edits move the transport —
+     *     the sorted scan picks `clip.speed` for the 0→1 flip, and the app re-indexes the
+     *     track under the new transport (`readTrackAtPlayhead`), so the oracle must too.
+     *
+     * Every edit the script picks for E66 (sorted ids: `analysis` first, `e-analysis-hit`
+     * first edge, `analysis` the first bypassable) lands on the audio side, so with no
+     * sound the session edited things whose effect was silence. Now each of those edits
+     * changes what the analysis publishes, and the guard measures a moving picture.
+     */
+    const flattenNow = () =>
+      request.components === undefined
+        ? undefined
+        : flattenComponents({
+            graph: store.view.getGraph(),
+            registry: request.registry,
+            components: request.components,
+          });
+    let flattened = flattenNow();
+    /** What the value graph reads: §V437, the raw document is not it. */
+    const logicalGraph = (): GraphDocument => flattened?.graph ?? store.view.getGraph();
+
     const compileNow = (resolution?: ParameterResolution) =>
       compileGraph({
         graph: store.view.getGraph(),
@@ -316,12 +356,14 @@ export async function renderUnderPolicy(request: OracleRunRequest): Promise<stri
           timestampQuery: false,
           limits: { maxTextureDimension2D: 8192 },
         },
-        ...(request.components === undefined ? {} : { components: request.components }),
+        ...(flattened === undefined ? {} : { flattened }),
         ...(resolution === undefined ? {} : { resolution }),
       });
 
     let plan = compileNow();
     let compiled = await backend.compile(plan);
+    // The oracle's clock is `frameIndex / 60` below, so the track is walked at 60 fps.
+    let audioAt = shippedClipAudio(store.view.getGraph(), 60);
     /*
      * B186 — THE MEDIA FEED, and this oracle is the fourth place to learn the same
      * lesson (T630, T633, T650, §V854's `components`).
@@ -378,9 +420,11 @@ export async function renderUnderPolicy(request: OracleRunRequest): Promise<stri
         edit.backend?.(backend, plan);
       }
       if (edited) {
+        flattened = flattenNow();
         plan = compileNow();
         compiled = await backend.compile(plan);
         feedMedia();
+        audioAt = shippedClipAudio(store.view.getGraph(), 60);
         // The per-frame push below diffs against the newest structural plan (§V5) —
         // reset together with it, as the live frame loop does.
         animator.reset();
@@ -399,13 +443,15 @@ export async function renderUnderPolicy(request: OracleRunRequest): Promise<stri
 
       // T340's order, exactly as renderHeadless keeps it: channels advance, the
       // per-frame plan re-resolves, and only changed VALUES are pushed (§V5).
-      const evaluated = valueSession.evaluate(store.view.getGraph(), frame);
+      const audio = audioAt?.(frameIndex) ?? null;
+      const evaluated = valueSession.evaluate(logicalGraph(), frame, audio === null ? {} : { audio });
       const next = compileNow({ frame, channels: evaluated.resolver });
       animator.push(backend, plan, next);
 
       backend.render(compiled, {
         frame,
         pointer: { x: 0, y: 0, buttons: 0 },
+        ...(audio === null ? {} : { audio }),
         resolution: [request.settings.outputResolution.width, request.settings.outputResolution.height],
       });
 
