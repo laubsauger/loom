@@ -1,6 +1,18 @@
-import { useCallback, useSyncExternalStore } from "react";
-import type { CostBucket, TelemetrySnapshot, TelemetrySource } from "@runtime/telemetry/index.ts";
+import { useCallback, useMemo, useRef } from "react";
+import { UNAVAILABLE_COST } from "@runtime/telemetry/index.ts";
+import type {
+  CategoryRollup,
+  CostBucket,
+  NodeCostRow,
+  PassTimingRow,
+  TelemetrySnapshot,
+  TelemetrySource,
+} from "@runtime/telemetry/index.ts";
+import { useStoreSelector } from "@ui/hooks/use-store-selector.ts";
+import { useVisibleSubscribe } from "@ui/hooks/use-visible-subscribe.ts";
+import type { Subscribe } from "@ui/hooks/use-visible-subscribe.ts";
 import { formatBytes, formatCost, formatMs } from "./format.ts";
+import type { FormattedMs } from "./format.ts";
 import styles from "./inspect.module.css";
 
 /**
@@ -38,9 +50,20 @@ import styles from "./inspect.module.css";
  * read — and because sixty node rows permanently open is the §V90 failure this pane is most
  * prone to.
  *
- * The whole pane re-renders once per telemetry tick — at most 10 times a second (§V16) —
- * because the hub, not this component, owns the rate.
+ * The hub, not this component, owns the rate: it notifies at most 10 times a second
+ * (§V16). What re-renders on a tick is keyed on what READS (T1239, §V939): the pane's
+ * STRUCTURE — which sections, which rows — follows the plan and the build and re-renders
+ * only when one of those changes; every live number is its own subscriber that re-renders
+ * only when ITS text moved. And nothing here renders while the pane is hidden: the
+ * subscription is gated on the pane's visibility, and the moment the pane is shown again
+ * every subscriber re-reads the hub, so the first paint is current (§V86).
  */
+
+/** The hub, or a fixture standing in for it. */
+interface SnapshotSource {
+  readonly subscribe: Subscribe;
+  readonly snapshot: () => TelemetrySnapshot;
+}
 
 /** `BackendStatus`'s own switch, restated so this module never imports the backend. */
 export type CookPolicyValue = "always" | "auto";
@@ -77,21 +100,42 @@ function Stat({
   );
 }
 
+/** One live reading: re-renders only when the selected text changed. */
+function useLiveText(source: SnapshotSource, select: (snapshot: TelemetrySnapshot) => string) {
+  return useStoreSelector(source.subscribe, source.snapshot, select);
+}
+
+function LiveStat({
+  source,
+  label,
+  select,
+}: {
+  source: SnapshotSource;
+  label: string;
+  select: (snapshot: TelemetrySnapshot) => string;
+}) {
+  return <Stat label={label} value={useLiveText(source, select)} />;
+}
+
 export function PerformancePanel({
   telemetry,
   cookPolicy,
   onCookPolicyChange,
 }: PerformancePanelProps) {
-  const snapshot = useSyncExternalStore(
+  const root = useRef<HTMLDivElement>(null);
+  const subscribe = useVisibleSubscribe(
+    root,
     useCallback(
       (listener: () => void) => telemetry?.subscribe(listener) ?? (() => {}),
       [telemetry],
     ),
-    useCallback(() => telemetry?.snapshot() ?? null, [telemetry]),
-    useCallback(() => telemetry?.snapshot() ?? null, [telemetry]),
+  );
+  const source = useMemo<SnapshotSource | null>(
+    () => (telemetry === null ? null : { subscribe, snapshot: () => telemetry.snapshot() }),
+    [telemetry, subscribe],
   );
 
-  if (snapshot === null) {
+  if (source === null) {
     return (
       <div className={styles.performance}>
         <p className={styles.note}>No telemetry attached</p>
@@ -100,21 +144,83 @@ export function PerformancePanel({
   }
 
   return (
-    <PerformanceView
-      snapshot={snapshot}
-      {...(cookPolicy === undefined ? {} : { cookPolicy })}
-      {...(onCookPolicyChange === undefined ? {} : { onCookPolicyChange })}
-    />
+    <div ref={root} className={styles.performance} data-testid="performance-panel">
+      <PerformanceSections
+        source={source}
+        {...(cookPolicy === undefined ? {} : { cookPolicy })}
+        {...(onCookPolicyChange === undefined ? {} : { onCookPolicyChange })}
+      />
+    </div>
   );
 }
 
+/**
+ * Per-snapshot row lookup, built once per snapshot object however many cells read it.
+ * (A per-row selector on the hub itself would make this unnecessary — T1243's API.)
+ */
+interface RowIndex {
+  readonly nodes: ReadonlyMap<string, NodeCostRow>;
+  readonly categories: ReadonlyMap<string, CategoryRollup>;
+  readonly passes: ReadonlyMap<string, PassTimingRow>;
+}
+
+const rowIndexes = new WeakMap<TelemetrySnapshot, RowIndex>();
+
+function rowIndex(snapshot: TelemetrySnapshot): RowIndex {
+  let index = rowIndexes.get(snapshot);
+  if (index === undefined) {
+    index = {
+      nodes: new Map(snapshot.nodes.map((row) => [row.nodeId, row])),
+      categories: new Map(snapshot.categories.map((row) => [row.category, row])),
+      passes: new Map(snapshot.passes.map((row) => [row.passId, row])),
+    };
+    rowIndexes.set(snapshot, index);
+  }
+  return index;
+}
+
+const sameText = (a: FormattedMs, b: FormattedMs): boolean => a.text === b.text;
+
 /** A cost cell. An absent measurement is a word, never a digit (§V86). */
-function CostCell({ bucket }: { bucket: CostBucket }) {
-  const formatted = formatCost(bucket);
+function CostCell({
+  source,
+  select,
+}: {
+  source: SnapshotSource;
+  select: (snapshot: TelemetrySnapshot) => CostBucket;
+}) {
+  const formatted = useStoreSelector(
+    source.subscribe,
+    source.snapshot,
+    (snapshot) => formatCost(select(snapshot)),
+    sameText,
+  );
   return (
     <td className={`${styles.numeric} ${formatted.absent ? styles.absent : ""}`.trim()}>
       {formatted.text}
     </td>
+  );
+}
+
+function PassMsCell({ source, passId }: { source: SnapshotSource; passId: string }) {
+  const ms = useStoreSelector(
+    source.subscribe,
+    source.snapshot,
+    (snapshot) => {
+      const row = rowIndex(snapshot).passes.get(passId);
+      return row === undefined
+        ? formatMs({ availability: "unavailable", gpuMs: null, passCount: 1, nodeCount: 0 })
+        : formatMs({
+            availability: row.availability,
+            gpuMs: row.gpuMs,
+            passCount: 1,
+            nodeCount: row.nodeId === null ? 0 : 1,
+          });
+    },
+    sameText,
+  );
+  return (
+    <td className={`${styles.numeric} ${ms.absent ? styles.absent : ""}`.trim()}>{ms.text}</td>
   );
 }
 
@@ -127,7 +233,13 @@ function CostCell({ bucket }: { bucket: CostBucket }) {
  * "free" and sends someone optimising the wrong node, which is the whole reason §V86 makes
  * absence a first-class state rather than a default value.
  */
-function CostSection({ snapshot }: { snapshot: TelemetrySnapshot }) {
+function CostSection({
+  source,
+  snapshot,
+}: {
+  source: SnapshotSource;
+  snapshot: TelemetrySnapshot;
+}) {
   const measuring = snapshot.timingAvailable || snapshot.cpuTimingAvailable;
   return (
     <section aria-label="Cost">
@@ -162,8 +274,18 @@ function CostSection({ snapshot }: { snapshot: TelemetrySnapshot }) {
                   <tr key={rollup.category}>
                     <td>{rollup.category}</td>
                     <td className={styles.numeric}>{rollup.nodeCount}</td>
-                    <CostCell bucket={rollup.cpu} />
-                    <CostCell bucket={rollup.gpu} />
+                    <CostCell
+                      source={source}
+                      select={(s) =>
+                        rowIndex(s).categories.get(rollup.category)?.cpu ?? UNAVAILABLE_COST
+                      }
+                    />
+                    <CostCell
+                      source={source}
+                      select={(s) =>
+                        rowIndex(s).categories.get(rollup.category)?.gpu ?? UNAVAILABLE_COST
+                      }
+                    />
                   </tr>
                 ))}
               </tbody>
@@ -194,8 +316,14 @@ function CostSection({ snapshot }: { snapshot: TelemetrySnapshot }) {
                       <td>{row.sourcePath ?? row.label ?? row.nodeId}</td>
                       <td>{row.category}</td>
                       <td className={styles.numeric}>{row.passCount}</td>
-                      <CostCell bucket={row.cpu} />
-                      <CostCell bucket={row.gpu} />
+                      <CostCell
+                        source={source}
+                        select={(s) => rowIndex(s).nodes.get(row.nodeId)?.cpu ?? UNAVAILABLE_COST}
+                      />
+                      <CostCell
+                        source={source}
+                        select={(s) => rowIndex(s).nodes.get(row.nodeId)?.gpu ?? UNAVAILABLE_COST}
+                      />
                     </tr>
                   ))}
                 </tbody>
@@ -218,7 +346,13 @@ function CostSection({ snapshot }: { snapshot: TelemetrySnapshot }) {
  * fact from a backend reporting none, and collapsing the two would hide a readback path
  * that is not running at all.
  */
-function ReadbackSection({ snapshot }: { snapshot: TelemetrySnapshot }) {
+function ReadbackSection({
+  source,
+  snapshot,
+}: {
+  source: SnapshotSource;
+  snapshot: TelemetrySnapshot;
+}) {
   const { readback } = snapshot;
   return (
     <section aria-label="Readback">
@@ -233,9 +367,10 @@ function ReadbackSection({ snapshot }: { snapshot: TelemetrySnapshot }) {
               label="bytes / frame"
               value={`${readback.incomplete ? "≥ " : ""}${formatBytes(readback.bytes)}`}
             />
-            <Stat
+            <LiveStat
+              source={source}
               label="performed"
-              value={readback.performed === null ? "—" : String(readback.performed)}
+              select={(s) => (s.readback.performed === null ? "—" : String(s.readback.performed))}
             />
           </div>
           <details className={styles.disclosure}>
@@ -321,17 +456,58 @@ function CookPolicyControl({
   );
 }
 
+const NEVER: Subscribe = () => () => {};
+
 /** Pure view over a snapshot — renders from a fixture with no GPU and no hub. */
 export function PerformanceView({
   snapshot,
   cookPolicy,
   onCookPolicyChange,
 }: PerformanceViewProps) {
-  const { plan, build } = snapshot;
-  const frame = formatMs(snapshot.frame);
-
+  const source = useMemo<SnapshotSource>(
+    () => ({ subscribe: NEVER, snapshot: () => snapshot }),
+    [snapshot],
+  );
   return (
     <div className={styles.performance} data-testid="performance-panel">
+      <PerformanceSections
+        source={source}
+        {...(cookPolicy === undefined ? {} : { cookPolicy })}
+        {...(onCookPolicyChange === undefined ? {} : { onCookPolicyChange })}
+      />
+    </div>
+  );
+}
+
+/**
+ * The pane's structure. Subscribed to the snapshot but keyed on the facts that decide
+ * WHICH sections and rows exist — plan, build, the two timing capabilities, the budget
+ * verdict — so a tick that only moved numbers does not re-render it. The numbers are
+ * `LiveStat` / `CostCell` / `PassMsCell` subscribers of their own.
+ */
+const sameStructure = (a: TelemetrySnapshot, b: TelemetrySnapshot): boolean =>
+  a.plan === b.plan &&
+  a.build === b.build &&
+  a.timingAvailable === b.timingAvailable &&
+  a.cpuTimingAvailable === b.cpuTimingAvailable &&
+  a.overBudget === b.overBudget;
+
+const identity = (snapshot: TelemetrySnapshot): TelemetrySnapshot => snapshot;
+
+function PerformanceSections({
+  source,
+  cookPolicy,
+  onCookPolicyChange,
+}: {
+  source: SnapshotSource;
+  cookPolicy?: CookPolicyValue | undefined;
+  onCookPolicyChange?: ((policy: CookPolicyValue) => void) | undefined;
+}) {
+  const snapshot = useStoreSelector(source.subscribe, source.snapshot, identity, sameStructure);
+  const { plan, build } = snapshot;
+
+  return (
+    <>
       <section aria-label="Frame">
         <h3 className={styles.blockTitle}>frame</h3>
         {/*
@@ -342,11 +518,12 @@ export function PerformanceView({
           `cook-policy` test id and its label association.
         */}
         <div className={styles.statRow}>
-          <Stat label="gpu time" value={frame.text} />
-          <Stat label="frames" value={String(snapshot.framesRendered)} />
-          <Stat
+          <LiveStat source={source} label="gpu time" select={(s) => formatMs(s.frame).text} />
+          <LiveStat source={source} label="frames" select={(s) => String(s.framesRendered)} />
+          <LiveStat
+            source={source}
             label="frame index"
-            value={snapshot.lastFrameIndex === null ? "—" : String(snapshot.lastFrameIndex)}
+            select={(s) => (s.lastFrameIndex === null ? "—" : String(s.lastFrameIndex))}
           />
           {cookPolicy === undefined || onCookPolicyChange === undefined ? null : (
             <CookPolicyControl policy={cookPolicy} onChange={onCookPolicyChange} />
@@ -354,9 +531,9 @@ export function PerformanceView({
         </div>
       </section>
 
-      <CostSection snapshot={snapshot} />
+      <CostSection source={source} snapshot={snapshot} />
 
-      <ReadbackSection snapshot={snapshot} />
+      <ReadbackSection source={source} snapshot={snapshot} />
 
       <section aria-label="Plan">
         <h3 className={styles.blockTitle}>plan</h3>
@@ -422,31 +599,19 @@ export function PerformanceView({
                 </tr>
               </thead>
               <tbody>
-                {snapshot.passes.map((row) => {
-                  const ms = formatMs({
-                    availability: row.availability,
-                    gpuMs: row.gpuMs,
-                    passCount: 1,
-                    nodeCount: row.nodeId === null ? 0 : 1,
-                  });
-                  return (
-                    <tr key={row.passId}>
-                      <td>{row.passId}</td>
-                      <td>{row.kind}</td>
-                      <td>{row.sourcePath ?? row.nodeId ?? "—"}</td>
-                      <td
-                        className={`${styles.numeric} ${ms.absent ? styles.absent : ""}`.trim()}
-                      >
-                        {ms.text}
-                      </td>
-                    </tr>
-                  );
-                })}
+                {snapshot.passes.map((row) => (
+                  <tr key={row.passId}>
+                    <td>{row.passId}</td>
+                    <td>{row.kind}</td>
+                    <td>{row.sourcePath ?? row.nodeId ?? "—"}</td>
+                    <PassMsCell source={source} passId={row.passId} />
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
         )}
       </section>
-    </div>
+    </>
   );
 }

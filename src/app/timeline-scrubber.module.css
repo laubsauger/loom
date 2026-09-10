@@ -71,20 +71,37 @@
   outline-offset: var(--focus-ring-offset);
 }
 
-/* Elapsed. Dim rather than saturated: the playhead is what the eye should find. */
+/* Elapsed. Dim rather than saturated: the playhead is what the eye should find.
+
+   Both bars are positioned by TRANSFORM, not by width/left (T1239): each spans the whole
+   track and the script scales / translates it by the elapsed fraction, so a moving
+   playhead costs the compositor a frame and layout nothing. The playhead is a full-width
+   box translated by the fraction of its own width, with the visible 2px marker drawn by
+   `::before` at its left edge — a percentage translate needs no track width read. */
 .elapsed {
   position: absolute;
-  inset: 0 auto 0 0;
+  inset: 0;
+  transform: scaleX(0);
+  transform-origin: 0 0;
+  will-change: transform;
   background: var(--line-hot);
   pointer-events: none;
 }
 
 .playhead {
   position: absolute;
+  inset: 0;
+  transform: translateX(0);
+  will-change: transform;
+  pointer-events: none;
+}
+
+.playhead::before {
+  content: "";
+  position: absolute;
   top: 0;
   bottom: 0;
+  left: -1px;
   width: 2px;
-  margin-left: -1px;
   background: var(--signal);
-  pointer-events: none;
 }

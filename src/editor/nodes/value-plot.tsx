@@ -1,5 +1,8 @@
-import { useCallback, useRef, useSyncExternalStore } from "react";
+import { useCallback, useMemo, useRef } from "react";
+import type { RefObject } from "react";
 import type { NodeId } from "@domain/types/ids.ts";
+import { useStoreSelector } from "@ui/hooks/use-store-selector.ts";
+import { useVisibleSubscribe } from "@ui/hooks/use-visible-subscribe.ts";
 import { stickyRange } from "./plot-range.ts";
 import type { PlotRange } from "./plot-range.ts";
 import type { ValueHistory, ValueHistorySource } from "./value-history.ts";
@@ -62,6 +65,17 @@ import styles from "./value-plot.module.css";
  * A node that has not been sampled yet renders the empty state, never a flat line at
  * zero — a line at zero is a claim that the node produced zero, which is a different and
  * wrong statement about a node that has produced nothing.
+ *
+ * ## What a tick costs (T1239)
+ *
+ * The history ring notifies at 10 Hz. A plot in a hidden graph pane — a tab behind the
+ * viewer, a window on another screen — used to re-render on every one of those ticks for
+ * nobody; the subscription is now gated on the plot's own visibility, and a plot that
+ * comes back re-reads the ring at once (§V86). A VISIBLE plot still re-renders per tick,
+ * because its picture moved; what it no longer does per tick is re-evaluate the function
+ * plot's whole cycle (that is a property of the node's parameters, sampled once per
+ * parameter change; only the phase follows the clock) or format the x coordinates of a
+ * history window (they depend on the window's length, not its contents).
  */
 
 export interface ValuePlotProps {
@@ -127,20 +141,46 @@ const HEIGHT = 32;
 /** Distinct strokes, in order. Tokens only (§V17) — the CSS maps these to variables. */
 const CHANNEL_CLASS = [styles.seriesA, styles.seriesB, styles.seriesC, styles.seriesD] as const;
 
+/**
+ * The x half of every path command for a window of `length` samples — `M0.00 `,
+ * `L0.84 `, … — formatted once per length rather than once per sample per tick.
+ */
+const X_COMMANDS = new Map<number, readonly string[]>();
+
+function xCommands(length: number): readonly string[] {
+  let commands = X_COMMANDS.get(length);
+  if (commands === undefined) {
+    const step = length === 1 ? 0 : WIDTH / (length - 1);
+    commands = Array.from(
+      { length },
+      (_, index) => `${index === 0 ? "M" : " L"}${(index * step).toFixed(2)} `,
+    );
+    X_COMMANDS.set(length, commands);
+  }
+  return commands;
+}
+
 /** A degenerate range would divide by zero; a constant signal draws down the middle. */
 function project(series: readonly number[], low: number, span: number): string {
   if (series.length === 0) return "";
-  const step = series.length === 1 ? 0 : WIDTH / (series.length - 1);
+  const xs = xCommands(series.length);
   let path = "";
   for (let index = 0; index < series.length; index += 1) {
     const value = series[index] as number;
     const unit = span === 0 ? 0.5 : (value - low) / span;
     // SVG y grows downward; the signal should not be drawn upside down.
     const y = HEIGHT - unit * HEIGHT;
-    path += `${index === 0 ? "M" : "L"}${(index * step).toFixed(2)} ${y.toFixed(2)}`;
-    if (index < series.length - 1) path += " ";
+    path += `${xs[index] as string}${y.toFixed(2)}`;
   }
   return path;
+}
+
+/** Where in its cycle a periodic function is at `timeSeconds`; null before the first frame. */
+function phaseAt(timeSeconds: number | null, periodSeconds: number): number | null {
+  if (timeSeconds === null) return null;
+  const cycles = timeSeconds / periodSeconds;
+  const phase = cycles - Math.floor(cycles);
+  return Number.isFinite(phase) ? phase : null;
 }
 
 function formatValue(value: number): string {
@@ -165,15 +205,42 @@ function rangeOf(history: ValueHistory): PlotRange {
 }
 
 export function ValuePlot({ nodeId, history, source = null, silence = null }: ValuePlotProps) {
-  const subscribe = useCallback(
-    (listener: () => void) => history.subscribe(nodeId, listener),
-    [history, nodeId],
+  const root = useRef<HTMLDivElement>(null);
+  const subscribe = useVisibleSubscribe(
+    root,
+    useCallback((listener: () => void) => history.subscribe(nodeId, listener), [history, nodeId]),
   );
   const snapshot = useCallback(() => history.get(nodeId), [history, nodeId]);
-  const value = useSyncExternalStore(subscribe, snapshot, snapshot);
+  const value = useStoreSelector(subscribe, snapshot, identity);
   // Held across renders, per node, because the whole point is that it does NOT follow
   // every window. Declared above the empty-state return so the hook order is fixed.
   const heldRange = useRef<PlotRange | null>(null);
+
+  /*
+   * The CURVE is a property of the node's parameters and is sampled when those change —
+   * i.e. when the caller hands over a new `source` — not on every tick of the clock. The
+   * clock only moves the playhead, and that is the one input this component's own
+   * subscription supplies (see `source` above). T735's inherited cycle first, then the
+   * node's own declared one; both cannot apply at once, `resolveValuePlotChain` enforces
+   * that at the source, so this is a preference in name only.
+   */
+  const curve = useMemo(
+    () =>
+      source === null
+        ? null
+        : (source.chain != null && source.registry != null
+            ? sampleValueChainPlot(source.chain, source.registry, {
+                samples: FUNCTION_PLOT_SAMPLES,
+                randomSeed: source.randomSeed,
+                timeSeconds: null,
+              })
+            : null) ??
+          sampleValueFunction(source.definition, source.values, {
+            timeSeconds: null,
+            randomSeed: source.randomSeed,
+          }),
+    [source],
+  );
 
   // T576: OFF, before either picture. Ahead of the function plot because that one does
   // not need the value graph to draw and would otherwise keep running; ahead of the
@@ -182,44 +249,33 @@ export function ValuePlot({ nodeId, history, source = null, silence = null }: Va
   // same shape a preview's OFF state uses rather than an empty box.
   if (silence !== null) {
     return (
-      <div className={styles.plot} data-testid={`value-plot-${nodeId}`}>
+      <div ref={root} className={styles.plot} data-testid={`value-plot-${nodeId}`}>
         <span className={styles.empty}>{silence}</span>
       </div>
     );
   }
 
-  // Re-sampled per tick rather than memoised: 96 evaluations of a pure arithmetic
-  // function, ten times a second, is beneath measurement, and a memo keyed on a fresh
-  // values object would not hold anyway.
-  const fn =
-    source === null
-      ? null
-      : /*
-         * T735: an INHERITED cycle first, then the node's own declared one.
-         *
-         * Order matters only in that both cannot apply at once — a node that declares a
-         * period does not inherit one, and `resolveValuePlotChain` enforces that at the
-         * source. So this is a preference in name only; what it really does is give the
-         * chain path somewhere to be.
-         */
-        (source.chain != null && source.registry != null
-          ? sampleValueChainPlot(source.chain, source.registry, {
-              samples: FUNCTION_PLOT_SAMPLES,
-              randomSeed: source.randomSeed,
-              timeSeconds: value.timeSeconds,
-            })
-          : null) ??
-        sampleValueFunction(source.definition, source.values, {
-          timeSeconds: value.timeSeconds ?? 0,
-          randomSeed: source.randomSeed,
-        });
-  if (fn !== null) return <FunctionPlot nodeId={nodeId} fn={fn} latest={value.latest} />;
+  if (curve !== null) {
+    // A chain's phase is on the ABSOLUTE clock; a node's own is phase zero until the
+    // graph has run — what `sampleValueFunction` does with a null time, restated.
+    const timeSeconds =
+      source?.chain != null && source.registry != null ? value.timeSeconds : (value.timeSeconds ?? 0);
+    return (
+      <FunctionPlot
+        rootRef={root}
+        nodeId={nodeId}
+        fn={curve}
+        phase={phaseAt(timeSeconds, curve.periodSeconds)}
+        latest={value.latest}
+      />
+    );
+  }
 
   if (value.latest === null || value.series.length === 0) {
     // Named state, not a zeroed plot (§V91): this node has produced nothing yet, which is
     // a different fact from producing zero.
     return (
-      <div className={styles.plot} data-testid={`value-plot-${nodeId}`}>
+      <div ref={root} className={styles.plot} data-testid={`value-plot-${nodeId}`}>
         <span className={styles.empty}>no signal yet</span>
       </div>
     );
@@ -231,7 +287,7 @@ export function ValuePlot({ nodeId, history, source = null, silence = null }: Va
   const span = range.high - range.low;
 
   return (
-    <div className={styles.plot} data-testid={`value-plot-${nodeId}`}>
+    <div ref={root} className={styles.plot} data-testid={`value-plot-${nodeId}`}>
       <svg
         className={styles.canvas}
         viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
@@ -278,12 +334,17 @@ export function ValuePlot({ nodeId, history, source = null, silence = null }: Va
  * §V296's breathing cannot recur.
  */
 function FunctionPlot({
+  rootRef,
   nodeId,
   fn,
+  phase,
   latest,
 }: {
+  readonly rootRef: RefObject<HTMLDivElement | null>;
   readonly nodeId: NodeId;
+  /** The cycle; its own `phase` is null and unused — the live one is the prop. */
   readonly fn: ValueFunctionPlot;
+  readonly phase: number | null;
   readonly latest: Readonly<Record<string, number>> | null;
 }) {
   const heldRange = useRef<PlotRange | null>(null);
@@ -298,10 +359,12 @@ function FunctionPlot({
   const range = stickyRange(heldRange.current, measured);
   heldRange.current = range;
   const span = range.high - range.low;
+  // The curve holds still between parameter changes; only the playhead moves per tick.
+  const curvePath = useMemo(() => project(fn.series, range.low, span), [fn, range.low, span]);
 
-  const playX = fn.phase === null ? 0 : fn.phase * WIDTH;
+  const playX = phase === null ? 0 : phase * WIDTH;
   const index =
-    fn.phase === null ? 0 : Math.min(fn.series.length - 1, Math.round(fn.phase * fn.series.length));
+    phase === null ? 0 : Math.min(fn.series.length - 1, Math.round(phase * fn.series.length));
   const current = fn.series[index] ?? 0;
   const unit = span === 0 ? 0.5 : (current - range.low) / span;
   const playY = HEIGHT - unit * HEIGHT;
@@ -318,7 +381,7 @@ function FunctionPlot({
   const reading = latest === null ? null : latest["value"] ?? current;
 
   return (
-    <div className={styles.plot} data-testid={`value-plot-${nodeId}`}>
+    <div ref={rootRef} className={styles.plot} data-testid={`value-plot-${nodeId}`}>
       <svg
         className={styles.canvas}
         viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
@@ -327,11 +390,11 @@ function FunctionPlot({
       >
         <path
           className={CHANNEL_CLASS[0]}
-          d={project(fn.series, range.low, span)}
+          d={curvePath}
           fill="none"
           vectorEffect="non-scaling-stroke"
         />
-        {fn.phase === null ? null : (
+        {phase === null ? null : (
           <line
           className={styles.playhead}
           data-testid={`value-playhead-${nodeId}`}
@@ -342,7 +405,7 @@ function FunctionPlot({
           vectorEffect="non-scaling-stroke"
           />
         )}
-        {fn.phase === null ? null : (
+        {phase === null ? null : (
           <circle className={styles.playdot} cx={playX.toFixed(2)} cy={playY.toFixed(2)} r={1.6} />
         )}
       </svg>
@@ -355,6 +418,8 @@ function FunctionPlot({
     </div>
   );
 }
+
+const identity = (value: ValueHistory): ValueHistory => value;
 
 /** The swatch beside a reading uses the same stroke class as its line. */
 function cxChannel(index: number): string {

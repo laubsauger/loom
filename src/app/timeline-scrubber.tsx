@@ -132,9 +132,17 @@ export function TimelineScrubber({
    * The frame index still comes from `latestFrame()` — the frame that was actually
    * RENDERED (§V169). This reads it more often; it does not read a different clock, and a
    * stalled loop leaves the playhead exactly where the last real frame put it.
+   *
+   * T1239 — the two writes are TRANSFORMS, and they happen only when the fraction moved.
+   * They used to be `style.left` and `style.width`, which are layout properties: every
+   * animation frame invalidated layout for the strip, and the profile showed Layout +
+   * HitTest + Layerize on every frame of idle playback — the scrubber alone was two thirds
+   * of the Layout events per second. `translateX` / `scaleX` are composited without a
+   * layout pass, and a paused transport writes nothing at all.
    */
   useEffect(() => {
     let handle = 0;
+    let painted: number | null = null;
     const paint = (): void => {
       handle = requestAnimationFrame(paint);
       const dragging = dragRef.current;
@@ -144,9 +152,14 @@ export function TimelineScrubber({
         if (frame === null) return;
         fraction = fractionOfRange(rangeRef.current, frame.frame.frameIndex);
       }
-      const percent = `${String(fraction * 100)}%`;
-      if (elapsedRef.current !== null) elapsedRef.current.style.width = percent;
-      if (playheadRef.current !== null) playheadRef.current.style.left = percent;
+      if (fraction === painted) return;
+      painted = fraction;
+      if (elapsedRef.current !== null) {
+        elapsedRef.current.style.transform = `scaleX(${String(fraction)})`;
+      }
+      if (playheadRef.current !== null) {
+        playheadRef.current.style.transform = `translateX(${String(fraction * 100)}%)`;
+      }
     };
     handle = requestAnimationFrame(paint);
     return () => cancelAnimationFrame(handle);

@@ -143,6 +143,80 @@ describe("scrubbing asks the transport to seek (§V170)", () => {
   });
 });
 
+describe("the playhead moves on the compositor, and only when it moved (T1239)", () => {
+  /**
+   * jsdom's `requestAnimationFrame` is a timer; this replaces it with a hand-cranked one so
+   * a test can run exactly N animation frames and count what each wrote. A frame-driven
+   * `left`/`width` write forces Layout + HitTest + Layerize on every frame of playback —
+   * that was the scrubber's whole cost in the idle profile — so the assertion is on the
+   * PROPERTY written, not only on the position it encodes.
+   */
+  function crankedFrames() {
+    let queued: FrameRequestCallback[] = [];
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      queued.push(callback);
+      return queued.length;
+    });
+    vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => {
+      queued = [];
+    });
+    return {
+      frame(): void {
+        const batch = queued;
+        queued = [];
+        for (const callback of batch) callback(0);
+      },
+    };
+  }
+
+  function bars() {
+    const track = screen.getByRole("slider", { name: "Playhead" });
+    const [elapsed, playhead] = Array.from(track.children) as HTMLElement[];
+    if (elapsed === undefined || playhead === undefined) throw new Error("bars missing");
+    return { elapsed, playhead };
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("positions both bars by transform, never by left or width", () => {
+    const frames = crankedFrames();
+    let frameIndex = 150;
+    mount(<TimelineScrubber latestFrame={() => frameAt(frameIndex)} range={RANGE} />);
+    frames.frame();
+    const { elapsed, playhead } = bars();
+    expect(elapsed.style.transform).toBe(`scaleX(${String(150 / 599)})`);
+    expect(playhead.style.transform).toBe(`translateX(${String((150 / 599) * 100)}%)`);
+    expect(elapsed.style.width).toBe("");
+    expect(playhead.style.left).toBe("");
+
+    frameIndex = 599;
+    frames.frame();
+    expect(elapsed.style.transform).toBe("scaleX(1)");
+    expect(playhead.style.transform).toBe("translateX(100%)");
+  });
+
+  it("writes nothing while the frame stands still — a paused transport costs no style", () => {
+    const frames = crankedFrames();
+    mount(<TimelineScrubber latestFrame={() => frameAt(300)} range={RANGE} />);
+    frames.frame();
+    const { elapsed, playhead } = bars();
+    const writes = vi.fn();
+    for (const bar of [elapsed, playhead]) {
+      const style = bar.style;
+      vi.spyOn(bar, "style", "get").mockImplementation(() => {
+        writes();
+        return style;
+      });
+    }
+    frames.frame();
+    frames.frame();
+    frames.frame();
+    expect(writes).not.toHaveBeenCalled();
+  });
+});
+
 describe("the range's ends are ONE value with three meanings (T433)", () => {
   it("writes the whole range when the out point is committed, keeping the in point", () => {
     const onChangeRange = vi.fn();
