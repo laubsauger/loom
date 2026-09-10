@@ -36,7 +36,8 @@ fn luma(c: vec3f) -> f32 {
 @fragment
 fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   let px = 1.0 / vec2f(textureDimensions(inputTexture));
-  let m = tap(uv);
+  let centre = textureSampleLevel(inputTexture, inputSampler, uv, 0.0);
+  let m = centre.rgb;
   let lM = luma(m);
   let lNW = luma(tap(uv + vec2f(-1.0, -1.0) * px));
   let lNE = luma(tap(uv + vec2f(1.0, -1.0) * px));
@@ -54,5 +55,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   let b = a * 0.5 + 0.25 * (tap(uv - dir * 0.5) + tap(uv + dir * 0.5));
   let lB = luma(b);
   let smoothed = select(b, a, (lB < lMin) || (lB > lMax));
-  return vec4f(mix(m, smoothed, params.amount), 1.0);
+  // Alpha passes through untouched: an edge-smoothing pass has no business deciding coverage
+  // (T1276 found the first version writing 1 over a plate that carried 0).
+  return vec4f(mix(m, smoothed, params.amount), centre.a);
 }`;

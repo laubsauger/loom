@@ -19,7 +19,8 @@ import {
   feedbackEchoDocument,
   kaleidoscopeDocument,
 } from "./documents.ts";
-import { edge } from "./documents/builders.ts";
+import { document, edge, graph, node, settings } from "./documents/builders.ts";
+import { FXAA_WGSL } from "./shaders/fxaa.wgsl.ts";
 import { DEPTH_CARVE_KERNEL, DEPTH_PAINT_KERNEL } from "./shaders/depth-points.wgsl.ts";
 import { TIME_GRID_BREAK_WGSL, TIME_GRID_MAP_WGSL, TIME_GRID_SWEEP_WGSL } from "./shaders/time-grid.wgsl.ts";
 import { SHARED_UNIFORMS_WGSL } from "../runtime/backend/shared-uniforms.ts";
@@ -1320,6 +1321,43 @@ const bloomComponentHost: ProjectDocument = {
 };
 
 /**
+ * Antialias's host (T1276): a picture with hard staircases in it, the pass, and an output.
+ *
+ * Noise cut by a Threshold at zero softness, because every contour of a hard threshold is a
+ * pixel staircase — the aliasing FXAA exists for. The catalogue's own shape generators
+ * anti-alias their edges already, and would give the pass nothing to smooth.
+ *
+ * The pass is E67 Fins's (T1275), the same `FXAA_WGSL`, so the component and the example
+ * cannot drift apart: the component is extracted from what shipped, not designed beside it.
+ */
+const antialiasHost: ProjectDocument = {
+  ...document(
+    "antialias-host",
+    "Antialias",
+    settings({ randomSeed: 7 }),
+    graph(
+      [
+        node("grain", "noise", [0, 0], {
+          type: "perlin4d", seed: 11, period: 0.25, harmon: 1, spread: 2, gain: 0.5, rough: 0.5,
+          exp: 1, amp: 1, offset: 0, mono: true, aspectcorrect: true, t4d: 0.37, s4d: 1, speed: 0.2,
+        }, { label: "grain1" }),
+        node("cut", "threshold", [300, 0], {
+          threshold: 0.5, softness: 0, channel: "luminance", compare: "greater",
+        }, { label: "cut1" }),
+        node("fxaa", "customWgsl", [600, 0], { [SHADER_SOURCE_PARAMETER]: FXAA_WGSL, amount: 1 }, { label: "fxaa1" }),
+        node("out", "output", [900, 0], { toneMap: "none" }, { label: "out1" }),
+      ],
+      [
+        edge("e-grain-cut", ["grain", "out"], ["cut", "input"]),
+        edge("e-cut-fxaa", ["cut", "out"], ["fxaa", "input"]),
+        edge("e-fxaa-out", ["fxaa", "out"], ["out", "input"]),
+      ],
+    ),
+  ),
+  projectId: "component-antialias-host",
+};
+
+/**
  * The specs.
  *
  * Ordered the way the library reads them: the two most-reached-for first, then the two
@@ -2052,6 +2090,32 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
           description: "Master dissolve for the recolorizer. 0 is the raw wall exactly — tear and all — and 1 is the palette. The tear is on the dry side, so this dissolves colour without dissolving glitch.",
         },
         targets: [{ nodeId: "mix", key: "cross" }],
+      },
+    ],
+  },
+  {
+    componentId: "antialias",
+    name: "Antialias",
+    description:
+      "FXAA: smooths stair-stepped edges along their own direction and leaves flat areas alone. One pass — the cheap alternative to tracing or rendering more samples.",
+    host: antialiasHost,
+    selection: ["fxaa"],
+    portNames: { "fxaa.input": "picture" },
+    // Only the knob E67 shipped (T1275). FXAA's span and edge thresholds are constants in the
+    // pass; they become knobs when a second piece needs them tuned, not before.
+    publish: [
+      {
+        key: "amount",
+        definition: {
+          type: "number",
+          label: "Amount",
+          default: 1,
+          min: 0,
+          max: 1,
+          range: "bounded",
+          description: "0 returns the picture exactly; 1 is full FXAA.",
+        },
+        targets: [{ nodeId: "fxaa", key: "amount" }],
       },
     ],
   },

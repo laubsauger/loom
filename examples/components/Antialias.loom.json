@@ -1,0 +1,244 @@
+{
+  "assets": [],
+  "componentLibrary": {
+    "components": [
+      {
+        "componentId": "antialias",
+        "description": "FXAA: smooths stair-stepped edges along their own direction and leaves flat areas alone. One pass — the cheap alternative to tracing or rendering more samples.",
+        "graph": {
+          "edges": {
+            "in_picture_feed_1": {
+              "id": "in_picture_feed_1",
+              "source": {
+                "nodeId": "in_picture",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "fxaa",
+                "portId": "input"
+              }
+            },
+            "out_out_feed": {
+              "id": "out_out_feed",
+              "source": {
+                "nodeId": "fxaa",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "out_out",
+                "portId": "in"
+              }
+            }
+          },
+          "groups": {},
+          "nodes": {
+            "fxaa": {
+              "definitionVersion": 1,
+              "id": "fxaa",
+              "label": "fxaa1",
+              "parameters": {
+                "amount": 1,
+                "source": "struct Params {\n  amount: f32, // @default 1  0 is the input exactly, 1 is full FXAA.\n};\n\n@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n@group(0) @binding(2) var<uniform> params: Params;\n\nconst SPAN_MAX: f32 = 8.0;\nconst REDUCE_MUL: f32 = 0.125;\nconst REDUCE_MIN: f32 = 0.0078125;\n\nfn tap(uv: vec2f) -> vec3f {\n  return textureSampleLevel(inputTexture, inputSampler, uv, 0.0).rgb;\n}\n\nfn luma(c: vec3f) -> f32 {\n  let t = max(c, vec3f(0.0)) / (vec3f(1.0) + max(c, vec3f(0.0)));\n  return dot(t, vec3f(0.299, 0.587, 0.114));\n}\n\n@fragment\nfn fs(@location(0) uv: vec2f) -> @location(0) vec4f {\n  let px = 1.0 / vec2f(textureDimensions(inputTexture));\n  let centre = textureSampleLevel(inputTexture, inputSampler, uv, 0.0);\n  let m = centre.rgb;\n  let lM = luma(m);\n  let lNW = luma(tap(uv + vec2f(-1.0, -1.0) * px));\n  let lNE = luma(tap(uv + vec2f(1.0, -1.0) * px));\n  let lSW = luma(tap(uv + vec2f(-1.0, 1.0) * px));\n  let lSE = luma(tap(uv + vec2f(1.0, 1.0) * px));\n  let lMin = min(lM, min(min(lNW, lNE), min(lSW, lSE)));\n  let lMax = max(lM, max(max(lNW, lNE), max(lSW, lSE)));\n\n  var dir = vec2f(-((lNW + lNE) - (lSW + lSE)), (lNW + lSW) - (lNE + lSE));\n  let reduce = max((lNW + lNE + lSW + lSE) * 0.25 * REDUCE_MUL, REDUCE_MIN);\n  let rcpMin = 1.0 / (min(abs(dir.x), abs(dir.y)) + reduce);\n  dir = clamp(dir * rcpMin, vec2f(-SPAN_MAX), vec2f(SPAN_MAX)) * px;\n\n  let a = 0.5 * (tap(uv + dir * (1.0 / 3.0 - 0.5)) + tap(uv + dir * (2.0 / 3.0 - 0.5)));\n  let b = a * 0.5 + 0.25 * (tap(uv - dir * 0.5) + tap(uv + dir * 0.5));\n  let lB = luma(b);\n  let smoothed = select(b, a, (lB < lMin) || (lB > lMax));\n  // Alpha passes through untouched: an edge-smoothing pass has no business deciding coverage\n  // (T1276 found the first version writing 1 over a plate that carried 0).\n  return vec4f(mix(m, smoothed, params.amount), centre.a);\n}"
+              },
+              "position": {
+                "x": 258,
+                "y": -74
+              },
+              "type": "customWgsl"
+            },
+            "in_picture": {
+              "definitionVersion": 1,
+              "id": "in_picture",
+              "label": "picture",
+              "parameters": {},
+              "position": {
+                "x": 0,
+                "y": -74
+              },
+              "type": "componentIn"
+            },
+            "out_out": {
+              "definitionVersion": 1,
+              "id": "out_out",
+              "label": "out",
+              "parameters": {},
+              "position": {
+                "x": 516,
+                "y": -74
+              },
+              "type": "componentOut"
+            }
+          },
+          "revision": 1
+        },
+        "inputs": [
+          {
+            "externalId": "picture",
+            "label": "picture",
+            "nodeId": "in_picture",
+            "portId": "in"
+          }
+        ],
+        "name": "Antialias",
+        "outputs": [
+          {
+            "externalId": "out",
+            "label": "out",
+            "nodeId": "out_out",
+            "portId": "out"
+          }
+        ],
+        "parameters": [
+          {
+            "definition": {
+              "default": 1,
+              "description": "0 returns the picture exactly; 1 is full FXAA.",
+              "label": "Amount",
+              "max": 1,
+              "min": 0,
+              "range": "bounded",
+              "type": "number"
+            },
+            "key": "amount",
+            "targets": [
+              {
+                "key": "amount",
+                "nodeId": "fxaa"
+              }
+            ]
+          }
+        ],
+        "version": 1
+      }
+    ],
+    "schemaVersion": 1
+  },
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e-grain-cut": {
+        "id": "e-grain-cut",
+        "source": {
+          "nodeId": "grain",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "cut",
+          "portId": "input"
+        }
+      },
+      "ed_antialias2": {
+        "id": "ed_antialias2",
+        "source": {
+          "nodeId": "cut",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_antialias1",
+          "portId": "picture"
+        }
+      },
+      "ed_antialias3": {
+        "id": "ed_antialias3",
+        "source": {
+          "nodeId": "nd_antialias1",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "cut": {
+        "definitionVersion": 1,
+        "id": "cut",
+        "label": "cut1",
+        "parameters": {
+          "channel": "luminance",
+          "compare": "greater",
+          "softness": 0,
+          "threshold": 0.5
+        },
+        "position": {
+          "x": 300,
+          "y": 0
+        },
+        "type": "threshold"
+      },
+      "grain": {
+        "definitionVersion": 1,
+        "id": "grain",
+        "label": "grain1",
+        "parameters": {
+          "amp": 1,
+          "aspectcorrect": true,
+          "exp": 1,
+          "gain": 0.5,
+          "harmon": 1,
+          "mono": true,
+          "offset": 0,
+          "period": 0.25,
+          "rough": 0.5,
+          "s4d": 1,
+          "seed": 11,
+          "speed": 0.2,
+          "spread": 2,
+          "t4d": 0.37,
+          "type": "perlin4d"
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "type": "noise"
+      },
+      "nd_antialias1": {
+        "definitionVersion": 1,
+        "id": "nd_antialias1",
+        "parameters": {},
+        "position": {
+          "x": 600,
+          "y": 0
+        },
+        "type": "component:antialias@1"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "label": "out1",
+        "parameters": {
+          "toneMap": "none"
+        },
+        "position": {
+          "x": 900,
+          "y": 0
+        },
+        "type": "output"
+      }
+    },
+    "revision": 2
+  },
+  "name": "Antialias",
+  "projectId": "component-antialias",
+  "schemaVersion": 3,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 7,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}
