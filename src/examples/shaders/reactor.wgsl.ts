@@ -53,6 +53,8 @@ struct Params {
   strutDepth: f32,    // @default 0.04  how far the outer shell's struts stand proud of its faces — the relief that makes the skeleton solid
   shieldOuter: f32,   // @default 0  the outer shell's shielding, 0 open to 1 shut — driven by drops in the music
   shieldInner: f32,   // @default 0  the inner shells' shielding, on a slower lag, so the shutters cascade inward
+  shutDim: f32,       // @default 0.7  how much of the ray a shut plate holds back — 0 lets a shut shell pass light as if open, 1 blacks it out
+  shutPulse: f32,     // @default 2.5  how fast a shut plate's frame glow breathes, radians per second — 0 holds the glow steady
   shellGap: f32,      // @default 0.26  radial spacing between shells, as a share of the outer radius — driven by the high-mids
   swell: f32,         // @default 1  the outer shell's radius — driven by the music's level on the slowest lag, so the ball breathes
   ior: f32,           // @default 1.45  index of refraction of the faces — 1 is inert, 1.5 is glass
@@ -177,6 +179,7 @@ fn rotX(v: vec3f, a: f32) -> vec3f {
 struct Cell {
   edge: f32,     // distance-like measure to the nearest cell border (F2 - F1)
   id: vec3f,     // the owning feature point — stable per cell, the facet's random seed
+  id2: vec3f,    // the second-nearest cell — the plate on the other side of a bar (T1264)
   across: vec3f, // direction from the nearest feature point to the second — the border normal
 };
 
@@ -198,7 +201,7 @@ fn cellEdge(d0: vec3f, freq: f32, salt: f32) -> Cell {
   let i = floor(p);
   var f1 = 8.0; var f2 = 8.0;
   var p1 = vec3f(0.0); var p2 = vec3f(0.0);
-  var g1 = vec3f(0.0);
+  var g1 = vec3f(0.0); var g2 = vec3f(0.0);
   for (var z: i32 = -1; z <= 1; z = z + 1) {
     for (var y: i32 = -1; y <= 1; y = y + 1) {
       for (var x: i32 = -1; x <= 1; x = x + 1) {
@@ -206,10 +209,10 @@ fn cellEdge(d0: vec3f, freq: f32, salt: f32) -> Cell {
         let fp = g + hash33(g);
         let dd = dot(fp - p, fp - p);
         if (dd < f1) {
-          f2 = f1; p2 = p1;
+          f2 = f1; p2 = p1; g2 = g1;
           f1 = dd; p1 = fp; g1 = g;
         } else if (dd < f2) {
-          f2 = dd; p2 = fp;
+          f2 = dd; p2 = fp; g2 = g;
         }
       }
     }
@@ -220,6 +223,7 @@ fn cellEdge(d0: vec3f, freq: f32, salt: f32) -> Cell {
   // when the lattice morphs, and a facet's tilt or a plate's state hashed off a moving
   // number would flicker. The grid cell never moves.
   out.id = g1;
+  out.id2 = g2;
   out.across = normalize(p2 - p1 + vec3f(1.0e-5, 0.0, 0.0));
   return out;
 }
@@ -258,10 +262,32 @@ fn barWidthAt(c: Cell, k: i32) -> f32 {
 }
 /* 1 through a face, 0 under a bar, soft over 'soft' of a cell — the light gate. The medium
    reads it wider than the surface does: a shaft's edge blurs with distance from the bar. */
-/* A face is a solid plate when its cell's hash falls under this shell's share. The share
-   and the hash salt both vary by shell, so every shell blocks a different set of cells and
-   throws its own silhouette into the light. */
-fn blockedFace(c: Cell, k: i32) -> bool {
+/* THE SHUTTERS (T1264). A face is SHUT by a continuous weight, 0 open to 1 shut, judged per
+   cell against this shell's share: the shield raises the share every plate's hash is judged
+   against, so plates close in hash order — a cascade across the shell, not a texture change
+   — and at 1 the shell is solid. A uniform, so driving it recompiles nothing (§T1149). The
+   share and the hash salt both vary by shell, so every shell shuts a different set of cells
+   and throws its own silhouette into the light.
+
+   The weight is a smoothstep from the plate's hash to hash + SHUT_EASE of share, not a
+   threshold: a threshold flipped each plate's whole look in the one frame the lagged shield
+   crossed its hash, and that cascade of one-frame flips was the pop the owner saw. Now a
+   plate eases over SHUT_EASE of the share's travel — two to three frames on the lane's
+   0.04 s rise, a hundred on its release. The window starts AT the hash so a share of 0
+   leaves every plate fully open (the outer shell at rest), and the share runs to
+   1 + SHUT_EASE so a shield of 1 shuts every plate fully.
+
+   What the weight DRIVES is only light: the frame's glow (the seam where a plate meets its
+   struts, the bar's own bleed), the share of the ray the plate holds back (shutDim), and
+   the leak in the haze's gate. The SURFACE never changes — a shut plate is the same Fresnel
+   glass facet as an open one, so nothing about the panel or its border can pop. (The
+   earlier design swapped the plate for a recessed metal panel; that branch is gone, and
+   with it its second sphere hit and Worley read per plate.) */
+const SHUT_EASE: f32 = 0.3;
+fn shutHash(id: vec3f, k: i32) -> f32 {
+  return hash13(id * 1.37 + vec3f(f32(k) * 13.7, 5.1, 2.3));
+}
+fn shutWeightOf(id: vec3f, k: i32) -> f32 {
   // A filled panel is a flat polygon, and enough of them turn a skeleton into a paper ball
   // (the owner's read, and it is right). At rest the outer shell has NONE; each shell inward
   // carries more, so the core sits in containment you look through the open frame to see.
@@ -270,18 +296,37 @@ fn blockedFace(c: Cell, k: i32) -> bool {
   let depth = f32(k) / f32(n);
   let rest = params.blocked * depth * depth;
   let shield = select(params.shieldInner, params.shieldOuter, k == 0);
-  // The shutters: the shield raises the threshold every plate's hash is judged against, so
-  // plates close in hash order — a cascade across the shell, not a texture change — and at
-  // 1 the shell is solid. A uniform, so driving it recompiles nothing (§T1149).
-  let share = mix(rest, 1.0, clamp(shield, 0.0, 1.0));
-  return hash13(c.id * 1.37 + vec3f(f32(k) * 13.7, 5.1, 2.3)) < share;
+  let share = mix(rest, 1.0 + SHUT_EASE, clamp(shield, 0.0, 1.0));
+  let h = shutHash(id, k);
+  return smoothstep(h, h + SHUT_EASE, share);
+}
+/* The glow's amplitude BREATHES: a slow sine on the frame clock (§V44 — never a wall clock)
+   at shutPulse radians per second, with a per-plate phase from the same hash, so a shut
+   frame pulses rather than holding one value, and neighbouring plates pulse out of step. */
+fn shutPulseOf(id: vec3f, k: i32) -> f32 {
+  return 0.65 + 0.35 * sin(frameU.absTime * params.shutPulse + shutHash(id, k) * 6.2831853);
+}
+/* (weight, weight × pulse) for a face's own cell. An open plate skips the pulse's sine: the
+   rest state is open, and the pulse of a plate at weight 0 is multiplied away. */
+fn shut(c: Cell, k: i32) -> vec2f {
+  let w = shutWeightOf(c.id, k);
+  if (w <= 0.0) { return vec2f(0.0); }
+  return vec2f(w, w * shutPulseOf(c.id, k));
+}
+/* A bar's glow: it lies between two plates and carries the mean of both, so the glow runs
+   the length of the bar rather than switching down its midline. */
+fn barGlow(c: Cell, k: i32) -> f32 {
+  let w1 = shutWeightOf(c.id, k);
+  let w2 = shutWeightOf(c.id2, k);
+  if (w1 <= 0.0 && w2 <= 0.0) { return 0.0; }
+  return 0.5 * (w1 * shutPulseOf(c.id, k) + w2 * shutPulseOf(c.id2, k));
 }
 fn gate(p: vec3f, k: i32, soft: f32) -> f32 {
   let c = cellEdge(shellDir(p, k), shellFreq(k), f32(k));
   let w = barWidthAt(c, k);
   // A shut plate is a hull, not a wall: a twelfth leaks, so a collapsed ball still glows
-  // through its seams and skin rather than going out like a switch.
-  return select(smoothstep(w, w + soft, c.edge), 0.12, blockedFace(c, k));
+  // through its seams and skin rather than going out like a switch. Lerped on the weight.
+  return mix(smoothstep(w, w + soft, c.edge), 0.12, shutWeightOf(c.id, k));
 }
 
 /* THE COLLAPSE: the core's radiance itself goes down while the outer shell is shut, and
@@ -432,7 +477,7 @@ fn coreSegment(o: vec3f, d: vec3f, t0: f32, t1: f32, jitter: f32, steps: i32) ->
 
 /* The frame under the core's light: dark metal, rim-lit from behind, edges glowing where
    the bar thins toward a face — the light bleeding through the frame rather than around it. */
-fn shadeFrame(p: vec3f, n: vec3f, d: vec3f, k: i32, edge01: f32) -> vec3f {
+fn shadeFrame(p: vec3f, n: vec3f, d: vec3f, k: i32, edge01: f32, glow: f32) -> vec3f {
   let toCore = normalize(-p);
   let light = coreLightBare(p) * 0.6;
   let diff = max(dot(n, toCore), 0.0);
@@ -451,7 +496,9 @@ fn shadeFrame(p: vec3f, n: vec3f, d: vec3f, k: i32, edge01: f32) -> vec3f {
           // "jagged where the glass meets the frame" (isolated with the relief off).
           + rim * light * 0.08 * edgeRGB()
           + env * (0.15 + 0.15 * rim);
-  let bleed = smoothstep(0.55, 1.0, edge01) * light * 0.3 * coreRGB();
+  // The bleed is the frame's light at rest; a shut plate's frame GLOWS on top of it (T1264),
+  // glow being the shut weight × its pulse of the plates the bar lies between.
+  let bleed = smoothstep(0.55, 1.0, edge01) * light * (0.3 + 1.2 * glow) * coreRGB();
   return lit + bleed;
 }
 
@@ -471,7 +518,7 @@ fn outerRadiusAt(dir: vec3f) -> f32 {
   let w = sin(dir.x * 2.3 + t * 0.21) * sin(dir.y * 1.9 - t * 0.17) + 0.6 * sin(dir.z * 2.6 + t * 0.13);
   return shellRadius(0) * (1.0 + params.wobble * w * 0.6);
 }
-fn strutSdf(p: vec3f, k: i32) -> vec2f {
+fn strutSdf(p: vec3f, k: i32) -> f32 {
   let R = select(shellRadius(k), outerRadiusAt(normalize(p)), k == 0);
   let c = cellEdge(shellDir(p, k), shellFreq(k), f32(k));
   let w = barWidthAt(c, k);
@@ -480,7 +527,7 @@ fn strutSdf(p: vec3f, k: i32) -> vec2f {
   // walk's step a lower bound; without that the march stepped over struts at grazing
   // incidence and drew a sawtooth along every edge at the outer graze.
   let de = (c.edge - w) * 0.5 * R / shellFreq(k);
-  return vec2f(max(dr, de), select(0.0, 1.0, blockedFace(c, k)));
+  return max(dr, de);
 }
 
 /* The first event along the straight ray from o: the nearest of every shell, the core
@@ -579,7 +626,7 @@ fn trace(ro: vec3f, rd: vec3f, jitter: f32, uv: vec2f) -> vec3f {
         let rr = length(ph);
         if (rr > R + depth + 1.0e-3 && dot(ph, d) > 0.0) { break; }
         if (rr < R - depth - 1.0e-3 && dot(ph, d) < 0.0) { break; }
-        let sdStrut = strutSdf(ph, 0).x;
+        let sdStrut = strutSdf(ph, 0);
         sdLast = sdStrut;
         if (sdStrut < 0.0015) { hit = true; break; }
         // The breathing face, positive while approaching. The step is the STRUT distance
@@ -598,7 +645,7 @@ fn trace(ro: vec3f, rd: vec3f, jitter: f32, uv: vec2f) -> vec3f {
           // Strut or face is decided by the FIELD at the found face point, not by which
           // threshold the walk tripped first: the walk-order decision cut the strut's base
           // against the face in a ragged band.
-          if (strutSdf(ph, 0).x < 0.002) { hit = true; sdLast = 0.0; } else { faceHit = true; }
+          if (strutSdf(ph, 0) < 0.002) { hit = true; sdLast = 0.0; } else { faceHit = true; }
           break;
         }
         twPrev = tw;
@@ -618,7 +665,7 @@ fn trace(ro: vec3f, rd: vec3f, jitter: f32, uv: vec2f) -> vec3f {
         var hi = tw;
         for (var b: i32 = 0; b < 3; b = b + 1) {
           let mid = 0.5 * (lo + hi);
-          if (strutSdf(o + d * mid, 0).x < 0.0015) { hi = mid; } else { lo = mid; }
+          if (strutSdf(o + d * mid, 0) < 0.0015) { hi = mid; } else { lo = mid; }
         }
         tw = hi;
         ph = o + d * tw;
@@ -634,7 +681,7 @@ fn trace(ro: vec3f, rd: vec3f, jitter: f32, uv: vec2f) -> vec3f {
         let base = smoothstep(depth * 0.5, depth * 1.0, abs(rr - R));
         let ns = normalize(radial * sign(rr - R) * (0.35 + onCrown) + mix(radial * 0.35 + across * 0.65, across, base) * (1.0 - onCrown) * 0.9);
         let prof = 1.0 - clamp((c.edge - 0.0) / max(barWidthAt(c, 0), 1.0e-4), 0.0, 1.0);
-        col = col + tp * shadeFrame(ph, ns, d, 0, prof);
+        col = col + tp * shadeFrame(ph, ns, d, 0, prof, barGlow(c, 0));
         tp = vec3f(0.0);
         break;
       }
@@ -651,51 +698,30 @@ fn trace(ro: vec3f, rd: vec3f, jitter: f32, uv: vec2f) -> vec3f {
     let w = barWidthAt(cell, k);
     let nOut = select(-sn, sn, entering);
 
-    // A plate within a hand's width of the lens (the dive passing through a shut shell) is
-    // read as glass: a plate ON the lens is a flat wall for the frames it takes to pass.
-    // And from INSIDE the ball (the dive) the plates are read as glass: the inside view is
-    // the skeleton around the core, not the backs of shutters.
-    if (blockedFace(cell, k) && tNext > 0.06 && length(ro) > shellRadius(0)) {
-      // A shut plate is RECESSED behind its frame — a shell of flush plates is a smooth
-      // sphere, and a smooth sphere is a balloon however it is lit (the owner's read). The
-      // ray continues to the inset surface; where it lands under a strut it has met the
-      // strut's inner wall, elsewhere the plate: CONTAINED light, not a dead hull — the
-      // frame's material across the face, a seam that glows where the plate meets its
-      // strut, and a skin thin enough that the core's light shows through as a dull heat.
-      let R = shellRadius(k);
-      let recess = max(params.strutDepth, 0.02) * 1.3;
-      let inset = select(R - recess, R + recess, !entering);
-      let t2 = sphereHit(o, d, inset);
-      var p2 = p;
-      if (t2 > tNext) { p2 = o + d * t2; }
-      let c2 = cellEdge(shellDir(p2, k), shellFreq(k), f32(k));
-      let w2 = barWidthAt(c2, k);
-      let wall = c2.edge < w2 * 1.6;
-      let n2 = select(nOut, normalize(c2.across - nOut * dot(c2.across, nOut) + vec3f(1.0e-5)) * -1.0, wall);
-      // The seam is NARROW: a wide one, seen through the outer shell's refracting facets
-      // during a collapse, was the "jagged where the glass meets the frame" band — isolated
-      // by forcing the plates open, which removed it entirely.
-      let seam = smoothstep(w2 + 0.1, w2, c2.edge);
-      let heat = coreLightBare(p2) * 0.6;
-      let plate = shadeFrame(p2, n2, d, k, seam) * select(0.75, 0.35, wall)
-                + seam * seam * heat * 0.7 * mix(coreRGB(), vec3f(1.0, 0.9, 0.7), 0.3)
-                + select(heat * 0.035 * coreRGB() * max(dot(n2, -d), 0.0), vec3f(0.0), wall);
-      // TRANSLUCENT: the plate is not opaque — it adds its own lit colour and lets a share
-      // of the ray through, so the core shows through a shut shell as a dull glow and a
-      // lit-from-behind panel at a grazing angle reads as transmission.
-      col = col + tp * plate * 0.8;
-      tp = tp * select(0.3, 0.06, wall) * mix(vec3f(1.0), glassRGBk(k), 0.5);
-    }
-
     if (cell.edge < w) {
       // Rounded bar: the sphere normal tilted toward the border by how close we are to it.
       let across = normalize(cell.across - sn * dot(cell.across, sn) + vec3f(1.0e-5));
       let prof = (1.0 - cell.edge / max(w, 1.0e-4));
       let nb = normalize(nOut + across * prof * prof * 0.9);
-      col = col + tp * shadeFrame(p, nb, d, k, prof);
+      col = col + tp * shadeFrame(p, nb, d, k, prof, barGlow(cell, k));
       tp = vec3f(0.0);
       break;
     }
+
+    // THE SHUT PLATE (T1264) is this same glass face with its light changed: a seam that
+    // glows where the plate meets its struts, breathing on the plate's own phase, and a
+    // share of the ray held back so the core shows through a shut shell as a dull glow.
+    // A plate within a hand's width of the lens (the dive passing through a shut shell)
+    // eases to open: a plate ON the lens would dim the whole frame for the frames it takes
+    // to pass, and the ease keeps that from being a step either.
+    let sh = shut(cell, k) * smoothstep(0.03, 0.08, tNext);
+    // The seam is NARROW: a wide one, seen through the outer shell's refracting facets
+    // during a collapse, was the "jagged where the glass meets the frame" band — isolated
+    // by forcing the plates open, which removed it entirely.
+    let seam = smoothstep(w + 0.1, w, cell.edge);
+    let lightHere = coreLightBare(p) * 0.6;
+    col = col + tp * sh.y * seam * seam * lightHere * 0.8 * mix(coreRGB(), vec3f(1.0, 0.9, 0.7), 0.3);
+    let hold = params.shutDim * sh.x;
 
     // Glass face: a per-cell facet, Fresnel-split. THE JUNCTION (the owner: "jagged where
     // the glass meets the frame"): Fresnel is a steep power of the normal, so a normal STEP
@@ -720,7 +746,6 @@ fn trace(ro: vec3f, rd: vec3f, jitter: f32, uv: vec2f) -> vec3f {
     let F = max(fresnel(cosI, eta), select(0.02, 0.06, k == 0));
     let fTint = mix(vec3f(1.0), glassRGBk(k), 0.8);
     let refl = reflect(d, nf);
-    let lightHere = coreLightBare(p) * 0.6;
     col = col + tp * glassRGBk(k) * select(0.008, 0.02, k == 0) * lightHere;
     // The reflected share reads the core's glow, per channel offset by dispersion.
     let dsp = params.dispersion * 0.35;
@@ -732,7 +757,9 @@ fn trace(ro: vec3f, rd: vec3f, jitter: f32, uv: vec2f) -> vec3f {
     let k2 = 1.0 - etaHere * etaHere * (1.0 - cosI * cosI);
     var t = refl;
     if (k2 >= 0.0) { t = normalize(etaHere * d + (etaHere * cosI - sqrt(k2)) * nf); }
-    tp = tp * (1.0 - F) * mix(vec3f(0.97), glassRGB() * 0.4 + 0.6, select(0.08, 0.18, k == 0));
+    // The Fresnel split is the SAME shut or open (the surface never changes); the hold is a
+    // scalar on the transmitted share alone, lerped on the weight, never switched.
+    tp = tp * (1.0 - F) * mix(vec3f(0.97), glassRGB() * 0.4 + 0.6, select(0.08, 0.18, k == 0)) * (1.0 - hold);
     d = t;
     o = p + d * 3.0e-4;
     if (max(max(tp.r, tp.g), tp.b) < 0.01) { break; }

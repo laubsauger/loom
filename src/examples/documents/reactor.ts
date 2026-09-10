@@ -104,10 +104,11 @@ import { REACTOR_HAZE_WGSL, REACTOR_WGSL } from "../shaders/reactor.wgsl.ts";
  * skeleton and closing is the shielding event alone; (2) the outer shell's struts are a
  * SOLID — a signed-distance tube of depth strutDepth along every border, marched through
  * the shell band at the outer crossings only — so they stand proud, occlude the face behind
- * them and break the silhouette; (3) a shut plate is RECESSED behind its frame (a shell of
+ * them and break the silhouette; (3) a shut plate WAS recessed behind its frame (a shell of
  * flush plates is a smooth sphere however it is lit: the middle shell, shut by a collapse at
  * f1000, read as a pink balloon behind the fixed struts until this), the ray continuing to
- * the inset surface to meet the strut's inner wall or the plate; (4) the camera DIVES: four
+ * the inset surface to meet the strut's inner wall or the plate — undone by T1264 (THE
+ * SHUTTER POP below): the plate's surface never switches now; (4) the camera DIVES: four
  * legs — wide, surface, one continuous pass through the centre and out the far side (never
  * parked in the core: the first draft dwelt there four seconds looking at plate backs), a
  * half-turn swing back — gaze held along the travel through the ball and turned back to the
@@ -127,8 +128,8 @@ import { REACTOR_HAZE_WGSL, REACTOR_WGSL } from "../shaders/reactor.wgsl.ts";
  * shell looking ALONG it with the shell as the ground, the outer one from outside and the
  * middle one from inside the outer skeleton — which is the viewpoint where Fresnel is
  * strongest on every facet in view (six legs now: wide, surface, graze outer, dive, graze
- * middle, swing). Shut plates are TRANSLUCENT: they add their lit colour and pass 30% of
- * the ray on. COLOUR: the base contrast restored (orange core, cyan-blue glass — the pink
+ * middle, swing). Shut plates became TRANSLUCENT: they added their lit colour and passed
+ * 30% of the ray on (since T1264 the hold is `shutDim` on a continuous weight). COLOUR: the base contrast restored (orange core, cyan-blue glass — the pink
  * was the two mixing in the haze and bloom), and the hue is a SWING of ±55° at 150°/min
  * rather than a 40°/min full turn: a nine-minute turn was invisible inside any viewing, and
  * a full circle lands on yellow-greens; the swing stays in the family. FORM: the outer
@@ -169,6 +170,34 @@ import { REACTOR_HAZE_WGSL, REACTOR_WGSL } from "../shaders/reactor.wgsl.ts";
  * control in the same run, under a load that doubled everything: wide 1.01× control,
  * graze outer 1.05×, graze middle 1.24×, dive centre 1.55× (quiet-day absolutes: 17.1,
  * 16.0, 19.0, 28.7 against 17.0/20.1).
+ *
+ * THE SHUTTER POP (T1264; the owner: "the glowing in the frame segments does not just
+ * disappear and pop in which makes things look very wonky. the surface of the panels and
+ * their bordering should stay the same basically so we always get the neat fresnel surface
+ * and then the glowing frame could pulse or something but not just appear disappear over a
+ * single frame"). The cause was a per-plate THRESHOLD: `blockedFace` compared the lagged
+ * shield with the plate's hash and switched the plate's whole look — recessed metal, its
+ * own seam, a different transmission — in the one frame the shield crossed it, so a
+ * collapse was a cascade of one-frame flips however slow the lane. Now (1) the plate's
+ * SURFACE never switches: the recessed-plate branch is gone and every plate is the glass
+ * facet path, shut or open — Fresnel, facet normal, refraction and the strut profile are
+ * the same at shield 0 and 1 (asserted byte-identical with the light off); (2) the
+ * boolean is a continuous weight, smoothstep(h, h + 0.3, share) with share = mix(rest,
+ * 1.3, shield), so a plate eases over 0.3 of the shield's travel — two to three frames on
+ * the lane's 0.04 s rise, a hundred on its release — and a share of 0 leaves every plate
+ * fully open (the outer shell at rest, §V914); (3) the weight reaches only the LIGHT: the
+ * frame's seam and bleed glow (`shadeFrame` takes a glow, the mean of the two plates a bar
+ * lies between), a share of the ray held back (`shutDim`, lerped on the weight, never
+ * switched) and the haze gate's leak (lerped 1 → 0.12); (4) the glow BREATHES: 0.65 +
+ * 0.35·sin(absTime·shutPulse + phase) on the frame clock (§V44), the phase per plate from
+ * the same hash, so neighbouring plates pulse out of step. Claims (§V147): SURFACE
+ * INVARIANT (light off, shield 0 vs 1 byte-identical), REACTS (shutting the inner shells
+ * adds glow and darkens no pixel), PULSE (shutPulse 2π at t = 1 s repeats shutPulse 0, π
+ * does not), CONTINUITY (a 60-step sweep of the inner shield moves no plate region by more
+ * than 2·1.5·1.3/(0.3·60) of its total travel — measured 0.101 against the bound 0.217; a
+ * threshold put back gives 0.86). The lanes were not touched: DUTY below is unchanged, and
+ * the rest state of the inner shells is now a faint seam glow on the tenth of plates whose
+ * hash sits under `blocked`·(k/n)² rather than a tenth of metal plates.
  *
  * DUTY (§V903/§V914 — 3600 frames of the pattern through the lanes):
  *   coreGain    = 4.2·level    + 0.5   (env1) → 0.733..2.671, mean 1.14, above retained 75%, hold 0
@@ -280,6 +309,10 @@ export const reactorDocument = document(
         stations: 1,
         travel: 96,
         exposure: 1.9,
+        // T1264 — the shutters: how much of the ray a shut plate holds back, and how fast its
+        // frame glow breathes (radians per second, per-plate phase).
+        shutDim: 0.7,
+        shutPulse: 2.5,
         /* Colour evolution (round three): one hue angle turns core, glass and beams
            together, inside the shader, so the sky stays deep and the core/glass contrast
            is invariant — 150°/min is one revolution every two and a half minutes — a turn inside any real viewing (40°/min, nine minutes a turn, was "not coming through": nobody watches a loop for nine minutes): moved when you look

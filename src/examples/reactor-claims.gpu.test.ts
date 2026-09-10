@@ -7,6 +7,7 @@ import { renderHeadless } from "../tests/headless/render-harness.ts";
 import { listExamples } from "./catalogue.ts";
 import { requireExample } from "./runner.ts";
 import { effectFor, example, valueGraphRun, CENTRE } from "./concepts/helpers.ts";
+import { decodeComponents } from "../tests/headless/pixel-compare.ts";
 
 /**
  * E55 REACTOR — THE CLAIMS (T1141).
@@ -27,6 +28,11 @@ import { effectFor, example, valueGraphRun, CENTRE } from "./concepts/helpers.ts
  *      its bias and never holds one value for a second.
  *   4. LIVELINESS IS STRUCTURAL (T1138, §V913). Consecutive frames still differ at the end
  *      of a whole minute, not only inside the first draw.
+ *   5. THE SHUTTERS NEVER POP (T1264). A plate's shut weight is a smoothstep of the shield,
+ *      not a threshold, and it reaches only the LIGHT: the glass surface is byte-identical
+ *      at shield 0 and 1, the frame glow it drives is periodic in the pulse rate, and a
+ *      sweep of the shield never moves any plate region by more than a step bound derived
+ *      from the ease width and the sweep step.
  *
  * Every bound is exact or derived (§V147): "no pixel brighter" allows exactly one 8-bit
  * quantisation step, the bias bound is the `valueMath` chain's own arithmetic, and "differs"
@@ -258,3 +264,143 @@ describe("E55 Reactor — claims", () => {
     expect(differs(b!, d!)).toBe(true);
   }, 120_000);
 });
+
+/* T1264 — THE SHUTTERS. The shield drives a per-plate weight
+   w = smoothstep(h, h + E, share), share = mix(rest, 1 + E, shield), E = SHUT_EASE = 0.3,
+   h = the plate's hash. Its whole reach is the light: frame seam/bleed glow, the ray's
+   transmission (× (1 − shutDim·w)) and the haze gate's leak. The surface is never touched. */
+
+/** The reactor node's own LINEAR output at one frame, luma per pixel — no tone map, no
+    bloom, so a term that is affine in the plate weights stays affine in what is read. */
+async function shootLinear(overrides: Record<string, unknown>, frame: number): Promise<Float32Array> {
+  const { graph, settings } = e55();
+  setReactor(graph, overrides);
+  const result = await renderHeadless({ host: nodeGpuHost(), graph, settings, frames: frame + 1, capture: [frame], animate: true, fps: 60, outputNodeId: "reactor" });
+  const errors = result.diagnostics.filter((d) => d.severity === "error");
+  if (errors.length > 0) throw new Error(errors.map((d) => d.message).join("; "));
+  const captured = result.frames.find((entry) => entry.frameIndex === frame);
+  if (captured === undefined) throw new Error(`no captured frame ${frame}`);
+  if (captured.width !== WIDTH || captured.height !== HEIGHT) throw new Error(`reactor drew ${captured.width}x${captured.height}`);
+  const c = decodeComponents(captured.bytes, captured.format);
+  const luma = new Float32Array(WIDTH * HEIGHT);
+  for (let p = 0; p < luma.length; p += 1) luma[p] = 0.2126 * (c[p * 4] ?? 0) + 0.7152 * (c[p * 4 + 1] ?? 0) + 0.0722 * (c[p * 4 + 2] ?? 0);
+  return luma;
+}
+
+/** Pixels where `a` and `b` differ by more than one 8-bit step, in `where`. */
+function differCount(a: Shot, b: Shot, where: (p: number) => boolean): number {
+  let count = 0;
+  for (let p = 0; p < a.luma.length; p += 1) {
+    if (where(p) && Math.abs((a.luma[p] ?? 0) - (b.luma[p] ?? 0)) > LSB) count += 1;
+  }
+  return count;
+}
+
+describe("E55 Reactor — the shutters never pop (T1264)", () => {
+  /* Light-off configuration: coreGain and laserGain zero kill every term the shield reaches
+     through the light (glow, haze), shutDim 0 kills the transmission hold, and a BLACK core
+     and edge colour pin coreRGB() at zero (the shield cools it towards edgeColor, and the
+     frame's ambient term reads it; a non-black pin is inexact — the colours are sRGB-decoded
+     before upload and the mix rounds). What is left is the surface: facets, Fresnel,
+     refraction, the background and the frame's environment read. */
+  const DARK = { coreGain: 0, laserGain: 0, shutDim: 0, coreColor: [0, 0, 0, 1], edgeColor: [0, 0, 0, 1] };
+
+  it("SURFACE INVARIANT: with the light off the picture is byte-identical at shield 0 and 1", async () => {
+    expect(dawnError, dawnError ?? "").toBeUndefined();
+    const [open] = await shoot({ ...DARK, shieldOuter: 0, shieldInner: 0 }, [60]);
+    const [shut] = await shoot({ ...DARK, shieldOuter: 1, shieldInner: 1 }, [60]);
+    // Every facet, Fresnel term, refraction path and frame profile is the same: the shield
+    // switches no geometry and no material. Exact: not one byte moves.
+    expect(differs(open!, shut!)).toBe(false);
+    // Not vacuous — with the light still off, the one thing the shield reaches that is not
+    // light-scaled, the transmission hold (shutDim shipped), darkens the disc.
+    const [heldOpen] = await shoot({ ...DARK, shutDim: 0.7, shieldOuter: 0, shieldInner: 0 }, [60]);
+    const [heldShut] = await shoot({ ...DARK, shutDim: 0.7, shieldOuter: 1, shieldInner: 1 }, [60]);
+    expect(brighterCount(heldOpen!, heldShut!, inDisc)).toBeGreaterThan(0);
+  }, 120_000);
+
+  it("REACTS: shutting the inner shells only ADDS frame glow — no pixel darker, the disc brighter", async () => {
+    expect(dawnError, dawnError ?? "").toBeUndefined();
+    // shieldOuter stays 0 so coreGain() and coreRGB() do not move; shutDim 0 removes the
+    // hold; haze 0 removes the gate's leak. What is left of the shield is the seam/bleed
+    // glow, which is non-negative and monotone in the weight.
+    // The saturation grade is not monotone in luma (see noGrade), so the frame is read before it.
+    const still = { shieldOuter: 0, shutDim: 0, haze: 0 };
+    const [open] = await shoot({ ...still, shieldInner: 0 }, [60], noGrade);
+    const [shut] = await shoot({ ...still, shieldInner: 1 }, [60], noGrade);
+    expect(brighterCount(open!, shut!, () => true)).toBe(0);
+    expect(brighterCount(shut!, open!, inDisc)).toBeGreaterThan(0);
+    expect(meanWhere(shut!, inDisc)).toBeGreaterThan(meanWhere(open!, inDisc));
+  });
+
+  it("PULSE: the shut glow is periodic in shutPulse — a rate of 2π at t = 1 s repeats a rate of 0, π does not", async () => {
+    expect(dawnError, dawnError ?? "").toBeUndefined();
+    // pulse = 0.65 + 0.35·sin(absTime·shutPulse + phase). Frame 60 at 60 fps is absTime 1.0
+    // exactly, so shutPulse 2π lands every plate on the same sine value as shutPulse 0 (up
+    // to a float rounding of the argument, hence "one 8-bit step"), while π negates it.
+    const still = { shieldOuter: 0, shieldInner: 1, shutDim: 0, haze: 0 };
+    const [hold] = await shoot({ ...still, shutPulse: 0 }, [60]);
+    const [turn] = await shoot({ ...still, shutPulse: 2 * Math.PI }, [60]);
+    const [half] = await shoot({ ...still, shutPulse: Math.PI }, [60]);
+    expect(differCount(hold!, turn!, () => true)).toBe(0);
+    expect(differCount(hold!, half!, inDisc)).toBeGreaterThan(0);
+  });
+
+  it("CONTINUITY: a 60-step sweep of the inner shield never moves any plate region by more than the derived step bound", async () => {
+    expect(dawnError, dawnError ?? "").toBeUndefined();
+    /* Two shells, shieldOuter 0, blocked 0: only shell 1's weights move, every plate starts
+       fully open (share 0 ≤ h) and ends fully shut (share 1 + E ≥ h + E), and nothing else in
+       the picture depends on shieldInner. Same frame index for every step, so the pulse and
+       the camera are constant.
+
+       THE BOUND. Per step Δs = 1/K of shield, Δshare = (1 + E − rest)/K = (1 + E)/K. The
+       smoothstep's steepest slope is 1.5/E per unit share, so any one plate weight moves
+       ≤ ρ = 1.5·(1 + E)/(E·K) per step while travelling exactly 1 over the sweep. A region's
+       linear luma is a sum of terms each affine in one plate weight (glow, bar glow, gate
+       leak) or the product of two (a ray crossing shell 1 twice: (1 − d·w_a)(1 − d·w_b), d =
+       shutDim). For an affine term c·w the ratio (largest single step) / (total variation
+       over the sweep) is ≤ ρ·|c| / |c| = ρ; for the product term with d = 0.7 the largest
+       step is ≤ 2dρ·X and the variation ≥ (1 − (1 − d)²)·X = 0.91·X, so ≤ 1.54ρ. The claim
+       asserts 2ρ on the shipped shutDim over every 8×8 block whose variation is at least a
+       quarter of the largest (the blocks where the shutters act), with the summed terms'
+       partial cancellation the one assumption not derived. Measured 0.101 (ρ = 0.108, 2ρ =
+       0.217); a threshold put back in place of the smoothstep gives 0.86, which is what
+       red-verified this bound. */
+    const K = 60;
+    const E = 0.3;
+    const rho = (1.5 * (1 + E)) / (E * K);
+    const bound = 2 * rho;
+    const sweep: Float32Array[] = [];
+    for (let i = 0; i <= K; i += 1) sweep.push(await shootLinear({ layers: 2, blocked: 0, shieldOuter: 0, shieldInner: i / K }, 0));
+    const BLOCK = 8;
+    const cols = WIDTH / BLOCK;
+    const rows = HEIGHT / BLOCK;
+    const blocks: { ratio: number; variation: number }[] = [];
+    for (let by = 0; by < rows; by += 1) {
+      for (let bx = 0; bx < cols; bx += 1) {
+        const centre = (by * BLOCK + BLOCK / 2) * WIDTH + bx * BLOCK + BLOCK / 2;
+        if (!inDisc(centre)) continue;
+        const means = sweep.map((luma) => {
+          let sum = 0;
+          for (let y = 0; y < BLOCK; y += 1) for (let x = 0; x < BLOCK; x += 1) sum += luma[(by * BLOCK + y) * WIDTH + bx * BLOCK + x] ?? 0;
+          return sum / (BLOCK * BLOCK);
+        });
+        let variation = 0;
+        let largest = 0;
+        for (let i = 1; i <= K; i += 1) {
+          const step = Math.abs((means[i] ?? 0) - (means[i - 1] ?? 0));
+          variation += step;
+          largest = Math.max(largest, step);
+        }
+        blocks.push({ ratio: variation > 0 ? largest / variation : 0, variation });
+      }
+    }
+    const most = Math.max(...blocks.map((b) => b.variation));
+    expect(most).toBeGreaterThan(0);
+    const acting = blocks.filter((b) => b.variation >= most / 4);
+    expect(acting.length).toBeGreaterThan(0);
+    const worst = Math.max(...acting.map((b) => b.ratio));
+    expect(worst, `largest step / total variation ${worst.toFixed(4)} over ${acting.length} acting blocks; bound 2ρ = ${bound.toFixed(4)}`).toBeLessThanOrEqual(bound);
+  }, 600_000);
+});
+

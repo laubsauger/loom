@@ -81,10 +81,11 @@ const UNSET_BY_DESIGN: Readonly<Record<string, { reason: string; fields: readonl
       "T1150 runs `reactor.wgsl.ts` twice — `REACTOR_WGSL` (PASS 0, the geometry) and " +
       "`REACTOR_HAZE_WGSL` (PASS 1, the front haze at half resolution) — from ONE template, " +
       "so the haze node reflects the whole struct while its `fs` returns inside `if (PASS == " +
-      "1)` before any of these twelve is read. They are the optics and the palette: used only " +
-      "under `trace`, `coreSegment` and the hue helpers, none of which PASS 1 reaches. So a " +
-      "declared default cannot move a pixel of E55, and pinning the values into the document " +
-      "would be twelve numbers claiming to matter that do not.",
+      "1)` before any of these fourteen is read. They are the optics, the palette and the " +
+      "shutters' hold and pulse (T1264): used only under `trace`, `coreSegment` and the hue " +
+      "helpers, none of which PASS 1 reaches. So a declared default cannot move a pixel of " +
+      "E55, and pinning the values into the document would be fourteen numbers claiming to " +
+      "matter that do not.",
     fields: [
       "coreColor",
       "dispersion",
@@ -97,6 +98,8 @@ const UNSET_BY_DESIGN: Readonly<Record<string, { reason: string; fields: readonl
       "hueSwing",
       "ior",
       "shellHueStep",
+      "shutDim",
+      "shutPulse",
       "turbulence",
     ],
   },
