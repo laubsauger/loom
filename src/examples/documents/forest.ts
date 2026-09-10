@@ -287,12 +287,44 @@ import { FOREST_WGSL, FOREST_DOF_WGSL } from "../shaders/forest.wgsl.ts";
  * the occlusion fades to zero before the shortest walk the count can produce; and the
  * columns had to be NARROW ENOUGH TO LEAVE GAPS. At thirteen and four trunk radii every
  * direction found an occluder and the picture was uniformly dark rather than striped; seven
- * and two and a half leaves lit lanes between the shadows, which is the whole effect.
+ * and two and a half left lit lanes between the shadows.
  *
  * The shadowed term's coefficient went 0.95 to 1.95 to put the LIT fog back where it was, so
- * the change buys CONTRAST rather than darkness. Measured over five frames spread across
- * forty seconds, the frame mean now swings 0.214 to 0.406 where the T1170 file swung 0.286
- * to 0.306 — a fivefold wider swing about nearly the same average.
+ * the change bought CONTRAST rather than darkness. Measured over five frames spread across
+ * forty seconds, the frame mean swung 0.214 to 0.406 where the T1170 file swung 0.286 to
+ * 0.306 — a fivefold wider swing about nearly the same average.
+ *
+ * ## T1266 — THE SHADOW IS THE DRAWN TREE'S (B198)
+ *
+ * The owner, on the T1170b file: the shadows "seem to be originating from a tree that is
+ * twice the size" of the one standing there. They were. A column seven radii wide with a
+ * black core of two and a half is a shadow cast by a much thicker tree — measured at nine
+ * metres, a 46 px black core behind a 22 px trunk — and it stood at the FOOT radius all the
+ * way up while the drawn stem tapered and leaned away from it.
+ *
+ * Now the occluder is the stem as drawn: 'moonVisible' reads the same four knots
+ * 'buildTree' draws the trunk through (one function, 'stemKnot', so the two cannot drift),
+ * at the height the light ray passes, lean and taper and swelling included; and its edge
+ * softens the way a disc light's does — half dark exactly on the silhouette, the penumbra
+ * opening either side at tan(moonSize) per metre behind. 'forest-claims.gpu.test.ts' gates
+ * it on the cause: one metre behind a foot, the shadow's half-dark width and centre equal
+ * the drawn trunk's cross-section, to a texel of the probe row.
+ *
+ * THE PRICE IS THE DARKNESS THE WIDE COLUMNS BOUGHT, AND THE OWNER CHOSE IT. A wood of
+ * true-width trunks takes 5.2% of the moonlight out of the fog where the T1170b file took
+ * 22%, and the frame came out a third brighter (mean 83 against 62 of 255 at frame 300).
+ * The coefficient went back to 1.0, which returns the mean over frames 0/300/900/1500 to
+ * 68.59 against the T1170b file's 68.17. The swing is narrower (60 to 79 against 55 to 100
+ * on those frames): thin shadows put less light coming and going into a walk, and that is
+ * what the truthful picture has. The half-way alternative (black on the trunk, a faint
+ * wide falloff) passed the old fog bound and was rendered and rejected: every variant that
+ * darkened the fog enough brought the wide column back.
+ *
+ * COST: +0.27 ms a frame at 1280x720 (3.90 against 3.63, the T1170b file alternated in the
+ * same quiet run; E13 beside them at 2.48, so the ratio went 1.46 to 1.57). The knots cost
+ * +0.41 until trees far from the light ray were refused before paying for them — an exact
+ * refusal, byte-identical frames. Most of what is left is the thin shadow itself: the walk
+ * retires when the light is gone, and a 2.5-radius black core used to put it out early.
  *
  * ⚑ AND THE DITHER SPLIT IN TWO, which is worth more than it looks. The march's entry dither
  * and the volumetric's sample offset had shared one hash; they want opposite distributions.

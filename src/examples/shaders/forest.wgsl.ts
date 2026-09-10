@@ -443,19 +443,26 @@ const STEP_SCALE: f32 = 0.72;
    A straight spoke reads as a diagram, so every branch bends once, upward and off its own
    azimuth; the twisted azimuth comes off the shoulder's own cosine and sine by angle
    addition rather than a second pair of trig calls. */
+/* One knot of the drawn stem at height fraction 'f' — xyz the axis point, w the radius.
+   The lean grows as a cubic-ish so the foot stands straight and the top does the wandering,
+   and the radius tapers with one sine of swelling over it. ONE function for both readers
+   (T1266): 'buildTree' draws the trunk through four of these, and 'moonVisible' casts the
+   shadow from the same four, so the shadow cannot drift off the trunk it belongs to. */
+fn stemKnot(t: Tree, lean: vec2f, f: f32) -> vec4f {
+  let w = f * f * (0.35 + 0.65 * f);
+  // A whole tree tapers to a point; a SNAG ends where it snapped, so its top radius is
+  // more than half its base. That blunt end is most of what says "broken" rather than
+  // "small" from a distance, and it costs one mix.
+  let tip = mix(0.09, 0.62, t.snag);
+  let taper = t.r * mix(1.0, tip, f * (0.45 + 0.55 * f)) * (1.0 + 0.15 * sin(f * 9.0 + t.seed.z * 21.0));
+  return vec4f(t.base + vec3f(lean.x * w, t.h * f, lean.y * w), taper);
+}
+
 fn buildTree(t: Tree, tbl: ptr<function, array<vec4f, 22>>) -> i32 {
-  /* The stem, as four knots: the lean grows as a cubic-ish so the foot stands straight and
-     the top does the wandering, and the radius tapers with one sine of swelling over it. */
+  // The stem, as four knots (see 'stemKnot').
   let fs = vec4f(0.0, 0.35, 0.7, 1.0);
   for (var j: i32 = 0; j < 4; j = j + 1) {
-    let f = fs[j];
-    let w = f * f * (0.35 + 0.65 * f);
-    // A whole tree tapers to a point; a SNAG ends where it snapped, so its top radius is
-    // more than half its base. That blunt end is most of what says "broken" rather than
-    // "small" from a distance, and it costs one mix.
-    let tip = mix(0.09, 0.62, t.snag);
-    let taper = t.r * mix(1.0, tip, f * (0.45 + 0.55 * f)) * (1.0 + 0.15 * sin(f * 9.0 + t.seed.z * 21.0));
-    (*tbl)[j] = vec4f(t.base + vec3f(t.lean.x * w, t.h * f, t.lean.y * w), taper);
+    (*tbl)[j] = stemKnot(t, t.lean, fs[j]);
   }
   let n = i32(clamp(round(params.branches), 0.0, f32(MAX_BRANCH)));
   if (n <= 0 || t.reach <= 0.0) { return 0; }
@@ -707,22 +714,22 @@ fn density(y: f32) -> f32 {
  * cell can only ever join the walk contributing nothing. It is also the right picture: a
  * shadow cast from far away through this much haze has no edge left.
  *
- * The column is still far wider than the trunk (SHADOW_WIDE/SHADOW_CORE), and for the same
- * reason as before — a fog lit through wide occluders is a DARKER fog, and that darkness is
- * most of the mood. What changed is that it can now be FULL extinction at the core without
- * buying noise, so the picture is the alternation of lit and unlit slabs rather than a wash.
+ * THE COLUMN IS THE DRAWN TRUNK (T1266, B198). T1170b cast it 2.5 trunk radii black and 7
+ * radii wide on purpose, for a darker fog, and every shaft then read as cast by a tree
+ * several times thicker than the one standing in front of it: 46 px of black core behind a
+ * 22 px trunk at nine metres. The occluder now is the stem as drawn, with its lean and
+ * taper at the height the light ray passes, and the edge softens the way a disc light's
+ * shadow does, from the stem's own radius outward at the moon's apparent size. The
+ * darkness that bought is paid back in the shaft gain at the call site, not by widening
+ * the shadow again.
  */
 const SHADOW_CELLS: i32 = 5;
-/* The column, in trunk radii: full extinction inside SHADOW_CORE, nothing past SHADOW_WIDE.
-   Deliberately much wider than the trunk — see the note above. */
-const SHADOW_CORE: f32 = 2.5;
-const SHADOW_WIDE: f32 = 7.0;
 /* Where the shadow has faded out, in cells. A DDA of SHADOW_CELLS steps is guaranteed to
    reach (SHADOW_CELLS - 1) * spacing / sqrt(2) even on the worst diagonal, which is 2.12
    cells at four; ending the fade inside that is what makes the walk's own far end
    invisible. */
 const SHADOW_REACH: f32 = 2.6;
-fn moonVisible(x: vec3f, dxz: vec2f, slope: f32, base: vec2f, canopy: f32) -> f32 {
+fn moonVisible(x: vec3f, dxz: vec2f, slope: f32, base: vec2f, canopy: f32, pen: f32) -> f32 {
   // Above the tallest stem the wood can grow there is nothing left to cast, and the taps
   // only climb from here — so the whole walk is skipped for every sample over the canopy,
   // which near the moon is most of them.
@@ -752,7 +759,32 @@ fn moonVisible(x: vec3f, dxz: vec2f, slope: f32, base: vec2f, canopy: f32) -> f3
     if (tEnter > far || x.y + slope * tEnter > canopy || vis < 0.004) { break; }
     let tree = stemAt(cell, cell + base);
     if (tree.present > 0.5) {
-      let m = tree.base.xz - x.xz;
+      /* THE OCCLUDER IS THE DRAWN STEM (T1266, B198). The light ray passes this trunk at a
+         height; at that height the drawn stem has been carried off the foot by its lean and
+         thinned by its taper, and that is what casts: the SAME four knots 'buildTree' draws
+         the trunk through ('stemKnot'), interpolated along the one straight capsule this
+         height is on, exactly as the drawn trunk is. The lean is paid for here, once per
+         PRESENT tree, rather than in 'stemAt' for every probe. The height is read at the
+         foot's 'along' — the lean moves it by well under a cell, and one fixed-point step
+         is the whole correction. */
+      let m0 = tree.base.xz - x.xz;
+      let along0 = dot(m0, dxz);
+      /* ⚑ AND MOST TREES THE WALK PASSES ARE NOWHERE NEAR THE LIGHT RAY, so they are refused
+         before the knots are paid for (two sines each — +0.41 ms a frame when every tree
+         paid them). The refusal is EXACT, not a tolerance: the drawn stem never strays more
+         than 'leanLen' from its foot's axis nor swells past 1.15 of its foot radius, so a
+         ray further than that plus the widest penumbra it could have is one the smoothstep
+         below returns exactly 0 for, and a stem wholly behind the point casts nothing. */
+      let perp0 = length(m0 - dxz * along0);
+      if (along0 + tree.leanLen > 0.0
+          && perp0 - tree.leanLen < max(tree.r * 1.15, 0.02) + (along0 + tree.leanLen) * pen + 0.02) {
+      let f = clamp((x.y + slope * along0 - tree.base.y) / max(tree.h, 0.01), 0.0, 1.0);
+      let ang = tree.seed.w * 6.2831853;
+      let lean = vec2f(cos(ang), sin(ang)) * tree.leanLen;
+      let lo = select(select(0.7, 0.35, f < 0.7), 0.0, f < 0.35);
+      let hi = select(select(1.0, 0.7, f < 0.7), 0.35, f < 0.35);
+      let knot = mix(stemKnot(tree, lean, lo), stemKnot(tree, lean, hi), (f - lo) / (hi - lo));
+      let m = knot.xz - x.xz;
       let along = dot(m, dxz);
       /* The light ray's height where it passes this trunk. A trunk the ray clears overhead
          casts nothing — which is why the shafts open out above the wood — but the test on
@@ -764,10 +796,16 @@ fn moonVisible(x: vec3f, dxz: vec2f, slope: f32, base: vec2f, canopy: f32) -> f3
       let taper = clamp((tree.base.y + tree.h - (x.y + slope * along)) / max(tree.h * 0.35, 0.5), 0.0, 1.0);
       if (along > 0.0 && taper > 0.0) {
         let perp = length(m - dxz * along);
-        let w = max(tree.r, 0.02);
+        // The drawn radius at that height, swelling and all.
+        let w = max(knot.w, 0.02);
+        /* A disc light's shadow: the half-dark edge stays ON the stem's own radius, and the
+           penumbra opens either side of it at the moon's apparent size per metre behind.
+           The 0.02 keeps the smoothstep's edges apart at the foot. */
+        let soft = along * pen + 0.02;
         let fade = 1.0 - smoothstep(far * 0.6, far, along);
-        vis = vis * (1.0 - fade * taper * smoothstep(w * SHADOW_WIDE, w * SHADOW_CORE, perp));
+        vis = vis * (1.0 - fade * taper * smoothstep(w + soft, max(w - soft, 0.0), perp));
       }
+      } // the reach test
     }
     if (tMax.x < tMax.y) {
       tEnter = tMax.x;
@@ -984,7 +1022,8 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
      loop read five transcendentals a sample and it is the third-largest thing in the frame;
      written this way it reads three. 'shafts' at 0 skips all of it and is the second cost
      lever in the file.
-     ⚑ AND THE COEFFICIENT ON THE SHADOWED TERM IS 1.95 RATHER THAN T1170's 0.95, WHICH IS
+     ⚑ AND THE COEFFICIENT ON THE SHADOWED TERM (T1170b's account; T1266 has since moved it
+     back to 1.0 — see the call site) WAS 1.95 RATHER THAN T1170's 0.95, WHICH WAS
      NOT A BRIGHTNESS DECISION. A shadow that actually blocks removes light, and the deep
      analytic occlusion below takes the frame's mean from 0.30 to about 0.18 on its own. The
      gain puts the LIT fog back where it was, so what the change buys is contrast between
@@ -1016,6 +1055,8 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
       let lxz = max(length(l.xz), 1.0e-3);
       let shadowDir = l.xz / lxz;
       let shadowSlope = l.y / lxz;
+      // The penumbra's growth per metre behind a stem: the tangent of the disc's angular radius.
+      let shadowPen = tan(max(params.moonSize, 0.02) * PI / 180.0);
       let canopy = max(params.treeHeight, 0.5) * (1.0 + 0.5 * max(params.heightVary, 0.0));
       var sum = 0.0;
       for (var i: i32 = 0; i < SHAFT_STEPS; i = i + 1) {
@@ -1029,12 +1070,16 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
         // The estimator's weight: the true transmittance over the sampling density's,
         // which is near 1 by construction and carries only the altitude structure the
         // constant sigma does not know about.
-        sum = sum + dens * moonVisible(o + rd * ts, shadowDir, shadowSlope, base, canopy) * exp(-od + sigma * ts);
+        sum = sum + dens * moonVisible(o + rd * ts, shadowDir, shadowSlope, base, canopy, shadowPen) * exp(-od + sigma * ts);
       }
       acc = sum * norm / f32(SHAFT_STEPS);
     }
+    /* The shadowed term's coefficient: 0.95 at T1170, 1.95 when T1170b widened the columns
+       and needed the lit fog back, and 1.0 since T1266 narrowed them to the trunks — which
+       let so much more light through that 1.0 is what returns the frame's mean luma to the
+       T1170b file's (68.59 against 68.17 of 255 over frames 0/300/900/1500). */
     col = col + params.moonColor.rgb * params.moonGain * shaftGain
-              * (0.022 * (1.0 - tr) + 1.95 * phase * acc);
+              * (0.022 * (1.0 - tr) + 1.0 * phase * acc);
   }
 
   // THE QUIET ZONE. Text goes on top, so this dissolves a patch of the picture into the

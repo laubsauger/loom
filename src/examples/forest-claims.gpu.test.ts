@@ -67,6 +67,12 @@ import { requireExample } from "./runner.ts";
  *  12. AND THE DRIVE REACHES THE PIXELS. Freezing both slots at exactly their own retained
  *      values — the only change being that they stop listening — moves the picture.
  *
+ * T1266 added one, for B198:
+ *
+ *  13. THE SHADOW IS THE DRAWN STEM'S. In a probe pass of the shipped shader, one metre
+ *      behind a foot the moon's visibility is half dark exactly where the renderer's own
+ *      distance field says the trunk's edges are: width and centre, to a texel.
+ *
  * Every bound is exact or derived (§V147): "no pixel brighter" allows exactly one 8-bit
  * quantisation step; the quiet window's edge is solved from the shipped parameters rather
  * than typed in; "differs" is byte inequality; and the ratios carry the measured value they
@@ -306,7 +312,7 @@ describe("E57 Forest — claims", () => {
     expect(mean(dark!)).toBeLessThan(mean(lit!) * 0.05);
   });
 
-  it("the trees are the structure: emptying the grid halves the detail in the band they live in", async () => {
+  it("the trees are the structure: emptying the grid takes over a quarter of the detail out of the band they live in", async () => {
     expect(dawnError, dawnError ?? "").toBeUndefined();
     /* T1170: FOUR FRAMES RATHER THAN ONE, and that is a consequence of the clumping rather
        than a convenience. With a constant per-cell probability every frame held about the
@@ -321,9 +327,16 @@ describe("E57 Forest — claims", () => {
     const band = (_u: number, v: number) => v > 0.25 && v < 0.55;
     const avg = (xs: number[]): number => xs.reduce((a, b) => a + b, 0) / xs.length;
     expect(differs(wood[0]!, bare[0]!)).toBe(true);
-    // Measured 0.0340 with the forest and 0.0189 without: half of everything there is to see
-    // in that band is the wood. What is left is the fog's own gradient and the moon.
-    expect(avg(bare.map((s) => detail(s, band)))).toBeLessThan(avg(wood.map((s) => detail(s, band))) * 0.6);
+    /* Bare against wooded, the detail in that band: 0.725 (T1266). What is left without the
+       wood is the fog's own gradient and the moon.
+       ⚑ IT WAS 0.545, AND THE DIFFERENCE IS B198. Under T1170b every trunk cast a column 2.5
+       radii black and 7 wide, and that column's edges were most of what this line credited
+       to "the wood": emptying the grid took out 0.0473 of detail then and takes out 0.0353
+       now, while the bare band did not move (0.0258 against 0.0256) — the shaft gain barely
+       touches it either (0.677 at the old 1.95). A wood casting its own trunks carries this
+       much of the band's structure and no more. The bound sits between the measured 0.725
+       and 1.0, which is what a forest that stopped drawing its trees would read. */
+    expect(avg(bare.map((s) => detail(s, band)))).toBeLessThan(avg(wood.map((s) => detail(s, band))) * 0.85);
     /* AND THE DARK TAIL IS TRUNK, which is the half of the claim the gradient cannot make.
        Local contrast is raised as much by a shaft in the mist as by a silhouette, so a forest
        that had stopped drawing its trees and only kept throwing their shadows would still
@@ -507,17 +520,26 @@ describe("E57 Forest — claims", () => {
   it("the broken stems are a different object: `snags` moves the structure down the frame", async () => {
     expect(dawnError, dawnError ?? "").toBeUndefined();
     const frames = [60, 240, 900, 1500];
-    const shipped = await shoot({}, frames);
-    const none = await shoot({ snags: 0 }, frames);
-    const all = await shoot({ snags: 1 }, frames);
+    /* ⚑ WITH THE VOLUMETRIC OFF (T1266), because a snag is GEOMETRY and this measures the
+       geometry. Under T1170b this ran with the shafts on and read 1.121, and most of that was
+       not the stems at all: a whole tree cast a column seven radii wide up through the high
+       band and a snag cast nothing there, so breaking the stems moved the balance by
+       removing SHADOW. Once the shadows became the trunks' own width (B198) the same line
+       read 1.013 — the knob unchanged, its evidence gone. With the shafts off the ratio is
+       2.250 for the T1170b file and this one alike: the stems themselves, which T1266 did not
+       touch, and more than twice the bound. */
+    const dry = { shafts: 0 };
+    const shipped = await shoot({ ...dry }, frames);
+    const none = await shoot({ ...dry, snags: 0 }, frames);
+    const all = await shoot({ ...dry, snags: 1 }, frames);
     // The high band is where only a whole trunk reaches; the low band is under the crowns,
     // which is where a broken one lives and where the mist is thin enough overhead to see it.
     const low = (_u: number, v: number) => v > 0.5 && v < 0.72;
     const high = (_u: number, v: number) => v > 0.02 && v < 0.22;
     const balance = (shots: Shot[]): number =>
       shots.reduce((a, shot) => a + detail(shot, low) / detail(shot, high), 0) / shots.length;
-    /* Break every stem and the frame's structure moves down it: 0.787 at 0 against 0.889 at
-       1. The knob does what its comment says (§V146).
+    /* Break every stem and the frame's structure moves down it (T1170b, shafts on: 0.787 at
+       0 against 0.889 at 1). The knob does what its comment says (§V146).
        ⚑ AND THIS GATES THE KNOB, NOT ONE OF ITS THREE LIMBS — which is worth stating because
        the red-verify said so. A snag differs from a whole tree three ways: it is shorter, it
        carries no branches, and it ends blunt. Disabling only the HEIGHT and leaving the other
@@ -748,20 +770,157 @@ describe("E57 Forest — claims", () => {
     // 1. THE VOLUMETRIC IS THE LIGHT. Non-vacuous first: with no trees the term adds a
     //    measured 0.4117 of luma to every one of the 78268 pixels this walks.
     expect(bareLevel / maskedPixels).toBeGreaterThan(0.05);
-    /* 2. THE WOOD TAKES LIGHT OUT OF IT — 0.3205 against 0.4117, 22% of the shaft term gone.
-          Same pixels, same fog, same moon, same shafts gain; the only difference is that a
-          trunk stands somewhere along the path to the moon. RED-VERIFIED by making
-          `moonVisible` return a constant 1.0 and regenerating the example: this line is the
-          first to fail, at 32221 against a bound of 29002. (And the regeneration is the
-          point — the WGSL travels INSIDE the `.loom.json`, so a shader edit alone changes
-          nothing this suite can see, which cost one wasted red-verify to learn.) */
-    expect(woodLevel).toBeLessThan(bareLevel * 0.9);
+    /* 2. THE WOOD TAKES LIGHT OUT OF IT. Same pixels, same fog, same moon, same shafts gain;
+          the only difference is that a trunk stands somewhere along the path to the moon.
+          RED-VERIFIED (T1170b) by making `moonVisible` return a constant 1.0 and regenerating
+          the example: the ratio is then 1.000, the no-occlusion reading. (And the
+          regeneration is the point — the WGSL travels INSIDE the `.loom.json`, so a shader
+          edit alone changes nothing this suite can see, which cost one wasted red-verify to
+          learn.)
+          ⚑ T1266 MOVED THE BOUND, AND WHY IT IS NOT A LOOSENING OF THE MEANING. At T1170b the
+          wood took 22% (0.778) because every trunk cast 2.5 radii black and 7 wide — the
+          shadows of a tree several times the size of the one drawn, which is B198. Cast from
+          the drawn stem the wood takes what a wood of these trunks actually takes: measured
+          0.9476, 5.2%. No coefficient can change this ratio (the shaft gain scales both arms),
+          so the bound sits halfway between the no-occlusion 1.000 and the measured value: a
+          shadow term that stopped casting fails it, a wood that casts its own trunks passes. */
+    expect(woodLevel).toBeLessThan(bareLevel * 0.975);
     /* 3. AND IT TAKES IT OUT IN SLABS, which is the half that separates a god ray from a
-          dimmer glow: measured 1289 against 634, so the wood roughly DOUBLES the boxed
-          curvature of the shaft term. With an empty grid what is left is the estimator's
+          dimmer glow: measured 1289 against 634 under T1170b's wide columns, and 1.665 times
+          the bare curvature with the trunks casting at their own width (T1266) — the edges
+          are fewer and closer together now, and they are still two thirds more structure
+          than the fog has on its own. With an empty grid what is left is the estimator's
           own residual; with a wood in it, the shadow edges. */
     expect(woodStructure).toBeGreaterThan(bareStructure * 1.5);
   }, 300_000);
+
+  it("the shadow is the drawn stem's: one metre behind a foot, its half-dark width and centre are the trunk's own (T1266)", async () => {
+    expect(dawnError, dawnError ?? "").toBeUndefined();
+    /* ⚑ B198 — THE OWNER SAW SHADOWS CAST BY A TREE TWICE THE SIZE OF THE ONE STANDING
+       THERE, and they were: T1170b cast every trunk 2.5 radii black and 7 wide. The guard
+       goes on the cause, so it compares the two things that disagreed, both measured with
+       the file's own functions in the file's own frame — not a rendered picture, where fog
+       and a thousand other trunks would blur the comparison past use.
+
+       A PROBE PASS. The shipped shader is rendered with its fragment cut short at the dither
+       line, where everything the frame knows (the eye, the moon, the rebased cell frame) is
+       in scope, and it returns a 1-D measurement per row for a stem it picks itself — the
+       first unbroken stems in the cells just ahead of the eye:
+         even row  the moon's visibility along a line PERPENDICULAR to the moon, one metre
+                   behind the stem's foot, one metre off the ground ('moonVisible')
+         odd row   1 where that same line, raised to the height the light ray passes the
+                   trunk, is INSIDE the drawn trunk ('treeNear', lod 0 — the renderer's own
+                   distance field, the thing a viewer sees)
+       A disc light's shadow is half dark exactly on the occluder's own silhouette, so the
+       half-dark crossings must sit on the trunk's edges: width and centre, each to within
+       one texel of the probe row. The run of inside texels quantises each edge by half a
+       texel, which is where the one comes from (§V147: derived, not tuned). */
+    const PW = 600;
+    const PH = 60;
+    const SPAN = 3; // metres across a probe row
+    const TEXEL = SPAN / PW;
+    const ANCHOR = "  // Fixed per-pixel dither: grain, never flicker (E55's finding, kept).";
+    const PROBE = `  {
+    let lxzP = max(length(l.xz), 1.0e-3);
+    let sdP = l.xz / lxzP;
+    let ssP = l.y / lxzP;
+    let penP = tan(max(params.moonSize, 0.02) * PI / 180.0);
+    let canopyP = max(params.treeHeight, 0.5) * (1.0 + 0.5 * max(params.heightVary, 0.0));
+    let band = i32(floor(uv.y * 6.0));
+    let pick = band / 2;
+    var tree: Tree;
+    var found = -1;
+    for (var k: i32 = 0; k < 16; k = k + 1) {
+      let c = floor(o.xz / s) + vec2f(f32(k % 4) - 1.0, f32(k / 4) + 1.0);
+      let tt = treeAt(c, c + base);
+      if (tt.present > 0.5 && tt.snag < 0.5) {
+        found = found + 1;
+        if (found == pick) { tree = tt; }
+      }
+    }
+    if (found < pick) { return vec4f(-1.0, -1.0, -1.0, 1.0); }
+    let perpP = vec2f(-sdP.y, sdP.x);
+    let u = (uv.x - 0.5) * ${SPAN.toFixed(1)};
+    let y0 = tree.base.y + 1.0;
+    if ((band & 1) == 0) {
+      let xz = tree.base.xz - sdP + perpP * u;
+      return vec4f(moonVisible(vec3f(xz.x, y0, xz.y), sdP, ssP, base, canopyP, penP), 0.0, 0.0, 1.0);
+    }
+    var tbl: array<vec4f, 22>;
+    let nb = buildTree(tree, &tbl);
+    let xz = tree.base.xz + perpP * u;
+    let d = treeNear(vec3f(xz.x, y0 + ssP, xz.y), &tbl, nb, 0);
+    return vec4f(select(0.0, 1.0, d.w < 0.0), 0.0, 0.0, 1.0);
+  }`;
+    const { graph, settings } = e57();
+    const forest = graph.nodes["forest"]!.parameters as Record<string, unknown>;
+    const source = forest["source"] as string;
+    expect(source.includes(ANCHOR), "the probe's anchor line is gone from the shader").toBe(true);
+    forest["source"] = source.replace(ANCHOR, `${PROBE}\n${ANCHOR}`);
+    const frame = 300;
+    const result = await renderHeadless({
+      host: nodeGpuHost(),
+      graph,
+      settings: { ...settings, outputResolution: { width: PW, height: PH } },
+      frames: frame + 1,
+      capture: [frame],
+      animate: true,
+      fps: 60,
+      outputNodeId: "forest",
+    });
+    const errors = result.diagnostics.filter((d) => d.severity === "error");
+    expect(errors.map((d) => d.message)).toEqual([]);
+    const shot = result.frames[0]!;
+    expect(shot.format).toBe("rgba16float");
+    const halves = new Uint16Array(shot.bytes.buffer, shot.bytes.byteOffset, shot.bytes.byteLength / 2);
+    const half = (h: number): number => {
+      const sign = h & 0x8000 ? -1 : 1;
+      const exponent = (h >> 10) & 0x1f;
+      const mantissa = h & 0x3ff;
+      if (exponent === 0) return sign * mantissa * 2 ** -24;
+      return sign * (1 + mantissa / 1024) * 2 ** (exponent - 15);
+    };
+    const row = (band: number): number[] => {
+      const y = Math.floor(((band + 0.5) / 6) * PH);
+      return Array.from({ length: PW }, (_, x) => half(halves[(y * PW + x) * 4]!));
+    };
+
+    let checked = 0;
+    for (let pick = 0; pick < 3; pick += 1) {
+      const vis = row(pick * 2);
+      const inside = row(pick * 2 + 1);
+      if (vis[0]! < 0) continue; // fewer than three stems in reach
+      const first = inside.indexOf(1);
+      const last = inside.lastIndexOf(1);
+      expect(first, `stem ${pick}: the drawn trunk is not on its own probe row`).toBeGreaterThan(0);
+      const drawnWidth = last - first + 1;
+      const drawnMid = (first + last) / 2;
+      // The shadow that contains the trunk's centre: walk out from it to the first texel each
+      // side that is half lit, and interpolate the 0.5 crossing between it and its neighbour.
+      const centre = Math.round(drawnMid);
+      if (vis[centre]! > 0.1) continue; // something else lights it: not a clean candidate
+      let left = centre;
+      while (left > 0 && vis[left]! < 0.5) left -= 1;
+      let right = centre;
+      while (right < PW - 1 && vis[right]! < 0.5) right += 1;
+      const xl = left + (0.5 - vis[left]!) / (vis[left + 1]! - vis[left]!);
+      const xr = right - (0.5 - vis[right]!) / (vis[right - 1]! - vis[right]!);
+      /* ISOLATION, DERIVED: a disc light's penumbra ends `soft` = 1 m · tan(moonSize) + 0.02
+         past the silhouette, so a stem alone in its own shadow is fully lit again by then (two
+         texels of margin). A second trunk's shadow overlapping this one fails that, and would
+         move the crossings for a reason that has nothing to do with this stem — so it is
+         skipped rather than measured. */
+      const soft = (Math.tan((knob("moonSize")[0]! * Math.PI) / 180) + 0.02) / TEXEL + 2;
+      const lit = (x: number) => (vis[Math.max(0, Math.min(PW - 1, Math.round(x)))] ?? 0) > 0.97;
+      if (!lit(xl - soft) || !lit(xr + soft)) continue;
+      expect(drawnWidth * TEXEL).toBeGreaterThan(0.1); // a trunk, not a twig: ≥ 20 texels
+      expect(Math.abs(xr - xl - drawnWidth), `stem ${pick}: shadow ${((xr - xl) * TEXEL).toFixed(3)} m wide, trunk ${(drawnWidth * TEXEL).toFixed(3)} m`).toBeLessThanOrEqual(1);
+      expect(Math.abs((xl + xr) / 2 - drawnMid), `stem ${pick}: shadow centre off the trunk's`).toBeLessThanOrEqual(1);
+      checked += 1;
+    }
+    // Non-vacuous: at least one stem stood alone in its own shadow.
+    expect(checked).toBeGreaterThan(0);
+  }, 120_000);
 
   it("the audio moves the air and the moon, slowly, and neither lane can jump", () => {
     /* ⚑ T1170b — THE OWNER'S CONSTRAINT WAS "audio reactive in a way where it's NOT BECOMING
