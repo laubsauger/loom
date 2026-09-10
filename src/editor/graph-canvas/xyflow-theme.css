@@ -75,6 +75,15 @@
   box-shadow: 0 0 0 3px var(--ok);
 }
 
+/*
+ * T1257: bottom-LEFT, because the overview map now owns the bottom-right corner and would
+ * cover it. The attribution stays visible; it is not ours to remove.
+ */
+.react-flow__attribution.bottom.right {
+  right: auto;
+  left: 0;
+}
+
 .react-flow__attribution {
   background: transparent;
   color: var(--line-hot);
@@ -85,4 +94,36 @@
 .react-flow__attribution a {
   color: inherit;
   text-decoration: none;
+}
+
+/*
+ * T1257: the network overview map. Its DOM is portalled OUT of `.react-flow` (see
+ * `graph-minimap.tsx`) into a host at `--z-canvas-chrome`, so these rules are scoped to
+ * that host rather than to the flow wrapper. The mask is the dialog scrim: everything
+ * the viewport does not show is dimmed, the visible rectangle is cut out and outlined.
+ */
+.react-flow__minimap {
+  --xy-minimap-background-color: var(--bg-panel);
+  --xy-minimap-mask-background-color: var(--bg-overlay);
+  --xy-minimap-mask-stroke-color: var(--text-dim);
+  --xy-minimap-node-stroke-color: transparent;
+  margin: var(--space-4);
+  padding: var(--space-1);
+  border: var(--border-hairline);
+  /* React Flow writes the map's width/height INLINE on this panel (they are also what it
+     computes the viewBox from); content-box keeps that the SVG's size, with the padding
+     and border outside it rather than the SVG overflowing them. */
+  box-sizing: content-box;
+  pointer-events: auto;
+}
+
+.react-flow__minimap-svg {
+  display: block;
+}
+
+/* Selection reads on the map too: the same amber that means "selected" on the node. */
+.react-flow__minimap-node.selected {
+  stroke: var(--signal);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
 }

@@ -9,3 +9,21 @@
      rung off the surface it hosts. */
   background: var(--bg-sunken);
 }
+
+/*
+ * T1257: where the overview map lands. A sibling of `.react-flow` (which is its own
+ * stacking context at z 0) at the chrome layer, so the map paints over the preview
+ * tiles the pane draws at --z-canvas-overlay. The host itself lets every event through;
+ * only the panel inside takes the pointer (`xyflow-theme.css`).
+ */
+.minimapHost {
+  /* The map's size, read back by `graph-minimap.tsx` and handed to React Flow as numbers
+     (its viewBox and drag scale come from them). Half React Flow's 200×150 default, at
+     the owner's request; keep the 10:7 aspect when tuning. */
+  --minimap-width: 100px;
+  --minimap-height: 70px;
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-canvas-chrome);
+  pointer-events: none;
+}

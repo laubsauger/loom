@@ -54,6 +54,8 @@ import {
 import { resolveMenuTarget } from "@editor/menus/target.ts";
 import { parameterDependencies } from "@domain/graph/parameter-dependencies.ts";
 import { GraphGrid } from "./graph-grid.tsx";
+import { GraphMinimap } from "./graph-minimap.tsx";
+import { registerMinimapCommand } from "./minimap-command.ts";
 import { GraphCanvasContext } from "./canvas-context.ts";
 import type {
   GraphCanvasContextValue,
@@ -212,6 +214,15 @@ export function GraphCanvas({
    */
   const referenceLines = useMemo(() => registerReferenceLinesCommand(bus), [bus]);
   const showReferenceLines = useSyncExternalStore(referenceLines.subscribe, referenceLines.get);
+  // T1257: on the door buses too — the `o` key dispatches on the root bus (T1195).
+  const minimap = useMemo(() => {
+    for (const door of doorBuses ?? []) registerMinimapCommand(door);
+    return registerMinimapCommand(bus);
+  }, [bus, doorBuses]);
+  const showMinimap = useSyncExternalStore(minimap.subscribe, minimap.get);
+  // The map's DOM lands here (see `graph-minimap.tsx`); state, not a ref, so the portal
+  // renders once the host exists.
+  const [minimapHost, setMinimapHost] = useState<HTMLDivElement | null>(null);
   const domainGraph = useStore(bus.store, (state) => state.graph);
   const dependencies = useMemo(
     () => (showReferenceLines ? [...parameterDependencies(domainGraph).values()].flat() : []),
@@ -721,6 +732,9 @@ export function GraphCanvas({
       const element = canvasRef.current;
       if (element === null) return;
       const start = event.target instanceof Element ? event.target : null;
+      // T1257: the overview map is chrome over the canvas, not the canvas — a double
+      // click on it (two quick jumps) must not open the node browser underneath.
+      if (start !== null && start.closest(".react-flow__minimap") !== null) return;
       const resolved = resolveMenuTarget(start, { fallback: "canvas", boundary: element });
       if (resolved === null || resolved.surface !== "canvas") return;
       const flow = flowRef.current;
@@ -859,7 +873,9 @@ export function GraphCanvas({
           <GraphGrid />
           {underlay}
           <ReferenceLines dependencies={dependencies} />
+          {showMinimap ? <GraphMinimap host={minimapHost} /> : null}
         </ReactFlow>
+        {showMinimap ? <div className={styles.minimapHost} ref={setMinimapHost} /> : null}
         {nodeSearchAt === null ? null : (
           <NodeSearch
             definitions={registry.list()}
