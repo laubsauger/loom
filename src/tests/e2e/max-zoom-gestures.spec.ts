@@ -34,6 +34,12 @@ import { APP_VIEWPORT, addNode, fitAll, openApp, viewportSettled } from "./app.t
  * would pass on the broken tree). Then alt+drag at that one point, asserted on the value
  * the user reads back: the camera's translate. It was 0 on the tree before the fix.
  *
+ * T1246 — the drag half. The same tile refused a plain drag too: `node-view.tsx` put
+ * `nodrag nopan` on every preview wrapper, so the picture that filled the canvas moved
+ * nothing. Now only the tile that owns a gesture (orbitable, T675) opts out, and a plain
+ * drag on any other picture moves the node exactly as a drag on its header does — the
+ * node's graph position changes by the pointer's screen distance over the zoom.
+ *
  * The legitimate case the fix could swallow — on an ORBITABLE tile alt+drag is the
  * camera (T675), and a press there must keep reaching the tile — needs an installed plan
  * to mark the tile orbitable, i.e. a real adapter, i.e. the headed lane; that lane's
@@ -53,6 +59,14 @@ async function camera(page: Page): Promise<{ zoom: number; tx: number; ty: numbe
   });
 }
 
+/** A node's own graph position, read off the transform React Flow gives it. */
+async function graphPosition(page: Page, nodeId: string): Promise<{ x: number; y: number }> {
+  return page.locator(`.react-flow__node[data-id="${nodeId}"]`).evaluate((element) => {
+    const { e, f } = new DOMMatrix((element as HTMLElement).style.transform);
+    return { x: e, y: f };
+  });
+}
+
 /** The pane's max zoom (`graph-canvas.tsx`), reached with the wheel over `at`. */
 const MAX_ZOOM = 8;
 async function wheelZoomToMax(page: Page, at: { x: number; y: number }): Promise<void> {
@@ -66,8 +80,10 @@ async function wheelZoomToMax(page: Page, at: { x: number; y: number }): Promise
   expect((await camera(page)).zoom, "the wheel never reached the pane's max zoom").toBe(MAX_ZOOM);
 }
 
-/** Screen px of the gesture. */
+/** Screen px of the gesture — at zoom 8 exactly 20×12 graph px, no rounding to hide in. */
 const DRAG = { x: 160, y: 96 } as const;
+/** The move that crosses React Flow's 1 px `nodeDragThreshold` and opens a node drag. */
+const OPENING_MOVE_PX = 2;
 
 /**
  * Adds one node, zooms the wheel to max over its preview and returns the canvas centre —
@@ -131,4 +147,36 @@ test("at max zoom, alt+drag over a preview tile that fills the canvas still pans
     { dx: panned.tx - before.tx, dy: panned.ty - before.ty },
     "alt+drag over the preview tile did not pan the camera",
   ).toEqual({ dx: DRAG.x, dy: DRAG.y });
+});
+
+test("at max zoom, a plain drag on a preview tile that fills the canvas moves the node (T1246)", async ({
+  page,
+}) => {
+  await openApp(page);
+  const { nodeId, at } = await zoomIntoTile(page, "generator", "Noise");
+
+  const before = await graphPosition(page, nodeId);
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.down();
+  /*
+   * React Flow's drag STARTS on the first move that travels more than `nodeDragThreshold`
+   * (1 screen px) and snapshots the pointer-to-node offset THERE, so the move that opens
+   * the drag is not part of the distance the node travels (`XYDrag`, `startDrag`). One
+   * opening move, then the gesture proper — which the node then follows exactly.
+   */
+  await page.mouse.move(at.x + OPENING_MOVE_PX, at.y);
+  await page.mouse.move(at.x + OPENING_MOVE_PX + DRAG.x, at.y + DRAG.y, { steps: 8 });
+  await page.mouse.up();
+  // Polled: the position is what the document holds once the drag COMMITS through the
+  // bus, and the wrapper re-renders from the store — a rejected commit snaps back to
+  // `before`, which this would then report.
+  await expect
+    .poll(
+      async () => {
+        const after = await graphPosition(page, nodeId);
+        return { dx: after.x - before.x, dy: after.y - before.y };
+      },
+      { message: "a plain drag on the preview tile did not move the node" },
+    )
+    .toEqual({ dx: DRAG.x / MAX_ZOOM, dy: DRAG.y / MAX_ZOOM });
 });

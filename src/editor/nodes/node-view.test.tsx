@@ -312,12 +312,19 @@ describe("V20 — a drag on embedded node chrome never becomes a node drag", () 
       expect(control.closest(".nodrag")).not.toBeNull();
       expect(control.closest(".nopan")).not.toBeNull();
     }
-    expect(screen.getByText("preview").closest(".nodrag")).not.toBeNull();
     expect(screen.getByText("radius").closest(".nodrag")).not.toBeNull();
 
     // The title bar, by contrast, must still drag the node.
     const title = container.querySelector("header");
     expect(title?.closest(".nodrag")).toBeNull();
+
+    // T1246 (B195): so must the preview. A picture with no gesture of its own is the
+    // node's body — at max zoom it is wider than the canvas and the ONLY thing under the
+    // pointer, so a wrapper that opted out left nothing to drag or pan. The tile that
+    // does own a gesture opts out itself (`node-preview-slot-orbit.test.tsx`, nodrag iff
+    // orbitable); the wrapper decides nothing.
+    expect(screen.getByText("preview").closest(".nodrag")).toBeNull();
+    expect(screen.getByText("preview").closest(".nopan")).toBeNull();
   });
 
   it("swallows the press so an ancestor drag handler never sees it", () => {

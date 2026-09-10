@@ -481,7 +481,16 @@ export const NodeView = memo(function NodeView({ id, selected }: NodeProps<LoomN
           // output, so its slot opts out of `--preview-aspect`; `node-box.ts` models the
           // same precedence, or the layout gate would predict a box the browser never draws.
           <div
-            className={cx(styles.preview, producesValue && styles.plotSlot, "nodrag", "nopan")}
+            /*
+              T1246 (B195): NOT `nodrag`/`nopan` here. This box carried both unconditionally since the
+              first commit, and at max zoom a tile is wider than the canvas, so the picture
+              was the only thing under the pointer and neither a drag nor alt+drag did
+              anything — "the graph seems to have a max size". A picture with no gesture of
+              its own is the node's body: it drags the node and pans the canvas like the
+              header. The slot that DOES own a gesture (`node-preview-slot.tsx`) opts out
+              itself, exactly as it already did for `nowheel`.
+            */
+            className={cx(styles.preview, producesValue && styles.plotSlot)}
             data-testid={`node-preview-${id}`}
           >
             {renderPreview?.(id)}

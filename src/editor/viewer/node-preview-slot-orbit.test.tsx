@@ -331,6 +331,28 @@ describe("the preview inspection mode (T656)", () => {
     expect(orbits.mode(NODE)).toBe("home");
     expect(canvasWheel).toHaveBeenCalledTimes(1);
   });
+
+  /*
+   * T1246 (B195): `nodrag`/`nopan` iff orbitable — and from HOME, not from adjustable.
+   * React Flow reads the class at the press, and alt+press enters the camera from home,
+   * so a tile that opted out only once adjustable would have started a node drag under
+   * the very press that entered the mode. A tile with no camera is the node's body: at
+   * max zoom it is the only thing under the pointer, and it must drag the node and pan
+   * the canvas like the header. Both directions are asserted because both have been the
+   * bug: the wrapper used to opt EVERY tile out, and the slot used to opt out none.
+   */
+  it("an ORBITABLE slot owns the press from home", () => {
+    const { slot } = mount(true);
+    expect(slot.getAttribute("data-inspect")).toBe("home");
+    expect(slot.classList.contains("nodrag")).toBe(true);
+    expect(slot.classList.contains("nopan")).toBe(true);
+  });
+
+  it("a NON-orbitable slot leaves the press to the node", () => {
+    const { slot } = mount(false);
+    expect(slot.classList.contains("nodrag")).toBe(false);
+    expect(slot.classList.contains("nopan")).toBe(false);
+  });
 });
 
 describe("§V527 — inspection is VIEW state: no gesture mints a revision", () => {
