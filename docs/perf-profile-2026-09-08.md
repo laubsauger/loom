@@ -283,7 +283,37 @@ did not get one. Outside this row; a name map built once per resolver closure re
 belongs to T1238 and is not wired in `655b3c9`; the patch is in the T1182 report.
 Scenarios A and C on E24 are to be re-run once it lands.
 
-### 2026-09-10 — §T1243, hub frame "GPU time" (this commit)
+### 2026-09-10 — §T1241, preview tick (`8ad0169`)
+
+`buildPreviewProgram` is memoised on its own inputs (`programFor` in
+`src/runtime/previews/system.ts`, keyed on the per-tile `ProgramInput` list, §V939), and the
+hook's tick returns before assembling a request when nothing it reads has moved
+(`TickStamp`/`quiet` in `src/app/use-node-previews.ts`: inputs identity, `framesSubmitted`,
+`resourceBuilds`, `deviceGeneration`, viewport, canvas size, DPR, interest, bounds, node
+boxes, lenses, orbits). Off-screen tiles stay allocated (§T1187/§T1180); they are not blitted.
+
+E24, `run-at.sh`, before (`cbdba66`) and after (`8ad0169`) alternated B/A/A/B, quiet machine,
+120 Hz display (8.33 ms rAF, so 600 ticks per 5 s window). `tick @ use-node-previews.ts`
+inclusive, ms per 5 s window, both passes:
+
+| scenario | before (`cbdba66`) | after (`8ad0169`) | busy ms/window before → after |
+|---|---|---|---|
+| A idle, playing (examples / performance tab) | 550–601 | 203–220 | 3335–4656 → 2768–3315 |
+| B paused | 595–665 | 45–58 | 930–1109 → 253–359 |
+
+Inside the tick (trace self/inclusive, scenario A after): `system.update` — the blit —
+132 ms; `getNodeBoxes` (`graph-pane.tsx`, `querySelectorAll`) 31 ms; the stamp itself 16 ms.
+Before: `update` 427 ms (the rebuild rode inside it), `getNodeBoxes` 54, self 31. Scenario B
+after: 48 ms, of which `getNodeBoxes` 37 — no `update`, no `presentPreviews`, no `plan`
+(before: `plan` 182 + `presentPreviews` 176 + `update` 78).
+
+Against the VERIFY clauses: B is 0.08 ms per rAF, not 0 — what remains is READING the stamp,
+and `getNodeBoxes` is three quarters of it (a DOM walk per rAF; a cheap "node layout
+changed" signal from the canvas would let the DOM read sit behind the cheap fields). A's tick
+is 1.4× the blit alone for the same reason. Neither is the rebuild; both are the same DOM
+read, and it is the next item if 0.08 ms/rAF matters.
+
+### 2026-09-10 — §T1243, hub frame "GPU time" (`a808a40`)
 
 **Cause, measured** (Dawn/Metal, Apple silicon; scratchpad probes over raw timestamps):
 every pass's BEGIN timestamp samples within 0.1 ms of the command buffer's start while the
