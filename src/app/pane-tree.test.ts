@@ -31,7 +31,7 @@ import {
   treeFromShellLayout,
 } from "./pane-tree.ts";
 import type { LayoutNode, PaneKey, PaneTreeLayout } from "./pane-tree.ts";
-import { DEFAULT_SHELL_LAYOUT } from "./layout-storage.ts";
+import { DEFAULT_SHELL_LAYOUT, PANE_IDS } from "./layout-storage.ts";
 
 /**
  * The pane TREE (T404, V340): identity split from role. This gate is front-loaded on
@@ -151,6 +151,7 @@ describe("v3 → tree migration reproduces the flat arrangement (T404)", () => {
       "problems",
       "performance",
       "agent",
+      "terminal",
     ]);
     // The active TAB carries the active ROLE of its zone.
     const left = findLeaf(tree, "leaf-left");
@@ -280,8 +281,8 @@ describe("the T1125 default: the libraries are back in the LEFT DOCK", () => {
     expect(new Set(mintedKeys).size).toBe(mintedKeys.length);
   });
 
-  it("still holds all ten roles — moving two panes must not lose one", () => {
-    expect(new Set(allTabs(DEFAULT_PANE_TREE).map((tab) => tab.role)).size).toBe(10);
+  it("still holds every role — moving two panes must not lose one", () => {
+    expect(new Set(allTabs(DEFAULT_PANE_TREE).map((tab) => tab.role)).size).toBe(PANE_IDS.length);
   });
 });
 
@@ -310,14 +311,14 @@ describe("the projection goes NULL the moment the tree stops being flat (V385)",
   it("a second tab of a NEW role stays projectable — v3 can say that much", () => {
     /*
      * The flat model tabs zones already; only structure and duplicates exceed it. The
-     * moved role comes from the BOTTOM dock, which has five tabs and keeps four: since
+     * moved role comes from the BOTTOM dock, which has six tabs and keeps five: since
      * T931 a move that EMPTIES its source leaf collapses that leaf, which is a structural
      * change and would make this assert the wrong thing for the wrong reason.
      */
     const moved = moveTab(flat, allTabs(flat).find((tab) => tab.role === "problems")!.key, "leaf-right");
     const projected = shellLayoutFromTree(moved);
     expect(projected?.zones.right).toEqual(["viewer", "problems"]);
-    expect(projected?.zones.bottom).toEqual(["examples", "shader", "performance", "agent"]);
+    expect(projected?.zones.bottom).toEqual(["examples", "shader", "performance", "agent", "terminal"]);
   });
 
   it("T927's default was structural — v3 could not hold it, and V385 CLEARED the record", () => {
@@ -470,6 +471,7 @@ describe("the split/close algebra", () => {
         "problems",
         "performance",
         "agent",
+        "terminal",
       ]);
 
       /*
@@ -540,7 +542,7 @@ describe("the split/close algebra", () => {
     it("lands where the caret was, not one past it, when dragging RIGHTWARDS", () => {
       const tree = DEFAULT_PANE_TREE;
       const bottom = findLeaf(tree, "leaf-bottom")!;
-      const first = bottom.tabs[0]!; // examples | shader | problems | performance | agent
+      const first = bottom.tabs[0]!; // examples | shader | problems | performance | agent | terminal
       // Aimed at the gap before "performance", which is index 3 in the strip on screen.
       const moved = moveTab(tree, first.key, "leaf-bottom", 3);
       expect(findLeaf(moved, "leaf-bottom")?.tabs.map((tab) => tab.role)).toEqual([
@@ -549,6 +551,7 @@ describe("the split/close algebra", () => {
         "examples",
         "performance",
         "agent",
+        "terminal",
       ]);
     });
 
@@ -562,6 +565,7 @@ describe("the split/close algebra", () => {
         "shader",
         "problems",
         "performance",
+        "terminal",
       ]);
     });
   });

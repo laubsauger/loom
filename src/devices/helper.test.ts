@@ -1,4 +1,5 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
@@ -7,9 +8,14 @@ import { describe, expect, it } from "vitest";
 import {
   DEVICE_HELPER_COMMAND,
   DEVICE_HELPER_DEVICES_ONLY_COMMAND,
+  DEVICE_HELPER_TERMINAL_COMMAND,
   HELPER_DEVICES_ONLY_FLAG,
   HELPER_SCRIPT,
+  HELPER_TERMINAL_FLAG,
+  TERMINAL_PANE_HINT,
 } from "./helper.ts";
+import { createDeviceDoors } from "./doors.ts";
+import { createDeviceHelper } from "../mcp/serve.ts";
 
 /**
  * ONE SPELLING OF THE COMMAND, AND A GATE THAT SAYS SO (T1110, §V39).
@@ -106,5 +112,68 @@ describe("the helper command has exactly one spelling (T1110)", () => {
   it("builds both commands from the one script name, so a rename moves both", () => {
     expect(DEVICE_HELPER_COMMAND).toBe(`pnpm ${HELPER_SCRIPT}`);
     expect(DEVICE_HELPER_DEVICES_ONLY_COMMAND).toBe(`${DEVICE_HELPER_COMMAND} ${HELPER_DEVICES_ONLY_FLAG}`);
+  });
+
+  /*
+   * T1263 — the third spelling, `pnpm helper --terminal`, follows the same rule: built
+   * from the one script name here, and the FLAG itself is written nowhere else under
+   * src/ either, so the entry point and every refusal that names it move together.
+   */
+  it("builds the terminal command from the same script name, and the pane hint from it", () => {
+    expect(DEVICE_HELPER_TERMINAL_COMMAND).toBe(`${DEVICE_HELPER_COMMAND} ${HELPER_TERMINAL_FLAG}`);
+    expect(TERMINAL_PANE_HINT).toContain(DEVICE_HELPER_TERMINAL_COMMAND);
+    expect(TERMINAL_PANE_HINT).toContain(`${DEVICE_HELPER_DEVICES_ONLY_COMMAND} ${HELPER_TERMINAL_FLAG}`);
+  });
+
+  it("the --terminal flag is not spelled into a string anywhere else under src/ (T1263)", () => {
+    const offenders: string[] = [];
+    for (const path of sourceFiles(SRC)) {
+      if (ALLOWED.has(path)) continue;
+      if (literalText(path).some((text) => text.includes(HELPER_TERMINAL_FLAG))) {
+        offenders.push(relative(SRC, path));
+      }
+    }
+    expect(offenders, "Import HELPER_TERMINAL_FLAG from @devices/helper.ts instead").toEqual([]);
+  });
+});
+
+describe("the devices-only helper never registers the terminal role unless told to (T1263, §T1111)", () => {
+  it("refuses `terminalAttach` by name with the door's default construction — the right code kept", async () => {
+    const handoffDir = mkdtempSync(join(tmpdir(), "loom-helper-"));
+    const helper = createDeviceHelper({
+      port: 0,
+      handoffDir,
+      // The DEFAULT doors, with only the OS's UDP replaced: no `terminal` option at all,
+      // which is what `pnpm helper --devices-only` builds without `--terminal`.
+      doors: createDeviceDoors({
+        udpSocketFactory: () => {
+          throw new Error("no UDP in this test");
+        },
+      }),
+    });
+    try {
+      const deadline = Date.now() + 5_000;
+      while (helper.status().port == null) {
+        if (Date.now() > deadline) throw new Error("the helper never bound a port");
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      const socket = new WebSocket(`ws://127.0.0.1:${String(helper.status().port)}`);
+      const answer = await new Promise<Record<string, unknown>>((resolve, reject) => {
+        socket.onopen = () => {
+          socket.send(JSON.stringify({ type: "terminalAttach", code: helper.pairingCode }));
+        };
+        socket.onmessage = (event: MessageEvent) => {
+          resolve(JSON.parse(String(event.data)) as Record<string, unknown>);
+        };
+        setTimeout(() => reject(new Error("no answer")), 5_000);
+      });
+      socket.close();
+      expect(answer["type"]).toBe("refused");
+      expect(answer["terminalUnavailable"]).toBe(true);
+      expect(String(answer["reason"])).toContain(DEVICE_HELPER_TERMINAL_COMMAND);
+    } finally {
+      helper.dispose();
+      rmSync(handoffDir, { recursive: true, force: true });
+    }
   });
 });

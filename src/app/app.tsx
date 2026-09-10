@@ -26,6 +26,8 @@ import type { AppRuntime } from "./app-runtime.ts";
 import type { AgentToolSurface } from "@agent/index.ts";
 import { AppShell } from "./app-shell.tsx";
 import { AgentPane, PerformancePane, ShaderPane } from "./dock-panes.tsx";
+import { TerminalPane } from "./terminal-pane.tsx";
+import { createTerminalClient } from "@devices/terminal-client.ts";
 import {
   OPEN_SETTINGS_COMMAND,
   PipelineHost,
@@ -1527,6 +1529,22 @@ export function App({
     ),
     [agentSurface, mcpTransports, openAgentHelp],
   );
+  /*
+   * T1263: ONE terminal client per tab — the socket that holds the helper's `terminal`
+   * role — shared by every terminal pane, each of which opens its own shell on it.
+   * Building it connects nothing (the (c) rule: a pane asks, or nothing happens), so a
+   * memo is the right lifetime; disposal kills whatever shells the tab still holds.
+   */
+  const terminalClient = useMemo(() => createTerminalClient({ client: "a Loom tab" }), []);
+  useEffect(() => () => terminalClient.dispose(), [terminalClient]);
+  const terminalPane = useMemo(
+    () => (
+      <ErrorBoundary name="Terminal">
+        <TerminalPane client={terminalClient} />
+      </ErrorBoundary>
+    ),
+    [terminalClient],
+  );
 
   /*
    * T1238: the top bar is memoised on what it shows. It carries no document state —
@@ -1887,6 +1905,7 @@ export function App({
           }
           performance={performancePane}
           agent={agentPane}
+          terminal={terminalPane}
         />
         {/* T359/§V307: opened by `ui.openSettings`, never by a flag set from here. The
             host owns the open state; the top bar, `mod+,` and the palette all execute the

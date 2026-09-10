@@ -40,7 +40,9 @@ export type PaneId =
   | "problems"
   | "performance"
   | "examples"
-  | "agent";
+  | "agent"
+  /** T1263: a shell from the local helper, last in the bottom dock. Spawns only when its pane is shown. */
+  | "terminal";
 
 export const PANE_IDS: readonly PaneId[] = [
   "library",
@@ -53,6 +55,7 @@ export const PANE_IDS: readonly PaneId[] = [
   "performance",
   "examples",
   "agent",
+  "terminal",
 ];
 
 /** Tab label and accessible name. Lower case, like the rest of the shell's chrome. */
@@ -67,6 +70,7 @@ export const PANE_TITLES: Readonly<Record<PaneId, string>> = {
   performance: "performance",
   examples: "examples",
   agent: "agent",
+  terminal: "terminal",
 };
 
 /** Where a pane goes when the stored arrangement does not mention it (a new pane). */
@@ -87,6 +91,7 @@ export const PANE_HOME: Readonly<Record<PaneId, DockZone>> = {
   performance: "bottom",
   examples: "bottom",
   agent: "bottom",
+  terminal: "bottom",
 };
 
 export interface ShellLayout {
@@ -141,7 +146,7 @@ export const DEFAULT_SHELL_LAYOUT: ShellLayout = {
     // `DEFAULT_PANE_TREE` (T1123). Kept in step with the tree so the flat model's
     // SKELETON_TREE (what a restored baseline dock is built from, T936) and the v3
     // migration fallback cannot hand back an arrangement the tree default abandoned.
-    bottom: ["examples", "shader", "problems", "performance", "agent"],
+    bottom: ["examples", "shader", "problems", "performance", "agent", "terminal"],
   },
   active: {
     left: "library",

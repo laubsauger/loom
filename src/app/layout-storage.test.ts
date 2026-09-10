@@ -199,7 +199,7 @@ describe("V95 — the arrangement is data", () => {
   it("keeps the active tab when the move did not touch it, and picks one when it did", () => {
     const layout = movePane(DEFAULT_SHELL_LAYOUT, "performance", "left");
     expect(layout.active.bottom).toBe("examples"); // untouched
-    const emptied = (["shader", "problems", "examples", "agent"] as const).reduce<ShellLayout>(
+    const emptied = (["shader", "problems", "examples", "agent", "terminal"] as const).reduce<ShellLayout>(
       (next, paneId) => movePane(next, paneId, "left"),
       layout,
     );
@@ -270,7 +270,7 @@ describe("V95 — a stored arrangement is repaired, not rejected", () => {
     expect(restored.zones.left).toEqual(["library", "shader", "components"]);
     expect(restored.active.left).toBe("shader");
     expect(restored.floating).toEqual(["inspector"]);
-    expect(restored.zones.bottom).toEqual(["problems", "performance", "examples", "agent"]);
+    expect(restored.zones.bottom).toEqual(["problems", "performance", "examples", "agent", "terminal"]);
     expect(placements(restored).size).toBe(PANE_IDS.length);
   });
 

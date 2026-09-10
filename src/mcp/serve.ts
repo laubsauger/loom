@@ -1,3 +1,4 @@
+import { userInfo } from "node:os";
 import { createInterface } from "node:readline";
 
 import { createGraphStore } from "../domain/graph/store.ts";
@@ -17,8 +18,9 @@ import { createNodeLibraryCatalogue } from "../examples/catalogue.ts";
 import { createMcpConnection, type McpConnection } from "./server.ts";
 import { createBridgeHost, type BridgeStatus } from "./bridge-host.ts";
 import { createDeviceDoors, type DeviceDoors } from "@devices/doors.ts";
+import type { TerminalHost } from "@devices/terminal-host.ts";
 import type { UdpSocketFactory } from "@devices/device-hub.ts";
-import { HELPER_DEVICES_ONLY_FLAG } from "@devices/helper.ts";
+import { HELPER_DEVICES_ONLY_FLAG, HELPER_TERMINAL_FLAG } from "@devices/helper.ts";
 
 /**
  * The out-of-process MCP server (T290, T294): a HEADLESS Loom on stdio — store,
@@ -138,6 +140,12 @@ export interface HeadlessMcpServerOptions {
     readonly laser?: import("@devices/laser-host.ts").LaserHost;
     /** T1029 — the vision door. Defaults to the REAL one (swiftc-compiled worker). */
     readonly vision?: import("@devices/vision-host.ts").VisionHost;
+    /**
+     * T1263 — the terminal door. OFF unless the invocation carried `--terminal`; the
+     * flag→enabled mapping is the entry points' below and nowhere else. A gate passes
+     * `{ enabled: true, spawn }` to prove the wiring without a real shell.
+     */
+    readonly terminal?: import("@devices/doors.ts").TerminalDoorOptions;
     /**
      * How the DEVICE role opens UDP sockets (T942 tier 3). Injected ONLY by tests.
      *
@@ -297,7 +305,9 @@ export function createHeadlessMcpServer(options: HeadlessMcpServerOptions): Head
           ...(options.bridge.deviceNow === undefined ? {} : { deviceNow: options.bridge.deviceNow }),
           ...(options.bridge.laser === undefined ? {} : { laser: options.bridge.laser }),
           ...(options.bridge.vision === undefined ? {} : { vision: options.bridge.vision }),
+          ...(options.bridge.terminal === undefined ? {} : { terminal: options.bridge.terminal }),
         });
+  if (doors?.terminal) options.bridge?.announce?.(terminalDoorBanner(doors.terminal));
   const bridge =
     options.bridge === undefined
       ? null
@@ -307,6 +317,7 @@ export function createHeadlessMcpServer(options: HeadlessMcpServerOptions): Head
           // operator then pairs. The bridge only reports it; the page composes it.
           operatorGrantedSnapshots: options.grantExport === true,
           ...(doors === null ? {} : { devices: doors.devices, laser: doors.laser, vision: doors.vision }),
+          ...(doors?.terminal ? { terminal: doors.terminal } : {}),
           ...(options.bridge.port === undefined ? {} : { port: options.bridge.port }),
           ...(options.bridge.handoffDir === undefined ? {} : { handoffDir: options.bridge.handoffDir }),
           ...(options.bridge.proxyRetryMs === undefined ? {} : { proxyRetryMs: options.bridge.proxyRetryMs }),
@@ -460,7 +471,20 @@ export function createHeadlessMcpServer(options: HeadlessMcpServerOptions): Head
   };
 }
 
-export function serveStdio(): void {
+/**
+ * T1263 (d) — the ONE startup line that says the terminal door is open and for whom.
+ *
+ * Printed by both entry points from this one function so the two modes cannot describe
+ * the same door differently. "For whom" is not decoration: the reader is the person who
+ * typed the flag, and the sentence tells them what that flag let in — a paired Loom tab
+ * served from this machine's loopback, nothing else — before the first pane opens.
+ */
+function terminalDoorBanner(door: TerminalHost): string {
+  const { shell, cwd } = door.describe();
+  return `Terminal door OPEN: paired Loom tabs served from localhost (and only those) may open one ${shell} per terminal pane in ${cwd}, as ${userInfo().username}. Every shell dies with its pane, and all of them with this helper.`;
+}
+
+export function serveStdio(options: { readonly terminal?: boolean } = {}): void {
   const server = createHeadlessMcpServer({
     send: (message) => {
       process.stdout.write(`${JSON.stringify(message)}\n`);
@@ -472,8 +496,23 @@ export function serveStdio(): void {
       announce: (message) => {
         process.stderr.write(`[loom bridge] ${message}\n`);
       },
+      ...(options.terminal === true ? { terminal: { enabled: true } } : {}),
     },
   });
+  if (options.terminal === true) {
+    // T1263: an MCP client kills this process with a signal, and every shell it opened
+    // must go with it. The device helper below has always done this for the laser (G2);
+    // here it is worth doing only once there is a child process to take along.
+    let closing = false;
+    const close = (): void => {
+      if (closing) return;
+      closing = true;
+      server.dispose();
+      process.exit(0);
+    };
+    process.on("SIGINT", close);
+    process.on("SIGTERM", close);
+  }
 
   const lines = createInterface({ input: process.stdin });
   lines.on("line", (line) => {
@@ -524,6 +563,11 @@ export function serveStdio(): void {
 export interface DeviceHelperOptions {
   /** `0` for an OS-assigned port (tests). Defaults to the shared constant. */
   readonly port?: number;
+  /**
+   * T1263 — open the terminal door. Read from `--terminal` by `serveDevices` and nowhere
+   * else; ignored when `doors` is injected whole (the gate then decided already).
+   */
+  readonly terminal?: boolean;
   /** Where a HUMAN reads the pairing code and every refusal (§V233/§V288). */
   readonly announce?: (message: string) => void;
   /** The three doors. Defaulted to the real ones; injected whole by a gate. */
@@ -547,13 +591,15 @@ export interface DeviceHelper {
 
 export function createDeviceHelper(options: DeviceHelperOptions = {}): DeviceHelper {
   const announce = options.announce ?? ((): void => undefined);
-  const doors = options.doors ?? createDeviceDoors();
+  const doors = options.doors ?? createDeviceDoors({ terminal: { enabled: options.terminal === true } });
+  if (doors.terminal) announce(terminalDoorBanner(doors.terminal));
   const bridge = createBridgeHost({
     // NO `headless` — that absence IS the mode, and it is what makes the agent doors
     // unserveable rather than merely closed. See `bridge-host.ts`.
     devices: doors.devices,
     laser: doors.laser,
     vision: doors.vision,
+    ...(doors.terminal ? { terminal: doors.terminal } : {}),
     ...(options.port === undefined ? {} : { port: options.port }),
     ...(options.handoffDir === undefined ? {} : { handoffDir: options.handoffDir }),
     ...(options.retryMs === undefined ? {} : { proxyRetryMs: options.retryMs }),
@@ -576,8 +622,9 @@ export function createDeviceHelper(options: DeviceHelperOptions = {}): DeviceHel
 }
 
 /** `pnpm helper --devices-only`: the device bridge, and a process that stays up for it. */
-export function serveDevices(): void {
+export function serveDevices(options: { readonly terminal?: boolean } = {}): void {
   const helper = createDeviceHelper({
+    ...(options.terminal === true ? { terminal: true } : {}),
     announce: (message) => {
       // stderr, exactly as `serveStdio` uses it, so there is one announce channel and one
       // shape of line in the two modes. Nothing writes stdout here — there is no protocol
@@ -606,7 +653,10 @@ export function serveDevices(): void {
 // Started directly (not imported): serve.
 if (process.argv[1]?.endsWith("serve.ts") === true) {
   // T1111: the flag decides WHICH doors open. Read here rather than inside either function,
-  // so the two entry points stay independently callable by a test.
-  if (process.argv.includes(HELPER_DEVICES_ONLY_FLAG)) serveDevices();
-  else serveStdio();
+  // so the two entry points stay independently callable by a test. T1263: `--terminal` is
+  // the second flag, orthogonal to the first — `--devices-only --terminal` is a shell with
+  // no agent server — and this is the ONLY place it is read.
+  const terminal = process.argv.includes(HELPER_TERMINAL_FLAG);
+  if (process.argv.includes(HELPER_DEVICES_ONLY_FLAG)) serveDevices({ terminal });
+  else serveStdio({ terminal });
 }

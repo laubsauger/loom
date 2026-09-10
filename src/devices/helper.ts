@@ -42,8 +42,23 @@ export const HELPER_SCRIPT = "helper";
  */
 export const HELPER_DEVICES_ONLY_FLAG = "--devices-only";
 
+/**
+ * The flag that opens the TERMINAL door (T1263).
+ *
+ * OPT-IN, and the flag is the opt-in: whoever pairs with the helper's socket then holds a
+ * shell as the user, so the door is not built unless the person who started the process
+ * said so on its own command line. Named here for the same reason the other flag is —
+ * the refusal, the pane's hint and the startup line all say it. Combines with
+ * `HELPER_DEVICES_ONLY_FLAG` (devices and a shell, no agent server); `--devices-only`
+ * alone stays shell-free.
+ */
+export const HELPER_TERMINAL_FLAG = "--terminal";
+
 /** The literal command. One place, because it is expected to be renamed. */
 export const DEVICE_HELPER_COMMAND = `pnpm ${HELPER_SCRIPT}`;
+
+/** The command that also opens the terminal door (T1263). */
+export const DEVICE_HELPER_TERMINAL_COMMAND = `${DEVICE_HELPER_COMMAND} ${HELPER_TERMINAL_FLAG}`;
 
 /**
  * The command for someone who wants NOTHING to do with agents (T1111).
@@ -74,3 +89,16 @@ export const DEVICE_HELPER_START =
   `start ${DEVICE_HELPER_NAME} with \`${DEVICE_HELPER_COMMAND}\` (or ` +
   `\`${DEVICE_HELPER_DEVICES_ONLY_COMMAND}\` for devices and no agent server) and enter its ` +
   "pairing code in the agent panel's Connections section";
+
+/**
+ * What the terminal pane says when there is no shell to show (T1263).
+ *
+ * The one sentence, here rather than in the pane, for the reason `helper.test.ts`
+ * enforces: it names the command. Two cases share it because they need the same action —
+ * no helper paired at all, and a helper paired that was started without the flag — and
+ * the pane prefixes which of the two it is.
+ */
+export const TERMINAL_PANE_HINT =
+  `start ${DEVICE_HELPER_NAME} with \`${DEVICE_HELPER_TERMINAL_COMMAND}\` (or ` +
+  `\`${DEVICE_HELPER_DEVICES_ONLY_COMMAND} ${HELPER_TERMINAL_FLAG}\` for devices and a shell with no agent ` +
+  "server) and pair it in the agent panel's Connections section; each terminal pane then opens its own shell";

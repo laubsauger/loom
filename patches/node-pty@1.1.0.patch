@@ -1,0 +1,21 @@
+diff --git a/scripts/post-install.js b/scripts/post-install.js
+index 8dbac507ea9c64169ea500a0115816056c0bc309..f05c8d70eb6123147debbebba728b1c082bc6be4 100644
+--- a/scripts/post-install.js
++++ b/scripts/post-install.js
+@@ -47,6 +47,16 @@ try {
+   process.exit(1);
+ }
+ 
++// Loom (T1263): the published prebuild ships `spawn-helper` without its execute bit, so
++// `posix_spawnp` fails on every fork. Restore it for the platform this install serves.
++if (os.platform() !== 'win32') {
++  const helper = path.join(__dirname, '..', 'prebuilds', `${os.platform()}-${os.arch()}`, 'spawn-helper');
++  if (fs.existsSync(helper)) {
++    fs.chmodSync(helper, 0o755);
++    console.log(`\x1b[32m> Made ${helper} executable\x1b[0m`);
++  }
++}
++
+ console.log(`\x1b[32m> Moving conpty.dll...\x1b[0m`);
+ if (os.platform() !== 'win32') {
+   console.log('  SKIPPED (not Windows)');

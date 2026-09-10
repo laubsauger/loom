@@ -142,6 +142,8 @@ export interface AppShellProps {
   exampleLibrary?: ReactNode;
   /** Agent presence: what the agent is doing, and what is waiting for review (§V42). */
   agent?: ReactNode;
+  /** T1263: a shell pane. Two tabs of this role are two instances, so two shells. */
+  terminal?: ReactNode;
   problemCount?: number;
   /**
    * Layout store override. Defaults to `localStorage` (V18); pass `null` to run
@@ -194,6 +196,7 @@ export function AppShell({
   performance,
   exampleLibrary,
   agent,
+  terminal,
   problemCount = 0,
   storage,
   openPaneWindow,
@@ -440,9 +443,11 @@ export function AppShell({
       performance: performance ?? <PaneEmpty label="Not running" />,
       examples: exampleLibrary ?? <PaneEmpty label="No examples" />,
       agent: agent ?? <PaneEmpty label="No agent connected" />,
+      terminal: terminal ?? <PaneEmpty label="No terminal" />,
     }),
     [
       agent,
+      terminal,
       componentLibrary,
       exampleLibrary,
       graphCanvas,

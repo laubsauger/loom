@@ -22,6 +22,8 @@ import {
 import { createBridgeProxy, type BridgeProxy } from "./bridge-proxy.ts";
 import type { DeviceHub, DeviceSession } from "@devices/device-hub.ts";
 import type { BridgeSocket } from "@devices/transport/bridge-socket.ts";
+import type { TerminalHost, TerminalSession } from "@devices/terminal-host.ts";
+import { DEVICE_HELPER_TERMINAL_COMMAND } from "@devices/helper.ts";
 import {
   createLoopbackWebSocketServer,
   type LoopbackConnection,
@@ -255,6 +257,15 @@ export interface BridgeHostOptions {
    */
   readonly vision?: import("@devices/vision-host.ts").VisionHost;
   /**
+   * T1263 — the terminal door, present only when the host was built with one
+   * (`pnpm helper --terminal`, or a desktop host that opens it itself). ABSENT means the
+   * `terminal` role is refused BY NAME, after the pairing code is checked — the
+   * `devicesOnly` shape (T1111): a page with the right code must keep it. The door is a
+   * fourth ROLE rather than a device stream because a shell as the user is not a UDP
+   * socket: it gets its own socket, its own credential check, and dies with that socket.
+   */
+  readonly terminal?: TerminalHost;
+  /**
    * Whether THIS helper's own invocation carried `--grant-export` (T1220).
    *
    * Reported to an attaching page in the `attached` frame, and nowhere else. The bridge
@@ -338,6 +349,13 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
   let device: LoopbackConnection | null = null;
   let deviceClient: string | null = null;
   let deviceSession: DeviceSession | null = null;
+  /**
+   * T1263 — the one socket holding the TERMINAL role, and the shells it opened, by the
+   * pane's own id. One socket, like the device role: a tab is the unit of pairing, and
+   * every pane in it rides that one socket with one session each.
+   */
+  let terminal: LoopbackConnection | null = null;
+  const shells = new Map<string, TerminalSession>();
   /** Set when THIS process lost the race and forwards to somebody else instead. */
   let proxy: BridgeProxy | null = null;
   let server: LoopbackWebSocketServer | null = null;
@@ -520,6 +538,86 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
     notice({ severity: "info", message: `Device bridge released: ${reason}.` });
   };
 
+  /** Every shell the terminal socket opened dies with it (T1263: nothing survives a pane). */
+  const releaseTerminal = (reason: string): void => {
+    if (terminal === null) return;
+    terminal = null;
+    const open = shells.size;
+    for (const session of shells.values()) session.close();
+    shells.clear();
+    notice({
+      severity: "info",
+      message: `Terminal door released: ${reason}. ${String(open)} shell${open === 1 ? "" : "s"} killed.`,
+    });
+  };
+
+  /**
+   * One terminal socket's request (T1263). Every request names a pane `id`; the door
+   * answers `terminalOpened`/`terminalRefused` once per open and streams `terminalOutput`
+   * until `terminalExit`. Nothing here reads another role's messages (§T458(b)).
+   */
+  const handleTerminalMessage = (socket: LoopbackConnection, message: Record<string, unknown>): void => {
+    const door = options.terminal;
+    if (door === undefined) return;
+    const id = message["id"];
+    if (typeof id !== "string") return;
+    switch (message["type"]) {
+      case "terminalOpen": {
+        if (shells.has(id)) {
+          send(socket, { type: "terminalRefused", id, reason: "that pane already has a shell" });
+          return;
+        }
+        const cols = message["cols"];
+        const rows = message["rows"];
+        const opened = door.open({
+          // The socket's OWN announced origin — the same value the listener vetted at
+          // connect, handed to the one door that vets it a second time (T1263 (b)).
+          origin: socket.origin,
+          cols: typeof cols === "number" ? cols : Number.NaN,
+          rows: typeof rows === "number" ? rows : Number.NaN,
+          onData: (data) => {
+            if (terminal !== socket) return;
+            send(socket, { type: "terminalOutput", id, data });
+          },
+          onExit: (exitCode) => {
+            shells.delete(id);
+            if (terminal !== socket) return;
+            send(socket, { type: "terminalExit", id, exitCode });
+          },
+        });
+        if ("refusal" in opened) {
+          send(socket, { type: "terminalRefused", id, reason: opened.refusal });
+          return;
+        }
+        shells.set(id, opened);
+        send(socket, { type: "terminalOpened", id, pid: opened.pid });
+        return;
+      }
+      case "terminalInput": {
+        const data = message["data"];
+        if (typeof data !== "string") return;
+        shells.get(id)?.write(data);
+        return;
+      }
+      case "terminalResize": {
+        const cols = message["cols"];
+        const rows = message["rows"];
+        if (typeof cols !== "number" || typeof rows !== "number") return;
+        shells.get(id)?.resize(cols, rows);
+        return;
+      }
+      case "terminalClose": {
+        const session = shells.get(id);
+        if (session === undefined) return;
+        shells.delete(id);
+        session.close();
+        return;
+      }
+      default:
+        return;
+    }
+  };
+
   /**
    * One device client's request (T942 tier 3).
    *
@@ -658,8 +756,8 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
       return;
     }
 
-    /** Which of the THREE roles this socket claimed, once it has claimed one. */
-    let role: "none" | "page" | "proxy" | "device" = "none";
+    /** Which of the FOUR roles this socket claimed, once it has claimed one. */
+    let role: "none" | "page" | "proxy" | "device" | "terminal" = "none";
     const silence = setTimeout(() => {
       if (role !== "none") return;
       refuse(socket, "no pairing code or proxy token arrived; the socket was closed.");
@@ -669,6 +767,7 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
       clearTimeout(silence);
       proxies.delete(socket);
       if (device === socket) releaseDevice("the tab closed the connection");
+      if (terminal === socket) releaseTerminal("the tab closed the connection");
       if (page === socket) detach("the tab closed the connection");
     };
 
@@ -777,6 +876,45 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
           });
           return;
         }
+        if (type === "terminalAttach") {
+          // The TERMINAL role (T1263). The code FIRST, then the door — the T1111 order:
+          // a right code on a helper without the door is told so with a marked refusal,
+          // and keeps its code; a wrong code learns nothing about which doors exist.
+          const given = message["code"];
+          if (typeof given !== "string" || !pairingCodeMatches(pairingCode, given)) {
+            clearTimeout(silence);
+            refuse(socket, "that pairing code does not match the one this bridge printed.");
+            return;
+          }
+          if (options.terminal === undefined) {
+            clearTimeout(silence);
+            refuse(
+              socket,
+              `this Loom helper was started without a terminal door, so it opens no shell. Your pairing code is correct. Restart it as \`${DEVICE_HELPER_TERMINAL_COMMAND}\` to give terminal panes a shell.`,
+              { terminalUnavailable: true },
+            );
+            return;
+          }
+          if (terminal !== null) {
+            clearTimeout(silence);
+            refuse(
+              socket,
+              "a Loom tab already holds this helper's terminal door. Disconnect it first — one tab at a time, so every shell has one identifiable owner.",
+            );
+            return;
+          }
+          role = "terminal";
+          clearTimeout(silence);
+          terminal = socket;
+          const said = message["client"];
+          const label = typeof said === "string" ? said.slice(0, 120) : "a Loom tab";
+          send(socket, { type: "terminalAttached", ...options.terminal.describe() });
+          notice({
+            severity: "info",
+            message: `Terminal door attached to ${label}; each of its terminal panes may now open one shell as this user.`,
+          });
+          return;
+        }
         if (type !== "attach") return;
         const code = message["code"];
         if (typeof code !== "string" || !pairingCodeMatches(pairingCode, code)) {
@@ -835,6 +973,12 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
       if (role === "device") {
         if (device !== socket) return;
         handleDeviceMessage(socket, message);
+        return;
+      }
+
+      if (role === "terminal") {
+        if (terminal !== socket) return;
+        handleTerminalMessage(socket, message);
         return;
       }
 
@@ -1311,6 +1455,9 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
       disposed = true;
       releaseDevice("the server shut down");
       options.devices?.dispose();
+      releaseTerminal("the server shut down");
+      // Every shell, whether or not a socket still holds the door (T1263).
+      options.terminal?.dispose();
       detach("the server shut down");
       if (rebind !== null) clearTimeout(rebind);
       rebind = null;
