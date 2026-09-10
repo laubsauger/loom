@@ -151,6 +151,14 @@ export interface GraphCanvasProps {
   /** Patch outcomes, so a rejected gesture can surface instead of failing silently. */
   onPatchResult?: (result: CommandResult<"graph.applyPatch">) => void;
   /**
+   * T1248 — called once per batch of node changes that can move a preview tile: a
+   * position, a resize, a node appearing or leaving, or a selection (which React Flow
+   * elevates, so it reorders the stack). The host uses it to skip a `querySelectorAll`
+   * per rAF; nothing here depends on it, and a host that does not pass it loses only
+   * that saving.
+   */
+  onNodeLayoutChange?: () => void;
+  /**
    * Selection and hover are view state — the document does not model them — but the
    * keymap resolves `inputFrom: "selection" | "hoveredNode"` against them (T77). This
    * is where they leave the canvas.
@@ -180,6 +188,7 @@ export function GraphCanvas({
   onSelectionChange,
   underlay,
   onHoveredNodeChange,
+  onNodeLayoutChange,
 }: GraphCanvasProps) {
   const registry = bus.registry;
   const domainNodes = useStore(bus.store, (state) => state.graph.nodes);
@@ -397,6 +406,29 @@ export function GraphCanvas({
     (changes: NodeChange<LoomNode>[]) => {
       setViewNodes((previous) => applyNodeChanges(changes, previous));
 
+      /*
+       * T1248 — the "something moved" signal, raised for the CHANGE TYPES that can move a
+       * preview tile and no others. `select` is in the list because React Flow elevates the
+       * selected node's z-index, which reorders the stack the compositor clips against;
+       * `replace` because a node swapped in place is a new box at the same id. What is
+       * deliberately NOT here is every other change React Flow reports during a drag, which
+       * is the point: the host reads the DOM when this fires rather than every frame.
+       */
+      if (
+        onNodeLayoutChange !== undefined &&
+        changes.some(
+          (change) =>
+            change.type === "position" ||
+            change.type === "dimensions" ||
+            change.type === "add" ||
+            change.type === "remove" ||
+            change.type === "replace" ||
+            change.type === "select",
+        )
+      ) {
+        onNodeLayoutChange();
+      }
+
       const committed: Record<NodeId, { x: number; y: number }> = {};
       const resized: Array<[NodeId, { width: number; height: number }]> = [];
       const removed: NodeId[] = [];
@@ -462,7 +494,7 @@ export function GraphCanvas({
         dispatch([{ op: "removeNodes", nodeIds: removed }], "Delete node");
       }
     },
-    [dispatch, spliceAt],
+    [dispatch, spliceAt, onNodeLayoutChange],
   );
 
   const onEdgesChange = useCallback(

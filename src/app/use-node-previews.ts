@@ -146,6 +146,22 @@ export interface NodePreviewInputs {
    */
   readonly getNodeBoxes: () => ReadonlyArray<NodeStackBox>;
   /**
+   * T1248 — "has any node moved, resized, appeared or changed stacking since you last
+   * asked", as one number the canvas already knows.
+   *
+   * `getNodeBoxes` is a `querySelectorAll` plus a walk of every node, and T1241's quiet
+   * gate was calling it EVERY rAF purely to discover that nothing had moved: measured at
+   * 37 of the 48 ms a paused five seconds spent in this tick, and 31 ms playing. The read
+   * itself is not the bug — the tick genuinely needs those boxes to clip tiles — asking
+   * the DOM the question is. React Flow raises a change event for every one of those
+   * events, so the canvas can answer from a counter and the DOM read moves behind it.
+   *
+   * Optional, and its absence is not a degraded mode: without it the stamp holds the boxes
+   * themselves and compares them exactly as it did before T1248. A host that has no canvas
+   * to ask (every test in this file, the first-paint harness) keeps the old behaviour.
+   */
+  readonly nodeLayoutRevision?: () => number;
+  /**
    * Which DOCUMENT is open (T519, B106).
    *
    * A tile is keyed by NODE ID, and two documents share node ids the moment they share
@@ -402,6 +418,10 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
      *    stores, fps, long edge, document identity, selection-driven re-renders).
      *  - the CAMERA moved, the surface resized, or the device pixel ratio changed.
      *  - a NODE moved, was measured, or changed stacking (T1102) — the paint-order boxes.
+     *    T1248: asked of the CANVAS (`nodeLayoutRevision`) rather than of the DOM, because
+     *    reading the boxes to find out was 37 of the 48 ms a paused five seconds spent in
+     *    this tick. The read still happens on every tick that runs; it no longer happens on
+     *    the ones that do not.
      *  - a per-node store wrote without a render: the viewer's interest (T756), a slot's
      *    bounds (copy-on-write map, T892), a candidate's lens (T336) or orbit (T561).
      *
@@ -426,7 +446,12 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
       readonly devicePixelRatio: number;
       readonly interest: NodeId | null;
       readonly bounds: ReadonlyMap<NodeId, unknown>;
-      readonly boxes: ReadonlyArray<NodeStackBox>;
+      /**
+       * T1248: the canvas' layout counter when there is one, and the boxes themselves when
+       * there is not. A number and an array never compare equal, so a host that gains or
+       * loses the signal mid-run simply ticks once — it cannot compare across the two.
+       */
+      readonly layout: number | ReadonlyArray<NodeStackBox>;
       /** Per candidate, in candidate order: the lens and orbit objects the stores hold. */
       readonly lenses: ReadonlyArray<unknown>;
       readonly orbits: ReadonlyArray<unknown>;
@@ -444,6 +469,8 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
       }
       return true;
     };
+    const sameLayout = (a: TickStamp["layout"], b: TickStamp["layout"]): boolean =>
+      typeof a === "number" || typeof b === "number" ? a === b : sameBoxes(a, b);
     const sameList = (a: ReadonlyArray<unknown>, b: ReadonlyArray<unknown>): boolean =>
       a.length === b.length && a.every((value, index) => value === b[index]);
     const quiet = (previous: TickStamp | null, next: TickStamp): boolean =>
@@ -460,7 +487,7 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
       previous.devicePixelRatio === next.devicePixelRatio &&
       previous.interest === next.interest &&
       previous.bounds === next.bounds &&
-      sameBoxes(previous.boxes, next.boxes) &&
+      sameLayout(previous.layout, next.layout) &&
       sameList(previous.lenses, next.lenses) &&
       sameList(previous.orbits, next.orbits);
 
@@ -499,8 +526,10 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
       const surface = { x: 0, y: 0, width: rect.width, height: rect.height };
       const viewport = current.getViewport();
       const devicePixelRatio = typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
-      const stack = current.getNodeBoxes();
       const candidates = candidatesFor(current.graph, current.registry);
+      /* T1248: the counter if the canvas offers one, and only then is the DOM read skipped
+         — the boxes are still read below, once, on every tick that is not quiet. */
+      const layout = current.nodeLayoutRevision?.() ?? current.getNodeBoxes();
 
       // T1241 — nothing this tick reads has moved since the last one: see `TickStamp`.
       const stamp: TickStamp = {
@@ -514,12 +543,13 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
         devicePixelRatio,
         interest: current.interest?.get() ?? null,
         bounds: current.bounds.snapshot(),
-        boxes: stack,
+        layout,
         lenses: current.views === undefined ? [] : candidates.map(({ nodeId }) => current.views?.get(nodeId)),
         orbits: current.orbits === undefined ? [] : candidates.map(({ nodeId }) => current.orbits?.get(nodeId)),
       };
       if (quiet(lastStamp, stamp)) return;
       lastStamp = stamp;
+      const stack = typeof layout === "number" ? current.getNodeBoxes() : layout;
 
       /*
        * T1102 — the DOM's stacking order, in screen rects, once per tick.

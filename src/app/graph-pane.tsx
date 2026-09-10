@@ -261,6 +261,20 @@ function GraphPaneInner({
    * written to avoid. The BOX still comes from React Flow's live node (§V112, the same
    * source `getNodePosition` uses), never from a client rect.
    */
+  /**
+   * T1248 — the counter `useNodePreviews` reads instead of the DOM.
+   *
+   * A ref rather than state on purpose: bumping it must NOT re-render this pane. The
+   * preview tick reads it inside a rAF that is already running, and a `setState` per node
+   * drag frame would trade a `querySelectorAll` for a React render of the whole pane,
+   * which is the more expensive half of the two.
+   */
+  const nodeLayoutRevision = useRef(0);
+  const bumpNodeLayout = useCallback(() => {
+    nodeLayoutRevision.current += 1;
+  }, []);
+  const readNodeLayoutRevision = useCallback(() => nodeLayoutRevision.current, []);
+
   const getNodeBoxes = useCallback((): ReadonlyArray<NodeStackBox> => {
     const root = surfaceRef.current;
     if (root === null) return [];
@@ -322,6 +336,9 @@ function GraphPaneInner({
     getNodePosition,
     // T1102: the DOM's stacking order, so a tile does not paint over the node in front.
     getNodeBoxes,
+    // T1248: and the canvas' own answer to "has any of that moved", so the read above
+    // happens when it has rather than once per rAF.
+    nodeLayoutRevision: readNodeLayoutRevision,
     previewFps,
     previewLongEdge,
     documentIdentity,
@@ -970,6 +987,7 @@ function GraphPaneInner({
           previewLens={previewLens}
           onSelectionChange={onSelectionChange}
           onHoveredNodeChange={onHoveredNodeChange}
+          onNodeLayoutChange={bumpNodeLayout}
           onPatchResult={onPatchResult}
           underlay={
             <canvas ref={backgroundCanvasRef} className={styles.graphBackground} aria-hidden="true" />

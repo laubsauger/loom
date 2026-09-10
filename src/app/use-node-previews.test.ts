@@ -1264,7 +1264,7 @@ describe("the tick skips itself when nothing it reads has moved (T1241)", () => 
    * reads (§V939), so each of those reads must be able to wake it on its own, and
    * nothing else may.
    */
-  function mount() {
+  function mount(options: { readonly withLayoutSignal?: boolean } = {}) {
     const registry = createTestRegistry().view();
     const graph = graphWith("test.blur");
     const nodeRuntime = createNodeRuntimeStore();
@@ -1290,6 +1290,9 @@ describe("the tick skips itself when nothing it reads has moved (T1241)", () => 
 
     const viewport = { x: 0, y: 0, zoom: 1 };
     let boxes: Array<{ nodeId: never; x: number; y: number; width: number; height: number }> = [];
+    /* T1248: how many times the tick asked the DOM. The saving IS this number. */
+    let boxReads = 0;
+    let revision = 0;
     const compiledOutputs = [
       {
         nodeId: "n1",
@@ -1316,7 +1319,11 @@ describe("the tick skips itself when nothing it reads has moved (T1241)", () => 
           interest,
           getViewport: () => ({ ...viewport }),
           getNodePosition: () => ({ x: 0, y: 0 }),
-          getNodeBoxes: () => boxes,
+          getNodeBoxes: () => {
+            boxReads += 1;
+            return boxes;
+          },
+          ...(options.withLayoutSignal === true ? { nodeLayoutRevision: () => revision } : {}),
           previewFps: 60,
           previewLongEdge: 192,
           documentIdentity: identity,
@@ -1337,6 +1344,10 @@ describe("the tick skips itself when nothing it reads has moved (T1241)", () => 
       setBoxes: (next: typeof boxes) => {
         boxes = next;
       },
+      bumpLayout: () => {
+        revision += 1;
+      },
+      boxReads: () => boxReads,
       rerender,
       ticks,
       dispose: () => nodeRuntime.dispose(),
@@ -1407,5 +1418,83 @@ describe("the tick skips itself when nothing it reads has moved (T1241)", () => 
       t.status.resourceBuilds += 1;
     });
     t.dispose();
+  });
+
+  /**
+   * T1248 — THE QUIET TICK'S RESIDUAL WAS THE QUESTION, NOT THE ANSWER.
+   *
+   * §T1241's gate compared node boxes by READING them: a `querySelectorAll` plus a walk of
+   * every node, every rAF, to discover that nothing had moved. Profiled at 37 of the 48 ms a
+   * paused five seconds spent in this tick, and 31 ms playing. The boxes are genuinely needed
+   * when the tick runs — they are what stops a tile painting over the node in front — so the
+   * fix is not to read less, it is to ask the canvas whether the answer could have changed.
+   *
+   * These assert the SAVING itself: how many times the DOM was asked. A test that only
+   * checked "still presents once" would pass with the read left in.
+   */
+  describe("the layout read happens when the canvas says so, not every frame (T1248)", () => {
+    it("asks the DOM once and then not at all while the canvas reports no movement", () => {
+      const t = mount({ withLayoutSignal: true });
+      t.ticks(1);
+      expect(t.presents).toHaveLength(1);
+      const afterFirst = t.boxReads();
+      // The first tick runs, so it reads once. Every quiet frame after it reads NOTHING.
+      expect(afterFirst).toBe(1);
+      t.ticks(100);
+      expect(t.presents).toHaveLength(1);
+      expect(t.boxReads()).toBe(afterFirst);
+      t.dispose();
+    });
+
+    it("without the signal it keeps §T1241's behaviour exactly: a read per frame", () => {
+      // The seam is optional, and its absence is not a degraded mode — it is the old code.
+      // A host with no canvas to ask (the first-paint harness, every other test here) must
+      // still skip its quiet ticks, and the only way it can know they are quiet is to look.
+      const t = mount();
+      t.ticks(1);
+      expect(t.presents).toHaveLength(1);
+      const afterFirst = t.boxReads();
+      t.ticks(10);
+      expect(t.presents).toHaveLength(1);
+      expect(t.boxReads()).toBe(afterFirst + 10);
+      t.dispose();
+    });
+
+    it("a bumped counter wakes the tick and re-reads the boxes", () => {
+      const t = mount({ withLayoutSignal: true });
+      t.ticks(1);
+      const before = t.boxReads();
+      // What the canvas raises on a drag, a resize, a node appearing, or a selection that
+      // elevates one node over another.
+      t.setBoxes([{ nodeId: "n1" as never, x: 40, y: 0, width: 200, height: 160 }]);
+      t.bumpLayout();
+      t.ticks(1);
+      expect(t.presents).toHaveLength(2);
+      expect(t.boxReads()).toBe(before + 1);
+      // And it is consumed: the frames after it are quiet again.
+      t.ticks(5);
+      expect(t.presents).toHaveLength(2);
+      expect(t.boxReads()).toBe(before + 1);
+      t.dispose();
+    });
+
+    it("moving a box WITHOUT the signal changes nothing — the canvas is the source of truth", () => {
+      /*
+       * The trade this row makes, stated as a test rather than left implicit. With the signal
+       * wired, the tick believes the canvas: boxes that move without a change event are
+       * invisible to it. That is safe because React Flow raises one for every way a node can
+       * move, and it is the assertion that FAILS if someone starts moving nodes by another
+       * route (a direct DOM write, a transform applied outside the node change pipeline)
+       * without telling the canvas.
+       */
+      const t = mount({ withLayoutSignal: true });
+      t.ticks(1);
+      const before = t.boxReads();
+      t.setBoxes([{ nodeId: "n1" as never, x: 999, y: 999, width: 200, height: 160 }]);
+      t.ticks(5);
+      expect(t.presents).toHaveLength(1);
+      expect(t.boxReads()).toBe(before);
+      t.dispose();
+    });
   });
 });
