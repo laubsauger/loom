@@ -110,6 +110,20 @@ const SIGNATURE_SITES: Readonly<Record<string, Ledger>> = {
     },
   },
 
+  "src/compiler/frame-compile.ts": {
+    gates:
+      "the per-frame VALUES-ONLY compile (T1182): `passStructureKey` is the VERIFIER that " +
+      "each pass a node re-emits at this frame has the base plan's structure before its " +
+      "values are spliced over the base (§V936). The spliced plan carries the base's " +
+      "signature by construction, so it reaches the GPU through exactly the main plan's " +
+      "push — the same door `compile.ts` above declares, not a second one.",
+    pushSite: {
+      file: "src/app/animate-parameters.ts",
+      carries: ["updateUniforms", "isUniformOnlyChange"],
+      provenBy: "src/app/animate-parameters.test.ts",
+    },
+  },
+
   "src/runtime/backend/index.ts": {
     gates:
       "nothing. The backend barrel RE-EXPORTS `planStructureSignature`; it computes no key " +

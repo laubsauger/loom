@@ -1,4 +1,5 @@
 import type { NodeId, PortId } from "../domain/types/ids.ts";
+import type { GraphDocument, GraphNode } from "../domain/types/graph.ts";
 import { instanceShapeIndex } from "../nodes/definitions/render-instances.ts";
 import { attributeBinding } from "../nodes/definitions/point-storage.ts";
 import { bypassPassthroughPorts } from "../domain/graph/bypass.ts";
@@ -490,7 +491,13 @@ function propagate(args: PropagationArgs): PropagationResult {
   return { outputs, diagnostics };
 }
 
-function normalizePass(
+/**
+ * One raw pass from a node description into the compiler's own shape: namespaced id,
+ * defaulted target, `nodeId` stamped. Exported for the per-frame values-only path
+ * (`frame-compile.ts`, T1182), which must produce EXACTLY the pass the full compile
+ * would — the same normaliser is how "exactly" is not a claim.
+ */
+export function normalizePass(
   nodeId: NodeId,
   defaultTarget: string | undefined,
   index: number,
@@ -806,7 +813,54 @@ function splicePassthroughNodes(validated: {
   return { nodes, edges, aliases, redirectSink, diagnostics };
 }
 
+/**
+ * What ONE compiled node leaves behind for the per-frame values-only path (T1182).
+ *
+ * The frame path re-runs `definition.compile` for the nodes whose parameters animate,
+ * with this context and fresh parameter values, and splices the passes it emits over the
+ * base plan's — so it needs the context as built here, which pass ids the node owns, and
+ * the STRUCTURAL half of what it declared (scratch and pointsets) to prove the re-run
+ * declared the same.
+ */
+export interface RetainedNodeCompile {
+  readonly node: GraphNode;
+  readonly definition: NodeDefinition;
+  /** The context `definition.compile` was called with at the base resolution. */
+  readonly context: CompilerNodeContext;
+  /** Ids of the passes this node emitted, in emission order (namespaced, §V5-stable). */
+  readonly passIds: ReadonlyArray<string>;
+  /** `JSON.stringify` of the description's `scratch` and `pointsets` — the structural half. */
+  readonly structureKey: string;
+}
+
+/** Everything `frame-compile.ts` needs from a full compile, besides the plan itself. */
+export interface RetainedCompile {
+  /** The flat graph with source-reference edges synthesized — what `op()` reads against. */
+  readonly graph: GraphDocument;
+  /** Kept nodes in topological order (spliced passthroughs excluded). */
+  readonly order: ReadonlyArray<NodeId>;
+  /** One record per node that compiled without throwing, by id. */
+  readonly nodes: ReadonlyMap<NodeId, RetainedNodeCompile>;
+  /** Scene payloads published at the base resolution, by `outputKey`. */
+  readonly scenePayloads: ReadonlyMap<string, ScenePayload>;
+}
+
+export interface CompileGraphResult {
+  readonly compiled: CompiledGraph;
+  /** Null when the compile stopped early (recursion, cycle) and no node was compiled. */
+  readonly retained: RetainedCompile | null;
+}
+
 export function compileGraph(request: CompileRequest): CompiledGraph {
+  return compileGraphRetaining(request).compiled;
+}
+
+/**
+ * `compileGraph`, keeping what the per-frame path needs (T1182). One function, not two
+ * compiles: the retained records are taken from the very loop that built the plan, so
+ * they cannot describe a different compile from the one whose plan they accompany.
+ */
+export function compileGraphRetaining(request: CompileRequest): CompileGraphResult {
   const { registry, settings } = request;
   const diagnostics: RuntimeDiagnostic[] = [];
 
@@ -832,7 +886,9 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
   if (flattened !== undefined) {
     diagnostics.push(...flattened.diagnostics);
     // §V83: a recursive graph expands for ever. It stops here, with the cycle named.
-    if (flattened.recursion !== null) return emptyPlan(stamp(diagnostics), [], sourceRows);
+    if (flattened.recursion !== null) {
+      return { compiled: emptyPlan(stamp(diagnostics), [], sourceRows), retained: null };
+    }
   }
   const flatGraph = flattened?.graph ?? request.graph;
 
@@ -970,7 +1026,9 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
   // 3. temporal split, cycle rejection, ordering (T25, §V4)
   const topology = orderNodes(kept, validated.edges);
   diagnostics.push(...topology.diagnostics);
-  if (topology.cycles.length > 0) return emptyPlan(stamp(diagnostics), pruned, sourceRows);
+  if (topology.cycles.length > 0) {
+    return { compiled: emptyPlan(stamp(diagnostics), pruned, sourceRows), retained: null };
+  }
 
   const incoming = new Map<NodeId, CompileEdge[]>();
   // §V131: a variadic port's inputs arrive in the order the DOCUMENT declares, not in the
@@ -1048,6 +1106,8 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
   /** T447: scene payloads (camera/light/geometry/material) per output — the pointsets
    *  channel's sibling, all CPU values, re-published on every animate recompile. */
   const sceneInfoByOutput = new Map<string, ScenePayload>();
+  /** T1182: what each compiled node leaves for the per-frame values-only path. */
+  const retainedNodes = new Map<NodeId, RetainedNodeCompile>();
   for (const nodeId of topology.order) {
     const resolved = validated.nodes.get(nodeId);
     if (resolved === undefined) continue;
@@ -1436,11 +1496,20 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
     }
 
     let emitted = 0;
+    const emittedPassIds: string[] = [];
     description.passes.forEach((raw, index) => {
       const pass = normalizePass(nodeId, target, index, raw, diagnostics);
       if (pass === undefined) return;
       passes.push(pass);
+      emittedPassIds.push(pass["id"] as string);
       emitted += 1;
+    });
+    retainedNodes.set(nodeId, {
+      node,
+      definition,
+      context,
+      passIds: emittedPassIds,
+      structureKey: descriptionStructureKey(description),
     });
 
     if (emitted === 0 && target !== undefined) {
@@ -2216,18 +2285,33 @@ export function compileGraph(request: CompileRequest): CompiledGraph {
   const structure = planStructureKeys(read.resources, read.passes);
 
   return {
-    passes: read.passes,
-    resources: read.resources,
-    diagnostics: reported,
-    ok: !hasError(reported),
-    order: topology.order,
-    pruned,
-    outputs,
-    feedback,
-    sources: sourceRows,
-    resourceSignatures: structure.resourceSignatures,
-    passSignatures: structure.passSignatures,
-    signature: structure.signature,
-    estimatedResourceBytes,
+    compiled: {
+      passes: read.passes,
+      resources: read.resources,
+      diagnostics: reported,
+      ok: !hasError(reported),
+      order: topology.order,
+      pruned,
+      outputs,
+      feedback,
+      sources: sourceRows,
+      resourceSignatures: structure.resourceSignatures,
+      passSignatures: structure.passSignatures,
+      signature: structure.signature,
+      estimatedResourceBytes,
+    },
+    retained: { graph, order: topology.order, nodes: retainedNodes, scenePayloads: sceneInfoByOutput },
   };
+}
+
+/**
+ * The STRUCTURAL half of a node description, as one comparable string (T1182): what it
+ * declared as scratch (resources) and as pointset outputs (downstream bindings). Passes
+ * are compared per pass through `passStructureKey`; scene payloads are VALUES and travel.
+ */
+export function descriptionStructureKey(description: CompiledNodeDescription): string {
+  return JSON.stringify([
+    (description as { scratch?: unknown }).scratch ?? null,
+    (description as { pointsets?: unknown }).pointsets ?? null,
+  ]);
 }

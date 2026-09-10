@@ -234,6 +234,7 @@ export const projectorNode: NodeDefinition = {
       type: "boolean",
       label: "Occlusion",
       default: true,
+      compileTime: true,
       description: "Surfaces the projector cannot see receive nothing — a parapet shadows the wall below. Off is a decal that lies about the site; sometimes that is wanted.",
     },
   },

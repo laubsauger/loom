@@ -83,6 +83,33 @@ export interface SubstepPlan {
  * structurally incapable of asking for one — there is no naming convention to remember and
  * no key to guess.
  */
+/**
+ * The iteration count a resolved substeps VALUE asks for.
+ *
+ * T425: the region is emitted even at ONE iteration, whenever the loop is real.
+ * T387 skipped count <= 1 — harmless when the count was structural — but the count
+ * is a per-frame VALUE now, and a region that appears only above 1 would make
+ * "substeps driven from 1 to 3" a STRUCTURAL change the animator must refuse
+ * (§V5). The markers cost nothing at count 1: the encoder expands the body once,
+ * exactly the un-marked order.
+ *
+ * The ceiling is already enforced where a user meets it: the manifest declares
+ * `max: MAX_SUBSTEPS`, so an over-range value is REFUSED by name at parameter
+ * resolution ("Parameter \"substeps\" is 296, above its maximum 256") and the loop
+ * falls back to one step per frame. This clamp is a contract guard, not a second
+ * opinion — `readExecutionPlan` refuses a count above the ceiling, and refusing the
+ * WHOLE PLAN over a number the user has already been told about would turn one loud
+ * parameter error into a black frame.
+ *
+ * Exported for the per-frame values-only path (T1182), which re-derives a loop-begin
+ * marker's count from the re-resolved value through THIS function, so the spliced count
+ * and the full compile's cannot disagree about rounding or the ceiling.
+ */
+export function substepCount(raw: unknown): number {
+  const requested = typeof raw === "number" && Number.isFinite(raw) ? Math.round(raw) : 1;
+  return Math.min(Math.max(1, requested), MAX_SUBSTEPS);
+}
+
 export function planSubstepLoops(input: SubstepPlanInput): SubstepPlan {
   const diagnostics: RuntimeDiagnostic[] = [];
   const loops: SubstepLoop[] = [];
@@ -93,27 +120,7 @@ export function planSubstepLoops(input: SubstepPlanInput): SubstepPlan {
     const key = resolved.definition.temporal?.substeps;
     if (key === undefined) continue;
 
-    const raw = resolved.parameters[key];
-    const requested = typeof raw === "number" && Number.isFinite(raw) ? Math.round(raw) : 1;
-    /*
-     * T425: the region is emitted even at ONE iteration, whenever the loop is real.
-     * T387 skipped count <= 1 — harmless when the count was structural — but the count
-     * is a per-frame VALUE now, and a region that appears only above 1 would make
-     * "substeps driven from 1 to 3" a STRUCTURAL change the animator must refuse
-     * (§V5). The markers cost nothing at count 1: the encoder expands the body once,
-     * exactly the un-marked order.
-     */
-    const requestedAtLeastOne = Math.max(1, requested);
-    /*
-     * The ceiling is already enforced where a user meets it: the manifest declares
-     * `max: MAX_SUBSTEPS`, so an over-range value is REFUSED by name at parameter
-     * resolution ("Parameter \"substeps\" is 296, above its maximum 256") and the loop
-     * falls back to one step per frame. This clamp is a contract guard, not a second
-     * opinion — `readExecutionPlan` refuses a count above the ceiling, and refusing the
-     * WHOLE PLAN over a number the user has already been told about would turn one loud
-     * parameter error into a black frame.
-     */
-    const count = Math.min(requestedAtLeastOne, MAX_SUBSTEPS);
+    const count = substepCount(resolved.parameters[key]);
 
     const bodyNodes = loopBody(output.nodeId, output.portId, input);
     // A Feedback node whose output nothing consumes is a one-node "loop": iterating it

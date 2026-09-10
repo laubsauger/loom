@@ -560,7 +560,13 @@ function readResource(value: unknown): ResourceDescriptor | undefined {
   return undefined;
 }
 
-function readPass(value: unknown): PassDescriptor | undefined {
+/**
+ * Narrows one raw pass into a backend descriptor, or `undefined` when it is not one.
+ * Exported for the compiler's per-frame values-only path (T1182), which narrows the
+ * passes it re-emits through the SAME reader `readExecutionPlan` uses, so a spliced pass
+ * is byte-for-byte what a full compile would have carried.
+ */
+export function readPass(value: unknown): PassDescriptor | undefined {
   if (!isRecord(value)) return undefined;
   const { kind, id } = value;
   if (typeof id !== "string" || id.length === 0) return undefined;
