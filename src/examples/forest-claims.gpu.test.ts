@@ -146,6 +146,27 @@ interface Shot {
   readonly luma: Float64Array;
 }
 
+/**
+ * T1279 — EVERY DRIVEN SLOT AT ITS RETAINED VALUE, for the claims that are about something
+ * else.
+ *
+ * This file has learned the same lesson three times now and this is the third: T1156 found
+ * "the frames differ" vacuous because the cloud veil drifts on its own clock; T1170b put the
+ * two audio lanes in and the walk's freeze stopped being a freeze; T1279 adds a BEAT lane,
+ * and a claim that renders two frames at different beat phases is comparing two pictures
+ * that differ for a reason it is not testing. Derived from the document rather than written
+ * out, so a retune cannot leave a stale constant here.
+ */
+function beatsAtRest(): Record<string, number> {
+  const graph = e57().graph;
+  return {
+    mist: retainedOf(graph, "mist"),
+    moonGain: retainedOf(graph, "moonGain"),
+    fog: retainedOf(graph, "fog"),
+    shafts: retainedOf(graph, "shafts"),
+  };
+}
+
 async function shoot(
   overrides: Record<string, unknown>,
   frames: readonly number[],
@@ -413,10 +434,8 @@ describe("E57 Forest — claims", () => {
        picture still moved by 0.00989, eighteen times the bound, because `mist` and
        `moonGain` were still breathing. Freezing them at their own retained values is what
        makes this an assertion about THE WALK rather than about "something moves". */
-    const frozenDrive = {
-      mist: retainedOf(e57().graph, "mist"),
-      moonGain: retainedOf(e57().graph, "moonGain"),
-    };
+    // T1279: the beat lane is the THIRD clock this freeze has had to learn about.
+    const frozenDrive = beatsAtRest();
     const [stillA, stillB] = await shoot({ walkSpeed: 0, sway: 0, bob: 0, ...frozenDrive }, [60, 180]);
     // Cut the walk and the picture stops: 0.02775 mean |Δ| over the look window becomes
     // 0.00004, which is the cloud drift and nothing else. The motion budget is the walk's.
@@ -677,11 +696,16 @@ describe("E57 Forest — claims", () => {
        the volumetric off, a tree can only reach a pixel by being drawn on it. Everything
        below is measured on those pixels alone, and on their neighbours too where a gradient
        is taken, so no statistic ever straddles the mask's own edge. */
+    /* T1279: the beat lane pinned at rest across all four arms. `shafts` and `fog` are both
+       driven now, so an unpinned arm would render each frame at whatever beat phase it fell
+       on — and the shaft term this measures IS one of the driven quantities. The isolation
+       is between the wood and the volumetric, not between two moments of a bar. */
+    const rest = beatsAtRest();
     const frames = [420, 900, 1500];
-    const woodShafts = await shoot({}, frames);
-    const woodPlain = await shoot({ shafts: 0 }, frames);
-    const bareShafts = await shoot({ density: 0 }, frames);
-    const barePlain = await shoot({ density: 0, shafts: 0 }, frames);
+    const woodShafts = await shoot({ ...rest }, frames);
+    const woodPlain = await shoot({ ...rest, shafts: 0 }, frames);
+    const bareShafts = await shoot({ ...rest, density: 0 }, frames);
+    const barePlain = await shoot({ ...rest, density: 0, shafts: 0 }, frames);
 
     /** The shaft term itself, per pixel: what the volumetric added to this frame. */
     const shaftOf = (on: Shot, off: Shot): Float64Array => {
@@ -1024,6 +1048,95 @@ describe("E57 Forest — claims", () => {
       expect(step / span).toBeGreaterThan(lane.maxStepFraction * 3);
     }
   }, 120_000);
+
+  /**
+   * T1279 — THE BEATS LAND, AND A CONTINUOUS LANE CANNOT PASS THIS.
+   *
+   * The owner's report was that the file "gets boring quickly", and the diagnosis was that
+   * both audio lanes were CONTINUOUS: the file breathed and never hit. So the claim for the
+   * lane that fixes it has to be about an EVENT — the picture must move ON the beat and come
+   * back afterwards. A drift, however deep, fails this: it cannot return.
+   *
+   * The frames are the fixture's own arithmetic rather than eyeballed. At 112 bpm a beat is
+   * 60/112 s = 32.14 frames, so beat 20 lands at frame 642.9 and 643 is the first frame after
+   * it. 640 is two frames before that beat with its predecessor's 250 ms tail long spent, and
+   * 655 is twelve frames after, where the release has run most of its course.
+   */
+  it("the beats LAND: the wood shuts on the event and opens again after it (T1279)", async () => {
+    expect(dawnError, dawnError ?? "").toBeUndefined();
+    const [before, onBeat, after] = await shoot({}, [640, 643, 655]);
+    const dip = mean(before!) - mean(onBeat!);
+    const recovery = mean(after!) - mean(onBeat!);
+    /* The gloom DARKENS — never brightens. §T1170b's refusals rule out a flash, and this is
+       the assertion that keeps a future tuning pass from turning the beat into one. */
+    expect(dip, "the frame on the beat must be darker than the frame before it").toBeGreaterThan(0);
+    expect(recovery, "and it must come back up afterwards, or this is a drift and not a beat").toBeGreaterThan(0);
+    /* AND IT RECOVERS most of the way: a beat that only half-returns inside 250 ms is a lane
+       that ratchets, which is how a "beat" becomes a slow fade under a dense track. */
+    expect(recovery).toBeGreaterThan(dip * 0.5);
+    /* The event is worth seeing. Measured 0.0122 mean |Δ| between the frame before the beat
+       and the frame on it; the bound is a quarter of that, which no drift of these lanes
+       reaches across three frames (their own max step is 2.09% of span per frame). */
+    expect(meanAbsDelta(before!, onBeat!)).toBeGreaterThan(0.003);
+  }, 240_000);
+
+  /**
+   * T1279 — WITH NO DRIVE THE BEATS ARE NOT THERE, which is §V914 for an event.
+   *
+   * The retained value of a driven slot is what stands when no channel resolves, and for
+   * these three that has to be the picture §T1170b shipped: every headless render, every
+   * thumbnail and every first open has no track. A count has no floor to sit above, so the
+   * rest state is exactly the old constant rather than approximately it.
+   *
+   * ⚑ NOTE WHAT THIS DOES *NOT* TEST, AND WHY. The obvious version — mute the pattern and
+   * assert the counts stop — is wrong on this fixture: `audioPattern` derives `onsetCount`
+   * from BEAT CROSSINGS, so it keeps counting at `amount: 0` (measured: 567 of 600 frames
+   * still carry a decaying count). Its `amount` gains the band amplitudes, not the clock.
+   * That is §V955's shape again — a mute arm measuring something other than what it looks
+   * like it measures — so the claim is made against the RETAINED path, which is the one a
+   * host with no audio actually takes.
+   */
+  it("with no drive the beats rest on the picture T1170b shipped (T1279, §V914)", () => {
+    const graph = e57().graph;
+    expect(
+      [retainedOf(graph, "fog"), retainedOf(graph, "shafts")],
+      "the beat slots' retained values are the shipped constants, exactly",
+    ).toEqual([0.03, 0.85]);
+    // The moon's slot carries BOTH lanes, so its retained value is the continuous lane's
+    // measured driven mean with the beat factor at rest — the same 0.995 T1170b tuned.
+    expect(retainedOf(graph, "moonGain")).toBeCloseTo(0.995, 6);
+  });
+
+  /**
+   * T1279 — AND THE LANE DECAYS BETWEEN HITS RATHER THAN RATCHETING.
+   *
+   * A 250 ms release against a 536 ms beat at 112 bpm has to be most of the way back down
+   * before the next hit lands, or successive beats stack and the "beat" becomes a slow fade
+   * that never lets go — which is the failure this whole row exists to remove, arriving by
+   * a different route. Analytic, not eyeballed: one release constant of 0.25 s over 0.536 s
+   * is exp(−2.14) = 0.117 of the peak.
+   */
+  it("the beat decays between hits and never stacks (T1279)", () => {
+    const registry = createNodeRegistry(allNodeDefinitions);
+    const session = createValueGraphSession(registry);
+    const graph = e57().graph;
+    const series: number[] = [];
+    for (let frameIndex = 0; frameIndex < 1200; frameIndex += 1) {
+      const evaluated = session.evaluate(
+        graph,
+        { timeSeconds: frameIndex / 60, deltaSeconds: 1 / 60, frameIndex, mode: "offline", randomSeed: 57 },
+        { pointer: { x: 0.5, y: 0.5, buttons: 0 }, channels: () => undefined },
+      );
+      const value = evaluated.resolver("beat1:onsetCount", undefined as never);
+      if (typeof value === "number" && Number.isFinite(value)) series.push(value);
+    }
+    const late = series.slice(600);
+    // It reaches its full height — the count IS 1 on the frame the beat lands.
+    expect(Math.max(...late)).toBeGreaterThan(0.9);
+    // And it gets back down. The trough is the assertion: a lane that stacked would floor
+    // higher and higher, and this one returns to within a rounding of the analytic 0.117.
+    expect(Math.min(...late)).toBeLessThan(0.15);
+  });
 
   it("cutting the drive is a different picture, so the audio reaches the pixels", async () => {
     expect(dawnError, dawnError ?? "").toBeUndefined();

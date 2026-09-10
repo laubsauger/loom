@@ -1,6 +1,6 @@
 # E57 — Forest
 
-A misty, moonlit, faintly hostile wood that you are walking through forever. One `customWgsl` pass raymarches an infinite procedural forest — thickets and clearings, a mist that pools on the ground, broken snags standing out of it, **god rays cutting between the trunks with their shadows in them**, and a full moon you never reach — and a second pass throws the near field out of focus. Two slow audio lanes move the air and the moon underneath all of it. It is built to sit behind somebody's web page, so the frame budget shaped every decision in it before the picture did.
+A misty, moonlit, faintly hostile wood that you are walking through forever. One `customWgsl` pass raymarches an infinite procedural forest — thickets and clearings, a mist that pools on the ground, broken snags standing out of it, **god rays cutting between the trunks with their shadows in them**, and a full moon you never reach — and a second pass throws the near field out of focus. Two slow audio lanes move the air and the moon underneath all of it, and a third lands the beats on top. It is built to sit behind somebody's web page, so the frame budget shaped every decision in it before the picture did.
 
 T1170 deepened it on the owner's reading that the first version was "a little bit lame, a little bit repetitive" and wanted depth of field: a density **field** instead of a constant, broken stems, a ground that rolls, a near-field defocus and a real gait.
 
@@ -190,6 +190,28 @@ Before the second follower those steps were 20.9% and 8.6%. Neither lane ever re
 ⚠ **And the channel on the dimming lane was a measurement, not a taste.** On `:level` the same lane put 18.9% of its run in the bottom twentieth and 0.8% in the nineteenth, because `audioPattern`'s level *rests at its floor* — and a percentile cannot spread a tie. Normalize removes skew; it does not remove ties. `:lowMid` never rests, so its rank comes out nearly flat.
 
 Retained values are the **measured driven means** — 0.212 and 0.995 — not the lane midpoints, because absence is the common case: every headless render, every thumbnail and every first open has no track. Both sit inside the driven range (0.166…0.255 and 0.877…1.176).
+
+### T1279: two continuous lanes is a file that breathes and never hits
+
+The owner, on the file as T1170b shipped it: *"the audio reactivity is a bit lame, it would be interesting to dim the light or make some things appear or gloom or something with some beats and some rhythm, it gets a bit boring quickly."* The diagnosis is one line and it is in the table above — **both lanes are continuous.** One follows the phrase, the other the section, and neither has an edge on it, so nothing in the file ever *lands*. He is describing the absence of an event, not a shortage of movement.
+
+So there is a third lane, and it is the only one with a sharp edge: `beat1`, a 1 ms attack and a 250 ms release on the source's **count** channels. A count is 1 on the frame a drum lands and 0 between, so a bare gain on it **rests at zero** — the beats are silent by construction when there is no audio, and the file with no track is exactly the picture T1170b shipped.
+
+| parameter | channel | what it does | range |
+| --- | --- | --- | --- |
+| `fog` | `onsetCount` | the gloom: the aerial perspective swells, the middle distance shuts, and the depth comes back over 250 ms | 0.03 … 0.052 |
+| `moonGain` | `kickCount` | the dimming, on top of the section lane: `dimMap1 × (1 − 0.3 · kickCount)` | ×1 … ×0.7 |
+| `shafts` | `snareCount` | the reveal: shafts are the one term here that **adds** light between the trunks | 0.85 … 1.30 |
+
+**Why counts and not the ranked levels the other two lanes use.** A percentile cannot spread a tie, and a count is 0 on almost every frame — through a rank it rests at its *mid* and the beat becomes a permanent half-lit nothing (T1234 measured 0.53 on this pattern). Continuous properties on ranks, drums on counts.
+
+**Why the `AudioAnalysis` component is not used here**, though E24, E35, E66 and E67 all moved to it. Its levels lane has one window. The whole finding of the two lanes above is that theirs are *deliberately different* — 18 s for the phrase, 40 s for the section — so migrating would flatten a measured design to buy a hits lane that is one node. This is the case the component does not fit.
+
+**The gloom's size is a look call, made by eye.** The first cut was `+0.045` on `fog` and it swallowed the wood whole at the peak: two near trunks and a glow, which reads as the render failing rather than as a beat. `+0.022` shuts the middle distance and leaves the near stems standing, which is a wood closing.
+
+⚠ **On the shipped pattern the fog and the moon fire together, and that is the fixture rather than the wiring.** `audioPattern` defines `kickCount = onsetCount` — a kick on every beat — so the two channels are one signal here. On a real track dropped into `track1` they separate: `onsetCount` is a spectral-flux detector that fires on any transient, `kickCount` is the low-band heuristic, so the gloom fires more often than the moon dips. The split is what the wiring *says*; the fixture cannot show it.
+
+**The beats cost nothing.** GPU frame extent on Dawn, 300 frames an arm after 30 warm-up, arms alternated over three passes: the driven file measures 4.170 / 4.109 / 4.168 ms mean against 4.102 / 4.094 / 4.424 for the same file with the three slots pinned at rest — inside the control's own run-to-run spread. Pinned at the **peak** of all three at once, which the document never does, the p50 is *below* rest in every pass (3.867 / 3.932 / 4.194 against 3.998 / 3.998 / 4.325): the gloom shortens the march more than the shafts lengthen it. E57's budget is untouched.
 
 ⚑ **And the air lane pays part of the god rays' bill**, which is why its floor is a budget number rather than a taste one. `reach` is solved from the fog, so thinner mist is more cells: at `mist` 0.155 the reach is 27.3 m against the T1170 file's 25.8, and at the lane's mean of 0.212 it is 22.2 — about 14% fewer cells than the constant it replaced. The floor sits a hair under the old 0.17 so the *worst* case the drive can reach is within 6% of what was measured before, and everything above it is cheaper.
 
