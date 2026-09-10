@@ -301,6 +301,7 @@ describe("the performance tab (T41)", () => {
   const snapshot = (over: Partial<TelemetrySnapshot> = {}): TelemetrySnapshot => ({
     timingAvailable: true,
     timingUnavailableReason: null,
+    frameCompileReason: null,
     plan: {
       categories: new Map([["blur", "filter"]]),
       readback: EMPTY_READBACK_BUDGET,

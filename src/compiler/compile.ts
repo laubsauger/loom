@@ -835,6 +835,12 @@ export interface RetainedNodeCompile {
 
 /** Everything `frame-compile.ts` needs from a full compile, besides the plan itself. */
 export interface RetainedCompile {
+  /**
+   * The request this compile was built from — the compiler's own record, so a caller
+   * handing the result to `prepareFrameCompiler` as a base cannot claim it was compiled
+   * for a request it was not (T1254).
+   */
+  readonly request: CompileRequest;
   /** The flat graph with source-reference edges synthesized — what `op()` reads against. */
   readonly graph: GraphDocument;
   /** Kept nodes in topological order (spliced passthroughs excluded). */
@@ -2300,7 +2306,7 @@ export function compileGraphRetaining(request: CompileRequest): CompileGraphResu
       signature: structure.signature,
       estimatedResourceBytes,
     },
-    retained: { graph, order: topology.order, nodes: retainedNodes, scenePayloads: sceneInfoByOutput },
+    retained: { request, graph, order: topology.order, nodes: retainedNodes, scenePayloads: sceneInfoByOutput },
   };
 }
 

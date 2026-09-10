@@ -508,7 +508,8 @@ const sameStructure = (a: TelemetrySnapshot, b: TelemetrySnapshot): boolean =>
   a.build === b.build &&
   a.timingAvailable === b.timingAvailable &&
   a.cpuTimingAvailable === b.cpuTimingAvailable &&
-  a.overBudget === b.overBudget;
+  a.overBudget === b.overBudget &&
+  a.frameCompileReason === b.frameCompileReason;
 
 const identity = (snapshot: TelemetrySnapshot): TelemetrySnapshot => snapshot;
 
@@ -548,6 +549,18 @@ function PerformanceSections({
             <CookPolicyControl policy={cookPolicy} onChange={onCookPolicyChange} />
           )}
         </div>
+        {/*
+          T1254 — why every animated frame compiles in FULL, when it does. The compiler
+          names the node and the key (`FrameCompiler.reason`, §V936); a knob that is
+          slow because it animates a compileTime parameter is otherwise indistinguishable
+          from one that is slow for any other reason. Absent while the fast path is live
+          — a line saying "values-only" on every animated document is noise (§V91).
+        */}
+        {snapshot.frameCompileReason === null ? null : (
+          <p className={styles.note} data-testid="frame-compile-reason">
+            full compile every frame — {snapshot.frameCompileReason}
+          </p>
+        )}
       </section>
 
       <CostSection source={source} snapshot={snapshot} />

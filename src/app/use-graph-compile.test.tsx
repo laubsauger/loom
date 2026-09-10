@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
-import { act, cleanup, renderHook } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { BackendCapabilities } from "@domain/types/backend.ts";
 import type { GraphPatchOperation } from "@domain/types/patch.ts";
 import type { StoredParameter } from "@domain/types/parameters.ts";
+import type { NodeCompileContext, NodeDefinition } from "@domain/types/node-definition.ts";
 import { isUniformOnlyChange } from "@compiler/index.ts";
 import { createAppRuntime } from "./app-runtime.ts";
 import type { AppRuntime } from "./app-runtime.ts";
@@ -378,6 +379,141 @@ describe("useGraphCompile — the per-frame compile is values-only where provabl
     // than push uniforms into a ring that is the wrong size.
     expect(isUniformOnlyChange(structural!, before!)).toBe(true);
     expect(isUniformOnlyChange(structural!, after!)).toBe(false);
+
+    runtime.dispose();
+  });
+});
+
+/**
+ * T1254 — ONE full compile per revision. The structural memo compiles the revision in
+ * full; the frame compiler on the first frame used to compile it AGAIN as its base (E24:
+ * 174–191 ms + 160–170 ms per knob drag). Now the memo's retained compile IS the base:
+ *
+ *  1. identity, from the consumer's side: the plan the first frame hands out shares the
+ *     memo result's `signature` and its very objects — the non-animating node's pass,
+ *     `outputs`, `resources`, `passSignatures` are `result.compiled`'s own, not a fresh
+ *     compile's equal copies;
+ *  2. a counter on a definition that never animates: the solid compiles ONCE across the
+ *     memo and the first frame. Red-verified by making `prepareFrameCompiler` ignore its
+ *     base (it reads 2), and by dropping the base hand-over in the hook (2 again);
+ *  3. the reason reaches the performance pane's source: a structural key animating
+ *     publishes the compiler's sentence to the hub, a values-only document publishes
+ *     null.
+ */
+describe("useGraphCompile — the frame compiler splices over the memo's own compile (T1254)", () => {
+  const frameAt = (frameIndex: number) => ({
+    timeSeconds: frameIndex / 60,
+    deltaSeconds: 1 / 60,
+    frameIndex,
+    mode: "offline" as const,
+    randomSeed: 7,
+  });
+  const expression = (source: string, retained: number): StoredParameter => ({
+    mode: "expression",
+    bindings: { expression: { kind: "expression", source }, static: { kind: "static", value: retained } },
+  });
+
+  /** Counts `compile` calls of ONE node type through the runtime's own registry. */
+  function countCompiles(runtime: AppRuntime, type: string): () => number {
+    let compiles = 0;
+    const wrapped = new Map<NodeDefinition, NodeDefinition>();
+    const get = runtime.registry.get.bind(runtime.registry);
+    vi.spyOn(runtime.registry, "get").mockImplementation((name: string) => {
+      const definition = get(name);
+      if (definition === undefined || definition.type !== type) return definition;
+      let counted = wrapped.get(definition);
+      if (counted === undefined) {
+        counted = {
+          ...definition,
+          compile: (context: NodeCompileContext) => {
+            compiles += 1;
+            return definition.compile(context);
+          },
+        };
+        wrapped.set(definition, counted);
+      }
+      return counted;
+    });
+    return () => compiles;
+  }
+
+  async function seedSolidBlur(runtime: AppRuntime, blurSize: StoredParameter): Promise<{ solid: string; blur: string }> {
+    let solid = "";
+    let blur = "";
+    await act(async () => {
+      const result = await seed(runtime, [
+        { op: "addNode", ref: "$solid", type: "solid", position: { x: 0, y: 0 } },
+        { op: "addNode", ref: "$blur", type: "blur", position: { x: 240, y: 0 }, parameters: { size: blurSize } },
+        { op: "connect", source: { nodeId: "$solid", portId: "out" }, target: { nodeId: "$blur", portId: "input" } },
+      ]);
+      expect(result.status).toBe("applied");
+      solid = result.output.createdIds["$solid"] ?? "";
+      blur = result.output.createdIds["$blur"] ?? "";
+    });
+    return { solid, blur };
+  }
+
+  it("hands out the memo result's plan on the first frame — base shared, not rebuilt", async () => {
+    const runtime = newRuntime();
+    const compiles = countCompiles(runtime, "solid");
+    const { solid } = await seedSolidBlur(runtime, expression("2 + frame * 0.5", 1));
+    const { result } = renderHook(() => useGraphCompile(runtime, CAPABILITIES));
+    const structural = result.current.compiled;
+    expect(structural).not.toBeNull();
+    expect(compiles(), "the structural memo's one full compile").toBe(1);
+
+    const frame15 = result.current.animate?.(frameAt(15));
+    expect(frame15).not.toBeNull();
+    // 2 (first, so it fails on its own): one full compile per revision. The solid never
+    // animates, so its count is the count of FULL compiles — the first frame added none.
+    expect(compiles(), "no second full compile for the frame compiler's base").toBe(1);
+    // 1. The consumer's gate, and the identity behind it: the splice's untouched parts
+    // ARE the memo's plan — a second full compile would hand out equal copies.
+    expect(frame15!.signature).toBe(structural!.signature);
+    expect(isUniformOnlyChange(structural!, frame15!)).toBe(true);
+    const solidPass = (plan: NonNullable<typeof structural>) => plan.passes.find((pass) => pass.id.endsWith(`${solid}:fill`));
+    expect(solidPass(frame15!)).toBeDefined();
+    expect(solidPass(frame15!)).toBe(solidPass(structural!));
+    expect(frame15!.outputs).toBe(structural!.outputs);
+    expect(frame15!.resources).toBe(structural!.resources);
+    expect(frame15!.passSignatures).toBe(structural!.passSignatures);
+    result.current.animate?.(frameAt(16));
+    expect(compiles()).toBe(1);
+    // The fast path is live, so the pane has nothing to say.
+    expect(runtime.telemetry.snapshot().frameCompileReason).toBeNull();
+
+    runtime.dispose();
+  });
+
+  it("publishes why frames compile in full to the telemetry hub, naming node and key", async () => {
+    const runtime = newRuntime();
+    let cache = "";
+    await act(async () => {
+      const result = await seed(runtime, [
+        { op: "addNode", ref: "$noise", type: "noise", position: { x: 0, y: 0 } },
+        {
+          op: "addNode",
+          ref: "$cache",
+          type: "cache",
+          position: { x: 240, y: 0 },
+          parameters: { frames: expression("4 + 4 * (frame >= 30)", 4) },
+        },
+        { op: "connect", source: { nodeId: "$noise", portId: "out" }, target: { nodeId: "$cache", portId: "input" } },
+      ]);
+      expect(result.status).toBe("applied");
+      cache = result.output.createdIds["$cache"] ?? "";
+    });
+    const { result } = renderHook(() => useGraphCompile(runtime, CAPABILITIES));
+    expect(result.current.animate).not.toBeNull();
+    // Nothing is known until a frame asks: the compiler is prepared lazily (T1182).
+    expect(runtime.telemetry.snapshot().frameCompileReason).toBeNull();
+    expect(result.current.animate?.(frameAt(1))).not.toBeNull();
+    // The hub notifies at most 10 times a second (§V16); the sentence lands on its tick.
+    await waitFor(() => {
+      const reason = runtime.telemetry.snapshot().frameCompileReason;
+      expect(reason).toContain(`Node "${cache}" (cache)`);
+      expect(reason).toContain('animates "frames"');
+    });
 
     runtime.dispose();
   });

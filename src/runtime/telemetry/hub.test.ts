@@ -506,3 +506,30 @@ describe("T1243 — the frame bucket is the submitted frame's extent", () => {
     hub.dispose();
   });
 });
+
+describe("T1254 — the per-frame compile's reason reaches the snapshot", () => {
+  it("carries the compiler's sentence, null by default, and a repeat notifies nobody", () => {
+    const hub = createTelemetryHub({ now });
+    let notified = 0;
+    hub.subscribe(() => {
+      notified += 1;
+    });
+    expect(hub.snapshot().frameCompileReason).toBeNull();
+
+    hub.setFrameCompileReason('Node "cache1" (cache) animates "frames"');
+    advance(TELEMETRY_TICK_MS);
+    expect(hub.snapshot().frameCompileReason).toBe('Node "cache1" (cache) animates "frames"');
+    const after = notified;
+
+    // The hook publishes on every prepared compiler — one per revision during a knob
+    // drag — and the same sentence again must not wake the pane (§V16).
+    hub.setFrameCompileReason('Node "cache1" (cache) animates "frames"');
+    advance(TELEMETRY_TICK_MS * 2);
+    expect(notified).toBe(after);
+
+    hub.setFrameCompileReason(null);
+    advance(TELEMETRY_TICK_MS);
+    expect(hub.snapshot().frameCompileReason).toBeNull();
+    expect(notified).toBe(after + 1);
+  });
+});

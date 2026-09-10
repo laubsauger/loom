@@ -14,7 +14,7 @@ import { minimalGraphFor } from "../nodes/definitions/test-support.ts";
 import { createNodeRegistry } from "../nodes/registry/registry.ts";
 import { listExamples } from "../examples/catalogue.ts";
 import { TIER_B_CAPABILITIES } from "../examples/runner.ts";
-import { compileGraph } from "./compile.ts";
+import { compileGraph, compileGraphRetaining } from "./compile.ts";
 import { flattenComponents } from "./flatten.ts";
 import { animatedRootKeys, prepareFrameCompiler, structuralParameterKeys } from "./frame-compile.ts";
 import { asCompilerContext } from "./types.ts";
@@ -471,5 +471,118 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
       plan.passes.filter((pass) => "nodeId" in pass && pass.nodeId === "observe" && "uniforms" in pass).map((pass) => ("uniforms" in pass ? pass.uniforms : undefined));
     expect(renderUniforms(spliced as typeof full).length).toBeGreaterThan(0);
     expect(renderUniforms(spliced as typeof full)).not.toEqual(renderUniforms(prepared.base));
+  });
+});
+
+/* ------------------------------------------------------------------------------------ */
+/* 6. a supplied base: reused when it is this request's compile, refused when it is not  */
+/* ------------------------------------------------------------------------------------ */
+
+/**
+ * T1254 — the app's structural memo has already compiled the request in full by the time
+ * the first frame asks, so the frame compiler takes THAT result as its base rather than
+ * compiling its own. Two claims:
+ *
+ *  - reuse is real: with a base supplied, no definition compiles a second time, and the
+ *    plan the frames splice over IS the supplied one (identity);
+ *  - a base compiled for some OTHER request — a different sink set, a graph with a
+ *    different value, a base resolved AT a frame — is refused by name, never spliced
+ *    over. A silently accepted foreign base would be a wrong plan wearing a fast path,
+ *    and the per-frame verifier (§V936) compares against the base, so it cannot catch
+ *    a base that is itself wrong.
+ */
+describe("T1254: a caller's own full compile is the base — reused, or refused by name", () => {
+  const solidBlur = (blurSize: number): GraphDocument =>
+    ({
+      revision: 1,
+      groups: {},
+      nodes: {
+        solid: { id: "solid", type: "solid", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: {} },
+        blur: {
+          id: "blur",
+          type: "blur",
+          definitionVersion: 1,
+          position: { x: 200, y: 0 },
+          parameters: { size: expressionSlot(`${String(blurSize)} + frame * 0.5`, 1) },
+        },
+      },
+      edges: {
+        "e-solid-blur": { id: "e-solid-blur", source: { nodeId: "solid", portId: "out" }, target: { nodeId: "blur", portId: "input" } },
+      },
+    }) as unknown as GraphDocument;
+
+  /** The catalogue with ONE definition's `compile` counted — the solid never animates here. */
+  function countingRegistry(type: string): { view: typeof registry; compiles: () => number } {
+    let compiles = 0;
+    const counted = new Map<string, NodeDefinition>();
+    const wrap = (definition: NodeDefinition | undefined): NodeDefinition | undefined => {
+      if (definition === undefined || definition.type !== type) return definition;
+      let wrapped = counted.get(definition.type);
+      if (wrapped === undefined) {
+        wrapped = {
+          ...definition,
+          compile: (context: NodeCompileContext) => {
+            compiles += 1;
+            return definition.compile(context);
+          },
+        };
+        counted.set(definition.type, wrapped);
+      }
+      return wrapped;
+    };
+    const view: typeof registry = {
+      ...registry,
+      get: (name) => wrap(registry.get(name)),
+      require: (name) => wrap(registry.require(name)) as NodeDefinition,
+    };
+    return { view, compiles: () => compiles };
+  }
+
+  const previewSinks: CompileRequest["sinks"] = [{ nodeId: "blur", portId: "out", kind: "preview" }];
+
+  it("splices over the supplied base itself, and compiles nothing a second time", () => {
+    const counting = countingRegistry("solid");
+    const request = requestFor(solidBlur(2), { registry: counting.view, sinks: previewSinks });
+    const base = compileGraphRetaining(request);
+    expect(base.retained).not.toBeNull();
+    expect(counting.compiles(), "the caller's own full compile").toBe(1);
+
+    const prepared = prepareFrameCompiler(request, base);
+    expect(prepared.uniformOnly, prepared.reason ?? "").toBe(true);
+    // Red-verify: `prepareFrameCompiler(request)` here — the compiler's own compile — reads 2.
+    expect(counting.compiles(), "no second full compile with a base supplied").toBe(1);
+    expect(prepared.base).toBe(base.compiled);
+
+    const spliced = prepared.compileFrame({ frame: frameAt(15) });
+    expect(spliced, prepared.reason ?? "").not.toBeNull();
+    // The frame re-emits the blur only; the solid's pass is the supplied base's object.
+    expect(counting.compiles()).toBe(1);
+    expect(spliced?.signature).toBe(base.compiled.signature);
+    const solidPass = (plan: { passes: ReadonlyArray<{ id: string }> }) => plan.passes.find((pass) => pass.id === "solid:fill");
+    expect(solidPass(spliced as NonNullable<typeof spliced>)).toBe(solidPass(base.compiled));
+    expect(spliced?.passes).toEqual(compileGraph({ ...request, resolution: { frame: frameAt(15) } }).passes);
+  });
+
+  it("refuses a base compiled for a different sink set, graph or moment — by name", () => {
+    const graph = solidBlur(2);
+    const request = requestFor(graph, { sinks: previewSinks });
+    const cases: ReadonlyArray<{ label: string; base: CompileRequest; names: string }> = [
+      { label: "sink set", base: requestFor(graph, { sinks: [{ nodeId: "solid", portId: "out", kind: "preview" }] }), names: "sinks" },
+      { label: "graph", base: requestFor(solidBlur(3), { sinks: previewSinks }), names: "graph" },
+      { label: "resolved at a frame", base: requestFor(graph, { sinks: previewSinks, resolution: { frame: frameAt(9) } }), names: "resolution.frame" },
+    ];
+    for (const entry of cases) {
+      const foreign = compileGraphRetaining(entry.base);
+      expect(foreign.retained, entry.label).not.toBeNull();
+      expect(() => prepareFrameCompiler(request, foreign), entry.label).toThrow(new RegExp(`\\(${entry.names.replace(".", "\\.")} differs\\)`));
+    }
+    // The sink-set case is the one the app can hit (B95): the same graph, a different
+    // kept set — the foreign base has one pass set, the request another, and the
+    // verifier would happily splice frames over the wrong one.
+    const foreignSinks = compileGraphRetaining(cases[0]!.base).compiled;
+    expect(foreignSinks.signature).not.toBe(compileGraph(request).signature);
+    // The same request compiled by anyone is accepted: value-equal sinks, not identical arrays.
+    const twin = requestFor(graph, { sinks: [{ nodeId: "blur", portId: "out", kind: "preview" }] });
+    expect(() => prepareFrameCompiler(request, compileGraphRetaining(twin))).not.toThrow();
   });
 });

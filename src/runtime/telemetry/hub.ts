@@ -179,6 +179,13 @@ export interface TelemetryHub extends TelemetrySource {
    */
   setReadbacksPerformed(count: number | null): void;
   /**
+   * Why the per-frame compile runs in FULL rather than values-only, or null while the
+   * fast path is live or nothing animates (T1254, `FrameCompiler.reason`). Set by the
+   * compile hook when it prepares a frame compiler and again when one degrades; a
+   * repeat of the current sentence notifies nobody.
+   */
+  setFrameCompileReason(reason: string | null): void;
+  /**
    * Points the hub at a CPU span source (T256). Returns a detach function. Without one
    * every `cpu` bucket reads "unavailable" — the honest state, and the one the app is in
    * until something measures encode time per pass.
@@ -234,6 +241,7 @@ export function createTelemetryHub(options: TelemetryHubOptions = {}): Telemetry
   /** T304: see `recentFrameTimes` on the interface. */
   const frameTimes: number[] = [];
   let readbacksPerformed: number | null = null;
+  let frameCompileReason: string | null = null;
 
   /** Most recent GPU span per pass id, ms. Only ever written from `onPassTimings`. */
   const spans = new Map<string, number>();
@@ -465,6 +473,7 @@ export function createTelemetryHub(options: TelemetryHubOptions = {}): Telemetry
       categories: categoryRollups(nodes),
       timingAvailable: timingSource.timestampQuery,
       timingUnavailableReason: unavailableReason(),
+      frameCompileReason,
       plan,
       build,
       framesRendered,
@@ -500,6 +509,12 @@ export function createTelemetryHub(options: TelemetryHubOptions = {}): Telemetry
       const next = count === null || !Number.isFinite(count) ? null : count;
       if (next === readbacksPerformed) return;
       readbacksPerformed = next;
+      schedule();
+    },
+
+    setFrameCompileReason(reason) {
+      if (reason === frameCompileReason) return;
+      frameCompileReason = reason;
       schedule();
     },
 

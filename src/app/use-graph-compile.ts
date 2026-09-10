@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
-import { compileGraph, prepareFrameCompiler } from "@compiler/index.ts";
+import { compileGraphRetaining, prepareFrameCompiler } from "@compiler/index.ts";
 import { humanizeDiagnostics } from "@domain/graph/index.ts";
 import { classifyGraphChange, isValuesOnly } from "./classify-revision.ts";
 import type {
   ActiveSink,
+  CompileGraphResult,
   CompileRequest,
   CompiledGraph,
   FlattenedGraph,
@@ -248,21 +249,22 @@ function compileRequest(
   };
 }
 
+/**
+ * The full compile, RETAINING what the per-frame path needs (T1254): the structural
+ * memo's result is the base the frame compiler splices over, so one revision costs one
+ * full compile — not the memo's and then the frame compiler's own on the next frame.
+ */
 function compileSafely(
-  graph: GraphDocument,
-  flattened: FlattenedGraph,
-  runtime: AppRuntime,
-  capabilities: BackendCapabilities,
-  resolution: ParameterResolution = {},
-  previewSinks?: ReadonlyArray<ActiveSink>,
-): { compiled: CompiledGraph | null; diagnostics: RuntimeDiagnostic[] } {
+  request: CompileRequest,
+): { result: CompileGraphResult | null; compiled: CompiledGraph | null; diagnostics: RuntimeDiagnostic[] } {
   try {
-    const compiled = compileGraph(compileRequest(graph, flattened, runtime, capabilities, resolution, previewSinks));
-    return { compiled, diagnostics: [...compiled.diagnostics] };
+    const result = compileGraphRetaining(request);
+    return { result, compiled: result.compiled, diagnostics: [...result.compiled.diagnostics] };
   } catch (error) {
     // A compiler crash is a bug, but it is not a reason to unmount the editor: report
     // it where every other problem is reported and keep the document editable.
     return {
+      result: null,
       compiled: null,
       diagnostics: [
         {
@@ -491,6 +493,40 @@ export function useGraphCompile(
    * orbiting caster froze the moment a pane covered part of the graph). The sink set is
    * DERIVED from the one store both compiles read, so they cannot disagree again.
    */
+  /**
+   * THE request, built once per set of inputs for BOTH compiles (T1182, T1254).
+   *
+   * The structural memo below compiles it in full and keeps the retained form; the
+   * per-frame compiler splices over that very result. One object rather than two equal
+   * ones is what lets the compiler assert, by identity of every input, that the base it
+   * was handed is the compile it would have done itself — B95's sink rule and §V936's
+   * verifier both rest on the two paths never compiling different requests.
+   */
+  const request = useMemo(
+    () =>
+      capabilities === null
+        ? null
+        : compileRequest(
+            graph,
+            flattened,
+            runtime,
+            capabilities,
+            { channels },
+            previewSinks === undefined ? undefined : scheduledPreviews,
+          ),
+    [capabilities, channels, flattened, graph, runtime, previewSinks, scheduledPreviews],
+  );
+
+  /**
+   * The structural memo's retained compile, for the frame compiler (T1254). Written
+   * during render by the `result` memo below, read at the first FRAME — after commit —
+   * by the `animate` closure, and only when it was compiled for that closure's own
+   * `request` (a discarded render, §V904, or an editor-only revision that reused the
+   * previous plan leaves a base for some other request here, and then the frame
+   * compiler compiles its own, exactly as before this ref existed).
+   */
+  const baseRef = useRef<{ request: CompileRequest; result: CompileGraphResult } | null>(null);
+
   const animate = useMemo(() => {
     // T615: the gate reads the FLAT document. This is the largest half of the defect and
     // the least obvious: with a document whose only animation lives inside a component,
@@ -498,8 +534,7 @@ export function useGraphCompile(
     // per-frame compile at all — which killed the component's internal EXPRESSIONS too,
     // even though flattening preserves those perfectly. Nothing was broken about the
     // expression; nothing was ever asked to evaluate it.
-    if (capabilities === null || !hasAnimatedParameters(flatGraph)) return null;
-    const sinks = previewSinks === undefined ? undefined : scheduledPreviews;
+    if (request === null || !hasAnimatedParameters(flatGraph)) return null;
     /**
      * T1182 — the per-frame compile is VALUES-ONLY wherever the compiler can prove it.
      *
@@ -515,15 +550,21 @@ export function useGraphCompile(
      * revisions outrun the display rate prepares one compiler per FRAME, not one per
      * revision — the memo that was superseded before any frame asked builds nothing.
      * Keyed on exactly this memo's inputs, so a new flat-graph revision (§V935) is a
-     * new compiler: the base it splices over is the plan the structural compile below
-     * produces for the same inputs, which is what `isUniformOnlyChange` in
-     * `animate-parameters.ts` checks against — B95's sink-set rule, made by
-     * construction through `compileRequest`.
+     * new compiler: the base it splices over IS the plan the structural compile below
+     * produced for this same `request` (T1254 — handed over through `baseRef`, so the
+     * revision is compiled once, not once per path), which is what `isUniformOnlyChange`
+     * in `animate-parameters.ts` checks against — B95's sink-set rule, made by
+     * construction through one `compileRequest`.
+     *
+     * The compiler's `reason` — why frames compile in full, naming node and key — goes
+     * to the telemetry hub for the performance pane (T1254), when the compiler is
+     * prepared and again when a frame degrades it (§V936).
      */
     let frameCompiler: FrameCompiler | null | undefined;
     const prepare = (): FrameCompiler | null => {
       try {
-        return prepareFrameCompiler(compileRequest(graph, flattened, runtime, capabilities, { channels }, sinks));
+        const shared = baseRef.current;
+        return prepareFrameCompiler(request, shared !== null && shared.request === request ? shared.result : undefined);
       } catch {
         // A compiler crash is reported by the full compile's own path below, once per
         // frame as before — not swallowed here, and not thrown into the frame loop.
@@ -531,20 +572,29 @@ export function useGraphCompile(
       }
     };
     return (frame: FrameEvaluationInput): CompiledGraph | null => {
-      if (frameCompiler === undefined) frameCompiler = prepare();
+      if (frameCompiler === undefined) {
+        frameCompiler = prepare();
+        runtime.telemetry.setFrameCompileReason(frameCompiler?.reason ?? null);
+      }
       if (frameCompiler !== null) {
         try {
           const spliced = frameCompiler.compileFrame({ frame, channels });
           if (spliced !== null) return spliced;
+          runtime.telemetry.setFrameCompileReason(frameCompiler.reason);
         } catch {
           // The fast path may be wrong as long as it detects that it is and pays the
           // full price (§V936) — a throw is detection; the full compile reports it.
           frameCompiler = null;
         }
       }
-      return compileSafely(graph, flattened, runtime, capabilities, { frame, channels }, sinks).compiled;
+      return compileSafely({ ...request, resolution: { frame, channels } }).compiled;
     };
-  }, [capabilities, channels, flatGraph, flattened, graph, runtime, previewSinks, scheduledPreviews]);
+  }, [request, channels, flatGraph, runtime]);
+
+  // Nothing animates: no frame compiler, no reason to show (T1254).
+  useEffect(() => {
+    if (animate === null) runtime.telemetry.setFrameCompileReason(null);
+  }, [animate, runtime]);
 
   /**
    * The inputs of the LAST compile, for classifying the next one (T308).
@@ -633,6 +683,7 @@ export function useGraphCompile(
   const result = useMemo<GraphCompileResult>(() => {
     const deps: readonly unknown[] = [
       animate,
+      request,
       channels,
       flatGraph,
       flattened,
@@ -657,7 +708,7 @@ export function useGraphCompile(
       return answer;
     };
 
-    if (capabilities === null) {
+    if (request === null) {
       // No device, no plan (§V12) — but the panel still resolves, so the resolver still
       // travels. Dropping it here would make "the inspector says lfo1 is not attached"
       // true again on exactly the machines that cannot compile.
@@ -719,14 +770,9 @@ export function useGraphCompile(
       });
     }
 
-    const { compiled, diagnostics: rawDiagnostics } = compileSafely(
-      graph,
-      flattened,
-      runtime,
-      capabilities,
-      { channels },
-      previewSinks === undefined ? undefined : scheduledPreviews,
-    );
+    const { result: retained, compiled, diagnostics: rawDiagnostics } = compileSafely(request);
+    // T1254: the base the frame compiler splices over — this compile, not a second one.
+    if (retained !== null) baseRef.current = { request, result: retained };
     // T599: the message boundary. Every UI surface reads THIS array (problems pane,
     // inspector, shader pane, node badges), so quoted node ids resolve to display
     // labels here, once — never in the 90-odd sites that mint the messages. The
@@ -757,7 +803,7 @@ export function useGraphCompile(
       resetFeedback: change?.resetFeedback === true,
       documentBoundary: change?.documentBoundary === true,
     });
-  }, [animate, channels, flatGraph, flattened, graph, runtime, capabilities, previewSinks, scheduledPreviews, catalogueRevision]);
+  }, [animate, request, channels, flatGraph, flattened, graph, runtime, capabilities, previewSinks, scheduledPreviews, catalogueRevision]);
 
   const capabilitiesRef = useRef(capabilities);
   capabilitiesRef.current = capabilities;
@@ -788,7 +834,10 @@ export function useGraphCompile(
     // T615: the memo answers for whatever revision the STORE is on, which is the same
     // document `current` was just read from — so this compile and the rendered one are
     // built from one flattening even when React has not caught up yet.
-    const view = compileSafely(current, runtime.flattened.current(), runtime, capability);
+    const { compiled, diagnostics } = compileSafely(
+      compileRequest(current, runtime.flattened.current(), runtime, capability, {}),
+    );
+    const view: CompileResultView = { compiled, diagnostics };
     cacheRef.current = { documentIdentity: runtime.documentIdentity, revision: current.revision, view };
     return view;
   }, [runtime]);

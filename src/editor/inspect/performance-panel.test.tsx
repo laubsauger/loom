@@ -79,6 +79,7 @@ function snapshot(
   return {
     timingAvailable: true,
     timingUnavailableReason: null,
+    frameCompileReason: null,
     plan,
     build,
     readback: EMPTY_READBACK_BUDGET,
@@ -233,5 +234,33 @@ describe("PerformancePanel renders for the eyes on it (T1239)", () => {
     hub.tick(snapshot(4.25, 121));
     expect(frames()).toBe("121");
     expect(screen.getAllByText("4.250 ms").length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * T1254 — WHY a knob is slow, on the pane that shows it is. The compiler's
+ * `FrameCompiler.reason` names the node and the key that keep every animated frame on
+ * the full compile; the pane renders that sentence and NOTHING when the fast path is
+ * live (§V91 — "values-only" on every animated document would be noise). The line is
+ * structure, not a number: it appears and disappears with the reason, on the tick that
+ * carries it.
+ */
+describe("PerformancePanel names why frames compile in full (T1254)", () => {
+  const reason = 'Node "cache1" (cache) animates "frames", which is structural (compileTime or a resolution policy input); every frame compiles in full.';
+
+  it("renders the node and key when a reason exists, and nothing otherwise", () => {
+    const hub = fakeSource(snapshot(3.5, 120));
+    mount(hub.source);
+    expect(screen.queryByTestId("frame-compile-reason")).toBeNull();
+
+    hub.tick({ ...snapshot(3.5, 121), frameCompileReason: reason });
+    const line = screen.getByTestId("frame-compile-reason");
+    expect(line.textContent).toContain('Node "cache1" (cache)');
+    expect(line.textContent).toContain('animates "frames"');
+    expect(line.textContent).toMatch(/^full compile every frame/);
+
+    // The fast path came back (a new revision no longer animates the structural key).
+    hub.tick({ ...snapshot(3.5, 122), frameCompileReason: null });
+    expect(screen.queryByTestId("frame-compile-reason")).toBeNull();
   });
 });

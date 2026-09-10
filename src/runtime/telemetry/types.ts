@@ -235,6 +235,12 @@ export interface TelemetrySnapshot {
    * adapter for an omission of ours.
    */
   readonly timingUnavailableReason: TimingUnavailableReason | null;
+  /**
+   * Why every animated frame compiles in FULL rather than splicing values over the
+   * structural plan — the compiler's `FrameCompiler.reason`, naming the node and key —
+   * or null while the fast path is live or nothing animates (T1254, §V936).
+   */
+  readonly frameCompileReason: string | null;
   readonly plan: TelemetryPlan | null;
   readonly build: TelemetryBuildStats | null;
   /** Frames the driver actually rendered since the hub was created. */

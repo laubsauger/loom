@@ -5,7 +5,8 @@
  * structured diagnostics the problems tab and the agent tools read. Headless and pure:
  * nothing here touches the DOM, React or the GPU.
  */
-export { compileGraph } from "./compile.ts";
+export { compileGraph, compileGraphRetaining } from "./compile.ts";
+export type { CompileGraphResult } from "./compile.ts";
 export { prepareFrameCompiler } from "./frame-compile.ts";
 export type { FrameCompiler } from "./frame-compile.ts";
 export { synthesizeSourceReferenceEdges } from "./source-reference-edges.ts";

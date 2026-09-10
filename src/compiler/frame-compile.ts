@@ -10,13 +10,13 @@ import { createParameterReadOptions } from "../domain/parameters/node-references
 import type { PassDescriptor } from "../runtime/backend/plan.ts";
 import { passStructureKey, readPass } from "../runtime/backend/plan.ts";
 import { compileGraphRetaining, descriptionStructureKey, normalizePass } from "./compile.ts";
-import type { RetainedCompile, RetainedNodeCompile } from "./compile.ts";
+import type { CompileGraphResult, RetainedCompile, RetainedNodeCompile } from "./compile.ts";
 import { isParameterPolicy } from "./resolution.ts";
 import { substepCount } from "./substeps.ts";
 import { resolveNodeParameters } from "./validate.ts";
 import type { ParameterResolution } from "./validate.ts";
 import { outputKey } from "./types.ts";
-import type { CompileRequest, CompiledGraph, CompiledInputBinding, CompilerNodeContext } from "./types.ts";
+import type { ActiveSink, CompileRequest, CompiledGraph, CompiledInputBinding, CompilerNodeContext } from "./types.ts";
 
 /**
  * The per-frame VALUES-ONLY compile (T1182, T1183, §V936).
@@ -205,14 +205,69 @@ function withScenePayloads(
   return next;
 }
 
+function sameSinks(
+  a: ReadonlyArray<ActiveSink> | undefined,
+  b: ReadonlyArray<ActiveSink> | undefined,
+): boolean {
+  if (a === b) return true;
+  if (a === undefined || b === undefined || a.length !== b.length) return false;
+  return a.every((sink, index) => {
+    const other = b[index] as ActiveSink;
+    return sink.nodeId === other.nodeId && sink.portId === other.portId && sink.kind === other.kind;
+  });
+}
+
+/**
+ * Whether a base compiled for `built` IS the compile `request` would produce (T1254).
+ *
+ * The compiler is pure, so identical inputs are the proof: every input the plan depends
+ * on must be the same object (sinks by value — a caller without a sink store derives a
+ * fresh array per request), and both must be FRAMELESS with one channel reader, because
+ * a base resolved at a frame carries that frame's values in every pass the frames do not
+ * re-emit. Returns the first input that differs, or `null`.
+ */
+function baseMismatch(built: CompileRequest, request: CompileRequest): string | null {
+  if (built.graph !== request.graph) return "graph";
+  if (built.flattened !== request.flattened) return "flattened";
+  if (built.settings !== request.settings) return "settings";
+  if (built.registry !== request.registry) return "registry";
+  if (built.capabilities !== request.capabilities) return "capabilities";
+  if (built.components !== request.components) return "components";
+  if (!sameSinks(built.sinks, request.sinks)) return "sinks";
+  if (built.resolution?.frame !== undefined || request.resolution?.frame !== undefined) return "resolution.frame";
+  if (built.resolution?.channels !== request.resolution?.channels) return "resolution.channels";
+  if (built.resolution?.nodes !== request.resolution?.nodes) return "resolution.nodes";
+  return null;
+}
+
 /**
  * One full compile, then frames at the cost of the nodes that animate.
  *
  * `request.resolution` is the BASE's moment (the structural compile passes its channel
  * resolver and no frame); each `compileFrame` supplies its own.
+ *
+ * T1254: a caller that has ALREADY compiled `request` in full hands that result in as
+ * `base` and no second compile happens — the app's structural memo compiles once per
+ * revision and the frames splice over that very plan, which is also what makes the
+ * frame loop's `isUniformOnlyChange` check hold by identity rather than by luck. A base
+ * built for a different request is a wrong plan wearing a fast path, so it is REFUSED
+ * with a throw (a caller bug, not a frame to degrade on): the compiler's own record of
+ * what it compiled (`retained.request`) is compared input by input.
  */
-export function prepareFrameCompiler(request: CompileRequest): FrameCompiler {
-  const { compiled: base, retained } = compileGraphRetaining(request);
+export function prepareFrameCompiler(request: CompileRequest, base?: CompileGraphResult): FrameCompiler {
+  if (base !== undefined && base.retained !== null) {
+    const mismatch = baseMismatch(base.retained.request, request);
+    if (mismatch !== null) {
+      throw new Error(
+        `prepareFrameCompiler: the supplied base was compiled for a different request (${mismatch} differs); compile the request itself or pass no base.`,
+      );
+    }
+  }
+  return frameCompilerOver(request, base ?? compileGraphRetaining(request));
+}
+
+function frameCompilerOver(request: CompileRequest, result: CompileGraphResult): FrameCompiler {
+  const { compiled: base, retained } = result;
   if (retained === null) {
     return { base, uniformOnly: false, reason: "The compile produced no plan to splice over.", compileFrame: () => null };
   }
