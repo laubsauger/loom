@@ -57,6 +57,8 @@ node --import ./src/tooling/alias-hooks.ts src/examples/build-examples.ts --only
 node --import ./src/tooling/alias-hooks.ts src/examples/build-thumbnails.ts --only E13
 ```
 
+`--only E13` matches the E-number EXACTLY (T1267, after B197 swept seven sessions' in-flight documents: `--only E2` used to take E20–E29 with it). Any other argument is still a substring match — `--only Reaction` takes both files that carry the word. Both scripts print the list they are about to overwrite before writing a byte; read it.
+
 The bare `node --experimental-strip-types src/...` form is dead and has been "fixed" in docblocks three times; run a command before trusting it.
 
 ## Scoping test runs

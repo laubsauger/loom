@@ -4,6 +4,7 @@ import { EXAMPLES_DIR, STARTER_COMPONENTS_DIR } from "./catalogue.ts";
 import { buildStarterComponentFiles } from "./component-files.ts";
 import { buildStarterComponents } from "./starter-components.ts";
 import { buildExampleFiles } from "./example-files.ts";
+import { matchesOnlyFlag } from "./only-flag.ts";
 
 /**
  * Regenerates `examples/*.loom.json` and `examples/components/*.loom.json` (T153-T156, T190).
@@ -18,9 +19,13 @@ import { buildExampleFiles } from "./example-files.ts";
  */
 
 /**
- * T698: `--only <substring>` writes just the matching examples. Five workers share this
+ * T698: `--only <name>` writes just the matching examples. Five workers share this
  * tree through windowed files, and a bare regen sweeps up every other worker's
  * in-flight document changes — regenerate only what your change touched.
+ *
+ * T1267/B197: an E-number argument (`--only E2`) names ONE example and is matched exactly;
+ * substring matching is kept for every other shape (`--only E2-Reaction`, `--only Reaction`).
+ * See `only-flag.ts`.
  */
 const onlyAt = process.argv.indexOf("--only");
 const only = onlyAt >= 0 ? process.argv[onlyAt + 1] : undefined;
@@ -30,15 +35,20 @@ if (onlyAt >= 0 && only === undefined) throw new Error("--only needs a name subs
    set is authored first even under --only — the definitions are deterministic and cheap. */
 const starterDefinitions = (await buildStarterComponents()).map((built) => built.definition);
 
-let wrote = 0;
-for (const file of buildExampleFiles(starterDefinitions)) {
-  if (only !== undefined && !file.fileName.includes(only)) continue;
+const selected = buildExampleFiles(starterDefinitions).filter(
+  (file) => only === undefined || matchesOnlyFlag(file.fileName, only),
+);
+if (only !== undefined && selected.length === 0) throw new Error(`--only ${only} matched no example`);
+
+/* T1267: say what is about to be OVERWRITTEN before a byte moves, scoped run or not — the
+   sweep in B197 was invisible until `git status` showed seven foreign files rewritten. */
+console.log(`writing ${selected.length} example${selected.length === 1 ? "" : "s"}: ${selected.map((file) => file.fileName).join(", ")}`);
+
+for (const file of selected) {
   const path = join(EXAMPLES_DIR, file.fileName);
   writeFileSync(path, file.text, "utf8");
   console.log(`wrote ${path}`);
-  wrote += 1;
 }
-if (only !== undefined && wrote === 0) throw new Error(`--only ${only} matched no example`);
 
 // Components are authored by running the real authoring commands, so this half is async.
 // Skipped under --only: the flag scopes a regen to named EXAMPLES.
