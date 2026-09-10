@@ -478,8 +478,24 @@ API shape: 24 color/float frames pass with signed/above-one values preserved,
 including immediate renderer reference release after submission. This suggests
 reusing the media boundary before adding a separate external-texture shader
 adapter. It is one GPU copy into graph-owned storage, not strict zero-copy.
-App-level acquisition/replacement/unregistration lifetimes, explicit float targets
-for numerical data, other color spaces and full-resolution cost remain gates.
+At this stage, actual backend replacement/unregistration had not been exercised.
+
+**T1331 exercises the actual backend:** the `backend-frame` probe now registers
+Python-produced VideoFrames through the real browser backend, releases renderer
+references after submission, renders unchanged frames without rereading closed
+VideoFrames, replaces sources restarting at frame ID zero, and unregisters while
+retaining the last output. It reproduced a stale-texture bug: frame ID alone did
+not distinguish replacement producers. Registration-lifetime tokens now invalidate
+that cache without retaining old producer payloads; a focused regression proves
+replacement and stale-unregister behavior. Electron 45.0.0-alpha.5 passed all 24
+frames, early releases, producer acknowledgments and all-reference callbacks,
+preserving `[-0.25, 0.125, 0.5, 2]` with maximum channel error
+`0.00016276041666662966`. Backend headless coverage passes 316 tests.
+This remains a 64×64 synthetic native probe, not an app node or model integration.
+Full-resolution cost, other color spaces, numerical-node allocation and production
+GPU-loss handling remain gates. See the [probe record](../experiments/native-texture-bridge/README.md)
+and [native video I/O plan](native-video-io-plan.md) for separate input/output
+transport work, including the still-unproven selected-node export direction.
 
 Electron is the first candidate because it keeps a bundled Chromium runtime and exposes a native shared-texture import route. Tauri uses the platform's WebView, including WebKit on macOS and WebView2 on Windows, so adopting it would add a different rendering-engine compatibility problem to this work. This is an engineering fit recommendation, not a claim that Electron renders faster. [Tauri WebViews](https://v2.tauri.app/reference/webview-versions/).
 

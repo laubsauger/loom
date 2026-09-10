@@ -113,6 +113,17 @@
           "portId": "in"
         }
       },
+      "e-source-beat": {
+        "id": "e-source-beat",
+        "source": {
+          "nodeId": "source",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "beat",
+          "portId": "in"
+        }
+      },
       "e-source-dim": {
         "id": "e-source-dim",
         "source": {
@@ -205,6 +216,20 @@
         "position": {
           "x": -900,
           "y": 700
+        },
+        "type": "valueLag"
+      },
+      "beat": {
+        "definitionVersion": 1,
+        "id": "beat",
+        "label": "beat1",
+        "parameters": {
+          "lag": 0.001,
+          "releaseRatio": 250
+        },
+        "position": {
+          "x": -1500,
+          "y": 1500
         },
         "type": "valueLag"
       },
@@ -303,7 +328,19 @@
           "density": 1,
           "exposure": 0.85,
           "eyeHeight": 1.7,
-          "fog": 0.03,
+          "fog": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "0.03 + 0.022 * op('beat1').chan.onsetCount"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.03
+              }
+            },
+            "mode": "expression"
+          },
           "fogColor": [
             0.038,
             0.048,
@@ -345,7 +382,7 @@
             "bindings": {
               "expression": {
                 "kind": "expression",
-                "source": "op('dimMap1').chan.lowMid"
+                "source": "op('dimMap1').chan.lowMid * (1 - 0.3 * op('beat1').chan.kickCount)"
               },
               "static": {
                 "kind": "static",
@@ -364,7 +401,19 @@
           ],
           "quietSize": 0.4,
           "relief": 1.4,
-          "shafts": 0.85,
+          "shafts": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "0.85 + 0.45 * op('beat1').chan.snareCount"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.85
+              }
+            },
+            "mode": "expression"
+          },
           "skyColor": [
             0.01,
             0.016,

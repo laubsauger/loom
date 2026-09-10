@@ -1,4 +1,4 @@
-import { settings, node, edge, graph, document, drivenSlot } from "./builders.ts";
+import { settings, node, edge, graph, document, drivenSlot, expressionSlot } from "./builders.ts";
 import { FOREST_WGSL, FOREST_DOF_WGSL } from "../shaders/forest.wgsl.ts";
 
 /**
@@ -477,7 +477,36 @@ export const forestDocument = document(
            render, every thumbnail and every first open has no track. */
         parameters: {
           mist: drivenSlot("airMap1:low", 0.212),
-          moonGain: drivenSlot("dimMap1:lowMid", 0.995),
+          /* T1279 — THE MOON DIPS ON THE KICK, on top of the section-long lane.
+             `dimMap1` still carries the slow key change; the second factor is the beat,
+             and it only ever DARKENS (a count rests at 0, so the product is the lane
+             itself between kicks). This is the owner's "dim the light" read literally:
+             the light dims ON something, rather than drifting. */
+          moonGain: expressionSlot(
+            `op('dimMap1').chan.lowMid * (1 - 0.3 * op('beat1').chan.kickCount)`,
+            0.995,
+          ),
+          /* T1279 — THE GLOOM CLOSES ON THE SAME KICK. Fog is the aerial perspective, so
+             a swell of it eats the depth for a moment and hands it back: the wood shuts
+             and reopens. One event, two terms, which is the file's own rule (one signal
+             shaped two ways is one gesture) — and it darkens rather than flashes, which
+             is what §T1170b's refusals leave available.
+             ⚑ ON `onsetCount`, NOT the kick, AND THE OWNER CHOSE THAT (T1279). The first
+             build put the fog swell and the moon dip both on `kickCount` — one event read
+             twice, which is this file's own rule. Shown both ways, the owner took the
+             SPLIT: the gloom now fires on every onset while the moon dips only on the
+             downbeat, so the two darkenings have different rhythms and coincide rather
+             than always arriving together. What felt heavy-handed was the doubling, not
+             the depth.
+             THE SIZE IS A LOOK CALL, MADE BY EYE AND NOT BY ROUNDING: +0.045 was the first
+             cut and it swallowed the wood whole at the peak — every trunk gone, which reads
+             as the picture dropping out rather than as a beat. +0.022 shuts the middle
+             distance and leaves the near stems standing, which is a wood closing. */
+          fog: expressionSlot(`0.03 + 0.022 * op('beat1').chan.onsetCount`, 0.03),
+          /* T1279 — AND THE SNARE REVEALS. The shafts are the one term in this shader
+             that ADDS light between the trunks rather than taking it away, so the offbeat
+             gets "make some things appear" while the downbeat gets the gloom. */
+          shafts: expressionSlot(`0.85 + 0.45 * op('beat1').chan.snareCount`, 0.85),
         },
       }),
 
@@ -564,6 +593,36 @@ export const forestDocument = document(
       node("dimMap", "valueMath", [-600, 1120], {
         operation: "range", fromLow: 0, fromHigh: 1, toLow: 0.85, toHigh: 1.22, outside: "clamp",
       }, { label: "dimMap1" }),
+
+      /* ─── THE BEAT LANE (T1279) ───────────────────────────────────────────────────────
+       *
+       * The owner, on the file as §T1170b shipped it: "the audio reactivity is a bit lame
+       * ... it gets a bit boring quickly". The diagnosis is one line. BOTH lanes above are
+       * CONTINUOUS — a phrase-long swell of air and a section-long swell of moon — so the
+       * file BREATHES and never HITS. Nothing in it lands on anything. He is describing the
+       * absence of an event, not a shortage of movement.
+       *
+       * So this is the third lane and it is the only one with a sharp edge: a 1 ms attack
+       * and a 250 ms release on the source's COUNT channels, which is §V952's hits shape
+       * (the `AudioAnalysis` component builds the same pair internally). A count is 1 on
+       * the frame the drum lands and 0 between, so a bare gain on it rests at ZERO — the
+       * beat is silent by construction when there is no audio, and §V914's rest state is
+       * the picture this file already was.
+       *
+       * ⚑ WHY NOT THE RANKED LEVELS THE OTHER TWO LANES USE. A percentile cannot spread a
+       * tie: a count is 0 on almost every frame, so through a rank it RESTS AT ITS MID and
+       * a beat becomes a permanent half-lit nothing (§T1234 measured 0.53 on this pattern).
+       * Continuous properties on ranks, drums on counts — the split §T1234 and §T1271 both
+       * arrived at, and this file is the third.
+       *
+       * ⚑ AND WHY THE `AudioAnalysis` COMPONENT IS *NOT* USED HERE, though four files now
+       * do. Its levels lane has ONE window, and the whole finding of §T1170b's two lanes is
+       * that theirs are DELIBERATELY DIFFERENT — 18 s for the phrase, 40 s for the section
+       * — because one signal shaped two ways is one gesture. Migrating would flatten that
+       * to a single history and cost the file the thing it was tuned for, to buy a hits
+       * lane that is one node. The component is the right default; this is the case it does
+       * not fit, and that is worth writing down rather than converging for tidiness. */
+      node("beat", "valueLag", [-1500, 1500], { lag: 0.001, releaseRatio: 250 }, { label: "beat1" }),
     ],
     [
       edge("e-veil-forest", ["veil", "out"], ["forest", "input"]),
@@ -580,6 +639,7 @@ export const forestDocument = document(
       edge("e-dim-dimrank", ["dim", "out"], ["dimRank", "in"]),
       edge("e-dimrank-dimsmooth", ["dimRank", "out"], ["dimSmooth", "in"]),
       edge("e-dimsmooth-dimmap", ["dimSmooth", "out"], ["dimMap", "a"]),
+      edge("e-source-beat", ["source", "out"], ["beat", "in"]),
     ],
   ),
 );

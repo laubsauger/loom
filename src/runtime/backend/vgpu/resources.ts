@@ -34,6 +34,8 @@ export interface ExternalTextureEntry {
   readonly format: string;
   /** Mutable: the frameId last uploaded, so an unchanged frame uploads nothing (§V136). */
   lastFrameId: number | undefined;
+  /** Registration lifetime, without retaining the producer or its frame payload. */
+  lastSourceToken?: object;
 }
 
 /**

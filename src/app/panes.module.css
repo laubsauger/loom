@@ -323,6 +323,12 @@
   letter-spacing: var(--tracking-display);
 }
 
+/* Native output diagnostics live in a portal tooltip, never in toolbar flow. */
+.nativeOutput {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 .select {
   flex: 1 1 auto;
   min-width: 0;

@@ -237,7 +237,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
   /** §V157: the permanent bisect switch. Read by the render loop's T254 idle gate (§V156). */
   let cookPolicy: CookPolicy = "always";
   /** sourceId → frame producer (T229, §V135). Backend-lifetime: survives recompiles and device loss. */
-  const mediaSources = new Map<string, MediaSource>();
+  const mediaSources = new Map<string, { source: MediaSource; token: object }>();
   let presentationCounter = 0;
   let presentSampler: GPUSampler | undefined;
   /** GPU pass timer (T163). Exists only when the device has timestamp-query (§V12). */
@@ -1195,10 +1195,12 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
     if (!session || active.resources.externalTextures.size === 0) return changed;
     const queue = session.gpu.device.queue.gpu;
     for (const [resourceId, entry] of active.resources.externalTextures) {
-      const source = mediaSources.get(entry.sourceId);
-      if (source === undefined) continue;
-      const mediaFrame = source.currentFrame();
-      if (mediaFrame === undefined || mediaFrame.frameId === entry.lastFrameId) continue;
+      const registered = mediaSources.get(entry.sourceId);
+      if (registered === undefined) continue;
+      const mediaFrame = registered.source.currentFrame();
+      if (mediaFrame === undefined ||
+          (mediaFrame.frameId === entry.lastFrameId && registered.token === entry.lastSourceToken)) continue;
+      entry.lastSourceToken = registered.token;
       try {
         if (mediaFrame.bytes !== undefined) {
           const bytesPerRow = entry.size[0] * bytesPerPixelFor(entry.format as Parameters<typeof bytesPerPixelFor>[0]);
@@ -2504,11 +2506,11 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
 
     registerMediaSource(sourceId, source) {
       // Order-free (T229): a plan compiled before this registration starts uploading on
-      // the next render; a registration with no plan yet simply waits. Replacement
-      // resets no texture — the next differing frameId overwrites the pixels anyway.
-      mediaSources.set(sourceId, source);
+      // the next render; a registration with no plan yet simply waits. Frame IDs are
+      // private to each producer: a replacement can restart at the previous ID.
+      if (mediaSources.get(sourceId)?.source !== source) mediaSources.set(sourceId, { source, token: {} });
       return () => {
-        if (mediaSources.get(sourceId) === source) mediaSources.delete(sourceId);
+        if (mediaSources.get(sourceId)?.source === source) mediaSources.delete(sourceId);
       };
     },
 

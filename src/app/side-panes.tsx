@@ -38,6 +38,7 @@ import { useAppRuntime } from "./app-context.ts";
 import { useFullscreenSurface } from "./fullscreen-commands.ts";
 import { registerViewerCommands } from "./viewer-commands.ts";
 import { useOutputPresentation } from "./use-output-presentation.ts";
+import { useNativeOutput } from "./use-native-output.ts";
 import type { GraphActions, PortDragOrigin } from "./graph-pane.tsx";
 import type { GpuStatus } from "./gpu-status.ts";
 import styles from "./panes.module.css";
@@ -632,6 +633,7 @@ export function ViewerPane({
   }, [bus, setPinnedKey]);
 
   const { canvasRef, canvasKey } = useOutputPresentation(backend, selected?.resourceId ?? null);
+  const nativeOutput = useNativeOutput(backend, selected, documentIdentity);
   /**
    * The probe's target, keyed on PRIMITIVES.
    *
@@ -1101,6 +1103,18 @@ export function ViewerPane({
         </select>
         {/* §V90: the hint is carried by the label, on hover and on focus — no permanent
             caption in the bar. */}
+        {nativeOutput.available ? (
+          <Tooltip label={nativeOutput.status || "Publish selected output as SDR video"}>
+            <Button disabled={backend === null || selected === null} onClick={nativeOutput.toggle}
+              className={styles.nativeOutput}
+              aria-label={nativeOutput.active ? "Stop native SDR output" : "Start native SDR output"}
+              aria-pressed={nativeOutput.active}
+              data-testid="native-output-toggle" data-native-output-ready={nativeOutput.ready}
+              data-native-output-status={nativeOutput.status}>
+              SDR
+            </Button>
+          </Tooltip>
+        ) : null}
         <Tooltip label={fullscreen ? "Leave fullscreen — Escape also works" : "Fullscreen"}>
           <Button
             aria-label={fullscreen ? "Leave fullscreen" : "Fullscreen"}

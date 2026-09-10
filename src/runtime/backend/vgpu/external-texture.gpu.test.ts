@@ -162,6 +162,39 @@ describe("media node end to end on Dawn (T262/T263, §V167)", () => {
 });
 
 describe("externalTexture through the backend on Dawn (T229)", () => {
+  it("replacement sources can restart frame IDs and stale unregister cannot remove them", async () => {
+    const probe = await probeDawn();
+    if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
+    const backend = createVgpuBackend({ host: nodeGpuHost() });
+    const frameAt = (frameIndex: number) => ({
+      frame: { timeSeconds: 0, deltaSeconds: 1 / 60, frameIndex, mode: "offline" as const, randomSeed: 7 },
+      pointer: { x: 0, y: 0, buttons: 0 }, resolution: [16, 16] as const,
+    });
+    const centre = async () => [...(await backend.readOutput("out")).bytes.slice((8 * 16 + 8) * 4, (8 * 16 + 8) * 4 + 4)];
+    try {
+      await backend.initialize({});
+      const compiled = await backend.compile(PLAN);
+      const unregisterA = backend.registerMediaSource("vid", { currentFrame: () => ({ frameId: 0, bytes: solid(255, 0, 0) }) });
+      backend.render(compiled, frameAt(0));
+      expect(await centre()).toEqual([255, 0, 0, 255]);
+      const blue = solid(0, 0, 255);
+      const sourceB = { currentFrame: () => ({ frameId: 0, bytes: blue }) };
+      const unregisterB = backend.registerMediaSource("vid", sourceB);
+      unregisterA();
+      backend.render(compiled, frameAt(1));
+      expect(await centre()).toEqual([0, 0, 255, 255]);
+      // Re-registering the SAME source is not a new frame or a changed source.
+      blue.set(solid(0, 255, 0));
+      backend.registerMediaSource("vid", sourceB);
+      backend.render(compiled, frameAt(2));
+      expect(await centre()).toEqual([0, 0, 255, 255]);
+      unregisterB();
+      backend.registerMediaSource("vid", { currentFrame: () => ({ frameId: 0, bytes: solid(0, 255, 0) }) });
+      backend.render(compiled, frameAt(3));
+      expect(await centre()).toEqual([0, 255, 0, 255]);
+    } finally { backend.dispose(); }
+  });
+
   it("uploads on frame-ready, skips unchanged frames, keeps contents after the source ends", async () => {
     const probe = await probeDawn();
     if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
