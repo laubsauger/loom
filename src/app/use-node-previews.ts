@@ -47,7 +47,8 @@ import type { ComponentRegistryView } from "@domain/components/index.ts";
  * CONTENT still refreshes at `previewFps`; this tick, like `backend.loop`'s own
  * scheduler, just runs at display rate to keep tile PLACEMENT in sync with pan (design
  * note §3) — cheap, because nothing here allocates when nothing about the active set
- * changed.
+ * changed, and (T1241) a tick that finds nothing it reads has moved since the last one
+ * returns before assembling a request: see `TickStamp` inside the effect.
  *
  * §V28a: every eligible node is offered as a request every tick — visibility (on
  * screen or not) and the pin are read by the scheduler that already exists, never
@@ -383,6 +384,103 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
       everMaterialized.clear();
     };
 
+    /**
+     * T1241 — WHAT THE LAST TICK READ, so the next one can tell whether anything moved.
+     *
+     * The tick used to run its whole body at display rate regardless: the §T1235 profile
+     * measured it at 450–470 ms per 5 s on E24 PAUSED (0.9 ms per display frame, 65 % of
+     * everything the page did while paused), re-assembling every request, re-planning,
+     * re-blitting every tile from a source texture that had not changed since the
+     * transport stopped. This is the paused case stated as what the tick reads (§V939):
+     *
+     *  - the MAIN PLAN cooked — `framesSubmitted` moved. That is what "playing" means to
+     *    a tile: a source texture may have new pixels. A paused transport does not cook,
+     *    so this stays put; a step, a seek and a snapshot's own render all move it.
+     *    A plan install or a device rebuild moves `resourceBuilds`/`deviceGeneration`.
+     *  - the CANVAS re-rendered — `inputsRef.current` is a fresh object per render, and
+     *    that covers every prop the tick reads (graph, compiled outputs, registry,
+     *    stores, fps, long edge, document identity, selection-driven re-renders).
+     *  - the CAMERA moved, the surface resized, or the device pixel ratio changed.
+     *  - a NODE moved, was measured, or changed stacking (T1102) — the paint-order boxes.
+     *  - a per-node store wrote without a render: the viewer's interest (T756), a slot's
+     *    bounds (copy-on-write map, T892), a candidate's lens (T336) or orbit (T561).
+     *
+     * None moved → nothing a tile shows, where it shows, or what the compiler is told
+     * could differ from the last tick, and the tick returns before assembling a request.
+     * The refresh clocks are untouched by a skipped tick: the scheduler's `due` is a
+     * comparison against transport seconds, and `liveClock` catches up on wall time.
+     * A skipped tick presents nothing, and the preview surface keeps its last frame —
+     * the same fact T620's hidden-page path already rests on.
+     *
+     * Not "is the transport paused": the hook has no transport, and asking for one would
+     * be a second answer to a question `framesSubmitted` already settles.
+     */
+    interface TickStamp {
+      readonly inputs: NodePreviewInputs;
+      readonly framesSubmitted: number;
+      readonly resourceBuilds: number;
+      readonly deviceGeneration: number;
+      readonly viewport: ViewportTransform;
+      readonly width: number;
+      readonly height: number;
+      readonly devicePixelRatio: number;
+      readonly interest: NodeId | null;
+      readonly bounds: ReadonlyMap<NodeId, unknown>;
+      readonly boxes: ReadonlyArray<NodeStackBox>;
+      /** Per candidate, in candidate order: the lens and orbit objects the stores hold. */
+      readonly lenses: ReadonlyArray<unknown>;
+      readonly orbits: ReadonlyArray<unknown>;
+    }
+    let lastStamp: TickStamp | null = null;
+    const sameBoxes = (a: ReadonlyArray<NodeStackBox>, b: ReadonlyArray<NodeStackBox>): boolean => {
+      if (a.length !== b.length) return false;
+      for (let index = 0; index < a.length; index += 1) {
+        const x = a[index];
+        const y = b[index];
+        if (x === undefined || y === undefined) return false;
+        if (x.nodeId !== y.nodeId || x.x !== y.x || x.y !== y.y || x.width !== y.width || x.height !== y.height) {
+          return false;
+        }
+      }
+      return true;
+    };
+    const sameList = (a: ReadonlyArray<unknown>, b: ReadonlyArray<unknown>): boolean =>
+      a.length === b.length && a.every((value, index) => value === b[index]);
+    const quiet = (previous: TickStamp | null, next: TickStamp): boolean =>
+      previous !== null &&
+      previous.inputs === next.inputs &&
+      previous.framesSubmitted === next.framesSubmitted &&
+      previous.resourceBuilds === next.resourceBuilds &&
+      previous.deviceGeneration === next.deviceGeneration &&
+      previous.viewport.x === next.viewport.x &&
+      previous.viewport.y === next.viewport.y &&
+      previous.viewport.zoom === next.viewport.zoom &&
+      previous.width === next.width &&
+      previous.height === next.height &&
+      previous.devicePixelRatio === next.devicePixelRatio &&
+      previous.interest === next.interest &&
+      previous.bounds === next.bounds &&
+      sameBoxes(previous.boxes, next.boxes) &&
+      sameList(previous.lenses, next.lenses) &&
+      sameList(previous.orbits, next.orbits);
+
+    /**
+     * T1241: `previewCandidates` walks every node and edge of the graph, and the graph is
+     * the same object from one tick to the next unless the document moved. Keyed on the
+     * two things it reads.
+     */
+    let candidateCache: {
+      readonly graph: GraphDocument;
+      readonly registry: NodeRegistryView;
+      readonly list: ReadonlyArray<PreviewCandidate>;
+    } | null = null;
+    const candidatesFor = (graph: GraphDocument, registry: NodeRegistryView): ReadonlyArray<PreviewCandidate> => {
+      if (candidateCache === null || candidateCache.graph !== graph || candidateCache.registry !== registry) {
+        candidateCache = { graph, registry, list: previewCandidates(graph, registry) };
+      }
+      return candidateCache.list;
+    };
+
     const step = (): void => {
       // §V23 — a device rebuild invalidates cadence state (refresh clocks, tile keys)
       // that the backend cannot know about; the backend's own rebuild is separate and
@@ -401,6 +499,27 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
       const surface = { x: 0, y: 0, width: rect.width, height: rect.height };
       const viewport = current.getViewport();
       const devicePixelRatio = typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
+      const stack = current.getNodeBoxes();
+      const candidates = candidatesFor(current.graph, current.registry);
+
+      // T1241 — nothing this tick reads has moved since the last one: see `TickStamp`.
+      const stamp: TickStamp = {
+        inputs: current,
+        framesSubmitted: backend.status.framesSubmitted,
+        resourceBuilds: backend.status.resourceBuilds,
+        deviceGeneration: backend.status.deviceGeneration,
+        viewport,
+        width: rect.width,
+        height: rect.height,
+        devicePixelRatio,
+        interest: current.interest?.get() ?? null,
+        bounds: current.bounds.snapshot(),
+        boxes: stack,
+        lenses: current.views === undefined ? [] : candidates.map(({ nodeId }) => current.views?.get(nodeId)),
+        orbits: current.orbits === undefined ? [] : candidates.map(({ nodeId }) => current.orbits?.get(nodeId)),
+      };
+      if (quiet(lastStamp, stamp)) return;
+      lastStamp = stamp;
 
       /*
        * T1102 — the DOM's stacking order, in screen rects, once per tick.
@@ -411,7 +530,6 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
        * the nodes; the per-request loop that follows only walks the suffix, and only for
        * nodes that actually overlap.
        */
-      const stack = current.getNodeBoxes();
       const stackDepth = new Map<string, number>();
       const occluderRect: PreviewRect[] = [];
       for (let index = 0; index < stack.length; index += 1) {
@@ -436,7 +554,6 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
         return occluders.length === 0 ? undefined : subtractRects(tileRect, occluders);
       };
 
-      const candidates = previewCandidates(current.graph, current.registry);
       // Nodes the compiler already keeps on its own, so they must not be asked for as
       // preview sinks (see `previewCandidates`).
       const ungated = new Set<string>(

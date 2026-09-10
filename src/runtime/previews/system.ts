@@ -91,6 +91,50 @@ export interface PreviewSystem {
   reset(): void;
 }
 
+/** T1241: the fields of one allocated entry that `buildPreviewProgram` reads (§V939). */
+interface ProgramInput {
+  readonly key: string;
+  readonly width: number;
+  readonly height: number;
+  readonly mode: PreviewRequest["view"]["mode"];
+  readonly space: PreviewRequest["source"]["space"];
+  readonly resourceId: string;
+  readonly synthesis: PreviewRequest["synthesis"];
+}
+
+function programInput(entry: AllocatedPreview): ProgramInput {
+  return {
+    key: previewKey(entry.ref),
+    width: entry.tileSize[0],
+    height: entry.tileSize[1],
+    mode: entry.request.view.mode,
+    space: entry.request.source.space,
+    resourceId: entry.request.source.resourceId,
+    synthesis: entry.request.synthesis,
+  };
+}
+
+function sameProgramInputs(a: ReadonlyArray<ProgramInput>, b: ReadonlyArray<ProgramInput>): boolean {
+  if (a.length !== b.length) return false;
+  for (let index = 0; index < a.length; index += 1) {
+    const x = a[index];
+    const y = b[index];
+    if (x === undefined || y === undefined) return false;
+    if (
+      x.key !== y.key ||
+      x.width !== y.width ||
+      x.height !== y.height ||
+      x.mode !== y.mode ||
+      x.space !== y.space ||
+      x.resourceId !== y.resourceId ||
+      x.synthesis !== y.synthesis
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export function createPreviewSystem(options: PreviewSystemOptions): PreviewSystem {
   const scheduler: PreviewScheduler = createPreviewScheduler({ capacity: options.capacity });
   const atlas: TileAtlas = createTileAtlas({ capacity: options.capacity });
@@ -105,6 +149,38 @@ export function createPreviewSystem(options: PreviewSystemOptions): PreviewSyste
   const lastPushed = new Map<string, string>();
 
   const held = (entry: AllocatedPreview): boolean => atlas.get(previewKey(entry.ref)) !== undefined;
+  /**
+   * T1241 — the program is MEMOIZED ON WHAT `buildPreviewProgram` READS (§V939), not
+   * rebuilt every tick and then compared by its own signature.
+   *
+   * The build was the single largest item inside the preview tick in the §T1235 profile
+   * (147–149 ms per 5 s on E24, playing OR paused): every display frame re-ran
+   * `atlas.sync`, re-emitted every pass descriptor, sorted them, and serialized the
+   * structural keys — to discover, ~99 % of the time, that the signature had not moved.
+   * The signature is a function of exactly the fields `ProgramInput` lists (the allocated
+   * keys in priority order, each tile's granted size, the lens MODE, the source's id and
+   * colour space, and the synthesis descriptor), so when none of those changed the
+   * program cannot have either, and the cached one is returned without touching the
+   * atlas. `atlas.sync` with an unchanged request list is a no-op by its own contract
+   * (every key kept at its size), so skipping it changes no allocation.
+   *
+   * Lens VALUES are deliberately not a key: they never reach the signature (§V5) and
+   * travel by push below (B118). The synthesis descriptor is compared by IDENTITY, which
+   * is what B176 needs — a values-only recompile mints a new descriptor and the built
+   * program's `pointSize`/uniform restatement is re-read from the fresh one.
+   */
+  let lastInputs: ProgramInput[] | null = null;
+  let lastProgram: PreviewProgram | null = null;
+
+  const programFor = (allocated: ReadonlyArray<AllocatedPreview>): PreviewProgram => {
+    const inputs = allocated.map(programInput);
+    if (lastProgram !== null && lastInputs !== null && sameProgramInputs(lastInputs, inputs)) {
+      return lastProgram;
+    }
+    lastInputs = inputs;
+    lastProgram = buildPreviewProgram(allocated, atlas);
+    return lastProgram;
+  };
 
   function plan(input: PreviewSystemFrame): PreviewSystemResult {
     const schedule = scheduler.select(input.requests, {
@@ -128,7 +204,7 @@ export function createPreviewSystem(options: PreviewSystemOptions): PreviewSyste
     holding.sort((a, b) => Number(held(b)) - Number(held(a)));
 
     const allocated: AllocatedPreview[] = [...schedule.active, ...holding];
-    const program = buildPreviewProgram(allocated, atlas);
+    const program = programFor(allocated);
     const programChanged = program.signature !== lastSignature;
     if (programChanged) {
       lastSignature = program.signature;
@@ -262,6 +338,10 @@ export function createPreviewSystem(options: PreviewSystemOptions): PreviewSyste
       atlas.reset();
       lastSignature = null;
       lastPushed.clear();
+      // T1241: the atlas is empty again, so a program built against its old slots is
+      // not the program those inputs would build now.
+      lastInputs = null;
+      lastProgram = null;
     },
   };
 }

@@ -591,8 +591,11 @@ describe("useNodePreviews resets at a document boundary (T519, B106)", () => {
     // 2. NOT DUE. The clock has barely moved and the cadence is one frame a second, so
     //    the same key must draw nothing. THIS IS THE NON-VACUITY CHECK: it establishes
     //    that a refresh in step 3 cannot be the cadence coming round on its own.
+    //    T1241: nothing the tick reads has moved either (no main frame, same inputs),
+    //    so the tick presents NOTHING AT ALL rather than an empty refresh list.
+    const painted = refreshes.length;
     vi.advanceTimersToNextFrame();
-    expect(refreshes.at(-1)).toEqual([]);
+    expect(refreshes).toHaveLength(painted);
 
     // 3. A DIFFERENT DOCUMENT IS OPEN. Same node id, same clock, still not due — and it
     //    must draw anyway, because the tile behind that key belongs to a project that is
@@ -603,8 +606,9 @@ describe("useNodePreviews resets at a document boundary (T519, B106)", () => {
 
     // 4. ...and the boundary is crossed ONCE. Staying in the new document goes straight
     //    back to the cadence, or the fix would be a permanent full-rate repaint.
+    const repainted = refreshes.length;
     vi.advanceTimersToNextFrame();
-    expect(refreshes.at(-1)).toEqual([]);
+    expect(refreshes).toHaveLength(repainted);
 
     nodeRuntime.dispose();
   });
@@ -1249,5 +1253,159 @@ describe("overlapping nodes layer with the DOM (T1102)", () => {
     nodeRuntime.dispose();
 
     for (const tile of commands.at(-1)?.composite ?? []) expect(tile.clip).toBeUndefined();
+  });
+});
+
+describe("the tick skips itself when nothing it reads has moved (T1241)", () => {
+  /**
+   * The §T1235 profile: 450–470 ms per 5 s of preview tick on E24 while PAUSED — every
+   * display frame re-assembled the requests, re-planned and re-blitted tiles whose source
+   * had not changed since the transport stopped. The gate is stated as what the tick
+   * reads (§V939), so each of those reads must be able to wake it on its own, and
+   * nothing else may.
+   */
+  function mount() {
+    const registry = createTestRegistry().view();
+    const graph = graphWith("test.blur");
+    const nodeRuntime = createNodeRuntimeStore();
+    const bounds = createPreviewSlotBounds();
+    bounds.publish("n1", { x: 0, y: 0, width: 200, height: 120 });
+    const views = createPreviewViewStore();
+    const interest = createPreviewInterestStore();
+    const canvas = document.createElement("canvas");
+    const size = { width: 400, height: 300 };
+    canvas.getBoundingClientRect = () =>
+      ({ x: 0, y: 0, top: 0, left: 0, right: size.width, bottom: size.height, ...size }) as DOMRect;
+
+    const status = { ...fakeBackend().status } as { framesSubmitted: number; resourceBuilds: number };
+    const presents: PreviewFrameCommand[] = [];
+    const backend = {
+      status,
+      previewHost: () => ({
+        setPreviewProgram: () => {},
+        presentPreviews: (command: PreviewFrameCommand) => presents.push(command),
+        dispose: () => {},
+      }),
+    } as unknown as LoomBackend;
+
+    const viewport = { x: 0, y: 0, zoom: 1 };
+    let boxes: Array<{ nodeId: never; x: number; y: number; width: number; height: number }> = [];
+    const compiledOutputs = [
+      {
+        nodeId: "n1",
+        portId: "out",
+        resourceId: "res:n1:out",
+        resourceKind: "target" as const,
+        size: [64, 64] as const,
+        format: "rgba8unorm" as const,
+        space: "linear" as const,
+        temporal: false,
+      },
+    ];
+    const { rerender } = renderHook(
+      ({ identity }: { identity: string }) =>
+        useNodePreviews({
+          backend,
+          canvasRef: { current: canvas },
+          bounds,
+          graph,
+          registry,
+          compiledOutputs,
+          nodeRuntime,
+          views,
+          interest,
+          getViewport: () => ({ ...viewport }),
+          getNodePosition: () => ({ x: 0, y: 0 }),
+          getNodeBoxes: () => boxes,
+          previewFps: 60,
+          previewLongEdge: 192,
+          documentIdentity: identity,
+        }),
+      { initialProps: { identity: "document-under-test" } },
+    );
+    const ticks = (count: number) => {
+      for (let index = 0; index < count; index += 1) vi.advanceTimersToNextFrame();
+    };
+    return {
+      presents,
+      status,
+      viewport,
+      size,
+      views,
+      interest,
+      bounds,
+      setBoxes: (next: typeof boxes) => {
+        boxes = next;
+      },
+      rerender,
+      ticks,
+      dispose: () => nodeRuntime.dispose(),
+    };
+  }
+
+  it("paused and untouched: the first tick presents, the next hundred present nothing", () => {
+    const t = mount();
+    t.ticks(1);
+    expect(t.presents).toHaveLength(1);
+    t.ticks(100);
+    expect(t.presents).toHaveLength(1);
+    t.dispose();
+  });
+
+  it("a main frame is what 'playing' means to a tile: one cook, one tick", () => {
+    const t = mount();
+    t.ticks(1);
+    t.status.framesSubmitted += 1;
+    t.ticks(1);
+    expect(t.presents).toHaveLength(2);
+    // The cook was consumed; a display frame with no new cook presents nothing.
+    t.ticks(3);
+    expect(t.presents).toHaveLength(2);
+    t.dispose();
+  });
+
+  it("each thing the tick reads wakes it on its own, and only once", () => {
+    const t = mount();
+    t.ticks(1);
+    const wake = (label: string, move: () => void) => {
+      const before = t.presents.length;
+      move();
+      t.ticks(1);
+      expect([label, t.presents.length]).toEqual([label, before + 1]);
+      t.ticks(2);
+      expect([label, t.presents.length]).toEqual([label, before + 1]);
+    };
+    // A pan: the tile's destination moves without a pixel inside it changing.
+    wake("camera", () => {
+      t.viewport.x += 25;
+    });
+    wake("surface resize", () => {
+      t.size.width = 500;
+    });
+    // B118: an exposure nudge while paused must not read as a dead control.
+    wake("lens value", () => {
+      t.views.set("n1" as never, { exposureStops: 1 });
+    });
+    // T756: the viewer looking at a node pins its tile.
+    wake("viewer interest", () => {
+      t.interest.set("n1" as never);
+    });
+    // T892: a slot re-measured.
+    wake("slot bounds", () => {
+      t.bounds.publish("n1", { x: 0, y: 0, width: 220, height: 120 });
+    });
+    // T1102: a node moved or was elevated — the stacking boxes.
+    wake("node boxes", () => {
+      t.setBoxes([{ nodeId: "n1" as never, x: 10, y: 0, width: 200, height: 160 }]);
+    });
+    // A re-render of the pane: every prop the tick reads may have changed.
+    wake("pane render", () => {
+      t.rerender({ identity: "document-under-test" });
+    });
+    // A plan install.
+    wake("resource build", () => {
+      t.status.resourceBuilds += 1;
+    });
+    t.dispose();
   });
 });

@@ -79,6 +79,77 @@ describe("preview system", () => {
     expect(host.commands).toHaveLength(120);
   });
 
+  it("T1241 — a steady tick returns the SAME program object; it does not rebuild and compare", () => {
+    // `host.programs` above proves the host was asked once; this proves the BUILD ran once.
+    // The §T1235 profile put `buildPreviewProgram` at 147–149 ms per 5 s on E24, playing
+    // or paused, because every tick rebuilt the program to learn its signature had not
+    // moved. The memo is keyed on the build's own inputs (§V939), so an unchanged tick
+    // returns the cached object by identity — a rebuild would return a fresh one.
+    const host = fakeHost();
+    const system = createPreviewSystem({ host, capacity: 8 });
+    const requests = [request("a"), request("b")];
+    const first = system.update({
+      requests,
+      frame: frame(0, 0),
+      surface: SURFACE,
+      devicePixelRatio: 2,
+      previewFps: 15,
+      previewLongEdge: 192,
+    });
+    // The same set, panned (the rect is not a build input), a lens VALUE nudged (B118 pushes
+    // it; §V5 keeps it off the signature): the cached program stands.
+    const panned = requests.map((entry) => ({
+      ...entry,
+      rect: { ...entry.rect, x: entry.rect.x + 40 },
+      view: { ...entry.view, exposureStops: 1 },
+    }));
+    const second = system.update({
+      requests: panned,
+      frame: frame(1 / 60, 1),
+      surface: SURFACE,
+      devicePixelRatio: 2,
+      previewFps: 15,
+      previewLongEdge: 192,
+    });
+    expect(second.program).toBe(first.program);
+    expect(second.programChanged).toBe(false);
+    // What the build READS moves: a source id (a recompile re-pointed the node), a debug
+    // mode (a different shader), a synthesis descriptor (identity — B176's values-only
+    // recompile), the allocated set. Each is a genuine rebuild.
+    const variants: Array<[string, ReadonlyArray<PreviewRequest>]> = [
+      ["source id", [request("a", { source: { ...request("a").source, resourceId: "target/a2" } }), request("b")]],
+      ["debug mode", [request("a", { view: { ...DEFAULT_PREVIEW_VIEW, mode: "alpha" } }), request("b")]],
+      ["allocated set", [request("a")]],
+      ["colour space", [request("a", { source: { ...request("a").source, space: "encoded" } }), request("b")]],
+    ];
+    let previous = second.program;
+    for (const [label, variant] of variants) {
+      const result = system.update({
+        requests: variant,
+        frame: frame(2 / 60, 2),
+        surface: SURFACE,
+        devicePixelRatio: 2,
+        previewFps: 15,
+        previewLongEdge: 192,
+      });
+      expect([label, result.program === previous]).toEqual([label, false]);
+      expect([label, result.programChanged]).toEqual([label, true]);
+      previous = result.program;
+    }
+    // And `reset()` forgets the memo: the atlas it was built against is gone.
+    system.reset();
+    const afterReset = system.update({
+      requests,
+      frame: frame(3 / 60, 3),
+      surface: SURFACE,
+      devicePixelRatio: 2,
+      previewFps: 15,
+      previewLongEdge: 192,
+    });
+    expect(afterReset.program).not.toBe(first.program);
+    expect(afterReset.programChanged).toBe(true);
+  });
+
   it("does not rebuild the program while the graph pans", () => {
     const host = fakeHost();
     const system = createPreviewSystem({ host, capacity: 8 });
