@@ -390,6 +390,60 @@ to hand its `CompiledGraph` to `animate`) is the next step for C and outside thi
 `FrameCompiler.reason` is not surfaced anywhere yet; the perf panel (§T1239) is the
 natural place.
 
+### 2026-09-10 — items 1 + 2, §T1238, pane re-render per revision (`cf6438d`, `5fa1b12`, `20a7676`)
+
+**Cause, found in the tree, not the profile.** `App` subscribes to the root document
+(`useSyncExternalStore`) and re-renders per revision by design; what made that cost
+15 ms was that every pane element was a FRESH element per `App` render, so React could
+not bail out below it: the five document-free panes (node/component/example library,
+performance, agent), the whole `AppShell` chrome (~600 fibers) and the `<TopBar>` element
+(Tooltip×20, Button×24, 385 fibers) all re-rendered with props that had not changed. Fixed
+by memoising each element on what it reads (§V939): the pane slots in `app.tsx`
+(`cf6438d`), the shell body in `app-shell.tsx` (`5fa1b12`), the top bar (`20a7676`).
+Guard: `src/app/pane-render-boundaries.test.tsx` (real `App`, two `setParameters` and a
+select leave the node library, the pane leaves and the top bar at their mounted render
+counts; a `project.setSettings` range edit does re-render the top bar and nothing else).
+
+**The pan/zoom half was misattributed.** No product code writes a `setViewport` patch;
+the ~40 `App` commits per gesture on the 2026-09-08 numbers were hover: `hoveredNodeId`
+was `App` state, so every node the pointer crossed re-rendered the tree. It is a ref with
+a getter on the keymap environment now (`cf6438d`, same shape as T1177). §V16 holds.
+
+Harness, `PERF_REF=20a7676` (my last commit, BEFORE the T1182 wiring `eec78d5` landed,
+so the compile cost is the same on both sides), before = `run1*` at `bf411d1`/`971056b`.
+Another session's headed runs were serialised with mine (25 s quiet window each);
+WindowServer 50–56 % and the user's Chrome 25–90 % throughout — take the shapes and
+ratios, not the third digit.
+
+| scenario | before | after (`20a7676`) |
+|---|---|---|
+| E24 C knob drag: latency p50 / p95 (pass 1, 2) | 30.0 / 79.9, 29.5 / 64.4 ms | 18.4 / 44.7, 16.8 / 37.4 ms |
+| E24 C: the per-revision `App` group | 118× `NodeIdentity×108 CostCell×94 Presence×44`, 15.7 ms, 971 fibers | 115× `Presence×14 Button×13 PaneContent×10`, 8.8 / 7.4 ms, 232 fibers |
+| E24 C: React render sum per 120-input window | 2422 / 2417 ms | 1389 / 1153 ms |
+| E24 E pan/zoom: latency p50 / p95 | 6.7 / 8.2 ms | 6.0 / 7.9 ms |
+| E24 E: `App`-driven groups | 57× `CostCell×94 Stat×13 PerformancePanel×1`, 210 ms (hover) | none |
+| chain-200 E: latency p50 / p95 / max | 8.3 / 55 / 109–134 ms | 7.2 / 39–53 / 99–139 ms |
+| chain-200 E: `App` groups per gesture | 13+10+5+2+… × 1087–1174 fibers, 12.5–38 ms + 20× `CostCell×334`, 10–12 ms | 41–46× `Presence×12 PaneContent×10 ErrorBoundary×5`, 165 fibers, 9.8–10.1 ms |
+
+`NodeIdentity×108` is gone from every group. What is left of the per-revision commit
+(232 fibers, 7–9 ms on E24) is the four panes that DO read the document (graph, inspector,
+viewer, shader editor) plus the shell chrome outside the body memo — `Dialog×6`,
+`Popover×3`, `Tabs×4`, `LayoutMenu`, `ContextMenuHost`, and the `PaneContent` map —
+which is still built inline in `AppShell`'s return; the same memo treatment applies and
+is the next cut for scenario C.
+
+**chain-200 E is not ≤ 2 `App` commits per gesture, and the reason is not element
+identity.** Hook diffing on the `App` fiber (`scratchpad` diagnostic, top-40 signature)
+shows the ~45 remaining commits are driven by the preview-interest sink list
+(`{nodeId, portId, kind:"preview"}[]`, 0–51 long, tracking which nodes are on screen) →
+recompile → a new plan (`passes` 152 → 158 → 164 as nodes scroll in). That is genuine
+data `App` consumes; making the plan not depend on WHICH tiles are visible is preview
+territory (T1241's neighbour), not this row.
+
+Outside the row: `ComponentLibrary` subscribes to the root document itself and re-runs
+`component.list` / `component.upgrades` on every revision (113× per drag, 0.3–0.4 ms
+each) — a memo on the graph's component set would stop it.
+
 ## Appendix A — per-scenario frame budget, all fixtures, all passes
 
 Columns: N frames; interval p50 / p95; busy p50 / p95 / mean; script mean; style;
