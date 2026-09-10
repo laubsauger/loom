@@ -443,6 +443,84 @@ territory (T1241's neighbour), not this row.
 Outside the row: `ComponentLibrary` subscribes to the root document itself and re-runs
 `component.list` / `component.upgrades` on every revision (113× per drag, 0.3–0.4 ms
 each) — a memo on the graph's component set would stop it.
+### 2026-09-10 — items 1, 3 + 6, §T1239, the 10 Hz samplers and the scrubber (`2fe21f7`, `a9d2a43`)
+
+**What landed.** (a) `PerformancePanel` and `ValuePlot` subscribe through
+`useVisibleSubscribe` (`src/ui/hooks/use-visible-subscribe.ts`): a hub / ring tick reaches
+React only while the element passes `checkVisibility()`, with one `MutationObserver` over
+the ancestor chain (re-armed when the pane is adopted into another slot or window) so a
+pane that becomes visible paints the CURRENT snapshot on its first frame (§V86; tested
+hide → tick → show in both `.test.tsx`). Inside a visible panel every `LiveStat` /
+`CostCell` / `PassMsCell` is its own `useSyncExternalStore` selector on the text it shows
+(`useStoreSelector`), the tree re-renders only on a plan / build / capability change, and
+node rows are looked up through a per-snapshot `WeakMap` index instead of `find`. The
+function-plot cycle is memoised on its source and phased per tick; the x-path commands are
+cached per window length. (b) The scrubber writes `transform: scaleX()` / `translateX()`
+instead of `width` / `left`, and only when the fraction moved. Same-run before/after,
+alternated (before `8ad0169` = `2fe21f7~1`, so nothing else moved), E24 A + B, one headed
+browser at a time; WindowServer 40–55 %, the user's Chrome 20–70 %, FSEvents 30 %
+throughout; controls cheap 0.35–0.40 / dear 9.8–10.4 ms in every window. Two runs were
+discarded as disturbed (another session's vitest at 5 × 100 % inside the window: 194–406
+frames per 5 s) and re-run.
+
+| per 5 s window, E24 A idle | windows | frames | busy mean ms | React commits | React render sum ms | Layout n / ms | HitTest n / ms | Layerize n / ms | Paint n / ms |
+|---|---|---|---|---|---|---|---|---|---|
+| before `8ad0169` | 8 | 474–497 | 5.5–7.2 | 229–251 | 600–780 | 367–428 / 100–170 | 233–394 / 14–119 | 454–474 / 193–233 | 2394–2629 / 129–164 |
+| after `2fe21f7` | 12 | 456–499 | 5.3–8.0 | 230–252 | 458–670 | 134–151 / 74–152 | 10–176 / 2–78 | 456–485 / 249–370 | 1692–1873 / 87–132 |
+| before, scrubber hidden (probe) | 4 | 490–495 | 5.1–5.8 | 247–249 | 611–691 | 133–149 / 73–143 | 10–160 / 3–9 | 408–442 / 56–60 | 1834–1898 / 89–120 |
+| after, scrubber hidden (probe) | 4 | 483–498 | 4.7–5.6 | 245–251 | 472–495 | 147–151 / 76–141 | 108–160 / 7–10 | 393–450 / 58–80 | 1050–1868 / 90–123 |
+| variant: as after, no `will-change` | 4 | 474–498 | 5.8–6.5 | 247–251 | 465–518 | 119–148 / 80–137 | 129–158 / 7–10 | 456–480 / 254–283 | 1240–2077 / 98–137 |
+| variant: one write per frame (`translateX` only, elapsed bar as `::before`) | 8 | 490–499 | 5.1–5.8 | 246–250 | 460–509 | 146–151 / 73–136 | 156–161 / 8–11 | 458–483 / 239–279 | 1766–1868 / 89–125 |
+
+B (paused): 50–51 commits / 27–30 ms render, Layout 0, Paint 0 on both sides — the
+paused path was already write-free and stays so.
+
+**Scrubber (item 3): Layout, HitTest and Paint went where §3 said they would; Layerize
+did not.** With the scrubber visible, Layout is 134–151 events per window against the
+probe's 133–151 — the per-frame layout is gone, and so is the per-frame pointer re-hit-test
+(HitTest 10–176 from 233–394) and a third of the Paint events. But Layerize ROSE from
+193–233 to 249–370 ms per window, where the probe shows 56–60 ms with the scrubber hidden
+on either side. Two variants measured to find out why: dropping `will-change: transform`
+(254–283) and collapsing the two writes into one `translateX` (239–279) change nothing.
+So on this Chromium (151, headed, DPR 1) any per-frame `style.transform` write on this
+element costs a full `PaintArtifactCompositor::Update` (~0.5 ms), and the direct
+transform-update fast path is not taken; a `left`/`width` write cost a layout + repaint
+instead. Net for the render pipeline: Layout+HitTest+Layerize+Paint per window 453–632 ms
+(median 525) → 435–603 (median 520) — a wash, with the work moved from layout to
+compositing. The
+§3 estimate that a transform is free was wrong for a script-driven transform. What would
+make the scrubber free is a compositor-driven Web Animation on `transform`
+(`element.animate`, restarted on play / pause / seek / rate change, drift-corrected at
+10 Hz) so the main thread writes nothing per display frame — a follow-up row, not this
+one. The committed shape (two transforms, `will-change`) is kept: it is the correct
+target for that animation and no variant measured better.
+
+**Samplers (items 1 + 6): the commit COUNT does not drop; the work per commit does.**
+Commits stay at ~250 per window on both sides because a commit is one per ticking
+SOURCE, not one per panel: the hub flush also feeds the top bar's fps / GPU readouts
+(always visible), the value ring feeds the 34 plots on the visible canvas, and the
+readout, scrubber and inspector samplers are their own 10 Hz intervals. What the gate
+removes is the hidden pane's render work inside those commits: React render sum
+600–780 → 458–670 ms per window (−25 %), and with the scrubber held constant by the probe
+611–691 → 472–495 ms. The hub readout the harness takes from the panel's DOM at the end of
+the window proves the gate in the real app: on the examples tab the hidden panel reads
+`measuring… / frames 0` after (frozen at its first paint) where before it read live
+`frames 615`; on the performance tab it reads live on both sides (`frames 1181–1207`).
+That reading is stale BY DESIGN now — anything reading a hidden pane's DOM as a live
+number (the summariser's "Hub readings" row for the examples tab) reads first-paint
+values.
+
+**Not verified.** The devtools-hook commit groups (`renders`, `signatures`) come back
+empty in every idle window on both sides at these commits — the fiber walk in
+`page-hooks.ts` finds no `PerformedWork` fiber under `root.current.child` — so the
+per-commit `ValuePlot×34` / `CostCell×94` groups §1 cites could not be re-read; the render
+sum and the DOM reading stand in for them. Truly incremental plot projection (only the new
+samples) needs an absolute sample cursor on `ValueHistory`, which `value-history.ts` does
+not expose; the plot re-projects its window per tick with cached x commands instead.
+Plots culled by xyflow off the viewport are still `checkVisibility()`-visible and still
+tick. T1243's row addition (`a9d2a43`): the Frame row shows the extent as "gpu time" and
+the nested-span sum as "pass sum", and names a `basis: "passes"` frame in its reading.
+
 
 ## Appendix A — per-scenario frame budget, all fixtures, all passes
 
