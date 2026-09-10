@@ -168,10 +168,6 @@ const ALLOWLIST: ReadonlyArray<{ file: string; text: string }> = [
     text: "kept exactly as saved and written back unchanged, so nothing is lost — but this build cannot show a control over",
   },
   {
-    file: "src/app/top-bar.tsx",
-    text: "Detected WebGPU capability tier. Baseline is B.",
-  },
-  {
     // T399. The Agents tab's one long line, and it is a CONSENT statement, not chrome:
     // the snippet below it hands an external process write access to the open document,
     // so what that process may do is spelled out at the point of the decision. A tooltip

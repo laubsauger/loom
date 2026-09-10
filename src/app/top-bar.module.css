@@ -152,20 +152,6 @@
   text-align: right;
 }
 
-.tier {
-  padding: 0 var(--space-2);
-  border: var(--border-hairline);
-  border-radius: var(--radius);
-  font-family: var(--font-mono);
-  font-size: var(--fs-micro);
-  color: var(--text-dim);
-}
-
-.tierKnown {
-  border-color: var(--line-hot);
-  color: var(--text);
-}
-
 .trailing {
   display: flex;
   align-items: center;

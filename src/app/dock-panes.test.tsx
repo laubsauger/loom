@@ -10,7 +10,10 @@ import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import { createTestRegistry } from "@nodes/registry/test-nodes.ts";
 import { AppRuntimeContext } from "./app-context.ts";
 import type { AppRuntime } from "./app-runtime.ts";
-import { ShaderPane } from "./dock-panes.tsx";
+import { createTelemetryHub } from "@runtime/telemetry/index.ts";
+import { TooltipProvider } from "@ui/primitives/tooltip.tsx";
+import type { GpuStatus } from "./gpu-status.ts";
+import { PerformancePane, ShaderPane } from "./dock-panes.tsx";
 
 /**
  * §T219/B11 — data loss, and worth a COMPOSED test rather than another per-module one:
@@ -272,5 +275,45 @@ describe("§T1178 — markers are keyed on the diagnostics, not on the keystroke
     fireEvent.change(editor, { target: { value: "xy" } });
     expect(new Set(markersSeen).size).toBe(1);
     expect(markersSeen[0]).toEqual([]);
+  });
+});
+
+/**
+ * T1256 — the capability tier's ONE home is the performance pane's GPU block.
+ *
+ * The top bar's `tier B` chip left (`top-bar.test.tsx` holds the door shut); this is the
+ * other half of that move, proving the job moved rather than vanished: a ready status
+ * with a detected tier reaches the `tier` row as the tier the device actually reported,
+ * not a baseline constant. Cut the `<dd>{capabilities.tier}</dd>` and no surface in the
+ * app says which tier the device cleared.
+ */
+describe("PerformancePane — the tier row (T1256)", () => {
+  it("reads the detected tier off the ready status", () => {
+    const runtime = {
+      ...fakeRuntime(),
+      telemetry: createTelemetryHub({ now: () => 0 }),
+    } as unknown as AppRuntime;
+    const status: GpuStatus = {
+      kind: "ready",
+      baseline: false,
+      capabilities: {
+        tier: "A",
+        features: [],
+        formats: ["rgba8unorm", "rgba16float"],
+        timestampQuery: false,
+        limits: { maxTextureDimension2D: 8192 },
+      },
+    };
+    render(
+      <AppRuntimeContext.Provider value={runtime}>
+        <TooltipProvider>
+          <PerformancePane status={status} />
+        </TooltipProvider>
+      </AppRuntimeContext.Provider>,
+    );
+
+    const rows = screen.getByLabelText("GPU status").querySelectorAll("dt");
+    const tierRow = [...rows].find((dt) => dt.textContent === "tier");
+    expect(tierRow?.nextElementSibling?.textContent).toBe("A");
   });
 });

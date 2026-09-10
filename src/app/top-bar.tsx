@@ -1,5 +1,4 @@
 import type { ReactNode } from "react";
-import type { CapabilityTier } from "@domain/types/backend.ts";
 import { Button } from "@ui/primitives/button.tsx";
 import { Tooltip } from "@ui/primitives/tooltip.tsx";
 import { cx } from "@ui/cx.ts";
@@ -42,7 +41,6 @@ export interface TopBarProps {
    * `timeline` is a slot. A component that subscribes to the hub itself goes here.
    */
   gpuMetric?: ReactNode;
-  tier?: CapabilityTier | null;
   /**
    * Frame / time / fps (T265). A slot rather than props: the readout samples the frame
    * loop at its own <= 10 Hz tick, so it must own its state and re-render alone (§V16).
@@ -67,10 +65,10 @@ export interface TopBarProps {
   trailing?: ReactNode;
 }
 
-const EM_DASH = "—";
-
 /**
- * Top bar: transport, fps, GPU ms, capability tier (§I.ui).
+ * Top bar: transport, fps, GPU ms (§I.ui). The capability tier is NOT here (T1256): it
+ * is a fact about the device, read once, and it lives on the performance pane's GPU
+ * block beside the rows that qualify it.
  * Every control is a real button with an accessible name and a tooltip, so the
  * bar is fully operable from the keyboard (V19).
  */
@@ -93,7 +91,6 @@ export function TopBar({
   fps = null,
   gpuMs = null,
   gpuMetric,
-  tier = null,
   timeline,
   trailing,
 }: TopBarProps) {
@@ -216,11 +213,6 @@ export function TopBar({
             {gpuMetric ?? formatMs(gpuMs)}
           </span>
         </div>
-        <Tooltip label="Detected WebGPU capability tier. Baseline is B.">
-          <span className={cx(styles.tier, tier !== null && styles.tierKnown)} tabIndex={0}>
-            tier {tier ?? EM_DASH}
-          </span>
-        </Tooltip>
       </div>
 
       {trailing ? <div className={styles.trailing}>{trailing}</div> : null}

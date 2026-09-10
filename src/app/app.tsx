@@ -1541,7 +1541,6 @@ export function App({
     () => (
       <TopBar
         projectName={project.fileName ?? runtime.project.name}
-        tier={status.kind === "ready" ? status.capabilities.tier : null}
         // B172: the header's GPU number, subscribed to the hub on its own <= 10 Hz
         // tick (§V16). Nothing had ever passed `gpuMs`, so this read "—" forever.
         gpuMetric={<GpuMsReadout telemetry={runtime.telemetry} />}
@@ -1619,7 +1618,6 @@ export function App({
       renderRange.frames,
       renderRange.rendering,
       runtime,
-      status,
     ],
   );
 
