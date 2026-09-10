@@ -3,6 +3,7 @@ import { UNAVAILABLE_COST } from "@runtime/telemetry/index.ts";
 import type {
   CategoryRollup,
   CostBucket,
+  FrameTimingBucket,
   NodeCostRow,
   PassTimingRow,
   TelemetrySnapshot,
@@ -98,6 +99,23 @@ function Stat({
       </span>
     </div>
   );
+}
+
+/**
+ * T1243 — the frame's GPU time is the submit's EXTENT and the per-pass sum is a second,
+ * separate reading. The two differ on Apple GPUs (passes overlap, so the sum overstates
+ * the frame), which is why the sum is shown beside the frame and never as it. When the
+ * hub had no extent to give, `basis` is "passes" and the frame figure IS the sum — the
+ * label says so rather than letting a fallback pass for a measurement.
+ */
+function frameGpuText(frame: FrameTimingBucket): string {
+  const text = formatMs(frame).text;
+  return frame.basis === "passes" ? `${text} (pass sum)` : text;
+}
+
+function passSumText(frame: FrameTimingBucket): string {
+  if (frame.passSumMs === undefined) return "—";
+  return formatMs({ ...frame, gpuMs: frame.passSumMs }).text;
 }
 
 /** One live reading: re-renders only when the selected text changed. */
@@ -518,7 +536,8 @@ function PerformanceSections({
           `cook-policy` test id and its label association.
         */}
         <div className={styles.statRow}>
-          <LiveStat source={source} label="gpu time" select={(s) => formatMs(s.frame).text} />
+          <LiveStat source={source} label="gpu time" select={(s) => frameGpuText(s.frame)} />
+          <LiveStat source={source} label="pass sum" select={(s) => passSumText(s.frame)} />
           <LiveStat source={source} label="frames" select={(s) => String(s.framesRendered)} />
           <LiveStat
             source={source}

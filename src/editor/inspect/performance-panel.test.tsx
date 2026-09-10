@@ -2,7 +2,7 @@ import { Profiler } from "react";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { EMPTY_READBACK_BUDGET, emptyNodeTelemetry } from "@runtime/telemetry/index.ts";
-import type { TelemetrySnapshot, TelemetrySource } from "@runtime/telemetry/index.ts";
+import type { FrameTimingBasis, TelemetrySnapshot, TelemetrySource } from "@runtime/telemetry/index.ts";
 import { installDomStubs } from "@ui/testing/install-dom-stubs.ts";
 import { PerformancePanel } from "./performance-panel.tsx";
 
@@ -71,7 +71,11 @@ const build: TelemetrySnapshot["build"] = {
   effectsReused: 3,
 };
 
-function snapshot(frameMs: number, framesRendered: number): TelemetrySnapshot {
+function snapshot(
+  frameMs: number,
+  framesRendered: number,
+  basis: FrameTimingBasis = "frame",
+): TelemetrySnapshot {
   return {
     timingAvailable: true,
     timingUnavailableReason: null,
@@ -101,7 +105,16 @@ function snapshot(frameMs: number, framesRendered: number): TelemetrySnapshot {
     ],
     framesRendered,
     lastFrameIndex: framesRendered - 1,
-    frame: { availability: "measured", gpuMs: frameMs, passCount: 1, nodeCount: 1 },
+    // T1243: the frame is the submit's extent; the pass sum is a different number on
+    // purpose, so a test can tell which one a stat reads.
+    frame: {
+      availability: "measured",
+      gpuMs: frameMs,
+      passCount: 1,
+      nodeCount: 1,
+      basis,
+      passSumMs: frameMs + 1.25,
+    },
     passes: [
       {
         passId: "blur:p0",
@@ -149,6 +162,7 @@ function mount(source: TelemetrySource) {
 }
 
 const frames = () => screen.getByText("frames").nextElementSibling?.textContent;
+const stat = (label: string) => screen.getByText(label).nextElementSibling?.textContent;
 
 function hiddenByDisplay(element: Element): boolean {
   for (let node: Element | null = element; node !== null; node = node.parentElement) {
@@ -200,6 +214,17 @@ describe("PerformancePanel renders for the eyes on it (T1239)", () => {
     hub.tick(snapshot(3.5, 121));
     expect(view.commits()).toBe(shown + 1);
     expect(frames()).toBe("121");
+  });
+
+  it("shows the frame extent and the pass sum as two readings, and names a summed frame (T1243)", () => {
+    const hub = fakeSource(snapshot(3.5, 120));
+    mount(hub.source);
+    expect(stat("gpu time")).toBe("3.500 ms");
+    expect(stat("pass sum")).toBe("4.750 ms");
+
+    hub.tick(snapshot(3.5, 121, "passes"));
+    expect(stat("gpu time")).toBe("3.500 ms (pass sum)");
+    expect(stat("pass sum")).toBe("4.750 ms");
   });
 
   it("keeps following the hub while visible", () => {
