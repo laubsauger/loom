@@ -118,10 +118,10 @@ export const novaTorusDocument = document(
        * follower in front of the rank is the one that decides how percussive the source
        * looks and this file was authored around it.
        */
-      node("analysis1", "component:audioAnalysis@1", [-140, 700], {
+      node("analysis1", "component:audioAnalysis@1", [-140, 820], {
         envelope: 0.09, window: 16, settle: 0.15, hitDecay: 250,
       }, { label: "analysis1" }),
-      node("lvl1", "valueLimit", [140, 620], { minimum: 0, maximum: 1 }, { label: "lvl1" }),
+      node("lvl1", "valueLimit", [160, 740], { minimum: 0, maximum: 1 }, { label: "lvl1" }),
       /**
        * The counts lane, and it earns its place on ONE layer. Six properties read the rank,
        * which is the right shape for a body that breathes; the cyan sparkle is not a body,
@@ -131,7 +131,7 @@ export const novaTorusDocument = document(
        * and decays over 250 ms, which is the flash the owner's ×20 gain was reaching for
        * before the negative excursions ate a fifth of it.
        */
-      node("hit1", "valueLimit", [140, 800], { minimum: 0, maximum: 1 }, { label: "hit1" }),
+      node("hit1", "valueLimit", [160, 940], { minimum: 0, maximum: 1 }, { label: "hit1" }),
     ],
     [
       edge("e0-music1-source1", ["music1", "out"], ["source1", "in1"]),

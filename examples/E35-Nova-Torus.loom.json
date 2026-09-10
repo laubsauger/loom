@@ -627,7 +627,7 @@
         },
         "position": {
           "x": -140,
-          "y": 700
+          "y": 820
         },
         "type": "component:audioAnalysis@1"
       },
@@ -712,8 +712,8 @@
           "minimum": 0
         },
         "position": {
-          "x": 140,
-          "y": 800
+          "x": 160,
+          "y": 940
         },
         "type": "valueLimit"
       },
@@ -891,8 +891,8 @@
           "minimum": 0
         },
         "position": {
-          "x": 140,
-          "y": 620
+          "x": 160,
+          "y": 740
         },
         "type": "valueLimit"
       },
