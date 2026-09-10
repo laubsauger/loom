@@ -45,10 +45,11 @@
     "f0max": 0.6839
   },
   "E24-Audio-Reaction-Diffusion.loom.json": {
-    "motion": 0.01809,
-    "range": 0.9794,
-    "f0max": 1,
-    "phrase": 0.01685
+    "motion": 0.00602,
+    "range": 0.8449,
+    "f0max": 0.8656,
+    "cardFloor": 0.0002,
+    "phrase": 0.01102
   },
   "E25-Stage.loom.json": {
     "motion": 0.0296,

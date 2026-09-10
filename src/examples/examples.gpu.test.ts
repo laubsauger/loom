@@ -207,12 +207,14 @@ describe("E2 is alive, and its chemistry map is doing the work", () => {
   ): Promise<ReadonlyArray<Float32Array>> {
     const file = listExamples().find((entry) => entry.fileName === fileName);
     if (file === undefined) throw new Error(`${fileName} is not shipped`);
-    const { document } = requireExample(file);
+    const { document, result } = requireExample(file);
     const plan = compileGraph({
       graph: mutate(document.graph),
       settings: document.settings,
-      registry: exampleRegistry(),
+      registry: result.nodes ?? exampleRegistry(),
       capabilities: TIER_B_CAPABILITIES,
+      // T1234: E24 instances the AudioAnalysis component, so its library rides along.
+      ...(result.components ? { components: result.components } : {}),
     });
     expect(plan.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
 

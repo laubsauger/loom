@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { nodeGpuHost, probeDawn } from "../../runtime/backend/vgpu/node-gpu-host.ts";
 import { renderHeadless } from "./render-harness.ts";
 import { EXAMPLE_DOCUMENTS } from "../../examples/documents.ts";
+import { starterComponentsView } from "../../examples/component-files.ts";
 import type { ProjectDocument } from "../../domain/types/graph.ts";
 
 /**
@@ -23,11 +24,14 @@ describe("E24 replays and reacts (T442, §V363)", () => {
     const probe = await probeDawn();
     if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
 
+    // T1234: E24 instances the AudioAnalysis component; the starter library supplies it.
+    const components = await starterComponentsView();
     const run = (animate: boolean) =>
       renderHeadless({
         host: nodeGpuHost(),
         graph: e24.graph,
         settings: e24.settings,
+        components,
         frames: 40,
         capture: [39],
         outputNodeId: "out",

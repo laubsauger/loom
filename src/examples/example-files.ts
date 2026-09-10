@@ -12,6 +12,7 @@ import { EXAMPLE_DOCUMENTS, EXAMPLE_TIMESTAMP } from "./documents.ts";
 export const EXAMPLE_COMPONENT_IDS: Readonly<Record<string, readonly string[]>> = {
   "example-e47-hologram": ["depthPoints", "depthCut"],
   "example-e51-chorus": ["timeGrid"],
+  "example-e24-audio-reaction-diffusion": ["audioAnalysis"],
   "example-e66-meter": ["audioAnalysis"],
   "example-e67-fins": ["audioAnalysis"],
 };

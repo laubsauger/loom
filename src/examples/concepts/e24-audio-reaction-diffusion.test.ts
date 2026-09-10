@@ -12,49 +12,53 @@ function channelOf(source: string | undefined): string | undefined {
 
 describe("E24 Audio Reaction-Diffusion", () => {
   const { document, plan } = example("E24-Audio-Reaction-Diffusion.loom.json");
+  const slotOf = (nodeId: string, key: string) =>
+    (document.graph.nodes[nodeId] as GraphNode).parameters[key] as {
+      mode?: string;
+      bindings?: { expression?: { source?: string }; static?: { value?: number } };
+    };
+  const sourceOf = (nodeId: string, key: string): string => slotOf(nodeId, key).bindings?.expression?.source ?? "";
 
   /**
    * T425's headline: substeps is DRIVEN, capped twice. The document binds the channel,
    * the plan carries a loop REGION whose count is the retained base (channels resolve
-   * live, not at compile), and the graph-side fence sits exactly on [1, 34].
+   * live, not at compile), and the graph-side fence sits exactly on [1, 34] — T1234 moved
+   * it from a `valueLimit` node into the expression's own `clamp`, so the bound is read
+   * off the expression rather than off a third node.
    */
-  it("drives substeps from the bass, through a hard fence, into a live loop region", () => {
-    const state = document.graph.nodes["state"] as GraphNode;
-    const slot = state.parameters["substeps"] as { mode?: string; bindings?: { expression?: { source?: string } } };
+  it("drives substeps from the bass rank, through a hard fence, into a live loop region", () => {
+    const slot = slotOf("state", "substeps");
     expect(slot.mode).toBe("expression");
-    expect(channelOf(slot?.bindings?.expression?.source)).toBe("steps1:low");
+    expect(channelOf(sourceOf("state", "substeps"))).toBe("lvl1:low");
+    expect(sourceOf("state", "substeps")).toMatch(/^clamp\(.*, 1, 34\)$/);
     const begin = plan.passes.find((pass) => pass.kind === "loop" && pass.edge === "begin") as {
       count?: number;
     };
     expect(begin).toBeDefined();
-    expect(begin.count).toBe(14); // the retained base — silence's iteration rate
-    const cap = document.graph.nodes["scap"] as GraphNode;
-    expect(cap.parameters["minimum"]).toBe(1);
-    expect(cap.parameters["maximum"]).toBe(34);
+    // The retained base is the rank's own mid: a constant input ranks 0.5, so this is
+    // silence's iteration rate, 8 + 24 * 0.5.
+    expect(begin.count).toBe(20);
   });
 
   /**
-   * The tutorial's safe-bounds warning, as assertions: the white point is driven, and
-   * its fence keeps the chemistry inside the band where the pattern SURVIVES — dead
-   * Gray-Scott is a fixed point silence cannot revive.
+   * The tutorial's safe-bounds warning, as assertions: the white point is driven from the
+   * lowMid RANK, and the range the expression spans keeps the chemistry inside the band
+   * where the pattern SURVIVES — dead Gray-Scott is a fixed point silence cannot revive.
+   * T1234: the rank is 0..1 by construction, so `a + b * rank` IS the fence; the two
+   * literals are the measured range (0.49 covers 39% of the disc, 0.55 covers 68%).
    */
-  it("range-maps audio into the chemistry with bounds the pattern survives", () => {
-    const shape = document.graph.nodes["shape"] as GraphNode;
-    const slot = shape.parameters["whitelevel"] as { mode?: string; bindings?: { expression?: { source?: string } } };
+  it("range-maps the audio rank into the chemistry with bounds the pattern survives", () => {
+    const slot = slotOf("shape", "whitelevel");
     expect(slot.mode).toBe("expression");
-    expect(channelOf(slot?.bindings?.expression?.source)).toBe("wlevel1:lowMid");
-    const fence = document.graph.nodes["wcap"] as GraphNode;
-    // T562 moved the fence WITH the window it guards: `shape1`'s Level was refitted to the
-    // warped field's measured spread (0.451..0.543 rather than 0.235..0.72), so the old
-    // 0.62..0.80 would no longer be a safety bound — it would be the whole picture. The
-    // assertion is that the fence still BRACKETS the retained white point closely, which is
-    // the property, rather than the two literals it used to be.
-    const retained = ((document.graph.nodes["shape"] as GraphNode).parameters["whitelevel"] as {
-      bindings?: { static?: { value?: number } };
-    }).bindings?.static?.value;
-    expect(retained).toBe(0.543);
-    expect(fence.parameters["minimum"]).toBe(0.528);
-    expect(fence.parameters["maximum"]).toBe(0.566);
+    expect(channelOf(sourceOf("shape", "whitelevel"))).toBe("lvl1:lowMid");
+    const m = /^([0-9.]+) \+ ([0-9.]+) \* op/.exec(sourceOf("shape", "whitelevel"));
+    expect(m).not.toBeNull();
+    const rest = Number(m![1]);
+    const peak = rest + Number(m![2]);
+    expect(rest).toBe(0.48);
+    expect(peak).toBeCloseTo(0.55, 6);
+    // Retained is the rank's mid, which is what silence renders.
+    expect(slot.bindings?.static?.value).toBeCloseTo((rest + peak) / 2, 6);
   });
 
   /**
@@ -169,11 +173,13 @@ describe("E24 Audio Reaction-Diffusion", () => {
       mode?: string;
       bindings?: { expression?: { source?: string }; static?: { value?: number } };
     };
-    expect(channelOf(slot?.bindings?.expression?.source)).toBe("seedcut1:onsetCount");
+    // T1234: the trigger's pulse is read RAW by the expression — not through `hit1`, whose
+    // 250 ms decay would hold the gate open for fifteen frames and seed a wash.
+    expect(channelOf(slot?.bindings?.expression?.source)).toBe("trig1:onsetCount");
     expect(slot.bindings?.static?.value).toBe(2); // shut, and shut is exactly zero mask
-    // trig1 -> seedamt -> seedcut -> the gate: every hop is arithmetic, none is stateful.
-    const path = ["seedamt", "seedcut"].map((id) => (document.graph.nodes[id] as GraphNode).type);
-    expect(path).toEqual(["valueMath", "valueMath"]);
+    expect(channelOf(sourceOf("born", "opacity"))).toBe("trig1:onsetCount");
+    const intoTrig = Object.values(document.graph.edges).filter((edge) => edge.target.nodeId === "trig");
+    expect(intoTrig.map((edge) => edge.source.nodeId)).toEqual(["source"]);
     expect(document.graph.nodes["kick"]).toBeUndefined();
     // And the seed is SCREENED into the state, not added: screen takes U and V to 1 where
     // the mask is, which is the kernel's own seededState, and leaves them untouched at 0.
@@ -181,49 +187,93 @@ describe("E24 Audio Reaction-Diffusion", () => {
   });
 
   /**
-   * T560 — FIVE FAST PATHS BESIDE THE SLOW ONE, off a SECOND Lag. The whole diagnosis in
-   * one assertion: every audio path used to run through the reaction, which integrates a
-   * beat away. These five are one-frame responses, one band each (§V471.3), and the Lag
-   * they hang off has to be the fast one or they are back on the integrator.
+   * T1234 — ONE ANALYSIS INSTANCE, and every lane is an expression on one of its two bags.
+   * The 28 `valueMath`/`valueLimit` conditioning nodes are gone: a raw band × gain lane is a
+   * statement about one source's loudness (measured: 21.5% disc occupancy on the pattern,
+   * 5.8% on the clip, same graph), and the rank normaliser is what removes the source from
+   * the mapping. The assertion is the SHAPE — one instance, two bags, no lane nodes left —
+   * and the split: five distinct reads, each on the bag its job needs (§V952: continuous
+   * through `levels`, counts through `hits`).
    */
-  it("drives five one-frame properties off a fast lag, one band each", () => {
-    const snap = document.graph.nodes["snap"] as GraphNode;
-    expect(snap.type).toBe("valueLag");
-    expect(snap.parameters["lag"]).toBeLessThan(0.06);
-    expect((document.graph.nodes["env"] as GraphNode).parameters["lag"]).toBeGreaterThan(0.1);
-    const driven = (nodeId: string, key: string): string | undefined =>
-      channelOf(
-        (
-          (document.graph.nodes[nodeId] as GraphNode).parameters[key] as {
-            bindings?: { expression?: { source?: string } };
-          }
-        )?.bindings?.expression?.source,
-      );
-    expect(driven("warpA", "weight.x")).toBe("lenswa1:low");
-    expect(driven("warpB", "weight.x")).toBe("lenswb1:lowMid");
-    expect(driven("warpC", "weight.x")).toBe("lenswc1:high");
-    expect(driven("tint", "scale")).toBe("grade1:highMid");
-    expect(driven("glow", "brightness")).toBe("bright1:level");
-    // Five DIFFERENT bands: one master gain moving everything together is the thing
-    // §V471.3 exists to rule out.
-    const bands = new Set(
-      ["lenswa1:low", "lenswb1:lowMid", "lenswc1:high", "grade1:highMid", "bright1:level"].map(
-        (channel) => channel.split(":")[1],
-      ),
-    );
-    expect(bands.size).toBe(5);
-    /*
-     * T738 — and the three lens weights read a FENCED value, not the bare gain+bias.
-     * This is the assertion that would have failed before the fix: under real music the
-     * unfenced chains ran NEGATIVE (warpc1 for 99.9% of one track), and a negative
-     * displace weight inverts the lens instead of quieting it. The floor is the claim —
-     * so it is asserted as a floor of exactly 0, not merely "a Limit exists".
-     */
-    for (const id of ["acap", "bcap", "ccap"]) {
-      const fence = document.graph.nodes[id] as GraphNode;
-      expect(fence.type, `${id} must fence its lens weight`).toBe("valueLimit");
-      expect(fence.parameters["minimum"], `${id} must floor at zero`).toBe(0);
+  it("conditions the audio once, and drives every lane as an expression on lvl1 or hit1", () => {
+    const analyses = Object.values(document.graph.nodes).filter((node) => node.type === "component:audioAnalysis@1");
+    expect(analyses.map((node) => node.id)).toEqual(["analysis"]);
+    for (const [id, port] of [["lvl", "levels"], ["hit", "hits"]] as const) {
+      const bag = document.graph.nodes[id] as GraphNode;
+      expect(bag.type).toBe("valueLimit");
+      expect([bag.parameters["minimum"], bag.parameters["maximum"]]).toEqual([0, 1]);
+      const into = Object.values(document.graph.edges).filter((edge) => edge.target.nodeId === id);
+      expect(into.map((edge) => `${edge.source.nodeId}.${edge.source.portId}`)).toEqual([`analysis.${port}`]);
     }
+    // No conditioning lane survives: the only value-math left would be a regression.
+    const lanes = Object.values(document.graph.nodes).filter((node) => node.type === "valueMath" || node.type === "valueLag");
+    expect(lanes).toEqual([]);
+    // Counts through hits, continuous through levels — one read per property.
+    const reads = {
+      "warpA.weight.x": channelOf(sourceOf("warpA", "weight.x")),
+      "warpB.weight.x": channelOf(sourceOf("warpB", "weight.x")),
+      "warpC.weight.x": channelOf(sourceOf("warpC", "weight.x")),
+      "tint.scale": channelOf(sourceOf("tint", "scale")),
+      "glow.brightness": channelOf(sourceOf("glow", "brightness")),
+      "grow.s.x": channelOf(sourceOf("grow", "s.x")),
+    };
+    expect(reads).toEqual({
+      "warpA.weight.x": "hit1:kickCount",
+      "warpB.weight.x": "hit1:snareCount",
+      "warpC.weight.x": "hit1:hatCount",
+      "tint.scale": "lvl1:highMid",
+      "glow.brightness": "hit1:onsetCount",
+      "grow.s.x": "lvl1:low",
+    });
+    // Both axes of every pair read the same source, or a lens becomes a shear.
+    for (const id of ["warpA", "warpB", "warpC"]) expect(sourceOf(id, "weight.y")).toBe(sourceOf(id, "weight.x"));
+    expect(sourceOf("grow", "s.y")).toBe(sourceOf("grow", "s.x"));
+    // A lens at rest is OFF: the three weights are a bare gain on a count that rests at 0,
+    // which is T738's floor stated by the arithmetic rather than by a Limit node.
+    for (const id of ["warpA", "warpB", "warpC"]) expect(sourceOf(id, "weight.x")).toMatch(/^0\.[0-9]+ \* op\('hit1'\)/);
+  });
+
+  /**
+   * T1237 — WHAT KIND of pattern the disc grows is on three slow clocks and never on a
+   * beat: a regime change per beat is a strobe of unrelated textures. `anisotropy` must stay
+   * under the 0.35 ceiling T1237 measured (past ±0.5, stripes stay alive in the band's high
+   * corner where spots die — and this file's black IS that corner being dead).
+   */
+  it("walks morph, shape and anisotropy on slow free-running LFOs, anisotropy under 0.35", () => {
+    const knobs = { morph: "band", shape: "stencil", anisotropy: "grain" } as const;
+    for (const [key, id] of Object.entries(knobs)) {
+      expect(channelOf(sourceOf("rd", key)), key).toBe(id + "1");
+      const lfo = document.graph.nodes[id] as GraphNode;
+      expect(lfo.type).toBe("lfo");
+      // Slower than a minute per lap: 80 s, 120 s, 164 s.
+      expect(lfo.parameters["frequency"] as number).toBeLessThan(1 / 60);
+    }
+    const grain = document.graph.nodes["grain"] as GraphNode;
+    const reach = Math.abs(grain.parameters["amplitude"] as number) + Math.abs(grain.parameters["offset"] as number);
+    expect(reach).toBeLessThanOrEqual(0.35);
+    // Three incommensurate laps, so the combination never repeats inside a set.
+    const periods = Object.values(knobs).map((id) => 1 / ((document.graph.nodes[id] as GraphNode).parameters["frequency"] as number));
+    expect(new Set(periods.map((p) => Math.round(p))).size).toBe(3);
+  });
+
+  /**
+   * T1234 — THE ECHO LOOP IS CAPPED. The old expansion rate rested at 0.982 (a SHRINKING
+   * loop that the comments called an expansion); on the low rank it now runs 1.008..1.029
+   * always, and `dim1`'s gamma is contractive only in [0,1): above 1 it grows, and the
+   * clip's loud bars diverged the top-right corner to inf. The clamp is the bound.
+   */
+  it("caps the expanding echo loop at 1, between the dimmer and the stamp", () => {
+    const cap = document.graph.nodes["cap"] as GraphNode;
+    expect(cap.type).toBe("limit");
+    expect([cap.parameters["mode"], cap.parameters["low"], cap.parameters["high"]]).toEqual(["clamp", 0, 1]);
+    const chain = Object.values(document.graph.edges)
+      .filter((edge) => ["fade", "cap"].includes(edge.source.nodeId))
+      .map((edge) => `${edge.source.nodeId}->${edge.target.nodeId}.${edge.target.portId}`)
+      .sort();
+    expect(chain).toEqual(["cap->born.in2", "fade->cap.input"]);
+    const m = /^([0-9.]+) \+ ([0-9.]+) \* op/.exec(sourceOf("grow", "s.x"));
+    expect(Number(m![1])).toBeGreaterThan(1);
+    expect(Number(m![1]) + Number(m![2])).toBeLessThan(1.03);
   });
 
   /**

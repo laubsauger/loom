@@ -115,16 +115,16 @@ export const GRAY_SCOTT_WGSL = `struct Params {
 @group(0) @binding(1) var inputTexture: texture_2d<f32>;
 @group(0) @binding(2) var<uniform> params: Params;
 
-// Where \`morph = 1\` puts the band's LOW endpoint. Only the low end travels: the high end
+// Where 'morph = 1' puts the band's LOW endpoint. Only the low end travels: the high end
 // is the corner E24 pins its empty field to (chemistry 1 outside the dish decays to
 // nothing), and it has to stay dead at every morph. Measured along the path (T1237):
 // the holes regime is narrow, and 0.002 lower in feed is the uniform-V fixed point.
 const HOLES_FEED: f32 = 0.039;
 const HOLES_KILL: f32 = 0.058;
 
-// The most \`anisotropy\` may move between the cross pairs: at 0.6 the slow pair keeps a
-// positive weight at every \`shape\` (cross · 0.4), and the explicit step stays inside its
-// stability margin at DIFFUSE_U with \`shape\` at either extreme (measured, T1237).
+// The most 'anisotropy' may move between the cross pairs: at 0.6 the slow pair keeps a
+// positive weight at every 'shape' (cross · 0.4), and the explicit step stays inside its
+// stability margin at DIFFUSE_U with 'shape' at either extreme (measured, T1237).
 const ANISOTROPY_LIMIT: f32 = 0.6;
 
 const DIFFUSE_U: f32 = 0.2097;
@@ -171,7 +171,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   let nw = textureSample(inputTexture, inputSampler, uv + vec2f(-texel.x, texel.y)).rg;
   let ne = textureSample(inputTexture, inputSampler, uv + vec2f(texel.x, texel.y)).rg;
 
-  // THE BAND (T1237). \`morph\` carries the band's LOW endpoint toward the holes regime and
+  // THE BAND (T1237). 'morph' carries the band's LOW endpoint toward the holes regime and
   // leaves the high one where it is; at morph 0 each mix returns its first argument
   // exactly, which is the default band.
   let morph = clamp(params.morph, 0.0, 1.0);

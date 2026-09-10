@@ -4,6 +4,7 @@ import { nodeGpuHost, probeDawn } from "../../runtime/backend/vgpu/node-gpu-host
 import { offlineTransport } from "../../runtime/execution/index.ts";
 import { renderHeadless } from "./render-harness.ts";
 import { EXAMPLE_DOCUMENTS } from "../../examples/documents.ts";
+import { starterComponentsView } from "../../examples/component-files.ts";
 import { audioPatternNode } from "../../nodes/definitions/audio.ts";
 import type { GraphDocument, ProjectDocument } from "../../domain/types/graph.ts";
 import type { AudioFeatures } from "../../domain/types/frame.ts";
@@ -81,6 +82,7 @@ function graphDrivenByAudioIn(): GraphDocument {
   };
 }
 
+// T1234: E24 instances the AudioAnalysis component; the starter library supplies it.
 describe("T431 — a recorded feature track replays the performance it recorded (§V352)", () => {
   it("renders the same pixels from a stored track as from the live source", async () => {
     const probe = await probeDawn();
@@ -89,6 +91,7 @@ describe("T431 — a recorded feature track replays the performance it recorded 
     const common = {
       host: nodeGpuHost(),
       settings: e24.settings,
+      components: await starterComponentsView(),
       frames: FRAMES,
       capture: [FRAMES - 1],
       outputNodeId: "out",
@@ -155,11 +158,13 @@ describe("T431 — a recorded feature track replays the performance it recorded 
     const parsed = parseFeatureTrack(serializeFeatureTrack(trackFromPattern(FRAMES)));
     if (!parsed.ok) throw new Error("the recorded track did not parse");
 
+    const components = await starterComponentsView();
     const run = () =>
       renderHeadless({
         host: nodeGpuHost(),
         graph: graphDrivenByAudioIn(),
         settings: e24.settings,
+        components,
         frames: FRAMES,
         capture: [FRAMES - 1],
         outputNodeId: "out",
@@ -194,6 +199,7 @@ describe("T431 — a recorded feature track replays the performance it recorded 
       host: nodeGpuHost(),
       graph: graphDrivenByAudioIn(),
       settings: e24.settings,
+      components: await starterComponentsView(),
       frames: 20,
       capture: [19],
       outputNodeId: "out",

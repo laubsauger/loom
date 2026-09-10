@@ -1,17 +1,300 @@
 {
   "assets": [],
+  "componentLibrary": {
+    "components": [
+      {
+        "componentId": "audioAnalysis",
+        "description": "Any audio source in, two conditioned bags out. levels: every channel enveloped, ranked to 0..1 over a sliding window and settled — read level, the bands and centroid here. hits: every channel as a 1 ms attack / decaying release pulse — read kickCount, snareCount, hatCount, onsetCount and beatCount here; through levels a count rests at its mid-rank, not at 0.",
+        "graph": {
+          "edges": {
+            "e-rank-settle": {
+              "id": "e-rank-settle",
+              "source": {
+                "nodeId": "rank",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "settle",
+                "portId": "in"
+              }
+            },
+            "e-smooth-rank": {
+              "id": "e-smooth-rank",
+              "source": {
+                "nodeId": "smooth",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "rank",
+                "portId": "in"
+              }
+            },
+            "in_audio_feed_1": {
+              "id": "in_audio_feed_1",
+              "source": {
+                "nodeId": "in_audio",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "decay",
+                "portId": "in"
+              }
+            },
+            "in_audio_feed_2": {
+              "id": "in_audio_feed_2",
+              "source": {
+                "nodeId": "in_audio",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "smooth",
+                "portId": "in"
+              }
+            },
+            "out_hits_feed": {
+              "id": "out_hits_feed",
+              "source": {
+                "nodeId": "decay",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "out_hits",
+                "portId": "in"
+              }
+            },
+            "out_levels_feed": {
+              "id": "out_levels_feed",
+              "source": {
+                "nodeId": "settle",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "out_levels",
+                "portId": "in"
+              }
+            }
+          },
+          "groups": {},
+          "nodes": {
+            "decay": {
+              "definitionVersion": 1,
+              "id": "decay",
+              "parameters": {
+                "lag": 0.001,
+                "releaseRatio": 250
+              },
+              "position": {
+                "x": 258,
+                "y": -168
+              },
+              "type": "valueLag"
+            },
+            "in_audio": {
+              "definitionVersion": 1,
+              "id": "in_audio",
+              "label": "audio",
+              "parameters": {},
+              "position": {
+                "x": 0,
+                "y": -74
+              },
+              "type": "componentInValue"
+            },
+            "out_hits": {
+              "definitionVersion": 1,
+              "id": "out_hits",
+              "label": "hits",
+              "parameters": {},
+              "position": {
+                "x": 516,
+                "y": -168
+              },
+              "type": "componentOutValue"
+            },
+            "out_levels": {
+              "definitionVersion": 1,
+              "id": "out_levels",
+              "label": "levels",
+              "parameters": {},
+              "position": {
+                "x": 1032,
+                "y": -74
+              },
+              "type": "componentOutValue"
+            },
+            "rank": {
+              "definitionVersion": 1,
+              "id": "rank",
+              "parameters": {
+                "window": 16
+              },
+              "position": {
+                "x": 516,
+                "y": 20
+              },
+              "type": "valueNormalize"
+            },
+            "settle": {
+              "definitionVersion": 1,
+              "id": "settle",
+              "parameters": {
+                "lag": 0.15,
+                "releaseRatio": 1
+              },
+              "position": {
+                "x": 774,
+                "y": -74
+              },
+              "type": "valueLag"
+            },
+            "smooth": {
+              "definitionVersion": 1,
+              "id": "smooth",
+              "parameters": {
+                "lag": 0.08,
+                "releaseRatio": 1
+              },
+              "position": {
+                "x": 258,
+                "y": 20
+              },
+              "type": "valueLag"
+            }
+          },
+          "revision": 1
+        },
+        "inputs": [
+          {
+            "externalId": "audio",
+            "label": "audio",
+            "nodeId": "in_audio",
+            "portId": "in"
+          }
+        ],
+        "name": "AudioAnalysis",
+        "outputs": [
+          {
+            "externalId": "hits",
+            "label": "hits",
+            "nodeId": "out_hits",
+            "portId": "out"
+          },
+          {
+            "externalId": "levels",
+            "label": "levels",
+            "nodeId": "out_levels",
+            "portId": "out"
+          }
+        ],
+        "parameters": [
+          {
+            "definition": {
+              "default": 0.08,
+              "description": "The follower BEFORE the rank, on the levels lane: how long a channel takes to follow the source. Longer smooths what the rank sees; it cannot calm the rank's own steps — Settle does that.",
+              "label": "Envelope",
+              "max": 1,
+              "min": 0,
+              "range": "floor",
+              "step": 0.005,
+              "type": "number",
+              "unit": "seconds"
+            },
+            "key": "envelope",
+            "targets": [
+              {
+                "key": "lag",
+                "nodeId": "smooth"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": 16,
+              "description": "How much history the levels lane ranks against. Short adapts within a phrase and forgets the drop; long holds the whole track's shape and takes that long to re-centre after a change.",
+              "label": "Window",
+              "max": 60,
+              "min": 0.25,
+              "range": "bounded",
+              "step": 0.25,
+              "type": "number",
+              "unit": "seconds"
+            },
+            "key": "window",
+            "targets": [
+              {
+                "key": "window",
+                "nodeId": "rank"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": 0.15,
+              "description": "The follower AFTER the rank (§V952). A rank re-orders every frame and can step most of its span in one; this bounds the step of levels to 1 − exp(−frame / Settle) of it — 10% at 0.15 s, 2.7% at 0.6 s. 0 hands you the raw rank.",
+              "label": "Settle",
+              "max": 2,
+              "min": 0,
+              "range": "floor",
+              "step": 0.005,
+              "type": "number",
+              "unit": "seconds"
+            },
+            "key": "settle",
+            "targets": [
+              {
+                "key": "lag",
+                "nodeId": "settle"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": 250,
+              "description": "The hits lane's tail, in milliseconds: a count is 1 on the frame it happens and falls to 0.37 of that after this long. It is the release ratio of a 1 ms follower, which is why the number reads in ms.",
+              "label": "Hit Decay",
+              "max": 1000,
+              "min": 10,
+              "range": "floor",
+              "step": 10,
+              "type": "number"
+            },
+            "key": "hitDecay",
+            "targets": [
+              {
+                "key": "releaseRatio",
+                "nodeId": "decay"
+              }
+            ]
+          }
+        ],
+        "version": 1
+      }
+    ],
+    "schemaVersion": 1
+  },
   "createdAt": "2026-08-29T00:00:00.000Z",
   "graph": {
     "edges": {
-      "e-bgain-bright": {
-        "id": "e-bgain-bright",
+      "e-analysis-hit": {
+        "id": "e-analysis-hit",
         "source": {
-          "nodeId": "bgain",
-          "portId": "out"
+          "nodeId": "analysis",
+          "portId": "hits"
         },
         "target": {
-          "nodeId": "bright",
-          "portId": "a"
+          "nodeId": "hit",
+          "portId": "in"
+        }
+      },
+      "e-analysis-lvl": {
+        "id": "e-analysis-lvl",
+        "source": {
+          "nodeId": "analysis",
+          "portId": "levels"
+        },
+        "target": {
+          "nodeId": "lvl",
+          "portId": "in"
         }
       },
       "e-blend-tint": {
@@ -82,6 +365,18 @@
           "portId": "source"
         }
       },
+      "e-cap-born": {
+        "id": "e-cap-born",
+        "order": 0,
+        "source": {
+          "nodeId": "cap",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "born",
+          "portId": "in2"
+        }
+      },
       "e-chem-blend": {
         "id": "e-chem-blend",
         "order": 0,
@@ -138,60 +433,15 @@
           "portId": "input"
         }
       },
-      "e-env-sgain": {
-        "id": "e-env-sgain",
-        "source": {
-          "nodeId": "env",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "sgain",
-          "portId": "a"
-        }
-      },
-      "e-env-wgain": {
-        "id": "e-env-wgain",
-        "source": {
-          "nodeId": "env",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "wgain",
-          "portId": "a"
-        }
-      },
-      "e-env-xgain": {
-        "id": "e-env-xgain",
-        "source": {
-          "nodeId": "env",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "xgain",
-          "portId": "a"
-        }
-      },
-      "e-fade-born": {
-        "id": "e-fade-born",
-        "order": 0,
+      "e-fade-cap": {
+        "id": "e-fade-cap",
         "source": {
           "nodeId": "fade",
           "portId": "out"
         },
         "target": {
-          "nodeId": "born",
-          "portId": "in2"
-        }
-      },
-      "e-fgain-flash": {
-        "id": "e-fgain-flash",
-        "source": {
-          "nodeId": "fgain",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "flash",
-          "portId": "a"
+          "nodeId": "cap",
+          "portId": "input"
         }
       },
       "e-fringe-glow": {
@@ -216,17 +466,6 @@
           "portId": "in1"
         }
       },
-      "e-gadd-grade": {
-        "id": "e-gadd-grade",
-        "source": {
-          "nodeId": "gadd",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "grade",
-          "portId": "in"
-        }
-      },
       "e-gate-inject": {
         "id": "e-gate-inject",
         "source": {
@@ -236,17 +475,6 @@
         "target": {
           "nodeId": "inject",
           "portId": "in1"
-        }
-      },
-      "e-ggain-gadd": {
-        "id": "e-ggain-gadd",
-        "source": {
-          "nodeId": "ggain",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "gadd",
-          "portId": "a"
         }
       },
       "e-glow-hue": {
@@ -302,72 +530,6 @@
         "target": {
           "nodeId": "pack",
           "portId": "in1"
-        }
-      },
-      "e-lagain-lena": {
-        "id": "e-lagain-lena",
-        "source": {
-          "nodeId": "lagain",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "lena",
-          "portId": "a"
-        }
-      },
-      "e-lbgain-lenb": {
-        "id": "e-lbgain-lenb",
-        "source": {
-          "nodeId": "lbgain",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "lenb",
-          "portId": "a"
-        }
-      },
-      "e-lcgain-lenc": {
-        "id": "e-lcgain-lenc",
-        "source": {
-          "nodeId": "lcgain",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "lenc",
-          "portId": "a"
-        }
-      },
-      "e-lena-acap": {
-        "id": "e-lena-acap",
-        "source": {
-          "nodeId": "lena",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "acap",
-          "portId": "in"
-        }
-      },
-      "e-lenb-bcap": {
-        "id": "e-lenb-bcap",
-        "source": {
-          "nodeId": "lenb",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "bcap",
-          "portId": "in"
-        }
-      },
-      "e-lenc-ccap": {
-        "id": "e-lenc-ccap",
-        "source": {
-          "nodeId": "lenc",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "ccap",
-          "portId": "in"
         }
       },
       "e-lensa-warpa": {
@@ -449,39 +611,6 @@
           "portId": "in2"
         }
       },
-      "e-sbase-scap": {
-        "id": "e-sbase-scap",
-        "source": {
-          "nodeId": "sbase",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "scap",
-          "portId": "in"
-        }
-      },
-      "e-seedamt-seedcut": {
-        "id": "e-seedamt-seedcut",
-        "source": {
-          "nodeId": "seedamt",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "seedcut",
-          "portId": "a"
-        }
-      },
-      "e-sgain-sbase": {
-        "id": "e-sgain-sbase",
-        "source": {
-          "nodeId": "sgain",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "sbase",
-          "portId": "a"
-        }
-      },
       "e-shape-dish": {
         "id": "e-shape-dish",
         "order": 0,
@@ -505,81 +634,15 @@
           "portId": "source"
         }
       },
-      "e-snap-bgain": {
-        "id": "e-snap-bgain",
-        "source": {
-          "nodeId": "snap",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "bgain",
-          "portId": "a"
-        }
-      },
-      "e-snap-ggain": {
-        "id": "e-snap-ggain",
-        "source": {
-          "nodeId": "snap",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "ggain",
-          "portId": "a"
-        }
-      },
-      "e-snap-lagain": {
-        "id": "e-snap-lagain",
-        "source": {
-          "nodeId": "snap",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "lagain",
-          "portId": "a"
-        }
-      },
-      "e-snap-lbgain": {
-        "id": "e-snap-lbgain",
-        "source": {
-          "nodeId": "snap",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "lbgain",
-          "portId": "a"
-        }
-      },
-      "e-snap-lcgain": {
-        "id": "e-snap-lcgain",
-        "source": {
-          "nodeId": "snap",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "lcgain",
-          "portId": "a"
-        }
-      },
-      "e-source-env": {
-        "id": "e-source-env",
+      "e-source-analysis": {
+        "id": "e-source-analysis",
         "source": {
           "nodeId": "source",
           "portId": "out"
         },
         "target": {
-          "nodeId": "env",
-          "portId": "in"
-        }
-      },
-      "e-source-snap": {
-        "id": "e-source-snap",
-        "source": {
-          "nodeId": "source",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "snap",
-          "portId": "in"
+          "nodeId": "analysis",
+          "portId": "audio"
         }
       },
       "e-source-trig": {
@@ -715,28 +778,6 @@
           "portId": "in2"
         }
       },
-      "e-trig-fgain": {
-        "id": "e-trig-fgain",
-        "source": {
-          "nodeId": "trig",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "fgain",
-          "portId": "a"
-        }
-      },
-      "e-trig-seedamt": {
-        "id": "e-trig-seedamt",
-        "source": {
-          "nodeId": "trig",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "seedamt",
-          "portId": "a"
-        }
-      },
       "e-warp-shape": {
         "id": "e-warp-shape",
         "source": {
@@ -803,28 +844,6 @@
           "portId": "input"
         }
       },
-      "e-wbase-wcap": {
-        "id": "e-wbase-wcap",
-        "source": {
-          "nodeId": "wbase",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "wcap",
-          "portId": "in"
-        }
-      },
-      "e-wgain-wbase": {
-        "id": "e-wgain-wbase",
-        "source": {
-          "nodeId": "wgain",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "wbase",
-          "portId": "a"
-        }
-      },
       "e-wind-rd": {
         "id": "e-wind-rd",
         "source": {
@@ -835,62 +854,41 @@
           "nodeId": "rd",
           "portId": "input"
         }
-      },
-      "e-xgain-xspeed": {
-        "id": "e-xgain-xspeed",
-        "source": {
-          "nodeId": "xgain",
-          "portId": "out"
-        },
-        "target": {
-          "nodeId": "xspeed",
-          "portId": "a"
-        }
       }
     },
     "groups": {},
     "nodes": {
-      "acap": {
+      "analysis": {
         "definitionVersion": 1,
-        "id": "acap",
-        "label": "lenswa1",
+        "id": "analysis",
+        "label": "analysis1",
         "parameters": {
-          "maximum": 0.2348,
-          "minimum": 0
+          "envelope": 0.08,
+          "hitDecay": 250,
+          "settle": 0.15,
+          "window": 16
         },
         "position": {
-          "x": -500,
-          "y": 965
+          "x": -1440,
+          "y": 460
         },
-        "type": "valueLimit"
+        "type": "component:audioAnalysis@1"
       },
-      "bcap": {
+      "band": {
         "definitionVersion": 1,
-        "id": "bcap",
-        "label": "lenswb1",
+        "id": "band",
+        "label": "band1",
         "parameters": {
-          "maximum": 0.1591,
-          "minimum": 0
+          "amplitude": 0.5,
+          "frequency": 0.0125,
+          "offset": 0.5,
+          "shape": "sine"
         },
         "position": {
-          "x": -500,
-          "y": 1238
+          "x": -1440,
+          "y": 1000
         },
-        "type": "valueLimit"
-      },
-      "bgain": {
-        "definitionVersion": 1,
-        "id": "bgain",
-        "label": "bgain1",
-        "parameters": {
-          "operand": 1.35,
-          "operation": "multiply"
-        },
-        "position": {
-          "x": -980,
-          "y": 1992
-        },
-        "type": "valueMath"
+        "type": "lfo"
       },
       "blend": {
         "definitionVersion": 1,
@@ -912,7 +910,7 @@
             "bindings": {
               "expression": {
                 "kind": "expression",
-                "source": "op('flash1').chan.onsetCount"
+                "source": "0.02 + 0.6 * op('trig1').chan.onsetCount"
               },
               "static": {
                 "kind": "static",
@@ -963,20 +961,6 @@
         },
         "type": "circle"
       },
-      "bright": {
-        "definitionVersion": 1,
-        "id": "bright",
-        "label": "bright1",
-        "parameters": {
-          "operand": 0.93,
-          "operation": "add"
-        },
-        "position": {
-          "x": -740,
-          "y": 2057
-        },
-        "type": "valueMath"
-      },
       "broad": {
         "definitionVersion": 1,
         "id": "broad",
@@ -1004,19 +988,20 @@
         },
         "type": "noise"
       },
-      "ccap": {
+      "cap": {
         "definitionVersion": 1,
-        "id": "ccap",
-        "label": "lenswc1",
+        "id": "cap",
+        "label": "cap1",
         "parameters": {
-          "maximum": 0.0936,
-          "minimum": 0
+          "high": 1,
+          "low": 0,
+          "mode": "clamp"
         },
         "position": {
-          "x": -500,
-          "y": 1511
+          "x": 1490,
+          "y": 1120
         },
-        "type": "valueLimit"
+        "type": "limit"
       },
       "chem": {
         "definitionVersion": 1,
@@ -1130,19 +1115,6 @@
         },
         "type": "feedback"
       },
-      "env": {
-        "definitionVersion": 1,
-        "id": "env",
-        "label": "env1",
-        "parameters": {
-          "lag": 0.12
-        },
-        "position": {
-          "x": -1440,
-          "y": 450
-        },
-        "type": "valueLag"
-      },
       "fade": {
         "definitionVersion": 1,
         "id": "fade",
@@ -1160,34 +1132,6 @@
           "y": 1120
         },
         "type": "level"
-      },
-      "fgain": {
-        "definitionVersion": 1,
-        "id": "fgain",
-        "label": "fgain1",
-        "parameters": {
-          "operand": 0.53,
-          "operation": "multiply"
-        },
-        "position": {
-          "x": -980,
-          "y": 2538
-        },
-        "type": "valueMath"
-      },
-      "flash": {
-        "definitionVersion": 1,
-        "id": "flash",
-        "label": "flash1",
-        "parameters": {
-          "operand": 0.02,
-          "operation": "add"
-        },
-        "position": {
-          "x": -740,
-          "y": 2603
-        },
-        "type": "valueMath"
       },
       "fringe": {
         "definitionVersion": 1,
@@ -1221,20 +1165,6 @@
         },
         "type": "reorder"
       },
-      "gadd": {
-        "definitionVersion": 1,
-        "id": "gadd",
-        "label": "gadd1",
-        "parameters": {
-          "operand": -1.5095,
-          "operation": "add"
-        },
-        "position": {
-          "x": -740,
-          "y": 1784
-        },
-        "type": "valueMath"
-      },
       "gate": {
         "definitionVersion": 1,
         "id": "gate",
@@ -1247,7 +1177,7 @@
             "bindings": {
               "expression": {
                 "kind": "expression",
-                "source": "op('seedcut1').chan.onsetCount"
+                "source": "2 - 1.28 * op('trig1').chan.onsetCount"
               },
               "static": {
                 "kind": "static",
@@ -1263,20 +1193,6 @@
         },
         "type": "threshold"
       },
-      "ggain": {
-        "definitionVersion": 1,
-        "id": "ggain",
-        "label": "ggain1",
-        "parameters": {
-          "operand": 6.7547,
-          "operation": "multiply"
-        },
-        "position": {
-          "x": -980,
-          "y": 1719
-        },
-        "type": "valueMath"
-      },
       "glow": {
         "definitionVersion": 1,
         "id": "glow",
@@ -1287,11 +1203,11 @@
             "bindings": {
               "expression": {
                 "kind": "expression",
-                "source": "op('bright1').chan.level"
+                "source": "0.94 + 0.3 * op('hit1').chan.onsetCount"
               },
               "static": {
                 "kind": "static",
-                "value": 1.08
+                "value": 0.94
               }
             },
             "mode": "expression"
@@ -1308,19 +1224,21 @@
         },
         "type": "level"
       },
-      "grade": {
+      "grain": {
         "definitionVersion": 1,
-        "id": "grade",
-        "label": "grade1",
+        "id": "grain",
+        "label": "grain1",
         "parameters": {
-          "maximum": 3.2,
-          "minimum": 1.2
+          "amplitude": 0.3,
+          "frequency": 0.0061,
+          "offset": 0,
+          "shape": "sine"
         },
         "position": {
-          "x": -500,
-          "y": 1784
+          "x": -1440,
+          "y": 1400
         },
-        "type": "valueLimit"
+        "type": "lfo"
       },
       "grow": {
         "definitionVersion": 1,
@@ -1342,11 +1260,11 @@
             "bindings": {
               "expression": {
                 "kind": "expression",
-                "source": "op('xspeed1').chan.low"
+                "source": "1.008 + 0.021 * op('lvl1').chan.low"
               },
               "static": {
                 "kind": "static",
-                "value": 1.012
+                "value": 1.0185
               }
             },
             "mode": "expression"
@@ -1355,11 +1273,11 @@
             "bindings": {
               "expression": {
                 "kind": "expression",
-                "source": "op('xspeed1').chan.low"
+                "source": "1.008 + 0.021 * op('lvl1').chan.low"
               },
               "static": {
                 "kind": "static",
-                "value": 1.012
+                "value": 1.0185
               }
             },
             "mode": "expression"
@@ -1375,6 +1293,20 @@
           "y": 1120
         },
         "type": "transform"
+      },
+      "hit": {
+        "definitionVersion": 1,
+        "id": "hit",
+        "label": "hit1",
+        "parameters": {
+          "maximum": 1,
+          "minimum": 0
+        },
+        "position": {
+          "x": -1160,
+          "y": 560
+        },
+        "type": "valueLimit"
       },
       "hue": {
         "definitionVersion": 1,
@@ -1420,90 +1352,6 @@
           "width": 512
         },
         "type": "screen"
-      },
-      "lagain": {
-        "definitionVersion": 1,
-        "id": "lagain",
-        "label": "lagain1",
-        "parameters": {
-          "operand": 0.669,
-          "operation": "multiply"
-        },
-        "position": {
-          "x": -980,
-          "y": 900
-        },
-        "type": "valueMath"
-      },
-      "lbgain": {
-        "definitionVersion": 1,
-        "id": "lbgain",
-        "label": "lbgain1",
-        "parameters": {
-          "operand": 0.3128,
-          "operation": "multiply"
-        },
-        "position": {
-          "x": -980,
-          "y": 1173
-        },
-        "type": "valueMath"
-      },
-      "lcgain": {
-        "definitionVersion": 1,
-        "id": "lcgain",
-        "label": "lcgain1",
-        "parameters": {
-          "operand": 0.1396,
-          "operation": "multiply"
-        },
-        "position": {
-          "x": -980,
-          "y": 1446
-        },
-        "type": "valueMath"
-      },
-      "lena": {
-        "definitionVersion": 1,
-        "id": "lena",
-        "label": "lena1",
-        "parameters": {
-          "operand": -0.4342,
-          "operation": "add"
-        },
-        "position": {
-          "x": -740,
-          "y": 965
-        },
-        "type": "valueMath"
-      },
-      "lenb": {
-        "definitionVersion": 1,
-        "id": "lenb",
-        "label": "lenb1",
-        "parameters": {
-          "operand": -0.1537,
-          "operation": "add"
-        },
-        "position": {
-          "x": -740,
-          "y": 1238
-        },
-        "type": "valueMath"
-      },
-      "lenc": {
-        "definitionVersion": 1,
-        "id": "lenc",
-        "label": "lenc1",
-        "parameters": {
-          "operand": -0.046,
-          "operation": "add"
-        },
-        "position": {
-          "x": -740,
-          "y": 1511
-        },
-        "type": "valueMath"
       },
       "lensA": {
         "definitionVersion": 1,
@@ -1558,6 +1406,20 @@
           "y": 860
         },
         "type": "noise"
+      },
+      "lvl": {
+        "definitionVersion": 1,
+        "id": "lvl",
+        "label": "lvl1",
+        "parameters": {
+          "maximum": 1,
+          "minimum": 0
+        },
+        "position": {
+          "x": -1160,
+          "y": 380
+        },
+        "type": "valueLimit"
       },
       "music": {
         "definitionVersion": 1,
@@ -1685,14 +1547,50 @@
         "id": "rd",
         "label": "rd1",
         "parameters": {
-          "anisotropy": 0,
+          "anisotropy": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('grain1').chan.value"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "expression"
+          },
           "feedHigh": 0.042,
           "feedLow": 0.028,
           "killHigh": 0.068,
           "killLow": 0.0545,
-          "morph": 0,
-          "shape": 0,
-          "source": "struct Params {\n  feedLow: f32,    // @default 0.028  feed at chemistry 0 — the labyrinth end of the band\n  killLow: f32,    // @default 0.0545  kill at chemistry 0\n  feedHigh: f32,   // @default 0.042  feed at chemistry 1 — the spot end of the band\n  killHigh: f32,   // @default 0.068  kill at chemistry 1\n  morph: f32,      // @default 0  0..1 slides the band's LOW end toward the holes regime (F 0.039, k 0.058): the foam / Voronoi look. Drive it SLOWLY.\n  shape: f32,      // @default 0  -1 lattice-aligned stencil (squarish blobs) · 0 isotropic (round) · 1 diagonal stencil (rotated square)\n  anisotropy: f32, // @default 0  -1..1 how much faster diffusion runs along x (positive) or y (negative) than across — elongated, stripey. Past ±0.5 the stripes outlive the spot end of the band.\n};\n\n@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n@group(0) @binding(2) var<uniform> params: Params;\n\n// Where `morph = 1` puts the band's LOW endpoint. Only the low end travels: the high end\n// is the corner E24 pins its empty field to (chemistry 1 outside the dish decays to\n// nothing), and it has to stay dead at every morph. Measured along the path (T1237):\n// the holes regime is narrow, and 0.002 lower in feed is the uniform-V fixed point.\nconst HOLES_FEED: f32 = 0.039;\nconst HOLES_KILL: f32 = 0.058;\n\n// The most `anisotropy` may move between the cross pairs: at 0.6 the slow pair keeps a\n// positive weight at every `shape` (cross · 0.4), and the explicit step stays inside its\n// stability margin at DIFFUSE_U with `shape` at either extreme (measured, T1237).\nconst ANISOTROPY_LIMIT: f32 = 0.6;\n\nconst DIFFUSE_U: f32 = 0.2097;\nconst DIFFUSE_V: f32 = 0.105;\n\n// Seeded initial condition (§V45). Constant, so the start is reproducible.\nconst SEED: u32 = 20260829u;\nconst SEED_CELLS: f32 = 28.0;\nconst SEED_DENSITY: f32 = 0.10;\n\nfn hashU32(value: u32) -> u32 {\n  var x = value;\n  x = x ^ (x >> 16u);\n  x = x * 0x7feb352du;\n  x = x ^ (x >> 15u);\n  x = x * 0x846ca68bu;\n  x = x ^ (x >> 16u);\n  return x;\n}\n\nfn unitFloat(h: u32) -> f32 {\n  return f32(h & 0x00ffffffu) / f32(0x01000000u);\n}\n\n/** U saturated, V sprinkled in whole cells: the classic Gray-Scott starting plate. */\nfn seededState(uv: vec2f) -> vec2f {\n  let cell = vec2u(floor(uv * SEED_CELLS));\n  let h = hashU32((cell.x * 73856093u) ^ hashU32((cell.y * 19349663u) ^ SEED));\n  let v = select(0.0, 1.0, unitFloat(h) < SEED_DENSITY);\n  return vec2f(1.0, v);\n}\n\n@fragment\nfn fs(@location(0) uv: vec2f) -> @location(0) vec4f {\n  let texel = 1.0 / vec2f(textureDimensions(inputTexture));\n\n  let centre = textureSample(inputTexture, inputSampler, uv);\n  let west = textureSample(inputTexture, inputSampler, uv + vec2f(-texel.x, 0.0)).rg;\n  let east = textureSample(inputTexture, inputSampler, uv + vec2f(texel.x, 0.0)).rg;\n  let south = textureSample(inputTexture, inputSampler, uv + vec2f(0.0, -texel.y)).rg;\n  let north = textureSample(inputTexture, inputSampler, uv + vec2f(0.0, texel.y)).rg;\n  let sw = textureSample(inputTexture, inputSampler, uv + vec2f(-texel.x, -texel.y)).rg;\n  let se = textureSample(inputTexture, inputSampler, uv + vec2f(texel.x, -texel.y)).rg;\n  let nw = textureSample(inputTexture, inputSampler, uv + vec2f(-texel.x, texel.y)).rg;\n  let ne = textureSample(inputTexture, inputSampler, uv + vec2f(texel.x, texel.y)).rg;\n\n  // THE BAND (T1237). `morph` carries the band's LOW endpoint toward the holes regime and\n  // leaves the high one where it is; at morph 0 each mix returns its first argument\n  // exactly, which is the default band.\n  let morph = clamp(params.morph, 0.0, 1.0);\n  let feedLow = mix(params.feedLow, HOLES_FEED, morph);\n  let killLow = mix(params.killLow, HOLES_KILL, morph);\n\n  // THE CHEMISTRY MAP. b is a 0..1 coordinate the graph paints per pixel; the band it\n  // walks is the pair of endpoints above. A constant map is uniform chemistry exactly.\n  let chemistry = clamp(centre.b, 0.0, 1.0);\n  let feed = mix(feedLow, params.feedHigh, chemistry);\n  let kill = mix(killLow, params.killHigh, chemistry);\n\n  let state = centre.rg;\n\n  // THE STENCIL (T1237). Cross and diagonal weights always sum to 1 (four of each), so the\n  // operator still annihilates a constant field; at shape 0 the two products are 0.2 and\n  // 0.05 exactly and the expression is the isotropic 9-tap it replaced, term for term.\n  let shape = clamp(params.shape, -1.0, 1.0);\n  let swing = select(0.15, 0.05, shape < 0.0);\n  let cross = 0.2 - (swing * shape);\n  let diagonal = 0.05 + (swing * shape);\n  let isotropic =\n    ((west + east + south + north) * cross) + ((sw + se + nw + ne) * diagonal) - state;\n\n  // THE ANISOTROPY (T1237): cross weight moved from one pair of the cross to the other, so\n  // diffusion runs faster along x (positive) or y (negative) than across it while the\n  // total weight — the mean diffusion, and with it the pattern scale — stays what the\n  // isotropic split put there. At anisotropy 0 the term is zero and the sum above is\n  // untouched. Only the two lattice directions are offered: an axis ANGLE was built three\n  // ways (a traceless tensor on these taps, the whole stencil turned through linearly\n  // filtered taps, turned taps for this term alone at 1, 2 and 3 texels' reach) and in\n  // every one the stripes snapped to the lattice at 30° and 60° and went round at 45° —\n  // at the ~5 px scale of these fronts the lattice decides the direction, and a knob that\n  // answers only 0° and 90° is honest as a sign, not as an angle.\n  let stretch = clamp(params.anisotropy, -1.0, 1.0) * ANISOTROPY_LIMIT;\n  let laplacian = isotropic + ((cross * stretch) * ((west + east) - (south + north)));\n\n  let reaction = state.x * state.y * state.y;\n  let stepped = clamp(\n    vec2f(\n      state.x + ((DIFFUSE_U * laplacian.x) - reaction + (feed * (1.0 - state.x))),\n      state.y + ((DIFFUSE_V * laplacian.y) + reaction - ((kill + feed) * state.y)),\n    ),\n    vec2f(0.0),\n    vec2f(1.0),\n  );\n\n  // alpha < 0.5 == the pair was cleared: re-seed instead of stepping (see the note above).\n  let next = select(seededState(uv), stepped, centre.a >= 0.5);\n  return vec4f(next, 0.0, 1.0);\n}"
+          "morph": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('band1').chan.value"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "expression"
+          },
+          "shape": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('stencil1').chan.value"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "expression"
+          },
+          "source": "struct Params {\n  feedLow: f32,    // @default 0.028  feed at chemistry 0 — the labyrinth end of the band\n  killLow: f32,    // @default 0.0545  kill at chemistry 0\n  feedHigh: f32,   // @default 0.042  feed at chemistry 1 — the spot end of the band\n  killHigh: f32,   // @default 0.068  kill at chemistry 1\n  morph: f32,      // @default 0  0..1 slides the band's LOW end toward the holes regime (F 0.039, k 0.058): the foam / Voronoi look. Drive it SLOWLY.\n  shape: f32,      // @default 0  -1 lattice-aligned stencil (squarish blobs) · 0 isotropic (round) · 1 diagonal stencil (rotated square)\n  anisotropy: f32, // @default 0  -1..1 how much faster diffusion runs along x (positive) or y (negative) than across — elongated, stripey. Past ±0.5 the stripes outlive the spot end of the band.\n};\n\n@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n@group(0) @binding(2) var<uniform> params: Params;\n\n// Where 'morph = 1' puts the band's LOW endpoint. Only the low end travels: the high end\n// is the corner E24 pins its empty field to (chemistry 1 outside the dish decays to\n// nothing), and it has to stay dead at every morph. Measured along the path (T1237):\n// the holes regime is narrow, and 0.002 lower in feed is the uniform-V fixed point.\nconst HOLES_FEED: f32 = 0.039;\nconst HOLES_KILL: f32 = 0.058;\n\n// The most 'anisotropy' may move between the cross pairs: at 0.6 the slow pair keeps a\n// positive weight at every 'shape' (cross · 0.4), and the explicit step stays inside its\n// stability margin at DIFFUSE_U with 'shape' at either extreme (measured, T1237).\nconst ANISOTROPY_LIMIT: f32 = 0.6;\n\nconst DIFFUSE_U: f32 = 0.2097;\nconst DIFFUSE_V: f32 = 0.105;\n\n// Seeded initial condition (§V45). Constant, so the start is reproducible.\nconst SEED: u32 = 20260829u;\nconst SEED_CELLS: f32 = 28.0;\nconst SEED_DENSITY: f32 = 0.10;\n\nfn hashU32(value: u32) -> u32 {\n  var x = value;\n  x = x ^ (x >> 16u);\n  x = x * 0x7feb352du;\n  x = x ^ (x >> 15u);\n  x = x * 0x846ca68bu;\n  x = x ^ (x >> 16u);\n  return x;\n}\n\nfn unitFloat(h: u32) -> f32 {\n  return f32(h & 0x00ffffffu) / f32(0x01000000u);\n}\n\n/** U saturated, V sprinkled in whole cells: the classic Gray-Scott starting plate. */\nfn seededState(uv: vec2f) -> vec2f {\n  let cell = vec2u(floor(uv * SEED_CELLS));\n  let h = hashU32((cell.x * 73856093u) ^ hashU32((cell.y * 19349663u) ^ SEED));\n  let v = select(0.0, 1.0, unitFloat(h) < SEED_DENSITY);\n  return vec2f(1.0, v);\n}\n\n@fragment\nfn fs(@location(0) uv: vec2f) -> @location(0) vec4f {\n  let texel = 1.0 / vec2f(textureDimensions(inputTexture));\n\n  let centre = textureSample(inputTexture, inputSampler, uv);\n  let west = textureSample(inputTexture, inputSampler, uv + vec2f(-texel.x, 0.0)).rg;\n  let east = textureSample(inputTexture, inputSampler, uv + vec2f(texel.x, 0.0)).rg;\n  let south = textureSample(inputTexture, inputSampler, uv + vec2f(0.0, -texel.y)).rg;\n  let north = textureSample(inputTexture, inputSampler, uv + vec2f(0.0, texel.y)).rg;\n  let sw = textureSample(inputTexture, inputSampler, uv + vec2f(-texel.x, -texel.y)).rg;\n  let se = textureSample(inputTexture, inputSampler, uv + vec2f(texel.x, -texel.y)).rg;\n  let nw = textureSample(inputTexture, inputSampler, uv + vec2f(-texel.x, texel.y)).rg;\n  let ne = textureSample(inputTexture, inputSampler, uv + vec2f(texel.x, texel.y)).rg;\n\n  // THE BAND (T1237). 'morph' carries the band's LOW endpoint toward the holes regime and\n  // leaves the high one where it is; at morph 0 each mix returns its first argument\n  // exactly, which is the default band.\n  let morph = clamp(params.morph, 0.0, 1.0);\n  let feedLow = mix(params.feedLow, HOLES_FEED, morph);\n  let killLow = mix(params.killLow, HOLES_KILL, morph);\n\n  // THE CHEMISTRY MAP. b is a 0..1 coordinate the graph paints per pixel; the band it\n  // walks is the pair of endpoints above. A constant map is uniform chemistry exactly.\n  let chemistry = clamp(centre.b, 0.0, 1.0);\n  let feed = mix(feedLow, params.feedHigh, chemistry);\n  let kill = mix(killLow, params.killHigh, chemistry);\n\n  let state = centre.rg;\n\n  // THE STENCIL (T1237). Cross and diagonal weights always sum to 1 (four of each), so the\n  // operator still annihilates a constant field; at shape 0 the two products are 0.2 and\n  // 0.05 exactly and the expression is the isotropic 9-tap it replaced, term for term.\n  let shape = clamp(params.shape, -1.0, 1.0);\n  let swing = select(0.15, 0.05, shape < 0.0);\n  let cross = 0.2 - (swing * shape);\n  let diagonal = 0.05 + (swing * shape);\n  let isotropic =\n    ((west + east + south + north) * cross) + ((sw + se + nw + ne) * diagonal) - state;\n\n  // THE ANISOTROPY (T1237): cross weight moved from one pair of the cross to the other, so\n  // diffusion runs faster along x (positive) or y (negative) than across it while the\n  // total weight — the mean diffusion, and with it the pattern scale — stays what the\n  // isotropic split put there. At anisotropy 0 the term is zero and the sum above is\n  // untouched. Only the two lattice directions are offered: an axis ANGLE was built three\n  // ways (a traceless tensor on these taps, the whole stencil turned through linearly\n  // filtered taps, turned taps for this term alone at 1, 2 and 3 texels' reach) and in\n  // every one the stripes snapped to the lattice at 30° and 60° and went round at 45° —\n  // at the ~5 px scale of these fronts the lattice decides the direction, and a knob that\n  // answers only 0° and 90° is honest as a sign, not as an angle.\n  let stretch = clamp(params.anisotropy, -1.0, 1.0) * ANISOTROPY_LIMIT;\n  let laplacian = isotropic + ((cross * stretch) * ((west + east) - (south + north)));\n\n  let reaction = state.x * state.y * state.y;\n  let stepped = clamp(\n    vec2f(\n      state.x + ((DIFFUSE_U * laplacian.x) - reaction + (feed * (1.0 - state.x))),\n      state.y + ((DIFFUSE_V * laplacian.y) + reaction - ((kill + feed) * state.y)),\n    ),\n    vec2f(0.0),\n    vec2f(1.0),\n  );\n\n  // alpha < 0.5 == the pair was cleared: re-seed instead of stepping (see the note above).\n  let next = select(seededState(uv), stepped, centre.a >= 0.5);\n  return vec4f(next, 0.0, 1.0);\n}"
         },
         "position": {
           "x": -200,
@@ -1803,76 +1701,6 @@
         },
         "type": "ramp"
       },
-      "sbase": {
-        "definitionVersion": 1,
-        "id": "sbase",
-        "label": "sbase1",
-        "parameters": {
-          "operand": -31.2246,
-          "operation": "add"
-        },
-        "position": {
-          "x": -740,
-          "y": 419
-        },
-        "type": "valueMath"
-      },
-      "scap": {
-        "definitionVersion": 1,
-        "id": "scap",
-        "label": "steps1",
-        "parameters": {
-          "maximum": 34,
-          "minimum": 1
-        },
-        "position": {
-          "x": -500,
-          "y": 419
-        },
-        "type": "valueLimit"
-      },
-      "seedamt": {
-        "definitionVersion": 1,
-        "id": "seedamt",
-        "label": "seedamt1",
-        "parameters": {
-          "operand": -1.28,
-          "operation": "multiply"
-        },
-        "position": {
-          "x": -980,
-          "y": 2265
-        },
-        "type": "valueMath"
-      },
-      "seedcut": {
-        "definitionVersion": 1,
-        "id": "seedcut",
-        "label": "seedcut1",
-        "parameters": {
-          "operand": 2,
-          "operation": "add"
-        },
-        "position": {
-          "x": -740,
-          "y": 2330
-        },
-        "type": "valueMath"
-      },
-      "sgain": {
-        "definitionVersion": 1,
-        "id": "sgain",
-        "label": "sgain1",
-        "parameters": {
-          "operand": 66.897,
-          "operation": "multiply"
-        },
-        "position": {
-          "x": -980,
-          "y": 340
-        },
-        "type": "valueMath"
-      },
       "shape": {
         "definitionVersion": 1,
         "id": "shape",
@@ -1886,11 +1714,11 @@
             "bindings": {
               "expression": {
                 "kind": "expression",
-                "source": "op('wlevel1').chan.lowMid"
+                "source": "0.48 + 0.07 * op('lvl1').chan.lowMid"
               },
               "static": {
                 "kind": "static",
-                "value": 0.543
+                "value": 0.515
               }
             },
             "mode": "expression"
@@ -1912,19 +1740,6 @@
           "y": 1120
         },
         "type": "add"
-      },
-      "snap": {
-        "definitionVersion": 1,
-        "id": "snap",
-        "label": "snap1",
-        "parameters": {
-          "lag": 0.04
-        },
-        "position": {
-          "x": -1440,
-          "y": 1200
-        },
-        "type": "valueLag"
       },
       "source": {
         "definitionVersion": 1,
@@ -2012,11 +1827,11 @@
             "bindings": {
               "expression": {
                 "kind": "expression",
-                "source": "op('steps1').chan.low"
+                "source": "clamp(8 + 24 * op('lvl1').chan.low, 1, 34)"
               },
               "static": {
                 "kind": "static",
-                "value": 14
+                "value": 20
               }
             },
             "mode": "expression"
@@ -2032,6 +1847,22 @@
           "width": 512
         },
         "type": "feedback"
+      },
+      "stencil": {
+        "definitionVersion": 1,
+        "id": "stencil",
+        "label": "stencil1",
+        "parameters": {
+          "amplitude": 1,
+          "frequency": 0.0083,
+          "offset": 0,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -1440,
+          "y": 1200
+        },
+        "type": "lfo"
       },
       "swell": {
         "definitionVersion": 1,
@@ -2134,7 +1965,7 @@
             "bindings": {
               "expression": {
                 "kind": "expression",
-                "source": "op('grade1').chan.highMid"
+                "source": "1.6 + 1.3 * op('lvl1').chan.highMid"
               },
               "static": {
                 "kind": "static",
@@ -2172,7 +2003,7 @@
         },
         "position": {
           "x": -1440,
-          "y": 1900
+          "y": 760
         },
         "type": "valueTrigger"
       },
@@ -2215,7 +2046,7 @@
             "bindings": {
               "expression": {
                 "kind": "expression",
-                "source": "op('lenswa1').chan.low"
+                "source": "0.14 * op('hit1').chan.kickCount"
               },
               "static": {
                 "kind": "static",
@@ -2228,7 +2059,7 @@
             "bindings": {
               "expression": {
                 "kind": "expression",
-                "source": "op('lenswa1').chan.low"
+                "source": "0.14 * op('hit1').chan.kickCount"
               },
               "static": {
                 "kind": "static",
@@ -2260,7 +2091,7 @@
             "bindings": {
               "expression": {
                 "kind": "expression",
-                "source": "op('lenswb1').chan.lowMid"
+                "source": "0.06 * op('hit1').chan.snareCount"
               },
               "static": {
                 "kind": "static",
@@ -2273,7 +2104,7 @@
             "bindings": {
               "expression": {
                 "kind": "expression",
-                "source": "op('lenswb1').chan.lowMid"
+                "source": "0.06 * op('hit1').chan.snareCount"
               },
               "static": {
                 "kind": "static",
@@ -2305,7 +2136,7 @@
             "bindings": {
               "expression": {
                 "kind": "expression",
-                "source": "op('lenswc1').chan.high"
+                "source": "0.02 * op('hit1').chan.hatCount"
               },
               "static": {
                 "kind": "static",
@@ -2318,7 +2149,7 @@
             "bindings": {
               "expression": {
                 "kind": "expression",
-                "source": "op('lenswc1').chan.high"
+                "source": "0.02 * op('hit1').chan.hatCount"
               },
               "static": {
                 "kind": "static",
@@ -2333,48 +2164,6 @@
           "y": 380
         },
         "type": "displace"
-      },
-      "wbase": {
-        "definitionVersion": 1,
-        "id": "wbase",
-        "label": "wbase1",
-        "parameters": {
-          "operand": 0.445,
-          "operation": "add"
-        },
-        "position": {
-          "x": -740,
-          "y": 692
-        },
-        "type": "valueMath"
-      },
-      "wcap": {
-        "definitionVersion": 1,
-        "id": "wcap",
-        "label": "wlevel1",
-        "parameters": {
-          "maximum": 0.566,
-          "minimum": 0.528
-        },
-        "position": {
-          "x": -500,
-          "y": 676
-        },
-        "type": "valueLimit"
-      },
-      "wgain": {
-        "definitionVersion": 1,
-        "id": "wgain",
-        "label": "wgain1",
-        "parameters": {
-          "operand": 0.1788,
-          "operation": "multiply"
-        },
-        "position": {
-          "x": -980,
-          "y": 613
-        },
-        "type": "valueMath"
       },
       "wind": {
         "definitionVersion": 1,
@@ -2403,34 +2192,6 @@
           "width": 512
         },
         "type": "displace"
-      },
-      "xgain": {
-        "definitionVersion": 1,
-        "id": "xgain",
-        "label": "xgain1",
-        "parameters": {
-          "operand": 0.0569,
-          "operation": "multiply"
-        },
-        "position": {
-          "x": -980,
-          "y": 2811
-        },
-        "type": "valueMath"
-      },
-      "xspeed": {
-        "definitionVersion": 1,
-        "id": "xspeed",
-        "label": "xspeed1",
-        "parameters": {
-          "operand": 0.9736,
-          "operation": "add"
-        },
-        "position": {
-          "x": -740,
-          "y": 2876
-        },
-        "type": "valueMath"
       }
     },
     "revision": 1

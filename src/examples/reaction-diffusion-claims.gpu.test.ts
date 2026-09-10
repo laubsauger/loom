@@ -97,7 +97,7 @@ const meanAbsoluteDifference = (a: Float64Array, b: Float64Array): number => {
 };
 
 async function render(fileName: string, runTheLoadRite: boolean) {
-  const { document } = example(fileName);
+  const { document, result: loaded } = example(fileName);
   const result = await renderHeadless({
     host: nodeGpuHost(),
     graph: document.graph,
@@ -106,6 +106,8 @@ async function render(fileName: string, runTheLoadRite: boolean) {
     capture: [...CAPTURE],
     fps: 60,
     animate: true,
+    // T1234: E24 instances the AudioAnalysis component, so its library rides along.
+    ...(loaded.components ? { components: loaded.components } : {}),
     ...(runTheLoadRite ? { beforeFrames: (control) => control.resetTemporalHistory() } : {}),
   });
   const errors = result.diagnostics.filter((diagnostic) => diagnostic.severity === "error");

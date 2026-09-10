@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { nodeGpuHost, probeDawn } from "../../runtime/backend/vgpu/node-gpu-host.ts";
 import { renderHeadless } from "./render-harness.ts";
 import { EXAMPLE_DOCUMENTS } from "../../examples/documents.ts";
+import { starterComponentsView } from "../../examples/component-files.ts";
 import { AUDIO_DETECTOR_DEFAULTS } from "../../nodes/definitions/audio.ts";
 import { analyseOffline } from "../../app/audio-offline-analysis.ts";
 import { readTrackAtPlayhead } from "../../app/audio-pre-analysis.ts";
@@ -67,12 +68,15 @@ function scrub(track: FeatureTrack, transport: MediaTransportValues) {
   return (frameIndex: number) => readTrackAtPlayhead(track, transport, frameIndex / FPS, SECONDS);
 }
 
-describe("T1229 — a pre-analysed file renders reproducibly, indexed by the transport", () => {
+describe("T1229 — a pre-analysed file renders reproducibly, indexed by the transport", async () => {
   const { track } = analyseOffline(clickTrack(), SAMPLE_RATE, FPS, AUDIO_DETECTOR_DEFAULTS);
 
+  // T1234: E24 instances the AudioAnalysis component; the starter library supplies it.
+  const components = await starterComponentsView();
   const common = {
     host: nodeGpuHost(),
     settings: e24.settings,
+    components,
     frames: FRAMES,
     capture: [FRAMES - 1],
     outputNodeId: "out",
