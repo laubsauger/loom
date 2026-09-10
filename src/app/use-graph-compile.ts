@@ -1,8 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
-import { compileGraph } from "@compiler/index.ts";
+import { compileGraph, prepareFrameCompiler } from "@compiler/index.ts";
 import { humanizeDiagnostics } from "@domain/graph/index.ts";
 import { classifyGraphChange, isValuesOnly } from "./classify-revision.ts";
-import type { ActiveSink, CompiledGraph, FlattenedGraph, ParameterResolution } from "@compiler/index.ts";
+import type {
+  ActiveSink,
+  CompileRequest,
+  CompiledGraph,
+  FlattenedGraph,
+  FrameCompiler,
+  ParameterResolution,
+} from "@compiler/index.ts";
 import { graphChannelResolver, hasAnimatedParameters } from "@domain/channels/graph-channels.ts";
 import type { ChannelResolver } from "@domain/parameters/resolve.ts";
 import type { FrameEvaluationInput } from "@domain/types/frame.ts";
@@ -91,6 +98,11 @@ export interface GraphCompileResult {
    * The plan that comes back is the same plan structurally; only its pass uniform VALUES
    * move. The caller pushes those with `updateUniforms` (§V5) — see
    * `animate-parameters.ts`. It never reaches `backend.compile`.
+   *
+   * T1182: where the compiler can prove that claim from the definitions it is the base
+   * plan with only the animating nodes' passes re-emitted (`prepareFrameCompiler`);
+   * where it cannot — a structural parameter animates, or a definition's structure moved
+   * at this frame — it is the full compile at the frame, exactly as it always was.
    */
   readonly animate: ((frame: FrameEvaluationInput) => CompiledGraph | null) | null;
   /**
@@ -177,6 +189,65 @@ function statusFor(errors: number, warnings: number, compiled: boolean): NodeRun
   return compiled ? "valid" : "idle";
 }
 
+/**
+ * THE compile request, built in one place for the structural compile, the per-frame
+ * fallback and the per-frame values-only compiler (T1182). One builder rather than three
+ * literals: the values-only path splices over its own base and is accepted by the frame
+ * loop only while that base's `signature` equals the structural plan's, so the two must
+ * compile the SAME sink set — B95's lesson, held by construction rather than by copy.
+ */
+function compileRequest(
+  graph: GraphDocument,
+  flattened: FlattenedGraph,
+  runtime: AppRuntime,
+  capabilities: BackendCapabilities,
+  resolution: ParameterResolution,
+  previewSinks?: ReadonlyArray<ActiveSink>,
+): CompileRequest {
+  return {
+    graph,
+    settings: runtime.settings,
+    registry: runtime.registry,
+    capabilities,
+    /**
+     * B29 — the component catalogue, which this call did not pass for the whole life of
+     * the feature.
+     *
+     * `compileGraph` flattens ONLY when this field is supplied (§V82), and nothing in
+     * `src/` supplied it. So every component instance fell through to the manifest's
+     * `component.notFlattened` tripwire and contributed no passes: the starter set
+     * (Bloom, FeedbackEcho, Kaleidoscope, DisplacementStack, MediaGrade) was visible in
+     * the library, instantiable from it, and produced a graph that did not compile.
+     * Measured on a Bloom instance wired between a Solid and an Output — before:
+     * `error:component.notFlattened`, 2 passes; after: no errors, 7.
+     *
+     * `registry` is the component-AWARE node view, so an instance already typed and
+     * connected correctly (§V13) — which is exactly why this was invisible until
+     * someone tried to render one.
+     */
+    components: runtime.components.view(),
+    /**
+     * T615 — the flattening the app ALREADY holds, rather than a fresh one per call.
+     *
+     * `compileGraph` used to redo it inside every call, including the per-frame
+     * values-only compile (§V163). Measured on ten instances of a component holding an
+     * LFO, a Lag and a Math: `flattenComponents` alone is 5.1× the value graph it feeds
+     * (§V529), and per-frame flattening made the CORRECT version 1.4× slower than the
+     * broken one. Passing the memo makes it 1.8× faster than the broken one instead.
+     *
+     * It is also what keeps the CPU layer and the plan on ONE flattening: the value
+     * graph, the pulse watcher and the Analyze sampler read this same object.
+     */
+    flattened,
+    // T252 (§V158, B18): the scheduler's KEPT set when a store is wired — the
+    // partition that stops every off-screen node rendering every frame. The old
+    // every-texture-node fallback stands only where no scheduler exists (tests,
+    // project.compile): over-rendering is safe there; under-rendering never is.
+    sinks: previewSinks ?? visiblePreviewSinks(graph, runtime.registry),
+    resolution,
+  };
+}
+
 function compileSafely(
   graph: GraphDocument,
   flattened: FlattenedGraph,
@@ -186,48 +257,7 @@ function compileSafely(
   previewSinks?: ReadonlyArray<ActiveSink>,
 ): { compiled: CompiledGraph | null; diagnostics: RuntimeDiagnostic[] } {
   try {
-    const compiled = compileGraph({
-      graph,
-      settings: runtime.settings,
-      registry: runtime.registry,
-      capabilities,
-      /**
-       * B29 — the component catalogue, which this call did not pass for the whole life of
-       * the feature.
-       *
-       * `compileGraph` flattens ONLY when this field is supplied (§V82), and nothing in
-       * `src/` supplied it. So every component instance fell through to the manifest's
-       * `component.notFlattened` tripwire and contributed no passes: the starter set
-       * (Bloom, FeedbackEcho, Kaleidoscope, DisplacementStack, MediaGrade) was visible in
-       * the library, instantiable from it, and produced a graph that did not compile.
-       * Measured on a Bloom instance wired between a Solid and an Output — before:
-       * `error:component.notFlattened`, 2 passes; after: no errors, 7.
-       *
-       * `registry` is the component-AWARE node view, so an instance already typed and
-       * connected correctly (§V13) — which is exactly why this was invisible until
-       * someone tried to render one.
-       */
-      components: runtime.components.view(),
-      /**
-       * T615 — the flattening the app ALREADY holds, rather than a fresh one per call.
-       *
-       * `compileGraph` used to redo it inside every call, including the per-frame
-       * values-only compile (§V163). Measured on ten instances of a component holding an
-       * LFO, a Lag and a Math: `flattenComponents` alone is 5.1× the value graph it feeds
-       * (§V529), and per-frame flattening made the CORRECT version 1.4× slower than the
-       * broken one. Passing the memo makes it 1.8× faster than the broken one instead.
-       *
-       * It is also what keeps the CPU layer and the plan on ONE flattening: the value
-       * graph, the pulse watcher and the Analyze sampler read this same object.
-       */
-      flattened,
-      // T252 (§V158, B18): the scheduler's KEPT set when a store is wired — the
-      // partition that stops every off-screen node rendering every frame. The old
-      // every-texture-node fallback stands only where no scheduler exists (tests,
-      // project.compile): over-rendering is safe there; under-rendering never is.
-      sinks: previewSinks ?? visiblePreviewSinks(graph, runtime.registry),
-      resolution,
-    });
+    const compiled = compileGraph(compileRequest(graph, flattened, runtime, capabilities, resolution, previewSinks));
     return { compiled, diagnostics: [...compiled.diagnostics] };
   } catch (error) {
     // A compiler crash is a bug, but it is not a reason to unmount the editor: report
@@ -469,15 +499,51 @@ export function useGraphCompile(
     // even though flattening preserves those perfectly. Nothing was broken about the
     // expression; nothing was ever asked to evaluate it.
     if (capabilities === null || !hasAnimatedParameters(flatGraph)) return null;
-    return (frame: FrameEvaluationInput): CompiledGraph | null =>
-      compileSafely(
-        graph,
-        flattened,
-        runtime,
-        capabilities,
-        { frame, channels },
-        previewSinks === undefined ? undefined : scheduledPreviews,
-      ).compiled;
+    const sinks = previewSinks === undefined ? undefined : scheduledPreviews;
+    /**
+     * T1182 — the per-frame compile is VALUES-ONLY wherever the compiler can prove it.
+     *
+     * `prepareFrameCompiler` compiles once in full and, when no animated parameter is
+     * structural (derived from the definitions: `compileTime`, resolution-policy
+     * inputs), re-runs only the animating nodes per frame and splices their passes over
+     * that base. Every frame is still verified against the base's structure keys
+     * (§V936): a frame it cannot prove returns null and the full compile below is the
+     * safety net (§T1176) — the same call as before, unchanged.
+     *
+     * Built LAZILY, on the first frame that asks, and never more than once per memo:
+     * a document that never reaches a frame pays nothing, and a knob drag whose
+     * revisions outrun the display rate prepares one compiler per FRAME, not one per
+     * revision — the memo that was superseded before any frame asked builds nothing.
+     * Keyed on exactly this memo's inputs, so a new flat-graph revision (§V935) is a
+     * new compiler: the base it splices over is the plan the structural compile below
+     * produces for the same inputs, which is what `isUniformOnlyChange` in
+     * `animate-parameters.ts` checks against — B95's sink-set rule, made by
+     * construction through `compileRequest`.
+     */
+    let frameCompiler: FrameCompiler | null | undefined;
+    const prepare = (): FrameCompiler | null => {
+      try {
+        return prepareFrameCompiler(compileRequest(graph, flattened, runtime, capabilities, { channels }, sinks));
+      } catch {
+        // A compiler crash is reported by the full compile's own path below, once per
+        // frame as before — not swallowed here, and not thrown into the frame loop.
+        return null;
+      }
+    };
+    return (frame: FrameEvaluationInput): CompiledGraph | null => {
+      if (frameCompiler === undefined) frameCompiler = prepare();
+      if (frameCompiler !== null) {
+        try {
+          const spliced = frameCompiler.compileFrame({ frame, channels });
+          if (spliced !== null) return spliced;
+        } catch {
+          // The fast path may be wrong as long as it detects that it is and pays the
+          // full price (§V936) — a throw is detection; the full compile reports it.
+          frameCompiler = null;
+        }
+      }
+      return compileSafely(graph, flattened, runtime, capabilities, { frame, channels }, sinks).compiled;
+    };
   }, [capabilities, channels, flatGraph, flattened, graph, runtime, previewSinks, scheduledPreviews]);
 
   /**

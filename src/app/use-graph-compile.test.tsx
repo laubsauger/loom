@@ -3,6 +3,8 @@ import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { BackendCapabilities } from "@domain/types/backend.ts";
 import type { GraphPatchOperation } from "@domain/types/patch.ts";
+import type { StoredParameter } from "@domain/types/parameters.ts";
+import { isUniformOnlyChange } from "@compiler/index.ts";
 import { createAppRuntime } from "./app-runtime.ts";
 import type { AppRuntime } from "./app-runtime.ts";
 import { useMemo } from "react";
@@ -240,5 +242,143 @@ describe("project.compile answers for THIS document (T764, §B140)", () => {
 
     runtimeA.dispose();
     runtimeB.dispose();
+  });
+});
+
+/**
+ * T1182 — THE WIRING: the plan the hook hands the frame loop each frame is the values-only
+ * splice where the compiler can prove it, and the full compile at the frame where it cannot.
+ *
+ * Two claims, each asserted from the consumer's side (`pushAnimatedValues` in
+ * `use-frame-loop.ts` reads `passes` and gates on `isUniformOnlyChange` against the hook's
+ * own structural plan):
+ *
+ *  1. VALUES-ONLY: with an animated non-structural parameter, the per-frame plan carries
+ *     the parameter's value AT THAT FRAME (cut the wire and the retained static comes
+ *     back), its `signature` is the structural plan's (or the animator refuses it and
+ *     the picture freezes — B95's failure), and it IS a splice: every pass the animating
+ *     node did not emit, and every array the frame loop does not read, is the base's
+ *     own object across frames. A full compile allocates all of it afresh, so forcing
+ *     the fall-through fails this test where "same values" alone could not.
+ *  2. FALLBACK: with an animated STRUCTURAL parameter (a Cache's `frames`, the size of an
+ *     allocation), the per-frame plan is the correct full compile — the ring is 4 deep
+ *     before the threshold and 8 deep from it — not null and not the stale base.
+ */
+describe("useGraphCompile — the per-frame compile is values-only where provable (T1182, §V936)", () => {
+  const frameAt = (frameIndex: number) => ({
+    timeSeconds: frameIndex / 60,
+    deltaSeconds: 1 / 60,
+    frameIndex,
+    mode: "offline" as const,
+    randomSeed: 7,
+  });
+  const expression = (source: string, retained: number): StoredParameter => ({
+    mode: "expression",
+    bindings: { expression: { kind: "expression", source }, static: { kind: "static", value: retained } },
+  });
+
+  it("hands out the structural plan with only the animating node's passes re-emitted", async () => {
+    const runtime = newRuntime();
+    let blur = "";
+    let solid = "";
+    await act(async () => {
+      const result = await seed(runtime, [
+        { op: "addNode", ref: "$solid", type: "solid", position: { x: 0, y: 0 } },
+        {
+          op: "addNode",
+          ref: "$blur",
+          type: "blur",
+          position: { x: 240, y: 0 },
+          // Exact at every frame: 2 + frame / 2 is representable, and the retained
+          // static (1) is not on that line, so a dead expression is a different number.
+          parameters: { size: expression("2 + frame * 0.5", 1) },
+        },
+        { op: "connect", source: { nodeId: "$solid", portId: "out" }, target: { nodeId: "$blur", portId: "input" } },
+      ]);
+      expect(result.status).toBe("applied");
+      blur = result.output.createdIds["$blur"] ?? "";
+      solid = result.output.createdIds["$solid"] ?? "";
+    });
+    const { result } = renderHook(() => useGraphCompile(runtime, CAPABILITIES));
+    const structural = result.current.compiled;
+    expect(structural).not.toBeNull();
+    expect(result.current.animate, "an expression on blur.size must open the animate gate").not.toBeNull();
+
+    const at = (frameIndex: number) => {
+      const plan = result.current.animate?.(frameAt(frameIndex));
+      expect(plan, `frame ${String(frameIndex)}`).not.toBeNull();
+      return plan!;
+    };
+    const blurSize = (plan: NonNullable<typeof structural>): unknown => {
+      const pass = plan.passes.find((entry) => entry.id.endsWith(`${blur}:blur-h`));
+      if (pass === undefined || pass.kind !== "effect") throw new Error("no blur-h pass");
+      return pass.uniforms?.["size"];
+    };
+    const passById = (plan: NonNullable<typeof structural>, id: string) => {
+      const pass = plan.passes.find((entry) => entry.id.endsWith(id));
+      if (pass === undefined) throw new Error(`no pass ${id}`);
+      return pass;
+    };
+
+    const frame15 = at(15);
+    const frame30 = at(30);
+    // 1a. The consumer's read: the value at the frame, not the retained static.
+    expect(blurSize(frame15)).toBe(9.5);
+    expect(blurSize(frame30)).toBe(17);
+    // 1b. The frame loop's acceptance gate, against the hook's OWN structural plan —
+    // the base the splice reuses must be the plan the app installed (B95's sink rule).
+    expect(isUniformOnlyChange(structural!, frame15)).toBe(true);
+    expect(isUniformOnlyChange(structural!, frame30)).toBe(true);
+    // 1c. A SPLICE, not a fresh compile: the solid did not animate, so its pass is the
+    // base's object at both frames; the blur's was re-emitted at each. Everything the
+    // frame loop does not read is the base's, shared across frames.
+    const solidPassId = `${solid}:fill`;
+    expect(passById(frame15, solidPassId)).toBe(passById(frame30, solidPassId));
+    expect(passById(frame15, `${blur}:blur-h`)).not.toBe(passById(frame30, `${blur}:blur-h`));
+    expect(frame15.outputs).toBe(frame30.outputs);
+    expect(frame15.resources).toBe(frame30.resources);
+    expect(frame15.passSignatures).toBe(frame30.passSignatures);
+
+    runtime.dispose();
+  });
+
+  it("falls through to a correct full compile when the animated parameter is structural", async () => {
+    const runtime = newRuntime();
+    await act(async () => {
+      const result = await seed(runtime, [
+        { op: "addNode", ref: "$noise", type: "noise", position: { x: 0, y: 0 } },
+        {
+          op: "addNode",
+          ref: "$cache",
+          type: "cache",
+          position: { x: 240, y: 0 },
+          // 4 deep before frame 30, 8 deep from it: the SIZE of an allocation, which the
+          // definition declares compileTime and the compiler therefore refuses to splice.
+          parameters: { frames: expression("4 + 4 * (frame >= 30)", 4) },
+        },
+        { op: "connect", source: { nodeId: "$noise", portId: "out" }, target: { nodeId: "$cache", portId: "input" } },
+      ]);
+      expect(result.status).toBe("applied");
+    });
+    const { result } = renderHook(() => useGraphCompile(runtime, CAPABILITIES));
+    const structural = result.current.compiled;
+    expect(structural).not.toBeNull();
+    expect(result.current.animate).not.toBeNull();
+
+    const ringFrames = (plan: NonNullable<typeof structural> | null | undefined): number[] =>
+      (plan?.resources ?? []).flatMap((resource) => (resource.kind === "ring" ? [resource.frames] : []));
+    const before = result.current.animate?.(frameAt(29));
+    const after = result.current.animate?.(frameAt(30));
+    expect(before, "frame 29 must still compile in full").not.toBeNull();
+    expect(after, "frame 30 must still compile in full").not.toBeNull();
+    expect(ringFrames(before)).toEqual([4]);
+    expect(ringFrames(after)).toEqual([8]);
+    // The full compile at the crossing is honestly NOT a values-only variation, which is
+    // what lets the frame loop refuse it and warn (`animation/structuralDrift`) rather
+    // than push uniforms into a ring that is the wrong size.
+    expect(isUniformOnlyChange(structural!, before!)).toBe(true);
+    expect(isUniformOnlyChange(structural!, after!)).toBe(false);
+
+    runtime.dispose();
   });
 });
