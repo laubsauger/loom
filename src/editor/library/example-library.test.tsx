@@ -7,6 +7,7 @@ import type { LoomBus } from "@domain/commands/bus.ts";
 import { installDomStubs } from "@ui/testing/install-dom-stubs.ts";
 import { capabilityOf, listExampleProjects } from "./example-catalogue.ts";
 import { ExampleLibrary } from "./example-library.tsx";
+import { readExampleLink, resolveExampleLink } from "./example-link.ts";
 
 /**
  * The example library (T189, §V93, §V88).
@@ -95,7 +96,7 @@ describe("ExampleLibrary (T189, §V93)", () => {
       <ExampleLibrary bus={bus} context={context} dirty={false} examples={[EXAMPLE]} />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /E9 Test/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^E9 Test/ }));
 
     await waitFor(() => expect(opened).toHaveLength(1));
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -107,7 +108,7 @@ describe("ExampleLibrary (T189, §V93)", () => {
     const { bus, opened } = busWithOpen();
     render(<ExampleLibrary bus={bus} context={context} dirty examples={[EXAMPLE]} />);
 
-    fireEvent.click(screen.getByRole("button", { name: /E9 Test/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^E9 Test/ }));
 
     const dialog = await screen.findByRole("dialog");
     expect(opened).toHaveLength(0);
@@ -120,7 +121,7 @@ describe("ExampleLibrary (T189, §V93)", () => {
     const { bus, opened } = busWithOpen();
     render(<ExampleLibrary bus={bus} context={context} dirty examples={[EXAMPLE]} />);
 
-    fireEvent.click(screen.getByRole("button", { name: /E9 Test/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^E9 Test/ }));
     const dialog = await screen.findByRole("dialog");
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
 
@@ -133,7 +134,7 @@ describe("ExampleLibrary (T189, §V93)", () => {
     render(
       <ExampleLibrary bus={harness.bus} context={context} dirty={false} examples={[EXAMPLE]} />,
     );
-    expect(screen.getByRole("button", { name: /E9 Test/ }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: /^E9 Test/ }).hasAttribute("disabled")).toBe(true);
   });
 
   it("filters the list as you type, and says so when nothing matches", () => {
@@ -144,14 +145,14 @@ describe("ExampleLibrary (T189, §V93)", () => {
 
     const search = screen.getByRole("searchbox", { name: "Search examples" });
     fireEvent.change(search, { target: { value: "other" } });
-    expect(screen.queryByRole("button", { name: /E9 Test/ })).toBeNull();
-    expect(screen.getByRole("button", { name: /E12 Other/ })).toBeDefined();
+    expect(screen.queryByRole("button", { name: /^E9 Test/ })).toBeNull();
+    expect(screen.getByRole("button", { name: /^E12 Other/ })).toBeDefined();
 
     // The description is searchable, which is what keeps a one-category-per-example
     // taxonomy unnecessary: prose carries the words the category cannot.
     fireEvent.change(search, { target: { value: "breathing" } });
-    expect(screen.getByRole("button", { name: /E9 Test/ })).toBeDefined();
-    expect(screen.queryByRole("button", { name: /E12 Other/ })).toBeNull();
+    expect(screen.getByRole("button", { name: /^E9 Test/ })).toBeDefined();
+    expect(screen.queryByRole("button", { name: /^E12 Other/ })).toBeNull();
 
     fireEvent.change(search, { target: { value: "zzzznotathing" } });
     expect(screen.getByText("No example matches that search.")).toBeDefined();
@@ -168,13 +169,13 @@ describe("ExampleLibrary (T189, §V93)", () => {
     // A header per category, each naming its own section, and each carrying its size —
     // which is the thing a per-row badge could not have said.
     const points = screen.getByRole("region", { name: "points" });
-    expect(within(points).getByRole("button", { name: /E9 Test/ })).toBeDefined();
-    expect(within(points).queryByRole("button", { name: /E12 Other/ })).toBeNull();
+    expect(within(points).getByRole("button", { name: /^E9 Test/ })).toBeDefined();
+    expect(within(points).queryByRole("button", { name: /^E12 Other/ })).toBeNull();
     expect(within(points).getByRole("heading", { name: /points/ }).textContent).toContain("1");
 
     expect(
       within(screen.getByRole("region", { name: "feedback" })).getByRole("button", {
-        name: /E12 Other/,
+        name: /^E12 Other/,
       }),
     ).toBeDefined();
 
@@ -231,8 +232,8 @@ describe("ExampleLibrary (T189, §V93)", () => {
     expect(within(menu).queryByRole("button", { name: "audio" })).toBeNull();
 
     fireEvent.click(within(menu).getByRole("button", { name: "feedback" }));
-    await waitFor(() => expect(screen.queryByRole("button", { name: /E9 Test/ })).toBeNull());
-    expect(screen.getByRole("button", { name: /E12 Other/ })).toBeDefined();
+    await waitFor(() => expect(screen.queryByRole("button", { name: /^E9 Test/ })).toBeNull());
+    expect(screen.getByRole("button", { name: /^E12 Other/ })).toBeDefined();
     // The trigger answers "what am I looking at" (§V90).
     expect(screen.getByRole("button", { name: "Filter examples by category: feedback" })).toBeDefined();
   });
@@ -243,7 +244,7 @@ describe("ExampleLibrary (T189, §V93)", () => {
       <ExampleLibrary bus={bus} context={context} dirty={false} examples={[EXAMPLE, OTHER]} />,
     );
 
-    screen.getByRole("button", { name: /E9 Test/ }).focus();
+    screen.getByRole("button", { name: /^E9 Test/ }).focus();
 
     const card = await screen.findByRole("tooltip");
     expect(within(card).getByText(EXAMPLE.description)).toBeDefined();
@@ -265,7 +266,7 @@ describe("ExampleLibrary (T189, §V93)", () => {
       <ExampleLibrary bus={bus} context={context} dirty={false} examples={[EXAMPLE, OTHER]} />,
     );
 
-    screen.getByRole("button", { name: /E9 Test/ }).focus();
+    screen.getByRole("button", { name: /^E9 Test/ }).focus();
     const card = await screen.findByRole("tooltip");
 
     // The label, not the tag id: `3d` renders "3D" and `wgsl` renders "WGSL", and a card
@@ -283,7 +284,7 @@ describe("ExampleLibrary (T189, §V93)", () => {
     // The row itself stays two columns wide (§T863): the badges are on the card, and a
     // per-row badge strip is what that task refused for the categories.
     expect(
-      within(screen.getByRole("button", { name: /E9 Test/ })).queryByText(
+      within(screen.getByRole("button", { name: /^E9 Test/ })).queryByText(
         capabilityOf("wgsl").label,
       ),
     ).toBeNull();
@@ -302,15 +303,15 @@ describe("ExampleLibrary (T189, §V93)", () => {
     const search = screen.getByRole("searchbox", { name: "Search examples" });
     fireEvent.change(search, { target: { value: "wgsl" } });
 
-    expect(screen.getByRole("button", { name: /E9 Test/ })).toBeDefined();
-    expect(screen.queryByRole("button", { name: /E12 Other/ })).toBeNull();
+    expect(screen.getByRole("button", { name: /^E9 Test/ })).toBeDefined();
+    expect(screen.queryByRole("button", { name: /^E12 Other/ })).toBeNull();
   });
 
   it("renders no image at all for an example with no thumbnail — never a broken one", async () => {
     const { bus } = busWithOpen();
     render(<ExampleLibrary bus={bus} context={context} dirty={false} examples={[OTHER]} />);
 
-    screen.getByRole("button", { name: /E12 Other/ }).focus();
+    screen.getByRole("button", { name: /^E12 Other/ }).focus();
 
     const card = await screen.findByRole("tooltip");
     // The card still carries its prose; what is absent is the `<img>`, not the row.
@@ -337,7 +338,87 @@ describe("ExampleLibrary (T189, §V93)", () => {
     render(
       <ExampleLibrary bus={harness.bus} context={context} dirty={false} examples={[EXAMPLE]} />,
     );
-    fireEvent.click(screen.getByRole("button", { name: /E9 Test/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^E9 Test/ }));
     expect(await screen.findByText("not a project")).toBeDefined();
+  });
+});
+
+/**
+ * T1278 — THE LINK A PERSON SENDS.
+ *
+ * The owner's ask is a round trip between two people: one copies a link out of this pane,
+ * the other opens it and lands on that example. This end owns the copy; `example-link.ts`
+ * owns the contract and `app/example-link-boot.test.tsx` owns what a boot does with it.
+ * The assertions here are on the STRING that leaves the app, fed back through the reader
+ * the recipient's browser will actually use — never on the fact that a handler ran.
+ */
+describe("copying a link to an example (T1278)", () => {
+  it("copies a URL the boot reader resolves back to that same example", () => {
+    const copied: string[] = [];
+    const { bus } = busWithOpen();
+    render(
+      <ExampleLibrary
+        bus={bus}
+        context={context}
+        dirty={false}
+        examples={[EXAMPLE, OTHER]}
+        copyLink={(text) => copied.push(text)}
+        linkOrigin="https://host.example"
+        linkBase="/loom/"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy a link to E12 Other" }));
+
+    /*
+     * THE GATE on producer/consumer drift, and the reason it is asserted here rather than
+     * against a literal: nothing in this file tells `exampleLinkUrl` what spelling to use,
+     * and nothing tells `resolveExampleLink` what to expect. If either end changes its
+     * mind about the query key, the extension, or the case, this goes red — while two
+     * literals would simply have been edited to match.
+     */
+    expect(copied).toHaveLength(1);
+    const url = new URL(copied[0] as string);
+    expect(url.origin + url.pathname).toBe("https://host.example/loom/");
+    const requested = readExampleLink(url.search);
+    expect(requested).not.toBeNull();
+    expect(resolveExampleLink(requested as string, [EXAMPLE, OTHER])).toEqual({
+      kind: "match",
+      example: OTHER,
+    });
+  });
+
+  it("says which link was copied, because a clipboard write is otherwise invisible", () => {
+    const { bus } = busWithOpen();
+    render(
+      <ExampleLibrary
+        bus={bus}
+        context={context}
+        dirty={false}
+        examples={[EXAMPLE]}
+        copyLink={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Copy a link to E9 Test" }));
+    expect(screen.getByText("Link to E9 Test copied.")).toBeDefined();
+  });
+
+  it("copies without opening — the row's two actions are not one action (§V93)", () => {
+    // The destructive verb and the harmless one sit on the same row; the harmless one must
+    // not carry the destructive one along with it, dirty document or not.
+    const { bus, opened } = busWithOpen();
+    render(
+      <ExampleLibrary
+        bus={bus}
+        context={context}
+        dirty
+        examples={[EXAMPLE]}
+        copyLink={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Copy a link to E9 Test" }));
+    expect(opened).toEqual([]);
+    // …and no confirmation dialog either: nothing was at risk.
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 });

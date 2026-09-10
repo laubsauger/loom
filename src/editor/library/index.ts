@@ -19,6 +19,17 @@ export type { ExampleLibraryProps } from "./example-library.tsx";
 export { listExampleProjects } from "./example-catalogue.ts";
 export type { ExampleCategory, ExampleProject } from "./example-catalogue.ts";
 
+/** T1278 — the shareable-link contract. Produced by the pane above, read at boot. */
+export {
+  EXAMPLE_LINK_PARAM,
+  exampleLinkName,
+  exampleLinkUrl,
+  readExampleLink,
+  resolveExampleLink,
+  withoutExampleLink,
+} from "./example-link.ts";
+export type { ExampleLinkResolution } from "./example-link.ts";
+
 export { useDocumentDirty } from "./document-dirty.ts";
 export type { DocumentDirty } from "./document-dirty.ts";
 

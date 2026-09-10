@@ -114,6 +114,39 @@ function probeSessionMemory(): { readonly canRemember: boolean; readonly reloadA
   }
 }
 
+/** This load's step, measured. One derivation, asked by the boot and by T1278 below. */
+function currentIsolationStep(): IsolationStep {
+  const memory = probeSessionMemory();
+  return decideIsolationStep({
+    isolated: globalThis.crossOriginIsolated === true,
+    hosted: import.meta.env.PROD,
+    serviceWorkers: "serviceWorker" in navigator,
+    canRemember: memory.canRemember,
+    reloadAttempted: memory.reloadAttempted,
+  });
+}
+
+/**
+ * Is THIS load still expecting the one-time reload? (T1278)
+ *
+ * Asked by anything that would otherwise destroy state the reload cannot recover. The one
+ * caller today is the shareable-example link: consuming it means `history.replaceState`
+ * over the query, and a reload a moment later would then arrive with no link and boot the
+ * starter instead — the recipient of a link silently getting the wrong document, which is
+ * exactly what T1278 exists to prevent. `register` is the ONLY step that reloads, so it is
+ * the only step that has to be waited out; every other one, including the `gave-up` a
+ * failed shim leaves behind, is safe immediately.
+ *
+ * The residual case is deliberate and is the cheap side of the trade: if registration
+ * throws, `registerAndReloadOnce` returns without ever setting the flag, so this keeps
+ * saying "pending" for the rest of the load and the link is never stripped. A `?example=`
+ * left in the address bar costs a refresh that reopens the same example. Stripping too
+ * early costs the link.
+ */
+export function isolationReloadPending(): boolean {
+  return currentIsolationStep().kind === "register";
+}
+
 /**
  * Registers `public/coi-sw.js` and reloads once, on the hosted build only.
  *
@@ -121,14 +154,7 @@ function probeSessionMemory(): { readonly canRemember: boolean; readonly reloadA
  * after the first there is nothing to wait FOR — the document already arrived isolated.
  */
 export function armCrossOriginIsolation(): void {
-  const memory = probeSessionMemory();
-  const step = decideIsolationStep({
-    isolated: globalThis.crossOriginIsolated === true,
-    hosted: import.meta.env.PROD,
-    serviceWorkers: "serviceWorker" in navigator,
-    canRemember: memory.canRemember,
-    reloadAttempted: memory.reloadAttempted,
-  });
+  const step = currentIsolationStep();
 
   switch (step.kind) {
     case "isolated":

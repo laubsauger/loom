@@ -70,7 +70,9 @@ import { APP_VIEWPORT, openApp } from "./app.ts";
 test.use({ viewport: APP_VIEWPORT });
 
 const EXAMPLE_FILE = "E3-Animated-Noise-Field.loom.json";
-const EXAMPLE_CARD = /E3 Animated Noise Field/;
+// Anchored since T1278: the row now has a sibling "Copy a link to <name>" button, so an
+// unanchored name matches two controls and only DOM order kept `.first()` on the right one.
+const EXAMPLE_CARD = /^E3 Animated Noise Field/;
 /** Two pinned states, addressed by timeline seeks; their abs values are read, not assumed. */
 const SEEKS = [0, 90] as const;
 /** Canvas pin: integer origin and size, 16:9 like the example. */

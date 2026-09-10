@@ -272,6 +272,23 @@
   cursor: default;
 }
 
+/*
+  T1278: the example row carries a second, non-destructive action — copy a shareable link.
+  Its own container rather than `.row` above, which the component pane shapes for a
+  three-column item and a row that is not itself clickable: an example row IS clickable and
+  keeps `.item`'s own two columns and its grab cursor.
+*/
+.exampleRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.exampleRow .item {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .version {
   color: var(--signal);
   font-family: var(--font-mono);

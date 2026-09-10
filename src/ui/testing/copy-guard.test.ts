@@ -163,6 +163,26 @@ const ALLOWLIST: ReadonlyArray<{ file: string; text: string }> = [
     file: "src/app/app.tsx",
     text: "What you see is not your latest edit. Fix the errors in Problems and it catches up.",
   },
+  /**
+   * T1278 — the two ways a shareable example link can fail, said to the person who was
+   * SENT it.
+   *
+   * Same class as every notice-object entry above: the strip's own data, not decoration
+   * around it. And the least tooltip-able copy in the app — the reader did not choose this
+   * app's state, has no label on screen to hover, and by construction nothing looks wrong,
+   * because the alternative to saying it is handing them a plausible document (the
+   * starter) with no reason to doubt it. Both lines open by naming what did NOT happen,
+   * because "nothing was opened" is the fact the recipient has to act on: they go back to
+   * the sender rather than discussing the wrong graph.
+   */
+  {
+    file: "src/app/app.tsx",
+    text: "Nothing was opened. The Examples pane lists what ships here.",
+  },
+  {
+    file: "src/app/app.tsx",
+    text: "Nothing was opened. This is a broken build rather than a broken link.",
+  },
   {
     file: "src/app/side-panes.tsx",
     text: "kept exactly as saved and written back unchanged, so nothing is lost — but this build cannot show a control over",

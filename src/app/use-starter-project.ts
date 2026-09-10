@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { listExampleProjects } from "@editor/library/index.ts";
 import type { ExampleProject } from "@editor/library/example-catalogue.ts";
+import { resolveExampleLink } from "@editor/library/example-link.ts";
 import { STARTER_EXAMPLE_FILE } from "./starter-document.ts";
 import type { LastOpened } from "./last-opened.ts";
 
@@ -26,6 +27,17 @@ import type { LastOpened } from "./last-opened.ts";
  *   concept as a POINTER (a file name and a kind, never bytes), so it cannot become the
  *   user's work the way an autosave-on-open would; this module asks it after the autosave
  *   and before the starter.
+ *
+ * …and one thing that outranks both, since T1278, because it is not from this browser at
+ * all:
+ *
+ *   **A SHAREABLE LINK BEATS THE AUTOSAVE — BUT ASKS WHEN THERE IS WORK TO LOSE.**
+ *   `?example=E11-Gradient-Remap` is somebody else's explicit request, clicked a second
+ *   ago; the two rules above rank this browser's own history, and the most explicit signal
+ *   the app can receive may not lose to the most implicit one. It costs nothing, because
+ *   the autosave is OFFERED and not consumed — the restore notice returns over the linked
+ *   example — and unsaved work on the canvas still confirms first (§V93). Rule zero in
+ *   the effect carries the whole argument; the contract is `example-link.ts`.
  *
  * ## The trap, stated, because it is the whole design
  *
@@ -133,6 +145,28 @@ export function exampleProjectText(
   }
 }
 
+/**
+ * WHAT THE BOOT DID ABOUT A SHAREABLE LINK (T1278).
+ *
+ * Reported rather than handled here because three of the four outcomes need a surface —
+ * an error somebody can read, or a question somebody can answer — and this module is a
+ * decision over facts, with no opinion about how the app talks. The composition root
+ * turns each one into a notice and strips the link from the address bar.
+ */
+export type ExampleLinkOutcome =
+  /** Opened. Nothing to say: the document on screen is the whole message. */
+  | { readonly kind: "opened"; readonly example: ExampleProject }
+  /**
+   * There is unsaved work here, so the link ASKS (§V93) — the same rule the example
+   * library applies to a click, which the boot path had no equivalent of before T1278.
+   * `text` is the restamped document, already resolved, so the answer is one call.
+   */
+  | { readonly kind: "confirm"; readonly example: ExampleProject; readonly text: string }
+  /** No such example ships here. NOTHING was opened — see the ladder below. */
+  | { readonly kind: "unknown"; readonly requested: string }
+  /** It ships and it did not parse. `sync.test.ts`'s finding, said out loud meanwhile. */
+  | { readonly kind: "unreadable"; readonly example: ExampleProject };
+
 export interface StarterProjectOptions {
   /**
    * The app BUILT its own runtime, i.e. this is the product boot (`<App />` in
@@ -182,7 +216,11 @@ export interface StarterProjectOptions {
   readonly enabled: boolean;
   /** `AutosaveWiring.restoreChecked` — the launch lookup has ANSWERED. */
   readonly restoreChecked: boolean;
-  /** True when that answer was "there is a snapshot". An autosave always wins. */
+  /**
+   * True when that answer was "there is a snapshot". An autosave beats everything this
+   * browser could decide on its own — and, since T1278, loses to one thing it could not:
+   * a link somebody sent. See rule zero.
+   */
   readonly hasRestore: boolean;
   /** The store's revision has moved: somebody is already working here. */
   readonly isDirty: () => boolean;
@@ -195,6 +233,17 @@ export interface StarterProjectOptions {
    * flight, or work already on the canvas.
    */
   readonly lastOpened: LastOpened;
+  /**
+   * THE EXAMPLE THIS LOAD WAS LINKED TO, by name, frozen at mount (T1278).
+   *
+   * `?example=E11-Gradient-Remap`, read by `example-link-boot.ts`. Null on every ordinary
+   * boot, which is why the ladder below is otherwise untouched. It is a NAME and not a
+   * resolved row on purpose: an unknown name is one of the outcomes this has to report,
+   * so resolving it early would throw away the thing the report is about.
+   */
+  readonly exampleLink: string | null;
+  /** Where an `exampleLink` decision goes. Required whenever a link can arrive. */
+  readonly onExampleLink?: ((outcome: ExampleLinkOutcome) => void) | undefined;
   /** The project id the starter is restamped with — the runtime's own. */
   readonly projectId: string;
   /** `useProject().openText`, i.e. `project.open` on the bus (§V29). */
@@ -225,6 +274,8 @@ export function useStarterProject(options: StarterProjectOptions): void {
     hasRestore,
     isDirty,
     lastOpened,
+    exampleLink,
+    onExampleLink,
     projectId,
     openText,
     catalogue,
@@ -241,6 +292,8 @@ export function useStarterProject(options: StarterProjectOptions): void {
     hasRestore,
     isDirty,
     lastOpened,
+    exampleLink,
+    onExampleLink,
     projectId,
     openText,
     catalogue,
@@ -253,6 +306,8 @@ export function useStarterProject(options: StarterProjectOptions): void {
     hasRestore,
     isDirty,
     lastOpened,
+    exampleLink,
+    onExampleLink,
     projectId,
     openText,
     catalogue,
@@ -268,12 +323,64 @@ export function useStarterProject(options: StarterProjectOptions): void {
 
     const current = latest.current;
     if (!current.selfBooted) return;
-    // RULE ONE. Restoring the user's work is not something a preference may override.
-    if (current.hasRestore) return;
     // Somebody already opened something in the window the lookup was in flight — landed,
-    // or still running.
+    // or still running. Nothing below may land on a document a person chose by hand,
+    // a link included: they are HERE, and the link is not what they just did.
     if (!current.atBootDocument) return;
     if (current.openInFlight) return;
+
+    /**
+     * RULE ZERO (T1278) — A LINK BEATS EVERYTHING BELOW IT, INCLUDING THE AUTOSAVE.
+     *
+     * Every other rule in this module ranks THIS BROWSER'S own history: an autosave, then
+     * where this person was, then the starter. A link is not from this browser at all —
+     * somebody sent it, and the recipient clicked it a second ago. Ranking it under an
+     * autosave would mean the most explicit request the app can receive loses to the most
+     * implicit one, and the person who was sent a link gets whatever they happened to have
+     * open instead, with no sign a link was involved.
+     *
+     * NOTHING IS LOST BY THAT, and the ordering only holds because of it:
+     *
+     *  - the autosave is OFFERED, not consumed — `findRestoreCandidate` runs again for the
+     *    new runtime, so the restore notice comes straight back over the linked example
+     *    and the snapshot ring is untouched (`example-link-boot.test.tsx` asserts both);
+     *  - the link opens into a FRESH document (`exampleProjectText` restamps the project
+     *    id), so following one commits nothing until the recipient edits it;
+     *  - and unsaved work on THIS canvas still asks first, which is §V93 — the rule the
+     *    library's `choose()` already applies to a click and the boot path had no
+     *    equivalent of. `isDirty` is asked below in exactly the same words.
+     *
+     * An UNKNOWN name returns rather than falling through. Falling through would boot the
+     * starter, i.e. hand the recipient a plausible document and no reason to doubt it was
+     * the one they were sent — the failure mode this whole row exists to refuse.
+     */
+    if (current.exampleLink !== null) {
+      const catalogue = current.catalogue ?? listExampleProjects();
+      const resolution = resolveExampleLink(current.exampleLink, catalogue);
+      if (resolution.kind === "unknown") {
+        current.onExampleLink?.({ kind: "unknown", requested: resolution.requested });
+        return;
+      }
+      const linked = exampleProjectText(
+        resolution.example.fileName,
+        current.projectId,
+        catalogue,
+      );
+      if (linked === null) {
+        current.onExampleLink?.({ kind: "unreadable", example: resolution.example });
+        return;
+      }
+      if (current.isDirty()) {
+        current.onExampleLink?.({ kind: "confirm", example: resolution.example, text: linked.text });
+        return;
+      }
+      current.openText(linked.text);
+      current.onExampleLink?.({ kind: "opened", example: resolution.example });
+      return;
+    }
+
+    // RULE ONE. Restoring the user's work is not something a preference may override.
+    if (current.hasRestore) return;
     // The lookup takes an IndexedDB round trip; a fast user can have dropped a node onto
     // the empty canvas before it lands, and that is work too.
     if (current.isDirty()) return;

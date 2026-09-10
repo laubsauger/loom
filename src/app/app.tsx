@@ -64,6 +64,8 @@ import { useRuntimeCommands } from "./runtime-commands.ts";
 import { createPreviewSinkStore } from "./preview-sinks.ts";
 import { useAutosave } from "./use-autosave.ts";
 import { useStarterProject } from "./use-starter-project.ts";
+import type { ExampleLinkOutcome } from "./use-starter-project.ts";
+import { consumeExampleLink, currentExampleLink } from "./example-link-boot.ts";
 import { lastOpenedStore } from "./last-opened.ts";
 import type { LastOpened } from "./last-opened.ts";
 import { useGpuStatus } from "./use-gpu-status.ts";
@@ -1054,6 +1056,43 @@ export function App({
   const lastOpened = lastOpenedStore();
   const [bootLastOpened] = useState<LastOpened>(() => lastOpened.get());
 
+  /**
+   * T1278 — THE SHAREABLE LINK, read once at mount and answered once at the boot decision.
+   *
+   * Frozen for the same reason `bootLastOpened` is, and a sharper one: answering the link
+   * REWRITES this address (`consumeExampleLink`), so a live read would let the app's own
+   * reply erase its own question halfway through the effect that is reading it.
+   *
+   * The outcome is state rather than a call into a dialog, because three of the four are
+   * things the boot has to SAY — an error the recipient of a bad link can read, or the
+   * §V93 question when there is work to lose — and the notice strip is where this app
+   * already says things that arrive without anybody asking (`notices.tsx`).
+   */
+  const [bootExampleLink] = useState<string | null>(() => currentExampleLink());
+  // `opened` is deliberately not representable here: it has nothing to say.
+  const [exampleLinkOutcome, setExampleLinkOutcome] = useState<
+    Exclude<ExampleLinkOutcome, { kind: "opened" }> | null
+  >(null);
+  const onExampleLink = useCallback((outcome: ExampleLinkOutcome) => {
+    /*
+     * Consumed as soon as the boot has TAKEN RESPONSIBILITY — including while a
+     * confirmation is still on screen. A refresh mid-question is a refusal to answer it,
+     * and it should get the ordinary boot rather than the same question again forever.
+     * `consumeExampleLink` declines while the hosted build's one-time isolation reload is
+     * still pending (T1048), which is what lets the link survive that reload.
+     */
+    consumeExampleLink();
+    /*
+     * And NOTHING is written to `lastOpened`, deliberately. That store records what THIS
+     * PERSON opened on purpose so a refresh returns them to it; a link is somebody else's
+     * choice arriving once, and recording it would make every later refresh — with the
+     * param long since stripped — reopen a document the recipient never picked, which is
+     * T1164's complaint wearing a new hat. The moment they EDIT the linked example the
+     * ordinary path takes over: it autosaves, and an autosave outranks all of this.
+     */
+    setExampleLinkOutcome(outcome.kind === "opened" ? null : outcome);
+  }, []);
+
   // T189/§V93: "is there unsaved work" is the one thing that makes OPEN ask first. The
   // example library asks it; `markSaved` after a successful write is the other half.
   const dirty = useDocumentDirty(runtime.bus);
@@ -1154,6 +1193,10 @@ export function App({
     // T1164: where the user WAS, frozen at mount — asked after the autosave and before
     // the starter (`use-starter-project.ts`, rule two).
     lastOpened: bootLastOpened,
+    // T1278: rule zero — somebody else's explicit request, which is the one thing that
+    // outranks this browser's own autosave.
+    exampleLink: bootExampleLink,
+    onExampleLink,
     projectId: runtime.invocation.projectId,
     openText: openProjectText,
   });
@@ -1403,6 +1446,59 @@ export function App({
       });
     }
 
+    /**
+     * T1278 — WHAT A SHAREABLE LINK DID, when it did not simply work.
+     *
+     * A link that opened says nothing: the document on screen is the message. The other
+     * three all reach a person who did not choose to be here and cannot see the URL bar
+     * they came in on, so each one names the example it is about.
+     *
+     * The unknown case is an ERROR and it is the point of the whole feature: a link to a
+     * name this build does not ship must not quietly become the starter, because the
+     * recipient would have no way to tell they were looking at the wrong document.
+     */
+    if (exampleLinkOutcome !== null) {
+      const dismissLink = { label: "Dismiss", onSelect: () => setExampleLinkOutcome(null) };
+      if (exampleLinkOutcome.kind === "unknown") {
+        list.push({
+          id: "example-link-unknown",
+          tone: "error",
+          // The caller's own string, never any shipped document text (§V37).
+          message: `This link asks for an example this build does not ship: "${exampleLinkOutcome.requested}".`,
+          detail: "Nothing was opened. The Examples pane lists what ships here.",
+          actions: [dismissLink],
+        });
+      } else if (exampleLinkOutcome.kind === "unreadable") {
+        list.push({
+          id: "example-link-unreadable",
+          tone: "error",
+          message: `This link's example, ${exampleLinkOutcome.example.name}, ships with this build but did not parse.`,
+          detail: "Nothing was opened. This is a broken build rather than a broken link.",
+          actions: [dismissLink],
+        });
+      } else {
+        const linked = exampleLinkOutcome;
+        list.push({
+          id: "example-link-confirm",
+          tone: "warn",
+          message: `A link wants to open the example ${linked.example.name}.`,
+          // §V93's rule in the recipient's words, not its number.
+          detail: "You have unsaved work here, and opening replaces it.",
+          actions: [
+            {
+              label: "Open example",
+              variant: "outline",
+              onSelect: () => {
+                setExampleLinkOutcome(null);
+                project.openText(linked.text);
+              },
+            },
+            { label: "Keep my work", onSelect: () => setExampleLinkOutcome(null) },
+          ],
+        });
+      }
+    }
+
     if (runtime.unknownParameters.length > 0) {
       list.push({
         id: "newer-version",
@@ -1421,6 +1517,7 @@ export function App({
   }, [
     autosave,
     depth.notices,
+    exampleLinkOutcome,
     floatBlocked,
     outputStale,
     project,

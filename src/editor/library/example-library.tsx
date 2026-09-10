@@ -17,6 +17,7 @@ import {
 } from "./library-panel.tsx";
 import { capabilityOf, listExampleProjects } from "./example-catalogue.ts";
 import type { ExampleProject } from "./example-catalogue.ts";
+import { exampleLinkUrl } from "./example-link.ts";
 import { filterExamples } from "./example-search.ts";
 import { categoriesOf } from "./search.ts";
 import styles from "./library.module.css";
@@ -70,6 +71,23 @@ export interface ExampleLibraryProps {
   examples?: readonly ExampleProject[];
   /** Fires after a successful open, e.g. to focus the canvas. */
   onOpened?: (example: ExampleProject) => void;
+  /**
+   * T1278 — where a copied link is mirrored so it can leave the app (§V148).
+   *
+   * Injected rather than reached for, the same argument `writeClipboard` makes one layer
+   * down in `parameter-commands.ts`: `navigator.clipboard` is absent in jsdom and in any
+   * non-secure context, and a copy that threw would be an odd way to lose a pane.
+   * Defaults to the real clipboard when there is one, and to a no-op when there is not —
+   * the row still renders and the rest of the pane still opens examples.
+   */
+  copyLink?: (text: string) => void;
+  /** Test seams for the link's two halves. Default to THIS page's own address. */
+  linkOrigin?: string;
+  linkBase?: string;
+}
+
+function writeToClipboard(text: string): void {
+  void globalThis.navigator?.clipboard?.writeText(text);
 }
 
 export function ExampleLibrary({
@@ -78,7 +96,17 @@ export function ExampleLibrary({
   dirty,
   examples,
   onOpened,
+  copyLink = writeToClipboard,
+  linkOrigin,
+  linkBase,
 }: ExampleLibraryProps) {
+  /*
+   * The link's prefix, read HERE rather than baked into `example-link.ts`: the base is
+   * `/loom/` on Pages and `/` in dev, so a hard-coded either would hand somebody a URL
+   * that works on exactly one of the two builds.
+   */
+  const origin = linkOrigin ?? globalThis.location.origin;
+  const base = linkBase ?? import.meta.env.BASE_URL;
   const catalogue = useMemo(() => examples ?? listExampleProjects(), [examples]);
   const [pending, setPending] = useState<ExampleProject | null>(null);
   const [busy, setBusy] = useState(false);
@@ -203,16 +231,34 @@ export function ExampleLibrary({
           keyOf={(example) => example.fileName}
           empty="No example matches that search."
           renderItem={(example) => (
-            <button
-              type="button"
-              className={styles.item}
-              disabled={busy || !canOpen}
-              onClick={() => choose(example)}
-              {...hover.rowProps(example)}
-            >
-              <span className={styles.itemTitle}>{example.name}</span>
-              <span className={styles.itemMeta}>{example.nodeCount} nodes</span>
-            </button>
+            <div className={styles.exampleRow}>
+              <button
+                type="button"
+                className={styles.item}
+                disabled={busy || !canOpen}
+                onClick={() => choose(example)}
+                {...hover.rowProps(example)}
+              >
+                <span className={styles.itemTitle}>{example.name}</span>
+                <span className={styles.itemMeta}>{example.nodeCount} nodes</span>
+              </button>
+              {/*
+                T1278 — the SHARE half of the feature, a sibling button rather than
+                anything nested: the row is already a `<button>` and a button inside a
+                button is not a control any browser agrees about. The component pane's
+                row/action split (`.row` + a trailing `Button`) is the precedent.
+              */}
+              <Button
+                aria-label={`Copy a link to ${example.name}`}
+                title={`Copy a link to ${example.name}`}
+                onClick={() => {
+                  copyLink(exampleLinkUrl(example.fileName, origin, base));
+                  setMessage(`Link to ${example.name} copied.`);
+                }}
+              >
+                link
+              </Button>
+            </div>
           )}
         />
       )}
