@@ -31,6 +31,25 @@
   font-size: var(--fs-meta);
 }
 
+/*
+ * B195: while the pan key is held (`data-pan-key`, graph-canvas.tsx) a press goes through
+ * nodes and edges to the pane, so alt+drag pans wherever it lands — including on the one
+ * preview tile that fills the canvas at zoom 8. Orbitable tiles keep the pointer: there
+ * alt+drag is the camera (T675), and `[data-inspect]` is the attribute that marks them.
+ *
+ * `!important` because React Flow writes `pointer-events: all` INLINE on every node
+ * wrapper (NodeWrapper's style); no selector outranks that.
+ */
+[data-pan-key] .react-flow__node,
+[data-pan-key] .react-flow__edge,
+[data-pan-key] .react-flow__nodesselection {
+  pointer-events: none !important;
+}
+
+[data-pan-key] .react-flow__node [data-inspect] {
+  pointer-events: auto;
+}
+
 /* Rubber-band selection: the same amber that means "live" everywhere else. */
 .react-flow__selection {
   border: var(--hairline) dashed var(--signal);

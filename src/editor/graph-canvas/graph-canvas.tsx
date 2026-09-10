@@ -11,6 +11,7 @@ import {
   SelectionMode,
   applyEdgeChanges,
   applyNodeChanges,
+  useKeyPress,
 } from "@xyflow/react";
 import type {
   Connection,
@@ -95,6 +96,17 @@ const EDGE_TYPES: EdgeTypes = { [SIGNAL_EDGE_TYPE]: SignalEdge as EdgeTypes[stri
 const DEFAULT_EDGE_OPTIONS = { type: SIGNAL_EDGE_TYPE } as const;
 /** §I.ui: middle-drag pans, alt-drag pans, left-drag rubber-band selects, scroll zooms. */
 const PAN_MOUSE_BUTTONS = [1] as const;
+/**
+ * Alt-drag is `panActivationKeyCode`, and with a trackpad it is the ONLY pan gesture.
+ * React Flow gives every node wrapper its `nopan` class and its node-drag filter ignores
+ * modifier keys, so alt+press on a node — any part of it — starts a node drag instead of a
+ * pan. At zoom 8 one preview tile is wider than the canvas: nothing but a node is under the
+ * pointer, and the canvas cannot be panned at all (B195). While the key is held the canvas
+ * carries `data-pan-key`, and `xyflow-theme.css` makes nodes transparent to the pointer so
+ * the press lands on the pane and pans. Orbitable tiles (`data-inspect`, T675) stay opaque:
+ * there alt+drag is the camera, by design.
+ */
+const PAN_KEY = "Alt";
 /** Module scope so "nothing is selected" is one array rather than one per canvas mount. */
 const EMPTY_SELECTION: readonly NodeId[] = [];
 
@@ -746,6 +758,9 @@ export function GraphCanvas({
 
   const reportLeave = useCallback(() => onHoveredNodeChange?.(null), [onHoveredNodeChange]);
 
+  // B195: the same key React Flow reads for `panActivationKeyCode`, read the same way.
+  const panKeyHeld = useKeyPress(PAN_KEY);
+
   const context = useMemo<GraphCanvasContextValue>(
     () => ({
       store: bus.store,
@@ -796,6 +811,7 @@ export function GraphCanvas({
       <div
         className={styles.canvas}
         data-testid="graph-canvas"
+        data-pan-key={panKeyHeld ? "held" : undefined}
         ref={canvasRef}
         onDoubleClick={onCanvasDoubleClick}
       >
@@ -819,7 +835,7 @@ export function GraphCanvas({
           // hotkey to be data pointing at a bus command (T76/T77 own that table).
           deleteKeyCode={null}
           panOnDrag={[...PAN_MOUSE_BUTTONS]}
-          panActivationKeyCode="Alt"
+          panActivationKeyCode={PAN_KEY}
           selectionOnDrag
           selectionMode={SelectionMode.Partial}
           zoomOnDoubleClick={false}
