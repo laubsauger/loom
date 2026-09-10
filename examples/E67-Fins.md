@@ -5,7 +5,7 @@ Nine bevelled glass slabs, hanging in a dark room, ray traced exactly. Each ray 
 ## The graph
 
 ```
-envSeed(solid) -> glassRT(customWgsl) -> finalGrade(customWgsl) -> finalImage(output)
+envSeed(solid) -> glassRT(customWgsl) -> finalGrade(customWgsl) -> fxaa1(customWgsl) -> finalImage(output)
 
 clip1(audioFileIn) -> analysis1 -> react1(valueMath)     the hits, times the reactivity knob
 ```
@@ -39,6 +39,10 @@ The camera circles the stack once every **four minutes**, at the hand-built dist
 - The room's input was a photo node holding a `blob:` URL, which dies with the tab. It never reached the picture: `envMix` was never set, so it sits at its default of 0, and the shader samples its input only above that. The file's own unconnected black `envSeed` feeds the input now. To light the glass with a real room, wire a latlong image into `glassRT` and raise `envMix`.
 - The photo node was pinned to 2048×1024 and `glassRT` inherits its input's size. The hand-built piece therefore traced at 2:1 and was squashed into a 1280×720 output. The example renders native 16:9 at 1920×1080. The vertical field of view is the shader's, so the slabs keep their height in frame and get their true width back. This is the only difference from the hand-built frame.
 - The unused starter components and the empty group frames were not carried over.
+
+## Edge smoothing
+
+`fxaa1` runs FXAA over the graded frame (T1275): it finds each edge's direction from its neighbours' brightness and smooths along it, and leaves flat areas alone. Its `amount` knob mixes it in; at 0 the frame is the grade exactly. Tracing more rays was the other route, and it was measured and rejected on a machine cleared for it: at 1920×1080 the piece costs 34.6 ms a frame as it is, 2 passes of the glass cost 1.69× that, and a 2× supersample 3.95×. FXAA is one pass. The glass's own 4 rays a pixel stay as they are, because those 4 also carry its dispersion.
 
 ## Recording
 

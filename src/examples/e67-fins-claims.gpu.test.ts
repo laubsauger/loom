@@ -273,3 +273,112 @@ describe("E67 Fins: the camera circles the stack", () => {
     expect(share, `the orbit moved ${(share * 100).toFixed(1)}% of the picture`).toBeGreaterThan(0.3);
   }, 600_000);
 });
+
+/**
+ * T1275 — FXAA SMOOTHS EDGES, AND ONLY EDGES.
+ *
+ * `fxaa1` sits between the grade and the output. Two claims, and the second is the one a
+ * plain blur would fail:
+ *
+ *   OFF      at `amount` 0 the frame is BYTE-IDENTICAL to the chain with no FXAA node at
+ *            all, so the knob really switches it off.
+ *   EDGES    at `amount` 1, the pixels it changes sit on edges — where the unsmoothed
+ *            frame's 3×3 neighbourhood spans a wide range of brightness — and the flat
+ *            interior of the glass is left as it was. A blur changes the interior too.
+ */
+describe("E67 Fins: FXAA smooths edges and nothing else", () => {
+  const unwired = (graph: GraphDocument) => {
+    delete (graph.nodes as Record<string, unknown>)["fxaa"];
+    delete (graph.edges as Record<string, unknown>)["e-grade-fxaa"];
+    delete (graph.edges as Record<string, unknown>)["e-fxaa-out"];
+    (graph.edges as Record<string, unknown>)["e-grade-out"] = {
+      id: "e-grade-out", source: { nodeId: "grade", portId: "out" }, target: { nodeId: "out", portId: "input" },
+    };
+  };
+  const amount = (value: number) => (graph: GraphDocument) => {
+    const node = graph.nodes["fxaa"]!;
+    node.parameters = { ...node.parameters, amount: value };
+  };
+
+  it("at amount 0 is the grade exactly, byte for byte", async () => {
+    if (dawnError !== undefined) throw new Error(dawnError);
+    const off = await shoot(amount(0));
+    const none = await shoot(unwired);
+    for (const frame of Object.values(MOMENTS)) expect(differing(off[frame]!, none[frame]!)).toBe(0);
+  }, 300_000);
+
+  /* The control a claim like this needs: a plain 3×3 box blur in the same slot. It smooths
+     the same edges, so "edges changed" alone cannot tell the two apart; what separates them
+     is the flat glass, which a blur moves and FXAA leaves. */
+  const BLUR_WGSL = `struct Params { amount: f32, };
+@group(0) @binding(0) var inputSampler: sampler;
+@group(0) @binding(1) var inputTexture: texture_2d<f32>;
+@group(0) @binding(2) var<uniform> params: Params;
+@fragment
+fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
+  let px = 1.0 / vec2f(textureDimensions(inputTexture));
+  var sum = vec3f(0.0);
+  for (var j = -1; j <= 1; j = j + 1) {
+    for (var i = -1; i <= 1; i = i + 1) {
+      sum = sum + textureSampleLevel(inputTexture, inputSampler, uv + vec2f(f32(i), f32(j)) * px, 0.0).rgb;
+    }
+  }
+  return vec4f(sum / 9.0, 1.0);
+}`;
+  const blurred = (graph: GraphDocument) => {
+    const node = graph.nodes["fxaa"]!;
+    node.parameters = { ...node.parameters, source: BLUR_WGSL };
+  };
+
+  /** Of the changed pixels, the share on an edge; of the lit flat pixels, the share changed. */
+  function stats(a: Uint8Array, b: Uint8Array) {
+    const lum = (d: Uint8Array, p: number) => (0.299 * d[p * 4]! + 0.587 * d[p * 4 + 1]! + 0.114 * d[p * 4 + 2]!) / 255;
+    let changedOnEdge = 0;
+    let changed = 0;
+    let flat = 0;
+    let flatChanged = 0;
+    for (let y = 1; y < SIZE.height - 1; y += 1) {
+      for (let x = 1; x < SIZE.width - 1; x += 1) {
+        const p = y * SIZE.width + x;
+        let lo = 1;
+        let hi = 0;
+        for (let j = -1; j <= 1; j += 1) for (let i = -1; i <= 1; i += 1) {
+          const l = lum(b, p + j * SIZE.width + i);
+          lo = Math.min(lo, l);
+          hi = Math.max(hi, l);
+        }
+        const edge = hi - lo > 0.05;
+        const d = Math.abs(a[p * 4]! - b[p * 4]!) + Math.abs(a[p * 4 + 1]! - b[p * 4 + 1]!) + Math.abs(a[p * 4 + 2]! - b[p * 4 + 2]!);
+        if (d > 3) {
+          changed += 1;
+          if (edge) changedOnEdge += 1;
+        }
+        if (!edge && lum(b, p) > 0.05) {
+          flat += 1;
+          if (d > 3) flatChanged += 1;
+        }
+      }
+    }
+    return { changed, edgeShare: changedOnEdge / changed, flatShare: flatChanged / flat };
+  }
+
+  it("at amount 1 changes the edges and leaves the flat glass alone — which a blur does not", async () => {
+    if (dawnError !== undefined) throw new Error(dawnError);
+    const on = await shoot();
+    const none = await shoot(unwired);
+    const blur = await shoot(blurred);
+    const frame = MOMENTS.snare;
+    const fxaa = stats(on[frame]!, none[frame]!);
+    const box = stats(blur[frame]!, none[frame]!);
+    const report = `fxaa changed ${fxaa.changed} edge ${(100 * fxaa.edgeShare).toFixed(1)}% flat ${(100 * fxaa.flatShare).toFixed(1)}% | blur changed ${box.changed} edge ${(100 * box.edgeShare).toFixed(1)}% flat ${(100 * box.flatShare).toFixed(1)}%`;
+    /* Measured at the snare frame, 320x180: FXAA changed 11065 pixels, 97.0% of them on an
+       edge, and 2.6% of the lit flat glass; the box blur changed 14908, 86.2% on an edge,
+       and 15.9% of the flat glass. The bounds sit between the two arms, so the blur fails
+       both and FXAA passes both. */
+    expect(fxaa.changed, report).toBeGreaterThan(2000);
+    expect(fxaa.edgeShare, report).toBeGreaterThan(0.93);
+    expect(fxaa.flatShare, report).toBeLessThan(0.07);
+    expect(box.edgeShare, `the blur control no longer fails the edge bound: ${report}`).toBeLessThan(0.93);
+    expect(box.flatShare, `the blur control no longer fails the flat bound: ${report}`).toBeGreaterThan(0.07);
+  }, 300_000);
+});

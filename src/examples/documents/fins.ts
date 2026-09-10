@@ -1,6 +1,7 @@
 import { settings, node, edge, graph, document, expressionSlot } from "./builders.ts";
 import { SHOWCASE_BEAT, SHOWCASE_BEAT_FILE, SHOWCASE_BEAT_OFFSET_SECONDS } from "../build-showcase-beat.ts";
 import { FINS_GLASS_WGSL, FINS_GRADE_WGSL } from "../shaders/fins.wgsl.ts";
+import { FXAA_WGSL } from "../shaders/fxaa.wgsl.ts";
 
 /**
  * E67 — Fins (T1265). The owner's hand-built piece (`fins-11.loom.json`), shipped, with the
@@ -104,7 +105,13 @@ export const finsDocument = document(
         source: FINS_GRADE_WGSL,
         amount: 1, ceiling: 3, exposure: 1, saturation: 1.28, tint: [1, 1, 1, 1], toe: 0.002, vignette: 0.12,
       }, { label: "finalGrade" }),
-      node("out", "output", [600, -150], { toneMap: "filmic" }, { label: "finalImage" }),
+      /* T1275 — EDGE SMOOTHING, AFTER THE GRADE. The glass traces 4 rays a pixel and those
+         4 also carry its dispersion, so more rays was the only in-shader route, and it
+         cost 1.69x (2 passes) to 3.95x (2x supersample) on a piece already near 30 fps
+         (measured on a cleared machine). FXAA is one pass over the graded frame. `amount`
+         0 returns the grade exactly, so it switches off without rewiring. */
+      node("fxaa", "customWgsl", [600, -150], { source: FXAA_WGSL, amount: 1 }, { label: "fxaa1" }),
+      node("out", "output", [900, -150], { toneMap: "filmic" }, { label: "finalImage" }),
 
       // ── the beat ─────────────────────────────────────────────────────────────
       node("clip", "audioFileIn", [-900, 300], {
@@ -124,7 +131,8 @@ export const finsDocument = document(
     [
       edge("e-seed-glass", ["seed", "out"], ["glass", "input"]),
       edge("e-glass-grade", ["glass", "out"], ["grade", "input"]),
-      edge("e-grade-out", ["grade", "out"], ["out", "input"]),
+      edge("e-grade-fxaa", ["grade", "out"], ["fxaa", "input"]),
+      edge("e-fxaa-out", ["fxaa", "out"], ["out", "input"]),
       edge("e-clip-analysis", ["clip", "out"], ["analysis", "audio"]),
       edge("e-analysis-react", ["analysis", "hits"], ["react", "a"]),
     ],
