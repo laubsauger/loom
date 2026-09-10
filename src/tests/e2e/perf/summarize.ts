@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { CATEGORIES, percentile, mean } from "../../perf/trace-parser.ts";
 import { classifyWalk, normaliseLegacyPerformed, walkVerdictLine } from "../../perf/fiber-walk.ts";
@@ -27,9 +27,64 @@ interface FixtureFile {
 const dir = process.argv[2];
 if (dir === undefined) throw new Error("usage: summarize.ts <out dir>");
 
+const MANIFEST = "run-manifest.json";
+const STATUS = "run-status.txt";
+
 const files = readdirSync(dir)
-  .filter((name) => name.endsWith(".json") && !name.endsWith(".trace.json") && !name.endsWith(".loom.json"))
+  .filter((name) => name.endsWith(".json") && !name.endsWith(".trace.json") && !name.endsWith(".loom.json") && name !== MANIFEST)
   .sort();
+
+/**
+ * §B204 — SAY WHEN THE SCENARIO SET IS INCOMPLETE, IN THE ARTEFACT.
+ *
+ * The failure that filed this: one fixture's first arm died with the browser, `run.sh`
+ * printed `1 failed, 3 did not run` and carried on. Nothing was corrupted, but the
+ * summary of a partial run looked exactly like the summary of a whole one, so a lost arm
+ * could later be read as a measured zero. `profile.perf.ts` writes the expected fixture
+ * set before it opens a browser and `run.sh` writes playwright's exit code beside it;
+ * this turns the two into a banner at the top of `summary.md`, and a non-zero exit.
+ *
+ * The three states are kept apart deliberately (§T1260): complete, incomplete, and
+ * "there is no manifest here so I cannot tell" — an old run directory, or one summarised
+ * by hand, must not be able to claim completeness it never recorded.
+ */
+const incompleteBanner = (): { markdown: string; incomplete: boolean } => {
+  const found = new Set(files.map((name) => name.replace(/\.json$/, "")));
+  const status = existsSync(resolve(dir, STATUS)) ? readFileSync(resolve(dir, STATUS), "utf8").trim() : null;
+  const exit = /playwright-exit=(\d+)/.exec(status ?? "")?.[1] ?? null;
+  const failed = exit !== null && exit !== "0";
+  if (!existsSync(resolve(dir, MANIFEST))) {
+    return {
+      markdown: `> ⚠ **No \`${MANIFEST}\` in this directory** — which fixtures this run owed was never recorded, so whether every arm ran cannot be told from the artefact (§B204).\n`,
+      incomplete: false,
+    };
+  }
+  const manifest = JSON.parse(readFileSync(resolve(dir, MANIFEST), "utf8")) as { fixtures: string[]; scenarios: string[] | null; when: string };
+  const missing = manifest.fixtures.filter((fixture) => !found.has(fixture));
+  const scope = manifest.scenarios === null ? "every scenario" : `scenarios ${manifest.scenarios.join(",")}`;
+  if (missing.length === 0 && !failed) {
+    return {
+      markdown: `_Complete run: ${manifest.fixtures.length} of ${manifest.fixtures.length} fixtures (${manifest.fixtures.join(", ")}), ${scope}._\n`,
+      incomplete: false,
+    };
+  }
+  const lines = [
+    `> ⚠⚠ **INCOMPLETE RUN — DO NOT READ A MISSING ARM AS A ZERO (§B204).**`,
+    `>`,
+    `> This run owed ${manifest.fixtures.length} fixture(s) — ${manifest.fixtures.join(", ")} — over ${scope}.`,
+  ];
+  if (missing.length > 0) lines.push(`> **${missing.length} produced no numbers at all: ${missing.join(", ")}.** They are absent from the tables below because they were never measured, not because they cost nothing.`);
+  if (failed) lines.push(`> The playwright run exited ${exit}: at least one arm failed or never started.`);
+  lines.push(`> The numbers that ARE below are still the numbers that were taken; they are simply not a full set.`);
+  return { markdown: `${lines.join("\n")}\n`, incomplete: true };
+};
+
+const banner = incompleteBanner();
+console.log(banner.markdown);
+if (banner.incomplete) {
+  process.exitCode = 3;
+  console.error(`INCOMPLETE RUN: ${dir}/summary.md is marked — a fixture the run owed produced no numbers (§B204).`);
+}
 
 const fmt = (value: number, digits = 2): string => (Number.isNaN(value) ? "n/a" : value.toFixed(digits));
 const med = (values: readonly number[]): number => percentile(values, 50);

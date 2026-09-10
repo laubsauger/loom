@@ -82,6 +82,30 @@ const SCENARIOS = process.env["PERF_SCENARIOS"]?.split(",").map((name) => name.t
 const PROBE_CSS = process.env["PERF_PROBE_CSS"] ?? null;
 const BASE_URL = "http://localhost:5211";
 
+/**
+ * §B204 — WHICH ARMS THIS RUN OWES, WRITTEN BEFORE A BROWSER OPENS.
+ *
+ * A scenario can die with its browser (`page.waitForTimeout: Target page, context or
+ * browser has been closed`); the fixture's test fails and, in serial mode, the ones after
+ * it never start. The run still produces a `summary.md`, and a fixture that is simply
+ * ABSENT from it is indistinguishable, to a reader who did not watch the run, from one
+ * that was measured and cost nothing. This file is what lets `summarize.ts` say "I could
+ * not see" instead: the expected set, recorded while it is still true.
+ */
+mkdirSync(OUT_DIR, { recursive: true });
+writeFileSync(
+  resolve(OUT_DIR, "run-manifest.json"),
+  JSON.stringify(
+    {
+      fixtures: FIXTURES.filter((fixture) => ONLY === null || ONLY.includes(fixture.name)).map((fixture) => fixture.name),
+      scenarios: SCENARIOS,
+      when: new Date().toISOString(),
+    },
+    null,
+    1,
+  ),
+);
+
 test.describe.configure({ mode: "serial" });
 
 for (const fixture of FIXTURES) {

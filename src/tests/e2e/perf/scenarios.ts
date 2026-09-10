@@ -17,6 +17,7 @@ import {
   topEntries,
 } from "../../perf/trace-parser.ts";
 import type { Category, Latency, TraceEvent, WindowSummary } from "../../perf/trace-parser.ts";
+import { keepRawTraces } from "./prune-traces.ts";
 import { writeFileSync } from "node:fs";
 
 /**
@@ -49,7 +50,8 @@ export interface ScenarioResult {
   readonly latencies: Latency[] | null;
   readonly hub: Record<string, string> | null;
   readonly note: string;
-  readonly traceFile: string;
+  /** The raw CDP trace on disk, or `null` — the default (T1277). See `capture` below. */
+  readonly traceFile: string | null;
 }
 
 export interface WalkProbe {
@@ -75,8 +77,24 @@ interface Captured {
   readonly commits: CommitRecord[];
   readonly renders: Record<string, number>;
   readonly controls: ControlReading;
-  readonly traceFile: string;
+  readonly traceFile: string | null;
 }
+
+/**
+ * T1277 / §B206 — THE RAW TRACE IS OPT-IN, and the reason the switch can be this blunt is
+ * that NOTHING IN THE HARNESS READS THE FILE BACK. `analyse` below parses the event array
+ * `tracer.stop()` returns, in memory, and `summarize.ts` reads only `<fixture>.json` (it
+ * filters `.trace.json` out by name). The file was only ever a keepsake to open in
+ * DevTools → Performance → Load profile — and at 27–110 MB per scenario, ~14 scenarios per
+ * fixture, it cost 18 GB before anyone loaded one.
+ *
+ * So the default does not write it, rather than writing it and deleting it afterwards.
+ * That ordering is the point: a scenario that throws mid-run (§B204 did, tonight) skips
+ * every cleanup path there is, and bytes that were never written cannot be orphaned by a
+ * crash. `PERF_KEEP_TRACES=1` brings the file back for the run that actually wants a flame
+ * chart; `prune-traces.ts` is what takes those bytes back later.
+ */
+const KEEP_TRACES = keepRawTraces(process.env);
 
 /** Wraps a gesture in a trace with marks on either side; the gesture runs inside. */
 async function capture(
@@ -96,8 +114,11 @@ async function capture(
   const events = await tracer.stop();
   await setFiberWalk(page, false);
   const { commits, renders } = await drainReactCounts(page);
-  const traceFile = `${context.outDir}/${context.fixture}-${key}.trace.json`;
-  writeFileSync(traceFile, JSON.stringify(events));
+  let traceFile: string | null = null;
+  if (KEEP_TRACES) {
+    traceFile = `${context.outDir}/${context.fixture}-${key}.trace.json`;
+    writeFileSync(traceFile, JSON.stringify(events));
+  }
   return { events, startNow, endNow, commits, renders, controls, traceFile };
 }
 

@@ -724,8 +724,14 @@ commit at 334 `CostCell`s. Layout 0.56, paint 2.34 ms/frame against 0.38 / 1.27 
 ## Appendix B — how to read the raw output
 
 `run.sh <out>` writes `<out>/<fixture>.json` (every scenario's parsed numbers),
-`<out>/<fixture>-<key>.trace.json` (the raw CDP trace), `commit.txt`, and `summary.md`
-(the tables above, plus heaviest entry points, span counts, hub readings and per-commit
-component groups). `node --import ./src/tooling/alias-hooks.ts
-src/tests/e2e/perf/summarize.ts <out>` regenerates the summary. Trace files open in
-Chrome DevTools → Performance → Load profile for the flame chart.
+`commit.txt`, `run-manifest.json` (the fixtures the run owed, §B204), `run-status.txt`,
+and `summary.md` (the tables above, plus heaviest entry points, span counts, hub readings
+and per-commit component groups). `node --import ./src/tooling/alias-hooks.ts
+src/tests/e2e/perf/summarize.ts <out>` regenerates the summary.
+
+The raw CDP trace, `<out>/<fixture>-<key>.trace.json`, is OPT-IN since T1277 — nothing in
+the harness reads it back, and at 41–47 MB per scenario it filled 18 GB of disk before
+anyone opened one (§B206). `PERF_KEEP_TRACES=1 run.sh` writes it; the files then open in
+Chrome DevTools → Performance → Load profile for the flame chart. `run.sh` prunes old ones
+on every invocation (`prune-traces.ts`, keeping the newest 3 trace-bearing runs); it only
+ever deletes a `*.trace.json`, never a `summary.md` or a `<fixture>.json`.
