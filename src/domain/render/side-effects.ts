@@ -228,6 +228,8 @@ export const NODE_SIDE_EFFECTS: Readonly<Record<string, SideEffect>> = {
   // Structure.
   output: "none",
   null: "none",
+  // T1262: a note box touches nothing outside the document.
+  annotate: "none",
   switch: "none",
   componentIn: "none",
   componentOut: "none",

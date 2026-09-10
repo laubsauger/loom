@@ -6,7 +6,7 @@ import { createNodeRegistry } from "../registry/registry.ts";
 import { allNodeDefinitions, coreNodeDefinitions } from "./index.ts";
 import type { GraphDocument, GraphNode, ProjectSettings } from "../../domain/types/graph.ts";
 import type { BackendCapabilities } from "../../domain/types/backend.ts";
-import { minimalGraphFor as sharedMinimalGraph } from "./test-support.ts";
+import { minimalGraphFor as sharedMinimalGraph, outsidePlanByConstruction } from "./test-support.ts";
 
 /**
  * The catalogue against the REAL compiler (T70, T40).
@@ -181,6 +181,18 @@ describe("the catalogue compiles through the real compiler", () => {
       if (definition.valueChannel !== undefined || definition.valueEvaluate !== undefined) continue;
       const graph = sharedMinimalGraph(definition, registry) as unknown as GraphDocument;
       const plan = compile(graph);
+      // T1262: a node with NO ports and no sink (the annotation box) is outside the plan
+      // by construction — nothing can reach it, so the compiler prunes it and says
+      // nothing ABOUT IT. Its minimal graph has no sink at all, so the one diagnostic is
+      // the graph's, not the node's. The full contract (E24 plan byte-identical with and
+      // without one) is pinned in annotate.test.ts; the sweep checks the half it can.
+      if (outsidePlanByConstruction(definition)) {
+        expect(plan.diagnostics.filter((d) => d.nodeId === "subject"), definition.type).toEqual([]);
+        expect(plan.diagnostics.map((d) => d.message), definition.type).toEqual(["No active sink: nothing is rendered."]);
+        expect(plan.pruned, definition.type).toContain("subject");
+        expect(plan.passes.some((pass) => "nodeId" in pass && pass.nodeId === "subject"), definition.type).toBe(false);
+        continue;
+      }
       // Not just errors: a warning here means an unknown parameter, a version mismatch or
       // a colour-space clash, all of which are real mistakes in a manifest.
       expect(plan.diagnostics.map((d) => d.message), definition.type).toEqual([]);
@@ -247,6 +259,7 @@ describe("the catalogue compiles through the real compiler", () => {
       if (definition.passthrough !== undefined) continue; // a wire has no uniforms to check (§V130)
       if (definition.valueChannel !== undefined || definition.valueEvaluate !== undefined) continue; // a value source has no passes (§V143)
       if (PAYLOAD_ONLY.has(definition.type)) continue; // an edge-payload transform has no passes (T302)
+      if (outsidePlanByConstruction(definition)) continue; // a portless non-sink is pruned, no shader (T1262)
       const plan = compile(sharedMinimalGraph(definition, registry) as unknown as GraphDocument);
       const passes = plan.passes.filter(
         (pass) =>

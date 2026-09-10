@@ -170,6 +170,13 @@ const RAW_SCHEMA_READS: Readonly<Record<string, { readonly reason: string; reado
       "the assertions are made against comes from `effectiveParameterSchema`.",
     reads: ["definition.parameters", "definition.parameters"],
   },
+  "src/nodes/definitions/annotate.test.ts": {
+    reason:
+      `${TYPE_ONLY_UNIT_TEST} T1262's three reads pin what the annotation box DECLARES — ` +
+      "the colour enum is exactly the token palette, the body is multiline, the title is a " +
+      "string — which is what the inspector and the stylesheet are written against.",
+    reads: ["annotateNode.parameters", "annotateNode.parameters", "annotateNode.parameters"],
+  },
   "src/nodes/definitions/point-kernel-params.test.ts": {
     reason: HOOK_UNDER_TEST,
     reads: [

@@ -203,6 +203,8 @@ describe("core catalogue (T70, T40)", () => {
       "laserOut",
       "pointKernelAdvanced",
       "slitScan",
+      // T1262: the annotation box — no ports, no passes, outside the plan by construction.
+      "annotate",
     ]);
   });
 

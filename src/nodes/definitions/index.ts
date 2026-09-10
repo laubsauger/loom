@@ -41,6 +41,7 @@ import { pointKernelAdvancedNode } from "./point-kernel-advanced.ts";
 import { slitScanNode } from "./slit-scan.ts";
 import { midiInNode } from "./midi.ts";
 import { oscInNode, oscOutNode } from "./osc.ts";
+import { annotateNode } from "./annotate.ts";
 
 export { solidNode } from "./solid.ts";
 export { nullNode } from "./null-node.ts";
@@ -83,6 +84,13 @@ export { pointKernelAdvancedNode, liveCountBufferId } from "./point-kernel-advan
 export { slitScanNode } from "./slit-scan.ts";
 export { midiInNode } from "./midi.ts";
 export { oscInNode, oscOutNode } from "./osc.ts";
+export {
+  annotateNode,
+  annotationColorOf,
+  ANNOTATE_TYPE,
+  ANNOTATION_COLORS,
+  DEFAULT_ANNOTATION_COLOR,
+} from "./annotate.ts";
 export {
   movieFileInNode,
   webcamNode,
@@ -252,6 +260,9 @@ export const coreNodeDefinitions: readonly NodeDefinition[] = [
   laserOutNode,
   pointKernelAdvancedNode,
   slitScanNode,
+  // T1262: the annotation box — portless, passless, pruned by construction. Last so the
+  // library reads it after the working nodes.
+  annotateNode,
 ];
 
 /**

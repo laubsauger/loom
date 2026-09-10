@@ -287,6 +287,8 @@ export const NODE_REPRODUCIBILITY: Readonly<Record<string, Reproducibility>> = {
   // Structure: no state, no clock, no device.
   output: "pure",
   null: "pure",
+  // T1262: a note box — no ports, no passes; the plan is byte-identical with or without it.
+  annotate: "pure",
   switch: "pure",
   componentIn: "pure",
   componentOut: "pure",

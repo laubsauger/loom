@@ -177,6 +177,22 @@ export function readNodePlan(
 }
 
 /**
+ * T1262 — a definition with NO ports and no sink declaration is OUTSIDE THE PLAN BY
+ * CONSTRUCTION: no sink can reach it, so `compileGraph` prunes it and emits nothing for
+ * it, on every device. The catalogue sweeps (headless here, Dawn in
+ * `catalogue-dawn.gpu.test.ts`) have nothing to compile for such a type and check the
+ * prune instead. Derived from the manifest, not a name list, so the next portless note
+ * cannot be forgotten.
+ */
+export function outsidePlanByConstruction(definition: {
+  readonly inputs: ReadonlyArray<unknown>;
+  readonly outputs: ReadonlyArray<unknown>;
+  readonly sink?: boolean | undefined;
+}): boolean {
+  return definition.inputs.length === 0 && definition.outputs.length === 0 && definition.sink !== true;
+}
+
+/**
  * T751 — THE MINIMAL GRAPH PER NODE TYPE, shared by the headless catalogue sweep
  * (catalogue-chain.test.ts) and the Dawn one (catalogue-dawn.gpu.test.ts).
  *
