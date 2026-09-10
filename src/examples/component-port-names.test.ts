@@ -179,6 +179,7 @@ const GENERIC = /^(?:in|input|in\d+|source|field|value|signal)(?:_\d+)?$/;
 
 /** What each shipped component publishes, in canvas order (§V109). */
 const PUBLISHED_INPUTS: Readonly<Record<string, readonly string[]>> = {
+  antialias: ["picture"],
   audioAnalysis: ["audio"],
   audioLevel: [],
   bloom: ["picture"],
@@ -191,7 +192,7 @@ const PUBLISHED_INPUTS: Readonly<Record<string, readonly string[]>> = {
   timeGrid: ["matte", "picture"],
 };
 
-describe("the ten shipped components publish speaking input names (T1194)", () => {
+describe("the eleven shipped components publish speaking input names (T1194)", () => {
   const shipped = shippedComponents();
 
   it("names every input for what the signal IS", () => {
@@ -205,7 +206,7 @@ describe("the ten shipped components publish speaking input names (T1194)", () =
   });
 
   it("publishes no generic socket name, on any component, ever again", () => {
-    // The recurrence guard. A tenth component saved with the default names lands here,
+    // The recurrence guard. An eleventh component saved with the default names lands here,
     // not in a review — which is the half of T1194 that was asked for repeatedly.
     const generic = shipped.flatMap((definition) =>
       definition.inputs

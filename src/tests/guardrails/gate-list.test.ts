@@ -52,6 +52,10 @@ const NOT_A_TREE_WALKING_GATE: Readonly<Record<string, string>> = {
 const DOCUMENT_SET_GATES: readonly string[] = [
   "src/examples/layout.test.ts",
   "src/examples/doc-drift.test.ts",
+  // B207: it walks the SHIPPED COMPONENT SET through `catalogue.ts`, so adding a component
+  // (T1276, Antialias) left its roster stale and no scoped run of the component's own files
+  // could reach it.
+  "src/examples/component-port-names.test.ts",
 ];
 
 function testFiles(directory: string): string[] {
