@@ -89,6 +89,8 @@ export interface WorkerRunner {
 
 export function createWorkerRunner(options: WorkerRunnerOptions): WorkerRunner {
   let nextId = 1;
+  // A terminated worker cannot accept another request. Reset creates a new runner.
+  let stopped: Error | undefined;
   const pending = new Map<
     number,
     { nodeId: string; resolve(bytes: Uint8Array): void; reject(error: Error): void }
@@ -133,6 +135,7 @@ export function createWorkerRunner(options: WorkerRunnerOptions): WorkerRunner {
     // The thread died. Everything outstanding must fail rather than hang forever — a take
     // blocked on a dead worker would never finish and would say nothing about why.
     const dead = new Error("the inference worker stopped");
+    stopped = dead;
     for (const [, waiter] of pending) waiter.reject(dead);
     pending.clear();
     for (const [, waiter] of loadWaiters) waiter.reject(dead);
@@ -142,29 +145,35 @@ export function createWorkerRunner(options: WorkerRunnerOptions): WorkerRunner {
   const ensureLoaded = (modelId: string, sessionKey: string, providers: readonly string[]): Promise<void> => {
     const existing = loads.get(sessionKey);
     if (existing !== undefined) return existing;
-    const started = (async () => {
-      const weights = await options.weightsFor(modelId);
-      if (weights === undefined) throw new Error(`${modelId} is not available`);
-      const settled = new Promise<void>((resolve, reject) => {
-        loadWaiters.set(sessionKey, { resolve, reject });
-      });
-      const request: InferenceRequest = { kind: "load", sessionKey, modelId, weights, providers };
-      options.worker.postMessage(request, [weights]);
-      await settled;
-    })();
+    const started = new Promise<void>((resolve, reject) => {
+      // Register before acquisition: disposal must reject even a stalled download.
+      loadWaiters.set(sessionKey, { resolve, reject });
+      void (async () => {
+        const weights = await options.weightsFor(modelId);
+        if (stopped !== undefined) throw stopped;
+        if (weights === undefined) throw new Error(`${modelId} is not available`);
+        const request: InferenceRequest = { kind: "load", sessionKey, modelId, weights, providers };
+        options.worker.postMessage(request, [weights]);
+      })().catch(reject);
+    });
     loads.set(sessionKey, started);
     // A failed load must not be remembered as done, or every later run fails with a stale
     // rejection and a retry can never happen.
-    void started.catch(() => loads.delete(sessionKey));
+    void started.catch(() => {
+      loads.delete(sessionKey);
+      loadWaiters.delete(sessionKey);
+    });
     return started;
   };
 
   return {
     async run(nodeId, texels) {
+      if (stopped !== undefined) throw stopped;
       const target = options.describe(nodeId);
       if (target === undefined) throw new Error(`no inference target for "${nodeId}"`);
       const sessionKey = sessionKeyFor(target.modelId, target.providers);
       await ensureLoaded(target.modelId, sessionKey, target.providers);
+      if (stopped !== undefined) throw stopped;
       const requestId = nextId++;
       const settled = new Promise<Uint8Array>((resolve, reject) => {
         pending.set(requestId, { nodeId, resolve, reject });
@@ -173,6 +182,7 @@ export function createWorkerRunner(options: WorkerRunnerOptions): WorkerRunner {
         kind: "run",
         requestId,
         sessionKey,
+        nodeId,
         nodeType: target.nodeType,
         texels,
         width: target.width,
@@ -190,8 +200,9 @@ export function createWorkerRunner(options: WorkerRunnerOptions): WorkerRunner {
       return settled;
     },
     dispose() {
-      options.worker.terminate();
       const gone = new Error("the inference worker was disposed");
+      stopped = gone;
+      options.worker.terminate();
       for (const [, waiter] of pending) waiter.reject(gone);
       pending.clear();
       /*

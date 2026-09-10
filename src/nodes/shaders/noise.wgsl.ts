@@ -73,6 +73,25 @@ fn grad4(cell: vec4i, seed: u32) -> vec4f {
   return v / max(length(v), 1e-4);
 }`;
 
+/**
+ * Expand the fixed 16-corner loop at shader construction, not per frame. Local
+ * Metal measurements showed about 40% lower Perlin4 GPU time. Keep corner
+ * order, gradients, weights and accumulation unchanged; only k becomes constant.
+ * Both browser and headless consume this same source. T1265's replay gate remains
+ * byte-exact; comparison with the former shader allows explicitly tested rounding.
+ */
+const PERLIN_4_CORNERS = Array.from({ length: 16 }, (_, k) => `{
+    let k = ${k}u;
+    let o = vec4f(
+      f32(k & 1u),
+      f32((k >> 1u) & 1u),
+      f32((k >> 2u) & 1u),
+      f32((k >> 3u) & 1u),
+    );
+    let w = mix(vec4f(1.0) - u, u, o);
+    acc = acc + (((w.x * w.y) * (w.z * w.w)) * dot(grad4(cell + vec4i(o), seed), f - o));
+  }`).join("\n  ");
+
 const PERLIN = `fn quintic(f: vec4f) -> vec4f {
   return f * f * f * ((f * ((f * 6.0) - 15.0)) + 10.0);
 }
@@ -109,16 +128,7 @@ fn perlin4(p: vec4f, seed: u32) -> f32 {
   let f = p - base;
   let u = quintic(f);
   var acc = 0.0;
-  for (var k = 0u; k < 16u; k = k + 1u) {
-    let o = vec4f(
-      f32(k & 1u),
-      f32((k >> 1u) & 1u),
-      f32((k >> 2u) & 1u),
-      f32((k >> 3u) & 1u),
-    );
-    let w = mix(vec4f(1.0) - u, u, o);
-    acc = acc + (((w.x * w.y) * (w.z * w.w)) * dot(grad4(cell + vec4i(o), seed), f - o));
-  }
+  ${PERLIN_4_CORNERS}
   return acc * 1.2;
 }`;
 

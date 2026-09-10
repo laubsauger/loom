@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { FrameInputs } from "@domain/types/backend.ts";
 import type { FrameClockVerdict } from "@runtime/telemetry/frame-clock.ts";
-import { wallDeltaSecondsOf } from "@domain/types/frame.ts";
 import { Tooltip } from "@ui/primitives/tooltip.tsx";
 import styles from "./timeline-readout.module.css";
 
@@ -10,22 +9,18 @@ import styles from "./timeline-readout.module.css";
  *
  * ## One clock
  *
- * §V169: every number here comes from the SAME `FrameEvaluationInput` the render
- * consumed. Wiring any of them to `performance.now()` is the obvious shortcut and produces
- * a display that drifts from the picture — worst precisely when it matters, because a
- * readout is what someone looks at once they have stopped trusting what they see. If the
- * loop stalls, these numbers stop; they never keep counting on their own.
+ * §V169: frame and time come from the SAME `FrameEvaluationInput` the render
+ * consumed. If the loop stalls, those numbers stop; they never count on their own.
  *
  * ## Which clock each number uses (T271)
  *
  * `frame` and `time` are the TIMELINE — where the animation is, which is the clock
  * expressions and shaders read, so the readout and the picture always agree.
  *
- * `fps` is the WALL delta, and it has to be: the timeline step is the constant `1/fps` by
- * construction, so an fps computed from it would read a flat 60 while the app was
- * actually managing 50 and dropping every sixth frame. A throughput meter that cannot
- * report a drop is not a meter. Both readings ride on the one frame input (§V172), so
- * this is still one clock source with two hands, not a second clock.
+ * `fps` counts ALL rendered frames in the frame clock's wall-time window. Sampling
+ * only the latest frame's wall delta at 10 Hz aliases uneven presentation intervals:
+ * 60 FPS on a 100 Hz display can read 50 or 100. The existing telemetry clock owns
+ * throughput; this component only samples its verdict, never estimates a second rate.
  *
  * ## Its own component, on purpose
  *
@@ -55,17 +50,14 @@ import styles from "./timeline-readout.module.css";
 /** §V16: <= 10 Hz. A readout that updates per frame is per-frame data in the tree. */
 export const READOUT_INTERVAL_MS = 100;
 
-/** Enough samples to stop the number flickering, few enough to still feel live. */
-const FPS_WINDOW = 8;
-
 export interface TimelineReadoutProps {
   /** Reads the last rendered frame. A REF read, never a subscription (§V16). */
   readonly latestFrame: () => FrameInputs | null;
   /**
    * T304: why-is-nothing-moving, judged in frame-clock.ts and read on the same 10 Hz
-   * sample as everything else. Absent = no verdict surface (a caller with no hub).
+   * sample as everything else. Also owns the rendered-frame throughput measurement.
    */
-  readonly frameClock?: () => FrameClockVerdict;
+  readonly frameClock: () => FrameClockVerdict;
   /** Runs `transport.seek`. Absent = the field is read-only, because nothing can seek. */
   readonly onSeek?: ((frameIndex: number) => void) | undefined;
   readonly intervalMs?: number;
@@ -83,28 +75,17 @@ export function TimelineReadout({ latestFrame, frameClock, onSeek, intervalMs = 
   const [sample, setSample] = useState<Sample | null>(null);
   const [clock, setClock] = useState<FrameClockVerdict | null>(null);
   const [draft, setDraft] = useState<string | null>(null);
-  const deltasRef = useRef<number[]>([]);
-  const lastIndexRef = useRef<number | null>(null);
 
   useEffect(() => {
     const tick = () => {
-      setClock(frameClock?.() ?? null);
+      const verdict = frameClock();
+      setClock(verdict);
       const frame = latestFrame();
       if (frame === null) return;
-      // Only count a frame once: while paused the same inputs stay in the ref, and
-      // averaging them again would make a stopped loop report a rising fps.
-      if (lastIndexRef.current !== frame.frame.frameIndex) {
-        lastIndexRef.current = frame.frame.frameIndex;
-        const deltas = deltasRef.current;
-        deltas.push(wallDeltaSecondsOf(frame.frame));
-        if (deltas.length > FPS_WINDOW) deltas.shift();
-      }
-      const deltas = deltasRef.current;
-      const mean = deltas.length === 0 ? 0 : deltas.reduce((a, b) => a + b, 0) / deltas.length;
       setSample({
         frameIndex: frame.frame.frameIndex,
         timeSeconds: frame.frame.timeSeconds,
-        fps: mean > 0 ? 1 / mean : null,
+        fps: verdict.kind === "paused" ? null : verdict.observedFps,
       });
     };
     tick();

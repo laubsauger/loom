@@ -474,7 +474,7 @@ export const getRuntimeMetrics: AgentTool<EmptyInput, AgentRuntimeMetrics> = {
   name: "get_runtime_metrics",
   title: "Get runtime metrics",
   description:
-    "Frame and pass timing as last published by the runtime. A null millisecond figure means the device has no timestamp query, not zero cost.",
+    "Frame timing and resource counts as last published by the runtime. frameGpuMs is the measured frame GPU extent, not a sum of per-node costs. GPU pass spans can overlap and cannot establish exclusive node cost. A null millisecond figure means no measurement is available, not zero cost; check timingAvailable and frameClock.",
   kind: "read",
   inputSchema: emptyInput,
   requires: { queries: ["runtime.metrics"] },

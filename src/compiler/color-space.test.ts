@@ -11,7 +11,7 @@ import { colorSpaceForFormat, resolveColorSpace } from "./color-space.ts";
 
 describe("colorSpaceForFormat", () => {
   it("maps formats to their implied spaces", () => {
-    expect(colorSpaceForFormat("rgba8unorm-srgb")).toBe("encoded");
+    expect(colorSpaceForFormat("rgba8unorm-srgb")).toBe("linear");
     expect(colorSpaceForFormat("r32float")).toBe("data");
     expect(colorSpaceForFormat("rgba16float")).toBe("linear");
     expect(colorSpaceForFormat("rgba8unorm")).toBe("linear");

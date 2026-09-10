@@ -135,7 +135,7 @@ export interface SinkDisplayTransform {
  * nothing about values above 1. That asymmetry is the reason this returns a pair rather than
  * two functions somebody could call in only one of the two places.
  *
- * See `sinkTargetSpace` for why an `-srgb` sink is reported rather than trusted.
+ * An `-srgb` sink is presented through a non-decoding view of its stored bytes (T1307).
  */
 export function sinkDisplayTransform(
   policy: ColorPolicy,
@@ -160,8 +160,8 @@ export function sinkDisplayTransform(
  * are genuinely different and were measured apart (a preview of an `-srgb` sink declared
  * `encoded` decoded twice and came out at 54).
  *
- * So an `-srgb` sink keeps the space it derived and the display transform is a NO-OP there,
- * which is exactly what `presentDecodesSrgbSource` makes the compiler say out loud.
+ * An `-srgb` display sink declares linear sampled values. Only the final presentation
+ * binding uses a non-decoding view to preserve its already encoded storage bytes (T1307).
  */
 export function sinkTargetSpace(
   policy: ColorPolicy,
@@ -172,22 +172,6 @@ export function sinkTargetSpace(
   if (policy.displayTransform !== "srgb") return derivedSpace;
   if (isSrgbFormat(format)) return "linear";
   return "encoded";
-}
-
-/**
- * True when presenting this sink target would show the wrong picture no matter what the
- * Output node does — the case the compiler reports rather than papering over (§V288).
- *
- * `rgba8unorm-srgb` stores encoded bytes and DECODES them on every sample. The present
- * blit is a raw copy by §V70a, so it samples (decode), writes to a canvas whose format is
- * never `-srgb` (`getPreferredCanvasFormat` returns `bgra8unorm` or `rgba8unorm`, never an
- * srgb variant), and the compositor shows linear light as if it were display values.
- * Measured on Dawn: 54 where 127 is right. Fixing it needs a non-decoding VIEW of the
- * source in the blit, which vgpu does not expose — so the compiler names the format and
- * the fix instead of shipping a fourth answer.
- */
-export function presentDecodesSrgbSource(policy: ColorPolicy, format: TextureFormat): boolean {
-  return policy.displayTransform === "srgb" && isSrgbFormat(format);
 }
 
 /**

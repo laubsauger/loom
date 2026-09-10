@@ -38,7 +38,7 @@ import { settings, node, edge, graph, document, expressionSlot } from "./builder
 export const gradientRemapDocument = document(
   "e11-gradient-remap",
   "E11 Gradient Remap",
-  settings({ randomSeed: 11 }),
+  settings({ randomSeed: 11, workingFormat: "rgba8unorm-srgb" }),
   graph(
     [
       node(
@@ -70,7 +70,9 @@ export const gradientRemapDocument = document(
           // same rate the two would beat against each other and read as noise.
           speed: 0.08,
         },
-        { label: "noise1" },
+        // T1310: this is a palette coordinate, not displayed colour. The remap's 2.6x
+        // scale magnifies eight-bit quantization; keep the field float, colour eight-bit.
+        { label: "noise1", format: { mode: "fixed", format: "rgba16float" } },
       ),
       node(
         "palette",

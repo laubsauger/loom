@@ -18,6 +18,21 @@ import { definitionSource, testDefinition, testDocument } from "./test-support.t
  */
 
 describe("round trip", () => {
+  it.each(["rgba16float", "rgba8unorm", "rgba8unorm-srgb"] as const)(
+    "preserves explicit %s settings regardless of new-project defaults (T1311)",
+    (workingFormat) => {
+      const base = testDocument();
+      const document = { ...base, settings: { ...base.settings, workingFormat } };
+      const file = buildProjectFile({ document, now: () => document.updatedAt });
+      const loaded = loadProject(file.text, {
+        nodes: definitionSource([testDefinition({ type: "gradient" }), testDefinition({ type: "output" })]),
+      });
+      if (!loaded.ok) throw new Error(loaded.reason);
+      expect(loaded.document.settings.workingFormat).toBe(workingFormat);
+      expect(loaded.changed).toBe(false);
+      expect(buildProjectFile({ document: loaded.document, now: () => document.updatedAt }).text).toBe(file.text);
+    },
+  );
   it("writes and reads back the same document, byte for byte", () => {
     const document = testDocument();
     const file = buildProjectFile({ document, now: () => document.updatedAt });

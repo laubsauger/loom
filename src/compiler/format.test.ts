@@ -214,11 +214,11 @@ describe("format propagation through a graph", () => {
 describe("colour space rides alongside format (doc §16.2)", () => {
   it("derives the space a format implies", () => {
     expect(colorSpaceForFormat("rgba16float")).toBe("linear");
-    expect(colorSpaceForFormat("rgba8unorm-srgb")).toBe("encoded");
+    expect(colorSpaceForFormat("rgba8unorm-srgb")).toBe("linear");
     expect(colorSpaceForFormat("r32float")).toBe("data");
   });
 
-  it("propagates the space with the format and reports a mix without converting", () => {
+  it("mixes sRGB storage with float samples in linear space without a false mismatch", () => {
     const encoded: NodeDefinition = {
       type: "fx.encoded",
       version: 1,
@@ -253,12 +253,10 @@ describe("colour space rides alongside format (doc §16.2)", () => {
       capabilities: testCapabilities(),
     });
 
-    expect(plan.outputs.find((output) => output.nodeId === "enc")?.space).toBe("encoded");
+    expect(plan.outputs.find((output) => output.nodeId === "enc")?.space).toBe("linear");
     expect(plan.outputs.find((output) => output.nodeId === "lin")?.space).toBe("linear");
     const mismatch = plan.diagnostics.find((d) => d.code === CompilerDiagnosticCode.colorSpaceMismatch);
-    expect(mismatch?.nodeId).toBe("comp");
-    expect(mismatch?.suggestion).toMatch(/conversion node/i);
-    // A mismatch is reported, never silently fixed: the plan still renders.
+    expect(mismatch).toBeUndefined();
     expect(plan.ok).toBe(true);
   });
 });

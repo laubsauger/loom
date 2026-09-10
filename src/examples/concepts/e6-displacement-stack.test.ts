@@ -5,6 +5,18 @@ import { example, outputFor, recompile, withFormat } from "./helpers.ts";
 describe("E6 Displacement Stack", () => {
   const { document, plan } = example("E6-Displacement-Stack.loom.json");
 
+  it("T1312: stores colour in sRGB8 without quantizing the full-resolution displacement field", () => {
+    expect(document.settings.workingFormat).toBe("rgba8unorm-srgb");
+    for (const nodeId of ["field", "shape", "place"]) {
+      expect(outputFor(plan, nodeId).format).toBe("rgba16float");
+      expect(outputFor(plan, nodeId).size).toEqual([1280, 720]);
+    }
+    for (const nodeId of ["plate", "warp", "out"]) {
+      expect(outputFor(plan, nodeId).format).toBe("rgba8unorm-srgb");
+      expect(outputFor(plan, nodeId).size).toEqual([1280, 720]);
+    }
+  });
+
   /**
    * §V56/§V57: the displacement branch is never colour-converted. Every node in it inherits
    * its format from its input, so the branch holds one space from Noise to Displace and the

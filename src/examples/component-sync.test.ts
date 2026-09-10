@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { flattenedNodeId } from "../compiler/flatten.ts";
 import { compileGraph } from "../compiler/index.ts";
 import { createComponentSystem } from "../domain/components/registry.ts";
 import { graphComponentDefinitionSchema } from "../domain/components/schemas.ts";
@@ -113,6 +114,21 @@ describe("the shipped starter components are what the save path writes (§V94)",
 });
 
 describe("every starter component renders (§V89)", () => {
+  it("T1312: DisplacementStack carries its float island into an eight-bit host", () => {
+    const text = shipped.get("DisplacementStack.loom.json");
+    if (text === undefined) throw new Error("Missing DisplacementStack starter");
+    const { loaded, plan } = open(text);
+    expect(loaded.document.settings.workingFormat).toBe("rgba8unorm-srgb");
+    const instance = Object.values(loaded.document.graph.nodes).find((entry) =>
+      readComponentInstance(entry)?.componentId === "displacementStack");
+    if (instance === undefined) throw new Error("Missing displacement instance");
+    for (const inner of ["field", "shape", "place", "warp"]) {
+      const output = plan.outputs.find((entry) => entry.nodeId === flattenedNodeId(instance.id, inner));
+      expect(output?.format, inner).toBe(inner === "warp" ? "rgba8unorm-srgb" : "rgba16float");
+      expect(output?.size, inner).toEqual([1280, 720]);
+    }
+  });
+
   it.each([...shipped.keys()])("%s loads with nothing to report", (fileName) => {
     const { loaded } = open(shipped.get(fileName) as string);
     expect(messagesOf(loaded.diagnostics)).toEqual([]);

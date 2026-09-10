@@ -325,7 +325,8 @@ export interface ProjectSettings {
  */
 export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   outputResolution: { width: 1280, height: 720 },
-  workingFormat: "rgba16float",
+  // SDR storage; shader samples remain linear. Numerical/HDR paths select float.
+  workingFormat: "rgba8unorm-srgb",
   randomSeed: 1,
   previewLongEdge: 192,
   previewFps: 20,

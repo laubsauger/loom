@@ -183,6 +183,23 @@ describe("placement — outside the header, attached to the node", () => {
 });
 
 describe("the number is honest before it is useful (§V86)", () => {
+  it("labels overlapping spans as displayed-span proportions, never exclusive graph costs", async () => {
+    const { runtime, timingOverlay } = mountPair();
+    await act(async () => { timingOverlay.set(true); });
+    // Two 8 ms spans can overlap completely in an 8 ms frame. Neither owns half
+    // of that frame's execution; 50% describes only this displayed span sum.
+    await settle(runtime, "cheap", 8);
+    await settle(runtime, "dear", 8);
+    await publish(runtime, "offscreen", { gpuMs: 100 });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 5)); });
+    expect(screen.getAllByText("GPU spans · may overlap")).toHaveLength(2);
+    expect(screen.getAllByRole("img", {
+      name: "GPU span comparison: 50% of displayed span sum; not exclusive node cost",
+    })).toHaveLength(2);
+    expect(screen.queryByRole("img", { name: /of the graph/ })).toBeNull();
+    expect(screen.getByTestId("node-timing-value-cheap").textContent).toBe("8.00 ms");
+  });
+
   it("reads an em dash, never 0.00 ms, while nothing is measured", async () => {
     // The state the whole app is in until `attachTimingSource` has a product call site
     // (T1011). A zero here would be a measurement of nothing dressed as a cheap pass.

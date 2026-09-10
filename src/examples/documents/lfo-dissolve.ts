@@ -16,7 +16,7 @@ import { settings, node, edge, graph, document } from "./builders.ts";
 export const lfoDissolveDocument = document(
   "e7-lfo-dissolve",
   "E7 LFO Dissolve",
-  settings({ randomSeed: 11 }),
+  settings({ randomSeed: 11, workingFormat: "rgba8unorm-srgb" }),
   graph(
     [
       node("lfo", "lfo", [-640, 220], { shape: "sine", frequency: 0.25, amplitude: 0.5, offset: 0.5, phase: 0 }, { label: "lfo1" }),

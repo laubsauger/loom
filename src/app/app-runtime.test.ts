@@ -22,6 +22,12 @@ import { createAppRuntime } from "./app-runtime.ts";
 
 const ACTOR = { kind: "human" as const, id: "tester", label: "Tester" };
 
+it("T1311: new projects use sRGB8 storage at unchanged 720p resolution", () => {
+  const runtime = createAppRuntime({ identityStorage: null, actor: ACTOR });
+  expect(runtime.settings.workingFormat).toBe("rgba8unorm-srgb");
+  expect(runtime.settings.outputResolution).toEqual({ width: 1280, height: 720 });
+});
+
 function fanDefinition(version = 1): GraphComponentDefinition {
   return {
     componentId: "fan",

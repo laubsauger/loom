@@ -236,6 +236,7 @@ export function NodeInfoPopup({ info, lens, onLens, onLensReset }: NodeInfoPopup
 
       <section className={styles.section} aria-label="Cook">
         <h4 className={styles.sectionTitle}>cook</h4>
+        <p className={styles.note}>GPU span sums can overlap; not exclusive node cost.</p>
         <dl className={styles.facts}>
           {info.isComponent ? (
             <>
@@ -251,7 +252,7 @@ export function NodeInfoPopup({ info, lens, onLens, onLensReset }: NodeInfoPopup
               </Value>
             </>
           ) : (
-            <Timing label="gpu time" bucket={timing.own} />
+            <Timing label="gpu span sum" bucket={timing.own} />
           )}
           <dt>passes</dt>
           <Value>{timing.total.passCount}</Value>

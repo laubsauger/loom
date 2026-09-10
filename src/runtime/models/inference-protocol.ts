@@ -62,6 +62,8 @@ export type InferenceRequest =
       readonly kind: "run";
       readonly requestId: number;
       readonly sessionKey: string;
+      /** Temporal state belongs to this node; model/provider weights remain shared. */
+      readonly nodeId: string;
       readonly nodeType: InferenceNodeType;
       /** Raw `vec4f` texels straight from the readback. Transferred. */
       readonly texels: ArrayBuffer;

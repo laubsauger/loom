@@ -1258,6 +1258,25 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
 
   const isPair = (source: Target | PingPongTargets): source is PingPongTargets => "swap" in source;
 
+  // T1307: sRGB storage already contains display bytes. The final blit must sample
+  // those bytes without decoding them. Views share storage; no extra texture or copy.
+  // Prepare both feedback halves outside frame encoding and reuse their view identities.
+  const presentationViews = new WeakMap<GPUTexture, GPUTextureView>();
+  const presentationBindings = new WeakMap<PresentationState, Target | GPUTextureView>();
+  function preparePresentationView(target: Target): void {
+    if (target.format !== "rgba8unorm-srgb") return;
+    const texture = target.color.gpu;
+    if (!presentationViews.has(texture)) {
+      presentationViews.set(texture, target.color.createView({ format: "rgba8unorm" }));
+    }
+  }
+  function presentationBinding(target: Target): Target | GPUTextureView {
+    if (target.format !== "rgba8unorm-srgb") return target;
+    const view = presentationViews.get(target.color.gpu);
+    if (view === undefined) throw new Error("sRGB presentation view was not prepared before frame encoding.");
+    return view;
+  }
+
   /**
    * (Re)establishes one presentation: surface on the live device, blit effect bound to
    * the current source object. Allocates, so callers run outside any open frame (§V8).
@@ -1297,10 +1316,14 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       const source = presentationSource(p.outputId);
       if (source === undefined) {
         p.boundSource = undefined;
+        presentationBindings.delete(p);
         return;
       }
       presentSampler ??= sampler(active.gpu, { magFilter: "linear", minFilter: "linear" });
-      const bindValue = isPair(source) ? source.read.color : source;
+      const readTarget = isPair(source) ? source.read : source;
+      preparePresentationView(readTarget);
+      if (isPair(source)) preparePresentationView(source.write);
+      const bindValue = presentationBinding(readTarget);
       if (!p.blit) {
         p.blit = effect(active.gpu, BLIT_WGSL, {
           set: { blitSampler: presentSampler, blitSource: bindValue },
@@ -1309,7 +1332,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         // No compileSync here: a surface target only exists inside frame(gpu)
         // (VGPU-SURFACE-NOT-IN-FRAME), so the blit pipeline compiles lazily on its
         // first encode. One-time cost on the first presented frame, not per frame.
-      } else if (p.boundSource !== source) {
+      } else if (p.boundSource !== source || presentationBindings.get(p) !== bindValue) {
         // T1180: the blit outlives the source it was pointed at, and vgpu's eviction
         // subscription follows the SLOT, not the entry it built — so the entry naming the
         // outgoing target would survive that target's destroy with nothing listening. One
@@ -1318,6 +1341,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         p.blit.set({ blitSource: bindValue });
       }
       p.boundSource = source;
+      presentationBindings.set(p, bindValue);
     } catch (error) {
       hub.report(
         backendDiagnostic(
@@ -1587,7 +1611,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       if (p.disposed || p.surface === undefined || p.blit === undefined || p.boundSource === undefined) continue;
       // A ping-pong source swaps identity every frame; re-point before encoding, the
       // same way rebindDynamicTextures treats plan passes.
-      if (isPair(p.boundSource)) p.blit.set({ blitSource: p.boundSource.read.color });
+      if (isPair(p.boundSource)) p.blit.set({ blitSource: presentationBinding(p.boundSource.read) });
       f.pass({ target: p.surface, clear: true }, p.blit);
       // T739: counted HERE, after the four guards above, so the number means "a blit was
       // actually encoded for this surface" and not "a frame happened somewhere".
@@ -1929,6 +1953,9 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         return;
       }
       for (const t of found) t.resize(size);
+      // Alternate views belong to the old texture allocation, not the retained Target.
+      // Recreate/rebind outside the frame, just as after a structural rebuild.
+      ensureAllPresentations();
 
       // R4: the two resolution-change paths must agree. A live resize mutates GPU
       // targets, so the retained descriptors and structural signature are updated to
@@ -2830,4 +2857,3 @@ function pipelineFailureDiagnostic(
     },
   );
 }
-

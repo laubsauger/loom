@@ -21,7 +21,7 @@ import styles from "./node-timing-overlay.module.css";
  *
  *  - its own `useNodeRuntime` subscription, for its node id only;
  *  - its own smoothing accumulator;
- *  - its own subscription to the graph-wide denominator.
+ *  - its own subscription to the displayed overlays' span-sum denominator.
  *
  * `NodeView` renders `<NodeTimingOverlay nodeId>` and reads NONE of those. It subscribes
  * to the structural half of the runtime snapshot (`useNodeStructuralState`), which does
@@ -84,13 +84,14 @@ export const NodeTimingOverlay = memo(function NodeTimingOverlay({
 
   return (
     <div className={styles.overlay} data-testid={`node-timing-${nodeId}`}>
+      <span className={styles.value}>GPU spans · may overlap</span>
       <div
         className={styles.track}
         role="img"
         aria-label={
           smoothed === null
-            ? "GPU time share: not measured"
-            : `GPU time share: ${String(percent)}% of the graph (${costTier(share)})`
+            ? "GPU span comparison: not measured"
+            : `GPU span comparison: ${String(percent)}% of displayed span sum; not exclusive node cost`
         }
       >
         <div
@@ -103,7 +104,7 @@ export const NodeTimingOverlay = memo(function NodeTimingOverlay({
       <span
         className={styles.value}
         data-testid={`node-timing-value-${nodeId}`}
-        title="GPU time for this pass, smoothed"
+        title="Smoothed GPU span sum; not exclusive node cost"
       >
         {formatGpuMs(smoothed)}
       </span>

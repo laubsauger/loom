@@ -19,13 +19,13 @@ import { CompilerDiagnosticCode, compilerDiagnostic } from "./diagnostics.ts";
 export type ColorSpace = "linear" | "encoded" | "data";
 
 /**
- * The space a format implies when nothing upstream says otherwise.
+ * The sampled-value space a format implies when nothing upstream says otherwise.
  *
- * An `-srgb` format IS the encoding, a single-channel float is data by construction, and
- * everything else is working-space linear.
+ * An `-srgb` texture stores encoded bytes but hardware sampling returns linear values.
+ * Labelling those samples encoded would make previews decode them a second time.
+ * Single-channel float and depth formats are data; other samples are working-space linear.
  */
 export function colorSpaceForFormat(format: TextureFormat): ColorSpace {
-  if (format.endsWith("-srgb")) return "encoded";
   if (format === "r32float" || format === "depth24plus") return "data";
   return "linear";
 }

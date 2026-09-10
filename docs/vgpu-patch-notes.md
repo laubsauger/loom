@@ -1,8 +1,8 @@
-# vgpu 0.3.1 — the four things we patch, and why
+# vgpu patches — scope and rationale
 
 Loom is a browser WebGPU node compositor built entirely on `vgpu` (0.3.1 when this was written; pinned 0.4.1 since T1261, see the end). We carry a
 patch against the published `dist` (pnpm `patchedDependencies` → `patches/vgpu.patch`,
-sixteen hunks across twelve files, four independent themes). We would rather not: a pinned
+the original four themes below plus T1307's compatible texture views). We would rather not: a pinned
 dependency's diff is maintenance forever, and a silently dropped patch returns each bug
 with no error.
 
@@ -17,6 +17,33 @@ The third we suspect is a deliberate performance default that we are simply an u
 consumer of, and we say that too. The fourth (T1243) is a missing figure: the timer
 resolves the raw timestamps and discards them after computing per-span durations, and
 the frame's extent cannot be recovered from the durations.
+
+---
+
+## T1307 addition: compatible views for sRGB presentation
+
+`@vgpu/core` already supports `TextureOptions.viewFormats` and `Texture.createView`,
+but `TargetTextureOptions` and `OffscreenTarget` did not forward that allocation
+option. Two added hunks expose optional `viewFormats` for resolved color
+attachments. Depth and multisample storage are unchanged; callers that omit the
+option retain their existing behavior. The original four patch themes remain intact.
+
+Loom opts in only for `rgba8unorm-srgb` targets and feedback pairs, with
+`rgba8unorm` as the compatible view. Ordinary graph sampling keeps its sRGB
+decode. Presentation uses a cached non-decoding view of the same allocation,
+preserving stored display bytes without another texture, copy, encode, or
+readback. Both feedback halves are prepared outside frame encoding. Live resize
+refreshes views and evicts obsolete presentation bindings.
+
+The [WebGPU texture descriptor contract](https://www.w3.org/TR/2026/CRD-webgpu-20260812/#dom-gputexturedescriptor-viewformats)
+requires compatible alternate view formats to be declared at allocation. This
+does not guarantee identical performance across platforms; benchmark separately.
+
+Regression: `present-parity.gpu.test.ts` formerly measured viewer grey 54 versus
+preview/export 127. It now requires exact agreement, including dark values,
+resizing, and both feedback halves. `presentation-pixels.spec.ts` also requires
+the sRGB grey to reach the browser compositor as 127. No default format changes
+are part of this patch.
 
 ---
 

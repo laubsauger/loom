@@ -1,3 +1,29 @@
+diff --git a/dist/target-offscreen.js b/dist/target-offscreen.js
+index 3b4221148054e92c95a08f089a637249297b8d51..3757a969c867303556854e9998db66c917b98ec7 100644
+--- a/dist/target-offscreen.js
++++ b/dist/target-offscreen.js
+@@ -87,6 +87,8 @@ export class OffscreenTarget {
+             size: this.#currentSize,
+             format: spec.format,
+             usage: ["render_attachment", "texture_binding", "copy_src"],
++            // shaderloom patch (T1307): same allocation, alternate sampling interpretation.
++            viewFormats: this.options.viewFormats,
+             sampleCount: 1,
+             label: this.options.label ? `${this.options.label}.color${index}.resolve` : undefined,
+         }));
+diff --git a/dist/target.d.ts b/dist/target.d.ts
+index f642ba8b4a9ba90b3d3aff09484779766564f86a..4b158b1c64066e33c1e36cd4bcc055a515d7b71b 100644
+--- a/dist/target.d.ts
++++ b/dist/target.d.ts
+@@ -2,6 +2,8 @@ import type { ClearColor } from "./target-utils.ts";
+ import type { Texture, ResourceDestroyCallback, ResourceIdentity, UnsubscribeResourceDestroy } from "@vgpu/core";
+ export interface TargetTextureOptions {
+     readonly format?: GPUTextureFormat;
++    /** shaderloom T1307: compatible views for each resolved color attachment; not depth/MSAA storage. */
++    readonly viewFormats?: readonly GPUTextureFormat[];
+     /**
+      * Default clear color of this target, used by passes that clear without naming a color.
+      * Defaults to `[0, 0, 0, 1]`; mutable at runtime through `target.clearColor`.
 diff --git a/dist/compute.js b/dist/compute.js
 index fa1d930d97886ed6168d1ce9598f810e9ce61e15..076a88d671527de0c7da84dc1e1a4ca6e78d7c3e 100644
 --- a/dist/compute.js

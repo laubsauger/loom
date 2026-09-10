@@ -281,7 +281,8 @@ export const uvNode: NodeDefinition = {
     },
   },
   resolutionPolicy: { kind: "project" },
-  formatPolicy: { kind: "project" },
+  // T1311: coordinates need sub-texel precision, independently of colour storage.
+  formatPolicy: { kind: "fixed", format: "rgba16float" },
   compile(context): CompiledNodeDescription {
     const { nodeId, outputs, parameters } = readCompileInputs(context);
     const target = outputs["out"];
@@ -364,10 +365,9 @@ export const checkerNode: NodeDefinition = {
  * becomes its own node. Flagged rather than quietly picked, because either answer changes
  * the port contract.
  *
- * Distance mode wants a float format: with `rgba8unorm` the negative half of the field
- * clips to zero. The project working format (`rgba16float`) is what `{kind:"project"}`
- * gives it, so the default is right; a per-node format override to an 8-bit format is the
- * user's to make, and the loss is visible immediately.
+ * Distance mode needs float: eight-bit storage clips the negative half of the field.
+ * T1311 keeps both modes float so changing Mode cannot silently destroy the field in
+ * an SDR project. An explicit per-node format override remains the user's choice.
  */
 export const circleNode: NodeDefinition = {
   type: "circle",
@@ -408,7 +408,7 @@ export const circleNode: NodeDefinition = {
     },
   },
   resolutionPolicy: { kind: "project" },
-  formatPolicy: { kind: "project" },
+  formatPolicy: { kind: "fixed", format: "rgba16float" },
   compile(context): CompiledNodeDescription {
     const { nodeId, outputs, parameters, resolution } = readCompileInputs(context);
     const target = outputs["out"];
@@ -494,7 +494,8 @@ export const rectangleNode: NodeDefinition = {
     },
   },
   resolutionPolicy: { kind: "project" },
-  formatPolicy: { kind: "project" },
+  // Shares Circle's signed-distance contract, including when switching from Fill mode.
+  formatPolicy: { kind: "fixed", format: "rgba16float" },
   compile(context): CompiledNodeDescription {
     const { nodeId, outputs, parameters, resolution } = readCompileInputs(context);
     const target = outputs["out"];

@@ -1,7 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { compileGraph } from "../../../compiler/index.ts";
-import { CompilerDiagnosticCode } from "../../../compiler/diagnostics.ts";
 import { createNodeRegistry } from "../../../nodes/registry/registry.ts";
 import { allNodeDefinitions } from "../../../nodes/definitions/index.ts";
 import type { GraphDocument, ProjectSettings } from "../../../domain/types/graph.ts";
@@ -93,7 +92,7 @@ function settings(workingFormat: ProjectSettings["workingFormat"]): ProjectSetti
   };
 }
 
-function solidThroughOutput(): GraphDocument {
+function solidThroughOutput(grey = DISPLAY_GREY, feedback = false): GraphDocument {
   return {
     revision: 1,
     nodes: {
@@ -102,11 +101,11 @@ function solidThroughOutput(): GraphDocument {
         type: "solid",
         definitionVersion: 1,
         position: { x: 0, y: 0 },
-        parameters: { color: [DISPLAY_GREY, DISPLAY_GREY, DISPLAY_GREY, 1] },
+        parameters: { color: [grey, grey, grey, 1] },
       },
       out: {
         id: "out",
-        type: "output",
+        type: feedback ? "feedback" : "output",
         definitionVersion: 1,
         position: { x: 200, y: 0 },
         parameters: {},
@@ -116,7 +115,7 @@ function solidThroughOutput(): GraphDocument {
       e1: {
         id: "e1",
         source: { nodeId: "solid", portId: "out" },
-        target: { nodeId: "out", portId: "input" },
+        target: { nodeId: "out", portId: feedback ? "in" : "input" },
       },
     },
     groups: {},
@@ -219,13 +218,17 @@ interface Measurement {
 }
 
 /** Renders one document and reads the centre pixel out of all three present paths. */
-async function measure(workingFormat: ProjectSettings["workingFormat"]): Promise<Measurement> {
+async function measure(
+  workingFormat: ProjectSettings["workingFormat"],
+  options: { grey?: number; resize?: boolean; feedbackFrames?: number } = {},
+): Promise<Measurement> {
   const registry = createNodeRegistry(allNodeDefinitions).view();
   const plan = compileGraph({
-    graph: solidThroughOutput(),
+    graph: solidThroughOutput(options.grey, options.feedbackFrames !== undefined),
     settings: settings(workingFormat),
     registry,
     capabilities: CAPS,
+    ...(options.feedbackFrames === undefined ? {} : { sinks: [{ nodeId: "out", portId: "out", kind: "preview" as const }] }),
   });
   expect(plan.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
 
@@ -261,6 +264,25 @@ async function measure(workingFormat: ProjectSettings["workingFormat"]): Promise
       resolution: [SIZE, SIZE],
     });
     await device.queue.onSubmittedWorkDone();
+    if (options.resize) {
+      backend.resize(output.resourceId, [SIZE * 2, SIZE * 2]);
+      backend.render(compiled, {
+        frame: { timeSeconds: 1 / 60, deltaSeconds: 1 / 60, frameIndex: 1, mode: "offline", randomSeed: 7 },
+        pointer: { x: 0, y: 0, buttons: 0 },
+        resolution: [SIZE * 2, SIZE * 2],
+      });
+      await device.queue.onSubmittedWorkDone();
+    }
+    if (options.feedbackFrames !== undefined) {
+      expect(output.resourceKind).toBe("pingPong");
+      for (let frameIndex = 2; frameIndex < options.feedbackFrames + 2; frameIndex++) {
+        backend.render(compiled, {
+          frame: { timeSeconds: frameIndex / 60, deltaSeconds: 1 / 60, frameIndex, mode: "offline", randomSeed: 7 },
+          pointer: { x: 0, y: 0, buttons: 0 }, resolution: [SIZE, SIZE],
+        });
+      }
+      await device.queue.onSubmittedWorkDone();
+    }
     expect(errors).toEqual([]);
     // The surface never asks for an srgb format, so the hardware adds no transfer of its
     // own: whatever the blit writes is what the compositor gets.
@@ -368,27 +390,32 @@ describe("B47 — one decode answer for every way of showing an output (T375)", 
     60_000,
   );
 
-  /**
-   * The one configuration that CANNOT be made to agree, said out loud (§V288).
-   *
-   * An `rgba8unorm-srgb` output stores display bytes and DECODES them on every sample. The
-   * present blit is a raw copy by §V70a, so it samples (decode) and writes to a canvas
-   * whose format is never an srgb variant — 54 where the preview and the file both say 127.
-   * Fixing it needs a non-decoding VIEW of the source texture, which vgpu does not expose.
-   * Until then the compiler names the format and the fix, and this test holds it to that: a
-   * silent fourth answer is the thing B47 was.
-   */
-  it("names the -srgb output format it cannot present, rather than showing a fourth answer", async () => {
+  // T1307: red-verified at [54,54,54,255] before the non-decoding view was bound.
+  it("presents sRGB storage bytes without a second decode or an extra encode", async () => {
     if (dawnError !== undefined) throw new Error(`Dawn did not start: ${dawnError}`);
 
     const measured = await measure("rgba8unorm-srgb");
-    expect(measured.warnings).toContain(CompilerDiagnosticCode.sinkFormatUndisplayable);
-    // The two paths that CAN agree still do, exactly.
+    expect(measured.warnings).toEqual([]);
     expect(measured.preview).toEqual([ENCODED_BYTE, ENCODED_BYTE, ENCODED_BYTE, 255]);
     expect(measured.exported).toEqual(measured.preview);
-    // And the one that cannot is recorded at its MEASURED value, so a future fix that makes
-    // it agree fails here and gets to delete this line deliberately.
-    expect(measured.viewer).toEqual([54, 54, 54, 255]);
+    expect(measured.viewer).toEqual(measured.exported);
+  }, 60_000);
+
+  it.each([0.02, 0.1, 0.5, 0.9])("preserves sRGB parity across a live resize at grey %s", async (grey) => {
+    if (dawnError !== undefined) throw new Error(`Dawn did not start: ${dawnError}`);
+    const measured = await measure("rgba8unorm-srgb", { grey, resize: true });
+    expect(measured.warnings).toEqual([]);
+    expect(measured.viewer).toEqual(measured.exported);
+    expect(measured.preview).toEqual(measured.exported);
+    expect(measured.viewer[0]).toBeGreaterThan(0);
+  }, 60_000);
+
+  it.each([3, 4])("presents both sRGB feedback halves after resize and %s swaps", async (feedbackFrames) => {
+    if (dawnError !== undefined) throw new Error(`Dawn did not start: ${dawnError}`);
+    const measured = await measure("rgba8unorm-srgb", { feedbackFrames, resize: true });
+    expect(measured.viewer).toEqual([ENCODED_BYTE, ENCODED_BYTE, ENCODED_BYTE, 255]);
+    expect(measured.viewer).toEqual(measured.exported);
+    expect(measured.preview).toEqual(measured.exported);
   }, 60_000);
 });
 

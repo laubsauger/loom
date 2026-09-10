@@ -214,19 +214,17 @@ function planFor(modelId: string, nodeType: InferenceNodeType): ModelPlan {
 
 export function createWorkerCore(options: WorkerCoreOptions) {
   const sessions = new Map<string, Promise<LoadedSession>>();
-  /* T957 — the matte's temporal EMA, per session: worker-local state in the SAME slot
-     §T981's recurrent design would use (building this proves the slot). Cleared with
-     the session. */
+  // Weights are shared per session; image history is private to each node/session.
   const previousMatte = new Map<string, Float32Array>();
   /*
-   * T1040 — the recurrent state, per session, in the slot §T957 built the EMA in to prove.
+   * T1040/T1319 — recurrent state per node/session, never shared with another node.
    *
    * The tensors are the RUNTIME's own, held opaquely and handed straight back: on a GPU
    * execution provider they may never be CPU-resident at all, and touching `.data` would
-   * force a download this loop exists to avoid. `ratio` rides along because it decides
-   * their shape (see the run path). Cleared with the session, like everything else here.
+   * force a download this loop exists to avoid. Both input side and downsample ratio
+   * decide their shape. Cleared with the session, like everything else here.
    */
-  const recurrent = new Map<string, { ratio: number; tensors: Record<string, unknown> }>();
+  const recurrent = new Map<string, { ratio: number; side: number; tensors: Record<string, unknown> }>();
   const now = options.now ?? (() => (typeof performance === "undefined" ? 0 : performance.now()));
 
   /**
@@ -320,6 +318,8 @@ export function createWorkerCore(options: WorkerCoreOptions) {
         }
 
         const { session, backend } = await pending;
+        // JSON tuple encoding preserves opaque IDs even when they contain separators.
+        const temporalKey = JSON.stringify([request.sessionKey, request.nodeId]);
         const plan = planFor(request.modelId, request.nodeType);
         const side = request.side === 0 ? POSE_INPUT_SIDE : request.side;
         const packed = plan.pack(new Float32Array(request.texels), side);
@@ -333,12 +333,13 @@ export function createWorkerCore(options: WorkerCoreOptions) {
          *  1. The state stays in the WORKER. It never crosses the message boundary — the
          *     protocol carries texels in and bytes out, and a 6.13 MB structured clone
          *     twice a frame would cost more than the model. It lives here, beside the
-         *     session it belongs to, keyed the same way.
+         *     shared session, but keyed by node AND session so unrelated images never
+         *     inherit one another's history.
          *  2. THE FIRST FRAME FEEDS ZEROS, shaped [1,1,1,1]. That is RVM's own documented
          *     "no memory yet" and it is not a placeholder for something better: measured,
          *     it runs clean and returns correctly-shaped state at the same cost as a warm
          *     frame.
-         *  3. A RATIO CHANGE INVALIDATES THE STASH. `downsample_ratio` sets the internal
+         *  3. A RATIO OR INPUT-SIZE CHANGE INVALIDATES THE STASH. `downsample_ratio` sets the internal
          *     resolution, so the state tensors change shape with it (0.38 MB at 0.25,
          *     6.13 MB at 1.0). Feeding last frame's state after the dial moved hands the
          *     model tensors it will refuse — an error at the worst moment, on a control
@@ -350,8 +351,8 @@ export function createWorkerCore(options: WorkerCoreOptions) {
           [inputName]: options.createTensor(plan.tensorType, packed, plan.dims(side)),
         };
         if (plan.feedback !== undefined) {
-          const held = recurrent.get(request.sessionKey);
-          const usable = held !== undefined && held.ratio === request.ratio;
+          const held = recurrent.get(temporalKey);
+          const usable = held !== undefined && held.ratio === request.ratio && held.side === side;
           for (const inputSlot of Object.values(plan.feedback)) {
             feeds[inputSlot] = usable
               ? held!.tensors[inputSlot]
@@ -390,7 +391,7 @@ export function createWorkerCore(options: WorkerCoreOptions) {
             }
             tensors[inputSlot] = carried;
           }
-          recurrent.set(request.sessionKey, { ratio: request.ratio, tensors });
+          recurrent.set(temporalKey, { ratio: request.ratio, side, tensors });
         }
 
         let bytes = plan.encode(
@@ -408,8 +409,8 @@ export function createWorkerCore(options: WorkerCoreOptions) {
              this entirely, because it carries the past in its recurrent state instead.
              Runs on the FLOAT view, before any consumer sees the frame. */
           const view = new Float32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4);
-          const smoothed = smoothMatte(previousMatte.get(request.sessionKey), view, request.smoothing);
-          previousMatte.set(request.sessionKey, Float32Array.from(smoothed));
+          const smoothed = smoothMatte(previousMatte.get(temporalKey), view, request.smoothing);
+          previousMatte.set(temporalKey, Float32Array.from(smoothed));
           bytes = new Uint8Array(smoothed.buffer, smoothed.byteOffset, smoothed.byteLength);
         }
         // Transferred, not cloned: a 1080p depth map is 8.3 MB per frame. Copied out of

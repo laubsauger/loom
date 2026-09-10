@@ -55,6 +55,8 @@ describe("the transfer decision is made explicitly, never by accident", () => {
       bytes,
     };
     expect([...toRgba8(image, { space: "encoded" }).data]).toEqual([188, 188, 188, 128]);
+    // T1308: sampled values are linear, but readback still contains encoded storage bytes.
+    expect([...toRgba8(image, { space: "linear" }).data]).toEqual([188, 188, 188, 128]);
   });
 
   it("sRGB-encodes float formats, because 8 bits leaves no honest alternative", () => {

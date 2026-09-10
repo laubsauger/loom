@@ -118,6 +118,7 @@ async function run(
   await core.instance.handle({
     kind: "run",
     requestId: options.requestId,
+    nodeId: "matte",
     sessionKey: KEY,
     nodeType: "matte",
     modelId: MATTE_RVM.id,
@@ -208,6 +209,7 @@ describe("§V861 — the matte node publishes the alpha RVM names, never its ind
     });
     await core.instance.handle({
       kind: "run",
+      nodeId: "matte",
       requestId: 9,
       sessionKey: KEY,
       nodeType: "matte",

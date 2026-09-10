@@ -329,6 +329,7 @@ export default tseslint.config(
       // from minified bundles nobody wrote.
       "dist-pages/**",
       "node_modules/**",
+      ".vite/**", // Worktree-local generated dependency prebundles (T1314/T1321).
       "coverage/**",
       "playwright-report/**",
       "test-results/**",

@@ -155,6 +155,7 @@ describe("the popup renders every field from a fixture, with no GPU", () => {
     render(<NodeInfoPopup info={info} />);
 
     expect(screen.getByText("own")).toBeTruthy();
+    expect(screen.getByText("GPU span sums can overlap; not exclusive node cost.")).toBeTruthy();
     expect(screen.getByText("children")).toBeTruthy();
     expect(screen.getByText("total")).toBeTruthy();
     expect(screen.getByText("1.000 ms")).toBeTruthy();

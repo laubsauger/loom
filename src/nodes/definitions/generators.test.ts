@@ -31,14 +31,18 @@ describe("generator nodes (T40)", () => {
 
   /**
    * A generator has no input, so it has nothing to inherit a size or a format from.
-   * `{kind:"project"}` is the only honest policy — anything else would be a size nobody
-   * chose (§V21).
+   * Resolution follows the project. Coordinate and signed-distance producers retain
+   * float storage independently of the ordinary-colour project default (T1311).
    */
-  it("take their resolution and format from the project, and declare no inputs", () => {
+  it("take project resolution and preserve numerical producer precision", () => {
     for (const definition of generatorNodes) {
       expect(definition.inputs, definition.type).toEqual([]);
       expect(definition.resolutionPolicy, definition.type).toEqual({ kind: "project" });
-      expect(definition.formatPolicy, definition.type).toEqual({ kind: "project" });
+      expect(definition.formatPolicy, definition.type).toEqual(
+        ["uv", "circle", "rectangle"].includes(definition.type)
+          ? { kind: "fixed", format: "rgba16float" }
+          : { kind: "project" },
+      );
       expect(definition.outputs.map((port) => port.id), definition.type).toEqual(["out"]);
       // uv's output is coordinates, not light — the one generator declaring `data`
       // (T768/§V57c); everything else is colour.

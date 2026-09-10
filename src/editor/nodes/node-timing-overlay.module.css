@@ -31,7 +31,8 @@
 }
 
 /*
- * The track is the whole frame; the fill is this node's share of it.
+ * The track is the displayed span sum; the fill is this node's share of that sum.
+ * Neither represents exclusive GPU cost (T1302).
  *
  * 6px, not 3px, at the owner's ask — *"a little bit thicker… so it's even easier to see
  * at a distance."* The graph is read zoomed out, and at 40 % zoom a 3px bar is one screen
@@ -46,7 +47,7 @@
 
 /*
  * TWO ENCODINGS OF ONE NUMBER, deliberately: the fill's LENGTH and its COLOUR both come
- * from this node's share of the frame.
+ * from this node's share of the displayed span sum.
  *
  * That redundancy is the point at distance. Length wins when the bars are side by side and
  * long enough to compare; hue wins when they are three pixels wide across a whole zoomed-

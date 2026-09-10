@@ -49,6 +49,9 @@ const isolationHeaders = {
 };
 
 export default defineConfig({
+  // T1314: profiling snapshots share node_modules, not their dependency prebundles.
+  // A shared cache served old vgpu code with current backend code and blacked out sRGB.
+  cacheDir: fileURLToPath(new URL("./.vite", import.meta.url)),
   define: {
     __BUILD_COMMIT__: JSON.stringify(buildCommit),
     __BUILD_TIME__: JSON.stringify(new Date().toISOString()),

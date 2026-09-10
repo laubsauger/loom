@@ -412,6 +412,8 @@ export function buildResources(
           target(gpu, {
             size: resource.size,
             format: resource.format as GPUTextureFormat,
+            // T1307: presentation reads stored display bytes without hardware decode.
+            ...(resource.format === "rgba8unorm-srgb" ? { viewFormats: ["rgba8unorm" as const] } : {}),
             // T295: depth24plus attachment; draws into this target depth-test by
             // vgpu's default (write, less-equal) with no per-pass plumbing.
             ...(resource.depth === true ? { depth: true } : {}),
@@ -436,6 +438,7 @@ export function buildResources(
           resource.id,
           pingPong(gpu, resource.size[0], resource.size[1], {
             format: resource.format as GPUTextureFormat,
+            ...(resource.format === "rgba8unorm-srgb" ? { viewFormats: ["rgba8unorm" as const] } : {}),
             label: resource.label ?? resource.id,
           }),
         );

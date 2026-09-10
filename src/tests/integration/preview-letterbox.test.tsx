@@ -5,6 +5,7 @@ import { createMemoryStorage, installDomStubs } from "@ui/testing/install-dom-st
 import { installFlowStubs } from "@editor/graph-canvas/testing.tsx";
 import type { BackendCapabilities } from "@domain/types/backend.ts";
 import type { GraphPatchOperation } from "@domain/types/patch.ts";
+import { DEFAULT_PROJECT_SETTINGS } from "@domain/types/graph.ts";
 import type { PreviewFrameCommand, PreviewProgram } from "@runtime/previews/index.ts";
 import type { LoomBackend } from "@runtime/backend/index.ts";
 import { App } from "../../app/app.tsx";
@@ -116,8 +117,9 @@ function installLayoutStubs(): void {
   });
 }
 
-function newRuntime(): AppRuntime {
+function newRuntime(workingFormat: "rgba16float" | "rgba8unorm-srgb"): AppRuntime {
   return createAppRuntime({
+    settings: { ...DEFAULT_PROJECT_SETTINGS, workingFormat },
     identityStorage: null,
     actor: { kind: "human", id: "tester", label: "Tester" },
   });
@@ -137,8 +139,8 @@ async function ticks(): Promise<void> {
   });
 }
 
-async function mountWithSquareSource() {
-  const runtime = newRuntime();
+async function mountWithSquareSource(workingFormat: "rgba16float" | "rgba8unorm-srgb") {
+  const runtime = newRuntime(workingFormat);
   await seed(runtime, [
     { op: "addNode", ref: "$solid", type: "solid", position: { x: 0, y: 0 } },
     { op: "addNode", ref: "$out", type: "output", position: { x: 240, y: 0 } },
@@ -172,11 +174,14 @@ const SOURCE_ASPECT = SOURCE.width / SOURCE.height;
 const SLOT_ASPECT = SLOT.width / SLOT.height;
 
 describe("T209 — the preview keeps its aspect inside the node's area (§V117, §V118)", () => {
-  it("allocates a tile with the SOURCE aspect and draws it into a matching rect", async () => {
-    const { captured } = await mountWithSquareSource();
+  it.each(["rgba16float", "rgba8unorm-srgb"] as const)("allocates a tile with the SOURCE aspect and draws it into a matching rect (%s)", async (format) => {
+    const { captured } = await mountWithSquareSource(format);
 
     const program = captured.programs[captured.programs.length - 1];
-    const command = captured.commands[captured.commands.length - 1];
+    // A paused/static preview emits no-op commands between paints. Inspect the last
+    // command that actually drew this source, not an arbitrary later idle tick.
+    const command = captured.commands.findLast((entry) =>
+      entry.composite.some((tile) => tile.ref.portId === "out"));
 
     // The tile under test is NAMED, never "the only one": the Output node previews the
     // picture it presents, so this graph has two tiles — the square Solid's and the

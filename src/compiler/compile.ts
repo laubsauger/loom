@@ -32,14 +32,14 @@ import { MAX_TILE_SCALE } from "../runtime/previews/geometry.ts";
 import type { ColorSpace } from "./color-space.ts";
 import { colorSpaceForFormat, resolveColorSpace } from "./color-space.ts";
 import { declaredColorSpace } from "../domain/graph/port-compat.ts";
-import { colorPolicyOf, presentDecodesSrgbSource, sinkTargetSpace } from "../domain/color/display.ts";
+import { colorPolicyOf, sinkTargetSpace } from "../domain/color/display.ts";
 import { CompilerDiagnosticCode, compilerDiagnostic, hasError } from "./diagnostics.ts";
 import { synthesizeSourceReferenceEdges } from "./source-reference-edges.ts";
 import { bindingOverflows, describeOverflow } from "./bindings.ts";
 import { flattenComponents, redirectSink, withSourcePath } from "./flatten.ts";
 import type { ComponentSource } from "./flatten.ts";
 import { resolveNodeFormat } from "./format.ts";
-import { isDeclaredSink, presentsPicture, pruneToActiveSinks, resolveSinks } from "./prune.ts";
+import { presentsPicture, pruneToActiveSinks, resolveSinks } from "./prune.ts";
 import { resolveNodeResolution } from "./resolution.ts";
 import {
   SHARED_SAMPLER_ID,
@@ -409,30 +409,6 @@ function propagate(args: PropagationArgs): PropagationResult {
 
     if (collectDiagnostics) {
       diagnostics.push(...resolution.diagnostics, ...format.diagnostics, ...space.diagnostics);
-      // T375/B47, §V288: an `-srgb` sink target cannot be presented correctly. Its bytes
-      // are display values, but `textureSample` DECODES them, and the present blit is a
-      // raw copy (§V70a) into a canvas whose format is never an srgb variant — so the
-      // viewer shows linear light where the preview and the exporter show the picture
-      // (measured on Dawn: 54 against 127). Named rather than silently wrong.
-      if (
-        isDeclaredSink(definition) &&
-        presentDecodesSrgbSource(colorPolicyOf(request.settings), format.format)
-      ) {
-        diagnostics.push(
-          compilerDiagnostic(
-            "warning",
-            CompilerDiagnosticCode.sinkFormatUndisplayable,
-            `Output "${nodeId}" renders to ${format.format}, which the viewer decodes on sample: ` +
-              `the presented image will be lighter than the preview and the exported file.`,
-            {
-              nodeId,
-              suggestion:
-                'Use "rgba8unorm" (same depth, no hardware transfer) or "rgba16float" for this output, ' +
-                'or set the project colour policy displayTransform to "none".',
-            },
-          ),
-        );
-      }
     }
 
     for (const slot of outputSlots(definition)) {

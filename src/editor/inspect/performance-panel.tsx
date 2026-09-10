@@ -44,12 +44,10 @@ import styles from "./inspect.module.css";
  * many bytes — and the per-node attribution is one disclosure down, because "which node" is
  * the second question and §V90 says the panel shows what someone acts on first.
  *
- * COST (T256) is the one thing Notch's profiler does better than TD's: CPU and GPU on the
- * same row. The pair says which machine the frame is waiting on, which neither number says
- * alone. The CATEGORY rollup is on the surface and the per-node rows are one disclosure
- * down, because "filters cost 11 ms" narrows the search before any individual row has to be
- * read — and because sixty node rows permanently open is the §V90 failure this pane is most
- * prone to.
+ * CPU timings and GPU span sums share a row (T256), but GPU stages may overlap.
+ * Category sums are not exclusive execution costs (T1302). Frame extent remains the
+ * overall GPU measure; per-node rows sit one disclosure below category totals so sixty
+ * permanently open rows do not overwhelm the pane (§V90).
  *
  * The hub, not this component, owns the rate: it notifies at most 10 times a second
  * (§V16). What re-renders on a tick is keyed on what READS (T1239, §V939): the pane's
@@ -261,7 +259,7 @@ function CostSection({
   const measuring = snapshot.timingAvailable || snapshot.cpuTimingAvailable;
   return (
     <section aria-label="Cost">
-      <h3 className={styles.blockTitle}>cost by category</h3>
+      <h3 className={styles.blockTitle}>timing by category</h3>
       {snapshot.categories.length === 0 ? (
         <p className={styles.note}>No nodes in the current plan.</p>
       ) : !measuring ? (
@@ -283,7 +281,7 @@ function CostSection({
                     cpu ms
                   </th>
                   <th scope="col" className={styles.numeric}>
-                    gpu ms
+                    gpu span sum ms
                   </th>
                 </tr>
               </thead>
@@ -324,7 +322,7 @@ function CostSection({
                       cpu ms
                     </th>
                     <th scope="col" className={styles.numeric}>
-                      gpu ms
+                      gpu span sum ms
                     </th>
                   </tr>
                 </thead>
@@ -529,6 +527,9 @@ function PerformanceSections({
     <>
       <section aria-label="Frame">
         <h3 className={styles.blockTitle}>frame</h3>
+        <p className={styles.note}>
+          GPU spans may overlap; sums are not exclusive costs
+        </p>
         {/*
           §T1012 — cook policy rides the FRAME row rather than owning a section.
           It is one short value, it belongs to the frame (it says whether every pass cooks
@@ -626,7 +627,7 @@ function PerformanceSections({
                   <th scope="col">kind</th>
                   <th scope="col">node</th>
                   <th scope="col" className={styles.numeric}>
-                    gpu ms
+                    gpu span ms
                   </th>
                 </tr>
               </thead>

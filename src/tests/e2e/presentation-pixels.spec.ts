@@ -1,5 +1,11 @@
 import { expect, test } from "@playwright/test";
 import { APP_VIEWPORT, addNode, connect, fitAll, moveNode, openApp } from "./app.ts";
+import { createGraphStore } from "@domain/graph/store.ts";
+import { createDomainBus } from "@domain/commands/index.ts";
+import { createNodeRegistry } from "@nodes/registry/registry.ts";
+import { allNodeDefinitions } from "@nodes/definitions/index.ts";
+import { buildProjectFile } from "@domain/project/project-file.ts";
+import { document as exampleDocument, settings as exampleSettings } from "@/examples/documents/builders.ts";
 
 /**
  * T1086 — pixels through the APP, on the real canvas (§V895, §V885, §V628).
@@ -56,6 +62,47 @@ import { APP_VIEWPORT, addNode, connect, fitAll, moveNode, openApp } from "./app
  */
 
 test.use({ viewport: APP_VIEWPORT });
+
+test("sRGB grey reaches the compositor without a second decode (T1307)", async ({ page }) => {
+  const store = createGraphStore();
+  const { bus } = createDomainBus({ store, registry: createNodeRegistry(allNodeDefinitions).view() });
+  const result = await bus.execute("graph.applyPatch", {
+    baseRevision: store.view.getGraph().revision,
+    operations: [
+      { op: "addNode", ref: "$solid", type: "solid", position: { x: 0, y: 0 }, parameters: { color: [0.5, 0.5, 0.5, 1] } },
+      { op: "addNode", ref: "$out", type: "output", position: { x: 350, y: 0 } },
+      { op: "connect", source: { nodeId: "$solid", portId: "out" }, target: { nodeId: "$out", portId: "input" } },
+    ],
+    label: "sRGB presentation fixture",
+  }, { actor: { kind: "system", id: "srgb-test" }, projectId: "srgb-test", capabilities: [] });
+  expect(result.status).toBe("applied");
+  const project = exampleDocument("srgb-test", "sRGB presentation fixture",
+    exampleSettings({ workingFormat: "rgba8unorm-srgb", outputResolution: { width: 64, height: 64 } }),
+    store.view.getGraph());
+  const file = buildProjectFile({ document: project, now: () => project.updatedAt });
+  await openApp(page);
+  const chooser = page.waitForEvent("filechooser");
+  await page.getByTestId("project-open").click();
+  await (await chooser).setFiles({ name: "srgb-test.loom.json", mimeType: "application/json", buffer: Buffer.from(file.text) });
+  const canvas = page.getByTestId("viewer-canvas");
+  await expect(canvas).toBeVisible();
+  await expect.poll(async () => {
+    const shot = await canvas.screenshot();
+    return page.evaluate(async (base64) => {
+      const image = new Image();
+      image.src = `data:image/png;base64,${base64}`;
+      await image.decode();
+      const copy = document.createElement("canvas");
+      copy.width = image.naturalWidth;
+      copy.height = image.naturalHeight;
+      const context = copy.getContext("2d", { willReadFrequently: true });
+      if (context === null) throw new Error("No 2D context for screenshot decoding");
+      context.drawImage(image, 0, 0);
+      return [...context.getImageData(Math.floor(copy.width / 2), Math.floor(copy.height / 2), 1, 1).data];
+    }, shot.toString("base64"));
+  }).toEqual([127, 127, 127, 255]);
+  await expect(page.getByText(/which the viewer decodes on sample/)).toHaveCount(0);
+});
 
 test("this lane's premise: headed Chromium has a real WebGPU adapter", async ({ page }) => {
   // The claim `app.ts` carries — "headless has no adapter, headed does" — as a standing

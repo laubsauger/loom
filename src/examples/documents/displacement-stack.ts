@@ -37,7 +37,7 @@ import { settings, node, edge, graph, document, expressionSlot } from "./builder
 export const displacementStackDocument = document(
   "displacement-stack",
   "E6 Displacement Stack",
-  settings(),
+  settings({ workingFormat: "rgba8unorm-srgb" }),
   graph(
     [
       node("plate", "checker", [-520, -140], {
@@ -69,6 +69,10 @@ export const displacementStackDocument = document(
         t4d: 0.37,
         s4d: 1,
         speed: 0.1,
+      }, {
+        // T1312: keep the entire numerical displacement branch float. Only the colour
+        // branch uses the SDR project format; quantizing the field moves sharp edges.
+        format: { mode: "fixed", format: "rgba16float" },
       }),
       /**
        * The window narrowed from 0.2..0.8 to 0.33..0.67 because a 4D perlin's usable range

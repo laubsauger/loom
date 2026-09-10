@@ -77,6 +77,56 @@ const runnerOver = (fake: ReturnType<typeof fakeWorker>) =>
   });
 
 describe("the main thread's half", () => {
+  it.each(["crash", "dispose"] as const)("rejects new work after %s", async (end) => {
+    const fake = fakeWorker();
+    const runner = runnerOver(fake);
+    if (end === "crash") fake.crash(); else runner.dispose();
+    const result = runner.run("n1", new ArrayBuffer(4)).then(() => "resolved", () => "rejected");
+    expect(await Promise.race([result, new Promise(resolve => setTimeout(() => resolve("pending"), 10))]))
+      .toBe("rejected");
+    expect(fake.sent).toEqual([]);
+  });
+
+  it.each(["crash", "dispose"] as const)("does not post acquired weights after %s", async (end) => {
+    const fake = fakeWorker();
+    let acquired!: (bytes: ArrayBuffer) => void;
+    const runner = createWorkerRunner({
+      worker: fake.worker, describe: () => target,
+      weightsFor: () => new Promise(resolve => { acquired = resolve; }),
+    });
+    const result = runner.run("n1", new ArrayBuffer(4)).then(() => "resolved", () => "rejected");
+    if (end === "crash") fake.crash(); else runner.dispose();
+    acquired(new ArrayBuffer(8));
+    expect(await Promise.race([result, new Promise(resolve => setTimeout(() => resolve("pending"), 10))]))
+      .toBe("rejected");
+    expect(fake.sent).toEqual([]);
+  });
+
+  it.each(["crash", "dispose"] as const)("rejects on %s even when weight acquisition never finishes", async (end) => {
+    const fake = fakeWorker();
+    const runner = createWorkerRunner({
+      worker: fake.worker, describe: () => target,
+      weightsFor: () => new Promise(() => {}),
+    });
+    const result = runner.run("n1", new ArrayBuffer(4)).then(() => "resolved", () => "rejected");
+    if (end === "crash") fake.crash(); else runner.dispose();
+    expect(await Promise.race([result, new Promise(resolve => setTimeout(() => resolve("pending"), 10))]))
+      .toBe("rejected");
+    expect(fake.sent).toEqual([]);
+  });
+
+  it.each(["crash", "dispose"] as const)("does not start inference when %s follows load completion", async (end) => {
+    const fake = fakeWorker();
+    const runner = runnerOver(fake);
+    const result = runner.run("n1", new ArrayBuffer(4)).then(() => "resolved", () => "rejected");
+    await Promise.resolve();
+    fake.deliver({ kind: "loaded", sessionKey: sessionKeyFor("m", PROVIDERS), backend: "wasm", millis: 1, isolated: true });
+    if (end === "crash") fake.crash(); else runner.dispose();
+    expect(await Promise.race([result, new Promise(resolve => setTimeout(() => resolve("pending"), 10))]))
+      .toBe("rejected");
+    expect(fake.sent.map(message => message.kind)).toEqual(["load"]);
+  });
+
   it("loads a model once however many nodes ask", async () => {
     const fake = fakeWorker();
     const runner = runnerOver(fake);
@@ -235,7 +285,7 @@ describe("the worker's half", () => {
     const c = core(new Float32Array([0, 1, 2, 3]));
     await c.instance.handle({ kind: "load", modelId: "m", sessionKey: "m@wasm", weights: new ArrayBuffer(4), providers: ["wasm"] });
     await c.instance.handle({
-      kind: "run", requestId: 7, sessionKey: "m@wasm", nodeType: "depth", modelId: DEPTH_ID, ratio: 0, smoothing: 1,
+      kind: "run", nodeId: "depth", requestId: 7, sessionKey: "m@wasm", nodeType: "depth", modelId: DEPTH_ID, ratio: 0, smoothing: 1,
       texels: new Float32Array(2 * 2 * 4).buffer, width: 2, height: 2, side: 2, sourceWidth: 2, sourceHeight: 2,
     });
     expect(c.created[0]).toEqual({ type: "float32", length: 3 * 4, dims: [1, 3, 2, 2] });
@@ -247,7 +297,7 @@ describe("the worker's half", () => {
     const c = core(new Float32Array(POSE_KEYPOINT_COUNT * 3), POSE_ID);
     await c.instance.handle({ kind: "load", modelId: "m", sessionKey: "m@wasm", weights: new ArrayBuffer(4), providers: ["wasm"] });
     await c.instance.handle({
-      kind: "run", requestId: 1, sessionKey: "m@wasm", nodeType: "pose", modelId: POSE_ID, ratio: 0, smoothing: 1,
+      kind: "run", nodeId: "pose", requestId: 1, sessionKey: "m@wasm", nodeType: "pose", modelId: POSE_ID, ratio: 0, smoothing: 1,
       texels: new Float32Array(2 * 2 * 4).buffer, width: 0, height: 0, side: 2, sourceWidth: 2, sourceHeight: 2,
     });
     expect(c.created[0]).toEqual({ type: "uint8", length: 2 * 2 * 4, dims: [1, 2, 2, 4] });
@@ -260,7 +310,7 @@ describe("the worker's half", () => {
     // cannot tell which inference died and every pending one hangs (§V469 at a boundary).
     const c = core(new Float32Array(4));
     await c.instance.handle({
-      kind: "run", requestId: 42, sessionKey: "absent@wasm", nodeType: "depth", modelId: DEPTH_ID, ratio: 0, smoothing: 1,
+      kind: "run", nodeId: "depth", requestId: 42, sessionKey: "absent@wasm", nodeType: "depth", modelId: DEPTH_ID, ratio: 0, smoothing: 1,
       texels: new ArrayBuffer(64), width: 2, height: 2, side: 2, sourceWidth: 2, sourceHeight: 2,
     });
     expect(c.posted).toEqual([
@@ -337,7 +387,7 @@ describe("the worker's half", () => {
       kind: "load", modelId: "m", sessionKey: "m@wasm", weights: new ArrayBuffer(4), providers: ["wasm"],
     });
     await instance.handle({
-      kind: "run", requestId: 1, sessionKey: "m@wasm", nodeType: "depth", modelId: DEPTH_ID, ratio: 0, smoothing: 1,
+      kind: "run", nodeId: "depth", requestId: 1, sessionKey: "m@wasm", nodeType: "depth", modelId: DEPTH_ID, ratio: 0, smoothing: 1,
       texels: new Float32Array(2 * 2 * 4).buffer, width: 2, height: 2, side: 2, sourceWidth: 2, sourceHeight: 2,
     });
     const result = posted.find((m) => m.kind === "result");
@@ -450,7 +500,7 @@ describe("the worker's half", () => {
     });
     await instance.handle({ kind: "load", modelId: "m", sessionKey: "m@wasm", weights: new ArrayBuffer(4), providers: ["wasm"] });
     await instance.handle({
-      kind: "run", requestId: 3, sessionKey: "m@wasm", nodeType: "depth", modelId: DEPTH_ID, ratio: 0, smoothing: 1,
+      kind: "run", nodeId: "depth", requestId: 3, sessionKey: "m@wasm", nodeType: "depth", modelId: DEPTH_ID, ratio: 0, smoothing: 1,
       texels: new ArrayBuffer(64), width: 2, height: 2, side: 2, sourceWidth: 2, sourceHeight: 2,
     });
     expect(posted.at(-1)).toEqual({ kind: "error", requestId: 3, message: "kernel refused" });

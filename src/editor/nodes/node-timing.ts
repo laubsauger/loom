@@ -14,9 +14,9 @@ import type { NodeId } from "@domain/types/ids.ts";
  *  - PROPORTION. "So we don't just have an absolute value but also know whether that's a
  *    lot compared to the others." `timingShare` is that second number, and the bar's
  *    LENGTH is the encoding — a share is a ratio and a ratio reads as a length.
- *  - A DENOMINATOR THAT EXISTS. Nothing in the editor knew the graph-wide total, so
- *    `createNodeTimingScaleStore` collects it from the overlays themselves and hands back
- *    one coalesced number.
+ *  - A DISPLAYED-SPAN DENOMINATOR. `createNodeTimingScaleStore` sums the mounted
+ *    overlays' smoothed spans. It is not the frame extent or the whole graph's cost.
+ *    GPU stages can overlap; neither the digits nor the bar measure exclusive cost.
  *
  * §V86 runs through all three: an unmeasured pass is `null`, never `0`. A zero that means
  * "not measured" is the exact class of lie this project has spent the day removing, so a
@@ -53,7 +53,8 @@ export function smoothGpuMs(
 }
 
 /**
- * This node's share of the graph's GPU time, 0..1 — the bar's length.
+ * This node's share of displayed smoothed GPU spans, 0..1 — the bar's length.
+ * Not a share of frame execution: overlapping spans are not exclusive costs (T1302).
  *
  * `0` for an unmeasured pass and for a total that is not yet a number: an empty bar reads
  * as "nothing to say", which is true, where a full one would read as "this node is
@@ -68,7 +69,9 @@ export function timingShare(gpuMs: number | null, totalMs: number): number {
 }
 
 /**
- * The cost ramp's four steps, keyed to the SHARE and never to a millisecond figure.
+ * The span-comparison ramp's four steps, keyed to the SHARE, not milliseconds.
+ * Historical `costTier` naming is internal; these tiers do not establish which node
+ * owns GPU execution time. An overlapping Output span can be large while its work is cheap.
  *
  * The owner's constraint is *"at a distance"* — scanning a whole graph zoomed out for the
  * node to look at first — and that is what forces the ramp to be proportional. An absolute
@@ -80,8 +83,8 @@ export function timingShare(gpuMs: number | null, totalMs: number): number {
  * Four steps rather than a continuous gradient because the bar is a few screen pixels wide
  * when zoomed out: a smooth ramp is unreadable at that size, while four steps are four
  * distinguishable things. They are unevenly spaced on purpose — most nodes in a real graph
- * sit under a tenth of the frame, so the bottom step has to be wide or everything lands in
- * it, and the top step has to start well below "half the frame" to ever be reached on a
+ * sit under a tenth of the displayed span sum, so the bottom step has to be wide or everything lands in
+ * it, and the top step has to start well below "half the sum" to ever be reached on a
  * graph with a dozen passes.
  */
 export type CostTier = "low" | "moderate" | "high" | "dominant";
@@ -110,10 +113,10 @@ export function costTier(share: number): CostTier {
  * hand a node half of an interface it needs all of.
  */
 export interface NodeTimingScaleSource {
-  /** Sum of every reported node's smoothed GPU ms. `0` when nothing is measured. */
+  /** Sum of mounted overlays' smoothed GPU spans, not frame extent. `0` if unmeasured. */
   total(): number;
   subscribe(listener: () => void): () => void;
-  /** One node's smoothed cost. `null` withdraws it from the total (§V86). */
+  /** One node's smoothed span sum. `null` withdraws it from the total (§V86). */
   report(nodeId: NodeId, gpuMs: number | null): void;
   /** The node's overlay unmounted. */
   forget(nodeId: NodeId): void;
@@ -138,13 +141,11 @@ export interface NodeTimingScaleOptions {
 }
 
 /**
- * The graph-wide denominator, collected from the overlays that draw against it.
+ * The displayed-span denominator, collected from the overlays that draw against it.
  *
- * WHY IT IS COLLECTED HERE rather than read off the telemetry hub, which already sums the
- * frame: the hub lives in `src/runtime` and reaches the editor only as a prop threaded
- * from the composition root. Threading it would put this feature's wiring in a file two
- * other tracks are editing today, for a number the overlays already hold between them.
- * When that seam exists for another reason, this store is the one place to swap.
+ * Only mounted overlays participate. Culling or hiding an overlay changes the sum even
+ * when GPU execution does not change. The UI must name that denominator, not call it
+ * graph time. Reading frame extent instead would not make overlapping spans exclusive.
  *
  * The total is PUBLISHED, not computed on read: `useSyncExternalStore` requires a snapshot
  * that does not change identity between notifications, and a sum recomputed per call would

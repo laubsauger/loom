@@ -223,6 +223,10 @@ describe("PerformancePanel renders for the eyes on it (T1239)", () => {
     expect(stat("gpu time")).toBe("3.500 ms");
     expect(stat("pass sum")).toBe("4.750 ms");
 
+    expect(screen.getByText("GPU spans may overlap; sums are not exclusive costs")).toBeDefined();
+    expect(screen.getAllByRole("columnheader", { name: "gpu span sum ms" })).toHaveLength(2);
+    expect(screen.getByRole("columnheader", { name: "gpu span ms" })).toBeDefined();
+
     hub.tick(snapshot(3.5, 121, "passes"));
     expect(stat("gpu time")).toBe("3.500 ms (pass sum)");
     expect(stat("pass sum")).toBe("4.750 ms");

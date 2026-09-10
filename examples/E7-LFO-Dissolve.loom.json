@@ -150,7 +150,7 @@
     "previewFps": 30,
     "previewLongEdge": 192,
     "randomSeed": 11,
-    "workingFormat": "rgba16float"
+    "workingFormat": "rgba8unorm-srgb"
   },
   "updatedAt": "2026-08-29T00:00:00.000Z"
 }

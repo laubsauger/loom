@@ -601,6 +601,10 @@ export const depthNode: NodeDefinition = {
    * Displace lines up with the image it is displacing.
    */
   resolutionPolicy: { kind: "inherit", input: "input" },
+  // T1309: the input is a colour image, not a precision contract for measurements.
+  // Protect the final graph result as well as the R32F model scratch below; inheriting
+  // video's eight-bit storage loses small depth differences and signed output ranges.
+  formatPolicy: { kind: "fixed", format: "rgba16float" },
   compile(context): CompiledNodeDescription {
     const { nodeId, inputs, outputs, parameters } = readCompileInputs(context);
     const source = inputs["input"];
