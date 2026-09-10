@@ -1,6 +1,6 @@
 # vgpu 0.3.1 — the four things we patch, and why
 
-Loom is a browser WebGPU node compositor built entirely on `vgpu` 0.3.1. We carry a
+Loom is a browser WebGPU node compositor built entirely on `vgpu` (0.3.1 when this was written; pinned 0.4.1 since T1261, see the end). We carry a
 patch against the published `dist` (pnpm `patchedDependencies` → `patches/vgpu.patch`,
 sixteen hunks across twelve files, four independent themes). We would rather not: a pinned
 dependency's diff is maintenance forever, and a silently dropped patch returns each bug
@@ -295,3 +295,21 @@ typecheck/build/bundle-check: `loom/msaa-discard-store` (opt-in `preserveSamples
 default flip), `loom/buffer-binding-resource` (classifier + range identity + interval-based
 aliasing preflight), `loom/clear-draw` (`evictBindGroups()` on Draw/Effect/Compute with the
 `compute:` key), `loom/timer-frame-extent`. Not pushed; see the T1255 report for paths.
+
+## Pinned 0.4.1 (T1261, 2026-09-10)
+
+`package.json` pins `vgpu` 0.4.1; `patches/vgpu.patch` is byte-identical and its lockfile
+hash unchanged (`fp5cunzchnnbwyhn5a36cnah3q`) — pnpm applied it with the `frame.js` hunk
+offset only. The one semantic change 0.4.0 brought, `frame(gpu, cb)` / `frameLoop`
+cancel-on-throw, was decided per encode site in `src/runtime/backend/vgpu/vgpu-backend.ts`
+and pinned on Dawn by `frame-throw.gpu.test.ts`:
+
+- **loop path** (`runFrame`): partial submit, unchanged — the T98 catch inside the callback
+  is what keeps it so; a throw that escaped would now also stop the `frameLoop`.
+- **direct path** (`encodeSegmented`): partial submit, opted in with `f.submit()` in the
+  callback's own catch — the same state as the loop path (§V47), consistent with the CPU-side
+  swaps and self-submitting dispatches that are never rolled back. `render()` still rethrows.
+- **temporal-history clear**: dropped whole, vgpu's new default accepted — a reset that throws
+  leaves every pair as it was rather than one half cleared.
+
+The four patch themes are still needed, unchanged (see the audit above).

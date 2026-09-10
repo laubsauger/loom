@@ -710,7 +710,11 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
          instead of seeding, U ramped to 1 through the feed term, V stayed 0 and the
          field sat on the dead fixed point — a black picture in the app, where the T552
          load rite runs, and a healthy one under `renderHeadless`, which never resets.
-         §V22's "history is gone" has to mean the same thing at both entrances. */
+         §V22's "history is gone" has to mean the same thing at both entrances.
+
+         T1261: this frame is ATOMIC — vgpu ≥ 0.4's cancel-on-throw is accepted as is. A
+         clear that throws leaves every pair as it was (the caller gets the error), never
+         one half cleared and the other carrying. Gate: frame-throw.gpu.test.ts. */
       frame(gpu, (f) => {
         for (const pair of selected) {
           f.pass({ target: pair.read, clear: CLEARED_HISTORY }, () => {});
@@ -816,6 +820,13 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       // T98: a throw inside vgpu's rAF callback would otherwise explode every frame
       // with no diagnostic. Report it; a streak means something structural broke, so
       // halt instead of letting the storm continue.
+      //
+      // T1261: this catch is ALSO what decides the queue. vgpu ≥ 0.4 cancels a frame
+      // whose callback throws and stops a `frameLoop` whose tick throws; caught here,
+      // the callback returns normally and the passes encoded before the throw are
+      // submitted (partial submit — consistent with the CPU-side swaps and dispatches
+      // that already happened, and the same state `encodeSegmented` leaves). Gate:
+      // frame-throw.gpu.test.ts.
       consecutiveFrameErrors += 1;
       hub.report(
         backendDiagnostic(
@@ -1035,7 +1046,27 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         return;
       }
       const final = index === segments.length - 1;
-      frame(gpu, (f) => encode(f, active, segment.passes, final));
+      frame(gpu, (f) => {
+        try {
+          encode(f, active, segment.passes, final);
+        } catch (error) {
+          // T1261: PARTIAL SUBMIT, on purpose. vgpu ≥ 0.4 cancels a frame whose callback
+          // throws (nothing encoded reaches the queue); 0.3.1 submitted what was there.
+          // The passes before the throw stay on the queue here because the CPU-side
+          // state they belong to — a pair swapped after its write, a ring rotated, a
+          // dispatch that already self-submitted — is not rolled back by anyone, and
+          // because the loop path (`runFrame` catches inside its callback) submits
+          // exactly the same partial frame: the same failing plan must leave the same
+          // state on both paths (§V47). `render()` still rethrows below. Gate:
+          // frame-throw.gpu.test.ts.
+          try {
+            f.submit();
+          } catch {
+            // The encode's own error is the one the caller must see.
+          }
+          throw error;
+        }
+      });
     });
   }
 
