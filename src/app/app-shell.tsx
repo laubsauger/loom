@@ -470,113 +470,153 @@ export function AppShell({
     [],
   );
 
-  const leaves = leavesOf(tree.root);
-  const leafLabels = new Map<PaneKey, string>(
-    leaves.map((leaf, index) => {
-      const canonical = CANONICAL_LEAF_NAMES[leaf.id];
-      if (canonical !== undefined) return [leaf.id, canonical];
-      const activeRole = leaf.tabs.find((tab) => tab.key === leaf.active)?.role ?? leaf.tabs[0]?.role;
-      return [leaf.id, activeRole !== undefined ? `${PANE_TITLES[activeRole]} area` : `Area ${index + 1}`];
-    }),
-  );
-
-  const leafView = (leaf: Extract<LayoutNode, { kind: "leaf" }>): ReactNode => {
-    const moveTargets: LeafTarget[] = leaves
-      .filter((candidate) => candidate.id !== leaf.id)
-      .map((candidate) => ({ id: candidate.id, label: leafLabels.get(candidate.id) ?? candidate.id }));
-    return (
-      <PaneLeafView
-        leafId={leaf.id}
-        label={leafLabels.get(leaf.id) ?? leaf.id}
-        tabs={leaf.tabs.map(describe)}
-        active={leaf.active}
-        floating={floatingKeys}
-        onDock={onDock}
-        moveTargets={moveTargets}
-        dragging={dragging}
-        roleOptions={roleOptions}
-        canCloseLeaf={leaves.length > 1}
-        onSelect={onSelect}
-        onMoveTab={onMoveTab}
-        onFloat={onFloat}
-        onCloseTab={onCloseTab}
-        onDragTab={setDragging}
-        onDropTab={onMoveTab}
-        onSplit={onSplit}
-        onCloseLeaf={onCloseLeaf}
-        onAssignEmpty={onAssignEmpty}
-        onAssignRole={onAssignRole}
-        onAddTab={onAddTab}
-      />
-    );
-  };
-
-  /**
-   * The tree, recursively: a split is a PanelGroup of two Panels around a handle, a
-   * leaf is a tab group. Group keys carry the GENERATION so a layout restore remounts
-   * them at their stored ratios; a live drag never re-renders anything (§V16 — the
-   * ratio callback writes to the ref and storage only).
-   */
-  const renderNode = (node: LayoutNode): ReactNode => {
-    if (node.kind === "leaf") return leafView(node);
-    // Every panel is collapsible so a stored zero-size section (Classic's closed
-    // sidebar row) mounts cleanly; only the canonical three get menu toggles.
-    const panelProps = (child: LayoutNode) => ({
-      collapsible: true,
-      collapsedSize: 0,
-      ...(COLLAPSIBLE_IDS.has(child.id)
-        ? {
-            ref: (handle: ImperativePanelHandle | null) => void panelRefs.current.set(child.id, handle),
-            onCollapse: () => setCollapsed((prev) => ({ ...prev, [child.id]: true })),
-            onExpand: () => setCollapsed((prev) => ({ ...prev, [child.id]: false })),
-          }
-        : {}),
-    });
-    return (
-      <PanelGroup
-        key={`${node.id}:${generation}`}
-        className={node.id === "split-columns" ? styles.body : undefined}
-        direction={node.direction === "row" ? "horizontal" : "vertical"}
-        id={`group-${node.id}`}
-        onLayout={(sizes) => onRatio(node.id, sizes)}
-      >
-        <Panel
-          id={`panel-${node.id}-a`}
-          order={1}
-          minSize={8}
-          defaultSize={node.ratio}
-          {...panelProps(node.first)}
-        >
-          {renderNode(node.first)}
-        </Panel>
-        <PanelResizeHandle
-          className={cx(styles.handle, node.direction === "row" ? styles.handleV : styles.handleH)}
-          hitAreaMargins={HIT_AREA}
-          aria-label={
-            SPLIT_HANDLE_NAMES[node.id] ??
-            `Resize ${leafLabels.get(node.first.kind === "leaf" ? node.first.id : node.second.kind === "leaf" ? node.second.id : node.id) ?? "split"}`
-          }
-          onDoubleClick={() => resetSplit(node.id)}
-        />
-        <Panel
-          id={`panel-${node.id}-b`}
-          order={2}
-          minSize={8}
-          defaultSize={100 - node.ratio}
-          {...panelProps(node.second)}
-        >
-          {renderNode(node.second)}
-        </Panel>
-      </PanelGroup>
-    );
-  };
-
-  const tabs = allTabs(tree);
   /** T705(b): the keys whose content is in a window right now — their slots show placeholders. */
   const floatingKeys = useMemo(
     () => new Set<PaneKey>(tree.floating.map((tab) => tab.key)),
     [tree.floating],
   );
+
+  /*
+   * T1238: the CHROME is memoised on what it reads, which is the layout and nothing
+   * the slots carry. `App` re-renders on every document revision (its root store
+   * subscription, §V16 is satisfied because the panes below bail out), and each of
+   * those handed this shell a fresh element, so every leaf's tab strip, menus and
+   * tooltip triggers rendered again — measured on chain-200 as ~600 fibers and
+   * 10–12 ms per App commit, none of it visible. The tree is now built once per
+   * layout change (structure, a tab drag, a restore's generation bump, the problems
+   * badge) and React reuses the element otherwise. The slot contents are not read
+   * here at all: they mount through the portals above, keyed by pane key, and only
+   * the outlet inside a leaf resolves which container shows them.
+   */
+  const body = useMemo<ReactNode>(() => {
+    const leaves = leavesOf(tree.root);
+    const leafLabels = new Map<PaneKey, string>(
+      leaves.map((leaf, index) => {
+        const canonical = CANONICAL_LEAF_NAMES[leaf.id];
+        if (canonical !== undefined) return [leaf.id, canonical];
+        const activeRole = leaf.tabs.find((tab) => tab.key === leaf.active)?.role ?? leaf.tabs[0]?.role;
+        return [leaf.id, activeRole !== undefined ? `${PANE_TITLES[activeRole]} area` : `Area ${index + 1}`];
+      }),
+    );
+
+    const leafView = (leaf: Extract<LayoutNode, { kind: "leaf" }>): ReactNode => {
+      const moveTargets: LeafTarget[] = leaves
+        .filter((candidate) => candidate.id !== leaf.id)
+        .map((candidate) => ({ id: candidate.id, label: leafLabels.get(candidate.id) ?? candidate.id }));
+      return (
+        <PaneLeafView
+          leafId={leaf.id}
+          label={leafLabels.get(leaf.id) ?? leaf.id}
+          tabs={leaf.tabs.map(describe)}
+          active={leaf.active}
+          floating={floatingKeys}
+          onDock={onDock}
+          moveTargets={moveTargets}
+          dragging={dragging}
+          roleOptions={roleOptions}
+          canCloseLeaf={leaves.length > 1}
+          onSelect={onSelect}
+          onMoveTab={onMoveTab}
+          onFloat={onFloat}
+          onCloseTab={onCloseTab}
+          onDragTab={setDragging}
+          onDropTab={onMoveTab}
+          onSplit={onSplit}
+          onCloseLeaf={onCloseLeaf}
+          onAssignEmpty={onAssignEmpty}
+          onAssignRole={onAssignRole}
+          onAddTab={onAddTab}
+        />
+      );
+    };
+
+    /**
+     * The tree, recursively: a split is a PanelGroup of two Panels around a handle, a
+     * leaf is a tab group. Group keys carry the GENERATION so a layout restore remounts
+     * them at their stored ratios; a live drag never re-renders anything (§V16 — the
+     * ratio callback writes to the ref and storage only).
+     */
+    const renderNode = (node: LayoutNode): ReactNode => {
+      if (node.kind === "leaf") return leafView(node);
+      // Every panel is collapsible so a stored zero-size section (Classic's closed
+      // sidebar row) mounts cleanly; only the canonical three get menu toggles.
+      const panelProps = (child: LayoutNode) => ({
+        collapsible: true,
+        collapsedSize: 0,
+        ...(COLLAPSIBLE_IDS.has(child.id)
+          ? {
+              ref: (handle: ImperativePanelHandle | null) => void panelRefs.current.set(child.id, handle),
+              onCollapse: () => setCollapsed((prev) => ({ ...prev, [child.id]: true })),
+              onExpand: () => setCollapsed((prev) => ({ ...prev, [child.id]: false })),
+            }
+          : {}),
+      });
+      return (
+        <PanelGroup
+          key={`${node.id}:${generation}`}
+          className={node.id === "split-columns" ? styles.body : undefined}
+          direction={node.direction === "row" ? "horizontal" : "vertical"}
+          id={`group-${node.id}`}
+          onLayout={(sizes) => onRatio(node.id, sizes)}
+        >
+          <Panel
+            id={`panel-${node.id}-a`}
+            order={1}
+            minSize={8}
+            defaultSize={node.ratio}
+            {...panelProps(node.first)}
+          >
+            {renderNode(node.first)}
+          </Panel>
+          <PanelResizeHandle
+            className={cx(styles.handle, node.direction === "row" ? styles.handleV : styles.handleH)}
+            hitAreaMargins={HIT_AREA}
+            aria-label={
+              SPLIT_HANDLE_NAMES[node.id] ??
+              `Resize ${leafLabels.get(node.first.kind === "leaf" ? node.first.id : node.second.kind === "leaf" ? node.second.id : node.id) ?? "split"}`
+            }
+            onDoubleClick={() => resetSplit(node.id)}
+          />
+          <Panel
+            id={`panel-${node.id}-b`}
+            order={2}
+            minSize={8}
+            defaultSize={100 - node.ratio}
+            {...panelProps(node.second)}
+          >
+            {renderNode(node.second)}
+          </Panel>
+        </PanelGroup>
+      );
+    };
+
+    return tree.root.kind === "leaf" ? (
+      <div className={styles.body}>{leafView(tree.root)}</div>
+    ) : (
+      renderNode(tree.root)
+    );
+  }, [
+    describe,
+    dragging,
+    floatingKeys,
+    generation,
+    onAddTab,
+    onAssignEmpty,
+    onAssignRole,
+    onCloseLeaf,
+    onCloseTab,
+    onDock,
+    onFloat,
+    onMoveTab,
+    onRatio,
+    onSelect,
+    onSplit,
+    resetSplit,
+    roleOptions,
+    tree,
+  ]);
+
+  const tabs = allTabs(tree);
 
   return (
     <TooltipProvider delayDuration={400} skipDelayDuration={200}>
@@ -644,11 +684,7 @@ export function AppShell({
           <div className={styles.notices}>{notices}</div>
 
           <div className={styles.bodyWrap}>
-            {tree.root.kind === "leaf" ? (
-              <div className={styles.body}>{leafView(tree.root)}</div>
-            ) : (
-              renderNode(tree.root)
-            )}
+            {body}
             {/* T494, door two: while a tab drags, absent edges become drop zones. The
                 standard dockable gesture — drag to the outer edge, the area is created
                 and the tab lands in it. Same tree operation as the menu row. */}

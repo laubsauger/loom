@@ -34,6 +34,14 @@ import type { GpuStatus } from "./gpu-status.ts";
  * inspector's header is a `NodeIdentity` too, which legitimately renders on a selection.
  */
 const libraryRenders = vi.hoisted(() => ({ count: 0 }));
+/**
+ * The shell's chrome is the other subtree a revision has no business in: every leaf's
+ * tab strip, its menus and their tooltip triggers (~600 fibers, 10–12 ms per `App`
+ * commit on chain-200) read the layout and nothing the document holds. Counted at the
+ * leaf, which is where the whole strip hangs. Red-verified by removing the `useMemo`
+ * around `body` in `app-shell.tsx` (60 leaf renders where 50 were expected: five leaves, one more each per revision).
+ */
+const leafRenders = vi.hoisted(() => ({ count: 0 }));
 
 vi.mock("@editor/library/node-library.tsx", async (importOriginal) => {
   const original = await importOriginal<typeof import("@editor/library/node-library.tsx")>();
@@ -42,6 +50,17 @@ vi.mock("@editor/library/node-library.tsx", async (importOriginal) => {
     NodeLibrary: (props: Parameters<typeof original.NodeLibrary>[0]) => {
       libraryRenders.count += 1;
       return original.NodeLibrary(props);
+    },
+  };
+});
+
+vi.mock("./pane-leaf.tsx", async (importOriginal) => {
+  const original = await importOriginal<typeof import("./pane-leaf.tsx")>();
+  return {
+    ...original,
+    PaneLeafView: (props: Parameters<typeof original.PaneLeafView>[0]) => {
+      leafRenders.count += 1;
+      return original.PaneLeafView(props);
     },
   };
 });
@@ -103,7 +122,7 @@ async function patch(runtime: AppRuntime, label: string, operations: GraphPatchO
   return output as { createdIds: Record<string, string> };
 }
 
-describe("T1238 — the node library does not re-render on a document revision", () => {
+describe("T1238 — the node library and the shell chrome do not re-render on a document revision", () => {
   it("renders its rows once, and never again for a knob edit or a selection change", async () => {
     const runtime = createAppRuntime({
       identityStorage: null,
@@ -126,6 +145,8 @@ describe("T1238 — the node library does not re-render on a document revision",
     expect(screen.getAllByRole("button", { name: /level/i }).length).toBeGreaterThan(0);
     const mounted = libraryRenders.count;
     expect(mounted).toBeGreaterThan(0);
+    const leavesMounted = leafRenders.count;
+    expect(leavesMounted).toBeGreaterThan(0);
 
     // Two revisions, the knob-drag shape: each one re-renders `App` (it reads the
     // document) and re-compiles. Neither may reach a library row.
@@ -134,6 +155,7 @@ describe("T1238 — the node library does not re-render on a document revision",
     await patch(runtime, "knob", [{ op: "setParameters", nodeId: level, parameters: { brightness: 0.7 } }]);
     expect(runtime.bus.store.getRevision()).toBe(before + 2);
     expect(libraryRenders.count).toBe(mounted);
+    expect(leafRenders.count).toBe(leavesMounted);
 
     // And the other trigger §T1235 saw on chain-200: view state that lives in `App`
     // (selection, hover) changing under a stationary library.
@@ -142,6 +164,7 @@ describe("T1238 — the node library does not re-render on a document revision",
       expect(result.status).toBe("applied");
     });
     expect(libraryRenders.count).toBe(mounted);
+    expect(leafRenders.count).toBe(leavesMounted);
 
     runtime.dispose();
   });
