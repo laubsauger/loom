@@ -4,6 +4,7 @@ import { fitAll, viewportSettled } from "../app.ts";
 import { markTrace, startTrace, traceTsOfMark } from "./cdp.ts";
 import { drainReactCounts, readControls, setFiberWalk } from "./page-hooks.ts";
 import type { CommitRecord, ControlReading } from "./page-hooks.ts";
+import { assertWalkNotBlind, classifyWalk } from "../../perf/fiber-walk.ts";
 import {
   busyBetween,
   countSpans,
@@ -35,12 +36,29 @@ export interface ScenarioResult {
   readonly scriptMs: Record<Category, number>;
   readonly topEntries: Array<{ label: string; ms: number }>;
   readonly spans: Record<string, { count: number; ms: number }>;
-  readonly reactCommits: { count: number; actualDurationMs: number[]; performedFibers: number[]; signatures: string[] };
+  readonly reactCommits: { count: number; actualDurationMs: number[]; performedFibers: (number | null)[]; signatures: (string | null)[] };
   readonly renders: Record<string, number>;
+  /**
+   * The idle scenarios measure the frame budget with the fiber walk OFF, so their windows
+   * carry no render counts at all (T1260). This is a SECOND, short, UNTRACED window taken
+   * right after, with the walk on: it says what the idle commits actually are without a
+   * single one of its own samples landing in the numbers above. `null` where the scenario
+   * walked its own window.
+   */
+  readonly walkProbe: WalkProbe | null;
   readonly latencies: Latency[] | null;
   readonly hub: Record<string, string> | null;
   readonly note: string;
   readonly traceFile: string;
+}
+
+export interface WalkProbe {
+  readonly ms: number;
+  readonly count: number;
+  readonly actualDurationMs: number[];
+  readonly performedFibers: (number | null)[];
+  readonly signatures: (string | null)[];
+  readonly renders: Record<string, number>;
 }
 
 export interface ScenarioContext {
@@ -83,17 +101,50 @@ async function capture(
   return { events, startNow, endNow, commits, renders, controls, traceFile };
 }
 
+/**
+ * A short walked window with NO trace running, taken after an idle scenario has already
+ * been measured (T1260). Its whole job is to answer "what are those idle commits?" for a
+ * window whose own numbers must not carry the walk's cost — and to be the place where a
+ * walk that has stopped seeing React's work gets caught, because on any live fixture these
+ * commits provably render something.
+ */
+const WALK_PROBE_MS = 1500;
+
+async function walkProbe(context: ScenarioContext, label: string, ms: number): Promise<WalkProbe> {
+  const { page } = context;
+  await drainReactCounts(page);
+  await setFiberWalk(page, true);
+  await page.waitForTimeout(ms);
+  await setFiberWalk(page, false);
+  const { commits, renders } = await drainReactCounts(page);
+  const performedFibers = commits.map((commit) => commit.performed);
+  assertWalkNotBlind(`${label} walk probe`, classifyWalk(performedFibers));
+  return {
+    ms,
+    count: commits.length,
+    actualDurationMs: commits.map((commit) => commit.actualDuration),
+    performedFibers,
+    signatures: commits.map((commit) => commit.signature),
+    renders,
+  };
+}
+
 function analyse(
   context: ScenarioContext,
   captured: Captured,
   key: string,
-  meta: { scenario: string; variant: string; pass: number; note: string; latencyTypes?: ReadonlySet<string>; hub?: Record<string, string> | null },
+  meta: { scenario: string; variant: string; pass: number; note: string; latencyTypes?: ReadonlySet<string>; hub?: Record<string, string> | null; walkProbe?: WalkProbe | null },
 ): ScenarioResult {
   const thread = parseMainThread(captured.events, context.baseUrl);
   const from = traceTsOfMark(captured.events, `perf:${key}:start`);
   const to = traceTsOfMark(captured.events, `perf:${key}:end`);
   const windows = frameWindows(thread, from, to);
   const commits = captured.commits.filter((commit) => commit.t >= captured.startNow && commit.t <= captured.endNow);
+  const performedFibers = commits.map((commit) => commit.performed);
+  // §V936 — the check that makes the number safe. A window that was WALKED and reports not
+  // one rendered fiber is the instrument failing, not the app resting; it must stop the
+  // run rather than print an empty column that reads like a zero (T1260).
+  assertWalkNotBlind(`${meta.scenario} ${meta.variant} pass ${meta.pass}`, classifyWalk(performedFibers));
   return {
     scenario: meta.scenario,
     variant: meta.variant,
@@ -108,10 +159,11 @@ function analyse(
     reactCommits: {
       count: commits.length,
       actualDurationMs: commits.map((commit) => commit.actualDuration),
-      performedFibers: commits.map((commit) => commit.performed),
+      performedFibers,
       signatures: commits.map((commit) => commit.signature),
     },
     renders: captured.renders,
+    walkProbe: meta.walkProbe ?? null,
     latencies: meta.latencyTypes === undefined ? null : inputLatencies(thread, meta.latencyTypes, from, to),
     hub: meta.hub ?? null,
     note: meta.note,
@@ -158,12 +210,14 @@ export async function scenarioIdlePlaying(context: ScenarioContext, pass: number
   const key = `A-${tab}-${pass}`;
   const captured = await capture(context, key, false, () => page.waitForTimeout(5000));
   const hub = await readHub(page);
+  const probe = await walkProbe(context, key, WALK_PROBE_MS);
   return analyse(context, captured, key, {
     scenario: "A",
     variant: `dock tab: ${tab}`,
     pass,
     note: "idle, transport playing, no input; 3 s warm-up before the window",
     hub,
+    walkProbe: probe,
   });
 }
 
@@ -176,6 +230,7 @@ export async function scenarioIdlePaused(context: ScenarioContext, pass: number)
   const key = `B-${pass}`;
   const captured = await capture(context, key, false, () => page.waitForTimeout(5000));
   const hub = await readHub(page);
+  const probe = await walkProbe(context, key, WALK_PROBE_MS);
   await page.getByRole("button", { name: "Play" }).click();
   await expect(page.getByRole("button", { name: "Pause" })).toBeVisible();
   return analyse(context, captured, key, {
@@ -184,6 +239,7 @@ export async function scenarioIdlePaused(context: ScenarioContext, pass: number)
     pass,
     note: "idle, transport paused; 1.5 s after the pause click",
     hub,
+    walkProbe: probe,
   });
 }
 

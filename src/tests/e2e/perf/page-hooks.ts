@@ -1,4 +1,6 @@
 import type { Page } from "@playwright/test";
+import { PERFORMED_WORK, walkCommit } from "../../perf/fiber-walk.ts";
+import type { PerfFiber, WalkResult } from "../../perf/fiber-walk.ts";
 
 /**
  * What the harness plants in the page before the app loads (T1235).
@@ -9,74 +11,38 @@ import type { Page } from "@playwright/test";
  *    That is the one place a commit can be COUNTED and its fibers walked without
  *    touching app code. The walk is gated (`window.__perf.walk`) because it is not free
  *    and its own cost must not land in the idle scenarios; when on, it counts every
- *    fiber that carries `PerformedWork` (flags & 1) by component name.
+ *    fiber that carries `PerformedWork` by component name.
  * 2. Two CPU-spin references of fixed WORK (iteration counts, not durations), §V929's
  *    "two references of different cost in the same run". Their reading is the machine's
  *    speed at that moment; the harness takes them before every block.
  *
  * Every function here is named `__perf…` so the trace parser can charge its samples to
  * `harness` rather than to the app.
+ *
+ * ⚠ T1260 — WHEN THE WALK IS OFF, `performed` AND `signature` ARE `null`, NOT `-1`/`""`.
+ * The gate above means most windows carry no render counts, and the old sentinels made
+ * "not measured" indistinguishable from "measured, found nothing" by the time the numbers
+ * reached the report. Nothing downstream may collapse the two again.
  */
 export async function installPageHooks(page: Page): Promise<void> {
-  await page.addInitScript(() => {
+  /*
+   * The walk itself is injected as SOURCE (T1260): an init script is serialised, so it
+   * cannot close over an import, and duplicating the walk inline would leave the version
+   * `fiber-walk.test.ts` proves and the version the browser runs free to drift apart.
+   * This script runs before the one below, which reads the function off the window.
+   */
+  await page.addInitScript({ content: `window.__perfWalkCommit = ${walkCommit.toString()};` });
+  await page.addInitScript((performedWorkBit: number) => {
     const perf = {
-      commits: [] as Array<{ t: number; actualDuration: number; performed: number; signature: string }>,
+      commits: [] as Array<{ t: number; actualDuration: number; performed: number | null; signature: string | null }>,
       walk: false,
       renders: new Map<string, number>(),
       spins: { cheap: [] as number[], dear: [] as number[] },
     };
     (window as unknown as { __perf: typeof perf }).__perf = perf;
 
-    function __perfNameOf(fiber: { type: unknown; tag: number }): string {
-      const type = fiber.type as { displayName?: string; name?: string; render?: { name?: string }; type?: { name?: string } } | string | null;
-      if (type === null || type === undefined) return `#${fiber.tag}`;
-      if (typeof type === "string") return `<${type}>`;
-      return type.displayName ?? type.name ?? type.render?.name ?? type.type?.name ?? `#${fiber.tag}`;
-    }
-
-    /*
-     * Which fibers did work in THIS commit. Two facts make this more than a flag check:
-     * a fiber's flags are reset when it is cloned for a new render, but a subtree with
-     * no pending work is NOT cloned — the new fiber keeps pointing at the old children,
-     * whose PerformedWork bit is whatever their LAST render left. So the walk descends
-     * only where the child pointer changed against the alternate (the rule React
-     * DevTools uses), and counts PerformedWork inside that. Measured without the rule:
-     * every commit "rendered" ~1750 fibers, the whole canvas, which was the stale bit.
-     */
-    interface Fiber {
-      child: Fiber | null;
-      sibling: Fiber | null;
-      alternate: Fiber | null;
-      flags: number;
-      type: unknown;
-      tag: number;
-    }
-    function __perfWalk(root: { current: Fiber }): { performed: number; signature: string } {
-      let performed = 0;
-      const local = new Map<string, number>();
-      const stack: Fiber[] = [];
-      if (root.current.child) stack.push(root.current.child);
-      while (stack.length > 0) {
-        const fiber = stack.pop()!;
-        if ((fiber.flags & 1) !== 0) {
-          performed += 1;
-          const name = __perfNameOf(fiber);
-          local.set(name, (local.get(name) ?? 0) + 1);
-        }
-        if (fiber.sibling) stack.push(fiber.sibling);
-        const cloned = fiber.alternate === null || fiber.child !== fiber.alternate.child;
-        if (fiber.child && cloned) stack.push(fiber.child);
-      }
-      for (const [name, count] of local) perf.renders.set(name, (perf.renders.get(name) ?? 0) + count);
-      // The commit's "shape": its three most-rendered components, so commits can be
-      // grouped by what kind of update they were.
-      const signature = [...local]
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 3)
-        .map(([name, count]) => `${name}×${count}`)
-        .join(" ");
-      return { performed, signature };
-    }
+    type Walker = (root: { current: PerfFiber }, bit: number) => WalkResult;
+    const __perfWalk = (window as unknown as { __perfWalkCommit: Walker }).__perfWalkCommit;
 
     const hook = {
       renderers: new Map<number, unknown>(),
@@ -88,9 +54,17 @@ export async function installPageHooks(page: Page): Promise<void> {
         return id;
       },
       checkDCE(): void {},
-      onCommitFiberRoot(_id: number, root: { current: Fiber & { actualDuration?: number } }): void {
-        const walked = perf.walk ? __perfWalk(root) : { performed: -1, signature: "" };
-        perf.commits.push({ t: performance.now(), actualDuration: root.current.actualDuration ?? Number.NaN, ...walked });
+      onCommitFiberRoot(_id: number, root: { current: PerfFiber & { actualDuration?: number } }): void {
+        const walked = perf.walk ? __perfWalk(root, performedWorkBit) : null;
+        if (walked !== null) {
+          for (const [name, count] of Object.entries(walked.counts)) perf.renders.set(name, (perf.renders.get(name) ?? 0) + count);
+        }
+        perf.commits.push({
+          t: performance.now(),
+          actualDuration: root.current.actualDuration ?? Number.NaN,
+          performed: walked === null ? null : walked.performed,
+          signature: walked === null ? null : walked.signature,
+        });
       },
       onCommitFiberUnmount(): void {},
       onPostCommitFiberRoot(): void {},
@@ -112,14 +86,16 @@ export async function installPageHooks(page: Page): Promise<void> {
       return performance.now() - start;
     }
     (window as unknown as { __perfSpin: typeof __perfSpin }).__perfSpin = __perfSpin;
-  });
+  }, PERFORMED_WORK);
 }
 
 export interface CommitRecord {
   readonly t: number;
   readonly actualDuration: number;
-  readonly performed: number;
-  readonly signature: string;
+  /** Fibers that carried `PerformedWork`, or `null` when the walk was off (T1260). */
+  readonly performed: number | null;
+  /** The commit's shape, `""` when nothing rendered, `null` when the walk was off. */
+  readonly signature: string | null;
 }
 
 /** Drains the commit log and the per-component render counts collected since the last drain. */

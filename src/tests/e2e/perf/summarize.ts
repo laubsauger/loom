@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { CATEGORIES, percentile, mean } from "../../perf/trace-parser.ts";
+import { classifyWalk, normaliseLegacyPerformed, walkVerdictLine } from "../../perf/fiber-walk.ts";
 import type { ScenarioResult } from "./scenarios.ts";
 
 /**
@@ -32,6 +33,38 @@ const files = readdirSync(dir)
 
 const fmt = (value: number, digits = 2): string => (Number.isNaN(value) ? "n/a" : value.toFixed(digits));
 const med = (values: readonly number[]): number => percentile(values, 50);
+
+/**
+ * Commits grouped by shape: what kind of update they were, how many, what they cost.
+ * A commit the walk never looked at is SKIPPED — the verdict line above the groups is what
+ * reports those, and a group row for an unwalked commit would restate the T1260 ambiguity
+ * one level down. Whether it was walked is decided by `performed`, not by the signature: a
+ * pre-T1260 file writes `""` for both "not walked" and "walked, nothing rendered". A commit
+ * that WAS walked and rendered nothing is a real result and keeps its own labelled row.
+ */
+function printGroups(
+  signatures: readonly (string | null)[],
+  actualDurationMs: readonly number[],
+  performedFibers: readonly (number | null)[],
+  indent: string,
+): void {
+  const groups = new Map<string, { count: number; ms: number; fibers: number[] }>();
+  signatures.forEach((signature, index) => {
+    const performed = performedFibers[index] ?? null;
+    if (signature === null || performed === null) return;
+    const key = signature === "" ? "(walked, no fiber rendered)" : signature;
+    const group = groups.get(key) ?? { count: 0, ms: 0, fibers: [] };
+    group.count += 1;
+    const ms = actualDurationMs[index];
+    if (ms !== undefined && !Number.isNaN(ms)) group.ms += ms;
+    group.fibers.push(performed);
+    groups.set(key, group);
+  });
+  const ranked = [...groups].sort((a, b) => b[1].ms - a[1].ms).slice(0, 6);
+  for (const [signature, group] of ranked) {
+    console.log(`${indent}- ${group.count}× \`${signature}\` — ${fmt(group.ms, 0)} ms render, ${fmt(group.ms / group.count)} ms each, ${fmt(percentile(group.fibers, 50), 0)} fibers p50`);
+  }
+}
 
 for (const file of files) {
   const data = JSON.parse(readFileSync(resolve(dir, file), "utf8")) as FixtureFile;
@@ -82,7 +115,8 @@ for (const file of files) {
   for (const result of data.results) {
     const commits = result.reactCommits;
     const durations = commits.actualDurationMs.filter((value) => !Number.isNaN(value));
-    const performed = commits.performedFibers.filter((value) => value >= 0);
+    const performedFibers = commits.performedFibers.map(normaliseLegacyPerformed);
+    const performed = performedFibers.filter((value): value is number => value !== null);
     const top = Object.entries(result.renders)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 12)
@@ -94,19 +128,21 @@ for (const file of files) {
         (performed.length > 0 ? `; fibers rendered per commit p50 ${fmt(percentile(performed, 50), 0)} / max ${Math.max(...performed)}` : "") +
         (top.length > 0 ? `; top: ${top}` : ""),
     );
-    // Commits grouped by shape: what kind of update they were, how many, what they cost.
-    const groups = new Map<string, { count: number; ms: number; fibers: number[] }>();
-    commits.signatures.forEach((signature, index) => {
-      if (signature === "") return;
-      const group = groups.get(signature) ?? { count: 0, ms: 0, fibers: [] };
-      group.count += 1;
-      group.ms += commits.actualDurationMs[index] ?? 0;
-      group.fibers.push(commits.performedFibers[index] ?? 0);
-      groups.set(signature, group);
-    });
-    const ranked = [...groups].sort((a, b) => b[1].ms - a[1].ms).slice(0, 6);
-    for (const [signature, group] of ranked) {
-      console.log(`  - ${group.count}× \`${signature}\` — ${fmt(group.ms, 0)} ms render, ${fmt(group.ms / group.count)} ms each, ${fmt(percentile(group.fibers, 50), 0)} fibers p50`);
+    // T1260 — say WHICH of the three it is. An empty group list used to mean "the walk was
+    // off", "the walk found nothing" or "the walk is broken", and printed the same nothing
+    // for all three; the reader then supplied the flattering one.
+    console.log(`  - walk: ${walkVerdictLine(classifyWalk(performedFibers))}`);
+    printGroups(commits.signatures, commits.actualDurationMs, performedFibers, "  ");
+    const probe = result.walkProbe ?? null;
+    if (probe !== null) {
+      const probeFibers = probe.performedFibers.map(normaliseLegacyPerformed);
+      const probeTop = Object.entries(probe.renders)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 8)
+        .map(([name, count]) => `${name} ×${count}`)
+        .join(", ");
+      console.log(`  - walk probe (${fmt(probe.ms, 0)} ms, NOT traced, NOT in the numbers above): ${walkVerdictLine(classifyWalk(probeFibers))}` + (probeTop.length > 0 ? `; top: ${probeTop}` : ""));
+      printGroups(probe.signatures, probe.actualDurationMs, probeFibers, "    ");
     }
   }
 
