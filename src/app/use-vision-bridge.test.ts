@@ -192,3 +192,31 @@ describe("T1029 — the hook, per path", () => {
     expect(warning?.message).toContain("only exists on macOS");
   });
 });
+
+describe("T1254 — the resolver's identity does not follow the caller's accessor", () => {
+  it("a fresh `graph` arrow per render keeps the SAME resolver, and that resolver reads the LATEST document", () => {
+    // The composition root hands `graph: () => runtime.flattened.current().graph` — a new
+    // function every `App` render. With that arrow in the resolver's dependency array,
+    // every render re-keyed `externalChannels`, the compile hook's channel resolver, its
+    // `CompileRequest` and its per-frame compiler: one full compile per RENDER on a knob
+    // drag (1935 renders, 1935 resolvers on E24 scenario C). Identity is what the compile
+    // memos key on, so identity is what this pins — and the ref must not go stale, or a
+    // renamed mask would keep answering for its old name.
+    let current = graph;
+    const view = renderHook(() => useVisionBridge({ deviceClient: () => null, graph: () => current }));
+    const first = view.result.current.resolver;
+    view.rerender();
+    view.rerender();
+    expect(view.result.current.resolver).toBe(first);
+    expect(first("mask1:coverage", { frame } as never)).toBe(0);
+
+    current = {
+      ...graph,
+      nodes: { mask: { ...graph.nodes["mask"], label: "mask2" } },
+    } as unknown as GraphDocument;
+    view.rerender();
+    expect(view.result.current.resolver).toBe(first);
+    expect(first("mask2:coverage", { frame } as never)).toBe(0);
+    expect(first("mask1:coverage", { frame } as never)).toBeUndefined();
+  });
+});

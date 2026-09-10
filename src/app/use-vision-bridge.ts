@@ -157,6 +157,14 @@ export function useVisionBridge(options: {
   const client = useCallback(() => clientRef.current(), []);
   const backendRef = useRef(options.backend);
   backendRef.current = options.backend;
+  /* T1254 — the graph accessor through the same ref, for the same reason: the composition
+     root hands a fresh arrow per render, and with `graph` in the resolver's dependency
+     array every `App` render minted a new `resolver`, which re-keyed `externalChannels`,
+     then the compile hook's channel resolver, then its `CompileRequest` and per-frame
+     compiler — one full compile per RENDER on a knob drag (measured: 1935 renders, 1935
+     new resolvers, E24 scenario C). The resolver's identity now moves with `sources` only. */
+  const graphRef = useRef(options.graph);
+  graphRef.current = options.graph;
   const unregisterRef = useRef(new Map<string, () => void>());
   const registeredOnRef = useRef<LoomBackend | null>(null);
 
@@ -304,7 +312,6 @@ export function useVisionBridge(options: {
     [sources],
   );
 
-  const graphOf = options.graph;
   const resolver = useCallback<ChannelResolver>(
     (channel, context) => {
       const value = sources.resolver(channel, context);
@@ -317,14 +324,14 @@ export function useVisionBridge(options: {
       const split = channel.lastIndexOf(":");
       if (split <= 0 || channel.slice(split + 1) !== "coverage") return undefined;
       const name = channel.slice(0, split);
-      const graph = graphOf?.();
+      const graph = graphRef.current?.();
       if (graph === undefined) return undefined;
       for (const node of Object.values(graph.nodes)) {
         if (node.type === "personMask" && (node.label ?? node.id) === name) return 0;
       }
       return undefined;
     },
-    [graphOf, sources],
+    [sources],
   );
 
   return useMemo(
