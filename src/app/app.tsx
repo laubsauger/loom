@@ -1528,6 +1528,101 @@ export function App({
     [agentSurface, mcpTransports, openAgentHelp],
   );
 
+  /*
+   * T1238: the top bar is memoised on what it shows. It carries no document state —
+   * transport flags, the render and audio-track status, the project name — yet its
+   * fifteen tooltip triggers rendered on every revision because the element was fresh
+   * each time. `frameRange` is read outside the memo from `runtime.settings`, the store's
+   * live settings (§V177): a graph patch leaves the range's identity alone, a
+   * `project.setSettings` replaces it, which is exactly when the scrubber must re-read.
+   */
+  const frameRange = projectRange(runtime.settings);
+  const topBar = useMemo(
+    () => (
+      <TopBar
+        projectName={project.fileName ?? runtime.project.name}
+        tier={status.kind === "ready" ? status.capabilities.tier : null}
+        // B172: the header's GPU number, subscribed to the hub on its own <= 10 Hz
+        // tick (§V16). Nothing had ever passed `gpuMs`, so this read "—" forever.
+        gpuMetric={<GpuMsReadout telemetry={runtime.telemetry} />}
+        playing={frameLoop.playing}
+        onPlayPause={onPlayPause}
+        onStep={onStepFrame}
+        onResetTime={onResetTime}
+        onToggleLoop={onToggleLoop}
+        looping={frameLoop.looping}
+        scrubber={
+          <TimelineScrubber
+            latestFrame={frameLoop.latestFrame}
+            range={frameRange}
+            onSeek={onSeek}
+            onChangeRange={onChangeRange}
+          />
+        }
+        onRenderRange={onRenderRange}
+        rendering={renderRange.rendering}
+        renderFrames={renderRange.frames}
+        onToggleAudioTrack={onToggleAudioTrack}
+        onSaveAudioTrack={onSaveAudioTrack}
+        recordingAudioTrack={audioTrack.recording}
+        audioTrackFrames={audioTrack.frames}
+        timeline={
+          <TimelineReadout
+            latestFrame={frameLoop.latestFrame}
+            frameClock={() =>
+              frameClockVerdict({
+                playing: frameLoop.playing,
+                hidden: typeof document !== "undefined" && document.visibilityState === "hidden",
+                settings: runtime.settings,
+                recentFrameTimes: runtime.telemetry.recentFrameTimes(),
+                now: typeof performance === "undefined" ? Date.now() : performance.now(),
+              })
+            }
+            onSeek={onSeek}
+          />
+        }
+        trailing={
+          <ProjectActions
+            busy={project.busy}
+            onNew={project.create}
+            onOpen={project.open}
+            onSave={project.save}
+            onSettings={openSettings}
+            onHelp={openHelp}
+          />
+        }
+      />
+    ),
+    [
+      audioTrack.frames,
+      audioTrack.recording,
+      frameLoop.latestFrame,
+      frameLoop.looping,
+      frameLoop.playing,
+      frameRange,
+      onChangeRange,
+      onPlayPause,
+      onRenderRange,
+      onResetTime,
+      onSaveAudioTrack,
+      onSeek,
+      onStepFrame,
+      onToggleAudioTrack,
+      onToggleLoop,
+      openHelp,
+      openSettings,
+      project.busy,
+      project.create,
+      project.fileName,
+      project.open,
+      project.save,
+      renderRange.frames,
+      renderRange.rendering,
+      runtime,
+      status,
+    ],
+  );
+
   return (
     <AppRuntimeContext.Provider value={runtime}>
       <KeymapProvider
@@ -1570,61 +1665,7 @@ export function App({
           onFloatBlocked={setFloatBlocked}
           problemCount={errorCount}
           notices={<NoticeStrip notices={notices} />}
-          topBar={
-            <TopBar
-              projectName={project.fileName ?? runtime.project.name}
-              tier={status.kind === "ready" ? status.capabilities.tier : null}
-              // B172: the header's GPU number, subscribed to the hub on its own <= 10 Hz
-              // tick (§V16). Nothing had ever passed `gpuMs`, so this read "—" forever.
-              gpuMetric={<GpuMsReadout telemetry={runtime.telemetry} />}
-              playing={frameLoop.playing}
-              onPlayPause={onPlayPause}
-              onStep={onStepFrame}
-              onResetTime={onResetTime}
-              onToggleLoop={onToggleLoop}
-              looping={frameLoop.looping}
-              scrubber={
-                <TimelineScrubber
-                  latestFrame={frameLoop.latestFrame}
-                  range={projectRange(runtime.settings)}
-                  onSeek={onSeek}
-                  onChangeRange={onChangeRange}
-                />
-              }
-              onRenderRange={onRenderRange}
-              rendering={renderRange.rendering}
-              renderFrames={renderRange.frames}
-              onToggleAudioTrack={onToggleAudioTrack}
-              onSaveAudioTrack={onSaveAudioTrack}
-              recordingAudioTrack={audioTrack.recording}
-              audioTrackFrames={audioTrack.frames}
-              timeline={
-                <TimelineReadout
-                  latestFrame={frameLoop.latestFrame}
-                  frameClock={() =>
-                    frameClockVerdict({
-                      playing: frameLoop.playing,
-                      hidden: typeof document !== "undefined" && document.visibilityState === "hidden",
-                      settings: runtime.settings,
-                      recentFrameTimes: runtime.telemetry.recentFrameTimes(),
-                      now: typeof performance === "undefined" ? Date.now() : performance.now(),
-                    })
-                  }
-                  onSeek={onSeek}
-                />
-              }
-              trailing={
-                <ProjectActions
-                  busy={project.busy}
-                  onNew={project.create}
-                  onOpen={project.open}
-                  onSave={project.save}
-                  onSettings={openSettings}
-                  onHelp={openHelp}
-                />
-              }
-            />
-          }
+          topBar={topBar}
           /*
            * EVERY PANE IS CONTAINED (B79).
            *

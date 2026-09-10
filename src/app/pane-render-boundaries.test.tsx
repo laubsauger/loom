@@ -42,6 +42,15 @@ const libraryRenders = vi.hoisted(() => ({ count: 0 }));
  * around `body` in `app-shell.tsx` (60 leaf renders where 50 were expected: five leaves, one more each per revision).
  */
 const leafRenders = vi.hoisted(() => ({ count: 0 }));
+/**
+ * The top bar: transport buttons and their tooltips, the scrubber, the project actions.
+ * It shows no document state except the timeline range, so a knob edit must not reach it
+ * and a `project.setSettings` that moves the range MUST — that second half is the case
+ * the memo could swallow, and the one this test exists to keep honest. Red-verified both
+ * ways: without the `useMemo` the count grows by one per revision; with the memo's deps
+ * emptied the range edit never reaches the bar (`expected 1 to be greater than 1`).
+ */
+const topBarRenders = vi.hoisted(() => ({ count: 0 }));
 
 vi.mock("@editor/library/node-library.tsx", async (importOriginal) => {
   const original = await importOriginal<typeof import("@editor/library/node-library.tsx")>();
@@ -61,6 +70,17 @@ vi.mock("./pane-leaf.tsx", async (importOriginal) => {
     PaneLeafView: (props: Parameters<typeof original.PaneLeafView>[0]) => {
       leafRenders.count += 1;
       return original.PaneLeafView(props);
+    },
+  };
+});
+
+vi.mock("./top-bar.tsx", async (importOriginal) => {
+  const original = await importOriginal<typeof import("./top-bar.tsx")>();
+  return {
+    ...original,
+    TopBar: (props: Parameters<typeof original.TopBar>[0]) => {
+      topBarRenders.count += 1;
+      return original.TopBar(props);
     },
   };
 });
@@ -122,7 +142,7 @@ async function patch(runtime: AppRuntime, label: string, operations: GraphPatchO
   return output as { createdIds: Record<string, string> };
 }
 
-describe("T1238 — the node library and the shell chrome do not re-render on a document revision", () => {
+describe("T1238 — the node library, the shell chrome and the top bar do not re-render on a document revision", () => {
   it("renders its rows once, and never again for a knob edit or a selection change", async () => {
     const runtime = createAppRuntime({
       identityStorage: null,
@@ -147,6 +167,8 @@ describe("T1238 — the node library and the shell chrome do not re-render on a 
     expect(mounted).toBeGreaterThan(0);
     const leavesMounted = leafRenders.count;
     expect(leavesMounted).toBeGreaterThan(0);
+    const topBarMounted = topBarRenders.count;
+    expect(topBarMounted).toBeGreaterThan(0);
 
     // Two revisions, the knob-drag shape: each one re-renders `App` (it reads the
     // document) and re-compiles. Neither may reach a library row.
@@ -156,6 +178,7 @@ describe("T1238 — the node library and the shell chrome do not re-render on a 
     expect(runtime.bus.store.getRevision()).toBe(before + 2);
     expect(libraryRenders.count).toBe(mounted);
     expect(leafRenders.count).toBe(leavesMounted);
+    expect(topBarRenders.count).toBe(topBarMounted);
 
     // And the other trigger §T1235 saw on chain-200: view state that lives in `App`
     // (selection, hover) changing under a stationary library.
@@ -163,6 +186,22 @@ describe("T1238 — the node library and the shell chrome do not re-render on a 
       const result = await runtime.bus.execute("graph.selectNodes", { nodeIds: [level] }, runtime.invocation);
       expect(result.status).toBe("applied");
     });
+    expect(libraryRenders.count).toBe(mounted);
+    expect(leafRenders.count).toBe(leavesMounted);
+    expect(topBarRenders.count).toBe(topBarMounted);
+
+    // The legitimate case: the timeline range is document state (§V177) and the top
+    // bar shows it, so a settings edit that moves it must get through the memo.
+    await act(async () => {
+      const result = await runtime.bus.execute(
+        "project.setSettings",
+        { settings: { frameRange: { start: 10, end: 20 } }, label: "range" },
+        runtime.invocation,
+      );
+      expect(result.status).toBe("applied");
+    });
+    expect(topBarRenders.count).toBeGreaterThan(topBarMounted);
+    expect((screen.getByLabelText("In point") as HTMLInputElement).value).toBe("10");
     expect(libraryRenders.count).toBe(mounted);
     expect(leafRenders.count).toBe(leavesMounted);
 
