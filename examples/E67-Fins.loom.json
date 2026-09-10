@@ -1,0 +1,665 @@
+{
+  "assets": [],
+  "componentLibrary": {
+    "components": [
+      {
+        "componentId": "audioAnalysis",
+        "description": "Any audio source in, two conditioned bags out. levels: every channel enveloped, ranked to 0..1 over a sliding window and settled — read level, the bands and centroid here. hits: every channel as a 1 ms attack / decaying release pulse — read kickCount, snareCount, hatCount, onsetCount and beatCount here; through levels a count rests at its mid-rank, not at 0.",
+        "graph": {
+          "edges": {
+            "e-rank-settle": {
+              "id": "e-rank-settle",
+              "source": {
+                "nodeId": "rank",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "settle",
+                "portId": "in"
+              }
+            },
+            "e-smooth-rank": {
+              "id": "e-smooth-rank",
+              "source": {
+                "nodeId": "smooth",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "rank",
+                "portId": "in"
+              }
+            },
+            "in_audio_feed_1": {
+              "id": "in_audio_feed_1",
+              "source": {
+                "nodeId": "in_audio",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "decay",
+                "portId": "in"
+              }
+            },
+            "in_audio_feed_2": {
+              "id": "in_audio_feed_2",
+              "source": {
+                "nodeId": "in_audio",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "smooth",
+                "portId": "in"
+              }
+            },
+            "out_hits_feed": {
+              "id": "out_hits_feed",
+              "source": {
+                "nodeId": "decay",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "out_hits",
+                "portId": "in"
+              }
+            },
+            "out_levels_feed": {
+              "id": "out_levels_feed",
+              "source": {
+                "nodeId": "settle",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "out_levels",
+                "portId": "in"
+              }
+            }
+          },
+          "groups": {},
+          "nodes": {
+            "decay": {
+              "definitionVersion": 1,
+              "id": "decay",
+              "parameters": {
+                "lag": 0.001,
+                "releaseRatio": 250
+              },
+              "position": {
+                "x": 258,
+                "y": -168
+              },
+              "type": "valueLag"
+            },
+            "in_audio": {
+              "definitionVersion": 1,
+              "id": "in_audio",
+              "label": "audio",
+              "parameters": {},
+              "position": {
+                "x": 0,
+                "y": -74
+              },
+              "type": "componentInValue"
+            },
+            "out_hits": {
+              "definitionVersion": 1,
+              "id": "out_hits",
+              "label": "hits",
+              "parameters": {},
+              "position": {
+                "x": 516,
+                "y": -168
+              },
+              "type": "componentOutValue"
+            },
+            "out_levels": {
+              "definitionVersion": 1,
+              "id": "out_levels",
+              "label": "levels",
+              "parameters": {},
+              "position": {
+                "x": 1032,
+                "y": -74
+              },
+              "type": "componentOutValue"
+            },
+            "rank": {
+              "definitionVersion": 1,
+              "id": "rank",
+              "parameters": {
+                "window": 16
+              },
+              "position": {
+                "x": 516,
+                "y": 20
+              },
+              "type": "valueNormalize"
+            },
+            "settle": {
+              "definitionVersion": 1,
+              "id": "settle",
+              "parameters": {
+                "lag": 0.15,
+                "releaseRatio": 1
+              },
+              "position": {
+                "x": 774,
+                "y": -74
+              },
+              "type": "valueLag"
+            },
+            "smooth": {
+              "definitionVersion": 1,
+              "id": "smooth",
+              "parameters": {
+                "lag": 0.08,
+                "releaseRatio": 1
+              },
+              "position": {
+                "x": 258,
+                "y": 20
+              },
+              "type": "valueLag"
+            }
+          },
+          "revision": 1
+        },
+        "inputs": [
+          {
+            "externalId": "audio",
+            "label": "audio",
+            "nodeId": "in_audio",
+            "portId": "in"
+          }
+        ],
+        "name": "AudioAnalysis",
+        "outputs": [
+          {
+            "externalId": "hits",
+            "label": "hits",
+            "nodeId": "out_hits",
+            "portId": "out"
+          },
+          {
+            "externalId": "levels",
+            "label": "levels",
+            "nodeId": "out_levels",
+            "portId": "out"
+          }
+        ],
+        "parameters": [
+          {
+            "definition": {
+              "default": 0.08,
+              "description": "The follower BEFORE the rank, on the levels lane: how long a channel takes to follow the source. Longer smooths what the rank sees; it cannot calm the rank's own steps — Settle does that.",
+              "label": "Envelope",
+              "max": 1,
+              "min": 0,
+              "range": "floor",
+              "step": 0.005,
+              "type": "number",
+              "unit": "seconds"
+            },
+            "key": "envelope",
+            "targets": [
+              {
+                "key": "lag",
+                "nodeId": "smooth"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": 16,
+              "description": "How much history the levels lane ranks against. Short adapts within a phrase and forgets the drop; long holds the whole track's shape and takes that long to re-centre after a change.",
+              "label": "Window",
+              "max": 60,
+              "min": 0.25,
+              "range": "bounded",
+              "step": 0.25,
+              "type": "number",
+              "unit": "seconds"
+            },
+            "key": "window",
+            "targets": [
+              {
+                "key": "window",
+                "nodeId": "rank"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": 0.15,
+              "description": "The follower AFTER the rank (§V952). A rank re-orders every frame and can step most of its span in one; this bounds the step of levels to 1 − exp(−frame / Settle) of it — 10% at 0.15 s, 2.7% at 0.6 s. 0 hands you the raw rank.",
+              "label": "Settle",
+              "max": 2,
+              "min": 0,
+              "range": "floor",
+              "step": 0.005,
+              "type": "number",
+              "unit": "seconds"
+            },
+            "key": "settle",
+            "targets": [
+              {
+                "key": "lag",
+                "nodeId": "settle"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": 250,
+              "description": "The hits lane's tail, in milliseconds: a count is 1 on the frame it happens and falls to 0.37 of that after this long. It is the release ratio of a 1 ms follower, which is why the number reads in ms.",
+              "label": "Hit Decay",
+              "max": 1000,
+              "min": 10,
+              "range": "floor",
+              "step": 10,
+              "type": "number"
+            },
+            "key": "hitDecay",
+            "targets": [
+              {
+                "key": "releaseRatio",
+                "nodeId": "decay"
+              }
+            ]
+          }
+        ],
+        "version": 1
+      }
+    ],
+    "schemaVersion": 1
+  },
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e-analysis-react": {
+        "id": "e-analysis-react",
+        "source": {
+          "nodeId": "analysis",
+          "portId": "hits"
+        },
+        "target": {
+          "nodeId": "react",
+          "portId": "a"
+        }
+      },
+      "e-clip-analysis": {
+        "id": "e-clip-analysis",
+        "source": {
+          "nodeId": "clip",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "analysis",
+          "portId": "audio"
+        }
+      },
+      "e-glass-grade": {
+        "id": "e-glass-grade",
+        "source": {
+          "nodeId": "glass",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "grade",
+          "portId": "input"
+        }
+      },
+      "e-grade-out": {
+        "id": "e-grade-out",
+        "source": {
+          "nodeId": "grade",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      },
+      "e-seed-glass": {
+        "id": "e-seed-glass",
+        "source": {
+          "nodeId": "seed",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "glass",
+          "portId": "input"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "analysis": {
+        "definitionVersion": 1,
+        "id": "analysis",
+        "label": "analysis1",
+        "parameters": {
+          "envelope": 0.08,
+          "hitDecay": 300,
+          "settle": 0.15,
+          "window": 16
+        },
+        "position": {
+          "x": -600,
+          "y": 300
+        },
+        "type": "component:audioAnalysis@1"
+      },
+      "clip": {
+        "definitionVersion": 1,
+        "id": "clip",
+        "label": "clip1",
+        "parameters": {
+          "beatOffset": 0.484,
+          "beatsPerBar": 4,
+          "bpm": 124,
+          "cue": false,
+          "cuePoint": 0,
+          "extend": "loop",
+          "file": "media/showcase-beat.m4a",
+          "monitor": true,
+          "play": true,
+          "playMode": "timeline",
+          "speed": 1,
+          "tempoMode": "declared",
+          "trimEnd": 0,
+          "trimStart": 0,
+          "volume": 1
+        },
+        "position": {
+          "x": -900,
+          "y": 300
+        },
+        "type": "audioFileIn"
+      },
+      "glass": {
+        "definitionVersion": 1,
+        "id": "glass",
+        "label": "glassRT",
+        "parameters": {
+          "aa": 1,
+          "absorb": 2.6,
+          "amount": 1,
+          "beamBend": 1,
+          "beamSpan": 40,
+          "bevel": 0.009,
+          "bevelAmt": 1,
+          "bg": 0,
+          "chroma": 1,
+          "detailDepth": 0.5,
+          "dispersion": 0.055,
+          "edgeLift": 0.9,
+          "envDetail": 5,
+          "envLevel": 1,
+          "envMix": 0,
+          "envPunch": 0.6,
+          "envRotate": 0,
+          "envSpin": 0.006,
+          "excite": 1.6,
+          "exciteRadius": 0.42,
+          "eyeX": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "2.78*sin(0.20+0.30*sin(abstime*0.0125))"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.5523
+              }
+            },
+            "mode": "expression"
+          },
+          "eyeY": 0.16,
+          "eyeZ": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "2.78*cos(0.20+0.30*sin(abstime*0.0125))"
+              },
+              "static": {
+                "kind": "static",
+                "value": 2.7246
+              }
+            },
+            "mode": "expression"
+          },
+          "fan": 0.22,
+          "fill": 0.004,
+          "film": 0.75,
+          "filmThick": 0.62,
+          "filmVary": 0.55,
+          "fov": 40,
+          "gelLevel": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "0.55 * (1 + 0.35 * op('react1').chan.hatCount)"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.55
+              }
+            },
+            "mode": "expression"
+          },
+          "glow": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "0.3 + 1.2 * op('react1').chan.snareCount"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.3
+              }
+            },
+            "mode": "expression"
+          },
+          "glowRadius": 0.6,
+          "glowSpeed": 1,
+          "ior": 1.52,
+          "laser": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "2.6 * (1 + 2 * op('react1').chan.kickCount)"
+              },
+              "static": {
+                "kind": "static",
+                "value": 2.6
+              }
+            },
+            "mode": "expression"
+          },
+          "laser2": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "2 * (1 + 2 * op('react1').chan.kickCount)"
+              },
+              "static": {
+                "kind": "static",
+                "value": 2
+              }
+            },
+            "mode": "expression"
+          },
+          "laser2Aim": 0.2,
+          "laser2Hue": 0.55,
+          "laser2Radius": 0.021,
+          "laser3": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "2.1 * (1 + 2 * op('react1').chan.kickCount)"
+              },
+              "static": {
+                "kind": "static",
+                "value": 2.1
+              }
+            },
+            "mode": "expression"
+          },
+          "laser3Aim": 0.35,
+          "laser3Hue": 0.33,
+          "laser3Radius": 0.014,
+          "laserAim": 0.45,
+          "laserCycle": 26,
+          "laserDuty": 5,
+          "laserHue": 0.02,
+          "laserInside": 4.5,
+          "laserRadius": 0.016,
+          "laserReach": 0.5,
+          "lean": 0.05,
+          "length": 0.66,
+          "motion": 1,
+          "panelSize": 0.62,
+          "panelSoft": 0.3,
+          "reflFade": 0.55,
+          "scratch": 0.35,
+          "scratchScale": 90,
+          "selfSpin": 0.05,
+          "slabs": 9,
+          "source": "// ═══ GLASS · analytic ray-traced slabs ═════════════════════════════\n// A slab is an oriented box with an EXACT ray intersection. A ray\n// enters, refracts, crosses the interior accumulating Beer-Lambert\n// absorption, refracts again leaving, and carries on into the NEXT\n// slab — which materialGlass structurally cannot do, being screen-space\n// and drawing after the opaques, so glass never sees glass.\n//\n// THE BEAMS ARE TRACED, NOT DRAWN. Each beam used to be an infinite\n// straight line that did not know the glass was there: the camera ray\n// refracted, the beam did not, so it crossed the stack dead straight.\n// Now every beam is fired as a RAY through the same slabs, refracting\n// at each interface, offsetting laterally across each body, dimming by\n// Fresnel and absorption as it goes. What is stored is the resulting\n// POLYLINE, and light is added where a camera segment passes near any\n// BEAM SEGMENT. So a beam visibly kinks entering a slab, walks sideways\n// inside it, and leaves on a new heading — and each dogleg dims,\n// because the energy went somewhere.\n//\n// The beam path does not depend on the viewer, so this wants computing\n// once a frame; a fragment shader has no such place, so it is rebuilt\n// per pixel. That is why the beam bounce budget is small and why beams\n// below a brightness threshold are skipped entirely — with a short duty\n// cycle only one is usually alight, which is what keeps this affordable.\n//\n// THE BEVEL IS SHADED, NOT MODELLED. A perfect 90-degree edge has ZERO\n// AREA and can never catch a highlight; a ground chamfer picks up a\n// bright line along the edge. Distance in from each face plane blends\n// the normal toward the bisector of the two adjoining faces. The\n// silhouette stays sharp, which is a lie you only catch looking for it.\n//\n// SURFACE IS NOT POLISH: micro-scratches smear a narrow source into a\n// streak; THIN-FILM INTERFERENCE cancels wavelengths across the whole\n// FACE — the oil-slick sweep, which dispersion cannot produce.\n//\n// THREE SPIN AXES, DIFFERENT COSTS: selfSpin (own long axis, needs\n// spacing > 2*width), spinTumble (end over end, free), spinRoll\n// (clock-face, needs spacing > 2*length). Interpenetration is not\n// cosmetic — the tracer assumes a ray is inside at most one slab.\n\nstruct SharedFrame {\n  time: f32,\n  deltaTime: f32,\n  frameIndex: f32,\n  randomSeed: f32,\n  wallTime: f32,\n  wallDelta: f32,\n  absTime: f32,\n  absFrame: f32,\n  resolution: vec2f,\n  pointer: vec4f,\n};\nstruct Params {\n  amount: f32,\n  envMix: f32,      // @default 0  0 is the built-in panels, 1 is the wired latlong map.\n  envPunch: f32,    // @default 0.6  Rebuilds highlight energy an LDR map lost to clipping. 0 for a true HDR.\n  envRotate: f32,   // @default 0  Turns the map around the vertical axis, in turns.\n  envSpin: f32,     // @default 0.006  Turns per second the room drifts.\n  envLevel: f32,    // @default 1  Master level for the whole room.\n  slabs: f32,       // @default 9  How many slabs. Up to 16.\n  spacing: f32,     // @default 0.44  Pitch along the stack. Must clear the widest the slab ever gets.\n  stackAngle: f32,  // @default 0.68  Radians the stack turns AWAY from camera. This is what overlaps them.\n  thickness: f32,   // @default 0.055  Half-thickness.\n  width: f32,       // @default 0.20  Half-depth — the broad face.\n  length: f32,      // @default 0.66  Half-height.\n  bevel: f32,       // @default 0.009  Width of the shaded chamfer, in world units.\n  bevelAmt: f32,    // @default 1  How fully the edge rounds. 0 is an infinitely sharp, lifeless edge.\n  yawBase: f32,     // @default 1.15  Radians the slabs turn to FACE the camera. This is what lets you see through.\n  selfSpin: f32,    // @default 0.05  Turns/sec about the slab's own LONG axis. Needs spacing > 2*width.\n  spinTumble: f32,  // @default 0  Turns/sec end over end. Costs no spacing at all.\n  spinRoll: f32,    // @default 0  Turns/sec clock-face roll. Needs spacing > 2*length.\n  spinAlt: f32,     // @default 1  How much neighbours counter-rotate. 1 alternates, 0 all one way.\n  spinStagger: f32, // @default 0.085  Turns of fixed offset between neighbours. The helix.\n  fan: f32,         // @default 0.22  Yaw spread across the stack.\n  wave: f32,        // @default 0.05  Small incoherent wobble.\n  waveLen: f32,     // @default 3.7  Slabs per cycle of that wobble.\n  spin: f32,        // @default 0.3  Radians of the travelling SPIRAL surge, on top of the steady spin.\n  spinRate: f32,    // @default 26  Seconds for one lap of that spiral.\n  spinOffset: f32,  // @default 0.16  Turns of phase between neighbours in the spiral.\n  surgeCycle: f32,  // @default 52  Seconds between surges.\n  surgeFloor: f32,  // @default 0.2  How much spiral remains between surges.\n  lean: f32,        // @default 0.05  Tilt off vertical.\n  sway: f32,        // @default 0.03  Drift off the stack line.\n  motion: f32,      // @default 1  Speed of the whole animation.\n  ior: f32,         // @default 1.52  Index of refraction.\n  dispersion: f32,  // @default 0.055  Index spread across the band. Splits colour AT EDGES.\n  absorb: f32,      // @default 2.6  Absorption per unit path.\n  reflFade: f32,    // @default 0.55  How fast reflections fade with depth. Low values white out and cost more.\n  edgeLift: f32,    // @default 0.9  Extra brightness where a face turns edge-on. The angle response.\n  film: f32,        // @default 0.75  Thin-film iridescence. The oil-slick rainbow ACROSS a face.\n  filmThick: f32,   // @default 0.62  Coating thickness. Shifts which colours cancel.\n  filmVary: f32,    // @default 0.55  How much the coating varies over a face.\n  scratch: f32,     // @default 0.35  Micro-scratch depth.\n  scratchScale: f32,// @default 90  Scratch fineness.\n  laserCycle: f32,  // @default 26  Seconds for one full pass of all three beams.\n  laserDuty: f32,   // @default 5  Briefness of each pass. Higher also means fewer beams alight at once, which is cheaper.\n  laserReach: f32,  // @default 0.5  How much of a long segment alongside a beam still counts.\n  beamSpan: f32,    // @default 40  How far a beam runs through empty space before and after the stack.\n  beamBend: f32,    // @default 1  How much beams refract. 0 sends them straight through, as before.\n  laserInside: f32, // @default 4.5  How much brighter a beam scatters INSIDE glass than in the gaps.\n  laser: f32,       // @default 2.6  Brightness of beam 1.\n  laserHue: f32,    // @default 0.02  Beam 1 colour. Around 0.02 is red.\n  laserAim: f32,    // @default 0.45  0 aims across the frame, 1 down the stack (where it becomes a dot).\n  laserRadius: f32, // @default 0.016  Beam 1 thickness.\n  laser2: f32,      // @default 2  Brightness of beam 2.\n  laser2Hue: f32,   // @default 0.55  Beam 2 colour. Around 0.55 is green-cyan.\n  laser2Aim: f32,   // @default 0.2  Beam 2 aim blend.\n  laser2Radius: f32,// @default 0.021  Beam 2 thickness.\n  laser3: f32,      // @default 2.1  Brightness of beam 3.\n  laser3Hue: f32,   // @default 0.33  Beam 3 colour. 0.33 is a clean blue.\n  laser3Aim: f32,   // @default 0.35  Beam 3 aim blend.\n  laser3Radius: f32,// @default 0.014  Beam 3 thickness.\n  excite: f32,      // @default 1.6  How strongly a slab lights up when a beam passes through it.\n  exciteRadius: f32,// @default 0.42  How close a beam must pass to light a slab.\n  glow: f32,        // @default 0.3  Light scattered from INSIDE the glass by a wandering source.\n  glowRadius: f32,  // @default 0.6  How far that inner light reaches.\n  glowSpeed: f32,   // @default 1  How fast it wanders through the stack.\n  gelLevel: f32,    // @default 0.55  Built-in panels, when envMix is below 1.\n  stripLevel: f32,  // @default 4  Built-in narrow sources. Raise carefully: these are what white out.\n  envDetail: f32,   // @default 5  Bars across the built-in panels.\n  detailDepth: f32, // @default 0.5  How deeply those bars cut.\n  panelSize: f32,   // @default 0.62  Built-in panel extent.\n  panelSoft: f32,   // @default 0.3  Built-in panel edge softness.\n  chroma: f32,      // @default 1  Colour intensity of the room.\n  fill: f32,        // @default 0.004  Dim ambient so nothing is absolutely dead.\n  bg: f32,          // @default 0  Room visible as background. 0 is pure black.\n  aa: f32,          // @default 1  Sub-pixel spread. 0 collapses to one ray and goes jagged.\n  eyeX: f32,        // @default 0.5  Camera.\n  eyeY: f32,        // @default 0.16\n  eyeZ: f32,        // @default 2.6\n  fov: f32,         // @default 40  Degrees.\n  tint: vec3f,      // @default 1  Overall grade.\n};\n\n@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n@group(0) @binding(2) var<uniform> frameU: SharedFrame;\n@group(0) @binding(3) var<uniform> params: Params;\n\nconst TAU: f32 = 6.2831853;\nconst PI: f32 = 3.1415927;\nconst MAXSLAB: i32 = 16;\nconst MAXBOUNCE: i32 = 10;\nconst NBEAM: i32 = 3;\nconst BPTS: i32 = 6;          // points per beam polyline: 5 segments\nconst FIRE_EPS: f32 = 0.004;  // below this a beam is skipped entirely\n\nvar<private> gR: array<mat3x3f, 16>;\nvar<private> gC: array<vec3f, 16>;\nvar<private> gExcite: array<vec3f, 16>;\nvar<private> gN: i32;\nvar<private> gGlow: vec3f;\n\nvar<private> bCol: array<vec3f, 3>;\nvar<private> bFire: array<f32, 3>;\nvar<private> bRad: array<f32, 3>;\nvar<private> bLev: array<f32, 3>;\nvar<private> bPt: array<vec3f, 18>;   // NBEAM * BPTS\nvar<private> bAtt: array<vec3f, 18>;  // energy left at the START of each segment\n\nfn wrapPi(x: f32) -> f32 {\n  return x - TAU * floor((x + PI) / TAU);\n}\n\nfn hash21(p: vec2f) -> f32 {\n  var q = fract(p * vec2f(0.1031, 0.1030));\n  q = q + dot(q, q.yx + 33.33);\n  return fract((q.x + q.y) * q.x);\n}\n\nfn panel(lon: f32, up: f32, cLon: f32, cUp: f32, wLon: f32, wUp: f32) -> f32 {\n  let s = clamp(params.panelSoft, 0.02, 0.99);\n  let k = max(params.panelSize, 0.05);\n  let d = abs(wrapPi(lon - cLon));\n  let a = 1.0 - smoothstep(wLon * k * (1.0 - s), wLon * k, d);\n  let b = 1.0 - smoothstep(wUp * k * (1.0 - s), wUp * k, abs(up - cUp));\n  return a * b;\n}\n\nfn stripe(lon: f32, up: f32, cLon: f32, w: f32) -> f32 {\n  let d = wrapPi(lon - cLon);\n  return exp(-(d * d) / (2.0 * w * w))\n       * smoothstep(-0.85, -0.1, up) * smoothstep(0.98, 0.30, up);\n}\n\nfn proceduralEnv(lon: f32, up: f32) -> vec3f {\n  var gel = vec3f(0.42, 0.32, 1.00) * panel(lon, up,  1.95,  0.24, 0.80, 0.66) * 0.95\n          + vec3f(0.22, 0.86, 1.00) * panel(lon, up,  2.85, -0.26, 0.62, 0.52) * 0.85\n          + vec3f(1.00, 0.52, 0.16) * panel(lon, up, -0.62,  0.14, 0.74, 0.62) * 1.10\n          + vec3f(1.00, 0.26, 0.62) * panel(lon, up, -1.85, -0.24, 0.66, 0.54) * 0.95\n          + vec3f(0.55, 1.00, 0.72) * panel(lon, up,  0.55, -0.42, 0.48, 0.40) * 0.55\n          + vec3f(1.00, 0.86, 0.42) * panel(lon, up, -3.00,  0.30, 0.56, 0.48) * 0.75;\n\n  let bar = 0.5 + 0.5 * cos(lon * params.envDetail * 2.0 + up * 3.1);\n  gel = gel * (1.0 - params.detailDepth * (1.0 - bar * bar));\n\n  let st = stripe(lon, up, 0.62, 0.038) + stripe(lon, up, -2.85, 0.05) * 0.7;\n  return gel * params.gelLevel + vec3f(1.0, 0.99, 0.97) * st * params.stripLevel;\n}\n\nfn envColor(d: vec3f) -> vec3f {\n  let dir = normalize(d);\n  let up = clamp(dir.y, -1.0, 1.0);\n  let drift = (params.envRotate + frameU.absTime * params.envSpin) * TAU;\n  let lon = atan2(dir.z, dir.x) + drift;\n\n  var room = proceduralEnv(lon, up);\n\n  if (params.envMix > 0.001) {\n    let uvm = vec2f(fract(lon / TAU + 0.5), clamp(0.5 - asin(up) / PI, 0.0, 1.0));\n    let tex = max(textureSampleLevel(inputTexture, inputSampler, uvm, 0.0).rgb,\n                  vec3f(0.0, 0.0, 0.0));\n    let pk = max(max(tex.r, tex.g), tex.b);\n    let boost = 1.0 + params.envPunch * pow(clamp(pk, 0.0, 1.0), 5.0) * 24.0;\n    room = mix(room, tex * boost, clamp(params.envMix, 0.0, 1.0));\n  }\n\n  let g = dot(room, vec3f(0.2126, 0.7152, 0.0722));\n  room = mix(vec3f(g, g, g), room, params.chroma);\n\n  return (room + vec3f(0.08, 0.09, 0.14) * params.fill) * params.envLevel;\n}\n\nfn glowAt(p: vec3f) -> f32 {\n  let d = p - gGlow;\n  let r = max(params.glowRadius, 0.02);\n  return exp(-dot(d, d) / (2.0 * r * r));\n}\n\nfn hueTint(h: f32) -> vec3f {\n  return 0.5 + 0.5 * cos(TAU * (vec3f(0.0, 0.33, 0.67) + h));\n}\n\nfn boxSpan(ro: vec3f, rd: vec3f, h: vec3f) -> vec2f {\n  let inv = 1.0 / rd;\n  let a = (h - ro) * inv;\n  let b = (-h - ro) * inv;\n  let lo = min(a, b);\n  let hi = max(a, b);\n  return vec2f(max(max(lo.x, lo.y), lo.z), min(min(hi.x, hi.y), hi.z));\n}\n\nfn boxNormal(pl: vec3f, h: vec3f) -> vec3f {\n  let d = abs(pl) - h;\n  if (d.x > d.y && d.x > d.z) { return vec3f(sign(pl.x), 0.0, 0.0); }\n  if (d.y > d.z) { return vec3f(0.0, sign(pl.y), 0.0); }\n  return vec3f(0.0, 0.0, sign(pl.z));\n}\n\nfn bevelNormal(pl: vec3f, h: vec3f) -> vec3f {\n  let hard = boxNormal(pl, h);\n  let amt = clamp(params.bevelAmt, 0.0, 1.0);\n  if (amt < 0.001) { return hard; }\n  let bw = max(params.bevel, 1e-5);\n  let q = max(h - abs(pl), vec3f(0.0, 0.0, 0.0));\n  let w = exp(-q / bw);\n  var nb = vec3f(sign(pl.x) * w.x, sign(pl.y) * w.y, sign(pl.z) * w.z);\n  if (dot(nb, nb) < 1e-9) { return hard; }\n  nb = normalize(nb);\n  return normalize(mix(hard, nb, amt));\n}\n\nfn microNormal(pl: vec3f, nl: vec3f) -> vec3f {\n  let s = max(params.scratchScale, 1.0);\n  let a = pl.z * s + sin(pl.y * s * 0.11) * 1.9;\n  let b = pl.y * s * 0.09 + sin(pl.z * s * 0.6) * 1.1;\n  var pert = vec3f(sin(a) * 0.55 + sin(a * 2.7 + 1.3) * 0.28,\n                   sin(b) * 0.30,\n                   sin(a * 0.47 + b) * 0.40);\n  pert = pert - nl * dot(pert, nl);\n  return normalize(nl + pert * params.scratch * 0.09);\n}\n\nfn thinFilm(ct: f32, d: f32) -> vec3f {\n  let nf = 1.42;\n  let s2 = (1.0 - ct * ct) / (nf * nf);\n  let cf = sqrt(max(1.0 - s2, 0.0));\n  let opd = 2.0 * nf * d * cf;\n  let ph = TAU * opd / vec3f(0.66, 0.55, 0.45);\n  return 0.35 + 0.65 * (0.5 + 0.5 * cos(ph));\n}\n\nfn fresnelSchlick(ct: f32, f0: f32) -> f32 {\n  let m = clamp(1.0 - ct, 0.0, 1.0);\n  let m2 = m * m;\n  return f0 + (1.0 - f0) * m2 * m2 * m;\n}\n\n// Closest distance between two finite segments. The beam is a polyline\n// now, so a point-to-infinite-line test no longer describes it.\nfn segSegDist(p1: vec3f, q1: vec3f, p2: vec3f, q2: vec3f) -> f32 {\n  let d1 = q1 - p1;\n  let d2 = q2 - p2;\n  let r = p1 - p2;\n  let a = dot(d1, d1);\n  let e = dot(d2, d2);\n  let f = dot(d2, r);\n  var s = 0.0;\n  var t = 0.0;\n  if (a <= 1e-9 && e <= 1e-9) { return length(r); }\n  if (a <= 1e-9) {\n    t = clamp(f / e, 0.0, 1.0);\n  } else {\n    let c = dot(d1, r);\n    if (e <= 1e-9) {\n      s = clamp(-c / a, 0.0, 1.0);\n    } else {\n      let b = dot(d1, d2);\n      let den = a * e - b * b;\n      if (den > 1e-9) { s = clamp((b * f - c * e) / den, 0.0, 1.0); }\n      t = (b * s + f) / e;\n      if (t < 0.0) { t = 0.0; s = clamp(-c / a, 0.0, 1.0); }\n      else if (t > 1.0) { t = 1.0; s = clamp((b - c) / a, 0.0, 1.0); }\n    }\n  }\n  return length((p1 + d1 * s) - (p2 + d2 * t));\n}\n\n// Fire a beam through the stack and record where it actually goes.\nfn traceBeam(k: i32, start: vec3f, dir: vec3f) {\n  let h = vec3f(params.thickness, params.length, params.width);\n  let eta = params.ior;\n  let f0 = ((eta - 1.0) / (eta + 1.0)) * ((eta - 1.0) / (eta + 1.0));\n  let far = max(params.beamSpan, 1.0);\n  let bend = clamp(params.beamBend, 0.0, 1.0);\n\n  var ro = start;\n  var rd = dir;\n  var att = vec3f(1.0, 1.0, 1.0);\n  var inside = -1;\n  let base = k * BPTS;\n\n  bPt[base] = ro;\n  bAtt[base] = att;\n\n  var j = 1;\n  loop {\n    if (j >= BPTS) { break; }\n\n    var bestT = 1e9;\n    var bestI = -1;\n    for (var i = 0; i < gN; i = i + 1) {\n      let lo = (ro - gC[i]) * gR[i];\n      let ld = rd * gR[i];\n      let sp = boxSpan(lo, ld, h);\n      if (sp.y <= sp.x) { continue; }\n      var tc = sp.x;\n      if (inside == i) { tc = sp.y; }\n      if (tc > 1e-4 && tc < bestT) { bestT = tc; bestI = i; }\n    }\n\n    if (bestI < 0) {\n      // out the far side: run to the horizon and stop\n      ro = ro + rd * far;\n      bPt[base + j] = ro;\n      bAtt[base + j] = att;\n      j = j + 1;\n      break;\n    }\n\n    ro = ro + rd * bestT;\n    let pl = (ro - gC[bestI]) * gR[bestI];\n    var nw = normalize(gR[bestI] * bevelNormal(pl, h));\n    let entering = (inside != bestI);\n    if (!entering) {\n      att = att * exp(-params.absorb * vec3f(1.0, 1.16, 1.4) * bestT);\n      nw = -nw;\n    }\n    let ci = clamp(dot(-rd, nw), 0.0, 1.0);\n    att = att * (1.0 - fresnelSchlick(ci, f0));\n\n    bPt[base + j] = ro;\n    bAtt[base + j] = att;\n    j = j + 1;\n\n    let e = select(eta, 1.0 / eta, entering);\n    let refr = refract(rd, nw, e);\n    if (dot(refr, refr) < 1e-6) {\n      rd = reflect(rd, nw);\n    } else {\n      // beamBend at 0 keeps the old dead-straight behaviour\n      rd = normalize(mix(rd, normalize(refr), bend));\n      inside = select(-1, bestI, entering);\n    }\n    ro = ro + rd * 2e-4;\n  }\n\n  // pad the rest with the last point: zero-length segments are skipped\n  for (var m = j; m < BPTS; m = m + 1) {\n    bPt[base + m] = ro;\n    bAtt[base + m] = vec3f(0.0, 0.0, 0.0);\n  }\n}\n\nfn beamsAlong(A: vec3f, B: vec3f) -> vec3f {\n  var s = vec3f(0.0, 0.0, 0.0);\n  let camLen = length(B - A);\n  if (camLen < 1e-6) { return s; }\n  let reach = max(params.laserReach, 0.02);\n\n  for (var k = 0; k < NBEAM; k = k + 1) {\n    if (bFire[k] < FIRE_EPS) { continue; }\n    let r = max(bRad[k], 0.004);\n    let base = k * BPTS;\n    var sum = vec3f(0.0, 0.0, 0.0);\n    for (var j = 0; j < BPTS - 1; j = j + 1) {\n      let p0 = bPt[base + j];\n      let p1 = bPt[base + j + 1];\n      if (dot(p1 - p0, p1 - p0) < 1e-8) { continue; }\n      let d = segSegDist(A, B, p0, p1);\n      let core = exp(-(d * d) / (2.0 * r * r));\n      let halo = exp(-(d * d) / (2.0 * r * r * 16.0)) * 0.18;\n      sum = sum + (core + halo) * bAtt[base + j];\n    }\n    s = s + sum * min(camLen, reach) * bFire[k] * bLev[k] * bCol[k];\n  }\n  return s;\n}\n\nfn buildStack(n: f32, t: f32) {\n  gN = i32(min(n, f32(MAXSLAB)));\n\n  let sc = max(params.surgeCycle, 1.0);\n  let e = 0.5 - 0.5 * cos(TAU * t / sc);\n  let surge = mix(clamp(params.surgeFloor, 0.0, 1.0), 1.0, e * e * e);\n  let amp = params.spin * surge;\n\n  let sa = params.stackAngle;\n  let axis = vec3f(cos(sa), 0.0, sin(sa));\n  let perp = vec3f(-sin(sa), 0.0, cos(sa));\n\n  for (var i = 0; i < gN; i = i + 1) {\n    let fi = f32(i);\n    let c = fi - (n - 1.0) * 0.5;\n    let ph = c * TAU / max(params.waveLen, 0.5);\n    let pA = 41.0 + 17.0 * sin(fi * 1.73);\n    let pB = 67.0 + 23.0 * sin(fi * 2.91 + 1.0);\n    let pC = 97.0 + 31.0 * sin(fi * 0.71 + 2.0);\n\n    let odd = fi - 2.0 * floor(fi * 0.5);\n    let hand = mix(1.0, select(1.0, -1.0, odd > 0.5), clamp(params.spinAlt, 0.0, 1.0));\n    let stag = TAU * params.spinStagger * c;\n\n    let spiral = amp * sin(TAU * (t / max(params.spinRate, 1.0)\n                                  - c * params.spinOffset));\n\n    let yaw = -params.yawBase\n            + params.fan * (c / max(n * 0.5, 1.0))\n            + params.wave * sin(ph + TAU * t / pA)\n            + TAU * params.selfSpin * t * hand + stag\n            + spiral;\n    let lz = params.lean * sin(ph * 0.7 + TAU * t / pB)\n           + TAU * params.spinRoll * t * hand + stag * 0.5;\n    let px = 0.03 * sin(ph * 1.3)\n           + TAU * params.spinTumble * t * hand + stag * 0.75;\n\n    let cy = cos(yaw); let sy = sin(yaw);\n    let cz = cos(lz);  let sz = sin(lz);\n    let cx = cos(px);  let sx = sin(px);\n\n    gR[i] = mat3x3f(\n      vec3f(cy * cz, sz, -sy * cz),\n      vec3f(cy * (-sz * cx) + sy * sx, cz * cx, -sy * (-sz * cx) + cy * sx),\n      vec3f(cy * (sz * sx) + sy * cx, -cz * sx, -sy * (sz * sx) + cy * cx));\n\n    gC[i] = axis * (c * params.spacing)\n          + vec3f(0.0, params.sway * sin(ph * 0.8 + TAU * t / pB), 0.0)\n          + vec3f(0.0, 0.0, params.sway * 0.5 * cos(ph * 1.1 + TAU * t / pC));\n  }\n\n  let g = t * params.glowSpeed;\n  let half = (n - 1.0) * 0.5 * params.spacing;\n  gGlow = axis * (half * 1.1 * sin(g * 0.041 * TAU))\n        + vec3f(0.0, params.length * 0.55 * sin(g * 0.023 * TAU), 0.0);\n\n  let lc = max(params.laserCycle, 1.0);\n  let du = max(params.laserDuty, 1.0);\n  let cyc = t / lc;\n\n  bLev[0] = params.laser;  bRad[0] = params.laserRadius;\n  bLev[1] = params.laser2; bRad[1] = params.laser2Radius;\n  bLev[2] = params.laser3; bRad[2] = params.laser3Radius;\n  bCol[0] = hueTint(params.laserHue);\n  bCol[1] = hueTint(params.laser2Hue);\n  bCol[2] = hueTint(params.laser3Hue);\n\n  for (var k = 0; k < NBEAM; k = k + 1) {\n    let ph = cyc - f32(k) / f32(NBEAM);\n    bFire[k] = pow(max(0.5 + 0.5 * cos(TAU * ph), 0.0), du);\n  }\n\n  let far = max(params.beamSpan, 1.0);\n\n  let a1 = clamp(params.laserAim, 0.0, 1.0);\n  let d1 = normalize(mix(normalize(perp + vec3f(0.0, 0.45 * sin(TAU * t / 31.0), 0.0)),\n                         axis, a1)\n         + vec3f(0.0, 0.22 * sin(TAU * t / 37.0), 0.0));\n  let o1 = vec3f(0.0, params.length * 0.6 * sin(TAU * t / 19.0), 0.0)\n         + axis * (half * 0.8 * sin(TAU * t / 43.0));\n\n  let a2 = clamp(params.laser2Aim, 0.0, 1.0);\n  let d2 = normalize(mix(normalize(-perp * 0.75 - axis * 0.35\n                         + vec3f(0.0, 0.55 + 0.35 * sin(TAU * t / 23.0), 0.0)),\n                         -axis, a2)\n         + vec3f(0.0, -0.18 * sin(TAU * t / 17.0), 0.0));\n  let o2 = vec3f(0.0, -params.length * 0.5 * sin(TAU * t / 27.0), 0.0)\n         + axis * (half * 0.9 * sin(TAU * t / 33.0 + 2.1))\n         + perp * (params.width * 0.8 * sin(TAU * t / 21.0));\n\n  let a3 = clamp(params.laser3Aim, 0.0, 1.0);\n  let d3 = normalize(mix(normalize(perp * 0.55 + axis * 0.30\n                         + vec3f(0.0, -0.95, 0.0)),\n                         axis, a3)\n         + perp * 0.20 * sin(TAU * t / 41.0));\n  let o3 = vec3f(0.0, params.length * 0.25 * sin(TAU * t / 29.0), 0.0)\n         + axis * (half * 0.7 * sin(TAU * t / 47.0 + 1.1))\n         - perp * (params.width * 0.9 * sin(TAU * t / 25.0));\n\n  // each beam starts well off stage so it enters the frame already lit\n  if (bFire[0] >= FIRE_EPS) { traceBeam(0, o1 - d1 * far * 0.5, d1); }\n  if (bFire[1] >= FIRE_EPS) { traceBeam(1, o2 - d2 * far * 0.5, d2); }\n  if (bFire[2] >= FIRE_EPS) { traceBeam(2, o3 - d3 * far * 0.5, d3); }\n\n  // a slab lights up by how near the beam's ACTUAL path runs to it\n  let er = max(params.exciteRadius, 0.02);\n  for (var i = 0; i < gN; i = i + 1) {\n    var ex = vec3f(0.0, 0.0, 0.0);\n    for (var k = 0; k < NBEAM; k = k + 1) {\n      if (bFire[k] < FIRE_EPS) { continue; }\n      let base = k * BPTS;\n      var near = 1e9;\n      for (var j = 0; j < BPTS - 1; j = j + 1) {\n        let p0 = bPt[base + j];\n        let p1 = bPt[base + j + 1];\n        let seg = p1 - p0;\n        let ll = dot(seg, seg);\n        if (ll < 1e-8) { continue; }\n        let u = clamp(dot(gC[i] - p0, seg) / ll, 0.0, 1.0);\n        near = min(near, length(gC[i] - (p0 + seg * u)));\n      }\n      ex = ex + bCol[k] * exp(-(near * near) / (2.0 * er * er))\n              * bFire[k] * bLev[k];\n    }\n    gExcite[i] = ex;\n  }\n}\n\nfn trace(ro0: vec3f, rd0: vec3f, eta: f32) -> vec3f {\n  var ro = ro0;\n  var rd = rd0;\n  var thr = vec3f(1.0, 1.0, 1.0);\n  var acc = vec3f(0.0, 0.0, 0.0);\n  var inside = -1;\n  var hitAny = false;\n  let h = vec3f(params.thickness, params.length, params.width);\n  let f0 = ((eta - 1.0) / (eta + 1.0)) * ((eta - 1.0) / (eta + 1.0));\n\n  for (var b = 0; b < MAXBOUNCE; b = b + 1) {\n    var bestT = 1e9;\n    var bestI = -1;\n\n    for (var i = 0; i < gN; i = i + 1) {\n      let lo = (ro - gC[i]) * gR[i];\n      let ld = rd * gR[i];\n      let sp = boxSpan(lo, ld, h);\n      if (sp.y <= sp.x) { continue; }\n      var tc = sp.x;\n      if (inside == i) { tc = sp.y; }\n      if (tc > 1e-4 && tc < bestT) { bestT = tc; bestI = i; }\n    }\n\n    if (bestI < 0) { break; }\n    hitAny = true;\n\n    let prev = ro;\n    ro = ro + rd * bestT;\n\n    let inGlass = (inside == bestI);\n    let medium = select(1.0, params.laserInside, inGlass);\n    acc = acc + thr * medium * beamsAlong(prev, ro);\n\n    if (inGlass) {\n      acc = acc + thr * gExcite[bestI] * params.excite * bestT;\n    }\n\n    let pl = (ro - gC[bestI]) * gR[bestI];\n    var nw = normalize(gR[bestI] * microNormal(pl, bevelNormal(pl, h)));\n\n    if (inGlass) {\n      acc = acc + thr * params.glow * glowAt((prev + ro) * 0.5) * bestT\n                * vec3f(1.0, 0.86, 0.72);\n      thr = thr * exp(-params.absorb * vec3f(1.0, 1.16, 1.4) * bestT);\n      nw = -nw;\n    }\n    let ci = clamp(dot(-rd, nw), 0.0, 1.0);\n    let F = fresnelSchlick(ci, f0);\n\n    let dv = params.filmThick\n           * (1.0 + params.filmVary * (sin(pl.y * 5.3 + pl.z * 7.1)\n                                     + 0.6 * sin(pl.y * 11.7 - pl.z * 3.3)) * 0.5);\n    let irid = mix(vec3f(1.0, 1.0, 1.0), thinFilm(ci, dv), params.film);\n\n    let lift = 1.0 + params.edgeLift * pow(1.0 - ci, 4.0);\n\n    let fade = 1.0 / (1.0 + f32(b) * params.reflFade);\n    acc = acc + thr * F * envColor(reflect(rd, nw)) * irid * fade * lift;\n    thr = thr * (1.0 - F) * (0.82 + 0.18 * fade);\n\n    let e = select(eta, 1.0 / eta, !inGlass);\n    let refr = refract(rd, nw, e);\n    if (dot(refr, refr) < 1e-6) {\n      rd = reflect(rd, nw);\n    } else {\n      rd = normalize(refr);\n      inside = select(-1, bestI, !inGlass);\n    }\n    ro = ro + rd * 2e-4;\n\n    if (max(thr.r, max(thr.g, thr.b)) < 0.02) { break; }\n  }\n\n  let far = max(params.beamSpan, 1.0);\n  acc = acc + thr * 0.55 * beamsAlong(ro, ro + rd * far);\n\n  let back = envColor(rd) * select(params.bg, 1.0, hitAny);\n  return acc + thr * back;\n}\n\n@fragment\nfn fs(@location(0) uv: vec2f) -> @location(0) vec4f {\n  let res = max(frameU.resolution, vec2f(1.0, 1.0));\n  let asp = res.x / res.y;\n  let t = frameU.absTime * params.motion;\n  let n = max(params.slabs, 1.0);\n  let ipx = 1.0 / res;\n\n  buildStack(n, t);\n\n  let eye = vec3f(params.eyeX, params.eyeY, params.eyeZ);\n  let fwd = normalize(-eye);\n  let rgt = normalize(cross(fwd, vec3f(0.0, 1.0, 0.0)));\n  let upv = cross(rgt, fwd);\n  let tanH = tan(params.fov * 0.008726646);\n\n  var offs = array<vec2f, 4>(\n    vec2f(-0.375, -0.125), vec2f( 0.125, -0.375),\n    vec2f( 0.375,  0.125), vec2f(-0.125,  0.375));\n\n  var wgt = array<vec3f, 4>(\n    vec3f(0.150, 0.030, 0.508),\n    vec3f(0.026, 0.324, 0.431),\n    vec3f(0.289, 0.500, 0.051),\n    vec3f(0.526, 0.147, 0.010));\n\n  let rot = i32(hash21(floor(uv * res)) * 4.0) & 3;\n\n  var col = vec3f(0.0, 0.0, 0.0);\n  for (var i = 0; i < 4; i = i + 1) {\n    let j = (i + rot) & 3;\n    let o = offs[i] * clamp(params.aa, 0.0, 2.0);\n    let f = (f32(j) + 0.5) * 0.25 - 0.5;\n    let eta = params.ior * (1.0 + params.dispersion * f * 2.0);\n\n    let p = uv + o * ipx;\n    let ndc = vec2f((p.x - 0.5) * 2.0 * asp, (0.5 - p.y) * 2.0);\n    let rd = normalize(fwd + rgt * ndc.x * tanH + upv * ndc.y * tanH);\n\n    col = col + trace(eye, rd, eta) * wgt[j];\n  }\n\n  return vec4f(col * params.tint * params.amount, 1.0);\n}\n",
+          "spacing": 0.44,
+          "spin": 0.3,
+          "spinAlt": 1,
+          "spinOffset": 0.16,
+          "spinRate": 26,
+          "spinRoll": 0,
+          "spinStagger": 0.085,
+          "spinTumble": 0,
+          "stackAngle": 0.68,
+          "stripLevel": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "4 * (1 + 0.8 * op('react1').chan.kickCount)"
+              },
+              "static": {
+                "kind": "static",
+                "value": 4
+              }
+            },
+            "mode": "expression"
+          },
+          "surgeCycle": 52,
+          "surgeFloor": 0.18,
+          "sway": 0.03,
+          "thickness": 0.055,
+          "tint": [
+            1,
+            1,
+            1,
+            1
+          ],
+          "wave": 0.05,
+          "waveLen": 3.7,
+          "width": 0.2,
+          "yawBase": 1.15
+        },
+        "position": {
+          "x": -52,
+          "y": -128
+        },
+        "type": "customWgsl"
+      },
+      "grade": {
+        "definitionVersion": 1,
+        "id": "grade",
+        "label": "finalGrade",
+        "parameters": {
+          "amount": 1,
+          "ceiling": 3,
+          "exposure": 1,
+          "saturation": 1.28,
+          "source": "// ═══ COMPOSITE · final grade ═══════════════════════════════════════\n// Deliberately light-handed. An earlier version crushed the toe hard\n// enough to swallow the sculpture: the brief asks for two-thirds of the\n// frame almost black, but that darkness has to come from the LIGHTING\n// leaving most of the frame empty, not from a curve stamping on it\n// afterwards. A grade that has to rescue an exposure is the wrong tool.\n//\n// So: an asymptotic ceiling that highlights approach and never reach,\n// a shallow toe that settles the empty frame without touching anything\n// the eye is meant to read, and a light vignette.\n\nstruct SharedFrame {\n  time: f32,\n  deltaTime: f32,\n  frameIndex: f32,\n  randomSeed: f32,\n  wallTime: f32,\n  wallDelta: f32,\n  absTime: f32,\n  absFrame: f32,\n  resolution: vec2f,\n  pointer: vec4f,\n};\nstruct Params {\n  amount: f32,\n  exposure: f32,   // @default 1.25  Overall gain, before everything else.\n  ceiling: f32,    // @default 2.2  Peak luminance. Highlights approach this and never reach it.\n  toe: f32,        // @default 0.012  Settles the empty frame to black. Keep this small.\n  vignette: f32,   // @default 0.14  Corner falloff.\n  saturation: f32, // @default 1.12  The rolloff desaturates highlights; this puts a little back.\n  tint: vec3f,     // @default 1  Overall grade.\n};\n\n@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n@group(0) @binding(2) var<uniform> frameU: SharedFrame;\n@group(0) @binding(3) var<uniform> params: Params;\n\n@fragment\nfn fs(@location(0) uv: vec2f) -> @location(0) vec4f {\n  let src = textureSampleLevel(inputTexture, inputSampler, uv, 0.0);\n  var col = max(src.rgb, vec3f(0.0, 0.0, 0.0)) * params.tint * params.exposure;\n\n  let ceil = max(params.ceiling, 0.05);\n  let luma = max(dot(col, vec3f(0.2126, 0.7152, 0.0722)), 0.0);\n  col = col * (ceil / (ceil + luma));\n\n  // shallow toe — settles black without eating the sculpture\n  let t = max(params.toe, 1e-5);\n  col = col * (col + vec3f(t, t, t) * 0.5) / (col + vec3f(t, t, t));\n\n  let q = (uv - vec2f(0.5, 0.5)) * vec2f(1.0, 0.9);\n  let vig = 1.0 - params.vignette * smoothstep(0.14, 0.85, dot(q, q) * 2.4);\n  col = col * clamp(vig, 0.0, 1.0);\n\n  let g = dot(col, vec3f(0.2126, 0.7152, 0.0722));\n  col = mix(vec3f(g, g, g), col, params.saturation);\n\n  return vec4f(max(col, vec3f(0.0, 0.0, 0.0)), 1.0);\n}\n",
+          "tint": [
+            1,
+            1,
+            1,
+            1
+          ],
+          "toe": 0.002,
+          "vignette": 0.12
+        },
+        "position": {
+          "x": 300,
+          "y": -150
+        },
+        "type": "customWgsl"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "label": "finalImage",
+        "parameters": {
+          "toneMap": "filmic"
+        },
+        "position": {
+          "x": 600,
+          "y": -150
+        },
+        "type": "output"
+      },
+      "react": {
+        "definitionVersion": 1,
+        "id": "react",
+        "label": "react1",
+        "parameters": {
+          "operand": 1,
+          "operation": "multiply"
+        },
+        "position": {
+          "x": -300,
+          "y": 300
+        },
+        "type": "valueMath"
+      },
+      "seed": {
+        "definitionVersion": 1,
+        "id": "seed",
+        "label": "envSeed",
+        "parameters": {
+          "color": [
+            0,
+            0,
+            0,
+            1
+          ]
+        },
+        "position": {
+          "x": -343,
+          "y": -135
+        },
+        "type": "solid"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E67 Fins",
+  "projectId": "example-e67-fins",
+  "schemaVersion": 3,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 1080,
+      "width": 1920
+    },
+    "previewFps": 20,
+    "previewLongEdge": 192,
+    "randomSeed": 1,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}

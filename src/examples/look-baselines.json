@@ -305,6 +305,12 @@
     "f0max": 0.6012,
     "cardFloor": 0.0105
   },
+  "E67-Fins.loom.json": {
+    "motion": 0.10445,
+    "range": 0.659,
+    "f0max": 0.7421,
+    "cardFloor": 0
+  },
   "E7-LFO-Dissolve.loom.json": {
     "motion": 0.49929,
     "range": 0.3789,

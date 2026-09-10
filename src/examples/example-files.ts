@@ -13,6 +13,7 @@ export const EXAMPLE_COMPONENT_IDS: Readonly<Record<string, readonly string[]>> 
   "example-e47-hologram": ["depthPoints", "depthCut"],
   "example-e51-chorus": ["timeGrid"],
   "example-e66-meter": ["audioAnalysis"],
+  "example-e67-fins": ["audioAnalysis"],
 };
 
 /**
