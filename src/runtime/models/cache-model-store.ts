@@ -5,8 +5,18 @@ import type { ModelStore } from "./model-acquisition.ts";
  *
  * The Cache API rather than IndexedDB or OPFS, for one reason that decides it: these ARE
  * cached HTTP responses, so the store that is built for them handles a 94 MB body without
- * being talked into it, survives reloads, and is scoped per ORIGIN — which is what makes
- * the download once per machine rather than once per project.
+ * being talked into it, survives reloads, and is scoped per ORIGIN — one copy per origin
+ * rather than one per project.
+ *
+ * ⚑ AN ORIGIN INCLUDES THE PORT (B202), and this docblock used to claim "once per machine",
+ * which is false on any dev machine. `pnpm dev` asks for 5173 and Vite silently takes the
+ * next free port when it is busy — routine here, where several sessions run dev servers at
+ * once — and every port it lands on is a NEW origin with an empty store, so the 94 MB
+ * downloads again. Measured on the owner's profile: `shaderloom-models-v1` held 134 MB
+ * under `http://localhost:5173` and another 95 MB under `http://localhost:5176`, the same
+ * model twice. Pinning the port (`server.strictPort`) would fix it and was declined on
+ * purpose: a second dev server failing to start is a worse day than a re-download. So the
+ * duplication is accepted, and this comment is the place it is written down.
  *
  * It is unavailable in a non-secure context and in some private modes, and that is a
  * NORMAL outcome rather than an exception: `cacheModelStore` returns `null` and the caller
