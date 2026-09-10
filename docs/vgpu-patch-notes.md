@@ -255,3 +255,43 @@ Every hunk, immediately, for: an MSAA preserve opt-in (1), a first-class region 
 with interval-based aliasing (2), either an exported eviction call or a per-entry
 eviction subscription (3), and a frame extent or raw-timestamp callback on the timer (4). We are happy to send patches upstream against any of these if
 the shapes above are close to what you would want.
+
+---
+
+## Upstream status 2026-09-10
+
+Audit for T1255 against `vercel-labs/vgpu` (`main` = v0.4.1 + docs commits at `96ced572`;
+`canary` = the PR target, 102 commits past v0.4.1, unreleased).
+
+**0.3.1 → 0.4.1 changes nothing this patch touches.** `compute.ts`, `draw.ts`, `effect.ts`,
+`set-resources.ts`, `target-utils.ts`, `timer.ts`, `init.ts` and `bind-cache.ts` are
+byte-identical between the two tags; `frame.ts` changed (0.4.0 made `frame(gpu, cb)` and
+`frameLoop` cancel the frame on throw instead of submitting on finally — `2d137a4`) but not
+in the `passPreserveMsaaError` region our hunk edits. The entry files only add
+`ShaderFunctionExport`; `package.json` adds a `./three` export and an optional `three` peer.
+The four themes are all **still needed, unchanged**: nothing upstream fixes any of them.
+
+| Theme | 0.4.1 | canary (next release) |
+|---|---|---|
+| 1 MSAA `storeOp` | needed, applies clean | needed; `target-utils.ts` `validateTargetOptions` and `target-offscreen.ts` (`#currentColors`) moved adjacent lines — context conflict only |
+| 2 raw `GPUBufferBinding` + region identity | needed, applies clean | needed; `set-resources.ts` grew (+70 lines: destroyed-binding wrapper, storage textures, `resourceLabel`) but `hasAnyResourceShape` and the `isGPUBufferBinding` line are unchanged — context conflict only |
+| 3 `evictBindGroups` | needed, applies clean | **semantic conflict**: canary keys a compute's cache slot `compute:${id}` (fixing the draw/compute id collision noted above), so our `this.cache.clearDraw(this.id)` in `compute.js` must become `clearDraw(\`compute:${this.id}\`)` or evict nothing |
+| 4 `TimerFrameExtent` | needed, applies clean | needed; `timer.ts` byte-identical to main — cherry-picks clean |
+
+**Trial upgrade to 0.4.1** (scratch copy, own install): `pnpm install` applied the patch with
+zero warnings (`frame.js` hunk with offset); `pnpm typecheck` clean; Dawn gates
+`bind-group-eviction`, `point-packed-attributes`, `scene-antialias`, `dawn-render`,
+`matte-coverage`, `frame-extent`, `headless-parity` all green; `pnpm test:gates` green;
+`src/runtime/backend/vgpu` 283/283. One failure, `cook-oracle.test.ts` E66-Meter
+"auto is byte-identical to always", fails identically on 0.3.1 at HEAD — pre-existing, not the
+upgrade. The one thing the numbers do not cover: 0.4.0's cancel-on-throw at
+`vgpu-backend.ts` `frameLoop` / `frame(gpu, …)` call sites is a semantic change (a throwing
+encode used to submit whatever was encoded; now it submits nothing). Review those three sites
+before bumping the pin.
+
+**Patches by case** were prepared as one branch per theme on upstream `main`, each with a
+`PR.md`, changeset, tests (upstream had none for themes 3 and 4's contracts) and green
+typecheck/build/bundle-check: `loom/msaa-discard-store` (opt-in `preserveSamples`, not a
+default flip), `loom/buffer-binding-resource` (classifier + range identity + interval-based
+aliasing preflight), `loom/clear-draw` (`evictBindGroups()` on Draw/Effect/Compute with the
+`compute:` key), `loom/timer-frame-extent`. Not pushed; see the T1255 report for paths.
