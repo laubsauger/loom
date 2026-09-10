@@ -55,15 +55,27 @@ const TD_GRAPH_BINDINGS: readonly KeyBinding[] = [
     // centred on the content: the one thing fit cannot give you, because fit picks
     // whatever zoom fills the window and so hides how big the graph actually is.
     //
-    // `h` (home selected) and `o` (overview) are DELIBERATELY absent beside it. "Home
-    // selected" has no meaning once `H` is about scale rather than extent, and TD's
-    // overview is a separate PANE this app does not have. A key taught a wrong meaning
-    // costs more to un-teach than an absent one costs to add (T430, §V354).
+    // `h` (home selected) is DELIBERATELY absent beside it: "home selected" has no
+    // meaning once `H` is about scale rather than extent. A key taught a wrong meaning
+    // costs more to un-teach than an absent one costs to add (T430, §V354). `o` was
+    // absent for the same reason until T1257 gave it TD's meaning — see `view.toggleMinimap`.
     id: "view.home",
     keys: "H",
     context: "graph",
     command: "view.home",
     label: "Home — 1:1 zoom",
+  },
+  {
+    // TD: "A scale 'overview' representation of the Network can be toggled on and off
+    // with the 'o' key" (Network_Editor; Application_Shortcuts row `network.overview | o`).
+    // Loom's overview is the corner map rather than TD's separate pane, and the key is the
+    // same because it does the same thing (T1257).
+    id: "view.toggleMinimap",
+    keys: "o",
+    context: "graph",
+    command: "view.toggleMinimap",
+    label: "Overview map",
+    description: "Show or hide the network overview map.",
   },
   {
     id: "view.frame",

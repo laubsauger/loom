@@ -114,6 +114,10 @@ const APP_REGISTERED = [
   // the canvas can move its own camera, and framing is view state that writes no patch.
   // Live, not planned: `F` and this row both fit the graph in the window.
   "view.frameAll",
+  // T1257: registered by the mounted graph canvas (`src/editor/graph-canvas/minimap-command.ts`)
+  // on its bus and its door buses — whether the overview map is on screen is a property
+  // of a look at the graph, persisted per person. Live, not planned: this row and `o`.
+  "view.toggleMinimap",
 ];
 
 describe("what the menus promise but nobody has built", () => {

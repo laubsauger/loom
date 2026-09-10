@@ -79,13 +79,15 @@ describe("verified TouchDesigner network-editor bindings", () => {
   });
 
   it("binds the verified table", () => {
-    // THREE TD keys are deliberately absent from this otherwise TD-verified table, which
+    // TWO TD keys are deliberately absent from this otherwise TD-verified table, which
     // makes them exactly the kind of thing a future reader would "restore": `mod+f` (no
-    // find surface exists), `h` (home-selected has no meaning beside a `H` that is about
-    // scale) and `o` (TD's overview is a separate pane this app does not have). The loop
-    // at the end of this test is what keeps each one a decision rather than an omission.
+    // find surface exists) and `h` (home-selected has no meaning beside a `H` that is
+    // about scale). The loop at the end of this test is what keeps each one a decision
+    // rather than an omission. `o` was the third until T1257: TD's overview is a separate
+    // pane, Loom's is the corner map, and the key means "toggle the overview" in both.
     const expected: Record<string, string> = {
       "graph.addOperator": "tab",
+      "view.toggleMinimap": "o",
       "node.toggleBypass": "b",
       "node.toggleDisplay": "d",
       "node.toggleRender": "r",
@@ -108,8 +110,10 @@ describe("verified TouchDesigner network-editor bindings", () => {
 
     // T443/T430: unbound until each has a meaning or a surface, and rebinding one has to
     // be a visible edit to this line rather than a quiet re-add to the table above.
-    // `mod+f` — no find surface exists. `h`/`o` — "home selected" has no meaning beside a
-    // `H` that is about SCALE, and TD's overview is a separate pane this app lacks.
+    // `mod+f` — no find surface exists. `h` — "home selected" has no meaning beside a
+    // `H` that is about SCALE. `view.overview` never became a command: `o` is
+    // `view.toggleMinimap` (T1257), and a second name for the overview would be a way for
+    // two bindings to disagree about what the key does.
     for (const command of ["ui.findInGraph", "view.homeSelected", "view.overview"]) {
       expect(
         DEFAULT_BINDINGS.filter((binding) => binding.command === command),
@@ -148,8 +152,10 @@ describe("our app-level bindings", () => {
 
     // T443/T430: unbound until each has a meaning or a surface, and rebinding one has to
     // be a visible edit to this line rather than a quiet re-add to the table above.
-    // `mod+f` — no find surface exists. `h`/`o` — "home selected" has no meaning beside a
-    // `H` that is about SCALE, and TD's overview is a separate pane this app lacks.
+    // `mod+f` — no find surface exists. `h` — "home selected" has no meaning beside a
+    // `H` that is about SCALE. `view.overview` never became a command: `o` is
+    // `view.toggleMinimap` (T1257), and a second name for the overview would be a way for
+    // two bindings to disagree about what the key does.
     for (const command of ["ui.findInGraph", "view.homeSelected", "view.overview"]) {
       expect(
         DEFAULT_BINDINGS.filter((binding) => binding.command === command),

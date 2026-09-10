@@ -15,6 +15,7 @@ import { BEGIN_RENAME_COMMAND } from "@editor/nodes/rename-session.ts";
 // Same reason again (B68, §V356): the constant, from the module rather than the
 // `@editor/edges` barrel.
 import { TOGGLE_REFERENCE_LINES_COMMAND } from "@editor/edges/reference-lines-command.ts";
+import { TOGGLE_MINIMAP_COMMAND } from "@editor/graph-canvas/minimap-command.ts";
 // Same reason again (T1010): the constant, from the module rather than the
 // `@editor/nodes` barrel, which exports React surfaces.
 import { TOGGLE_TIMING_OVERLAY_COMMAND } from "@editor/nodes/timing-overlay-command.ts";
@@ -106,6 +107,8 @@ export function canvasMenu(registry: NodeRegistryView): MenuSchema {
       // binding, no menu row and no button. A plain row, like `node.toggleBypass`: the
       // command flips when `show` is omitted, which is what a menu item means.
       { command: TOGGLE_REFERENCE_LINES_COMMAND, label: "Reference lines" },
+      // T1257: the same door for the overview map — this row and `o` are one command.
+      { command: TOGGLE_MINIMAP_COMMAND, label: "Overview map" },
       { separator: true },
       /**
        * T1010 — the DEBUG submenu, and the owner asked for it by that name: *"it's not

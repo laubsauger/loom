@@ -160,6 +160,11 @@ const NOT_CONSTRUCTED: ReadonlyArray<{ name: string; reason: string }> = [
       "Composed by `nodeTypeLabelStore()` in the SAME module — deliberately a single per-PERSON store rather than a bus-keyed one, since the settings dialog that writes it is nowhere near the canvas that reads it (T416). The product path is `nodeTypeLabelStore` in `node-view.tsx` and `project-settings.tsx`; `tests/integration/node-rename.test.tsx` flips it from the composed settings dialog and asserts the chip leaves the node.",
   },
   {
+    name: "createMinimapStore",
+    reason:
+      "Composed by `minimapStore()` in the SAME module — a single per-PERSON store over one `localStorage` key, the shape of `createNodeTypeLabelStore` and for the same reason: a canvas inside a component dive runs on a session bus, and a bus-keyed store would let the root canvas and the dived one disagree about whether the map is on screen after one toggle (T1257). The product path is `registerMinimapCommand` in `graph-canvas.tsx`; `graph-canvas/minimap-command.test.ts` round-trips the preference through a fake storage and flips it through the bus command, and `tests/e2e/minimap.spec.ts` hides the map with `o` and asserts it stays hidden across a reload.",
+  },
+  {
     name: "createStarterPreferenceStore",
     reason:
       "Composed by `starterPreferenceStore()` in the SAME module — a single per-PERSON store, for the same reason `createNodeTypeLabelStore` is one: the settings dialog that writes it and the composition root's boot decision that reads it are nowhere near each other in the tree, and two identities over one `localStorage` key would only be a way for the switch and the boot to disagree. The product path is `starterPreferenceStore` in `project-settings.tsx` and in `app.tsx`, which feeds `useStarterProject`; `app/starter-boot.test.tsx` flips it and asserts which document is on screen after a boot, and that a starter never loads over an autosave.",
