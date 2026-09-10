@@ -241,6 +241,48 @@ Everything in this table is a claim about the tree at `d8eabb8`. Fix item 1 and 
 shares of every other item change; measure again with the same harness rather than
 carrying these numbers forward.
 
+## 7. After
+
+Per item, dated, by the session that landed it. Compiler-side numbers here are node
+micro-benchmarks (`vgpu`-free, alternated in one run, §V929); the harness number for a row
+is owed until its call site is wired.
+
+### 2026-09-10 — item 5, §T1182 + §T1183 (`655b3c9`)
+
+`prepareFrameCompiler` + `compileFrame` in `src/compiler/frame-compile.ts`: one full
+compile retained; per frame only the nodes that animate are re-resolved and re-compiled,
+their passes spliced over the base plan after `passStructureKey` verifies each one (§V936).
+The fast path is refused when any animated parameter is structural — derived from the
+definitions (`compileTime`, resolution-policy inputs), not a list. E24 takes it (no
+structural parameter animates).
+
+Micro-benchmark, E24's flat graph (74 nodes, 52 passes), N = 300 per arm, full and
+values-only alternated in both orders, three runs on a machine other sessions were also
+using (load noted; take the ratio, not the absolute):
+
+| run | full `compileGraph` ms/frame | values-only ms/frame | ratio |
+|---|---|---|---|
+| quietest | 1.054 / 1.308 | 0.222 / 0.280 | 4.7× |
+| loaded (node 156 %) | 1.715 / 1.109 | 0.367 / 0.237 | 4.7× |
+| loaded (node 90 %) | 2.400 / 1.135 | 0.554 / 0.252 | 4.4× |
+
+`passStructureKey` per frame (§T1183) is no longer a separate cost to cache: it runs only
+over the re-emitted passes of the animating nodes (4.5 % inclusive of the values-only
+path, down from 30 % of the full compile), and the spliced plan carries the base plan's
+`signature`, so `isUniformOnlyChange` holds by construction.
+
+What is left inside the values-only path (profile of 3000 frames, node `--cpu-prof`):
+74 % is `resolveNodeParameters` → expression evaluation, and of that the largest self
+cost is `nodeNames` (`src/domain/graph/names.ts:38`, 13.7 % of the whole run): the
+channels resolver (`graphChannelResolver`, `src/domain/channels/graph-channels.ts:33`)
+calls `nodeByName`, which sorts and scans every node, once per `op('name').chan` read
+per frame. T1172 gave the reference READER a shared name index; the channel resolver
+did not get one. Outside this row; a name map built once per resolver closure removes it.
+
+**Harness number owed.** The call site (`src/app/use-graph-compile.ts` animate memo)
+belongs to T1238 and is not wired in `655b3c9`; the patch is in the T1182 report.
+Scenarios A and C on E24 are to be re-run once it lands.
+
 ## Appendix A — per-scenario frame budget, all fixtures, all passes
 
 Columns: N frames; interval p50 / p95; busy p50 / p95 / mean; script mean; style;
