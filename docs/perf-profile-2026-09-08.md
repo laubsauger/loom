@@ -279,9 +279,8 @@ calls `nodeByName`, which sorts and scans every node, once per `op('name').chan`
 per frame. T1172 gave the reference READER a shared name index; the channel resolver
 did not get one. Outside this row; a name map built once per resolver closure removes it.
 
-**Harness number owed.** The call site (`src/app/use-graph-compile.ts` animate memo)
-belongs to T1238 and is not wired in `655b3c9`; the patch is in the T1182 report.
-Scenarios A and C on E24 are to be re-run once it lands.
+**Harness number** — the call site was wired in `eec78d5`; scenarios A and C on E24
+are re-run in the §T1182 subsection below.
 
 ### 2026-09-10 — §T1241, preview tick (`8ad0169`)
 
@@ -348,6 +347,48 @@ thread. E24 is not: 6 ms of GPU under a 10 ms interval.
 **Found, outside the row.** Compute dispatches and indirect draws attach no timer span
 in `vgpu-backend.ts`, so a compute-heavy document under-reports both the per-pass column
 and the extent; the extent docblock (`GpuFrameTiming`) says so.
+
+### 2026-09-10 — item 5 wired, §T1182 (`eec78d5`)
+
+The `animate` memo in `src/app/use-graph-compile.ts` now builds a `FrameCompiler` lazily
+(first frame after the memo, never per revision) through the same `compileRequest` the
+structural compile uses — same sink set by construction (the B95 lesson) — and hands the
+frame driver `compileFrame({frame, channels})`; a `null` (structural parameter animating,
+verifier refused a pass, or a throw) falls through to `compileSafely` unchanged (§V936).
+`src/tests/e2e/perf/run.sh` takes `PERF_REF` (`2e73efe`) so an arm can be a committed
+ancestor, not only HEAD.
+
+E24, `run.sh`, before = the direct parent `e890f2b`, after = `eec78d5`, run
+before-then-after, 120 Hz display, all twelve windows with controls in 0.35–0.38 /
+9.76–10.11 ms (an earlier after-arm at `7ecbd21` had three idle windows with dear-spin
+15–17 ms from another session's headed run and is discarded, §V929). Per 5 s window
+(idle A) or per drag (C):
+
+| scenario | window | `compile` category ms/frame before → after | per-frame compile inclusive ms/window before → after |
+|---|---|---|---|
+| A idle, playing (examples tab) | 2 × 5 s | 0.40 / 0.34 → 0.06 / 0.05 | `compileSafely` 385 / 351 → `compileFrame` 75 / 69, `compileSafely` 0 / 0 |
+| A idle, playing (performance tab) | 2 × 5 s | 0.38 / 0.35 → 0.04 / 0.04 | `compileSafely` 381 / 361 → `compileFrame` 71 / 70, `compileSafely` 0 / 0 |
+| C knob drag `chem.Brightness` | 6.1 / 5.7 s | 0.59 / 0.56 → 0.39 / 0.38 | `compileSafely` 618 / 565 → structural 191 / 174 + `prepareFrameCompiler` 170 / 160 + `compileFrame` 73 / 68 |
+
+Busy ms/window, same runs: A examples 2853 / 2621 → 2429 / 2489; A performance
+3131 / 2963 → 2521 / 2724; C 5702 / 5313 → 5244 / 5063.
+
+Idle A: the row's 0.7 ms/frame full compile is now 0.14 ms/frame (`compileFrame`,
+inclusive, ≈5× — the micro-benchmark ratio above holds in the browser), and the
+fall-through never fires in any idle window. The harness does not capture the page
+console, so "no `animation/structuralDrift`" rests on that plus the hook test
+(`use-graph-compile.test.tsx`: the plan handed out satisfies `isUniformOnlyChange`
+against the hook's own structural plan, and untouched passes are the same objects
+frame to frame).
+
+Knob C is the honest half. Each committed revision still costs TWO full compiles —
+the structural one in the `result` memo and the `FrameCompiler` base built on the next
+frame — so the drag's compile share falls only 0.57 → 0.38 ms/frame. Laziness bounds it
+to one `prepare` per frame however fast the knob commits, so it cannot exceed the old
+cost, but sharing the retained base between the two memos (the `result` memo would have
+to hand its `CompiledGraph` to `animate`) is the next step for C and outside this row.
+`FrameCompiler.reason` is not surfaced anywhere yet; the perf panel (§T1239) is the
+natural place.
 
 ## Appendix A — per-scenario frame budget, all fixtures, all passes
 
