@@ -3,6 +3,7 @@ import { incomingEdgesInOrder, variadicHandleId } from "@domain/graph/edge-order
 import type { GraphEdge, GraphNode } from "@domain/types/graph.ts";
 import type { NodeId } from "@domain/types/ids.ts";
 import type { PortKind } from "@domain/types/ports.ts";
+import { ANNOTATE_TYPE } from "@nodes/definitions/annotate.ts";
 import type { NodeRegistryView } from "@nodes/registry/registry.ts";
 
 /**
@@ -22,6 +23,19 @@ import type { NodeRegistryView } from "@nodes/registry/registry.ts";
  */
 
 export const LOOM_NODE_TYPE = "loom";
+/**
+ * T1262 — the annotation box's own React Flow node type. An `annotate` domain node is a
+ * coloured field behind the graph, not a node with ports, so it gets its own component.
+ */
+export const ANNOTATION_NODE_TYPE = "annotation";
+/**
+ * T1262 — where an annotation stacks: UNDER every graph node, always. React Flow computes
+ * a node's z as `zIndex + 1000` while it is selected, and a graph node that has never been
+ * raised sits at 0 — so −1001 keeps a SELECTED annotation below an unselected node, which
+ * is the property "the box is behind the nodes" actually needs. The document's `ui.z`
+ * (T1102) is ignored for annotations: they have no order among the nodes to be raised in.
+ */
+export const ANNOTATION_Z = -1001;
 export const SIGNAL_EDGE_TYPE = "signal";
 
 /**
@@ -30,7 +44,7 @@ export const SIGNAL_EDGE_TYPE = "signal";
  * own slice of the store and its own runtime channel (§V16).
  */
 export type LoomNodeData = { nodeId: NodeId };
-export type LoomNode = Node<LoomNodeData, typeof LOOM_NODE_TYPE>;
+export type LoomNode = Node<LoomNodeData, typeof LOOM_NODE_TYPE | typeof ANNOTATION_NODE_TYPE>;
 
 export type SignalEdgeData = {
   /**
@@ -88,6 +102,11 @@ function withZ(node: LoomNode, z: number | undefined): LoomNode {
   return { ...node, zIndex: z };
 }
 
+/** The z the document asks for — or the annotation floor, which no document value moves (T1262). */
+function zOf(domain: GraphNode): number | undefined {
+  return domain.type === ANNOTATE_TYPE ? ANNOTATION_Z : domain.ui?.z;
+}
+
 function withSize(node: LoomNode, size: { width: number; height: number } | undefined): LoomNode {
   if (size === undefined) {
     const { width: _width, height: _height, ...rest } = node;
@@ -123,11 +142,11 @@ export function projectNodes(
       if (prior === undefined) {
         const fresh: LoomNode = {
           id: nodeId,
-          type: LOOM_NODE_TYPE,
+          type: domain.type === ANNOTATE_TYPE ? ANNOTATION_NODE_TYPE : LOOM_NODE_TYPE,
           position: { x: domain.position.x, y: domain.position.y },
           data: { nodeId },
         };
-        return [withZ(withSize(fresh, domain.size), domain.ui?.z)];
+        return [withZ(withSize(fresh, domain.size), zOf(domain))];
       }
       // A node mid-GESTURE keeps the view's geometry until that gesture commits (§V15):
       // a drag and a resize are both deliberately uncommitted until release, so the
@@ -135,13 +154,13 @@ export function projectNodes(
       if (prior.dragging === true || prior.resizing === true) return [prior];
       const keepPosition = samePosition(prior.position, domain.position);
       const keepSize = sameSize(prior, domain.size);
-      const keepZ = sameZ(prior, domain.ui?.z);
+      const keepZ = sameZ(prior, zOf(domain));
       if (keepPosition && keepSize && keepZ) return [prior];
       const moved: LoomNode = keepPosition
         ? prior
         : { ...prior, position: { x: domain.position.x, y: domain.position.y } };
       const sized = keepSize ? moved : withSize(moved, domain.size);
-      return [keepZ ? sized : withZ(sized, domain.ui?.z)];
+      return [keepZ ? sized : withZ(sized, zOf(domain))];
     });
   return stable(previous, next);
 }

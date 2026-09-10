@@ -5,9 +5,12 @@ import { installDomStubs } from "@ui/testing/install-dom-stubs.ts";
 import { alice, contextFor, createHarness, patch } from "@domain/commands/test-support.ts";
 import { GraphCanvas } from "./graph-canvas.tsx";
 import { createNodeRuntimeStore } from "./node-runtime.ts";
-import { minimapSizeOf } from "./graph-minimap.tsx";
+import { annotationHueKey, minimapNodeColor, minimapSizeOf } from "./graph-minimap.tsx";
 import { TOGGLE_MINIMAP_COMMAND, minimapStore } from "./minimap-command.ts";
 import { installFlowStubs } from "./testing.tsx";
+import type { GraphNode } from "@domain/types/graph.ts";
+import { allNodeDefinitions } from "@nodes/definitions/index.ts";
+import { createNodeRegistry } from "@nodes/registry/registry.ts";
 
 /**
  * The overview map on the real canvas (T1257).
@@ -136,5 +139,33 @@ describe("view.toggleMinimap is the one door (§V29)", () => {
     await waitFor(() => {
       expect(container.querySelector(MAP)).not.toBeNull();
     });
+  });
+});
+
+describe("T1262 — an annotation shows on the map in its own hue", () => {
+  const note = (id: string, color?: string): GraphNode => ({
+    id,
+    type: "annotate",
+    definitionVersion: 1,
+    position: { x: 0, y: 0 },
+    parameters: color === undefined ? {} : { color },
+  });
+
+  it("paints the named category token, not the sink tone a portless definition would get", () => {
+    const definition = createNodeRegistry(allNodeDefinitions).view().get("annotate");
+    expect(definition).toBeDefined();
+    expect(minimapNodeColor(definition)).toBe("var(--text-dim)");
+    expect(minimapNodeColor(definition, "points")).toBe("var(--category-points)");
+    expect(minimapNodeColor(definition, "filter")).toBe("var(--category-filter)");
+  });
+
+  it("keys every annotation's hue, with the default and the fallback the canvas paints", () => {
+    const noise: GraphNode = { id: "noise", type: "noise", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: {} };
+    expect(annotationHueKey({ noise })).toBe("");
+    expect(
+      annotationHueKey({ noise, a: note("a", "points"), b: note("b"), c: note("c", "#ff0000") }),
+    ).toBe("a=points;b=utility;c=utility;");
+    // A primitive, so the subscription only wakes when a hue actually moves.
+    expect(annotationHueKey({ a: note("a", "points") })).toBe(annotationHueKey({ a: note("a", "points") }));
   });
 });

@@ -1,0 +1,100 @@
+/*
+ * The annotation box (T1262). A coloured field BEHIND the nodes — so it must never look
+ * like a node: no chrome, no shadow, no status edge. It is a region of the canvas that
+ * has been named, and its hue is the one meaning it carries (§V17): the name stored on
+ * the node selects one of the `--category-*` tokens, washed to a low alpha for the fill
+ * and left at full strength for the border. The title reads at the node title's size so
+ * a note and the nodes it frames share one typographic scale.
+ */
+
+.box {
+  --annotation-hue: var(--category-utility);
+  --annotation-width: 320px;
+  --annotation-height: 200px;
+
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: var(--annotation-width);
+  height: var(--annotation-height);
+  padding: var(--space-3) var(--space-4);
+  border: var(--hairline) solid var(--annotation-hue);
+  border-radius: var(--radius);
+  /* 16%: a wash a node stays legible over; the border is what says which hue it is. */
+  background: color-mix(in srgb, var(--annotation-hue) 16%, transparent);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-ui);
+  line-height: var(--lh-ui);
+  overflow: hidden;
+  user-select: none;
+}
+
+/* A box with a stored size (§V116) fills the rectangle React Flow lays out for it. */
+.box[data-sized="true"] {
+  width: 100%;
+  height: 100%;
+}
+
+.box.selected {
+  box-shadow: 0 0 0 var(--hairline) var(--signal);
+}
+
+.box[data-color="generator"] { --annotation-hue: var(--category-generator); }
+.box[data-color="filter"] { --annotation-hue: var(--category-filter); }
+.box[data-color="composite"] { --annotation-hue: var(--category-composite); }
+.box[data-color="color"] { --annotation-hue: var(--category-color); }
+.box[data-color="points"] { --annotation-hue: var(--category-points); }
+.box[data-color="render"] { --annotation-hue: var(--category-render); }
+.box[data-color="shader"] { --annotation-hue: var(--category-shader); }
+.box[data-color="temporal"] { --annotation-hue: var(--category-temporal); }
+.box[data-color="value"] { --annotation-hue: var(--category-value); }
+.box[data-color="input"] { --annotation-hue: var(--category-input); }
+.box[data-color="output"] { --annotation-hue: var(--category-output); }
+.box[data-color="utility"] { --annotation-hue: var(--category-utility); }
+
+.title {
+  flex: 0 0 auto;
+  min-height: 1.35em;
+  font-size: var(--chrome-title);
+  font-weight: var(--weight-header);
+  font-stretch: var(--width-header);
+  color: var(--annotation-hue);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: text;
+}
+
+.titleInput {
+  flex: 0 0 auto;
+  width: 100%;
+  min-width: 0;
+  padding: 0 var(--space-1);
+  border: var(--hairline) solid var(--line-hot);
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--chrome-title);
+  font-weight: var(--weight-header);
+  font-stretch: var(--width-header);
+  line-height: inherit;
+}
+
+.titleInput:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* Prose: the stored newlines are the paragraphing, so they are kept. */
+.body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  color: var(--text-dim);
+  line-height: var(--lh-prose);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

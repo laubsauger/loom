@@ -32,6 +32,7 @@ import type { NodeId } from "@domain/types/ids.ts";
 import type { GraphPatch, GraphPatchOperation } from "@domain/types/patch.ts";
 import type { LoomBus } from "@domain/commands/bus.ts";
 import { NodeView } from "@editor/nodes/node-view.tsx";
+import { AnnotationNode } from "@editor/nodes/annotation-node.tsx";
 import { registerRenameSessionCommand } from "@editor/nodes/rename-session.ts";
 import { SignalEdge } from "@editor/edges/signal-edge.tsx";
 import {
@@ -69,6 +70,7 @@ import {
 } from "@editor/selection/select-created.ts";
 import type { SelectNodesHandlers } from "@editor/selection/select-created.ts";
 import {
+  ANNOTATION_NODE_TYPE,
   LOOM_NODE_TYPE,
   SIGNAL_EDGE_TYPE,
   projectEdges,
@@ -93,7 +95,12 @@ import styles from "./graph-canvas.module.css";
  * (§V15).
  */
 
-const NODE_TYPES: NodeTypes = { [LOOM_NODE_TYPE]: NodeView as NodeTypes[string] };
+const NODE_TYPES: NodeTypes = {
+  [LOOM_NODE_TYPE]: NodeView as NodeTypes[string],
+  // T1262: the annotation box — projected to its own type by `derive.ts`, stacked under
+  // every graph node there (`ANNOTATION_Z`).
+  [ANNOTATION_NODE_TYPE]: AnnotationNode as NodeTypes[string],
+};
 const EDGE_TYPES: EdgeTypes = { [SIGNAL_EDGE_TYPE]: SignalEdge as EdgeTypes[string] };
 const DEFAULT_EDGE_OPTIONS = { type: SIGNAL_EDGE_TYPE } as const;
 /** §I.ui: middle-drag pans, alt-drag pans, left-drag rubber-band selects, scroll zooms. */

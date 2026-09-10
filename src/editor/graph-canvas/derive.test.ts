@@ -2,7 +2,14 @@ import { describe, expect, it } from "vitest";
 import { alice, contextFor, createHarness, patch } from "@domain/commands/test-support.ts";
 import type { GraphEdge, GraphNode } from "@domain/types/graph.ts";
 import { createTestRegistry } from "@nodes/registry/test-nodes.ts";
-import { LOOM_NODE_TYPE, SIGNAL_EDGE_TYPE, projectEdges, projectNodes } from "./derive.ts";
+import {
+  ANNOTATION_NODE_TYPE,
+  ANNOTATION_Z,
+  LOOM_NODE_TYPE,
+  SIGNAL_EDGE_TYPE,
+  projectEdges,
+  projectNodes,
+} from "./derive.ts";
 
 const registry = createTestRegistry().view();
 const context = contextFor(alice);
@@ -240,5 +247,53 @@ describe("V26 — the edge carries the source port's family, resolved from the r
 
     const next = bus.store.getGraph();
     expect(projectEdges(next.edges, next.nodes, registry)[0]?.data?.inactive).toBe(true);
+  });
+});
+
+describe("T1262 — an annotation projects to its own type, under every node", () => {
+  const note: GraphNode = {
+    id: "note",
+    type: "annotate",
+    definitionVersion: 1,
+    position: { x: -40, y: -30 },
+    size: { width: 600, height: 400 },
+    parameters: { title: "Chemistry" },
+  };
+
+  it("gets the annotation node type, its stored size, and the floor z", () => {
+    const [node] = projectNodes({ note });
+    expect(node).toMatchObject({
+      id: "note",
+      type: ANNOTATION_NODE_TYPE,
+      position: { x: -40, y: -30 },
+      width: 600,
+      height: 400,
+      zIndex: ANNOTATION_Z,
+    });
+  });
+
+  it("stays under an unselected graph node even while SELECTED — the property 'behind' needs", () => {
+    // React Flow's elevate-on-select adds 1000 to a selected node's z; an unraised graph
+    // node sits at 0. So the floor must be below −1000, or selecting a box would lift it
+    // over the nodes it frames.
+    expect(ANNOTATION_Z + 1000).toBeLessThan(0);
+  });
+
+  it("ignores the document's ui.z: bring-to-front cannot raise a box over the nodes", () => {
+    const raised: GraphNode = { ...note, ui: { z: 7 } };
+    const [first] = projectNodes({ note: raised });
+    expect(first?.zIndex).toBe(ANNOTATION_Z);
+    // And the stale-reuse path agrees: a z change on an annotation re-projects to the same floor.
+    const again = projectNodes({ note: { ...raised, ui: { z: 9 } } }, first === undefined ? [] : [first]);
+    expect(again[0]?.zIndex).toBe(ANNOTATION_Z);
+    expect(again[0]).toBe(first);
+  });
+
+  it("leaves a graph node's projection exactly as it was", async () => {
+    const { bus } = await seed();
+    for (const node of projectNodes(bus.store.getGraph().nodes)) {
+      expect(node.type).toBe(LOOM_NODE_TYPE);
+      expect(node.zIndex).toBeUndefined();
+    }
   });
 });

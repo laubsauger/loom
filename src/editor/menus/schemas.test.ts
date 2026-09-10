@@ -6,6 +6,8 @@ import { MODE_LABELS } from "@ui/controls/parameter-slot.ts";
 import type { MenuEntry, MenuItem, MenuSchema } from "@domain/types/menus.ts";
 import { hasMenuInputBuilder, menuInputBuilderCommands } from "./input.ts";
 import { isMenuSeparator } from "@domain/types/menus.ts";
+import { allNodeDefinitions } from "@nodes/definitions/index.ts";
+import { createNodeRegistry } from "@nodes/registry/registry.ts";
 import { isMenuGuardName } from "./guards.ts";
 import { PLANNED_COMMANDS, TOGGLE_GUARD, addNodeSubmenu, menuSchemaFor } from "./schemas.ts";
 
@@ -214,6 +216,24 @@ describe("the Mode submenu is the mode UNION (B45/T372, §V316)", () => {
 
 describe("add node here", () => {
   const submenu = addNodeSubmenu(registry);
+
+  // T1262: the annotation row is an "Add node" leaf promoted to the top level — same
+  // command, same static input, so the SAME builder places it at the click's graph point.
+  // A row that went through a different door could land somewhere else.
+  it("offers Add annotation as a top-level row shaped exactly like an Add node leaf", () => {
+    const top = menuSchemaFor("canvas", registry).entries.flatMap((entry): MenuItem[] =>
+      isMenuSeparator(entry) ? [] : [entry],
+    );
+    const row = top.find((item) => item.label === "Add annotation");
+    expect(row).toEqual({ command: "graph.applyPatch", input: { type: "annotate" }, label: "Add annotation" });
+    // The harness registry is the spike trio; the leaf lives in the shipped catalogue.
+    const leaf = addNodeSubmenu(createNodeRegistry(allNodeDefinitions).view())
+      .flatMap((entry) => entry.submenu ?? [])
+      .find((item) => item.label === "Annotation");
+    expect(leaf).toEqual({ command: "graph.applyPatch", input: { type: "annotate" }, label: "Annotation" });
+    // Directly under "Add node": the two ways of adding something sit together.
+    expect(top.findIndex((item) => item.label === "Add annotation")).toBe(top.findIndex((item) => item.label === "Add node") + 1);
+  });
 
   it("groups every registered node type under its own category", () => {
     const categories = submenu.map((entry) => entry.label);

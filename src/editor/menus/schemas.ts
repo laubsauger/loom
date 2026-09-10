@@ -2,6 +2,7 @@ import type { CommandName, PlannedCommandName } from "@domain/types/commands.ts"
 import { PLANNED_COMMANDS } from "@domain/types/commands.ts";
 import type { MenuItem, MenuSchema, MenuTarget } from "@domain/types/menus.ts";
 import { AUTHORABLE_PARAMETER_MODES } from "@domain/parameters/slots.ts";
+import { ANNOTATE_TYPE } from "@nodes/definitions/annotate.ts";
 import type { NodeRegistryView } from "@nodes/registry/registry.ts";
 import { MODE_LABELS } from "@ui/controls/parameter-slot.ts";
 // The command constant, NOT a literal — importing it is what keeps the menu and the
@@ -86,6 +87,9 @@ export function canvasMenu(registry: NodeRegistryView): MenuSchema {
     surface: "canvas",
     entries: [
       { label: "Add node", submenu: addNodeSubmenu(registry) },
+      // T1262: TD's "Add Annotation" — the same `canvas:graph.applyPatch` builder as an
+      // "Add node" leaf, so the box lands at the CLICK's graph point, not the viewport's.
+      { command: "graph.applyPatch", input: { type: ANNOTATE_TYPE }, label: "Add annotation" },
       // T709: live since the graph canvas registers it. The row, the `tab` binding and
       // the background double-click are the same command, so all three open one browser
       // at one position (§V78, §V307).
