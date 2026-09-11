@@ -2,7 +2,7 @@
 
 Loom is a browser WebGPU node compositor built entirely on `vgpu` (0.3.1 when this was written; pinned 0.4.1 since T1261, see the end). We carry a
 patch against the published `dist` (pnpm `patchedDependencies` → `patches/vgpu.patch`,
-the original four themes below plus T1307's compatible texture views). We would rather not: a pinned
+the original four themes below, T1247's fifth, plus T1307's compatible texture views). We would rather not: a pinned
 dependency's diff is maintenance forever, and a silently dropped patch returns each bug
 with no error.
 
@@ -16,7 +16,10 @@ Two of the first three read to us like oversights rather than positions, and we 
 The third we suspect is a deliberate performance default that we are simply an unusual
 consumer of, and we say that too. The fourth (T1243) is a missing figure: the timer
 resolves the raw timestamps and discards them after computing per-span durations, and
-the frame's extent cannot be recovered from the durations.
+the frame's extent cannot be recovered from the durations. The fifth (T1247) is a hole
+the fourth exposed: the two calls that submit their own command buffer — a compute
+dispatch and a GPU-driven draw — take no timer, so the one figure theme 4 built cannot
+see them.
 
 ---
 
@@ -276,11 +279,58 @@ whatever figure it needs. Exposing the timestamps is the smaller ask; the extent
 
 ---
 
+---
+
+## 5. Work that submits its own command buffer can never be timed
+
+**What we needed.** A GPU span for a compute dispatch and for a GPU-driven (indirect) draw,
+the same one `FramePassOptions.timer` gives a render pass. Without it the per-pass column
+of a points/particles document is render-only, and — worse — the FRAME EXTENT from theme 4
+is computed over the frame's timestamp pairs, so a submit whose work is all kernels has no
+pairs and reports nothing at all. Not zero: absent. On our point-lifecycle example
+(E9-Ember, 14 dispatches and 3 indirect draws against 9 effects) that silently removed
+13–16 % of the frame's GPU time from every profile.
+
+**What 0.4.1 does.** `Compute.dispatch()` and `Draw.draw()` each build their OWN
+`GPUCommandEncoder`, open a single pass, and `queue.submit()` before returning.
+`Frame.pass` — the only place a `TimerSpan` can be attached — is never involved, and
+neither call takes a timer. `Draw.draw()` is also the only way to issue an indirect draw,
+so "GPU-driven" and "untimed" are the same set.
+
+**Our patch.** `dispatch()` takes an optional `{ timer, frame }` (a 4th positional argument
+beside explicit workgroup counts, or on the existing `DispatchOptions` object);
+`DrawCallOptions` grows the same two members. Both ask the frame for the pair through one
+new method, `Frame.attachExternalSpan(span)`, which registers the timer as an owner of that
+frame exactly as a pass attachment does and returns the descriptor's `timestampWrites`.
+Everything else follows from vgpu's existing bookkeeping: the frame's single
+`resolveQuerySet` covers the extra indices, and the frame's extent widens to include them.
+
+**Why billing the pair to the FRAME is the correct shape, not a convenience.** The
+alternative — resolving the compute's own queries in the compute's own command buffer —
+gives a second, separate extent per frame, and two extents for one frame is exactly the
+"a number that is not a duration of anything" failure theme 4 exists to end. Billing to the
+open frame is also correct by queue order rather than by luck: the self-submitted command
+buffer reaches the queue while the frame is still open, so its timestamps are written
+before the frame's resolve executes. We verified on Dawn/Metal that a timestamp pair
+written in one command buffer resolves correctly from a later one (5.98 ms for a heavy
+kernel, against 13.90 ms for the same pass resolved in its own encoder).
+
+**Repro.** Any `compute(gpu, wgsl).dispatch(x, y, z)` between `frame()` calls: there is no
+argument that would time it, and the frame's `timer.onResults` never names it.
+
+**Is there a supported way we missed?** We could not find one. What we would prefer, in
+order: a compute pass encodable INTO a frame (`frame.pass({ compute })`), which would fix
+ordering as well as timing — a dispatch inside an open frame currently runs before that
+frame's render passes whatever the caller intended, which is a documented hazard we work
+around by splitting the frame; failing that, `dispatch({ timer })` / `draw({ timer })` with
+vgpu resolving the frame itself, since the timer already knows which frame is current.
+
 ## What we would delete
 
 Every hunk, immediately, for: an MSAA preserve opt-in (1), a first-class region binding
 with interval-based aliasing (2), either an exported eviction call or a per-entry
-eviction subscription (3), and a frame extent or raw-timestamp callback on the timer (4). We are happy to send patches upstream against any of these if
+eviction subscription (3), a frame extent or raw-timestamp callback on the timer (4), and
+a timer on `Compute.dispatch` / `Draw.draw` — or compute passes inside a frame (5). We are happy to send patches upstream against any of these if
 the shapes above are close to what you would want.
 
 ---

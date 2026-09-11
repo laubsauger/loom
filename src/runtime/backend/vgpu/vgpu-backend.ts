@@ -856,18 +856,31 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
    * Encodes one dispatch pass. vgpu computes have no frame-level pass API (upstream
    * gap): `dispatch()` builds its own command buffer and SUBMITS IMMEDIATELY, so where
    * this call happens relative to open frames IS the execution order.
+   *
+   * T1247 (§V86): `timing` is what puts the dispatch's GPU timestamp pair in the OPEN
+   * FRAME's span set. Without it a compute dispatch and an indirect draw carried no GPU
+   * span at all, so the per-pass column was render-only AND the frame extent — earliest
+   * begin to latest end over the frame's pairs — stopped at the last render pass. Both
+   * under-reported every points/particles, scan/compact and audio-analysis document by
+   * exactly the compute work. The span is billed to the frame, not to this command
+   * buffer: the compute submits while the frame is still open, so its timestamps are
+   * written before the frame's single resolve executes (vgpu patch theme 5).
    */
-  function encodeDispatch(active: Program, pass: PassDescriptor & { kind: "dispatch" }): void {
+  function encodeDispatch(
+    active: Program,
+    pass: PassDescriptor & { kind: "dispatch" },
+    timing?: { readonly timer: TimerSpan; readonly frame: Frame },
+  ): void {
     // T172: kernels run in the frame. Indirect counts come from a GPU buffer the
     // lifecycle wrote — the CPU never knows the number, and does not need to.
     const pipeline = active.resources.computes.get(pass.id);
     if (!pipeline) return;
     if ("indirect" in (pass.workgroups as object)) {
       const counter = active.resources.buffers.get((pass.workgroups as { indirect: string }).indirect);
-      if (counter) pipeline.dispatch({ indirect: counter });
+      if (counter) pipeline.dispatch({ indirect: counter, ...timing });
     } else {
       const [x, y, z] = pass.workgroups as readonly [number, number, number];
-      pipeline.dispatch(x, y, z);
+      pipeline.dispatch(x, y, z, timing);
     }
   }
 
@@ -946,7 +959,18 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
           // (Analyze, the TOP→POP bridge) sees the PREVIOUS frame's texture — one
           // frame of latency, which §V144 embraces. The no-open-frame path
           // (`encodeSegmented`) honours plan order exactly.
-          timed(pass.id, () => encodeDispatch(active, pass));
+          //
+          // T1247: the GPU span rides on THIS frame, keyed exactly like a render pass's
+          // (same `spanFor`, same substep numbering), so the compute lands in both the
+          // per-pass column and the frame extent instead of being invisible to both.
+          const dispatchSpan = spanFor(pass.id);
+          timed(pass.id, () =>
+            encodeDispatch(
+              active,
+              pass,
+              dispatchSpan === undefined ? undefined : { timer: dispatchSpan, frame: f },
+            ),
+          );
           continue;
         }
         if (pass.kind === "draw") {
@@ -957,15 +981,26 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
             typeof pass.instances === "object"
               ? active.resources.buffers.get(pass.instances.indirect)
               : undefined;
+          const span = spanFor(pass.id);
           if (indirect) {
             // Indirect counts come from the GPU-written args buffer through the draw's
-            // own pass. No clear/timer hook exists on that path yet (T180/T181 note).
-            timed(pass.id, () => drawable.draw({ target: resolve(), indirect }));
+            // OWN pass — `Draw.draw()` builds and submits its own command buffer, so it
+            // never reaches `f.pass` and still has no clear knob (T180 note).
+            // T1247: it does now carry a GPU span, billed to the open frame like a
+            // dispatch's — a GPU-driven draw of a million points was invisible to both
+            // the per-pass column and the frame extent for exactly the same reason a
+            // kernel was.
+            timed(pass.id, () =>
+              drawable.draw({
+                target: resolve(),
+                indirect,
+                ...(span === undefined ? {} : { timer: span, frame: f }),
+              }),
+            );
           } else {
             // Literal draws encode through f.pass, which is what gives them a clear
             // knob (T180 - clear:false is the trails pattern) and a GPU timer span
             // (T181 - span name = pass id, like effects).
-            const span = spanFor(pass.id);
             timed(pass.id, () =>
               f.pass(
                 {
@@ -1014,41 +1049,48 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
    * submit the moment they are called, while a frame's render passes submit when the
    * frame closes — so inside ONE frame a dispatch always runs first, whatever the plan
    * said. Here the passes are split into segments instead: consecutive render-family
-   * passes share a frame, and each dispatch executes BETWEEN frames, exactly where the
-   * plan put it. This is what makes an effect→dispatch read (Analyze reducing a texture
-   * rendered THIS frame) correct on the offline/export path.
+   * passes share a frame, and a dispatch that follows them starts the NEXT frame, so it
+   * runs exactly where the plan put it. This is what makes an effect→dispatch read
+   * (Analyze reducing a texture rendered THIS frame) correct on the offline/export path.
+   *
+   * T1247: a dispatch is no longer executed BETWEEN frames but as the LEADING pass of the
+   * next frame, which changes nothing about when its command buffer reaches the queue —
+   * `encode` still calls `dispatch()` in plan order and vgpu still submits it there and
+   * then, while the frame it opened submits afterwards. What it changes is that a frame is
+   * open when the compute is encoded, and a compute can only be timestamped against an open
+   * frame (see `encodeDispatch`). Hence the split rule: a dispatch closes the current
+   * segment only once that segment holds something the FRAME will submit — everything
+   * before it has already run.
    */
   function encodeSegmented(gpu: GpuSession["gpu"], active: Program): void {
-    type Segment =
-      | { kind: "frame"; passes: PassDescriptor[] }
-      | { kind: "dispatch"; pass: PassDescriptor & { kind: "dispatch" } };
-    const segments: Segment[] = [];
+    const segments: PassDescriptor[][] = [];
     let current: PassDescriptor[] = [];
+    /**
+     * Does `current` hold a pass a later dispatch would overtake? Only `f.pass` work
+     * really waits for the frame's submit — an indirect draw self-submits like a
+     * dispatch — but every non-dispatch kind sets this, because an unnecessary split
+     * costs one empty command buffer and a missing one reorders the plan.
+     */
+    let deferred = false;
     // T387: the EXPANDED order — the offline/export path runs the same number of substeps
     // the live path does, or the same project renders two different pictures (§V47).
     for (const pass of expandedPasses(active)) {
-      if (pass.kind === "dispatch") {
-        if (current.length > 0) {
-          segments.push({ kind: "frame", passes: current });
-          current = [];
-        }
-        segments.push({ kind: "dispatch", pass });
-        continue;
+      if (pass.kind === "dispatch" && deferred) {
+        segments.push(current);
+        current = [];
+        deferred = false;
       }
+      if (pass.kind !== "dispatch") deferred = true;
       current.push(pass);
     }
     // The final frame always runs, even empty: it carries the presentations.
-    segments.push({ kind: "frame", passes: current });
+    segments.push(current);
 
-    segments.forEach((segment, index) => {
-      if (segment.kind === "dispatch") {
-        guard.duringFrame(() => encodeDispatch(active, segment.pass));
-        return;
-      }
+    segments.forEach((passes, index) => {
       const final = index === segments.length - 1;
       frame(gpu, (f) => {
         try {
-          encode(f, active, segment.passes, final);
+          encode(f, active, passes, final);
         } catch (error) {
           // T1261: PARTIAL SUBMIT, on purpose. vgpu ≥ 0.4 cancels a frame whose callback
           // throws (nothing encoded reaches the queue); 0.3.1 submitted what was there.

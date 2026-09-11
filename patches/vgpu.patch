@@ -1,34 +1,71 @@
-diff --git a/dist/target-offscreen.js b/dist/target-offscreen.js
-index 3b4221148054e92c95a08f089a637249297b8d51..3757a969c867303556854e9998db66c917b98ec7 100644
---- a/dist/target-offscreen.js
-+++ b/dist/target-offscreen.js
-@@ -87,6 +87,8 @@ export class OffscreenTarget {
-             size: this.#currentSize,
-             format: spec.format,
-             usage: ["render_attachment", "texture_binding", "copy_src"],
-+            // shaderloom patch (T1307): same allocation, alternate sampling interpretation.
-+            viewFormats: this.options.viewFormats,
-             sampleCount: 1,
-             label: this.options.label ? `${this.options.label}.color${index}.resolve` : undefined,
-         }));
-diff --git a/dist/target.d.ts b/dist/target.d.ts
-index f642ba8b4a9ba90b3d3aff09484779766564f86a..4b158b1c64066e33c1e36cd4bcc055a515d7b71b 100644
---- a/dist/target.d.ts
-+++ b/dist/target.d.ts
-@@ -2,6 +2,8 @@ import type { ClearColor } from "./target-utils.ts";
- import type { Texture, ResourceDestroyCallback, ResourceIdentity, UnsubscribeResourceDestroy } from "@vgpu/core";
- export interface TargetTextureOptions {
-     readonly format?: GPUTextureFormat;
-+    /** shaderloom T1307: compatible views for each resolved color attachment; not depth/MSAA storage. */
-+    readonly viewFormats?: readonly GPUTextureFormat[];
-     /**
-      * Default clear color of this target, used by passes that clear without naming a color.
-      * Defaults to `[0, 0, 0, 1]`; mutable at runtime through `target.clearColor`.
+diff --git a/dist/api-types.d.ts b/dist/api-types.d.ts
+index e444670e232e0d03f6387c3a35e3f5959c668c71..a9f33aa51b8e4c558b736423c21d7705f0964b3e 100644
+--- a/dist/api-types.d.ts
++++ b/dist/api-types.d.ts
+@@ -5,7 +5,9 @@
+  * can be imported — and tree-shaken — without pulling the object that owns every factory.
+  */
+ import type { VGPUError } from "./errors.ts";
++import type { Frame } from "./frame.ts";
+ import type { Target } from "./target.ts";
++import type { TimerSpan } from "./timer.ts";
+ export interface ComputeOptions {
+     readonly label?: string;
+     readonly set?: Record<string, unknown>;
+@@ -21,10 +23,22 @@ export interface DispatchOptions {
+         readonly offset?: number;
+     };
+ }
++/**
++ * shaderloom patch (T1247): where a dispatch's GPU timestamp pair is billed.
++ *
++ * A `Compute` submits its own command buffer, so it cannot take a `timer` the way
++ * `FramePassOptions` does. The span is attached to the OPEN FRAME handed here, which is what
++ * puts the dispatch inside that frame's resolve — and therefore inside the per-pass column and
++ * the frame extent that vgpu reports for the submit (patch theme 4).
++ */
++export interface DispatchTiming {
++    readonly timer: TimerSpan;
++    readonly frame: Frame;
++}
+ export interface Compute {
+     set(values: Record<string, unknown>): this;
+-    dispatch(x: number, y?: number, z?: number): void;
+-    dispatch(opts: DispatchOptions): void;
++    dispatch(x: number, y?: number, z?: number, timing?: DispatchTiming): void;
++    dispatch(opts: DispatchOptions & Partial<DispatchTiming>): void;
+ }
+ export type StorageAccess = "read" | "read-write";
+ export interface StorageOptions {
+diff --git a/dist/compute.d.ts b/dist/compute.d.ts
+index 287bdf781aa076099649632b1d6effc1fdaba2d7..a971889ae90d3d271e5c84b4a4ce621168de90bd 100644
+--- a/dist/compute.d.ts
++++ b/dist/compute.d.ts
+@@ -3,7 +3,7 @@ import type { ShaderSource } from "@vgpu/wgsl";
+ import { type Reflection } from "@vgpu/wgsl/reflect-source";
+ import { type BindGroupCache } from "./bind-cache.ts";
+ import { type SetBag, type SetCore } from "./set-core.ts";
+-import type { Compute, ComputeOptions, DispatchOptions } from "./api-types.ts";
++import type { Compute, ComputeOptions, DispatchOptions, DispatchTiming } from "./api-types.ts";
+ import type { Gpu } from "./kernel.ts";
+ /**
+  * Compute pipeline for this gpu, ready to `set()` bindings and `dispatch()`.
+@@ -35,7 +35,7 @@ export declare class ComputePipeline implements Compute {
+     readonly pipeline: GPUComputePipeline;
+     constructor(device: Device, source: string, opts?: ComputeOptions, cache?: BindGroupCache);
+     set(values: SetBag): this;
+-    dispatch(x: number, y?: number, z?: number): void;
+-    dispatch(opts: DispatchOptions): void;
++    dispatch(x: number, y?: number, z?: number, timing?: DispatchTiming): void;
++    dispatch(opts: DispatchOptions & Partial<DispatchTiming>): void;
+ }
+ //# sourceMappingURL=compute.d.ts.map
+\ No newline at end of file
 diff --git a/dist/compute.js b/dist/compute.js
-index fa1d930d97886ed6168d1ce9598f810e9ce61e15..076a88d671527de0c7da84dc1e1a4ca6e78d7c3e 100644
+index fa1d930d97886ed6168d1ce9598f810e9ce61e15..edd34927e8a1cf4863c592525f8a4089292d3519 100644
 --- a/dist/compute.js
 +++ b/dist/compute.js
-@@ -71,6 +71,16 @@ export class ComputePipeline {
+@@ -71,17 +71,41 @@ export class ComputePipeline {
          if (opts.set)
              this.set(opts.set);
      }
@@ -45,8 +82,63 @@ index fa1d930d97886ed6168d1ce9598f810e9ce61e15..076a88d671527de0c7da84dc1e1a4ca6
      set(values) {
          assertDeviceUsable(this.device, `${this.label}.set`);
          this.setCore.set(values);
+         return this;
+     }
+-    dispatch(x, y, z) {
++    dispatch(x, y, z, timing) {
+         assertDeviceUsable(this.device, `${this.label}.dispatch`);
+-        const indirect = typeof x === "object" && x !== null ? this.#resolveIndirectDispatch(x, y, z) : undefined;
++        const opts = typeof x === "object" && x !== null ? x : undefined;
++        const indirect = opts ? this.#resolveIndirectDispatch(x, y, z) : undefined;
+         this.#preflightAliasing();
++        /**
++         * shaderloom patch (T1247): optional GPU timestamp pair around this dispatch. The span
++         * belongs to the open frame that is handed with it, never to this command buffer — see
++         * Frame.attachExternalSpan. Attached AFTER every throwing precondition above, so a
++         * dispatch that never encodes cannot leave a reserved query pair the frame would resolve
++         * out of an unwritten query set.
++         */
++        const timed = opts?.timer !== undefined ? opts : timing;
++        const timestampWrites = timed?.timer !== undefined && timed.frame !== undefined
++            ? timed.frame.attachExternalSpan(timed.timer).timestampWrites
++            : undefined;
+         const encoder = this.device.gpu.createCommandEncoder({ label: `${this.label}.encoder` });
+-        const pass = encoder.beginComputePass({ label: `${this.label}.pass` });
++        const pass = encoder.beginComputePass(timestampWrites
++            ? { label: `${this.label}.pass`, timestampWrites }
++            : { label: `${this.label}.pass` });
+         pass.setPipeline(this.pipeline);
+         for (const binding of this.setCore.bindGroups())
+             pass.setBindGroup(binding.group, binding.bindGroup, binding.offsets);
+diff --git a/dist/draw.d.ts b/dist/draw.d.ts
+index 3a363e3a6b8df312ab2e8b78f6d76d472c09fb94..70b440489134c1131403f3b69f3b8a1833c5ebc0 100644
+--- a/dist/draw.d.ts
++++ b/dist/draw.d.ts
+@@ -4,6 +4,8 @@ import { type Reflection } from "@vgpu/wgsl/reflect-source";
+ import { type BindGroupCache } from "./bind-cache.ts";
+ import { type ClaimedGroupValidationResult, type ValidationErrorSink } from "./claim-validation.ts";
+ import { type BindingIdentityChange, type BindingState, type SetBag } from "./set-core.ts";
++import type { Frame } from "./frame.ts";
++import type { TimerSpan } from "./timer.ts";
+ import type { CompileTarget, Target, TargetSignature } from "./target.ts";
+ import { type PipelineLayoutCache, type PipelineStore, type ShaderModuleCache } from "./pipeline-store.ts";
+ import type { StorageBuffer } from "./api-types.ts";
+@@ -135,6 +137,13 @@ export interface DrawCallOptions {
+         readonly buffer: StorageBuffer;
+         readonly offset?: number;
+     };
++    /**
++     * shaderloom patch (T1247): time this self-submitted draw against an OPEN FRAME, the way
++     * `FramePassOptions.timer` times a pass of that frame. Both members or neither; see
++     * `DispatchTiming` in api-types.ts for why the frame is part of the request.
++     */
++    readonly timer?: TimerSpan;
++    readonly frame?: Frame;
+ }
+ export interface DrawLayoutOptions {
+     readonly dynamicOffsets?: boolean;
 diff --git a/dist/draw.js b/dist/draw.js
-index d6011f8aba886f4a9f5f4e15b7da07fe889ad006..e4036ed78a5ca3a46590a3b8f121d2e926a5d2fa 100644
+index d6011f8aba886f4a9f5f4e15b7da07fe889ad006..c0e52fd0b00cc62d6e81a3be6660315447d42ba0 100644
 --- a/dist/draw.js
 +++ b/dist/draw.js
 @@ -102,6 +102,35 @@ export class InternalDraw {
@@ -85,6 +177,26 @@ index d6011f8aba886f4a9f5f4e15b7da07fe889ad006..e4036ed78a5ca3a46590a3b8f121d2e9
      set(values) {
          const state = drawState(this);
          assertDeviceUsable(state.device, `${this.label}.set`);
+@@ -151,7 +180,18 @@ export class InternalDraw {
+             throw targetRequiredError(`${this.label}.draw`);
+         assertSurfaceTargetInFrame(target, `${this.label}.draw`);
+         const encoder = state.device.gpu.createCommandEncoder();
+-        const pass = encoder.beginRenderPass(target.renderPassDescriptor());
++        /**
++         * shaderloom patch (T1247): optional GPU timestamp pair around a self-submitted draw.
++         * `Draw.draw()` is the only way to issue a GPU-driven (indirect) draw and, like
++         * Compute.dispatch, it builds and submits its OWN command buffer — so it never reaches
++         * Frame.pass and never received a pair. The span is billed to the open frame handed with
++         * it (Frame.attachExternalSpan), whose resolve runs after this submit.
++         */
++        const timestampWrites = opts.timer !== undefined && opts.frame !== undefined
++            ? opts.frame.attachExternalSpan(opts.timer).timestampWrites
++            : undefined;
++        const descriptor = target.renderPassDescriptor();
++        const pass = encoder.beginRenderPass(timestampWrites ? { ...descriptor, timestampWrites } : descriptor);
+         const validations = [];
+         try {
+             this.encode(pass, target, opts, (result) => validations.push(result));
 diff --git a/dist/effect.js b/dist/effect.js
 index 079c6686ce2c87a580f217b12c9ea978f0ed3005..fb684c09ba66ed7763f8f2123a5f6ec635bda0ea 100644
 --- a/dist/effect.js
@@ -98,11 +210,30 @@ index 079c6686ce2c87a580f217b12c9ea978f0ed3005..fb684c09ba66ed7763f8f2123a5f6ec6
      draw(target = {}) { effectImpl(this).draw(isTarget(target) ? { target } : target); }
      compile(target) { return effectImpl(this).compile(target).then(() => this); }
      compileSync(target) { effectImpl(this).compileSync(target); return this; }
+diff --git a/dist/frame.d.ts b/dist/frame.d.ts
+index 195a58c3a3a8f8c01f53307ec31e5449d1608748..91cf3d3730b57c2096b06ec829c34f47c2ffaa7f 100644
+--- a/dist/frame.d.ts
++++ b/dist/frame.d.ts
+@@ -82,6 +82,14 @@ export declare class Frame {
+     constructor(device: Device, defaultTarget?: Target | undefined, errorSink?: ValidationErrorSink | undefined, trackSettled?: ((promise: Promise<unknown>) => void) | undefined, releaseLifecycle?: (() => void) | undefined);
+     pass(target: Target, body: Effect | Draw | ((pass: FramePass) => void)): void;
+     pass(options: FramePassOptions, body: Effect | Draw | ((pass: FramePass) => void)): void;
++    /**
++     * shaderloom patch (T1247): times GPU work submitted outside this frame's encoder (a vgpu
++     * `Compute` submits its own command buffer) into THIS frame's span set, so the per-pass column
++     * and the frame extent cover compute dispatches. See the implementation note in frame.js.
++     */
++    attachExternalSpan(span: TimerSpan): {
++        readonly timestampWrites?: GPUComputePassTimestampWrites;
++    };
+     submit(): void;
+     /**
+      * Discards the frame without submitting it: the command encoder is dropped (nothing this frame
 diff --git a/dist/frame.js b/dist/frame.js
-index 21e3d41add2578fee9198c44260cba69b7867c82..3b4ac37fdfa159b02d792a8378fefa55f3a1a4bd 100644
+index 0cda97810db3bb9bec195d8399cd768baf9b8c2c..d88959d720773109cb2d3ce46fac6f76ad9c1346 100644
 --- a/dist/frame.js
 +++ b/dist/frame.js
-@@ -103,8 +103,8 @@ export class Frame {
+@@ -119,8 +119,8 @@ export class Frame {
              throw surfaceNotInFrameError("Frame.pass");
          const clear = targetOnly ? undefined : target.clear;
          const preserve = clear === false;
@@ -113,25 +244,59 @@ index 21e3d41add2578fee9198c44260cba69b7867c82..3b4ac37fdfa159b02d792a8378fefa55
          const clearDepth = targetOnly ? undefined : target.clearDepth;
          if (clearDepth !== undefined) {
              if (typeof clearDepth !== "number" || !(clearDepth >= 0 && clearDepth <= 1))
+@@ -221,6 +221,30 @@ export class Frame {
+         }
+         endRenderPassWithClaimValidation(this.device, encoder, this.#validations);
+     }
++    /**
++     * shaderloom patch (T1247): time GPU work that is NOT encoded into this frame's encoder.
++     *
++     * A vgpu `Compute` builds and submits its own command buffer (compute.js `dispatch`), so its
++     * `timestampWrites` cannot travel through `Frame.pass` — and without them a compute-heavy
++     * document's per-pass column is render-only and the frame EXTENT (patch theme 4) stops at the
++     * last render pass. Both under-report by exactly the compute work.
++     *
++     * Attaching here puts the span in THIS frame's span set through the same protocol a pass uses,
++     * so the frame's single `resolveQuerySet` covers the compute's query indices too. That is
++     * correct by queue order, not by luck: the compute's command buffer is submitted while this
++     * frame is still open, so its timestamp writes execute before this frame's resolve does.
++     *
++     * Returns the attachment result; `timestampWrites` is undefined when the span was dropped for
++     * this frame (query set full), exactly as in `Frame.pass`.
++     */
++    attachExternalSpan(span) {
++        if (this.#canceled)
++            throw frameCanceledError("Frame.attachExternalSpan");
++        if (this.#submitted)
++            throw frameAlreadySubmittedError("Frame.attachExternalSpan");
++        assertDeviceUsable(this.device, "Frame.attachExternalSpan");
++        return this.#attach(span, undefined, [], timerAttachmentInvalidError);
++    }
+     submit() {
+         // Closed either way: a re-submit has nothing left to flush, and a canceled frame dropped its
+         // encoder. Both are silent no-ops so `frame(gpu, cb)`'s implicit submit-on-return never masks
 diff --git a/dist/index.d.ts b/dist/index.d.ts
-index e37316bd0fe8c02e3346594169c95c394531e089..d2d15e71d436c11cd492c21748f164c9f95e10f0 100644
+index f11060a2a7f9b234465d04371e8826941e6b8d90..ca90902665a0e974c076c2592130458d69be7f5d 100644
 --- a/dist/index.d.ts
 +++ b/dist/index.d.ts
 @@ -1,6 +1,6 @@
  import { createGpu, type InitOptions } from "./init.ts";
  export { initFromDevice } from "./init-from-device.ts";
 -export type { Bundle, BundleOptions, BundleRecorder, Compute, ComputeOptions, DispatchOptions, ClearColor, GpuErrorListener, InitOptions, PingPongStorage, PingPongTargets, SharedUniforms, StorageAccess, StorageBuffer, StorageOptions, Surface, SurfaceOptions, SurfaceResizeEvent, Timer, TimerSpan, Visibility, VisibilityOptions, VisibilityQuery } from "./init.ts";
-+export type { Bundle, BundleOptions, BundleRecorder, Compute, ComputeOptions, DispatchOptions, ClearColor, GpuErrorListener, InitOptions, PingPongStorage, PingPongTargets, SharedUniforms, StorageAccess, StorageBuffer, StorageOptions, Surface, SurfaceOptions, SurfaceResizeEvent, Timer, TimerFrameExtent, TimerSpan, Visibility, VisibilityOptions, VisibilityQuery } from "./init.ts";
++export type { Bundle, BundleOptions, BundleRecorder, Compute, ComputeOptions, DispatchOptions, DispatchTiming, ClearColor, GpuErrorListener, InitOptions, PingPongStorage, PingPongTargets, SharedUniforms, StorageAccess, StorageBuffer, StorageOptions, Surface, SurfaceOptions, SurfaceResizeEvent, Timer, TimerFrameExtent, TimerSpan, Visibility, VisibilityOptions, VisibilityQuery } from "./init.ts";
  export type { BlendComponentOptions, BlendOptions, BlendPreset, DepthOptions, Draw, DrawOptions, DrawCallOptions, DrawLayoutOptions, GeometryLike, StencilFaceOptions, StencilOptions } from "./draw.ts";
  export { Geometry } from "./scene/geometry-descriptor.ts";
  export type { GeometryAttributeOverride, GeometryAttributes, GeometryBuffer, GeometryBufferOptions, GeometryData, GeometryOptions, GeometrySlice, GeometrySliceOptions } from "./scene/geometry-descriptor.ts";
 diff --git a/dist/init.d.ts b/dist/init.d.ts
-index d4cb959be6bc7d6e9c8fbad4d42cd90058c1ade1..2a25b0e6e314510025de4fe005d091069ac0a838 100644
+index d4cb959be6bc7d6e9c8fbad4d42cd90058c1ade1..968bae2f72631bf4286a8e4d4910b9823eaa531d 100644
 --- a/dist/init.d.ts
 +++ b/dist/init.d.ts
-@@ -3,7 +3,7 @@ export { initFromDevice } from "./init-from-device.ts";
+@@ -1,9 +1,9 @@
+ export { createCoreGpu as createGpu, type Gpu } from "./kernel.ts";
+ export { initFromDevice } from "./init-from-device.ts";
  export type { AdapterFactory, InitOptions } from "./kernel.ts";
- export type { Compute, ComputeOptions, DispatchOptions, GpuErrorListener, PingPongStorage, PingPongTargets, SharedUniforms, StorageAccess, StorageBuffer, StorageOptions } from "./api-types.ts";
+-export type { Compute, ComputeOptions, DispatchOptions, GpuErrorListener, PingPongStorage, PingPongTargets, SharedUniforms, StorageAccess, StorageBuffer, StorageOptions } from "./api-types.ts";
++export type { Compute, ComputeOptions, DispatchOptions, DispatchTiming, GpuErrorListener, PingPongStorage, PingPongTargets, SharedUniforms, StorageAccess, StorageBuffer, StorageOptions } from "./api-types.ts";
  export type { ClearColor } from "./target-utils.ts";
 -export type { Timer, TimerSpan } from "./timer.ts";
 +export type { Timer, TimerFrameExtent, TimerSpan } from "./timer.ts";
@@ -139,7 +304,7 @@ index d4cb959be6bc7d6e9c8fbad4d42cd90058c1ade1..2a25b0e6e314510025de4fe005d09106
  export type { Bundle, BundleOptions, BundleRecorder } from "./bundle.ts";
  export type { Surface, SurfaceOptions, SurfaceResizeEvent } from "./surface.ts";
 diff --git a/dist/mock.d.ts b/dist/mock.d.ts
-index 8fe9da7bf42e35f413c59ba076525e1302f055e0..a64870b5bf1868d9801a737315f340d1e8413a51 100644
+index 1a10c694a982bde7440229d528c1e7c973a9a389..2b33e90ca6fe3a6ccbfc5c83cfec9a5ae254dbbd 100644
 --- a/dist/mock.d.ts
 +++ b/dist/mock.d.ts
 @@ -3,7 +3,7 @@ export { initFromDevice } from "./init-from-device.ts";
@@ -147,12 +312,12 @@ index 8fe9da7bf42e35f413c59ba076525e1302f055e0..a64870b5bf1868d9801a737315f340d1
  export type { CreateMockAdapterOptions } from "@vgpu/adapter-mock";
  export { getMockGPUDeviceInstrumentation } from "@vgpu/core";
 -export type { Bundle, BundleOptions, BundleRecorder, Compute, ComputeOptions, DispatchOptions, ClearColor, GpuErrorListener, InitOptions, PingPongStorage, PingPongTargets, SharedUniforms, StorageAccess, StorageBuffer, StorageOptions, Surface, SurfaceOptions, SurfaceResizeEvent, Timer, TimerSpan, Visibility, VisibilityOptions, VisibilityQuery } from "./init.ts";
-+export type { Bundle, BundleOptions, BundleRecorder, Compute, ComputeOptions, DispatchOptions, ClearColor, GpuErrorListener, InitOptions, PingPongStorage, PingPongTargets, SharedUniforms, StorageAccess, StorageBuffer, StorageOptions, Surface, SurfaceOptions, SurfaceResizeEvent, Timer, TimerFrameExtent, TimerSpan, Visibility, VisibilityOptions, VisibilityQuery } from "./init.ts";
++export type { Bundle, BundleOptions, BundleRecorder, Compute, ComputeOptions, DispatchOptions, DispatchTiming, ClearColor, GpuErrorListener, InitOptions, PingPongStorage, PingPongTargets, SharedUniforms, StorageAccess, StorageBuffer, StorageOptions, Surface, SurfaceOptions, SurfaceResizeEvent, Timer, TimerFrameExtent, TimerSpan, Visibility, VisibilityOptions, VisibilityQuery } from "./init.ts";
  export type { BlendComponentOptions, BlendOptions, BlendPreset, DepthOptions, Draw, DrawOptions, DrawCallOptions, DrawLayoutOptions, GeometryLike, StencilFaceOptions, StencilOptions } from "./draw.ts";
  export { Geometry } from "./scene/geometry-descriptor.ts";
  export type { GeometryAttributeOverride, GeometryAttributes, GeometryBuffer, GeometryBufferOptions, GeometryData, GeometryOptions, GeometrySlice, GeometrySliceOptions } from "./scene/geometry-descriptor.ts";
 diff --git a/dist/node.d.ts b/dist/node.d.ts
-index 0b778eaed8b166bbf1e2b0eb5f7dfd5292c1db87..b5b80d0851992e39fc20fedfc9b6d730610ef1b4 100644
+index c7b92ed4fba8ab1d0641d585d80c85e49bb6a6f9..36015c3285f00e873fccb742f5fab6a858bd4bb7 100644
 --- a/dist/node.d.ts
 +++ b/dist/node.d.ts
 @@ -2,7 +2,7 @@ import { type NodeAdapterInfo, type NodeAdapterMode } from "@vgpu/adapter-node";
@@ -160,7 +325,7 @@ index 0b778eaed8b166bbf1e2b0eb5f7dfd5292c1db87..b5b80d0851992e39fc20fedfc9b6d730
  import { type Gpu, type InitOptions } from "./init.ts";
  export { createNodeAdapter } from "@vgpu/adapter-node";
 -export type { Bundle, BundleOptions, BundleRecorder, Compute, ComputeOptions, DispatchOptions, ClearColor, GpuErrorListener, PingPongStorage, PingPongTargets, SharedUniforms, StorageAccess, StorageBuffer, StorageOptions, Surface, SurfaceOptions, SurfaceResizeEvent, Timer, TimerSpan, Visibility, VisibilityOptions, VisibilityQuery } from "./init.ts";
-+export type { Bundle, BundleOptions, BundleRecorder, Compute, ComputeOptions, DispatchOptions, ClearColor, GpuErrorListener, PingPongStorage, PingPongTargets, SharedUniforms, StorageAccess, StorageBuffer, StorageOptions, Surface, SurfaceOptions, SurfaceResizeEvent, Timer, TimerFrameExtent, TimerSpan, Visibility, VisibilityOptions, VisibilityQuery } from "./init.ts";
++export type { Bundle, BundleOptions, BundleRecorder, Compute, ComputeOptions, DispatchOptions, DispatchTiming, ClearColor, GpuErrorListener, PingPongStorage, PingPongTargets, SharedUniforms, StorageAccess, StorageBuffer, StorageOptions, Surface, SurfaceOptions, SurfaceResizeEvent, Timer, TimerFrameExtent, TimerSpan, Visibility, VisibilityOptions, VisibilityQuery } from "./init.ts";
  export type { BlendComponentOptions, BlendOptions, BlendPreset, DepthOptions, Draw, DrawOptions, DrawCallOptions, DrawLayoutOptions, GeometryLike, StencilFaceOptions, StencilOptions } from "./draw.ts";
  export { Geometry } from "./scene/geometry-descriptor.ts";
  export type { GeometryAttributeOverride, GeometryAttributes, GeometryBuffer, GeometryBufferOptions, GeometryData, GeometryOptions, GeometrySlice, GeometrySliceOptions } from "./scene/geometry-descriptor.ts";
@@ -201,6 +366,19 @@ index 43d3530106957dcbd764af7bd07f91b8d8b14ef3..ccc4d62b4cd3708633a7a0473b3d9c8d
  }
  function syntheticIdentity(value) {
      if (typeof value !== "object" || value === null)
+diff --git a/dist/target-offscreen.js b/dist/target-offscreen.js
+index 3b4221148054e92c95a08f089a637249297b8d51..bbe26d4d064ec9c644c47c4a79d79a6ad64c7c0d 100644
+--- a/dist/target-offscreen.js
++++ b/dist/target-offscreen.js
+@@ -87,6 +87,8 @@ export class OffscreenTarget {
+             size: this.#currentSize,
+             format: spec.format,
+             usage: ["render_attachment", "texture_binding", "copy_src"],
++            // shaderloom patch (T1307): same allocation, alternate sampling interpretation.
++            viewFormats: this.options.viewFormats,
+             sampleCount: 1,
+             label: this.options.label ? `${this.options.label}.color${index}.resolve` : undefined,
+         }));
 diff --git a/dist/target-utils.js b/dist/target-utils.js
 index ec39e15a23d7dfdf7172e74d7c7305b34670a3e6..f9f04834e0554f53331cdb50872d04f6ef5cf94c 100644
 --- a/dist/target-utils.js
@@ -240,6 +418,19 @@ index ec39e15a23d7dfdf7172e74d7c7305b34670a3e6..f9f04834e0554f53331cdb50872d04f6
          if (!preserve)
              attachment.stencilClearValue = clearStencil ?? 0;
      }
+diff --git a/dist/target.d.ts b/dist/target.d.ts
+index f642ba8b4a9ba90b3d3aff09484779766564f86a..fcaa44da00b451720e69d0347dabe6244cc933e1 100644
+--- a/dist/target.d.ts
++++ b/dist/target.d.ts
+@@ -2,6 +2,8 @@ import type { ClearColor } from "./target-utils.ts";
+ import type { Texture, ResourceDestroyCallback, ResourceIdentity, UnsubscribeResourceDestroy } from "@vgpu/core";
+ export interface TargetTextureOptions {
+     readonly format?: GPUTextureFormat;
++    /** shaderloom T1307: compatible views for each resolved color attachment; not depth/MSAA storage. */
++    readonly viewFormats?: readonly GPUTextureFormat[];
+     /**
+      * Default clear color of this target, used by passes that clear without naming a color.
+      * Defaults to `[0, 0, 0, 1]`; mutable at runtime through `target.clearColor`.
 diff --git a/dist/timer.d.ts b/dist/timer.d.ts
 index 4571da5a860793c7250ad8862c5341d700217765..d90c34b8f3238e77907b5045e46727582e84c633 100644
 --- a/dist/timer.d.ts
