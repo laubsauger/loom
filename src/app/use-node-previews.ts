@@ -249,19 +249,25 @@ export function previewCandidates(
  * pointset, a MARKER with no synthesis — §B177's measured detail: the sink `c1/out_out`
  * has nothing to draw while the synthesis lands on `c1/paint:out`), so a sink aimed at
  * the boundary registers forever and materializes never. Following the wire inside the
- * SAME graph lands on the row the compiler really mints. Bounded walk: boundaries do
+ * SAME graph lands on the row the compiler really mints. Declared input previews
+ * (such as Syphon Out) similarly reuse their producer without a sink target.
+ * Bounded walk: boundaries do
  * not legally chain, but a malformed graph must not hang the preview tick.
  */
 function throughOutputBoundary(
   graph: GraphDocument,
+  registry: NodeRegistryView,
   nodeId: NodeId,
   portId: string,
 ): { nodeId: NodeId; portId: string } {
   let at = { nodeId, portId };
   for (let hops = 0; hops < 4; hops += 1) {
     const node = graph.nodes[at.nodeId];
-    if (node === undefined || !isComponentOutputBoundary(node.type)) return at;
-    const feeding = Object.values(graph.edges).find((edge) => edge.target.nodeId === at.nodeId);
+    if (node === undefined) return at;
+    const input = registry.get(node.type)?.previewInput;
+    if (input === undefined && !isComponentOutputBoundary(node.type)) return at;
+    const feeding = Object.values(graph.edges).find((edge) => edge.target.nodeId === at.nodeId &&
+      (input === undefined || edge.target.portId === input));
     if (feeding === undefined) return at; // an unwired boundary stays itself: honest idle
     at = { nodeId: feeding.source.nodeId, portId: feeding.source.portId };
   }
@@ -300,7 +306,7 @@ export function componentPreviewTarget(
   const produced =
     innerNodeDef === undefined
       ? { nodeId: inner, portId: "out" }
-      : throughOutputBoundary(definition.graph, inner, "out");
+      : throughOutputBoundary(definition.graph, current.registry, inner, "out");
   const innerNode = definition.graph.nodes[produced.nodeId];
   const innerDefinition = innerNode === undefined ? undefined : current.registry.get(innerNode.type);
   const port = innerDefinition === undefined ? undefined : previewablePort(innerDefinition.outputs);
@@ -609,6 +615,7 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
         ref: { nodeId: NodeId; portId: string };
         sink: { nodeId: NodeId; portId: string };
         area: number;
+        pinned?: boolean;
       }> = [];
       /** Switched off (§V297): reported to the body, and nowhere else. */
       const off: Array<{ nodeId: NodeId; portId: string }> = [];
@@ -667,7 +674,7 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
         // a plain node, and an Out boundary (resolved through to its producer, §B177's
         // shape seen from the inside) all live under the dived chain in the plan.
         const canvasSink =
-          previewTarget ?? throughOutputBoundary(current.graph, nodeId, portId);
+          previewTarget ?? throughOutputBoundary(current.graph, current.registry, nodeId, portId);
         const sinkNodeId = flatOf(canvasSink.nodeId);
         const sinkPortId = canvasSink.portId;
         if (sinkNodeId !== nodeId || sinkPortId !== portId) {
@@ -704,7 +711,7 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
             const longEdge = Math.max(output.size[0], output.size[1], 1);
             const areaScale = Math.min(1, current.previewLongEdge / longEdge);
             requests.push({
-              ref: { nodeId, portId: output.portId },
+              ref: { nodeId, portId },
               source: {
                 resourceId: output.resourceId,
                 size: output.size,
@@ -735,7 +742,13 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
           // T252: a visible slot with NO materialized output cannot render yet, but it
           // must still register as a preview sink or it never will — the sink triggers
           // the recompile that materializes it, and the next tick fills the tile.
-          if (offset !== undefined && position !== undefined) {
+          const viewerPinned = current.interest?.get() === nodeId || current.interest?.get() === sinkNodeId;
+          if (viewerPinned && !ungated.has(nodeId)) {
+            visibleIdle.push({
+              ref: { nodeId, portId }, sink: { nodeId: sinkNodeId, portId: sinkPortId },
+              area: current.previewLongEdge * current.previewLongEdge, pinned: true,
+            });
+          } else if (offset !== undefined && position !== undefined) {
             const box = {
               x: position.x + offset.x,
               y: position.y + offset.y,
@@ -779,7 +792,7 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
         const screenRect = slotScreenRect(box, viewport);
         const clip = clipFor(nodeId, screenRect);
         requests.push({
-          ref: { nodeId, portId: output.portId },
+          ref: { nodeId, portId },
           // T375 (§V57): `space` travels with the texture. `output` is the compiler's
           // ResolvedOutput, which already carries it — the preview shader is told what it
           // is looking at rather than assuming linear (B47).
@@ -864,11 +877,11 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
        * after which the scheduler's stated policy decides whether it draws or reports
        * `suspended`. Both are answers; black-and-silent was not.
        */
-      visibleIdle.sort((a, b) => b.area - a.area);
+      visibleIdle.sort((a, b) => Number(b.pinned === true) - Number(a.pinned === true) || b.area - a.area);
       // First-paint bookkeeping runs on the CANVAS ref (that is what `everMaterialized`
       // records); what goes to the COMPILER is each entry's flat sink (T1019).
       const unpainted = visibleIdle.filter(
-        (entry) => !everMaterialized.has(`${entry.ref.nodeId}:${entry.ref.portId}`),
+        (entry) => entry.pinned === true || !everMaterialized.has(`${entry.ref.nodeId}:${entry.ref.portId}`),
       );
       const reserved = unpainted.slice(0, Math.min(FIRST_PAINT_RESERVE, system.capacity));
       const room = Math.max(0, system.capacity - reserved.length);

@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import { compileGraph } from "@compiler/compile.ts";
 import { createAppRuntime } from "../../app/app-runtime.ts";
-import { nativeOutputFixture } from "../../../experiments/electron-app/output-fixture.ts";
+import { nativeOutputFixture } from "../../desktop/testing/output-fixture.ts";
 import { loadProject } from "@domain/project/load.ts";
 it("self-input fixture keeps the receiver outside the publishing branch", async () => {
   const runtime = createAppRuntime({ identityStorage: null, actor: { kind: "human", id: "test", label: "Test" } });

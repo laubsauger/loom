@@ -3,10 +3,10 @@ import { afterEach, expect, it, vi } from "vitest";
 
 const fixture = vi.hoisted(() => {
   class Port {
-    onmessage: ((event: { data: unknown }) => void) | null = null;
+    onmessage: ((event: { data: unknown }) => void | Promise<void>) | null = null;
     onmessageerror: (() => void) | null = null;
     postMessage = vi.fn(); start = vi.fn(); close = vi.fn();
-    receive(data: unknown) { this.onmessage?.({ data }); }
+    receive(data: unknown) { return this.onmessage?.({ data }); }
   }
   return { Port, channel: vi.fn() };
 });
@@ -28,7 +28,8 @@ async function setup(available = true) {
     width = 1920; height = 1080; close = vi.fn();
   }
   vi.stubGlobal("ImageBitmap", Bitmap);
-  await import("../../experiments/electron-app/output-renderer.ts");
+  vi.stubGlobal("loomNativeSurface", { frameReady: vi.fn(async () => {}) });
+  await import("../desktop/output-renderer.ts");
   const port = new fixture.Port();
   worker.port.receive({ kind: "ready", port });
   return { port, transfer, context, frame: new Bitmap() };
@@ -37,7 +38,7 @@ async function setup(available = true) {
 it("adopts the bitmap directly, resizes at full resolution, and acknowledges after transfer", async () => {
   const { port, transfer, context, frame } = await setup();
   transfer.mockImplementation(() => expect(port.postMessage).not.toHaveBeenCalled());
-  port.receive({ kind: "frame", frame });
+  await port.receive({ kind: "frame", frame });
   expect(context).toHaveBeenCalledTimes(1);
   expect(context).toHaveBeenCalledWith("bitmaprenderer", { alpha: false });
   expect(transfer).toHaveBeenCalledTimes(1);
@@ -53,7 +54,7 @@ it("adopts the bitmap directly, resizes at full resolution, and acknowledges aft
 it("closes the bitmap but does not acknowledge successful presentation on failure", async () => {
   const { port, transfer, frame } = await setup();
   transfer.mockImplementation(() => { throw new Error("presentation failed"); });
-  expect(() => port.receive({ kind: "frame", frame })).toThrow("presentation failed");
+  await expect(port.receive({ kind: "frame", frame })).rejects.toThrow("presentation failed");
   expect(frame.close).toHaveBeenCalledTimes(1);
   expect(port.postMessage).not.toHaveBeenCalled();
 });

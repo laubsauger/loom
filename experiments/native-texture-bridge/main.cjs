@@ -9,17 +9,25 @@ let active;
 let sequence = 0;
 const results = [];
 const rendererLoss = process.env.SHADERLOOM_PROOF_CHECK === 'renderer-loss';
-const gpuLoss = process.env.SHADERLOOM_PROOF_CHECK === 'gpu-loss';
-const earlyRelease = process.env.SHADERLOOM_PROOF_CHECK === 'early-release';
+const gpuRendererTeardown = process.env.SHADERLOOM_PROOF_CHECK === 'gpu-loss-renderer-teardown';
+const gpuLoss = process.env.SHADERLOOM_PROOF_CHECK === 'gpu-loss' || gpuRendererTeardown;
+const copyFrameEarly = process.env.SHADERLOOM_PROOF_CHECK === 'copy-frame-early-release';
+const backendFrame = process.env.SHADERLOOM_PROOF_CHECK === 'backend-frame';
+const earlyRelease = process.env.SHADERLOOM_PROOF_CHECK === 'early-release' || copyFrameEarly || backendFrame;
+const copyFrame = process.env.SHADERLOOM_PROOF_CHECK === 'copy-frame' || copyFrameEarly;
 let gpuKilled = false;
 let gpuGone = false;
 let deviceLost = false;
+let failed = false;
 function finishGpuLoss() {
+  if (failed) return;
   if (!gpuGone || !deviceLost || !active?.released) return;
+  if (gpuRendererTeardown && !rendererGone) return;
   try {
     native.release();
     native.abort();
-    console.log('NATIVE_TEXTURE_GPU_LOSS_PASS: submitted frame, GPU death, device loss, reference release, one producer acknowledgment');
+    console.log('NATIVE_TEXTURE_GPU_LOSS_PASS:', JSON.stringify({ gpuRendererTeardown, rendererGone,
+      producerAcknowledgments: 1, allReferencesReleased: true }));
     clearTimeout(watchdog);
     app.exit(0);
   } catch (error) { fail(error.stack); }
@@ -27,6 +35,7 @@ function finishGpuLoss() {
 let rendererKilled = false;
 let rendererGone = false;
 function finishRendererLoss() {
+  if (failed) return;
   if (!rendererGone || !active?.released) return;
   try {
     native.release();
@@ -44,6 +53,10 @@ function progress(next) {
 const watchdog = setTimeout(() => fail(`Timed out: ${stage}, frame ${sequence}, ${JSON.stringify(active)}`), 60000);
 
 function fail(message) {
+  if (failed) return;
+  // app.exit can synchronously trigger reference-release callbacks during teardown.
+  // Once failed, those callbacks must not acknowledge reuse or replace exit 1.
+  failed = true;
   console.error('NATIVE_TEXTURE_PROOF_FAILED', message);
   // Do not reclaim a surface possibly still in GPU use. Process teardown owns it.
   clearTimeout(watchdog);
@@ -51,6 +64,7 @@ function fail(message) {
 }
 
 function advance() {
+  if (failed) return;
   if (!active?.released || !active?.result) return;
   try { native.release(); } catch (error) { fail(error.stack); return; }
   results.push(active.result);
@@ -67,6 +81,7 @@ function advance() {
       producerPid, consumerPid: process.pid, producerReleaseAcks: results.length,
       allReferencesReleased: results.length, sandboxed: results.every(r => r.sandboxed),
       earlyReleases: results.filter(r => r.earlyReleased).length,
+      importPath: backendFrame ? 'registered-media-backend' : copyFrame ? 'copyExternalImageToTexture' : 'importExternalTexture',
       colorMaxError: Math.max(...color.map(r => r.maxError)),
       floatMaxError: Math.max(...data.map(r => r.maxError)),
       floatSamples: data[0].samples, adapter: results[0].adapter,
@@ -81,6 +96,7 @@ function advance() {
 }
 
 async function send() {
+  if (failed) return;
   if (active) throw new Error('Producer overrun');
   progress('producing');
   const format = sequence < 12 ? 0 : 1;
@@ -102,10 +118,11 @@ async function send() {
   try {
     progress('sending');
     await sharedTexture.sendSharedTexture({ frame: window.webContents.mainFrame,
-      importedSharedTexture: imported }, { sequence, format,
+      importedSharedTexture: imported }, { sequence, format, copyFrame,
       fault: rendererLoss ? 'renderer-loss' : gpuLoss ? 'gpu-loss' : earlyRelease ? 'early-release' : null });
   } finally {
     imported.release();
+    progress('main-reference-explicitly-released');
   }
 }
 
@@ -117,10 +134,10 @@ app.whenReady().then(async () => {
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.webContents.on('will-navigate', event => event.preventDefault());
   window.webContents.on('render-process-gone', (_event, details) => {
-    if (!rendererLoss || !rendererKilled || details.reason !== 'killed') return fail(JSON.stringify(details));
+    if ((!rendererLoss && !gpuRendererTeardown) || !rendererKilled || details.reason !== 'killed') return fail(JSON.stringify(details));
     rendererGone = true;
     progress('renderer-killed');
-    finishRendererLoss();
+    if (gpuRendererTeardown) finishGpuLoss(); else finishRendererLoss();
   });
   app.on('child-process-gone', (_event, details) => {
     if (!gpuLoss || !gpuKilled || gpuGone || details.type !== 'GPU' || details.reason !== 'killed')
@@ -153,6 +170,14 @@ app.whenReady().then(async () => {
     if (!gpuLoss || !deviceLost || frame !== 0 || event.sender !== window.webContents)
       return fail('Unexpected renderer-release signal');
     progress('renderer-references-explicitly-released');
+    if (gpuRendererTeardown) {
+      if (rendererKilled) return fail('Duplicate renderer teardown signal');
+      const pid = window.webContents.getOSProcessId();
+      if (pid <= 0 || pid === process.pid) return fail('Invalid renderer PID');
+      rendererKilled = true;
+      console.log('NATIVE_TEXTURE_POST_GPU_RENDERER_KILL', pid);
+      process.kill(pid, 'SIGKILL');
+    }
   });
   ipcMain.on('proof-held', (event, frame) => {
     if (!rendererLoss || rendererKilled || frame !== 0 || event.sender !== window.webContents)
@@ -170,5 +195,6 @@ app.whenReady().then(async () => {
     advance();
   });
   progress('loading-renderer');
-  await window.loadFile(join(__dirname, 'index.html'));
+  if (backendFrame) await window.loadURL('http://127.0.0.1:5189/experiments/native-texture-bridge/backend.html');
+  else await window.loadFile(join(__dirname, 'index.html'));
 }).catch(error => fail(error.stack));

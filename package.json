@@ -4,12 +4,13 @@
   "version": "0.0.0",
   "type": "module",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.12.0"
   },
   "scripts": {
     "dev": "vite",
-    "desktop:dev": "node experiments/electron-app/run.mjs",
-    "desktop:test": "node experiments/electron-app/run.mjs --smoke",
+    "desktop:dev": "node src/desktop/run.mjs",
+    "desktop:test": "node src/desktop/run.mjs --smoke",
+    "desktop:check": "node --test src/desktop/file-permissions.test.cjs src/desktop/native-input.test.cjs src/desktop/native-output.test.cjs src/desktop/policy.test.cjs src/desktop/preload.test.cjs src/desktop/unload-gate.test.cjs src/desktop/ownership.test.cjs src/devices/native/build-cache.test.mjs",
     "build": "tsc -b && vite build",
     "build:pages": "tsc -b && vite build --base=/loom/",
     "deploy": "gh workflow run deploy-pages.yml --ref main",
@@ -65,6 +66,7 @@
     "@vitejs/plugin-react": "^4.3.4",
     "@vitest/coverage-v8": "^2.1.9",
     "@webgpu/types": "^0.1.72",
+    "electron": "45.0.0-alpha.5",
     "eslint": "^10.9.1",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.5",

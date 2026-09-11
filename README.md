@@ -22,12 +22,21 @@ process on your machine — the stdio MCP bridge today, external devices and ser
 later — works only from a local clone. Nodes that need one stay visible either way and
 say what they are waiting for.
 
-Requires Node.js 22+, pnpm 9.15.4, and a WebGPU browser.
+Requires Node.js 22.12+, pnpm 9.15.4, and a WebGPU browser.
 
 ```bash
 pnpm install
 pnpm dev
 ```
+
+For the Electron app, run `pnpm desktop:dev`. The lockfile pins the tested runtime;
+its official installer downloads the binary on first use. macOS Apple Silicon
+supports **Syphon In / Out** using the same graph runtime. Building the native
+adapters requires Xcode and its macOS SDK. See [desktop setup and validation](src/desktop/README.md).
+Windows native transport, NDI and native Python inference are not yet integrated.
+
+Desktop checks: `pnpm desktop:check` (unit/ownership) and `pnpm desktop:test`
+(actual app/GPU integration; macOS native checks require Apple Silicon).
 
 ```bash
 pnpm lint && pnpm typecheck && pnpm test && pnpm build

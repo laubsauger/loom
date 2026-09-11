@@ -808,8 +808,10 @@ describe("a project round-trips through save and open (T43, §V10)", () => {
 
     const clicks: string[] = [];
     const createElement = document.createElement.bind(document);
-    const spy = vi.spyOn(document, "createElement").mockImplementation((tag: string) => {
-      const element = createElement(tag);
+    // Preserve the factory's overloads, including Electron's webview declaration.
+    const spy = vi.spyOn(document, "createElement").mockImplementation(new Proxy(createElement, { apply(target, thisArg, args) {
+      const [tag] = args;
+      const element = Reflect.apply(target, thisArg, args) as HTMLElement;
       if (tag === "a") {
         element.addEventListener("click", (event) => {
           event.preventDefault();
@@ -817,7 +819,7 @@ describe("a project round-trips through save and open (T43, §V10)", () => {
         });
       }
       return element;
-    });
+    } }));
 
     try {
       await act(async () => {

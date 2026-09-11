@@ -425,6 +425,8 @@ export interface NodeDefinition {
    * is not the same claim, and a node with a side effect must survive pruning either way.
    */
   sink?: boolean;
+  /** Preview this input's producer without allocating a render target for the node. */
+  previewInput?: PortId;
   /**
    * Declares this node a pure WIRE (T223, §V130): the compiler splices it out —
    * consumers of `output` bind the producer feeding `input` directly, no pass is

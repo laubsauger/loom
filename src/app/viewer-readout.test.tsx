@@ -14,6 +14,7 @@ import { ViewerPane } from "./side-panes.tsx";
 import { TooltipProvider } from "@ui/primitives/tooltip.tsx";
 import type { AppRuntime } from "./app-runtime.ts";
 import type { GpuStatus } from "./gpu-status.ts";
+import { createPreviewInterestStore } from "@editor/viewer/index.ts";
 
 /**
  * T329 — T36's features, on the pane the app actually mounts (§V242, B34).
@@ -304,8 +305,34 @@ describe("T622 — the OUTPUT selector speaks node names, not resource ids", () 
   });
 });
 
+it.each(["selector", "command"])("%s requests an uncompiled Syphon input through existing preview interest", async (entry) => {
+  const runtime = newRuntime();
+  await seed(runtime, [{ op: "addNode", ref: "$input", type: "syphonIn", position: { x: 0, y: 4000 } }]);
+  const graph = runtime.bus.store.getGraph();
+  const nodeId = Object.keys(graph.nodes)[0]!;
+  const interest = createPreviewInterestStore();
+  const view = render(
+    <TooltipProvider><AppRuntimeContext.Provider value={runtime}>
+      <ViewerPane compiled={{ outputs: [], diagnostics: [] } as never} graph={graph}
+        backend={null} probe={undefined} interest={interest} />
+    </AppRuntimeContext.Provider></TooltipProvider>,
+  );
+  const select = screen.getByTestId("viewer-output-select") as HTMLSelectElement;
+  expect([...select.options].map(option => option.value)).toContain(`${nodeId}:out`);
+  expect(interest.get()).toBeNull(); // Merely listing the node must not cook it.
+  await act(async () => {
+    if (entry === "selector") fireEvent.change(select, { target: { value: `${nodeId}:out` } });
+    else await runtime.bus.execute("node.openViewer", { nodeIds: [nodeId] }, runtime.invocation);
+  });
+  expect(select.value).toBe(`${nodeId}:out`);
+  expect(interest.get()).toBe(nodeId);
+  view.unmount();
+  expect(interest.get()).toBeNull();
+  runtime.dispose();
+});
+
 describe("a preview-off node gets a sentence, not a blank pane (T763)", () => {
-  it("names the switch when the selected node has preview disabled", async () => {
+  it.each([true, false])("names the disabled preview switch even before materialization (compiled: %s)", async (materialized) => {
     const runtime = createAppRuntime({
       identityStorage: null,
       actor: { kind: "human", id: "tester", label: "Tester" },
@@ -333,7 +360,7 @@ describe("a preview-off node gets a sentence, not a blank pane (T763)", () => {
     );
     const graph = runtime.bus.store.getGraph();
     const compiled = {
-      outputs: [
+      outputs: materialized ? [
         {
           nodeId,
           portId: "out",
@@ -344,7 +371,7 @@ describe("a preview-off node gets a sentence, not a blank pane (T763)", () => {
           space: "linear",
           temporal: false,
         },
-      ],
+      ] : [],
       diagnostics: [],
     };
     render(

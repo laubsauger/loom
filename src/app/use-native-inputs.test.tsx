@@ -13,14 +13,25 @@ function setup() {
   const graph: GraphDocument = { revision: 1, nodes: {
     input: { id: "input", type: "syphonIn", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: { source: "uuid" } },
   }, edges: {}, groups: {} };
-  const dispose = vi.fn(); const unregister = vi.fn();
+  const dispose = vi.fn(); const unregister = vi.fn(); const releaseForNavigation = vi.fn();
   const registerMediaSource = vi.fn(() => unregister);
   const backend = { registerMediaSource } as unknown as LoomBackend;
   vi.mocked(desktopInputBridge).mockReturnValue({} as never);
-  vi.mocked(createNativeInputSource).mockReturnValue({ source: { currentFrame: () => undefined }, dispose, ready: Promise.resolve() });
+  vi.mocked(createNativeInputSource).mockReturnValue({ source: { currentFrame: () => undefined }, dispose, releaseForNavigation, ready: Promise.resolve() });
   const resolved = { order: ["input"], outputs: [{ nodeId: "input", size: [1920, 1080] as const }] };
-  return { runtime, graph, dispose, unregister, registerMediaSource, backend, resolved };
+  return { runtime, graph, dispose, releaseForNavigation, unregister, registerMediaSource, backend, resolved };
 }
+it.each(["pagehide", "loom-native-input-retire"])("%s releases document-owned frames without waiting for React unmount", (event) => {
+  const h = setup();
+  const view = renderHook(() => useNativeInputs(h.runtime, h.backend, h.graph, h.resolved));
+  window.dispatchEvent(new Event(event));
+  expect(h.releaseForNavigation).toHaveBeenCalledTimes(1);
+  expect(h.unregister).toHaveBeenCalledTimes(1);
+  expect(h.dispose).not.toHaveBeenCalled();
+  view.unmount();
+  window.dispatchEvent(new Event(event));
+  expect(h.releaseForNavigation).toHaveBeenCalledTimes(1);
+});
 it("opens demanded nodes only, preserves sessions across movement, and retires on pruning", async () => {
   const h = setup();
   const view = renderHook(({ graph, resolved }) => useNativeInputs(h.runtime, h.backend, graph, resolved),

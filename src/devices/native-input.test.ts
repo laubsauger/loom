@@ -53,6 +53,27 @@ it("reports disconnect as stale and closes the native session without retry", as
   expect(h.report).toHaveBeenLastCalledWith(expect.stringMatching(/stale.*disconnected/));
   expect(h.bridge.close).toHaveBeenCalledTimes(1);
 });
+it("releases a retained renderer frame on navigation without racing main teardown", async () => {
+  const h = setup(); await h.input.ready; await h.deliver();
+  h.input.releaseForNavigation();
+  expect(h.owned.close).toHaveBeenCalledTimes(1);
+  expect(h.bridge.close).not.toHaveBeenCalled();
+  const calls = vi.mocked(h.bridge.poll).mock.calls.length;
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(h.bridge.poll).toHaveBeenCalledTimes(calls);
+  expect(h.input.source.currentFrame()).toBeUndefined();
+});
+it("stops polling an explicitly retired session without a second close", async () => {
+  const h = setup(); await h.input.ready;
+  vi.mocked(h.bridge.poll).mockResolvedValue({ kind: "closed" });
+  await vi.advanceTimersByTimeAsync(32);
+  const calls = vi.mocked(h.bridge.poll).mock.calls.length;
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(h.bridge.poll).toHaveBeenCalledTimes(calls);
+  expect(h.bridge.close).not.toHaveBeenCalled();
+  expect(h.report).toHaveBeenLastCalledWith("Syphon input session closed");
+  expect(h.input.source.currentFrame()).toBeUndefined();
+});
 it("a close before open resolves retires the late session", async () => {
   const h = setup(); h.input.dispose(); await h.input.ready;
   expect(h.bridge.close).toHaveBeenCalledWith("session");

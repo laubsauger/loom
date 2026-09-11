@@ -5,7 +5,7 @@ export interface NativeInputMetadata { session: string; sequence: number; width:
 export interface DesktopInputBridge {
   list(): Promise<NativeInputSourceInfo[]>;
   open(uuid: string, consume: (frame: VideoFrame, metadata: NativeInputMetadata) => Promise<void>): Promise<string>;
-  poll(session: string): Promise<{ kind: "busy" | "empty" | "sent" }>;
+  poll(session: string): Promise<{ kind: "busy" | "empty" | "sent" | "closed" }>;
   close(session: string): Promise<unknown>;
 }
 export function desktopInputBridge(): DesktopInputBridge | undefined {
@@ -19,6 +19,7 @@ export function createNativeInputSource(bridge: DesktopInputBridge, uuid: string
   report(message: string | null): void;
 }) {
   let closed = false;
+  let leaving = false;
   let session: string | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let pending: { image: VideoFrame; frameId: number; width: number; height: number } | undefined;
@@ -55,7 +56,15 @@ export function createNativeInputSource(bridge: DesktopInputBridge, uuid: string
   const poll = async () => {
     if (closed || !session) return;
     try {
-      if (!pending) await bridge.poll(session);
+      if (!pending) {
+        const result = await bridge.poll(session);
+        if (result.kind === "closed") {
+          session = undefined; // Main already retired it; do not close it twice.
+          options.report("Syphon input session closed");
+          dispose();
+          return;
+        }
+      }
       if (!closed) timer = setTimeout(() => void poll(), 16);
     } catch (error) { fail(error); }
   };
@@ -72,9 +81,12 @@ export function createNativeInputSource(bridge: DesktopInputBridge, uuid: string
       if (!closed) options.report(null);
     } catch (error) { fail(error); }
   }).then(async id => {
-    if (closed) { await bridge.close(id); return; }
+    if (closed) { if (!leaving) await bridge.close(id); return; }
     session = id;
     await poll();
   }).catch(fail);
-  return { source, dispose, ready };
+  // The document is leaving: release renderer frames immediately, without racing
+  // an IPC close against main's committed-navigation retirement.
+  const releaseForNavigation = () => { leaving = true; session = undefined; dispose(); };
+  return { source, dispose, releaseForNavigation, ready };
 }

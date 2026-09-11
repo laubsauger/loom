@@ -1,9 +1,51 @@
-# Native texture import proof — macOS / Apple Silicon
+# Native texture import and output proofs — macOS / Apple Silicon
 
-An isolated, runnable experiment, tracked by **SPEC T1249**. No app dependencies,
-compiler, backend, device bridge, or example defaults are changed. This proves
+An isolated, runnable experiment, initially tracked by **SPEC T1249**. No app dependencies,
+compiler, device bridge, or example defaults are changed. T1331 additionally fixes
+the backend source-replacement cache, as documented below. This proves
 synthetic texture transport from a separate Python process, **not model inference
 or a production desktop wrapper**.
+
+## Selected-output export (T1337)
+
+```bash
+node experiments/native-texture-bridge/export-run.mjs "$PWD/.cache/electron-v45.0.0-alpha.5/runtime/Electron.app/Contents/MacOS/Electron"
+node --test experiments/native-texture-bridge/export-main.test.cjs experiments/native-texture-bridge/main.test.cjs
+```
+
+Separate, bounded output-only probe; no Python service or SDK needed. Runner
+builds a tiny N-API oracle in an OS temporary directory, owns Vite on loopback
+5190, starts a sandboxed Electron renderer with a temporary profile, then closes
+Electron and Vite. Temporary build/profile files remain for inspection. It does
+not touch the desktop app profile or install a driver.
+
+The actual browser backend compiles two full-HD SDR targets, uses `present` and
+`setOutput` to select A → B → A into a dedicated canvas, and Electron emits an
+offscreen shared GPU texture. Native code borrows its local IOSurface pointer
+only while the paint lease is held, validates BGRA8 storage and dimensions,
+locks it for read-only inspection, checks four interior sample points, unlocks,
+and returns tiny sample results. Every paint lease is released; unmatched stale
+frames do not advance the test. Missing handles, unsupported layouts and timeouts
+fail explicitly. CPU reads here are the test oracle, not a proposed video path.
+
+2026-09-10, Electron **45.0.0-alpha.5**, PID **54776**: exit 0, three verified
+selections and three lease releases at **1920×1080**. Metadata: BGRA8, bt709
+primaries, sRGB transfer, RGB matrix, full range. Native samples preserve red/blue
+selection, the top/bottom pattern, and linear 0.5 → encoded byte **188**.
+Five harness tests pass (four export tests plus existing import terminal-failure
+regression); typecheck, lint, 103 gates and build pass, with existing lint/bundle
+warnings. Initial harness runs exposed initialization/structured-clone mistakes;
+the runner now explicitly awaits module initialization and returns a cloneable
+readiness value. Those failed runs were not native export failures.
+
+This proves a **dedicated presentation-surface route**, not direct export of an
+arbitrary WebGPU texture. No editor UI is captured. Existing-app cross-window
+attachment, independent Metal/Syphon consumption, actual copy count, alpha/HDR
+fidelity, sustained 60 fps, multi-output resource bounds and Windows still need
+proof. The lab's synchronous oracle must not become the runtime frame path.
+Current API evidence: [offscreen rendering](https://www.electronjs.org/docs/latest/tutorial/offscreen-rendering),
+[shared texture ownership](https://www.electronjs.org/docs/latest/api/structures/offscreen-shared-texture),
+[matching 45-alpha preferences](https://github.com/electron/electron/blob/v45.0.0-alpha.5/docs/api/structures/web-preferences.md).
 
 ## What it proves
 
@@ -33,6 +75,39 @@ prototype service. These are local test protections, not a production code-signi
 or hostile-peer security review.
 
 ## Run
+
+### Owner testing / readiness (2026-09-10)
+
+**This probe is separate from the [maintained desktop host](../../src/desktop/README.md).**
+The app shell now opens the node editor in Electron, but native textures are not
+integrated into its graph. This probe opens a small automated test window,
+not the node editor. On this development
+Mac, the following command passed with 24 frames, 24 producer acknowledgments,
+24 reference-release callbacks, exit 0 and verified service removal:
+
+```sh
+node experiments/native-texture-bridge/run.mjs \
+  /private/tmp/shaderloom-electron-proof-am3ojQ/Electron.app/Contents/MacOS/Electron \
+  /opt/homebrew/bin/python3 pixels
+```
+
+The Electron binary is temporary: check that this path still exists before testing
+later. If it has been removed, supply an explicit compatible Electron binary using
+the generic command below. No Electron app launcher is installed in this project.
+The verified run took about 1.5 seconds, but earlier launches crashed, stalled or
+exited slowly; this run does not establish startup reliability.
+
+The `gpu-loss` fault test is **known failing**: device loss arrives, but the required
+`allReferencesReleased` callback does not. It must time out and fail rather than
+acknowledge unsafe surface reuse. Do not treat it as a passing recovery test.
+
+Before a native-inference app-level trial, remaining work includes reliable startup and GPU-loss
+teardown, renderer/backend integration, real inference models, browser-generated
+input transport, bounded reusable surface pools and multi-model throughput tests.
+Windows GPU transport and capability parity still require a separate implementation
+and real Windows hardware validation. This probe does not prove those features.
+
+### Prerequisites and generic command
 
 Requirements: Apple Silicon Mac, Xcode Command Line Tools, a Node installation
 with sibling `include/node/node_api.h`, an explicit Python 3 interpreter, and an Electron app
@@ -122,6 +197,38 @@ Electron/Chromium lifetime stage failed. See the
 [version-pinned implementation](https://github.com/electron/electron/blob/v43.3.0/shell/common/api/electron_api_shared_texture.cc#L297-L310).
 No upstream patch or release bypass has been applied.
 
+**T1326 ownership localization:** an instrumented GPU-loss run (main 29933,
+GPU 29934, Python 29937) confirmed main-side `sendSharedTexture` settlement and
+explicit release before GPU death. Renderer explicit release followed device loss,
+but the final callback arrived only during timeout-driven application teardown.
+Electron logged a dangling renderer reference being released. This narrows the
+blocker to the cross-process release path; it does not identify the exact native
+sync-token or WebGPU lifetime failure.
+
+That run exposed a bug in this test harness: a release callback reentering during
+`app.exit(1)` could call `app.exit(0)` and acknowledge the producer after failure.
+The failure latch now makes timeout terminal. A deterministic regression reproduces
+the old `[1, 0]` exit sequence and asserts a single exit 1 and zero acknowledgments:
+
+```sh
+node --test experiments/native-texture-bridge/main.test.cjs
+```
+
+The separate `gpu-loss-renderer-teardown` diagnostic terminates only the verified
+test renderer after device loss and explicit reference release. Main 30153,
+renderer 30157, Python 30190 received the final callback after renderer termination,
+acknowledged one surface and exited 0 with service cleanup. This is **terminal
+renderer teardown**, not in-session recovery, pool reuse or a production restart
+policy. The original `gpu-loss` gate must still fail unless its own acceptance
+conditions complete before timeout. Run this diagnostic with the normal command,
+replacing `pixels` with `gpu-loss-renderer-teardown`.
+
+After the failure-latch fix, the original GPU-loss run (main 30789, Python 30800)
+timed out with exit 1, zero producer acknowledgments and verified service removal.
+The pixel control (main 31082, Python 31090) passed all 24 frames/releases, exited 0
+in about 1.5 seconds and removed its service. No application code, model settings,
+resolution, Electron dependency or sandbox policy changed in this investigation.
+
 `early-release` closes renderer VideoFrame/imported references immediately after
 WebGPU submission, before awaiting readback. This exercises submitted-work
 retention instead of keeping JavaScript references alive until pixel verification
@@ -137,6 +244,131 @@ the process exited before an approved stack sample could capture it. This is a
 lifecycle-latency observation, not a diagnosed deadlock or startup fix.
 
 ## Recorded result — 2026-09-10
+
+### Current prerelease retest (T1328)
+
+Per owner request, fetched the newest published prerelease,
+[Electron 45.0.0-alpha.5](https://github.com/electron/electron/releases/tag/v45.0.0-alpha.5),
+from the official release and verified its Apple Silicon archive SHA-256
+`d9c40bdfa1973d896712e2d01bbc5efa66cdef606c3c71d8eefb31fe07f6ad9d`.
+This runs Chromium 155.0.8038.2. Current official documentation still marks
+[sharedTexture import/send/receive experimental](https://www.electronjs.org/docs/latest/api/shared-texture).
+The 43.3.0 observations below are historical controls, not a claim about latest support.
+
+Use the current downloaded binary for new tests:
+
+```sh
+node experiments/native-texture-bridge/run.mjs \
+  "$PWD/.cache/electron-v45.0.0-alpha.5/runtime/Electron.app/Contents/MacOS/Electron" \
+  /opt/homebrew/bin/python3 pixels
+```
+
+Normal pixels (main/Python 34463/34512) and early release (35344/35353) each
+passed 24 frames, 24 producer acknowledgments, signed/above-one float assertions,
+exit 0 and service removal. Maximum channel error remained 0.00016276041666662966.
+The unchanged GPU-loss gate (main/GPU/Python 35209/35210/35216) still reached
+device loss and explicit renderer release without the final callback. It timed
+out with exit 1, zero acknowledgments and verified service removal. The newer
+release does not resolve this measured in-session recovery blocker.
+
+The terminal renderer-teardown diagnostic also passed on this version
+(main/Python 36528/36534): one callback-backed acknowledgment, exit 0 and service
+removal after the probe renderer was killed. This remains distinct from recovery
+with the renderer alive.
+
+### Existing backend GPU-copy API proof (T1330)
+
+The backend's registered-media path already calls `copyExternalImageToTexture`
+with a VideoFrame-compatible source. The new `copy-frame` mode tests that exact
+API shape against Python-produced IOSurfaces, rather than assuming the earlier
+`importExternalTexture` shader probe establishes the behavior of a different API.
+`copy-frame-early-release` additionally closes the renderer VideoFrame/imported
+reference immediately after submission, before waiting for test readback.
+
+On Electron 45.0.0-alpha.5, both modes passed all 24 frames and GPU-aware release
+acknowledgments: main/Python 41960/41964 and 42544/42548. Signed float samples
+`[-0.25, 0.125, 0.5, 2]` survived and maximum channel error remained
+0.00016276041666662966. Early mode reported 24 early releases. The original
+importExternalTexture control (42758/42767) also passed. All three exited 0 and
+verified service removal. Replace `pixels` in the command above with either mode.
+
+This supports reusing the existing media upload boundary with **one GPU copy**
+into graph-owned storage; it does not establish strict zero-copy. Tests cover
+64×64, opaque, sRGB-tagged BGRA8 and RGBA16F sources into RGBA16F destinations.
+They do not prove full-resolution throughput, arbitrary color spaces/alpha,
+different destination formats, Windows, or app-level frame lifecycle integration.
+Numerical graph inputs still need explicit float allocation to preserve these values.
+The actual backend module is not executed by this isolated API probe.
+
+### Actual backend and source replacement (T1331)
+
+`backend-frame` starts an owned Vite server on loopback port 5189 and loads a
+separate probe page importing the real `browserGpuHost` and `createVgpuBackend`.
+The plan registers a native VideoFrame, uploads it through registered media,
+samples it into an RGBA16F graph target, and checks `backend.readOutput` pixels.
+Readback remains a test oracle. Every frame closes renderer references immediately
+after render submission; rendering the same frame ID again must not reuse that
+closed VideoFrame. The test also exercises replacement source counters starting
+at zero, stale unregister closures, and retained output after unregistering.
+
+This found a real backend bug: frame IDs were compared without producer identity,
+so replacement sources restarting at zero kept the old image. The first native
+run (main/Python 47171/47210) completed ownership handshakes but failed pixel
+assertions, exit 2. A real-GPU unit regression reproduced old red instead of new
+blue. Registration lifetime tokens now accompany the last uploaded frame ID;
+they do not retain old producer/frame payloads. Re-registering the same source
+still skips unchanged frames.
+
+After the fix, main/Python 49167/49172 passed 24 native frames, 24 early releases,
+24 producer acknowledgments and signed float samples `[-0.25,0.125,0.5,2]`, with
+maximum error 0.00016276041666662966. Exit 0 and service removal were verified.
+The loopback Vite server is closed afterward, including failed-run paths.
+Run the normal command with final argument `backend-frame`.
+
+This is the actual backend, but still an isolated 64×64 synthetic-source test.
+There is no native-input graph node, inference model or throughput claim yet.
+
+### Actual app Syphon output (T1338–T1343, 2026-09-10)
+
+`pnpm desktop:test /absolute/path/to/Electron` now loads a command-authored test
+project through the real project-open UI, publishes its selected output, and
+checks it with an independent native Syphon client. Electron 45.0.0-alpha.5 /
+Chromium 155.0.8038.2 passed A/B/A selection with 1280×720 → 1920×1080 → 1280×720
+resizing. Three receiver frames per selection had exact red/blue top corners and
+`[0,128,0,255]` bottom corners. This checks orientation and the SDR midtone as well
+as discovery and frame delivery. All nine frames reported GPU drain. The starter
+project also passed a separate nonblank-frame run.
+
+The production-facing test path is the existing backend's extra local
+OffscreenCanvas presentation, `transferToImageBitmap()`, a direct MessagePort to
+a main-created offscreen output renderer, then Electron's shared IOSurface and
+the native Syphon publisher. The graph is not evaluated a second time. The
+SharedWorker only introduces the ports; it never receives image payloads.
+
+Two rejected approaches are recorded, not retained as fallbacks: VideoFrame is
+not exposed to SharedWorker, and Chromium's VideoFrame attachment is locked to
+its agent cluster, so direct delivery to this separate renderer fails with
+`messageerror`. Cross-process OffscreenCanvas ownership previously caused a
+Chromium invalid-client-ID termination. GPU-backed ImageBitmap has an explicit
+accelerated serialization path in the
+[exact Chromium version](https://github.com/chromium/chromium/blob/155.0.8038.2/third_party/blink/renderer/core/messaging/blink_transferable_message_mojom_traits.cc).
+That path clones the GPU image before exporting it: this is **not strict
+zero-copy**. No codec or application CPU pixel buffer is used by the transport;
+the independent receiver's small readback is a test oracle. Total copy cost and
+sustained throughput remain to be profiled.
+
+The viewer's development control is a compact SDR toggle; counters live only in
+its tooltip. A real 320px toolbar check passed at 21px height with no overlap or
+overflow. The remaining product integration is separate graph In/Out nodes,
+native input delivery, platform parity and packaging—not proof already supplied
+by this viewer control.
+
+Storage fix: pinned Syphon builds are reused after artifact integrity checks;
+compiler intermediates are discarded. Desktop smoke/export temporary profiles
+and native addons are removed after their processes finish, including failed
+runs. The persistent `.cache/electron-dev` profile is never part of that cleanup.
+
+### Historical 43.3.0 process runs
 
 **Separate-process result:** Python 3.14.6, producer PID 30200, Electron main PID
 30156, 24 frames and 24 producer release acknowledgments. Electron exited 0 with

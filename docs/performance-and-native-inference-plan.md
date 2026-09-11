@@ -4,9 +4,18 @@ Investigation and implementation record: 2026-09-10. Original baseline HEAD: `cb
 
 ## Recommended direction
 
-**T1327/T1328 development follow-up:** the actual app now runs through
+**T1349 integration promotion (2026-09-11):** the maintained host is now
+`src/desktop`, with native Syphon code/build tooling in `src/devices/native` and
+test fixtures in `src/desktop/testing`. `pnpm desktop:dev` uses the exact Electron
+dependency from the lockfile; an explicit executable remains an optional comparison
+override. Normal startup no longer imports experiments. `pnpm desktop:check` runs
+in CI; the real Mac desktop smoke covers graph input/output, loopback, resizing,
+background publication and lifecycle. This is a source-integrated development app,
+not a signed/package-ready distribution or native Python model integration.
+
+**Earlier T1327/T1328 development follow-up:** the actual app ran through
 `pnpm desktop:dev <explicit-electron-executable>`; see the
-[development-shell instructions](../experiments/electron-app/README.md).
+[development-shell instructions](../src/desktop/README.md).
 Owner requested current experimental releases: official Electron 45.0.0-alpha.5
 was downloaded and checksum-verified in the ignored worktree cache. Its app smoke
 passes WebGPU, real shared worker memory, sandbox/Node isolation, starter pixels

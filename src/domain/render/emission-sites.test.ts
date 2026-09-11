@@ -58,6 +58,9 @@ const NOT_A_PUMP_SITE = [
    * less readable to slip past a gate.
    */
   "src/examples/documents",
+  // Command-authored desktop test documents name Syphon Out as graph data.
+  // This fixture creates/serializes documents only; the real app pump remains gated.
+  "src/desktop/testing/output-fixture.ts",
   /*
    * T1162 — THE EXAMPLE CARD'S CAPABILITY VOCABULARY NAMES NODE TYPES AS DATA, and the
    * `device` tag is the row that has to name `oscOut` and `laserOut`: the tag means "this

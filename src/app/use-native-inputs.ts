@@ -25,13 +25,21 @@ export function useNativeInputs(runtime: AppRuntime, backend: LoomBackend | null
   const demanded = new Set(resolved?.order);
   const requested = requests.filter(request => demanded.has(request.nodeId) && sizes.has(request.nodeId));
   const key = JSON.stringify(requested);
-  const entries = useRef(new Map<string, { uuid: string; dispose(): void }>());
+  const entries = useRef(new Map<string, { uuid: string; dispose(): void; releaseForNavigation?(): void }>());
   const reports = useRef(new Map<string, RuntimeDiagnostic>());
   useEffect(() => {
     const owned = entries.current;
     const messages = reports.current;
     setDiagnostics([]);
-    return () => { for (const entry of owned.values()) entry.dispose(); owned.clear(); messages.clear(); };
+    const leaving = () => { for (const entry of owned.values()) entry.releaseForNavigation?.(); };
+    window.addEventListener("pagehide", leaving);
+    window.addEventListener("loom-native-input-retire", leaving);
+    return () => {
+      window.removeEventListener("pagehide", leaving);
+      window.removeEventListener("loom-native-input-retire", leaving);
+      for (const entry of owned.values()) entry.dispose();
+      owned.clear(); messages.clear();
+    };
   }, [backend, runtime.documentIdentity]);
   useEffect(() => {
     if (!backend) return;
@@ -69,7 +77,10 @@ export function useNativeInputs(runtime: AppRuntime, backend: LoomBackend | null
         report: message => { if (live) report(nodeId, message); },
       });
       const unregister = backend.registerMediaSource(mediaSourceIdFor(nodeId), input.source);
-      entries.current.set(nodeId, { uuid, dispose() { live = false; unregister(); input.dispose(); } });
+      entries.current.set(nodeId, { uuid,
+        dispose() { live = false; unregister(); input.dispose(); },
+        releaseForNavigation() { live = false; unregister(); input.releaseForNavigation(); },
+      });
     }
   }, [backend, runtime, key]);
   return { diagnostics };

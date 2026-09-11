@@ -22,6 +22,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm typecheck
+      - run: pnpm desktop:check
       # The full suite includes Dawn GPU tests. Run it locally before pushing;
       # GitHub-hosted runners do not provide the required WebGPU adapter.
       # Vite-only breakage (asset imports, CSS modules, font emission) passes

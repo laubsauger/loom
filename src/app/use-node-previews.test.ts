@@ -65,6 +65,41 @@ afterEach(() => {
 });
 
 describe("useNodePreviews (T185)", () => {
+  it.each([true, false])("previews the Syphon Out input without a sink target (connected=%s)", (connected) => {
+    const graph = graphWith("syphonOut", "sink");
+    graph.nodes["source"] = graphWith("checker", "source").nodes["source"]!;
+    if (connected) graph.edges["wire"] = {
+      id: "wire", source: { nodeId: "source", portId: "out" },
+      target: { nodeId: "sink", portId: "input" },
+    };
+    const nodeRuntime = createNodeRuntimeStore();
+    const bounds = createPreviewSlotBounds();
+    bounds.publish("sink", { x: 0, y: 0, width: 200, height: 120 });
+    const canvas = document.createElement("canvas");
+    canvas.getBoundingClientRect = () =>
+      ({ x: 0, y: 0, top: 0, left: 0, right: 400, bottom: 300, width: 400, height: 300 }) as DOMRect;
+    renderHook(() => useNodePreviews({
+      backend: fakeBackend(), canvasRef: { current: canvas }, bounds, graph,
+      registry: createNodeRegistry(allNodeDefinitions).view(),
+      compiledOutputs: [{ nodeId: "source", portId: "out", resourceId: "res:source:out",
+        resourceKind: "target", size: [1920, 1080], format: "rgba8unorm", space: "linear", temporal: false }],
+      nodeRuntime, getViewport: () => ({ x: 0, y: 0, zoom: 1 }),
+      getNodePosition: () => ({ x: 0, y: 0 }), getNodeBoxes: () => [],
+      previewFps: 20, previewLongEdge: 192, documentIdentity: "syphon-preview",
+    }));
+    vi.advanceTimersToNextFrame();
+    vi.advanceTimersByTime(150);
+    const preview = nodeRuntime.get("sink").preview;
+    if (connected) {
+      expect(preview?.output).toEqual({ nodeId: "sink", portId: SINK_TARGET_PORT });
+      expect(preview?.state.kind).toBe("live");
+      expect(preview?.facts).toEqual({ width: 1920, height: 1080, format: "rgba8unorm" });
+    } else {
+      expect(preview?.state.kind).not.toBe("live");
+    }
+    nodeRuntime.dispose();
+  });
+
   it("classifies a disconnected texture node and publishes it to the runtime channel", () => {
     const registry = createTestRegistry().view();
     const graph = graphWith("test.blur");
@@ -808,6 +843,30 @@ describe("useNodePreviews binds the PORT it asked for, not the node's first row 
 });
 
 describe("the viewer's interest pins a hidden tile (T756)", () => {
+  it("materializes a hidden, uncompiled viewer demand and withdraws it when unpinned", () => {
+    const interest = createPreviewInterestStore();
+    const set = vi.fn();
+    const nodeRuntime = createNodeRuntimeStore();
+    const canvas = document.createElement("canvas");
+    canvas.getBoundingClientRect = () => ({ x: 0, y: 0, width: 400, height: 300 }) as DOMRect;
+    renderHook(() => useNodePreviews({
+      backend: fakeBackend(), canvasRef: { current: canvas }, bounds: createPreviewSlotBounds(),
+      graph: graphWith("test.blur"), registry: createTestRegistry().view(), compiledOutputs: [],
+      nodeRuntime, interest, previewSinks: { set },
+      getViewport: () => ({ x: 0, y: 0, zoom: 1 }), getNodePosition: () => undefined,
+      getNodeBoxes: () => [], previewFps: 20, previewLongEdge: 192, documentIdentity: "demand",
+    }));
+    vi.advanceTimersToNextFrame();
+    expect(set).toHaveBeenLastCalledWith([]);
+    interest.set("n1");
+    vi.advanceTimersToNextFrame();
+    expect(set).toHaveBeenLastCalledWith([{ nodeId: "n1", portId: "out" }]);
+    interest.set(null);
+    vi.advanceTimersToNextFrame();
+    expect(set).toHaveBeenLastCalledWith([]);
+    nodeRuntime.dispose();
+  });
+
   it("requests a node with NO measured slot when the viewer presents it — as a pin, through the one path", () => {
     const registry = createTestRegistry().view();
     const graph = graphWith("test.blur");

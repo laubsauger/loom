@@ -53,13 +53,13 @@ which falsely makes the resource reusable.
 
 ## Verified native lifecycle test
 
-`experiments/native-texture-bridge/syphon-input-fixture.mm` is a test-only publisher
+`src/desktop/testing/syphon-input-fixture.mm` is a test-only publisher
 and CPU sample oracle; it is not part of production ingestion. Compile it with the
 same native flags to a separate `.node` file. Then run:
 
 ```sh
 .cache/electron-v45.0.0-alpha.5/runtime/Electron.app/Contents/MacOS/Electron \
-  experiments/native-texture-bridge/syphon-input.test.cjs \
+  src/desktop/testing/syphon-input.test.cjs \
   .cache/syphon-71351d4b484cd2d1917867f7846a5cdca724552d/syphon-input.node \
   .cache/syphon-71351d4b484cd2d1917867f7846a5cdca724552d/syphon-input-fixture.node
 ```

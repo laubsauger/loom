@@ -15,8 +15,8 @@ if (process.platform !== 'darwin' || process.arch !== 'arm64') {
 const electron = process.argv[2];
 const python = process.argv[3];
 const check = process.argv[4] ?? 'pixels';
-if (!['pixels', 'protocol', 'consumer-exit', 'producer-loss', 'renderer-loss', 'gpu-loss', 'early-release'].includes(check)) throw new Error(`Unknown check: ${check}`);
-const needsElectron = ['pixels', 'renderer-loss', 'gpu-loss', 'early-release'].includes(check);
+if (!['pixels', 'protocol', 'consumer-exit', 'producer-loss', 'renderer-loss', 'gpu-loss', 'gpu-loss-renderer-teardown', 'early-release', 'copy-frame', 'copy-frame-early-release', 'backend-frame'].includes(check)) throw new Error(`Unknown check: ${check}`);
+const needsElectron = ['pixels', 'renderer-loss', 'gpu-loss', 'gpu-loss-renderer-teardown', 'early-release', 'copy-frame', 'copy-frame-early-release', 'backend-frame'].includes(check);
 if (!electron || !python) throw new Error('Usage: node experiments/native-texture-bridge/run.mjs /path/to/Electron /absolute/path/to/python3');
 await access(electron);
 await access(python);
@@ -59,7 +59,13 @@ const startedAt = new Date().toISOString();
 console.log('NATIVE_TEXTURE_PROOF_START', JSON.stringify({ startedAt, build, service, cleanup: `launchctl bootout ${target}` }));
 checked('launchctl', ['bootstrap', domain, plist]);
 let failure;
+let server;
 try {
+  if (check === 'backend-frame') {
+    const { createServer } = await import('vite');
+    server = await createServer({ root: resolve(here, '../..'), server: { host: '127.0.0.1', port: 5189, strictPort: true } });
+    await server.listen();
+  }
   const child = spawn(needsElectron ? electron : process.execPath,
     [join(here, needsElectron ? 'main.cjs' : `${check}.cjs`)], {
     stdio: 'inherit', timeout: 90000, killSignal: 'SIGKILL',
@@ -88,6 +94,9 @@ try {
   }
 } catch (error) {
   failure = error;
+} finally {
+  try { if (server) await server.close(); }
+  catch (error) { failure = failure ? new AggregateError([failure, error], 'Run and server cleanup failed') : error; }
 }
 try {
   checked('launchctl', ['bootout', target]);
@@ -100,7 +109,7 @@ try {
   const producerLog = await readFile(log, 'utf8');
   console.log(producerLog);
   const expectedLog = check === 'consumer-exit' ? 'released=0 finished=0'
-    : ['renderer-loss', 'gpu-loss'].includes(check) ? 'released=1 finished=0' : 'released=24 finished=1';
+    : ['renderer-loss', 'gpu-loss', 'gpu-loss-renderer-teardown'].includes(check) ? 'released=1 finished=0' : 'released=24 finished=1';
   if (!failure && check !== 'producer-loss' && !producerLog.includes(expectedLog))
     throw new Error(`Missing producer shutdown proof: ${expectedLog}`);
   if (!failure && producerLog.split('PYTHON_PRODUCER pid=').length !== 2)

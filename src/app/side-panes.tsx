@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isComponentNodeType } from "@domain/components/component-type.ts";
+import { previewablePort } from "@domain/graph/previewable.ts";
 import type {
   KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
@@ -524,6 +525,22 @@ export function ViewerPane({
   // runtime because the runtime IS the loaded document (`adoptDocument`, `app.tsx`).
   const { bus, documentIdentity, invocation, registry } = useAppRuntime();
   const outputs = useMemo(() => compiled?.outputs ?? [], [compiled]);
+  // Selection is a demand, not evidence that a node is already being cooked.
+  // Keep declared preview outputs selectable while visibility prunes their GPU work.
+  const choices = useMemo(() => {
+    const refs: Array<{ nodeId: string; portId: string }> = [...outputs];
+    const keys = new Set(refs.map(outputKey));
+    for (const node of Object.values(graph.nodes)) {
+      // Instances have no output row of their own after flattening. Their compiled
+      // inner outputs remain choices; do not advertise an unresolvable instance key.
+      if (isComponentNodeType(node.type)) continue;
+      const port = previewablePort(registry.get(node.type)?.outputs ?? []);
+      if (port === undefined) continue;
+      const ref = { nodeId: node.id, portId: port.id };
+      if (!keys.has(outputKey(ref))) refs.push(ref);
+    }
+    return refs;
+  }, [graph, outputs, registry]);
 
   const sink = useMemo(() => {
     for (const output of outputs) {
@@ -564,6 +581,7 @@ export function ViewerPane({
    */
   const [pin, setPin] = useState<{ documentIdentity: string; key: string } | null>(null);
   const pinnedKey = pin !== null && pin.documentIdentity === documentIdentity ? pin.key : null;
+  const requested = choices.find((output) => outputKey(output) === pinnedKey) ?? null;
   const setPinnedKey = useCallback(
     (key: string | null) => {
       setPin(key === null ? null : { documentIdentity, key });
@@ -576,9 +594,10 @@ export function ViewerPane({
       // A pinned output the graph no longer produces must not leave the surface pointing
       // at a resource that has been freed; falling back to the sink is the safe answer.
       if (match !== undefined) return match;
+      if (requested !== null) return null; // Await materialization, not a different picture.
     }
     return sink;
-  }, [outputs, pinnedKey, sink]);
+  }, [outputs, pinnedKey, requested, sink]);
 
   /**
    * T440/§V354 — `v` points the viewer here.
@@ -589,8 +608,8 @@ export function ViewerPane({
    * after every compile, and re-registering on each one would churn the holder for no
    * reason.
    */
-  const outputsRef = useRef(outputs);
-  outputsRef.current = outputs;
+  const outputsRef = useRef(choices);
+  outputsRef.current = choices;
   useEffect(() => {
     const holder = registerViewerCommands(bus);
     const handlers = {
@@ -780,13 +799,14 @@ export function ViewerPane({
    * one thing the picture exists to show (T614/T675's refusals, honored here too).
    */
   const orbitNodeId = (selected?.nodeId ?? null) as NodeId | null;
+  const requestedNodeId = (requested?.nodeId ?? orbitNodeId) as NodeId | null;
   /* T756: publish the presented node as preview interest; clear on unmount and on
      switching away, so a closed viewer stops pinning anything. */
   useEffect(() => {
     if (interest === undefined) return;
-    interest.set(orbitNodeId);
+    interest.set(requestedNodeId);
     return () => interest.set(null);
-  }, [interest, orbitNodeId]);
+  }, [interest, requestedNodeId]);
   const orbitable =
     orbits !== undefined && orbitNodeId !== null && selected?.synthesis?.orbit !== undefined;
   /** T379: measure the selected preview's positions — the frame-content readback. */
@@ -1084,12 +1104,12 @@ export function ViewerPane({
           id="viewer-output"
           data-testid="viewer-output-select"
           className={styles.select}
-          value={selected === null ? "" : outputKey(selected)}
+          value={requested !== null ? outputKey(requested) : selected === null ? "" : outputKey(selected)}
           onChange={(event) => setPinnedKey(event.target.value === "" ? null : event.target.value)}
-          disabled={outputs.length === 0}
+          disabled={choices.length === 0}
         >
-          {outputs.length === 0 ? <option value="">no outputs</option> : null}
-          {outputs.map((output) => (
+          {choices.length === 0 ? <option value="">no outputs</option> : null}
+          {choices.map((output) => (
             <option key={outputKey(output)} value={outputKey(output)}>
               {/* T622 (§V539's boundary rule): the NAME the user gave the node (§V129:
                   the label IS the name), resolved here where the row is composed — the
@@ -1140,7 +1160,7 @@ export function ViewerPane({
             node), but a silent black rectangle is the reader-that-cannot-see pointed
             at the user: they toggled P, later pointed the viewer here, and nothing
             connects the two. No auto-enable, no prompt — the switch is named. */}
-        {selected !== null && graph.nodes[selected.nodeId]?.ui?.preview === false ? (
+        {requestedNodeId !== null && graph.nodes[requestedNodeId]?.ui?.preview === false ? (
           <p className={styles.note} data-testid="viewer-preview-off">
             Preview is off for this node (P re-enables)
           </p>

@@ -31,23 +31,29 @@ async function run() {
     fragment: { module, entryPoint: 'fragment', targets: [{ format: 'rgba16float' }] },
   });
   const target = device.createTexture({ size: [64, 64], format: 'rgba16float',
-    usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC });
+    usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST });
   const readback = device.createBuffer({ size: 64 * 64 * 8,
     usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
   const sampler = device.createSampler({ magFilter: 'nearest', minFilter: 'nearest' });
-  window.proof.receive(async (frame, { sequence, format, fault }, release) => {
+  window.proof.receive(async (frame, { sequence, format, fault, copyFrame }, release) => {
     if (frame.timestamp !== sequence) throw new Error('Wrong frame timestamp');
-    const external = device.importExternalTexture({ source: frame, colorSpace: 'srgb' });
-    const bind = device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [
-      { binding: 0, resource: external }, { binding: 1, resource: sampler },
-    ] });
     const encoder = device.createCommandEncoder();
-    const pass = encoder.beginRenderPass({ colorAttachments: [{ view: target.createView(),
-      loadOp: 'clear', storeOp: 'store', clearValue: [0, 0, 0, 0] }] });
-    pass.setPipeline(pipeline);
-    pass.setBindGroup(0, bind);
-    pass.draw(3);
-    pass.end();
+    if (copyFrame) {
+      // Exact API shape used by the app's existing registered-media boundary.
+      // This is a GPU copy into graph-owned storage, not strict zero-copy.
+      device.queue.copyExternalImageToTexture({ source: frame }, { texture: target }, { width: 64, height: 64 });
+    } else {
+      const external = device.importExternalTexture({ source: frame, colorSpace: 'srgb' });
+      const bind = device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [
+        { binding: 0, resource: external }, { binding: 1, resource: sampler },
+      ] });
+      const pass = encoder.beginRenderPass({ colorAttachments: [{ view: target.createView(),
+        loadOp: 'clear', storeOp: 'store', clearValue: [0, 0, 0, 0] }] });
+      pass.setPipeline(pipeline);
+      pass.setBindGroup(0, bind);
+      pass.draw(3);
+      pass.end();
+    }
     // Readback is the TEST ORACLE only. It is not part of native frame transport.
     encoder.copyTextureToBuffer({ texture: target }, { buffer: readback, bytesPerRow: 512 }, [64, 64]);
     device.queue.submit([encoder.finish()]);
