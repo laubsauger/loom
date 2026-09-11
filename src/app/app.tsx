@@ -1680,6 +1680,8 @@ export function App({
             range={frameRange}
             onSeek={onSeek}
             onChangeRange={onChangeRange}
+            playing={frameLoop.playing}
+            fps={projectFps(runtime.settings)}
           />
         }
         onRenderRange={onRenderRange}

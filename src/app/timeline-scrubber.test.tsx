@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactElement } from "react";
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { installDomStubs } from "@ui/testing/install-dom-stubs.ts";
 import { TooltipProvider } from "@ui/primitives/tooltip.tsx";
 import type { FrameInputs } from "@domain/types/backend.ts";
@@ -143,28 +143,71 @@ describe("scrubbing asks the transport to seek (§V170)", () => {
   });
 });
 
-describe("the playhead moves on the compositor, and only when it moved (T1239)", () => {
+describe("the playhead is a compositor animation, touched only on events (T1259)", () => {
   /**
-   * jsdom's `requestAnimationFrame` is a timer; this replaces it with a hand-cranked one so
-   * a test can run exactly N animation frames and count what each wrote. A frame-driven
-   * `left`/`width` write forces Layout + HitTest + Layerize on every frame of playback —
-   * that was the scrubber's whole cost in the idle profile — so the assertion is on the
-   * PROPERTY written, not only on the position it encodes.
+   * T1239 measured that every per-frame `style.transform` write from script costs a full
+   * compositor Update on Chromium 151, whatever the property. So the gate is on WRITES:
+   * while the transport plays, script may touch neither bar's style, and the animation
+   * may be started and re-timed only when something happened (play, pause, a seek, the
+   * loop's wrap), never on a steady frame.
+   *
+   * jsdom has no Web Animations, so each bar's `animate` hands back this fake: a clock on
+   * the test's fake timers that runs while playing, with every `currentTime` write and
+   * every start counted.
    */
-  function crankedFrames() {
-    let queued: FrameRequestCallback[] = [];
-    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
-      queued.push(callback);
-      return queued.length;
-    });
-    vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => {
-      queued = [];
-    });
+  class FakeAnimation {
+    currentTimeWrites = 0;
+    plays = 0;
+    private base = 0;
+    private startedAt: number | null = null;
+    readonly keyframes: Keyframe[];
+    readonly timing: KeyframeAnimationOptions;
+    constructor(keyframes: Keyframe[], timing: KeyframeAnimationOptions) {
+      this.keyframes = keyframes;
+      this.timing = timing;
+      made.push(this);
+    }
+    get playState(): AnimationPlayState {
+      return this.startedAt === null ? "paused" : "running";
+    }
+    get currentTime(): number {
+      return this.startedAt === null ? this.base : this.base + (Date.now() - this.startedAt);
+    }
+    set currentTime(value: number) {
+      this.currentTimeWrites += 1;
+      this.base = value;
+      if (this.startedAt !== null) this.startedAt = Date.now();
+    }
+    play(): void {
+      if (this.startedAt !== null) return;
+      this.startedAt = Date.now();
+      this.plays += 1;
+    }
+    pause(): void {
+      if (this.startedAt === null) return;
+      this.base = this.currentTime;
+      this.startedAt = null;
+    }
+    cancel(): void {}
+  }
+  let made: FakeAnimation[] = [];
+
+  const FPS = 60;
+  /** A transport that renders `start + elapsed` frames while playing, on the fake clock. */
+  function transport(start: number) {
+    let origin = Date.now();
+    let from = start;
+    let playing = true;
     return {
-      frame(): void {
-        const batch = queued;
-        queued = [];
-        for (const callback of batch) callback(0);
+      latestFrame: () =>
+        frameAt(playing ? from + Math.floor(((Date.now() - origin) * FPS) / 1000) : from),
+      seek(frame: number): void {
+        from = frame;
+        origin = Date.now();
+      },
+      pause(): void {
+        from += Math.floor(((Date.now() - origin) * FPS) / 1000);
+        playing = false;
       },
     };
   }
@@ -176,44 +219,108 @@ describe("the playhead moves on the compositor, and only when it moved (T1239)",
     return { elapsed, playhead };
   }
 
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it("positions both bars by transform, never by left or width", () => {
-    const frames = crankedFrames();
-    let frameIndex = 150;
-    mount(<TimelineScrubber latestFrame={() => frameAt(frameIndex)} range={RANGE} />);
-    frames.frame();
+  /** Counts every read of either bar's `style` — the only way script can write one. */
+  function watchStyle(): () => number {
     const { elapsed, playhead } = bars();
-    expect(elapsed.style.transform).toBe(`scaleX(${String(150 / 599)})`);
-    expect(playhead.style.transform).toBe(`translateX(${String((150 / 599) * 100)}%)`);
-    expect(elapsed.style.width).toBe("");
-    expect(playhead.style.left).toBe("");
-
-    frameIndex = 599;
-    frames.frame();
-    expect(elapsed.style.transform).toBe("scaleX(1)");
-    expect(playhead.style.transform).toBe("translateX(100%)");
-  });
-
-  it("writes nothing while the frame stands still — a paused transport costs no style", () => {
-    const frames = crankedFrames();
-    mount(<TimelineScrubber latestFrame={() => frameAt(300)} range={RANGE} />);
-    frames.frame();
-    const { elapsed, playhead } = bars();
-    const writes = vi.fn();
+    let touches = 0;
     for (const bar of [elapsed, playhead]) {
       const style = bar.style;
       vi.spyOn(bar, "style", "get").mockImplementation(() => {
-        writes();
+        touches += 1;
         return style;
       });
     }
-    frames.frame();
-    frames.frame();
-    frames.frame();
-    expect(writes).not.toHaveBeenCalled();
+    return () => touches;
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    made = [];
+    (Element.prototype as unknown as { animate: unknown }).animate = function (
+      keyframes: Keyframe[],
+      timing: KeyframeAnimationOptions,
+    ) {
+      return new FakeAnimation(keyframes, timing);
+    };
+  });
+
+  afterEach(() => {
+    delete (Element.prototype as unknown as { animate?: unknown }).animate;
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  const scrubber = (latestFrame: () => FrameInputs, playing: boolean) => (
+    <TooltipProvider>
+      <TimelineScrubber latestFrame={latestFrame} range={RANGE} playing={playing} fps={FPS} />
+    </TooltipProvider>
+  );
+
+  it("runs each bar as one animation over the range, started once, with no style write while it plays", () => {
+    const clock = transport(150);
+    render(scrubber(clock.latestFrame, true));
+    const touches = watchStyle();
+    expect(made).toHaveLength(2);
+    const [elapsed, playhead] = made as [FakeAnimation, FakeAnimation];
+    // The whole range, once per lap, at the timeline's own rate: 599 frame steps at 60 fps.
+    expect(playhead.timing.duration).toBeCloseTo((599 / FPS) * 1000, 6);
+    expect(playhead.timing.iterations).toBe(Infinity);
+    expect(playhead.keyframes).toEqual([{ transform: "translateX(0%)" }, { transform: "translateX(100%)" }]);
+    expect(elapsed.keyframes).toEqual([{ transform: "scaleX(0)" }, { transform: "scaleX(1)" }]);
+
+    act(() => {
+      vi.advanceTimersByTime(3000);
+    });
+    expect(touches(), "script wrote a bar's style during playback").toBe(0);
+    for (const animation of made) {
+      expect(animation.plays).toBe(1);
+      // Placed on frame 150 once, then left to the compositor for three seconds.
+      expect(animation.currentTimeWrites).toBe(1);
+      expect(animation.currentTime).toBeCloseTo(((150 + 180) / FPS) * 1000, -1);
+    }
+  });
+
+  it("re-times the animation when the rendered frame jumps — a seek — and not again after", () => {
+    const clock = transport(150);
+    render(scrubber(clock.latestFrame, true));
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    clock.seek(30);
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+    for (const animation of made) expect(animation.currentTimeWrites).toBe(2);
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+    for (const animation of made) {
+      expect(animation.currentTimeWrites).toBe(2);
+      expect(animation.plays).toBe(1);
+    }
+  });
+
+  it("pauses with the transport, and a still playhead writes nothing at all", () => {
+    const clock = transport(150);
+    const { rerender } = render(scrubber(clock.latestFrame, true));
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    clock.pause();
+    rerender(scrubber(clock.latestFrame, false));
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+    const touches = watchStyle();
+    const writes = made.map((animation) => animation.currentTimeWrites);
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+    expect(touches()).toBe(0);
+    made.forEach((animation, i) => {
+      expect(animation.playState).toBe("paused");
+      expect(animation.currentTimeWrites).toBe(writes[i]);
+    });
   });
 });
 

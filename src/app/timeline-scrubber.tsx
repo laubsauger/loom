@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import type { FrameInputs } from "@domain/types/backend.ts";
 import type { FrameRange } from "@domain/types/graph.ts";
-import { frameRangeLength } from "@domain/types/graph.ts";
+import { frameRangeLength, projectFps } from "@domain/types/graph.ts";
 import { Tooltip } from "@ui/primitives/tooltip.tsx";
 import { cx } from "@ui/cx.ts";
 import styles from "./timeline-scrubber.module.css";
@@ -48,6 +48,16 @@ import styles from "./timeline-scrubber.module.css";
 export const SCRUBBER_INTERVAL_MS = 100;
 
 /**
+ * T1259 — how far the compositor's playhead may drift from the RENDERED frame before it is
+ * put back, in frames. Playing, 1.5: the 10 Hz sample lags the frame it reads by up to one
+ * frame, and the loop's wrap adds one frame a lap, so a tolerance under 1 would re-sync on
+ * every sample and a tolerance of several would let a seek go unnoticed. Paused, 0.5: a
+ * still playhead must sit on its frame.
+ */
+const DRIFT_PLAYING_FRAMES = 1.5;
+const DRIFT_PAUSED_FRAMES = 0.5;
+
+/**
  * Where a frame sits along the track, as 0..1.
  *
  * Pure and exported because it is the part with an off-by-one in it, and a jsdom test
@@ -79,6 +89,10 @@ export interface TimelineScrubberProps {
   readonly onSeek?: ((frameIndex: number) => void) | undefined;
   /** Writes `frameRange` through `project.setSettings`. Absent = the ends are read-only. */
   readonly onChangeRange?: ((range: FrameRange) => void) | undefined;
+  /** Whether the transport is playing (T1259): only then does the compositor move the playhead. */
+  readonly playing?: boolean | undefined;
+  /** The timeline's frame rate, which is the speed the compositor runs the playhead at (T1259). */
+  readonly fps?: number | undefined;
   readonly intervalMs?: number;
 }
 
@@ -87,12 +101,14 @@ export function TimelineScrubber({
   range,
   onSeek,
   onChangeRange,
+  playing = false,
+  fps,
   intervalMs = SCRUBBER_INTERVAL_MS,
 }: TimelineScrubberProps) {
   /**
    * The frame the READOUT of this strip reports — `aria-valuenow` and the keyboard
    * handler's starting point. Sampled at 10 Hz (§V16). The PLAYHEAD does not come from
-   * here; see `paint` below.
+   * here; see the animations below.
    */
   const [frameIndex, setFrameIndex] = useState<number | null>(null);
   const trackRef = useRef<HTMLDivElement | null>(null);
@@ -100,70 +116,100 @@ export function TimelineScrubber({
   const playheadRef = useRef<HTMLDivElement | null>(null);
   /** Where the pointer is during a drag, as a fraction. Null when nobody is dragging. */
   const dragRef = useRef<number | null>(null);
-  // Read inside the paint loop, which must never be rebuilt to pick up a new range.
+
+  /**
+   * T1259 — THE PLAYHEAD IS A COMPOSITOR ANIMATION, NOT A SCRIPT WRITE PER FRAME.
+   *
+   * T456 made the playhead move on the display's clock instead of a 10 Hz sample, and
+   * T1239 made those per-frame writes transforms instead of `left`/`width`. That was still
+   * a SCRIPT write every animation frame, and T1239 measured what one costs on Chromium
+   * 151: a full compositor Update, about 0.5 ms, with Layerize at 249–370 ms per 5 s of
+   * idle playback. `will-change` and a lone `translateX` did not change it; the write
+   * itself is the cost.
+   *
+   * So each bar runs ONE looping Web Animation over the range, and the compositor moves it.
+   * Script touches it only on EVENTS: play and pause, a change of range or rate (a new
+   * animation), a drag (`currentTime` follows the pointer), and a drift of more than
+   * `DRIFT_PLAYING_FRAMES` between the animation and the frame that was actually RENDERED
+   * (§V169). A drift is a seek, a step, or the loop's wrap, which lands once per lap
+   * because the out point is shown for a frame before the in point. The check runs on
+   * the readout's 10 Hz tick (§V16). No style property is written while it plays, and
+   * none while it stands still.
+   */
+  const animationsRef = useRef<readonly Animation[]>([]);
+  // Read inside the sync, which must not be rebuilt on every render to pick these up.
   const rangeRef = useRef(range);
   rangeRef.current = range;
+  const playingRef = useRef(playing);
+  playingRef.current = playing;
+  const rate = projectFps(fps === undefined ? {} : { fps });
+  const rateRef = useRef(rate);
+  rateRef.current = rate;
+  const durationMs = (Math.max(frameRangeLength(range) - 1, 1) / rate) * 1000;
+  const durationRef = useRef(durationMs);
+  durationRef.current = durationMs;
+
+  const sync = useCallback((): void => {
+    const animations = animationsRef.current;
+    if (animations.length === 0) return;
+    const duration = durationRef.current;
+    const dragging = dragRef.current;
+    let target: number;
+    if (dragging !== null) {
+      target = dragging * duration;
+    } else {
+      const frame = latestFrame();
+      if (frame === null) return;
+      target = fractionOfRange(rangeRef.current, frame.frame.frameIndex) * duration;
+    }
+    const run = playingRef.current && dragging === null;
+    const tolerance = (run ? DRIFT_PLAYING_FRAMES : DRIFT_PAUSED_FRAMES) * (1000 / rateRef.current);
+    for (const animation of animations) {
+      if (!run && animation.playState === "running") animation.pause();
+      const at = Number(animation.currentTime ?? 0) % duration;
+      if (Math.abs(at - target) > tolerance) animation.currentTime = target;
+      if (run && animation.playState !== "running") animation.play();
+    }
+  }, [latestFrame]);
+
+  useEffect(() => {
+    const elapsed = elapsedRef.current;
+    const playhead = playheadRef.current;
+    if (elapsed === null || playhead === null || typeof playhead.animate !== "function") return;
+    const timing: KeyframeAnimationOptions = {
+      duration: durationMs,
+      iterations: Infinity,
+      easing: "linear",
+      fill: "both",
+    };
+    const animations = [
+      elapsed.animate([{ transform: "scaleX(0)" }, { transform: "scaleX(1)" }], timing),
+      playhead.animate([{ transform: "translateX(0%)" }, { transform: "translateX(100%)" }], timing),
+    ];
+    for (const animation of animations) animation.pause();
+    animationsRef.current = animations;
+    sync();
+    return () => {
+      for (const animation of animations) animation.cancel();
+      animationsRef.current = [];
+    };
+  }, [durationMs, sync]);
+
+  // Play and pause land at once, not on the next sample.
+  useEffect(() => {
+    sync();
+  }, [playing, sync]);
 
   useEffect(() => {
     const tick = () => {
       const frame = latestFrame();
       if (frame !== null) setFrameIndex(frame.frame.frameIndex);
+      sync();
     };
     tick();
     const timer = setInterval(tick, intervalMs);
     return () => clearInterval(timer);
-  }, [intervalMs, latestFrame]);
-
-  /**
-   * T456 — the playhead moves on the DISPLAY's clock, not on the readout's (§V16).
-   *
-   * The owner reported forward playback as "steppy" and it was: the playhead was
-   * positioned from the 10 Hz sample above, so a marker crossing a 500px track over ten
-   * seconds jumped five pixels at a time, ten times a second. Ten discrete positions per
-   * second is below anything the eye reads as motion — that is arithmetic, not taste, and
-   * no amount of easing fixes a sampling rate.
-   *
-   * §V16 is not bent to fix it. Its rule is that per-frame data must not enter the
-   * document store or re-render the tree, and neither happens here: this writes two CSS
-   * properties on two elements it owns, with no React state and no subscription, which is
-   * the same escape the viewer's canvas sizing takes. React never writes these two
-   * properties, so there is nothing for the two rates to fight over.
-   *
-   * The frame index still comes from `latestFrame()` — the frame that was actually
-   * RENDERED (§V169). This reads it more often; it does not read a different clock, and a
-   * stalled loop leaves the playhead exactly where the last real frame put it.
-   *
-   * T1239 — the two writes are TRANSFORMS, and they happen only when the fraction moved.
-   * They used to be `style.left` and `style.width`, which are layout properties: every
-   * animation frame invalidated layout for the strip, and the profile showed Layout +
-   * HitTest + Layerize on every frame of idle playback — the scrubber alone was two thirds
-   * of the Layout events per second. `translateX` / `scaleX` are composited without a
-   * layout pass, and a paused transport writes nothing at all.
-   */
-  useEffect(() => {
-    let handle = 0;
-    let painted: number | null = null;
-    const paint = (): void => {
-      handle = requestAnimationFrame(paint);
-      const dragging = dragRef.current;
-      let fraction = dragging;
-      if (fraction === null) {
-        const frame = latestFrame();
-        if (frame === null) return;
-        fraction = fractionOfRange(rangeRef.current, frame.frame.frameIndex);
-      }
-      if (fraction === painted) return;
-      painted = fraction;
-      if (elapsedRef.current !== null) {
-        elapsedRef.current.style.transform = `scaleX(${String(fraction)})`;
-      }
-      if (playheadRef.current !== null) {
-        playheadRef.current.style.transform = `translateX(${String(fraction * 100)}%)`;
-      }
-    };
-    handle = requestAnimationFrame(paint);
-    return () => cancelAnimationFrame(handle);
-  }, [latestFrame]);
+  }, [intervalMs, latestFrame, sync]);
 
   const fractionAt = useCallback((clientX: number): number => {
     const track = trackRef.current;
@@ -179,16 +225,18 @@ export function TimelineScrubber({
       event.preventDefault();
       event.currentTarget.setPointerCapture(event.pointerId);
       dragRef.current = fractionAt(event.clientX);
+      sync();
     },
-    [fractionAt, onSeek],
+    [fractionAt, onSeek, sync],
   );
 
   const onPointerMove = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
       if (dragRef.current === null) return;
       dragRef.current = fractionAt(event.clientX);
+      sync();
     },
-    [fractionAt],
+    [fractionAt, sync],
   );
 
   const endDrag = useCallback(
@@ -196,7 +244,8 @@ export function TimelineScrubber({
       if (dragRef.current === null || onSeek === undefined) return;
       const fraction = fractionAt(event.clientX);
       dragRef.current = null;
-      // ONE seek per gesture (§V170) — see the note at the top of the file.
+      // ONE seek per gesture (§V170) — see the note at the top of the file. The playhead
+      // re-syncs to the replayed frame on the next sample.
       onSeek(frameAtFraction(range, fraction));
     },
     [fractionAt, onSeek, range],
@@ -251,8 +300,8 @@ export function TimelineScrubber({
             onSeek(next);
           }}
         >
-          {/* Positioned ONLY by `paint` above — React must not write these, or every
-              re-render would snap the playhead back to a 10 Hz sample (T456). */}
+          {/* Positioned ONLY by their Web Animations (T1259) — React must not write a style
+              on these, or it would fight the compositor for the transform. */}
           <div ref={elapsedRef} className={styles.elapsed} />
           <div ref={playheadRef} className={styles.playhead} />
         </div>
