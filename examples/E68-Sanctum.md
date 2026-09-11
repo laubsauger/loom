@@ -99,6 +99,35 @@ fixed step count through a volume bands; jittering removes the bands, and a jitt
 changed every frame would turn them into boiling noise instead. The dither is grain, never
 flicker.
 
+## The floor is the second march, and it is the only expensive idea here
+
+Everything else in this piece is a lookup. The reflection is a whole second ray, and it is
+what the original 25–35 ms estimate was really pricing. It runs on a third of the primary's
+steps, over a shorter reach, with a distance fade — not a corner cut but what a reflection
+can afford to be, because the eye checks a silhouette against the thing above it and
+forgives everything else.
+
+**A missed reflected ray is not black.** Most floor pixels reflect a *gap* between columns,
+so "nothing hit" is the common case rather than the edge one; returning zero there made the
+first version invisible. A ray that leaves the colonnade is looking at the lit end of the
+hall, and a wet floor shows exactly that.
+
+`polish` at 0 removes the march entirely rather than multiplying its result by zero — a
+branch the whole wavefront takes together on a flat floor, and the difference between "this
+idea is off" and "this idea is free".
+
+## ⚑ Every still before stage 4 was upside down
+
+The camera basis used `cross(right, forward)` for its up vector, which points **down**. The
+image was vertically flipped from the first line of this shader, and it survived three
+stages and a dozen renders because a symmetric hall of eroded stone looks almost the same
+either way up in the dark: the vault and the floor are the same material, and neither had
+anything on it that says which way gravity goes.
+
+What exposed it was the floor reflection appearing along the **top** edge of the frame. The
+reflection was correct; the camera was not — and the bug was only visible once something in
+the picture knew which surface it belonged to.
+
 ## What this file does not have
 
 It is a marcher, so it owns its own shading. That means **none of the scene family's PBR material** — none of the
@@ -121,6 +150,7 @@ means over 240 of 300 frames rather than medians, because Dawn quantizes timesta
 | 1 | the bare march: stone, erosion, one key | **2.94 ms** |
 | 2 | the inlay, its channels and its spill | **3.57 ms** |
 | 3 | the dust: light visible in the air, and the shaft | **3.77 ms** |
+| 4 | the floor reflection: a second march | **5.51 ms** |
 
 The estimate that shaped the decision to build this was 25–35 ms. It was an estimate, and
 nothing had run it. The stages are measured separately and reported as each lands precisely

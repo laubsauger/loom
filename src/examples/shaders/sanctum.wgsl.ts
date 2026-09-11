@@ -54,7 +54,7 @@ ${SHARED_UNIFORMS_WGSL}
 struct Params {
   dollySpeed: f32,    // @default 0.55  metres a second the eye travels down the nave, forever — the whole camera move
   eyeHeight: f32,     // @default 1.62  the eye above the floor, metres
-  pitch: f32,         // @default -2  degrees the view tilts: negative looks slightly down the floor
+  pitch: f32,         // @default -7  degrees the view tilts: negative looks slightly down the floor
   lens: f32,          // @default 1.7  focal length — long, so the colonnade stacks and compresses
   bay: f32,           // @default 4.4  metres between column centres down the nave
   aisle: f32,         // @default 3.6  metres from the nave's axis to a column's centre
@@ -82,6 +82,9 @@ struct Params {
   dustSteps: f32,     // @default 22  volumetric samples along the ray, and the stage's whole cost
   dustFloor: f32,     // @default 2.6  metres over which the dust thins with height: it settles
   shaft: f32,         // @default 0.55  strength of the beam through the doorway, the one light that comes from outside
+  polish: f32,        // @default 0.55  how much of the floor is still polished enough to reflect — 0 turns the second march off entirely
+  reflectSteps: f32,  // @default 34  march iterations for the REFLECTED ray: a fraction of the primary's, because a reflection may be approximate and a silhouette may not
+  reflectFade: f32,   // @default 12  metres over which the reflection fades with distance — near the eye it is a mirror, far away it is a sheen
   steps: f32,         // @default 96  march iterations — the frame budget, stated as a number
 };
 
@@ -327,6 +330,57 @@ fn dustAlong(eye: vec3f, dir: vec3f, far: f32, pixel: vec2f) -> vec3f {
   return accumulated * (params.dust * stride);
 }
 
+/**
+ * THE FLOOR REFLECTION — the only idea in this piece that is a SECOND MARCH rather than a
+ * lookup, and the one the original 25–35 ms estimate was really pricing.
+ *
+ * It gets a deliberately smaller budget than the primary ray: a third of the steps, a
+ * shorter reach, and a distance fade. That is not a corner cut, it is what a reflection
+ * can afford to be — the eye checks a silhouette against the thing above it and forgives
+ * everything else, so precision spent past the first few metres buys nothing anybody sees.
+ *
+ * It only runs where the floor is still polished, and 'polish' at 0 removes the march
+ * entirely rather than multiplying its result by zero: a branch the whole wavefront takes
+ * together on a flat floor, and the difference between "this idea is off" and "this idea is
+ * free".
+ */
+fn reflectionAt(hitPoint: vec3f, n: vec3f, viewDir: vec3f) -> vec3f {
+  let dir = reflect(viewDir, n);
+  // Upward only: the floor reflects the hall, never the floor.
+  if (dir.y <= 0.02) { return vec3f(0.0); }
+  let count = i32(clamp(params.reflectSteps, 4.0, 96.0));
+  let reach = max(params.reflectFade, 0.5) * 2.0;
+  var travelled = 0.08;
+  var found = false;
+  for (var i = 0; i < count; i = i + 1) {
+    let p = hitPoint + dir * travelled;
+    let d = sceneAt(p);
+    if (d < SURFACE * 2.0) { found = true; break; }
+    travelled = travelled + d * 0.9;
+    if (travelled > reach) { break; }
+  }
+  /* A MISS IS NOT BLACK. A ray that leaves the colonnade without hitting anything is
+     looking at the lit end of the hall, and a wet floor shows exactly that — the doorway
+     and the haze above it. Returning zero here is what made the first version invisible:
+     most floor pixels reflect a gap between columns, so "nothing hit" is the common case
+     rather than the edge one. */
+  if (!found) {
+    let toward = smoothstep(0.0, 0.5, dir.z);
+    return (params.fogColor.rgb * 0.8) + (params.keyColor.rgb * params.shaft * 0.5 * toward);
+  }
+  let p = hitPoint + dir * travelled;
+  /* The reflected hit is shaded by the INLAY ALONE — its own emission and its spill. The
+     key is a directional light from a doorway the reflected ray cannot see past, and the
+     ambient term would only wash the reflection toward the stone's own grey. What a wet
+     floor shows is the bright things, which here means the writing. */
+  let channel = inlayAt(p);
+  let spill = inlaySpillAt(p) * params.inlaySpill * 0.4;
+  let colour = (params.inlayColor.rgb * params.inlayEmission * channel)
+    + (params.stoneColor.rgb * params.inlayColor.rgb * spill);
+  // Near the eye it is a mirror, far away a sheen.
+  return colour * (1.0 - smoothstep(0.0, max(params.reflectFade, 0.5), travelled));
+}
+
 @fragment
 fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   let aspect = 16.0 / 9.0;
@@ -340,7 +394,12 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   let tilt = radians(params.pitch);
   let forward = normalize(vec3f(0.0, sin(tilt), cos(tilt)));
   let right = vec3f(1.0, 0.0, 0.0);
-  let up = cross(right, forward);
+  /* ⚑ cross(forward, right), NOT cross(right, forward). The other order gives a vector
+     pointing DOWN, which flips the image vertically — and a symmetric dark hall hides that
+     almost perfectly: every still through stage 3 was upside down and read fine, because a
+     vault and a floor of the same eroded stone look alike in the dark. What exposed it was
+     the floor REFLECTION appearing along the top edge of the frame. */
+  let up = cross(forward, right);
   let dir = normalize((right * ndc.x) + (up * ndc.y) + (forward * params.lens));
 
   var travelled = 0.0;
@@ -378,8 +437,21 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
     let lit = (params.stoneColor.rgb * ((params.keyColor.rgb * params.keyIntensity * lambert) + fill + bounced)) + emission;
     // Aerial perspective: exponential in depth, which is also what lets the march stop
     // early without a visible wall of nothing.
+    /* The floor, and only the floor: a surface whose normal points up is the one the hall
+       is standing on. A Fresnel weight on top, so the reflection arrives at a grazing view
+       the way it does on wet stone and not head-on like a mirror. */
+    var reflected = vec3f(0.0);
+    /* The FLOOR, and the test is position as well as orientation. A normal pointing up is
+       not enough: the eroded vault has pockets whose local normals point any way at all, so
+       an orientation-only test put reflected glyphs on the CEILING. The hall stands on
+       exactly one surface and it is at y = 0. */
+    if (params.polish > 0.001 && n.y > 0.75 && p.y < 0.6) {
+      let fresnel = pow(1.0 - max(dot(n, -dir), 0.0), 4.0);
+      let weight = params.polish * mix(0.12, 1.0, fresnel);
+      reflected = reflectionAt(p, n, dir) * weight;
+    }
     let haze = 1.0 - exp(-travelled * params.fog);
-    colour = mix(lit, params.fogColor.rgb, haze);
+    colour = mix(lit + reflected, params.fogColor.rgb, haze);
   }
   /* The dust is ADDED over whatever the ray found, surface or nothing: light in the air is
      in front of the thing behind it, not mixed with it. */
