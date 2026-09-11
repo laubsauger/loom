@@ -1,0 +1,145 @@
+{
+  "assets": [],
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e-sky-temple": {
+        "id": "e-sky-temple",
+        "source": {
+          "nodeId": "sky",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "temple",
+          "portId": "input"
+        }
+      },
+      "e-temple-out": {
+        "id": "e-temple-out",
+        "source": {
+          "nodeId": "temple",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "label": "out1",
+        "parameters": {
+          "toneMap": "filmic"
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "type": "output"
+      },
+      "sky": {
+        "definitionVersion": 1,
+        "id": "sky",
+        "label": "sky1",
+        "parameters": {
+          "color": [
+            0,
+            0,
+            0,
+            1
+          ]
+        },
+        "position": {
+          "x": -600,
+          "y": 0
+        },
+        "type": "solid"
+      },
+      "temple": {
+        "definitionVersion": 1,
+        "id": "temple",
+        "label": "temple1",
+        "parameters": {
+          "aisle": 3.6,
+          "ambient": 0.16,
+          "bay": 4.4,
+          "ceiling": 7.2,
+          "columnFlare": 0.22,
+          "columnRadius": 0.62,
+          "dollySpeed": 0.55,
+          "erosion": 0.115,
+          "erosionBands": 0.62,
+          "erosionScale": 4.6,
+          "exposure": 1,
+          "eyeHeight": 1.62,
+          "fog": 0.055,
+          "fogColor": [
+            0.045,
+            0.05,
+            0.062,
+            1
+          ],
+          "inlayColor": [
+            1,
+            0.62,
+            0.22,
+            1
+          ],
+          "inlayDensity": 0.1,
+          "inlayDepth": 0.035,
+          "inlayEmission": 1.5,
+          "inlayRows": 0.46,
+          "inlaySpill": 4.2,
+          "inlayWidth": 0.1,
+          "keyColor": [
+            0.52,
+            0.62,
+            0.78,
+            1
+          ],
+          "keyIntensity": 1.35,
+          "lens": 1.7,
+          "pitch": -2,
+          "source": "// @use hash\nstruct SharedFrame {\n  time: f32,\n  deltaTime: f32,\n  frameIndex: f32,\n  randomSeed: f32,\n  wallTime: f32,\n  wallDelta: f32,\n  absTime: f32,\n  absFrame: f32,\n  resolution: vec2f,\n  pointer: vec4f,\n};\nstruct Params {\n  dollySpeed: f32,    // @default 0.55  metres a second the eye travels down the nave, forever — the whole camera move\n  eyeHeight: f32,     // @default 1.62  the eye above the floor, metres\n  pitch: f32,         // @default -2  degrees the view tilts: negative looks slightly down the floor\n  lens: f32,          // @default 1.7  focal length — long, so the colonnade stacks and compresses\n  bay: f32,           // @default 4.4  metres between column centres down the nave\n  aisle: f32,         // @default 3.6  metres from the nave's axis to a column's centre\n  columnRadius: f32,  // @default 0.62  column radius at the base, metres\n  columnFlare: f32,   // @default 0.22  how much wider the column grows toward the ceiling\n  ceiling: f32,       // @default 7.2  metres to the vault\n  erosion: f32,       // @default 0.115  how deeply time has eaten the stone, metres of displacement\n  erosionScale: f32,  // @default 4.6  size of the bites — higher is finer damage\n  erosionBands: f32,  // @default 0.62  how much the damage varies in HEIGHT bands rather than eating evenly: 0 is uniform decay, 1 is courses eaten and courses intact\n  inlayRows: f32,     // @default 0.46  metres between glyph rows on a column\n  inlayDepth: f32,    // @default 0.035  how deep the channels are cut, metres\n  inlayWidth: f32,    // @default 0.1  the lit share of a row's pitch\n  inlayColor: vec4f,  // @default [1, 0.62, 0.22, 1]  the powered inlay, warm against the cold key\n  inlayEmission: f32, // @default 1.5  how hard the channels burn\n  inlaySpill: f32,    // @default 4.2  how hard the channels light the stone around them — this is the hall's PRIMARY light, not a decoration on it\n  inlayDensity: f32,  // @default 0.1  share of rows that carry writing at all — most of a wall is blank stone\n  stoneColor: vec4f,  // @default [0.29, 0.27, 0.25, 1]  the stone under the key\n  keyColor: vec4f,    // @default [0.52, 0.62, 0.78, 1]  the cold light from the doorway\n  keyIntensity: f32,  // @default 1.35  how hard that light drives\n  ambient: f32,       // @default 0.16  fill, so a wall facing away is not a silhouette — warmed toward the inlay, because in a buried hall the only thing bouncing IS the inlay\n  fog: f32,           // @default 0.055  depth haze — the aerial perspective, and the cost lever\n  fogColor: vec4f,    // @default [0.045, 0.05, 0.062, 1]  what distance converges to\n  exposure: f32,      // @default 1  master gain before the display transform\n  steps: f32,         // @default 96  march iterations — the frame budget, stated as a number\n};\n\n@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n@group(0) @binding(2) var<uniform> frameU: SharedFrame;\n@group(0) @binding(3) var<uniform> params: Params;\n\nconst MAX_DISTANCE: f32 = 70.0;\nconst SURFACE: f32 = 0.0025;\n/* One seed for the stone, so the same erosion replays everywhere (§V45). */\nconst STONE_SEED: u32 = 68u;\n/* A second seed, so re-cutting the glyphs cannot move the stone under them. */\nconst GLYPH_SEED: u32 = 690u;\n\n/* Value noise on the integer lattice — the hashes come from the shared 'hash' module, so\n   this shader declares none of its own (T1286). */\nfn valueNoise(p: vec3f) -> f32 {\n  let i = floor(p);\n  let f = fract(p);\n  let u = f * f * (3.0 - 2.0 * f);\n  let c = vec3i(i);\n  let n000 = unitFloat(hash3i(c + vec3i(0, 0, 0), STONE_SEED));\n  let n100 = unitFloat(hash3i(c + vec3i(1, 0, 0), STONE_SEED));\n  let n010 = unitFloat(hash3i(c + vec3i(0, 1, 0), STONE_SEED));\n  let n110 = unitFloat(hash3i(c + vec3i(1, 1, 0), STONE_SEED));\n  let n001 = unitFloat(hash3i(c + vec3i(0, 0, 1), STONE_SEED));\n  let n101 = unitFloat(hash3i(c + vec3i(1, 0, 1), STONE_SEED));\n  let n011 = unitFloat(hash3i(c + vec3i(0, 1, 1), STONE_SEED));\n  let n111 = unitFloat(hash3i(c + vec3i(1, 1, 1), STONE_SEED));\n  let x00 = mix(n000, n100, u.x);\n  let x10 = mix(n010, n110, u.x);\n  let x01 = mix(n001, n101, u.x);\n  let x11 = mix(n011, n111, u.x);\n  return mix(mix(x00, x10, u.y), mix(x01, x11, u.y), u.z) * 2.0 - 1.0;\n}\n\n/* Two octaves, not five: the erosion is a PROFILE on a surface the march has to find, and\n   every octave is paid at every step of every ray. The fine damage comes from the second\n   octave's scale rather than from a third one. */\nfn erosionAt(p: vec3f) -> f32 {\n  let s = params.erosionScale;\n  let bite = (valueNoise(p * s) * 0.62) + (valueNoise(p * s * 2.7) * 0.31);\n  /* ⚑ THE DAMAGE IS BANDED IN HEIGHT, and that is what separates stone from wax. An even\n     displacement subtracted from a cylinder reads as something POURED — the eye recognises\n     a melted candle — because real decay does not attack a column uniformly: it eats the\n     soft courses and leaves the hard ones, so a weathered pillar is chewed in bands with\n     intact stone between them. One extra noise on 'p.y' alone buys that, and it costs one\n     lookup rather than an octave. */\n  let course = valueNoise(vec3f(0.0, p.y * 1.7, 0.0)) * 0.5 + 0.5;\n  let band = mix(1.0, smoothstep(0.18, 0.72, course), clamp(params.erosionBands, 0.0, 1.0));\n  return bite * band;\n}\n\n/**\n * THE INLAY — channels cut into the stone, and still powered.\n *\n * Rows of glyph channels around the columns and along the walls, spaced by 'inlayRows'.\n * Which rows are lit is an integer hash of the row index and the bay, so a column is not a\n * repeating decal: the same pillar geometry carries a different sentence in every bay, and\n * it is the same figure on every device and every replay (§V45).\n *\n * ⚑ PROCEDURAL, NOT THE 'text' NODE. §V403: the text node renders BLACK headless, so a\n * glyph row made of it would be invisible in every thumbnail, every claim and every\n * headless render — which is to say in every picture anybody automated ever sees.\n *\n * Returns 0..1 where 1 is the middle of a lit channel.\n */\nfn inlayAt(p: vec3f) -> f32 {\n  let pitch = max(params.inlayRows, 0.05);\n  let row = floor(p.y / pitch);\n  let bayIndex = floor(p.z / max(params.bay, 0.1));\n  /* ⚑ MOST OF THE STONE IS BLANK, and that is the whole difference between writing and a\n     circuit board. The first cut lit two thirds of the rows and the hall read as a lava\n     temple: an inlay is remarkable because the surface around it is not. */\n  let live = unitFloat(hash3i(vec3i(i32(row), i32(bayIndex), 0), GLYPH_SEED));\n  if (live > clamp(params.inlayDensity, 0.0, 1.0)) { return 0.0; }\n  /* ⚑ AND NOT ON THE FLOOR. The rows are spaced in HEIGHT, so a flat floor sits in row\n     zero everywhere and the glyph hash tiles it like a grid — which is exactly what the\n     first cut did. The channels belong to what stands up. */\n  if (p.y < 0.35) { return 0.0; }\n  let withinRow = abs(fract(p.y / pitch) - 0.5) * 2.0;\n  let lit = 1.0 - smoothstep(1.0 - clamp(params.inlayWidth, 0.02, 0.9), 1.0, 1.0 - withinRow);\n  // And the row is BROKEN along its length — glyphs, not a neon tube.\n  let glyph = unitFloat(hash3i(vec3i(i32(floor(p.z * 5.0)), i32(row), i32(floor(p.x * 5.0))), GLYPH_SEED));\n  /* A second, finer division INSIDE each mark, so a glyph is a figure with parts rather\n     than a lit rectangle. The first cut had only the coarse hash and every mark read as a\n     window; this is the difference between writing and lighting. */\n  let stroke = unitFloat(hash3i(vec3i(i32(floor(p.z * 17.0)), i32(floor(p.y * 23.0)), i32(floor(p.x * 17.0))), GLYPH_SEED));\n  return lit * step(0.66, glyph) * step(0.3, stroke);\n}\n\n/**\n * THE SPILL — the light that LEAVES the channel, and it took two wrong versions to get here.\n *\n * ⚑ VERSION ONE sampled the inlay field at 'p + n * 0.06', along the SURFACE NORMAL. That\n * moves off the surface into the air, where the field is whatever it was directly\n * underneath — so a lit point read lit, a dark point read dark, and the \"spill\" was the\n * channel's own value again.\n *\n * ⚑ VERSION TWO sampled four offsets in the TANGENT PLANE, which is the right direction to\n * move but the wrong thing to sample. The glyph hash is keyed on cells about 0.2 m across,\n * so a 0.12 m tap usually lands in the SAME cell and returns the same value: a blur whose\n * radius is smaller than its subject is not a blur. The stone around a glyph stayed black\n * in both versions and the inlay read as painted on.\n *\n * What works is not a blur of the channel at all — it is a SEPARATE, WIDER FIELD that shares\n * the channel's structure but not its detail: the same row test, the same coarse mark, and\n * a soft window several times the channel's own width, with the stroke hash dropped\n * entirely. It answers \"is there writing near here\", which is what a glow is. One hash pair\n * rather than four field evaluations, so it is also the cheaper of the two wrong versions.\n */\nfn inlaySpillAt(p: vec3f) -> f32 {\n  if (p.y < 0.2) { return 0.0; }\n  let pitch = max(params.inlayRows, 0.05);\n  let row = floor(p.y / pitch);\n  let bayIndex = floor(p.z / max(params.bay, 0.1));\n  let live = unitFloat(hash3i(vec3i(i32(row), i32(bayIndex), 0), GLYPH_SEED));\n  if (live > clamp(params.inlayDensity, 0.0, 1.0)) { return 0.0; }\n  // A window several times the channel's width, falling off smoothly: the pool of light.\n  let withinRow = abs(fract(p.y / pitch) - 0.5) * 2.0;\n  let pool = 1.0 - smoothstep(0.0, 0.85, withinRow);\n  // The coarse mark only — a glow does not carry the strokes of the glyph making it.\n  let glyph = unitFloat(hash3i(vec3i(i32(floor(p.z * 5.0)), i32(row), i32(floor(p.x * 5.0))), GLYPH_SEED));\n  return pool * smoothstep(0.35, 0.72, glyph);\n}\n\nfn sdBox(p: vec3f, b: vec3f) -> f32 {\n  let q = abs(p) - b;\n  return length(max(q, vec3f(0.0))) + min(max(q.x, max(q.y, q.z)), 0.0);\n}\n\n/**\n * THE HALL. Floor, vault, two colonnades and the wall at the far end.\n *\n * The columns are DOMAIN-REPEATED: 'p.z' is folded into one bay and 'p.x' mirrored about\n * the nave's axis, so the whole colonnade is one cylinder's distance function. The eye can\n * see thirty columns and the marcher evaluates one.\n */\nfn sceneAt(p: vec3f) -> f32 {\n  let floorD = p.y;\n  let vaultD = params.ceiling - p.y;\n\n  let zLocal = (fract(p.z / params.bay + 0.5) - 0.5) * params.bay;\n  let xLocal = abs(p.x) - params.aisle;\n  // The column tapers the other way from a classical one — wider at the vault, so the\n  // hall reads as carried rather than as propped.\n  let flare = 1.0 + params.columnFlare * clamp(p.y / max(params.ceiling, 0.001), 0.0, 1.0);\n  let radial = length(vec2f(xLocal, zLocal)) - (params.columnRadius * flare);\n  let columnD = max(radial, -p.y);\n\n  // The far wall, with the doorway the key comes through cut out of it.\n  let wallD = sdBox(p - vec3f(0.0, params.ceiling * 0.5, 46.0), vec3f(14.0, params.ceiling * 0.5, 0.6));\n  let doorD = sdBox(p - vec3f(0.0, 1.9, 46.0), vec3f(1.15, 1.9, 2.0));\n  let wall = max(wallD, -doorD);\n\n  let stone = min(min(floorD, vaultD), min(columnD, wall));\n  // Time, taken out of the stone rather than added to it: the displacement only ever\n  // REMOVES material, so an eroded edge is bitten and never inflated.\n  let eaten = stone - (params.erosion * max(erosionAt(p), 0.0));\n  /* The channels are CUT, not painted: the same field that lights them also removes stone,\n     so a channel breaks the silhouette of a column seen edge-on. A decal would not. */\n  return eaten + (params.inlayDepth * inlayAt(p));\n}\n\nfn normalAt(p: vec3f) -> vec3f {\n  let e = vec2f(0.0016, 0.0);\n  return normalize(vec3f(\n    sceneAt(p + e.xyy) - sceneAt(p - e.xyy),\n    sceneAt(p + e.yxy) - sceneAt(p - e.yxy),\n    sceneAt(p + e.yyx) - sceneAt(p - e.yyx),\n  ));\n}\n\n@fragment\nfn fs(@location(0) uv: vec2f) -> @location(0) vec4f {\n  let aspect = 16.0 / 9.0;\n  let ndc = vec2f((uv.x - 0.5) * 2.0 * aspect, (0.5 - uv.y) * 2.0);\n\n  /* THE CAMERA MOVE: a slow dolly down the nave, free-running on the absolute clock so a\n     timeline lap cannot snap it (§V436). No audio reaches this — T1279's refusal, learned\n     on E57: modulating the move makes it a limp rather than a groove. */\n  let t = frameU.absTime;\n  let eye = vec3f(0.0, params.eyeHeight, t * params.dollySpeed);\n  let tilt = radians(params.pitch);\n  let forward = normalize(vec3f(0.0, sin(tilt), cos(tilt)));\n  let right = vec3f(1.0, 0.0, 0.0);\n  let up = cross(right, forward);\n  let dir = normalize((right * ndc.x) + (up * ndc.y) + (forward * params.lens));\n\n  var travelled = 0.0;\n  var hit = false;\n  let steps = i32(clamp(params.steps, 8.0, 256.0));\n  for (var i = 0; i < steps; i = i + 1) {\n    let p = eye + dir * travelled;\n    let d = sceneAt(p);\n    if (d < SURFACE) { hit = true; break; }\n    travelled = travelled + d * 0.85;\n    if (travelled > MAX_DISTANCE) { break; }\n  }\n\n  var colour = params.fogColor.rgb;\n  if (hit) {\n    let p = eye + dir * travelled;\n    let n = normalAt(p);\n    /* One key, from the doorway at the end of the nave: a direction rather than a point,\n       because the doorway is far enough that its rays are parallel by the time they reach\n       anything the camera can see. */\n    let toKey = normalize(vec3f(0.0, 0.22, -1.0));\n    let lambert = max(dot(n, toKey), 0.0);\n    /* THE INLAY IS THE PRIMARY SOURCE, which is what makes the temple read as powered\n       rather than as lit-from-off-screen. Three terms and they are different things:\n       the channel's own emission (it burns), the spill onto the stone immediately around\n       it (light leaves the channel), and the cold key from the doorway (the only thing in\n       the picture that is not the building). */\n    let channel = inlayAt(p);\n    let emission = params.inlayColor.rgb * params.inlayEmission * channel;\n    /* Two radii: a tight one for the hot edge immediately beside a channel, a wide one for\n       the wash further out. One radius gives a hard ring; two give a falloff. */\n    let spill = inlaySpillAt(p) * params.inlaySpill;\n    let bounced = params.inlayColor.rgb * spill;\n    let fill = mix(vec3f(1.0), params.inlayColor.rgb, 0.65) * params.ambient;\n    let lit = (params.stoneColor.rgb * ((params.keyColor.rgb * params.keyIntensity * lambert) + fill + bounced)) + emission;\n    // Aerial perspective: exponential in depth, which is also what lets the march stop\n    // early without a visible wall of nothing.\n    let haze = 1.0 - exp(-travelled * params.fog);\n    colour = mix(lit, params.fogColor.rgb, haze);\n  }\n\n  return vec4f(colour * params.exposure, 1.0);\n}\n",
+          "steps": 96,
+          "stoneColor": [
+            0.29,
+            0.27,
+            0.25,
+            1
+          ]
+        },
+        "position": {
+          "x": -300,
+          "y": 0
+        },
+        "type": "customWgsl"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E68 Sanctum",
+  "projectId": "example-sanctum",
+  "schemaVersion": 3,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 68,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}

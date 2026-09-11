@@ -316,6 +316,12 @@
     "f0max": 0.7169,
     "cardFloor": 0
   },
+  "E68-Sanctum.loom.json": {
+    "motion": 0.00977,
+    "range": 0.5397,
+    "f0max": 0.6175,
+    "cardFloor": 0.0012
+  },
   "E7-LFO-Dissolve.loom.json": {
     "motion": 0.49929,
     "range": 0.3789,
