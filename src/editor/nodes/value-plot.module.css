@@ -20,9 +20,31 @@
   background: var(--bg-sunken);
 }
 
+/*
+ * B214 — this asked for `--space-10`, WHICH IS DEFINED NOWHERE, so the declaration was
+ * dropped and the curve has never been the height its stylesheet states.
+ *
+ * With no height the `<svg>` falls back to its intrinsic ratio (`viewBox` 100x32 against
+ * a full-width box), so the curve was a function of the NODE'S WIDTH — 53.76px at the
+ * 178px default, growing with every resize. That is the same defect T1168 fixed one level
+ * up: a plot's height is a property of the plot, not of something else's geometry.
+ *
+ * `--space-48`, because the scale is ONE ordinal ladder that was renamed halfway up.
+ * `--space-1..7` are 2, 4, 6, 8, 12, 16, 24, and the three rungs added later (tokens.css,
+ * "gaps found in review") continue it exactly — 32, 40, 48 — but were named for their
+ * pixels instead of their position. Rung ten is 48px. So this is the author's own number,
+ * restored, not a new size invented for the slot.
+ *
+ * It also fits the 16:9 slot the plot is CLIPPED to (`.preview` is `overflow: hidden`, so
+ * 99px of content at the default 178px node): 4 + 48 + 2 + 4 leaves 41px, which holds one
+ * or two wrapping rows of readings. T1297's 48px scroll window for a wide bag (audioIn)
+ * still wants 7px more than that and is clipped at the default width — it was clipped by
+ * 13px before this fix, so this improves it without resolving it; that is its own row.
+ * §V957's gate for this whole class is `ui/tokens.test.ts`.
+ */
 .canvas {
   width: 100%;
-  height: var(--space-10);
+  height: var(--space-48);
   display: block;
 }
 
