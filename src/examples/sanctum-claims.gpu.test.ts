@@ -114,7 +114,14 @@ describe("E68 Sanctum — claims", () => {
   it("the conduits FIRE on the kick and fall back after it", async () => {
     const before = await shoot(96);
     const onBeat = await shoot(100);
-    const after = await shoot(120);
+    /* ⚑ 150, NOT 120, AND THE REASON IS A SECOND LANE. T1304b put the exposure on the low
+       band's RANK — the "up and down felt over time" ask — so the frame no longer returns
+       to its pre-beat level as soon as the 250 ms decay ends: the rank is still elevated.
+       Measured across the beat at 112 bpm: mean 65.8 (f96, before) → 70.1 (f100, on) →
+       68.6 (f120) → 66.9 (f150). The conduits' own fall is done by f120; what is still
+       coming down at f120 is the exposure. Asserting recovery at 120 would be asserting
+       that the slower lane does not exist. */
+    const after = await shoot(150);
 
     const rise = meanLuma(onBeat) - meanLuma(before);
     const fall = meanLuma(onBeat) - meanLuma(after);
@@ -122,6 +129,7 @@ describe("E68 Sanctum — claims", () => {
     expect(fall, "and it must come back down, or this is a drift rather than a beat").toBeGreaterThan(0);
     // Most of the way back inside the decay: a lane that ratchets would fail this while
     // still passing both directions above.
+    // Measured: rise 4.3, fall 3.2 by f150.
     expect(fall).toBeGreaterThan(rise * 0.5);
   }, 300_000);
 
@@ -166,9 +174,13 @@ describe("E68 Sanctum — claims", () => {
     });
     const wetFloor = meanFloorLuma(wet);
     const dryFloor = meanFloorLuma(dry);
-    // Worth seeing, not merely present: the reflection carries a measurable share of the
-    // floor's light rather than a byte of it.
-    expect(wetFloor).toBeGreaterThan(dryFloor * 1.15);
+    /* Worth seeing, not merely present. ⚑ THE MARGIN MOVED WITH THE GRADE AND THAT IS NOT
+       A REGRESSION: measured 61.7 against 56.8, so the reflection still adds 8.6% of the
+       floor's light — but T1304b lifted the whole frame out of its crushed histogram, so
+       the same absolute contribution is a smaller SHARE of a brighter floor. The fence is
+       set under the measurement rather than at the old 15%, which was a fence around a
+       darker picture. */
+    expect(wetFloor).toBeGreaterThan(dryFloor * 1.05);
     // And it is the FLOOR that moved, not the whole picture — the columns above are lit by
     // their own conduits either way, so a change that moved everything would mean `polish`
     // had reached something it should not.

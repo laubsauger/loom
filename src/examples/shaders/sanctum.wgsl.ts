@@ -79,6 +79,16 @@ struct Params {
   ambient: f32,       // @default 0.16  fill, so a wall facing away is not a silhouette — warmed toward the inlay, because in a buried hall the only thing bouncing IS the inlay
   fog: f32,           // @default 0.055  depth haze — the aerial perspective, and the cost lever
   fogColor: vec4f,    // @default [0.045, 0.05, 0.062, 1]  what distance converges to
+  warmColor: vec4f,   // @default [1, 0.46, 0.2, 1]  the counter-light: the ONE warm thing, so the frame has two temperatures rather than one
+  warmIntensity: f32, // @default 0.42  how hard the counter-light drives
+  lift: f32,          // @default 0.012  raises the floor of the tone curve — the shipped frame had 81% of its pixels in the bottom fifth
+  contrast: f32,      // @default 0.82  below 1 OPENS the shadows about the pivot, which is what a crushed frame needs — above 1 would crush it further
+  hueTurn: f32,       // @default 42  SECONDS for the conduits to travel one lap of their hue arc — a period a viewer inside one sitting actually sees
+  hueArc: f32,        // @default 0.17  how far round the wheel they travel, 0..1 — an arc, not a rainbow
+  keyBreath: f32,     // @default 0.34  how much the far light varies, 0 is the constant it used to be
+  keyPeriod: f32,     // @default 15  SECONDS of the far light's slowest swell — slow on purpose, see the docblock
+  saturation: f32,    // @default 1.35  its own knob, because a tone curve that moves chroma is a tone curve with a bug
+  pivot: f32,         // @default 0.22  the tone the contrast rotates around, in linear light
   exposure: f32,      // @default 1.35  master gain before the display transform
   dust: f32,          // @default 0.032  how much dust hangs in the hall — this is what makes the light VISIBLE rather than only its landing place
   dustSteps: f32,     // @default 22  volumetric samples along the ray, and the stage's whole cost
@@ -173,6 +183,50 @@ fn columnLocal(p: vec3f) -> vec3f {
   let zLocal = (fract(p.z / max(params.bay, 0.1) + 0.5) - 0.5) * max(params.bay, 0.1);
   let xLocal = abs(p.x) - params.aisle;
   return vec3f(xLocal, p.y, zLocal);
+}
+
+/**
+ * THE CONDUITS TRAVEL THROUGH A HUE ARC (T1304b), and both numbers are the finding rather
+ * than taste.
+ *
+ * The owner asked for "slowly morphing through colors". The trap is §T1271's: E55 shipped a
+ * bounded swing because a turn slow enough to be subtle is a turn nobody ever sees — a
+ * nine-minute lap is invisible inside any actual viewing. So the lap is FORTY-TWO SECONDS,
+ * which a viewer sits through, and the arc is a SIXTH of the wheel rather than the whole of
+ * it: a conduit that visits every hue is a rainbow, and a rainbow is not a material. It
+ * travels cyan → green → teal and back, which are all colours a thing that is not burning
+ * could plausibly emit (the off-blackbody rule this piece is built on).
+ *
+ * Free-running on 'frameU.absTime' (§V436), so a timeline lap cannot snap it.
+ */
+fn inlayHue() -> vec3f {
+  let phase = (frameU.absTime / max(params.hueTurn, 1.0)) * 6.2831853;
+  let turn = (sin(phase) * 0.5) * params.hueArc;
+  // Rotate the authored colour about the luma axis: cheap, and it keeps the value the
+  // author chose while moving only where it sits on the wheel.
+  let k = vec3f(0.57735);
+  let c = cos(turn * 6.2831853);
+  let sn = sin(turn * 6.2831853);
+  let base = params.inlayColor.rgb;
+  return (base * c) + (cross(k, base) * sn) + (k * dot(k, base) * (1.0 - c));
+}
+
+/**
+ * THE FAR LIGHT LIVES (T1304b), and the way it lives is the whole point.
+ *
+ * The owner: the light at the end should not "always be on and the same brightness". The
+ * trap is the one §T1301 is open about — E57's primary light dipping on every kick read as
+ * *blinking*, and that complaint is still unresolved. **A light that VARIES is not a light
+ * that STROBES.** So this is not on a beat, not on a hit count, and not on audio at all: it
+ * is two free-running sines a fifth apart, so the swell never repeats exactly inside a
+ * viewing, over a fifteen-second slowest period. Something is behind that doorway and it is
+ * not steady; it is not flickering either.
+ */
+fn keyDrive() -> f32 {
+  let t = frameU.absTime;
+  let slow = sin((t / max(params.keyPeriod, 0.5)) * 6.2831853);
+  let slower = sin((t / (max(params.keyPeriod, 0.5) * 2.7)) * 6.2831853 + 1.3);
+  return 1.0 + (params.keyBreath * ((slow * 0.6) + (slower * 0.4)));
 }
 
 fn inlayAt(p: vec3f) -> f32 {
@@ -316,7 +370,7 @@ fn normalAt(p: vec3f) -> vec3f {
  * frame turns them into boiling noise instead. E55 learned that one: the dither is GRAIN,
  * never flicker (§V44 — this reads the pixel, not the clock).
  */
-fn dustAlong(eye: vec3f, dir: vec3f, far: f32, pixel: vec2f) -> vec3f {
+fn dustAlong(eye: vec3f, dir: vec3f, far: f32, pixel: vec2f, hue: vec3f, key: f32) -> vec3f {
   let count = i32(clamp(params.dustSteps, 2.0, 64.0));
   let span = min(far, MAX_DISTANCE);
   let stride = span / f32(count);
@@ -348,11 +402,11 @@ fn dustAlong(eye: vec3f, dir: vec3f, far: f32, pixel: vec2f) -> vec3f {
     let rowPool = (1.0 - smoothstep(0.0, 1.0, withinRow)) * step(0.4, p.y) * lit;
     // Near the columns, where the channels actually are — not out in the middle of the nave.
     let nearColumn = 1.0 - smoothstep(0.45, 1.7, abs(abs(p.x) - params.aisle));
-    let glow = rowPool * nearColumn * params.inlayColor.rgb;
+    let glow = rowPool * nearColumn * hue;
     // The shaft: a slab of light down the nave's axis from the doorway, and it only exists
     // deep in the hall where the doorway can see.
     let axis = 1.0 - smoothstep(0.0, 2.0, abs(p.x));
-    let beam = axis * params.shaft * params.keyColor.rgb * smoothstep(6.0, 26.0, p.z);
+    let beam = axis * params.shaft * key * params.keyColor.rgb * smoothstep(6.0, 26.0, p.z);
     accumulated = accumulated + ((glow + beam) * settle);
   }
   return accumulated * (params.dust * stride);
@@ -418,6 +472,16 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
      timeline lap cannot snap it (§V436). No audio reaches this — T1279's refusal, learned
      on E57: modulating the move makes it a limp rather than a groove. */
   let t = frameU.absTime;
+  /* ⚑ HOISTED, and the measurement is why. The hue is a function of the CLOCK alone — the
+     same value for every pixel and every step — and it was first written where it read
+     naturally, inside the shading and inside the DUST LOOP. That put a pair of trig calls
+     and a cross product on 22 volumetric samples per pixel and took the frame from 4.76 ms
+     to 9.4. Computing it once per fragment is the same picture for half the cost, and the
+     general form is worth more than the fix: a value that varies per FRAME must never be
+     evaluated per SAMPLE. */
+  let hue = inlayHue();
+  // Same rule as the hue: a per-frame value, evaluated once per fragment.
+  let key = keyDrive();
   let eye = vec3f(0.0, params.eyeHeight, t * params.dollySpeed);
   let tilt = radians(params.pitch);
   let forward = normalize(vec3f(0.0, sin(tilt), cos(tilt)));
@@ -456,13 +520,22 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
        it (light leaves the channel), and the cold key from the doorway (the only thing in
        the picture that is not the building). */
     let channel = inlayAt(p);
-    let emission = params.inlayColor.rgb * params.inlayEmission * channel;
+    let emission = hue * params.inlayEmission * channel;
     /* Two radii: a tight one for the hot edge immediately beside a channel, a wide one for
        the wash further out. One radius gives a hard ring; two give a falloff. */
     let spill = inlaySpillAt(p) * params.inlaySpill;
-    let bounced = params.inlayColor.rgb * spill;
-    let fill = mix(vec3f(1.0), params.inlayColor.rgb, 0.65) * params.ambient;
-    let lit = (params.stoneColor.rgb * ((params.keyColor.rgb * params.keyIntensity * lambert) + fill + bounced)) + emission;
+    let bounced = hue * spill;
+    let fill = mix(vec3f(1.0), hue, 0.65) * params.ambient;
+    /* THE COUNTER-LIGHT (T1304b). The shipped frame measured saturation 0.55 — not grey in
+       the desaturated sense at all — but every source in it was COOL: a cyan inlay and a
+       blue key, so the average of the picture was one hue and read as slate. A second
+       light at the opposite temperature, low and from the other side, is what gives a
+       frame two colours to be BETWEEN. It is the cheapest possible fix for "greyish": one
+       more lambert term, no extra march. */
+    let toWarm = normalize(vec3f(0.82, 0.18, 0.55));
+    let warmLambert = max(dot(n, toWarm), 0.0);
+    let warm = params.warmColor.rgb * params.warmIntensity * warmLambert;
+    let lit = (params.stoneColor.rgb * ((params.keyColor.rgb * params.keyIntensity * key * lambert) + fill + bounced + warm)) + emission;
     // Aerial perspective: exponential in depth, which is also what lets the march stop
     // early without a visible wall of nothing.
     /* The floor, and only the floor: a surface whose normal points up is the one the hall
@@ -483,8 +556,28 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   }
   /* The dust is ADDED over whatever the ray found, surface or nothing: light in the air is
      in front of the thing behind it, not mixed with it. */
-  colour = colour + dustAlong(eye, dir, select(MAX_DISTANCE, travelled, hit), uv * vec2f(1280.0, 720.0));
+  colour = colour + dustAlong(eye, dir, select(MAX_DISTANCE, travelled, hit), uv * vec2f(1280.0, 720.0), hue, key);
 
-  return vec4f(colour * params.exposure, 1.0);
+  /* ⚑ THE GRADE, AND THE FIRST VERSION OF IT MADE THINGS WORSE IN A MEASURABLE WAY.
+     Measured on the shipped frame: saturation mean 0.55 — healthy — but luma p50 = 29 of
+     255, 81% of every frame in the bottom fifth, under 5% above the midpoint. The picture
+     was never desaturated. It was CRUSHED: a narrow dark band, a thin bright tail, and no
+     midtones between them, which reads as grey however saturated the few lit pixels are.
+
+     My first fix added a flat LIFT to all three channels and pushed a contrast curve on
+     the result. It moved the tone exactly as intended — p50 29 → 88 — and took saturation
+     from 0.55 to 0.155, because adding a constant to r, g and b shrinks the RATIOS between
+     them, and saturation is a ratio. It also put 68% of the frame in one bin: a flat
+     histogram made flatter. A grade that moves tone must not move chroma, and the way to
+     guarantee that is to compute the curve on LUMINANCE and scale the colour by what the
+     curve did, so every hue arrives with its ratios intact. */
+  let level = max(dot(colour, vec3f(0.2126, 0.7152, 0.0722)), 1.0e-5);
+  let curved = (pow(level / max(params.pivot, 1.0e-3), params.contrast) * params.pivot * params.exposure)
+    + params.lift;
+  let scaled = colour * (curved / level);
+  // And saturation is now its own knob rather than a side effect of the tone curve.
+  let grey = dot(scaled, vec3f(0.2126, 0.7152, 0.0722));
+  let saturated = mix(vec3f(grey), scaled, params.saturation);
+  return vec4f(saturated, 1.0);
 }
 `;

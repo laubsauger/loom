@@ -317,11 +317,11 @@
     "cardFloor": 0
   },
   "E68-Sanctum.loom.json": {
-    "motion": 0.06544,
-    "range": 0.6724,
-    "f0max": 0.6568,
-    "cardFloor": 0.0016,
-    "phrase": 0.05999
+    "motion": 0.07805,
+    "range": 0.6314,
+    "f0max": 0.6303,
+    "cardFloor": 0.0124,
+    "phrase": 0.07446
   },
   "E69-Burnish.loom.json": {
     "motion": 0.00522,

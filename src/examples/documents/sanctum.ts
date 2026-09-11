@@ -89,6 +89,16 @@ export const sanctumDocument = document(
         ambient: 0.16,
         fog: 0.055,
         fogColor: [0.045, 0.05, 0.062, 1],
+        warmColor: [1, 0.46, 0.2, 1],
+        warmIntensity: 0.42,
+        lift: 0.012,
+        contrast: 0.82,
+        hueTurn: 42,
+        hueArc: 0.17,
+        keyBreath: 0.34,
+        keyPeriod: 15,
+        saturation: 1.35,
+        pivot: 0.22,
         exposure: 1.35,
         dust: 0.032,
         dustSteps: 22,
@@ -110,6 +120,32 @@ export const sanctumDocument = document(
           /* And the air BREATHES rather than landing: dust on the low band's rank, which
              rests at 0.5 with no audio and so renders the shipped density exactly. */
           dust: expressionSlot(`0.02 + 0.024 * ${LEVELS("low")}`, 0.032),
+
+          /* ⚑ FINER REACTION TO FINER DETAIL (T1304b). One kick lane moving everything is
+             the coarsest possible answer to "is this reactive"; what makes a piece perform
+             is that SMALL things answer small things. Three more lanes, each on the channel
+             whose grain matches what it moves, and every one of them rests at the shipped
+             value with no track (§V914):
+
+               hats   → how many RING members are lit. A hat is the finest event in a kit
+                        and it ticks the finest structure in the hall.
+               snare  → the shaft through the doorway. A backbeat is a bigger gesture than
+                        a hat and it moves a bigger thing, but still not the whole frame.
+               highMid rank → the warm counter-light. A CONTINUOUS property on a rank, so
+                        the frame's second colour swells with the mix's top end rather than
+                        firing — the colour balance breathes where the conduits land. */
+          inlayRings: expressionSlot(`0.34 + 0.26 * ${HITS("hatCount")}`, 0.34),
+          shaft: expressionSlot(`0.55 + 0.4 * ${HITS("snareCount")}`, 0.55),
+          warmIntensity: expressionSlot(`0.245 + 0.35 * ${LEVELS("highMid")}`, 0.42),
+
+          /* ⚑ "MORE UP AND DOWN SIDE FELT" — dynamic range IN TIME rather than in space,
+             and it is the same complaint as "greyish on average" one axis over: a flat
+             histogram and a flat timeline are the same failure. The exposure rides the low
+             rank, so a quiet passage sits DOWN and a loud one sits UP, and because a rank
+             rests at its middle the no-track picture is the shipped exposure exactly.
+             Gentle on purpose: ±10%, because this is the one lane that moves every pixel
+             and §T1301's open complaint is a primary light that read as blinking. */
+          exposure: expressionSlot(`1.22 + 0.26 * ${LEVELS("low")}`, 1.35),
         },
       }),
       node("out", "output", [0, 0], { toneMap: "filmic" }, { label: "out1" }),
