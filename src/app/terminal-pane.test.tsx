@@ -2,7 +2,7 @@ import { act, cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createMemoryStorage, installDomStubs } from "@ui/testing/install-dom-stubs.ts";
-import { TERMINAL_PANE_HINT } from "@devices/helper.ts";
+import { TERMINAL_PANE_HINT, TERMINAL_PANE_RUN, TERMINAL_UNPAIRED_REFUSAL } from "@devices/helper.ts";
 import type { TerminalClient, TerminalPaneRequest } from "@devices/terminal-client.ts";
 import { AppShell } from "./app-shell.tsx";
 import { DEFAULT_SHELL_LAYOUT, PANE_HOME, PANE_IDS, PANE_TITLES } from "./layout-storage.ts";
@@ -52,8 +52,9 @@ function fakeClient(answer: (request: TerminalPaneRequest) => void): FakeClient 
   };
 }
 
+/** What the real client answers an unpaired tab with, by the constant it uses (B213). */
 const unpaired = (request: TerminalPaneRequest): void => {
-  request.onRefused(`No local helper is paired with this tab: ${TERMINAL_PANE_HINT}.`, "unpaired");
+  request.onRefused(TERMINAL_UNPAIRED_REFUSAL, "unpaired");
 };
 
 describe("T1263 — the terminal pane kind", () => {
@@ -105,16 +106,18 @@ describe("T1263 — the terminal pane kind", () => {
     expect(screen.getByRole("button", { name: "Open shell" })).toBeDefined();
   });
 
-  it("shows the one hint sentence from helper.ts before asking, again when nothing is paired, and a way to try again", async () => {
+  it("shows the hint from helper.ts before asking, the command in the refusal when nothing is paired, and a way to try again", async () => {
     const user = userEvent.setup();
     const client = fakeClient(unpaired);
     render(<TerminalPane client={client} />);
-    const hint = (): HTMLElement => screen.getByText((text) => text.includes(TERMINAL_PANE_HINT));
-    expect(hint()).toBeDefined();
+    expect(screen.getByText((text) => text.includes(TERMINAL_PANE_HINT))).toBeDefined();
 
     await user.click(screen.getByRole("button", { name: "Open shell" }));
     expect(client.requests).toHaveLength(1);
-    expect(hint()).toBeDefined();
+    // B213: the reader furthest from a working shell is the one who must be told what to
+    // run, and the refusal is all they are left looking at.
+    expect(screen.getByText(TERMINAL_UNPAIRED_REFUSAL)).toBeDefined();
+    expect(TERMINAL_UNPAIRED_REFUSAL).toContain(TERMINAL_PANE_RUN);
 
     await user.click(screen.getByRole("button", { name: "Try again" }));
     // A retry is a NEW request, and the old one was closed first — never a second shell

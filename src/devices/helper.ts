@@ -111,5 +111,22 @@ export const TERMINAL_PANE_HINT = "Shells come from the local helper.";
 export const TERMINAL_PANE_RUN = DEVICE_HELPER_TERMINAL_COMMAND;
 export const TERMINAL_PANE_THEN = "Pair it in Agent \u2192 Connections.";
 
+/**
+ * B213 — WHAT A PANE IS TOLD WHEN NOTHING IS PAIRED WITH THIS TAB.
+ *
+ * The refusal used to be built at the call site as `"No local helper is paired with this
+ * tab: " + TERMINAL_PANE_HINT + "."`, from the day `TERMINAL_PANE_HINT` was a long
+ * instructional sentence. T1284b cut that constant down to the fragment above and gave
+ * the pane's IDLE state the command separately — and left this refusal reading "…with
+ * this tab: Shells come from the local helper.." Double period, and no command in sight,
+ * for the one reader who is furthest from a working shell.
+ *
+ * So the refusal is composed HERE, from the same three parts the idle state lays out,
+ * and the client interpolates it whole. Same rule as every other sentence in this file:
+ * the command is spelled once, and a rename moves every place that says it.
+ */
+export const TERMINAL_UNPAIRED_REFUSAL =
+  `No local helper is paired with this tab. Run \`${TERMINAL_PANE_RUN}\`. ${TERMINAL_PANE_THEN}`;
+
 /** Where the long version lives — the README's helper section (T1284b). */
 export const HELPER_DOCS_URL = "https://github.com/laubsauger/loom#osc";

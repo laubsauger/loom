@@ -14,6 +14,7 @@ import {
   HELPER_TERMINAL_FLAG,
   HELPER_DOCS_URL,
   TERMINAL_PANE_RUN,
+  TERMINAL_UNPAIRED_REFUSAL,
 } from "./helper.ts";
 import { createDeviceDoors } from "./doors.ts";
 import { createDeviceHelper } from "../mcp/serve.ts";
@@ -137,6 +138,18 @@ describe("the helper command has exactly one spelling (T1110)", () => {
      */
     expect(TERMINAL_PANE_RUN).not.toContain(DEVICE_HELPER_DEVICES_ONLY_COMMAND);
     expect(HELPER_DOCS_URL.startsWith("https://")).toBe(true);
+  });
+
+  /*
+   * B213 — the refusal a reader without a helper gets is the one that most needs the
+   * command, and it was the one that lost it: composed from `TERMINAL_PANE_HINT` back
+   * when that constant was a whole instruction, it survived T1284b's edit as "…with this
+   * tab: Shells come from the local helper..". Both halves of that are asserted, because
+   * the sentence broke silently — nothing reads a refusal but a person.
+   */
+  it("tells a tab with no helper paired what to run, in one sentence per idea (B213)", () => {
+    expect(TERMINAL_UNPAIRED_REFUSAL).toContain(TERMINAL_PANE_RUN);
+    expect(TERMINAL_UNPAIRED_REFUSAL, "a sentence ended twice").not.toMatch(/\.\./);
   });
 
   it("the --terminal flag is not spelled into a string anywhere else under src/ (T1263)", () => {

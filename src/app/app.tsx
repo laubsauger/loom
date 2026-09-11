@@ -27,7 +27,7 @@ import type { AgentToolSurface } from "@agent/index.ts";
 import { AppShell } from "./app-shell.tsx";
 import { AgentPane, PerformancePane, ShaderPane } from "./dock-panes.tsx";
 import { TerminalPane } from "./terminal-pane.tsx";
-import { createTerminalClient } from "@devices/terminal-client.ts";
+import { useTerminalClient } from "./use-terminal-client.ts";
 import {
   OPEN_SETTINGS_COMMAND,
   PipelineHost,
@@ -1638,15 +1638,18 @@ export function App({
   /*
    * T1263: ONE terminal client per tab — the socket that holds the helper's `terminal`
    * role — shared by every terminal pane, each of which opens its own shell on it.
-   * Building it connects nothing (the (c) rule: a pane asks, or nothing happens), so a
-   * memo is the right lifetime; disposal kills whatever shells the tab still holds.
+   * Building it connects nothing (the (c) rule: a pane asks, or nothing happens).
+   *
+   * B213: its lifetime is the HOOK's, not a `[]`-memo's. `dispose()` is one-way, and a
+   * memo does not re-run for StrictMode's cleanup-and-remount rehearsal — so the tab
+   * spent the whole session holding a disposed client and every "Open shell" answered
+   * "This tab is going away.". `null` until the mount effect has built one.
    */
-  const terminalClient = useMemo(() => createTerminalClient({ client: "a Loom tab" }), []);
-  useEffect(() => () => terminalClient.dispose(), [terminalClient]);
+  const terminalClient = useTerminalClient();
   const terminalPane = useMemo(
     () => (
       <ErrorBoundary name="Terminal">
-        <TerminalPane client={terminalClient} />
+        {terminalClient === null ? null : <TerminalPane client={terminalClient} />}
       </ErrorBoundary>
     ),
     [terminalClient],

@@ -6,7 +6,7 @@ import {
   type BridgeSocketFactory,
   type PairingMemory,
 } from "./transport/bridge-socket.ts";
-import { TERMINAL_PANE_HINT } from "./helper.ts";
+import { TERMINAL_UNPAIRED_REFUSAL } from "./helper.ts";
 
 /**
  * T1263 — THE PAGE HALF OF THE TERMINAL DOOR: one socket per tab holding the bridge's
@@ -26,8 +26,9 @@ import { TERMINAL_PANE_HINT } from "./helper.ts";
  *
  * The one pairing surface is the agent panel's Connections section (T1111); it writes
  * the confirmed code into session memory, and the device role rides it. This is the
- * third rider. A tab that never paired gets the hint sentence from `helper.ts` instead of
- * a second code prompt, so there is still exactly one place to type a code.
+ * third rider. A tab that never paired gets `TERMINAL_UNPAIRED_REFUSAL` from `helper.ts`
+ * — the command to run and where to pair it (B213) — instead of a second code prompt, so
+ * there is still exactly one place to type a code.
  */
 
 export interface TerminalClientOptions {
@@ -264,9 +265,7 @@ export function createTerminalClient(options: TerminalClientOptions = {}): Termi
       if (failure !== null) {
         pane.closed = true;
         request.onRefused(
-          failure === "unpaired"
-            ? `No local helper is paired with this tab: ${TERMINAL_PANE_HINT}.`
-            : "The local helper could not be reached.",
+          failure === "unpaired" ? TERMINAL_UNPAIRED_REFUSAL : "The local helper could not be reached.",
           failure,
         );
         return session;
