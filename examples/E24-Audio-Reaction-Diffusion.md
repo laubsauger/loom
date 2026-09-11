@@ -287,7 +287,7 @@ off-centre is not a taste call; it is why the loop terminates.
 `grow1`'s scale rides the audio (`low`), which is E29's lurch: the field SURGES outward on
 the kick and settles over the beat. Both fences are arithmetic rather than a clamp — the
 band is 0..1 and the pair spans 1.012…1.029, so it can neither stop expanding (which piles
-up into white) nor outrun the eye. A `valueLimit` there would fence a range the gain cannot
+up into white) nor outrun the eye. A Limit node there would fence a range the gain cannot
 leave.
 
 The loop closes on the GRADED picture (§V471.5), so the echoes carry the ramp's own colour
