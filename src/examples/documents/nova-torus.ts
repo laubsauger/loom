@@ -121,7 +121,11 @@ export const novaTorusDocument = document(
       node("analysis1", "component:audioAnalysis@1", [-140, 820], {
         envelope: 0.09, window: 16, settle: 0.15, hitDecay: 250,
       }, { label: "analysis1" }),
-      node("lvl1", "valueLimit", [160, 740], { minimum: 0, maximum: 1 }, { label: "lvl1" }),
+      /* T1302b — the two bags are named by a Select at `*`, which passes each through
+         unchanged. They were Limits at 0..1, the identity only on lanes that live there: the
+         hits bag also carries the tempo claim, and the Limit clipped `bpm` 112 to 1 and
+         `beat`/`bar` to at most 1. */
+      node("lvl1", "valueSelect", [160, 740], { channels: "*" }, { label: "lvl1" }),
       /**
        * The counts lane, and it earns its place on ONE layer. Six properties read the rank,
        * which is the right shape for a body that breathes; the cyan sparkle is not a body,
@@ -131,7 +135,7 @@ export const novaTorusDocument = document(
        * and decays over 250 ms, which is the flash the owner's ×20 gain was reaching for
        * before the negative excursions ate a fifth of it.
        */
-      node("hit1", "valueLimit", [160, 940], { minimum: 0, maximum: 1 }, { label: "hit1" }),
+      node("hit1", "valueSelect", [160, 940], { channels: "*" }, { label: "hit1" }),
     ],
     [
       edge("e0-music1-source1", ["music1", "out"], ["source1", "in1"]),

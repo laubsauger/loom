@@ -70,10 +70,12 @@ export const meterDocument = document(
       node("analysis", "component:audioAnalysis@1", [-1200, 620], {
         envelope: 0.08, window: 16, settle: 0.15, hitDecay: 250,
       }, { label: "analysis1" }),
-      /* The two bags, read by label. A Limit at 0..1 is the identity on a lane that already
-         lives there, and it is what gives each output a NAME an expression can reach. */
-      node("lvl", "valueLimit", [-900, 540], { minimum: 0, maximum: 1 }, { label: "lvl1" }),
-      node("hit", "valueLimit", [-900, 720], { minimum: 0, maximum: 1 }, { label: "hit1" }),
+      /* The two bags, read by label. A Select at `*` passes each bag through unchanged and
+         gives it a NAME an expression can reach (T1302b). This was a Limit at 0..1, which is
+         the identity only on lanes that live there: the hits bag also carries the tempo
+         claim, and it clipped `bpm` 124 to 1 and `beat`/`bar` to at most 1. */
+      node("lvl", "valueSelect", [-900, 540], { channels: "*" }, { label: "lvl1" }),
+      node("hit", "valueSelect", [-900, 720], { channels: "*" }, { label: "hit1" }),
 
       // ── the backdrop: onsets ─────────────────────────────────────────────────
       node("bg", "solid", [-600, 1000], { color: [0.03, 0.035, 0.06, 1] }, { label: "bg1" }),

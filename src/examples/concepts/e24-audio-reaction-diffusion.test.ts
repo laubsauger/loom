@@ -200,8 +200,11 @@ describe("E24 Audio Reaction-Diffusion", () => {
     expect(analyses.map((node) => node.id)).toEqual(["analysis"]);
     for (const [id, port] of [["lvl", "levels"], ["hit", "hits"]] as const) {
       const bag = document.graph.nodes[id] as GraphNode;
-      expect(bag.type).toBe("valueLimit");
-      expect([bag.parameters["minimum"], bag.parameters["maximum"]]).toEqual([0, 1]);
+      // T1302b: a Select at `*` names the bag and passes it through unchanged. A Limit at
+      // 0..1 here clipped the tempo claim riding the hits bag (`bpm` 112 read as 1), so a
+      // tap that clamps is the regression this guards against.
+      expect(bag.type).toBe("valueSelect");
+      expect(bag.parameters["channels"]).toBe("*");
       const into = Object.values(document.graph.edges).filter((edge) => edge.target.nodeId === id);
       expect(into.map((edge) => `${edge.source.nodeId}.${edge.source.portId}`)).toEqual([`analysis.${port}`]);
     }

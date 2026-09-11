@@ -1299,14 +1299,13 @@
         "id": "hit",
         "label": "hit1",
         "parameters": {
-          "maximum": 1,
-          "minimum": 0
+          "channels": "*"
         },
         "position": {
           "x": -1160,
           "y": 560
         },
-        "type": "valueLimit"
+        "type": "valueSelect"
       },
       "hue": {
         "definitionVersion": 1,
@@ -1412,14 +1411,13 @@
         "id": "lvl",
         "label": "lvl1",
         "parameters": {
-          "maximum": 1,
-          "minimum": 0
+          "channels": "*"
         },
         "position": {
           "x": -1160,
           "y": 380
         },
-        "type": "valueLimit"
+        "type": "valueSelect"
       },
       "music": {
         "definitionVersion": 1,

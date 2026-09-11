@@ -830,14 +830,13 @@
         "id": "hit",
         "label": "hit1",
         "parameters": {
-          "maximum": 1,
-          "minimum": 0
+          "channels": "*"
         },
         "position": {
           "x": -900,
           "y": 720
         },
-        "type": "valueLimit"
+        "type": "valueSelect"
       },
       "hole": {
         "definitionVersion": 1,
@@ -929,14 +928,13 @@
         "id": "lvl",
         "label": "lvl1",
         "parameters": {
-          "maximum": 1,
-          "minimum": 0
+          "channels": "*"
         },
         "position": {
           "x": -900,
           "y": 540
         },
-        "type": "valueLimit"
+        "type": "valueSelect"
       },
       "mix": {
         "definitionVersion": 1,

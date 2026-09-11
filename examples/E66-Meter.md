@@ -20,8 +20,8 @@ At the detector's defaults the analysis counts exactly **56 kicks**, **28 snares
 ## The graph
 
 ```
-clip1(audioFileIn) -> analysis1 -+-> lvl1(valueLimit)    the conditioned lanes, ranked over 16 s
-                                 +-> hit1(valueLimit)    the counts, decaying over 250 ms
+clip1(audioFileIn) -> analysis1 -+-> lvl1(valueSelect)   the conditioned lanes, ranked over 16 s
+                                 +-> hit1(valueSelect)   the counts, decaying over 250 ms
 
 bg1(solid) -> flash1(level) ----------------------------------------------+
 core1(circle) -> kick1(transform) -> halo1(blur) -> glow1(level) -> tint1(hsv) -+
@@ -31,7 +31,7 @@ hand1(rectangle) -> sweep1(transform) -> tick1(level) -----------------------+
 kick1 ---------------------------------------------------------------------+
 ```
 
-`analysis1` is the starter component `AudioAnalysis`, unchanged. Its `levels` output is the source's bands and centroid after the envelope and the running-rank normaliser; its `hits` output is the four counts, each held at 1 on the frame it fires and decaying over `hitDecay` milliseconds. The two Limits are the identity on lanes that already live in 0…1 — they exist so each bag has a name an expression can reach.
+`analysis1` is the starter component `AudioAnalysis`, unchanged. Its `levels` output is the source's bands and centroid after the envelope and the running-rank normaliser; its `hits` output is the four counts, each held at 1 on the frame it fires and decaying over `hitDecay` milliseconds. The two Selects pass each bag through unchanged at their default `*` — they exist so each bag has a name an expression can reach. They were Limits at 0…1 until T1302b, which is the identity only on lanes that live there: the hits bag also carries the tempo claim, and the Limit clipped `bpm` 124 to 1 and `beat` and `bar` to at most 1.
 
 ## The legend, lane by lane
 

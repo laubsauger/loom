@@ -210,9 +210,10 @@ export const audioRdDocument = document(
        * each band sits in its own recent window — so `low` reads 0 on this source's
        * quietest bars and 1 on its loudest whatever the source's gain, and its `hits` bag
        * is the counts with a 1 ms attack and a 250 ms decay (§V952). `lvl1` and `hit1`
-       * are `valueLimit 0..1` on each bag, which is the E66 idiom: they exist so every
-       * expression below names a bag rather than a component port, and the limit states
-       * the range the expressions assume.
+       * are Selects at `*` on each bag: they exist so every expression below names a bag
+       * rather than a component port, and they pass the bag through unchanged (T1302b).
+       * They were `valueLimit 0..1`, the identity only on lanes that live there — the
+       * hits bag also carries the tempo claim, and the Limit clipped `bpm` 112 to 1.
        *
        * `trig1` stays, and stays on the RAW switch: the seed gate and the stamp need an
        * INSTANT, and a 250 ms decay into `crest1`'s persistent expanding loop is §V481(b)'s
@@ -223,8 +224,8 @@ export const audioRdDocument = document(
       node("analysis", "component:audioAnalysis@1", [-1440, 460], {
         envelope: 0.08, window: 16, settle: 0.15, hitDecay: 250,
       }, { label: "analysis1" }),
-      node("lvl", "valueLimit", [-1160, 380], { minimum: 0, maximum: 1 }, { label: "lvl1" }),
-      node("hit", "valueLimit", [-1160, 560], { minimum: 0, maximum: 1 }, { label: "hit1" }),
+      node("lvl", "valueSelect", [-1160, 380], { channels: "*" }, { label: "lvl1" }),
+      node("hit", "valueSelect", [-1160, 560], { channels: "*" }, { label: "hit1" }),
       node("trig", "valueTrigger", [-1440, 760], { threshold: 0.5 }, { label: "trig1" }),
       /* T1237 — WHAT KIND OF PATTERN THE DISC GROWS, on three free-running clocks that
          never share a period. `band1` walks the kernel's `morph` 0..1 (mitosis spots at 0,

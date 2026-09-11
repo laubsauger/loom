@@ -708,14 +708,13 @@
         "id": "hit1",
         "label": "hit1",
         "parameters": {
-          "maximum": 1,
-          "minimum": 0
+          "channels": "*"
         },
         "position": {
           "x": 160,
           "y": 940
         },
-        "type": "valueLimit"
+        "type": "valueSelect"
       },
       "hsv1": {
         "definitionVersion": 1,
@@ -887,14 +886,13 @@
         "id": "lvl1",
         "label": "lvl1",
         "parameters": {
-          "maximum": 1,
-          "minimum": 0
+          "channels": "*"
         },
         "position": {
           "x": 160,
           "y": 740
         },
-        "type": "valueLimit"
+        "type": "valueSelect"
       },
       "multiply1": {
         "definitionVersion": 1,

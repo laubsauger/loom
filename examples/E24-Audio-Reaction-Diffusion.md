@@ -53,12 +53,12 @@ music1(audioPattern 112bpm) ─┐
 track1(audioFileIn — DROP    ─┘   0 = pattern, 1 = your file
         YOUR TRACK HERE)                    │
   analysis1(component:audioAnalysis@1) ◄──────┤   ONE instance (T1234); every lane below
-        │ levels ─► lvl1(0..1)                  │   is an expression on one of its two bags
+        │ levels ─► lvl1(valueSelect)           │   is an expression on one of its two bags
         │      ├─► state.substeps      = clamp(8 + 24·low, 1, 34)
         │      ├─► shape1.whitelevel   = 0.48 + 0.07·lowMid
         │      ├─► grow1.s             = 1.008 + 0.021·low
         │      └─► tint1.scale         = 1.6 + 1.3·highMid
-        └ hits ───► hit1(0..1)                  │
+        └ hits ───► hit1(valueSelect)           │
                ├─► warpa1.weight       = 0.14·kickCount
                ├─► warpb1.weight       = 0.06·snareCount
                ├─► warpc1.weight       = 0.02·hatCount
