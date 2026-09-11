@@ -8,19 +8,33 @@ import type { NodeId } from "@domain/types/ids.ts";
  * holds the ring buffers and the §V16 coalescing; nothing here knows they exist.
  */
 
-/** At most this many channels are plotted per node — see `ValuePlot` for why. */
+/** At most this many channels get a CURVE per node — see `ValuePlot` for why. */
 export const MAX_PLOTTED_CHANNELS = 4;
 
 export interface ValueHistory {
-  /** Channel names in publication order, capped at `MAX_PLOTTED_CHANNELS`. */
+  /**
+   * EVERY channel the node published, in publication order (T1297).
+   *
+   * Not capped, and the cap is the bug this replaced: the ring used to slice the bag to
+   * `MAX_PLOTTED_CHANNELS` BEFORE writing, so `latest` itself only ever held four and the
+   * other seventeen of `audioIn`'s twenty-one — every `*Count`, `centroid`, the whole
+   * tempo claim — were unreachable from the UI, forever. The CURVES still cap (a two
+   * centimetre body cannot carry twenty-one legible lines, §V90-§V92); the READOUT lists
+   * the lot, which costs one string per channel per frame and no series at all.
+   */
   readonly channels: readonly string[];
   /**
-   * One series per channel, oldest sample first. Shorter than the window until it fills;
+   * The prefix of `channels` that has a curve — at most `MAX_PLOTTED_CHANNELS`, and
+   * PARALLEL TO `series`. Read this, never `channels`, when indexing a stroke.
+   */
+  readonly plotted: readonly string[];
+  /**
+   * One series per PLOTTED channel, oldest sample first. Shorter than the window until it fills;
    * a node with no history has EMPTY series rather than a run of zeros, so the plot can
    * say "no signal yet" instead of drawing a flat line at a value nobody produced.
    */
   readonly series: ReadonlyArray<readonly number[]>;
-  /** The most recent sample per channel, or null before the first. */
+  /** The most recent sample per channel — EVERY channel, keyed by name — or null before the first. */
   readonly latest: Readonly<Record<string, number>> | null;
   /**
    * ABSOLUTE seconds of the most recent sample, or null before the first (T459, T495).
@@ -42,6 +56,7 @@ export interface ValueHistory {
 
 export const EMPTY_VALUE_HISTORY: ValueHistory = Object.freeze({
   channels: [],
+  plotted: [],
   series: [],
   latest: null,
   timeSeconds: null,

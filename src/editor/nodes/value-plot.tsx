@@ -35,6 +35,27 @@ import styles from "./value-plot.module.css";
  * count is capped (`MAX_PLOTTED_CHANNELS`) so a wide bag cannot turn two centimetres of
  * node into a smear.
  *
+ * ## The READOUT is not capped — and why it scrolls (T1297)
+ *
+ * `audioIn` publishes twenty-one channels. The cap used to be applied to the BAG rather
+ * than to the curves, and one layer down (`app/value-history.ts`) it was applied before
+ * the ring was written at all — so `latest` held four names and the other seventeen,
+ * every `*Count`, `centroid` and the whole tempo claim, could not be reached from the UI
+ * by any route. Four curves, twenty-one readings: the curves are the thing two
+ * centimetres cannot carry, and a `<dt>/<dd>` pair is not.
+ *
+ * Twenty-one readings do not fit either, and the choice of what to do about that is
+ * between three: grow the node, show the rest somewhere else, or scroll in place. This
+ * SCROLLS IN PLACE, at a fixed height. Growing the node makes its size a function of its
+ * bag — an `audioIn` becomes a ~300px tower that shoves its neighbours around a dense
+ * network (§V90-§V92) — and "only when selected" makes the node's height JUMP on a click,
+ * which moves the layout under the cursor that caused it. A fixed window keeps every node
+ * the same size whatever it publishes, and keeps every channel reachable where the user is
+ * already looking, which is the whole of the complaint. The numbers sit in a reserved box
+ * for the reason `timeline-readout.module.css`'s `.value` states: a field that grows a
+ * character when a value crosses a power of ten slides everything to its right, and in a
+ * wrapping list it also re-wraps the rows.
+ *
  * ## Scale
  *
  * Auto-ranged over the visible window, not pinned to 0..1: Slope and Math produce
@@ -296,7 +317,7 @@ export function ValuePlot({ nodeId, history, source = null, silence = null }: Va
       >
         {value.series.map((series, index) => (
           <path
-            key={value.channels[index] ?? index}
+            key={value.plotted[index] ?? index}
             className={CHANNEL_CLASS[index % CHANNEL_CLASS.length]}
             d={project(series, low, span)}
             fill="none"
@@ -304,10 +325,27 @@ export function ValuePlot({ nodeId, history, source = null, silence = null }: Va
           />
         ))}
       </svg>
-      <dl className={styles.values} aria-label={`Channels of ${nodeId}`}>
+      <dl
+        /*
+         * T1297: `nowheel` ONLY when the list actually overflows. React Flow reads it as
+         * `target.closest('.nowheel')` on the wheel event, so carrying it unconditionally
+         * would make a three-channel node a dead zone for canvas zoom — a cost paid by
+         * every node to solve a problem only `audioIn` has.
+         */
+        className={
+          value.channels.length > value.plotted.length
+            ? `${styles.values} ${styles.valuesScroll} nowheel`
+            : styles.values
+        }
+        aria-label={`Channels of ${nodeId}`}
+      >
         {value.channels.map((channel, index) => (
           <div key={channel} className={styles.reading}>
-            <dt className={cxChannel(index)}>{channel}</dt>
+            {/* Only a PLOTTED channel gets its stroke's colour: tinting the 19th name
+                with seriesC would claim a line that is not on the canvas. */}
+            <dt className={index < value.plotted.length ? cxChannel(index) : styles.channel}>
+              {channel}
+            </dt>
             <dd className={styles.number}>{formatValue(value.latest?.[channel] ?? 0)}</dd>
           </div>
         ))}

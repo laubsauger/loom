@@ -48,8 +48,11 @@ export interface ValueHistoryOptions {
 }
 
 interface Ring {
+  /** EVERY channel name the node publishes, in publication order (T1297). */
   channels: string[];
-  /** Parallel to `channels`; each is a preallocated buffer used circularly. */
+  /** The `MAX_PLOTTED_CHANNELS` prefix of `channels` that gets a curve. */
+  plotted: string[];
+  /** Parallel to `plotted`; each is a preallocated buffer used circularly. */
   buffers: Float64Array[];
   /** Samples written so far, saturating at the window size. */
   length: number;
@@ -94,22 +97,31 @@ export function createValueHistoryStore(options: ValueHistoryOptions = {}): Valu
     timer = setTimeout(flush, Math.max(0, intervalMs - (now() - lastFlush)));
   }
 
-  /** Rebuilds `channels`/`buffers` when a node's published set changes shape. */
+  /** Rebuilds `channels`/`plotted`/`buffers` when a node's published set changes shape. */
   function reshape(ring: Ring, names: readonly string[]): void {
     ring.channels = [...names];
-    ring.buffers = names.map(() => new Float64Array(frames));
+    ring.plotted = ring.channels.slice(0, MAX_PLOTTED_CHANNELS);
+    ring.buffers = ring.plotted.map(() => new Float64Array(frames));
     ring.length = 0;
     ring.cursor = 0;
   }
 
   return {
     push(nodeId, channels, timeSeconds) {
-      // Publication order is the node's own; the cap keeps a bag of twenty channels from
-      // turning a 2cm plot into a smear (see `MAX_PLOTTED_CHANNELS`).
-      const names = Object.keys(channels).slice(0, MAX_PLOTTED_CHANNELS);
+      /*
+       * T1297: the cap applies to the SERIES, and to nothing else.
+       *
+       * It used to be applied here, to `Object.keys(channels)`, before anything was
+       * written — so a twenty-one channel bag became a four channel bag at the door and
+       * the seventeen that were dropped could not be read back from `latest` either. The
+       * cap's reason (twenty-one curves in two centimetres of node body is a smear, §V90)
+       * only ever justified capping the CURVES; the readout under them pays one string
+       * per channel and can carry the whole bag.
+       */
+      const names = Object.keys(channels);
       let ring = rings.get(nodeId);
       if (ring === undefined) {
-        ring = { channels: [], buffers: [], length: 0, cursor: 0, latest: null, time: null, view: null };
+        ring = { channels: [], plotted: [], buffers: [], length: 0, cursor: 0, latest: null, time: null, view: null };
         rings.set(nodeId, ring);
       }
       const sameShape =
@@ -119,8 +131,8 @@ export function createValueHistoryStore(options: ValueHistoryOptions = {}): Valu
       // old window would draw two unrelated histories as one continuous line.
       if (!sameShape) reshape(ring, names);
 
-      for (let index = 0; index < names.length; index += 1) {
-        const value = channels[names[index] as string];
+      for (let index = 0; index < ring.plotted.length; index += 1) {
+        const value = channels[ring.plotted[index] as string];
         (ring.buffers[index] as Float64Array)[ring.cursor] =
           typeof value === "number" && Number.isFinite(value) ? value : 0;
       }
@@ -146,7 +158,13 @@ export function createValueHistoryStore(options: ValueHistoryOptions = {}): Valu
         }
         return out;
       });
-      ring.view = { channels: [...ring.channels], series, latest: ring.latest, timeSeconds: ring.time };
+      ring.view = {
+        channels: [...ring.channels],
+        plotted: [...ring.plotted],
+        series,
+        latest: ring.latest,
+        timeSeconds: ring.time,
+      };
       return ring.view;
     },
 

@@ -20,6 +20,7 @@ import type { ValueHistory, ValueHistorySource } from "./value-history.ts";
 function window(latest: number): ValueHistory {
   return {
     channels: ["value"],
+    plotted: ["value"],
     series: [[latest - 0.2, latest - 0.1, latest]],
     latest: { value: latest },
     timeSeconds: latest,
@@ -103,5 +104,78 @@ describe("ValuePlot renders for the eyes on it (T1239)", () => {
 
     history.push(window(0.8));
     expect(reading()).toBe("0.800");
+  });
+});
+
+/**
+ * T1297 — the readout lists EVERY channel; only the curves are capped.
+ *
+ * `audioIn` publishes twenty-one. The cap used to be applied to the bag rather than to
+ * the lines, one layer down and before the ring was written, so seventeen of them — every
+ * `*Count`, `centroid`, the whole tempo claim — could not be read from the UI by any
+ * route. Four curves in two centimetres is the real constraint (§V90-§V92); twenty-one
+ * `<dt>/<dd>` pairs in a fixed, scrolled window is not.
+ */
+describe("ValuePlot shows every channel, not just the plotted four (T1297)", () => {
+  const wide: ValueHistory = {
+    channels: ["level", "low", "lowMid", "highMid", "high", "centroid", "bpm"],
+    plotted: ["level", "low", "lowMid", "highMid"],
+    series: [
+      [0.1, 0.2],
+      [0.3, 0.4],
+      [0.5, 0.6],
+      [0.7, 0.8],
+    ],
+    latest: {
+      level: 0.2, low: 0.4, lowMid: 0.6, highMid: 0.8, high: 0.9, centroid: 0.62, bpm: 128,
+    },
+    timeSeconds: 1,
+  };
+
+  const rows = () =>
+    [...screen.getByLabelText("Channels of lag").querySelectorAll("div")].map((row) => [
+      row.querySelector("dt")?.textContent ?? "",
+      row.querySelector("dd")?.textContent ?? "",
+    ]);
+
+  it("prints all seven readings while drawing four lines", () => {
+    render(<ValuePlot nodeId="lag" history={fakeHistory(wide).source} />);
+    expect(rows()).toEqual([
+      ["level", "0.200"],
+      ["low", "0.400"],
+      ["lowMid", "0.600"],
+      ["highMid", "0.800"],
+      ["high", "0.900"],
+      ["centroid", "0.620"],
+      ["bpm", "128.000"],
+    ]);
+    // Four strokes, because four is what the body can carry legibly.
+    expect(document.querySelectorAll("svg path")).toHaveLength(4);
+  });
+
+  it("tints only the channels that HAVE a line, so a name never claims a stroke that is absent", () => {
+    render(<ValuePlot nodeId="lag" history={fakeHistory(wide).source} />);
+    const terms = [...screen.getByLabelText("Channels of lag").querySelectorAll("dt")];
+    const classOf = (index: number) => terms[index]?.className ?? "";
+    // The first four wear their stroke's class; `high` and beyond wear none of them.
+    expect(classOf(0)).not.toBe(classOf(4));
+    for (const index of [4, 5, 6]) {
+      expect(classOf(index).split(" ").filter((name) => name.includes("series"))).toEqual([]);
+    }
+  });
+
+  it("scrolls the readout in place rather than growing the node (and opts out of canvas zoom)", () => {
+    render(<ValuePlot nodeId="lag" history={fakeHistory(wide).source} />);
+    // A node whose HEIGHT depends on its bag shoves a dense network around; a fixed
+    // window keeps every node the same size whatever it publishes. React Flow reads
+    // `nowheel` off the wheel target, so without it the wheel zooms the canvas instead of
+    // scrolling the list it is pointed at.
+    expect(screen.getByLabelText("Channels of lag").className).toContain("nowheel");
+  });
+
+  it("a bag that FITS is a plain row — no scroll box, and the canvas still zooms over it", () => {
+    render(<ValuePlot nodeId="lag" history={fakeHistory(window(0.5)).source} />);
+    // The opt-out is a cost every node would otherwise pay to solve `audioIn`'s problem.
+    expect(screen.getByLabelText("Channels of lag").className).not.toContain("nowheel");
   });
 });

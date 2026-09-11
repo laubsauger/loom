@@ -78,6 +78,7 @@ import { absTimeSecondsOf } from "@domain/types/frame.ts";
 import type { FrameEvaluationInput } from "@domain/types/frame.ts";
 import { createPointerSource } from "@runtime/execution/index.ts";
 import { createValueHistoryStore } from "./value-history.ts";
+import { instanceValueChannels } from "./instance-value-channels.ts";
 import { useAnalyzeChannels } from "./use-analyze-channels.ts";
 import { useModelInference } from "./use-model-inference.ts";
 import { useGraphCompile } from "./use-graph-compile.ts";
@@ -494,7 +495,8 @@ export function App({
       // document, so adding a root node called `wob` renames instance 1's `wob` to `wob1`
       // and shifts the rest along. A name-keyed lookup would then quietly draw a
       // different instance's trajectory. Ids do not move.
-      const graph = runtime.flattened.current().graph;
+      const flattened = runtime.flattened.current();
+      const graph = flattened.graph;
       const bags = valueGraph.channels();
       const live = new Set<NodeId>();
       for (const [nodeId, node] of Object.entries(graph.nodes)) {
@@ -526,6 +528,24 @@ export function App({
         if (name === undefined) continue;
         const measured = analyze.resolver(name, { frame } as never);
         if (typeof measured === "number") valueHistory.push(nodeId, { value: measured }, absTimeSecondsOf(frame));
+      }
+      /*
+       * T1297: the COMPONENT INSTANCES, which the loop above cannot see.
+       *
+       * Flattening deleted them, so `graph.nodes` has no entry to iterate and no ring was
+       * ever written under an instance's id — while its synthesized definition does carry
+       * `value` outputs, so the pane drew a plot that said "no signal yet" for the life of
+       * the document. Redirected through `instanceOutputs`, the same map a sink pinned on
+       * an instance has always been redirected through, and off the SAME `bags` the loop
+       * above reads (§V275: one evaluation per frame, never a second one for a display).
+       *
+       * An instance whose publishers are all silent yields no entry, so it never joins
+       * `live` and `retain` drops its ring — absence reads as absence (§V91), not as the
+       * window it had when its inner node was muted.
+       */
+      for (const instance of instanceValueChannels(flattened, runtime.registry, bags)) {
+        live.add(instance.nodeId);
+        valueHistory.push(instance.nodeId, instance.channels, absTimeSecondsOf(frame));
       }
       // A deleted node frees its ring rather than holding a window nobody can see.
       valueHistory.retain(live);

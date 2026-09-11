@@ -53,8 +53,26 @@
 .values {
   display: flex;
   flex-wrap: wrap;
-  gap: 0 var(--space-3);
+  gap: var(--space-1) var(--space-3);
   margin: 0;
+}
+
+/*
+ * T1297 — the fixed window for a WIDE bag (audioIn publishes twenty-one channels).
+ *
+ * Applied only when the readout is longer than the curves, so a two-channel node is a
+ * plain wrapping row exactly as before. The height is fixed rather than grown because a
+ * node whose size depends on its bag shoves a dense network around (§V90-§V92), and
+ * fixed-and-scrolled beats "reveal on select": revealing on select makes the node's
+ * height jump under the click that selected it.
+ *
+ * The element also carries React Flow's `nowheel` in that state — without it the wheel
+ * would zoom the canvas instead of scrolling the list it is pointed at.
+ */
+.valuesScroll {
+  max-block-size: var(--space-48);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .reading {
@@ -72,6 +90,12 @@
   font-size: var(--fs-micro);
   text-transform: uppercase;
   letter-spacing: var(--tracking-display);
+  /*
+   * T1297: the UNPLOTTED default, stated rather than inherited. A channel past the curve
+   * cap has no line to be matched to, so it must not wear one of the four stroke hues —
+   * and it must not wear --text-dim either, because that IS seriesD's hue.
+   */
+  color: var(--text);
 }
 
 .channel.seriesA {
@@ -90,8 +114,22 @@
   color: var(--text-dim);
 }
 
+/*
+ * A RESERVED box, not merely tabular digits — the lesson `timeline-readout.module.css`'s
+ * `.value` docblock states, arriving here for the same reason (T1297).
+ *
+ * `formatValue` is `toFixed(3)`, so a reading GAINS A CHARACTER crossing zero (`0.500` →
+ * `-0.500`) and again at ten. `tabular-nums` cannot help with a string that got longer:
+ * the reading's own box grew, every reading to its right slid over, and in a WRAPPING
+ * list the row breaks moved too — so the channel a user was reading jumped to another
+ * line because an unrelated channel went negative. 6ch holds `-0.500`; wider readings
+ * (`toFixed(0)` above 1000) still grow, and that is a rarity rather than a per-frame
+ * oscillation.
+ */
 .number {
   margin: 0;
+  min-width: 6ch;
+  text-align: right;
   color: var(--text);
   font-family: var(--font-mono);
   font-size: var(--fs-micro);

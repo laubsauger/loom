@@ -118,11 +118,58 @@ describe("multi-channel nodes keep their channels apart", () => {
     store.dispose();
   });
 
-  it("keeps a wide bag from smearing the plot", () => {
+  it("keeps a wide bag from smearing the plot — the CURVES cap at four", () => {
     const store = createValueHistoryStore({ frames: 4, now });
     store.push("w", { a: 1, b: 2, c: 3, d: 4, e: 5, f: 6 });
     advance(200);
-    expect(store.get("w").channels).toEqual(["a", "b", "c", "d"]);
+    expect(store.get("w").plotted).toEqual(["a", "b", "c", "d"]);
+    // Parallel, and that is the contract a stroke index depends on.
+    expect(store.get("w").series).toHaveLength(4);
+    store.dispose();
+  });
+
+  /**
+   * T1297 — the cap was applied to the BAG, before the ring was written.
+   *
+   * `audioIn` publishes twenty-one channels. `Object.keys(channels).slice(0, 4)` ran at
+   * the door, so `latest` itself only ever held four: every `*Count`, `centroid` and the
+   * whole tempo claim were unreachable from the UI by ANY route — not "hard to find",
+   * not shown — while the node's own definition promised them. The curves still cap,
+   * because twenty-one legible lines do not fit in two centimetres of node body; the
+   * readout under them costs one string per channel and carries the lot.
+   */
+  it("carries EVERY channel through to the readout, not just the plotted four", () => {
+    const store = createValueHistoryStore({ frames: 4, now });
+    const audio = {
+      level: 0.5, low: 0.1, lowMid: 0.2, highMid: 0.3, high: 0.4,
+      onset: 1, onsetCount: 7, kick: 1, kickCount: 3, snare: 0, snareCount: 2,
+      hat: 0, hatCount: 9, centroid: 0.62, bpm: 128, bpmConfidence: 0.9,
+      beatPhase: 0.25, beat: 1, beatCount: 41, bar: 10, barPhase: 0.5,
+    };
+    store.push("audio", audio);
+    advance(200);
+    const history = store.get("audio");
+    expect(history.channels).toEqual(Object.keys(audio));
+    expect(history.channels).toHaveLength(21);
+    // The numbers a user reads out of the <dl> — the tempo claim, reachable at last.
+    expect(history.latest?.["bpm"]).toBe(128);
+    expect(history.latest?.["centroid"]).toBe(0.62);
+    expect(history.latest?.["beatCount"]).toBe(41);
+    // And the cap is still doing its job on the half it was always about.
+    expect(history.plotted).toEqual(["level", "low", "lowMid", "highMid"]);
+    expect(history.series).toHaveLength(4);
+    store.dispose();
+  });
+
+  it("restarts the window when a channel BEYOND the cap appears", () => {
+    const store = createValueHistoryStore({ frames: 8, now });
+    store.push("n", { a: 1, b: 1, c: 1, d: 1 });
+    store.push("n", { a: 2, b: 2, c: 2, d: 2, e: 9 });
+    advance(200);
+    // The readout's set changed, so the node is publishing a different bag — the shape
+    // check has to see past the cap or `channels` and `series` describe different frames.
+    expect(store.get("n").channels).toEqual(["a", "b", "c", "d", "e"]);
+    expect(store.get("n").series[0]).toEqual([2]);
     store.dispose();
   });
 });
