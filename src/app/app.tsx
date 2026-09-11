@@ -691,6 +691,8 @@ export function App({
       timestampQuery: capabilities.timestampQuery,
       timestampQueryRequested: capabilities.timestampQueryRequested === true,
       onPassTimings: (listener) => backend.onGpuTimings(listener),
+      // T1295: the frames that will never report, so the frame figure can say it is partial.
+      onTimingsDropped: (listener) => backend.onGpuTimingsDropped?.(listener) ?? (() => {}),
     });
   }, [backend, capabilities, runtime]);
 

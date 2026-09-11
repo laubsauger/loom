@@ -37,6 +37,16 @@ export interface FrameSpanExtent {
 }
 
 /**
+ * T1295: a timed frame whose spans will never arrive — restated structurally from the
+ * backend's `GpuTimingDrop` for the same §V3 reason as the rest of this file.
+ */
+export interface FrameTimingDrop {
+  readonly submit: number | null;
+  readonly reason: "staging-busy" | "abandoned";
+  readonly spans: number;
+}
+
+/**
  * The backend's GPU timing surface, as telemetry needs it.
  *
  * Declared here rather than imported because §V3 keeps `timer(gpu)` inside
@@ -59,6 +69,11 @@ export interface PassTimingSource {
    * the bucket SAYS so (`FrameTimingBucket.basis`).
    */
   onPassTimings(listener: (spans: PassSpanResults, frame?: FrameSpanExtent) => void): () => void;
+  /**
+   * T1295: frames whose timing was lost — see `FrameTimingDrop`. Optional: a source that
+   * cannot lose a frame (a test's fake, a device with no timer) need not provide it.
+   */
+  onTimingsDropped?(listener: (drop: FrameTimingDrop) => void): () => void;
 }
 
 /** A device with no timestamp-query support. Emits nothing, ever (§V86). */
@@ -152,6 +167,13 @@ export type FrameTimingBasis = "frame" | "passes";
 export interface FrameTimingBucket extends TimingBucket {
   readonly basis?: FrameTimingBasis;
   readonly passSumMs?: number | null;
+  /**
+   * T1295: timed frames whose spans were LOST since this plan was set — never measured,
+   * as opposed to not measured yet. Non-zero means `gpuMs` and the per-pass column describe
+   * only the frames that got through: a figure that knows it is partial, rather than one
+   * that reads as whole.
+   */
+  readonly droppedFrames?: number;
 }
 
 export function emptyBucket(availability: TimingAvailability): TimingBucket {

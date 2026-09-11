@@ -225,6 +225,13 @@ export interface LoomBackend extends RenderBackend {
   ): () => void;
 
   /**
+   * T1295: every timed frame whose results will never arrive — see `GpuTimingDrop`. With it,
+   * results plus drops account for every timed frame the backend submitted, so an absence
+   * can always be told from a wait. Optional so a backend with no GPU timer need not stub it.
+   */
+  onGpuTimingsDropped?(listener: (drop: GpuTimingDrop) => void): () => void;
+
+  /**
    * Per-pass CPU ENCODE time in milliseconds, keyed by PASS ID (T256, §V86, §V844).
    *
    * The other half of a node's cost, and a DIFFERENT measurement: this is how long it
@@ -287,6 +294,22 @@ export interface LoomBackend extends RenderBackend {
 export interface GpuFrameTiming {
   readonly gpuMs: number;
   readonly submit: number | null;
+}
+
+/**
+ * T1295: one frame whose GPU timing will NEVER arrive through `onGpuTimings`.
+ *
+ * Without it a lost frame is indistinguishable from one whose results have not landed yet,
+ * and the export path lost most of them: vgpu's query ring has three staging slots and drops
+ * rather than blocks, and `encodeSegmented` submits one frame per compute segment — so every
+ * segment past the third of one render, and every frame of a run that never yields to the
+ * event loop, reported nothing. `staging-busy` is that; `abandoned` is a frame whose timer a
+ * failed pass discarded, or that never reached the queue. `spans` is how many it carried.
+ */
+export interface GpuTimingDrop {
+  readonly submit: number | null;
+  readonly reason: "staging-busy" | "abandoned";
+  readonly spans: number;
 }
 
 export type CookPolicy = "always" | "auto";

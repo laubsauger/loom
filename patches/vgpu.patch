@@ -62,10 +62,10 @@ index 287bdf781aa076099649632b1d6effc1fdaba2d7..a971889ae90d3d271e5c84b4a4ce6211
  //# sourceMappingURL=compute.d.ts.map
 \ No newline at end of file
 diff --git a/dist/compute.js b/dist/compute.js
-index fa1d930d97886ed6168d1ce9598f810e9ce61e15..edd34927e8a1cf4863c592525f8a4089292d3519 100644
+index fa1d930d97886ed6168d1ce9598f810e9ce61e15..dbfa741a882f8dce3a59aaf5f62607e5ca72cc87 100644
 --- a/dist/compute.js
 +++ b/dist/compute.js
-@@ -71,17 +71,41 @@ export class ComputePipeline {
+@@ -71,26 +71,62 @@ export class ComputePipeline {
          if (opts.set)
              this.set(opts.set);
      }
@@ -91,6 +91,17 @@ index fa1d930d97886ed6168d1ce9598f810e9ce61e15..edd34927e8a1cf4863c592525f8a4089
 +        const opts = typeof x === "object" && x !== null ? x : undefined;
 +        const indirect = opts ? this.#resolveIndirectDispatch(x, y, z) : undefined;
          this.#preflightAliasing();
+-        const encoder = this.device.gpu.createCommandEncoder({ label: `${this.label}.encoder` });
+-        const pass = encoder.beginComputePass({ label: `${this.label}.pass` });
+-        pass.setPipeline(this.pipeline);
+-        for (const binding of this.setCore.bindGroups())
+-            pass.setBindGroup(binding.group, binding.bindGroup, binding.offsets);
+-        if (indirect)
+-            pass.dispatchWorkgroupsIndirect(indirect.buffer, indirect.offset);
+-        else
+-            pass.dispatchWorkgroups(x, y ?? 1, z ?? 1);
+-        pass.end();
+-        this.device.gpu.queue.submit([encoder.finish()]);
 +        /**
 +         * shaderloom patch (T1247): optional GPU timestamp pair around this dispatch. The span
 +         * belongs to the open frame that is handed with it, never to this command buffer — see
@@ -99,17 +110,37 @@ index fa1d930d97886ed6168d1ce9598f810e9ce61e15..edd34927e8a1cf4863c592525f8a4089
 +         * out of an unwritten query set.
 +         */
 +        const timed = opts?.timer !== undefined ? opts : timing;
-+        const timestampWrites = timed?.timer !== undefined && timed.frame !== undefined
-+            ? timed.frame.attachExternalSpan(timed.timer).timestampWrites
++        const attachment = timed?.timer !== undefined && timed.frame !== undefined
++            ? timed.frame.attachExternalSpan(timed.timer)
 +            : undefined;
-         const encoder = this.device.gpu.createCommandEncoder({ label: `${this.label}.encoder` });
--        const pass = encoder.beginComputePass({ label: `${this.label}.pass` });
-+        const pass = encoder.beginComputePass(timestampWrites
-+            ? { label: `${this.label}.pass`, timestampWrites }
-+            : { label: `${this.label}.pass` });
-         pass.setPipeline(this.pipeline);
-         for (const binding of this.setCore.bindGroups())
-             pass.setBindGroup(binding.group, binding.bindGroup, binding.offsets);
++        const timestampWrites = attachment?.timestampWrites;
++        // shaderloom patch (T1295): the pair above is now reserved in the frame. If anything below
++        // throws, no timestamp was written into it, so the span is retracted rather than resolved
++        // out of an unwritten query set as a duration for a dispatch that never ran.
++        let submitted = false;
++        try {
++            const encoder = this.device.gpu.createCommandEncoder({ label: `${this.label}.encoder` });
++            const pass = encoder.beginComputePass(timestampWrites
++                ? { label: `${this.label}.pass`, timestampWrites }
++                : { label: `${this.label}.pass` });
++            pass.setPipeline(this.pipeline);
++            for (const binding of this.setCore.bindGroups())
++                pass.setBindGroup(binding.group, binding.bindGroup, binding.offsets);
++            if (indirect)
++                pass.dispatchWorkgroupsIndirect(indirect.buffer, indirect.offset);
++            else
++                pass.dispatchWorkgroups(x, y ?? 1, z ?? 1);
++            pass.end();
++            this.device.gpu.queue.submit([encoder.finish()]);
++            submitted = true;
++        }
++        finally {
++            if (!submitted)
++                attachment?.retract();
++        }
+     }
+     /** The GPU reads the workgroup counts from the buffer, so explicit counts alongside indirect are dead options and throw. */
+     #resolveIndirectDispatch(opts, y, z) {
 diff --git a/dist/draw.d.ts b/dist/draw.d.ts
 index 3a363e3a6b8df312ab2e8b78f6d76d472c09fb94..70b440489134c1131403f3b69f3b8a1833c5ebc0 100644
 --- a/dist/draw.d.ts
@@ -138,7 +169,7 @@ index 3a363e3a6b8df312ab2e8b78f6d76d472c09fb94..70b440489134c1131403f3b69f3b8a18
  export interface DrawLayoutOptions {
      readonly dynamicOffsets?: boolean;
 diff --git a/dist/draw.js b/dist/draw.js
-index d6011f8aba886f4a9f5f4e15b7da07fe889ad006..c0e52fd0b00cc62d6e81a3be6660315447d42ba0 100644
+index d6011f8aba886f4a9f5f4e15b7da07fe889ad006..eac7c0b03a71525a8bb6621a4ac74241d25893d2 100644
 --- a/dist/draw.js
 +++ b/dist/draw.js
 @@ -102,6 +102,35 @@ export class InternalDraw {
@@ -177,11 +208,12 @@ index d6011f8aba886f4a9f5f4e15b7da07fe889ad006..c0e52fd0b00cc62d6e81a3be66603154
      set(values) {
          const state = drawState(this);
          assertDeviceUsable(state.device, `${this.label}.set`);
-@@ -151,7 +180,18 @@ export class InternalDraw {
+@@ -151,71 +180,94 @@ export class InternalDraw {
              throw targetRequiredError(`${this.label}.draw`);
          assertSurfaceTargetInFrame(target, `${this.label}.draw`);
          const encoder = state.device.gpu.createCommandEncoder();
 -        const pass = encoder.beginRenderPass(target.renderPassDescriptor());
+-        const validations = [];
 +        /**
 +         * shaderloom patch (T1247): optional GPU timestamp pair around a self-submitted draw.
 +         * `Draw.draw()` is the only way to issue a GPU-driven (indirect) draw and, like
@@ -189,14 +221,147 @@ index d6011f8aba886f4a9f5f4e15b7da07fe889ad006..c0e52fd0b00cc62d6e81a3be66603154
 +         * Frame.pass and never received a pair. The span is billed to the open frame handed with
 +         * it (Frame.attachExternalSpan), whose resolve runs after this submit.
 +         */
-+        const timestampWrites = opts.timer !== undefined && opts.frame !== undefined
-+            ? opts.frame.attachExternalSpan(opts.timer).timestampWrites
++        const attachment = opts.timer !== undefined && opts.frame !== undefined
++            ? opts.frame.attachExternalSpan(opts.timer)
 +            : undefined;
-+        const descriptor = target.renderPassDescriptor();
-+        const pass = encoder.beginRenderPass(timestampWrites ? { ...descriptor, timestampWrites } : descriptor);
-         const validations = [];
++        const timestampWrites = attachment?.timestampWrites;
++        // shaderloom patch (T1295): every exit below that does not reach queue.submit — a throw, or the
++        // finish/submit validation early returns — wrote no timestamps into the reserved pair, so the
++        // span is retracted rather than resolved as a phantom duration.
++        let submitted = false;
          try {
-             this.encode(pass, target, opts, (result) => validations.push(result));
+-            this.encode(pass, target, opts, (result) => validations.push(result));
+-        }
+-        catch (error) {
+-            discardClaimedGroupValidationResults(validations);
+-            discardClaimedGroupValidationScopes(state.device);
++            const descriptor = target.renderPassDescriptor();
++            const pass = encoder.beginRenderPass(timestampWrites ? { ...descriptor, timestampWrites } : descriptor);
++            const validations = [];
+             try {
+-                pass.end();
++                this.encode(pass, target, opts, (result) => validations.push(result));
+             }
+-            catch { /* ignore cleanup failure after encode failure */ }
+-            throw error;
+-        }
+-        endRenderPassWithClaimValidation(state.device, pass, validations, validations[0]?.context);
+-        let commandBuffer;
+-        const finishContext = validations[0]?.context;
+-        if (finishContext)
+-            pushClaimedGroupValidationScope(state.device, finishContext);
+-        try {
+-            commandBuffer = encoder.finish();
+-        }
+-        catch (error) {
+-            const result = finishContext ? popLastClaimedGroupValidationScope(state.device) : undefined;
+-            discardClaimedGroupValidationResults(validations);
+-            if (result)
+-                discardClaimedGroupValidationResults([result]);
+-            const context = result?.context ?? finishContext;
+-            if (context) {
+-                void reportDrawValidationError(state, context.label, context.group, error);
+-                return;
++            catch (error) {
++                discardClaimedGroupValidationResults(validations);
++                discardClaimedGroupValidationScopes(state.device);
++                try {
++                    pass.end();
++                }
++                catch { /* ignore cleanup failure after encode failure */ }
++                throw error;
+             }
+-            throw error;
+-        }
+-        if (finishContext) {
+-            const result = popLastClaimedGroupValidationScope(state.device);
+-            if (result)
+-                validations[0] = validations[0] ? preferClaimedGroupValidationResult(result, validations[0]) : result;
+-        }
+-        const submitContext = validations[0]?.context;
+-        if (submitContext)
+-            pushClaimedGroupValidationScope(state.device, submitContext);
+-        try {
+-            state.device.gpu.queue.submit([commandBuffer]);
+-        }
+-        catch (error) {
+-            const result = submitContext ? popLastClaimedGroupValidationScope(state.device) : undefined;
+-            discardClaimedGroupValidationResults(validations);
+-            if (result)
+-                discardClaimedGroupValidationResults([result]);
+-            const context = result?.context ?? submitContext;
+-            if (context) {
+-                void reportDrawValidationError(state, context.label, context.group, error);
+-                return;
++            endRenderPassWithClaimValidation(state.device, pass, validations, validations[0]?.context);
++            let commandBuffer;
++            const finishContext = validations[0]?.context;
++            if (finishContext)
++                pushClaimedGroupValidationScope(state.device, finishContext);
++            try {
++                commandBuffer = encoder.finish();
++            }
++            catch (error) {
++                const result = finishContext ? popLastClaimedGroupValidationScope(state.device) : undefined;
++                discardClaimedGroupValidationResults(validations);
++                if (result)
++                    discardClaimedGroupValidationResults([result]);
++                const context = result?.context ?? finishContext;
++                if (context) {
++                    void reportDrawValidationError(state, context.label, context.group, error);
++                    return;
++                }
++                throw error;
++            }
++            if (finishContext) {
++                const result = popLastClaimedGroupValidationScope(state.device);
++                if (result)
++                    validations[0] = validations[0] ? preferClaimedGroupValidationResult(result, validations[0]) : result;
++            }
++            const submitContext = validations[0]?.context;
++            if (submitContext)
++                pushClaimedGroupValidationScope(state.device, submitContext);
++            try {
++                state.device.gpu.queue.submit([commandBuffer]);
++                submitted = true;
++            }
++            catch (error) {
++                const result = submitContext ? popLastClaimedGroupValidationScope(state.device) : undefined;
++                discardClaimedGroupValidationResults(validations);
++                if (result)
++                    discardClaimedGroupValidationResults([result]);
++                const context = result?.context ?? submitContext;
++                if (context) {
++                    void reportDrawValidationError(state, context.label, context.group, error);
++                    return;
++                }
++                throw error;
++            }
++            if (submitContext) {
++                const result = popLastClaimedGroupValidationScope(state.device);
++                if (result)
++                    validations[0] = validations[0] ? preferClaimedGroupValidationResult(result, validations[0]) : result;
++            }
++            if (validations.length) {
++                const done = claimedGroupValidationDone(state.device, validations, { errorSink: state.errorSink });
++                state.trackSettled?.(done);
+             }
+-            throw error;
+-        }
+-        if (submitContext) {
+-            const result = popLastClaimedGroupValidationScope(state.device);
+-            if (result)
+-                validations[0] = validations[0] ? preferClaimedGroupValidationResult(result, validations[0]) : result;
+         }
+-        if (validations.length) {
+-            const done = claimedGroupValidationDone(state.device, validations, { errorSink: state.errorSink });
+-            state.trackSettled?.(done);
++        finally {
++            if (!submitted)
++                attachment?.retract();
+         }
+     }
+     encode(pass, target, opts = {}, claimValidation) {
 diff --git a/dist/effect.js b/dist/effect.js
 index 079c6686ce2c87a580f217b12c9ea978f0ed3005..fb684c09ba66ed7763f8f2123a5f6ec635bda0ea 100644
 --- a/dist/effect.js
@@ -211,10 +376,10 @@ index 079c6686ce2c87a580f217b12c9ea978f0ed3005..fb684c09ba66ed7763f8f2123a5f6ec6
      compile(target) { return effectImpl(this).compile(target).then(() => this); }
      compileSync(target) { effectImpl(this).compileSync(target); return this; }
 diff --git a/dist/frame.d.ts b/dist/frame.d.ts
-index 195a58c3a3a8f8c01f53307ec31e5449d1608748..91cf3d3730b57c2096b06ec829c34f47c2ffaa7f 100644
+index 195a58c3a3a8f8c01f53307ec31e5449d1608748..efa932e214e1a318e1c8c245e62b65192634e656 100644
 --- a/dist/frame.d.ts
 +++ b/dist/frame.d.ts
-@@ -82,6 +82,14 @@ export declare class Frame {
+@@ -82,6 +82,16 @@ export declare class Frame {
      constructor(device: Device, defaultTarget?: Target | undefined, errorSink?: ValidationErrorSink | undefined, trackSettled?: ((promise: Promise<unknown>) => void) | undefined, releaseLifecycle?: (() => void) | undefined);
      pass(target: Target, body: Effect | Draw | ((pass: FramePass) => void)): void;
      pass(options: FramePassOptions, body: Effect | Draw | ((pass: FramePass) => void)): void;
@@ -225,12 +390,14 @@ index 195a58c3a3a8f8c01f53307ec31e5449d1608748..91cf3d3730b57c2096b06ec829c34f47
 +     */
 +    attachExternalSpan(span: TimerSpan): {
 +        readonly timestampWrites?: GPUComputePassTimestampWrites;
++        /** shaderloom patch (T1295): undo, for work that attached and then never reached the queue. */
++        readonly retract: () => void;
 +    };
      submit(): void;
      /**
       * Discards the frame without submitting it: the command encoder is dropped (nothing this frame
 diff --git a/dist/frame.js b/dist/frame.js
-index 0cda97810db3bb9bec195d8399cd768baf9b8c2c..d88959d720773109cb2d3ce46fac6f76ad9c1346 100644
+index 0cda97810db3bb9bec195d8399cd768baf9b8c2c..12c6848abe2c81541cd7da22c7180e74d29ebc29 100644
 --- a/dist/frame.js
 +++ b/dist/frame.js
 @@ -119,8 +119,8 @@ export class Frame {
@@ -244,7 +411,7 @@ index 0cda97810db3bb9bec195d8399cd768baf9b8c2c..d88959d720773109cb2d3ce46fac6f76
          const clearDepth = targetOnly ? undefined : target.clearDepth;
          if (clearDepth !== undefined) {
              if (typeof clearDepth !== "number" || !(clearDepth >= 0 && clearDepth <= 1))
-@@ -221,6 +221,30 @@ export class Frame {
+@@ -221,6 +221,36 @@ export class Frame {
          }
          endRenderPassWithClaimValidation(this.device, encoder, this.#validations);
      }
@@ -270,25 +437,31 @@ index 0cda97810db3bb9bec195d8399cd768baf9b8c2c..d88959d720773109cb2d3ce46fac6f76
 +        if (this.#submitted)
 +            throw frameAlreadySubmittedError("Frame.attachExternalSpan");
 +        assertDeviceUsable(this.device, "Frame.attachExternalSpan");
-+        return this.#attach(span, undefined, [], timerAttachmentInvalidError);
++        const result = this.#attach(span, undefined, [], timerAttachmentInvalidError);
++        // shaderloom patch (T1295): the caller's undo, for work that attached a span and then never
++        // reached the queue. See InternalTimer.retractSpan.
++        return {
++            timestampWrites: result.timestampWrites,
++            retract: () => { result.owner.retractSpan?.(span, this); },
++        };
 +    }
      submit() {
          // Closed either way: a re-submit has nothing left to flush, and a canceled frame dropped its
          // encoder. Both are silent no-ops so `frame(gpu, cb)`'s implicit submit-on-return never masks
 diff --git a/dist/index.d.ts b/dist/index.d.ts
-index f11060a2a7f9b234465d04371e8826941e6b8d90..ca90902665a0e974c076c2592130458d69be7f5d 100644
+index f11060a2a7f9b234465d04371e8826941e6b8d90..b301ef54962d1ed25106e5b321f33dcde9b59af0 100644
 --- a/dist/index.d.ts
 +++ b/dist/index.d.ts
 @@ -1,6 +1,6 @@
  import { createGpu, type InitOptions } from "./init.ts";
  export { initFromDevice } from "./init-from-device.ts";
 -export type { Bundle, BundleOptions, BundleRecorder, Compute, ComputeOptions, DispatchOptions, ClearColor, GpuErrorListener, InitOptions, PingPongStorage, PingPongTargets, SharedUniforms, StorageAccess, StorageBuffer, StorageOptions, Surface, SurfaceOptions, SurfaceResizeEvent, Timer, TimerSpan, Visibility, VisibilityOptions, VisibilityQuery } from "./init.ts";
-+export type { Bundle, BundleOptions, BundleRecorder, Compute, ComputeOptions, DispatchOptions, DispatchTiming, ClearColor, GpuErrorListener, InitOptions, PingPongStorage, PingPongTargets, SharedUniforms, StorageAccess, StorageBuffer, StorageOptions, Surface, SurfaceOptions, SurfaceResizeEvent, Timer, TimerFrameExtent, TimerSpan, Visibility, VisibilityOptions, VisibilityQuery } from "./init.ts";
++export type { Bundle, BundleOptions, BundleRecorder, Compute, ComputeOptions, DispatchOptions, DispatchTiming, ClearColor, GpuErrorListener, InitOptions, PingPongStorage, PingPongTargets, SharedUniforms, StorageAccess, StorageBuffer, StorageOptions, Surface, SurfaceOptions, SurfaceResizeEvent, Timer, TimerFrameDrop, TimerFrameExtent, TimerSpan, Visibility, VisibilityOptions, VisibilityQuery } from "./init.ts";
  export type { BlendComponentOptions, BlendOptions, BlendPreset, DepthOptions, Draw, DrawOptions, DrawCallOptions, DrawLayoutOptions, GeometryLike, StencilFaceOptions, StencilOptions } from "./draw.ts";
  export { Geometry } from "./scene/geometry-descriptor.ts";
  export type { GeometryAttributeOverride, GeometryAttributes, GeometryBuffer, GeometryBufferOptions, GeometryData, GeometryOptions, GeometrySlice, GeometrySliceOptions } from "./scene/geometry-descriptor.ts";
 diff --git a/dist/init.d.ts b/dist/init.d.ts
-index d4cb959be6bc7d6e9c8fbad4d42cd90058c1ade1..968bae2f72631bf4286a8e4d4910b9823eaa531d 100644
+index d4cb959be6bc7d6e9c8fbad4d42cd90058c1ade1..ef89e3a22e6e138a7106b86e75555908eeb1efb5 100644
 --- a/dist/init.d.ts
 +++ b/dist/init.d.ts
 @@ -1,9 +1,9 @@
@@ -299,7 +472,7 @@ index d4cb959be6bc7d6e9c8fbad4d42cd90058c1ade1..968bae2f72631bf4286a8e4d4910b982
 +export type { Compute, ComputeOptions, DispatchOptions, DispatchTiming, GpuErrorListener, PingPongStorage, PingPongTargets, SharedUniforms, StorageAccess, StorageBuffer, StorageOptions } from "./api-types.ts";
  export type { ClearColor } from "./target-utils.ts";
 -export type { Timer, TimerSpan } from "./timer.ts";
-+export type { Timer, TimerFrameExtent, TimerSpan } from "./timer.ts";
++export type { Timer, TimerFrameDrop, TimerFrameExtent, TimerSpan } from "./timer.ts";
  export type { Visibility, VisibilityOptions, VisibilityQuery } from "./visibility.ts";
  export type { Bundle, BundleOptions, BundleRecorder } from "./bundle.ts";
  export type { Surface, SurfaceOptions, SurfaceResizeEvent } from "./surface.ts";
@@ -432,10 +605,10 @@ index f642ba8b4a9ba90b3d3aff09484779766564f86a..fcaa44da00b451720e69d0347dabe624
       * Default clear color of this target, used by passes that clear without naming a color.
       * Defaults to `[0, 0, 0, 1]`; mutable at runtime through `target.clearColor`.
 diff --git a/dist/timer.d.ts b/dist/timer.d.ts
-index 4571da5a860793c7250ad8862c5341d700217765..d90c34b8f3238e77907b5045e46727582e84c633 100644
+index 4571da5a860793c7250ad8862c5341d700217765..04998a9ceec949475f1cb4005900f244d53e8bdc 100644
 --- a/dist/timer.d.ts
 +++ b/dist/timer.d.ts
-@@ -10,12 +10,21 @@ import { type QueryHostOptions } from "./query-ring.ts";
+@@ -10,12 +10,33 @@ import { type QueryHostOptions } from "./query-ring.ts";
  export interface TimerSpan {
      readonly name: string;
  }
@@ -448,6 +621,16 @@ index 4571da5a860793c7250ad8862c5341d700217765..d90c34b8f3238e77907b5045e4672758
 +    readonly extentMs: number;
 +    readonly frame: object;
 +}
++/**
++ * shaderloom patch (T1295): one frame whose attached spans will never produce an `onResults` call.
++ * `reason` is "staging-busy" (every staging slot was still waiting on an earlier readback) or
++ * "abandoned" (a failed pass discarded the timer for the frame, or the frame never reached the queue).
++ */
++export interface TimerFrameDrop {
++    readonly frame: object;
++    readonly reason: "staging-busy" | "abandoned";
++    readonly spans: number;
++}
  /** GPU pass timer created by `timer(gpu)`. Needs the "timestamp-query" device feature. */
  export interface Timer {
      /** Marks a pass for timing. Pass the result as FramePassOptions.timer. One name per frame. */
@@ -456,23 +639,119 @@ index 4571da5a860793c7250ad8862c5341d700217765..d90c34b8f3238e77907b5045e4672758
 -    onResults(cb: (spans: Readonly<Record<string, number>>) => void): () => void;
 +    /** Registers a callback invoked whenever a new set of results lands (typically 1-2 frames after submit). Times in milliseconds. Returns an unsubscribe function. shaderloom patch (T1243): the frame's extent rides as a second argument. */
 +    onResults(cb: (spans: Readonly<Record<string, number>>, frame: TimerFrameExtent) => void): () => void;
++    /** shaderloom patch (T1295): called once per frame whose spans will never produce a result. Returns an unsubscribe function. */
++    onDropped(cb: (drop: TimerFrameDrop) => void): () => void;
      /** Releases the timer's query set and buffers. Further use of the timer or its spans throws. */
      dispose(): void;
  }
-@@ -54,7 +63,7 @@ export declare class InternalTimer {
+@@ -54,8 +75,11 @@ export declare class InternalTimer {
      #private;
      constructor(device: Device, host?: QueryHostOptions);
      span(name: string): TimerSpan;
 -    onResults(cb: (spans: Readonly<Record<string, number>>) => void): () => void;
 +    onResults(cb: (spans: Readonly<Record<string, number>>, frame: TimerFrameExtent) => void): () => void;
++    onDropped(cb: (drop: TimerFrameDrop) => void): () => void;
      dispose(): void;
++    /** @internal shaderloom patch (T1295): Frame.attachExternalSpan's undo. */
++    retractSpan(span: TimerSpan, frame: unknown): void;
      /**
       * @internal Frame.pass hook: registers the span for the current frame and returns the pass
+      * descriptor's timestampWrites, or undefined when the span is dropped for this frame because
 diff --git a/dist/timer.js b/dist/timer.js
-index 88f211164c7f4d19a965d45ef4cce5d75fe08086..c151bece3125ee8d4e976a7632e909337c906ab0 100644
+index 88f211164c7f4d19a965d45ef4cce5d75fe08086..0488902ba2a30085e8cafcc5b068ca03c3c16282 100644
 --- a/dist/timer.js
 +++ b/dist/timer.js
-@@ -181,7 +181,7 @@ export class InternalTimer {
+@@ -8,6 +8,14 @@ const INITIAL_SPAN_CAPACITY = 32;
+ const MAX_QUERIES = 4096;
+ const MAX_SPANS_PER_FRAME = MAX_QUERIES / 2;
+ const MS_PER_NS = 1 / 1_000_000;
++/**
++ * shaderloom patch (T1295): the query ring starts with vgpu's three staging slots and doubles on
++ * demand, at a frame boundary, whenever a frame is dropped for want of a free one. Three is right for
++ * a frame loop (one frame per tick); a caller that submits several timed frames per tick — our export
++ * path splits a render into one frame per compute segment — needs one slot per frame in flight.
++ */
++const INITIAL_STAGING_DEPTH = 3;
++const MAX_STAGING_DEPTH = 32;
+ class InternalTimerSpan {
+     name;
+     owner;
+@@ -63,6 +71,12 @@ export class InternalTimer {
+     #encodedSpans;
+     #resultSeq = 0;
+     #appliedSeq = -1;
++    /** shaderloom patch (T1295): the current ring's staging depth, and the depth a drop asked for. */
++    #depth = INITIAL_STAGING_DEPTH;
++    #depthDemand = INITIAL_STAGING_DEPTH;
++    #dropListeners = new Set();
++    /** The frame a drop was last reported for, so one frame is never reported twice. */
++    #droppedFrame;
+     /**
+      * One retain per open frame whose pass descriptors reference a ring's query set, keyed by frame
+      * identity and remembering *which* ring it pinned (capacity growth swaps the ring mid-life).
+@@ -100,11 +114,25 @@ export class InternalTimer {
+         this.#listeners.add(cb);
+         return () => { this.#listeners.delete(cb); };
+     }
++    /**
++     * shaderloom patch (T1295): called once for every frame whose attached spans will NEVER produce
++     * an `onResults` call. Before this, such a frame was indistinguishable from one whose results had
++     * not landed yet: a missing figure that read as an absence rather than announcing itself.
++     * `reason` is "staging-busy" (every staging slot was still waiting on an earlier readback when the
++     * frame submitted) or "abandoned" (a failed pass discarded this timer for the frame, or the frame
++     * never reached the queue). `spans` is how many spans the frame had attached.
++     */
++    onDropped(cb) {
++        this.#assertUsable("Timer.onDropped");
++        this.#dropListeners.add(cb);
++        return () => { this.#dropListeners.delete(cb); };
++    }
+     dispose() {
+         if (this.#disposed)
+             return;
+         this.#disposed = true;
+         this.#listeners.clear();
++        this.#dropListeners.clear();
+         this.#spans.clear();
+         this.#frameNames.clear();
+         this.#frameSpans = [];
+@@ -153,10 +181,33 @@ export class InternalTimer {
+     /** @internal Frame.submit hook, before encoder.finish(): appends this frame's single resolve to the frame encoder. */
+     finalizeFrame(frame, encoder) {
+         this.#encodedSpans = undefined;
+-        if (this.#disposed || frame !== this.#frame || this.#usedQueries === 0)
++        // shaderloom patch (T1295): a frame whose every span was retracted has nothing to read back.
++        if (this.#disposed || frame !== this.#frame || this.#usedQueries === 0 || this.#frameSpans.length === 0)
+             return;
+-        if (this.#ring.encodeResolve(encoder, this.#usedQueries))
++        if (this.#ring.encodeResolve(encoder, this.#usedQueries)) {
+             this.#encodedSpans = [...this.#frameSpans];
++            return;
++        }
++        // shaderloom patch (T1295): every staging slot is still waiting on an earlier readback, so this
++        // frame's spans are lost. The ring drops rather than blocks, which is right for a frame loop —
++        // but the loss is now reported, and the next frame boundary opens a deeper ring.
++        if (this.#depth < MAX_STAGING_DEPTH)
++            this.#depthDemand = Math.min(MAX_STAGING_DEPTH, this.#depth * 2);
++        this.#reportDropped(frame, "staging-busy");
++    }
++    /**
++     * @internal shaderloom patch (T1295): Frame.attachExternalSpan's undo. Work that attached a span
++     * and then never reached the queue — it threw, or its command buffer failed to finish or submit —
++     * wrote no timestamps, so the frame must not resolve its pair into a result: that would be a
++     * duration for a pass that never ran. The pair stays reserved (indices are positional) and is
++     * simply never reported.
++     */
++    retractSpan(span, frame) {
++        if (frame !== this.#frame)
++            return;
++        const index = this.#frameSpans.findIndex((entry) => entry.name === span.name);
++        if (index >= 0)
++            this.#frameSpans.splice(index, 1);
+     }
+     /** @internal Frame.submit hook, after queue.submit succeeds: starts the non-blocking readback. */
+     frameSubmitted(frame) {
+@@ -181,7 +232,7 @@ export class InternalTimer {
              if (seq <= this.#appliedSeq)
                  return;
              this.#appliedSeq = seq;
@@ -481,7 +760,34 @@ index 88f211164c7f4d19a965d45ef4cce5d75fe08086..c151bece3125ee8d4e976a7632e90933
          });
      }
      /**
-@@ -209,19 +209,37 @@ export class InternalTimer {
+@@ -191,16 +242,24 @@ export class InternalTimer {
+      * it attached a span — the counterpart of frameSubmitted() for frames that never submit.
+      */
+     frameAbandoned(frame) {
+-        if (frame === this.#frame)
++        if (frame === this.#frame) {
+             this.#encodedSpans = undefined;
++            // shaderloom patch (T1295): a failed pass discards this timer for the WHOLE frame, and a
++            // failed finish/submit or a cancel() never reaches the queue. Either way the frame's spans
++            // produce no result; they used to vanish, and now the frame is reported once.
++            if (!this.#disposed && this.#frameSpans.length > 0)
++                this.#reportDropped(frame, "abandoned");
++        }
+         this.#releaseRing(frame);
+     }
+     #beginFrame(frame) {
+-        if (this.#demand > this.#ring.capacity) {
++        // shaderloom patch (T1295): the staging DEPTH grows on the same edge as the capacity.
++        if (this.#demand > this.#ring.capacity || this.#depthDemand > this.#depth) {
+             // Grow only at frame boundaries. The retired ring keeps applying its in-flight readbacks
+             // before releasing its resources, so growth never drops results already submitted.
+             this.#ring.dispose();
+             this.#capacity = Math.min(MAX_QUERIES, nextPowerOfTwo(this.#demand));
++            this.#depth = this.#depthDemand;
+             this.#ring = this.#createRing();
+         }
+         this.#demand = this.#capacity;
+@@ -209,19 +268,51 @@ export class InternalTimer {
          this.#frameNames.clear();
          this.#usedQueries = 0;
      }
@@ -518,6 +824,29 @@ index 88f211164c7f4d19a965d45ef4cce5d75fe08086..c151bece3125ee8d4e976a7632e90933
              try {
 -                listener(frozen);
 +                listener(frozen, extent);
++            }
++            catch (error) {
++                console.error(error);
++            }
++        }
++    }
++    #reportDropped(frame, reason) {
++        if (this.#droppedFrame === frame)
++            return;
++        this.#droppedFrame = frame;
++        const drop = Object.freeze({ frame, reason, spans: this.#frameSpans.length });
++        for (const listener of [...this.#dropListeners]) {
++            try {
++                listener(drop);
              }
              catch (error) {
                  console.error(error);
+@@ -242,7 +333,7 @@ export class InternalTimer {
+         ring.release();
+     }
+     #createRing() {
+-        return createQueryRing(this.#device, { type: "timestamp", capacity: this.#capacity, label: "vgpu.timer", trackSettled: this.#host.trackSettled, errorSink: this.#host.errorSink });
++        return createQueryRing(this.#device, { type: "timestamp", capacity: this.#capacity, depth: this.#depth, label: "vgpu.timer", trackSettled: this.#host.trackSettled, errorSink: this.#host.errorSink });
+     }
+     #assertUsable(where) {
+         if (this.#disposed)

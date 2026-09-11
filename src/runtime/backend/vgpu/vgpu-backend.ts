@@ -15,6 +15,7 @@ import type {
   BuildStats,
   FrameLoopSettings,
   GpuFrameTiming,
+  GpuTimingDrop,
   // Ours, NOT the DOM's Media Source Extensions global of the same name — without this
   // import the code below would silently typecheck against the wrong interface.
   CookPolicy,
@@ -245,6 +246,8 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
   const timingListeners = new Set<
     (spans: Readonly<Record<string, number>>, frame: GpuFrameTiming) => void
   >();
+  /** T1295: the frames `timingListeners` will never hear about, with why. */
+  const droppedTimingListeners = new Set<(drop: GpuTimingDrop) => void>();
   /**
    * T1243: which submit each timed vgpu frame belongs to, keyed by the frame object the
    * spans were attached to. vgpu hands that object back with the results (patched
@@ -1411,7 +1414,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
     try {
       const created = timer(active.gpu);
       gpuTimer = created;
-      unsubscribeTimer = created.onResults((spans, extent) => {
+      const offResults = created.onResults((spans, extent) => {
         // T1243: the frame figure is the extent vgpu measured from the same timestamps
         // the spans came from — never a sum of the spans (they overlap; see hub.ts
         // `frameBucket`). The submit number ties it to the render that encoded it.
@@ -1421,6 +1424,23 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         };
         for (const listener of timingListeners) listener(spans, frame);
       });
+      /*
+       * T1295: the frames that will never reach `onResults`, keyed back to their submit the
+       * same way. vgpu reports each once; results plus drops now account for every timed
+       * frame this backend submitted, so a missing figure can say it is missing.
+       */
+      const offDropped = created.onDropped((drop) => {
+        const report: GpuTimingDrop = {
+          submit: timedFrames.get(drop.frame as Frame) ?? null,
+          reason: drop.reason,
+          spans: drop.spans,
+        };
+        for (const listener of droppedTimingListeners) listener(report);
+      });
+      unsubscribeTimer = () => {
+        offResults();
+        offDropped();
+      };
     } catch (error) {
       // Absence degrades to "no GPU timings", exactly like the capability being missing.
       hub.report(
@@ -2101,6 +2121,13 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       };
     },
 
+    onGpuTimingsDropped(listener) {
+      droppedTimingListeners.add(listener);
+      return () => {
+        droppedTimingListeners.delete(listener);
+      };
+    },
+
     onCpuTimings(listener) {
       cpuTimingListeners.add(listener);
       return () => {
@@ -2581,6 +2608,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       unsubscribeTimer = undefined;
       gpuTimer = undefined;
       timingListeners.clear();
+      droppedTimingListeners.clear();
       cpuTimingListeners.clear();
       for (const h of previewHosts) {
         h.disposed = true;

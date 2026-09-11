@@ -2,7 +2,7 @@
 
 Loom is a browser WebGPU node compositor built entirely on `vgpu` (0.3.1 when this was written; pinned 0.4.1 since T1261, see the end). We carry a
 patch against the published `dist` (pnpm `patchedDependencies` → `patches/vgpu.patch`,
-the original four themes below, T1247's fifth, plus T1307's compatible texture views). We would rather not: a pinned
+the original four themes below, T1247's fifth, T1295's sixth, plus T1307's compatible texture views). We would rather not: a pinned
 dependency's diff is maintenance forever, and a silently dropped patch returns each bug
 with no error.
 
@@ -19,7 +19,8 @@ resolves the raw timestamps and discards them after computing per-span durations
 the frame's extent cannot be recovered from the durations. The fifth (T1247) is a hole
 the fourth exposed: the two calls that submit their own command buffer — a compute
 dispatch and a GPU-driven draw — take no timer, so the one figure theme 4 built cannot
-see them.
+see them. The sixth (T1295) is what the fifth exercised: the timer drops a frame when its
+three staging slots are busy, and a dropped frame is indistinguishable from a late one.
 
 ---
 
@@ -325,12 +326,62 @@ frame's render passes whatever the caller intended, which is a documented hazard
 around by splitting the frame; failing that, `dispatch({ timer })` / `draw({ timer })` with
 vgpu resolving the frame itself, since the timer already knows which frame is current.
 
+## 6. A dropped frame is indistinguishable from a late one
+
+**What we needed.** To know, for every frame we attached timer spans to, whether its
+results will ever arrive — and, on our export path, for them to arrive at all.
+
+**What 0.4.1 does.** The timer's query ring has three staging buffers (`depth ?? 3`, and the
+timer never passes one). When all three are still mapping, `encodeResolve` returns false
+and the frame's resolve is skipped — "drop, never block" — and nothing else happens: no
+`onResults`, no error, no counter. Right for a frame loop, which submits one frame per tick.
+Our export path splits a render into one frame per compute segment so a dispatch runs where
+the plan put it (theme 5's neighbour), and submits them all inside one synchronous call, so
+no slot can free in between. MEASURED on Dawn/Metal (reserved machine, two runs, identical
+counts): a render of 8 timed frames delivered exactly 3 results, every render — 62.5 % of
+frames lost and 21 of that document's passes never timed at all; 8 of our 60 shipped
+examples render more than three. Stepped back to back without yielding to the event loop,
+every frame after the first render was lost. None of it was visible: the figures that did
+arrive read as a whole measurement.
+
+The same silence has two smaller siblings. A failed `Frame.pass` discards the timer for the
+WHOLE frame (correctly — nothing may resolve half-written bookkeeping), so the passes that
+did run lose their spans too, and nothing says so. And theme 5 reserves a self-submitted
+pass's timestamp pair before encoding it; a throw between that reservation and
+`queue.submit()` left the pair reserved, and the frame resolved it out of an unwritten query
+set as a duration for a pass that never ran.
+
+**Our patch.** Three parts, all in `timer.js` except where named:
+
+- `Timer.onDropped(cb)`: called once per frame whose spans will never reach `onResults`,
+  with `reason` — `"staging-busy"` (the skipped resolve above) or `"abandoned"` (the frame's
+  timer was discarded by a failed pass, or the frame never reached the queue) — and how many
+  spans it carried. Results plus drops now account for every timed frame.
+- The staging depth grows on demand, on the same frame-boundary edge capacity already grows
+  on: a staging-busy drop doubles it for the next ring, up to 32. A render of 8 frames loses
+  one frame once, then reports all 8 every render. No depth rescues a caller that never
+  yields; that case is reported, not fixed.
+- `Frame.attachExternalSpan` returns a `retract()` beside `timestampWrites` (`frame.js`), and
+  `Compute.dispatch` / `Draw.draw` call it on every exit that does not reach `queue.submit()`
+  (`compute.js`, `draw.js`). The pair stays reserved — indices are positional — and is never
+  reported.
+
+**Repro.** One `timer(gpu)`, one manual `frame(gpu)` per compute segment, four or more
+segments submitted back to back: the fourth frame's `onResults` never fires and nothing
+else does either.
+
+**Is there a supported way we missed?** Not that we found. What we would prefer: a drop
+signal on the timer (the sixth theme's first bullet, as is), and either a `depth` option on
+`timer(gpu)` or demand-driven depth like capacity's. A blocking resolve would also serve an
+offline caller, but only the caller knows it has no frame budget to protect.
+
 ## What we would delete
 
 Every hunk, immediately, for: an MSAA preserve opt-in (1), a first-class region binding
 with interval-based aliasing (2), either an exported eviction call or a per-entry
 eviction subscription (3), a frame extent or raw-timestamp callback on the timer (4), and
-a timer on `Compute.dispatch` / `Draw.draw` — or compute passes inside a frame (5). We are happy to send patches upstream against any of these if
+a timer on `Compute.dispatch` / `Draw.draw` — or compute passes inside a frame (5), and a
+drop signal plus a staging depth option on the timer (6). We are happy to send patches upstream against any of these if
 the shapes above are close to what you would want.
 
 ---

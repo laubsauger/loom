@@ -40,6 +40,13 @@ import { createTelemetryHub, telemetryPlan } from "./hub.ts";
  * Anyone reading its profile was reading a number with the particle system subtracted
  * out.
  *
+ * WHAT THIS FIXTURE CANNOT REACH (T1295). E9 renders as exactly THREE timed frames per
+ * render on the export path, and vgpu's timer had exactly three staging slots — so this gate
+ * was green even while every frame past the third of a render was silently dropped, which
+ * lost 21 of E47's passes outright. Its green says "self-submitted work carries a span", not
+ * "every span arrives": that claim, on a fixture that did lose passes, is
+ * `timing-drops.gpu.test.ts`.
+ *
  * ## What is asserted, and why each holds exactly (§V147)
  *
  * 1. EVERY self-submitted pass in the plan — dispatch or indirect draw — reports a

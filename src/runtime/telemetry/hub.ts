@@ -251,6 +251,8 @@ export function createTelemetryHub(options: TelemetryHubOptions = {}): Telemetry
    * does leaves `frameBucket` on the per-pass sum, labelled as such.
    */
   let frameExtent: { submit: number | null; gpuMs: number } | null = null;
+  /** T1295: timed frames the source reported as lost since the plan was set. */
+  let droppedFrames = 0;
   /** Most recent CPU span per pass id, ms. Only ever written from `onCpuTimings`. */
   const cpuSpans = new Map<string, number>();
   const counters = new Map<NodeId, NodeCounters>();
@@ -413,6 +415,7 @@ export function createTelemetryHub(options: TelemetryHubOptions = {}): Telemetry
         passSumMs,
         passCount: passes.length,
         nodeCount: nodes.size,
+        droppedFrames,
       };
     }
     return {
@@ -422,6 +425,7 @@ export function createTelemetryHub(options: TelemetryHubOptions = {}): Telemetry
       passSumMs,
       passCount: passes.length,
       nodeCount: nodes.size,
+      droppedFrames,
     };
   }
 
@@ -495,6 +499,7 @@ export function createTelemetryHub(options: TelemetryHubOptions = {}): Telemetry
       for (const passId of [...spans.keys()]) if (!live.has(passId)) spans.delete(passId);
       // T1243: the extent belongs to a frame of the previous plan for the same reason.
       frameExtent = null;
+      droppedFrames = 0;
       for (const passId of [...cpuSpans.keys()]) if (!live.has(passId)) cpuSpans.delete(passId);
       for (const nodeId of [...counters.keys()]) if (!activeNodes.has(nodeId)) counters.delete(nodeId);
       schedule();
@@ -544,6 +549,14 @@ export function createTelemetryHub(options: TelemetryHubOptions = {}): Telemetry
       timingSource = source;
       spans.clear();
       frameExtent = null;
+      droppedFrames = 0;
+      // T1295: a lost frame is counted where the frame figure is read, so the figure can say
+      // it is describing only the frames that got through.
+      const offDropped =
+        source.onTimingsDropped?.(() => {
+          droppedFrames += 1;
+          schedule();
+        }) ?? null;
       const off = source.onPassTimings((results: PassSpanResults, frame?: FrameSpanExtent) => {
         // T1243: halves of one render (same submit) add up; a new submit replaces.
         if (frame !== undefined) {
@@ -571,10 +584,12 @@ export function createTelemetryHub(options: TelemetryHubOptions = {}): Telemetry
       });
       detachTiming = () => {
         off();
+        offDropped?.();
         detachTiming = null;
         timingSource = NO_PASS_TIMING;
         spans.clear();
         frameExtent = null;
+        droppedFrames = 0;
         schedule();
       };
       schedule();

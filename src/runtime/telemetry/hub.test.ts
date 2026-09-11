@@ -16,17 +16,27 @@ import type { FrameSpanExtent, PassSpanResults, PassTimingSource } from "./types
 /** A controllable stand-in for the backend's vgpu timer surface. */
 function fakeTimingSource(timestampQuery: boolean): PassTimingSource & {
   emit(spans: PassSpanResults, frame?: FrameSpanExtent): void;
+  drop(): void;
   listenerCount(): number;
 } {
   const listeners = new Set<(spans: PassSpanResults, frame?: FrameSpanExtent) => void>();
+  const dropListeners = new Set<() => void>();
   return {
     timestampQuery,
     onPassTimings(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
+    onTimingsDropped(listener) {
+      const once = () => listener({ submit: null, reason: "staging-busy", spans: 1 });
+      dropListeners.add(once);
+      return () => dropListeners.delete(once);
+    },
     emit(spans, frame) {
       for (const listener of [...listeners]) listener(spans, frame);
+    },
+    drop() {
+      for (const listener of [...dropListeners]) listener();
     },
     listenerCount: () => listeners.size,
   };
@@ -143,6 +153,47 @@ describe("§V16 — the UI is notified at most 10 times a second", () => {
 
     advance(TELEMETRY_TICK_MS);
     expect(hub.snapshot()).not.toBe(first);
+    hub.dispose();
+  });
+});
+
+describe("T1295 — a lost frame is counted on the frame figure, not left as an absence", () => {
+  it("counts drops beside a measured frame, and forgets them with the plan they belong to", () => {
+    const hub = createTelemetryHub({ now });
+    const timing = fakeTimingSource(true);
+    hub.attachTimingSource(timing);
+    hub.setPlan(telemetryPlan(planOf([{ id: "p1", nodeId: "blur" }])));
+    timing.emit({ p1: 2.5 }, { gpuMs: 2.5, submit: 1 });
+    advance(TELEMETRY_TICK_MS);
+    // Nothing lost: the figure is whole and says so with a zero, not an absent field.
+    expect(hub.snapshot().frame.droppedFrames).toBe(0);
+
+    timing.drop();
+    timing.drop();
+    advance(TELEMETRY_TICK_MS);
+    const partial = hub.snapshot().frame;
+    // The measured figure is still shown — it is a real duration (§V86) — but it now
+    // carries how many frames it is NOT describing.
+    expect(partial.availability).toBe("measured");
+    expect(partial.gpuMs).toBe(2.5);
+    expect(partial.droppedFrames).toBe(2);
+
+    // A new plan's figure owes nothing to the old plan's losses.
+    hub.setPlan(telemetryPlan(planOf([{ id: "p2", nodeId: "blur" }])));
+    advance(TELEMETRY_TICK_MS);
+    expect(hub.snapshot().frame.droppedFrames).toBe(0);
+    hub.dispose();
+  });
+
+  it("stops counting once the source is detached", () => {
+    const hub = createTelemetryHub({ now });
+    const timing = fakeTimingSource(true);
+    const detach = hub.attachTimingSource(timing);
+    hub.setPlan(telemetryPlan(planOf([{ id: "p1", nodeId: "blur" }])));
+    detach();
+    timing.drop();
+    advance(TELEMETRY_TICK_MS);
+    expect(hub.snapshot().frame.droppedFrames).toBe(0);
     hub.dispose();
   });
 });
