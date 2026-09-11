@@ -4,6 +4,8 @@ import { compileGraph } from "./index.ts";
 import { createNodeRegistry } from "../nodes/registry/registry.ts";
 import { allNodeDefinitions } from "../nodes/definitions/index.ts";
 import { cameraPayloadMatrix } from "../domain/geometry/camera.ts";
+import { sceneSurfaceWgsl } from "../nodes/shaders/scene-render.wgsl.ts";
+import { scenePreviewBallWgsl } from "../nodes/shaders/scene-preview.wgsl.ts";
 import { DEFAULT_MATERIAL, SCENE_PAYLOAD_KINDS } from "../domain/types/scene.ts";
 import type { ScenePayloadKind } from "../domain/types/scene.ts";
 import type { GraphDocument, GraphNode } from "../domain/types/graph.ts";
@@ -474,5 +476,100 @@ describe("every geometry mode previews (T1020)", () => {
     // T917 exactly as the Render: additive light sums and stops writing depth.
     expect(object?.blend).toBe("additive");
     expect(object?.depthWrite).toBe(false);
+  });
+});
+
+/**
+ * T1292 — THE TWO SURFACES OF ONE NODE, AND THE BOUND IS ZERO.
+ *
+ * The defect: T1284 gave `materialPbr` a GGX/Smith lobe in the Render and left these two
+ * lines in `compile.ts` mapping `pbr → phong` for the PREVIEW paths, deliberately and on
+ * the record. So a `materialPbr` node's TILE shaded Blinn-Phong while its RENDER shaded
+ * GGX — both working as built, and the first person to compare them would think one was
+ * broken.
+ *
+ * MEASURED BEFORE FIXED, because the row's alternative was to declare the tile an
+ * approximation and say so in the UI. At a 192 px tile (the shipped `previewLongEdge`,
+ * and the same numbers at 384) the two shadings disagree over essentially the WHOLE
+ * object, not in a highlight a thumbnail could hide: base [0.8, 0.6, 0.3], metallic 0,
+ * roughness 1 → 100 % of object texels differ, mean |Δ| 144.9 of 255; the mildest case
+ * measured (metallic 0, roughness 0.1) is still mean 9.7 with a 178-level worst channel;
+ * metallic 1 runs 100–177 mean across the roughness range. A "small tile hides it"
+ * argument dies on those numbers, so the tile was widened rather than disclaimed.
+ *
+ * This gate is the AGREEMENT itself, and it is exact because the GEOMETRY preview draws
+ * with the Render's OWN generators (`sceneSurfaceWgsl` / `sceneInstancesWgsl`, which have
+ * carried a pbr branch since T1284) — so the mapping line was the entire disagreement on
+ * this path, and with it gone the two passes compile to the SAME WGSL, byte for byte.
+ * Comparing two GENERATED strings would prove nothing if both came from one call; these
+ * come from two independent compiles of two different sinks in one graph, so a mapping
+ * that sends one of them to `phong` fails here.
+ *
+ * The MATERIAL tile (the torus) cannot be byte-compared this way — it is its own
+ * generator with its own geometry — so its claim is pixels, in
+ * `scene-preview.gpu.test.ts`, plus the fact that its lobe IS `ggxSpecularWgsl`, the
+ * Render's own exported string (§V349): the third caller, not a third copy.
+ */
+describe("a pbr material's preview and its render agree (T1292)", () => {
+  const pbrScene = (): GraphDocument =>
+    graphOf(
+      [
+        node("grid", "pointGrid", { cols: 8, rows: 8 }, "grid1"),
+        node("skin", "materialPbr", { color: [0.8, 0.6, 0.3, 1], metallic: 1, roughness: 0.4 }, "skin1"),
+        node("geo", "geometry", { mode: "surface", material: "skin1" }, "geo1"),
+        node("cam", "camera", { eye: [0, 0, 4], lookAt: [0, 0, 0] }, "cam1"),
+        // TWO lights, because the preview rig has two: the generated light blocks are
+        // structural, so a render under one light emits a different (correct) shader and
+        // the comparison would be about the light COUNT rather than about the model.
+        node("key", "light", { kind: "directional", direction: [0, 0, -1] }, "key1"),
+        node("fill", "light", { kind: "directional", direction: [1, -0.4, 0] }, "fill1"),
+        node("shot", "render", { scenes: "geo1", camera: "cam1", lights: "key1 fill1" }, "shot1"),
+        node("out", "output", {}, "out1"),
+      ],
+      {
+        e1: { id: "e1", source: { nodeId: "grid", portId: "out" }, target: { nodeId: "geo", portId: "points" } },
+        e2: { id: "e2", source: { nodeId: "shot", portId: "out" }, target: { nodeId: "out", portId: "input" } },
+      },
+    );
+
+  it("the geometry tile and the Render draw the SAME shader — not a look-alike", () => {
+    const compiled = compileGraph({
+      graph: pbrScene(),
+      settings: SETTINGS,
+      registry,
+      capabilities: CAPABILITIES,
+      sinks: [{ nodeId: "geo", portId: "out", kind: "preview" as const }],
+    } as never) as unknown as {
+      passes: ReadonlyArray<{ id: string; shader?: string }>;
+      outputs: ReadonlyArray<ResolvedOutput>;
+    };
+    const tile = (rowById(compiled, "preview:scene:geo:out")?.synthesis?.passes ?? []).find((pass) =>
+      pass.id.includes("#scenePreview:"),
+    ) as DrawPassDescriptor | undefined;
+    const render = compiled.passes.find((pass) => pass.id.endsWith("shot:scene:0"));
+    expect([tile === undefined, render === undefined]).toEqual([false, false]);
+    // The bound the row asked for, and it is ZERO: same generator, same options, same
+    // text. Before this task the tile's was `sceneSurfaceWgsl({ model: "phong" })`.
+    expect(tile?.shader).toBe(render?.shader);
+    // And it is the GGX text that is shared, not an empty agreement between two phongs:
+    // `distribution` appears only in `ggxSpecularWgsl`.
+    expect(tile?.shader?.includes("let distribution = alpha2 /")).toBe(true);
+    expect(tile?.shader?.includes("let gloss = max(2.0,")).toBe(false);
+  });
+
+  it("the material tile's lobe IS the Render's, character for character (§V349)", () => {
+    // The torus tile is a different generator with different geometry, so the claim it
+    // can make is that the ARITHMETIC is one string. Sliced out of the Render's own
+    // shader rather than retyped here, so a fork in either generator fails this.
+    const rendered = sceneSurfaceWgsl({ model: "pbr", lightCount: 2 });
+    const start = rendered.indexOf("    let halfway = normalize(toLight + viewDir);");
+    const end = rendered.indexOf("\n", rendered.indexOf("lit += radiance * distribution"));
+    expect(start).toBeGreaterThan(-1);
+    const lobe = rendered.slice(start, end + 1);
+    expect(scenePreviewBallWgsl({ stock: "torus", model: "pbr", lightCount: 2 }).includes(lobe)).toBe(true);
+    // The diffuse scaling rides with it — a lobe shared but a diffuse forked would make
+    // `metallic` mean one thing in the tile and another in the render.
+    const diffuse = "    lit += albedo.rgb * radiance * lambert * (vec3f(1.0) - fresnel) * (1.0 - params.material.x);";
+    expect([rendered.includes(diffuse), scenePreviewBallWgsl({ stock: "torus", model: "pbr", lightCount: 2 }).includes(diffuse)]).toEqual([true, true]);
   });
 });

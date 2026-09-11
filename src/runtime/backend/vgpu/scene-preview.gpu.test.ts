@@ -336,6 +336,114 @@ describe("scene payload previews render exactly (T462, §V147, §V384)", () => {
   }, 120_000);
 
   /**
+   * T1292 — THE PBR TILE SHADES WHAT THE RENDER SHADES, AND THE OLD STAND-IN PROVABLY
+   * COULD NOT.
+   *
+   * Until this task `compile.ts` mapped `pbr → phong` for the two PREVIEW paths, so a
+   * `materialPbr` node's tile drew a Blinn-Phong highlight while its render drew T1284's
+   * GGX/Smith lobe — two surfaces of ONE node, both working as built, disagreeing.
+   *
+   * THE ROW'S ALTERNATIVE WAS TO DISCLAIM THE TILE AS AN APPROXIMATION, AND IT WAS
+   * MEASURED BEFORE IT WAS REFUSED. At 192 px — the shipped `previewLongEdge`, half the
+   * tile this file grants — base [0.8, 0.6, 0.3] at metallic 0 / roughness 1 puts the two
+   * shadings 144.9 levels apart on the MEAN object texel with 100 % of them differing,
+   * and the mildest case measured (metallic 0, roughness 0.1) is still a mean of 9.7 with
+   * a 178-level worst channel. The disagreement is in the BODY of the form, not in a
+   * highlight a thumbnail could swallow — the numbers at 384 px are the same to one
+   * decimal, which is exactly why size does not rescue the approximation.
+   *
+   * Each `it` below is a fact the OLD tile fails, arithmetically rather than by taste.
+   * Both arms compile through the real preview path; the "old" arm is a `materialPhong`
+   * node carrying the uniforms the old mapping produced VERBATIM (base colour, specular
+   * = mix(white, base, metallic), shininess 96), which is byte-exact because the phong
+   * branch never reads `material.x`.
+   */
+  it("a BLACK METAL's tile is no longer a pure silhouette — Schlick survives F0 = 0", async () => {
+    const probe = await probeDawn();
+    if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
+    /*
+     * Why black metal, and why this is arithmetic. At metallic = 1 the old mapping set
+     * the specular colour to mix(white, base, 1) = base, so a BLACK base zeroed it; the
+     * base also zeroed the albedo, hence the ambient and the diffuse. Every term the old
+     * shader had was multiplied by zero, so the whole object came out EXACTLY [0,0,0] —
+     * a hole in the tile, and a material you could not tell from `materialUnlit` black.
+     *
+     * GGX cannot do that: `specF0 = mix(0.04, specular.rgb, metallic)` is 0 here too, but
+     * Schlick's tail is `F0 + (1 - F0)·(1 - VoH)^5`, so at grazing the facets still
+     * reflect — which is the physical truth a black car is made of. The render has drawn
+     * it that way since T1284; now the tile does.
+     */
+    const old = await renderPreviews(
+      graphOf([node("old", "materialPhong", { color: [0, 0, 0, 1], specular: [0, 0, 0, 1], shininess: 96, roughness: 0.4 }, "old1")]),
+      [{ nodeId: "old", portId: "out" }],
+    );
+    const neu = await renderPreviews(
+      graphOf([node("new", "materialPbr", { color: [0, 0, 0, 1], metallic: 1, roughness: 0.4 }, "new1")]),
+      [{ nodeId: "new", portId: "out" }],
+    );
+    savePng("scene-preview-pbr-black-metal-old.png", old.get("old")!);
+    savePng("scene-preview-pbr-black-metal.png", neu.get("new")!);
+
+    const census = (bytes: Uint8Array): { black: number; lit: number } => {
+      let black = 0;
+      let litCount = 0;
+      for (let y = 0; y < EDGE; y += 1) {
+        for (let x = 0; x < EDGE; x += 1) {
+          const here = texel(bytes, x, y);
+          if (isBackdrop(here)) continue;
+          if (here[0] === 0 && here[1] === 0 && here[2] === 0) black += 1;
+          else litCount += 1;
+        }
+      }
+      return { black, lit: litCount };
+    };
+
+    // The OLD tile: every texel is EXACTLY the backdrop or EXACTLY black — a two-colour
+    // picture, and the second colour carries no information at all. `black > 0` is what
+    // keeps that from being vacuously true of an empty tile.
+    const before = census(old.get("old")!);
+    expect(before.lit).toBe(0);
+    expect(before.black).toBeGreaterThan(0);
+    // The NEW tile: the same form, and the grazing facets are lit. Not "brighter on
+    // average" — a dimmer would pass that — but texels that are neither backdrop nor the
+    // exact zero the old shader could only produce.
+    const after = census(neu.get("new")!);
+    expect(after.lit).toBeGreaterThan(0);
+    // And the FORM is unchanged: the same texels are covered either way, so this is the
+    // shading that moved and not the geometry.
+    expect(after.black + after.lit).toBe(before.black + before.lit);
+  }, 120_000);
+
+  it("the tile answers ROUGHNESS where the old gloss floor made two roughnesses one picture", async () => {
+    const probe = await probeDawn();
+    if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
+    /*
+     * The arithmetic, and it is the whole claim. The old stand-in's exponent was
+     * `gloss = max(2.0, params.specular.w * (1.0 - roughness))` with `specular.w` PINNED
+     * AT 96 for a pbr material, so gloss hits its floor for every roughness above
+     * 1 - 2/96 = 0.97916…: at roughness 0.98 it is max(2, 1.92) = 2 and at 1.00 it is
+     * max(2, 0) = 2. Nothing else in the phong branch reads roughness, so the top 2 % of
+     * the slider produced ONE PICTURE, byte for byte — a preview that had stopped
+     * answering the parameter it was previewing.
+     *
+     * GGX's alpha is roughness², so alpha² is 0.9224 against 1.0 and the distribution
+     * differs at every NoH. The render has moved across that range since T1284; the tile
+     * now moves with it.
+     */
+    const tile = async (id: string, type: string, parameters: Record<string, unknown>): Promise<Uint8Array> =>
+      (await renderPreviews(graphOf([node(id, type, parameters, `${id}1`)]), [{ nodeId: id, portId: "out" }])).get(id)!;
+    const base = [0.8, 0.6, 0.3, 1];
+    // The old mapping's uniforms for metallic 0: specular stays white, shininess 96.
+    const oldRough = await tile("oa", "materialPhong", { color: base, specular: [1, 1, 1, 1], shininess: 96, roughness: 0.98 });
+    const oldMax = await tile("ob", "materialPhong", { color: base, specular: [1, 1, 1, 1], shininess: 96, roughness: 1 });
+    expect(oldRough).toEqual(oldMax);
+
+    const newRough = await tile("na", "materialPbr", { color: base, metallic: 0, roughness: 0.98 });
+    const newMax = await tile("nb", "materialPbr", { color: base, metallic: 0, roughness: 1 });
+    expect(newRough).not.toEqual(newMax);
+  }, 120_000);
+
+  /**
    * T532 — the geometry variant, on a real device.
    *
    * The compiler tests pin that the passes exist and carry the right values; this is the

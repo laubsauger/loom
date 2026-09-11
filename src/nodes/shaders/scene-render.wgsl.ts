@@ -214,7 +214,19 @@ ${occlusionBlock}        let nominal = max(params.projector${p}Meta.x, 1e-4);
  * a front face rather than going black. `max(…, 1e-4)` guards the divisions, never the
  * sidedness.
  */
-const ggxSpecularWgsl = (roughnessExpr: string): string => `    let halfway = normalize(toLight + viewDir);
+/**
+ * T1292 — EXPORTED, and the export is the point. A third copy of this lobe in
+ * `scene-preview.wgsl.ts` is §V960's defect waiting to happen (one rule spelled in six
+ * places is exactly what T1284's §V288 twin came from), so the material PREVIEW tile
+ * generates its highlight from this same string. The parameterisation already existed
+ * for the surface/instances split — the preview is the third caller, not a third copy.
+ *
+ * What a caller owes it: `normal`, `viewDir`, `toLight`, `radiance` and a mutable `lit`
+ * in scope, and a uniform block with `specular: vec4f` (rgb = F0 tint) and
+ * `material: vec4f` (x = metallic). `PreviewParams` carries both under the same names as
+ * `SceneParams`, which is why this drops in verbatim.
+ */
+export const ggxSpecularWgsl = (roughnessExpr: string): string => `    let halfway = normalize(toLight + viewDir);
     let NoV = max(abs(dot(normal, viewDir)), 1.0e-4);
     let NoL = max(abs(dot(normal, toLight)), 1.0e-4);
     let NoH = abs(dot(normal, halfway));

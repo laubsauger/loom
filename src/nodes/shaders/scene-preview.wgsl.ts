@@ -1,4 +1,4 @@
-import { INSTANCE_SHAPES_WGSL } from "./scene-render.wgsl.ts";
+import { ggxSpecularWgsl, INSTANCE_SHAPES_WGSL } from "./scene-render.wgsl.ts";
 /**
  * Scene-payload PREVIEWS (T462, §V85): a material, a light or a camera is a THING whose
  * whole job is a look, and until this file each one showed nothing. Every preview here
@@ -36,6 +36,17 @@ import { INSTANCE_SHAPES_WGSL } from "./scene-render.wgsl.ts";
  * Uniform field names match the scene Render's `SceneParams` (light triples included),
  * so the packing code in compile.ts reads like the render's and the animate path drives
  * an orbiting light's preview as a value update (§V5).
+ *
+ * T1292 — WHAT THIS TILE STILL DOES NOT SHOW, STATED HERE RATHER THAN DISCOVERED.
+ * The stock rig is an ambient floor and two directional lights and NOTHING ELSE: there is
+ * no environment in a material preview, for any model, and there never was. So a material
+ * wired to an environment previews WITHOUT its reflections — no Fresnel rim, no
+ * irradiance fill, and none of T1289's cone-sampled blur, because a material node does
+ * not know which Render it will be named by and there is no environment in its payload to
+ * show. That is a preview showing LESS than the render, which is honest; what this row
+ * fixed is the preview showing something DIFFERENT — a Blinn-Phong highlight where the
+ * render draws a GGX one. The direct lobe now agrees exactly; the environment half is
+ * absent on both sides of the tile and is the Render's answer, not the material's.
  */
 
 /**
@@ -78,7 +89,13 @@ export interface ScenePreviewBallOptions {
    * `ball` is the LIGHT preview, whose whole job is a known form under one light.
    */
   readonly stock: "ball" | "torus";
-  readonly model: "unlit" | "lambert" | "phong";
+  /**
+   * T1292: `pbr` is carried here rather than mapped to `phong`, because until it was the
+   * material's PREVIEW TILE shaded Blinn-Phong while its RENDER shaded GGX — two surfaces
+   * of the SAME node disagreeing, both working as built. The lobe is the render's own
+   * (`ggxSpecularWgsl`, §V349), not a preview-shaped imitation.
+   */
+  readonly model: "unlit" | "lambert" | "phong" | "pbr";
   /** 1 for a light preview (the payload's own), 2 for the material stock rig. */
   readonly lightCount: number;
   readonly maps?: { readonly albedo?: boolean; readonly roughness?: boolean };
@@ -188,15 +205,23 @@ fn torusTilt(p: vec3f) -> vec3f {
     }
     let lambert = abs(dot(normal, toLight));
     let radiance = lightColor.rgb * lightMeta.y * attenuation;
-    lit += albedo.rgb * radiance * lambert;
 ${
-  options.model === "phong"
-    ? `    let halfway = normalize(toLight + viewDir);
+  options.model === "pbr"
+    ? /* T1292: the render's own lobe and the render's own diffuse scaling, in the render's
+         own order — the diffuse follows the lobe because it reads `fresnel`. Anything
+         rearranged here is a new BRDF, and a new BRDF is the bug this row closes. */
+      ggxSpecularWgsl("roughness") +
+      `    lit += albedo.rgb * radiance * lambert * (vec3f(1.0) - fresnel) * (1.0 - params.material.x);
+`
+    : `    lit += albedo.rgb * radiance * lambert;
+` +
+      (options.model === "phong"
+        ? `    let halfway = normalize(toLight + viewDir);
     let gloss = max(2.0, params.specular.w * (1.0 - roughness));
     let highlight = pow(abs(dot(normal, halfway)), gloss);
     lit += params.specular.rgb * radiance * highlight;
 `
-    : ""
+        : "")
 }  }
 `;
 

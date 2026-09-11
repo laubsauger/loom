@@ -1759,13 +1759,22 @@ export function compileGraphRetaining(request: CompileRequest): CompileGraphResu
         const geometryModel =
           material.model === "unlit"
             ? ("unlit" as const)
-            // T725: GLASS previews as phong — a stand-in, stated on the node: there is
-            // no rendered scene behind a preview rig to refract, and a shiny ball is
-            // the honest picture of "this is a specular dielectric".
-            : material.model === "phong" || material.model === "pbr" || material.model === "glass"
-              ? ("phong" as const)
-              : ("lambert" as const);
-        // T428's pbr-through-phong, exactly as the Render maps it (scene.ts).
+            // T1292: `pbr` is its OWN model here now, exactly as the Render maps it
+            // (scene.ts). These preview passes are built with the RENDER's generators
+            // (`sceneSurfaceWgsl`/`sceneInstancesWgsl`), which have carried a GGX branch
+            // since T1284 — so this line was the whole of the disagreement on this path:
+            // the tile shaded Blinn-Phong while the render shaded GGX.
+            : material.model === "pbr"
+              ? ("pbr" as const)
+              // T725: GLASS previews as phong — a stand-in, stated on the node: there is
+              // no rendered scene behind a preview rig to refract, and a shiny ball is
+              // the honest picture of "this is a specular dielectric".
+              : material.model === "phong" || material.model === "glass"
+                ? ("phong" as const)
+                : ("lambert" as const);
+        // The metallic→specular tint, exactly as the Render maps it (scene.ts): it is the
+        // F0 the GGX Fresnel reads. The shininess is unread by the pbr branch (roughness
+        // drives alpha) and is kept only so a material switched back to phong is unchanged.
         const geometrySpecular =
           material.model === "pbr"
             ? ([
@@ -1970,10 +1979,19 @@ export function compileGraphRetaining(request: CompileRequest): CompileGraphResu
       } else {
         // Material: the tilted TORUS under the fixed warm key and cool fill (T665 —
         // the ball hid concavity, self-occlusion, silhouette and a map's tiling) — the
-        // model/specular mapping is the scene Render's own (T428's pbr-through-phong).
+        // model/specular mapping is the scene Render's own.
+        // T1292: `pbr` reaches the tile as `pbr`; the preview generator's lobe IS the
+        // render's `ggxSpecularWgsl` (§V349), so the tile and the render cannot draw two
+        // different highlights for one node.
         // T725: glass rides the phong stand-in here too — see the geometry site above.
         const model =
-          payload.model === "unlit" ? "unlit" : payload.model === "phong" || payload.model === "pbr" || payload.model === "glass" ? "phong" : "lambert";
+          payload.model === "unlit"
+            ? "unlit"
+            : payload.model === "pbr"
+              ? "pbr"
+              : payload.model === "phong" || payload.model === "glass"
+                ? "phong"
+                : "lambert";
         const specularColor =
           payload.model === "pbr"
             ? ([
