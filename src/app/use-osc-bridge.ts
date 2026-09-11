@@ -93,6 +93,40 @@ import { DEVICE_HELPER_NAME, DEVICE_HELPER_START } from "@devices/helper.ts";
 const PUMP_PATH = "src/app/use-osc-bridge.ts";
 
 /**
+ * §B212 — IS A PERIODIC SESSION ACTION DUE, ON A CLOCK THAT IS ALLOWED TO GO BACKWARDS?
+ *
+ * This pump's only clock is `frame.timeSeconds`, and that clock WRAPS: the timeline is
+ * bounded (T455) and a lap puts it back at the in point (T464) without disturbing anything
+ * else — which is the feature, not a bug. `reset` (a seek, §V170) sends it back too. So
+ * every `now - previous >= interval` written against it is a latch waiting to happen, and
+ * §B212 is what that cost: the last send of lap one landed at ≈9.97 s, every later lap
+ * tops out at 9.98 s, and `now - previous` sat at about −10 000 ms FOREVER. E64 Relay's
+ * receiving end froze at whatever value it last heard, on frame 600, for the life of the
+ * session — silently, because a send that never happens has no outcome and raises no row.
+ *
+ * The answer is NOT to pick a different clock. `wallSeconds` is zeroed by `reset` and
+ * `absTimeSeconds` is zeroed by `resetAbsolute` (T467, which a take calls on the live
+ * transport through `render-range.ts`), so every clock this pump can reach can decrease
+ * under some legitimate session action. What must be true is the property: **a periodic
+ * action whose clock went BACKWARDS is due, never overdue by the size of the jump.** Ahead
+ * of `previous` by less than the interval is the ONLY state that waits.
+ *
+ * §T489's `loop-continuity.test.ts` enumerates nine clock-reading surfaces and asserts none
+ * may see a value decrease across a lap. All nine are inside the value/render path; a
+ * session pump is a tenth, reads the same wrapping clock, and had nothing watching it.
+ * `use-osc-bridge.test.tsx`'s §B212 block drives the real relay across the real lap.
+ *
+ * The property was already paid, once, by the ONE other periodic scheduler on this clock:
+ * `runtime/previews/schedule.ts` treats `time < last` as due, under a comment saying that
+ * treating it as "not due" would stall every preview until the clock caught up. It did not
+ * reach here, which is why this is a named function rather than a second inline `<`.
+ */
+function due(nowMs: number, previousMs: number, intervalMs: number): boolean {
+  const elapsed = nowMs - previousMs;
+  return !(elapsed >= 0 && elapsed < intervalMs);
+}
+
+/**
  * T1006 — the node types whose data this pump sends OUT, from `EMISSION_PUMPS` rather
  * than from a hand-list, exactly as `laserPumpNodeTypes()` reads it.
  *
@@ -372,7 +406,8 @@ export function useOscBridge(options: OscBridgeOptions = {}): OscBridgeBinding {
         const rateValue = read("rate");
         const rate = typeof rateValue === "number" && rateValue > 0 ? rateValue : 30;
         const previous = lastSent.current.get(nodeId) ?? Number.NEGATIVE_INFINITY;
-        if (now - previous >= 1000 / rate) {
+        // §B212: `due`, not `now - previous >= …`. `now` is timeline time and it WRAPS.
+        if (due(now, previous, 1000 / rate)) {
           lastSent.current.set(nodeId, now);
           const named = typeof read("address") === "string" ? (read("address") as string).trim() : "";
           // An empty Address takes the node's OWN name, which mirrors how a channel is
@@ -430,7 +465,11 @@ export function useOscBridge(options: OscBridgeOptions = {}): OscBridgeBinding {
         }
         // Retry from the code this tab already paired with, so pairing MID-SESSION lights
         // the node up without a reload. Only when the document is actually asking.
-        if (now - lastAttempt.current >= (options.retryMs ?? DEFAULT_RETRY_MS)) {
+        // §B212 again, and the consequence was worse here than for a send: a tab that
+        // lapped before the helper was started would have stopped retrying for good, so
+        // starting the helper mid-session would never have lit the node up — the exact
+        // thing this retry exists to make work.
+        if (due(now, lastAttempt.current, options.retryMs ?? DEFAULT_RETRY_MS)) {
           lastAttempt.current = now;
           live.reconnectRemembered();
         }

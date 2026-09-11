@@ -15,6 +15,10 @@ import type { NodeRegistryView } from "@nodes/registry/registry.ts";
 import { EMISSION_PUMPS } from "@domain/render/emission-pumps.ts";
 import { OSC_CHANNEL_PREFIX } from "@domain/osc/osc-address.ts";
 import { VALUE_PORT } from "@nodes/definitions/common-ports.ts";
+import { liveClock } from "@domain/transport/live-clock.ts";
+import { projectRange } from "@domain/types/graph.ts";
+import { absFrameIndexOf } from "@domain/types/frame.ts";
+import type { ParameterValue } from "@domain/types/parameters.ts";
 import { messagesFor, oscPumpEmittingTypes, oscPumpListeningTypes, useOscBridge } from "./use-osc-bridge.ts";
 
 /**
@@ -549,5 +553,269 @@ describe("a value bag as OSC messages", () => {
     expect(messagesFor("/pad", { x: Number.NaN, y: 0.5 })).toEqual([{ address: "/pad/y", args: [0.5] }]);
     expect(messagesFor("/level", { value: Number.NaN })).toEqual([]);
     expect(messagesFor("/level", {})).toEqual([]);
+  });
+});
+
+/*
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ * §B212 — THE PUMP READ THE TIMELINE CLOCK AS IF IT WERE A HOST CLOCK.
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ *
+ * The owner, on E64 Relay: *"the receiving end is breaking down after it runs through the
+ * timeline once. On frame 600 it suddenly just dies, at whatever point it was at."*
+ *
+ * 600 frames is `DEFAULT_FRAME_RANGE` — one lap at 60 fps — and "dies at whatever point it
+ * was at" is a FREEZE rather than a fall to rest, which is what an `oscIn` that stops being
+ * fed looks like: its last reading is retained, so the cyan trace goes flat at whatever
+ * height it had. Nothing on the ingress path reads a clock at all. The egress path did:
+ * `sync` took its rate-limiter clock from `frame.timeSeconds`, which WRAPS at the out point
+ * (T455/T464 — that is the feature), while `lastSent` still held a reading from before the
+ * wrap. `now - previous` then went to about −10 000 ms and could never climb back: the last
+ * send of lap one happens at ~9.97 s and the clock's ceiling for every later lap is 9.98 s,
+ * so `now - previous >= 1000 / rate` is false FOREVER. One lap, and the transmitter is dead
+ * for the life of the session — silently, because a UDP send that never happens has no
+ * outcome and raises no row.
+ *
+ * This is T489's property (`domain/transport/loop-continuity.test.ts`) escaping the graph.
+ * That file enumerates NINE clock-reading surfaces and asserts none of them may see a value
+ * decrease across a lap; every one of them is inside the value/render path. A SESSION PUMP
+ * is a tenth, it reads the same wrapping clock, and nothing was watching it — §V437's shape
+ * exactly, one layer out.
+ *
+ * So the gate is the RELAY, not the fix: the real hook, the real device client, the real
+ * `oscOut` pump and the real `oscIn.valueEvaluate`, closed through a fake helper that echoes
+ * every datagram back the way the loopback socket does — and driven by the real `liveClock`
+ * across the real `projectRange`, past the wrap, asserting on the number the RECEIVING node
+ * publishes. A unit test of the comparison would not have been the bug.
+ */
+describe("§B212 — the relay survives the lap", () => {
+  /** E64's own circuit, so the numbers here are the numbers in `examples/documents/relay.ts`. */
+  const LOOPBACK_HOST = "127.0.0.1";
+  const LOOPBACK_PORT = 9107;
+  const RELAY_ADDRESS = "/loom/relay";
+  const RELAY_REST = 0.42;
+  const FPS = 60;
+  /** Where the sender's ramp starts — not 0, not `RELAY_REST`. See `heardOver`. */
+  const RAMP_BASE = 0.1;
+
+  /**
+   * The document, both halves of the loop in one graph — `send1` transmits to the port
+   * `hear1` listens on, exactly as E64 does.
+   */
+  const relayGraph = graphOf({
+    send1: {
+      type: "oscOut",
+      label: "send1",
+      parameters: { host: LOOPBACK_HOST, port: LOOPBACK_PORT, address: RELAY_ADDRESS, rate: 30 },
+    },
+    hear1: {
+      type: "oscIn",
+      label: "hear1",
+      parameters: {
+        port: LOOPBACK_PORT,
+        controls: "level",
+        levelAddress: RELAY_ADDRESS,
+        levelRest: RELAY_REST,
+      },
+    },
+  });
+
+  /** The receiving node's own parameters, read by its own `valueEvaluate`. */
+  const hearValues = relayGraph.nodes["hear1"]?.parameters as Record<string, ParameterValue>;
+
+  function relay() {
+    globalThis.sessionStorage.setItem("loom.bridge.pairing.v1", "ABCDEF");
+    const socket = fakeSocket();
+    const hook = renderHook(() =>
+      useOscBridge({ socketFactory: socket.factory, port: 1, autoConnect: false }),
+    );
+    act(() => {
+      hook.result.current.sync(frameAt(0), relayGraph, registry, new Map(), NO_CHANNELS, LIVE);
+      socket.open();
+    });
+    act(() => {
+      socket.say({ type: "deviceAttached", sources: [] });
+    });
+    socket.sent.length = 0;
+    return { socket, hook };
+  }
+
+  /**
+   * THE UDP STACK, which is the one thing a gate cannot have: every `deviceSend` the page
+   * made since `from` comes back as the `deviceEvents` push a helper bound to 9107 would
+   * produce for it. Everything either side of this line is the product's own code.
+   */
+  function echo(
+    socket: ReturnType<typeof fakeSocket>,
+    from: number,
+  ): void {
+    for (let index = from; index < socket.sent.length; index += 1) {
+      const message = socket.sent[index] as Record<string, unknown>;
+      if (message["type"] !== "deviceSend") continue;
+      const values: Record<string, number> = {};
+      for (const packet of message["packets"] as ReadonlyArray<{ address: string; args: number[] }>) {
+        values[`${OSC_CHANNEL_PREFIX}${packet.address}`] = packet.args[0] as number;
+      }
+      socket.say({
+        type: "deviceEvents",
+        stream: `osc:${LOOPBACK_PORT}`,
+        at: index,
+        seq: index,
+        dropped: 0,
+        values,
+      });
+    }
+  }
+
+  /**
+   * Run the circuit for `frames` frames off the REAL live transport, lapping at the real
+   * project range, and report what `hear1` published on each one.
+   *
+   * The value sent is a strictly rising ramp on the ABSOLUTE frame count, so "frozen" is
+   * directly readable: a heard sequence that stops rising is a receiving end that stopped
+   * being fed, and it cannot be confused with the timeline's own values repeating. It
+   * starts away from zero and away from `hear1`'s Rest so that "the loop closed" and
+   * "nothing ever arrived" cannot produce the same number.
+   */
+  function heardOver(frames: number): { readonly heard: number[]; readonly sends: number[] } {
+    const { socket, hook } = relay();
+    const range = projectRange({});
+    let nowMs = 0;
+    const transport = liveClock({ fps: FPS, now: () => nowMs });
+    const heard: number[] = [];
+    const sends: number[] = [];
+    for (let step = 0; step < frames; step += 1) {
+      const frame = transport.next();
+      const sent = RAMP_BASE + absFrameIndexOf(frame) / 100_000;
+      const bags = new Map([["send1" as NodeId, { value: sent }]]);
+      const before = socket.sent.length;
+      act(() => {
+        hook.result.current.sync(frame, relayGraph, registry, bags, NO_CHANNELS, LIVE);
+      });
+      act(() => {
+        echo(socket, before);
+      });
+      sends.push(
+        socket.sent.slice(before).filter((message) => message["type"] === "deviceSend").length,
+      );
+      const bag = registry.get("oscIn")?.valueEvaluate?.({
+        inputs: {},
+        values: hearValues,
+        frame,
+        state: {},
+        // `use-value-graph.ts`'s adapter, verbatim: a `ChannelResolver` narrowed to the
+        // `(name) => number | undefined` seam a node definition reads.
+        channels: (name: string): number | undefined => {
+          const value = hook.result.current.resolver(name, { frame } as never);
+          return typeof value === "number" ? value : undefined;
+        },
+      });
+      heard.push(bag?.["level"] as number);
+      // The lap, as `use-frame-loop`'s `maybeLap` performs it: at the out point the
+      // timeline wraps and NOTHING else is disturbed (T464).
+      if (frame.frameIndex >= range.end) transport.wrapTo?.(range.start);
+      nowMs += 1000 / FPS;
+    }
+    return { heard, sends };
+  }
+
+  it("keeps feeding the receiving end after the timeline has wrapped", () => {
+    const range = projectRange({});
+    // Two full laps and a bit, so the claim is about a SESSION rather than about the first
+    // frame after the wrap.
+    const { heard, sends } = heardOver(range.end + 1 + 200);
+    const lap = range.end + 1;
+
+    // A FLOOR first (§T985): the circuit has to close at all before its dying is worth
+    // asserting. Frame zero's send goes out, comes back through the fake helper's push and
+    // is what `hear1` publishes — not its Rest, which is what an open circuit reads.
+    expect(heard[0]).toBeCloseTo(RAMP_BASE, 10);
+    expect(RAMP_BASE).not.toBe(RELAY_REST);
+    expect(sends.slice(0, lap).reduce((total, count) => total + count, 0)).toBeGreaterThan(100);
+
+    // THE BUG, stated as the owner sees it: at frame 600 the cyan trace freezes at
+    // whatever height it had and never moves again.
+    const atWrap = heard[lap - 1] as number;
+    const afterWrap = heard.slice(lap);
+    expect(afterWrap.some((value) => value !== atWrap)).toBe(true);
+
+    // And it is not a one-frame twitch: the receiving end keeps tracking a rising sender
+    // for the whole of lap two, which is what "the relay works" means.
+    expect(heard[heard.length - 1] as number).toBeGreaterThan(atWrap);
+    // The transmitter runs at the SAME rate after the wrap as before it — asserted as a
+    // ratio rather than as a count, so the number here is a property of `rate` against the
+    // frame rate and not a transcription of what the code happened to do.
+    const perFrame = (counts: readonly number[]): number =>
+      counts.reduce((total, count) => total + count, 0) / counts.length;
+    expect(perFrame(sends.slice(lap))).toBeCloseTo(perFrame(sends.slice(0, lap)), 2);
+  });
+
+  /*
+   * THE SECOND SITE OF THE SAME CAUSE, and it is the one with the worse consequence: the
+   * mid-session retry (`reconnectRemembered`) was gated on the same wrapping clock. A tab
+   * that had lapped once before the helper was started would never dial again — so
+   * `pnpm helper` would light nothing up, which is precisely what that retry exists to
+   * make work (§T948 rule 1: probe the capability, do not gate on the deployment).
+   */
+  it("keeps retrying for a helper after the lap, so starting one mid-session still works", () => {
+    globalThis.sessionStorage.setItem("loom.bridge.pairing.v1", "ABCDEF");
+    /**
+     * NO HELPER IS RUNNING — a connection to a closed loopback port is refused, which the
+     * page sees as an `onclose` on a socket that never opened. That is what returns the
+     * client to "not wanted" and makes the next retry a real dial, so it has to be modelled
+     * here or the cadence under test would not exist at all.
+     */
+    const dials: BridgeSocket[] = [];
+    const attempts: number[] = [];
+    const factory = (): BridgeSocket => {
+      const socket: BridgeSocket = {
+        send: () => undefined,
+        close: () => undefined,
+        onopen: null,
+        onmessage: null,
+        onclose: null,
+        onerror: null,
+      };
+      dials.push(socket);
+      return socket;
+    };
+    const hook = renderHook(() =>
+      useOscBridge({ socketFactory: factory, port: 1, autoConnect: false, retryMs: 500 }),
+    );
+    const range = projectRange({});
+    let nowMs = 0;
+    const transport = liveClock({ fps: FPS, now: () => nowMs });
+    for (let step = 0; step < range.end + 1 + 200; step += 1) {
+      const frame = transport.next();
+      const before = dials.length;
+      act(() => {
+        hook.result.current.sync(frame, relayGraph, registry, new Map(), NO_CHANNELS, LIVE);
+        // Connection refused, on whatever was just dialled.
+        for (const dialled of dials.slice(before)) dialled.onclose?.();
+      });
+      attempts.push(dials.length - before);
+      if (frame.frameIndex >= range.end) transport.wrapTo?.(range.start);
+      nowMs += 1000 / FPS;
+    }
+    const lap = range.end + 1;
+    const before = attempts.slice(0, lap).reduce((total, count) => total + count, 0);
+    const after = attempts.slice(lap).reduce((total, count) => total + count, 0);
+    // THE FLOOR: it really was dialling before the lap — 500 ms of retry across ten
+    // seconds is twenty attempts — or the line below would be vacuously true.
+    expect(before).toBeGreaterThan(10);
+    // And it keeps dialling at the same cadence afterwards.
+    expect(after / attempts.slice(lap).length).toBeCloseTo(before / lap, 2);
+  });
+
+  it("does not turn the wrap into a flood, so `rate` still means messages per second", () => {
+    // The guard band is the other half: a lap must not be read as "infinitely overdue"
+    // either. 30 messages a second against 60 fps is one send every other frame, both
+    // sides of the wrap.
+    const range = projectRange({});
+    const { sends } = heardOver(range.end + 1 + 120);
+    const lapTwo = sends.slice(range.end + 1);
+    expect(lapTwo.reduce((total, count) => total + count, 0)).toBeLessThanOrEqual(
+      Math.ceil(lapTwo.length / 2) + 1,
+    );
   });
 });
