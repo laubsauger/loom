@@ -115,12 +115,17 @@ export interface AgentRuntimeMetrics {
    * (§V560); "running-behind" means the machine cannot hold the project rate;
    * "paused" means press play. Zeros elsewhere in this object are explained here
    * before they are believed.
+   *
+   * T1300: `kind` is the DIAGNOSIS, `realtime` is the ANSWER. "live" only means the clock
+   * is RUNNING — its boundary is half the project rate, so 30 fps against a 60 fps project
+   * is "live" and is not realtime. Ask `realtime` for "are we at the set rate or above";
+   * ask `kind` for why not.
    */
   readonly frameClock:
-    | { readonly kind: "live"; readonly observedFps: number }
-    | { readonly kind: "paused" }
-    | { readonly kind: "browser-throttled"; readonly observedFps: number; readonly suggestion: string }
-    | { readonly kind: "running-behind"; readonly observedFps: number; readonly suggestion: string };
+    | { readonly kind: "live"; readonly observedFps: number; readonly realtime: boolean }
+    | { readonly kind: "paused"; readonly realtime: false }
+    | { readonly kind: "browser-throttled"; readonly observedFps: number; readonly realtime: false; readonly suggestion: string }
+    | { readonly kind: "running-behind"; readonly observedFps: number; readonly realtime: false; readonly suggestion: string };
   /** False when the device has no timestamp query — every ms figure is then null (§V86). */
   readonly timingAvailable: boolean;
   readonly framesRendered: number;

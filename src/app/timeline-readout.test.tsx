@@ -5,7 +5,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { installDomStubs } from "@ui/testing/install-dom-stubs.ts";
 import { TooltipProvider } from "@ui/primitives/tooltip.tsx";
 import type { FrameInputs } from "@domain/types/backend.ts";
-import { frameClockVerdict } from "@runtime/telemetry/frame-clock.ts";
+import { type FrameClockVerdict, frameClockVerdict } from "@runtime/telemetry/frame-clock.ts";
 import { TimelineReadout } from "./timeline-readout.tsx";
 
 /**
@@ -63,7 +63,7 @@ describe("the timeline readout reads the rendered frame (§V169)", () => {
   });
 
   it("says nothing rather than zero before a frame has been rendered", () => {
-    mount(<TimelineReadout latestFrame={() => null} frameClock={() => ({ kind: "live", observedFps: 0 })} />);
+    mount(<TimelineReadout latestFrame={() => null} frameClock={() => ({ kind: "live", observedFps: 0, realtime: false })} />);
     expect((screen.getByLabelText("Frame") as HTMLInputElement).value).toBe("");
     expect(screen.getByLabelText("Elapsed time").textContent).toBe("—");
     expect(screen.getByLabelText("Frames per second").textContent).toBe("—");
@@ -73,7 +73,7 @@ describe("the timeline readout reads the rendered frame (§V169)", () => {
     vi.useFakeTimers();
     try {
       let current = frame(0, 1 / 60);
-      mount(<TimelineReadout latestFrame={() => current} frameClock={() => ({ kind: "live", observedFps: 60 })} intervalMs={100} />);
+      mount(<TimelineReadout latestFrame={() => current} frameClock={() => ({ kind: "live", observedFps: 60, realtime: true })} intervalMs={100} />);
 
       expect((screen.getByLabelText("Frame") as HTMLInputElement).value).toBe("0");
 
@@ -99,7 +99,7 @@ describe("the timeline readout reads the rendered frame (§V169)", () => {
       mount(
         <TimelineReadout
           latestFrame={() => frame(index++, 1 / 60, 1 / 30)}
-          frameClock={() => ({ kind: "live", observedFps: 30 })}
+          frameClock={() => ({ kind: "live", observedFps: 30, realtime: false })}
           intervalMs={100}
         />,
       );
@@ -116,7 +116,7 @@ describe("the timeline readout reads the rendered frame (§V169)", () => {
     vi.useFakeTimers();
     try {
       let observedFps = 30;
-      mount(<TimelineReadout latestFrame={() => frame(42, 1 / 30)} frameClock={() => ({ kind: "live", observedFps })} intervalMs={100} />);
+      mount(<TimelineReadout latestFrame={() => frame(42, 1 / 30)} frameClock={() => ({ kind: "live", observedFps, realtime: false })} intervalMs={100} />);
       expect(screen.getByLabelText("Frames per second").textContent).toBe("30.0");
       observedFps = 0;
       act(() => {
@@ -133,7 +133,7 @@ describe("the timeline readout reads the rendered frame (§V169)", () => {
     vi.useFakeTimers();
     try {
       const stalled = frame(42, 1 / 60);
-      mount(<TimelineReadout latestFrame={() => stalled} frameClock={() => ({ kind: "paused" })} intervalMs={100} />);
+      mount(<TimelineReadout latestFrame={() => stalled} frameClock={() => ({ kind: "paused", realtime: false })} intervalMs={100} />);
       act(() => {
         vi.advanceTimersByTime(1_000);
       });
@@ -154,7 +154,7 @@ describe("the timeline readout reads the rendered frame (§V169)", () => {
 describe("the frame field seeks (§V170)", () => {
   it("asks to seek to the frame that was typed, on Enter", () => {
     const seeks: number[] = [];
-    mount(<TimelineReadout latestFrame={() => frame(0, 1 / 60)} frameClock={() => ({ kind: "paused" })} onSeek={(n) => seeks.push(n)} />);
+    mount(<TimelineReadout latestFrame={() => frame(0, 1 / 60)} frameClock={() => ({ kind: "paused", realtime: false })} onSeek={(n) => seeks.push(n)} />);
 
     const field = screen.getByLabelText("Frame");
     fireEvent.change(field, { target: { value: "240" } });
@@ -165,7 +165,7 @@ describe("the frame field seeks (§V170)", () => {
 
   it("abandons the edit on Escape without seeking", () => {
     const seeks: number[] = [];
-    mount(<TimelineReadout latestFrame={() => frame(7, 1 / 60)} frameClock={() => ({ kind: "paused" })} onSeek={(n) => seeks.push(n)} />);
+    mount(<TimelineReadout latestFrame={() => frame(7, 1 / 60)} frameClock={() => ({ kind: "paused", realtime: false })} onSeek={(n) => seeks.push(n)} />);
 
     const field = screen.getByLabelText("Frame") as HTMLInputElement;
     fireEvent.change(field, { target: { value: "999" } });
@@ -177,7 +177,7 @@ describe("the frame field seeks (§V170)", () => {
 
   it("ignores input that is not a frame rather than seeking somewhere arbitrary", () => {
     const seeks: number[] = [];
-    mount(<TimelineReadout latestFrame={() => frame(0, 1 / 60)} frameClock={() => ({ kind: "paused" })} onSeek={(n) => seeks.push(n)} />);
+    mount(<TimelineReadout latestFrame={() => frame(0, 1 / 60)} frameClock={() => ({ kind: "paused", realtime: false })} onSeek={(n) => seeks.push(n)} />);
 
     const field = screen.getByLabelText("Frame");
     for (const value of ["", "-4", "abc"]) {
@@ -188,40 +188,102 @@ describe("the frame field seeks (§V170)", () => {
   });
 
   it("is read-only, and offers no start button, when nothing can seek", () => {
-    mount(<TimelineReadout latestFrame={() => frame(0, 1 / 60)} frameClock={() => ({ kind: "paused" })} />);
+    mount(<TimelineReadout latestFrame={() => frame(0, 1 / 60)} frameClock={() => ({ kind: "paused", realtime: false })} />);
     expect(screen.getByLabelText("Frame").hasAttribute("readonly")).toBe(true);
     expect(screen.queryByLabelText("Go to start")).toBeNull();
   });
 });
 
-describe("T304 — the readout says why nothing is moving, by name", () => {
-  it("shows the throttle chip with its remedy, and no chip when live", () => {
-    const frame = {
-      frame: { frameIndex: 5, timeSeconds: 0.08, deltaSeconds: 1 / 60, mode: "live", randomSeed: 7 },
-    } as never;
-    const { rerender } = render(
+/**
+ * T304/T1300 — the frame clock is a PERMANENT FIELD, not a notice that pops in.
+ *
+ * The owner: *"the 'running behind' text is silly and breaks the layout when it appears.
+ * instead I want an indicator that is already there."* So the assertion that matters most
+ * here is the boring one: the element is in the document in EVERY state, including the
+ * healthy one. §V461's concern (a notice that can never turn off) is met by the WORD and
+ * the dot state changing, not by the element disappearing — which is what used to shove
+ * the row at the exact moment someone was reading it.
+ */
+describe("T1300 — the readout always shows the frame clock, and says whether it is realtime", () => {
+  const anyFrame = {
+    frame: { frameIndex: 5, timeSeconds: 0.08, deltaSeconds: 1 / 60, mode: "live", randomSeed: 7 },
+  } as never;
+
+  function readIndicator(clock: FrameClockVerdict) {
+    cleanup();
+    render(
+      <TooltipProvider>
+        <TimelineReadout latestFrame={() => anyFrame} frameClock={() => clock} intervalMs={5} />
+      </TooltipProvider>,
+    );
+    const el = screen.getByTestId("frame-clock-notice");
+    return { word: el.textContent, state: el.getAttribute("data-state"), kind: el.getAttribute("data-kind") };
+  }
+
+  it("reads Realtime, with the ok dot, when the clock is at the project rate", () => {
+    expect(readIndicator({ kind: "live", observedFps: 60, realtime: true })).toEqual({
+      word: "Realtime",
+      state: "realtime",
+      kind: "live",
+    });
+  });
+
+  it("reads Behind in the whole band between half rate and full rate — the band that used to show nothing", () => {
+    // 31 of 60 is `live`: the clock is RUNNING. It is not realtime, and before T1300 the
+    // strip said nothing at all here, which is the owner's "what does live even mean then".
+    expect(readIndicator({ kind: "live", observedFps: 31, realtime: false })).toEqual({
+      word: "Behind",
+      state: "behind",
+      kind: "live",
+    });
+  });
+
+  it("names the BROWSER when the browser stopped the clock, and the machine when the machine did", () => {
+    expect(readIndicator({ kind: "browser-throttled", observedFps: 0, realtime: false, suggestion: "Bring the window to the front." })).toEqual({
+      word: "Throttled",
+      state: "throttled",
+      kind: "browser-throttled",
+    });
+    expect(readIndicator({ kind: "running-behind", observedFps: 4, realtime: false, suggestion: "Reduce steps." })).toEqual({
+      word: "Behind",
+      state: "behind",
+      kind: "running-behind",
+    });
+  });
+
+  it("reads Paused rather than vanishing when the transport is stopped", () => {
+    expect(readIndicator({ kind: "paused", realtime: false })).toEqual({
+      word: "Paused",
+      state: "paused",
+      kind: "paused",
+    });
+  });
+
+  it("is present before the first frame has been rendered, so the row cannot grow a field later", () => {
+    cleanup();
+    mount(<TimelineReadout latestFrame={() => null} frameClock={() => ({ kind: "paused", realtime: false })} />);
+    expect(screen.getByTestId("frame-clock-notice").textContent).toBe("Paused");
+  });
+
+  it("carries the verdict's own remedy as the tooltip, so the guidance still has one home", async () => {
+    cleanup();
+    render(
       <TooltipProvider>
         <TimelineReadout
-          latestFrame={() => frame}
+          latestFrame={() => anyFrame}
           frameClock={() => ({
             kind: "browser-throttled",
             observedFps: 0,
+            realtime: false,
             suggestion: "The browser suspends the frame clock for a hidden or occluded window.",
           })}
           intervalMs={5}
         />
       </TooltipProvider>,
     );
-    const chip = screen.getByTestId("frame-clock-notice");
-    expect(chip.textContent).toBe("throttled by the browser");
-    expect(chip.getAttribute("data-kind")).toBe("browser-throttled");
-
-    // LIVE: the chip is GONE — the notice must be able to turn off (§V461).
-    rerender(
-      <TooltipProvider>
-        <TimelineReadout latestFrame={() => frame} frameClock={() => ({ kind: "live", observedFps: 60 })} intervalMs={5} />
-      </TooltipProvider>,
-    );
-    expect(screen.queryByTestId("frame-clock-notice")).toBeNull();
+    const trigger = screen.getByTestId("frame-clock-notice");
+    fireEvent.focus(trigger);
+    const described = await screen.findByText("The browser suspends the frame clock for a hidden or occluded window.");
+    expect(described).not.toBeNull();
   });
 });

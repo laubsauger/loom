@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { FrameInputs } from "@domain/types/backend.ts";
 import type { FrameClockVerdict } from "@runtime/telemetry/frame-clock.ts";
 import { Tooltip } from "@ui/primitives/tooltip.tsx";
+import { frameClockIndicator } from "./frame-clock-indicator.ts";
 import styles from "./timeline-readout.module.css";
 
 /**
@@ -28,6 +29,13 @@ import styles from "./timeline-readout.module.css";
  * tree. The value is SAMPLED from a ref on an interval and lives in this component's
  * state, so ten times a second exactly this strip re-renders and nothing else does. The
  * frame loop pushes nothing.
+ *
+ * ## Realtime (T1300)
+ *
+ * A fourth field, always present: a dot plus a word, answering "are we at the set frame
+ * rate or above". The judgement is `realtime` on the verdict and is made in
+ * `frame-clock.ts`; this component does not compare anything (§V960 — one rule, one
+ * spelling). The reading it renders comes from `frame-clock-indicator.ts`.
  *
  * ## Seeking (§V170)
  *
@@ -103,6 +111,8 @@ export function TimelineReadout({ latestFrame, frameClock, onSeek, intervalMs = 
   }, [draft, onSeek]);
 
   const shown = draft ?? (sample === null ? "" : String(sample.frameIndex));
+  // Before the first sample there is no verdict; nothing is rendering, which is `paused`.
+  const indicator = frameClockIndicator(clock ?? { kind: "paused", realtime: false });
 
   return (
     <div className={styles.readout} role="group" aria-label="Timeline readout">
@@ -149,24 +159,27 @@ export function TimelineReadout({ latestFrame, frameClock, onSeek, intervalMs = 
         </span>
       </div>
 
-      {/* T304: the frame clock's verdict, BY NAME (§V541) — "throttled" is the browser
-          suspending a hidden window's clock (bring it to the front), "behind" is the
-          machine missing the project rate. Not a problems-pane entry on purpose: it
-          changes per second and would eat the ring (§V537); this strip and
+      {/* T304/T1300: the frame clock, ALWAYS PRESENT. It used to be a conditional prose
+          notice that appeared mid-row and shoved its neighbours (and named a class the
+          stylesheet never had, so it was unstyled prose at that). Now it is a field like
+          `time` and `fps`: a dot that answers "realtime?" and a word in a reserved box
+          that says which of the four readings it is. Not a problems-pane entry on
+          purpose: it changes per second and would eat the ring (§V537); this strip and
           get_runtime_metrics are its two homes (§V437). */}
-      {clock !== null && (clock.kind === "browser-throttled" || clock.kind === "running-behind") ? (
-        <Tooltip label={clock.suggestion}>
+      <div className={styles.field}>
+        <Tooltip label={indicator.description}>
           <span
-            className={styles.clockNotice}
-            data-kind={clock.kind}
+            className={styles.clock}
+            data-kind={clock?.kind ?? "paused"}
+            data-state={indicator.state}
             data-testid="frame-clock-notice"
             role="status"
           >
-            {clock.kind === "browser-throttled" ? "throttled by the browser" : "running behind"}
+            <span className={styles.dot} aria-hidden="true" />
+            <span className={styles.clockWord}>{indicator.word}</span>
           </span>
         </Tooltip>
-      ) : null}
-
+      </div>
     </div>
   );
 }

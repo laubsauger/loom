@@ -42,6 +42,59 @@
   text-align: right;
 }
 
+/*
+ * T1300 — the realtime indicator. A dot and a word, permanently present.
+ *
+ * The dot answers one question: realtime or not. Green is yes. Everything else is no, and
+ * the hue says whose fault — red when the MACHINE is missing the rate (the state the owner
+ * wants to be unmissable), amber when the BROWSER suspended the clock (a hidden window; for
+ * an automation-driven session this is expected and nothing is broken, §V560), dim when the
+ * transport is stopped and there is no rate to judge.
+ */
+.clock {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-dim);
+}
+
+.clock[data-state="realtime"] .dot {
+  background: var(--ok);
+}
+
+.clock[data-state="behind"] .dot {
+  background: var(--error);
+}
+
+.clock[data-state="throttled"] .dot {
+  background: var(--warn);
+}
+
+/*
+ * T1300/T1010B — a reserved box, for the same reason `.value` has one: the word CHANGES
+ * LENGTH (`Behind` is 6 characters, `Throttled` is 9), and this field sits at the end of a
+ * flex row, so an unreserved one shoves the row every time the reading changes. The old
+ * conditional notice did worse — it was absent entirely until something went wrong, so the
+ * layout moved at exactly the moment someone was reading it.
+ *
+ * Monospace is what makes `ch` an honest unit here: `readout-stability.test.ts` compares
+ * this reservation against the longest word `frame-clock-indicator.ts` can render, and that
+ * comparison only holds if one character is one `ch`.
+ */
+.clockWord {
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-meta);
+  min-width: 9ch;
+}
+
 /* Editable, so it reads as a field rather than as a label (§V19: focus ring, tab order). */
 .input {
   width: 6ch;

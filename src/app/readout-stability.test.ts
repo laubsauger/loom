@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { FRAME_CLOCK_WORDS } from "./frame-clock-indicator.ts";
 import { formatFps, formatMs } from "./format-metrics.ts";
 
 /**
@@ -95,5 +96,27 @@ describe("the timeline readout's fields sit in fixed boxes", () => {
   it("keeps tabular figures on both the value and the editable frame field", () => {
     expect(tabular("timeline-readout.module.css", "value")).toBe(true);
     expect(tabular("timeline-readout.module.css", "input")).toBe(true);
+  });
+
+  /**
+   * T1300 — the realtime indicator is the newest member of the same row, and it arrived as
+   * the WORST version of this bug: the old frame-clock notice was conditional, so it did
+   * not merely resize the row, it appeared in it. It is now permanent and its word changes
+   * length (`Behind` is 6, `Throttled` is 9), which is the same reservation problem `.value`
+   * already solved — so it is asserted the same way, against the words the product can
+   * actually render rather than against a number typed twice.
+   */
+  it("reserves at least the longest word the frame-clock indicator can render", () => {
+    const longest = Math.max(...Object.values(FRAME_CLOCK_WORDS).map((word) => word.length));
+    expect(longest).toBe("Throttled".length);
+    expect(reservedCh("timeline-readout.module.css", "clockWord")).toBeGreaterThanOrEqual(longest);
+  });
+
+  it("renders that word in a monospace face, which is what makes `ch` an honest unit here", () => {
+    // A `ch` is the advance of "0". In a proportional face a nine-character word is not
+    // nine `ch` wide, and the reservation above would be measuring nothing.
+    const css = readFileSync(join(HERE, "timeline-readout.module.css"), "utf8");
+    const rule = /\.clockWord\s*\{([^}]*)\}/.exec(css);
+    expect(rule?.[1]).toMatch(/font-family:\s*var\(--font-mono\)/);
   });
 });
