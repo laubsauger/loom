@@ -196,10 +196,22 @@ means over 240 of 300 frames rather than medians, because Dawn quantizes timesta
 | 3 | the dust: light visible in the air, and the shaft | **3.77 ms** |
 | 4 | the floor reflection: a second march | **5.51 ms** |
 | — | the inlay rebuilt as conduits (below) | **4.73 ms** |
+| 5 | the audio, on the shipped document | **4.76 ms** |
 
-The estimate that shaped the decision to build this was 25–35 ms. It was an estimate, and
-nothing had run it. The stages are measured separately and reported as each lands precisely
-so that the next number in this table is a fact rather than a forecast.
+The last row is the **shipped document** rather than the shader in a test rig, so it
+carries the audio graph, the component instance and the real node chain. The audio costs
+nothing measurable on the GPU, which is what you would expect: the drive changes uniform
+values and the value graph runs on the CPU.
+
+**The estimate that shaped the decision to build this was 25–35 ms.** It was an estimate,
+and nothing had ever run it — the finished piece, with every idea in, is **4.76 ms**. The
+stages are measured separately and reported as each lands precisely so that the next number
+in this table is a fact rather than a forecast.
+
+Every figure here is a trimmed mean over 240 of 300 frames after a 40-frame warm-up, and
+every run is checked for **dropped GPU spans** — consecutive renders never yield the
+event-loop turn `mapAsync` needs, so a probe that does not await can silently measure a
+fraction of its passes. All runs behind this table reported a complete set (340 of 340).
 
 The resolution is set explicitly on the document rather than inherited, so the piece and its
 claims agree about what it was designed for.
