@@ -302,6 +302,9 @@ const CLOCK_OWNERSHIP: Readonly<Record<string, "free-running" | "timeline-anchor
   mouse: "clockless",
   valueMath: "clockless",
   valueLimit: "clockless",
+  // T1298: a Select is a projection — it picks and reorders names and reads nothing else,
+  // so whatever its input does across a loop boundary, it does.
+  valueSelect: "clockless",
   valueTrigger: "clockless",
   // T508: a Switch selects. It has no phase and no state, so a lap cannot reach it —
   // whatever the SELECTED input does across a loop boundary, the Switch does.

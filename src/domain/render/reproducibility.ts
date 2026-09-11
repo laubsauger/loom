@@ -337,6 +337,7 @@ export const NODE_REPRODUCIBILITY: Readonly<Record<string, Reproducibility>> = {
   // a reset is deterministic. Random access is what it gives up, and that is `stateful`'s
   // `randomAccess: false` (§V181), not this axis's question.
   valueSpeed: "pure",
+  valueSelect: "pure",
   audioPattern: "pure",
   // MEDIA FILES ARE PURE AS TYPES, and this is the split the module note argues for. A
   // bound file locked to the timeline is `f(frame)`; free run is a PARAMETER fact and

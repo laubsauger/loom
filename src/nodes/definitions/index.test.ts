@@ -142,6 +142,9 @@ describe("core catalogue (T70, T40)", () => {
       "channelIn",
       "valueMath",
       "valueLimit",
+      // T1298: TD's Select CHOP — which channels, in which order — and the value lane's
+      // Null at its default `*`. The matcher is `domain/channels/channel-patterns.ts`.
+      "valueSelect",
       "valueSlope",
       "valueTrigger",
       "valueLag",
@@ -383,6 +386,7 @@ describe("T438 (§V316) — the channel publishers are DECLARED, not a category"
         "valueLimit",
         "valueMath",
         "valueNormalize",
+        "valueSelect",
         "valueSpeed",
         "valueSlope",
         "valueStep",

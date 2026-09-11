@@ -108,6 +108,7 @@ export {
   mouseNode,
   valueMathNode,
   valueLimitNode,
+  valueSelectNode,
   valueSlopeNode,
   valueTriggerNode,
   valueLagNode,

@@ -251,6 +251,7 @@ export const NODE_SIDE_EFFECTS: Readonly<Record<string, SideEffect>> = {
   valueStep: "none",
   valueNormalize: "none",
   valueSpeed: "none",
+  valueSelect: "none",
   audioPattern: "none",
   channelIn: "none",
   /*

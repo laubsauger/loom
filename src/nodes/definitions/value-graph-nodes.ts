@@ -6,6 +6,7 @@ import type {
   ValueEvaluateContext,
 } from "../../domain/types/node-definition.ts";
 import type { NumberParameter, ParameterSchema, ParameterValue } from "../../domain/types/parameters.ts";
+import { parseChannelPatterns, selectChannels } from "../../domain/channels/channel-patterns.ts";
 import { VALUE_PORT } from "./common-ports.ts";
 import { resolveSwitchBlend, resolveSwitchIndex, switchParametersFor } from "./switch.ts";
 import { cycleHash } from "./values.ts";
@@ -1138,11 +1139,55 @@ export const channelInNode: NodeDefinition = {
   compile: noPasses,
 };
 
+/**
+ * T1298 — Select: the channels whose names match a pattern, in PATTERN order. TD's Select CHOP.
+ *
+ * Thin on purpose: every rule about which names match, and in what order, lives in
+ * `domain/channels/channel-patterns.ts`, which a later Rename node and the inspector's
+ * channel filter will call too (the owner: "a select node … and carry the same code core").
+ * So this node is a projection and nothing else.
+ *
+ * It is also the value lane's missing NULL. At its default `*` it passes a bag through
+ * unchanged — values, names and order — and gives it a name an expression can reach. E66
+ * names its component's bags with a `valueLimit` for want of one, and a Limit CLAMPS: a
+ * level that ever leaves 0..1 is silently cut on that tap.
+ */
+export const valueSelectNode: NodeDefinition = {
+  type: "valueSelect",
+  version: 1,
+  title: "Select",
+  category: "value",
+  description:
+    "Passes only the channels whose names match Channels, in the order the patterns are written: `high low` puts high first. Patterns are separated by spaces: * matches any run of characters, ? one character, [abc] or [a-z] one character from a set, [1-4] a number range (chan[1-12] matches chan10), and ^ in front removes what it matches. `*` passes the whole input through unchanged, which is how to give a bag a name without altering it. CLOCKLESS (§V436): it reads no clock, so whatever its input does across a timeline loop, it does.",
+  tags: ["value", "select", "filter", "rename", "null", "chop"],
+  inputs: [{ id: "in", label: "In", type: VALUE_PORT }],
+  outputs: [{ id: "out", label: "Out", type: VALUE_PORT }],
+  parameters: {
+    channels: {
+      type: "string",
+      label: "Channels",
+      default: "*",
+      description: "Channel-name patterns, space-separated. * any run, ? one character, [a-z] a set, [1-4] a number range, ^ removes. The output follows this order.",
+    },
+  },
+  valueEvaluate: ({ inputs, values }) => {
+    const bag = inputs["in"] ?? {};
+    const source = typeof values["channels"] === "string" ? values["channels"] : "*";
+    const out: Record<string, number> = {};
+    for (const name of selectChannels(Object.keys(bag), parseChannelPatterns(source))) out[name] = bag[name]!;
+    return out;
+  },
+  /** A projection keeps each channel's own samples, so each channel's period passes through. */
+  plotPeriodFollowsInputs: true,
+  compile: noPasses,
+};
+
 export const valueGraphNodeDefinitions: readonly NodeDefinition[] = [
   mouseNode,
   channelInNode,
   valueMathNode,
   valueLimitNode,
+  valueSelectNode,
   valueSlopeNode,
   valueTriggerNode,
   valueLagNode,
