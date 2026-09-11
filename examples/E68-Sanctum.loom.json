@@ -1,8 +1,313 @@
 {
   "assets": [],
+  "componentLibrary": {
+    "components": [
+      {
+        "componentId": "audioAnalysis",
+        "description": "Any audio source in, two conditioned bags out. levels: every channel enveloped, ranked to 0..1 over a sliding window and settled — read level, the bands and centroid here. hits: every channel as a 1 ms attack / decaying release pulse — read kickCount, snareCount, hatCount, onsetCount and beatCount here; through levels a count rests at its mid-rank, not at 0.",
+        "graph": {
+          "edges": {
+            "e-rank-settle": {
+              "id": "e-rank-settle",
+              "source": {
+                "nodeId": "rank",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "settle",
+                "portId": "in"
+              }
+            },
+            "e-smooth-rank": {
+              "id": "e-smooth-rank",
+              "source": {
+                "nodeId": "smooth",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "rank",
+                "portId": "in"
+              }
+            },
+            "in_audio_feed_1": {
+              "id": "in_audio_feed_1",
+              "source": {
+                "nodeId": "in_audio",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "decay",
+                "portId": "in"
+              }
+            },
+            "in_audio_feed_2": {
+              "id": "in_audio_feed_2",
+              "source": {
+                "nodeId": "in_audio",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "smooth",
+                "portId": "in"
+              }
+            },
+            "out_hits_feed": {
+              "id": "out_hits_feed",
+              "source": {
+                "nodeId": "decay",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "out_hits",
+                "portId": "in"
+              }
+            },
+            "out_levels_feed": {
+              "id": "out_levels_feed",
+              "source": {
+                "nodeId": "settle",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "out_levels",
+                "portId": "in"
+              }
+            }
+          },
+          "groups": {},
+          "nodes": {
+            "decay": {
+              "definitionVersion": 1,
+              "id": "decay",
+              "parameters": {
+                "lag": 0.001,
+                "releaseRatio": 250
+              },
+              "position": {
+                "x": 258,
+                "y": -168
+              },
+              "type": "valueLag"
+            },
+            "in_audio": {
+              "definitionVersion": 1,
+              "id": "in_audio",
+              "label": "audio",
+              "parameters": {},
+              "position": {
+                "x": 0,
+                "y": -74
+              },
+              "type": "componentInValue"
+            },
+            "out_hits": {
+              "definitionVersion": 1,
+              "id": "out_hits",
+              "label": "hits",
+              "parameters": {},
+              "position": {
+                "x": 516,
+                "y": -168
+              },
+              "type": "componentOutValue"
+            },
+            "out_levels": {
+              "definitionVersion": 1,
+              "id": "out_levels",
+              "label": "levels",
+              "parameters": {},
+              "position": {
+                "x": 1032,
+                "y": -74
+              },
+              "type": "componentOutValue"
+            },
+            "rank": {
+              "definitionVersion": 1,
+              "id": "rank",
+              "parameters": {
+                "window": 16
+              },
+              "position": {
+                "x": 516,
+                "y": 20
+              },
+              "type": "valueNormalize"
+            },
+            "settle": {
+              "definitionVersion": 1,
+              "id": "settle",
+              "parameters": {
+                "lag": 0.15,
+                "releaseRatio": 1
+              },
+              "position": {
+                "x": 774,
+                "y": -74
+              },
+              "type": "valueLag"
+            },
+            "smooth": {
+              "definitionVersion": 1,
+              "id": "smooth",
+              "parameters": {
+                "lag": 0.08,
+                "releaseRatio": 1
+              },
+              "position": {
+                "x": 258,
+                "y": 20
+              },
+              "type": "valueLag"
+            }
+          },
+          "revision": 1
+        },
+        "inputs": [
+          {
+            "externalId": "audio",
+            "label": "audio",
+            "nodeId": "in_audio",
+            "portId": "in"
+          }
+        ],
+        "name": "AudioAnalysis",
+        "outputs": [
+          {
+            "externalId": "hits",
+            "label": "hits",
+            "nodeId": "out_hits",
+            "portId": "out"
+          },
+          {
+            "externalId": "levels",
+            "label": "levels",
+            "nodeId": "out_levels",
+            "portId": "out"
+          }
+        ],
+        "parameters": [
+          {
+            "definition": {
+              "default": 0.08,
+              "description": "The follower BEFORE the rank, on the levels lane: how long a channel takes to follow the source. Longer smooths what the rank sees; it cannot calm the rank's own steps — Settle does that.",
+              "label": "Envelope",
+              "max": 1,
+              "min": 0,
+              "range": "floor",
+              "step": 0.005,
+              "type": "number",
+              "unit": "seconds"
+            },
+            "key": "envelope",
+            "targets": [
+              {
+                "key": "lag",
+                "nodeId": "smooth"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": 16,
+              "description": "How much history the levels lane ranks against. Short adapts within a phrase and forgets the drop; long holds the whole track's shape and takes that long to re-centre after a change.",
+              "label": "Window",
+              "max": 60,
+              "min": 0.25,
+              "range": "bounded",
+              "step": 0.25,
+              "type": "number",
+              "unit": "seconds"
+            },
+            "key": "window",
+            "targets": [
+              {
+                "key": "window",
+                "nodeId": "rank"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": 0.15,
+              "description": "The follower AFTER the rank (§V952). A rank re-orders every frame and can step most of its span in one; this bounds the step of levels to 1 − exp(−frame / Settle) of it — 10% at 0.15 s, 2.7% at 0.6 s. 0 hands you the raw rank.",
+              "label": "Settle",
+              "max": 2,
+              "min": 0,
+              "range": "floor",
+              "step": 0.005,
+              "type": "number",
+              "unit": "seconds"
+            },
+            "key": "settle",
+            "targets": [
+              {
+                "key": "lag",
+                "nodeId": "settle"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": 250,
+              "description": "The hits lane's tail, in milliseconds: a count is 1 on the frame it happens and falls to 0.37 of that after this long. It is the release ratio of a 1 ms follower, which is why the number reads in ms.",
+              "label": "Hit Decay",
+              "max": 1000,
+              "min": 10,
+              "range": "floor",
+              "step": 10,
+              "type": "number"
+            },
+            "key": "hitDecay",
+            "targets": [
+              {
+                "key": "releaseRatio",
+                "nodeId": "decay"
+              }
+            ]
+          }
+        ],
+        "version": 1
+      }
+    ],
+    "schemaVersion": 1
+  },
   "createdAt": "2026-08-29T00:00:00.000Z",
   "graph": {
     "edges": {
+      "e-analysis-hit": {
+        "id": "e-analysis-hit",
+        "source": {
+          "nodeId": "analysis1",
+          "portId": "hits"
+        },
+        "target": {
+          "nodeId": "hit1",
+          "portId": "in"
+        }
+      },
+      "e-analysis-lvl": {
+        "id": "e-analysis-lvl",
+        "source": {
+          "nodeId": "analysis1",
+          "portId": "levels"
+        },
+        "target": {
+          "nodeId": "lvl1",
+          "portId": "in"
+        }
+      },
+      "e-music-source": {
+        "id": "e-music-source",
+        "source": {
+          "nodeId": "music1",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "source1",
+          "portId": "in1"
+        }
+      },
       "e-sky-temple": {
         "id": "e-sky-temple",
         "source": {
@@ -12,6 +317,17 @@
         "target": {
           "nodeId": "temple",
           "portId": "input"
+        }
+      },
+      "e-source-analysis": {
+        "id": "e-source-analysis",
+        "source": {
+          "nodeId": "source1",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "analysis1",
+          "portId": "audio"
         }
       },
       "e-temple-out": {
@@ -24,10 +340,77 @@
           "nodeId": "out",
           "portId": "input"
         }
+      },
+      "e-track-source": {
+        "id": "e-track-source",
+        "source": {
+          "nodeId": "track1",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "source1",
+          "portId": "in2"
+        }
       }
     },
     "groups": {},
     "nodes": {
+      "analysis1": {
+        "definitionVersion": 1,
+        "id": "analysis1",
+        "label": "analysis1",
+        "parameters": {
+          "envelope": 0.08,
+          "hitDecay": 250,
+          "settle": 0.15,
+          "window": 16
+        },
+        "position": {
+          "x": -720,
+          "y": 510
+        },
+        "type": "component:audioAnalysis@1"
+      },
+      "hit1": {
+        "definitionVersion": 1,
+        "id": "hit1",
+        "label": "hit1",
+        "parameters": {
+          "channels": "*"
+        },
+        "position": {
+          "x": -480,
+          "y": 600
+        },
+        "type": "valueSelect"
+      },
+      "lvl1": {
+        "definitionVersion": 1,
+        "id": "lvl1",
+        "label": "lvl1",
+        "parameters": {
+          "channels": "*"
+        },
+        "position": {
+          "x": -480,
+          "y": 420
+        },
+        "type": "valueSelect"
+      },
+      "music1": {
+        "definitionVersion": 1,
+        "id": "music1",
+        "label": "music1",
+        "parameters": {
+          "amount": 1,
+          "bpm": 112
+        },
+        "position": {
+          "x": -1200,
+          "y": 400
+        },
+        "type": "audioPattern"
+      },
       "out": {
         "definitionVersion": 1,
         "id": "out",
@@ -59,6 +442,19 @@
         },
         "type": "solid"
       },
+      "source1": {
+        "definitionVersion": 1,
+        "id": "source1",
+        "label": "source1",
+        "parameters": {
+          "index": 0
+        },
+        "position": {
+          "x": -960,
+          "y": 510
+        },
+        "type": "valueSwitch"
+      },
       "temple": {
         "definitionVersion": 1,
         "id": "temple",
@@ -71,7 +467,19 @@
           "columnFlare": 0.22,
           "columnRadius": 0.62,
           "dollySpeed": 0.55,
-          "dust": 0.032,
+          "dust": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "0.02 + 0.024 * op('lvl1').chan.low"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.032
+              }
+            },
+            "mode": "expression"
+          },
           "dustFloor": 2.6,
           "dustSteps": 22,
           "erosion": 0.115,
@@ -94,7 +502,19 @@
           ],
           "inlayDensity": 0.4,
           "inlayDepth": 0.035,
-          "inlayEmission": 0.85,
+          "inlayEmission": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "0.85 + 1.5 * op('hit1').chan.kickCount"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.85
+              }
+            },
+            "mode": "expression"
+          },
           "inlayRings": 0.34,
           "inlayRows": 1.15,
           "inlaySpill": 4.2,
@@ -127,6 +547,29 @@
           "y": 0
         },
         "type": "customWgsl"
+      },
+      "track1": {
+        "definitionVersion": 1,
+        "id": "track1",
+        "label": "track1",
+        "parameters": {
+          "cue": false,
+          "cuePoint": 0,
+          "extend": "loop",
+          "file": "",
+          "monitor": true,
+          "play": true,
+          "playMode": "freeRun",
+          "speed": 1,
+          "trimEnd": 0,
+          "trimStart": 0,
+          "volume": 1
+        },
+        "position": {
+          "x": -1200,
+          "y": 620
+        },
+        "type": "audioFileIn"
       }
     },
     "revision": 1

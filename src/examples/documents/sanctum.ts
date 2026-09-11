@@ -1,4 +1,8 @@
-import { settings, node, edge, graph, document } from "./builders.ts";
+import { settings, node, edge, graph, document, expressionSlot } from "./builders.ts";
+
+/** T1279's idiom: continuous properties read the RANK, drums read the COUNTS. */
+const LEVELS = (key: string): string => `op('lvl1').chan.${key}`;
+const HITS = (key: string): string => `op('hit1').chan.${key}`;
 import { SANCTUM_WGSL } from "../shaders/sanctum.wgsl.ts";
 
 /**
@@ -94,12 +98,60 @@ export const sanctumDocument = document(
         reflectSteps: 34,
         reflectFade: 12,
         steps: 96,
-      }, { label: "temple1" }),
+      }, {
+        label: "temple1",
+        parameters: {
+          /* T1279's shape: the conduits FIRE on the kick. A count is 1 on the frame the
+             drum lands and 0 between, so a bare gain on it rests at ZERO — the file with
+             no track is exactly the picture it already was (§V914). A rank would rest at
+             its middle and leave the hall permanently half-pulsed, which is the opposite
+             of a beat. */
+          inlayEmission: expressionSlot(`0.85 + 1.5 * ${HITS("kickCount")}`, 0.85),
+          /* And the air BREATHES rather than landing: dust on the low band's rank, which
+             rests at 0.5 with no audio and so renders the shipped density exactly. */
+          dust: expressionSlot(`0.02 + 0.024 * ${LEVELS("low")}`, 0.032),
+        },
+      }),
       node("out", "output", [0, 0], { toneMap: "filmic" }, { label: "out1" }),
+
+      /* ─── THE AUDIO ────────────────────────────────────────────────────────────────
+       *
+       * The catalogue's fixed drive shape: a deterministic pattern at index 0 so the file
+       * is audio-reactive on open with no track at all (§V363), and a real file at index 1
+       * one drop away. Everything downstream reads `source1`, so swapping the source
+       * changes nothing else.
+       *
+       * ONE ANALYSIS INSTANCE, two bags — `lvl1` for the ranked levels, `hit1` for the
+       * drum counts — which is the idiom §T1234 and §T1271 arrived at the hard way. The
+       * split is the finding: a percentile cannot spread a tie, so a COUNT through a rank
+       * rests at its mid and a beat becomes a permanent half-lit nothing.
+       *
+       * ⚑ NOTHING DRIVES THE CAMERA. §T1279 refused that on E57 for a reason that applies
+       * here unchanged: the move IS the piece's pace, and modulating it makes the walk a
+       * limp rather than a groove.
+       */
+      node("music1", "audioPattern", [-1200, 400], { amount: 1, bpm: 112 }, { label: "music1" }),
+      node("track1", "audioFileIn", [-1200, 620], {
+        cue: false, cuePoint: 0, extend: "loop", file: "", monitor: true, play: true,
+        playMode: "freeRun", speed: 1, trimEnd: 0, trimStart: 0, volume: 1,
+      }, { label: "track1" }),
+      node("source1", "valueSwitch", [-960, 510], { index: 0 }, { label: "source1" }),
+      node("analysis1", "component:audioAnalysis@1", [-720, 510], {
+        envelope: 0.08, window: 16, settle: 0.15, hitDecay: 250,
+      }, { label: "analysis1" }),
+      /* T1302b: a Select at `*` passes every channel through unchanged — a Limit at 0..1
+         would clip the tempo claims the hits bag also carries. */
+      node("lvl1", "valueSelect", [-480, 420], { channels: "*" }, { label: "lvl1" }),
+      node("hit1", "valueSelect", [-480, 600], { channels: "*" }, { label: "hit1" }),
     ],
     [
       edge("e-sky-temple", ["sky", "out"], ["temple", "input"]),
       edge("e-temple-out", ["temple", "out"], ["out", "input"]),
+      edge("e-music-source", ["music1", "out"], ["source1", "in1"]),
+      edge("e-track-source", ["track1", "out"], ["source1", "in2"]),
+      edge("e-source-analysis", ["source1", "out"], ["analysis1", "audio"]),
+      edge("e-analysis-lvl", ["analysis1", "levels"], ["lvl1", "in"]),
+      edge("e-analysis-hit", ["analysis1", "hits"], ["hit1", "in"]),
     ],
   ),
 );

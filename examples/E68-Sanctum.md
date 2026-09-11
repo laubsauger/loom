@@ -149,6 +149,29 @@ What exposed it was the floor reflection appearing along the **top** edge of the
 reflection was correct; the camera was not — and the bug was only visible once something in
 the picture knew which surface it belonged to.
 
+## The audio lands rather than breathes
+
+One `AudioAnalysis` instance, two bags: `lvl1` for the ranked levels, `hit1` for the drum
+counts. A deterministic pattern plays at index 0 so the file is reactive on open with no
+track at all, and a real file is one drop away on index 1.
+
+| what | channel | why that one |
+| --- | --- | --- |
+| the conduits' emission | `hit1.kickCount` | a count is 1 on the frame the drum lands and 0 between, so the conduits **fire** |
+| the dust density | `lvl1.low` | a rank rests at its middle, so the air **breathes** |
+
+That split is the whole finding of the rows before this one: a percentile cannot spread a
+tie, so a count read through a rank rests at its mid and a beat becomes a permanent
+half-lit nothing. Continuous properties on ranks, drums on counts.
+
+**Nothing drives the camera.** The dolly *is* the piece's pace, and modulating it makes the
+walk a limp rather than a groove — a refusal inherited from E57, where it was measured
+rather than argued.
+
+With no track the counts rest at zero and the rank at its middle, so the retained values
+render the shipped picture exactly — which matters because every thumbnail, every headless
+render and every first open has no audio.
+
 ## What this file does not have
 
 It is a marcher, so it owns its own shading. That means **none of the scene family's PBR material** — none of the
