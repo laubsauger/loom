@@ -422,17 +422,30 @@ working rather than a compromise, and is worth stating because "rim light" impli
 edge everywhere. Mean |Δ| luma with the band wired against unwired, split by a 6px
 erosion of the object mask:
 
-| | silhouette ring | body interior | the room |
+| | silhouette ring | body interior | ratio |
 | --- | --- | --- | --- |
-| goo frame (484) | **45.8** | 25.9 | 2.8 |
-| emblem frame (0) | 14.5 | **19.5** | 1.8 |
+| goo frame (484) | **120.4** | 45.8 | **2.63×** |
+| emblem frame (0) | 24.9 | 22.4 | 1.11× |
 
-(154ddf1, on the object as T673 shipped it: a smooth mass with tiles on it.)
+(T1296, `obol-claims.gpu.test.ts` — a gate reads these now. The isolation is E13's, ported:
+the bloom muted, the drawn backdrop off, the cyclorama soloed out, the background black so
+the mask thresholds, and `environmentIntensity` REPLACED rather than written through,
+because on this file it is a driven slot and a driven slot beats the static under it.)
 
-On the goo it lands 1.8× harder on the outline than on the body: that is a rim. On the
-emblem it does not, because a flat disc facing the camera has almost no grazing surface
-for a Fresnel term to find — which is the same fact as "the emblem end is flat" wearing
-a different hat. The room moves under 3 luma either way.
+On the goo it lands 2.6× harder on the outline than on the body: that is a rim. On the
+emblem it is roughly even — neither a rim nor fill — because a flat disc facing the camera
+has almost no grazing surface for a Fresnel term to find, which is the same fact as "the
+emblem end is flat" wearing a different hat. With the cyclorama out of the frame the room
+contributes nothing at all.
+
+⚑ **The numbers this table used to carry — goo 45.8 / 25.9 (1.8×) and emblem 14.5 / 19.5
+(0.74×) — were measured ad hoc at 154ddf1 with an isolation nobody wrote down, and nothing
+ever ran them again.** The ratios above are what a documented instrument reads. The
+difference is the instrument, not a change in the renderer: measured on THIS instrument
+with T1289's blur temporarily swapped back for the old `1 − roughness` dimming, the goo
+read 2.619× and the emblem 1.126× — so the blur moved the absolute contribution about 5%
+on both and left both ratios where they were. The flat end was never fill-dominated here;
+0.74× was an artefact of a recipe that is not recoverable.
 
 **T716 did not re-take this pair, and the limit it records is the reason.** §V640 is
 already stated with these two numbers and T716 changes nothing about `rimband1` or the
