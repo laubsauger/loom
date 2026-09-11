@@ -2,7 +2,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
-import { TERMINAL_PANE_HINT } from "@devices/helper.ts";
+import {
+  HELPER_DOCS_URL,
+  TERMINAL_PANE_HINT,
+  TERMINAL_PANE_RUN,
+  TERMINAL_PANE_THEN,
+} from "@devices/helper.ts";
 import type { TerminalClient, TerminalPaneSession, TerminalRefusal } from "@devices/terminal-client.ts";
 import { KEYMAP_CONTEXT_ATTRIBUTE } from "@editor/keymap/index.ts";
 import { Button } from "@ui/primitives/button.tsx";
@@ -179,8 +184,17 @@ export function TerminalPane({ client }: TerminalPaneProps) {
               <Button variant="outline" onClick={again}>
                 Open shell
               </Button>
-              {/* The one hint sentence, from helper.ts (T1110): what a shell needs, before asking. */}
-              <span>Shells come from the local helper: {TERMINAL_PANE_HINT}.</span>
+              {/*
+                T1284b — the command is shown AS A COMMAND, not buried in a sentence. The
+                strings still come from helper.ts, which is what `helper.test.ts` enforces
+                (T1110); only the layout lives here.
+              */}
+              <p className={styles.hint}>{TERMINAL_PANE_HINT}</p>
+              <code className={styles.command}>{TERMINAL_PANE_RUN}</code>
+              <p className={styles.hint}>{TERMINAL_PANE_THEN}</p>
+              <a className={styles.docs} href={HELPER_DOCS_URL} target="_blank" rel="noreferrer">
+                Helper docs
+              </a>
             </>
           ) : null}
           {phase.kind === "opening" ? <span>Opening a shell…</span> : null}

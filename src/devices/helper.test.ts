@@ -12,7 +12,8 @@ import {
   HELPER_DEVICES_ONLY_FLAG,
   HELPER_SCRIPT,
   HELPER_TERMINAL_FLAG,
-  TERMINAL_PANE_HINT,
+  HELPER_DOCS_URL,
+  TERMINAL_PANE_RUN,
 } from "./helper.ts";
 import { createDeviceDoors } from "./doors.ts";
 import { createDeviceHelper } from "../mcp/serve.ts";
@@ -119,10 +120,23 @@ describe("the helper command has exactly one spelling (T1110)", () => {
    * from the one script name here, and the FLAG itself is written nowhere else under
    * src/ either, so the entry point and every refusal that names it move together.
    */
-  it("builds the terminal command from the same script name, and the pane hint from it", () => {
+  it("builds the terminal command from the same script name, and hands the pane that command", () => {
     expect(DEVICE_HELPER_TERMINAL_COMMAND).toBe(`${DEVICE_HELPER_COMMAND} ${HELPER_TERMINAL_FLAG}`);
-    expect(TERMINAL_PANE_HINT).toContain(DEVICE_HELPER_TERMINAL_COMMAND);
-    expect(TERMINAL_PANE_HINT).toContain(`${DEVICE_HELPER_DEVICES_ONLY_COMMAND} ${HELPER_TERMINAL_FLAG}`);
+    /*
+     * T1284b — the requirement is that the pane NAMES THE COMMAND, built from the one
+     * script name here; it was never that the command sit inside a prose sentence. The
+     * pane now renders `TERMINAL_PANE_RUN` as a command, so that constant is what has to
+     * be the real thing.
+     */
+    expect(TERMINAL_PANE_RUN).toBe(DEVICE_HELPER_TERMINAL_COMMAND);
+    /*
+     * The devices-only variant is DELIBERATELY no longer in the pane (T1284b, the owner:
+     * "less verbose text, more clear instructions"). One command is what a reader has to
+     * type; the second spelling is an option, and options live in the docs the pane links.
+     * Asserted as ABSENCE so nobody puts it back by reflex.
+     */
+    expect(TERMINAL_PANE_RUN).not.toContain(DEVICE_HELPER_DEVICES_ONLY_COMMAND);
+    expect(HELPER_DOCS_URL.startsWith("https://")).toBe(true);
   });
 
   it("the --terminal flag is not spelled into a string anywhere else under src/ (T1263)", () => {

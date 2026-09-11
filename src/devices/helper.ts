@@ -98,7 +98,18 @@ export const DEVICE_HELPER_START =
  * no helper paired at all, and a helper paired that was started without the flag — and
  * the pane prefixes which of the two it is.
  */
-export const TERMINAL_PANE_HINT =
-  `start ${DEVICE_HELPER_NAME} with \`${DEVICE_HELPER_TERMINAL_COMMAND}\` (or ` +
-  `\`${DEVICE_HELPER_DEVICES_ONLY_COMMAND} ${HELPER_TERMINAL_FLAG}\` for devices and a shell with no agent ` +
-  "server) and pair it in the agent panel's Connections section; each terminal pane then opens its own shell";
+export const TERMINAL_PANE_HINT = "Shells come from the local helper.";
+
+/**
+ * T1284b — the pane shows the command as a COMMAND, not inside a sentence.
+ *
+ * The one-paragraph version read as prose and buried the only thing a reader has to type.
+ * These three exports are the same information as three parts the pane can lay out: what
+ * to run, what to do next, and where the long version lives. The command still comes from
+ * here, which is what `helper.test.ts` enforces (T1110).
+ */
+export const TERMINAL_PANE_RUN = DEVICE_HELPER_TERMINAL_COMMAND;
+export const TERMINAL_PANE_THEN = "Pair it in Agent \u2192 Connections.";
+
+/** Where the long version lives — the README's helper section (T1284b). */
+export const HELPER_DOCS_URL = "https://github.com/laubsauger/loom#osc";

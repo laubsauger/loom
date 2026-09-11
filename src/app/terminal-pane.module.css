@@ -40,3 +40,29 @@
 .state[data-tone="error"] {
   color: var(--error);
 }
+
+/* T1284b — the idle pane: a command reads as a command, not as prose. */
+.hint {
+  margin: 0;
+  max-width: 52ch;
+}
+
+.command {
+  font-family: var(--font-mono);
+  font-size: var(--fs-body);
+  color: var(--text);
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-2);
+  user-select: all;
+}
+
+.docs {
+  color: var(--text-dim);
+  text-decoration: underline;
+}
+
+.docs:hover {
+  color: var(--text);
+}
