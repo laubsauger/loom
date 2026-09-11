@@ -42,16 +42,37 @@ actually does to a pillar. One lookup, not an extra octave.
 The displacement only ever **removes** material, so an eroded edge is bitten rather than
 inflated.
 
+## The first inlay made this a flooded crypt, and the fix was not more detail
+
+The version that shipped through stage 4 laid rows of hashed marks at regular heights:
+rectangular, warm, evenly spaced, human-scaled. Every one of those properties says
+**window**, and a hall of lit windows in eroded stone is a ruin with people in it. The brief
+asked for alien technology, and the stone alone cannot say that — eroded rock reads "old",
+never "made by something else".
+
+Two changes carry it, and neither adds detail:
+
+**The channels follow the geometry instead of sitting on it.** Veins run the full height of
+a column, spaced around its circumference, crossed by rings at intervals. They are
+**continuous**, which is what separates circuitry from writing: a mark that stops and starts
+in blocks is a glyph, a line that runs the length of a structure is a conduit.
+
+**The light is not on the blackbody curve.** Amber at that temperature is fire, and fire is
+human — a torch, a forge, a lamp. A cyan-green with no red in it cannot be produced by
+anything burning, and the eye knows that without being told.
+
+It is also *cheaper*: 4.73 ms against the amber version's 5.51, because a vein is one angular
+test where a glyph was three hashes.
+
 ## The inlay is cut, not painted
 
 The channels are subtracted from the distance function itself, so a channel breaks the
 silhouette of a column seen edge-on. A decal would not.
 
-Which rows carry writing is an integer hash of the row index and the bay, so the same column
-geometry carries a different sentence in every bay — and it is the same figure on every
-device and every replay (§V45). Most of the stone is blank: the first version lit two thirds
-of the rows and the hall read as a circuit board. An inlay is remarkable because the surface
-around it is not.
+Which veins are live is an integer hash of the vein index, the bay and the side, so a column
+carries a different circuit in every bay — and the same one on every device and every replay
+(§V45). A dead conduit is still a channel cut in the stone, which is what keeps the
+architecture reading as built rather than as decorated.
 
 **Procedural, not the `text` node.** §V403: the text node renders black headless, so glyph
 rows made of it would be invisible in every thumbnail, every claim and every headless render
@@ -151,6 +172,7 @@ means over 240 of 300 frames rather than medians, because Dawn quantizes timesta
 | 2 | the inlay, its channels and its spill | **3.57 ms** |
 | 3 | the dust: light visible in the air, and the shaft | **3.77 ms** |
 | 4 | the floor reflection: a second march | **5.51 ms** |
+| — | the inlay rebuilt as conduits (below) | **4.73 ms** |
 
 The estimate that shaped the decision to build this was 25–35 ms. It was an estimate, and
 nothing had run it. The stages are measured separately and reported as each lands precisely

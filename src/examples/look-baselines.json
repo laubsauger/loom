@@ -317,9 +317,9 @@
     "cardFloor": 0
   },
   "E68-Sanctum.loom.json": {
-    "motion": 0.01607,
-    "range": 0.6309,
-    "f0max": 0.6992,
+    "motion": 0.06154,
+    "range": 0.6195,
+    "f0max": 0.6568,
     "cardFloor": 0.0016
   },
   "E7-LFO-Dissolve.loom.json": {

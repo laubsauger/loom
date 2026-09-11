@@ -64,13 +64,15 @@ struct Params {
   erosion: f32,       // @default 0.115  how deeply time has eaten the stone, metres of displacement
   erosionScale: f32,  // @default 4.6  size of the bites — higher is finer damage
   erosionBands: f32,  // @default 0.62  how much the damage varies in HEIGHT bands rather than eating evenly: 0 is uniform decay, 1 is courses eaten and courses intact
-  inlayRows: f32,     // @default 0.46  metres between glyph rows on a column
+  inlayRows: f32,     // @default 1.15  metres between the rings that cross the veins
+  inlayVeins: f32,    // @default 9  conduits spaced around a column's circumference
+  inlayRings: f32,    // @default 0.34  share of ring heights that carry a member
   inlayDepth: f32,    // @default 0.035  how deep the channels are cut, metres
-  inlayWidth: f32,    // @default 0.1  the lit share of a row's pitch
-  inlayColor: vec4f,  // @default [1, 0.62, 0.22, 1]  the powered inlay, warm against the cold key
-  inlayEmission: f32, // @default 1.5  how hard the channels burn
+  inlayWidth: f32,    // @default 0.16  the lit share of a vein's spacing
+  inlayColor: vec4f,  // @default [0.16, 1, 0.82, 1]  the powered inlay — NOT on the blackbody curve, because anything that burns is human
+  inlayEmission: f32, // @default 0.85  how hard the channels burn
   inlaySpill: f32,    // @default 4.2  how hard the channels light the stone around them — this is the hall's PRIMARY light, not a decoration on it
-  inlayDensity: f32,  // @default 0.1  share of rows that carry writing at all — most of a wall is blank stone
+  inlayDensity: f32,  // @default 0.4  share of veins that are live — a dead conduit is still a channel in the stone
   stoneColor: vec4f,  // @default [0.29, 0.27, 0.25, 1]  the stone under the key
   keyColor: vec4f,    // @default [0.52, 0.62, 0.78, 1]  the cold light from the doorway
   keyIntensity: f32,  // @default 1.35  how hard that light drives
@@ -142,41 +144,64 @@ fn erosionAt(p: vec3f) -> f32 {
 }
 
 /**
- * THE INLAY — channels cut into the stone, and still powered.
+ * THE INLAY — and the FIRST version of it was the reason this hall read as a flooded crypt
+ * rather than as alien technology.
  *
- * Rows of glyph channels around the columns and along the walls, spaced by 'inlayRows'.
- * Which rows are lit is an integer hash of the row index and the bay, so a column is not a
- * repeating decal: the same pillar geometry carries a different sentence in every bay, and
- * it is the same figure on every device and every replay (§V45).
+ * That version laid rows of hashed marks at regular heights: rectangular, warm, evenly
+ * spaced, human-scaled. Every one of those properties says WINDOW, and a hall of lit
+ * windows in eroded stone is a ruin with people in it. The brief asked for alien
+ * technology, and the stone alone cannot say that — eroded rock is "old", never "made by
+ * something else".
  *
- * ⚑ PROCEDURAL, NOT THE 'text' NODE. §V403: the text node renders BLACK headless, so a
- * glyph row made of it would be invisible in every thumbnail, every claim and every
- * headless render — which is to say in every picture anybody automated ever sees.
+ * Two changes carry it, and neither is more detail:
  *
- * Returns 0..1 where 1 is the middle of a lit channel.
+ *  - THE CHANNELS FOLLOW THE GEOMETRY INSTEAD OF SITTING ON IT. Veins run the full height
+ *    of a column, spaced around its circumference, crossed by rings at intervals. They are
+ *    CONTINUOUS, which is what separates circuitry from writing: a mark that stops and
+ *    starts in blocks is a glyph, a line that runs the length of a structure is a conduit.
+ *  - THE LIGHT IS NOT ON THE BLACKBODY CURVE. Amber at that temperature is fire, and fire
+ *    is human — a torch, a forge, a lamp. A cyan-green with no red in it cannot be produced
+ *    by anything burning, and the eye knows that without being told.
+ *
+ * Which veins are live is still an integer hash, so a column carries a different circuit in
+ * every bay and the same one on every device and every replay (§V45).
+ *
+ * ⚑ PROCEDURAL, NOT THE 'text' NODE. §V403: the text node renders BLACK headless, so marks
+ * made of it would be invisible in every thumbnail, every claim and every headless render.
  */
+fn columnLocal(p: vec3f) -> vec3f {
+  let zLocal = (fract(p.z / max(params.bay, 0.1) + 0.5) - 0.5) * max(params.bay, 0.1);
+  let xLocal = abs(p.x) - params.aisle;
+  return vec3f(xLocal, p.y, zLocal);
+}
+
 fn inlayAt(p: vec3f) -> f32 {
-  let pitch = max(params.inlayRows, 0.05);
-  let row = floor(p.y / pitch);
+  let q = columnLocal(p);
+  let radial = length(vec2f(q.x, q.z));
+  // Only on the column's own skin: a conduit is fixed to something.
+  let onColumn = 1.0 - smoothstep(params.columnRadius * 1.05, params.columnRadius * 1.9, radial);
+  if (onColumn <= 0.0) { return 0.0; }
+  if (p.y < 0.15) { return 0.0; }
+
   let bayIndex = floor(p.z / max(params.bay, 0.1));
-  /* ⚑ MOST OF THE STONE IS BLANK, and that is the whole difference between writing and a
-     circuit board. The first cut lit two thirds of the rows and the hall read as a lava
-     temple: an inlay is remarkable because the surface around it is not. */
-  let live = unitFloat(hash3i(vec3i(i32(row), i32(bayIndex), 0), GLYPH_SEED));
-  if (live > clamp(params.inlayDensity, 0.0, 1.0)) { return 0.0; }
-  /* ⚑ AND NOT ON THE FLOOR. The rows are spaced in HEIGHT, so a flat floor sits in row
-     zero everywhere and the glyph hash tiles it like a grid — which is exactly what the
-     first cut did. The channels belong to what stands up. */
-  if (p.y < 0.35) { return 0.0; }
-  let withinRow = abs(fract(p.y / pitch) - 0.5) * 2.0;
-  let lit = 1.0 - smoothstep(1.0 - clamp(params.inlayWidth, 0.02, 0.9), 1.0, 1.0 - withinRow);
-  // And the row is BROKEN along its length — glyphs, not a neon tube.
-  let glyph = unitFloat(hash3i(vec3i(i32(floor(p.z * 5.0)), i32(row), i32(floor(p.x * 5.0))), GLYPH_SEED));
-  /* A second, finer division INSIDE each mark, so a glyph is a figure with parts rather
-     than a lit rectangle. The first cut had only the coarse hash and every mark read as a
-     window; this is the difference between writing and lighting. */
-  let stroke = unitFloat(hash3i(vec3i(i32(floor(p.z * 17.0)), i32(floor(p.y * 23.0)), i32(floor(p.x * 17.0))), GLYPH_SEED));
-  return lit * step(0.66, glyph) * step(0.3, stroke);
+  let side = select(0.0, 1.0, p.x >= 0.0);
+
+  // VEINS: continuous lines up the column, spaced around it.
+  let turns = max(params.inlayVeins, 1.0);
+  let angle = (atan2(q.z, q.x) / 6.2831853) + 0.5;
+  let veinIndex = floor(angle * turns);
+  let live = unitFloat(hash3i(vec3i(i32(veinIndex), i32(bayIndex), i32(side)), GLYPH_SEED));
+  let veinLit = step(live, clamp(params.inlayDensity, 0.0, 1.0));
+  let acrossVein = abs(fract(angle * turns) - 0.5) * 2.0;
+  let vein = (1.0 - smoothstep(0.0, clamp(params.inlayWidth, 0.02, 0.9), acrossVein)) * veinLit;
+
+  // RINGS: the horizontal members that make it read as a circuit rather than as fluting.
+  let pitch = max(params.inlayRows, 0.05);
+  let acrossRing = abs(fract(p.y / pitch) - 0.5) * 2.0;
+  let ringLive = unitFloat(hash3i(vec3i(i32(floor(p.y / pitch)), i32(bayIndex), 7), GLYPH_SEED));
+  let ring = (1.0 - smoothstep(0.0, 0.12, acrossRing)) * step(ringLive, params.inlayRings);
+
+  return max(vein, ring) * onColumn;
 }
 
 /**
@@ -200,18 +225,21 @@ fn inlayAt(p: vec3f) -> f32 {
  * rather than four field evaluations, so it is also the cheaper of the two wrong versions.
  */
 fn inlaySpillAt(p: vec3f) -> f32 {
-  if (p.y < 0.2) { return 0.0; }
-  let pitch = max(params.inlayRows, 0.05);
-  let row = floor(p.y / pitch);
+  let q = columnLocal(p);
+  let radial = length(vec2f(q.x, q.z));
+  if (p.y < 0.15) { return 0.0; }
+  // A pool around the column's skin rather than a copy of the channel: the glow is "there
+  // is a conduit near here", which is a coarser question than "am I on one".
+  let near = 1.0 - smoothstep(params.columnRadius * 1.0, params.columnRadius * 2.9, radial);
   let bayIndex = floor(p.z / max(params.bay, 0.1));
-  let live = unitFloat(hash3i(vec3i(i32(row), i32(bayIndex), 0), GLYPH_SEED));
-  if (live > clamp(params.inlayDensity, 0.0, 1.0)) { return 0.0; }
-  // A window several times the channel's width, falling off smoothly: the pool of light.
-  let withinRow = abs(fract(p.y / pitch) - 0.5) * 2.0;
-  let pool = 1.0 - smoothstep(0.0, 0.85, withinRow);
-  // The coarse mark only — a glow does not carry the strokes of the glyph making it.
-  let glyph = unitFloat(hash3i(vec3i(i32(floor(p.z * 5.0)), i32(row), i32(floor(p.x * 5.0))), GLYPH_SEED));
-  return pool * smoothstep(0.35, 0.72, glyph);
+  let side = select(0.0, 1.0, p.x >= 0.0);
+  let turns = max(params.inlayVeins, 1.0);
+  let angle = (atan2(q.z, q.x) / 6.2831853) + 0.5;
+  let veinIndex = floor(angle * turns);
+  let live = unitFloat(hash3i(vec3i(i32(veinIndex), i32(bayIndex), i32(side)), GLYPH_SEED));
+  let veinLit = step(live, clamp(params.inlayDensity, 0.0, 1.0));
+  let acrossVein = abs(fract(angle * turns) - 0.5) * 2.0;
+  return near * veinLit * (1.0 - smoothstep(0.0, 1.0, acrossVein));
 }
 
 fn sdBox(p: vec3f, b: vec3f) -> f32 {
