@@ -104,33 +104,60 @@ describe("E68 Sanctum — claims", () => {
    *
    * §T1279's finding, applied to a different file: a drive that BREATHES cannot return, so
    * asserting "the picture moved" would pass for a lane that merely drifts. The shape that
-   * only an event produces is up-and-back — brighter on the beat than before it, and back
-   * down after.
+   * only an event produces is a sharp attack and a slow fall, and that is what is asserted
+   * here — not a return to zero, which T1304c deliberately no longer happens (see below).
    *
-   * The frames are the fixture's arithmetic rather than eyeballed: at 112 bpm a beat is
-   * 60/112 s = 32.14 frames, so beat 3 lands at frame 96.4. 96 is the frame before it, 100
-   * is inside the 250 ms decay, and 120 is most of the way back down.
+   * The frames are the fixture's arithmetic rather than eyeballed, and every figure quoted
+   * in the comments below was measured on this document rather than estimated.
    */
-  it("the conduits FIRE on the kick and fall back after it", async () => {
-    const before = await shoot(96);
-    const onBeat = await shoot(100);
-    /* ⚑ 150, NOT 120, AND THE REASON IS A SECOND LANE. T1304b put the exposure on the low
-       band's RANK — the "up and down felt over time" ask — so the frame no longer returns
-       to its pre-beat level as soon as the 250 ms decay ends: the rank is still elevated.
-       Measured across the beat at 112 bpm: mean 65.8 (f96, before) → 70.1 (f100, on) →
-       68.6 (f120) → 66.9 (f150). The conduits' own fall is done by f120; what is still
-       coming down at f120 is the exposure. Asserting recovery at 120 would be asserting
-       that the slower lane does not exist. */
-    const after = await shoot(150);
+  it("the conduits FIRE on the kick and gutter down between kicks", async () => {
+    /* ⚑ MEASURED AGAINST A CUT ARM AT THE SAME FRAME, NOT AGAINST A LATER FRAME OF ITSELF.
+       The first version of this claim compared frame 100 with frames 96 and 150 and asked
+       for a rise and a fall. It passed until T1304c, and then it failed for a reason that
+       had nothing to do with the beat: THE CAMERA IS MOVING. A dolly down a nave with
+       daylight shafts standing in it changes the frame's mean luminance by more, between
+       any two frames fifty apart, than one kick does — so the claim had been measuring the
+       walk and crediting it to the drum. It only survived as long as it did because the
+       hall used to be uniform enough that the walk did not change the average much.
+       Cutting ONE lane and holding the frame index fixed removes the camera from the
+       measurement entirely, and it is the §V361 shape besides: what differs if the edge
+       were cut? */
+    const cutKick = (graph: GraphDocument): void => {
+      param(graph, "temple", "inlayEmission", 0.85);
+    };
 
-    const rise = meanLuma(onBeat) - meanLuma(before);
-    const fall = meanLuma(onBeat) - meanLuma(after);
-    expect(rise, "the frame after the kick must be brighter than the one before it").toBeGreaterThan(0);
-    expect(fall, "and it must come back down, or this is a drift rather than a beat").toBeGreaterThan(0);
-    // Most of the way back inside the decay: a lane that ratchets would fail this while
-    // still passing both directions above.
-    // Measured: rise 4.3, fall 3.2 by f150.
-    expect(fall).toBeGreaterThan(rise * 0.5);
+    /* At 112 bpm a beat is 60/112 s = 32.14 frames — 536 ms — so beat 3 lands at frame
+       96.4. Frame 94 is the last frame before it and frame 98 the first clear one after.
+       ⚑ THE LANE NO LONGER RETURNS TO ZERO BETWEEN BEATS, AND THAT IS THE T1304c CHANGE
+       ITSELF RATHER THAN A WEAKENED CLAIM. The decay went 250 ms → 420 ms to answer "too
+       blinky blinky", and 420 ms against a 536 ms beat means the next kick arrives while
+       the last one is still audible in the picture — which is what a light that GUTTERS
+       does and what a light that STROBES does not. Measured, live minus cut, in mean luma
+       of 255:
+           f84 0.226   f88 0.200   f92 0.179   f94 0.168   f96 0.158
+           f98 0.426   f100 0.395  f104 0.344  f112 0.273  f120 0.219
+       An attack of 2.7× in four frames and a monotone fall over the next twenty-two. The
+       claim is that SHAPE, because the shape is what an event makes and a drift cannot. */
+    const beforeLive = await shoot(94);
+    const beforeCut = await shoot(94, cutKick);
+    const afterLive = await shoot(98);
+    const afterCut = await shoot(98, cutKick);
+    const lateLive = await shoot(120);
+    const lateCut = await shoot(120, cutKick);
+
+    const before = meanLuma(beforeLive) - meanLuma(beforeCut);
+    const after = meanLuma(afterLive) - meanLuma(afterCut);
+    const late = meanLuma(lateLive) - meanLuma(lateCut);
+
+    // The lane exists at all: cutting it changes the picture wherever it is read.
+    expect(before, "the conduit lane must reach the frame").toBeGreaterThan(0.05);
+    // THE ATTACK. Measured 0.426 against 0.168 — a factor of 2.5 in four frames.
+    expect(after, "the kick must put light into the frame it lands on").toBeGreaterThan(before * 2);
+    /* THE DECAY, and this is the half a lane that merely RATCHETED would fail: it comes
+       back down on its own, without waiting for a quieter passage. Measured 0.219 at f120
+       against 0.426 at f98. */
+    expect(late, "and it must fall again, or the light came on once").toBeLessThan(after * 0.75);
+    expect(late, "but not all the way to nothing inside one beat — it gutters").toBeGreaterThan(before);
   }, 300_000);
 
   /**
@@ -145,9 +172,19 @@ describe("E68 Sanctum — claims", () => {
   it("the drives' retained values render the same frame as the drives cut", async () => {
     const driven = await shoot(1);
     const cut = await shoot(1, (graph) => {
-      // The slots' own retained values, written as statics: a static replaces the slot.
+      /* The slots' own retained values, written as statics: a static replaces the slot.
+         ⚑ EVERY DRIVEN SLOT, not a sample of them. T1304c took the piece from two lanes to
+         eight, and a claim that cuts two of eight is asserting §V914 about a quarter of the
+         file — the four lanes it does not cut could each rest somewhere else entirely and
+         this would still pass. The list is the document's, and it is the whole list. */
       param(graph, "temple", "inlayEmission", 0.85);
       param(graph, "temple", "dust", 0.032);
+      param(graph, "temple", "inlayRings", 0.34);
+      param(graph, "temple", "inlayNode", 0.9);
+      param(graph, "temple", "shaft", 0.55);
+      param(graph, "temple", "inlaySpill", 4.2);
+      param(graph, "temple", "warmIntensity", 0.28);
+      param(graph, "temple", "exposure", 1.35);
     });
     // Frame 1 is before the first beat lands and the rank has not yet moved off its middle,
     // so the two arms are the same picture — and byte-identical is the only honest way to

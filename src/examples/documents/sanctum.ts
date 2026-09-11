@@ -64,13 +64,49 @@ export const sanctumDocument = document(
         source: SANCTUM_WGSL,
         dollySpeed: 0.55,
         eyeHeight: 1.62,
-        pitch: -7,
+        pitch: -2,
         lens: 1.7,
         bay: 4.4,
         aisle: 3.6,
         columnRadius: 0.62,
         columnFlare: 0.22,
         ceiling: 7.2,
+        /* ─── THE ARCHITECTURAL VOCABULARY (T1304c) ────────────────────────────────────
+         * The owner's reading of the version before this one was "the shapes too simple",
+         * and it was exact: the hall was a floor, one repeated column, a flat ceiling and
+         * a far wall. Four shapes cannot describe a building.
+         *
+         * Every value here buys a KIND rather than a COUNT, which is the finding the whole
+         * rework rests on: the colonnade is domain-repeated, so thirty columns evaluate one
+         * distance function — a thirty-first column is free and a CAPITAL is one box. */
+        plinthHeight: 0.46,
+        capitalDrop: 0.95,
+        spanDepth: 0.3,
+        ribThickness: 0.17,
+        ribWidth: 0.34,
+        /* A fifth of the bays have FALLEN, and one hash decides the column, its capital,
+           the span above it and the block of it on the floor — a bay whose column is gone
+           but whose architrave still floats is a bug, not a ruin. */
+        ruin: 0.22,
+        /* The mason's courses, cut as real grooves. This is the shape that separates AGE
+           from DIRT: weathering opens the bedding joint between two courses first, and a
+           noise skin has no idea where those are. */
+        /* ⚑ THE VAULT IS BROKEN OPEN IN A THIRD OF THE BAYS, and the daylight standing in
+           those holes is the answer to "not dramatic enough". Every other light in this
+           hall comes from inside it, at one temperature, along one axis; a shaft falling
+           THROUGH the roof gives the frame a light from above, a warm against the cyan,
+           and a source that is visible in shot rather than implied. */
+        breach: 0.24,
+        breachLight: 1.15,
+        dayColor: [1, 0.86, 0.62, 1],
+        courseHeight: 0.54,
+        courseDepth: 0.016,
+        /* The floor, which "felt like mud" because it was the plane y = 0 with a
+           reflection on it and no material underneath. Slabs, joints, and settlement. */
+        slabSize: 1.7,
+        slabJoint: 0.055,
+        slabDepth: 0.026,
+        slabSettle: 0.022,
         erosion: 0.115,
         erosionScale: 4.6,
         erosionBands: 0.62,
@@ -79,6 +115,16 @@ export const sanctumDocument = document(
         inlayRings: 0.34,
         inlayDepth: 0.035,
         inlayWidth: 0.16,
+        /* ⚑ CONTINUOUS IS NOT UNIFORM (T1304c), and the version before this one was
+           uniform: strips of even width and even brightness running the full height of
+           every column, which reads as NEON TAPE APPLIED TO A COLUMN rather than as
+           something that is part of one. A conduit varies along its run — it swells and
+           narrows, it dips, it gutters out and comes back, and it POOLS where it crosses
+           a member, because a junction is where a network shows it is a network. */
+        inlayRun: 1.7,
+        inlayVary: 0.62,
+        inlayBreak: 0.42,
+        inlayNode: 0.9,
         inlayColor: [0.16, 1, 0.82, 1],
         inlayEmission: 0.85,
         inlaySpill: 4.2,
@@ -86,22 +132,32 @@ export const sanctumDocument = document(
         stoneColor: [0.29, 0.27, 0.25, 1],
         keyColor: [0.52, 0.62, 0.78, 1],
         keyIntensity: 1.35,
-        ambient: 0.16,
+        /* The doorway's half-width, and its head is an ARCH — the flat rectangle was "the
+           brightest and least interesting thing in frame", and half of that is shape. */
+        doorWidth: 1.15,
+        ambient: 0.26,
         fog: 0.055,
         fogColor: [0.045, 0.05, 0.062, 1],
-        warmColor: [1, 0.46, 0.2, 1],
-        warmIntensity: 0.42,
+        warmColor: [1, 0.54, 0.26, 1],
+        warmIntensity: 0.28,
         lift: 0.012,
         contrast: 0.82,
         hueTurn: 42,
-        hueArc: 0.17,
+        /* ⚑ TWO HUES IN OPPOSITION, not one family drifting. The first morph moved the
+           conduits along a sixth of the wheel and the reading was that it "reads as one
+           state" — correct, because a single hue drifting has nothing to be measured
+           against. The counter-light now travels the OTHER WAY on a wider arc, so the two
+           lights pull apart and come back together and the frame has a relationship in it
+           rather than a setting. */
+        hueArc: 0.26,
+        warmArc: 0.12,
         keyBreath: 0.34,
         keyPeriod: 15,
         saturation: 1.35,
         pivot: 0.22,
         exposure: 1.35,
         dust: 0.032,
-        dustSteps: 22,
+        dustSteps: 30,
         dustFloor: 2.6,
         shaft: 0.55,
         polish: 0.55,
@@ -116,7 +172,16 @@ export const sanctumDocument = document(
              no track is exactly the picture it already was (§V914). A rank would rest at
              its middle and leave the hall permanently half-pulsed, which is the opposite
              of a beat. */
-          inlayEmission: expressionSlot(`0.85 + 1.5 * ${HITS("kickCount")}`, 0.85),
+          /* ⚑ THE GAIN CAME DOWN FROM 1.5 TO 0.7 (T1304c) AND THE DECAY WENT UP, and the
+             two together are the answer to "stuff too blinky blinky". A count is a STEP:
+             it is 1 on the frame the drum lands and 0 between, so the only thing that
+             decides whether a viewer reads it as a swell or as a strobe is how far it
+             travels and how long it takes to come back. 1.5 on top of a rest of 0.85 is a
+             light that nearly triples in one frame — which is a strobe however you shape
+             it. 0.7 over a 420 ms decay (on the analysis node) is a light that GUTTERS.
+             §T1301's open complaint is exactly this failure on E57, and it was not going
+             to be fixed by a different curve on a bigger jump. */
+          inlayEmission: expressionSlot(`0.85 + 0.7 * ${HITS("kickCount")}`, 0.85),
           /* And the air BREATHES rather than landing: dust on the low band's rank, which
              rests at 0.5 with no audio and so renders the shipped density exactly. */
           dust: expressionSlot(`0.02 + 0.024 * ${LEVELS("low")}`, 0.032),
@@ -135,8 +200,20 @@ export const sanctumDocument = document(
                         the frame's second colour swells with the mix's top end rather than
                         firing — the colour balance breathes where the conduits land. */
           inlayRings: expressionSlot(`0.34 + 0.26 * ${HITS("hatCount")}`, 0.34),
-          shaft: expressionSlot(`0.55 + 0.4 * ${HITS("snareCount")}`, 0.55),
-          warmIntensity: expressionSlot(`0.245 + 0.35 * ${LEVELS("highMid")}`, 0.42),
+          /* The snare moved OFF the shaft and ONTO the junctions (T1304c). A backbeat
+             landing on the doorway's beam is the whole frame's brightest object snapping,
+             which is the "blinky" reading again; landing on the pools where conduits cross
+             members is the same event on the finest structure in the hall. Finer reaction
+             to finer detail means the event has to move something SMALL. */
+          inlayNode: expressionSlot(`0.9 + 1.1 * ${HITS("snareCount")}`, 0.9),
+          /* And the doorway now breathes with a RANK instead of firing on a count: a
+             continuous property on a continuous channel, resting at its middle. */
+          shaft: expressionSlot(`0.42 + 0.26 * ${LEVELS("high")}`, 0.55),
+          /* The hall's primary light swells with the mix's middle rather than only landing
+             on the kick — the up-and-down the owner asked for, carried by the light that
+             actually illuminates the stone. */
+          inlaySpill: expressionSlot(`3.4 + 1.6 * ${LEVELS("lowMid")}`, 4.2),
+          warmIntensity: expressionSlot(`0.2 + 0.16 * ${LEVELS("highMid")}`, 0.28),
 
           /* ⚑ "MORE UP AND DOWN SIDE FELT" — dynamic range IN TIME rather than in space,
              and it is the same complaint as "greyish on average" one axis over: a flat
@@ -173,7 +250,10 @@ export const sanctumDocument = document(
       }, { label: "track1" }),
       node("source1", "valueSwitch", [-960, 510], { index: 0 }, { label: "source1" }),
       node("analysis1", "component:audioAnalysis@1", [-720, 510], {
-        envelope: 0.08, window: 16, settle: 0.15, hitDecay: 250,
+        /* hitDecay 420 rather than 250 (T1304c): a count's fall is the ONLY shaping a hit
+           lane has, and 250 ms puts the whole gesture inside fifteen frames. "Too blinky
+           blinky" is a complaint about that number as much as about the gains above it. */
+        envelope: 0.08, window: 16, settle: 0.15, hitDecay: 420,
       }, { label: "analysis1" }),
       /* T1302b: a Select at `*` passes every channel through unchanged — a Limit at 0..1
          would clip the tempo claims the hits bag also carries. */
