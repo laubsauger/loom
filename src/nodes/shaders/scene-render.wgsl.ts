@@ -43,6 +43,13 @@ export interface SceneShadingOptions {
    */
   readonly environment?: boolean;
   /**
+   * T1289 — how many taps the specular cone takes. A KNOB and not a constant, for
+   * §T1285's reason: if a bright small light in an environment aliases at high roughness,
+   * whoever finds it turns it up rather than editing a shader, and §T1293 gets a real
+   * measurement to be gated on rather than an argument.
+   */
+  readonly environmentTaps?: number;
+  /**
    * T624: an ambient-occlusion map is bound, indexed by SCREEN PIXEL, and multiplies
    * the ambient and environment terms. Not the direct lights: occlusion says how much
    * of the surroundings a point can see, and the key light arrives from one direction
@@ -285,6 +292,59 @@ const ENV_SAMPLE_WGSL = `fn sampleEnvironment(direction: vec3f) -> vec3f {
   );
   let dims = vec2f(textureDimensions(environmentMap, 0));
   return textureLoad(environmentMap, vec2i(clamp(uv, vec2f(0.0), vec2f(1.0)) * (dims - vec2f(1.0))), 0).rgb;
+}
+`;
+
+/**
+ * T1289 — THE SPECULAR CONE: roughness BLURS the reflection instead of DIMMING it.
+ *
+ * What shipped before this read the environment ONCE, sharply, and multiplied by
+ * `(1 − roughness)`. So a brushed surface and a mirror sampled the SAME TEXEL and differed
+ * only in brightness: rough metal read DARK rather than SOFT, which is the largest single
+ * gap between what this renderer shipped and what "PBR" means to somebody looking at it.
+ *
+ * ⚑ WHY TAPS AND NOT A PREFILTERED PYRAMID. The pyramid was the plan (§T1289 named the
+ * glass chain as the reuse, and the pass shapes really are the same) until the SIZING was
+ * checked: `compile.ts` sizes every scratch target as `baseSize × scale`, where `baseSize`
+ * is the NODE'S OUTPUT RESOLUTION and not any input's. Glass gets away with it because its
+ * source IS the render target; an environment is an arbitrary TOP with its own size, so a
+ * decimating kernel that assumes "target is half of source" is simply wrong at the first
+ * level, and the blur radius would track the render resolution rather than the map. Doing
+ * it properly means teaching the compiler to size a scratch from an INPUT (§T1293, filed
+ * and gated on this landing's measurements). These taps need no scratch at all, cost ALU
+ * per covered pixel instead of extra passes, and answer the claim the row actually makes.
+ *
+ * THE PATTERN IS A GOLDEN-ANGLE SPIRAL, deterministic by construction (§V44/§V45): tap i
+ * sits at angle `i · 2.39996` and radius `spread · sqrt((i + 0.5) / taps)`, which fills a
+ * disc evenly rather than clumping at its centre the way equal radial steps do. No hash,
+ * no clock, no per-frame jitter — the same pixel is the same colour on every device and
+ * every replay, and a stationary rough surface does not boil.
+ *
+ * `spread` is GGX's own `alpha` (roughness²), so the cone widens the way the lobe does
+ * rather than the way the slider does, and the two halves of this material agree about
+ * what roughness means.
+ *
+ * ⚑ AT ROUGHNESS 0 THE FUNCTION RETURNS THE SINGLE SHARP SAMPLE, by an early return
+ * rather than by the arithmetic collapsing. A mirror must be BYTE-IDENTICAL to what it was
+ * before this row, and `(N copies of v summed) / N` is not reliably `v` in float — the
+ * branch is what makes "a polished surface is unchanged" a fact instead of a hope.
+ */
+const ENV_CONE_WGSL = (taps: number): string => `fn sampleEnvironmentCone(direction: vec3f, spread: f32) -> vec3f {
+  if (spread <= 0.0) {
+    return sampleEnvironment(direction);
+  }
+  let coneUp = select(vec3f(0.0, 1.0, 0.0), vec3f(1.0, 0.0, 0.0), abs(direction.y) > 0.9);
+  let coneTx = normalize(cross(coneUp, direction));
+  let coneTy = cross(direction, coneTx);
+  var total = vec3f(0.0);
+  for (var i = 0; i < ${String(taps)}; i = i + 1) {
+    let t = (f32(i) + 0.5) / ${String(taps)}.0;
+    let angle = f32(i) * 2.3999632;
+    let radius = spread * sqrt(t);
+    let offset = (coneTx * (cos(angle) * radius)) + (coneTy * (sin(angle) * radius));
+    total = total + sampleEnvironment(normalize(direction + offset));
+  }
+  return total / ${String(taps)}.0;
 }
 `;
 
@@ -543,9 +603,14 @@ export function sceneSurfaceWgsl(options: SceneShadingOptions): string {
     return shadowFactorWgsl(slot, options.shadowSoftness?.[slot] ?? 0);
   };
   const environment = options.environment === true && lit(options.model);
+  /* T1289: the shipped default is 8 — measured enough to read as a blur at roughness 1
+     without the cost of a pyramid, and cheap enough that a scene already paying for
+     shadows does not notice it. Clamped because a tap count is a loop bound in generated
+     WGSL: 0 would silently turn the cone back into the sharp sample this row removed. */
+  const envTaps = Math.min(32, Math.max(1, Math.round(options.environmentTaps ?? 8)));
   const envBinding = 5 + shadows.length;
   const envDeclarations = environment
-    ? `@group(0) @binding(${envBinding}) var environmentMap: texture_2d<f32>;\n${ENV_SAMPLE_WGSL}`
+    ? `@group(0) @binding(${envBinding}) var environmentMap: texture_2d<f32>;\n${ENV_SAMPLE_WGSL}${ENV_CONE_WGSL(envTaps)}`
     : "";
   const envField = environment ? "  environment: vec4f,   // x = intensity\n" : "";
   /* Equirect, documented exactly: u = atan2(R.x, −R.z)/2π + 0.5, v = acos(R.y)/π. */
@@ -564,8 +629,8 @@ export function sceneSurfaceWgsl(options: SceneShadingOptions): string {
     aoBinding + (ambientOcclusion ? 1 : 0),
   );
   const envTerm = environment
-    ? `  let envColor = sampleEnvironment(reflect(-viewDir, normal));
-${FRESNEL_WGSL}  lit += envColor * params.specular.rgb * envFresnel * (1.0 - roughness) * params.environment.x${aoTerm};
+    ? `  let envColor = sampleEnvironmentCone(reflect(-viewDir, normal), roughness * roughness);
+${FRESNEL_WGSL}  lit += envColor * params.specular.rgb * envFresnel * params.environment.x${aoTerm};
 ${IRRADIANCE_WGSL}  lit += irradiance * albedo.rgb * (1.0 - envFresnel) * (1.0 - params.material.x) * params.environment.x${aoTerm};
 `
     : "";
@@ -813,6 +878,13 @@ export function sceneInstancesWgsl(options: {
   shadowSoftness?: ReadonlyArray<number>;
   /** T482: equirect environment wired — see SceneShadingOptions.environment. */
   environment?: boolean;
+  /**
+   * T1289 — how many taps the specular cone takes. A KNOB and not a constant, for
+   * §T1285's reason: if a bright small light in an environment aliases at high roughness,
+   * whoever finds it turns it up rather than editing a shader, and §T1293 gets a real
+   * measurement to be gated on rather than an argument.
+   */
+  environmentTaps?: number;
   /** T624: an occlusion map is bound — see SceneShadingOptions.ambientOcclusion. */
   ambientOcclusion?: boolean;
   /** T704: referenced projectors — see SceneShadingOptions.projectors. */
@@ -895,9 +967,14 @@ export function sceneInstancesWgsl(options: {
     .map((_, slot) => `@group(0) @binding(${5 + slot}) var shadowMap${slot}: texture_2d<f32>;\n`)
     .join("");
   const environment = options.environment === true && lit(options.model);
+  /* T1289: the shipped default is 8 — measured enough to read as a blur at roughness 1
+     without the cost of a pyramid, and cheap enough that a scene already paying for
+     shadows does not notice it. Clamped because a tap count is a loop bound in generated
+     WGSL: 0 would silently turn the cone back into the sharp sample this row removed. */
+  const envTaps = Math.min(32, Math.max(1, Math.round(options.environmentTaps ?? 8)));
   const envBinding = 5 + shadows.length;
   const envDeclarations = environment
-    ? `@group(0) @binding(${envBinding}) var environmentMap: texture_2d<f32>;\n${ENV_SAMPLE_WGSL}`
+    ? `@group(0) @binding(${envBinding}) var environmentMap: texture_2d<f32>;\n${ENV_SAMPLE_WGSL}${ENV_CONE_WGSL(envTaps)}`
     : "";
   const envField = environment ? "  environment: vec4f,   // x = intensity\n" : "";
   /* T624 — see the surface generator: bound after the environment, ambient and
@@ -946,8 +1023,8 @@ fn qrot(q: vec4f, v: vec3f) -> vec3f {
 `
     : "";
   const envTerm = environment
-    ? `  let envColor = sampleEnvironment(reflect(-viewDir, normal));
-${FRESNEL_WGSL}  lit += envColor * params.specular.rgb * envFresnel * (1.0 - params.material.y) * params.environment.x${aoTerm};
+    ? `  let envColor = sampleEnvironmentCone(reflect(-viewDir, normal), params.material.y * params.material.y);
+${FRESNEL_WGSL}  lit += envColor * params.specular.rgb * envFresnel * params.environment.x${aoTerm};
 ${IRRADIANCE_WGSL}  lit += irradiance * albedo.rgb * (1.0 - envFresnel) * (1.0 - params.material.x) * params.environment.x${aoTerm};
 `
     : "";
@@ -1374,6 +1451,112 @@ fn fs(input: VertexOut) -> @location(0) vec4f {
  *    GUI ships the thickness-based "simple" mode; that is what every geometry gets
  *    here, and an exact box-exit trace for instances is the stated follow-up.
  */
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ * T1289 — THE PREFILTERED ENVIRONMENT: roughness BLURS instead of DIMMING.
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ *
+ * What shipped before this: the reflection term read the environment ONCE, sharply, and
+ * then multiplied the result by `(1 − roughness)`. A rough metal therefore read DARK
+ * rather than SOFT — the single largest gap between what this renderer shipped and what
+ * "PBR" means to somebody looking at the picture. A mirror and a brushed surface sampled
+ * the same texel; only their brightness differed.
+ *
+ * The chain is the GLASS PYRAMID, pointed at the environment. `scene.ts` already builds a
+ * separable blur pyramid for transmission — blit to level 0, then per level a horizontal
+ * decimating pass into a scratch and a vertical pass into the level — and a prefiltered
+ * environment is structurally that same chain with a roughness→level lookup replacing
+ * glass's own. Same scratch mechanism, same pass shapes, same file.
+ *
+ * ⚑ BUT THE KERNELS COULD NOT BE REUSED VERBATIM, AND THE REASON IS THE EQUIRECT'S OWN
+ * GEOMETRY. The glass kernels CLAMP at every edge, which is right for a frame: a screen
+ * has borders. An equirect has none in longitude — its left and right columns are
+ * adjacent directions in the world — so clamping there smears the seam into a visible
+ * vertical bar in every reflection, at every roughness, and it gets worse as the levels
+ * coarsen. These kernels WRAP in x and clamp in y.
+ *
+ * ⚑ AND THE POLES ARE NOT FIXED, THEY ARE BOUNDED, WHICH IS WORTH STATING RATHER THAN
+ * PRETENDING. A separable blur in equirect space filters a constant angular width in
+ * TEXELS, and a texel near the pole subtends far less solid angle than one at the
+ * equator — so the top and bottom rows are under-blurred relative to a true spherical
+ * convolution. The honest fix is a cosine-weighted or spherical prefilter, which is a
+ * different and much larger piece of work. What this does instead is clamp in y, so the
+ * pole rows average toward their own neighbourhood rather than wrapping onto the far
+ * side of the sphere — the error is a slightly sharper pole, not a wrong direction.
+ */
+export const ENV_BLIT_WGSL = `@group(0) @binding(0) var sourceTex: texture_2d<f32>;
+@vertex
+fn vs(@builtin(vertex_index) v: u32) -> @builtin(position) vec4f {
+  var corners = array<vec2f, 6>(
+    vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0, 1.0),
+    vec2f(-1.0, 1.0), vec2f(1.0, -1.0), vec2f(1.0, 1.0),
+  );
+  return vec4f(corners[v], 0.0, 1.0);
+}
+@fragment
+fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
+  let dims = vec2i(textureDimensions(sourceTex, 0));
+  let p = clamp(vec2i(position.xy), vec2i(0), dims - vec2i(1));
+  return textureLoad(sourceTex, p, 0);
+}`;
+
+/** Longitude WRAPS: the column past the right edge is the one at the left (T1289). */
+const ENV_WRAP_X = `fn envWrapX(x: i32, width: i32) -> i32 {
+  return ((x % width) + width) % width;
+}
+`;
+
+/** The horizontal half, decimating: [1,3,3,1]/8 across a wrapped longitude. */
+export const ENV_DOWN_WGSL = `@group(0) @binding(0) var sourceTex: texture_2d<f32>;
+${ENV_WRAP_X}@vertex
+fn vs(@builtin(vertex_index) v: u32) -> @builtin(position) vec4f {
+  var corners = array<vec2f, 6>(
+    vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0, 1.0),
+    vec2f(-1.0, 1.0), vec2f(1.0, -1.0), vec2f(1.0, 1.0),
+  );
+  return vec4f(corners[v], 0.0, 1.0);
+}
+@fragment
+fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
+  let dims = vec2i(textureDimensions(sourceTex, 0));
+  let base = vec2i(position.xy) * 2;
+  var weights = array<f32, 4>(1.0, 3.0, 3.0, 1.0);
+  var sum = vec4f(0.0);
+  for (var i = 0; i < 4; i = i + 1) {
+    let x = envWrapX(base.x + i - 1, dims.x);
+    let a = textureLoad(sourceTex, vec2i(x, clamp(base.y, 0, dims.y - 1)), 0);
+    let b = textureLoad(sourceTex, vec2i(x, clamp(base.y + 1, 0, dims.y - 1)), 0);
+    sum += (a + b) * 0.5 * weights[i];
+  }
+  return sum / 8.0;
+}`;
+
+/** The vertical half: [1,4,6,4,1]/16 at the level's own resolution, clamped at the poles. */
+export const ENV_VBLUR_WGSL = `@group(0) @binding(0) var sourceTex: texture_2d<f32>;
+@vertex
+fn vs(@builtin(vertex_index) v: u32) -> @builtin(position) vec4f {
+  var corners = array<vec2f, 6>(
+    vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0, 1.0),
+    vec2f(-1.0, 1.0), vec2f(1.0, -1.0), vec2f(1.0, 1.0),
+  );
+  return vec4f(corners[v], 0.0, 1.0);
+}
+@fragment
+fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
+  let dims = vec2i(textureDimensions(sourceTex, 0));
+  let p = vec2i(position.xy);
+  var weights = array<f32, 5>(1.0, 4.0, 6.0, 4.0, 1.0);
+  var sum = vec4f(0.0);
+  for (var i = 0; i < 5; i = i + 1) {
+    let y = clamp(p.y + i - 2, 0, dims.y - 1);
+    sum += textureLoad(sourceTex, vec2i(clamp(p.x, 0, dims.x - 1), y), 0) * weights[i];
+  }
+  return sum / 16.0;
+}`;
+
+/** How many prefiltered levels the environment carries. Level k is 1/2^k of the source. */
+export const ENV_PYRAMID_LEVELS = 5;
 
 /** Pyramid depth: level k is the frame at scale 1/2^k. Five reaches 1/16 resolution. */
 export const GLASS_PYRAMID_LEVELS = 5;

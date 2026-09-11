@@ -951,6 +951,19 @@ export const renderNode: NodeDefinition = {
         "Scales the wired environment — its reflection, its diffuse fill, and (T659) the background when Show Environment is on. A value: drivable, never a rebuild.",
       inactiveWhen: () => null,
     },
+    environmentTaps: {
+      type: "number",
+      label: "Env Taps",
+      default: 8,
+      min: 1,
+      max: 32,
+      step: 1,
+      range: "bounded",
+      compileTime: true,
+      description:
+        "T1289: how many taps the reflection's roughness cone takes. Roughness BLURS the environment rather than dimming it, and this is the sample count that blur is made of — priced per covered pixel in the main pass. 8 reads as a blur at full roughness; turn it up if a small bright thing in the environment sparkles as the surface moves, down if the shot cannot afford the loads. A compile-time knob: changing it rebuilds the shader.",
+      inactiveWhen: () => null,
+    },
     /*
      * T659 — DRAW the environment behind the scene. Off by default and it must stay
      * that way: an environment is wired on several shipped scenes purely as light, and
@@ -1168,6 +1181,9 @@ export const renderNode: NodeDefinition = {
     const environmentResource =
       typeof environmentInput?.resourceId === "string" ? environmentInput.resourceId : undefined;
     const environmentIntensity = readNumber(parameters, "environmentIntensity", 1);
+    /* T1289: the cone's sample count, clamped here AND in the generator — this is a loop
+       bound in generated WGSL, so a stray value must not reach it from either direction. */
+    const environmentTaps = Math.min(32, Math.max(1, Math.round(readNumber(parameters, "environmentTaps", 8))));
 
     const ambient = readColor(parameters, "ambientColor", [1, 1, 1, 1]);
     const ambientIntensity = readNumber(parameters, "ambientIntensity", 0.12);
@@ -1742,7 +1758,7 @@ export const renderNode: NodeDefinition = {
                   },
                 }),
             ...(castingIndices.length === 0 ? {} : { shadows: castingIndices, shadowSoftness }),
-            ...(environmentResource === undefined ? {} : { environment: true }),
+            ...(environmentResource === undefined ? {} : { environment: true, environmentTaps }),
             ...(aoActive ? { ambientOcclusion: true } : {}),
             ...(projActive ? { projectors: projectorOptions } : {}),
             ...(payload.group === undefined ? {} : { group: payload.group }),
@@ -1814,7 +1830,7 @@ export const renderNode: NodeDefinition = {
             ...Object.fromEntries(
               shadowMatrices.map((matrix, slot) => [`shadow${slot}Matrix`, Array.from(matrix)]),
             ),
-            ...(environmentResource === undefined || model !== "phong"
+            ...(environmentResource === undefined || !envLit(model)
               ? {}
               : { environment: [environmentIntensity, 0, 0, 0] }),
             ...(projActive ? projectorUniforms : {}),
@@ -1828,7 +1844,7 @@ export const renderNode: NodeDefinition = {
                     resourceId: shadowTargetOf(slot),
                     sampled: "unfiltered" as const,
                   })),
-                  ...(environmentResource === undefined || model !== "phong"
+                  ...(environmentResource === undefined || !envLit(model)
                     ? []
                     : [{ binding: "environmentMap", resourceId: environmentResource, sampled: "unfiltered" as const }]),
                   ...(aoActive
@@ -1932,7 +1948,7 @@ export const renderNode: NodeDefinition = {
           maps,
           ...(payload.colorAttribute === undefined ? {} : { pointColor: true }),
           ...(castingIndices.length === 0 ? {} : { shadows: castingIndices, shadowSoftness }),
-          ...(environmentResource === undefined ? {} : { environment: true }),
+          ...(environmentResource === undefined ? {} : { environment: true, environmentTaps }),
           ...(aoActive ? { ambientOcclusion: true } : {}),
           ...(projActive ? { projectors: projectorOptions } : {}),
         }),
@@ -1951,7 +1967,7 @@ export const renderNode: NodeDefinition = {
         casting.length === 0 &&
         !aoActive &&
         !projActive &&
-        (environmentResource === undefined || model !== "phong")
+        (environmentResource === undefined || !envLit(model))
           ? {}
           : {
               textures: [
@@ -1966,7 +1982,7 @@ export const renderNode: NodeDefinition = {
                   resourceId: shadowTargetOf(slot),
                   sampled: "unfiltered" as const,
                 })),
-                ...(environmentResource === undefined || model !== "phong"
+                ...(environmentResource === undefined || !envLit(model)
                   ? []
                   : [{ binding: "environmentMap", resourceId: environmentResource, sampled: "unfiltered" as const }]),
                 ...(aoActive
@@ -1993,7 +2009,7 @@ export const renderNode: NodeDefinition = {
           ...Object.fromEntries(
             shadowMatrices.map((matrix, slot) => [`shadow${slot}Matrix`, Array.from(matrix)]),
           ),
-          ...(environmentResource === undefined || model !== "phong"
+          ...(environmentResource === undefined || !envLit(model)
             ? {}
             : { environment: [environmentIntensity, 0, 0, 0] }),
           ...(projActive ? projectorUniforms : {}),
@@ -2228,6 +2244,18 @@ export const renderNode: NodeDefinition = {
  * Normal maps are DEFERRED WITH NO INERT PORT (V368): surfaces get analytic normals,
  * instances need tangent frames, and a port that binds nothing teaches nothing.
  */
+/**
+ * T1284/T1289 — the models that carry an environment, and why this is a NAMED predicate.
+ *
+ * These five sites decide whether the env map and its intensity are BOUND; the generator
+ * in `scene-render.wgsl.ts` decides whether the shader DECLARES them. The two have to say
+ * the same thing, and until T1284 both spelled it `=== "phong"` independently in six
+ * places. Giving `pbr` its own model moved the generator's copy and not these, which would
+ * have declared a texture nothing bound — the §V288-by-omission this row's predecessor
+ * caught on the shader side and missed here. One name per file now, on both sides.
+ */
+const envLit = (model: string): boolean => model === "phong" || model === "pbr";
+
 function materialCompile(model: MaterialPayload["model"]) {
   return (context: Parameters<NodeDefinition["compile"]>[0]): CompiledNodeDescription => {
     const { parameters, inputs } = readCompileInputs(context);

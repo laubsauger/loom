@@ -715,7 +715,7 @@ describe("the environment lights a dielectric's body and never a metal's (T636, 
     } as never;
   };
 
-  const probe = async (withEnvironment: boolean, metallic: number): Promise<number> => {
+  const probe = async (withEnvironment: boolean, metallic: number, albedo?: number): Promise<number> => {
     const registry = createNodeRegistry(allNodeDefinitions).view();
     const plan = compileGraph({
       graph: flatGraph(withEnvironment),
@@ -737,7 +737,16 @@ describe("the environment lights a dielectric's body and never a metal's (T636, 
       await backend.initialize({});
       const compiled = await backend.compile(plan);
       // §V5, the value path: only `metallic` moves between probes; roughness stays 1.
-      backend.updateUniforms({ passId, values: { specular: [0.8, 0.8, 0.8, 8], material: [metallic, 1, 0, 0] } });
+      backend.updateUniforms({
+        passId,
+        values: {
+          specular: [0.8, 0.8, 0.8, 8],
+          material: [metallic, 1, 0, 0],
+          // T1289: the albedo is a LEVER now, see the claim below — and only when the
+          // caller reaches for it, so the default probe stays the one T636 recorded.
+          ...(albedo === undefined ? {} : { baseColor: [albedo, albedo, albedo, 1] }),
+        },
+      });
       backend.render(compiled, {
         frame: { timeSeconds: 0, deltaSeconds: 1 / 60, frameIndex: 0, mode: "offline", randomSeed: 7 },
         pointer: { x: 0, y: 0, buttons: 0 },
@@ -750,14 +759,47 @@ describe("the environment lights a dielectric's body and never a metal's (T636, 
     }
   };
 
-  it("dielectric fills at 0.96, half-metal at 0.24, metal at zero — and nothing without the wire", async () => {
+  /**
+   * ⚑ T1289 RE-RECORDED THESE NUMBERS, AND THE MOVEMENT IS THE POINT RATHER THAN DRIFT.
+   *
+   * This probe pins roughness at 1. Under the shipped behaviour the specular environment
+   * term was multiplied by `(1 − roughness)`, so at roughness 1 it was multiplied by ZERO
+   * — a fully rough surface received NOTHING from the environment's reflection, and every
+   * number here was the irradiance half alone. T1289 replaced that dimming with a blur, so
+   * the reflection now arrives at every roughness.
+   *
+   * Measured, before → after: dielectric 245 → 253, half-metal 61 → 167, metal **0 → 204**.
+   * The metal is the headline and it is this row's whole argument in one byte: a fully
+   * rough metal used to be lit by the environment not at all, which is why rough metal
+   * read as dark rather than as soft.
+   *
+   * ⚑ AND T636'S OWN INVARIANT IS RE-STATED RATHER THAN DELETED. Its claim was never "a
+   * metal reads zero" — that was the number a zeroed specular term happened to produce. Its
+   * claim is that the environment lights a dielectric's BODY and never a metal's, and the
+   * body is the ALBEDO-dependent half. So the assertion below is now the one that says
+   * exactly that and survives the specular term coming back: change the albedo and the
+   * dielectric moves, while the metal does not move at all, because `(1 − metallic)` is a
+   * hard zero on the only term albedo multiplies.
+   */
+  it("the environment lights a dielectric's BODY and never a metal's — by albedo, not by zero", async () => {
     const dawn = await probeDawn();
     if (!dawn.available) throw new Error(`Dawn unavailable: ${dawn.error}`);
 
-    expect(await probe(true, 0)).toBe(245);
-    expect(await probe(true, 0.5)).toBe(61);
-    expect(await probe(true, 1)).toBe(0);
+    // The re-recorded totals, exact (§V147).
+    expect(await probe(true, 0)).toBe(253);
+    expect(await probe(true, 0.5)).toBe(167);
+    expect(await probe(true, 1)).toBe(204);
     expect(await probe(false, 0)).toBe(0);
+
+    /* T636's invariant, stated as the thing it always meant. The diffuse half is the only
+       one the albedo multiplies, and `(1 − metallic)` zeroes it for a metal. */
+    const dielectricDim = await probe(true, 0, 0.4);
+    const dielectricBright = await probe(true, 0, 0.8);
+    expect(dielectricBright).toBeGreaterThan(dielectricDim);
+
+    const metalDim = await probe(true, 1, 0.4);
+    const metalBright = await probe(true, 1, 0.8);
+    expect(metalBright).toBe(metalDim);
   }, 240_000);
 });
 

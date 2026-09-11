@@ -67,9 +67,9 @@
     "f0max": 0.9913
   },
   "E28-Sundial.loom.json": {
-    "motion": 0.01405,
-    "range": 0.7963,
-    "f0max": 0.7076,
+    "motion": 0.01406,
+    "range": 0.8022,
+    "f0max": 0.7078,
     "cardFloor": 0.0053
   },
   "E29-Descent.loom.json": {
@@ -102,14 +102,14 @@
     "phrase": 0.0477
   },
   "E33-Obol.loom.json": {
-    "motion": 0.00911,
-    "range": 0.6313,
-    "f0max": 0.6978,
-    "cardFloor": 0.0087
+    "motion": 0.00972,
+    "range": 0.6737,
+    "f0max": 0.7856,
+    "cardFloor": 0.0092
   },
   "E34-Lidar.loom.json": {
     "motion": 0.10595,
-    "range": 0.9975,
+    "range": 0.9974,
     "f0max": 0.8528,
     "cardFloor": 0.0039
   },
