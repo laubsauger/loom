@@ -56,6 +56,11 @@ const DOCUMENT_SET_GATES: readonly string[] = [
   // (T1276, Antialias) left its roster stale and no scoped run of the component's own files
   // could reach it.
   "src/examples/component-port-names.test.ts",
+  // T1303b: it reads every shipped concept doc against its graph (B83, §V332). 9f1a23b
+  // removed E24's last valueLimit and a HYPOTHETICAL sentence naming one went stale — a
+  // change that never touched the sentence's subject, found only by a session running it
+  // for another reason.
+  "src/examples/doc-claims.test.ts",
 ];
 
 function testFiles(directory: string): string[] {
