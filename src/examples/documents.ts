@@ -50,6 +50,7 @@ export { chorusDocument } from "./documents/chorus.ts";
 export { reactorDocument } from "./documents/reactor.ts";
 export { forestDocument } from "./documents/forest.ts";
 export { sanctumDocument } from "./documents/sanctum.ts";
+export { burnishDocument } from "./documents/burnish.ts";
 export { vesperDocument } from "./documents/vesper.ts";
 export { alembicDocument } from "./documents/alembic.ts";
 export { vaultDocument } from "./documents/vault.ts";
@@ -110,6 +111,7 @@ import { chorusDocument } from "./documents/chorus.ts";
 import { reactorDocument } from "./documents/reactor.ts";
 import { forestDocument } from "./documents/forest.ts";
 import { sanctumDocument } from "./documents/sanctum.ts";
+import { burnishDocument } from "./documents/burnish.ts";
 import { vesperDocument } from "./documents/vesper.ts";
 import { alembicDocument } from "./documents/alembic.ts";
 import { vaultDocument } from "./documents/vault.ts";
@@ -173,6 +175,7 @@ export const EXAMPLE_DOCUMENTS: readonly ProjectDocument[] = [
   vesperDocument,
   forestDocument,
   sanctumDocument,
+  burnishDocument,
   alembicDocument,
   vaultDocument,
   snarlDocument,

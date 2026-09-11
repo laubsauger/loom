@@ -421,6 +421,10 @@ const FRAME_ZERO_DIGESTS: Readonly<Record<string, string>> = {
      reach a pixel. E13/E34/E54/E63 are the four with kernels among those thirteen. The
      pictures are held where they always were: `quorum-claims`, `skin-claims`, `prism.gpu`
      and `prism-trace.gpu` all green across this change. */
+  /* T1290: E69-Burnish, new in this commit rather than re-stamped. Its digest is the
+     resolved passes of its four sphere kernels — one `pointGrid` folded onto a ball four
+     times, differing only in where each stands. */
+  "E69-Burnish.loom.json": "771cd3f49dab46b3",
   "E9-Ember.loom.json": "a2450efd16233b11",
   // T915 (static aim: value1 0.5 → 1) and T918 (the wall kernel) both changed E13's
   // resolved kernel state deliberately, then T920 rebuilt the optics kernel as a
@@ -505,7 +509,8 @@ describe("T900 — every shipped kernel resolves byte-equal at frame 0", () => {
 
   it("covers exactly the looms that carry kernels — a shrinking gate is a passing gate", () => {
     expect([...digests.keys()].sort()).toEqual(Object.keys(FRAME_ZERO_DIGESTS).sort());
-    expect(kernelCount).toBe(47);
+    // T1290: 47 + E69-Burnish's five — one plate and four spheres.
+    expect(kernelCount).toBe(52);
   });
 
   it.each(Object.keys(FRAME_ZERO_DIGESTS))("%s is unchanged at frame 0", (fileName) => {

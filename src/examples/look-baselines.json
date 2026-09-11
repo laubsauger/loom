@@ -323,6 +323,12 @@
     "cardFloor": 0.0016,
     "phrase": 0.05999
   },
+  "E69-Burnish.loom.json": {
+    "motion": 0.00522,
+    "range": 0.7277,
+    "f0max": 0.9234,
+    "cardFloor": 0.0007
+  },
   "E7-LFO-Dissolve.loom.json": {
     "motion": 0.49929,
     "range": 0.3789,

@@ -1,0 +1,632 @@
+{
+  "assets": [],
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e-atbrushed-brushed": {
+        "id": "e-atbrushed-brushed",
+        "source": {
+          "nodeId": "atBrushed",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "brushed",
+          "portId": "points"
+        }
+      },
+      "e-atglass-glass": {
+        "id": "e-atglass-glass",
+        "source": {
+          "nodeId": "atGlass",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "glass",
+          "portId": "points"
+        }
+      },
+      "e-atmirror-mirror": {
+        "id": "e-atmirror-mirror",
+        "source": {
+          "nodeId": "atMirror",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "mirror",
+          "portId": "points"
+        }
+      },
+      "e-atrough-rough": {
+        "id": "e-atrough-rough",
+        "source": {
+          "nodeId": "atRough",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "rough",
+          "portId": "points"
+        }
+      },
+      "e-ballpts-brushed": {
+        "id": "e-ballpts-brushed",
+        "source": {
+          "nodeId": "ballPts",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "atBrushed",
+          "portId": "in"
+        }
+      },
+      "e-ballpts-glass": {
+        "id": "e-ballpts-glass",
+        "source": {
+          "nodeId": "ballPts",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "atGlass",
+          "portId": "in"
+        }
+      },
+      "e-ballpts-mirror": {
+        "id": "e-ballpts-mirror",
+        "source": {
+          "nodeId": "ballPts",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "atMirror",
+          "portId": "in"
+        }
+      },
+      "e-ballpts-rough": {
+        "id": "e-ballpts-rough",
+        "source": {
+          "nodeId": "ballPts",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "atRough",
+          "portId": "in"
+        }
+      },
+      "e-platelay-plate": {
+        "id": "e-platelay-plate",
+        "source": {
+          "nodeId": "plateLay",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "plate",
+          "portId": "points"
+        }
+      },
+      "e-platepts-lay": {
+        "id": "e-platepts-lay",
+        "source": {
+          "nodeId": "platePts",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "plateLay",
+          "portId": "in"
+        }
+      },
+      "e-shot-out": {
+        "id": "e-shot-out",
+        "source": {
+          "nodeId": "shot",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      },
+      "e-sky-shot": {
+        "id": "e-sky-shot",
+        "source": {
+          "nodeId": "sky",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "shot",
+          "portId": "environment"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "atBrushed": {
+        "definitionVersion": 1,
+        "id": "atBrushed",
+        "label": "atbrushed1",
+        "parameters": {
+          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]}]",
+          "capacity": 3072,
+          "kernel": "\nfn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  let u = (p.position.x * 0.5) + 0.5;\n  let v = (p.position.y * 0.5) + 0.5;\n  let theta = u * 6.2831853;\n  let phi = v * 3.14159265;\n  let r = 0.85;\n  q.position = vec3f(\n    -1.1 + (r * sin(phi) * cos(theta)),\n    0.95 + (r * cos(phi)),\n    r * sin(phi) * sin(theta),\n  );\n  return q;\n}\n",
+          "seed": 69
+        },
+        "position": {
+          "x": -1160,
+          "y": 480
+        },
+        "type": "pointKernel"
+      },
+      "atGlass": {
+        "definitionVersion": 1,
+        "id": "atGlass",
+        "label": "atglass1",
+        "parameters": {
+          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]}]",
+          "capacity": 3072,
+          "kernel": "\nfn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  let u = (p.position.x * 0.5) + 0.5;\n  let v = (p.position.y * 0.5) + 0.5;\n  let theta = u * 6.2831853;\n  let phi = v * 3.14159265;\n  let r = 0.85;\n  q.position = vec3f(\n    3.3 + (r * sin(phi) * cos(theta)),\n    0.95 + (r * cos(phi)),\n    r * sin(phi) * sin(theta),\n  );\n  return q;\n}\n",
+          "seed": 69
+        },
+        "position": {
+          "x": -1160,
+          "y": 960
+        },
+        "type": "pointKernel"
+      },
+      "atMirror": {
+        "definitionVersion": 1,
+        "id": "atMirror",
+        "label": "atmirror1",
+        "parameters": {
+          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]}]",
+          "capacity": 3072,
+          "kernel": "\nfn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  let u = (p.position.x * 0.5) + 0.5;\n  let v = (p.position.y * 0.5) + 0.5;\n  let theta = u * 6.2831853;\n  let phi = v * 3.14159265;\n  let r = 0.85;\n  q.position = vec3f(\n    -3.3 + (r * sin(phi) * cos(theta)),\n    0.95 + (r * cos(phi)),\n    r * sin(phi) * sin(theta),\n  );\n  return q;\n}\n",
+          "seed": 69
+        },
+        "position": {
+          "x": -1160,
+          "y": 240
+        },
+        "type": "pointKernel"
+      },
+      "atRough": {
+        "definitionVersion": 1,
+        "id": "atRough",
+        "label": "atrough1",
+        "parameters": {
+          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]}]",
+          "capacity": 3072,
+          "kernel": "\nfn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  let u = (p.position.x * 0.5) + 0.5;\n  let v = (p.position.y * 0.5) + 0.5;\n  let theta = u * 6.2831853;\n  let phi = v * 3.14159265;\n  let r = 0.85;\n  q.position = vec3f(\n    1.1 + (r * sin(phi) * cos(theta)),\n    0.95 + (r * cos(phi)),\n    r * sin(phi) * sin(theta),\n  );\n  return q;\n}\n",
+          "seed": 69
+        },
+        "position": {
+          "x": -1160,
+          "y": 720
+        },
+        "type": "pointKernel"
+      },
+      "ballPts": {
+        "definitionVersion": 1,
+        "id": "ballPts",
+        "label": "ballpts1",
+        "parameters": {
+          "cols": 64,
+          "count": 3072,
+          "rows": 48,
+          "sizeX": 2,
+          "sizeY": 2
+        },
+        "position": {
+          "x": -1400,
+          "y": 500
+        },
+        "type": "pointGrid"
+      },
+      "brushed": {
+        "definitionVersion": 1,
+        "id": "brushed",
+        "label": "brushed1",
+        "parameters": {
+          "material": "matbrushed1",
+          "mode": "surface"
+        },
+        "position": {
+          "x": -900,
+          "y": 480
+        },
+        "type": "geometry"
+      },
+      "cam": {
+        "definitionVersion": 1,
+        "id": "cam",
+        "label": "cam1",
+        "parameters": {
+          "eye.x": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('drift1').chan.value"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "expression"
+          },
+          "eye.y": 1.9,
+          "eye.z": 8.4,
+          "fov": 38,
+          "lookAt": [
+            0,
+            0.75,
+            0
+          ]
+        },
+        "position": {
+          "x": -340,
+          "y": 40
+        },
+        "type": "camera"
+      },
+      "drift": {
+        "definitionVersion": 1,
+        "id": "drift",
+        "label": "drift1",
+        "parameters": {
+          "amplitude": 1.6,
+          "frequency": 0.02,
+          "offset": 0,
+          "phase": 0,
+          "shape": "sine"
+        },
+        "position": {
+          "x": -340,
+          "y": 520
+        },
+        "type": "lfo"
+      },
+      "glass": {
+        "definitionVersion": 1,
+        "id": "glass",
+        "label": "glass1",
+        "parameters": {
+          "material": "matglass1",
+          "mode": "surface"
+        },
+        "position": {
+          "x": -900,
+          "y": 960
+        },
+        "type": "geometry"
+      },
+      "key": {
+        "definitionVersion": 1,
+        "id": "key",
+        "label": "key1",
+        "parameters": {
+          "color": [
+            1,
+            0.94,
+            0.86,
+            1
+          ],
+          "direction": [
+            -0.6,
+            -0.8,
+            -0.45
+          ],
+          "intensity": 1.1,
+          "kind": "directional",
+          "shadowExtent": 7,
+          "shadows": true
+        },
+        "position": {
+          "x": -340,
+          "y": 260
+        },
+        "type": "light"
+      },
+      "matBrushed": {
+        "definitionVersion": 1,
+        "id": "matBrushed",
+        "label": "matbrushed1",
+        "parameters": {
+          "color": [
+            0.92,
+            0.9,
+            0.86,
+            1
+          ],
+          "metallic": 1,
+          "roughness": 0.42
+        },
+        "position": {
+          "x": -620,
+          "y": 480
+        },
+        "type": "materialPbr"
+      },
+      "matGlass": {
+        "definitionVersion": 1,
+        "id": "matGlass",
+        "label": "matglass1",
+        "parameters": {
+          "color": [
+            0.22,
+            0.4,
+            0.52,
+            1
+          ],
+          "metallic": 0,
+          "roughness": 0.3
+        },
+        "position": {
+          "x": -620,
+          "y": 960
+        },
+        "type": "materialPbr"
+      },
+      "matMirror": {
+        "definitionVersion": 1,
+        "id": "matMirror",
+        "label": "matmirror1",
+        "parameters": {
+          "color": [
+            0.92,
+            0.9,
+            0.86,
+            1
+          ],
+          "metallic": 1,
+          "roughness": 0.05
+        },
+        "position": {
+          "x": -620,
+          "y": 240
+        },
+        "type": "materialPbr"
+      },
+      "matPlate": {
+        "definitionVersion": 1,
+        "id": "matPlate",
+        "label": "matplate1",
+        "parameters": {
+          "color": [
+            0.16,
+            0.16,
+            0.18,
+            1
+          ],
+          "metallic": 0,
+          "roughness": 0.65
+        },
+        "position": {
+          "x": -620,
+          "y": 40
+        },
+        "type": "materialPbr"
+      },
+      "matRough": {
+        "definitionVersion": 1,
+        "id": "matRough",
+        "label": "matrough1",
+        "parameters": {
+          "color": [
+            0.92,
+            0.9,
+            0.86,
+            1
+          ],
+          "metallic": 1,
+          "roughness": 0.92
+        },
+        "position": {
+          "x": -620,
+          "y": 720
+        },
+        "type": "materialPbr"
+      },
+      "mirror": {
+        "definitionVersion": 1,
+        "id": "mirror",
+        "label": "mirror1",
+        "parameters": {
+          "material": "matmirror1",
+          "mode": "surface"
+        },
+        "position": {
+          "x": -900,
+          "y": 240
+        },
+        "type": "geometry"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "label": "out1",
+        "parameters": {
+          "toneMap": "filmic"
+        },
+        "position": {
+          "x": 220,
+          "y": 40
+        },
+        "type": "output"
+      },
+      "plate": {
+        "definitionVersion": 1,
+        "id": "plate",
+        "label": "plate1",
+        "parameters": {
+          "material": "matplate1",
+          "mode": "surface"
+        },
+        "position": {
+          "x": -900,
+          "y": 40
+        },
+        "type": "geometry"
+      },
+      "plateLay": {
+        "definitionVersion": 1,
+        "id": "plateLay",
+        "label": "platelay1",
+        "parameters": {
+          "attributes": "[{\"name\":\"position\",\"type\":\"vec3f\",\"semantic\":\"position\",\"default\":[0,0,0]}]",
+          "capacity": 1728,
+          "kernel": "\nfn process(p: Point, ctx: PointCtx) -> Point {\n  var q = p;\n  // The grid arrives in XY; the floor is XZ, so the plane is turned once here rather than\n  // every consumer having to know which way a grid lies.\n  q.position = vec3f(p.position.x, 0.0, p.position.y);\n  return q;\n}\n",
+          "seed": 69
+        },
+        "position": {
+          "x": -1160,
+          "y": 40
+        },
+        "type": "pointKernel"
+      },
+      "platePts": {
+        "definitionVersion": 1,
+        "id": "platePts",
+        "label": "platepts1",
+        "parameters": {
+          "cols": 48,
+          "count": 1728,
+          "rows": 36,
+          "sizeX": 16,
+          "sizeY": 12
+        },
+        "position": {
+          "x": -1400,
+          "y": 40
+        },
+        "type": "pointGrid"
+      },
+      "rough": {
+        "definitionVersion": 1,
+        "id": "rough",
+        "label": "rough1",
+        "parameters": {
+          "material": "matrough1",
+          "mode": "surface"
+        },
+        "position": {
+          "x": -900,
+          "y": 720
+        },
+        "type": "geometry"
+      },
+      "shot": {
+        "definitionVersion": 1,
+        "id": "shot",
+        "label": "shot1",
+        "parameters": {
+          "ambientColor": [
+            0.45,
+            0.55,
+            0.8,
+            1
+          ],
+          "ambientIntensity": 0.18,
+          "antialias": "msaa",
+          "background": [
+            0.03,
+            0.035,
+            0.05,
+            1
+          ],
+          "camera": "cam1",
+          "environmentIntensity": 1,
+          "environmentTaps": 8,
+          "lights": "key1",
+          "scenes": "plate1 mirror1 brushed1 rough1 glass1"
+        },
+        "position": {
+          "x": -60,
+          "y": 40
+        },
+        "type": "render"
+      },
+      "sky": {
+        "definitionVersion": 2,
+        "id": "sky",
+        "label": "sky1",
+        "parameters": {
+          "interp": "linear",
+          "period": 1,
+          "phase": 0,
+          "stops": [
+            {
+              "color": [
+                0.05,
+                0.08,
+                0.16,
+                1
+              ],
+              "position": 0
+            },
+            {
+              "color": [
+                0.3,
+                0.42,
+                0.6,
+                1
+              ],
+              "position": 0.4
+            },
+            {
+              "color": [
+                1,
+                0.82,
+                0.55,
+                1
+              ],
+              "position": 0.5
+            },
+            {
+              "color": [
+                0.24,
+                0.16,
+                0.14,
+                1
+              ],
+              "position": 0.58
+            },
+            {
+              "color": [
+                0.05,
+                0.04,
+                0.05,
+                1
+              ],
+              "position": 1
+            }
+          ],
+          "type": "vertical"
+        },
+        "position": {
+          "x": -620,
+          "y": 1200
+        },
+        "type": "ramp"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E69 Burnish",
+  "projectId": "example-burnish",
+  "schemaVersion": 3,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 69,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}
