@@ -77,6 +77,7 @@ export type {
   RuntimeMetricsSnapshot,
   SelectionSnapshot,
   StateSources,
+  ValueChannelsSnapshot,
 } from "./state-queries.ts";
 
 export interface DomainBusOptions extends GraphStoreOptions {

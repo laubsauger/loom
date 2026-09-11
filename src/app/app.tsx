@@ -1345,11 +1345,28 @@ export function App({
   ]);
 
   const errorCount = problems.filter((diagnostic) => diagnostic.severity === "error").length;
+  /**
+   * T1299: what `get_channels` reads — the SAME bags the value history sampler above
+   * pushes, root nodes and component instances alike, read on demand. Never a second
+   * evaluation (§V275).
+   */
+  const agentChannels = useCallback(() => {
+    const bags = valueGraph.channels();
+    const nodes = [...bags].map(([nodeId, channels]) => ({ nodeId, channels }));
+    nodes.push(...instanceValueChannels(runtime.flattened.current(), runtime.registry, bags));
+    return { nodes };
+  }, [runtime, valueGraph]);
   const agentSurface = useAgentSurface(
     runtime,
     // T596: the revision the COMPILE half of `problems` was derived from, so a reader can
     // tell "clean at your edit" from "not looked at your edit yet" (§V338).
-    { selection, playing: frameLoop.playing, diagnostics: problems, diagnosticsRevision: compile.graph.revision },
+    {
+      selection,
+      playing: frameLoop.playing,
+      diagnostics: problems,
+      diagnosticsRevision: compile.graph.revision,
+      channels: agentChannels,
+    },
     agentPorts,
   );
   // T397/§V338: publishing the surface to a transport AND reporting what that publication

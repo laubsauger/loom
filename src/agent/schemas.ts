@@ -184,6 +184,9 @@ export const getNodeInput = z
   .object({ nodeId: z.string().min(1), includeParameters: z.boolean().optional() })
   .strict();
 
+/** T1299: a node by id or by name — the name is what `op()` and the canvas show. */
+export const getChannelsInput = z.object({ node: z.string().min(1) }).strict();
+
 export const listNodeDefinitionsInput = z.object({ category: z.string().optional() }).strict();
 
 export const getNodeDefinitionInput = z.object({ type: z.string().min(1) }).strict();
@@ -335,6 +338,7 @@ export type ReadPointsInput = z.infer<typeof readPointsInput>;
 export type EmptyInput = z.infer<typeof emptyInput>;
 export type GetGraphInput = z.infer<typeof getGraphInput>;
 export type GetNodeInput = z.infer<typeof getNodeInput>;
+export type GetChannelsInput = z.infer<typeof getChannelsInput>;
 export type ListNodeDefinitionsInput = z.infer<typeof listNodeDefinitionsInput>;
 export type GetNodeDefinitionInput = z.infer<typeof getNodeDefinitionInput>;
 export type ListExamplesInput = z.infer<typeof listExamplesInput>;

@@ -8,6 +8,7 @@ import type {
 } from "@agent/index.ts";
 import { frameClockVerdict } from "@runtime/telemetry/frame-clock.ts";
 import { attachStateSources } from "@domain/commands/index.ts";
+import type { ValueChannelsSnapshot } from "@domain/commands/index.ts";
 import type { Actor, CapabilityClass } from "@domain/types/commands.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { NodeId, Revision } from "@domain/types/ids.ts";
@@ -128,6 +129,11 @@ export interface AgentSurfaceState {
    * problem. This is the revision the list actually saw.
    */
   readonly diagnosticsRevision: Revision;
+  /**
+   * T1299: the bags the app's one per-frame value evaluation last published (§V275).
+   * Absent where no value graph runs, and then `values.channels` is never registered.
+   */
+  readonly channels?: () => ValueChannelsSnapshot;
 }
 
 export function useAgentSurface(
@@ -177,6 +183,9 @@ export function useAgentSurface(
         };
       },
       project: () => runtime.project,
+      ...(stateRef.current.channels === undefined
+        ? {}
+        : { channels: () => stateRef.current.channels?.() ?? { nodes: [] } }),
     });
   }, [runtime]);
 

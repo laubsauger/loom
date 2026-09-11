@@ -1053,7 +1053,7 @@ describe("the agent tool surface is constructed (B12, T220, §V39, §V42)", () =
     const byName = new Map(built.listTools().map((tool) => [tool.name, tool]));
     // The read tools that used to need INJECTED PORTS. They are bus queries now (T175),
     // and the root attaches the sources — so an out-of-process adapter sees them too.
-    for (const name of ["get_selection", "get_diagnostics", "get_runtime_metrics"]) {
+    for (const name of ["get_selection", "get_diagnostics", "get_runtime_metrics", "get_channels"]) {
       expect(byName.get(name)?.available, `${name} has no source attached`).toBe(true);
     }
     // The mutation and workflow tools the criterion names.
@@ -1818,6 +1818,50 @@ describe("T619 — get_runtime_metrics tells the truth about a rendering documen
        the judgment is unit-gated in frame-clock.test.ts; this pins the WIRING (§V437's
        two-surfaces-one-derivation, agent half). */
     expect(["live", "paused", "browser-throttled", "running-behind"]).toContain(after.frameClock?.kind);
+  });
+});
+
+/**
+ * T1299 — an agent reads the value channels a human sees in the plot.
+ *
+ * Through the REAL app: `get_channels` answers from `values.channels`, which the root
+ * backs with the bags the one per-frame evaluation already produced (§V275). The retune
+ * is the point — a source that captured the bags at attach time, or a tool that read the
+ * document parameter instead of the evaluated bag, would still answer 8.
+ */
+describe("T1299 — get_channels reads the evaluated bag, live", () => {
+  it("answers by id and by name, follows a retune, and refuses an unknown node by name", async () => {
+    const runtime = newRuntime();
+    await seedRenderable(runtime);
+    const created = await seed(runtime, [
+      { op: "addNode", ref: "$knob", type: "constant", position: { x: 0, y: 200 }, label: "knob", parameters: { value: 8 } },
+    ]);
+    const knobId = created.output.createdIds["$knob"];
+    if (typeof knobId !== "string") throw new Error("expected the seeded constant");
+    let surface: AgentToolSurface | null = null;
+    await mountApp({ status: READY, runtime, onAgentSurface: (next) => (surface = next) });
+    const built = surface as AgentToolSurface | null;
+    if (built === null) throw new Error("no agent surface");
+
+    await waitFor(async () => {
+      const byName = await built.callTool("get_channels", { node: "knob" });
+      expect(byName.data).toEqual({ nodeId: knobId, name: "knob", publishing: true, channels: { value: 8 } });
+    });
+    expect((await built.callTool("get_channels", { node: knobId })).data).toEqual({
+      nodeId: knobId,
+      name: "knob",
+      publishing: true,
+      channels: { value: 8 },
+    });
+
+    await seed(runtime, [{ op: "setParameters", nodeId: knobId, parameters: { value: 3 } }]);
+    await waitFor(async () => {
+      expect((await built.callTool("get_channels", { node: "knob" })).data).toMatchObject({ channels: { value: 3 } });
+    });
+
+    const unknown = await built.callTool("get_channels", { node: "nope" });
+    expect(unknown.status).toBe("error");
+    expect(unknown.diagnostics.map((entry) => entry.code)).toContain("node.unknown");
   });
 });
 

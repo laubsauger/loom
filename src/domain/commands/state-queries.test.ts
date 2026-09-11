@@ -54,7 +54,7 @@ const project = (): Omit<ProjectDocument, "graph"> => ({
 
 describe("state queries are registered only once something can answer them", () => {
   it("does not publish a query with no source behind it", async () => {
-    for (const name of ["selection.get", "diagnostics.get", "runtime.metrics", "project.get"] as const) {
+    for (const name of ["selection.get", "diagnostics.get", "runtime.metrics", "values.channels", "project.get"] as const) {
       expect(harness.bus.hasQuery(name)).toBe(false);
     }
     // Honest rather than empty: "nobody is watching" must not read as "nothing is
@@ -119,6 +119,16 @@ describe("each query answers what it claims", () => {
     expect(snapshot.frameGpuMs).toBeNull();
     expect(snapshot.timingAvailable).toBe(false);
     expect(snapshot.framesRendered).toBe(12);
+  });
+
+  it("values.channels passes the published bags through, a silent node absent rather than zeroed", async () => {
+    attachStateSources(harness.bus, {
+      channels: () => ({ nodes: [{ nodeId: "nd_lfo", channels: { value: 0.25 } }] }),
+    });
+    const snapshot = await harness.bus.query("values.channels", {}, context());
+    // T1299: the same bags the plots draw, by node id — nothing synthesised for a node
+    // that published nothing this frame (§V91).
+    expect(snapshot.nodes).toEqual([{ nodeId: "nd_lfo", channels: { value: 0.25 } }]);
   });
 
   it("project.get answers the envelope graph.get cannot, paired with the graph revision", async () => {

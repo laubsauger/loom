@@ -41,6 +41,8 @@ declare module "../types/commands.ts" {
     "diagnostics.get": { input: DiagnosticsQueryInput; output: DiagnosticsSnapshot };
     /** Frame and pass timing as last published by the runtime (§V16, §V85, §V86). */
     "runtime.metrics": { input: Record<string, never>; output: RuntimeMetricsSnapshot };
+    /** T1299: every value channel bag the last evaluated frame published, by node id (§V275). */
+    "values.channels": { input: Record<string, never>; output: ValueChannelsSnapshot };
     /** The open project minus its graph — name, settings, assets (§V10). */
     "project.get": { input: Record<string, never>; output: ProjectSnapshot };
   }
@@ -123,6 +125,17 @@ export interface ProjectSnapshot {
 }
 
 /**
+ * T1299: the value channels the app's ONE per-frame evaluation last published (§V275).
+ *
+ * The same bags the node plots draw, so an agent reads what a human sees: root nodes by
+ * document id, component instances by the instance's own id (T1297). A node whose bag is
+ * silent this frame has no entry — absence reads as absence (§V91), never as zeros.
+ */
+export interface ValueChannelsSnapshot {
+  readonly nodes: readonly { readonly nodeId: NodeId; readonly channels: Readonly<Record<string, number>> }[];
+}
+
+/**
  * Read functions the owner of each piece of state attaches. Every one is pull-based and
  * synchronous: a query must never make the owner push, and per-frame data must never
  * enter the document store (§V16).
@@ -132,6 +145,8 @@ export interface StateSources {
   /** T596: the list AND the revision it was derived from — see `DiagnosticsReport`. */
   diagnostics?: () => DiagnosticsReport;
   metrics?: () => RuntimeMetricsSnapshot;
+  /** T1299: attached only where a value graph evaluates — the headless server has none. */
+  channels?: () => ValueChannelsSnapshot;
   /** Everything about the open project except its graph, which the store already has. */
   project?: () => Omit<ProjectDocument, "graph">;
 }
@@ -209,6 +224,17 @@ export function attachStateSources(bus: LoomBus, sources: StateSources): void {
         const read = holder.sources.metrics;
         if (read === undefined) return EMPTY_METRICS;
         return read();
+      },
+    });
+  }
+
+  if (holder.sources.channels !== undefined && !bus.hasQuery("values.channels")) {
+    bus.registerQuery({
+      name: "values.channels",
+      description: "Value channel bags the last evaluated frame published, by node id (§V275).",
+      handler: (): ValueChannelsSnapshot => {
+        const read = holder.sources.channels;
+        return read === undefined ? { nodes: [] } : read();
       },
     });
   }

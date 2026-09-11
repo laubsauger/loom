@@ -9,6 +9,7 @@ import { effectiveParameterSchema } from "@domain/parameters/resolve.ts";
 
 import {
   emptyInput,
+  getChannelsInput,
   getDiagnosticsInput,
   getGraphInput,
   getNodeDefinitionInput,
@@ -17,6 +18,7 @@ import {
 } from "../schemas.ts";
 import type {
   EmptyInput,
+  GetChannelsInput,
   GetDiagnosticsInput,
   GetGraphInput,
   GetNodeDefinitionInput,
@@ -485,6 +487,65 @@ export const getRuntimeMetrics: AgentTool<EmptyInput, AgentRuntimeMetrics> = {
   },
 };
 
+export interface NodeChannels {
+  readonly nodeId: NodeId;
+  readonly name: string | null;
+  /** False when the node published no bag on the last evaluated frame (§V91). */
+  readonly publishing: boolean;
+  readonly channels: Readonly<Record<string, number>>;
+}
+
+/**
+ * T1299: the value channels a human sees in a node's plot, for an agent.
+ *
+ * Read from `values.channels`, the query the app backs with the bags its ONE per-frame
+ * evaluation already produced — never a second evaluation, which would advance every
+ * stateful stage twice (§V275). A component instance answers with the channels its value
+ * outputs expose (T1297), the same bag its plot draws.
+ */
+export const getChannels: AgentTool<GetChannelsInput, NodeChannels> = {
+  name: "get_channels",
+  title: "Get value channels",
+  description:
+    "The value channels one node published on the last rendered frame, by channel name — the numbers its plot draws and op('name').chan.<channel> reads. Pass a node id or its name. publishing:false means the node emitted no bag this frame, not zeros. Analyze readbacks are not included.",
+  kind: "read",
+  inputSchema: getChannelsInput,
+  requires: { queries: ["graph.get", "values.channels"] },
+  capabilities: [],
+  mutates: false,
+  async run(input, runtime) {
+    const graph = await graphOf(runtime);
+    let node = graph.nodes[input.node];
+    if (node === undefined) {
+      const named = Object.values(graph.nodes).filter((candidate) => candidate.label === input.node);
+      if (named.length > 1) {
+        return failed<NodeChannels>(
+          "get_channels",
+          "node.ambiguous",
+          `${named.length} nodes are named "${input.node}".`,
+          { revision: graph.revision, suggestion: `Pass one of their ids: ${named.map((entry) => entry.id).join(", ")}.` },
+        );
+      }
+      node = named[0];
+    }
+    if (node === undefined) {
+      return failed<NodeChannels>("get_channels", "node.unknown", `No node with id or name "${input.node}".`, {
+        revision: graph.revision,
+        suggestion: "Call get_graph for the current node ids and names.",
+      });
+    }
+    const { nodes } = await runtime.query<{
+      readonly nodes: readonly { readonly nodeId: NodeId; readonly channels: Readonly<Record<string, number>> }[];
+    }>("values.channels", {});
+    const bag = nodes.find((entry) => entry.nodeId === node.id)?.channels;
+    return ok(
+      "get_channels",
+      { nodeId: node.id, name: node.label ?? null, publishing: bag !== undefined, channels: { ...bag } },
+      { revision: graph.revision },
+    );
+  },
+};
+
 export const readTools: readonly AgentTool[] = [
   getProjectSummary,
   getGraph,
@@ -494,4 +555,5 @@ export const readTools: readonly AgentTool[] = [
   getSelection,
   getDiagnostics,
   getRuntimeMetrics,
+  getChannels,
 ] as readonly AgentTool[];

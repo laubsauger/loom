@@ -418,8 +418,11 @@ describe("T597/§V39 — the headless server offers the full catalogue", () => {
        *    change, so a transport verb would be a button that lies (§V123).
        *  - save_project: the page's save targets a browser project store this process
        *    does not have.
+       *  - get_channels (T1299): it reads the bags the app's per-frame value evaluation
+       *    published, and this server runs no value graph — attaching a source here would
+       *    mean a second evaluator, which §V275 forbids.
        */
-      const waived = new Set(["set_output", "play", "pause", "save_project"]);
+      const waived = new Set(["set_output", "play", "pause", "save_project", "get_channels"]);
       const marker = "currently unavailable";
       const dead = tools
         .filter((tool) => tool.description.includes(marker) && !waived.has(tool.name))
