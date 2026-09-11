@@ -31,7 +31,7 @@ pnpm build               # tsc -b && vite build  (CI runs this; vite-only breaka
 pnpm lint                # eslint . — custom invariant rules, see below
 pnpm typecheck           # THE type gate. Bare `tsc --noEmit` at root checks nothing (solution tsconfig).
 pnpm test                # vitest run, both workspace projects — 580 files, 8k+ tests, >2 min
-pnpm test:gates          # the 28 gates no selector can find — ~6 s. See "Scoping test runs".
+pnpm test:gates          # the 48 gate files no selector can find — ~7.4 s. See "Scoping test runs".
 pnpm test:headless       # only the "headless" (node env) project
 pnpm test:e2e            # playwright, src/tests/e2e, boots dev server itself
 pnpm helper              # the local helper: stdio MCP server + loopback device bridge (was `mcp:serve`, still aliased)
@@ -67,9 +67,9 @@ The bare `node --experimental-strip-types src/...` form is dead and has been "fi
 `pnpm test` is >2 minutes and most changes cannot reach most of it. Default to this ladder instead:
 
 1. **`pnpm vitest run <paths>`** — the tests for what you touched, named directly. Seconds.
-2. **`pnpm test:gates`** — ~6 s, and **not optional**. These 28 gates walk the *source tree* (`readdirSync`, globs) or the *document set* rather than importing what they check, so **no dependency-graph selector can find them and your own file's tests will never pull them in** (§V957): `composition-seams` (a factory no product entry point reaches), `command-holder` (a command with no coverage row), `emission-sites` (an unregistered pump), `rename-gate` (an unregistered storage address), `layout` (§V389, two nodes on top of each other in a shipped document), `doc-drift`, `tokens`, `helper`, `copy-guard`, `headless`, `side-effects`, and the `guardrails/`. They are the ones that catch what you did not know you touched.
+2. **`pnpm test:gates`** — ~7.4 s, and **not optional**. These 48 files walk the *source tree* (`readdirSync`, globs) or the *document set* rather than importing what they check, so **no dependency-graph selector can find them and your own file's tests will never pull them in** (§V957): `composition-seams` (a factory no product entry point reaches), `command-holder` (a command with no coverage row), `emission-sites` (an unregistered pump), `rename-gate` (an unregistered storage address), `layout` (§V389, two nodes on top of each other in a shipped document), `doc-drift`, `tokens`, `helper`, `copy-guard`, `headless`, `side-effects`, and the `guardrails/`. They are the ones that catch what you did not know you touched.
 
-   **The list is derived, not remembered** (T1273). `gate-list.test.ts` walks `src/**` for tests that discover their subjects by `readdirSync`/`import.meta.glob` and fails when one is not named in the `test:gates` script — because a hand-maintained list of the gates nothing can find is one edit away from being wrong, and was: `layout.test.ts` was off it while §V389 sat red on two freshly-landed rows. Add a gate of that class to the script, or exempt it by name with a reason. If it is not CHEAP, give it its own script instead: this one runs before every commit.
+   **The list is derived, not remembered** (T1273). `gate-list.test.ts` walks `src/**` for tests that discover their subjects by `readdirSync`/`import.meta.glob`, AND (T1274) for non-GPU tests that IMPORT a document-set enumerator (`listExamples`, `EXAMPLE_DOCUMENTS`, …), and fails when one is not named in the `test:gates` script — because a hand-maintained list of the gates nothing can find is one edit away from being wrong, and was: `layout.test.ts` was off it while §V389 sat red on two freshly-landed rows. Add a gate of that class to the script, or exempt it by name with a reason. If it is not CHEAP, give it its own script instead: this one runs before every commit.
 3. **`pnpm typecheck`** — always. It is the cheapest cross-file blast-radius check you have.
 4. **`pnpm test` in full** only when the blast radius genuinely is everything: a change to a **shared abstraction, a registry, a domain type, or a generated artefact**. Moving a file counts.
 

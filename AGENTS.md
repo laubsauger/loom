@@ -51,10 +51,10 @@ For application or shared-library changes, run:
 pnpm lint
 pnpm typecheck
 pnpm test        # >2 min. Prefer the ladder below.
-pnpm test:gates  # ~6 s. The 28 gates no selector can find. Not optional.
+pnpm test:gates  # ~7.4 s. The 48 gate files no selector can find. Not optional.
 pnpm build
 ```
 
-**Scope your test runs.** Run `pnpm vitest run <paths>` for what you touched, then `pnpm test:gates` (~6 s) — those 28 gates walk the source tree or the document set rather than importing what they check, so nothing else selects them (§V957) and they are what catch a factory you orphaned, a command you left uncovered, or two nodes drawn on top of each other in a shipped example. The list is derived rather than remembered: `gate-list.test.ts` fails when a tree-walking test is missing from the script (T1273). Run the full `pnpm test` only when the blast radius is genuinely everything: a shared abstraction, a registry, a domain type, a generated artefact, or a file move. `pnpm typecheck` always. `pnpm vitest related --run <changed files>` picks the first step off the module graph; it still cannot see the gates.
+**Scope your test runs.** Run `pnpm vitest run <paths>` for what you touched, then `pnpm test:gates` (~7.4 s) — those 48 files walk the source tree or the document set rather than importing what they check, so nothing else selects them (§V957) and they are what catch a factory you orphaned, a command you left uncovered, or two nodes drawn on top of each other in a shipped example. The list is derived rather than remembered: `gate-list.test.ts` fails when a tree-walking test is missing from the script (T1273). Run the full `pnpm test` only when the blast radius is genuinely everything: a shared abstraction, a registry, a domain type, a generated artefact, or a file move. `pnpm typecheck` always. `pnpm vitest related --run <changed files>` picks the first step off the module graph; it still cannot see the gates.
 
 Also run `pnpm test:headless` for backend, rendering, or WGSL changes and `pnpm test:e2e` for browser interaction changes when the environment supports them. Report commands that could not be run and why.
