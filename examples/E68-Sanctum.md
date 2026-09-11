@@ -77,6 +77,28 @@ several times the channel's width, and the fine stroke hash dropped entirely. It
 "is there writing near here", which is what a glow is. It is also cheaper than the version
 that did not work.
 
+## The dust is what makes the inlay a light
+
+Everything before stage 3 showed light only where it **landed**. A buried hall has air in
+it, and air is what lets you see a beam rather than infer one. Twenty-two samples along the
+primary ray, carrying the inlay's glow near the columns and a cold shaft through the doorway
+at the far end. Dust settles, so density thins with height — that is what puts the shaft's
+edge where the eye expects it and keeps the vault from fogging over.
+
+**The volume reads a smoother field than the surface does, and that is not a shortcut.** The
+first version sampled the same spill field the stone uses, and the result was salt and
+pepper: that field is hash-gated and so nearly binary, and twenty-two sparse samples through
+a binary volume is a speckle generator rather than a fog. The second version smoothed it and
+painted continuous horizontal bands the full width of the hall, because a row window is a
+function of height alone. What works keeps the row-and-bay gate — so the air glows where
+there is writing and not in bays without any — and drops the fine glyph and stroke hashes,
+which are what made it speckle.
+
+The march's start offset is dithered by a hash of the **pixel**, fixed across frames. A
+fixed step count through a volume bands; jittering removes the bands, and a jitter that
+changed every frame would turn them into boiling noise instead. The dither is grain, never
+flicker.
+
 ## What this file does not have
 
 It is a marcher, so it owns its own shading. That means **none of the scene family's PBR material** — none of the
@@ -98,6 +120,7 @@ means over 240 of 300 frames rather than medians, because Dawn quantizes timesta
 | --- | --- | --- |
 | 1 | the bare march: stone, erosion, one key | **2.94 ms** |
 | 2 | the inlay, its channels and its spill | **3.57 ms** |
+| 3 | the dust: light visible in the air, and the shaft | **3.77 ms** |
 
 The estimate that shaped the decision to build this was 25–35 ms. It was an estimate, and
 nothing had run it. The stages are measured separately and reported as each lands precisely

@@ -77,7 +77,11 @@ struct Params {
   ambient: f32,       // @default 0.16  fill, so a wall facing away is not a silhouette — warmed toward the inlay, because in a buried hall the only thing bouncing IS the inlay
   fog: f32,           // @default 0.055  depth haze — the aerial perspective, and the cost lever
   fogColor: vec4f,    // @default [0.045, 0.05, 0.062, 1]  what distance converges to
-  exposure: f32,      // @default 1  master gain before the display transform
+  exposure: f32,      // @default 1.35  master gain before the display transform
+  dust: f32,          // @default 0.032  how much dust hangs in the hall — this is what makes the light VISIBLE rather than only its landing place
+  dustSteps: f32,     // @default 22  volumetric samples along the ray, and the stage's whole cost
+  dustFloor: f32,     // @default 2.6  metres over which the dust thins with height: it settles
+  shaft: f32,         // @default 0.55  strength of the beam through the doorway, the one light that comes from outside
   steps: f32,         // @default 96  march iterations — the frame budget, stated as a number
 };
 
@@ -92,6 +96,8 @@ const SURFACE: f32 = 0.0025;
 const STONE_SEED: u32 = 68u;
 /* A second seed, so re-cutting the glyphs cannot move the stone under them. */
 const GLYPH_SEED: u32 = 690u;
+/* A third seed for the volumetric dither, so re-jittering cannot move the glyphs. */
+const DUST_SEED: u32 = 6802u;
 
 /* Value noise on the integer lattice — the hashes come from the shared 'hash' module, so
    this shader declares none of its own (T1286). */
@@ -252,6 +258,75 @@ fn normalAt(p: vec3f) -> vec3f {
   ));
 }
 
+/**
+ * THE DUST — and it is the stage that makes the inlay read as a LIGHT rather than as a set
+ * of bright marks.
+ *
+ * Everything before this only showed light where it LANDED. A buried hall has air in it,
+ * and air is what lets you see a beam rather than infer one: the glow pools around the
+ * channels become volumes, and the doorway stops being a bright rectangle and becomes a
+ * shaft lying across the nave.
+ *
+ * Two sources, sampled along the primary ray between the eye and whatever it hit:
+ *
+ *  - THE INLAY, through the same wide field the surface spill uses. It is a function of
+ *    position rather than of any surface, so it works in the air unchanged — which is the
+ *    second time that field has paid for itself.
+ *  - THE SHAFT from the doorway, which is the only light in the picture that comes from
+ *    outside the building. Modelled as a slab rather than traced: full strength near the
+ *    nave's axis and falling off with distance from it, which is what a doorway makes.
+ *
+ * DENSITY SETTLES. Dust is heavier than air, so it thins with height over 'dustFloor'
+ * metres — that is what puts the shaft's edge where the eye expects it and keeps the vault
+ * from fogging over.
+ *
+ * ⚑ THE START OFFSET IS DITHERED BY A HASH OF THE PIXEL, FIXED ACROSS FRAMES. A fixed step
+ * count through a volume bands; jittering removes the bands and a jitter that changes every
+ * frame turns them into boiling noise instead. E55 learned that one: the dither is GRAIN,
+ * never flicker (§V44 — this reads the pixel, not the clock).
+ */
+fn dustAlong(eye: vec3f, dir: vec3f, far: f32, pixel: vec2f) -> vec3f {
+  let count = i32(clamp(params.dustSteps, 2.0, 64.0));
+  let span = min(far, MAX_DISTANCE);
+  let stride = span / f32(count);
+  let jitter = unitFloat(hash2i(vec2i(pixel), DUST_SEED));
+  var accumulated = vec3f(0.0);
+  for (var i = 0; i < count; i = i + 1) {
+    let travel = (f32(i) + jitter) * stride;
+    let p = eye + dir * travel;
+    // Dust settles: thinner the higher you look.
+    let settle = exp(-max(p.y, 0.0) / max(params.dustFloor, 0.05));
+    /* ⚑ THE VOLUME READS A SMOOTH FIELD, NOT THE SURFACE ONE. The first version sampled
+       the same spill field the stone uses, and the result was salt-and-pepper: that field
+       is hash-GATED, so it is nearly binary, and 22 sparse samples through a binary volume
+       is a speckle generator rather than a fog. What the air wants is "roughly how much
+       light is near here", so the glyph hash goes and the row window stays — smooth in
+       every direction, and cheaper for losing a hash. */
+    let pitch = max(params.inlayRows, 0.05);
+    let row = floor(p.y / pitch);
+    let bayIndex = floor(p.z / max(params.bay, 0.1));
+    /* Gated by the SAME row-and-bay test the channels use, so the air glows where there is
+       writing and not in bays without any. Without this the row window is a function of
+       height alone and paints continuous horizontal bands the full width of the hall —
+       which is what the first smooth version did, and it read as a striped fog rather than
+       as light near a wall. The fine glyph and stroke hashes stay out: those are what made
+       the volume speckle. */
+    let live = unitFloat(hash3i(vec3i(i32(row), i32(bayIndex), 0), GLYPH_SEED));
+    let lit = step(live, clamp(params.inlayDensity, 0.0, 1.0));
+    let withinRow = abs(fract(p.y / pitch) - 0.5) * 2.0;
+    let rowPool = (1.0 - smoothstep(0.0, 1.0, withinRow)) * step(0.4, p.y) * lit;
+    // Near the columns, where the channels actually are — not out in the middle of the nave.
+    let nearColumn = 1.0 - smoothstep(0.45, 1.7, abs(abs(p.x) - params.aisle));
+    let glow = rowPool * nearColumn * params.inlayColor.rgb;
+    // The shaft: a slab of light down the nave's axis from the doorway, and it only exists
+    // deep in the hall where the doorway can see.
+    let axis = 1.0 - smoothstep(0.0, 2.0, abs(p.x));
+    let beam = axis * params.shaft * params.keyColor.rgb * smoothstep(6.0, 26.0, p.z);
+    accumulated = accumulated + ((glow + beam) * settle);
+  }
+  return accumulated * (params.dust * stride);
+}
+
 @fragment
 fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   let aspect = 16.0 / 9.0;
@@ -306,6 +381,9 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
     let haze = 1.0 - exp(-travelled * params.fog);
     colour = mix(lit, params.fogColor.rgb, haze);
   }
+  /* The dust is ADDED over whatever the ray found, surface or nothing: light in the air is
+     in front of the thing behind it, not mixed with it. */
+  colour = colour + dustAlong(eye, dir, select(MAX_DISTANCE, travelled, hit), uv * vec2f(1280.0, 720.0));
 
   return vec4f(colour * params.exposure, 1.0);
 }
