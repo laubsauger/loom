@@ -15,7 +15,7 @@
  */
 
 export interface SceneShadingOptions {
-  readonly model: "unlit" | "lambert" | "phong";
+  readonly model: "unlit" | "lambert" | "phong" | "pbr";
   /** Lights the shader is compiled for. 0 is legal: ambient floor only. */
   readonly lightCount: number;
   readonly maps?: { readonly albedo?: boolean; readonly roughness?: boolean };
@@ -170,6 +170,63 @@ ${occlusionBlock}        let nominal = max(params.projector${p}Meta.x, 1e-4);
  * can develop an edge glow it did not already have, and a rough METAL keeps its
  * dimming instead of snapping back to a mirror.
  */
+/**
+ * T1284 — THE SPECULAR LOBE, GGX/Smith, shared verbatim by both generators (§V349).
+ *
+ * What this replaces, and why "replaces" is the honest word: `materialPbr` collapsed to
+ * Blinn-Phong. Every `pbr` material was mapped to `phong` with its shininess PINNED AT 96
+ * and `metallic` used only to tint the specular colour toward the base colour
+ * (`scene.ts:1682/1888`, `compile.ts:1770`), and the node description said so rather than
+ * pretending. Roughness reached the highlight only through `gloss = specular.w * (1 −
+ * roughness)`, which moves a Phong exponent and is not a microfacet distribution: it has
+ * no Fresnel per light, no shadowing-masking, and its energy is whatever the exponent
+ * happens to integrate to.
+ *
+ * The three terms, each the standard one and each chosen for a reason a reader can check:
+ *
+ *  - D, Trowbridge-Reitz (GGX). `alpha = roughness²` is the Disney/UE4 remap, so the
+ *    parameter stays perceptually even rather than crowding every visible change into the
+ *    bottom of its range.
+ *  - V, Smith height-correlated, returning G/(4·NoL·NoV) as ONE factor. Heitz's form,
+ *    and the fused version is not a micro-optimisation: the separable one divides by
+ *    NoL·NoV and then the reflectance multiplies by them, which is a 0/0 at grazing that
+ *    shows up as a bright rim on a silhouette — exactly where §V571 already fights.
+ *  - F, Schlick, on `VoH` (the half-vector), not on `NoV`. Per-light Fresnel is a
+ *    different quantity from the environment's: `FRESNEL_WGSL` below answers "how much
+ *    does this surface reflect the world at this viewing angle" and this answers "how
+ *    much does this facet reflect THIS light". Both are Schlick; they are not the same
+ *    number and sharing one would be wrong.
+ *
+ * ⚑ ENERGY: the diffuse half is scaled by (1 − F)(1 − metallic) in the pbr branch, which
+ * is what finally makes `metallic` mean something per light rather than only tinting. A
+ * metal has no diffuse lobe at all, and this is the line that says so. The lambert and
+ * phong models keep their unscaled diffuse EXACTLY — they are not PBR and pretending they
+ * are would change every non-pbr scene in the catalogue for no stated reason.
+ *
+ * ⚑ TWO-SIDED (T301, kept): every dot with the normal is `abs`, so a back face shades as
+ * a front face rather than going black. `max(…, 1e-4)` guards the divisions, never the
+ * sidedness.
+ */
+const ggxSpecularWgsl = (roughnessExpr: string): string => `    let halfway = normalize(toLight + viewDir);
+    let NoV = max(abs(dot(normal, viewDir)), 1.0e-4);
+    let NoL = max(abs(dot(normal, toLight)), 1.0e-4);
+    let NoH = abs(dot(normal, halfway));
+    let VoH = abs(dot(viewDir, halfway));
+    let alpha = max(${roughnessExpr} * ${roughnessExpr}, 1.0e-3);
+    let alpha2 = alpha * alpha;
+    let denom = (NoH * NoH * (alpha2 - 1.0)) + 1.0;
+    let distribution = alpha2 / (3.14159265 * denom * denom);
+    let lambdaV = NoL * sqrt((NoV * NoV * (1.0 - alpha2)) + alpha2);
+    let lambdaL = NoV * sqrt((NoL * NoL * (1.0 - alpha2)) + alpha2);
+    let visibility = 0.5 / max(lambdaV + lambdaL, 1.0e-5);
+    let specF0 = mix(vec3f(0.04), params.specular.rgb, params.material.x);
+    let fresnel = specF0 + ((vec3f(1.0) - specF0) * pow(1.0 - VoH, 5.0));
+    lit += radiance * distribution * visibility * fresnel * NoL;
+`;
+
+/** The models that carry a specular response, and so an environment (T1284 added pbr). */
+const lit = (model: SceneShadingOptions["model"]): boolean => model === "phong" || model === "pbr";
+
 const FRESNEL_WGSL = `  let envF0 = mix(0.04, 1.0, params.material.x);
   let envFresnel = envF0 + (1.0 - envF0) * pow(max(1.0 - abs(dot(normal, viewDir)), 0.0), 5.0);
 `;
@@ -485,7 +542,7 @@ export function sceneSurfaceWgsl(options: SceneShadingOptions): string {
     if (slot < 0) return "";
     return shadowFactorWgsl(slot, options.shadowSoftness?.[slot] ?? 0);
   };
-  const environment = options.environment === true && options.model === "phong";
+  const environment = options.environment === true && lit(options.model);
   const envBinding = 5 + shadows.length;
   const envDeclarations = environment
     ? `@group(0) @binding(${envBinding}) var environmentMap: texture_2d<f32>;\n${ENV_SAMPLE_WGSL}`
@@ -555,15 +612,24 @@ ${IRRADIANCE_WGSL}  lit += irradiance * albedo.rgb * (1.0 - envFresnel) * (1.0 -
     /* Two-sided lambert: a surface has no wrong side (T301's rule, kept). */
     let lambert = abs(dot(normal, toLight));
 ${shadowFactor(index)}    let radiance = lightColor.rgb * lightMeta.y * attenuation${shadowSlotOf(index) >= 0 ? " * shadow" : ""};
-    lit += albedo.rgb * radiance * lambert;
 ${
-  options.model === "phong"
-    ? `    let halfway = normalize(toLight + viewDir);
+  options.model === "pbr"
+    ? ggxSpecularWgsl("roughness") +
+      /* The diffuse half, AFTER the lobe so it can read `fresnel`: energy the facets sent
+         back specularly is not available to the body of the material, and a metal has no
+         diffuse lobe at all. This is the line that makes `metallic` a physical quantity
+         per light rather than a tint (T1284). */
+      `    lit += albedo.rgb * radiance * lambert * (vec3f(1.0) - fresnel) * (1.0 - params.material.x);
+`
+    : `    lit += albedo.rgb * radiance * lambert;
+` +
+      (options.model === "phong"
+        ? `    let halfway = normalize(toLight + viewDir);
     let gloss = max(2.0, params.specular.w * (1.0 - roughness));
     let highlight = pow(abs(dot(normal, halfway)), gloss);
     lit += params.specular.rgb * radiance * highlight;
 `
-    : ""
+        : "")
 }  }
 `;
 
@@ -731,7 +797,7 @@ ${gatedReturn}
 }
 
 export function sceneInstancesWgsl(options: {
-  model: "unlit" | "lambert" | "phong";
+  model: "unlit" | "lambert" | "phong" | "pbr";
   lightCount: number;
   /** T478: a vec4f attribute multiplies the base colour per point (the geometry's mapped tint). */
   pointColor?: boolean;
@@ -828,7 +894,7 @@ export function sceneInstancesWgsl(options: {
   const shadowBindings = shadows
     .map((_, slot) => `@group(0) @binding(${5 + slot}) var shadowMap${slot}: texture_2d<f32>;\n`)
     .join("");
-  const environment = options.environment === true && options.model === "phong";
+  const environment = options.environment === true && lit(options.model);
   const envBinding = 5 + shadows.length;
   const envDeclarations = environment
     ? `@group(0) @binding(${envBinding}) var environmentMap: texture_2d<f32>;\n${ENV_SAMPLE_WGSL}`
@@ -910,15 +976,24 @@ ${IRRADIANCE_WGSL}  lit += irradiance * albedo.rgb * (1.0 - envFresnel) * (1.0 -
     }
     let lambert = abs(dot(normal, toLight));
 ${shadowFactor(index)}    let radiance = lightColor.rgb * lightMeta.y * attenuation${shadowSlotOf(index) >= 0 ? " * shadow" : ""};
-    lit += albedo.rgb * radiance * lambert;
 ${
-  options.model === "phong"
-    ? `    let halfway = normalize(toLight + viewDir);
+  options.model === "pbr"
+    ? ggxSpecularWgsl("params.material.y") +
+      /* The diffuse half, AFTER the lobe so it can read `fresnel`: energy the facets sent
+         back specularly is not available to the body of the material, and a metal has no
+         diffuse lobe at all. This is the line that makes `metallic` a physical quantity
+         per light rather than a tint (T1284). */
+      `    lit += albedo.rgb * radiance * lambert * (vec3f(1.0) - fresnel) * (1.0 - params.material.x);
+`
+    : `    lit += albedo.rgb * radiance * lambert;
+` +
+      (options.model === "phong"
+        ? `    let halfway = normalize(toLight + viewDir);
     let gloss = max(2.0, params.specular.w * (1.0 - params.material.y));
     let highlight = pow(abs(dot(normal, halfway)), gloss);
     lit += params.specular.rgb * radiance * highlight;
 `
-    : ""
+        : "")
 }  }
 `;
   const needsViewDir = lightCount > 0 || environment;

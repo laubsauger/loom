@@ -873,3 +873,108 @@ describe("a geometry group predicate selects instances in the lit scene (T642, �
     expect(at(control, 16)).toBe(255);
   }, 240_000);
 });
+
+/**
+ * T1284 — THE GGX LOBE, ON THE AXIS, AGAINST ITS OWN CLOSED FORM (§V147).
+ *
+ * Until this row `materialPbr` was mapped to Blinn-Phong with its shininess pinned at 96,
+ * and the node description said so. The claim that the word is true now has to be one that
+ * Blinn-Phong FAILS, and on this fixture there is an exact one.
+ *
+ * The geometry is the same flat grid facing the camera the tests above use, so at the
+ * centre texel N = V = L = (0, 0, 1) and therefore NoV = NoL = NoH = VoH = 1. Every term
+ * collapses:
+ *
+ *   D  = alpha² / (pi · ((alpha² − 1) + 1)²) = 1 / (pi · alpha²)   with alpha = roughness²
+ *   V  = 0.5 / (1 + 1) = 0.25                                       (both lambdas are 1)
+ *   F  = F0 + (1 − F0)·(1 − VoH)⁵ = F0                              (VoH = 1)
+ *
+ * so the specular term is exactly `F0 / (4·pi·roughness⁴)`, and with metallic = 1 the
+ * diffuse half is exactly zero — a metal has no diffuse lobe — leaving `albedo × ambient`
+ * as the only other contribution.
+ *
+ * ⚑ THIS IS WHAT BLINN-PHONG CANNOT DO. Its on-axis highlight is `pow(NoH, gloss)` with
+ * NoH = 1, which is 1 for EVERY roughness and every shininess: the old path's centre texel
+ * did not move when roughness moved. The two roughnesses below therefore separate a real
+ * microfacet distribution from the exponent that stood in for one, and they do it with
+ * derived numbers rather than a tolerance band.
+ */
+describe("the pbr material is GGX/Smith, exactly (T1284, §V147)", () => {
+  const ggxOnAxis = (roughness: number, ambient: number): number => {
+    const alpha2 = roughness * roughness * roughness * roughness;
+    const distribution = 1 / (Math.PI * alpha2);
+    // F0 = specular.rgb at metallic 1, which the compiler sets to the base colour: white.
+    return ambient + distribution * 0.25;
+  };
+
+  const renderPbr = async (roughness: number): Promise<Uint8Array> => {
+    const registry = createNodeRegistry(allNodeDefinitions).view();
+    const graph = sceneGraph("sun1");
+    (graph.nodes as Record<string, unknown>)["metal"] = {
+      id: "metal",
+      type: "materialPbr",
+      definitionVersion: 1,
+      position: { x: 0, y: 0 },
+      // White and fully metallic: F0 is exactly 1, so the Fresnel drops out of the
+      // arithmetic and what is left is D·V — the two terms this row added.
+      parameters: { color: [1, 1, 1, 1], metallic: 1, roughness },
+      label: "metal1",
+    };
+    (graph.nodes["geo"] as { parameters: Record<string, unknown> }).parameters["material"] = "metal1";
+    const plan = compileGraph({
+      graph,
+      settings: SETTINGS,
+      registry,
+      capabilities: {
+        tier: "B",
+        features: [],
+        formats: ["rgba8unorm", "rgba8unorm-srgb", "rgba16float", "r32float"],
+        timestampQuery: false,
+        limits: { maxTextureDimension2D: 8192 },
+      } as never,
+    });
+    expect(plan.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    const backend = createVgpuBackend({ host: nodeGpuHost() });
+    try {
+      await backend.initialize({});
+      const compiled = await backend.compile(plan);
+      backend.render(compiled, {
+        frame: { timeSeconds: 0, deltaSeconds: 1 / 60, frameIndex: 0, mode: "offline", randomSeed: 7 },
+        pointer: { x: 0, y: 0, buttons: 0 },
+        resolution: [64, 64],
+      });
+      const image = await backend.readOutput("target:shot:out");
+      return image.bytes;
+    } finally {
+      backend.dispose();
+    }
+  };
+
+  it("the centre texel is F0/(4·pi·roughness⁴) plus the ambient floor, at two roughnesses", async () => {
+    const probe = await probeDawn();
+    if (!probe.available) throw new Error(`Dawn unavailable: ${probe.error}`);
+    const centre = (32 * 64 + 32) * 4;
+    const AMBIENT = 0.12;
+
+    const rough = await renderPbr(1);
+    const roughExpected = Math.round(Math.min(1, ggxOnAxis(1, AMBIENT)) * 255);
+    expect([rough[centre], rough[centre + 1], rough[centre + 2]]).toEqual([
+      roughExpected,
+      roughExpected,
+      roughExpected,
+    ]);
+
+    const sharper = await renderPbr(0.8);
+    const sharperExpected = Math.round(Math.min(1, ggxOnAxis(0.8, AMBIENT)) * 255);
+    expect([sharper[centre], sharper[centre + 1], sharper[centre + 2]]).toEqual([
+      sharperExpected,
+      sharperExpected,
+      sharperExpected,
+    ]);
+
+    /* And the half that names the old behaviour: Blinn-Phong's on-axis highlight is
+       pow(1, gloss) = 1 at EVERY roughness, so the two values above were identical before
+       this row. A claim both models pass is not a claim. */
+    expect(roughExpected).not.toBe(sharperExpected);
+  }, 180_000);
+});

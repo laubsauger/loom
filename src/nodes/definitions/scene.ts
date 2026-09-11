@@ -1672,7 +1672,18 @@ export const renderNode: NodeDefinition = {
             nodeId,
           });
         }
-        const model = material.model === "unlit" ? "unlit" : material.model === "phong" || material.model === "pbr" ? "phong" : "lambert";
+        const model =
+        material.model === "unlit"
+          ? "unlit"
+          /* T1284: `pbr` is its own model now. It used to be mapped to "phong" here with
+             its shininess pinned at 96, which is why `materialPbr` shaded as Blinn-Phong
+             and the node said so. `phong` is untouched: a Phong material must keep the
+             picture it had, or this row changes every scene in the catalogue. */
+          : material.model === "pbr"
+            ? "pbr"
+            : material.model === "phong"
+              ? "phong"
+              : "lambert";
         /* T624: an unlit material has no ambient term to occlude, so it binds nothing —
            the shader generator makes the same call, and the two must agree. */
         const aoActive = aoEnabled && model !== "unlit";
@@ -1873,16 +1884,30 @@ export const renderNode: NodeDefinition = {
         });
       }
       const { cellsU, cellsV } = gridCellCounts(topology);
-      const model = material.model === "unlit" ? "unlit" : material.model === "phong" || material.model === "pbr" ? "phong" : "lambert";
+      const model =
+        material.model === "unlit"
+          ? "unlit"
+          /* T1284: `pbr` is its own model now. It used to be mapped to "phong" here with
+             its shininess pinned at 96, which is why `materialPbr` shaded as Blinn-Phong
+             and the node said so. `phong` is untouched: a Phong material must keep the
+             picture it had, or this row changes every scene in the catalogue. */
+          : material.model === "pbr"
+            ? "pbr"
+            : material.model === "phong"
+              ? "phong"
+              : "lambert";
       /* T624: see the instances branch — unlit binds no occlusion map. */
       const aoActive = aoEnabled && model !== "unlit";
       /* T704: see the instances branch — unlit takes no projectors. */
       const projActive = projectorOptions.length > 0 && model !== "unlit";
       /*
-       * T428: PBR through the Blinn-Phong path, honestly — metallic tints the
-       * highlight toward the base colour (a metal's reflection is its own colour),
-       * roughness dulls it via the generator's gloss. Stated in the node description;
-       * environment reflections arrive with the environment input.
+       * T428, superseded by T1284 for the MODEL: `pbr` now generates a GGX/Smith lobe
+       * of its own. What survives here is the mapping BELOW — metallic tints the
+       * highlight toward the base colour (a metal's reflection is its own colour), which
+       * is exactly the F0 the GGX Fresnel wants: mix(0.04, specular.rgb, metallic) is the
+       * textbook mix(vec3(0.04), albedo, metallic) once this mapping has run. The
+       * shininess below is now unread by the pbr generator — roughness drives alpha
+       * directly — and is kept only so a material switched back to phong is unchanged.
        */
       const specularColor =
         material.model === "pbr"
@@ -2283,7 +2308,7 @@ export const materialPbrNode: NodeDefinition = {
   title: "Material · PBR",
   category: "render",
   description:
-    "Metallic-roughness material with albedo and roughness map inputs. This build shades it through the Blinn-Phong path (roughness drives the highlight; metallic tints it toward the base colour) — an honest approximation, stated rather than hidden; environment reflections land with the environment input.",
+    "Metallic-roughness material with albedo and roughness map inputs. Shaded with a real microfacet BRDF (T1284): GGX distribution, height-correlated Smith visibility, Schlick Fresnel per light, and a diffuse half scaled by (1 - F)(1 - metallic), so a metal has no diffuse lobe and roughness widens the highlight rather than moving an exponent. Environment reflections land with the environment input — and at high roughness they still DIM rather than blurring, which is the prefiltered-environment half (T1289) and is stated here rather than hidden.",
   tags: ["3d", "material", "pbr", "metallic", "roughness", "scene"],
   inputs: [ALBEDO_IN, ROUGHNESS_IN],
   outputs: [MATERIAL_OUT],
