@@ -1062,22 +1062,40 @@ describe("E57 Forest — claims", () => {
    * it. 640 is two frames before that beat with its predecessor's 250 ms tail long spent, and
    * 655 is twelve frames after, where the release has run most of its course.
    */
-  it("the beats LAND: the wood shuts on the event and opens again after it (T1279)", async () => {
+  /**
+   * T1279/T1301(a) — THE BEATS LAND, MEASURED AGAINST A CUT ARM AT A FIXED FRAME.
+   *
+   * ⚑ THE FIRST VERSION OF THIS CLAIM COMPARED FRAMES 640, 643 AND 655 OF THE LIVE FILE AND
+   * ASKED FOR A DIP AND A RECOVERY. §V965: THIS FILE HAS A WALKING CAMERA, so three frames
+   * fifteen apart differ because the eye MOVED, and the claim was crediting the walk to the
+   * drum. It passed for as long as it did because the moon dip happened to dominate.
+   *
+   * ⚑ AND ISOLATING THE GLOOM ALONE MEASURES THE WRONG SIGN. Freezing only `fog` makes the
+   * live frame BRIGHTER, not darker: in a night wood the fog colour is above the trees, so
+   * more gloom raises the mean even as it eats the middle distance. The "darker on the beat"
+   * the old claim asserted was always the MOON's. All three lanes are frozen together here,
+   * so the claim is about the beat as a gesture rather than about one term of it.
+   */
+  it("the beats LAND: the wood shuts on the event and opens again between them (T1279)", async () => {
     expect(dawnError, dawnError ?? "").toBeUndefined();
-    const [before, onBeat, after] = await shoot({}, [640, 643, 655]);
-    const dip = mean(before!) - mean(onBeat!);
-    const recovery = mean(after!) - mean(onBeat!);
+    const g = e57().graph;
+    const beatsOff = { fog: retainedOf(g, "fog"), shafts: retainedOf(g, "shafts"), moonGain: retainedOf(g, "moonGain") };
+    /* Frame 905 is the lane's peak and 932 its trough, read off the value graph rather than
+       guessed: at 112 bpm the beats land 33 frames apart, and T1301(a)'s 0.14 s rise puts
+       the peak about four frames after the event. */
+    const frozen = await shoot(beatsOff, [905, 932]);
+    const live = await shoot({}, [905, 932]);
+
+    const onPeak = meanAbsDelta(frozen[0]!, live[0]!);
+    const onTrough = meanAbsDelta(frozen[1]!, live[1]!);
+    // Measured 0.01442 at the peak against 0.00507 between beats.
+    expect(onPeak, "the beat has to reach the pixels").toBeGreaterThan(0.010);
+    /* AND IT LETS GO. This is the half a lane that RATCHETED would fail: between beats the
+       picture returns most of the way to the one with no beat in it at all. */
+    expect(onTrough).toBeLessThan(onPeak * 0.55);
     /* The gloom DARKENS — never brightens. §T1170b's refusals rule out a flash, and this is
-       the assertion that keeps a future tuning pass from turning the beat into one. */
-    expect(dip, "the frame on the beat must be darker than the frame before it").toBeGreaterThan(0);
-    expect(recovery, "and it must come back up afterwards, or this is a drift and not a beat").toBeGreaterThan(0);
-    /* AND IT RECOVERS most of the way: a beat that only half-returns inside 250 ms is a lane
-       that ratchets, which is how a "beat" becomes a slow fade under a dense track. */
-    expect(recovery).toBeGreaterThan(dip * 0.5);
-    /* The event is worth seeing. Measured 0.0122 mean |Δ| between the frame before the beat
-       and the frame on it; the bound is a quarter of that, which no drift of these lanes
-       reaches across three frames (their own max step is 2.09% of span per frame). */
-    expect(meanAbsDelta(before!, onBeat!)).toBeGreaterThan(0.003);
+       what keeps a future tuning pass from turning the beat into one. Measured +0.01428. */
+    expect(mean(frozen[0]!) - mean(live[0]!), "the frame on the beat must be darker").toBeGreaterThan(0.008);
   }, 240_000);
 
   /**
@@ -1127,15 +1145,20 @@ describe("E57 Forest — claims", () => {
         { timeSeconds: frameIndex / 60, deltaSeconds: 1 / 60, frameIndex, mode: "offline", randomSeed: 57 },
         { pointer: { x: 0.5, y: 0.5, buttons: 0 }, channels: () => undefined },
       );
-      const value = evaluated.resolver("beat1:onsetCount", undefined as never);
+      const value = evaluated.resolver("rise1:onset", undefined as never);
       if (typeof value === "number" && Number.isFinite(value)) series.push(value);
     }
     const late = series.slice(600);
-    // It reaches its full height — the count IS 1 on the frame the beat lands.
-    expect(Math.max(...late)).toBeGreaterThan(0.9);
-    // And it gets back down. The trough is the assertion: a lane that stacked would floor
-    // higher and higher, and this one returns to within a rounding of the analytic 0.117.
-    expect(Math.min(...late)).toBeLessThan(0.15);
+    /* ⚑ THE NUMBERS MOVED BECAUSE THE LANE DID (T1301(a)). This used to read `beat1`'s
+       COUNT, which is 1 on the frame the beat lands — so the old assertion was "it reaches
+       0.9". The lane is now a LAGGED ENVELOPE and its peak is 0.118, which is not a weaker
+       drive: the gains were re-solved against it and the picture's gesture is LARGER than
+       the count version's (peak-to-peak 12.1% against 24.4%, worst single-frame step 2.8%
+       against 18.4%). What is asserted is unchanged — it rises, and it lets go. */
+    expect(Math.max(...late), "the lane has to reach its height").toBeGreaterThan(0.10);
+    /* And it gets back down. The trough is the assertion: a lane that stacked would floor
+       higher and higher. Measured 0.0231 against a peak of 0.1181 — under a quarter. */
+    expect(Math.min(...late)).toBeLessThan(Math.max(...late) * 0.35);
   });
 
   it("cutting the drive is a different picture, so the audio reaches the pixels", async () => {

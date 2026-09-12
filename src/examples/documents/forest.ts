@@ -483,7 +483,7 @@ export const forestDocument = document(
              itself between kicks). This is the owner's "dim the light" read literally:
              the light dims ON something, rather than drifting. */
           moonGain: expressionSlot(
-            `op('dimMap1').chan.lowMid * (1 - 0.3 * op('beat1').chan.kickCount)`,
+            `op('dimMap1').chan.lowMid * (1 - 1.5 * op('rise1').chan.kick)`,
             0.995,
           ),
           /* T1279 — THE GLOOM CLOSES ON THE SAME KICK. Fog is the aerial perspective, so
@@ -502,11 +502,11 @@ export const forestDocument = document(
              cut and it swallowed the wood whole at the peak — every trunk gone, which reads
              as the picture dropping out rather than as a beat. +0.022 shuts the middle
              distance and leaves the near stems standing, which is a wood closing. */
-          fog: expressionSlot(`0.03 + 0.022 * op('beat1').chan.onsetCount`, 0.03),
+          fog: expressionSlot(`0.03 + 0.11 * op('rise1').chan.onset`, 0.03),
           /* T1279 — AND THE SNARE REVEALS. The shafts are the one term in this shader
              that ADDS light between the trunks rather than taking it away, so the offbeat
              gets "make some things appear" while the downbeat gets the gloom. */
-          shafts: expressionSlot(`0.85 + 0.45 * op('beat1').chan.snareCount`, 0.85),
+          shafts: expressionSlot(`0.85 + 2.3 * op('rise1').chan.snare`, 0.85),
         },
       }),
 
@@ -622,7 +622,59 @@ export const forestDocument = document(
        * to a single history and cost the file the thing it was tuned for, to buy a hits
        * lane that is one node. The component is the right default; this is the case it does
        * not fit, and that is worth writing down rather than converging for tidiness. */
-      node("beat", "valueLag", [-1500, 1500], { lag: 0.001, releaseRatio: 250 }, { label: "beat1" }),
+      /* ⚑ THE SWELL — T1301(a), and it exists because §V966 is only half the story.
+       *
+       * The owner: *"the forest example is super ugly with the blinking of the light to the
+       * music. that's not gonna work like this like at all."* §T1279 put the beat on three
+       * terms and the STILLS looked right; a still cannot show a blink, and this is what
+       * motion showed. Measured on the shipped file, as the WORST SINGLE-FRAME STEP in mean
+       * luma — which is the right instrument, because peak-to-peak cannot tell a swell from
+       * a strobe (same travel, different time):
+       *
+       *     shipped                     18.4% of mean in ONE frame
+       *     all three lanes frozen       2.7%   (so the lanes are the whole of it)
+       *
+       * ⚑ AND THE FIRST TWO FIXES BOTH FAILED, EACH FOR A REASON WORTH KEEPING.
+       *
+       * TAKING THE BEAT OFF THE PRIMARY LIGHT MADE IT WORSE: 25.9%. The moon's dip and the
+       * shafts' flash were OPPOSED — the shafts are an 18-unit instantaneous jump UP against
+       * the moon's 12-unit drop — so they had been partly masking each other, and removing
+       * one of two opposed steps leaves the bigger one naked.
+       *
+       * SWAPPING THE COUNTS FOR THE BAND ENVELOPES LOOKED LIKE A FIX AND IS NOT ONE. It
+       * measures 4.3%, but the channel series says why, and it is not the reason it appears
+       * to be: `kickCount` runs 0.12..1.00 with a one-frame step of 0.88, and `kick` runs
+       * 0.05..0.28 with a one-frame step of 0.23. BOTH REACH THEIR PEAK IN ONE FRAME. The
+       * envelope is not a slower attack, it is a SMALLER NUMBER — a gain reduction wearing a
+       * disguise, and doubling the gains back brings the blink back to 9.2%.
+       *
+       * So the attack has to be built rather than borrowed. §T1279's node was a PULSE
+       * FOLLOWER — a 1 ms attack and a 250 ms release, which is exactly what makes a count
+       * usable at all — and lengthening ITS attack was never available: a count is 1 for
+       * exactly one FRAME while lag is in SECONDS, so the peak it charges to depends on the
+       * frame rate, and the piece would land differently at 30 and 60 fps. That is a
+       * determinism bug, not a taste one. It has been REPLACED rather than joined, because
+       * once the lanes read this node nothing read it and a node nothing reads is a node
+       * that rots.
+       *
+       * This one lags the ENVELOPES, and that is the distinction the whole fix turns on: an
+       * envelope PERSISTS for about thirty frames, so a smoother charging toward it reaches
+       * a well-defined value the frame rate does not move. `kick` now rises over four
+       * frames — 0.07, 0.09, 0.11, 0.12 — where the count went 0.12 to 1.00 in one.
+       *
+       * MEASURED, on the shipped file, worst single-frame step in mean luma:
+       *
+       *     §T1279 as shipped            18.4%
+       *     this node, first gains        3.0%
+       *     this node, gesture 1.4x       2.8%   <- shipped, and it is the LARGER gesture
+       *
+       * The last row is the finding: a longer rise bought back the amplitude the owner
+       * asked for in the first place (*"dim the light… some beats and some rhythm"*) AND a
+       * smaller step, because the two are not the same axis. Peak-to-peak went 24.4% to
+       * 12.1% while the frame's mean is unmoved (62.05 to 61.56) — the gesture is half the
+       * travel spread over many times the frames, which is what separates a swell from a
+       * strobe. */
+      node("rise", "valueLag", [-1500, 1500], { lag: 0.14, releaseRatio: 2.2 }, { label: "rise1" }),
     ],
     [
       edge("e-veil-forest", ["veil", "out"], ["forest", "input"]),
@@ -639,7 +691,7 @@ export const forestDocument = document(
       edge("e-dim-dimrank", ["dim", "out"], ["dimRank", "in"]),
       edge("e-dimrank-dimsmooth", ["dimRank", "out"], ["dimSmooth", "in"]),
       edge("e-dimsmooth-dimmap", ["dimSmooth", "out"], ["dimMap", "a"]),
-      edge("e-source-beat", ["source", "out"], ["beat", "in"]),
+      edge("e-source-rise", ["source", "out"], ["rise", "in"]),
     ],
   ),
 );
