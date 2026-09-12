@@ -1,3 +1,6 @@
+import type { ParameterDependency, ParameterDependencyKind } from "@domain/graph/parameter-dependencies.ts";
+import type { NodeId } from "@domain/types/ids.ts";
+
 /**
  * Where a reference line starts and stops (T248, §V151).
  *
@@ -157,4 +160,43 @@ export function segmentsBounds(
  */
 export function screenScale(zoom: number): number {
   return zoom > 0 && Number.isFinite(zoom) ? 1 / zoom : 1;
+}
+
+/** One line to draw: a node pair, a kind, and every parameter that put it there. */
+export interface ReferenceLine {
+  readonly key: string;
+  readonly source: NodeId;
+  readonly target: NodeId;
+  readonly kind: ParameterDependencyKind;
+  readonly parameterKeys: readonly string[];
+}
+
+/**
+ * Dependencies collapsed to lines.
+ *
+ * Six parameters of one node driven by the same LFO is ONE relationship drawn once, with
+ * all six named in the tooltip. Six identical lines stacked on each other would look like
+ * one line anyway while costing six times as much to draw.
+ */
+export function referenceLinesOf(dependencies: readonly ParameterDependency[]): ReferenceLine[] {
+  const byPair = new Map<string, { line: ReferenceLine; keys: string[] }>();
+  for (const dependency of dependencies) {
+    // The ARROW follows the data: the node being read is the source, the node whose
+    // parameter reads it is the target, which is the same direction a wire would run.
+    const source = dependency.to;
+    const target = dependency.from;
+    const key = `${source}|${target}|${dependency.kind}`;
+    const existing = byPair.get(key);
+    if (existing === undefined) {
+      byPair.set(key, {
+        line: { key, source, target, kind: dependency.kind, parameterKeys: [] },
+        keys: [dependency.parameterKey],
+      });
+      continue;
+    }
+    if (!existing.keys.includes(dependency.parameterKey)) existing.keys.push(dependency.parameterKey);
+  }
+  return [...byPair.values()]
+    .map(({ line, keys }) => ({ ...line, parameterKeys: keys }))
+    .sort((a, b) => a.key.localeCompare(b.key));
 }

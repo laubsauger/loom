@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { arrowPoints, screenScale, segmentBetween, segmentsBounds } from "./reference-geometry.ts";
-import { referenceLinesOf } from "./reference-lines.tsx";
+import {
+  arrowPoints,
+  referenceLinesOf,
+  screenScale,
+  segmentBetween,
+  segmentsBounds,
+} from "./reference-geometry.ts";
 import type { ParameterDependency } from "@domain/graph/parameter-dependencies.ts";
 
 /**

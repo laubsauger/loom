@@ -5,7 +5,7 @@ import { installDomStubs } from "@ui/testing/install-dom-stubs.ts";
 import { alice, contextFor, createHarness, patch } from "@domain/commands/test-support.ts";
 import { GraphCanvas } from "./graph-canvas.tsx";
 import { createNodeRuntimeStore } from "./node-runtime.ts";
-import { annotationHueKey, minimapNodeColor, minimapSizeOf } from "./graph-minimap.tsx";
+import { annotationHueKey, minimapNodeColor, minimapSizeOf } from "./minimap-model.ts";
 import { TOGGLE_MINIMAP_COMMAND, minimapStore } from "./minimap-command.ts";
 import { installFlowStubs } from "./testing.tsx";
 import type { GraphNode } from "@domain/types/graph.ts";

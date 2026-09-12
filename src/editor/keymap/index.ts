@@ -92,16 +92,17 @@ export { createKeymapStore } from "./store.ts";
 export type { KeymapDispatch, KeymapEngine, KeymapEngineOptions } from "./engine.ts";
 export { DEFAULT_CHORD_TIMEOUT_MS, createKeymapEngine } from "./engine.ts";
 
-export type { KeymapContextValue, KeymapProviderProps } from "./keymap-provider.tsx";
+export type { KeymapProviderProps } from "./keymap-provider.tsx";
+export { KeymapProvider, KeymapWindowTarget } from "./keymap-provider.tsx";
+
+export type { KeymapContextValue } from "./keymap-context.ts";
 export {
-  KeymapProvider,
-  KeymapWindowTarget,
   useBindingKeyDisplay,
   useCommandKeyDisplay,
   useKeymap,
   useOptionalKeymap,
   useRunCommand,
-} from "./keymap-provider.tsx";
+} from "./keymap-hooks.ts";
 
 export type { KeyChipProps, KeyHintProps } from "./key-hint.tsx";
 export { KeyChip, KeyHint } from "./key-hint.tsx";

@@ -1,7 +1,8 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { DEFAULT_PREVIEW_LENS } from "@runtime/previews/index.ts";
-import { NodePreview, lensMarker } from "./node-preview.tsx";
+import { lensMarker } from "./lens-marker.ts";
+import { NodePreview } from "./node-preview.tsx";
 
 /**
  * T336 — the lens MARKER on the slot.

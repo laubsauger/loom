@@ -3,7 +3,7 @@ import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { DialogContent, DialogRoot, DialogTitle } from "../../ui/primitives/dialog.tsx";
 import { cx } from "../../ui/cx.ts";
 import { KeyChip } from "../keymap/key-hint.tsx";
-import { useKeymap, useRunCommand } from "../keymap/keymap-provider.tsx";
+import { useKeymap, useRunCommand } from "../keymap/keymap-hooks.ts";
 import { buildPaletteEntries } from "./entries.ts";
 import type { PaletteEntry } from "./entries.ts";
 import { fuzzyFilter } from "./fuzzy.ts";

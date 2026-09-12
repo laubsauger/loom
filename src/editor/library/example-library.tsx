@@ -9,12 +9,8 @@ import {
   DialogRoot,
   DialogTitle,
 } from "@ui/primitives/dialog.tsx";
-import {
-  LibraryGroups,
-  LibraryPanel,
-  LibrarySearch,
-  useLibraryHoverCard,
-} from "./library-panel.tsx";
+import { LibraryGroups, LibraryPanel, LibrarySearch } from "./library-panel.tsx";
+import { useLibraryHoverCard } from "./use-library-hover-card.ts";
 import { capabilityOf, listExampleProjects } from "./example-catalogue.ts";
 import type { ExampleProject } from "./example-catalogue.ts";
 import { exampleLinkUrl } from "./example-link.ts";

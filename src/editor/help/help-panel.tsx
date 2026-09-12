@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { ExpressionScope } from "@domain/expressions/index.ts";
 import type { NodeDefinition } from "@domain/types/node-definition.ts";
-import { useOptionalKeymap } from "@editor/keymap/keymap-provider.tsx";
+import { useOptionalKeymap } from "@editor/keymap/keymap-hooks.ts";
 import {
   eventStrokeToKeys,
   formatKeys,

@@ -2,8 +2,9 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { installDomStubs } from "@ui/testing/install-dom-stubs.ts";
-import { LibraryGroups, LibraryPanel, useLibraryHoverCard } from "./library-panel.tsx";
-import type { LibraryHoverCard } from "./library-panel.tsx";
+import { LibraryGroups, LibraryPanel } from "./library-panel.tsx";
+import { useLibraryHoverCard } from "./use-library-hover-card.ts";
+import type { LibraryHoverCard } from "./use-library-hover-card.ts";
 
 /**
  * The shared library panel (§T877).

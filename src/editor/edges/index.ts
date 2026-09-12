@@ -1,7 +1,7 @@
 export { SignalEdge } from "./signal-edge.tsx";
-export { ReferenceLines, referenceLinesOf } from "./reference-lines.tsx";
-export { arrowPoints, screenScale, segmentBetween } from "./reference-geometry.ts";
-export type { Rect, Segment } from "./reference-geometry.ts";
+export { ReferenceLines } from "./reference-lines.tsx";
+export { arrowPoints, referenceLinesOf, screenScale, segmentBetween } from "./reference-geometry.ts";
+export type { Rect, ReferenceLine, Segment } from "./reference-geometry.ts";
 export {
   REFERENCE_LINES_DEFAULT,
   TOGGLE_REFERENCE_LINES_COMMAND,

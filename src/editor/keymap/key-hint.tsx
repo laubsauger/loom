@@ -1,6 +1,6 @@
 import type { ComponentProps } from "react";
 import { cx } from "../../ui/cx.ts";
-import { useBindingKeyDisplay, useCommandKeyDisplay } from "./keymap-provider.tsx";
+import { useBindingKeyDisplay, useCommandKeyDisplay } from "./keymap-hooks.ts";
 import styles from "./key-hint.module.css";
 
 /**

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { alice, contextFor, createHarness } from "@domain/commands/test-support.ts";
 import type { PreferenceStorage } from "@editor/nodes/node-type-labels.ts";
 import { allNodeDefinitions } from "@nodes/definitions/index.ts";
-import { minimapNodeColor } from "./graph-minimap.tsx";
+import { minimapNodeColor } from "./minimap-model.ts";
 import {
   MINIMAP_DEFAULT,
   MINIMAP_STORAGE_KEY,

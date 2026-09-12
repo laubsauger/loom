@@ -12,7 +12,8 @@
  * `usePixelReadout` stays because it is a hook, not a pane, and the mounted viewer uses it.
  */
 
-export { NodePreview, lensMarker } from "./node-preview.tsx";
+export { NodePreview } from "./node-preview.tsx";
+export { lensMarker } from "./lens-marker.ts";
 export type { NodePreviewFacts, NodePreviewProps, NodePreviewState } from "./node-preview.tsx";
 
 export { NodePreviewSlot } from "./node-preview-slot.tsx";

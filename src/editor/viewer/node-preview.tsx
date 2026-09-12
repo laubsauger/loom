@@ -1,6 +1,7 @@
 import type { PreviewLens, PreviewOutputRef, SuspendReason } from "@runtime/previews/index.ts";
-import { isDefaultLens, previewKey } from "@runtime/previews/index.ts";
+import { previewKey } from "@runtime/previews/index.ts";
 import { cx } from "@ui/cx.ts";
+import { lensMarker } from "./lens-marker.ts";
 import styles from "./viewer.module.css";
 
 /**
@@ -43,35 +44,6 @@ export interface NodePreviewProps {
   readonly facts?: NodePreviewFacts | undefined;
   /** The lens this preview is being shown through (T336). Default = no marker at all. */
   readonly lens?: PreviewLens | undefined;
-}
-
-const LENS_LABEL: Readonly<Record<PreviewLens["lens"], string>> = {
-  rgb: "",
-  r: "R",
-  g: "G",
-  b: "B",
-  a: "A",
-  luminance: "LUM",
-};
-
-/**
- * The marker text for a lens, or null when there is nothing to say.
- *
- * This is the §V70a argument applied to the preview path: a display transform that outlives
- * the inspection HIDES WHICH NODE IS WRONG, so a lens that is on says so on the picture it is
- * changing. It costs zero pixels in the ordinary case, which is what keeps it out of §V90's
- * way — there is no ambient badge, only one on a preview somebody has deliberately altered.
- */
-export function lensMarker(lens: PreviewLens | undefined): string | null {
-  if (lens === undefined || isDefaultLens(lens)) return null;
-  const parts: string[] = [];
-  const channel = LENS_LABEL[lens.lens];
-  if (channel !== "") parts.push(channel);
-  if (lens.exposureStops !== 0) {
-    parts.push(`${lens.exposureStops > 0 ? "+" : ""}${lens.exposureStops} EV`);
-  }
-  if (lens.tonemap) parts.push("TM");
-  return parts.length === 0 ? null : parts.join(" ");
 }
 
 const SUSPEND_LABELS: Readonly<Record<SuspendReason, string>> = {

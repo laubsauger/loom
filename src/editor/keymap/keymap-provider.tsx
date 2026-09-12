@@ -1,26 +1,12 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from "react";
+import { useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 import type { LoomBus } from "../../domain/commands/bus.ts";
-import type {
-  CommandInput,
-  CommandName,
-  CommandResult,
-  InvocationContext,
-} from "../../domain/types/commands.ts";
+import type { InvocationContext } from "../../domain/types/commands.ts";
 import { selectCreatedNodes } from "@editor/selection/select-created.ts";
+import type { KeymapContextValue } from "./keymap-context.ts";
+import { KeymapReactContext } from "./keymap-context.ts";
 import type { KeymapDispatch, KeymapEngine } from "./engine.ts";
 import { createKeymapEngine } from "./engine.ts";
-import type { ResolvedKeymap } from "./resolve.ts";
-import { displayForBinding, displayForCommand } from "./resolve.ts";
 import type { KeymapStore, KeymapStoreOptions } from "./store.ts";
 import { createKeymapStore } from "./store.ts";
 import type { KeymapEnvironment } from "./types.ts";
@@ -33,19 +19,6 @@ import { EMPTY_ENVIRONMENT } from "./types.ts";
  * listener and the context plumbing. Components never read key names — they ask the
  * keymap for a display string (§V55) and let the engine dispatch (§V52).
  */
-
-export interface KeymapContextValue {
-  store: KeymapStore;
-  resolved: ResolvedKeymap;
-  engine: KeymapEngine;
-  bus: LoomBus;
-  /** Actor identity every dispatch is stamped with (§V30). */
-  invocationContext: InvocationContext;
-  /** Chord in progress, "" when none. */
-  pending: string;
-}
-
-const KeymapReactContext = createContext<KeymapContextValue | null>(null);
 
 export interface KeymapProviderProps {
   bus: LoomBus;
@@ -180,59 +153,4 @@ export function KeymapProvider({
   );
 
   return <KeymapReactContext.Provider value={value}>{children}</KeymapReactContext.Provider>;
-}
-
-export function useKeymap(): KeymapContextValue {
-  const value = useContext(KeymapReactContext);
-  if (value === null) {
-    throw new Error("useKeymap must be used inside a <KeymapProvider>.");
-  }
-  return value;
-}
-
-/** Optional form, for chrome that may render outside a provider (storybook, tests). */
-export function useOptionalKeymap(): KeymapContextValue | null {
-  return useContext(KeymapReactContext);
-}
-
-/**
- * The display string a menu item or tooltip should show (§V55) — never a hardcoded
- * "⌘Z". `null` when the command has no binding, so the caller renders nothing.
- */
-export function useCommandKeyDisplay(command: string): string | null {
-  const keymap = useOptionalKeymap();
-  return keymap === null ? null : displayForCommand(keymap.resolved, command);
-}
-
-export function useBindingKeyDisplay(bindingId: string): string | null {
-  const keymap = useOptionalKeymap();
-  return keymap === null ? null : displayForBinding(keymap.resolved, bindingId);
-}
-
-/**
- * Runs a bus command the way a hotkey would — for a toolbar button, menu item or the
- * command palette, so there stays exactly one mutation path (§V29). Resolves to `null`
- * when no track has registered the command yet, instead of throwing.
- */
-export function useRunCommand(): (
-  command: string,
-  input?: Record<string, unknown>,
-) => Promise<CommandResult<CommandName> | null> {
-  const { bus, invocationContext } = useKeymap();
-  return useCallback(
-    async (command, input = {}) => {
-      if (!bus.hasCommand(command)) return null;
-      const result = await bus.execute(
-        command as CommandName,
-        input as CommandInput<CommandName>,
-        invocationContext,
-      );
-      // "the way a hotkey would" includes this: the canvas menu's "Add node here", and
-      // Paste/Duplicate from a menu row or the palette, select what they created exactly
-      // as `mod+v` does above (§V78 — one behaviour, not two).
-      await selectCreatedNodes(bus, invocationContext, result);
-      return result;
-    },
-    [bus, invocationContext],
-  );
 }
