@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { GraphDocument, GraphNode } from "@domain/types/graph.ts";
 import { captureConfigOf, hasUnboundAudioFile, useAudioInput } from "./use-audio-input.ts";
 import { allNodeDefinitions } from "@nodes/definitions/index.ts";
+import { AUDIO_DETECTOR_DEFAULTS } from "@nodes/definitions/audio.ts";
 
 /**
  * T555 — a MUTED or BYPASSED audio node makes NO SOUND.
@@ -266,6 +267,11 @@ describe("T555 — which node the session captures, once a node can be off", () 
       device: "",
       monitor: true,
       nodeId: "music",
+      // T1230 added `detector` to CaptureConfig and did not update this expectation, so this
+      // sat red for six days — a .tsx fixture the gates ladder cannot reach. Taken from the
+      // OWNER's constant rather than copied as a second literal, so the next change to the
+      // defaults moves this with it instead of staling it again.
+      detector: AUDIO_DETECTOR_DEFAULTS,
     });
   });
 });
