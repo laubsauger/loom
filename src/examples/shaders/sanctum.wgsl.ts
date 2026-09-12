@@ -56,6 +56,16 @@ import { SHARED_UNIFORMS_WGSL } from "../../runtime/backend/shared-uniforms.ts";
 export const SANCTUM_WGSL = `// @use hash
 ${SHARED_UNIFORMS_WGSL}
 struct Params {
+  speedSwing: f32,    // @default 0.45  how much the dolly SPEED varies, 0 is the constant march it used to be — holds and rushes
+  speedPeriod: f32,   // @default 23  SECONDS of the speed's lap (coprime with the others)
+  driftX: f32,        // @default 1.55  metres the eye wanders across the nave — the thing that makes columns pass at changing distances
+  driftPeriod: f32,   // @default 31  SECONDS of the lateral lap
+  bobHeight: f32,     // @default 0.42  metres the eye rises and drops
+  bobPeriod: f32,     // @default 19  SECONDS of the rise and fall
+  yawAmount: f32,     // @default 11  degrees the heading leads the drift: you look where you are going
+  rollAmount: f32,    // @default 4.5  degrees of BANK into a turn, taken from the lateral velocity rather than its position
+  pitchSwing: f32,    // @default 4  degrees the pitch breathes, so the vault and the floor trade places slowly
+  pitchPeriod: f32,   // @default 43  SECONDS of the pitch's lap
   dollySpeed: f32,    // @default 0.55  metres a second the eye travels down the nave, forever — the whole camera move
   eyeHeight: f32,     // @default 1.62  the eye above the floor, metres
   pitch: f32,         // @default -7  degrees the view tilts: negative looks slightly down the floor
@@ -1070,10 +1080,57 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   let warmth = warmHue();
   // Same rule as the hue: a per-frame value, evaluated once per fragment.
   let key = keyDrive();
-  let eye = vec3f(0.0, params.eyeHeight, t * params.dollySpeed);
-  let tilt = radians(params.pitch);
-  let forward = normalize(vec3f(0.0, sin(tilt), cos(tilt)));
-  let right = vec3f(1.0, 0.0, 0.0);
+  /* ─── THE CAMERA (T1309d) ───────────────────────────────────────────────────────────
+   *
+   * It was a straight dolly at a fixed height and a fixed heading, and the owner's word for
+   * it was "lame". A walk down a corridor at constant everything is a screensaver: the only
+   * parallax is depth, so every column arrives the same way and the eye stops reading the
+   * space after about four seconds.
+   *
+   * ⚑ THE PERIODS ARE MUTUALLY PRIME — 19, 23, 31, 43 and 67 seconds — so the combined
+   * state does not repeat until their product, and any two moments a viewer compares have a
+   * DIFFERENT SUBSET of the move displaced. Five sines on one period would be one gesture
+   * with five faces; five on coprime periods is a walk that never quite repeats. (Idiom
+   * taken from E70, which built its "not flat after fifteen seconds" claim this way.)
+   *
+   * ⚑ AND THE SPEED IS INTEGRATED ANALYTICALLY, which is a correctness requirement rather
+   * than an optimisation. A shader is STATELESS: there is no previous frame to accumulate
+   * into, so a varying speed has to be a closed form or the camera's position depends on
+   * how it was sampled. For v(t) = v0(1 + a·sin(2πt/P)) the integral is
+   * v0·t + v0·a·(P/2π)(1 − cos(2πt/P)), exact at any frame rate and from any start —
+   * which is also what lets a claim render frame 900 without rendering the 899 before it.
+   */
+  let speedPhase = (t / max(params.speedPeriod, 1.0)) * 6.2831853;
+  let swing = clamp(params.speedSwing, 0.0, 0.95);
+  let travelZ = (params.dollySpeed * t)
+    + (params.dollySpeed * swing * (max(params.speedPeriod, 1.0) / 6.2831853) * (1.0 - cos(speedPhase)));
+
+  /* ⚑ THE WANDER CENTRES ITSELF TO GO THROUGH A DOOR, and that constraint turned out to be
+     the best thing in the move. The eye drifts across the nave — which is what makes the
+     colonnade pass at changing distances instead of streaming by identically — but a
+     doorway is 2.3 m wide and the camera has to thread it or it walks into the wall. So the
+     drift is gated by how far the next wall is: it wanders in open hall, gathers itself as
+     the door approaches, passes through dead centre, and spreads out again. Nobody has to
+     be told that is deliberate; it reads as intent. */
+  let toWall = nextWallZ(travelZ) - travelZ;
+  let thread = smoothstep(1.5, 11.0, toWall);
+  let driftX = params.driftX * sin((t / max(params.driftPeriod, 1.0)) * 6.2831853) * thread;
+  let bobY = params.bobHeight * sin((t / max(params.bobPeriod, 1.0)) * 6.2831853 + 1.1);
+  let eye = vec3f(driftX, params.eyeHeight + bobY, travelZ);
+
+  /* The heading leads the drift — you look slightly where you are going, which is what a
+     body does and what a locked-off heading never does. The pitch breathes on its own
+     period so the vault and the floor trade places slowly. */
+  let yaw = radians(params.yawAmount) * sin((t / max(params.driftPeriod, 1.0)) * 6.2831853 + 1.6);
+  let tilt = radians(params.pitch + (params.pitchSwing * sin((t / max(params.pitchPeriod, 1.0)) * 6.2831853)));
+  let forward = normalize(vec3f(sin(yaw) * cos(tilt), sin(tilt), cos(yaw) * cos(tilt)));
+  /* THE BANK. A roll proportional to the lateral VELOCITY rather than to the position, so
+     the horizon tips into a turn and levels in the straight — the derivative is the cue the
+     eye actually reads as banking, and rolling with position tips hardest where the camera
+     is moving least, which reads as a list. */
+  let bank = radians(params.rollAmount) * cos((t / max(params.driftPeriod, 1.0)) * 6.2831853) * thread;
+  let flat = normalize(vec3f(cos(yaw), 0.0, -sin(yaw)));
+  let right = normalize((flat * cos(bank)) + (vec3f(0.0, 1.0, 0.0) * sin(bank)));
   /* ⚑ cross(forward, right), NOT cross(right, forward). The other order gives a vector
      pointing DOWN, which flips the image vertically — and a symmetric dark hall hides that
      almost perfectly: every still through stage 3 was upside down and read fine, because a

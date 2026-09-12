@@ -62,6 +62,21 @@ export const sanctumDocument = document(
          shader is retuned, and nothing would say so. */
       node("temple", "customWgsl", [-300, 0], {
         source: SANCTUM_WGSL,
+        /* ─── THE CAMERA (T1309d). Five lanes on MUTUALLY PRIME periods — 19, 23, 31, 43,
+           67 — so the combined move does not repeat until their product and any two moments
+           a viewer compares have a different subset displaced. The owner's word for the old
+           straight dolly was "lame", and it was: constant speed, height and heading means the
+           only parallax is depth, so every column arrives the same way. */
+        speedSwing: 0.45,
+        speedPeriod: 23,
+        driftX: 1.55,
+        driftPeriod: 31,
+        bobHeight: 0.42,
+        bobPeriod: 19,
+        yawAmount: 11,
+        rollAmount: 4.5,
+        pitchSwing: 4,
+        pitchPeriod: 43,
         dollySpeed: 0.55,
         eyeHeight: 1.62,
         pitch: -2,
