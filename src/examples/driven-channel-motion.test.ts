@@ -320,6 +320,25 @@ const DELIBERATELY_STILL: Record<string, string> = {
      CONSTANT NODE spelled with the wrong operator, because there is no constant node. */
   "TimeGrid.loom.json churnx1.value": "TimeGrid ships Churn at its 0 default; E51 turns it up",
   "TimeGrid.loom.json churny1.value": "TimeGrid ships Churn at its 0 default; E51 turns it up",
+  /* ⚑ E70's TEMPO LANE, AND IT IS A DIFFERENT KIND OF ROW FROM THE FOUR ABOVE — not a knob
+     at its off position, but §T1279's shape: A LANE THAT IS A NO-OP ON THE SHIPPED FIXTURE
+     AND REAL ON A TRACK, which that row's owner proved byte-for-byte rather than letting it
+     pass as a change nobody could see.
+
+     §T1309b's ask is that a piece work at any tempo, so E70's morph clock is multiplied by
+     `1 + bpmConfidence * (bpm - 112) / 112`. On the shipped `audioPattern` the confidence IS
+     1 and the bpm IS 112, so both channels hold EXACTLY still and the expression is exactly
+     its retained 1 — and that is the POINT rather than a defect: §V914 requires the no-track
+     picture to be the shipped picture, and a tempo term that moved the morph on the fixture
+     would mean the thumbnail and the file disagreed about what the piece looks like.
+
+     The one number that turns it on is in the document: `music1.bpm`. Set it to 140 and the
+     morph runs 25% faster; drop any track into `track1` and the lane rides the real claim.
+     `chimera-claims.gpu.test.ts` asserts BOTH halves — that the lane is inert at 112, and
+     that it is genuinely live at a different tempo — so this row cannot decay into a lane
+     that is dead everywhere. */
+  "E70-Chimera.loom.json source1.bpm": "T1309b: the tempo lane is 1 by arithmetic at the fixture's own 112 bpm; music1.bpm turns it on",
+  "E70-Chimera.loom.json source1.bpmConfidence": "T1309b: the pattern always claims its tempo, so the confidence gate is open and constant here; a live source on Auto publishes 0 and the term vanishes",
 };
 
 interface Sweep {
