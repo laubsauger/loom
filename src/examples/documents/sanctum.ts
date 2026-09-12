@@ -84,6 +84,7 @@ export const sanctumDocument = document(
         bay: 4.4,
         aisle: 3.6,
         columnRadius: 0.62,
+        entasis: 0.075,
         columnFlare: 0.22,
         ceiling: 7.2,
         /* ─── THE ARCHITECTURAL VOCABULARY (T1304c) ────────────────────────────────────
@@ -184,7 +185,7 @@ export const sanctumDocument = document(
         warmIntensity: 0.28,
         lift: 0.003,
         contrast: 1.06,
-        hueTurn: 42,
+        hueTurn: 41,
         /* ⚑ TWO HUES IN OPPOSITION, not one family drifting. The first morph moved the
            conduits along a sixth of the wheel and the reading was that it "reads as one
            state" — correct, because a single hue drifting has nothing to be measured
@@ -194,7 +195,7 @@ export const sanctumDocument = document(
         hueArc: 0.26,
         warmArc: 0.12,
         keyBreath: 0.34,
-        keyPeriod: 15,
+        keyPeriod: 17,
         saturation: 1.35,
         pivot: 0.22,
         exposure: 1.35,

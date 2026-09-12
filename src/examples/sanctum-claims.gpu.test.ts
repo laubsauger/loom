@@ -94,6 +94,87 @@ function param(graph: GraphDocument, id: string, key: string, value: unknown): v
   (node.parameters as Record<string, unknown>)[key] = value;
 }
 
+
+/**
+ * Several frames of one run, small. This claim asks whether the picture CHANGES, which a
+ * 384x216 frame answers as well as a 720p one for a fraction of the render — and it has to
+ * reach ninety seconds, which is 5400 frames of stepping whatever the resolution.
+ */
+async function shootRun(frames: readonly number[], mutate: (graph: GraphDocument) => void = () => {}): Promise<Frame[]> {
+  const { document, result } = e68();
+  const graph = structuredClone(document.graph) as GraphDocument;
+  mutate(graph);
+  const rendered = await renderHeadless({
+    host: nodeGpuHost(),
+    graph,
+    settings: { ...document.settings, outputResolution: { width: 384, height: 216 } },
+    frames: Math.max(...frames) + 1,
+    capture: [...frames],
+    animate: true,
+    fps: 60,
+    outputNodeId: "out",
+    ...(result.components ? { components: result.components } : {}),
+  });
+  const errors = rendered.diagnostics.filter((diagnostic) => diagnostic.severity === "error");
+  if (errors.length > 0) throw new Error(errors.map((d) => d.message).join("; "));
+  const space = rendered.plan.outputs.find((output) => output.nodeId === "out")?.space ?? "linear";
+  return [...rendered.frames]
+    .sort((a, b) => a.frameIndex - b.frameIndex)
+    .map((frame) => {
+      const image = toRgba8(
+        {
+          width: frame.width,
+          height: frame.height,
+          format: frame.format,
+          bytes: frame.bytes,
+          rowStride: frame.width * (BYTES_PER_PIXEL[frame.format] ?? 8),
+        },
+        { space },
+      );
+      return { w: image.width, h: image.height, d: image.data };
+    });
+}
+
+/** Mean absolute luma difference between two frames, 0..255. */
+function frameDelta(a: Frame, b: Frame): number {
+  let total = 0;
+  const count = a.w * a.h;
+  for (let pixel = 0; pixel < count; pixel += 1) total += Math.abs(luma(a, pixel) - luma(b, pixel));
+  return total / count;
+}
+
+/**
+ * EVERY CLOCK THE PIECE RUNS ON, stopped — amplitudes to zero rather than periods to
+ * infinity, because a period of infinity still leaves sin(0) contributing a constant and a
+ * zero amplitude provably contributes nothing.
+ *
+ * ⚑ THIS LIST IS THE POINT OF THE CONTROL ARM. If someone adds a sixth camera lane or a new
+ * evolving term and does not add it here, the control stops collapsing and FAILS — which is
+ * the only way a freeze list stays honest. A stale freeze list is how "the frames differ"
+ * becomes vacuous (§V958), because the thing that moved is not the thing being tested.
+ */
+function everyClockStopped(): Record<string, number> {
+  /* ⚑ RED-VERIFIED, and the margin is the reason this list is trustworthy: removing ONE
+     entry (driftX) took the control's frame-0-to-frame-900 delta from under 0.01 to 23.69,
+     a factor of 2370 against the fence. The same 'frameDelta' reads both numbers in the same
+     run, which is also what validates the "it moves" fences above — an instrument that
+     reports 23.69 when something moves and under 0.01 when nothing does can tell the two
+     apart. A control arm nobody has broken on purpose is decoration. */
+  return {
+    dollySpeed: 0,
+    speedSwing: 0,
+    driftX: 0,
+    bobHeight: 0,
+    yawAmount: 0,
+    rollAmount: 0,
+    pitchSwing: 0,
+    hueArc: 0,
+    warmArc: 0,
+    keyBreath: 0,
+    doorLife: 0,
+  };
+}
+
 describe("E68 Sanctum — claims", () => {
   beforeAll(() => {
     if (dawnError !== undefined) throw new Error(`Dawn unavailable: ${dawnError}`);
@@ -225,4 +306,77 @@ describe("E68 Sanctum — claims", () => {
     const dryAll = meanLuma(dry);
     expect((wetFloor - dryFloor) / wetFloor).toBeGreaterThan((wetAll - dryAll) / wetAll);
   }, 300_000);
+
+  /**
+   * IT IS NOT FLAT AFTER FIFTEEN SECONDS (T1309g), and this is the instrument the piece has
+   * been missing through six passes of being told it was.
+   *
+   * "Still flat / still boring / still meh" was reported five times running and there was
+   * nothing in the suite that could have caught it, because every existing claim renders one
+   * frame or two adjacent ones. A piece that moves for four seconds and then repeats passes
+   * all of them.
+   *
+   * The piece runs on NINE clocks, and after this row every one of their periods is PRIME:
+   * the camera's 19, 23, 31, 43; the conduits' hue at 41; the far light at 17; the doorway's
+   * 29, 37, 53. Coprimality is the whole design — five sines on one period is one gesture
+   * with five faces, while nine on coprime periods do not realign until their product, so any
+   * two moments a viewer compares have a different SUBSET displaced. ⚑ Two of them were NOT
+   * coprime when this claim was written (42 = 2·3·7 against 15 = 3·5, realigning every 210 s)
+   * and writing the claim is what found it.
+   *
+   * ⚑ AND THE CONTROL ARM IS WHAT MAKES THIS NON-VACUOUS. "Four frames differ" is worth
+   * nothing on its own — §V958 — because a drifting noise field or an uncut audio lane would
+   * satisfy it. The second arm stops every clock and asserts those same four frames collapse
+   * to ONE PICTURE. If they do not, something is moving that the freeze list does not know
+   * about, and the first arm was measuring that instead. (Idiom taken from E70, where this
+   * control caught a stale freeze list twice.)
+   */
+  it("the piece is still moving at ninety seconds, and the control proves the clocks are why", async () => {
+    const at = [0, 900, 2700, 5400] as const;
+
+    /* THE AUDIO IS CUT IN BOTH ARMS. The question is whether the piece moves on its own
+       clocks, and a live drive would answer it for free — which is the §V958 trap in its
+       original form. */
+    const silent = (graph: GraphDocument): void => {
+      param(graph, "temple", "inlayEmission", 3.4);
+      param(graph, "temple", "dust", 0.075);
+      param(graph, "temple", "inlayRings", 0.34);
+      param(graph, "temple", "inlayNode", 0.9);
+      param(graph, "temple", "shaft", 0.55);
+      param(graph, "temple", "inlaySpill", 9.0);
+      param(graph, "temple", "warmIntensity", 0.28);
+      param(graph, "temple", "exposure", 1.35);
+    };
+
+    const live = await shootRun(at, silent);
+    const frozen = await shootRun(at, (graph) => {
+      silent(graph);
+      for (const [key, value] of Object.entries(everyClockStopped())) param(graph, "temple", key, value);
+    });
+
+    const first = frameDelta(live[0]!, live[1]!);
+    const mid = frameDelta(live[1]!, live[2]!);
+    const late = frameDelta(live[2]!, live[3]!);
+    const span = frameDelta(live[0]!, live[3]!);
+
+    // IT MOVES, and by an amount a viewer would call a different picture rather than a drift.
+    expect(first, "0 s to 15 s must be a different picture").toBeGreaterThan(4);
+    expect(span, "0 s to 90 s must be a different picture").toBeGreaterThan(4);
+    /* AND IT IS STILL MOVING LATE. A piece that displaces once and then settles would pass
+       the two above and fail this: the interval from 45 s to 90 s has to carry real change,
+       not a fraction of the first one. */
+    expect(late, "45 s to 90 s must move about as much as the opening did").toBeGreaterThan(first * 0.4);
+    expect(mid).toBeGreaterThan(first * 0.4);
+
+    /* THE CONTROL. Every clock stopped, the same four frames, and they must be ONE PICTURE.
+       This is what makes the four assertions above mean "the clocks did it" rather than
+       "something did it". */
+    for (let i = 1; i < at.length; i += 1) {
+      expect(
+        frameDelta(frozen[0]!, frozen[i]!),
+        `with every clock stopped, frame ${at[i]} must be the frame 0 picture — if it is not, the freeze list is stale and the claim above is measuring whatever is missing from it`,
+      ).toBeLessThan(0.01);
+    }
+  }, 900_000);
+
 });

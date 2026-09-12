@@ -73,6 +73,7 @@ struct Params {
   bay: f32,           // @default 4.4  metres between column centres down the nave
   aisle: f32,         // @default 3.6  metres from the nave's axis to a column's centre
   columnRadius: f32,  // @default 0.62  column radius at the base, metres
+  entasis: f32,       // @default 0.075  how much the shaft BELLIES through its height — a column whose radius is linear reads as machined, and every order ever built gives it a swell
   columnFlare: f32,   // @default 0.22  how much wider the column grows toward the ceiling
   ceiling: f32,       // @default 7.2  metres to the vault
   plinthHeight: f32,  // @default 0.46  the square block a column stands on — the single shape that stops a column reading as a pipe pushed through the floor
@@ -658,8 +659,28 @@ fn sceneAt(p: vec3f) -> f32 {
   let breakHeight = mix(1.0, 3.6, unitFloat(hash3i(vec3i(bayIndex, side, 9), RUIN_SEED)));
 
   // THE COLUMN, in courses rather than as one cylinder.
-  let flare = 1.0 + params.columnFlare * clamp(p.y / max(params.ceiling, 0.001), 0.0, 1.0);
-  let shaftD = max(length(vec2f(xLocal, zLocal)) - (r * flare), params.plinthHeight - p.y);
+  /* ⚑ ENTASIS (T1309h) — the shaft is not a cone, and that is the oldest fix in architecture.
+     A column whose radius is linear in height reads as MACHINED: the eye follows a straight
+     silhouette and gets no information from it, which is most of what "the shapes of pillars
+     still a bit weak" is naming at the level of the outline. Every order ever built gives the
+     shaft a slight BELLY — the Greeks because a true cone looks concave to the eye, everyone
+     since because it looks alive. A parabola through the height is the whole of it:
+     deliberately not a 'pow' or a 'sin', because this sits in the distance function and runs
+     at every step of every ray, and the shape a viewer reads is the swell rather than its
+     exact profile.
+     ⚑ AND IT STAYS A VALID DISTANCE, which is not automatic: a radius that varies with
+     height makes 'length(xz) − radius(y)' an OVERESTIMATE along y, and a marcher that trusts
+     an overestimate steps through the surface. Checked rather than assumed — the flare
+     contributes 0.22/7.2 = 0.031 per metre and the belly at most 0.075·4/7.2 = 0.042, so the
+     combined slope is 0.073 and the bound is sqrt(1 + 0.073²) = 1.003. Three parts in a
+     thousand, which the 0.85 step factor already covers many times over. The floor's height
+     field needed an explicit 0.7 for exactly this reason and this one does not; the
+     difference is the slope, and the only way to know which case you are in is to compute
+     it. */
+  let h = clamp(p.y / max(params.ceiling, 0.001), 0.0, 1.0);
+  let flare = 1.0 + params.columnFlare * h;
+  let belly = 1.0 + (params.entasis * h * (1.0 - h) * 4.0);
+  let shaftD = max(length(vec2f(xLocal, zLocal)) - (r * flare * belly), params.plinthHeight - p.y);
   /* ⚑ THE BASE IS A MOULDING, NOT A CRATE (T1304d). The first cut put a plain square box
      under each shaft and the owner's reading was "boxy, squary" — exactly right, and the
      reason is that a sharp-cornered prism is the one shape a mason never leaves. Stone is

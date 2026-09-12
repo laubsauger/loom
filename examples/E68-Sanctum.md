@@ -110,6 +110,114 @@ went into structure instead:
 Same budget, structure instead of grain. This is the general lesson of the file restated one
 more time: **detail the eye can name beats detail it can only see.**
 
+## The light in the air was a different pattern from the light on the stone
+
+This is the defect that made the conduits read as *"cheaply slapped on, sprite like"*, and
+the docblock in this repo had defended it.
+
+The volumetric sampled a hash on (row, bay) gated by "am I near a column axis". That has **no
+relationship** to where a single vein is, how bright it is, whether it is lit, or whether it
+has guttered out. So the hall contained **two unrelated patterns**: bright marks on the
+stone, and a fog that merely happened to hang near pillars. "Not shining out of the stone"
+was literally true — nothing in the air knew the conduits existed.
+
+The old argument was that the volume wants a *smoother* field than the surface. That is
+true. It then took a **different** field, and those are not the same requirement.
+
+Three more, in the same family:
+
+- **42% of every conduit run was dark**, so nothing ran top to bottom. The
+  "continuous is not uniform" fix had overshot into confetti.
+- **The spill fell to exactly zero between veins**, so a column lit by nine conduits
+  rendered as nine bright lines on a black cylinder. A light does not go out between its own
+  filaments.
+- **It reached 1.8 m** — barely outside the shaft. The conduits lit their own stone and
+  nothing else: not the floor, not the plinth, not the column opposite. A light that
+  illuminates nothing is a decal by definition.
+
+## A second hue needs an object, not a light
+
+Six passes put the second colour on a **light** — a warm directional rake, a daylight shaft,
+the network's junctions — and every one was either invisible or read as a wash. The rake
+measured as magenta paint on the rubble at **(70, 42, 57)**.
+
+The fault is structural rather than a tuning miss. A hue sprayed over geometry that already
+has a colour is a *tint*. A hue carried by an **object the eye can point at** is a second
+light. A hash per **column** now decides which family its conduits belong to, so amber and
+cyan interleave through the hall at the scale of a pillar — near ones large in frame, far
+ones small.
+
+The interleaving is the win, not the object-ness alone: a mark that appeared in only one
+place would not have done it.
+
+## Independent uniform hashes clump — that is what they are for
+
+The conduits were selected by rolling a number per slot and lighting it if it fell under the
+density. That is the textbook way to get a **clumped** set: independent uniform samples have
+no repulsion, so the gaps between chosen slots are exponentially distributed. Some neighbours
+land adjacent — which reads as *"overlap in an ugly way"* — and some arcs carry nothing.
+
+Multiplying an index by the golden ratio's conjugate and taking the fraction gives the most
+equidistributed sequence there is: each value lands in the largest remaining gap, for **any**
+count, no table, one multiply. It is also *cheaper* than what it replaced — one hash per
+column to seed the sequence rather than one per vein.
+
+⚑ **And the pick is used twice.** A distribution fixes *where*, not *how much*, and evenly
+spaced marks of identical width read as mechanical — a different ugliness, not a fix. The
+pick doubles as a **rank**: well inside the threshold is a principal conduit, wide and
+bright; only just inside is a minor one, narrow and dim. The hierarchy is free.
+
+## The camera, and the constraint that made it
+
+Five lanes on mutually prime periods — 19, 23, 31, 43 s: speed that holds and rushes, drift
+across the nave, rise and fall, a yaw that leads the drift, and a bank. Coprime is the whole
+design: five sines on one period is one gesture with five faces.
+
+The **bank is taken from lateral velocity, not position** — rolling with position tips the
+horizon hardest where the camera is moving least, which reads as a list rather than a turn.
+
+The speed is **integrated in closed form**. A shader is stateless, so a varying speed must be
+analytic or the camera's position depends on the frame rate. It is also what lets a claim
+render frame 5400 without rendering the 5399 before it.
+
+⚑ **And the tightest constraint produced the best gesture.** A doorway is 2.3 m wide and the
+eye has to thread it. So the drift is gated by the distance to the next wall: it wanders in
+open hall, gathers itself as the door approaches, passes through dead centre, and spreads out
+again. Nobody has to be told that is deliberate.
+
+## Two bugs that were conflations
+
+**The reflection stopped a few metres ahead** because the reflected ray marched
+`reflectFade × 2` — so tuning how fast a reflection *dims* also decided how far it could
+*see*. Different properties, separate parameters now.
+
+**The surface grain turned to salt on the sides.** Hand-scale relief is right at arm's length
+and nonsense at thirty metres, where one period is smaller than a pixel and the normal takes
+a near-random direction per pixel. The sides are where rays travel furthest before hitting
+anything, which is why they were worst. It fades with distance — the bump-map equivalent of a
+mip level, as a fade because a marcher has no derivatives to pick one with.
+
+An earlier version of that grain also **silently turned the mirror off**: perturbing an
+up-facing normal tips it past the gate the floor reflection is branched on, so the polished
+floor became a matte slab. A floor you can see the hall in is smooth.
+
+## Is it still moving at ninety seconds?
+
+The piece was told "still flat" five passes running and nothing in the suite could have
+caught it — every claim rendered one frame, or two adjacent ones. A piece that moves for four
+seconds and then repeats passes all of them.
+
+Nine clocks, and after this row every period is **prime**: the camera's 19, 23, 31, 43; the
+conduits' hue at 41; the far light at 17; the doorway's 29, 37, 53. ⚑ Two of them were *not*
+coprime when the claim was written — 42 against 15, sharing a factor of 3 and realigning
+every 210 s — and writing the claim is what found it.
+
+⚑ **The control arm is what makes it non-vacuous.** "Four frames differ" is worth nothing on
+its own: a drifting noise field or an uncut audio lane satisfies it. The second arm stops
+every clock and asserts those same four frames collapse to **one picture**. If they do not,
+something is moving that the freeze list does not know about — and the first arm was
+measuring that instead.
+
 ## The bedding joints are the difference between age and dirt
 
 Banding the erosion in height (below) stopped the stone reading as wax. It did not make it
