@@ -12,7 +12,8 @@ import { storedStaticValue } from "@domain/parameters/slots.ts";
 import { createNodeRegistry } from "@nodes/registry/registry.ts";
 import { allNodeDefinitions } from "@nodes/definitions/index.ts";
 import { ANNOTATE_TYPE, DEFAULT_ANNOTATION_COLOR } from "@nodes/definitions/annotate.ts";
-import { CanvasFixture, fixtureContext, installFlowStubs, nodeProps } from "@editor/graph-canvas/testing.tsx";
+import { CanvasFixture } from "@editor/graph-canvas/canvas-fixture.tsx";
+import { fixtureContext, installFlowStubs, nodeProps } from "@editor/graph-canvas/testing.tsx";
 import { ANNOTATION_NODE_TYPE } from "@editor/graph-canvas/derive.ts";
 import { AnnotationNode } from "./annotation-node.tsx";
 

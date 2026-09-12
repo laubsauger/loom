@@ -1,5 +1,4 @@
-import type { ReactNode } from "react";
-import { Position, ReactFlowProvider } from "@xyflow/react";
+import { Position } from "@xyflow/react";
 import type { EdgeProps, NodeProps } from "@xyflow/react";
 import { createEdgeGeometry } from "@editor/edges/edge-geometry.ts";
 import { createRenameSessionStore } from "@editor/nodes/rename-session.ts";
@@ -10,7 +9,6 @@ import { createNodeTimingScaleStore } from "@editor/nodes/node-timing.ts";
 import type { NodeTimingScaleStore } from "@editor/nodes/node-timing.ts";
 import type { TimingOverlayStore } from "@editor/nodes/timing-overlay-command.ts";
 import type { CommandResult } from "@domain/types/commands.ts";
-import { GraphCanvasContext } from "./canvas-context.ts";
 import type { GraphCanvasContextValue, GraphDispatch } from "./canvas-context.ts";
 import { LOOM_NODE_TYPE, SIGNAL_EDGE_TYPE } from "./derive.ts";
 import type { LoomEdge, LoomNode, SignalEdgeData } from "./derive.ts";
@@ -165,19 +163,6 @@ const FIXTURE_RENAME_REFUSAL: CommandResult<"node.rename"> = {
     createdIds: {},
   },
 };
-
-export interface CanvasFixtureProps {
-  value: GraphCanvasContextValue;
-  children: ReactNode;
-}
-
-export function CanvasFixture({ value, children }: CanvasFixtureProps) {
-  return (
-    <ReactFlowProvider>
-      <GraphCanvasContext.Provider value={value}>{children}</GraphCanvasContext.Provider>
-    </ReactFlowProvider>
-  );
-}
 
 export interface FixtureContextOptions {
   showProblems?: () => void;

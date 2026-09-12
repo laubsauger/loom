@@ -5,12 +5,12 @@ import { installDomStubs } from "@ui/testing/install-dom-stubs.ts";
 import { createGraphStore } from "@domain/graph/store.ts";
 import { createTestRegistry } from "@nodes/registry/test-nodes.ts";
 import {
-  CanvasFixture,
   edgeProps,
   fixtureContext,
   installFlowStubs,
   setReducedMotion,
 } from "@editor/graph-canvas/testing.tsx";
+import { CanvasFixture } from "@editor/graph-canvas/canvas-fixture.tsx";
 import type { NodeRuntimeStore } from "@editor/graph-canvas/node-runtime.ts";
 import type { SignalEdgeData } from "@editor/graph-canvas/derive.ts";
 import { SignalEdge } from "./signal-edge.tsx";

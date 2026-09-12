@@ -13,12 +13,12 @@ import { createNodeRegistry } from "@nodes/registry/registry.ts";
 import type { NodeRegistry } from "@nodes/registry/registry.ts";
 import { allNodeDefinitions } from "@nodes/definitions/index.ts";
 import {
-  CanvasFixture,
   fixtureContext,
   installFlowStubs,
   nodeProps,
   setReducedMotion,
 } from "@editor/graph-canvas/testing.tsx";
+import { CanvasFixture } from "@editor/graph-canvas/canvas-fixture.tsx";
 import type { NodeRunStatus, NodeRuntimeStore } from "@editor/graph-canvas/node-runtime.ts";
 import { NodeView } from "./node-view.tsx";
 import { STATUS_LABEL } from "./status.ts";

@@ -12,11 +12,11 @@ import type { GraphDocument } from "@domain/types/graph.ts";
 import { createTestRegistry } from "@nodes/registry/test-nodes.ts";
 import type { NodeRegistry } from "@nodes/registry/registry.ts";
 import {
-  CanvasFixture,
   fixtureContext,
   installFlowStubs,
   nodeProps,
 } from "@editor/graph-canvas/testing.tsx";
+import { CanvasFixture } from "@editor/graph-canvas/canvas-fixture.tsx";
 import type { NodeRuntimeStore } from "@editor/graph-canvas/node-runtime.ts";
 import { NodeView } from "./node-view.tsx";
 import { costTier } from "./node-timing.ts";
