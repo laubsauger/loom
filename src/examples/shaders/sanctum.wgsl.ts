@@ -101,6 +101,7 @@ struct Params {
   stoneColor: vec4f,  // @default [0.29, 0.27, 0.25, 1]  the stone under the key
   keyColor: vec4f,    // @default [0.52, 0.62, 0.78, 1]  the cold light from the doorway
   keyIntensity: f32,  // @default 1.35  how hard that light drives
+  roomPeriod: f32,    // @default 52.8  metres between the walls — TWELVE BAYS, and it must stay an exact multiple of 'bay' or a doorway lands mid-colonnade
   doorWidth: f32,     // @default 1.15  half-width of the doorway — and its head is an ARCH, not the flat rectangle that read as the least interesting thing in frame
   ambient: f32,       // @default 0.16  fill, so a wall facing away is not a silhouette — warmed toward the inlay, because in a buried hall the only thing bouncing IS the inlay
   fog: f32,           // @default 0.055  depth haze — the aerial perspective, and the cost lever
@@ -134,7 +135,8 @@ struct Params {
 
 const MAX_DISTANCE: f32 = 70.0;
 const SURFACE: f32 = 0.0025;
-/* The far wall's plane. The doorway is cut out of it and the light comes through. */
+/* The FIRST far wall's plane. The doorway is cut out of it and the light comes through.
+   There is another one every 'roomPeriod' metres beyond it — see 'nextWallZ'. */
 const WALL_Z: f32 = 46.0;
 /* One seed for the stone, so the same erosion replays everywhere (§V45). */
 const STONE_SEED: u32 = 68u;
@@ -145,6 +147,47 @@ const DUST_SEED: u32 = 6802u;
 /* A fourth for the ruin, so changing WHICH bays fell cannot move the erosion on the ones
    still standing. A shared seed makes two unrelated decisions one decision. */
 const RUIN_SEED: u32 = 6841u;
+
+/**
+ * THE WALK IS INFINITE, AND IT ALWAYS WAS — THE ROOM WAS NOT (T1306b).
+ *
+ * The owner: *"the camera resets back to start after end… we need leaving the room and
+ * going into the next, so it becomes an infinite move."*
+ *
+ * ⚑ AND THE FIRST DIAGNOSIS OF THAT IS WRONG IN A WAY WORTH WRITING DOWN. The obvious read
+ * is "the camera loops, so make the loop length a whole number of bays and the wrap will be
+ * invisible". It is a good idea about a thing that is not happening: the eye rides
+ * 'frameU.absTime', which is the ABSOLUTE clock and **does not wrap at a timeline lap**
+ * (T461/T489 — that is the entire difference between the absolute pair and the timeline
+ * pair). Nothing resets the dolly.
+ *
+ * What ends is the BUILDING. The colonnade is domain-repeated so it goes on forever, but
+ * the far wall was one wall at one fixed z, so the walk had a last room in it — and after
+ * about eighty seconds the camera walks through the back of the temple into open space,
+ * which is what "resets back to start" is describing from the outside.
+ *
+ * So the wall repeats too. A wall every 'roomPeriod' metres, each with the same arched
+ * doorway, and the camera walks out of one hall and into the next one forever. The ruin and
+ * the breaches are hashed on the ABSOLUTE bay index rather than folded, so each hall is
+ * differently broken and differently lit: the move is periodic, the place is not, and
+ * nothing in the frame ever repeats exactly.
+ */
+fn nextWallZ(z: f32) -> f32 {
+  let room = max(params.roomPeriod, 12.0);
+  /* ⚑ STRICTLY AHEAD, BY A METRE, AND THAT MARGIN IS A BUG FIX. Without it the frame the
+     eye crosses a doorway in returns the wall it is standing IN: the distance to it is
+     zero, so 'beyondDoor' samples the aperture at the eye's own position, every ray that
+     missed geometry passes the aperture test, and the whole picture blows out to daylight
+     for the crossing. Once the camera is within a metre of a wall it is in the doorway,
+     and the wall that matters is the next one. */
+  return WALL_Z + (ceil((z + 1.0 - WALL_Z) / room) * room);
+}
+
+/** This point's offset from the nearest wall plane, folded — the wall's own local z. */
+fn wallLocalZ(z: f32) -> f32 {
+  let room = max(params.roomPeriod, 12.0);
+  return (fract((z - WALL_Z) / room + 0.5) - 0.5) * room;
+}
 
 /* Value noise on the integer lattice — the hashes come from the shared 'hash' module, so
    this shader declares none of its own (T1286). */
@@ -515,8 +558,21 @@ fn sceneAt(p: vec3f) -> f32 {
   /* WHICH BAYS FELL. One roll, used by the column, the capital, the span and the rubble,
      so the four agree. A separate seed from the stone's, so changing which bays are ruined
      cannot move the erosion on the ones still standing. */
-  let roll = unitFloat(hash3i(vec3i(bayIndex, side, 3), RUIN_SEED));
-  let fallen = step(roll, clamp(params.ruin, 0.0, 0.9));
+  /* ⚑ BOTH SIDES ARE ROLLED, NOT JUST THIS ONE, AND THE REASON IS A BUG THIS FIXED (T1306b).
+     A column and its architrave belong to ONE colonnade, so rolling per side is right for
+     them. A RIB DOES NOT — it is a single member spanning the nave and landing on both
+     colonnades, so it cannot be gated by "did the side I happen to be evaluating fall".
+     It was not gated at all, which left arches springing from nothing over ruined bays:
+     a slab of stone floating at the top of the frame with no column under it, and carrying
+     CONDUITS, because a rib's springing sits inside the column's own radial window and the
+     inlay asks only "am I near a column axis". Diagnosed by rendering with 'ruin' at 0 —
+     the floating stone went with it, which ruled out the course grooves. */
+  let ruinShare = clamp(params.ruin, 0.0, 0.9);
+  let fellNear = step(unitFloat(hash3i(vec3i(bayIndex, 0, 3), RUIN_SEED)), ruinShare);
+  let fellFar = step(unitFloat(hash3i(vec3i(bayIndex, 1, 3), RUIN_SEED)), ruinShare);
+  let fallen = select(fellNear, fellFar, side == 1);
+  // A span needs one support; an arch needs two. Either column gone takes the rib with it.
+  let ribGone = max(fellNear, fellFar);
   let breakHeight = mix(1.0, 3.6, unitFloat(hash3i(vec3i(bayIndex, side, 9), RUIN_SEED)));
 
   // THE COLUMN, in courses rather than as one cylinder.
@@ -576,13 +632,16 @@ fn sceneAt(p: vec3f) -> f32 {
   let ringD = abs(length(vec2f(p.x, p.y - springY)) - params.aisle) - params.ribThickness;
   var ribD = max(ringD, abs(zLocal) - params.ribWidth);
   ribD = max(ribD, (springY - 0.35) - p.y);
+  // And it goes with either of its supports. 1000 is "nowhere near a surface".
+  ribD = max(ribD, mix(-1000.0, 1000.0, ribGone));
 
   // THE STEPS at the far end, under the doorway.
+  let sz = wallLocalZ(p.z);
   let stepsD = min(
-    sdBox(p - vec3f(0.0, 0.09, WALL_Z - 3.6), vec3f(5.4, 0.09, 1.5)),
+    sdBox(vec3f(p.x, p.y - 0.09, sz + 3.6), vec3f(5.4, 0.09, 1.5)),
     min(
-      sdBox(p - vec3f(0.0, 0.27, WALL_Z - 2.4), vec3f(4.6, 0.27, 1.2)),
-      sdBox(p - vec3f(0.0, 0.45, WALL_Z - 1.4), vec3f(3.8, 0.45, 1.0)),
+      sdBox(vec3f(p.x, p.y - 0.27, sz + 2.4), vec3f(4.6, 0.27, 1.2)),
+      sdBox(vec3f(p.x, p.y - 0.45, sz + 1.4), vec3f(3.8, 0.45, 1.0)),
     ),
   );
 
@@ -604,9 +663,10 @@ fn sceneAt(p: vec3f) -> f32 {
      that it was the brightest and least interesting thing in frame, and half of that is
      shape: a rectangle of light has no silhouette to read. A round head over square jambs
      is the oldest door in architecture and it costs one circle. */
-  let wallD = sdBox(p - vec3f(0.0, params.ceiling * 0.5, WALL_Z), vec3f(14.0, params.ceiling * 0.5, 0.6));
-  let jambD = sdBox(p - vec3f(0.0, 1.55, WALL_Z), vec3f(params.doorWidth, 1.55, 2.0));
-  let headD = max(length(vec2f(p.x, p.y - 3.1)) - params.doorWidth, abs(p.z - WALL_Z) - 2.0);
+  let wz = wallLocalZ(p.z);
+  let wallD = sdBox(vec3f(p.x, p.y - params.ceiling * 0.5, wz), vec3f(14.0, params.ceiling * 0.5, 0.6));
+  let jambD = sdBox(vec3f(p.x, p.y - 1.55, wz), vec3f(params.doorWidth, 1.55, 2.0));
+  let headD = max(length(vec2f(p.x, p.y - 3.1)) - params.doorWidth, abs(wz) - 2.0);
   let wall = max(wallD, -min(jambD, headD));
 
   let built = min(min(columnD, spanD), min(ribD, min(stepsD, min(rubbleD, wall))));
@@ -737,7 +797,7 @@ fn beyondDoor(eye: vec3f, dir: vec3f, key: f32) -> vec3f {
     return mix(params.fogColor.rgb, params.dayColor.rgb * params.breachLight, high);
   }
   if (dir.z <= 0.01) { return params.fogColor.rgb; }
-  let travel = (WALL_Z - eye.z) / dir.z;
+  let travel = (nextWallZ(eye.z) - eye.z) / dir.z;
   if (travel <= 0.0) { return params.fogColor.rgb; }
   let b = eye + dir * travel;
   let acrossJamb = 1.0 - smoothstep(params.doorWidth * 0.7, params.doorWidth * 1.02, abs(b.x));
@@ -836,8 +896,8 @@ fn dustAlong(eye: vec3f, dir: vec3f, far: f32, pixel: vec2f, hue: vec3f, key: f3
        into, and it is strongest near the wall. Measured in metres from the wall rather
        than in absolute z, because the eye dollies forever and an absolute window would
        leave the beam behind. */
-    let fromWall = clamp(WALL_Z - p.z, 0.0, 60.0);
-    let reach = (1.0 - smoothstep(4.0, 34.0, fromWall)) * step(0.0, WALL_Z - p.z);
+    let fromWall = clamp(nextWallZ(p.z) - p.z, 0.0, 60.0);
+    let reach = 1.0 - smoothstep(4.0, 34.0, fromWall);
     let beam = axis * ribBand * params.shaft * key * params.keyColor.rgb * reach;
 
     /* THE DAYLIGHT STANDING IN THE BREACHES — and this is the light the piece was missing.
@@ -984,7 +1044,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
        the inlay's own, so the near hall is lit by what is in it; far down the nave the
        cold key takes over. Two zones the eye can read the distance from, out of one
        'smoothstep'. */
-    let fromWall = clamp(WALL_Z - p.z, 0.0, 90.0);
+    let fromWall = clamp(nextWallZ(p.z) - p.z, 0.0, 90.0);
     let keyReach = 1.0 - smoothstep(2.0, 62.0, fromWall);
     let lambert = max(dot(n, toKey), 0.0) * keyReach;
     /* THE INLAY IS THE PRIMARY SOURCE, which is what makes the temple read as powered

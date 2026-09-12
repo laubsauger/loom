@@ -136,6 +136,13 @@ export const sanctumDocument = document(
         keyIntensity: 1.35,
         /* The doorway's half-width, and its head is an ARCH — the flat rectangle was "the
            brightest and least interesting thing in frame", and half of that is shape. */
+        /* ⚑ TWELVE BAYS, AND IT MUST STAY A MULTIPLE OF `bay` (T1306b). 12 x 4.4 = 52.8.
+           The walk is already infinite — `absTime` is the absolute clock and does not wrap
+           at a lap — so what ended was the BUILDING: one wall at one fixed z meant the
+           camera walked out of the back of the temple after about eighty seconds. The wall
+           repeats now, so you leave one hall and enter the next forever. A period that is
+           not a whole number of bays would put a doorway in the middle of a colonnade. */
+        roomPeriod: 52.8,
         doorWidth: 1.15,
         ambient: 0.26,
         fog: 0.055,

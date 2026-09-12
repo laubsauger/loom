@@ -145,6 +145,47 @@ exactly where the inlay's bay index changes. **Every column in the hall was spli
 middle**, carrying one circuit on its near half and a different one on its far half. It was
 invisible because both halves are plausible circuits and the seam runs down a shadowed axis.
 
+## The walk was already infinite; the room was not
+
+The owner: *"the camera resets back to start after end… we need leaving the room and going
+into the next, so it becomes an infinite move."*
+
+⚑ **The obvious diagnosis is wrong, and it is worth writing down.** The natural read is "the
+camera loops, so make the loop length a whole number of bays and the wrap will be invisible".
+That is a good idea about a thing that is not happening: the eye rides `absTime`, the
+**absolute** clock, which does not wrap at a timeline lap — that is the entire difference
+between the absolute pair and the timeline pair. Nothing resets the dolly.
+
+What ended was the **building**. The colonnade is domain-repeated so it goes on forever, but
+the far wall was one wall at one fixed z — so after about eighty seconds the camera walked
+out through the back of the temple into open space, which is what "resets back to start"
+describes from the outside.
+
+So the wall repeats too: one every **twelve bays** (52.8 m, and it must stay an exact
+multiple of the bay pitch or a doorway lands mid-colonnade). You leave one hall and enter
+the next, forever. The ruin and the breaches stay hashed on the **absolute** bay index rather
+than the folded one, so every hall is differently broken and differently lit — **the move is
+periodic and the place is not**, and nothing in frame ever repeats exactly.
+
+⚑ One bug came with it: the wall ahead has to be **strictly** ahead. Without a margin, the
+frame in which the eye crosses a doorway returns the wall it is standing *in* — distance
+zero, so the beyond-the-door field is sampled at the eye's own position, every missed ray
+passes the aperture test, and the whole picture blows out to daylight for that frame.
+
+## A rib is carried by two columns, not one
+
+A ruined bay used to leave an **arch springing from nothing** — a slab of stone floating at
+the top of frame with no column under it, carrying conduits, because a rib's springing sits
+inside the column's own radial window and the inlay asks only "am I near a column axis".
+
+The cause is that a column and its architrave belong to *one* colonnade, so rolling the ruin
+per side is right for them; a rib does not, because it spans the nave and lands on both. It
+was not gated at all. **A span needs one support; an arch needs two** — either column gone
+now takes the rib with it.
+
+Diagnosed rather than guessed: rendering with `ruin` at 0 removed the floating stone, which
+ruled out the course grooves and the block offsets in one frame.
+
 ## The vault is broken open, and that is where the drama is
 
 Every light in this hall came from inside it, at one temperature, along one axis. That is
