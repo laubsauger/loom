@@ -491,12 +491,11 @@ describe("B48/T392 — transport refuses out loud on a machine with no GPU", () 
  * the pane's other output-selector tests. Neither half is worth much alone, so they name
  * each other.
  */
-describe("T440/§V354 — `v` reaches the viewer command and says why when it cannot", () => {
-  it("refuses by name instead of doing nothing, and names the node", async () => {
-    const { runtime, container } = await mountWithNodes(1);
+describe("T440/§V354 — `v` reaches the viewer command", () => {
+  it("pins the selected node in the viewer instead of doing nothing", async () => {
+    const { container } = await mountWithNodes(1);
     const node = container.querySelector(".react-flow__node");
     if (node === null) throw new Error("expected a node to render");
-    const nodeId = Object.keys(runtime.bus.store.getGraph().nodes)[0] ?? "";
 
     await act(async () => {
       fireEvent.pointerDown(node, { button: 0, isPrimary: true });
@@ -510,11 +509,20 @@ describe("T440/§V354 — `v` reaches the viewer command and says why when it ca
     });
 
     const text = container.textContent ?? "";
-    expect(text, "`v` did nothing and said nothing — the dead key §V354 is about").toContain(
-      "no output the current plan can show",
-    );
-    // The node, by name: a refusal that does not say WHICH node is barely a refusal.
-    expect(text).toContain(nodeId);
+    /*
+     * §V354's claim is that the key must not be DEAD, and what satisfies it changed under
+     * this test: the viewer now PINS a node without waiting for a compiled plan, so in a
+     * GPU-less mount `v` APPLIES where it used to reject. The refusal copy this asserted
+     * has had no subject since — the viewer names `solid1:out` and the problems pane holds
+     * only the two environmental entries. Asserting what the key DOES keeps the invariant
+     * and drops an expectation of someone else's failure mode.
+     *
+     * The stronger shape, deliberately not taken here because it is T440's design to
+     * change rather than a stale-copy fix: construct a node that genuinely cannot be shown,
+     * so the test owns its own subject instead of relying on the environment to fail.
+     */
+    expect(text, "`v` did nothing — the dead key §V354 is about").toContain("solid1:out");
+    expect(text).not.toContain("no output the current plan can show");
   });
 
   it("is no longer a planned command, so the palette stops calling it unavailable", async () => {
