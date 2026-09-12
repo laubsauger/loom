@@ -1,6 +1,7 @@
 import type { VectorParameter } from "@domain/types/parameters.ts";
 import { NumberField } from "./number-field.tsx";
-import type { EditPhase, NumericSpec, ValueListener } from "./types.ts";
+import type { EditPhase, ValueListener } from "./types.ts";
+import { AXIS_LABELS, specForVector } from "./vector-spec.ts";
 import styles from "./controls.module.css";
 
 /**
@@ -10,17 +11,6 @@ import styles from "./controls.module.css";
  * Axis names, not indices — a vec3 offset reads as x/y/z, and the accessible name of
  * each field is "<label> x", which is what a screen reader needs to tell them apart.
  */
-
-export const AXIS_LABELS = ["x", "y", "z", "w"] as const;
-
-export function specForVector(definition: VectorParameter): NumericSpec {
-  return {
-    ...(definition.min === undefined ? {} : { min: definition.min }),
-    ...(definition.max === undefined ? {} : { max: definition.max }),
-    ...(definition.range === undefined ? {} : { range: definition.range }),
-    ...(definition.step === undefined ? {} : { step: definition.step }),
-  };
-}
 
 export interface VectorFieldProps {
   label: string;

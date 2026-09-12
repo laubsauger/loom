@@ -1,6 +1,7 @@
 import { useCallback } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { cx } from "../cx.ts";
+import { orientationOf } from "./orientation.ts";
 import styles from "./controls.module.css";
 
 /**
@@ -34,17 +35,6 @@ import styles from "./controls.module.css";
  * `GraphNode.resolution`, neither of which is a `StoredParameter`, so no expression,
  * binding, channel or map can reach it (§V29 — the only way to move either is a command).
  */
-
-export type Orientation = "landscape" | "portrait" | "square";
-
-/**
- * The one derivation, exported so both the control and its gates read the same rule
- * rather than each writing `width < height` again.
- */
-export function orientationOf(width: number, height: number): Orientation {
-  if (width === height) return "square";
-  return width < height ? "portrait" : "landscape";
-}
 
 export interface SwapDimensionsProps {
   readonly width: number;

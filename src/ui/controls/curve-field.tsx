@@ -1,6 +1,8 @@
 import { useRef } from "react";
 import { PICTURE_FILE_ACCEPT, PICTURE_FILE_TAKES } from "@domain/media/picture-file.ts";
 import { cx } from "../cx.ts";
+import { curvePolyline } from "./curve-polyline.ts";
+import type { CurvePoint } from "./curve-polyline.ts";
 import styles from "./controls.module.css";
 
 /**
@@ -15,30 +17,9 @@ import styles from "./controls.module.css";
  * hide part of the node from the user.
  */
 
-export interface CurvePoint {
-  x: number;
-  y: number;
-}
-
 export interface CurveFieldProps {
   label: string;
   value: readonly CurvePoint[];
-}
-
-/** Normalises the point list into a 0..1 polyline, whatever domain the points use. */
-export function curvePolyline(points: readonly CurvePoint[]): string {
-  if (points.length === 0) return "";
-  const xs = points.map((point) => point.x);
-  const ys = points.map((point) => point.y);
-  const minX = Math.min(...xs);
-  const maxX = Math.max(...xs);
-  const minY = Math.min(...ys);
-  const maxY = Math.max(...ys);
-  const spanX = maxX - minX || 1;
-  const spanY = maxY - minY || 1;
-  return points
-    .map((point) => `${(point.x - minX) / spanX},${1 - (point.y - minY) / spanY}`)
-    .join(" ");
 }
 
 export function CurveField({ label, value }: CurveFieldProps) {

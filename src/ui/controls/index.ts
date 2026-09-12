@@ -76,8 +76,9 @@ export type {
 export { ControlRow } from "./control-row.tsx";
 export type { ControlRowProps, ControlVariant } from "./control-row.tsx";
 
-export { NumberField, unitSuffix } from "./number-field.tsx";
+export { NumberField } from "./number-field.tsx";
 export type { NumberFieldProps } from "./number-field.tsx";
+export { unitSuffix } from "./unit-suffix.ts";
 
 export { BooleanField } from "./boolean-field.tsx";
 export type { BooleanFieldProps } from "./boolean-field.tsx";
@@ -88,14 +89,17 @@ export type { PulseFieldProps } from "./pulse-field.tsx";
 export { EnumField } from "./enum-field.tsx";
 export type { EnumFieldProps, EnumOption } from "./enum-field.tsx";
 
-export { SwapDimensions, orientationOf } from "./swap-dimensions.tsx";
-export type { Orientation, SwapDimensionsProps } from "./swap-dimensions.tsx";
+export { SwapDimensions } from "./swap-dimensions.tsx";
+export type { SwapDimensionsProps } from "./swap-dimensions.tsx";
+export { orientationOf } from "./orientation.ts";
+export type { Orientation } from "./orientation.ts";
 
 export { TextField } from "./text-field.tsx";
 export type { TextFieldProps } from "./text-field.tsx";
 
-export { VectorField, specForVector, AXIS_LABELS } from "./vector-field.tsx";
+export { VectorField } from "./vector-field.tsx";
 export type { VectorFieldProps } from "./vector-field.tsx";
+export { AXIS_LABELS, specForVector } from "./vector-spec.ts";
 
 export { ColorPicker, PICKER_LOCKED_REASON } from "./color-picker.tsx";
 export type { ColorPickerProps } from "./color-picker.tsx";
@@ -106,8 +110,10 @@ export type { ColorFieldProps } from "./color-field.tsx";
 export { StopsField } from "./stops-field.tsx";
 export type { StopsFieldProps } from "./stops-field.tsx";
 
-export { AssetField, CurveField, curvePolyline } from "./curve-field.tsx";
-export type { AssetFieldProps, CurveFieldProps, CurvePoint } from "./curve-field.tsx";
+export { AssetField, CurveField } from "./curve-field.tsx";
+export type { AssetFieldProps, CurveFieldProps } from "./curve-field.tsx";
+export { curvePolyline } from "./curve-polyline.ts";
+export type { CurvePoint } from "./curve-polyline.ts";
 
 export { ParameterControl } from "./parameter-control.tsx";
 export type { ParameterControlProps } from "./parameter-control.tsx";

@@ -17,6 +17,7 @@ import {
 } from "./drag-math.ts";
 import { evaluateExpression } from "./expression.ts";
 import type { EditPhase, NumericSpec, ValueListener } from "./types.ts";
+import { unitSuffix } from "./unit-suffix.ts";
 import styles from "./controls.module.css";
 
 /**
@@ -92,20 +93,6 @@ const LADDER_HOLD_MS = 400;
  * working while a field has focus.
  */
 const TYPED_ENTRY_START = /^[0-9+.-]$/;
-
-/** doc §8.1 — "Parameters show units". Symbols, not words: the row is 20 px tall. */
-const UNIT_SUFFIX: Readonly<Record<NonNullable<NumberParameter["unit"]>, string>> = {
-  px: "px",
-  percent: "%",
-  degrees: "°",
-  radians: "rad",
-  seconds: "s",
-  hz: "Hz",
-};
-
-export function unitSuffix(unit: NumberParameter["unit"]): string | null {
-  return unit === undefined ? null : UNIT_SUFFIX[unit];
-}
 
 export interface NumberFieldProps {
   /** Accessible name. The visible label lives in the row; this names the control. */
