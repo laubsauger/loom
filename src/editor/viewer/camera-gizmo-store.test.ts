@@ -119,6 +119,58 @@ describe("camera gizmo store (T692)", () => {
     expect(store.get(NODE)).toBeUndefined();
   });
 
+  it("T1314b — a held channel is never written, and never as a bare compound", () => {
+    // E69 Burnish's shape: `eye.x` on an expression, y and z free. The old store wrote the
+    // whole `eye` tuple, which landed on the driven channel's INACTIVE static binding —
+    // the camera stayed put and §V914's retained value became an arbitrary dragged pose.
+    const { store, writes } = harness({
+      eye: [0, 1.9, 8.4],
+      lookAt: [0, 0.75, 0],
+      eyeMask: [false, true, true],
+    });
+    store.setMode(NODE, "adjustable");
+    store.apply(NODE, { azimuth: 0.4 });
+
+    const live = writes[0];
+    if (live === undefined) throw new Error("a partly driven camera still flies on its free channels");
+    // The bare key is the corruption: it must not appear at all while anything is held.
+    expect(Object.keys(live.entries).sort()).toEqual(["eye.y", "eye.z", "lookAt"]);
+    expect(live.entries["eye.x"]).toBeUndefined();
+    // Azimuth rotates ABOUT y, so y is the one free channel this gesture cannot move —
+    // asserting otherwise would be asserting against the maths. `z` is what swings.
+    expect(live.entries["eye.y"]).toBe(1.9);
+    expect(live.entries["eye.z"]).not.toBe(8.4);
+
+    // Elevation moves y, and the held x still never appears.
+    store.apply(NODE, { elevation: 0.3 });
+    const tilted = writes[writes.length - 1];
+    if (tilted === undefined) throw new Error("expected a second write");
+    expect(tilted.entries["eye.y"]).not.toBe(1.9);
+    expect(tilted.entries["eye.x"]).toBeUndefined();
+  });
+
+  it("T1314b — a fully static camera still writes whole vectors, as it always did", () => {
+    const { store, writes } = harness({ eye: [0, 0, 3], lookAt: [0, 0, 0], eyeMask: [true, true, true] });
+    store.setMode(NODE, "adjustable");
+    store.apply(NODE, { azimuth: 0.4 });
+    expect(Object.keys(writes[0]?.entries ?? {}).sort()).toEqual(["eye", "lookAt"]);
+  });
+
+  it("T1314b — the session holds what it WROTE, so tile and store cannot drift (§V964)", () => {
+    // The store accumulates locally while the tile draws the DOCUMENT. An unrounded
+    // accumulator and a `round6` write disagree by a little more every frame of a drag.
+    const { store, writes } = harness({ eye: [0, 0, 3], lookAt: [0, 0, 0] });
+    store.setMode(NODE, "adjustable");
+    for (let step = 0; step < 12; step += 1) store.apply(NODE, { azimuth: 0.017 });
+    const last = writes[writes.length - 1];
+    if (last === undefined) throw new Error("expected writes");
+    for (const value of vec(last, "eye")) {
+      expect(value, `${String(value)} carries more precision than the document holds`).toBe(
+        Number(value.toFixed(6)),
+      );
+    }
+  });
+
   it("a driven camera arms nothing: no pose, no writes, no silent clobber", () => {
     const { store, writes } = harness(null);
     store.setMode(NODE, "adjustable");

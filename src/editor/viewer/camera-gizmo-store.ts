@@ -1,3 +1,4 @@
+import { componentKey } from "@domain/parameters/slots.ts";
 import type { NodeId } from "@domain/types/ids.ts";
 import type { ParameterValue } from "@domain/types/parameters.ts";
 import type { PreviewInspectMode, PreviewOrbitStore } from "./preview-orbit-store.ts";
@@ -53,6 +54,18 @@ export interface CameraGizmoEditor {
 export interface CameraPose {
   readonly eye: readonly [number, number, number];
   readonly lookAt: readonly [number, number, number];
+  /**
+   * T1314b — which channels this gesture may WRITE, per axis. Absent means all three, which
+   * is what a fully static camera hands over and what every pre-T1314b caller meant.
+   *
+   * A driven channel is masked out rather than refused wholesale: §V113 makes each channel
+   * its own decision, so a camera with one expression axis still flies on the other two. The
+   * masked channel is never written — a bare compound write would land on its INACTIVE
+   * static binding, leaving the camera still and replacing §V914's retained value with a
+   * dragged pose (§B219, the defect this mask exists to make impossible).
+   */
+  readonly eyeMask?: readonly boolean[] | undefined;
+  readonly lookAtMask?: readonly boolean[] | undefined;
 }
 
 const WHEEL_COMMIT_MS = 400;
@@ -60,6 +73,9 @@ const MIN_DISTANCE = 0.05;
 const MAX_ELEVATION = Math.PI / 2 - 0.02;
 
 type Vec3 = readonly [number, number, number];
+
+/** Axis spelling for component-addressed writes (§V113), as `camera-pose.ts` names them. */
+const AXIS = ["x", "y", "z"] as const;
 
 const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const add = (a: Vec3, b: Vec3): Vec3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
@@ -80,6 +96,11 @@ const asValue = (v: Vec3): [number, number, number] => [round6(v[0]), round6(v[1
 interface GizmoSession {
   eye: Vec3;
   lookAt: Vec3;
+  /** Where the gesture began. A held channel comes back exactly as it went in. */
+  readonly startEye: Vec3;
+  readonly startLookAt: Vec3;
+  readonly eyeMask: readonly boolean[] | undefined;
+  readonly lookAtMask: readonly boolean[] | undefined;
   /** True once any delta was written — release without movement commits nothing. */
   dirty: boolean;
   wheelTimer: ReturnType<typeof setTimeout> | undefined;
@@ -106,6 +127,10 @@ export function createCameraGizmoStore(options: {
     const created: GizmoSession = {
       eye: pose.eye,
       lookAt: pose.lookAt,
+      startEye: pose.eye,
+      startLookAt: pose.lookAt,
+      eyeMask: pose.eyeMask,
+      lookAtMask: pose.lookAtMask,
       dirty: false,
       wheelTimer: undefined,
     };
@@ -113,8 +138,55 @@ export function createCameraGizmoStore(options: {
     return created;
   };
 
+  /**
+   * A held channel keeps the value the gesture STARTED from — `valuesFromLabelDrag`'s rule,
+   * one control over: the maths still runs on all three so the orbit keeps its shape, and
+   * the channel another mode decides simply never moves.
+   */
+  const holdMasked = (next: Vec3, start: Vec3, mask: readonly boolean[] | undefined): Vec3 =>
+    mask === undefined
+      ? next
+      : [
+          mask[0] === true ? next[0] : start[0],
+          mask[1] === true ? next[1] : start[1],
+          mask[2] === true ? next[2] : start[2],
+        ];
+
+  const putVector = (
+    entries: Record<string, ParameterValue>,
+    key: string,
+    value: Vec3,
+    mask: readonly boolean[] | undefined,
+  ): void => {
+    const rounded = asValue(value);
+    if (mask === undefined || mask.every((free) => free)) {
+      entries[key] = rounded;
+      return;
+    }
+    // §V113: address the channels individually. The bare key would be written over the
+    // driven channel's own slot — §B219's exact corruption — so it is never emitted when
+    // anything is held.
+    for (const [index, axis] of AXIS.entries()) {
+      if (mask[index] === true) entries[componentKey(key, axis)] = rounded[index] as number;
+    }
+  };
+
   const write = (nodeId: NodeId, s: GizmoSession, phase: "live" | "commit"): void => {
-    options.editor.setStored(nodeId, { eye: asValue(s.eye), lookAt: asValue(s.lookAt) }, phase);
+    const entries: Record<string, ParameterValue> = {};
+    putVector(entries, "eye", s.eye, s.eyeMask);
+    putVector(entries, "lookAt", s.lookAt, s.lookAtMask);
+    // Defensive: `readPose` returns null when nothing is free, so an armed session always
+    // has something to write. An empty patch would be an undo entry that changed nothing.
+    if (Object.keys(entries).length === 0) return;
+    options.editor.setStored(nodeId, entries, phase);
+    /*
+     * §V964 — the session now holds what it WROTE, not a finer accumulator the document
+     * never saw. The tile draws the DOCUMENT, so an unrounded local pose and the drawn one
+     * disagree by a little more with every frame of a long drag: an instrument and its
+     * subject must agree.
+     */
+    s.eye = asValue(s.eye);
+    s.lookAt = asValue(s.lookAt);
     if (phase === "live") s.dirty = true;
   };
 
@@ -182,6 +254,8 @@ export function createCameraGizmoStore(options: {
           r * Math.cos(elevation) * Math.cos(azimuth),
         ]);
       }
+      s.eye = holdMasked(s.eye, s.startEye, s.eyeMask);
+      s.lookAt = holdMasked(s.lookAt, s.startLookAt, s.lookAtMask);
       write(nodeId, s, "live");
     },
     zoom(nodeId, factor) {
@@ -190,7 +264,7 @@ export function createCameraGizmoStore(options: {
       if (s === null) return;
       const offset = sub(s.eye, s.lookAt);
       const r = Math.max(length(offset) * factor, MIN_DISTANCE);
-      s.eye = add(s.lookAt, scale(normalize(offset), r));
+      s.eye = holdMasked(add(s.lookAt, scale(normalize(offset), r)), s.startEye, s.eyeMask);
       write(nodeId, s, "live");
       // The wheel has no pointerup; the transaction closes itself after a short idle.
       if (s.wheelTimer !== undefined) clearTimeout(s.wheelTimer);

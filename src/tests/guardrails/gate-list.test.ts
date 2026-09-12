@@ -97,6 +97,8 @@ const NOT_A_CHEAP_DOCUMENT_SET_GATE: Readonly<Record<string, string>> = {
     "reads only the E24 document, found by name, as an offline-scrub fixture",
   "src/tests/headless/audio-track-replay.test.ts":
     "reads only the E24 document, found by name, as a track-replay fixture",
+  "src/tests/integration/camera-gizmo-corruption.test.ts":
+    "reads only E69-Burnish, found by file name — the one catalogue camera with no bare `eye` at all",
 };
 
 function testFiles(directory: string): string[] {

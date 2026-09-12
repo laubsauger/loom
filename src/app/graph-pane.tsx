@@ -14,6 +14,7 @@ import type { PortType } from "@domain/types/ports.ts";
 import type { ResolvedOutput } from "@compiler/index.ts";
 import { GraphCanvas } from "@editor/graph-canvas/index.ts";
 import { type CameraPose, createCameraGizmoStore } from "@editor/viewer/camera-gizmo-store.ts";
+import { movableChannels, poseFromFacts, readCameraPoseFacts } from "@editor/viewer/camera-pose.ts";
 import { createParameterEditor } from "@editor/inspector/parameter-editor.ts";
 import { useKeymapPane } from "@editor/keymap/index.ts";
 import { readNodeDragPayload } from "@editor/library/index.ts";
@@ -384,26 +385,36 @@ function GraphPaneInner({
   const graphRef = useRef(graph);
   graphRef.current = graph;
   /**
-   * The document's pose, read at gesture start (§V657). Null when either vector wears
-   * a non-static envelope: a drag that clobbered a driven binding with a plain value
-   * would silently disconnect the drive, so a driven camera simply offers no gizmo.
+   * The document's pose, read at gesture start (§V657) — RESOLVED, and per channel.
+   *
+   * T1314b/§B219: this used to guard on the BARE `eye` key, which §V113 makes the wrong
+   * question — a driven channel stores its own slot under `eye.x`, and four shipped cameras
+   * carry no bare `eye` at all, so the old read fell through to a hardcoded copy of the
+   * schema default while the camera sat somewhere else entirely. `readCameraPoseFacts` asks
+   * per channel and returns null only when every one of them is decided elsewhere.
+   *
+   * The resolver comes off the BUS (`attachChannelResolver`, filled by `useGraphCompile`),
+   * which this pane already holds — so reading where the camera actually is needs no new
+   * prop and no new seam.
    */
-  const readCameraPose = useCallback((nodeId: NodeId): CameraPose | null => {
-    const node = graphRef.current.nodes[nodeId];
-    if (node === undefined) return null;
-    const vec = (key: string, fallback: readonly [number, number, number]) => {
-      const raw = node.parameters[key];
-      if (raw === undefined) return fallback;
-      if (Array.isArray(raw) && raw.length === 3 && raw.every((n) => typeof n === "number")) {
-        return [raw[0] ?? 0, raw[1] ?? 0, raw[2] ?? 0] as const;
-      }
-      return null;
-    };
-    const eye = vec("eye", [0, 0.5, 3]);
-    const lookAt = vec("lookAt", [0, 0, 0]);
-    if (eye === null || lookAt === null) return null;
-    return { eye, lookAt };
-  }, []);
+  const readCameraPose = useCallback(
+    (nodeId: NodeId): CameraPose | null => {
+      const node = graphRef.current.nodes[nodeId];
+      if (node === undefined) return null;
+      const facts = readCameraPoseFacts(node, registry.get(node.type), {
+        channels: bus.channelResolver(),
+      });
+      if (facts === null) return null;
+      const { eye, lookAt } = poseFromFacts(facts);
+      return {
+        eye,
+        lookAt,
+        eyeMask: movableChannels(facts.eye),
+        lookAtMask: movableChannels(facts.lookAt),
+      };
+    },
+    [bus, registry],
+  );
 
   const parameterEditor = useMemo(
     () => createParameterEditor({ bus, context: invocation }),
