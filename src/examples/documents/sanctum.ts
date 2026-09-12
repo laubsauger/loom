@@ -142,6 +142,22 @@ export const sanctumDocument = document(
         inlayVary: 0.42,
         inlayBreak: 0.06,
         inlayNode: 0.9,
+        /* ⚑ A SECOND HUE CARRIED BY AN OBJECT (T1309e). Six passes put the second colour on
+           a LIGHT — a warm rake, a daylight shaft, the junctions — and every one was either
+           invisible or read as a wash. A hash per column decides which family its network
+           belongs to instead, so two temperatures interleave through the hall at the scale
+           of a PILLAR and the eye has something to point at. */
+        inlayColorB: [1, 0.58, 0.16, 1],
+        tintShare: 0.34,
+        /* The close-range detail, as a normal perturbation rather than a displacement: paid
+           once per shaded pixel instead of at every step of every ray. */
+        grain: 0.16,
+        grainScale: 26,
+        /* A base is a STACK. One box is why the foundation read cheap. */
+        footHeight: 0.17,
+        /* The doorway is what the camera is aimed at for the whole run, and it was the one
+           thing in the piece that never changed. */
+        doorLife: 0.7,
         inlayColor: [0.16, 1, 0.82, 1],
         inlayEmission: 3.4,
         spillReach: 5.5,
@@ -182,13 +198,13 @@ export const sanctumDocument = document(
         pivot: 0.22,
         exposure: 1.35,
         dust: 0.075,
-        dustSteps: 18,
+        dustSteps: 14,
         dustFloor: 2.6,
         shaft: 0.55,
         polish: 0.55,
         reflectSteps: 34,
         reflectFade: 12,
-        steps: 96,
+        steps: 72,
       }, {
         label: "temple1",
         parameters: {

@@ -104,6 +104,12 @@ struct Params {
   inlayVary: f32,     // @default 0.3  how far a conduit's brightness DIPS along its run, 0 is the uniform strip this used to be
   inlayBreak: f32,    // @default 0.3  share of a conduit's run that is dark: interruptions, so a line reads as a thing that can fail
   inlayNode: f32,     // @default 0.9  extra light POOLED where a conduit crosses a ring — junctions are where a network shows it is a network
+  inlayColorB: vec4f, // @default [1, 0.58, 0.16, 1]  the SECOND conduit family — its own colour, not the warm rake's, which rotated to magenta and read as neon rather than as a material
+  tintShare: f32,     // @default 0.34  share of columns whose conduits burn the SECOND colour — a hue the eye can point at rather than a wash over everything
+  grain: f32,         // @default 0.45  fine surface relief, as a NORMAL perturbation: paid once per shaded pixel instead of at every march step
+  grainScale: f32,    // @default 26  size of that relief — hand-scale, which is the scale the stone had nothing at
+  footHeight: f32,    // @default 0.17  the wider footing course under the plinth: a base is a STACK, and one box is why it read cheap
+  doorLife: f32,      // @default 0.7  how much the world beyond the doorway changes — 0 is the static gradient it used to be
   inlayColor: vec4f,  // @default [0.16, 1, 0.82, 1]  the powered inlay — NOT on the blackbody curve, because anything that burns is human
   inlayEmission: f32, // @default 0.85  how hard the channels burn
   spillReach: f32,    // @default 5.5  metres the conduit light travels from a column's axis — what makes it a LIGHT rather than a mark
@@ -311,7 +317,11 @@ fn beddingAt(p: vec3f) -> f32 {
   // Only on the shaft: the mouldings are each cut from one stone.
   let onShaft = (1.0 - smoothstep(params.columnRadius * 1.1, params.columnRadius * 2.0, length(vec2f(q.x, q.z))))
     * step(params.plinthHeight + 0.4, p.y);
-  let perpend = smoothstep(0.86, 1.0, perp) * params.courseDepth * 0.8 * onShaft;
+  /* The base is coursed stone as well, and leaving it smooth beside a jointed shaft is
+     half of why it read as a crate rather than as masonry. */
+  let onBase = (1.0 - smoothstep(params.columnRadius * 1.5, params.columnRadius * 2.3, max(abs(q.x), abs(q.z))))
+    * (1.0 - step(params.plinthHeight, p.y));
+  let perpend = smoothstep(0.86, 1.0, perp) * params.courseDepth * 0.8 * max(onShaft, onBase * 0.7);
 
   return bed + perpend + proud;
 }
@@ -618,11 +628,22 @@ fn sceneAt(p: vec3f) -> f32 {
      sits between the square plinth and the round shaft, which is what that transition is
      for in every order ever built; and the capital's two members are rounded on the same
      rule so the top of the column matches the bottom. */
+  /* ⚑ TWO STEPS, NOT ONE (T1309e). "The foundation square looks super cheap", and a single
+     box is why: one prism meeting the floor has exactly one silhouette and one plane for the
+     light to land on, so there is nothing for the eye to resolve as it approaches. A real
+     base is a STACK — a wider footing course, the plinth proper, then the mouldings — and
+     each step adds a shadow line at a different height. Two boxes and a torus is still three
+     shapes in a domain-repeated cell, which costs nothing per column. */
   let plinthRound = r * 0.16;
-  let plinthD = sdBox(
+  let footD = sdBox(
+    vec3f(xLocal, p.y - (params.footHeight * 0.5), zLocal),
+    vec3f(r * 1.95 - plinthRound, (params.footHeight * 0.5) - plinthRound * 0.5, r * 1.95 - plinthRound),
+  ) - plinthRound;
+  let plinthBox = sdBox(
     vec3f(xLocal, p.y - (params.plinthHeight * 0.5), zLocal),
     vec3f(r * 1.62 - plinthRound, params.plinthHeight * 0.5 - plinthRound * 0.5, r * 1.62 - plinthRound),
   ) - plinthRound;
+  let plinthD = min(footD, plinthBox);
   /* THE TORUS. A square plinth carrying a round shaft needs something round in between or
      the eye sees two unrelated solids stacked. Swept about the column's axis, so it is a
      circle of a circle and costs one more length(). */
@@ -736,6 +757,38 @@ fn sceneAt(p: vec3f) -> f32 {
   return min(min(carved, vaultD), floorD);
 }
 
+/**
+ * THE SURFACE UP CLOSE (T1309e) — and it is a BUMP, deliberately, not a displacement.
+ *
+ * "90s CGI vibes" is mostly this: the stone is geometrically detailed at the scale of a
+ * block and perfectly smooth at the scale of a hand, so a column two metres from the camera
+ * has nothing on it. The obvious fix is to put the detail in the distance function, and that
+ * is the expensive mistake — every octave there is paid at EVERY STEP OF EVERY RAY and six
+ * more times per normal.
+ *
+ * A normal perturbation is paid ONCE PER SHADED PIXEL. It cannot break a silhouette, which
+ * is exactly why the block-scale damage stays in the SDF where it belongs; what it can do is
+ * give the light something to catch at arm's length, which is all this was missing.
+ */
+fn grainNormal(p: vec3f, n: vec3f) -> vec3f {
+  let s = max(params.grainScale, 0.5);
+  let e = 0.035;
+  let base = valueNoise(p * s);
+  let gx = valueNoise((p + vec3f(e, 0.0, 0.0)) * s) - base;
+  let gy = valueNoise((p + vec3f(0.0, e, 0.0)) * s) - base;
+  let gz = valueNoise((p + vec3f(0.0, 0.0, e)) * s) - base;
+  let grad = vec3f(gx, gy, gz) / e;
+  // Only the component along the surface tilts it; the normal component just scales depth.
+  let tangential = grad - (n * dot(grad, n));
+  /* ⚑ AND IT SPARES THE POLISHED FLOOR. Perturbing an up-facing normal at the floor tips it
+     past the 'n.y > 0.75' test the reflection is gated on, so the first version of this
+     silently turned the mirror off and left a matte brown slab — a texture that destroys the
+     one material in the piece that is not stone. A floor you can see the hall in is smooth;
+     that is what polished means. */
+  let onFloor = step(0.86, n.y) * (1.0 - step(0.7, p.y));
+  return normalize(n - (tangential * params.grain * (1.0 - onFloor)));
+}
+
 fn normalAt(p: vec3f) -> vec3f {
   let e = vec2f(0.0016, 0.0);
   return normalize(vec3f(
@@ -772,9 +825,36 @@ fn rotateHue(base: vec3f, turn: f32) -> vec3f {
  * that a turn slow enough to be subtle is a turn nobody ever sees. Free-running on
  * 'frameU.absTime' (§V436), so a timeline lap cannot snap it.
  */
+/**
+ * WHICH COLOUR THIS COLUMN'S CONDUITS BURN (T1309e).
+ *
+ * The frame has been one hue for six passes, and every previous attempt put the second
+ * colour on a LIGHT — a warm rake, a daylight shaft, the junctions. Each was either invisible
+ * or read as a wash, and the reason is the same one every time: a second hue needs to be
+ * carried by an OBJECT the eye can point at, not sprayed across the geometry that already
+ * has a colour.
+ *
+ * So a hash per column decides which family its network belongs to. Two temperatures are
+ * then interleaved through the whole hall at the scale of a PILLAR — near ones large in
+ * frame, far ones small — and the eye reads a place with two kinds of light in it rather
+ * than one tinted picture. It costs one hash at the shading point and nothing in the march.
+ */
+fn conduitTint(p: vec3f) -> f32 {
+  let bayIndex = i32(bayOf(p.z));
+  let side = select(0, 1, p.x >= 0.0);
+  let roll = unitFloat(hash3i(vec3i(bayIndex, side, 77), GLYPH_SEED));
+  return step(roll, clamp(params.tintShare, 0.0, 1.0));
+}
+
 fn inlayHue() -> vec3f {
   let phase = (frameU.absTime / max(params.hueTurn, 1.0)) * 6.2831853;
   return rotateHue(params.inlayColor.rgb, (sin(phase) * 0.5) * params.hueArc);
+}
+
+/* The second family, travelling the same arc as the first so the two stay related. */
+fn inlayHueB() -> vec3f {
+  let phase = (frameU.absTime / max(params.hueTurn, 1.0)) * 6.2831853;
+  return rotateHue(params.inlayColorB.rgb, (sin(phase) * 0.5) * params.hueArc);
 }
 
 fn warmHue() -> vec3f {
@@ -872,9 +952,20 @@ fn beyondDoor(eye: vec3f, dir: vec3f, key: f32) -> vec3f {
   if (inside <= 0.0) { return params.fogColor.rgb; }
   // The horizon: warm ground below, cold sky above, and the transition is where the eye
   // reads a distance rather than a wall.
-  let height = clamp((b.y - 0.1) / 3.8, 0.0, 1.0);
-  let field = mix(params.warmColor.rgb * 0.55, params.keyColor.rgb * 1.5, smoothstep(0.1, 0.72, height));
-  let core = exp(-abs(b.y - 1.4) * 0.6) * exp(-abs(b.x) * 0.85);
+  /* ⚑ AND IT EVOLVES (T1309e). The doorway is the one thing the camera is aimed at for the
+     whole run and it was a static gradient — the focal point of the piece was the only part
+     of it that never changed. Three coprime lanes (29, 37, 53 s), so what is beyond the door
+     is weather rather than a setting: the horizon RISES AND FALLS, the core DRIFTS across
+     the aperture instead of sitting dead centre, and the whole field warms and cools. Same
+     rule as the camera — coprime periods, so it never returns to a state a viewer remembers. */
+  let dt = frameU.absTime;
+  let horizon = 0.1 + (params.doorLife * 0.9 * sin(dt / 29.0 * 6.2831853));
+  let coreX = params.doorLife * 0.75 * sin(dt / 37.0 * 6.2831853 + 0.7);
+  let warmth2 = 0.5 + (0.5 * sin(dt / 53.0 * 6.2831853 + 2.1));
+  let height = clamp((b.y - horizon) / 3.8, 0.0, 1.0);
+  let sky = mix(params.keyColor.rgb * 1.5, params.warmColor.rgb * 1.9, warmth2 * params.doorLife);
+  let field = mix(params.warmColor.rgb * 0.55, sky, smoothstep(0.1, 0.72, height));
+  let core = exp(-abs(b.y - 1.4) * 0.6) * exp(-abs(b.x - coreX) * 0.85);
   let beyond = (field + (params.keyColor.rgb * core * 0.9)) * params.keyIntensity * key;
   /* ⚑ AND IT IS HAZED BY THE DISTANCE TO IT, WHICH THE FIRST VERSION WAS NOT (T1306c).
      Owner: *"we can see the next room being white bright in the absolute dark areas, and
@@ -1078,6 +1169,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
      the fix: a value that varies per FRAME must never be evaluated per SAMPLE. */
   let hue = inlayHue();
   let warmth = warmHue();
+  let hueB = inlayHueB();
   // Same rule as the hue: a per-frame value, evaluated once per fragment.
   let key = keyDrive();
   /* ─── THE CAMERA (T1309d) ───────────────────────────────────────────────────────────
@@ -1154,7 +1246,11 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   var colour = beyondDoor(eye, dir, key);
   if (hit) {
     let p = eye + dir * travelled;
-    let n = normalAt(p);
+    let n = grainNormal(p, normalAt(p));
+    /* This column's conduits burn one family or the other. Resolved at the SHADING point,
+       so it costs one hash per pixel and nothing in the distance function. */
+    let tint = conduitTint(p);
+    let myHue = mix(hue, hueB, tint);
     /* One key, from the doorway at the end of the nave: a direction rather than a point,
        because the doorway is far enough that its rays are parallel by the time they reach
        anything the camera can see. */
@@ -1204,15 +1300,15 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
     /* ⚑ THE EMISSION CARRIES BOTH COLOURS. A run burns the conduit's hue; a junction burns
        the counter-hue. That is where the frame's second temperature actually lives — see
        'inlayAt', and the render that proved a directional warm fill reads as red paint. */
-    let emission = mix(hue, warmth, channel.y) * params.inlayEmission * channel.x;
+    let emission = mix(myHue, mix(hueB, hue, tint), channel.y) * params.inlayEmission * channel.x;
     let spill = inlaySpillAt(p) * params.inlaySpill;
     /* ⚑ DESATURATED, because a stone lit by a cyan light is not a cyan stone. Multiplying
        the albedo by a fully saturated hue drives every channel the hue is weak in to zero,
        so the whole hall collapses to one colour and the material stops existing — which is
        the "everything is cyan and grey" reading from the other side. Real bounce carries
        the source's tint, not its purity. */
-    let bounced = mix(vec3f(1.0), hue, 0.5) * spill;
-    let fill = mix(vec3f(1.0), hue, 0.65) * params.ambient;
+    let bounced = mix(vec3f(1.0), myHue, 0.5) * spill;
+    let fill = mix(vec3f(1.0), myHue, 0.65) * params.ambient;
     /* THE COUNTER-LIGHT, and what is left of it after the junctions took its job. The
        shipped frame measured saturation 0.55 — not grey in the desaturated sense at all —
        but every source in it was COOL, so the average of the picture was one hue and read
@@ -1256,7 +1352,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
     if (params.polish > 0.001 && n.y > 0.75 && p.y < 0.6) {
       let fresnel = pow(1.0 - max(dot(n, -dir), 0.0), 4.0);
       let weight = params.polish * mix(0.12, 1.0, fresnel);
-      reflected = reflectionAt(p, n, dir, hue, warmth) * weight;
+      reflected = reflectionAt(p, n, dir, myHue, warmth) * weight;
     }
     // Aerial perspective: exponential in depth, which is also what lets the march stop
     // early without a visible wall of nothing.
