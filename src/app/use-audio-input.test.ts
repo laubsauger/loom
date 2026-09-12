@@ -4,7 +4,7 @@ import type { GraphDocument } from "@domain/types/graph.ts";
 import { createHopAnalyser } from "@domain/audio/analysis/hop-analyser.ts";
 import { DETECTOR_STREAM, analysisOptionsFor } from "./audio-analysis-protocol.ts";
 import { DETECTOR_EVENT_PICKER } from "./audio-features.ts";
-import { captureConfigOf, captureKeyOf } from "./use-audio-input.ts";
+import { captureConfigOf, captureKeyOf, syncLeadOf } from "./use-audio-input.ts";
 
 /**
  * T434: WHICH capture the session runs, pinned as a pure function.
@@ -130,6 +130,29 @@ describe("detector knobs on the source node (T1230)", () => {
     expect(captureKeyOf(raised, 0)).not.toBe(captureKeyOf(base, 0));
     expect(captureKeyOf(slower, 0)).not.toBe(captureKeyOf(base, 0));
     expect(captureKeyOf(null, 0)).toBe("");
+  });
+
+  it("T1312b — the sync offset is NOT a rebuild door: it must not re-analyse the file", () => {
+    // The detector knobs above rebuild the capture on purpose. The offset must not: it only
+    // says which frame of the ALREADY analysed track to read, so routing it through this
+    // door would re-decode and re-analyse the whole file on every drag of the slider.
+    const base = captureConfigOf(graphOf({ a: { type: "audioFileIn", parameters: { file: "blob:track" } } }));
+    const led = captureConfigOf(
+      graphOf({ a: { type: "audioFileIn", parameters: { file: "blob:track", syncOffset: 0.12 } } }),
+    );
+    expect(captureKeyOf(led, 0)).toBe(captureKeyOf(base, 0));
+    expect(led).toEqual(base);
+  });
+
+  it("T1312b — the lead reads as seconds, and anything that is not a number is OFF", () => {
+    expect(syncLeadOf(() => 0.25)).toBe(0.25);
+    expect(syncLeadOf(() => -0.1)).toBe(-0.1);
+    // A document that never stored it, and every non-number a slot can hand back, are 0 —
+    // which is what makes the parameter's default invisible to every shipped document.
+    expect(syncLeadOf(() => undefined)).toBe(0);
+    expect(syncLeadOf(() => Number.NaN)).toBe(0);
+    expect(syncLeadOf(() => Number.POSITIVE_INFINITY)).toBe(0);
+    expect(syncLeadOf(() => "0.2" as never)).toBe(0);
   });
 
   it("what the knob changes: a kick-band tone the default counts as a hit is not one at a raised threshold", () => {

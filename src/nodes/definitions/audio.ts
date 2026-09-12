@@ -42,6 +42,17 @@ const TEMPO_MODE_OPTIONS = [
   { value: "declared", label: "Declared" },
 ] as const;
 
+/**
+ * §V146 — T1312b: the lead is read only where a pre-analysed track is read, which is under
+ * the timeline lock. A free-run file plays on the element's own clock and the app reads the
+ * LIVE hops, and live analysis cannot look ahead: the sound has not happened yet.
+ */
+function freeRunHasNoTrack(values: Readonly<Record<string, ParameterValue>>): string | null {
+  return values["playMode"] === "freeRun"
+    ? "Play Mode is Free Run, so the features come from the live analysis, which cannot look ahead — there is no pre-analysed track to read early. Lock Play Mode to the Timeline to use this."
+    : null;
+}
+
 /** §V146: the declared-tempo controls do nothing in `auto`, and the sentence says what would make them apply. */
 function autoTempo(values: Readonly<Record<string, ParameterValue>>): string | null {
   return values["tempoMode"] === "declared"
@@ -362,6 +373,20 @@ export const audioFileInNode: NodeDefinition = {
       description: "Play the file audibly while analysing it.",
     },
     ...ANALYSIS_PARAMETERS,
+    syncOffset: {
+      type: "number",
+      label: "Sync Offset",
+      group: "Analysis",
+      default: 0,
+      min: -0.5,
+      max: 0.5,
+      range: "soft",
+      step: 0.001,
+      unit: "seconds",
+      inactiveWhen: freeRunHasNoTrack,
+      description:
+        "How far AHEAD of the playhead to read the analysis, to compensate the picture's own latency. The analysis describes the sound now, but the frame built from it is evaluated, rendered and presented after — one to three frames, more on a slow display — so an uncompensated picture lands late on a hard transient. Positive looks ahead, which pulls the picture back onto the beat; it NEVER moves the audio, so nothing about the sound changes. In timeline seconds, so speed, trim and a loop wrap scale it with the sound. It is stored in the document and applied identically to an offline render, which is what keeps a take reproducing what you heard; the right value is a property of this machine and display, so set it by measuring rather than by ear. 0 is off.",
+    },
     ...tempoParameters(
       "Declared only: the second INTO THE FILE where beat one falls — read it off the waveform. Trim, speed and cue move the beats with the sound.",
     ),

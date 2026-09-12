@@ -100,6 +100,10 @@ export function shippedClipAudio(
     number("retrigger", AUDIO_DETECTOR_DEFAULTS.retrigger),
   );
   const transport = mediaTransportFrom(read);
+  // T1312b: the document's sync offset, applied here for the same reason the transport is —
+  // an offline render that skipped it would hear a different frame than the app does, which
+  // is the §V47 divergence this parameter exists inside, not beside.
+  const lead = number("syncOffset", 0);
   // Under the timeline lock the harness's frame index IS the timeline (`useAudioInput.read`).
-  return (frameIndex) => readTrackAtPlayhead(track, transport, frameIndex / fps, duration);
+  return (frameIndex) => readTrackAtPlayhead(track, transport, frameIndex / fps, duration, lead);
 }

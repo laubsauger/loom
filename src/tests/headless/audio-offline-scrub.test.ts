@@ -65,7 +65,7 @@ const TIMELINE: MediaTransportValues = {
 
 /** What `useAudioInput.read` does under the lock: the harness's frame index is the timeline. */
 function scrub(track: FeatureTrack, transport: MediaTransportValues) {
-  return (frameIndex: number) => readTrackAtPlayhead(track, transport, frameIndex / FPS, SECONDS);
+  return (frameIndex: number) => readTrackAtPlayhead(track, transport, frameIndex / FPS, SECONDS, 0);
 }
 
 describe("T1229 — a pre-analysed file renders reproducibly, indexed by the transport", async () => {

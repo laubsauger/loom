@@ -180,8 +180,28 @@ export function readTrackAtPlayhead(
   transport: MediaTransportValues,
   timelineSeconds: number,
   duration: number,
+  /**
+   * T1312b — how far AHEAD of the playhead to read, in TIMELINE seconds. Positive looks
+   * forward, which is what compensates the picture's own latency: analysis describes the
+   * sound now, then the graph evaluates, the GPU renders and the compositor presents, so
+   * an uncompensated frame paints one to three frames after the sound it reacts to.
+   *
+   * TIMELINE seconds, not media seconds, and that is the whole reason it is applied here
+   * rather than added to the resulting position: the lead is a delay in WALL time, and
+   * `mediaPlayhead` is what turns wall time into a position — so speed, trim, cue and a
+   * loop wrap all scale it exactly as they scale the sound. At 2x speed the media really
+   * does advance twice as far in the same 20 ms.
+   *
+   * REQUIRED, with no default, on purpose: every caller of this function is a surface that
+   * must agree with every other one, and live and offline disagreeing is §V47 gone. A
+   * defaulted argument would let a new caller forget silently; this way the compiler names
+   * the ones that have not decided. It NEVER moves playback — `applyMediaPlayhead` takes
+   * the same transport and does not see this, which is what keeps the offset shifting the
+   * PICTURE rather than the sound.
+   */
+  leadSeconds: number,
 ): AudioFeatures {
-  const head = mediaPlayhead(transport, timelineSeconds, duration);
+  const head = mediaPlayhead(transport, timelineSeconds + leadSeconds, duration);
   if (!head.visible) return readFeatureFrame(track, -1);
   // The timeline second arrives as `frame / fps`, and multiplying it back lands one ulp
   // UNDER `frame` for 22 of the first 1900 frames at 60 fps. A bare floor read the

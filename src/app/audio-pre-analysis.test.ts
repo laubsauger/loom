@@ -112,11 +112,11 @@ describe("readTrackAtPlayhead — the timeline read is the transport's arithmeti
   const frameOf = (features: { level: number }): number => Math.round(features.level * 1000);
 
   it("is a pure function of the timeline second: any order, any history, the same frame", () => {
-    expect(frameOf(readTrackAtPlayhead(track, timeline, 2.5, DURATION))).toBe(150);
-    expect(frameOf(readTrackAtPlayhead(track, timeline, 0.25, DURATION))).toBe(15);
-    expect(frameOf(readTrackAtPlayhead(track, timeline, 2.5, DURATION))).toBe(150);
+    expect(frameOf(readTrackAtPlayhead(track, timeline, 2.5, DURATION, 0))).toBe(150);
+    expect(frameOf(readTrackAtPlayhead(track, timeline, 0.25, DURATION, 0))).toBe(15);
+    expect(frameOf(readTrackAtPlayhead(track, timeline, 2.5, DURATION, 0))).toBe(150);
     // Within a frame's 1/fps the floor holds: 2.5 + 0.9/60 is still frame 150.
-    expect(frameOf(readTrackAtPlayhead(track, timeline, 2.5 + 0.9 / FPS, DURATION))).toBe(150);
+    expect(frameOf(readTrackAtPlayhead(track, timeline, 2.5 + 0.9 / FPS, DURATION, 0))).toBe(150);
   });
 
   it("reads frame N for timeline second N / fps, for EVERY N — one ulp under a boundary is not the frame before", () => {
@@ -127,22 +127,37 @@ describe("readTrackAtPlayhead — the timeline read is the transport's arithmeti
     // flashed the ring, which is how `e66-meter-claims.gpu.test.ts` found it.
     const missed: number[] = [];
     for (let frame = 0; frame <= DURATION * FPS; frame += 1) {
-      if (frameOf(readTrackAtPlayhead(track, timeline, frame / FPS, DURATION)) !== frame) missed.push(frame);
+      if (frameOf(readTrackAtPlayhead(track, timeline, frame / FPS, DURATION, 0)) !== frame) missed.push(frame);
     }
     expect(missed).toEqual([]);
   });
 
   it("trim, cue, speed and loop move the read exactly as they move the sound", () => {
-    expect(frameOf(readTrackAtPlayhead(track, { ...timeline, trimStart: 4 }, 1, DURATION))).toBe(300);
-    expect(frameOf(readTrackAtPlayhead(track, { ...timeline, cue: true, cuePoint: 7 }, 1, DURATION))).toBe(420);
-    expect(frameOf(readTrackAtPlayhead(track, { ...timeline, speed: 2 }, 1, DURATION))).toBe(120);
+    expect(frameOf(readTrackAtPlayhead(track, { ...timeline, trimStart: 4 }, 1, DURATION, 0))).toBe(300);
+    expect(frameOf(readTrackAtPlayhead(track, { ...timeline, cue: true, cuePoint: 7 }, 1, DURATION, 0))).toBe(420);
+    expect(frameOf(readTrackAtPlayhead(track, { ...timeline, speed: 2 }, 1, DURATION, 0))).toBe(120);
     // Loop over a 2 s window from 3 s: timeline 5.5 s is 1.5 s into the second lap.
-    expect(frameOf(readTrackAtPlayhead(track, { ...timeline, trimStart: 3, trimEnd: 5, extend: "loop" }, 5.5, DURATION))).toBe(270);
+    expect(frameOf(readTrackAtPlayhead(track, { ...timeline, trimStart: 3, trimEnd: 5, extend: "loop" }, 5.5, DURATION, 0))).toBe(270);
+  });
+
+  it("reads AHEAD of the playhead by the lead, in timeline seconds (T1312b)", () => {
+    // The picture is evaluated, rendered and presented after the analysis that drove it, so
+    // an uncompensated frame lands late on a transient. A lead of two frames reads the record
+    // two frames later — the sound that will be PLAYING when this frame is on the glass.
+    expect(frameOf(readTrackAtPlayhead(track, timeline, 2.5, DURATION, 2 / FPS))).toBe(152);
+    // Zero is off, and is exactly what the call did before this argument existed: the whole
+    // catalogue renders byte-for-byte what it rendered, because every stored default is 0.
+    expect(frameOf(readTrackAtPlayhead(track, timeline, 2.5, DURATION, 0))).toBe(150);
+    // Negative reads BEHIND, for a chain whose picture somehow arrives early.
+    expect(frameOf(readTrackAtPlayhead(track, timeline, 2.5, DURATION, -0.5))).toBe(120);
+    // TIMELINE seconds, so speed scales it with the sound: at 2x, 0.5 s of lead is 60 frames
+    // of media. Adding it to the resulting POSITION instead would move a fixed 30.
+    expect(frameOf(readTrackAtPlayhead(track, { ...timeline, speed: 2 }, 1, DURATION, 0.5))).toBe(180);
   });
 
   it("holds the file's last frame under `hold` and reads SILENCE where `black` shows nothing", () => {
-    expect(frameOf(readTrackAtPlayhead(track, timeline, 12, DURATION))).toBe(DURATION * FPS);
-    expect(readTrackAtPlayhead(track, { ...timeline, extend: "black" }, 12, DURATION)).toEqual(SILENCE);
-    expect(readTrackAtPlayhead(track, { ...timeline, trimStart: 4, extend: "black" }, -1, DURATION)).toEqual(SILENCE);
+    expect(frameOf(readTrackAtPlayhead(track, timeline, 12, DURATION, 0))).toBe(DURATION * FPS);
+    expect(readTrackAtPlayhead(track, { ...timeline, extend: "black" }, 12, DURATION, 0)).toEqual(SILENCE);
+    expect(readTrackAtPlayhead(track, { ...timeline, trimStart: 4, extend: "black" }, -1, DURATION, 0)).toEqual(SILENCE);
   });
 });

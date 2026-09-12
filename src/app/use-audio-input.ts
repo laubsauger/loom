@@ -3,6 +3,7 @@ import type { AudioFeatures, FrameEvaluationInput } from "@domain/types/frame.ts
 import type { GraphDocument, GraphNode } from "@domain/types/graph.ts";
 import type { NodeId } from "@domain/types/ids.ts";
 import type { ChannelResolver } from "@domain/parameters/resolve.ts";
+import type { ParameterValue } from "@domain/types/parameters.ts";
 import { isSilencedSource } from "@domain/graph/bypass.ts";
 import { createHopAnalyser } from "@domain/audio/analysis/hop-analyser.ts";
 import type { MediaTransportValues } from "@domain/media/transport.ts";
@@ -239,6 +240,23 @@ function detectorOf(node: GraphNode): DetectorSettings {
   return { threshold: number("threshold"), retrigger: number("retrigger") };
 }
 
+/**
+ * T1312b — the capturing node's sync offset, in seconds, from a resolved parameter read.
+ *
+ * Exported and pure so the two claims that matter can be pinned without an AudioContext:
+ * an absent or non-finite value is 0 (a document that never stored the parameter hears
+ * exactly what it heard before), and the number passes through untouched.
+ *
+ * It is deliberately absent from `CaptureConfig` and therefore from `captureKeyOf`: the
+ * detector knobs are STRUCTURAL — changing one rebuilds the capture and re-analyses the
+ * file — and routing the offset through that door would re-analyse the whole track on
+ * every drag of the slider. It is a value, read per frame beside `volume`.
+ */
+export function syncLeadOf(read: (key: string) => ParameterValue | undefined): number {
+  const value = read("syncOffset");
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
 /** The string a capture is identified by: equal keys keep the capture, anything else rebuilds it. */
 export function captureKeyOf(config: CaptureConfig | null, reloadToken: number): string {
   if (config === null) return "";
@@ -340,6 +358,8 @@ export function useAudioInput(
   const offlineRef = useRef<OfflineAnalysis | null>(null);
   /** T1229: the transport as `sync` last resolved it — the previous frame's channels (§V887). */
   const transportRef = useRef<MediaTransportValues | null>(null);
+  /** T1312b: the capturing node's sync offset, resolved with the transport it belongs to. */
+  const leadRef = useRef(0);
   const fpsRef = useRef(fps);
   fpsRef.current = fps;
   const statusRef = useRef<AudioInputStatus>({ kind: "idle" });
@@ -607,7 +627,13 @@ export function useAudioInput(
     const offline = offlineRef.current;
     const transport = transportRef.current;
     if (offline !== null && transport !== null && transport.playMode !== "freeRun" && capture.element !== undefined) {
-      return readTrackAtPlayhead(offline.track, transport, frame.timeSeconds, durationOf(capture.element));
+      return readTrackAtPlayhead(
+        offline.track,
+        transport,
+        frame.timeSeconds,
+        durationOf(capture.element),
+        leadRef.current,
+      );
     }
     // T1226: the engine's hops since the last frame, or the polled engine — the named fallback.
     const reader = readerRef.current;
@@ -634,6 +660,13 @@ export function useAudioInput(
     const stepped = runner.step(frame, durationOf(capture.element));
     if (stepped === null) return;
     transportRef.current = stepped.transport;
+    /*
+     * T1312b — read like `volume` below, from the SAME resolve (§B8's shape), because it is
+     * a VALUE and not structural: changing it must not tear down the capture and re-analyse
+     * the file, and it animates through the ordinary path. It is deliberately NOT part of
+     * `captureKeyOf`, which is what a knob that rebuilt the capture on every drag would be.
+     */
+    leadRef.current = syncLeadOf(stepped.read);
     applyMediaPlayhead(capture.element, stepped.transport, stepped.head);
     if (capture.gain !== undefined) {
       // Read from the SAME resolve the playhead came from, so volume and position can
