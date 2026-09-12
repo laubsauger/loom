@@ -788,13 +788,35 @@ fn keyDrive() -> f32 {
  * one with the most shape in it.
  */
 fn beyondDoor(eye: vec3f, dir: vec3f, key: f32) -> vec3f {
-  /* UP IS THE SKY, and a ray only gets to look up by going through a breach in the vault —
-     the stone above the ceiling is solid, so nothing else can escape that way. That makes
-     this test both cheap and correct: no cone, no aperture arithmetic, just the fact that
-     the geometry already refused every other upward ray. */
-  if (dir.y > 0.12) {
-    let high = smoothstep(0.12, 0.55, dir.y);
-    return mix(params.fogColor.rgb, params.dayColor.rgb * params.breachLight, high);
+  /* ⚑ THE SKY IS SEEN THROUGH A HOLE, AND THE HOLE IS TESTED (T1306c).
+     The first version said "up is the sky" and justified it with: the stone above the vault
+     is solid, so no upward ray can escape except through a breach. THE GEOMETRY IS RIGHT AND
+     THE MARCHER IS NOT. A shallow upward ray running down the length of the hall needs sixty
+     metres to reach a ceiling seven metres above it, and it runs out of MAX_DISTANCE and
+     step budget first — so it reports "hit nothing", takes the sky branch, and the aisles
+     fill with flat daylight. That is the owner's *"next room being white bright in the
+     absolute dark areas"*, and it is neither an index keyed on the eye nor a missing fog
+     term: it is A GEOMETRIC ARGUMENT THAT THE MARCH DOES NOT HONOUR.
+     So the hole is tested rather than assumed. Intersect the ray with the vault's plane and
+     ask the same hash the geometry asks — is that point inside a breach? A ray that escaped
+     because it ran out of steps answers no, and gets the dark it should always have had. */
+  if (dir.y > 0.02) {
+    let toVault = (params.ceiling - eye.y) / dir.y;
+    if (toVault > 0.0 && toVault < MAX_DISTANCE) {
+      let b = eye + dir * toVault;
+      let bay = bayOf(b.z);
+      let open = step(unitFloat(hash3i(vec3i(i32(bay), 0, 41), RUIN_SEED)), clamp(params.breach, 0.0, 0.9));
+      let bX = mix(-2.6, 2.6, unitFloat(hash3i(vec3i(i32(bay), 0, 47), RUIN_SEED)));
+      let bR = mix(0.9, 1.8, unitFloat(hash3i(vec3i(i32(bay), 0, 53), RUIN_SEED)));
+      let zl = (fract(b.z / max(params.bay, 0.1) + 0.5) - 0.5) * max(params.bay, 0.1);
+      let inHole = 1.0 - smoothstep(bR * 0.72, bR, length(vec2f(b.x - bX, zl)));
+      let lit = open * inHole;
+      if (lit > 0.0) {
+        // Hazed by how far the sky actually is, like every other pixel in the frame.
+        let sky = params.dayColor.rgb * params.breachLight;
+        return mix(params.fogColor.rgb, sky, lit * exp(-toVault * params.fog));
+      }
+    }
   }
   if (dir.z <= 0.01) { return params.fogColor.rgb; }
   let travel = (nextWallZ(eye.z) - eye.z) / dir.z;
@@ -802,7 +824,22 @@ fn beyondDoor(eye: vec3f, dir: vec3f, key: f32) -> vec3f {
   let b = eye + dir * travel;
   let acrossJamb = 1.0 - smoothstep(params.doorWidth * 0.7, params.doorWidth * 1.02, abs(b.x));
   let underHead = 1.0 - smoothstep(3.0, 4.3, b.y);
-  let inside = acrossJamb * underHead * step(0.0, b.y);
+  /* ⚑ AND IT ONLY STANDS IN AT A DISTANCE (T1306c). This field is a SUBSTITUTE for geometry
+     the march cannot afford to reach: a ray through the doorway would have to cross a whole
+     further hall to hit anything, and the step budget runs out first, so the miss path
+     paints a plausible "somewhere else" instead. That is a fair trade for a doorway at the
+     end of a nave, which is a small bright hole. It is a disaster for one a metre away,
+     because THE APERTURE THEN SUBTENDS MOST OF THE FRAME — every forward ray crosses the
+     wall plane near the axis and passes the jamb test, so two thirds of the picture is
+     replaced by the backdrop and blows out. That is the owner's *"next room being white
+     bright in the absolute dark areas"*, and it is why crossing the threshold "fixed" it:
+     the next aperture is fifty-three metres away and small again.
+     Bisected rather than reasoned, after three hypotheses that rendered unchanged: cutting
+     'doorWidth' to nothing took the blown region from 4.32% of the frame to 0.00%, while a
+     twelve-fold fog increase left it at 4.31% — which is what ruled out the missing
+     extinction term I was sure of. */
+  let standIn = smoothstep(7.0, 24.0, travel);
+  let inside = acrossJamb * underHead * step(0.0, b.y) * standIn;
   if (inside <= 0.0) { return params.fogColor.rgb; }
   // The horizon: warm ground below, cold sky above, and the transition is where the eye
   // reads a distance rather than a wall.
@@ -810,7 +847,19 @@ fn beyondDoor(eye: vec3f, dir: vec3f, key: f32) -> vec3f {
   let field = mix(params.warmColor.rgb * 0.55, params.keyColor.rgb * 1.5, smoothstep(0.1, 0.72, height));
   let core = exp(-abs(b.y - 1.4) * 0.6) * exp(-abs(b.x) * 0.85);
   let beyond = (field + (params.keyColor.rgb * core * 0.9)) * params.keyIntensity * key;
-  return mix(params.fogColor.rgb, beyond, inside);
+  /* ⚑ AND IT IS HAZED BY THE DISTANCE TO IT, WHICH THE FIRST VERSION WAS NOT (T1306c).
+     Owner: *"we can see the next room being white bright in the absolute dark areas, and
+     only once we cross into that room, the white areas become correctly dark."*
+     Every other pixel in this shader gets the aerial perspective — 'mix(lit, fogColor,
+     1 - exp(-travelled * fog))' — and this one got none, so a doorway FIFTY-THREE METRES
+     away rendered at exactly the strength of one three metres away. That is why it read as
+     a bright hole punched in the dark, and why crossing into the room "fixed" it: once the
+     eye is inside, the aperture is near and the geometry occludes it honestly. The bug was
+     never about which room the camera is in. It was a missing extinction term, and the
+     giveaway is that the SAME surface looked right from one side of a threshold and wrong
+     from the other WITHOUT anything about it changing. */
+  let hazed = mix(beyond, params.fogColor.rgb, 1.0 - exp(-travel * params.fog));
+  return mix(params.fogColor.rgb, hazed, inside);
 }
 
 /**
@@ -916,9 +965,20 @@ fn dustAlong(eye: vec3f, dir: vec3f, far: f32, pixel: vec2f, hue: vec3f, key: f3
     let bR = mix(0.9, 1.8, unitFloat(hash3i(vec3i(i32(bIndex), 0, 53), RUIN_SEED)));
     let inShaft = 1.0 - smoothstep(bR * 0.3, bR * 0.85, length(vec2f(p.x - bX, (fract(p.z / bayF + 0.5) - 0.5) * bayF)));
     let descend = smoothstep(0.0, params.ceiling, p.y);
-    dayAir = dayAir + (bOpen * inShaft * descend * params.dayColor.rgb);
+    /* ⚑ TRANSMITTANCE, AND ITS ABSENCE IS THE WHITE (T1306c). Every sample along this ray
+       was added at FULL STRENGTH however far away it was, so a ray that happens to run
+       ALONG a daylight shaft summed the entire shaft — thirty samples of it — and blew out
+       to pure white. That is the owner's *"next room being white bright in the absolute
+       dark areas"*: the blown regions are in the AISLES rather than in a doorway, which is
+       what ruled out the aperture and the sky branch before this.
+       Light scattered toward the eye from a metre away and from seventy are not the same
+       light, and the surface path has always known that ('haze' in 'fs'). The volume did
+       not. One exponential per sample, the same fog coefficient the surfaces use, so the
+       two halves of the picture finally agree about how far away things are. */
+    let through = exp(-travel * params.fog);
+    dayAir = dayAir + (bOpen * inShaft * descend * params.dayColor.rgb * through);
 
-    accumulated = accumulated + ((glow + beam) * settle);
+    accumulated = accumulated + ((glow + beam) * settle * through);
   }
   /* ⚑ THE SHAFT IS NOT SCALED BY 'dust', and the first version was. Everything else in this
      function is light scattered by the dust that hangs in the hall, so 'dust' is the right
@@ -1032,7 +1092,26 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
     /* One key, from the doorway at the end of the nave: a direction rather than a point,
        because the doorway is far enough that its rays are parallel by the time they reach
        anything the camera can see. */
-    let toKey = normalize(vec3f(0.0, 0.22, -1.0));
+    /* ⚑ THE KEY IS A DOORWAY, NOT A WALL (T1306c), and treating it as a wall is the bug the
+       owner reported as *"the next room being white bright in the absolute dark areas, and
+       only once we cross into that room, the white areas become correctly dark."*
+       T1304c gave the key a reach and measured it as the distance to the WALL PLANE ahead.
+       That is fine while the camera is mid-hall and catastrophic next to a wall: at a metre
+       out, EVERY surface in frame scores "right beside the light" — including surfaces ten
+       metres off-axis in an aisle, which cannot see the doorway at all — so the whole
+       picture takes the key at full strength. Cross the threshold and the next wall is
+       fifty-three metres away, so it all drops to a sixth. Nothing about those surfaces
+       changed; the thing they were being measured AGAINST did.
+       Bisected rather than reasoned: ten arms with one term cut in each, and 'keyIntensity'
+       at 0 was the only one that removed the blown region (4.32% of the frame to 0.00%).
+       The three hypotheses I reached for first — an index keyed on the eye, a missing fog
+       term on the aperture, the sky branch — were all wrong, and each cost a render.
+       The doorway is a point on the nave's axis in the wall plane, so the key is a POINT
+       source with a falloff, which is what it always was in the fiction. */
+    let doorAt = vec3f(0.0, 1.9, nextWallZ(p.z));
+    let toDoor = doorAt - p;
+    let doorDist = length(toDoor);
+    let toKey = toDoor / max(doorDist, 0.001);
     /* ⚑ AND IT FALLS OFF, which is the single change that stopped this reading as a flat
        render of a corridor. A directional light with no reach lights EVERY surface facing
        the camera equally, all the way down the hall — so every column in the nave arrived
@@ -1044,9 +1123,12 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
        the inlay's own, so the near hall is lit by what is in it; far down the nave the
        cold key takes over. Two zones the eye can read the distance from, out of one
        'smoothstep'. */
-    let fromWall = clamp(nextWallZ(p.z) - p.z, 0.0, 90.0);
-    let keyReach = 1.0 - smoothstep(2.0, 62.0, fromWall);
-    let lambert = max(dot(n, toKey), 0.0) * keyReach;
+    /* Inverse-square, which is what a hole in a wall actually obeys, plus a lateral gate:
+       a doorway cannot light what the wall beside it is in the way of. The gate is the part
+       the plane-distance version had no way to express. */
+    let keyReach = 1.0 / (1.0 + (doorDist * doorDist * 0.012));
+    let throughDoor = 1.0 - smoothstep(2.0, 6.5, abs(p.x));
+    let lambert = max(dot(n, toKey), 0.0) * keyReach * throughDoor;
     /* THE INLAY IS THE PRIMARY SOURCE, which is what makes the temple read as powered
        rather than as lit-from-off-screen. Three terms and they are different things:
        the channel's own emission (it burns), the spill onto the stone immediately around

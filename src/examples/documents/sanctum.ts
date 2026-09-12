@@ -128,7 +128,7 @@ export const sanctumDocument = document(
         inlayBreak: 0.42,
         inlayNode: 0.9,
         inlayColor: [0.16, 1, 0.82, 1],
-        inlayEmission: 0.85,
+        inlayEmission: 3.4,
         inlaySpill: 4.2,
         inlayDensity: 0.4,
         stoneColor: [0.29, 0.27, 0.25, 1],
@@ -144,13 +144,13 @@ export const sanctumDocument = document(
            not a whole number of bays would put a doorway in the middle of a colonnade. */
         roomPeriod: 52.8,
         doorWidth: 1.15,
-        ambient: 0.26,
+        ambient: 0.18,
         fog: 0.055,
-        fogColor: [0.045, 0.05, 0.062, 1],
+        fogColor: [0.026, 0.03, 0.038, 1],
         warmColor: [1, 0.54, 0.26, 1],
         warmIntensity: 0.28,
-        lift: 0.012,
-        contrast: 0.82,
+        lift: 0.003,
+        contrast: 1.06,
         hueTurn: 42,
         /* ⚑ TWO HUES IN OPPOSITION, not one family drifting. The first morph moved the
            conduits along a sixth of the wheel and the reading was that it "reads as one
@@ -190,7 +190,7 @@ export const sanctumDocument = document(
              it. 0.7 over a 420 ms decay (on the analysis node) is a light that GUTTERS.
              §T1301's open complaint is exactly this failure on E57, and it was not going
              to be fixed by a different curve on a bigger jump. */
-          inlayEmission: expressionSlot(`0.85 + 0.7 * ${HITS("kickCount")}`, 0.85),
+          inlayEmission: expressionSlot(`3.4 + 2.6 * ${HITS("kickCount")}`, 3.4),
           /* And the air BREATHES rather than landing: dust on the low band's rank, which
              rests at 0.5 with no audio and so renders the shipped density exactly. */
           dust: expressionSlot(`0.02 + 0.024 * ${LEVELS("low")}`, 0.032),

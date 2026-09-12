@@ -123,7 +123,7 @@ describe("E68 Sanctum — claims", () => {
        measurement entirely, and it is the §V361 shape besides: what differs if the edge
        were cut? */
     const cutKick = (graph: GraphDocument): void => {
-      param(graph, "temple", "inlayEmission", 0.85);
+      param(graph, "temple", "inlayEmission", 3.4);
     };
 
     /* At 112 bpm a beat is 60/112 s = 32.14 frames — 536 ms — so beat 3 lands at frame
@@ -177,7 +177,7 @@ describe("E68 Sanctum — claims", () => {
          eight, and a claim that cuts two of eight is asserting §V914 about a quarter of the
          file — the four lanes it does not cut could each rest somewhere else entirely and
          this would still pass. The list is the document's, and it is the whole list. */
-      param(graph, "temple", "inlayEmission", 0.85);
+      param(graph, "temple", "inlayEmission", 3.4);
       param(graph, "temple", "dust", 0.032);
       param(graph, "temple", "inlayRings", 0.34);
       param(graph, "temple", "inlayNode", 0.9);
