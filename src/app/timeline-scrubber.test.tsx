@@ -6,7 +6,8 @@ import { installDomStubs } from "@ui/testing/install-dom-stubs.ts";
 import { TooltipProvider } from "@ui/primitives/tooltip.tsx";
 import type { FrameInputs } from "@domain/types/backend.ts";
 import { DEFAULT_FRAME_RANGE } from "@domain/types/graph.ts";
-import { TimelineScrubber, frameAtFraction, fractionOfRange } from "./timeline-scrubber.tsx";
+import { frameAtFraction, fractionOfRange } from "./scrubber-math.ts";
+import { TimelineScrubber } from "./timeline-scrubber.tsx";
 
 /**
  * The header timeline (T433).
