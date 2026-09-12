@@ -4,9 +4,19 @@ import { useRef } from "react";
 import { cx } from "../cx.ts";
 import styles from "./context-menu.module.css";
 
-export const ContextMenuRoot = ContextMenuPrimitive.Root;
-export const ContextMenuTrigger = ContextMenuPrimitive.Trigger;
-export const ContextMenuSub = ContextMenuPrimitive.Sub;
+/*
+ * T1315b — these are Radix's own components, re-exported under Loom names. Written as
+ * `export const X = Primitive.Y` the react-refresh rule sees a member expression and
+ * calls it a non-component export (it can only recognise a component by name+shape);
+ * as a re-export SPECIFIER it recognises the capitalised name and is satisfied. Same
+ * binding either way — this is the honest spelling, not a suppression.
+ */
+export {
+  Root as ContextMenuRoot,
+  Trigger as ContextMenuTrigger,
+  Sub as ContextMenuSub,
+  RadioGroup as ContextMenuRadioGroup,
+} from "@radix-ui/react-context-menu";
 
 export type ContextMenuContentProps = ComponentProps<typeof ContextMenuPrimitive.Content>;
 export type ContextMenuItemProps = ComponentProps<typeof ContextMenuPrimitive.Item> & {
@@ -124,8 +134,6 @@ export function ContextMenuCheckboxItem({ className, children, ...rest }: Contex
     </ContextMenuPrimitive.CheckboxItem>
   );
 }
-
-export const ContextMenuRadioGroup = ContextMenuPrimitive.RadioGroup;
 
 export type ContextMenuRadioItemProps = ComponentProps<typeof ContextMenuPrimitive.RadioItem>;
 

@@ -3,10 +3,19 @@ import type { ComponentProps } from "react";
 import { cx } from "../cx.ts";
 import styles from "./popover.module.css";
 
-export const PopoverRoot = PopoverPrimitive.Root;
-export const PopoverTrigger = PopoverPrimitive.Trigger;
-export const PopoverAnchor = PopoverPrimitive.Anchor;
-export const PopoverClose = PopoverPrimitive.Close;
+/*
+ * T1315b — these are Radix's own components, re-exported under Loom names. Written as
+ * `export const X = Primitive.Y` the react-refresh rule sees a member expression and
+ * calls it a non-component export (it can only recognise a component by name+shape);
+ * as a re-export SPECIFIER it recognises the capitalised name and is satisfied. Same
+ * binding either way — this is the honest spelling, not a suppression.
+ */
+export {
+  Root as PopoverRoot,
+  Trigger as PopoverTrigger,
+  Anchor as PopoverAnchor,
+  Close as PopoverClose,
+} from "@radix-ui/react-popover";
 
 export type PopoverContentProps = ComponentProps<typeof PopoverPrimitive.Content>;
 

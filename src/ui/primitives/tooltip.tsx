@@ -3,9 +3,18 @@ import type { ComponentProps, ReactNode } from "react";
 import { cx } from "../cx.ts";
 import styles from "./tooltip.module.css";
 
-export const TooltipProvider = TooltipPrimitive.Provider;
-export const TooltipRoot = TooltipPrimitive.Root;
-export const TooltipTrigger = TooltipPrimitive.Trigger;
+/*
+ * T1315b — these are Radix's own components, re-exported under Loom names. Written as
+ * `export const X = Primitive.Y` the react-refresh rule sees a member expression and
+ * calls it a non-component export (it can only recognise a component by name+shape);
+ * as a re-export SPECIFIER it recognises the capitalised name and is satisfied. Same
+ * binding either way — this is the honest spelling, not a suppression.
+ */
+export {
+  Provider as TooltipProvider,
+  Root as TooltipRoot,
+  Trigger as TooltipTrigger,
+} from "@radix-ui/react-tooltip";
 
 export type TooltipContentProps = ComponentProps<typeof TooltipPrimitive.Content>;
 
@@ -44,9 +53,9 @@ export interface TooltipProps {
  */
 export function Tooltip({ label, side = "bottom", children }: TooltipProps) {
   return (
-    <TooltipRoot>
-      <TooltipTrigger asChild>{children}</TooltipTrigger>
+    <TooltipPrimitive.Root>
+      <TooltipPrimitive.Trigger asChild>{children}</TooltipPrimitive.Trigger>
       <TooltipContent side={side}>{label}</TooltipContent>
-    </TooltipRoot>
+    </TooltipPrimitive.Root>
   );
 }
