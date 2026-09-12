@@ -413,6 +413,7 @@ describe("T62 Phase 1 agent exit — compile, preview, timings", () => {
             estimatedResourceBytes: snapshot.plan?.estimatedResourceBytes ?? null,
             memoryBudgetBytes: snapshot.plan?.memoryBudgetBytes ?? null,
             overBudget: snapshot.overBudget,
+            droppedTimingFrames: snapshot.frame.droppedFrames ?? 0,
           };
         },
       });

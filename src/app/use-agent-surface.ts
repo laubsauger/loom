@@ -180,6 +180,9 @@ export function useAgentSurface(
           estimatedResourceBytes: snapshot.plan?.estimatedResourceBytes ?? null,
           memoryBudgetBytes: snapshot.plan?.memoryBudgetBytes ?? null,
           overBudget: snapshot.overBudget,
+          // T1295: the frames this figure is NOT describing, so an agent reading frameGpuMs
+          // can tell a partial measurement from a whole one.
+          droppedTimingFrames: snapshot.frame.droppedFrames ?? 0,
         };
       },
       project: () => runtime.project,

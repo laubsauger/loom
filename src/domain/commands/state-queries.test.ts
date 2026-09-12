@@ -33,6 +33,7 @@ const metrics: RuntimeMetricsSnapshot = {
   estimatedResourceBytes: 2048,
   memoryBudgetBytes: 4096,
   overBudget: false,
+  droppedTimingFrames: 2,
 };
 
 const project = (): Omit<ProjectDocument, "graph"> => ({
@@ -119,6 +120,9 @@ describe("each query answers what it claims", () => {
     expect(snapshot.frameGpuMs).toBeNull();
     expect(snapshot.timingAvailable).toBe(false);
     expect(snapshot.framesRendered).toBe(12);
+    // T1295: the lost-timing count travels with the figures it qualifies, so a reader can
+    // tell a partial measurement from a whole one without asking a second question.
+    expect(snapshot.droppedTimingFrames).toBe(2);
   });
 
   it("values.channels passes the published bags through, a silent node absent rather than zeroed", async () => {

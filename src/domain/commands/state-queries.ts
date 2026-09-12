@@ -109,6 +109,13 @@ export interface RuntimeMetricsSnapshot {
   readonly estimatedResourceBytes: number | null;
   readonly memoryBudgetBytes: number | null;
   readonly overBudget: boolean;
+  /**
+   * T1295: frames whose GPU timing was LOST since the current plan was set — never
+   * measured, as opposed to not measured yet. Non-zero means `frameGpuMs` and the per-pass
+   * figures describe only the frames that got through. Named for what it counts: these are
+   * rendered frames whose TIMING went missing, never dropped rendering.
+   */
+  readonly droppedTimingFrames: number;
 }
 
 export interface ProjectSnapshot {
@@ -277,4 +284,5 @@ const EMPTY_METRICS: RuntimeMetricsSnapshot = Object.freeze({
   estimatedResourceBytes: null,
   memoryBudgetBytes: null,
   overBudget: false,
+  droppedTimingFrames: 0,
 });

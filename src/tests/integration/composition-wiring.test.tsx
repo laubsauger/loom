@@ -1800,11 +1800,16 @@ describe("T619 — get_runtime_metrics tells the truth about a rendering documen
       passCount: number;
       framesRendered: number;
       lastFrameIndex: number | null;
+      droppedTimingFrames: number;
     };
     // The plan half: an agent asking "what is compiled" must not be told zero on a
     // compiled five-node graph — the exact lie T619 measured in a live tab.
     expect(data.nodeCount).toBeGreaterThan(0);
     expect(data.passCount).toBeGreaterThan(0);
+    // T1295: the agent is told what the figures do NOT cover. A number here reads as a
+    // whole measurement unless the count that qualifies it travels beside it — and this is
+    // the HUB's count, crossing the query seam, not a constant the tool could invent.
+    expect(data.droppedTimingFrames).toBe(runtime.telemetry.snapshot().frame.droppedFrames ?? 0);
     // The frame half: the driver ticks in this mount; framesRendered must move with it.
     await waitFor(() => {
       expect(runtime.telemetry.snapshot().framesRendered).toBeGreaterThan(0);

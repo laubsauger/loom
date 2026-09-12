@@ -116,6 +116,26 @@ function passSumText(frame: FrameTimingBucket): string {
   return formatMs({ ...frame, gpuMs: frame.passSumMs }).text;
 }
 
+/**
+ * T1295 — the frames this panel's figures are NOT describing.
+ *
+ * vgpu's timer drops a frame's timestamps when its staging slots are all still mapping,
+ * and a silently partial timing reads exactly like a whole one: the gpu time above would
+ * keep showing a plausible number measured from a fraction of the frames. The count is
+ * rendered ONLY when it is non-zero — a permanent "lost 0" is noise, and §V91 asks absence
+ * to read as absence — so its appearance is itself the signal.
+ */
+function LostTimingText(frame: FrameTimingBucket): string {
+  const lost = frame.droppedFrames ?? 0;
+  return lost === 0 ? "" : String(lost);
+}
+
+function LostTimingStat({ source }: { source: SnapshotSource }) {
+  const value = useLiveText(source, (s) => LostTimingText(s.frame));
+  if (value === "") return null;
+  return <Stat label="timing lost" value={value} tone="warn" />;
+}
+
 /** One live reading: re-renders only when the selected text changed. */
 function useLiveText(source: SnapshotSource, select: (snapshot: TelemetrySnapshot) => string) {
   return useStoreSelector(source.subscribe, source.snapshot, select);
@@ -546,6 +566,7 @@ function PerformanceSections({
             label="frame index"
             select={(s) => (s.lastFrameIndex === null ? "—" : String(s.lastFrameIndex))}
           />
+          <LostTimingStat source={source} />
           {cookPolicy === undefined || onCookPolicyChange === undefined ? null : (
             <CookPolicyControl policy={cookPolicy} onChange={onCookPolicyChange} />
           )}

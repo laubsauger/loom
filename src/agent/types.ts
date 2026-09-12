@@ -137,6 +137,13 @@ export interface AgentRuntimeMetrics {
   readonly estimatedResourceBytes: number | null;
   readonly memoryBudgetBytes: number | null;
   readonly overBudget: boolean;
+  /**
+   * T1295: rendered frames whose GPU TIMING was lost since the plan was set — measured
+   * never, not measured yet. The export path drops a frame's timing when the timer's
+   * staging slots are all still mapping, and a silently partial timing reads exactly like
+   * a whole one; this is what lets a caller tell the two apart before quoting a figure.
+   */
+  readonly droppedTimingFrames: number;
 }
 
 /** §V60 — an image is bytes plus everything needed to interpret them. */

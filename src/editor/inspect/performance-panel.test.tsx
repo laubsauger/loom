@@ -75,6 +75,7 @@ function snapshot(
   frameMs: number,
   framesRendered: number,
   basis: FrameTimingBasis = "frame",
+  droppedFrames = 0,
 ): TelemetrySnapshot {
   return {
     timingAvailable: true,
@@ -115,6 +116,7 @@ function snapshot(
       nodeCount: 1,
       basis,
       passSumMs: frameMs + 1.25,
+      droppedFrames,
     },
     passes: [
       {
@@ -238,6 +240,25 @@ describe("PerformancePanel renders for the eyes on it (T1239)", () => {
     hub.tick(snapshot(4.25, 121));
     expect(frames()).toBe("121");
     expect(screen.getAllByText("4.250 ms").length).toBeGreaterThan(0);
+  });
+});
+
+describe("T1295 — the frame figure says what it is not describing", () => {
+  it("shows the lost-frame count only while frames are being lost, and keeps showing the figure", () => {
+    const hub = fakeSource(snapshot(3.5, 120));
+    mount(hub.source);
+    // Nothing lost: no row. A permanent "timing lost 0" is noise, and absence must read as
+    // absence (§V91) — the stat APPEARING is the signal.
+    expect(screen.queryByText("timing lost")).toBeNull();
+
+    hub.tick(snapshot(3.5, 121, "frame", 2));
+    expect(stat("timing lost")).toBe("2");
+    // The measured figure is still shown beside it: it is a real duration (§V86), just not
+    // one that covers every frame.
+    expect(stat("gpu time")).toBe("3.500 ms");
+
+    hub.tick(snapshot(3.5, 122, "frame", 0));
+    expect(screen.queryByText("timing lost")).toBeNull();
   });
 });
 

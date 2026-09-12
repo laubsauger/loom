@@ -247,6 +247,9 @@ export function createHeadlessMcpServer(options: HeadlessMcpServerOptions): Head
       estimatedResourceBytes: compiled?.estimatedResourceBytes ?? null,
       memoryBudgetBytes: HEADLESS_SETTINGS.limits.memoryBudgetBytes,
       overBudget: false,
+      // T1295: this server has no GPU timer at all (`timingAvailable: false` above), so no
+      // frame's timing can be lost. Zero is the honest count, not a stub.
+      droppedTimingFrames: 0,
     }),
   });
   const compileHolder = registerCompileCommand(bus);
