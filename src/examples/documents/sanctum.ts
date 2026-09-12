@@ -87,7 +87,7 @@ export const sanctumDocument = document(
         /* A fifth of the bays have FALLEN, and one hash decides the column, its capital,
            the span above it and the block of it on the floor — a bay whose column is gone
            but whose architrave still floats is a bug, not a ruin. */
-        ruin: 0.22,
+        ruin: 0.0,
         /* The mason's courses, cut as real grooves. This is the shape that separates AGE
            from DIRT: weathering opens the bedding joint between two courses first, and a
            noise skin has no idea where those are. */
@@ -96,8 +96,8 @@ export const sanctumDocument = document(
            hall comes from inside it, at one temperature, along one axis; a shaft falling
            THROUGH the roof gives the frame a light from above, a warm against the cyan,
            and a source that is visible in shot rather than implied. */
-        breach: 0.24,
-        breachLight: 1.15,
+        breach: 0.0,
+        breachLight: 0.0,
         dayColor: [1, 0.86, 0.62, 1],
         courseHeight: 0.54,
         courseDepth: 0.03,
@@ -123,13 +123,14 @@ export const sanctumDocument = document(
            something that is part of one. A conduit varies along its run — it swells and
            narrows, it dips, it gutters out and comes back, and it POOLS where it crosses
            a member, because a junction is where a network shows it is a network. */
-        inlayRun: 1.7,
-        inlayVary: 0.62,
-        inlayBreak: 0.42,
+        inlayRun: 0.9,
+        inlayVary: 0.42,
+        inlayBreak: 0.06,
         inlayNode: 0.9,
         inlayColor: [0.16, 1, 0.82, 1],
         inlayEmission: 3.4,
-        inlaySpill: 4.2,
+        spillReach: 5.5,
+        inlaySpill: 9.0,
         inlayDensity: 0.4,
         stoneColor: [0.29, 0.27, 0.25, 1],
         keyColor: [0.52, 0.62, 0.78, 1],
@@ -144,7 +145,7 @@ export const sanctumDocument = document(
            not a whole number of bays would put a doorway in the middle of a colonnade. */
         roomPeriod: 52.8,
         doorWidth: 1.15,
-        ambient: 0.18,
+        ambient: 0.34,
         fog: 0.055,
         fogColor: [0.026, 0.03, 0.038, 1],
         warmColor: [1, 0.54, 0.26, 1],
@@ -165,8 +166,8 @@ export const sanctumDocument = document(
         saturation: 1.35,
         pivot: 0.22,
         exposure: 1.35,
-        dust: 0.032,
-        dustSteps: 30,
+        dust: 0.075,
+        dustSteps: 18,
         dustFloor: 2.6,
         shaft: 0.55,
         polish: 0.55,
@@ -221,7 +222,7 @@ export const sanctumDocument = document(
           /* The hall's primary light swells with the mix's middle rather than only landing
              on the kick — the up-and-down the owner asked for, carried by the light that
              actually illuminates the stone. */
-          inlaySpill: expressionSlot(`3.4 + 1.6 * ${LEVELS("lowMid")}`, 4.2),
+          inlaySpill: expressionSlot(`7.2 + 3.6 * ${LEVELS("lowMid")}`, 9.0),
           warmIntensity: expressionSlot(`0.2 + 0.16 * ${LEVELS("highMid")}`, 0.28),
 
           /* ⚑ "MORE UP AND DOWN SIDE FELT" — dynamic range IN TIME rather than in space,

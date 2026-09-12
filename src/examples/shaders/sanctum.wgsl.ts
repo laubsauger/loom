@@ -96,6 +96,7 @@ struct Params {
   inlayNode: f32,     // @default 0.9  extra light POOLED where a conduit crosses a ring — junctions are where a network shows it is a network
   inlayColor: vec4f,  // @default [0.16, 1, 0.82, 1]  the powered inlay — NOT on the blackbody curve, because anything that burns is human
   inlayEmission: f32, // @default 0.85  how hard the channels burn
+  spillReach: f32,    // @default 5.5  metres the conduit light travels from a column's axis — what makes it a LIGHT rather than a mark
   inlaySpill: f32,    // @default 4.2  how hard the channels light the stone around them — this is the hall's PRIMARY light, not a decoration on it
   inlayDensity: f32,  // @default 0.4  share of veins that are live — a dead conduit is still a channel in the stone
   stoneColor: vec4f,  // @default [0.29, 0.27, 0.25, 1]  the stone under the key
@@ -493,7 +494,16 @@ fn inlaySpillAt(p: vec3f) -> f32 {
   if (p.y < params.plinthHeight) { return 0.0; }
   // A pool around the column's skin rather than a copy of the channel: the glow is "there
   // is a conduit near here", which is a coarser question than "am I on one".
-  let near = 1.0 - smoothstep(params.columnRadius * 1.0, params.columnRadius * 2.9, radial);
+  /* ⚑ AND IT REACHES (T1309c). This window used to stop at 2.9 column radii — about 1.8 m,
+     which is barely outside the shaft itself. So the conduits lit their own stone and
+     NOTHING ELSE: not the floor they stand on, not the plinth beneath them, not the column
+     opposite. That is why the hall read as bright lines drawn on black rather than as a
+     place with lights in it, and it is the other half of "cheaply slapped on" — a light
+     that illuminates nothing is a decal by definition.
+     'spillReach' is in METRES rather than in radii, because what a light reaches is a
+     property of the light and not of the thing carrying it. */
+  let near = (1.0 - smoothstep(params.columnRadius, max(params.spillReach, 0.5), radial))
+    / (1.0 + radial * radial * 0.22);
   let bayIndex = bayOf(p.z);
   let side = select(0.0, 1.0, p.x >= 0.0);
   let turns = max(params.inlayVeins, 1.0);
@@ -505,7 +515,16 @@ fn inlaySpillAt(p: vec3f) -> f32 {
   let key = vec2i((i32(veinIndex) * 31) + i32(side), i32(bayIndex));
   let alive = runNoise(key + vec2i(0, 233), p.y, params.inlayRun * 0.37);
   let unbroken = smoothstep(clamp(params.inlayBreak, 0.0, 0.8), clamp(params.inlayBreak, 0.0, 0.8) + 0.16, alive);
-  return near * veinLit * unbroken * (1.0 - smoothstep(0.0, 1.0, acrossVein));
+  /* ⚑ A LIGHT DOES NOT GO OUT BETWEEN ITS OWN FILAMENTS (T1309c). This used to fall to ZERO
+     at 'acrossVein == 1' — the angular midpoint between two veins — so the stone on a column
+     BETWEEN its conduits received nothing at all, and a column lit by nine channels rendered
+     as nine bright lines on a black cylinder. That is the whole "90s CGI" read: emissive
+     marks with unlit geometry behind them.
+     The wide field is supposed to answer "how much conduit light is near here", and the
+     answer between two lit veins is MOST OF IT, not none. So the angular term now only
+     shapes the falloff instead of gating it. */
+  let around = mix(0.55, 1.0, 1.0 - smoothstep(0.0, 1.0, acrossVein));
+  return near * veinLit * unbroken * around;
 }
 
 fn sdBox(p: vec3f, b: vec3f) -> f32 {
@@ -906,36 +925,26 @@ fn dustAlong(eye: vec3f, dir: vec3f, far: f32, pixel: vec2f, hue: vec3f, key: f3
        is a speckle generator rather than a fog. What the air wants is "roughly how much
        light is near here", so the glyph hash goes and the row window stays — smooth in
        every direction, and cheaper for losing a hash. */
-    let pitch = max(params.inlayRows, 0.05);
-    let row = floor(p.y / pitch);
-    let bayIndex = bayOf(p.z);
-    /* Gated by the SAME row-and-bay test the channels use, so the air glows where there is
-       writing and not in bays without any. Without this the row window is a function of
-       height alone and paints continuous horizontal bands the full width of the hall —
-       which is what the first smooth version did, and it read as a striped fog rather than
-       as light near a wall. The fine glyph and stroke hashes stay out: those are what made
-       the volume speckle. */
-    let live = unitFloat(hash3i(vec3i(i32(row), i32(bayIndex), 0), GLYPH_SEED));
-    /* ⚑ A SMOOTHSTEP, NOT A STEP, and the difference is visible as GRAIN. A hard gate makes
-       the volume binary again in one more axis, and a binary volume sampled sparsely is the
-       speckle generator this file already learned about once — the per-pixel dither decides
-       how many samples land inside the lit cell, so neighbouring pixels disagree and the
-       dark stone beyond the colonnade fills with noise. Softening the gate costs nothing
-       and turns the disagreement into a gradient. */
-    let density = clamp(params.inlayDensity, 0.0, 1.0);
-    let lit = smoothstep(density + 0.1, density - 0.1, live);
-    let withinRow = abs(fract(p.y / pitch) - 0.5) * 2.0;
-    let rowPool = (1.0 - smoothstep(0.0, 1.0, withinRow)) * step(0.4, p.y) * lit;
-    /* Near the columns, where the channels actually are — and NEAR ONE IN BOTH AXES.
-       ⚑ THE X TEST ALONE PAINTS A BAND ACROSS THE WHOLE FRAME. A ray heading sideways
-       still crosses the plane |x| = aisle, and it crosses it at whatever z it happens to
-       be at — including the gaps between bays, where there is no column at all. The
-       result was a flat horizontal band of glow spanning the frame at row height, which
-       is the same failure as the very first smooth version and for the same reason: a
-       gate that is a function of fewer axes than the thing it is gating. */
-    let nearColumn = 1.0 - smoothstep(0.45, 1.7, abs(abs(p.x) - params.aisle));
-    let nearBay = 1.0 - smoothstep(0.5, 1.6, abs((fract(p.z / bayF + 0.5) - 0.5) * bayF));
-    let glow = rowPool * nearColumn * nearBay * hue;
+    /* ⚑ THE VOLUME NOW SAMPLES THE CONDUITS THEMSELVES, AND THE OLD VERSION IS THE REASON
+       THE LIGHT NEVER LOOKED LIKE IT CAME OUT OF THE STONE (T1309c).
+       What used to be here was a row-and-bay hash gated by "am I near a column axis". It is
+       smooth, it is cheap, and it has NO RELATIONSHIP TO WHERE A SINGLE VEIN ACTUALLY IS —
+       not its position around the shaft, not its brightness, not whether it is lit at all.
+       So the hall had two unrelated patterns in it: bright marks on the stone, and a fog
+       that merely happened to hang near pillars. The owner read that exactly right — the
+       lights look "cheaply slapped on, sprite like, not like something actually shining and
+       glowing out of the stone pillars." They were not shining out of anything. Nothing in
+       the air knew they existed.
+       ⚑ AND THE OLD DOCBLOCK DEFENDED IT, which is the part worth keeping: it argued the
+       volume wants a SMOOTHER field than the surface, and that is true. It then took a
+       DIFFERENT field, and those are not the same requirement. 'inlaySpillAt' is already
+       the smooth one — the same veins, the same live/dead decision, the same interruptions,
+       a soft window several times the channel's width — so it answers "how much conduit
+       light is near here" in the air exactly as it does on the stone. Same pattern, softer.
+       It costs more than a hash. It is the single thing the piece is FOR. */
+    // Only where a column stands: the bays between them have no conduit to glow from.
+    let nearBay = 1.0 - smoothstep(0.5, 1.7, abs((fract(p.z / bayF + 0.5) - 0.5) * bayF));
+    let glow = inlaySpillAt(p) * nearBay * hue;
     /* The shaft: a slab of light down the nave's axis from the doorway, banded by the ribs
        it passed on the way. The band never closes fully — a rib casts a shadow, it does not
        switch the light off. */
@@ -1140,7 +1149,12 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
        'inlayAt', and the render that proved a directional warm fill reads as red paint. */
     let emission = mix(hue, warmth, channel.y) * params.inlayEmission * channel.x;
     let spill = inlaySpillAt(p) * params.inlaySpill;
-    let bounced = hue * spill;
+    /* ⚑ DESATURATED, because a stone lit by a cyan light is not a cyan stone. Multiplying
+       the albedo by a fully saturated hue drives every channel the hue is weak in to zero,
+       so the whole hall collapses to one colour and the material stops existing — which is
+       the "everything is cyan and grey" reading from the other side. Real bounce carries
+       the source's tint, not its purity. */
+    let bounced = mix(vec3f(1.0), hue, 0.5) * spill;
     let fill = mix(vec3f(1.0), hue, 0.65) * params.ambient;
     /* THE COUNTER-LIGHT, and what is left of it after the junctions took its job. The
        shipped frame measured saturation 0.55 — not grey in the desaturated sense at all —

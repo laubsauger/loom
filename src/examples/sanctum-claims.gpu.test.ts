@@ -182,7 +182,7 @@ describe("E68 Sanctum — claims", () => {
       param(graph, "temple", "inlayRings", 0.34);
       param(graph, "temple", "inlayNode", 0.9);
       param(graph, "temple", "shaft", 0.55);
-      param(graph, "temple", "inlaySpill", 4.2);
+      param(graph, "temple", "inlaySpill", 9.0);
       param(graph, "temple", "warmIntensity", 0.28);
       param(graph, "temple", "exposure", 1.35);
     });
