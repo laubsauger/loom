@@ -1,6 +1,9 @@
-import { createContext, useContext, useLayoutEffect, useMemo, useRef } from "react";
+import { useLayoutEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import type { ReactNode } from "react";
+import { adoptPaneHost, stashPaneState } from "./pane-adoption.ts";
+import { PaneHostContext, usePaneHosts } from "./pane-host-registry.ts";
+import type { PaneHostRegistry } from "./pane-host-registry.ts";
 import type { PaneKey } from "./pane-tree.ts";
 import styles from "./pane-portal.module.css";
 
@@ -47,21 +50,6 @@ import styles from "./pane-portal.module.css";
  * Nothing here re-renders on drag. The arrangement is state in `AppShell`; per-frame data
  * never reaches this module, and moving a pane touches the DOM once.
  */
-
-export interface PaneHostRegistry {
-  /** The pane's permanent portal target. Created on first ask, never replaced. */
-  container(paneId: PaneKey): HTMLElement;
-}
-
-const PaneHostContext = createContext<PaneHostRegistry | null>(null);
-
-export function usePaneHosts(): PaneHostRegistry {
-  const registry = useContext(PaneHostContext);
-  if (registry === null) {
-    throw new Error("Pane content and outlets must be rendered inside <PaneHostProvider>.");
-  }
-  return registry;
-}
 
 export function PaneHostProvider({ children }: { children: ReactNode }) {
   const containers = useRef(new Map<PaneKey, HTMLElement>());
@@ -113,121 +101,9 @@ export function PaneOutlet({ paneId }: { paneId: PaneKey }) {
     const host = registry.container(paneId);
     adoptPaneHost(slot, host);
     return () => {
-      stashed.set(host, capturePaneState(host));
+      stashPaneState(host);
     };
   }, [paneId, registry]);
 
   return <div ref={slotRef} className={styles.outlet} data-pane-outlet={paneId} />;
 }
-
-/** State a detaching pane left behind, consumed by whoever adopts it next. */
-const stashed = new WeakMap<HTMLElement, PaneState>();
-
-interface ScrollMark {
-  readonly element: Element;
-  readonly top: number;
-  readonly left: number;
-}
-
-function collectScroll(root: Element, out: ScrollMark[]): void {
-  if (root.scrollTop !== 0 || root.scrollLeft !== 0) {
-    out.push({ element: root, top: root.scrollTop, left: root.scrollLeft });
-  }
-  for (const child of Array.from(root.children)) collectScroll(child, out);
-}
-
-interface TextRestore {
-  readonly kind: "field";
-  readonly start: number | null;
-  readonly end: number | null;
-}
-
-function isTextField(element: Element): element is HTMLInputElement | HTMLTextAreaElement {
-  return element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement;
-}
-
-/** Everything the browser keeps on the ELEMENT rather than in React state. */
-interface PaneState {
-  readonly scrolls: readonly ScrollMark[];
-  readonly active: HTMLElement | null;
-  readonly field: TextRestore | null;
-  readonly range: Range | null;
-}
-
-function capturePaneState(host: HTMLElement): PaneState {
-  const scrolls: ScrollMark[] = [];
-  collectScroll(host, scrolls);
-
-  const fromDocument = host.ownerDocument;
-  const active =
-    fromDocument.activeElement instanceof HTMLElement && host.contains(fromDocument.activeElement)
-      ? fromDocument.activeElement
-      : null;
-
-  let field: TextRestore | null = null;
-  let range: Range | null = null;
-  if (active !== null && isTextField(active)) {
-    field = { kind: "field", start: active.selectionStart, end: active.selectionEnd };
-  } else {
-    const selection = fromDocument.defaultView?.getSelection?.() ?? null;
-    if (selection !== null && selection.rangeCount > 0) {
-      const candidate = selection.getRangeAt(0);
-      if (host.contains(candidate.commonAncestorContainer)) range = candidate.cloneRange();
-    }
-  }
-  return { scrolls, active, field, range };
-}
-
-function restorePaneState(slot: HTMLElement, state: PaneState): void {
-  for (const mark of state.scrolls) {
-    mark.element.scrollTop = mark.top;
-    mark.element.scrollLeft = mark.left;
-  }
-
-  const active = state.active;
-  if (active === null) return;
-  active.focus({ preventScroll: true });
-  if (state.field !== null && isTextField(active)) {
-    if (state.field.start !== null && state.field.end !== null) {
-      active.setSelectionRange(state.field.start, state.field.end);
-    }
-    return;
-  }
-  if (state.range === null) return;
-  // The nodes moved with the host, so the range still points at them; the SELECTION
-  // object belongs to whichever document the host now lives in.
-  const selection = slot.ownerDocument.defaultView?.getSelection?.() ?? null;
-  if (selection === null) return;
-  selection.removeAllRanges();
-  selection.addRange(state.range);
-}
-
-/**
- * Moves `host` into `slot`, carrying scroll, focus and text selection across.
- *
- * Exported for the floating-window path, which appends the same host into a different
- * DOCUMENT — `appendChild` adopts the node, so the one implementation covers both.
- */
-export function adoptPaneHost(slot: HTMLElement, host: HTMLElement): void {
-  if (host.parentElement === slot) return;
-  const state = stashed.get(host) ?? capturePaneState(host);
-  stashed.delete(host);
-  const documentChanged = host.ownerDocument !== slot.ownerDocument;
-  slot.appendChild(host);
-  restorePaneState(slot, state);
-  /*
-   * T705 — tell the pane's content it changed DOCUMENTS. A ResizeObserver belongs to
-   * the window it was constructed in: when a pane floats, an observer made in the dock
-   * fires one last time mid-detach (clientWidth 0 — which is how the viewer's canvas
-   * ended up 1×1 and the popped-out window read as an empty page) and then never
-   * again, because its element now lives in a document that window does not observe.
-   * React cannot signal this either — relocation without remount (§V96) means no
-   * fiber ever re-renders. So the HOST, the one element that provably travels with
-   * the content, carries the signal: anything holding a per-document resource listens
-   * here and re-arms against its new `ownerDocument`.
-   */
-  if (documentChanged) host.dispatchEvent(new Event(PANE_ADOPTED_EVENT));
-}
-
-/** Fired on a pane's permanent host when adoption moved it to a DIFFERENT document. */
-export const PANE_ADOPTED_EVENT = "loom:pane-adopted";

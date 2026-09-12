@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { PaneContent, PaneHostProvider, PaneOutlet, adoptPaneHost } from "./pane-portal.tsx";
+import { adoptPaneHost } from "./pane-adoption.ts";
+import { PaneContent, PaneHostProvider, PaneOutlet } from "./pane-portal.tsx";
 import { useOutputPresentation } from "./use-output-presentation.ts";
 import type { PresentableCanvas, PresentationHandle } from "@runtime/backend/backend-types.ts";
 import type { LoomBackend } from "@runtime/backend/index.ts";

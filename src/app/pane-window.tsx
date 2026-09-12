@@ -1,7 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { KeymapWindowTarget } from "@editor/keymap/index.ts";
 import type { PaneKey } from "./pane-tree.ts";
-import { adoptPaneHost, usePaneHosts } from "./pane-portal.tsx";
+import { openBrowserPaneWindow } from "./browser-pane-window.ts";
+import { adoptPaneHost } from "./pane-adoption.ts";
+import { usePaneHosts } from "./pane-host-registry.ts";
 import {
   CHILD_FRAME_DEADLINE_MS,
   emitFloatLine,
@@ -56,15 +58,6 @@ export interface OpenPaneWindowRequest {
 }
 
 export type OpenPaneWindow = (request: OpenPaneWindowRequest) => PaneWindow | null;
-
-/** The real thing. Returns null when the popup was blocked — a state, not a crash. */
-export const openBrowserPaneWindow: OpenPaneWindow = ({ name, title }) => {
-  if (typeof window === "undefined") return null;
-  const child = window.open("", name, "popup=yes,width=760,height=560");
-  if (child === null) return null;
-  child.document.title = title;
-  return child;
-};
 
 /**
  * Copies the app's styles into the child document.

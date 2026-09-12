@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { PANE_ADOPTED_EVENT } from "./pane-portal.tsx";
+import { PANE_ADOPTED_EVENT } from "./pane-adoption.ts";
 import { formatViewerReading, readViewer } from "./viewer-probe.ts";
 import type { ViewerReading } from "./viewer-probe.ts";
 import type { PresentationHandle } from "@runtime/backend/backend-types.ts";
