@@ -107,6 +107,7 @@ struct Params {
   inlayColorB: vec4f, // @default [1, 0.58, 0.16, 1]  the SECOND conduit family — its own colour, not the warm rake's, which rotated to magenta and read as neon rather than as a material
   tintShare: f32,     // @default 0.34  share of columns whose conduits burn the SECOND colour — a hue the eye can point at rather than a wash over everything
   grain: f32,         // @default 0.45  fine surface relief, as a NORMAL perturbation: paid once per shaded pixel instead of at every march step
+  grainFade: f32,      // @default 9  metres over which the fine relief fades out — beyond it one period is under a pixel and the normal becomes noise
   grainScale: f32,    // @default 26  size of that relief — hand-scale, which is the scale the stone had nothing at
   footHeight: f32,    // @default 0.17  the wider footing course under the plinth: a base is a STACK, and one box is why it read cheap
   doorLife: f32,      // @default 0.7  how much the world beyond the doorway changes — 0 is the static gradient it used to be
@@ -141,6 +142,7 @@ struct Params {
   shaft: f32,         // @default 0.55  strength of the beam through the doorway, the one light that comes from outside
   polish: f32,        // @default 0.55  how much of the floor is still polished enough to reflect — 0 turns the second march off entirely
   reflectSteps: f32,  // @default 34  march iterations for the REFLECTED ray: a fraction of the primary's, because a reflection may be approximate and a silhouette may not
+  reflectReach: f32,  // @default 42  metres the REFLECTED ray may travel — a separate thing from how fast the reflection fades, and tying the two together is what made the floor go flat a few metres ahead
   reflectFade: f32,   // @default 12  metres over which the reflection fades with distance — near the eye it is a mirror, far away it is a sheen
   steps: f32,         // @default 96  march iterations — the frame budget, stated as a number
 };
@@ -437,6 +439,32 @@ fn bayOf(z: f32) -> f32 {
  * temperatures are interleaved through the whole hall at the scale of a detail rather than
  * split across it at the scale of a wall.
  */
+/**
+ * WHERE THE CONDUITS GO (T1309f) — and "not just random" was the right instruction.
+ *
+ * Every vein and every ring was selected by an INDEPENDENT UNIFORM HASH: roll a number per
+ * slot, light it if the number is under the density. That is the textbook way to get a
+ * CLUMPED set. Independent uniform samples have no repulsion, so the gaps between chosen
+ * slots are exponentially distributed — some neighbours land adjacent, which reads as
+ * "overlap in an ugly way", and some arcs of the column carry nothing at all. The owner was
+ * describing the statistics, not a taste failure.
+ *
+ * Multiplying an index by the golden ratio's conjugate and taking the fraction gives the
+ * most equidistributed sequence there is: each new value lands in the largest remaining gap,
+ * for ANY count, with no table and one multiply. Thresholding it selects an EVENLY SPREAD
+ * subset where thresholding a hash selects a clumped one. Same cost, same determinism.
+ *
+ * ⚑ AND THE VALUE IS USED TWICE, WHICH IS THE HALF THAT STOPS IT LOOKING PRINTED. A
+ * distribution fixes WHERE, not HOW MUCH — evenly spaced marks of identical width and
+ * brightness read as mechanical, which is a different ugliness rather than a fix. The pick
+ * doubles as a RANK: a slot well inside the threshold is a principal conduit, wide and
+ * bright; one that only just made the cut is a minor one, narrow and dim. The hierarchy is
+ * free, it falls out of the number the membership test already computed.
+ */
+fn goldenPick(index: f32, offset: f32) -> f32 {
+  return fract((index * 0.6180339887) + offset);
+}
+
 fn inlayAt(p: vec3f) -> vec2f {
   let q = columnLocal(p);
   let radial = length(vec2f(q.x, q.z));
@@ -452,8 +480,14 @@ fn inlayAt(p: vec3f) -> vec2f {
   let turns = max(params.inlayVeins, 1.0);
   let angle = (atan2(q.z, q.x) / 6.2831853) + 0.5;
   let veinIndex = floor(angle * turns);
-  let live = unitFloat(hash3i(vec3i(i32(veinIndex), i32(bayIndex), i32(side)), GLYPH_SEED));
-  let veinLit = step(live, clamp(params.inlayDensity, 0.0, 1.0));
+  /* One hash per COLUMN rather than one per vein, so this is cheaper than what it replaces
+     as well as better distributed: it only decides where the sequence starts, so no two
+     columns carry the same circuit. */
+  let colOffset = unitFloat(hash2i(vec2i(i32(bayIndex), i32(side)), GLYPH_SEED));
+  let pick = goldenPick(veinIndex, colOffset);
+  let veinLit = step(pick, clamp(params.inlayDensity, 0.0, 1.0));
+  // 0 = this column's principal conduit, 1 = the least of the ones that made the cut.
+  let rank = clamp(pick / max(clamp(params.inlayDensity, 0.0, 1.0), 1.0e-4), 0.0, 1.0);
   let acrossVein = abs(fract(angle * turns) - 0.5) * 2.0;
 
   /* The three variations along the run. The keys are deliberately far apart so width,
@@ -461,8 +495,11 @@ fn inlayAt(p: vec3f) -> vec2f {
      decision read three times — correlated variation reads as a single wobble. */
   let key = vec2i((i32(veinIndex) * 31) + i32(side), i32(bayIndex));
   let swell = runNoise(key, p.y, params.inlayRun);
-  let width = clamp(params.inlayWidth, 0.02, 0.9) * mix(0.4, 1.7, swell);
-  let glow = mix(1.0 - clamp(params.inlayVary, 0.0, 0.95), 1.0, runNoise(key + vec2i(101, 0), p.y, params.inlayRun * 0.61));
+  /* Width is the rank's first job: a principal conduit is half as wide again as a minor
+     one before the run-length swell touches either. */
+  let width = clamp(params.inlayWidth, 0.02, 0.9) * mix(0.4, 1.7, swell) * mix(1.45, 0.55, rank);
+  let glow = mix(1.0 - clamp(params.inlayVary, 0.0, 0.95), 1.0, runNoise(key + vec2i(101, 0), p.y, params.inlayRun * 0.61))
+    * mix(1.0, 0.4, rank);
   let alive = runNoise(key + vec2i(0, 233), p.y, params.inlayRun * 0.37);
   // A soft edge on the interruption: a conduit GUTTERS out and comes back, it does not
   // switch. A hard step here is the "blinky" complaint spelled in space instead of time.
@@ -474,9 +511,13 @@ fn inlayAt(p: vec3f) -> vec2f {
   let pitch = max(params.inlayRows, 0.05);
   let rowIndex = i32(floor(p.y / pitch));
   let acrossRing = abs(fract(p.y / pitch) - 0.5) * 2.0;
-  let ringLive = unitFloat(hash3i(vec3i(rowIndex, i32(bayIndex), 7), GLYPH_SEED));
+  /* The members are spaced up the shaft by the same sequence, which is why the rings stop
+     bunching into pairs and leaving bare stretches between them. */
+  let ringPick = goldenPick(f32(rowIndex), colOffset + 0.37);
+  let ringRank = clamp(ringPick / max(params.inlayRings, 1.0e-4), 0.0, 1.0);
   let ringArc = unitFloat(hash3i(vec3i(rowIndex, i32(veinIndex), 11), GLYPH_SEED));
-  let ring = (1.0 - smoothstep(0.0, 0.12, acrossRing)) * step(ringLive, params.inlayRings) * step(ringArc, 0.74);
+  let ring = (1.0 - smoothstep(0.0, 0.12 * mix(1.4, 0.6, ringRank), acrossRing))
+    * step(ringPick, params.inlayRings) * step(ringArc, 0.74) * mix(1.0, 0.45, ringRank);
 
   /* THE JUNCTION POOLS. Where a live conduit crosses a live member there is more light than
      either carries alone — which is the one place a viewer can see that these lines are
@@ -529,8 +570,10 @@ fn inlaySpillAt(p: vec3f) -> f32 {
   let turns = max(params.inlayVeins, 1.0);
   let angle = (atan2(q.z, q.x) / 6.2831853) + 0.5;
   let veinIndex = floor(angle * turns);
-  let live = unitFloat(hash3i(vec3i(i32(veinIndex), i32(bayIndex), i32(side)), GLYPH_SEED));
-  let veinLit = step(live, clamp(params.inlayDensity, 0.0, 1.0));
+  /* THE SAME SEQUENCE, or the glow would light veins the surface did not. */
+  let colOffset = unitFloat(hash2i(vec2i(i32(bayIndex), i32(side)), GLYPH_SEED));
+  let pick = goldenPick(veinIndex, colOffset);
+  let veinLit = step(pick, clamp(params.inlayDensity, 0.0, 1.0));
   let acrossVein = abs(fract(angle * turns) - 0.5) * 2.0;
   let key = vec2i((i32(veinIndex) * 31) + i32(side), i32(bayIndex));
   let alive = runNoise(key + vec2i(0, 233), p.y, params.inlayRun * 0.37);
@@ -770,7 +813,7 @@ fn sceneAt(p: vec3f) -> f32 {
  * is exactly why the block-scale damage stays in the SDF where it belongs; what it can do is
  * give the light something to catch at arm's length, which is all this was missing.
  */
-fn grainNormal(p: vec3f, n: vec3f) -> vec3f {
+fn grainNormal(p: vec3f, n: vec3f, viewDist: f32) -> vec3f {
   let s = max(params.grainScale, 0.5);
   let e = 0.035;
   let base = valueNoise(p * s);
@@ -786,7 +829,15 @@ fn grainNormal(p: vec3f, n: vec3f) -> vec3f {
      one material in the piece that is not stone. A floor you can see the hall in is smooth;
      that is what polished means. */
   let onFloor = step(0.86, n.y) * (1.0 - step(0.7, p.y));
-  return normalize(n - (tangential * params.grain * (1.0 - onFloor)));
+  /* ⚑ AND IT FADES WITH DISTANCE, which the first version did not (T1309f). Hand-scale
+     relief is correct at arm's length and NONSENSE at thirty metres, where one period of it
+     is far smaller than a pixel: the normal then takes an essentially random direction per
+     pixel and the far stone fills with salt. That is the owner's "very grainy and look weird
+     on the sides especially" — the sides are where the ray travels furthest before it hits
+     anything. This is the bump-mapping equivalent of a mip level, done as a fade because a
+     marcher has no derivatives to pick one with. */
+  let detail = 1.0 - smoothstep(params.grainFade * 0.35, params.grainFade, viewDist);
+  return normalize(n - (tangential * params.grain * detail * (1.0 - onFloor)));
 }
 
 fn normalAt(p: vec3f) -> vec3f {
@@ -1118,7 +1169,12 @@ fn reflectionAt(hitPoint: vec3f, n: vec3f, viewDir: vec3f, hue: vec3f, warmth: v
   // Upward only: the floor reflects the hall, never the floor.
   if (dir.y <= 0.02) { return vec3f(0.0); }
   let count = i32(clamp(params.reflectSteps, 4.0, 96.0));
-  let reach = max(params.reflectFade, 0.5) * 2.0;
+  /* ⚑ REACH IS NOT FADE (T1309f). This used to march 'reflectFade * 2' metres, so tuning
+     how quickly a reflection dims ALSO decided how far it could see — and at a 12 m fade the
+     ray simply stopped at 24 m, which is why the floor went flat a few metres ahead of the
+     camera. They are different properties: one is how far the mirror can see, the other is
+     how fast what it sees washes out with distance. */
+  let reach = max(params.reflectReach, 1.0);
   var travelled = 0.08;
   var found = false;
   for (var i = 0; i < count; i = i + 1) {
@@ -1246,7 +1302,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   var colour = beyondDoor(eye, dir, key);
   if (hit) {
     let p = eye + dir * travelled;
-    let n = grainNormal(p, normalAt(p));
+    let n = grainNormal(p, normalAt(p), travelled);
     /* This column's conduits burn one family or the other. Resolved at the SHADING point,
        so it costs one hash per pixel and nothing in the distance function. */
     let tint = conduitTint(p);

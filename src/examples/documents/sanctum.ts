@@ -152,6 +152,7 @@ export const sanctumDocument = document(
         /* The close-range detail, as a normal perturbation rather than a displacement: paid
            once per shaded pixel instead of at every step of every ray. */
         grain: 0.16,
+        grainFade: 9,
         grainScale: 26,
         /* A base is a STACK. One box is why the foundation read cheap. */
         footHeight: 0.17,
@@ -203,7 +204,8 @@ export const sanctumDocument = document(
         shaft: 0.55,
         polish: 0.55,
         reflectSteps: 34,
-        reflectFade: 12,
+        reflectReach: 30,
+        reflectFade: 26,
         steps: 72,
       }, {
         label: "temple1",
