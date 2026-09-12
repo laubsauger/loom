@@ -70,6 +70,46 @@ added to a plane's distance is no longer a distance: its gradient exceeds one wh
 field is steep, and a marcher that trusts an overestimate steps *through* the surface. That
 puts holes in the floor at grazing angles, which is precisely where this floor is seen.
 
+## The bases were crates, and a sharp arris is the one thing a mason never leaves
+
+The owner's reading of the first architectural pass: *"the pillar bases look a bit boxy,
+squary"*. A plain box under a round shaft is exactly that, and the reason is that stone is
+cut with a chisel and worn by water, **neither of which produces a 90° corner**. Every real
+base is a stack of rounded mouldings, and the corner radius is most of what says *carved*
+rather than *modelled*.
+
+Three changes, each one number: the plinth is a **rounded box** (inset by a radius, grown
+back by it — exact, and the standard trick); a **torus** sits between the square plinth and
+the round shaft, which is what that transition is for in every order ever built; and the
+capital's two members are rounded on the same rule, so the top of the column matches the
+bottom. The fallen rubble is rounded harder still — a block that came off a weathered column
+and lay on a floor for a thousand years has no arrises left at all.
+
+## Noise made it look dirty; blocks made it look old
+
+The same reading, second half: the erosion was *"a bit noisy and strange"*. It was, and the
+failure is a **scale mismatch** rather than an amount.
+
+At the shipped frequency the fine octave's features were a few centimetres across —
+*smaller than the chisel marks a mason leaves*, and smaller than the pixel footprint at any
+distance. So it never read as damage. It read as **crust**: a per-pixel crawl that the
+normal picks up as high-frequency shading noise, which is the visual signature of *dirt*,
+not of age. Weathering works at the scale of the **block** — a corner spalls, a face
+hollows, a course crumbles.
+
+So the fine octave dropped to a third of its weight, the bites got larger, and the budget
+went into structure instead:
+
+- **the bed joints** deepened, so the courses actually read;
+- **each course sits proud or recessed** by a millimetre or two — one hash per course, the
+  mason's own error, and the thing that stops a column's silhouette being a line;
+- **perpend joints**, the vertical ones, **staggered half a block per course** — because a
+  wall whose vertical joints line up is a wall that falls down, and every mason since the
+  bronze age has known it.
+
+Same budget, structure instead of grain. This is the general lesson of the file restated one
+more time: **detail the eye can name beats detail it can only see.**
+
 ## The bedding joints are the difference between age and dirt
 
 Banding the erosion in height (below) stopped the stone reading as wax. It did not make it
@@ -351,6 +391,7 @@ means over 240 of 300 frames rather than medians, because Dawn quantizes timesta
 | — | the inlay rebuilt as conduits (below) | **4.73 ms** |
 | 5 | the audio, on the shipped document | **4.76 ms** |
 | 6 | the architecture, the ruin, the breaches and the daylight | **8.85 / 9.01 ms** |
+| 7 | the rounded mouldings and the coursed masonry | **10.6 ms** (p50) |
 
 The last row is the **shipped document** rather than the shader in a test rig, so it
 carries the audio graph, the component instance and the real node chain. The audio costs
@@ -371,7 +412,14 @@ on a quiet machine (load 1.9) in the same session as a control run of **E57 at 3
 against its documented 4.1 — at or below its own datum, which is what makes E68's number
 this row's rather than the machine's. Two independent runs, 8.848 and 9.009 ms.
 
-The piece therefore costs **1.9× what it did before this pass**, for the architectural
+Stage 7 is quoted as a **p50 rather than a trimmed mean**, and the reason is stated rather
+than hidden: the machine was carrying a load average of 3.8 for that run, so the means are
+contamination-inflated (E57's control mean read 4.55 against its own 3.66). The p50 is not:
+**E57's control p50 landed on 3.670, identical to its quiet-machine figure**, which is what
+makes E68's 10.6 attributable. At this magnitude Dawn's 0.0655 ms quantum is 0.6% of the
+figure, so the usual objection to medians does not bite here.
+
+Stage 6 therefore cost **1.9× what the piece did before that pass**, for the architectural
 vocabulary, the ruin, the broken vaults and their daylight, the slab floor, the bedding
 joints, the conduits' run-length variation, and eight volumetric samples more per ray. The
 owner's budget note was *"we're at 7 ms so we can go nuts"*; at 1280×720 this is about

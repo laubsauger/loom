@@ -75,7 +75,9 @@ struct Params {
   breachLight: f32,   // @default 1.7  how hard the daylight drives through a breach
   dayColor: vec4f,    // @default [1, 0.86, 0.62, 1]  the day outside: WARM, because it is the one light here that is not the building's own and the frame needs a temperature to be measured against
   courseHeight: f32,  // @default 0.54  metres between bedding joints: the mason's courses, and the thing erosion opens first
-  courseDepth: f32,   // @default 0.016  how far a weathered bedding joint is eaten back, metres
+  courseDepth: f32,   // @default 0.03  how far a weathered bedding joint is eaten back, metres
+  courseLay: f32,     // @default 0.018  how far courses sit proud of or recessed from each other, metres — the mason's own error, and the thing that makes a column's silhouette a stack of blocks rather than a line
+  courseBlocks: f32,  // @default 7  blocks around a shaft's circumference, staggered half a block per course
   slabSize: f32,      // @default 1.7  floor slabs, metres across
   slabJoint: f32,     // @default 0.055  width of the joint between slabs, in slab fractions
   slabDepth: f32,     // @default 0.026  how deep the joints are cut, metres
@@ -190,7 +192,18 @@ fn runNoise(key: vec2i, y: f32, scale: f32) -> f32 {
    octave's scale rather than from a third one. */
 fn erosionAt(p: vec3f) -> f32 {
   let s = params.erosionScale;
-  let bite = (valueNoise(p * s) * 0.62) + (valueNoise(p * s * 2.7) * 0.31);
+  /* ⚑ THE FINE OCTAVE IS A THIRD OF WHAT IT WAS (T1304d), and the owner's reading of the
+     old weight is the reason: the stone looked "noisy and strange" rather than worn. The
+     failure is a scale mismatch. At the shipped erosionScale the second octave's features
+     were a few centimetres across — SMALLER THAN THE CHISEL MARKS A MASON LEAVES and
+     smaller than the pixel footprint at any distance, so it did not read as damage at all.
+     It read as CRUST: a per-pixel crawl over the surface that the normal picks up as
+     high-frequency shading noise, which is the visual signature of dirt rather than age.
+     Weathering works at the scale of the BLOCK — a corner spalls, a face hollows, a course
+     crumbles — and the shapes that carry that are the low octave and the bedding joints.
+     The fine octave's job is only to stop the low one looking poured, so it needs to be
+     present and not prominent. */
+  let bite = (valueNoise(p * s) * 0.68) + (valueNoise(p * s * 2.7) * 0.11);
   /* ⚑ THE DAMAGE IS BANDED IN HEIGHT, and that is what separates stone from wax. An even
      displacement subtracted from a cylinder reads as something POURED — the eye recognises
      a melted candle — because real decay does not attack a column uniformly: it eats the
@@ -216,10 +229,37 @@ fn erosionAt(p: vec3f) -> f32 {
  * it breaks the silhouette. It is the cheapest shape in this file and it is doing more for
  * "eroded stone" than the two octaves of noise above it.
  */
-fn beddingAt(y: f32) -> f32 {
+fn beddingAt(p: vec3f) -> f32 {
   let h = max(params.courseHeight, 0.08);
-  let line = abs(fract(y / h) - 0.5) * 2.0;
-  return smoothstep(0.84, 1.0, line) * params.courseDepth;
+  let courseIndex = floor(p.y / h);
+  let line = abs(fract(p.y / h) - 0.5) * 2.0;
+  let bed = smoothstep(0.80, 1.0, line) * params.courseDepth;
+
+  /* ⚑ AND THE COURSES ARE LAID BY HAND (T1304d). Cutting the joint alone leaves a smooth
+     cylinder with rings scored into it; what makes stone read as STONE is that each course
+     is a separate block and no two sit flush. One hash per course, a millimetre or two
+     proud or recessed, and the silhouette of a column stops being a line.
+     This is the correction to a real mistake: the version before this leaned on a fine
+     noise octave for the same job, and the owner read it as "noisy and strange" rather
+     than as worn — because noise at that scale is a per-pixel crawl, and a mason's error
+     is at the scale of a BLOCK. Same budget, structure instead of grain. */
+  let proud = (unitFloat(hash2i(vec2i(i32(courseIndex), 5), STONE_SEED)) - 0.5) * params.courseLay;
+
+  /* THE PERPEND JOINTS — the vertical ones, and they are STAGGERED half a block from one
+     course to the next, because a wall whose vertical joints line up is a wall that falls
+     down and every mason since the bronze age has known it. Taken on the column's own
+     angular coordinate, so the blocks wrap the shaft rather than being projected onto it. */
+  let q = columnLocal(p);
+  let around = (atan2(q.z, q.x) / 6.2831853) + 0.5;
+  let blocks = max(params.courseBlocks, 1.0);
+  let stagger = fract(courseIndex * 0.5) * 0.5;
+  let perp = abs(fract((around * blocks) + stagger) - 0.5) * 2.0;
+  // Only on the shaft: the mouldings are each cut from one stone.
+  let onShaft = (1.0 - smoothstep(params.columnRadius * 1.1, params.columnRadius * 2.0, length(vec2f(q.x, q.z))))
+    * step(params.plinthHeight + 0.4, p.y);
+  let perpend = smoothstep(0.86, 1.0, perp) * params.courseDepth * 0.8 * onShaft;
+
+  return bed + perpend + proud;
 }
 
 /**
@@ -482,23 +522,38 @@ fn sceneAt(p: vec3f) -> f32 {
   // THE COLUMN, in courses rather than as one cylinder.
   let flare = 1.0 + params.columnFlare * clamp(p.y / max(params.ceiling, 0.001), 0.0, 1.0);
   let shaftD = max(length(vec2f(xLocal, zLocal)) - (r * flare), params.plinthHeight - p.y);
+  /* ⚑ THE BASE IS A MOULDING, NOT A CRATE (T1304d). The first cut put a plain square box
+     under each shaft and the owner's reading was "boxy, squary" — exactly right, and the
+     reason is that a sharp-cornered prism is the one shape a mason never leaves. Stone is
+     cut with a chisel and weathered by water, and neither produces a 90° arris: every real
+     base is a stack of ROUNDED mouldings, and the corner radius is most of what says
+     "carved" rather than "modelled".
+     Three changes, all of them one number: the plinth is a ROUNDED box (a box inset by the
+     radius, then grown back by it — exact, and the standard trick); a round TORUS moulding
+     sits between the square plinth and the round shaft, which is what that transition is
+     for in every order ever built; and the capital's two members are rounded on the same
+     rule so the top of the column matches the bottom. */
+  let plinthRound = r * 0.16;
   let plinthD = sdBox(
     vec3f(xLocal, p.y - (params.plinthHeight * 0.5), zLocal),
-    vec3f(r * 1.62, params.plinthHeight * 0.5, r * 1.62),
-  );
-  let filletD = sdBox(
-    vec3f(xLocal, p.y - (params.plinthHeight + 0.07), zLocal),
-    vec3f(r * 1.3, 0.07, r * 1.3),
-  );
+    vec3f(r * 1.62 - plinthRound, params.plinthHeight * 0.5 - plinthRound * 0.5, r * 1.62 - plinthRound),
+  ) - plinthRound;
+  /* THE TORUS. A square plinth carrying a round shaft needs something round in between or
+     the eye sees two unrelated solids stacked. Swept about the column's axis, so it is a
+     circle of a circle and costs one more length(). */
+  let toreRadius = r * 1.16;
+  let toreY = params.plinthHeight + (r * 0.19);
+  let toreD = length(vec2f(length(vec2f(xLocal, zLocal)) - toreRadius, p.y - toreY)) - (r * 0.21);
+  let capRound = r * 0.13;
   let echinusD = sdBox(
     vec3f(xLocal, p.y - (params.ceiling - params.capitalDrop), zLocal),
-    vec3f(r * 1.34, 0.2, r * 1.34),
-  );
+    vec3f(r * 1.34 - capRound, 0.2 - capRound * 0.5, r * 1.34 - capRound),
+  ) - capRound;
   let abacusD = sdBox(
     vec3f(xLocal, p.y - (params.ceiling - params.capitalDrop + 0.33), zLocal),
-    vec3f(r * 1.8, 0.15, r * 1.8),
-  );
-  var columnD = min(min(shaftD, plinthD), min(filletD, min(echinusD, abacusD)));
+    vec3f(r * 1.8 - capRound, 0.15 - capRound * 0.5, r * 1.8 - capRound),
+  ) - capRound;
+  var columnD = min(min(shaftD, plinthD), min(toreD, min(echinusD, abacusD)));
   /* The break. 'mix' against a large negative leaves an intact bay untouched: max(d, -1000)
      is d. A branch here would be a branch the wavefront cannot take together. */
   columnD = max(columnD, mix(-1000.0, p.y - breakHeight, fallen));
@@ -536,7 +591,13 @@ fn sceneAt(p: vec3f) -> f32 {
      floor did not snap, it was never finished. */
   let dropX = mix(-1.1, 1.1, unitFloat(hash3i(vec3i(bayIndex, side, 17), RUIN_SEED)));
   let dropZ = mix(-1.5, 1.5, unitFloat(hash3i(vec3i(bayIndex, side, 23), RUIN_SEED)));
-  var rubbleD = sdBox(vec3f(xLocal - dropX, p.y - 0.26, zLocal - dropZ), vec3f(r * 0.78, 0.26, r * 0.6));
+  /* Rounded on the same rule as the base: a block that has fallen off a weathered column
+     and lain on a floor for a thousand years has no sharp arrises left at all. */
+  let rubbleRound = r * 0.22;
+  var rubbleD = sdBox(
+    vec3f(xLocal - dropX, p.y - 0.26, zLocal - dropZ),
+    vec3f(r * 0.78 - rubbleRound, 0.26 - rubbleRound * 0.5, r * 0.6 - rubbleRound),
+  ) - rubbleRound;
   rubbleD = mix(1000.0, rubbleD, fallen);
 
   /* THE FAR WALL, and the doorway is an ARCH. The owner's reading of the flat rectangle was
@@ -552,7 +613,7 @@ fn sceneAt(p: vec3f) -> f32 {
   /* Time, taken out of the stone rather than added to it: the displacement only ever
      REMOVES material, so an eroded edge is bitten and never inflated. The bedding joints
      are removed on the same side of the ledger, and for the same reason. */
-  let eaten = built - (params.erosion * max(erosionAt(p), 0.0)) + beddingAt(p.y);
+  let eaten = built - (params.erosion * max(erosionAt(p), 0.0)) + beddingAt(p);
   /* The channels are CUT, not painted: the same field that lights them also removes stone,
      so a channel breaks the silhouette of a column seen edge-on. A decal would not. */
   let carved = eaten + (params.inlayDepth * inlayAt(p).x);
