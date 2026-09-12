@@ -220,8 +220,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
-  border: 1px dashed var(--color-accent);
+  background: color-mix(in srgb, var(--signal) 12%, transparent);
+  border: var(--hairline) dashed var(--line-hot);
   border-radius: 4px;
   pointer-events: auto;
 }
@@ -239,7 +239,7 @@
 }
 .edgeDropLabel {
   font-size: 11px;
-  color: var(--color-accent);
+  color: var(--line-hot);
   writing-mode: initial;
   white-space: nowrap;
 }

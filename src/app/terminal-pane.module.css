@@ -52,7 +52,7 @@
   font-size: var(--fs-body);
   color: var(--text);
   background: var(--bg-sunken);
-  border: 1px solid var(--border);
+  border: var(--border-hairline);
   border-radius: var(--radius-sm);
   padding: var(--space-1) var(--space-2);
   user-select: all;

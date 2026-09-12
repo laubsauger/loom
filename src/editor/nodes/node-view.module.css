@@ -558,9 +558,9 @@
 
 .node[data-component] {
   box-shadow:
-    3px 3px 0 -1px var(--bg-base),
+    3px 3px 0 -1px var(--node-surface),
     3px 3px 0 0 var(--border-color, color-mix(in srgb, currentColor 25%, transparent)),
-    6px 6px 0 -1px var(--bg-base),
+    6px 6px 0 -1px var(--node-surface),
     6px 6px 0 0 color-mix(in srgb, currentColor 12%, transparent);
 }
 

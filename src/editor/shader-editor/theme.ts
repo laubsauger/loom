@@ -34,7 +34,6 @@ const SYNTAX_VARS = {
   "--syntax-keyword": "var(--port-vector)",
   "--syntax-modifier": "var(--port-material)",
   "--syntax-type": "var(--port-texture2d)",
-  "--syntax-builtin": "var(--port-geometry)",
   "--syntax-number": "var(--port-audioFeatures)",
   "--syntax-atom": "var(--port-audioFeatures)",
   "--syntax-string": "var(--ok)",
@@ -159,7 +158,15 @@ export const wgslHighlightStyle = HighlightStyle.define(
     { tag: tags.typeName, color: syntaxColor("--syntax-type") },
     {
       tag: tags.function(tags.standard(tags.variableName)),
-      color: syntaxColor("--syntax-builtin"),
+      /*
+       * B215: read the REAL token, not an alias. This role aliased `--port-geometry`,
+       * which no `PortType` kind and no token ever defined, so the declaration was dropped
+       * and the editor already painted `tokens.css`'s own `--syntax-builtin` — this is that
+       * value, said out loud. The other roles above still alias port hues, which the token
+       * file explicitly argues against now that it ships a real `--syntax-*` scale; that
+       * migration is the shader editor's call and is NOT made here.
+       */
+      color: "var(--syntax-builtin)",
     },
     { tag: tags.annotation, color: syntaxColor("--syntax-attribute") },
     {

@@ -477,18 +477,8 @@ function bareReferencesIn(source: string): Array<{ token: string; line: number }
  * the row out and the list cannot rot into a permanent exemption.
  */
 const KNOWN_UNDEFINED: Readonly<Record<string, string>> = {
-  "src/app/app-shell.module.css:--color-accent":
-    "the edge-drop target's tint, dashed border and label (3 sites) — the accent token is --signal, and with this dropped the dashed border falls back to currentColor and the color-mix tint to nothing",
-  "src/app/pane-leaf.module.css:--fg-muted":
-    "a floated pane's placeholder note — the dim-text token in this tree is --text-dim, so the note is rendering at full --text instead of muted",
-  "src/app/terminal-pane.module.css:--border":
-    "the copyable command's box — the hairline tokens are --line / --border-hairline, so `1px solid var(--border)` draws in currentColor",
-  "src/editor/agent/mcp-connection-panel.module.css:--bg":
-    "the token field's fill — the surface ladder is --bg-sunken / --bg-panel / --bg-raise, so the field has no fill of its own and shows the panel through it",
-  "src/editor/nodes/node-view.module.css:--bg-base":
-    "the stacked-card shadow behind a component node (2 sites) — the ground token is --bg-panel / --bg-void, so the card offsets have no fill between them",
-  "src/editor/shader-editor/theme.ts:--port-geometry":
-    "the syntax alias for builtins — `geometry` is not a PortType kind and tokens.css declares no such port hue, so --syntax-builtin never overrides and the editor falls back to the literal in tokens.css",
+  // B215 emptied this list: all six references now point at tokens the tree defines.
+  // A row here is a shipped defect parked with its reason, never a place to leave one.
 };
 
 describe("B214 — every var() reference resolves to a token the tree defines", () => {
