@@ -843,6 +843,35 @@
   font-size: var(--fs-micro);
 }
 
+/*
+  The asset row's own picker. It borrowed `.meta` — a dim micro TEXT style — so it read as
+  unreadable grey prose rather than a control, which is the owner's report. Same surface as
+  `.picker` above; `flex: none` because T543 gives the FILENAME the row's width and this must
+  never be what pushes it into an ellipsis.
+*/
+.assetPick {
+  flex: none;
+  padding: 0 var(--space-2);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  line-height: calc(var(--control-h) - var(--space-2));
+  cursor: pointer;
+  transition: border-color var(--dur-instant) var(--ease-out);
+}
+
+.assetPick:hover {
+  border-color: var(--line-hot);
+}
+
+.assetPick:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
 .asset {
   display: flex;
   align-items: center;

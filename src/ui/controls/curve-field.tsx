@@ -122,7 +122,7 @@ export function AssetField({ label, value, kind, onPick }: AssetFieldProps) {
         <>
           <button
             type="button"
-            className={styles.meta}
+            className={styles.assetPick}
             onClick={() => input.current?.click()}
           >
             choose…
