@@ -347,6 +347,8 @@ struct Params {
   contrast: f32,        // @default 1.13  above 1 crushes about the pivot, below 1 opens the shadows
   lift: f32,            // @default 0  raises the floor of the curve. ZERO against a black backdrop: a lift has nothing to open there and only greys the void
   saturation: f32,      // @default 1.22  its own knob, because a tone curve that moves chroma is a tone curve with a bug
+  highlightKnee: f32,   // @default 0.8  where the hue-preserving shoulder starts, in linear light AFTER the grade. Below it nothing is touched at all, which is what makes this a HIGHLIGHT operator and not a second grade: measured, a knee of 0.8 reaches 45.2% of pod pixels and 0.07% — eighty-one pixels — of everything else in the subject, and the non-pod subject's p50/p90/p99/p999 come out 73.9/118.1/146.8/166.7 against a shipped 73.9/118.1/146.9/166.7
+  highlightCeiling: f32, // @default 1.1  where it ends: the largest value any channel may hand to the output node's tone map. ⚑ THE WHOLE REPAIR IS IN THIS NUMBER AND THE REASON IS DOWNSTREAM (T1325b). The sink runs Narkowicz PER CHANNEL, and a per-channel curve turns a saturated colour white as soon as its DIMMEST channel is large — measured exactly: a channel at 0.80 linear lands on byte 226, so a pixel whose minimum channel passes 0.80 has no hue left. 16.26% of pod pixels were past it, against 16.0% measured white in the shipped frame by an instrument that shares no code with this one. Capping the MAXIMUM channel at 1.1 caps the minimum at 1.1 times the pod's own hue ratio, which is under the line by construction. ⚠ AND A HIGHER CEILING IS NOT THE SAFER CHOICE IT LOOKS LIKE: filmic is so compressive up here that 1.1 -> 1.6 buys SIX BYTES of peak and costs a THIRD of the core's remaining chroma
   steps: f32,           // @default 132  primary march iterations — the frame budget, stated as a number
 };
 
@@ -1674,6 +1676,39 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   let scaled = colour * (curved / level);
   let grey = dot(scaled, vec3f(0.2126, 0.7152, 0.0722));
   let saturated = mix(vec3f(grey), scaled, params.saturation);
-  return vec4f(saturated, 1.0);
+
+  /* ⚑ THE HUE-PRESERVING SHOULDER, AND IT IS THE LAST THING THAT HAPPENS HERE ON PURPOSE
+     (T1325b). Everything above hands the sink an UNBOUNDED value — the grade is a luminance
+     ratio with no top — and the sink runs the Narkowicz filmic curve PER CHANNEL. A
+     per-channel curve is a saturation destroyer at the top end and nowhere else: each
+     channel approaches 1 independently, so a pixel of (6, 2, 5) arrives as (254, 246, 253)
+     and a magenta pod is a WHITE STICKER. Measured on the pods at 25 s: 16.0% of them.
+
+     ⚑ WHICH END OF §V977's AXIS THIS IS, MEASURED RATHER THAN ASSUMED. That row established
+     that a MISSING top end is a content defect; this is the same axis inverted, and the same
+     discriminator settles it. The over-range is not a slab: the subject's max channel reads
+     p50 0.116 against p99 1.907, and only 1.53% of it is above 1 at all while 43.98% of the
+     pod is. p99 moves, p50 does not ∴ IT IS A HIGHLIGHT, and the content is right — the
+     piece HAS the small bright things §V977 asked for. What was missing is a way to SHOW
+     them. The exposure arm is in the file as the refuted one: a flat gain has to fall to a
+     QUARTER before the pods stop being white, and it takes the subject's p50 from 74.9 to
+     22.5 with it. That is the whole piece, paid to fix eight pods.
+
+     THE OPERATOR: roll the MAXIMUM CHANNEL onto a ceiling and scale all three by the same
+     factor. Scaling all three is what preserves the hue exactly — a per-channel curve cannot,
+     which is the defect this exists to answer. The shoulder is C1 at the knee ('rolled' and
+     its slope are both continuous there), and it approaches the ceiling as 1/m rather than
+     exponentially, so no two distinct brightnesses ever land on the same output.
+
+     ⚠ AND THE SHAPE OF THE APPROACH IS NOT WHERE THE WIN IS — that was this pass's own wrong
+     prediction, refuted by the sweep. At a matched ceiling the exponential and the hyperbolic
+     forms measure within a few points of each other on every statistic (core flatness 4% vs
+     7% at 1.3, 47% vs 57% at 2.2). THE CEILING IS THE LEVER. The hyperbolic form is kept for
+     the monotonicity, not because it bought the result. */
+  let peak = max(max(saturated.r, saturated.g), saturated.b);
+  let knee = max(params.highlightKnee, 1.0e-3);
+  let head = max(params.highlightCeiling - knee, 1.0e-3);
+  let rolled = knee + head * (1.0 - 1.0 / (1.0 + (peak - knee) / head));
+  return vec4f(saturated * select(1.0, rolled / max(peak, 1.0e-5), peak > knee), 1.0);
 }
 `;

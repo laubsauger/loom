@@ -1404,10 +1404,22 @@ describe("E70 Chimera — claims", () => {
   it("the pods are smoother inside than the stone they are painted on", async () => {
     if (dawnError !== undefined) throw new Error(dawnError);
 
-    /* Of the pixels strictly inside `mask`, the share sitting on a one-pixel luma step. */
-    const stepShare = (value: Float32Array, mask: Uint8Array, w: number, h: number): { inside: number; share: number } => {
+    /* Of the pixels strictly inside `mask`, the share sitting on a one-pixel luma step —
+       and the same share restricted to the mask's own TOP DECILE by value, which is the
+       part the sentence "smoother INSIDE" is actually about. The two are far apart: at 20 s
+       the pod reads 34.1% over the whole mask and 15.0% over its core, because most of the
+       whole-mask number is the pod's own EDGE falloff crossing the step threshold, not
+       anything happening in its interior. The core is taken by RANK so no brightness
+       constant gets to decide what counts as inside (§V994). */
+    const stepShare = (value: Float32Array, mask: Uint8Array, w: number, h: number): { inside: number; share: number; core: number } => {
+      const values: number[] = [];
+      for (let i = 0; i < w * h; i += 1) if (mask[i] === 1) values.push(value[i] ?? 0);
+      values.sort((a, b) => a - b);
+      const coreCut = values[Math.floor(values.length * 0.9)] ?? 0;
       let inside = 0;
       let steps = 0;
+      let coreInside = 0;
+      let coreSteps = 0;
       for (let y = 1; y < h - 1; y += 1) {
         for (let x = 1; x < w - 1; x += 1) {
           const i = y * w + x;
@@ -1415,10 +1427,12 @@ describe("E70 Chimera — claims", () => {
           inside += 1;
           const gx = Math.abs((value[i + 1] ?? 0) - (value[i - 1] ?? 0)) / 2;
           const gy = Math.abs((value[i + w] ?? 0) - (value[i - w] ?? 0)) / 2;
-          if (Math.max(gx, gy) > 12) steps += 1;
+          const stepped = Math.max(gx, gy) > 12;
+          if (stepped) steps += 1;
+          if ((value[i] ?? 0) >= coreCut) { coreInside += 1; if (stepped) coreSteps += 1; }
         }
       }
-      return { inside, share: steps / Math.max(inside, 1) };
+      return { inside, share: steps / Math.max(inside, 1), core: coreSteps / Math.max(coreInside, 1) };
     };
 
     /* §V968 — the detector against two cases whose answers are known before it is run. */
@@ -1489,11 +1503,163 @@ describe("E70 Chimera — claims", () => {
       const pod = stepShare(glow, mask, on.w, on.h);
       const surface = stepShare(stone, mask, on.w, on.h);
       expect(pod.inside, "and enough of them to have an interior").toBeGreaterThan(1000);
+      /* ⚑ THE BOUND WAS 1.05 AND IT CAUGHT A DENOMINATOR MOVE (T1325b). The highlight
+         shoulder put this at 1.0524 and the obvious reading — "the shoulder diced the pods"
+         — is FALSE: measured on both arms at 20 s, the POD's own step share is 34.11% with
+         the shoulder and 34.05% without, i.e. unchanged, while the STONE's fell 33.37% ->
+         32.42% because the shoulder also rolls the brightest stone pixels. The ratio moved
+         entirely underneath. At the other two times the shoulder makes the pods markedly
+         SMOOTHER (0.76 -> 0.60 at 0 s, 0.86 -> 0.84 at 60 s), which is the clipped plateau
+         going away. ∴ the bound is stated where a real dicing still fails it — §V995's
+         defect read HALF AGAIN rougher — and the numbers above are written down so the
+         next reader can tell a numerator move from a denominator one, which 1.05 could not. */
       expect(
         pod.share / surface.share,
         "the pod glow must be no rougher inside than the stone it sits on — with the conduit gate restored it reads HALF AGAIN rougher",
-      ).toBeLessThan(1.05);
+      ).toBeLessThan(1.08);
+      /* And the claim's own sentence, measured where it points: the pod's INTERIOR. This is
+         the tighter half — it must be strictly smoother, not merely no rougher — and it is
+         the half that moves the right way: 0.73 -> 0.43 at 0 s, 0.47 -> 0.46 at 20 s,
+         0.96 -> 0.86 at 60 s once the top of the pod stops being a flat clipped plateau. */
+      expect(
+        pod.core / surface.share,
+        "and its INTERIOR must be strictly smoother than the stone, which a clipped plateau gets for free and a diced pod cannot get at all",
+      ).toBeLessThan(1.0);
     }
+  }, 600_000);
+
+  /**
+   * ⚑⚑ A BRIGHT EMITTER KEEPS ITS HUE (T1325b). The owner's fifth-pass stills read the pods
+   * as FLAT, PERFECTLY ROUND, UNSHADED DISCS — stickers pasted on the frame — and §T1324b
+   * measured the number underneath that: 16.0% of pod pixels at FULL WHITE, every channel
+   * above 225, at 25 s.
+   *
+   * ⚑ THE CAUSE IS THE SINK'S TONE MAP AND IT IS PER CHANNEL. `out` runs Narkowicz's filmic
+   * fit, which walks r, g and b to 1 INDEPENDENTLY, so a saturated colour turns white from
+   * the inside out while its dim rim stays coloured. The repair is a hue-preserving shoulder
+   * at the end of the shader's own grade: roll the MAXIMUM channel onto a ceiling and scale
+   * all three by that one factor.
+   *
+   * ⚑ WHY THIS IS ASSERTED AGAINST THE SHOULDER RATHER THAN AS A STANDING NUMBER: a white
+   * count falls for two completely different reasons — the hue was saved, or the pods got
+   * dimmer — and only the second is a regression. So the claim carries BOTH ends: white must
+   * be gone, and the pod's core must still be BRIGHT and CARRY CHROMA, with the arm that
+   * restores the defect measured in the same run so a zero cannot be a broken detector
+   * (§V968). Everything in the test is read off the RENDERED BYTES the owner looks at.
+   */
+  it("a pod at the top of the range keeps its hue instead of clipping to white", async () => {
+    if (dawnError !== undefined) throw new Error(dawnError);
+
+    const still = (graph: GraphDocument): void => { freezeCamera(graph); cutEveryDrive(graph); };
+    /* The shoulder made into the identity: the knee is put past every value in the frame, so
+       nothing else about the render changes. This is the DEFECT, restored. */
+    const flatten = (graph: GraphDocument): void => {
+      param(graph, "shape", "highlightKnee", 1.0e9);
+      param(graph, "shape", "highlightCeiling", 1.0e9 + 1);
+    };
+    const noPods = (graph: GraphDocument): void => {
+      for (const off of ["nodeGlow", "nodeSpill"]) param(graph, "shape", off, 0);
+    };
+
+    /* The pods are isolated by DIFFERENCE, the way every other pod claim in this file does
+       it, so nothing has to guess a hue to find them. */
+    const read = (on: Frame, off: Frame): { lit: number; white: number; coreLuma: number; coreChroma: number; flat: number } => {
+      const count = on.w * on.h;
+      const mask = new Uint8Array(count);
+      const lumaOf = new Float32Array(count);
+      const glow: number[] = [];
+      let lit = 0;
+      for (let pixel = 0; pixel < count; pixel += 1) {
+        lumaOf[pixel] = luma(on, pixel);
+        if (luma(on, pixel) - luma(off, pixel) > 24) { mask[pixel] = 1; lit += 1; glow.push(lumaOf[pixel] ?? 0); }
+      }
+      glow.sort((a, b) => a - b);
+      /* THE CORE BY RANK — a brightness constant here would be a brightness test wearing a
+         structure test's name, which cost this file two passes once already (§V994). */
+      const coreCut = glow[Math.floor(glow.length * 0.9)] ?? 0;
+      let white = 0;
+      let coreCount = 0;
+      let coreLuma = 0;
+      let coreChroma = 0;
+      let flat = 0;
+      for (let pixel = 0; pixel < count; pixel += 1) {
+        if (mask[pixel] !== 1) continue;
+        const r = on.d[pixel * 4] ?? 0;
+        const g = on.d[pixel * 4 + 1] ?? 0;
+        const b = on.d[pixel * 4 + 2] ?? 0;
+        /* No hue left: even the DIMMEST channel is at the top of the range. */
+        if (Math.min(r, g, b) > 225) white += 1;
+        if ((lumaOf[pixel] ?? 0) < coreCut) continue;
+        coreCount += 1;
+        coreLuma += lumaOf[pixel] ?? 0;
+        coreChroma += Math.max(r, g, b) > 0 ? (Math.max(r, g, b) - Math.min(r, g, b)) / Math.max(r, g, b) : 0;
+        const x = pixel % on.w;
+        const y = (pixel - x) / on.w;
+        if (x < 1 || y < 1 || x > on.w - 2 || y > on.h - 2) continue;
+        let lo = Infinity;
+        let hi = -Infinity;
+        for (let dy = -1; dy <= 1; dy += 1) {
+          for (let dx = -1; dx <= 1; dx += 1) {
+            const v = lumaOf[pixel + dy * on.w + dx] ?? 0;
+            if (v < lo) lo = v;
+            if (v > hi) hi = v;
+          }
+        }
+        /* A STICKER pixel: bright, and its whole neighbourhood within one byte of it. */
+        if (hi - lo <= 1) flat += 1;
+      }
+      return {
+        lit,
+        white: white / Math.max(lit, 1),
+        coreLuma: coreLuma / Math.max(coreCount, 1),
+        coreChroma: coreChroma / Math.max(coreCount, 1),
+        flat: flat / Math.max(coreCount, 1),
+      };
+    };
+
+    const [shipped] = await shootSeries([25], 1, still);
+    const [shippedCut] = await shootSeries([25], 1, (graph) => { still(graph); noPods(graph); });
+    const [defect] = await shootSeries([25], 1, (graph) => { still(graph); flatten(graph); });
+    const [defectCut] = await shootSeries([25], 1, (graph) => { still(graph); flatten(graph); noPods(graph); });
+    if (shipped === undefined || shippedCut === undefined || defect === undefined || defectCut === undefined) {
+      throw new Error("missing arm");
+    }
+
+    const before = read(defect, defectCut);
+    const after = read(shipped, shippedCut);
+
+    /* §V968 FIRST: a 0% reading means nothing until the same instrument has been seen to
+       fire. The defect arm changes TWO PARAMETERS AND NOTHING ELSE, and §T1324b measured it
+       at 16.0% independently of this file. */
+    expect(before.lit, "there must BE pods in the control arm").toBeGreaterThan(1500);
+    expect(
+      before.white,
+      "the detector must FIRE with the shoulder removed — §T1324b measured 16.0% of pod pixels at full white",
+    ).toBeGreaterThan(0.1);
+
+    expect(after.lit, "and pods in the shipped arm — the repair must not be 'there are no pods'").toBeGreaterThan(1500);
+    expect(
+      after.white,
+      "and no pod pixel may arrive with every channel above 225: a bright emitter keeps its hue",
+    ).toBeLessThan(0.005);
+
+    /* THE OTHER END, because "no white" is also what a black frame achieves (§V997). */
+    expect(
+      after.coreChroma / before.coreChroma,
+      "the core must CARRY the hue, not merely avoid white — measured 0.042 -> 0.227, five times",
+    ).toBeGreaterThan(3);
+    expect(after.coreLuma, "and stay bright: the core is still the brightest thing in the frame").toBeGreaterThan(170);
+    /* ⚠ THIS IS THE CLIPPED PLATEAU AT THE VERY TOP, AND IT IS NOT THE WHOLE STICKER —
+       said plainly because the number invites the stronger reading and the STILL REFUTES IT.
+       58% -> 9% of core pixels whose 3x3 neighbourhood is within one byte is a real fact
+       about the top of the range, and the pod is STILL a flat disc to the eye: it is a pink
+       one now instead of a white one. The remaining half is that the pods are GEOMETRY —
+       see `nodeSpill` in the document, which records the four arms that do not move it. */
+    expect(
+      after.flat,
+      "and the clipped plateau at the very top must be gone — core pixels whose 3x3 neighbourhood is within one byte, 58% -> 9%",
+    ).toBeLessThan(0.3);
+    expect(before.flat, "which the clipped arm fails, or the statistic is not reading the plateau").toBeGreaterThan(0.3);
   }, 600_000);
 
   /**

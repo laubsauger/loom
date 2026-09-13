@@ -468,6 +468,40 @@ export const chimeraDocument = document(
         /* The pool a pod casts on the stone it sits in. This is the term that makes the
            owner's *"they need to ACTUALLY EMIT LIGHT"* true rather than approximated. */
         nodeSpill: 7.5,
+        /* ⚑⚑ THE POD STILL READS AS A FLAT DISC AND IT IS NOT A SHADING BUG — THE PODS ARE
+           GEOMETRY (T1325b, and this is the fact six passes of work did not have).
+           Set `nodeGlow` AND `nodeSpill` BOTH TO ZERO and the pods are still in the frame:
+           smooth, shaded, unmistakably three-dimensional BALLS, scattered through the body.
+           They are the sphere fold's own solids, and the node trap lights them because both
+           read the same orbit radius. ∴ the owner's *"flat, perfectly round, UNSHADED discs
+           — stickers pasted on the frame, with no falloff, no internal structure and no
+           relationship to the surface they sit on"* is the description of A SOLID WHOSE OWN
+           SHADING HAS BEEN PAINTED OVER, not of a mark being drawn badly. Every pass that
+           treated it as a mark was working on the wrong object.
+           ⚑ FOUR ARMS MEASURED, ALL NO-OPS, RECORDED SO THE SEVENTH PASS DOES NOT BUY THEM
+           AGAIN — the pod's radial profile (mean luma per one-pixel ring, largest pod, 25 s)
+           is the instrument, because the frame-wide statistics this file already had CANNOT
+           SEE THIS: "core span across the pod mask" mixes pod-to-pod brightness differences
+           into a number named for within-pod structure, and it reported the repair as done
+           while the still showed a sticker (§V994's shape, third instance in this file):
+             (a) THE DISPLAY CEILING ALONE — the shoulder above. It fixes the WHITE and
+                 leaves a PINK sticker. Necessary, and not sufficient.
+             (b) THE FALLOFF WINDOW'S SHAPE — `near` is one minus a smoothstep, which is
+                 flat-topped by construction, so an inverse-square pool factor looked certain.
+                 Swept 0 -> 300 it moved the profile by THREE LUMA (188.6 -> 185.0 at r=5) and
+                 the plateau not at all.
+             (c) THE POD'S OWN GAIN — `nodeGlow`/`nodeSpill` from 5.5/7.5 down to 1.2/1.3.
+                 The profile SCALES (centre lift 121 -> 69) and the plateau stays at r=8 in
+                 every arm. ⚑ THIS IS THE AXIS SIX PASSES SPENT THEMSELVES ON (`nodeGlow`
+                 22 -> 9 -> 5.5) and it cannot reach the complaint.
+             (d) THE VOLUME — `haze` 0 leaves the discs exactly where they were, so the disc
+                 is not the pod field integrated through the air.
+           ⚑ AND THE OBVIOUS FIFTH — multiplying the emission by the ball's own cosine, which
+           is the physically right move — IS ALSO A NO-OP AT THIS GAIN (188 -> 188), because
+           a cosine of 0.3 on a value of 7.5 is still 2.5 and the ceiling is 1.1. It only
+           becomes a lever once the pod's peak is near the ceiling, and PAIRED with (c) it
+           still only moved the plateau r=7 -> r=6. NOT SHIPPED: a measured no-op does not
+           ship, whatever its rationale (§V994's rule, applied to this pass's own idea). */
         /* Where a pod's sharp core gives way to its spill alone. Sanctum's grain fade. */
         nodeFade: 21,
         nodeColor: [1, 0.36, 0.86, 1],
@@ -597,6 +631,56 @@ export const chimeraDocument = document(
            the backdrop is 70-87% TRUE black and the subject still spans p01 15 / p50 71 /
            p90 124, which is a real distribution rather than a crushed one. */
         lift: 0,
+        /* ⚑⚑ THE POD'S HUE WAS BEING DESTROYED BY THE SINK, NOT BY ITS OWN BRIGHTNESS
+           (T1325b), and the two are told apart by a measurement rather than by a story.
+           The owner's fifth-pass stills read the pods as FLAT, PERFECTLY ROUND, UNSHADED
+           DISCS — stickers pasted on the frame — and T1324b measured 16.0% of pod pixels at
+           full white, every channel above 225, at 25 s.
+
+           ⚑ THE CAUSE IS THE OUTPUT NODE'S TONE MAP AND IT IS PER CHANNEL. `out` runs
+           `toneMap: "filmic"` (Narkowicz's ACES fit), and a per-channel curve compresses
+           r, g and b INDEPENDENTLY: every channel walks to 1 on its own, so the wider a
+           colour's channel spread the faster it turns grey at the top. Recovered in pixels
+           rather than derived (§V995 — this file has twice had a correct-looking derivation
+           name the wrong mechanism): because `lift` is 0 the grade is EXACTLY proportional
+           to `exposure`, so rendering with the tone map off at 1/8 and 1/64 gain and
+           rescaling reconstructs the precise linear value the sink receives. It agrees with
+           itself across the two gains to a median 1.4%, and filmic-plus-encode applied to it
+           reproduces the shipped bytes with a median error of ZERO.
+           ⚑ AND THE RECONSTRUCTION PREDICTS THE DEFECT FROM THE OTHER SIDE: a channel at
+           0.80 linear lands on byte 226, so "minimum channel over 0.80" is the white test
+           stated in the sink's own terms. It reads 16.26% of the pod. The shipped frame's
+           byte test reads 16.0%. Two instruments sharing no code, one number.
+
+           ⚑ WHICH IS A *TRANSFER* DEFECT, AND §V977's DISCRIMINATOR IS WHAT SAYS SO. That
+           row settled a MISSING top end as a content defect by sweeping the gain; this is
+           the same axis inverted and the same sweep settles it. The subject's max channel is
+           p50 0.116 / p99 1.907 with 1.53% of it over 1, while the pod is 43.98% over 1 —
+           p99 moves, p50 does not, so the over-range is a HIGHLIGHT and not a slab. The
+           refuted arm is in the file: a flat gain must fall to a QUARTER before white drops
+           to 0.3%, and it takes the subject p50 from 74.9 to 22.5. ⚠ THE POD'S OWN GAIN IS A
+           DIFFERENT ARM AND IT IS REFUTED SEPARATELY, at `nodeSpill` above — it does not move
+           the slab, it simply cannot reach this either.
+
+           ∴ THE REPAIR IS AT THE TOP END ONLY: roll the MAXIMUM channel onto a ceiling and
+           scale all three by that one factor, which preserves the hue exactly. Measured at
+           25 s, shipped -> shoulder: white 16.0% -> 0.0%, and the pod's core carries hue
+           again — chroma 0.042 -> 0.227, a factor of five, with the same 0.0% holding at 0 s
+           and 60 s. THE COST IS PEAK: pod luma 171 -> 155 and peak 253 -> 219.
+           ⚠ WHAT THIS DOES NOT FIX, SAID HERE BECAUSE THE NUMBERS LOOKED LIKE IT DID: THE POD
+           IS STILL A FLAT DISC. It is a PINK flat disc now rather than a white one, which is
+           the hue half of the complaint and not the sticker half. The frame-wide statistics
+           read the sticker as cured (core byte span 14.9 -> 28.2, core flatness 58% -> 9%)
+           AND THE STILL SHOWS OTHERWISE — because a span taken across the whole pod MASK is
+           mostly pod-to-pod brightness differences, not within-pod structure (§V994 again,
+           and the still is the thing that caught it, not the number). The cause of the
+           remaining half, and the four arms that do not touch it, are at `nodeSpill`.
+           ⚑ AND THE REST OF THE PICTURE DOES NOT MOVE. The non-pod subject reads p50 73.9 /
+           p90 118.1 / p99 146.8 / p999 166.7 against a shipped 73.9 / 118.1 / 146.9 / 166.7,
+           because the knee reaches EIGHTY-ONE pixels outside the pods. The palette is
+           untouched by construction: a common scale on r, g and b is not a hue rotation. */
+        highlightKnee: 0.8,
+        highlightCeiling: 1.1,
         steps: 132,
       }, {
         label: "shape1",
