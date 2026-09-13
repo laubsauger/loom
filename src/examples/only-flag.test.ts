@@ -137,6 +137,27 @@ describe("--only matches an example, not a substring (T1267, B197)", () => {
     );
 
     expect(run.status).not.toBe(0);
+    /* ⚑ SAY WHAT ACTUALLY HAPPENED WHEN THE SCRIPT CANNOT LOAD (T1317b). This assertion used
+       to be the only one, and when a source file stopped PARSING it produced
+       "expected 'node:internal/modules/run_main:107 …' to contain '--only NoSuchExample
+       matched no example'" — across the four tests in this file at once. That names neither
+       the file, nor the line, nor the cause, so the reader sees four broken example-scoping
+       tests and never reaches the real defect, which was a bare backtick ending a WGSL
+       template literal 424 lines early in a file nobody here had touched.
+       The defect was never undetectable: `pnpm typecheck` names it exactly, file, line and
+       column. It was DESCRIBED unintelligibly by the tool that happened to report first, and
+       a defect detected precisely by a late tool and described unintelligibly by an early one
+       looks exactly like an undetected defect. The repair is the message, not a new
+       instrument — a second detector was specified for this and measured to be redundant. */
+    if (run.stderr.includes("ERR_INVALID_TYPESCRIPT_SYNTAX")) {
+      const where = /([^\s]+\.ts):(\d+)/.exec(run.stderr);
+      throw new Error(
+        "build-examples.ts could not LOAD: a source file does not parse" +
+          (where === null ? "" : ` (${where[1]}:${where[2]})`) +
+          ". This is not a scoping failure — run `pnpm typecheck` for the file, line and column. " +
+          "A bare backtick in the prose inside a WGSL template literal is the usual cause (§V834).",
+      );
+    }
     expect(run.stderr).toContain("--only NoSuchExample matched no example or component");
     /* The throw is ahead of BOTH write loops, so a mistyped scope cannot half-regenerate —
        and T1221 added a second half it has to stay ahead of. */
