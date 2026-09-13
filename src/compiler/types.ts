@@ -174,6 +174,33 @@ export interface ResolvedOutput {
       readonly passIds: ReadonlyArray<string>;
     };
   };
+  /**
+   * §T1311b(a) — THE VIEW CAMERA of a VIEWPORT row.
+   *
+   * Present only on the extra rows `viewportOutputs` adds, for an output whose shader
+   * DECLARED a view camera (`domain/geometry/view-camera.ts`). It is deliberately not
+   * `synthesis.orbit`, and the difference is the whole feature: `orbit` publishes a
+   * `viewProjection` for a rig the compiler chose by payload kind, and a RAYMARCHER
+   * CANNOT CONSUME A MATRIX — it builds a ray per pixel. What the override writes here is
+   * an eye, a target and an angle, into ONE pass whose target nothing else reads.
+   *
+   * Absent everywhere else, and that absence is the refusal: a shader that declares no
+   * view camera gets no viewport row, and the surface says so BY NAME rather than
+   * silently offering a control that moves nothing (`viewCameraAbsentReason`).
+   *
+   * The framing is the AUTHOR's own stored numbers, not a rig — §V986, because the eye of
+   * an animated marcher is computed inside the shader and the compiler cannot measure it.
+   */
+  readonly viewCamera?: {
+    /** The one pass the override writes. A viewport is exactly one re-render. */
+    readonly passId: string;
+    readonly eye: readonly [number, number, number];
+    readonly lookAt: readonly [number, number, number];
+    /** VERTICAL field of view, radians — never a focal length (see the contract). */
+    readonly fovY: number;
+    /** The viewport target's aspect, so an orbit is not stretched against it (T663). */
+    readonly aspect: number;
+  };
 }
 
 /**

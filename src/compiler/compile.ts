@@ -50,7 +50,11 @@ import {
   scratchResourceId,
   swapPassId,
   targetResourceId,
+  viewportPortId,
+  viewportResourceId,
 } from "./resources.ts";
+// §T1311b(a): the view-camera contract — what a shader declares so the viewer can fly it.
+import { viewCameraHome, viewCameraPassUniforms, viewCameraRow } from "../domain/geometry/view-camera.ts";
 import {
   POINTS_PREVIEW_VERTEX_COUNT,
   pointSplatNdcExtent,
@@ -958,6 +962,18 @@ export function compileGraphRetaining(request: CompileRequest): CompileGraphResu
     Math.max(1, Math.round(settings.previewLongEdge)) * MAX_TILE_SCALE;
 
   /**
+   * §T1311b(a): the long edge of a VIEWPORT target.
+   *
+   * A viewport is an inspection surface, and the thing it re-renders is by definition the
+   * expensive kind — a marcher pays per pixel, twice, for as long as an editor is watching
+   * the node. Capping the long edge at 960 makes the second march 56% of the authored
+   * pass's pixels at 1280×720 and a quarter of them at 1920×1080, while still being sharp
+   * enough to fly a building around in. The presenter blits it with a linear sampler, so a
+   * capped viewport fills a bigger pane rather than pillarboxing inside it.
+   */
+  const VIEWPORT_MAX_SIDE = 960;
+
+  /**
    * T663 — and the LONG EDGE is still the rule above; only the SHORT one is new.
    *
    * Owner: "maybe we should render the previews for points in project aspect ratio
@@ -1085,6 +1101,9 @@ export function compileGraphRetaining(request: CompileRequest): CompileGraphResu
   /** T462: synthesized scene-payload preview targets, concatenated into the projection
    *  (a scene producer materializes no row of its own to replace). */
   const scenePreviewOutputs = new Map<string, ResolvedOutput>();
+  /** §T1311b(a): viewport rows for outputs whose shader declares a view camera. ADDED to
+   *  the projection, never replacing — the authored row is still the node's real output. */
+  const viewportOutputs = new Map<string, ResolvedOutput>();
   /** T447: scene payloads (camera/light/geometry/material) per output — the pointsets
    *  channel's sibling, all CPU values, re-published on every animate recompile. */
   const sceneInfoByOutput = new Map<string, ScenePayload>();
@@ -1503,6 +1522,101 @@ export function compileGraphRetaining(request: CompileRequest): CompileGraphResu
           { nodeId },
         ),
       );
+    }
+
+    /*
+     * §T1311b(a) — THE VIEWPORT: a SECOND render of a shader that declares a VIEW CAMERA.
+     *
+     * The owner's complaint is exact — "we're not just stuck viewing a video texture" — and
+     * for the pieces they actually make it was literal. E55, E57, E68 and E70 are raymarched
+     * `customWgsl`, a `customWgsl` output is a TEXTURE payload, `PREVIEW_ORBIT_RIGS` is keyed
+     * by payload KIND, so those outputs declare no rig and the viewer refuses them. The rigs
+     * cannot be extended to cover them either: a rig publishes a `viewProjection`, and a
+     * MARCHER HAS NO VERTICES TO TRANSFORM — it builds a ray per pixel from an eye and a
+     * direction. The contract is therefore a different uniform set, and it is one the SHADER
+     * OPTS INTO rather than one the viewer imposes (`domain/geometry/view-camera.ts`).
+     *
+     * ⚑ NON-DESTRUCTIVE BY CONSTRUCTION, WHICH IS THE RULING AND NOT A PREFERENCE. What is
+     * emitted here is a CLONE of the authored pass into a target NOTHING READS, with
+     * `viewOverride` at 1. The authored pass, its uniforms and its target are untouched, so
+     * the node's own output — the thing that is exported, thumbnailed, claimed, measured
+     * against every look baseline and consumed downstream — is byte-identical whether a
+     * viewport exists or not. There is no write path from the inspection camera to the
+     * document, because the inspection camera has nowhere to write TO.
+     *
+     * ⚑ AND IT ONLY EXISTS WHILE AN EDITOR IS WATCHING. The gate is `previewSinkKeys`, the
+     * same set that gates pointset synthesis and texture materialization, so a headless
+     * render, an export, a thumbnail build and every claims run emit NO viewport pass and no
+     * viewport row at all — which is what "separate from what renders at export" means when
+     * it is a property of the plan rather than a promise.
+     *
+     * COST, stated rather than discovered (§V973): the marcher runs TWICE while its node is
+     * a live preview sink. The viewport target is capped at `VIEWPORT_MAX_SIDE` on its long
+     * edge, so for E68's 1280×720 the second march is 960×540 — 56% of the authored pass's
+     * pixels, ≈2.0 ms against its measured 3.57 ms. Narrowing the gate further (a viewport
+     * only while the viewport row is the PRESENTED output) needs the viewer mode that
+     * §T1311b(b)/(c) bring, and is the obvious next cut.
+     */
+    for (const slot of outputSlots(definition)) {
+      if (slot.resourceKind !== "target") continue;
+      const key = outputKey(nodeId, slot.portId);
+      if (!previewSinkKeys.has(key)) continue;
+      const resolved = propagated.outputs.get(key);
+      if (resolved === undefined) continue;
+      const emittedIds = new Set(emittedPassIds);
+      // Keyed on the PASS'S OWN UNIFORMS, never on a list of node types (§V316, §V319):
+      // any node that compiles a pass carrying the four contract names gets a viewport,
+      // the day it compiles, and one that does not is untouched by construction.
+      const authored = passes.find((pass) => {
+        if (!emittedIds.has(pass["id"] as string)) return false;
+        if (pass["target"] !== resolved.resourceId) return false;
+        return viewCameraHome(pass["uniforms"] as Parameters<typeof viewCameraHome>[0]) !== undefined;
+      });
+      if (authored === undefined) continue;
+      const home = viewCameraHome(authored["uniforms"] as Parameters<typeof viewCameraHome>[0]);
+      if (home === undefined) continue;
+      const longest = Math.max(resolved.size[0], resolved.size[1]);
+      const scale = longest > VIEWPORT_MAX_SIDE ? VIEWPORT_MAX_SIDE / longest : 1;
+      const viewportSize: [number, number] = [
+        Math.max(1, Math.round(resolved.size[0] * scale)),
+        Math.max(1, Math.round(resolved.size[1] * scale)),
+      ];
+      const viewportId = viewportResourceId(nodeId, slot.portId);
+      const viewportPass = `${nodeId}#viewport:${slot.portId}`;
+      resources.push({
+        kind: "target",
+        id: viewportId,
+        size: viewportSize,
+        format: resolved.format,
+        label: `${nodeId} viewport ${slot.portId}`,
+      });
+      passes.push({
+        ...authored,
+        id: viewportPass,
+        target: viewportId,
+        uniforms: { ...(authored["uniforms"] as Record<string, unknown>), ...viewCameraPassUniforms(home) },
+        label: `${authored["label"] as string} viewport`,
+      });
+      viewportOutputs.set(outputKey(nodeId, viewportPortId(slot.portId)), {
+        nodeId,
+        portId: viewportPortId(slot.portId),
+        resourceId: viewportId,
+        resourceKind: "target",
+        size: viewportSize,
+        format: resolved.format,
+        space: resolved.space,
+        temporal: false,
+        // The HOME framing is the author's own stored numbers, read straight off the pass
+        // (§V986: no invented rig for an eye nobody can measure). Identity deltas therefore
+        // render exactly what the author nominated, which is what makes "home" honest.
+        // Assembled by the CONTRACT, not here — the same rule `previewOrbitBasis` is under
+        // and for the same reason (§T675: a basis built where somebody was working is how
+        // two branches that must agree stop agreeing).
+        viewCamera: viewCameraRow(home, {
+          passId: viewportPass,
+          aspect: viewportSize[0] / viewportSize[1],
+        }),
+      });
     }
 
     /*
@@ -2274,6 +2388,10 @@ export function compileGraphRetaining(request: CompileRequest): CompileGraphResu
     // T462: scene-payload previews ADD rows — camera/light/material outputs never had
     // a materialized row to replace.
     .concat([...scenePreviewOutputs.values()])
+    // §T1311b(a): a viewport is an EXTRA way of looking at one output, so it is an extra
+    // row under its own port id — never a replacement, because the authored row is still
+    // what export, readback and every downstream consumer mean by this output.
+    .concat([...viewportOutputs.values()])
     .sort((a, b) => outputKey(a.nodeId, a.portId).localeCompare(outputKey(b.nodeId, b.portId)));
 
   // §V82: every diagnostic that names a node inside a component carries its source path.

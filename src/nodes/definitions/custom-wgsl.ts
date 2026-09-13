@@ -15,6 +15,12 @@ import {
   type ReflectedField,
 } from "./params-reflection.ts";
 import type { ParameterDefinition, ParameterSchema } from "../../domain/types/parameters.ts";
+import type { RuntimeDiagnostic } from "../../domain/types/diagnostics.ts";
+import {
+  VIEW_CAMERA_FIELDS,
+  VIEW_CAMERA_FIELD_NAMES,
+  viewCameraDeclaration,
+} from "../../domain/geometry/view-camera.ts";
 import {
   CUSTOM_WGSL_DEFAULT_SOURCE,
   CUSTOM_WGSL_SAMPLER_BINDING,
@@ -76,7 +82,7 @@ const SOURCE_PARAM: ParameterDefinition = {
   // rather than asking anybody to remember to write one — the point kernels' `kernel`
   // description has carried the same sentence since T900, and this node had none at all.
   description:
-    "The fragment shader. YOUR OWN KNOBS: the source this node ships with ALREADY declares a `struct Params`, with a `// @default <literal>` and a describing comment per field — keep the block and add to it. Every field becomes a named, typed, drivable control on this node (`orbitSpeed: f32` a number, `lightColor: vec4f` a colour picker), read in the shader as params.<name>. A shader with no such block has no knobs at all. Time arrives only through the shared `frameU` block (§V44).",
+    "The fragment shader. YOUR OWN KNOBS: the source this node ships with ALREADY declares a `struct Params`, with a `// @default <literal>` and a describing comment per field — keep the block and add to it. Every field becomes a named, typed, drivable control on this node (`orbitSpeed: f32` a number, `lightColor: vec4f` a colour picker), read in the shader as params.<name>. A shader with no such block has no knobs at all. Time arrives only through the shared `frameU` block (§V44). WANT TO FLY AROUND IN IT? Declare `viewEye: vec3f`, `viewTarget: vec3f`, `viewFov: f32` and `viewOverride: f32` in the same block and build your ray from them behind `if (params.viewOverride > 0.5)`. That is the VIEW-CAMERA CONTRACT: the viewer then offers this node a viewport you can orbit, rendered into a target nothing else reads — your own picture, your own camera and your export are untouched.",
 };
 
 /**
@@ -125,6 +131,8 @@ export { CUSTOM_WGSL_YIELDED_KEYS };
 const CUSTOM_WGSL_PARAM_CODE = "node.customWgsl.params";
 /** T1286: a `// @use` line that names nothing, or that collides with the source's own. */
 const CUSTOM_WGSL_MODULE_CODE = "node.customWgsl.module";
+/** §T1311b(a): a half-declared view camera — the refuse-by-name code. */
+const CUSTOM_WGSL_VIEW_CAMERA_CODE = "node.customWgsl.viewCamera";
 
 /** The fields a source declares as controls — none at all unless it asks for the block. */
 function reflectedFields(source: string): readonly ReflectedField[] {
@@ -238,6 +246,31 @@ export const customWgslNode: NodeDefinition = {
     if (collisions.length > 0) return { passes: [], diagnostics: collisions };
 
     /*
+     * §T1311b(a) — THE VIEW-CAMERA CONTRACT, refused BY NAME when it is half-written.
+     *
+     * A shader that declares NONE of the four fields is the ordinary case and says nothing
+     * here: most of the catalogue is 2D and has no camera to fly. A shader that declares
+     * SOME of them is the author having MEANT to opt in, and it is the §V288 shape — the
+     * viewer would offer no viewport and nothing would say why, so the missing or mistyped
+     * fields are named. A WARNING and not an error: the piece itself renders perfectly
+     * well without a viewport, and blanking somebody's picture over a camera typo would be
+     * a worse failure than the one being reported.
+     */
+    const viewDiagnostics: RuntimeDiagnostic[] = [];
+    const view = viewCameraDeclaration(fields);
+    if (view.kind === "partial") {
+      viewDiagnostics.push({
+        severity: "warning",
+        code: CUSTOM_WGSL_VIEW_CAMERA_CODE,
+        message: `Node "${nodeId}": no view camera — ${view.reason}`,
+        nodeId,
+        suggestion:
+          `Declare ${VIEW_CAMERA_FIELD_NAMES.map((name) => `\`${name}: ${VIEW_CAMERA_FIELDS[name]}\``).join(", ")} ` +
+          "and branch on `params.viewOverride > 0.5` where the ray is built.",
+      });
+    }
+
+    /*
      * T1286 — `// @use <name>` pulls named shared WGSL in front of this source.
      *
      * Resolved HERE rather than anywhere upstream, because the source string is opaque to
@@ -315,6 +348,6 @@ export const customWgslNode: NodeDefinition = {
       nodeId,
       label: "Custom WGSL",
     };
-    return { passes: [pass] };
+    return viewDiagnostics.length === 0 ? { passes: [pass] } : { passes: [pass], diagnostics: viewDiagnostics };
   },
 };

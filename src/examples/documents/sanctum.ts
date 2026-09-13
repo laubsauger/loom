@@ -81,6 +81,19 @@ export const sanctumDocument = document(
         eyeHeight: 1.62,
         pitch: -2,
         lens: 1.7,
+        /* ─── THE VIEW CAMERA (§T1311b(a)). This piece OPTS IN to the viewer's inspection
+           camera by declaring the four contract fields, which is what lets somebody walk
+           around the hall instead of watching a video of it. The three values are the
+           author's answer to "where should an explorer start" — standing in the nave a bay
+           short of the first columns, looking down the axis at the doorway — and they are
+           STORED rather than inherited from the shader's `// @default` lines (§V920).
+           ⚑ `viewOverride` is 0 and must stay 0: this is what the piece RENDERS. The
+           viewport is a second pass the compiler emits only while an editor is watching
+           this node, and it is the only thing that ever sets the flag. */
+        viewEye: [0, 1.62, -5.2],
+        viewTarget: [0, 1.9, 6],
+        viewFov: 1.0638,
+        viewOverride: 0,
         bay: 4.4,
         aisle: 3.6,
         columnRadius: 0.62,

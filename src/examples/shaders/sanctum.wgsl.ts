@@ -70,6 +70,21 @@ struct Params {
   eyeHeight: f32,     // @default 1.62  the eye above the floor, metres
   pitch: f32,         // @default -7  degrees the view tilts: negative looks slightly down the floor
   lens: f32,          // @default 1.7  focal length — long, so the colonnade stacks and compresses
+  /* ─── THE VIEW CAMERA (§T1311b(a)). Four fields, and they are a CONTRACT rather than four
+     more knobs: a shader that declares exactly these opts into the viewer's inspection
+     camera, and one that declares none of them is refused by name instead of being handed a
+     control that moves nothing. See 'domain/geometry/view-camera.ts'.
+     ⚑ 'viewOverride' is 0 in this document and stays 0: the exported picture, the thumbnail,
+     the claims and the look baselines all render the animated walk below, untouched. The
+     VIEWPORT is a second pass the compiler emits only while an editor is watching this node,
+     compiled with the flag at 1 — so the inspection camera has nowhere to write except a
+     target nothing reads. The three values are the AUTHOR's answer to "where should somebody
+     who wants to walk around in this START", not a rig anybody guessed (§V986): standing in
+     the nave a bay short of the first columns, looking down the axis at the doorway. */
+  viewEye: vec3f,     // @default [0, 1.62, -5.2]  where an explorer starts, metres
+  viewTarget: vec3f,  // @default [0, 1.9, 6]  what they start looking at — the doorway down the nave
+  viewFov: f32,       // @default 1.0638  VERTICAL field of view, RADIANS — 2*atan(1/1.7), the piece's own lens expressed as an angle
+  viewOverride: f32,  // @default 0  0 = the walk below; 1 = the three fields above. The viewport pass is the only thing that sets it
   bay: f32,           // @default 4.4  metres between column centres down the nave
   aisle: f32,         // @default 3.6  metres from the nave's axis to a column's centre
   columnRadius: f32,  // @default 0.62  column radius at the base, metres
@@ -1285,7 +1300,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   let thread = smoothstep(1.5, 11.0, toWall);
   let driftX = params.driftX * sin((t / max(params.driftPeriod, 1.0)) * 6.2831853) * thread;
   let bobY = params.bobHeight * sin((t / max(params.bobPeriod, 1.0)) * 6.2831853 + 1.1);
-  let eye = vec3f(driftX, params.eyeHeight + bobY, travelZ);
+  var eye = vec3f(driftX, params.eyeHeight + bobY, travelZ);
 
   /* The heading leads the drift — you look slightly where you are going, which is what a
      body does and what a locked-off heading never does. The pitch breathes on its own
@@ -1306,7 +1321,44 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
      vault and a floor of the same eroded stone look alike in the dark. What exposed it was
      the floor REFLECTION appearing along the top edge of the frame. */
   let up = cross(forward, right);
-  let dir = normalize((right * ndc.x) + (up * ndc.y) + (forward * params.lens));
+  var dir = normalize((right * ndc.x) + (up * ndc.y) + (forward * params.lens));
+
+  /* ─── THE VIEW CAMERA (§T1311b(a)) ──────────────────────────────────────────────────
+   *
+   * One branch on a UNIFORM, so the whole wavefront takes the same side of it and the
+   * default path costs a comparison. Everything above — the five coprime lanes, the
+   * analytic speed integral, the door-threading drift, the bank — is the PIECE, and it is
+   * what renders at 'viewOverride == 0': the shipped document stores 0, so the exported
+   * frame, the thumbnail, the claims and the look baselines are byte-identical to the
+   * version before this block existed.
+   *
+   * At 1, the walk stops and the three declared fields are the camera. That is the only
+   * state the compiler's VIEWPORT pass compiles, into a target nothing reads — which is
+   * what makes the viewer's inspection camera non-destructive by construction rather than
+   * by a guard that refuses to write.
+   *
+   * The basis is rebuilt the same way and in the same handedness as the walk's own (right
+   * = up × forward, up = forward × right, §T1309d's hard-won order), so entering the
+   * viewport changes WHERE you stand and never which way is up. 'focal = 1/tan(fov/2)' is
+   * the one conversion in the contract: the piece thinks in focal lengths, the viewer
+   * thinks in angles, and an orbit can only reason about the angle.
+   */
+  if (params.viewOverride > 0.5) {
+    eye = params.viewEye;
+    let aim = params.viewTarget - params.viewEye;
+    let vForward = normalize(select(vec3f(0.0, 0.0, 1.0), aim, length(aim) > 1e-5));
+    /* A view straight up or straight down has no horizontal right vector to take; falling
+       back to +x keeps the frame defined instead of filling it with NaN. */
+    let flatAim = vec3f(vForward.x, 0.0, vForward.z);
+    let vRight = normalize(select(
+      vec3f(1.0, 0.0, 0.0),
+      cross(vec3f(0.0, 1.0, 0.0), vForward),
+      length(flatAim) > 1e-4,
+    ));
+    let vUp = cross(vForward, vRight);
+    let focal = 1.0 / tan(clamp(params.viewFov, 0.05, 3.0) * 0.5);
+    dir = normalize((vRight * ndc.x) + (vUp * ndc.y) + (vForward * focal));
+  }
 
   var travelled = 0.0;
   var hit = false;

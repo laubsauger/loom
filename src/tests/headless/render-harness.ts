@@ -56,6 +56,21 @@ export interface HeadlessRenderRequest {
   /** Which frame indices to read back. Defaults to the last frame only. */
   readonly capture?: ReadonlyArray<number>;
   readonly outputNodeId?: string;
+  /**
+   * §T1311b(a): WHICH PORT of `outputNodeId` to read back. A node can publish more than one
+   * row — a customWgsl marcher that declares a view camera publishes its authored output
+   * AND its `out#view` viewport — and "the first row with this node id" cannot tell them
+   * apart. Absent keeps the historical behaviour (the first row for the node).
+   */
+  readonly outputPortId?: string;
+  /**
+   * §T1311b(a): the PREVIEW SINK set, exactly as the editor publishes it.
+   *
+   * Absent, a headless render has none — which is the state every export, thumbnail and
+   * claims run is in, and the reason a viewport does not exist in any of them. Supplying it
+   * is how a test can stand where the editor stands and assert what the editor gets.
+   */
+  readonly sinks?: ReadonlyArray<{ readonly nodeId: string; readonly portId: string }>;
   readonly fps?: number;
   /**
    * §V47's control knob. Supplying a canvas must not change a single byte — the backend
@@ -185,8 +200,10 @@ function registry(extra?: Iterable<NodeDefinition>) {
 }
 
 /** The resource the sink presents into, resolved from the plan rather than reconstructed. */
-export function outputResourceIdOf(plan: CompiledGraph, nodeId: string): string {
-  const match = plan.outputs.find((output) => output.nodeId === nodeId);
+export function outputResourceIdOf(plan: CompiledGraph, nodeId: string, portId?: string): string {
+  const match = plan.outputs.find(
+    (output) => output.nodeId === nodeId && (portId === undefined || output.portId === portId),
+  );
   if (match === undefined) {
     throw new Error(
       `No materialized output for node "${nodeId}". Plan outputs: ` +
@@ -674,13 +691,18 @@ export async function renderHeadless(request: HeadlessRenderRequest): Promise<He
       registry: registry(request.nodes),
       capabilities,
       ...(flattened === undefined ? {} : { flattened }),
+      // §T1311b(a): the editor's preview sinks, when a test is standing where the editor
+      // stands. Absent is the export/thumbnail/claims state, and it stays the default.
+      ...(request.sinks === undefined
+        ? {}
+        : { sinks: request.sinks.map((sink) => ({ ...sink, kind: "preview" as const })) }),
     });
     const errors = plan.diagnostics.filter((d) => d.severity === "error");
     if (errors.length > 0) {
       throw new Error(`Parity graph failed to compile: ${errors.map((d) => d.message).join("; ")}`);
     }
 
-    const outputResourceId = outputResourceIdOf(plan, outputNodeId);
+    const outputResourceId = outputResourceIdOf(plan, outputNodeId, request.outputPortId);
     const compiled = await backend.compile(plan);
 
     // T650: media draws SOMETHING attributable in headless, or nothing by stated design.

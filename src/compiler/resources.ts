@@ -61,3 +61,29 @@ export const SINK_TARGET_PORT = "$target";
 export function scenePreviewResourceId(nodeId: NodeId, portId: PortId): string {
   return `preview:scene:${nodeId}:${portId}`;
 }
+
+/**
+ * §T1311b(a) — the VIEWPORT target of an output whose shader declares a view camera.
+ *
+ * A second target, written by a second pass, read by NOTHING: that is what makes the
+ * inspection camera non-destructive by construction rather than by a guard. The authored
+ * target keeps the authored camera, and it is the one that is exported, thumbnailed,
+ * claimed and consumed downstream.
+ */
+export function viewportResourceId(nodeId: NodeId, portId: PortId): string {
+  return `viewport:${nodeId}:${portId}`;
+}
+
+/**
+ * The port id the viewport output row is published under.
+ *
+ * `#` is the project's separator for something the COMPILER synthesized (`nodeId#pass:port`
+ * everywhere in the pass ids), and no definition may declare a port id containing it — so
+ * this can never collide with a port somebody wrote. The row is deliberately VISIBLE in the
+ * viewer's output list: the viewport is a different picture from the node's output the
+ * moment you move it, and naming it is the opposite of a preview that lies about what it
+ * shows (§V-preview).
+ */
+export function viewportPortId(portId: PortId): string {
+  return `${portId}#view`;
+}

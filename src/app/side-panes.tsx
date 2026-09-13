@@ -40,6 +40,7 @@ import { useFullscreenSurface } from "./fullscreen-commands.ts";
 import { registerViewerCommands } from "./viewer-commands.ts";
 import { useOutputPresentation } from "./use-output-presentation.ts";
 import { useNativeOutput } from "./use-native-output.ts";
+import { useViewCameraOverride } from "./use-view-camera.ts";
 import type { GraphActions, PortDragOrigin } from "./graph-pane.tsx";
 import type { GpuStatus } from "./gpu-status.ts";
 import styles from "./panes.module.css";
@@ -652,7 +653,7 @@ export function ViewerPane({
   }, [bus, setPinnedKey]);
 
   const { canvasRef, canvasKey } = useOutputPresentation(backend, selected?.resourceId ?? null);
-  const nativeOutput = useNativeOutput(backend, selected, documentIdentity);
+  const nativeOutput = useNativeOutput(backend, selected, documentIdentity, bus);
   /**
    * The probe's target, keyed on PRIMITIVES.
    *
@@ -807,8 +808,26 @@ export function ViewerPane({
     interest.set(requestedNodeId);
     return () => interest.set(null);
   }, [interest, requestedNodeId]);
+  /*
+   * §T1311b(a) — AND THE OUTPUTS WHOSE SHADER DECLARED A VIEW CAMERA.
+   *
+   * The paragraph above is right about scene payloads and was the whole story, which is why
+   * the owner's own pieces could not be orbited AT ALL: E55, E57, E68 and E70 are raymarched
+   * `customWgsl`, a `customWgsl` output is a TEXTURE payload, so `synthesis.orbit` is absent
+   * and the viewer refused — "stuck viewing a video texture", exactly as reported.
+   *
+   * A `viewCamera` row is the other way an output can honestly offer a camera: its shader
+   * OPTED IN by declaring one, and the compiler emitted a VIEWPORT pass to receive it. Same
+   * gestures, same store, same never-touches-the-document rule (§V255); what differs is
+   * where the values land — an eye/target/fov on a second pass, not a `viewProjection` a
+   * marcher could not consume.
+   */
   const orbitable =
-    orbits !== undefined && orbitNodeId !== null && selected?.synthesis?.orbit !== undefined;
+    orbits !== undefined &&
+    orbitNodeId !== null &&
+    (selected?.synthesis?.orbit !== undefined || selected?.viewCamera !== undefined);
+  /* The delivery half: view state in the store becomes uniforms on the viewport pass. */
+  useViewCameraOverride({ backend, output: selected, orbits });
   /** T379: measure the selected preview's positions — the frame-content readback. */
   const measureBounds = useCallback(async (): Promise<
     { lookAt: readonly [number, number, number]; radius: number } | undefined
