@@ -85,6 +85,81 @@ describe("AudioSection (T434/T432)", () => {
     expect(editor.calls).toEqual([["mic", "device", "usb-7", "commit"]]);
   });
 
+  it("T1319b — a live file node offers the measured floor, and says it IS a floor", () => {
+    mockDevices([]);
+    render(
+      <AudioSection
+        nodeId={"nd_1" as never}
+        nodeType="audioFileIn"
+        device=""
+        status={{
+          kind: "live",
+          latency: { outputSeconds: 0.021, baseSeconds: 0.005, frameSeconds: 1 / 60, suggestedSeconds: 0.0427 },
+        }}
+        editor={editorStub()}
+      />,
+    );
+    // "At least", and the part the browser cannot see — the sentence that stops someone who
+    // is still late from concluding the feature is broken (§V985).
+    expect(screen.getByText(/At least/)).toBeDefined();
+    expect(screen.getByText(/display/i)).toBeDefined();
+  });
+
+  it("T1319b — applying the measurement writes syncOffset as one commit", () => {
+    mockDevices([]);
+    const editor = editorStub();
+    render(
+      <AudioSection
+        nodeId={"nd_1" as never}
+        nodeType="audioFileIn"
+        device=""
+        status={{
+          kind: "live",
+          latency: { outputSeconds: 0.021, baseSeconds: 0.005, frameSeconds: 1 / 60, suggestedSeconds: 0.0427 },
+        }}
+        editor={editor}
+      />,
+    );
+    screen.getByRole("button", { name: /Sync Offset/ }).click();
+    // The same write path the device picker uses: one value, one commit, one undo entry.
+    expect(editor.calls).toEqual([["nd_1", "syncOffset", 0.043, "commit"]]);
+  });
+
+  it("T1319b — a microphone is offered nothing: live analysis cannot look ahead", () => {
+    mockDevices([]);
+    render(
+      <AudioSection
+        nodeId={"nd_1" as never}
+        nodeType="audioIn"
+        device=""
+        status={{
+          kind: "live",
+          latency: { outputSeconds: 0.021, baseSeconds: 0.005, frameSeconds: 1 / 60, suggestedSeconds: 0.0427 },
+        }}
+        editor={editorStub()}
+      />,
+    );
+    // Absent, not disabled: the sound has not happened yet, so there is no number to apply.
+    expect(screen.queryByText(/At least/)).toBeNull();
+    expect(screen.queryByRole("button", { name: /Sync Offset/ })).toBeNull();
+  });
+
+  it("T1319b — an unmeasurable browser says so and offers NO value to apply (§V91)", () => {
+    mockDevices([]);
+    render(
+      <AudioSection
+        nodeId={"nd_1" as never}
+        nodeType="audioFileIn"
+        device=""
+        status={{ kind: "live", latency: null }}
+        editor={editorStub()}
+      />,
+    );
+    expect(screen.getByText(/no audio output latency/)).toBeDefined();
+    // A confident 0 ms is the one thing that must never be offered here.
+    expect(screen.queryByRole("button", { name: /Sync Offset/ })).toBeNull();
+  });
+
   it("the file node shows status only — there is no device to pick for a file", () => {
     mockDevices([{ deviceId: "d1", label: "Mic" }]);
     render(

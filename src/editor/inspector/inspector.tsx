@@ -148,7 +148,19 @@ export interface InspectorProps {
    * T434(b)/T432: the session's audio capture status, for the Audio section shown on
    * audio nodes. Absent = no session capture wiring (tests, embeds) — section hidden.
    */
-  audioStatus?: () => { kind: "idle" | "live" | "error"; message?: string };
+  audioStatus?: () => {
+    kind: "idle" | "live" | "error";
+    message?: string;
+    /** T1319b: the measured floor on the audio-to-picture offset, or null where unmeasurable. */
+    latency?:
+      | {
+          readonly outputSeconds: number;
+          readonly baseSeconds: number;
+          readonly frameSeconds: number;
+          readonly suggestedSeconds: number;
+        }
+      | null;
+  };
   /**
    * T942: the session's ONE Web MIDI access, for the MIDI section shown on `midiIn`.
    * Absent = no session MIDI wiring (tests, embeds) — section hidden, exactly as the

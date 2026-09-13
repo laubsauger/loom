@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { NodeId } from "@domain/types/ids.ts";
 import { ControlRow } from "@ui/controls/control-row.tsx";
 import { EnumField } from "@ui/controls/enum-field.tsx";
+import { describeAudioLatency, type AudioLatencyEstimate } from "@/app/audio-latency.ts";
 import type { ParameterEditor } from "./parameter-editor.ts";
 import styles from "./inspector.module.css";
 
@@ -22,6 +23,8 @@ import styles from "./inspector.module.css";
 export interface AudioCaptureStatus {
   readonly kind: "idle" | "live" | "error";
   readonly message?: string;
+  /** T1319b: the measured FLOOR on the audio-to-picture offset, or null where unmeasurable. */
+  readonly latency?: AudioLatencyEstimate | null;
 }
 
 export interface AudioSectionProps {
@@ -94,6 +97,20 @@ export function audioSectionParameters(nodeType: "audioIn" | "audioFileIn"): rea
 
 export function AudioSection({ nodeId, nodeType, device, status, editor }: AudioSectionProps) {
   const { devices, unlabelled } = useAudioDevices(nodeType === "audioIn");
+  /*
+   * T1319b — the measurement the Sync Offset description has been asking for since §T1312b.
+   *
+   * FILE ONLY: a microphone cannot be compensated this way at all, because live analysis
+   * cannot look ahead — the sound has not happened yet — which is the same reason the
+   * parameter itself is inactive under Free Run. Offering the suggestion on a mic would be
+   * offering a number for a control that cannot use it.
+   *
+   * This does NOT claim `syncOffset` in `audioSectionParameters`: the knob keeps its home in
+   * the Analysis group, where it is read and typed. A button that writes once is not a second
+   * editor of the value, and moving the control out of its group is a bigger change than the
+   * measurement needs (§T1320b holds the question of where the value should ultimately live).
+   */
+  const latency = nodeType === "audioFileIn" && status.kind === "live" ? (status.latency ?? null) : undefined;
 
   return (
     <section className={styles.section} aria-label="Audio capture">
@@ -105,6 +122,27 @@ export function AudioSection({ nodeId, nodeType, device, status, editor }: Audio
         {STATUS_TEXT[status.kind]}
         {status.message === undefined ? "" : ` — ${status.message}`}
       </div>
+      {latency === undefined ? null : (
+        <div className={styles.statusLine} data-audio-latency={latency === null ? "unmeasurable" : "measured"}>
+          {describeAudioLatency(latency)}
+          {latency === null ? null : (
+            <>
+              {" "}
+              <button
+                type="button"
+                onClick={() => {
+                  // The same editor the device picker writes through: one value, one write
+                  // path, one undo entry (§V15). `commit`, because this is a single act and
+                  // not a drag.
+                  editor.setParameter(nodeId, "syncOffset", Number(latency.suggestedSeconds.toFixed(3)), "commit");
+                }}
+              >
+                Use as Sync Offset
+              </button>
+            </>
+          )}
+        </div>
+      )}
       {nodeType === "audioIn" ? (
         <>
           {/* The kit's picker, not a bare `<select>`: a raw one renders as the OS's grey

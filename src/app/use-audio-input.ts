@@ -21,6 +21,7 @@ import { AUDIO_DETECTOR_DEFAULTS } from "@nodes/definitions/audio.ts";
 import { AUDIO_ANALYSIS_WORKLET_URL } from "./audio-analysis-worklet-url.ts";
 import type { AppRuntime } from "./app-runtime.ts";
 import type { MediaControlRegistry } from "./media-commands.ts";
+import { audioLatencyEstimate, type AudioLatencyEstimate } from "./audio-latency.ts";
 import { createPreAnalyser, readTrackAtPlayhead } from "./audio-pre-analysis.ts";
 import type { OfflineAnalysis } from "./audio-offline-analysis.ts";
 import {
@@ -150,6 +151,16 @@ async function attachAnalysisEngine(
 export interface AudioInputStatus {
   readonly kind: "idle" | "live" | "error";
   readonly message?: string;
+  /**
+   * T1319b — what the live context says its output latency is, paired with one frame at the
+   * project rate. A FLOOR on the true audio-to-picture offset (§V985): it cannot see the
+   * render and display path. Null while nothing is capturing, or where the browser reports
+   * no latency at all — absent rather than zero, because those are different facts.
+   *
+   * Structured rather than folded into `message` on purpose: a control that applies this
+   * number must read a number, not parse its own sentence.
+   */
+  readonly latency?: AudioLatencyEstimate | null;
 }
 
 /** T1229: one cache for the session — a re-bound file is a hit, not a second walk. */
@@ -640,7 +651,17 @@ export function useAudioInput(
     return reader === null ? null : reader();
   }, []);
 
-  const status = useCallback((): AudioInputStatus => statusRef.current, []);
+  /*
+   * T1319b: the latency is computed HERE, per call, off the live context — not stored when
+   * the capture opened. `outputLatency` moves when the device or the buffer size changes,
+   * and a number captured once would go quietly stale, which is the failure this whole row
+   * exists to end. Computing it on read costs two property lookups.
+   */
+  const status = useCallback((): AudioInputStatus => {
+    const context = captureRef.current?.context;
+    if (context === undefined) return statusRef.current;
+    return { ...statusRef.current, latency: audioLatencyEstimate(context, fpsRef.current?.() ?? 0) };
+  }, []);
 
   const detector = useCallback((): DetectorSettings | null => configRef.current?.detector ?? null, []);
 
