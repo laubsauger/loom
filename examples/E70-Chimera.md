@@ -112,21 +112,71 @@ floats, with the derivative still correct.
 ⚑ The general form is worth more than the fix: **a distance estimator is a pair — the map and
 its derivative — and changing one without the other produces a picture, not an error.**
 
-## The speckle was the epsilon, and the fix was also the cost saving
+## The speckle is the MARCH, and three passes looked for it in the shading
 
-The first lit render was covered in coloured salt-and-pepper noise. It was not the step size
-(halving `stepScale` and raising the step count moved the frame's mean by 0.06) and it was not
-the specular exponent. It was the **termination threshold**.
+The owner has called this piece *"speckled with noisy stuff… these details don't scale well
+when zooming out etc. it all gets just a freckly noisy mess."* Two passes treated that as a
+**mark** problem — first under-widened pods, then veins hue-rotated into magenta — and the
+speckle survived both. T1322b measured why.
 
-A fixed epsilon asks every ray for the same absolute precision. A ray crossing a region whose
-detail is finer than its own pixel stops wherever it happens to run out — and neighbouring
-rays run out in different places, which is exactly what salt-and-pepper on a fractal surface
-*is*. Stopping when the estimate falls below **what the pixel actually covers** asks each ray
-for the precision its pixel can show, and the normal is sampled at that same width so it is
-not averaging detail the pixel cannot display.
+⚑ **The instrument everyone used was wrong.** It counted connected magenta marks above a
+brightness threshold, and that count is a brightness statistic wearing a count's clothes: it
+reads **zero** with the camera pulled back to `orbitRadius` 34, it fell 75 % when `polish` was
+cut *while the visible speckle did not change at all*, and it cannot see a **white** speck by
+construction. Every conclusion drawn from it was a conclusion about brightness.
 
-It is also cheaper — the far half of the object stops sooner — so the quality fix and the cost
-fix were the same line.
+What replaced it is scale-free and colour-blind: a speck is a lit pixel standing more than
+twice **its own 3×3 median**. Nothing in it depends on absolute brightness or on how many
+pixels the object covers. Read that way, on a 0.000 A/A floor:
+
+| arm | specks, % of lit pixels |
+| --- | --- |
+| shipped | 0.899 |
+| `specular` 0 | 0.893 |
+| `polish` 0 | 0.948 |
+| pods cut (`nodeGlow` 0, `nodeSpill` 0) | 0.740 |
+| veins cut (`veinEmission` 0, `veinSpill` 0) | 0.836 |
+| `shellGlow` 0 | 0.882 |
+| `fresnelGain` 0 | 0.803 |
+| `haze` 0 | 0.891 |
+| **`stepScale` 0.78 → 0.45** | **0.619** |
+| **`detail` 1 → 4** | **0.365** |
+
+⚑ **Every shading term is a no-op and only the march moves it.** The speckle is *geometric* —
+rays terminating at different iterations on structure finer than the pixel — so no amount of
+work on pods, veins, hues or reflections could ever have reached it, which is exactly why
+three passes of that work did not.
+
+The fix taken is `stepScale` 0.78 → 0.5 (0.920 → 0.635 %, +0.34 ms against a 0.029 ms A/A
+floor), and it is the right thing on its own terms besides: a chain this long accumulates
+derivative error, so stepping less of the estimate is the file's margin against marching
+*through* a thin feature at a grazing angle — and an overshoot at a grazing angle **is** a
+land-or-miss per pixel. Raising `detail` buys a better number by resolving less structure, and
+it shows: at `detail` 3 the silhouette visibly coarsens.
+
+## There is no checkerboard, and the hash was innocent
+
+The owner reported *"a CHECKERBOARD TEXTURE IN THE MAGENTA GLOW"*, and the volume march's
+per-pixel jitter was indicted for it: `hash2i` multiplies each coordinate by an **odd**
+constant, so the low bit of the xor is x⊕y parity — a checkerboard by construction, before the
+finaliser. **That half is exactly true: 262 144 of 262 144 pixels.**
+
+⚑ **It does not reach the picture.** The PCG finaliser destroys it. Mean jitter over
+even-parity pixels against odd reads 0.499409 / 0.499714 — a gap of **0.000306, five times
+smaller than the 0.001476 the same statistic returns split on a bit pair the hash cannot know
+about**. And the rendered frame has no checkerboard either: a three-mode Haar detector (HH
+against (LH+HL)/2, which has a known null of 1.0 for isotropic noise) was validated first —
+white noise 0.98, gradient 0.95, stripes 0.00, a synthetic checkerboard 8×10¹⁶ — and then read
+**0.10 to 0.44** on this frame, at cell sizes 1/2/4/8 px, at eight times across the run, at
+every shot state. `haze` 0 did not move it.
+
+So if a checkerboard is visible it is in the **display path**, not in this image — a
+non-integer canvas scale resampling fine static grain will manufacture one. The jitter is an
+R2 sequence now rather than a hash, and the page says plainly what that bought: **not less
+noise** (A/B'd on one build, hash 4.25 % / R2 4.13 % / a constant half-stride 4.79 %, against
+a reference that disagrees with itself by 3.21 % — three arms inside the instrument's own
+floor) but one dot product instead of a PCG finaliser, and the retirement of the file's last
+hash along with its `// @use hash` include.
 
 ## Ten clocks, and they are prime — checked, not asserted
 
@@ -135,19 +185,22 @@ decorative.
 
 | clock | period | what moves |
 |---|---|---|
-| `morphPeriod` | **19 s** | the fold rotation — the segmentation, always turning |
 | `hueTurn` | **37 s** | the colour lap, two hues travelling in opposition |
-| `scalePeriod` | **47 s** | the chain's magnification: the density of incident |
-| `lightCycle` | **53 s** | *which* light is the key — the frame is lit from elsewhere |
-| `characterPeriod` | **73 s** | reef/skeleton → bulb → back |
-| `seedPeriod` | **113 s** | the seed offset's drift: the object's topology |
-| `voidPeriod` | **89 s** | the shells opening: negative space *inside* the sculpture |
-| `posePeriod` | **61 s** | the object turns on its own axis — the angles you see it from |
-| `pushPeriod` | **43 s** | the object swims *toward* the frame and back |
-| `aimPeriod` | **67 s** | which part of it the frame is centred on when it is close |
+| `orbitPeriod` | **23 s** | one lap of the camera around the object |
+| `pushPeriod` | **31 s** | the approach — and the shot lane |
+| `posePeriod` | **47 s** | the camera's second axis |
+| `lightCycle` | **53 s** | *which* light is the key — and which way the shadow falls |
+| `aimPeriod` | **59 s** | where the camera looks when it is close |
+| `characterPeriod` | **71 s** | reef/skeleton → bulb → back |
+| `morphPeriod` | **89 s** | the fold rotation: the object's own turning |
+| `spacingPeriod` | **103 s** | **the gaps between the nodules opening and closing** |
+| `voidPeriod` | **107 s** | the shells opening: negative space *inside* the sculpture |
+| `scalePeriod` | **181 s** | the chain's magnification: the density of incident |
+| `seedPeriod` | **277 s** | the seed offset's drift: the object's topology |
 
-Those are ten primes (plus `orbitPeriod` at 96, coprime with all of them), so the combined
-state repeats on their product and no viewer ever sees a cycle land.
+Eleven primes, split by the ruling that splits them: **form may evolve over a minute and may
+not restructure under a shot; light and camera may do whatever the music asks.** The combined
+state repeats on their product, so no viewer ever sees a cycle land.
 
 ⚑ **And that is now a gate rather than a sentence.** `chimera-claims.gpu.test.ts` enumerates
 every period in the document and asserts them **pairwise coprime** — it needs no GPU, because
@@ -333,7 +386,7 @@ single-frame step, *and they still land*.
 | `fillIntensity` | `lvl1.highMid` rank | the opposition light opens |
 | `specular` | `lvl1.high` rank | the wetness follows the top end |
 | `saturation` | `lvl1.centroid` rank | spectral brightness opens the chroma |
-| `punch` | `hit1.kick` envelope, **centred** | the camera THRUSTS on the beat and eases back between — a rigid dolly, read centred so it retains exactly 0 |
+| `spacingOpen` | `lvl1.low` rank, **centred** | **sustained** energy holds the gaps between the nodules open — the one lane that reaches the form, and the only kind that may |
 | `keyIntensity` | `hit1.kick` envelope | the key punches, and because the key now CASTS, its shadow snaps with it |
 | the shape | **nothing at all** | see below |
 
@@ -358,25 +411,48 @@ integrates it. A pump deforms the very structure the shot is magnifying** — at
 detail is not sliding out of frame, it is being destroyed and rebuilt every frame, which is
 what reads as noise. No shot-gating fixes that; only removing the deformation does.
 
-So the **form** clocks are long and read no audio at all, and the **transient** goes to three
-places that are all either light or camera: a rigid dolly punch, the key's intensity (and
-therefore its cast shadow), and the per-mark flare. Measured per FRAME at 60 fps, camera and
-every clock stopped so the only thing left moving is the drum:
+### And then the camera punch was rejected outright
 
-| arm | on the hit | between hits |
-| --- | --- | --- |
-| live | **5.07** | 1.12 |
-| camera punch cut | 0.41 | 0.11 |
-| flare cut | 4.89 | 1.07 |
-| every drive cut (control) | **0.000** | **0.000** |
+A rigid dolly on the kick landed for one pass and measured as **92 % of the whole piece's
+transient response** (5.07 on a hit against 1.12 between; punch cut, 0.41 / 0.11; every drive
+cut, 0.000 / 0.000). The owner saw it and said:
 
-⚑ **The camera punch is 92% of it.** The flare is real and small; the control reads exactly
-zero, which is what says the rest of the frame is genuinely still.
+> *"camera pulses are so ugly too. that's vomit inducing… we can't have like 1 frame camera
+> punches on kick and stuff. it's horrible."*
+
+⚑ **It was removed rather than softened, and the word that decided that is "1 frame".** The
+complaint is the *duration*, not the destination, so a smaller punch is the same gesture with
+a smaller amplitude. **A correct mechanism pointed at an effect nobody wants is still the
+wrong effect.** The consequence is stated rather than hidden: with it gone the fast lane drops
+to near zero, and that is not paid for here with a substitute motion. Beat-driven camera
+motion is a standing refusal for this piece.
+
+### The timescale of the driver must match the timescale of the thing driven
+
+In the same breath the owner asked for *"the shape shifting should be more audio reactive"*,
+which looks like a reversal of "form may not" and is not. What has been rejected three times
+is a **transient** driving something **structural** — the scale pumping per beat, then a
+one-frame dolly. What is asked for is the **morph**, a slow thing, answering on **its own**
+timescale.
+
+⚑ **A transient driving form is a pump. A transient driving a camera is a twitch. A sustained
+signal driving form is the piece dancing.** So `spacingOpen` — the gaps between the nodules —
+reads a **ranked level**, which moves over seconds and cannot step, and it drives an *offset*
+on a bounded quantity rather than a *rate* on a clock. (A rate would need integrating, a
+fragment shader has no state to integrate into, and multiplying a rate into `t` makes the
+phase jump by `t · Δrate / period` — an error that grows with the clock.)
+
+That lane takes `window: 60` on the analyser rather than the component's 16 s default.
+Measured on the owner's own track as the σ of a 30 s moving average — what survives once fast
+detail is gone — 16 s → 60 s roughly **doubles** the slow movement on every band (low .0501 →
+.1006, lowMid .0614 → .1323, highMid .0700 → .1303, high .0584 → .1211). It is a **peak, not a
+monotone**: 180 s is worse than 60, because a window approaching the track's length has too
+little history to rank against.
 
 ⚑ **§V914 was satisfied by arithmetic, and it paid out at the deletion rather than at the
-landing.** `openness` was centred so it retained *exactly* its neutral value — so removing it
-is bit-for-bit invisible in the no-track picture. A lane centred on its floor could not have
-been removed without a retune. `punch` is built the same way, for the same reason.
+landing** — twice now. `openness` and `punch` were both centred so they retained *exactly*
+their neutral value, so removing each is bit-for-bit invisible in the no-track picture. A lane
+centred on its floor could not have been removed without a retune.
 
 ## It works at any tempo
 

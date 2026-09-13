@@ -121,6 +121,21 @@ export const chimeraDocument = document(
         foldTravel: 0.18,
         minRadius: 0.47,
         fixedRadius: 1,
+        /* ─── ⚑ THE SPACING LANE: THE GAPS BETWEEN THE NODULES, OPENING AND CLOSING ──────
+         * The owner has asked for this THREE TIMES and until now it did not exist:
+         * *"the shape is still kinda boring in terms of stuff actually moving away from
+         * stuff or changing from cube to sphere to pyramid or rhombus or whatever the name
+         * is, opening and closing distances between nodules"*. T1318b answered it by
+         * shortening `voidPeriod` 239 -> 107, and that was the wrong lane: the void clock
+         * moves `minRadius`, which HOLLOWS OUT the shells. "Stuff moving away from stuff" is
+         * the gaps BETWEEN structures, which is the sphere fold's OUTER radius.
+         * ⚑ AND IT IS EXACT RATHER THAN CARVED. The fold multiplies the point by
+         * `fixedRadius² / r²` and multiplies the derivative by the same factor, so this is a
+         * pure scaling: every structure moves away from every other one and the distance
+         * estimate stays exactly an estimate. A gap cut with a min/max against the chain
+         * would cost the file its step scale and make every cost number in it dishonest. */
+        spacingTravel: 0.24,
+        spacingPeriod: 103,
         /* Exactly 1 = the identity, and the term is SKIPPED at that value rather than
            computed and multiplied by nothing. The travel to `bulbPeak` is what walks the
            object from reef/skeleton into bulb and back. */
@@ -152,7 +167,27 @@ export const chimeraDocument = document(
            the one thing the owner explicitly did not ask for. */
         foldSpin: [0.31, 0.47, 0.23, 0],
         detail: 2.5,
-        stepScale: 0.78,
+        /* ⚑ 0.78 -> 0.5, AND IT IS THE SPECKLE FIX (T1322b) — THE ONLY TERM IN THE FILE THAT
+           MOVED IT. The owner's *"speckled with noisy stuff… a freckly noisy mess"* has now
+           survived three passes of MATERIAL work, and this pass measured why: it is not a
+           material defect at all. A speckle statistic that is a threshold on a pixel against
+           its OWN 3x3 MEDIAN (so it cannot be fooled by the object getting smaller or
+           brighter) reads 0.899 % of lit pixels on the shipped build, and EVERY SHADING TERM
+           IS A NO-OP ON IT against a 0.000 A/A floor: `specular` 0 -> 0.893, `polish` 0 ->
+           0.948, pods cut -> 0.740, veins cut -> 0.836, `shellGlow` 0 -> 0.882, `haze` 0 ->
+           0.891, `fresnelGain` 0 -> 0.803. The two terms that DO move it are the march's own:
+           `detail` (0.25 -> 2.237, 4 -> 0.365) and this. ⚑ SO THE SPECKLE IS GEOMETRIC — rays
+           terminating at different iterations on structure finer than the pixel — and no
+           amount of work on pods, veins, hues or reflections could ever have reached it,
+           which is exactly why three passes of that work did not.
+           ⚑ AND THE CURE IS ALSO THE CORRECT THING TO DO ON ITS OWN TERMS, which is what
+           makes it the one to take rather than `detail`: a chain this long accumulates
+           derivative error, so stepping less of the estimate is the file's safety margin
+           against marching THROUGH a thin feature at a grazing angle — and an overshoot at a
+           grazing angle IS a land-or-miss per pixel. Raising `detail` instead buys the same
+           statistic by resolving less structure, and it shows: at `detail` 3 the silhouette
+           visibly coarsens and the marks along the veins get WORSE. */
+        stepScale: 0.5,
         bailout: 256,
 
         /* ─── THE CLOCKS, PRIME ON PURPOSE — AND SPLIT BY THE OWNER'S RULING ─────────
@@ -176,6 +211,20 @@ export const chimeraDocument = document(
         morphPhase: 0.37,
         morphPeriod: 89,
         hueTurn: 37,
+        /* ⚑ THE HUE TRAVEL IS BOUNDED NOW (T1322b), AND THAT IS A GUARD ON THE TRANSFORM
+           rather than a third annotation on a third site. The rotation read `t / hueTurn`,
+           which grows without bound, so it visited every hue on the wheel — including the one
+           the pods own and the one the key owns. Measured: at t = 20 s the veins had travelled
+           0.27 of a turn into the key's blue and the conduits were invisible against the stone
+           they are supposed to contrast with. A sine is bounded for all t.
+           ⚠ AND THE VALUE IS SET BY THE TIGHTEST PAIR, WHICH IS NOT THE PAIR THE BUG WAS
+           ABOUT. 0.075 was tried first: it fixed the vein-against-pod separation (0.003 turns
+           at a full lap — identical — up to 0.341) and drove the vein-against-KEY separation
+           to exactly 0.000, because those two travel in opposition and an opposition closes a
+           gap at TWICE the arc. They start 0.137 turns apart, so the arc must stay under half
+           of that. At 0.045 the worst case over a full lap is 0.375 turns from the pods and
+           0.048 from the key. Checked as arithmetic on `rotateHue` rather than by eye. */
+        hueArc: 0.045,
         scalePeriod: 181,
         lightCycle: 53,
         characterPeriod: 71,
@@ -209,14 +258,18 @@ export const chimeraDocument = document(
          * claims file enumerates every period in this node and asserts them PAIRWISE
          * COPRIME, because two of the sibling piece's nine shared a factor of three while
          * two commit messages called the whole set mutually prime. */
-        posePeriod: 61,
-        poseTilt: 0.42,
-        pushPeriod: 43,
+        /* ⚑ ALL THREE CAME DOWN AND BOTH TRAVELS WENT UP (T1322b), AND IT IS ONE DECISION.
+         * The owner: *"camera movements may actually be too slow. should be more dynamic.
+         * we're really moving about in slowmo."* ⚑ A PERIOD ALONE COULD NOT HAVE ANSWERED
+         * THAT: shortening a clock without widening its travel makes the same small move
+         * more often, which reads as fidgeting. `poseTilt` 0.42 -> 0.68 and `orbitRise`
+         * 1.35 -> 2.4 are what turn a faster lap into a bigger one. */
+        posePeriod: 47,
+        poseTilt: 0.68,
+        pushPeriod: 31,
         poseNear: 2.05,
-        aimPeriod: 67,
+        aimPeriod: 59,
         poseAim: 0.62,
-        /* How far the camera thrusts at the top of a kick, as a share of its distance. */
-        punchGain: 0.16,
         /* ⚑ THE SHOT LANE, AND IT DECIDES *CAMERA* BEHAVIOUR. At 1 the whole rig comes to a
            dead stop at the top of an approach and resumes as the camera pulls out, so a
            close-up is a held look rather than a whip-pan through magnified structure. The
@@ -234,7 +287,7 @@ export const chimeraDocument = document(
          * Still reading no audio, for §V965's reason: the camera is the stable reference the
          * morph is legible against, and parking it is the only way an audio claim is
          * provable. */
-        orbitPeriod: 41,
+        orbitPeriod: 23,
         orbitSpeed: 1,
         /* ⚑ EVERY DISTANCE IN THE FILE WENT UP BY THE SAME 1.4, AND THAT IS ONE DECISION
            RATHER THAN SEVEN. Widening the box fold makes the OBJECT BIGGER as well as less
@@ -244,7 +297,10 @@ export const chimeraDocument = document(
            the middle. They are all metres against the same body, so they all scale with it. */
         orbitRadius: 17,
         orbitHeight: 1.15,
-        orbitRise: 1.35,
+        /* ⚑ 1.35 -> 2.4. At 1.35 against an `orbitRadius` of 17 the eye moved through about
+           4.5 degrees of latitude: the lap was very nearly an equatorial band, which is most
+           of why the travel read as slow whatever the period said. */
+        orbitRise: 2.4,
         lens: 1.85,
 
         /* ─── BIOLUMINESCENCE ────────────────────────────────────────────────────────
@@ -257,7 +313,10 @@ export const chimeraDocument = document(
            rig: the object was being painted by its own veins rather than lit by anything,
            which is §V972's tint exactly and is what the owner's *"very very even grey"*
            was describing. Halving it hands the mid-tones back to the lights. */
-        veinSpill: 1.15,
+        /* ⚑ 1.15 -> 1.5 (T1322b): what a vein lights AROUND it, raised with the vein. A gain
+           and its spread are one decision — this file learned that on `nodeGlow`'s falloff —
+           and raising a core without its pool makes a brighter sprite, not a brighter light. */
+        veinSpill: 1.5,
         /* Share of the conduit lattice that is dark. Slightly lower than it was (0.45),
            because the cells are now chosen by an EVEN sequence rather than a clumping hash —
            the same density covers more of the object once it stops leaving voids. */
@@ -400,6 +459,23 @@ export const chimeraDocument = document(
          * alternating a parameter rather than by editing the shader. */
         polish: 0.62,
         reflectSteps: 30,
+        /* ⚑ THE FRECKLES ARE THE *REFLECTION*, AND THAT IS THE THIRD DIAGNOSIS THIS ONE
+           DEFECT HAS HAD (T1322b). Found by isolation, not by sweep: `polish 0` took the
+           frame from 1519 magenta marks to 382 AND RAISED their mean area 7.4 px -> 17.2 —
+           three quarters of the marks gone and the survivors BIGGER, which is a small-mark
+           population being removed rather than a general dimming. Cutting every VEIN term,
+           by contrast, left 1385 of 1519 standing, which is what overturned §V988.
+           ⛑ `reflectLinks` 4 IS NOT THE FIX AND IS NOT SHIPPED AS ONE: swept 11/8/6/4/3/2
+           the count reads 1593/1593/1593/1593/1594/1585, flat. It is kept because four links
+           instead of eleven is real work saved on most shaded pixels, and the number it did
+           not move is recorded next to it. */
+        reflectLinks: 4,
+        /* ⚑ AND THIS IS THE FIX: A REFLECTION CARRIES A POD'S POOL, NOT ITS FILAMENT. The
+           reflected ray's HIT is a per-pixel boolean off a fractal normal, and a sixth-power
+           core with a gain of 22 pushed through a per-pixel boolean is salt with a 22x gain.
+           The smooth spill survives the same decision as a pool. 1 restores the old
+           behaviour, which is the isolation arm. */
+        reflectSharp: 0,
         reflectFade: 7.7,
 
         /* ─── THE VOLUME ─────────────────────────────────────────────────────────────
@@ -462,18 +538,33 @@ export const chimeraDocument = document(
              independent of how bright each one already is.
              The vein term keeps the value this lane retained, so the rest picture does not
              move: 6.25 was the driven mean and it is now the static. */
-          veinEmission: 6.25,
+          /* ⚑ 6.25 -> 8.4, AND THE ORDER MATTERED: the owner asked for the glow to be MORE
+             INTENSE and also called the picture a freckly noisy mess, and raising a gain
+             before fixing the noise is how the last pass made the speckle worse. It is raised
+             here because the speckle was measured and traced to the MARCH rather than to any
+             emission gain (see `stepScale`), so the two are independent and this one can move
+             on its own merits. */
+          veinEmission: 8.4,
           flare: expressionSlot(`${HITS("kick")}`, 0.25),
-          /* ⚑ AND THE SAME TRANSIENT PUNCHES THE CAMERA — the fast lane the deleted pump was
-             carrying badly, moved onto the one thing that is allowed to be fast. A dolly is a
-             RIGID transform of the view: it magnifies structure without touching it, so the
-             detail stays coherent across the punch, which is exactly what the pump destroyed.
-             ⚑ READ CENTRED, so §V914 holds by arithmetic rather than by measurement: the kick
-             envelope's mean is the 0.25 this file already assumes elsewhere, so the lane
-             retains EXACTLY 0 and the no-audio picture is bit-for-bit the picture with the
-             lane deleted. Between hits the camera eases back a little and on a hit it thrusts,
-             which is a breath rather than a ratchet. */
-          punch: expressionSlot(`${HITS("kick")} - 0.25`, 0),
+          /* ⚑ THE CAMERA PUNCH IS GONE, AND IT WAS GONE THE DAY AFTER IT LANDED (T1322b).
+             `punch` read the kick envelope as a dolly on the eye. The mechanism was right —
+             a rigid magnification really does keep world-space detail coherent where the
+             deleted pump destroyed it, and the lane measured at 92 % of the piece's entire
+             transient response. THE OWNER REJECTED THE EFFECT ANYWAY, twice, by name:
+             *"camera pulses are so ugly too. that's vomit inducing"*, then *"we can't have
+             like 1 frame camera punches on kick and stuff. it's horrible."*
+             ⚑ NOTE WHICH WORD IS THE DIAGNOSIS: *1 FRAME*. The complaint is the DURATION, not
+             the destination — so it is removed rather than softened, because a smaller punch
+             is the same gesture with a smaller amplitude and the objection was never to the
+             amplitude. A CORRECT MECHANISM POINTED AT AN EFFECT NOBODY WANTS IS STILL THE
+             WRONG EFFECT. ⚑ AND BECAUSE THE LANE WAS READ CENTRED, deleting it is
+             bit-for-bit invisible with no audio — the second time in two passes that centring
+             a lane on its neutral value is what let it be removed without a retune.
+             ⚠ BEAT-DRIVEN CAMERA MOTION IS A STANDING REFUSAL FOR THIS PIECE NOW. What the
+             piece lost is stated rather than replaced: the fast lane drops to near zero, and
+             the owner's replacement is on the ANALYSIS side (*"rather use a better kick
+             detection… and then mids and highs and lows separated out used to drive stuff"*),
+             which is a different row and a different file. */
           /* ⚑ AND THE KEY LIGHT PUNCHES ON THE BACKBEAT — which, now that the key CASTS,
              moves the shading pattern across static geometry rather than merely brightening
              it. That is the cue the piece has never had, and it costs nothing beyond the
@@ -506,7 +597,12 @@ export const chimeraDocument = document(
              spill times `veinSpill`, nodes times `nodeGlow` — so the same master would be
              several times the light it was. The air is dimmer per unit of field and far
              brighter where the field is lit, which is the whole point. */
-          haze: expressionSlot(`0.052 + 0.046 * ${LEVELS("low")}`, 0.075),
+          /* ⚑ AND THE AIR CARRIES MORE OF IT (0.075 -> 0.104 at the driven mean). The volume
+             accumulates the object's OWN emission, so a brighter vein is a brighter glow
+             around it for free; this raises the medium the glow is carried IN on top of that,
+             which is the half that makes the light read as being in the room rather than on
+             the shell. */
+          haze: expressionSlot(`0.072 + 0.064 * ${LEVELS("low")}`, 0.104),
           /* ─── ⚑ NO AUDIO LANE REACHES THE FORM ANY MORE (T1318b) ────────────────────
            * `openness` (the looseness) and `foldTravel` (the creases opening with the body
            * of the mix) were the two that did, and the owner cut them by watching the
@@ -520,6 +616,39 @@ export const chimeraDocument = document(
            * satisfied by the same arithmetic that satisfied it when the lane landed. A lane
            * centred on its floor could not have been removed without a retune.
            * `foldTravel` keeps its retained 0.18 as a static, for the same reason. */
+          /* ─── ⚑ AND *ONE* AUDIO LANE REACHES THE FORM AGAIN (T1322b) ────────────────
+           * The owner, in the same breath as rejecting the camera punch: *"the shape
+           * shifting should be more audio reactive, that's for sure."* That looks like a
+           * reversal of the ruling above and it is not — THE DISTINCTION IS THE WHOLE DESIGN:
+           *
+           *   ⚑ THE TIMESCALE OF THE DRIVER MUST MATCH THE TIMESCALE OF THE THING DRIVEN.
+           *
+           * What this owner has now rejected THREE TIMES is a TRANSIENT driving something
+           * STRUCTURAL: the global scale pumping per beat (deleted twice) and a one-frame
+           * dolly on a kick (deleted above, and note their diagnosis was the DURATION).
+           * What they are asking for is the MORPH — a slow, structural thing — to answer the
+           * music ON ITS OWN TIMESCALE. A transient driving form is a pump; a transient
+           * driving a camera is a twitch; A SUSTAINED SIGNAL DRIVING FORM IS THE PIECE
+           * DANCING, and that is the thing this file has never had.
+           * So the lane is the SPACING between the nodules — the gaps opening and closing —
+           * and its driver is a RANKED LEVEL, not a hit. A rank is a percentile over a
+           * window: it moves over seconds, which is a form timescale, and it CANNOT step.
+           * ⚑ IT DRIVES AN OFFSET ON A BOUNDED QUANTITY, NOT A RATE ON A CLOCK. A rate would
+           * have to be integrated to give a phase, a fragment shader has nothing to integrate
+           * into, and multiplying a rate into `t` makes the phase jump by `t · Δrate / period`
+           * — an error that GROWS WITH THE CLOCK. An offset is continuous in its drive
+           * however the drive behaves.
+           * ⚑ AND IT IS READ CENTRED ON THE RANK'S OWN REST VALUE (0.5), so the retained
+           * 0.11 is the driven mean and §V914 holds by arithmetic: the silent picture is
+           * exactly the picture with this lane deleted.
+           * ⛑ THE SIGNAL IT SITS ON IS THE BEST ONE AVAILABLE TODAY AND IT IS KNOWN TO BE
+           * POOR: §T1323b measured the four published bands as effectively TWO signals
+           * (low x lowMid r = 0.917), so `low` today is very nearly `lowMid` and a gain here
+           * is silently compensating for unequal band spans. When the decorrelated contrast
+           * channels land this lane REPOINTS AT THEM and the coefficient below is refitted;
+           * it is not hand-decorrelated here, because two answers to one question is worse
+           * than one poor answer with a note on it. */
+          spacingOpen: expressionSlot(`0.22 * ${LEVELS("low")}`, 0.11),
           fillIntensity: expressionSlot(`5.9 + 2.6 * ${LEVELS("highMid")}`, 7.2),
           specular: expressionSlot(`1.05 + 0.6 * ${LEVELS("high")}`, 1.35),
           /* Spectral brightness opens the chroma — a grade that follows the music rather
@@ -570,7 +699,27 @@ export const chimeraDocument = document(
            frames, which is what "too blinky blinky" named. On an ENVELOPE lane the decay
            shapes a release that already has a shape, rather than being the only shaping the
            lane has. */
-        envelope: 0.08, window: 16, settle: 0.15, hitDecay: 420,
+        /* ⚑ window 60, NOT THE COMPONENT'S DEFAULT 16 (§T1323b), AND THIS IS THE WHOLE OF
+           THE ANALYSER'S ANSWER TO *"the shape shifting should be more audio reactive"*.
+           The levels bag is RANKED — each band as a percentile of its own recent window —
+           and the window is what decides which timescale survives that ranking. Measured on
+           the owner's own 4:32 track as the sigma of a 30 s moving average (i.e. what is
+           left once fast detail is gone): low .0501 -> .1006, lowMid .0614 -> .1323,
+           highMid .0700 -> .1303, high .0584 -> .1211 going from 16 s to 60 s. ROUGHLY
+           TWICE THE SLOW MOVEMENT ON EVERY BAND.
+           ⚠ AND IT IS A PEAK, NOT A MONOTONE — 180 s is WORSE than 60 (.0850 / .1229 /
+           .1107 / .0956), because a window approaching the track's length has too little
+           history to rank against. The optimum is around 45-90 s. Do not read this as
+           "longer is better" and do not move the component's own 16 s default, which is
+           right for the beat-scale lanes it was fitted to (two four-bar phrases at 120 bpm).
+           ⚑ THE COUNTERINTUITIVE PART IS WHY THE NUMBER IS WORTH TRUSTING: the rank does not
+           DESTROY slow structure, it AMPLIFIES it. Raw `low` on real music lives inside
+           0.891..0.970 — an eight-percent working range — so its slow movement is tiny in
+           absolute terms; ranked, that same structure occupies the full 0..1.
+           ⚠ AND THE HITS BAG STILL READS THIS COMPONENT. `kick` is NOT reliable on ambient
+           material (p50 0.002 on this track, §V992), which is one more reason the form lane
+           above is driven from a ranked BAND and not from a hit. */
+        envelope: 0.08, window: 60, settle: 0.15, hitDecay: 420,
       }, { label: "analysis1" }),
       /* T1302b: a Select at `*` passes every channel through unchanged — a Limit at 0..1
          would clip the tempo claims the hits bag also carries. */

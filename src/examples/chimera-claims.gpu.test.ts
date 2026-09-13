@@ -1112,4 +1112,160 @@ describe("E70 Chimera — claims", () => {
     // What it moved is the lit shell rather than the background.
     expect(brightMoved / Math.max(brightCount, 1)).toBeGreaterThan(0);
   }, 600_000);
+  /**
+   * ⚑ THE SPECKLE IS GEOMETRIC, AND THIS CLAIM EXISTS BECAUSE THREE PASSES OF MATERIAL WORK
+   * WENT LOOKING FOR IT IN THE SHADING (T1322b).
+   *
+   * The owner has called this piece *"speckled with noisy stuff… a freckly noisy mess"* and
+   * it survived two passes that treated it as a mark problem — under-widened pods (T1318b),
+   * then hue-rotated veins (§V988) — because the instrument everyone used was A COUNT OF
+   * MAGENTA MARKS, and that count is a BRIGHTNESS THRESHOLD wearing a count's clothes: it
+   * reads ZERO with the camera at orbitRadius 34 (§V981's cliff), it fell 75 % when `polish`
+   * was cut while the visible speckle did not change at all, and IT CANNOT SEE A WHITE SPECK
+   * BY CONSTRUCTION.
+   *
+   * ⚑ THE INSTRUMENT HERE IS SCALE-FREE AND COLOUR-BLIND ON PURPOSE: a speck is a lit pixel
+   * standing more than twice its OWN 3x3 MEDIAN. Nothing about it depends on an absolute
+   * brightness or on how many pixels the object covers, which is the whole of what was wrong
+   * with the count.
+   *
+   * ⚑ AND THE CLAIM IS THE ISOLATION, NOT THE VALUE. Measured, every shading term is a no-op
+   * against a 0.000 A/A floor — `specular` 0, `polish` 0, pods cut, veins cut, `shellGlow` 0,
+   * `haze` 0, `fresnelGain` 0 all land within 0.12 points of the shipped 0.90 — while the
+   * march's own `stepScale` moves it by a third. So what is asserted is that THE MARCH OWNS
+   * THE SPECKLE AND THE SHADING DOES NOT, which is the sentence two passes of work needed.
+   */
+  it("the speckle belongs to the MARCH, not to any shading term", async () => {
+    const parked = (graph: GraphDocument): void => {
+      freezeCamera(graph);
+      cutEveryDrive(graph);
+    };
+    /* A lit pixel more than twice the median of its own eight neighbours. */
+    const speckRate = (frame: Frame): number => {
+      let hot = 0;
+      let lit = 0;
+      const around: number[] = [];
+      for (let y = 1; y < frame.h - 1; y += 1) {
+        for (let x = 1; x < frame.w - 1; x += 1) {
+          const pixel = y * frame.w + x;
+          const here = luma(frame, pixel);
+          if (here < 12) continue;
+          lit += 1;
+          around.length = 0;
+          for (let dy = -1; dy <= 1; dy += 1) {
+            for (let dx = -1; dx <= 1; dx += 1) {
+              if (dx === 0 && dy === 0) continue;
+              around.push(luma(frame, pixel + dy * frame.w + dx));
+            }
+          }
+          around.sort((a, b) => a - b);
+          const median = ((around[3] ?? 0) + (around[4] ?? 0)) / 2;
+          if ((here - median) / Math.max(median, 4) > 1) hot += 1;
+        }
+      }
+      return hot / Math.max(lit, 1);
+    };
+
+    const shipped = await shoot(20, parked);
+    /* THE CONTROL FIRST, and it is the one that makes the rest mean anything: the same
+       render again must give the same number, because these renders are deterministic. */
+    const control = await shoot(20, parked);
+    const base = speckRate(shipped);
+    expect(speckRate(control) - base, "the A/A floor on this statistic must be zero").toBeCloseTo(0, 10);
+
+    /* AND THE ISOLATION. Cutting the brightest emission in the frame — the pods, which carry
+       a gain of 22 and the sixth-power falloff that is the highest-frequency signal the
+       shader computes — must NOT take the speckle with it. If it does, the speckle is a mark
+       problem after all and this whole diagnosis is wrong. */
+    const noPods = await shoot(20, (graph) => {
+      parked(graph);
+      param(graph, "shape", "nodeGlow", 0);
+      param(graph, "shape", "nodeSpill", 0);
+    });
+    expect(
+      speckRate(noPods),
+      "cutting the pods must leave most of the speckle standing — it is not a mark problem",
+    ).toBeGreaterThan(base * 0.6);
+
+    /* AND THE POSITIVE: the march's own step scale moves it. Stepping MORE of the estimate is
+       what the file did before this row, and it overshoots thin features at grazing angles,
+       which is a land-or-miss per pixel. */
+    const looseMarch = await shoot(20, (graph) => {
+      parked(graph);
+      param(graph, "shape", "stepScale", 0.78);
+    });
+    expect(
+      speckRate(looseMarch),
+      "a looser march must speckle MORE — the march is what owns this",
+    ).toBeGreaterThan(base * 1.2);
+  }, 600_000);
+
+  /**
+   * ⚑ THE GAPS BETWEEN THE NODULES OPEN AND CLOSE, AND THE OWNER ASKED FOR IT THREE TIMES
+   * BEFORE IT EXISTED (T1322b): *"stuff actually moving away from stuff… opening and closing
+   * distances between nodules"*.
+   *
+   * ⚑ THE CLAIM HAS TO SEPARATE THIS LANE FROM THE ONE IT WOULD BE EASY TO CONFUSE IT WITH.
+   * T1318b answered the same request by shortening `voidPeriod`, and that clock moves
+   * `minRadius`, which HOLLOWS OUT the shells rather than moving structures apart. So both
+   * arms below freeze every other clock and every other travel: what is left moving is the
+   * spacing alone, and cutting its travel must collapse the difference to the floor.
+   */
+  it("the spacing lane moves the gaps, and cutting it stops them", async () => {
+    const still = (graph: GraphDocument): void => {
+      freezeCamera(graph);
+      cutEveryDrive(graph);
+      freezeClocks(graph);
+    };
+    /* `freezeClocks` stops and zeroes everything; this arm hands the spacing lane alone back
+       its shipped period and travel, so nothing else in the frame can account for a change. */
+    const breathing = (graph: GraphDocument): void => {
+      still(graph);
+      const shipped = e70().document.graph.nodes["shape"]!.parameters as Record<string, unknown>;
+      param(graph, "shape", "spacingPeriod", shipped["spacingPeriod"]);
+      param(graph, "shape", "spacingTravel", shipped["spacingTravel"]);
+    };
+
+    /* ⚑ THE QUARTER LAPS, NOT THE HALF — AND GETTING THAT WRONG IS HOW THIS CLAIM FIRST READ
+       AS A LANE THAT DID NOTHING. The travel is a SINE, so half a period apart is 0 and 0:
+       the two sampled frames were both at the lane's neutral value and the arm measured 0.36
+       against its own control. A quarter lap either side of the peak is where the extremes
+       are. The general shape is §V968's — the instrument was pointed at the two moments the
+       term is guaranteed to be absent, and it reported that the term was absent. */
+    const [openA, openB] = await shootSeries([26, 77], 1, breathing);
+    const [stillA, stillB] = await shootSeries([26, 77], 1, still);
+    if (openA === undefined || openB === undefined || stillA === undefined || stillB === undefined) {
+      throw new Error("fewer than two frames captured");
+    }
+
+    /* THE CONTROL FIRST: with the lane cut, these two times are one picture. */
+    const floor = meanPixelDelta(stillA, stillB);
+    expect(floor, "with the spacing lane cut these must be the same frame").toBeLessThan(0.5);
+
+    /* AND THE CLAIM: the gaps moved, and they moved GEOMETRY rather than brightness — so the
+       count of pixels that changed from lit to unlit (or back) is what is asserted, not a
+       mean. A gain would move every lit pixel a little and cross no boundaries. */
+    expect(
+      meanPixelDelta(openA, openB),
+      "the spacing lane must move the picture on its own",
+    ).toBeGreaterThan(Math.max(floor, 0.05) * 10);
+
+    /* AND WHAT IT MOVED IS GEOMETRY RATHER THAN BRIGHTNESS. A gain moves every lit pixel a
+       little and crosses no boundary; gaps opening take pixels from lit to unlit and back.
+       ⚑ AGAINST ITS OWN CONTROL, not against a fitted constant — the frozen arm gives the
+       crossing rate two frames of THE SAME OBJECT produce, which is the only honest floor
+       for this statistic. */
+    const crossings = (a: Frame, b: Frame): number => {
+      let crossed = 0;
+      for (let pixel = 0; pixel < a.w * a.h; pixel += 1) {
+        if (luma(a, pixel) > 12 !== luma(b, pixel) > 12) crossed += 1;
+      }
+      return crossed / (a.w * a.h);
+    };
+    const stillCrossings = crossings(stillA, stillB);
+    expect(
+      crossings(openA, openB),
+      "and it must move the SILHOUETTE — gaps opening is geometry, not a gain",
+    ).toBeGreaterThan(Math.max(stillCrossings, 0.0002) * 8);
+  }, 600_000);
 });
