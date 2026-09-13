@@ -128,7 +128,7 @@ not averaging detail the pixel cannot display.
 It is also cheaper — the far half of the object stops sooner — so the quality fix and the cost
 fix were the same line.
 
-## Seven clocks, and they are prime on purpose
+## Ten clocks, and they are prime — checked, not asserted
 
 This is the answer to "not boring after fifteen seconds", and it is structural rather than
 decorative.
@@ -142,9 +142,18 @@ decorative.
 | `characterPeriod` | **73 s** | reef/skeleton → bulb → back |
 | `seedPeriod` | **113 s** | the seed offset's drift: the object's topology |
 | `voidPeriod` | **89 s** | the shells opening: negative space *inside* the sculpture |
+| `posePeriod` | **61 s** | the object turns on its own axis — the angles you see it from |
+| `pushPeriod` | **43 s** | the object swims *toward* the frame and back |
+| `aimPeriod` | **67 s** | which part of it the frame is centred on when it is close |
 
-Those are seven primes, so the combined state repeats on their product — about five thousand
-years — and no viewer ever sees a cycle land. More usefully, **any two moments a viewer
+Those are ten primes (plus `orbitPeriod` at 96, coprime with all of them), so the combined
+state repeats on their product and no viewer ever sees a cycle land.
+
+⚑ **And that is now a gate rather than a sentence.** `chimera-claims.gpu.test.ts` enumerates
+every period in the document and asserts them **pairwise coprime** — it needs no GPU, because
+it is arithmetic. It exists because the same enumeration, run for the first time on the
+sibling piece, found two of nine periods sharing a factor of three while two commit messages
+described the whole set as mutually prime. Nobody had checked; everybody had said it. More usefully, **any two moments a viewer
 compares have a different subset of them moved**: at fifteen seconds the segmentation has
 turned and the colour has started to separate; at forty-five the magnification has breathed
 and the key light has handed over; at ninety the object is a different shape with a different
@@ -170,6 +179,120 @@ which one it is rotates.
 
 The warm rim does **not** travel round the wheel with the other two. Rotating an orange about
 the luminance axis walks it into magenta, which is the one specific way this trick fails.
+
+⚑ **And the fill does not travel either any more, because it was doing exactly that.** The
+fill was the frame's "second temperature" — a magenta in opposition to the key — and the owner
+looked at the result and called the material *"very even grey"* while it was, in fact, evenly
+magenta. One arm at a time settled it: **cut the spill and the object stays magenta; cut the
+fill and it is teal stone with discrete magenta nodes on it.** The wash was the light.
+
+Two lessons came out of that, and the second is sharper than the first:
+
+- **A hue sprayed over geometry that already has a colour is a tint; a hue carried by an
+  object the eye can point at is a second light.** This is the sixth recorded case of a second
+  colour failing because it was put on a light. The opposition survives, and it is now between
+  two *objects*: teal veins and magenta nodes.
+- **Retuning the fill's colour could not have fixed it.** An amber fill was measured and came
+  back magenta anyway — `fillTint` was hue-*rotated*, and the hazard that exempts `rimColor`
+  two paragraphs above was never extended to it. A parameter sweep cannot find a defect that
+  lives in the code the parameter feeds.
+
+## The nodes: a third kind of mark, and the second hue rides it
+
+The veins are **lines** and the membranes are **sheets**. A frame made of those two is a frame
+made of one idea seen twice, and it had no top end at all. The nodes are **points** — how
+close the orbit passed the *origin* before the sphere fold pushed it back out, which is the
+structural definition of a core. They cost one `min` per link, on a radius the fold already
+computes.
+
+⚑ **The first version of this trap was pointed at a place the orbit never goes** — it measured
+the radius *after* the affine step, which ends by adding the ray's own starting point, so the
+orbit's radius there sits a couple of units out. It produced 21 marks over 0.02 % of the frame
+and **zero** below a radius of 0.2. The tell was the shape of the sweep: **a mark that falls to
+*zero* rather than to *fewer* is absence, not rarity**, and reading it as rarity would have led
+to widening the radius and buying nothing.
+
+**They recur at every scale, which is the property that makes the second hue work.** An object
+carrying a hue only reads as a second light if it appears at a size the eye can compare — the
+win is the interleaving, not the object-ness. Measured with a connected-component pass over the
+soloed node term, in a **single frame**: **949 marks, median area 1 px, largest 1 247 px, four
+decades of area.** Single-pixel nodes on far structure and 35-pixel pods on near structure, at
+the same time.
+
+**And they light the stone they sit in.** A term added to a surface's colour does not emit
+anything — it brightens the pixels it covers and leaves every neighbour untouched, and in a
+still that is indistinguishable from a light. So a `nodeSpill` term reads a wider window on the
+same trap, exactly as the vein's spill does. Measured by cutting it: stone within ten pixels of
+a pod moves by **1.708** mean luma and stone beyond it by **0.034** — a ratio of **50×**. That
+is a light, and it is a local one.
+
+Moving energy from the core into the spill is also what stops the pods going white at the
+centre and losing their hue where the eye looks hardest:
+
+| `nodeGlow` / `nodeSpill` | p99 | mean chroma, brightest 5 % |
+|---|---|---|
+| 22 / 3.2 | 237.8 | 0.158 |
+| 14 / 5.5 | 230.7 | 0.203 |
+| **9 / 7.5** (shipped) | 224.8 | **0.253** |
+
+Sixty per cent more hue across the pod for thirteen units of peak.
+
+## The distribution is quasirandom, because "too rarely" is a distribution complaint
+
+Which cells carry a live conduit used to be chosen by an **independent uniform hash**, and
+independent uniform samples have no repulsion: the gaps between chosen cells are exponentially
+distributed, so some neighbours land adjacent and some regions carry nothing at all. The
+sibling piece's owner saw the clumping half (*"all over the place and overlap in an ugly
+way"*); this one saw the void half (*"they appear too rarely"*). **One defect, two complaints**
+— and raising the density would only have made the clumps worse.
+
+The sibling's repair was `fract(index × 0.618…)`, the golden ratio's conjugate, the most
+equidistributed sequence there is in one dimension. A conduit lattice in a fractal is not
+one-dimensional, so what is used here is its three-dimensional form — the **plastic number's**
+reciprocal powers, the R3 sequence. It is *cheaper* than the hash it replaces, and just as
+deterministic.
+
+⚑ **And the value is used twice, which is the half without which this reads as a grid.** A
+distribution fixes *where*, not *how much*; evenly spaced marks of identical width and
+brightness are mechanical. The pick doubles as a **rank** — a cell well inside the threshold is
+a principal conduit, wide and bright; one that only just made the cut is a minor one. The
+hierarchy is free: it falls out of the number the membership test already computed.
+
+## The pose moves the object, not the camera
+
+The owner asked to *"sometimes follow one of the fractal knobs a little closer and see some
+angles"*, and then settled the mechanism themselves: *"it doesn't have to be the camera that
+moves, it can also be the piece."* That is the better half of the choice. A parked camera is
+the stable reference the morph is legible against, and it is what keeps every claim in this
+file provable — a two-frame comparison across a moving camera measures the camera.
+
+So the object turns on its own axis (61 s), swims toward the frame and back (43 s, **cubed**,
+so it is near zero most of the time and rises to a peak briefly), and the framing drifts off
+the centroid while it is close (67 s) — because the interesting part of a fractal is never the
+middle.
+
+⚑ **It costs nothing, and the reason is worth stating so nobody moves it.** A rigid rotation
+and a uniform scale are exactly invertible, so "the object turned and grew" and "the ray was
+turned and shortened" are the same picture. The transform is applied to the eye and the ray
+**once per fragment**. Applying it to the sample point instead would pay the same matrix
+product on every distance evaluation, and a pixel makes about a hundred and fifty of those.
+
+## Marks are never narrower than the pixel looking at them
+
+A dense scatter of single-pixel marks across the surface is **salt**, not detail. It is the
+same defect the sibling piece hit with its surface grain, and it has the same cause: a feature
+finer than a pixel lands or misses per pixel, and neighbouring pixels disagree at random.
+
+Two fixes, and they do different jobs:
+
+- A node's **sharp core** fades out with view distance, leaving its spill behind. That is a mip
+  level, done as a fade because a marcher has no derivatives to pick one with. The node does
+  not disappear — only its high-frequency half does — so the interleaving the second hue
+  depends on survives.
+- **Every mark widens to at least the pixel's own footprint**, which is this file's own march
+  epsilon lesson one level up. `epsilon` is already computed by the march, so it is free and
+  exactly proportionate: near marks untouched, far marks smeared to the width the image can
+  actually carry.
 
 ## The bioluminescence is the orbit trap
 
@@ -211,11 +334,28 @@ single-frame step, *and they still land*.
 | `foldTravel` | `lvl1.level` rank | the creases open and close — an amplitude on a morph already running |
 | `specular` | `lvl1.high` rank | the wetness follows the top end |
 | `saturation` | `lvl1.centroid` rank | spectral brightness opens the chroma |
+| `openness` | `lvl1.level` rank | **how far open the chain sits** — see below |
 | the camera | **nothing** | the orbit is the stable reference the morph is legible against |
 
 Every retained value is the lane's **driven mean**, not its floor and not its peak: the value
 that stands when no drive arrives has to look like the piece, because that is the picture the
 thumbnail shows.
+
+### Looseness is driven; identity still is not
+
+The owner asked the shape to be *"sometimes more loose, sometimes less"* and to *"react to the
+energy and the song"*. The ruling that nothing audio-driven may touch the object's **identity**
+stands — if the music decided what the object *is*, silence would be a different object. But
+"looser" is not a different object, it is the same object breathing, and the box fold's limit
+and the sphere fold's inner radius were already travelling on their own clocks. `openness`
+widens the region of that same parameter space the piece visits.
+
+⚑ **§V914 is satisfied here by arithmetic rather than by a measurement anyone has to redo.**
+The lane is `0.25 + 0.5 × rank` on a rank that rests at its middle, so it retains **exactly
+0.5**, and the shader reads `openness − 0.5`. The rest picture is therefore *byte-identical*
+to the picture this file would render with the lane deleted — which the claims assert, both
+halves: zero differing pixels at rest, and a measurably different shape when it is driven to
+the top of its range.
 
 ## It works at any tempo
 
@@ -316,15 +456,28 @@ always report "crushed", and grading against it would be grading the empty space
 distribution is reported twice: whole-frame, and **subject only** — pixels the sculpture
 actually occupies.
 
-| | p01 | p50 | p90 | true black | true bright |
+| | p01 | p50 | p90 | p99 | true bright |
 |---|---|---|---|---|---|
-| whole frame | 0.0 | 0.0 | 55–104 | **70–87 %** | 0.00 % |
-| **subject** | 14.9 | 69.6 | 120.5 | 0.0 % | 0.00 % |
+| first pass | 14.7 | 66.4 | 116.9 | — | **0.00 %** |
+| **second pass** | 14.4 | **86.3** | **165.8** | **227.1** | **0.15 %** |
 
-The backdrop is genuinely black — 70–87 % of the frame is under luma 2. The subject spans
-p01 15 to p90 121, which is a real distribution rather than E68's failure mode (83 % of the
-frame inside a quarter of the range). Nothing clips: there are no blown highlights, which for
-a dark emissive subject is a description rather than a defect.
+⚑ **THE FIRST PASS HAD NO TOP END AT ALL, AND THAT WAS A CONTENT DEFECT RATHER THAN A GRADE
+ONE.** The owner's *"the material is for the most part very very even grey"* is that table's
+first row: ninety per cent of the object below mid-grey and the upper half of the range empty.
+The instrument was validated against a known positive before the null was believed — and the
+validation is the finding:
+
+| exposure | p50 | p90 | true bright |
+|---|---|---|---|
+| 1.55 (shipped) | 66.4 | 116.9 | **0.00 %** |
+| 6 (≈4×) | 150.3 | 195.3 | **0.00 %** |
+| 20 (≈13×) | 210.7 | 235.3 | 4.43 % |
+
+**Four times the gain moves the whole slab up and still clips nothing.** So a regrade would
+have produced a *brighter* even slab and looked like progress. What the frame was missing was
+small bright things, so what was added is small bright things — see the nodes, below. Cutting
+them takes p99 from 227.1 back to 182.0 and true-bright to 0.00 %, while p50 moves only 86.3
+to 70.9: **a term that moves the top of the distribution and not its middle is a highlight.**
 
 Two numbers were found by that instrument and fixed:
 

@@ -115,6 +115,12 @@ export const chimeraDocument = document(
            different object, and silence is what every thumbnail renders. */
         seedOffset: [0, 0, 0, 0],
         seedDrift: 0.26,
+        /* ⚑ LOOSENESS, AND IT IS THE ONE AUDIO LANE THAT REACHES THE SHAPE — see the
+           `openness` slot below. Identity is still driven by nothing; what the music moves
+           is how far OPEN the chain sits, which is the same object breathing rather than a
+           different object. These two say how far that travel goes. */
+        openSpread: 0.5,
+        openVoid: 0.22,
         /* THE SEGMENTATION KNOB. Three different rates, so the fold planes precess instead
            of turning as a rigid set — a single axis reads as the object spinning, which is
            the one thing the owner explicitly did not ask for. */
@@ -147,6 +153,26 @@ export const chimeraDocument = document(
         voidPeriod: 89,
         voidTravel: 0.26,
 
+        /* ─── THE POSE: THE OBJECT TURNS AND SWIMS IN; THE CAMERA STAYS PARKED ────────
+         * The owner asked for *"different camera positions so we sometimes follow one of the
+         * fractal knobs a little closer and see some angles"* and then chose the mechanism
+         * themselves: *"it doesn't have to be the camera that moves, it can also be the
+         * piece."* Moving the object gives the same angles and keeps §V965 intact — a claim
+         * that compares two frames across a moving camera is measuring the camera — and it
+         * costs nothing, because a rotation and a uniform scale are exactly invertible and
+         * are applied to the RAY once per fragment rather than inside the march.
+         *
+         * ⚑ THREE MORE PRIME PERIODS, AND THEY WERE CHECKED RATHER THAN ASSUMED. The
+         * claims file enumerates every period in this node and asserts them PAIRWISE
+         * COPRIME, because two of the sibling piece's nine shared a factor of three while
+         * two commit messages called the whole set mutually prime. */
+        posePeriod: 61,
+        poseTilt: 0.42,
+        pushPeriod: 43,
+        poseNear: 2.05,
+        aimPeriod: 67,
+        poseAim: 0.62,
+
         /* ─── THE CAMERA: parked, orbiting, and reading NO audio ─────────────────────
          * The shape carries the motion. A fractal is self-similar, so flying through one
          * makes the morph unreadable — everything changes at once and nothing reads as
@@ -166,9 +192,56 @@ export const chimeraDocument = document(
          * the axis — so the light is structure-aware by construction and costs three
          * instructions a link rather than a field of its own. */
         veinWidth: 0.1,
-        veinSpill: 2.4,
-        veinBreak: 0.45,
+        /* ⚑ 2.4 -> 1.15, AND THE MEASUREMENT IS WHY. The spill wash measured 0.72 against
+           the key light's 0.45 at the surface, so the emission was OUTSHINING the three-light
+           rig: the object was being painted by its own veins rather than lit by anything,
+           which is §V972's tint exactly and is what the owner's *"very very even grey"*
+           was describing. Halving it hands the mid-tones back to the lights. */
+        veinSpill: 1.15,
+        /* Share of the conduit lattice that is dark. Slightly lower than it was (0.45),
+           because the cells are now chosen by an EVEN sequence rather than a clumping hash —
+           the same density covers more of the object once it stops leaving voids. */
+        veinBreak: 0.38,
+        /* Cells per unit along that lattice. The volume reads the SAME lattice coarser. */
+        veinRate: 3.1,
         veinColor: [0.1, 1, 0.72, 1],
+        /* ─── THE NODES: A THIRD KIND OF MARK, AND THE SECOND HUE RIDES IT ────────────
+         * Measured before this landed: the piece had NO top end at all — subject p90 116.9
+         * of 255 and trueBright 0.00%, and still 0.00% at four times the exposure. A missing
+         * top end is a CONTENT defect, not a grade defect, so what is added is the thing that
+         * was absent: small, discrete, bright marks. Veins are lines and membranes are
+         * sheets; these are points.
+         * ⚑ AND THE SECOND HUE IS ON THEM RATHER THAN ON A LIGHT (§V972). Six passes of the
+         * sibling piece put a second colour on a light and every one read as a wash; what
+         * makes an object work is that it RECURS at a scale the eye can compare, and an orbit
+         * trap is scale-free — large on a near lobe, small on a far one, in the same frame. */
+        nodeRadius: 0.62,
+        /* ⚑ 12, AND IT IS HIGH ON PURPOSE. Swept against the measurement: 2.6 -> 6 -> 12 moves
+           subject p99 from 182 to 196 to 217 and trueBright from 0.01% to 0.15%, while p50
+           moves 56.4 -> 58.4. That ratio IS the definition of a highlight — a few pixels at
+           the top, not a gain on everything — and it is the shape §V977 says a missing top
+           end needs, as against the exposure sweep that moved the whole slab and clipped
+           nothing. Specular and roughness were swept in the same run and moved p99 by 0.1,
+           so the top end is the NODES and the frame is not spent on speculars. */
+        /* ⚑ 9 AND 7.5, NOT 22 AND 3.2, AND THE TRADE WAS MEASURED RATHER THAN JUDGED.
+           A luminous object should keep its colour as it brightens; going white at the
+           centre is what an over-range value looks like after a per-channel tone map, and it
+           costs the hue at the one place the eye is looking hardest. Mean chroma of the
+           brightest slice of the subject, swept:
+               glow 22 / spill 3.2   p99 237.8   top-5% chroma 0.158
+               glow 14 / spill 5.5   p99 230.7   top-5% chroma 0.203
+               glow  9 / spill 7.5   p99 224.8   top-5% chroma 0.253
+           Moving the energy from the core into the spill buys 60% more hue across the pod
+           for 13 units of peak. The very brightest pixels still clip to white, which is what
+           a bright source does in a photograph; what changes is that the pod is PINK rather
+           than a white disc with a pink edge. */
+        nodeGlow: 9,
+        /* The pool a pod casts on the stone it sits in. This is the term that makes the
+           owner's *"they need to ACTUALLY EMIT LIGHT"* true rather than approximated. */
+        nodeSpill: 7.5,
+        /* Where a pod's sharp core gives way to its spill alone. Sanctum's grain fade. */
+        nodeFade: 15,
+        nodeColor: [1, 0.36, 0.86, 1],
 
         /* ─── THE LIGHT RIG ──────────────────────────────────────────────────────────
          * Three sources of different hue, each with REACH, and a hierarchy that hands the
@@ -176,12 +249,25 @@ export const chimeraDocument = document(
          * lights the far side as hard as the near, and that is most of what makes a picture
          * read cheap. §T1309b: without a hierarchy it is "lights all over the place". */
         keyColor: [0.55, 0.78, 1, 1],
-        fillColor: [1, 0.42, 0.6, 1],
+        /* ⚑ NEUTRAL, AND IT USED TO BE MAGENTA. Isolated one arm at a time: cutting the
+           SPILL left the object magenta, cutting the FILL left it teal stone with discrete
+           magenta nodes on it — so the magenta wash the owner was looking at was THIS LIGHT,
+           and it was covering the marks it was meant to contrast with. §V972: the second hue
+           belongs to an OBJECT, and it now does (the nodes). This light's whole job is to
+           model form. It is also no longer hue-rotated, which is why retuning its colour
+           could not have fixed it — an amber fill was measured and came back magenta, walked
+           there by the rotation, which is the failure `rimColor` is exempted from. */
+        fillColor: [0.8, 0.84, 0.92, 1],
         /* The warm one does NOT morph: rotating an orange about the luminance axis walks it
            into magenta, which is the specific way this trick fails (T1304c). */
         rimColor: [1, 0.62, 0.26, 1],
-        keyIntensity: 5.2,
-        rimIntensity: 3.8,
+        /* ⚑ THE LIGHTS COME UP BECAUSE THE WASH CAME DOWN. Halving `veinSpill` handed the
+           mid-tones back to the rig, and the rig was set against a frame where the emission
+           was doing that job: measured, the object fell to p50 43.8 before these moved and
+           sits at 58.4 after. This is the light modelling the form again, which is what was
+           missing when the whole surface read as one even tint. */
+        keyIntensity: 8.5,
+        rimIntensity: 6.2,
         lightReach: 5.6,
         lightDistance: 7.5,
         lightSwing: 0.35,
@@ -207,9 +293,15 @@ export const chimeraDocument = document(
          * eleven: §V962's companion — a volume wants a DIFFERENT field from a surface, not
          * a cheaper one, and a short chain is genuinely smoother while still being shaped
          * like the object it surrounds. */
-        hazeSteps: 28,
+        /* ⚑ 28 -> 20, AND IT IS A CONSEQUENCE RATHER THAN A SAVING. The air now reads the
+           SAME emission field the surface does (§V973) instead of a constant tint, and a
+           field that is smooth by construction integrates cleanly with fewer samples than a
+           hash-gated one. The sibling piece measured the same trade the same way round. */
+        hazeSteps: 20,
         hazeSharp: 26,
         hazeFalloff: 1.5,
+        hazeBase: 0.16,
+        hazeWidth: 3.4,
 
         /* ─── THE VOID AND THE GRADE ─────────────────────────────────────────────────── */
         /* ⚑ THE BACKDROP IS BLACK AND THE ENVIRONMENT IS NOT THE SAME THING (owner: "needs a
@@ -248,7 +340,7 @@ export const chimeraDocument = document(
 
           /* THE HITS OF BIOLUMINESCENCE the brief asked for by name. The veins are the
              frame's primary light, so this is the lane a viewer reads as the music. */
-          veinEmission: expressionSlot(`4.95 + 2.2 * ${HITS("kick")}`, 5.5),
+          veinEmission: expressionSlot(`5.6 + 2.6 * ${HITS("kick")}`, 6.25),
           /* The MEMBRANES answer on the backbeat — a different structure from the veins,
              so the two hit lanes are visibly different events rather than one gesture read
              twice (§T1279's split, learned on E57's fog and moon). */
@@ -256,13 +348,35 @@ export const chimeraDocument = document(
           /* FINER REACTION TO FINER DETAIL (§T1304b): a hat widens the spill a little. The
              smallest lane in the file, on the fastest part of the signal, and it moves the
              glow around the veins rather than the veins themselves. */
-          veinSpread: expressionSlot(`5 + 1.6 * ${HITS("hat")}`, 5.5),
+          veinSpread: expressionSlot(`2.6 + 1.4 * ${HITS("hat")}`, 3),
 
           /* ─── THE CONTINUOUS PROPERTIES, ON RANKS ──────────────────────────────────
            * A rank rests at its MIDDLE, so each retained value below is the expression
            * evaluated at 0.5 — silence renders the shipped density exactly. */
-          haze: expressionSlot(`0.15 + 0.14 * ${LEVELS("low")}`, 0.22),
-          fillIntensity: expressionSlot(`3.8 + 1.6 * ${LEVELS("highMid")}`, 4.6),
+          /* ⚑ THE MASTER CAME DOWN (0.22 -> 0.075) BECAUSE WHAT IT MULTIPLIES GOT BIGGER,
+             not because there is less medium. The volume used to accumulate a constant tint;
+             it now accumulates the object's OWN emission — vein core times `veinEmission`,
+             spill times `veinSpill`, nodes times `nodeGlow` — so the same master would be
+             several times the light it was. The air is dimmer per unit of field and far
+             brighter where the field is lit, which is the whole point. */
+          haze: expressionSlot(`0.052 + 0.046 * ${LEVELS("low")}`, 0.075),
+          /* ─── THE LOOSENESS, AND IT IS THE ONE LANE THAT REACHES THE SHAPE ──────────
+           * T1310b ruled the object's IDENTITY driven by nothing and that ruling stands: if
+           * the music decided what the object IS, silence would be a different object, and
+           * silence is what every thumbnail renders. The owner's *"sometimes more loose,
+           * sometimes less"* asks for a third thing, and it is not identity — it is the same
+           * object breathing. The box fold's limit and the sphere fold's inner radius are
+           * already travelling on their own clocks; this widens the region of that same
+           * parameter space the piece visits with the body of the mix.
+           *
+           * ⚑ THE FORM IS CHOSEN SO §V914 IS SATISFIED BY ARITHMETIC RATHER THAN BY A
+           * MEASUREMENT SOMEBODY HAS TO REDO: a rank rests at its MIDDLE, so `0.25 + 0.5 * r`
+           * rests at exactly 0.5, and the shader reads `openness - 0.5`. The retained value
+           * is therefore EXACTLY neutral — the no-audio picture is bit-for-bit the picture
+           * this file would render with the lane deleted — and the drive only ever takes it
+           * either side of that. It cannot drift out of its own driven range under a retune. */
+          openness: expressionSlot(`0.25 + 0.5 * ${LEVELS("level")}`, 0.5),
+          fillIntensity: expressionSlot(`5.9 + 2.6 * ${LEVELS("highMid")}`, 7.2),
           /* The creases open and close with the body of the mix. This is an AMPLITUDE on a
              morph that is already running, never the morph's own identity. */
           foldTravel: expressionSlot(`0.1 + 0.16 * ${LEVELS("level")}`, 0.18),
