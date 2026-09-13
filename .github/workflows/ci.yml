@@ -7,7 +7,7 @@ on:
 
 jobs:
   guardrails:
-    name: lint + typecheck + build
+    name: lint + typecheck + test + build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -23,8 +23,34 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm desktop:check
-      # The full suite includes Dawn GPU tests. Run it locally before pushing;
-      # GitHub-hosted runners do not provide the required WebGPU adapter.
+
+      # T1313b — THE TESTS RUN HERE NOW, AND UNTIL THIS COMMIT THEY DID NOT.
+      #
+      # The note that used to sit here said the full suite includes Dawn GPU tests and
+      # GitHub runners have no WebGPU adapter, so run it locally before pushing. Both
+      # halves of that are true. The conclusion was one step too far: 132 GPU files were
+      # keeping 585 GPU-FREE ones out of CI, so nothing automated ran ANY test, and §B218
+      # sat red for six days because nothing was looking. A gate is not coverage until
+      # something automated runs it.
+      #
+      # Measured locally (a loaded dev machine, so a floor and NOT the CI number):
+      #   browser project        149 files  1331 tests  126 s
+      #   headless minus Dawn    436 files  8168 tests   80 s
+      # Both green at the time of writing. Zero browser-project files import the Dawn
+      # host, so that half has no GPU dependency at all.
+      #
+      # ⚑ THE EXCLUSIONS ARE EXPLICIT AND MUST STAY THAT WAY. GPU tests FAIL LOUDLY on a
+      # missing adapter by design — they never skip — so leaving them in and hoping they
+      # skip turns CI red for a reason no runner can fix. A CI that is red for an
+      # unfixable reason is a CI that gets ignored, which is how the whole suite came out
+      # of here in the first place.
+      #
+      # Kept as two steps so a failure names which half broke.
+      - name: test (browser)
+        run: pnpm vitest run --project browser
+      - name: test (headless, excluding Dawn GPU tests)
+        run: pnpm vitest run --project headless --exclude '**/*.gpu.test.ts' --exclude '**/dawn-render*' --exclude '**/headless-parity*'
+
       # Vite-only breakage (asset imports, CSS modules, font emission) passes
       # tsc and vitest but fails a real build — so build in CI too.
       - run: pnpm build
