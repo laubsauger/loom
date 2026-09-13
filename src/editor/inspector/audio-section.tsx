@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { NodeId } from "@domain/types/ids.ts";
 import { ControlRow } from "@ui/controls/control-row.tsx";
 import { EnumField } from "@ui/controls/enum-field.tsx";
-import { describeAudioLatency, type AudioLatencyEstimate } from "@/app/audio-latency.ts";
+import type { AudioLatencyEstimate } from "@/app/audio-latency.ts";
 import type { ParameterEditor } from "./parameter-editor.ts";
 import styles from "./inspector.module.css";
 
@@ -23,7 +23,13 @@ import styles from "./inspector.module.css";
 export interface AudioCaptureStatus {
   readonly kind: "idle" | "live" | "error";
   readonly message?: string;
-  /** T1319b: the measured FLOOR on the audio-to-picture offset, or null where unmeasurable. */
+  /**
+   * T1319b: the measured FLOOR on the audio-to-picture offset, or null where unmeasurable.
+   *
+   * T1321b: read here but no longer RENDERED here — the suggestion moved to the Sync Offset
+   * field it is for (`sync-offset-suggestion.tsx`). It stays on this status type because
+   * this is the session's one audio-capture readout, and the inspector reads it from here.
+   */
   readonly latency?: AudioLatencyEstimate | null;
 }
 
@@ -33,12 +39,6 @@ export interface AudioSectionProps {
   nodeType: "audioIn" | "audioFileIn";
   /** Stored device id ("" = system default). */
   device: string;
-  /**
-   * T1319b(b) — the Sync Offset in effect, seconds. The suggestion is useless without it:
-   * a button that writes a value while the value is invisible gives the user no way to tell
-   * whether it landed, which is exactly what the owner reported.
-   */
-  syncOffset?: number;
   status: AudioCaptureStatus;
   editor: ParameterEditor;
 }
@@ -101,29 +101,17 @@ export function audioSectionParameters(nodeType: "audioIn" | "audioFileIn"): rea
   return nodeType === "audioIn" ? ["device"] : [];
 }
 
-/** Seconds as the status line says them: whole milliseconds, which is the resolution anyone can hear. */
-const msText = (seconds: number): string => `${(seconds * 1000).toFixed(0)} ms`;
-
-export function AudioSection({ nodeId, nodeType, device, syncOffset = 0, status, editor }: AudioSectionProps) {
+export function AudioSection({ nodeId, nodeType, device, status, editor }: AudioSectionProps) {
   const { devices, unlabelled } = useAudioDevices(nodeType === "audioIn");
   /*
-   * T1319b — the measurement the Sync Offset description has been asking for since §T1312b.
+   * T1321b — THE LATENCY SUGGESTION IS NO LONGER DRAWN HERE, and that is the whole row.
    *
-   * FILE ONLY: a microphone cannot be compensated this way at all, because live analysis
-   * cannot look ahead — the sound has not happened yet — which is the same reason the
-   * parameter itself is inactive under Free Run. Offering the suggestion on a mic would be
-   * offering a number for a control that cannot use it.
-   *
-   * This does NOT claim `syncOffset` in `audioSectionParameters`: the knob keeps its home in
-   * the Analysis group, where it is read and typed. A button that writes once is not a second
-   * editor of the value, and moving the control out of its group is a bigger change than the
-   * measurement needs (§T1320b holds the question of where the value should ultimately live).
+   * §T1319b put the measured floor and its apply button on this status line while the knob
+   * they are for sits in the Analysis group below, so the number and its field were in
+   * different parts of one panel. It now renders under the Sync Offset row itself
+   * (`sync-offset-suggestion.tsx`), fed from `status.latency` by the inspector. Do not add
+   * it back here: two surfaces offering one write is the §T994 shape, one panel further on.
    */
-  const latency = nodeType === "audioFileIn" && status.kind === "live" ? (status.latency ?? null) : undefined;
-  /** What the button would write, rounded as it writes it — so "applied" compares like with like. */
-  const suggested = latency === null || latency === undefined ? 0 : Number(latency.suggestedSeconds.toFixed(3));
-  /** Half a millisecond: below what anyone can hear, and below the resolution the line prints. */
-  const applied = Math.abs(syncOffset - suggested) < 0.0005;
 
   return (
     <section className={styles.section} aria-label="Audio capture">
@@ -135,46 +123,6 @@ export function AudioSection({ nodeId, nodeType, device, syncOffset = 0, status,
         {STATUS_TEXT[status.kind]}
         {status.message === undefined ? "" : ` — ${status.message}`}
       </div>
-      {latency === undefined ? null : (
-        <div className={styles.statusLine} data-audio-latency={latency === null ? "unmeasurable" : "measured"}>
-          {describeAudioLatency(latency)}
-          {latency === null ? null : (
-            <>
-              {" "}
-              {/*
-                T1319b(b) — THE FEEDBACK IS THE STATE, not a flash.
-                The owner: "not getting any feedback when I use the sync offset button… we
-                don't really feel like is this applied now?" A toast would have answered that
-                for two seconds and left the same question on the third. So the value in
-                effect is shown beside the suggestion, the button NAMES the number it will
-                write, and once they agree the button is replaced by the applied mark — the
-                surface reads its own state at any moment, including long after the click.
-              */}
-              <span className={styles.statusHint} data-sync-offset={applied ? "applied" : "pending"}>
-                Sync Offset {msText(syncOffset)}
-                {applied ? " — applied" : ""}
-              </span>
-              {applied ? null : (
-                <>
-                  {" "}
-                  <button
-                    type="button"
-                    className={styles.statusAction}
-                    onClick={() => {
-                      // The same editor the device picker writes through: one value, one
-                      // write path, one undo entry (§V15). `commit`, because this is a single
-                      // act and not a drag.
-                      editor.setParameter(nodeId, "syncOffset", suggested, "commit");
-                    }}
-                  >
-                    Use {msText(suggested)}
-                  </button>
-                </>
-              )}
-            </>
-          )}
-        </div>
-      )}
       {nodeType === "audioIn" ? (
         <>
           {/* The kit's picker, not a bare `<select>`: a raw one renders as the OS's grey

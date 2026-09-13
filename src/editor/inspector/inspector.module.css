@@ -321,3 +321,15 @@
   font-size: var(--fs-meta);
   line-height: var(--lh-ui);
 }
+
+/*
+  T1321b — a note that belongs to the ROW IT SITS UNDER, not to the section.
+
+  Full width rather than indented into the control column: it is a sentence that has to
+  say "at least", name what the measurement cannot see, and carry the button (§V985), and
+  40% of a side panel cannot hold that without wrapping into a column of two words. The
+  padding is what ties it to the row above — tight to it, loose from the next one.
+*/
+.parameterNote {
+  padding: 0 0 var(--space-2);
+}

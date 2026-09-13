@@ -85,123 +85,12 @@ describe("AudioSection (T434/T432)", () => {
     expect(editor.calls).toEqual([["mic", "device", "usb-7", "commit"]]);
   });
 
-  it("T1319b — a live file node offers the measured floor, and says it IS a floor", () => {
-    mockDevices([]);
-    render(
-      <AudioSection
-        nodeId={"nd_1" as never}
-        nodeType="audioFileIn"
-        device=""
-        status={{
-          kind: "live",
-          latency: { outputSeconds: 0.021, baseSeconds: 0.005, frameSeconds: 1 / 60, suggestedSeconds: 0.0427 },
-        }}
-        editor={editorStub()}
-      />,
-    );
-    // "At least", and the part the browser cannot see — the sentence that stops someone who
-    // is still late from concluding the feature is broken (§V985).
-    expect(screen.getByText(/At least/)).toBeDefined();
-    expect(screen.getByText(/display/i)).toBeDefined();
-  });
-
-  it("T1319b — applying the measurement writes syncOffset as one commit", () => {
-    mockDevices([]);
-    const editor = editorStub();
-    render(
-      <AudioSection
-        nodeId={"nd_1" as never}
-        nodeType="audioFileIn"
-        device=""
-        status={{
-          kind: "live",
-          latency: { outputSeconds: 0.021, baseSeconds: 0.005, frameSeconds: 1 / 60, suggestedSeconds: 0.0427 },
-        }}
-        editor={editor}
-      />,
-    );
-    screen.getByRole("button", { name: "Use 43 ms" }).click();
-    // The same write path the device picker uses: one value, one commit, one undo entry.
-    expect(editor.calls).toEqual([["nd_1", "syncOffset", 0.043, "commit"]]);
-  });
-
-  it("T1319b(b) — the value in effect is shown, so the click has something to change", () => {
-    mockDevices([]);
-    render(
-      <AudioSection
-        nodeId={"nd_1" as never}
-        nodeType="audioFileIn"
-        device=""
-        syncOffset={0}
-        status={{
-          kind: "live",
-          latency: { outputSeconds: 0.021, baseSeconds: 0.005, frameSeconds: 1 / 60, suggestedSeconds: 0.0427 },
-        }}
-        editor={editorStub()}
-      />,
-    );
-    // The owner's report: "we don't really feel like is this applied now?" The value in
-    // effect is on screen, and the button NAMES the number it will write — so the click has
-    // a visible before and after rather than a silent one.
-    expect(screen.getByText(/Sync Offset 0 ms/)).toBeDefined();
-    expect(screen.getByRole("button", { name: "Use 43 ms" })).toBeDefined();
-  });
-
-  it("T1319b(b) — once applied, the button is replaced by the applied mark", () => {
-    mockDevices([]);
-    render(
-      <AudioSection
-        nodeId={"nd_1" as never}
-        nodeType="audioFileIn"
-        device=""
-        syncOffset={0.043}
-        status={{
-          kind: "live",
-          latency: { outputSeconds: 0.021, baseSeconds: 0.005, frameSeconds: 1 / 60, suggestedSeconds: 0.0427 },
-        }}
-        editor={editorStub()}
-      />,
-    );
-    // State, not a flash: this still reads "applied" an hour after the click, which a toast
-    // cannot do. And there is nothing left to press, because there is nothing left to apply.
-    expect(screen.getByText(/— applied/)).toBeDefined();
-    expect(screen.queryByRole("button", { name: /^Use / })).toBeNull();
-  });
-
-  it("T1319b — a microphone is offered nothing: live analysis cannot look ahead", () => {
-    mockDevices([]);
-    render(
-      <AudioSection
-        nodeId={"nd_1" as never}
-        nodeType="audioIn"
-        device=""
-        status={{
-          kind: "live",
-          latency: { outputSeconds: 0.021, baseSeconds: 0.005, frameSeconds: 1 / 60, suggestedSeconds: 0.0427 },
-        }}
-        editor={editorStub()}
-      />,
-    );
-    // Absent, not disabled: the sound has not happened yet, so there is no number to apply.
-    expect(screen.queryByText(/At least/)).toBeNull();
-    expect(screen.queryByRole("button", { name: /^Use / })).toBeNull();
-  });
-
-  it("T1319b — an unmeasurable browser says so and offers NO value to apply (§V91)", () => {
-    mockDevices([]);
-    render(
-      <AudioSection
-        nodeId={"nd_1" as never}
-        nodeType="audioFileIn"
-        device=""
-        status={{ kind: "live", latency: null }}
-        editor={editorStub()}
-      />,
-    );
-    expect(screen.getByText(/no audio output latency/)).toBeDefined();
-    // A confident 0 ms is the one thing that must never be offered here.
-    expect(screen.queryByRole("button", { name: /^Use / })).toBeNull();
-  });
+  /*
+   * T1321b — the Sync Offset suggestion's tests moved WITH the surface, to
+   * `sync-offset-suggestion.test.tsx`, which mounts the inspector because the claim it
+   * defends is WHERE the caption renders: inside the Sync Offset row, and nowhere else.
+   * A test of this component alone could no longer see that.
+   */
 
   it("the file node shows status only — there is no device to pick for a file", () => {
     mockDevices([{ deviceId: "d1", label: "Mic" }]);

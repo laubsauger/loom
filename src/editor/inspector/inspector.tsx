@@ -22,6 +22,7 @@ import { CommonReadout, CommonSection } from "./common-section.tsx";
 import { ConnectionsSection } from "./connections-section.tsx";
 import { connectionModel } from "./connections.ts";
 import { AudioSection, audioSectionParameters } from "./audio-section.tsx";
+import { SyncOffsetSuggestion } from "./sync-offset-suggestion.tsx";
 import { WebcamSection, webcamSectionParameters } from "./webcam-section.tsx";
 import { SyphonSection, syphonSectionParameters } from "./syphon-section.tsx";
 import { SYPHON_IN_TYPE } from "@nodes/definitions/syphon-in.ts";
@@ -737,18 +738,38 @@ export function Inspector({
   /*
    * T434(b)/T432: the audio nodes get a capture section — status plus, for the mic
    * node, the device picker. Keyed on the node TYPE the capture hook itself keys on.
+   *
+   * T1321b — ONE read per render, TWO readers: this section's status line, and the Sync
+   * Offset field's own suggestion below. Read per RENDER and never captured once (§V986):
+   * `outputLatency` moves with the device and the buffer size, so a number snapshotted when
+   * the panel opened goes quietly stale, which is the disease that row exists to treat.
    */
+  const audioCapture = showsAudioSection ? audioStatus() : null;
   const audioSection =
-    showsAudioSection && (node.type === "audioIn" || node.type === "audioFileIn") ? (
+    audioCapture !== null && (node.type === "audioIn" || node.type === "audioFileIn") ? (
       <AudioSection
         nodeId={node.id}
         nodeType={node.type}
         device={typeof resolved.values["device"] === "string" ? (resolved.values["device"] as string) : ""}
-        syncOffset={typeof resolved.values["syncOffset"] === "number" ? (resolved.values["syncOffset"] as number) : 0}
-        status={audioStatus()}
+        status={audioCapture}
         editor={editor}
       />
     ) : null;
+
+  /*
+   * T1321b — the measured floor, for the FIELD it is for.
+   *
+   * `undefined` = say nothing at all: no capture is live, so there is nothing measured and
+   * the parameter's default 0 stays a rest state rather than borrowing the authority of a
+   * measurement (§V986). `null` = this browser reports no latency, which is a fact the field
+   * DOES say, in words, with no value to apply. A microphone reaches neither branch and
+   * needs no check to: `audioIn` has no `syncOffset` parameter, because live analysis cannot
+   * look ahead.
+   */
+  const syncOffsetLatency =
+    node.type === "audioFileIn" && audioCapture?.kind === "live"
+      ? (audioCapture.latency ?? null)
+      : undefined;
 
   /* T810: the webcam gets its camera picker the way the mic got its device picker —
      keyed on the node TYPE the media hook itself keys on. */
@@ -856,6 +877,25 @@ export function Inspector({
                 onStoredChange={rowWriters.stored}
                 onChange={rowWriters.changeFor(entry.key)}
               />
+              {/*
+                T1321b — the suggestion belongs AT the field, not on a status line across
+                the panel. This is the one site every generic parameter row is built at, and
+                it already computes per-entry facts like `inactive`, so the caption is
+                computed here too: no new prop on `ParameterControl`, nothing added to the
+                control kit, and the row above renders byte for byte as it did.
+
+                It SUGGESTS and never writes: `syncOffset` is stored in the document and
+                applied identically to an offline render, so a machine-derived prefill would
+                quietly retime a shipped take when the document is opened on another box.
+              */}
+              {entry.key === "syncOffset" && syncOffsetLatency !== undefined ? (
+                <SyncOffsetSuggestion
+                  nodeId={node.id}
+                  syncOffset={typeof entry.value === "number" ? entry.value : 0}
+                  latency={syncOffsetLatency}
+                  editor={editor}
+                />
+              ) : null}
             </div>
           ))}
         </section>
