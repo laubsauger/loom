@@ -88,10 +88,16 @@ export function useViewerSynthesis(inputs: ViewerSynthesisInputs): void {
 
     const host = backend.previewHost(canvas);
     const system: PreviewSystem = createPreviewSystem({ host, capacity: 1 });
-    /* Refresh cadence only, and seedless for the reason `use-graph-background.ts` records at
-       length: this clock reaches no shader. The seed arrives through the main program's shared
-       block, which this host binds and only `backend.render()` writes. */
-    const clock = liveClock();
+    /* ⚑ T740/T742 — THIS CLOCK ALWAYS PRESENTS, and the reason is the same one that makes
+       `use-node-previews` opt in rather than the one that makes `use-graph-background` refuse.
+       The background is AMBIENT: nothing on screen shows the same thing at the same time, so
+       there is nothing for a throttle to disagree with. This surface IS THE VIEWER — the node
+       tiles next door can be showing the very node it is presenting, and a throttled machine
+       would otherwise draw one picture at two different times.
+       Seedless, for the reason `use-graph-background.ts` records at length: this clock is
+       refresh cadence only and reaches no shader. The seed arrives through the main program's
+       shared block, which this host binds and only `backend.render()` writes. */
+    const clock = liveClock({ presenting: () => true });
     let lastDeviceGeneration = backend.status.deviceGeneration;
     let lastDocumentIdentity = inputsRef.current.documentIdentity;
     let frameHandle = 0;

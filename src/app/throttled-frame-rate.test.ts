@@ -205,7 +205,13 @@ describe("T740 — the session's clock is actually told it is presenting", () =>
    * node preview always presents, and the graph background deliberately never does. A
    * fourth `liveClock` appearing in `src/app` fails here until its author decides which.
    */
-  const DECLARED = ["use-frame-loop.ts", "use-node-previews.ts", "use-graph-background.ts"] as const;
+  const DECLARED = [
+    "use-frame-loop.ts",
+    "use-node-previews.ts",
+    "use-graph-background.ts",
+    // §B220: the viewer's second presentation path, for rows the main program cannot bind.
+    "use-viewer-synthesis.ts",
+  ] as const;
 
   it("the scan finds every app-layer clock it polices, and the table covers exactly them", () => {
     const here = fileURLToPath(new URL(".", import.meta.url));
@@ -230,6 +236,16 @@ describe("T740 — the session's clock is actually told it is presenting", () =>
     // nothing to opt out of. Losing this line puts the preview back at half the viewer's
     // rate on a throttled machine, and permanently behind after a hidden tab.
     expect(construction(sourceOf("use-node-previews.ts"))).toMatch(
+      /presenting:\s*\(\)\s*=>\s*true/,
+    );
+  });
+
+  it("`use-viewer-synthesis` ALWAYS presents — it IS the viewer (§B220)", () => {
+    /* Same answer as `use-node-previews` and for the same reason, which is why the two sit
+       together and the background sits apart: a node tile can be showing the very node this
+       surface is presenting, and a throttled machine would draw one picture at two times.
+       The background has no such neighbour; this one is the neighbour. */
+    expect(construction(sourceOf("use-viewer-synthesis.ts"))).toMatch(
       /presenting:\s*\(\)\s*=>\s*true/,
     );
   });
