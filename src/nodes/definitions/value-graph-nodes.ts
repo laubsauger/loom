@@ -861,10 +861,23 @@ export const valueNormalizeNode: NodeDefinition = {
       type: "number",
       label: "Window",
       description:
-        "How many seconds of history define 'typical'. THIS IS THE DRIFT KNOB: short reacts fast and re-calibrates under you, long is stable and slow to adapt. It must be longer than the cycle you want the output to traverse — a window shorter than the phrase normalises the phrase away and the output stops sweeping. The default is about two four-bar phrases at club tempo, which is the safe side of that rule.",
+        "How many seconds of history define 'typical'. THIS IS THE DRIFT KNOB: short reacts fast and re-calibrates under you, long is stable and slow to adapt. MATCH IT TO THE TIMESCALE OF THE THING YOU ARE DRIVING. It must be longer than the cycle you want the output to traverse — a window shorter than the phrase normalises the phrase away and the output stops sweeping. 16 s is about two four-bar phrases at club tempo and is tuned for PHRASE-SCALE lanes: a beat, a fill, a drop. A lane that should move over MINUTES — a slow morph, a colour that drifts with the arrangement — wants 45-90 s instead, and the difference is not subtle: measured on a 4:32 track, a 60 s window carries about TWICE the slow movement a 16 s one does (2.0x / 2.2x / 1.9x / 2.1x on the four bands, as the spread of a 30 s moving average). Past that it turns over: 180 s is WORSE than 60, because the window approaches the length of the material and there is less history left to rank against.",
       // 16 s rather than 8: a four-bar phrase at 120 bpm IS 8 s, so a default of 8 would sit
       // exactly on the boundary of the one way to hold this node wrong. Two phrases is the
       // first setting that cannot silently normalise away the structure it was reached for.
+      /* ⚑ AND THE DEFAULT IS FOR PHRASE-SCALE LANES, WHICH IS NOT THE ONLY KIND (T1323b).
+         This docblock warned about ONE end of the knob — a window SHORTER than the phrase —
+         and that warning is true. Its existence is also what made the opposite end
+         invisible: a one-sided warning reads as a complete map, so a lane that wants to move
+         over MINUTES was left on a default half the size it wanted, and nothing anywhere
+         said so. An owner asked for "the shape shifting to be more audio reactive" and the
+         whole answer turned out to be this number, at half its right value for that lane.
+         ⚑ THE MEASUREMENT ALSO CONTRADICTS THE OBVIOUS PREDICTION, which is why it is quoted
+         in the description rather than summarised. I expected a short window to DESTROY slow
+         structure. It AMPLIFIES it: ranking expands a squashed range, and a band that lives
+         in 0.891..0.970 has slow movement that is real but tiny in absolute terms until the
+         rank opens it out. Longer windows amplify more, up to the point where the window
+         runs out of material to rank against. */
       default: 16,
       min: 0.25,
       max: 60,

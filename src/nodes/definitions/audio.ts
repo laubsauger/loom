@@ -460,6 +460,30 @@ export const audioFileInNode: NodeDefinition = {
  *   highMid rest 0.557 mean 0.572 peak 0.712 | music 0.05-0.37 / 0.19-0.57 / 0.50-0.72
  *   high    rest 0.381 mean 0.401 peak 0.574 | music 0.00-0.09 / 0.03-0.42 / 0.28-0.60
  *
+ * ## ⚑ WHAT THOSE DISTRIBUTIONS MEAN FOR A DRIVE, MEASURED ON A FOURTH TRACK (T1323b)
+ *
+ * The figures above calibrate the PATTERN against music. Read the other way they are also
+ * the reason an owner said the audio reactivity was "not useful", and nobody had put a
+ * number on it. A fourth track — 4:32, real, through the same offline analyser — gives:
+ *
+ *   low     p01 0.356  p50 0.891  p99 0.970
+ *   lowMid  p01 0.253  p50 0.647  p99 0.767
+ *   highMid p01 0.048  p50 0.522  p99 0.675
+ *   high    p01 0.000  p50 0.263  p99 0.476
+ *
+ * `low` HAS A MEDIAN OF 0.891. Half the runtime it sits between 0.891 and 0.970 — an
+ * effective working range of about EIGHT PERCENT of the nominal 0..1, which is why a gain
+ * mapped onto it barely moves anything. And `low` at 0.891 against `high` at 0.263 means the
+ * SAME gain on two bands is not the same effect, with nothing in the tool saying so. Both
+ * halves are what `valueNormalize` exists to fix: ranked, all four bands span 0.993-0.997
+ * and their spreads agree to within 0.002, against a raw spread of 0.150.
+ *
+ * ⚑ THE SYNTHETIC CLIP IS THE OUTLIER AND BOTH ARE KEPT. `showcase-beat` measures `low` at
+ * p50 0.395 / p01 0.000 — the opposite picture — because it is a drum grid with silence in
+ * it rather than sustained material. The clip remains the deterministic fixture every gate
+ * uses; real music is what reference values must answer to. A number tuned to either alone
+ * is wrong against the other, and that dependency is the thing that gets forgotten first.
+ *
  * `level` is deliberately NOT mapped: it is amplitude on BOTH paths already — the
  * analyser takes a time-domain RMS and this node sums linear envelopes — and it is the
  * control that made the diagnosis a measurement rather than an inference (§V648). It
