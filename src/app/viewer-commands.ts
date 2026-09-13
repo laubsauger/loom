@@ -1,5 +1,7 @@
 import type { LoomBus } from "@domain/commands/bus.ts";
 import { commandHolder } from "@domain/commands/command-holder.ts";
+import { FLY_AXES, isFlyAxis } from "@editor/viewer/orbit-gestures.ts";
+import type { FlyAxis } from "@editor/viewer/orbit-gestures.ts";
 
 /**
  * `node.openViewer` — point the viewer at a node's output (T440, §V354).
@@ -37,6 +39,17 @@ declare module "@domain/types/commands.ts" {
     "viewer.cameraHome": { input: Record<string, never>; output: { framed: boolean } };
     /** T379/T380: frame the viewer's camera on the MEASURED content bounds. */
     "viewer.frameContent": { input: Record<string, never>; output: { framed: boolean } };
+    /**
+     * §T1311b(b): move the viewer's inspection camera ONE STEP in a direction, in the
+     * camera's own frame. `w`/`a`/`s`/`d`/`e`/`q` name this through the keymap and the
+     * pane integrates a HELD key into continuous motion; a single invocation — from the
+     * palette, from an agent, from a keyboard whose auto-repeat never arrives — is one
+     * step of the same arithmetic (`flyStepFor`), never a second formula.
+     *
+     * View-only, like everything else the viewer's camera touches: it reaches a uniform
+     * on a pass nothing downstream reads, and there is no path from it to the document.
+     */
+    "viewer.fly": { input: { direction: string }; output: { moved: boolean } };
   }
 }
 
@@ -52,6 +65,8 @@ export interface ViewerHandlers {
   /** T379: frame the camera on measured content. Resolves false when there is nothing
    *  to measure (not orbitable, no backend, no position buffer). */
   frameContent(): Promise<boolean>;
+  /** §T1311b(b): one fly step. False = nothing with a camera is on screen to fly. */
+  fly(direction: FlyAxis): boolean;
 }
 
 export interface ViewerHolder {
@@ -63,6 +78,20 @@ export function viewerHolderFor(bus: LoomBus): ViewerHolder {
 }
 
 const NO_OUTPUT = { nodeId: null, portId: null };
+
+/**
+ * §V349 — ONE sentence for "this output has no camera", written once and read by both the
+ * command's refusal and the pane's disabled control. The alternative is a tooltip that
+ * says one thing and a diagnostic that says another about the same fact, which is how a
+ * user learns to trust neither.
+ *
+ * A `customWgsl` output has its OWN sentence for this, and it is not a variant of this one:
+ * `viewCameraAbsentReason()` explains the opt-in a shader author can act on. The pane picks
+ * between them; neither invents a third.
+ */
+export const VIEWER_NO_CAMERA_MESSAGE = "The viewer is not showing an orbitable 3D preview.";
+export const VIEWER_NO_CAMERA_SUGGESTION =
+  "Select a geometry, points or material preview in the viewer first.";
 
 /**
  * Registration is idempotent and dispatches through the holder: the bus has no
@@ -146,8 +175,8 @@ export function registerViewerCommands(bus: LoomBus): ViewerHolder {
       {
         severity: "info" as const,
         code: "viewer.noOrbit",
-        message: "The viewer is not showing an orbitable 3D preview.",
-        suggestion: "Select a geometry, points or material preview in the viewer first.",
+        message: VIEWER_NO_CAMERA_MESSAGE,
+        suggestion: VIEWER_NO_CAMERA_SUGGESTION,
       },
     ],
     output: { framed: false },
@@ -179,6 +208,54 @@ export function registerViewerCommands(bus: LoomBus): ViewerHolder {
         : cameraRefusal(revision);
     },
     rejectionOutput: () => ({ framed: false }),
+  });
+
+  /*
+   * §T1311b(b) — FLY. A separate command from the two above because it is a separate
+   * INTERACTION: `cameraHome` and `frameContent` put the camera somewhere the graph
+   * chose, and this one moves it somewhere the user chose, through a scene the orbit
+   * cannot leave (§V-orbit: distance clamps to [0.2, 5]×, so no orbit value ever puts
+   * the eye past its own target).
+   *
+   * It takes a NAMED direction and refuses an unnamed one rather than picking a default
+   * (§V986): "fly" with no direction is not a movement anybody measured.
+   */
+  const flyRefusal = (revision: number, diagnostic: { code: string; message: string; suggestion: string }) => ({
+    status: "rejected" as const,
+    revision,
+    diagnostics: [{ severity: "info" as const, ...diagnostic }],
+    output: { moved: false },
+  });
+  bus.registerCommand({
+    name: "viewer.fly",
+    description: "Move the viewer's inspection camera one step in a direction.",
+    handler: (input, context) => {
+      const revision = context.store.getRevision();
+      if (!isFlyAxis(input.direction)) {
+        return flyRefusal(revision, {
+          code: "viewer.flyDirection",
+          message: `"${String(input.direction)}" is not a direction the viewer camera can fly.`,
+          suggestion: `Name one of ${FLY_AXES.join(", ")}.`,
+        });
+      }
+      if (holder.current === null) {
+        return flyRefusal(revision, {
+          code: "viewer.noOrbit",
+          message: VIEWER_NO_CAMERA_MESSAGE,
+          suggestion: VIEWER_NO_CAMERA_SUGGESTION,
+        });
+      }
+      if (context.dryRun) return { status: "validated", revision, output: { moved: false } };
+      const moved = holder.current.fly(input.direction);
+      return moved
+        ? { status: "applied", revision, output: { moved } }
+        : flyRefusal(revision, {
+            code: "viewer.noOrbit",
+            message: VIEWER_NO_CAMERA_MESSAGE,
+            suggestion: VIEWER_NO_CAMERA_SUGGESTION,
+          });
+    },
+    rejectionOutput: () => ({ moved: false }),
   });
 
   return holder;

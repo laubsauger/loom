@@ -169,6 +169,21 @@ export interface HarnessControl {
    * app does on open cannot see what the app sees on open.
    */
   resetTemporalHistory(): void;
+  /**
+   * §T1311b(b) — push uniform VALUES onto one pass, exactly as the editor does.
+   *
+   * The viewer's inspection camera reaches a shader through `backend.updateUniforms` and
+   * nowhere else (`use-view-camera.ts`), so a test that cannot make that call can only
+   * assert the camera by re-staging it as stored document parameters — which renders a
+   * picture through a path the app never takes. This is the app's own seam, offline: the
+   * same method, the same pass id off `plan`, so "the flown camera renders this" is a
+   * claim about the shipped delivery path rather than about a re-creation of it.
+   *
+   * It reaches no further than a uniform block, by construction: the backend's
+   * `updateUniforms` "accepts values and nothing else", so a test cannot rebuild a plan
+   * or re-point a resource through here.
+   */
+  updateUniforms(passId: string, values: Record<string, number | number[]>): void;
   readonly outputResourceId: string;
   readonly plan: CompiledGraph;
 }
@@ -723,6 +738,10 @@ export async function renderHeadless(request: HeadlessRenderRequest): Promise<He
       // B186: byte for byte the call `use-frame-loop` makes at a document boundary.
       resetTemporalHistory: () => {
         backend.resetTemporalHistory(undefined, { buffers: true, silent: true });
+      },
+      // §T1311b(b): byte for byte the call `use-view-camera` makes while the viewer flies.
+      updateUniforms: (passId, values) => {
+        backend.updateUniforms({ passId, values });
       },
       outputResourceId,
       plan,

@@ -46,3 +46,105 @@ export function zoomFactorFor(deltaY: number, deltaMode: number): number {
   const scale = DELTA_MODE_SCALE[deltaMode] ?? 1;
   return Math.exp(deltaY * scale * ZOOM_PER_DELTA);
 }
+
+/**
+ * §T1311b(b) — FLY, and the arithmetic lives here for the same reason the orbit's does:
+ * the viewer pane and any later surface that grows a fly must have one wrist.
+ *
+ * The owner's ask was "proper controls like blender… so we can fly around", against a
+ * viewer that already orbits, zooms, homes and frames content — and ORBIT IS NOT FLY. An
+ * orbit turns the camera about a target it cannot pass; a fly translates the whole rig
+ * under its own heading and the target travels with it. That is not a bigger orbit, it is
+ * the other half of a 3D viewport, and the two compose: fly to a spot, then drag to look
+ * around from there.
+ */
+
+/** The six directions, named in the camera's own frame. */
+export type FlyAxis = "forward" | "back" | "left" | "right" | "up" | "down";
+
+export const FLY_AXES: readonly FlyAxis[] = ["forward", "back", "left", "right", "up", "down"];
+
+export function isFlyAxis(value: unknown): value is FlyAxis {
+  return typeof value === "string" && (FLY_AXES as readonly string[]).includes(value);
+}
+
+/**
+ * Cruise speed, in STOCK RADII per second — scale-free like the pan constant, so one
+ * number flies a unit point cloud and a cathedral at the same apparent pace. ~1.1 crosses
+ * the stock framing's own distance in a shade under a second, which is the speed at which
+ * a room feels walkable rather than either sluggish or unsteerable.
+ */
+export const FLY_RADII_PER_SECOND = 1.1;
+/** Shift is the throttle, not a second binding — the same modifier the orbit uses to pan. */
+export const FLY_BOOST = 4;
+/** One DISCRETE invocation (the palette, an agent, a keyboard without auto-repeat). */
+export const FLY_STEP_RADII = 0.18;
+
+/** Which way each axis points, in the camera's own frame. `back` is eye − lookAt. */
+const FLY_SIGNS: Readonly<Record<FlyAxis, readonly [number, number, number]>> = {
+  // The camera looks ALONG −back, so forward is −back. Getting this backwards is the
+  // classic fly bug and it is invisible in a call-site audit: the keys all "work".
+  forward: [0, 0, -1],
+  back: [0, 0, 1],
+  right: [1, 0, 0],
+  left: [-1, 0, 0],
+  up: [0, 1, 0],
+  down: [0, -1, 0],
+};
+
+/** The camera axes a fly step is resolved against — `orbitFrame(pose)` supplies them. */
+export interface FlyFrame {
+  readonly right: readonly [number, number, number];
+  readonly up: readonly [number, number, number];
+  readonly back: readonly [number, number, number];
+}
+
+/**
+ * Held directions + elapsed time → a world-space step, in stock-radius units.
+ *
+ * `null` when nothing is held, or when the held axes cancel (W and S together): that is
+ * "no movement", and returning a zero triple instead would write a fly offset onto an
+ * untouched camera and cost it §V528's float-exact identity for nothing.
+ *
+ * The direction is NORMALIZED before it is scaled, so holding W and D is not 1.41× faster
+ * than holding W — the diagonal is a heading, not a bonus.
+ */
+export function flyDeltaFor(
+  axes: Iterable<FlyAxis>,
+  seconds: number,
+  frame: FlyFrame,
+  options?: { readonly boost?: boolean },
+): [number, number, number] | null {
+  if (!(seconds > 0)) return null;
+  let localX = 0;
+  let localY = 0;
+  let localZ = 0;
+  for (const axis of axes) {
+    const sign = FLY_SIGNS[axis];
+    localX += sign[0];
+    localY += sign[1];
+    localZ += sign[2];
+  }
+  const length = Math.hypot(localX, localY, localZ);
+  if (length < 1e-9) return null;
+  const speed =
+    (seconds * FLY_RADII_PER_SECOND * (options?.boost === true ? FLY_BOOST : 1)) / length;
+  const x = localX * speed;
+  const y = localY * speed;
+  const z = localZ * speed;
+  return [
+    frame.right[0] * x + frame.up[0] * y + frame.back[0] * z,
+    frame.right[1] * x + frame.up[1] * y + frame.back[1] * z,
+    frame.right[2] * x + frame.up[2] * y + frame.back[2] * z,
+  ];
+}
+
+/**
+ * One step of a DISCRETE invocation — the palette row, an agent's `viewer.fly`, a key
+ * press on a keyboard whose auto-repeat never arrives. Deliberately the same function
+ * with a fixed duration rather than a second formula: a nudge and a held key must move
+ * the camera the same way or the two surfaces are two features.
+ */
+export function flyStepFor(axis: FlyAxis, frame: FlyFrame): [number, number, number] | null {
+  return flyDeltaFor([axis], FLY_STEP_RADII / FLY_RADII_PER_SECOND, frame);
+}

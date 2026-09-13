@@ -110,6 +110,44 @@ const TD_GRAPH_BINDINGS: readonly KeyBinding[] = [
     command: "viewer.frameContent",
     label: "Frame content — fit measured bounds",
   },
+  /*
+   * §T1311b(b) — FLY, and it is HERE rather than in the viewer component for §V52's
+   * reason: which key means "forward" is DATA. A `if (event.key === "w")` in the pane
+   * would be unrebindable, invisible in the shortcut editor, and a second answer to a
+   * question this table already answers for every other key in the app.
+   *
+   * The pane reads THESE ROWS to build its held-key map — so rebinding forward to `i`
+   * rebinds the held gesture too, not just the discrete step. What the pane owns is the
+   * INTEGRATION (a held key is a gesture, like a drag, and gestures are not bindings);
+   * what the table owns is the meaning of the key. Shift is the throttle and is
+   * deliberately not six more rows: it modifies the gesture, exactly as shift modifies
+   * the orbit drag into a pan.
+   *
+   * WASD + E/Q is Blender's and every FPS's, which is what the owner asked for by name
+   * ("a proper blender thing with the proper control so that we can fly around"). All six
+   * are free in the `viewer` context — `d`, `e` and `r` are bound in `graph`, which is a
+   * SIBLING context and never active at the same time (§V53, `contextsOverlap`).
+   */
+  ...(
+    [
+      { id: "viewer.flyForward", keys: "w", direction: "forward", label: "Fly forward" },
+      { id: "viewer.flyBack", keys: "s", direction: "back", label: "Fly back" },
+      { id: "viewer.flyLeft", keys: "a", direction: "left", label: "Fly left" },
+      { id: "viewer.flyRight", keys: "d", direction: "right", label: "Fly right" },
+      { id: "viewer.flyUp", keys: "e", direction: "up", label: "Fly up" },
+      { id: "viewer.flyDown", keys: "q", direction: "down", label: "Fly down" },
+    ] as const
+  ).map(
+    (row): KeyBinding => ({
+      id: row.id,
+      keys: row.keys,
+      context: "viewer",
+      command: "viewer.fly",
+      input: { direction: row.direction },
+      label: row.label,
+      description: "Hold to fly the viewer's inspection camera; shift flies faster.",
+    }),
+  ),
   {
     id: "node.toggleBypass",
     keys: "b",

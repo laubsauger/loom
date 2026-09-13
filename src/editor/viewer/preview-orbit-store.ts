@@ -1,5 +1,10 @@
 import type { NodeId } from "@domain/types/ids.ts";
-import { clampOrbitDistance, clampOrbitPan, DEFAULT_PREVIEW_ORBIT } from "@runtime/previews/index.ts";
+import {
+  clampOrbitDistance,
+  clampOrbitFly,
+  clampOrbitPan,
+  DEFAULT_PREVIEW_ORBIT,
+} from "@runtime/previews/index.ts";
 import type { PreviewOrbit } from "@runtime/previews/index.ts";
 
 /**
@@ -56,6 +61,27 @@ export interface PreviewOrbitStore {
    * scrolls out then one scroll in would move nothing for nineteen of them.
    */
   zoom(nodeId: NodeId, factor: number): void;
+  /**
+   * §T1311b(b) — FLY: accumulate a world-space translation of the whole rig, in units of
+   * the stock framing's radius (`flyDeltaFor` produces exactly that).
+   *
+   * A THIRD write, not a third mode: the owner's "home" / "adjustable" pair already says
+   * everything there is to say about whether this preview is being looked around in, and
+   * flying is being looked around in. So this goes through the same `write` gate as the
+   * orbit — inert while home, `setMode("home")` drops the flight with the rest of the
+   * view state — and the surface that turns it on is the one that turns orbit on.
+   *
+   * Inert in home mode, like `apply` and `zoom`; the caller enters adjustable first.
+   *
+   * ⚑ OPTIONAL, like `frameContent` and `release`, and the absence is a REFUSAL rather
+   * than an omission: `createCameraGizmoStore` wears this same interface and its writes
+   * land on a DOCUMENT camera node through the command bus (§T1314b). Flying that is a
+   * different feature with a different ruling — undoable, audited, confirm-before-
+   * replacing a driven channel — and a `fly` inherited by accident would have made the
+   * view-only gesture quietly destructive on exactly one surface. A caller that cannot
+   * see this method has a store that does not fly, and must not offer the control.
+   */
+  fly?(nodeId: NodeId, delta: readonly [number, number, number]): void;
   reset(nodeId: NodeId): void;
   /**
    * T379 — home to MEASURED CONTENT: enter adjustable with a content frame under zero
@@ -118,6 +144,14 @@ export function createPreviewOrbitStore(): PreviewOrbitStore {
         // T379: the content frame rides under the deltas — a drag after framing must
         // orbit the content, not silently snap back to the baked constants.
         ...(current.frame === undefined ? {} : { frame: current.frame }),
+        /*
+         * §T1311b(b): AND SO DOES THE FLIGHT, for the identical reason one line up. This
+         * record is rebuilt field by field rather than spread, so a field nobody named
+         * here is silently dropped — and dropping the fly would teleport the camera back
+         * to the author's framing on the first drag AFTER a flight, which is the exact
+         * gesture a user makes ("fly over there, now look around").
+         */
+        ...(current.fly === undefined ? {} : { fly: current.fly }),
       }));
     },
     zoom(nodeId, factor) {
@@ -125,6 +159,19 @@ export function createPreviewOrbitStore(): PreviewOrbitStore {
         ...current,
         distance: clampOrbitDistance(current.distance * factor),
       }));
+    },
+    fly(nodeId, delta) {
+      write(nodeId, (current) => {
+        const next = clampOrbitFly([
+          (current.fly?.[0] ?? 0) + delta[0],
+          (current.fly?.[1] ?? 0) + delta[1],
+          (current.fly?.[2] ?? 0) + delta[2],
+        ]);
+        // §V986: a non-finite step is not a position, so it is not written. The camera
+        // stays where the user last saw it rather than becoming a NaN nobody can home out
+        // of — `clampOrbitFly` is the one place that decides, and it says so by absence.
+        return next === undefined ? current : { ...current, fly: next };
+      });
     },
     reset(nodeId) {
       orbits.delete(nodeId);
@@ -168,6 +215,9 @@ export function prefixedOrbitStore(store: PreviewOrbitStore, prefix: string): Pr
     zoom: (nodeId, factor) => {
       store.zoom(flat(nodeId), factor);
     },
+    ...(store.fly === undefined
+      ? {}
+      : { fly: (nodeId: NodeId, delta: readonly [number, number, number]) => store.fly!(flat(nodeId), delta) }),
     reset: (nodeId) => {
       store.reset(flat(nodeId));
     },

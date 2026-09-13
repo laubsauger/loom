@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { isComponentNodeType } from "@domain/components/component-type.ts";
 import { previewablePort } from "@domain/graph/previewable.ts";
+import { viewCameraAbsentReason } from "@domain/geometry/view-camera.ts";
 import type {
   KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
@@ -32,7 +33,8 @@ import { usePixelReadout } from "@editor/viewer/index.ts";
 import type { PixelReadoutOptions } from "@editor/viewer/index.ts";
 import type { PreviewOrbitStore } from "@editor/viewer/index.ts";
 import { ORBIT_REFERENCE_WIDTH, orbitDeltaFor, zoomFactorFor } from "@editor/viewer/orbit-gestures.ts";
-import type { PixelProbe } from "@runtime/previews/index.ts";
+import type { FlyAxis } from "@editor/viewer/orbit-gestures.ts";
+import type { OrbitCameraBasis, PixelProbe } from "@runtime/previews/index.ts";
 import { Button } from "@ui/primitives/button.tsx";
 import { Tooltip } from "@ui/primitives/tooltip.tsx";
 import { useAppRuntime } from "./app-context.ts";
@@ -41,6 +43,8 @@ import { registerViewerCommands } from "./viewer-commands.ts";
 import { useOutputPresentation } from "./use-output-presentation.ts";
 import { useNativeOutput } from "./use-native-output.ts";
 import { useViewCameraOverride } from "./use-view-camera.ts";
+import { useViewerFly } from "./use-viewer-fly.ts";
+import { VIEWER_NO_CAMERA_MESSAGE } from "./viewer-commands.ts";
 import type { GraphActions, PortDragOrigin } from "./graph-pane.tsx";
 import type { GpuStatus } from "./gpu-status.ts";
 import styles from "./panes.module.css";
@@ -642,6 +646,10 @@ export function ViewerPane({
         state.orbits.frameContent(state.nodeId, frame);
         return true;
       },
+      /* §T1311b(b): one fly step, for the palette and for an agent. The HELD key never
+         comes through here — it is a gesture on the focused pane — but both land in the
+         same store through the same arithmetic, so the two cannot drift. */
+      fly: (direction: FlyAxis) => orbitStateRef.current.fly(direction),
     };
     holder.current = handlers;
     return () => {
@@ -828,6 +836,20 @@ export function ViewerPane({
     (selected?.synthesis?.orbit !== undefined || selected?.viewCamera !== undefined);
   /* The delivery half: view state in the store becomes uniforms on the viewport pass. */
   useViewCameraOverride({ backend, output: selected, orbits });
+  /*
+   * §T1311b(b) — AND THE FLIGHT. One basis for both camera sources, because a fly is the
+   * same arithmetic either way: translate the whole rig along the axes the picture is
+   * actually pointing down. `synthesis.orbit` already IS an `OrbitCameraBasis`; a
+   * `viewCamera` row carries the same four numbers under its own names, and the pass id
+   * (which is the only field that differs) belongs to the delivery half above, not here.
+   */
+  const flyBasis = useMemo<OrbitCameraBasis | null>(() => {
+    if (selected?.synthesis?.orbit !== undefined) return selected.synthesis.orbit;
+    const camera = selected?.viewCamera;
+    if (camera === undefined) return null;
+    return { eye: camera.eye, lookAt: camera.lookAt, fovY: camera.fovY, aspect: camera.aspect };
+  }, [selected]);
+  const fly = useViewerFly({ orbits, nodeId: orbitNodeId, basis: orbitable ? flyBasis : null });
   /** T379: measure the selected preview's positions — the frame-content readback. */
   const measureBounds = useCallback(async (): Promise<
     { lookAt: readonly [number, number, number]; radius: number } | undefined
@@ -874,8 +896,15 @@ export function ViewerPane({
     nodeId: NodeId | null;
     orbitable: boolean;
     frameContent?: () => Promise<{ lookAt: readonly [number, number, number]; radius: number } | undefined>;
-  }>({ orbits, nodeId: orbitNodeId, orbitable, frameContent: measureBounds });
-  orbitStateRef.current = { orbits, nodeId: orbitNodeId, orbitable, frameContent: measureBounds };
+    fly: (direction: FlyAxis) => boolean;
+  }>({ orbits, nodeId: orbitNodeId, orbitable, frameContent: measureBounds, fly: fly.step });
+  orbitStateRef.current = {
+    orbits,
+    nodeId: orbitNodeId,
+    orbitable,
+    frameContent: measureBounds,
+    fly: fly.step,
+  };
   const orbitDrag = useRef<{ pointerId: number; x: number; y: number; pan: boolean } | null>(null);
   const onOrbitDown = useCallback(
     (event: ReactPointerEvent<HTMLCanvasElement>) => {
@@ -1114,7 +1143,21 @@ export function ViewerPane({
   );
 
   return (
-    <div {...viewerPaneProps} className={styles.viewer}>
+    /*
+     * §T1311b(b) — the fly keys ride on the PANE, not on the canvas, because the pane is
+     * what holds focus: `useKeymapPane`'s pointer-down focuses this element, so a click on
+     * the picture leaves the keyboard here and a handler on the canvas would never see a
+     * key at all. It is also the element the `viewer` keymap context is declared on, so
+     * the gesture and the bindings it reads are scoped to exactly the same surface.
+     */
+    <div
+      {...viewerPaneProps}
+      className={styles.viewer}
+      onKeyDown={fly.onKeyDown}
+      onKeyUp={fly.onKeyUp}
+      onBlur={fly.onBlur}
+      data-viewer-flying={fly.flying ? "true" : undefined}
+    >
       <div className={styles.bar}>
         <label className={styles.barLabel} htmlFor="viewer-output">
           output
@@ -1154,6 +1197,21 @@ export function ViewerPane({
             </Button>
           </Tooltip>
         ) : null}
+        <ViewerCameraButton
+          orbits={orbits}
+          nodeId={orbitNodeId}
+          orbitable={orbitable}
+          /* The one case that has a BETTER answer than "no camera here": a shader that
+             could have opted into §T1311b(a)'s contract and did not. Read off the node's
+             type, because that is the only thing the viewer knows about why the compiler
+             published no camera row. */
+          shaderWithoutCamera={
+            !orbitable &&
+            orbitNodeId !== null &&
+            graph.nodes[orbitNodeId]?.type === "customWgsl"
+          }
+          flying={fly.flying}
+        />
         <Tooltip label={fullscreen ? "Leave fullscreen — Escape also works" : "Fullscreen"}>
           <Button
             aria-label={fullscreen ? "Leave fullscreen" : "Fullscreen"}
@@ -1242,5 +1300,89 @@ export function ViewerPane({
         </dd>
       </dl>
     </div>
+  );
+}
+
+/**
+ * §T1311b(b) — THE VIEWER'S CAMERA CONTROL, and the surface `viewCameraAbsentReason()`
+ * was written for.
+ *
+ * §T1311b(a) shipped that sentence with one reader and NO surface: the gestures were
+ * simply inert on an output with no camera, and there was nothing to grey out. That is the
+ * defect §V123 names — a viewer that silently ignores a drag and six keys reads as broken
+ * rather than as honest — and it is worse for fly than for orbit, because a user who never
+ * presses this button has no way to discover that WASD does anything at all (§V90: the
+ * hint is carried by the control, never painted on the picture).
+ *
+ * So the button is the affordance, the indicator AND the refusal, and every one of its
+ * sentences is READ rather than written here:
+ *
+ *  - a `customWgsl` output whose shader did not opt in → `viewCameraAbsentReason()`, which
+ *    names the four fields its author has to declare. That is an actionable refusal.
+ *  - anything else with no camera → the command's own `VIEWER_NO_CAMERA_MESSAGE`, so the
+ *    tooltip and the `viewer.cameraHome` / `viewer.fly` rejections cannot say two
+ *    different things about one fact (§V349).
+ *
+ * DISABLED rather than absent, which is the opposite of the tile overlay's rule (T669) and
+ * deliberately so: a tile with no camera is one of forty on a canvas and its silence is
+ * unremarkable, while the viewer is where the user went specifically to look at this one
+ * thing. Here the answer to "why can I not fly this" has to be reachable.
+ */
+function ViewerCameraButton({
+  orbits,
+  nodeId,
+  orbitable,
+  shaderWithoutCamera,
+  flying,
+}: {
+  orbits: PreviewOrbitStore | undefined;
+  nodeId: NodeId | null;
+  orbitable: boolean;
+  shaderWithoutCamera: boolean;
+  flying: boolean;
+}) {
+  /* Per-node slice, like the tile toggle's: the store notifies on MODE changes only, so a
+     drag or a flight costs no render at all (§V16). */
+  const subscribe = useCallback(
+    (listener: () => void) =>
+      orbits === undefined || nodeId === null ? () => {} : orbits.subscribe(nodeId, listener),
+    [orbits, nodeId],
+  );
+  const read = useCallback(
+    () => (orbits === undefined || nodeId === null ? "home" : orbits.mode(nodeId)),
+    [orbits, nodeId],
+  );
+  const mode = useSyncExternalStore(subscribe, read, read);
+  const adjustable = orbitable && mode === "adjustable";
+  const canFly = orbitable && orbits?.fly !== undefined;
+
+  const hint = !orbitable
+    ? shaderWithoutCamera
+      ? viewCameraAbsentReason()
+      : VIEWER_NO_CAMERA_MESSAGE
+    : adjustable
+      ? `Inspecting${flying ? " — flying" : ""}. Drag orbits, shift-drag pans, wheel zooms${
+          canFly ? ", W A S D + E Q fly (shift is faster)" : ""
+        }. H returns home, F frames the content.`
+      : `Inspect camera: drag to orbit${canFly ? ", W A S D + E Q to fly around" : ""}.`;
+
+  return (
+    <Tooltip label={hint}>
+      <Button
+        disabled={!orbitable}
+        aria-label="Inspect camera"
+        aria-pressed={adjustable}
+        data-testid="viewer-camera-toggle"
+        data-viewer-camera={adjustable ? "adjustable" : "home"}
+        onClick={() => {
+          if (orbits === undefined || nodeId === null) return;
+          orbits.setMode(nodeId, adjustable ? "home" : "adjustable");
+        }}
+      >
+        <span className={styles.glyph} aria-hidden="true">
+          C
+        </span>
+      </Button>
+    </Tooltip>
   );
 }

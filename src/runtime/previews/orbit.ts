@@ -47,6 +47,30 @@ export interface PreviewOrbit {
     readonly lookAt: readonly [number, number, number];
     readonly radius: number;
   };
+  /**
+   * §T1311b(b) — FLY. **ORBIT IS NOT FLY, and this field is the whole difference.**
+   *
+   * Everything above turns the camera AROUND a target that never moves: azimuth and
+   * elevation swing the eye on a sphere, `distance` dollies along that sphere's radius,
+   * `panX`/`panY` slide the whole rig across its own screen plane. All three are FENCED on
+   * purpose — elevation stops short of the poles, distance clamps to [0.2, 5]× and pan to
+   * ±2 radii — because an inspection camera that loses the object it is inspecting is
+   * useless. Those fences are also exactly why none of them can EXPLORE: `distance` can
+   * approach the target and never reach it, so there is no value of any field above that
+   * puts the eye on the far side of what it was looking at.
+   *
+   * `fly` is a translation of the WHOLE RIG — eye and look-at together, so the heading is
+   * untouched and the target comes along — in WORLD space, in units of the stock framing's
+   * radius (scale-free like `distance` and the pan, so one gesture constant works for a
+   * unit cloud and a cathedral alike). It is applied LAST, after the orbit, which is what
+   * makes the two compose the way a 3D editor's do: fly to somewhere, then drag, and you
+   * orbit around where you flew to rather than snapping back to the author's target.
+   *
+   * Absent means "nobody has flown", and absent is not `[0,0,0]`: the identity orbit must
+   * short-circuit to the baked pose float for float (§V528), and a zero triple would take
+   * the long path through the spherical round-trip.
+   */
+  readonly fly?: readonly [number, number, number];
 }
 
 export const DEFAULT_PREVIEW_ORBIT: PreviewOrbit = Object.freeze({
@@ -66,7 +90,9 @@ export function isDefaultOrbit(orbit: PreviewOrbit): boolean {
     orbit.panY === 0 &&
     // T379: a content frame is not the identity — the whole point is that it moves
     // the camera off the baked constants.
-    orbit.frame === undefined
+    orbit.frame === undefined &&
+    // §T1311b(b): nor is a flight. Same rule, same reason.
+    orbit.fly === undefined
   );
 }
 
@@ -115,6 +141,8 @@ export interface OrbitCameraBasis {
 
 /** Just short of the poles: `lookAt`'s up is +y, and gimbal flip reads as a glitch. */
 const MAX_ELEVATION = Math.PI / 2 - 0.08;
+/** The "nobody has flown" offset. Never stored — absence is what the identity reads. */
+const ZERO_FLY: readonly [number, number, number] = [0, 0, 0];
 const MIN_DISTANCE = 0.2;
 const MAX_DISTANCE = 5;
 /** Two stock radii of travel in each direction — enough to put a corner centre-frame. */
@@ -135,10 +163,78 @@ export function clampOrbitPan(offset: number): number {
   return Math.min(MAX_PAN, Math.max(-MAX_PAN, offset));
 }
 
+/**
+ * §T1311b(b): the fly offset's outer bound, and it is a RUNAWAY GUARD, not a fence.
+ *
+ * The pan clamp exists to keep the subject on screen; this one exists only so a stuck key
+ * or a wild `dt` cannot walk the camera to 1e308 and hand the shader a non-finite eye. A
+ * thousand stock radii is far past anything anybody explores to and far short of anything
+ * that loses float precision, so the difference between this and `clampOrbitPan` is the
+ * difference between "you may not go there" and "nothing may go there".
+ */
+const MAX_FLY = 1000;
+
+/**
+ * A fly offset, clamped and CHECKED FOR FINITENESS. A non-finite component returns
+ * `undefined` rather than a substituted zero (§V986): a camera that silently kept flying
+ * from a NaN would be a confident default for a value nobody could measure. The caller
+ * drops the delta and the camera stays where it was, which is the state the user can see.
+ */
+export function clampOrbitFly(
+  offset: readonly [number, number, number],
+): readonly [number, number, number] | undefined {
+  const [x, y, z] = offset;
+  if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return undefined;
+  const clamp = (value: number): number => Math.min(MAX_FLY, Math.max(-MAX_FLY, value));
+  return [clamp(x), clamp(y), clamp(z)];
+}
+
 /** Where the inspection camera sits and what it looks at, after the deltas. */
 export interface OrbitPose {
   readonly eye: readonly [number, number, number];
   readonly lookAt: readonly [number, number, number];
+}
+
+/**
+ * The camera's own axes: `back` points from the look-at toward the eye, `right` and `up`
+ * are the screen axes derived from it exactly as `lookAt` derives them.
+ *
+ * §T1311b(b) exported this because FLY needs the same three vectors the pan already used,
+ * and a second derivation of "which way is right" is how two surfaces end up disagreeing
+ * about which way W goes. One spelling, two readers (`orbitPose` below, and the fly
+ * gesture that converts a key press into a world-space step).
+ */
+export interface OrbitFrame {
+  readonly right: readonly [number, number, number];
+  readonly up: readonly [number, number, number];
+  readonly back: readonly [number, number, number];
+}
+
+/** `back` must already be unit length and never parallel to +y (elevation is clamped). */
+function screenAxes(back: readonly [number, number, number]): OrbitFrame {
+  const rightLength = Math.max(1e-6, Math.hypot(back[2], 0, -back[0]));
+  const right: [number, number, number] = [back[2] / rightLength, 0, -back[0] / rightLength];
+  const up: [number, number, number] = [
+    back[1] * right[2] - back[2] * right[1],
+    back[2] * right[0] - back[0] * right[2],
+    back[0] * right[1] - back[1] * right[0],
+  ];
+  return { right, up, back };
+}
+
+/**
+ * The axes of a POSE — what a fly gesture reads to turn "forward" into a world vector.
+ *
+ * Derived from where the camera actually is rather than from the orbit deltas, so it is
+ * correct after a flight as well as after a drag: the frame follows the picture, which is
+ * the only thing the user is aiming with.
+ */
+export function orbitFrame(pose: OrbitPose): OrbitFrame {
+  const dx = pose.eye[0] - pose.lookAt[0];
+  const dy = pose.eye[1] - pose.lookAt[1];
+  const dz = pose.eye[2] - pose.lookAt[2];
+  const length = Math.max(1e-6, Math.hypot(dx, dy, dz));
+  return screenAxes([dx / length, dy / length, dz / length]);
 }
 
 /**
@@ -175,16 +271,20 @@ export function orbitPose(rawBasis: OrbitCameraBasis, orbit: PreviewOrbit): Orbi
   // The camera's screen axes, exactly as `lookAt` derives them: right = up × back,
   // up' = back × right. Elevation is clamped short of the poles, so `back` is never
   // parallel to +y and the cross product never degenerates.
-  const rightLength = Math.max(1e-6, Math.hypot(back[2], 0, -back[0]));
-  const right: [number, number, number] = [back[2] / rightLength, 0, -back[0] / rightLength];
-  const up: [number, number, number] = [
-    back[1] * right[2] - back[2] * right[1],
-    back[2] * right[0] - back[0] * right[2],
-    back[0] * right[1] - back[1] * right[0],
-  ];
+  const { right, up } = screenAxes(back);
   const panRight = clampOrbitPan(orbit.panX) * radius;
   const panUp = clampOrbitPan(orbit.panY) * radius;
-  const shift = (axis: 0 | 1 | 2): number => right[axis] * panRight + up[axis] * panUp;
+  /*
+   * §T1311b(b) — THE FLIGHT RIDES ON THE LOOK-AT, which is what makes it a fly and not a
+   * second pan. The eye below is derived FROM `lookAt`, so anything added here moves the
+   * eye by the identical vector: heading unchanged, distance unchanged, the whole rig
+   * translated. Already in world space (the gesture resolved the camera's axes when the
+   * key was pressed), so orbiting afterwards turns around the new position instead of
+   * dragging the flight back into the author's frame.
+   */
+  const fly = orbit.fly ?? ZERO_FLY;
+  const shift = (axis: 0 | 1 | 2): number =>
+    right[axis] * panRight + up[axis] * panUp + fly[axis] * radius;
   const lookAt: [number, number, number] = [
     basis.lookAt[0] + shift(0),
     basis.lookAt[1] + shift(1),

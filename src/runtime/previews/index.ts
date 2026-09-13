@@ -80,15 +80,17 @@ export {
 
 export {
   clampOrbitDistance,
+  clampOrbitFly,
   clampOrbitPan,
   DEFAULT_PREVIEW_ORBIT,
   isDefaultOrbit,
   orbitEye,
+  orbitFrame,
   orbitPose,
   orbitUniforms,
   orbitViewProjection,
 } from "./orbit.ts";
-export type { OrbitCameraBasis, OrbitPose, PreviewOrbit } from "./orbit.ts";
+export type { OrbitCameraBasis, OrbitFrame, OrbitPose, PreviewOrbit } from "./orbit.ts";
 
 export { createPreviewSystem } from "./system.ts";
 export type { PreviewSystem, PreviewSystemFrame, PreviewSystemResult } from "./system.ts";
