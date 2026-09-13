@@ -24,8 +24,8 @@ import { connectionModel } from "./connections.ts";
 import { AudioSection, audioSectionParameters } from "./audio-section.tsx";
 import { SyncOffsetSuggestion } from "./sync-offset-suggestion.tsx";
 import { WebcamSection, webcamSectionParameters } from "./webcam-section.tsx";
-import { SyphonSection, syphonSectionParameters } from "./syphon-section.tsx";
-import { SYPHON_IN_TYPE } from "@nodes/definitions/syphon-in.ts";
+import { NativeInputSection, nativeInputSectionParameters } from "./syphon-section.tsx";
+import { NATIVE_INPUT_TRANSPORTS } from "@devices/native-video.ts";
 import { MidiSection, midiSectionParameters } from "./midi-section.tsx";
 import { LaserSection, laserSectionParameters } from "./laser-section.tsx";
 import { ComponentSection, componentSectionParameters } from "./component-section.tsx";
@@ -588,7 +588,8 @@ export function Inspector({
   const showsAudioSection =
     audioStatus !== undefined && (node.type === "audioIn" || node.type === "audioFileIn");
   const showsWebcamSection = node.type === "webcam";
-  const showsSyphonSection = node.type === SYPHON_IN_TYPE;
+  const nativeInputTransport = NATIVE_INPUT_TRANSPORTS[node.type];
+  const showsSyphonSection = nativeInputTransport !== undefined;
   const showsMidiSection = midi !== undefined && node.type === "midiIn";
   // The CONSTANT, not the literal: §T1005's tripwire reads an emitting type's literal
   // in session code as an unregistered pump's tell, and this section is a surface.
@@ -600,7 +601,7 @@ export function Inspector({
   const presentedBySections = new Set<string>([
     ...(showsAudioSection ? audioSectionParameters(node.type as "audioIn" | "audioFileIn") : []),
     ...(showsWebcamSection ? webcamSectionParameters() : []),
-    ...(showsSyphonSection ? syphonSectionParameters() : []),
+    ...(showsSyphonSection ? nativeInputSectionParameters() : []),
     ...(showsMidiSection ? midiSectionParameters() : []),
     ...(showsLaserSection ? laserSectionParameters() : []),
     ...(showsComponentSection ? componentSectionParameters() : []),
@@ -781,7 +782,7 @@ export function Inspector({
         editor={editor}
       />
     ) : null;
-  const syphonSection = showsSyphonSection ? <SyphonSection nodeId={node.id}
+  const syphonSection = nativeInputTransport ? <NativeInputSection nodeId={node.id} transport={nativeInputTransport}
     source={typeof resolved.values["source"] === "string" ? resolved.values["source"] as string : ""} editor={editor} /> : null;
 
   /* T942: the controller gets its learn table and its ONE honest sentence about why there

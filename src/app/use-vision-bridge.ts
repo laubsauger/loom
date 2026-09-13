@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { ChannelResolver } from "@domain/parameters/resolve.ts";
@@ -21,6 +21,7 @@ import {
 } from "@nodes/definitions/index.ts";
 import type { DeviceClient } from "@devices/device-client.ts";
 import { DEVICE_HELPER_COMMAND, DEVICE_HELPER_NAME, DEVICE_HELPER_START } from "@devices/helper.ts";
+import { createNativeVisionSources, type NativeVisionTarget } from "./native-vision-sources.ts";
 
 /**
  * T1029 — the Person Mask node's CPU half: Apple Vision over the device bridge,
@@ -124,6 +125,8 @@ interface VisionTarget {
 }
 
 export function useVisionBridge(options: {
+  /** Document owner identity; replacing the project retires native model history. */
+  scope?: object;
   /** The OSC hook's shared device client — one attachment per tab (T950's rule). */
   deviceClient: () => DeviceClient | null;
   backend?: () => LoomBackend | null;
@@ -137,6 +140,7 @@ export function useVisionBridge(options: {
   observe(frame: FrameEvaluationInput): void;
   track(graph: GraphDocument, compiled: CompiledGraph | null): void;
   settle(frameIndex: number): Promise<void>;
+  prepareForRender(): Promise<void>;
   /** T1067 — `mask1:coverage` et al. Present whenever the NODE is tracked, whether or
    *  not a helper is: E52 shipped erroring on every unpaired machine because this hook
    *  tracked entries but never joined the channel chain, so a document that SPENDS a
@@ -147,7 +151,28 @@ export function useVisionBridge(options: {
   readonly resolver: ChannelResolver;
 } {
   const [diagnostics, setDiagnostics] = useState<readonly RuntimeDiagnostic[]>([]);
+  const [nativeDiagnostics, setNativeDiagnostics] = useState<readonly RuntimeDiagnostic[]>([]);
+  const nativeDiagnosticsRef = useRef<readonly RuntimeDiagnostic[]>([]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- Model history belongs to the document owner, not the persistent React mount.
+  const native = useMemo(() => createNativeVisionSources(), [options.scope]);
+  const refreshNative = useCallback(() => {
+    const next = native.diagnostics();
+    const prior = nativeDiagnosticsRef.current;
+    // Compare before dispatch: even a React eager bailout allocates an update
+    // and updater closure at frame rate, including when no native model exists.
+    if (prior.length === next.length && prior.every((value, index) =>
+      value.code === next[index]?.code && value.nodeId === next[index]?.nodeId &&
+      value.severity === next[index]?.severity && value.message === next[index]?.message)) return;
+    nativeDiagnosticsRef.current = next;
+    setNativeDiagnostics(next);
+  }, [native]);
+  useEffect(() => {
+    const retire = () => native.dispose();
+    window.addEventListener("loom-native-input-retire", retire);
+    return () => { window.removeEventListener("loom-native-input-retire", retire); native.dispose(); };
+  }, [native]);
   const targetsRef = useRef<readonly VisionTarget[]>([]);
+  const nativeTargetsRef = useRef<readonly NativeVisionTarget[]>([]);
   /* T1067 — through a REF, deliberately: the seam below memoises on its inputs, and a
      caller handing a fresh accessor per render would REBUILD the seam mid-session —
      dropping every tracked entry, which is exactly "the node exists and publishes no
@@ -204,11 +229,14 @@ export function useVisionBridge(options: {
   const track = useCallback(
     (graph: GraphDocument, compiled: CompiledGraph | null) => {
       const sized = new Map<string, readonly [number, number]>();
+      const nativeResults = new Set<string>();
       for (const resource of compiled?.resources ?? []) {
         const entry = resource as { id?: string; size?: readonly [number, number] };
         if (entry.id !== undefined && entry.size !== undefined) sized.set(entry.id, entry.size);
+        if (resource.kind === "externalTexture" && resource.format === "rgba16float") nativeResults.add(resource.id);
       }
       const targets: VisionTarget[] = [];
+      const nativeTargets: NativeVisionTarget[] = [];
       const next: RuntimeDiagnostic[] = [];
       for (const nodeId of Object.keys(graph.nodes).sort()) {
         const node = graph.nodes[nodeId];
@@ -218,12 +246,16 @@ export function useVisionBridge(options: {
         if (!sized.has(resultId)) continue;
         const rate = node.parameters["rateLimit"];
         const stored = typeof rate === "number" ? rate : (rate as { value?: unknown } | undefined)?.value;
-        targets.push({
+        const target = {
           nodeId,
           size: sized.get(resultId) ?? [1, 1],
           minIntervalSeconds: typeof stored === "number" ? Math.max(0, stored) : 0.1,
           ...(node.label === undefined ? {} : { channel: node.label }),
-        });
+        };
+        // The compiler resolved static/bound transport and declared its format.
+        // Do not reinterpret a stored parameter slot independently of that plan.
+        if (nativeResults.has(resultId)) { nativeTargets.push(target); continue; }
+        targets.push(target);
         if (client() === null) {
           next.push({
             /* T1067 — WARNING, not info: a wired node that cannot run produces a black
@@ -291,29 +323,41 @@ export function useVisionBridge(options: {
         coverage: maskCoverage,
       }));
       sources.track(entries);
+      native.track(nativeTargets, attached);
+      nativeTargetsRef.current = nativeTargets;
+      refreshNative();
     },
-    [client, sources],
+    [client, sources, native, refreshNative],
   );
 
   const observe = useCallback(
     (frame: FrameEvaluationInput) => {
+      native.observe(frame); refreshNative();
       if (targetsRef.current.length === 0) return;
       // Between frames, exactly as analyze and the model seam do (§V184).
       queueMicrotask(() => sources.sample(frame.frameIndex, absTimeSecondsOf(frame)));
     },
-    [sources],
+    [sources, native, refreshNative],
   );
 
   const settle = useCallback(
     async (frameIndex: number) => {
+      await native.settle(frameIndex); refreshNative();
       if (targetsRef.current.length === 0) return;
       await sources.settle(frameIndex);
     },
-    [sources],
+    [sources, native, refreshNative],
   );
+  const prepareForRender = useCallback(async () => {
+    await native.drain();
+    native.track(nativeTargetsRef.current, backendRef.current?.() ?? null);
+    refreshNative();
+  }, [native, refreshNative]);
 
   const resolver = useCallback<ChannelResolver>(
     (channel, context) => {
+      const nativeValue = native.resolver(channel, context);
+      if (nativeValue !== undefined) return nativeValue;
       const value = sources.resolver(channel, context);
       if (value !== undefined) return value;
       /* The node-level answer (a6's condition, verbatim: the channel must exist
@@ -331,11 +375,11 @@ export function useVisionBridge(options: {
       }
       return undefined;
     },
-    [sources],
+    [sources, native],
   );
 
   return useMemo(
-    () => ({ diagnostics, observe, track, settle, resolver }),
-    [diagnostics, observe, track, settle, resolver],
+    () => ({ diagnostics: [...diagnostics, ...nativeDiagnostics], observe, track, settle, prepareForRender, resolver }),
+    [diagnostics, nativeDiagnostics, observe, track, settle, prepareForRender, resolver],
   );
 }

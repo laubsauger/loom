@@ -1,0 +1,131 @@
+{
+  "assets": [],
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "receive-return": {
+        "id": "receive-return",
+        "source": {
+          "nodeId": "receive",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "returnOut",
+          "portId": "input"
+        }
+      },
+      "signal-reference": {
+        "id": "signal-reference",
+        "source": {
+          "nodeId": "signal",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      },
+      "signal-send": {
+        "id": "signal-send",
+        "source": {
+          "nodeId": "signal",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "send",
+          "portId": "input"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "label": "reference1",
+        "parameters": {},
+        "position": {
+          "x": 120,
+          "y": -200
+        },
+        "type": "output"
+      },
+      "receive": {
+        "definitionVersion": 1,
+        "id": "receive",
+        "label": "receive1",
+        "parameters": {
+          "source": ""
+        },
+        "position": {
+          "x": -240,
+          "y": 140
+        },
+        "type": "spoutIn"
+      },
+      "returnOut": {
+        "definitionVersion": 1,
+        "id": "returnOut",
+        "label": "returned1",
+        "parameters": {},
+        "position": {
+          "x": 120,
+          "y": 140
+        },
+        "type": "output"
+      },
+      "send": {
+        "definitionVersion": 1,
+        "id": "send",
+        "label": "send1",
+        "parameters": {
+          "enabled": false,
+          "name": "Loom E74 Spout"
+        },
+        "position": {
+          "x": -240,
+          "y": -200
+        },
+        "type": "spoutOut"
+      },
+      "signal": {
+        "definitionVersion": 1,
+        "id": "signal",
+        "label": "signal1",
+        "parameters": {
+          "mono": false,
+          "seed": 74,
+          "speed": 0.35,
+          "t4d": 0.37,
+          "type": "perlin4d"
+        },
+        "position": {
+          "x": -600,
+          "y": -200
+        },
+        "type": "noise"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E74 Spout Loopback Preparation",
+  "projectId": "example-e74-spout-loopback",
+  "schemaVersion": 3,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 1080,
+      "width": 1920
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 74,
+    "workingFormat": "rgba8unorm-srgb"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}

@@ -41,6 +41,7 @@ import { useAppRuntime } from "./app-context.ts";
 import { useFullscreenSurface } from "./fullscreen-commands.ts";
 import { registerViewerCommands } from "./viewer-commands.ts";
 import { useOutputPresentation } from "./use-output-presentation.ts";
+import { useViewerSynthesis } from "./use-viewer-synthesis.ts";
 import { useNativeOutput } from "./use-native-output.ts";
 import { useViewCameraOverride } from "./use-view-camera.ts";
 import { useViewerFly } from "./use-viewer-fly.ts";
@@ -484,6 +485,21 @@ export interface ViewerPaneProps {
    * (§V255): no document revision, no dirty flag, nothing downstream changes.
    */
   orbits?: PreviewOrbitStore | undefined;
+  /**
+   * §B220 — the viewer's own preview SINK, and it is not the same thing as `interest`.
+   *
+   * `interest` is a PIN: it keeps a tile the graph canvas already materialised alive. It is
+   * consumed by `useNodePreviews`, which runs in the GRAPH PANE ONLY — so with that pane
+   * closed the viewer's selection reached nothing at all. A sink is the other half: it is
+   * what makes the compiler SYNTHESISE a preview for a row that has none (§V309 — "off costs
+   * nothing: no pass, no target, no bytes"). A camera, light, geometry, material or pointset
+   * node has no main-program target ever, so without this the viewer had nothing to show and
+   * no way to ask for it.
+   */
+  previewSinks?: { set(refs: ReadonlyArray<{ nodeId: string; portId: string }>): void } | undefined;
+  /** Preview cadence and tile size, defaulted to `graph-pane.tsx`'s own values (§B220). */
+  previewFps?: number;
+  previewLongEdge?: number;
   /** T756: publishes which node this viewer is presenting — the graph pane's request
    *  assembler pins it, so a hidden tile keeps rendering under the viewer's gaze. */
   interest?: import("@editor/viewer/index.ts").PreviewInterestStore | undefined;
@@ -525,6 +541,9 @@ export function ViewerPane({
   readoutOptions,
   orbits,
   interest,
+  previewSinks,
+  previewFps = 20,
+  previewLongEdge = 192,
 }: ViewerPaneProps) {
   // T726: `documentIdentity` — WHICH document the pin below was made in. Taken from the
   // runtime because the runtime IS the loaded document (`adoptDocument`, `app.tsx`).
@@ -660,7 +679,29 @@ export function ViewerPane({
     // project's identity onto a pin made in the new one.
   }, [bus, setPinnedKey]);
 
-  const { canvasRef, canvasKey } = useOutputPresentation(backend, selected?.resourceId ?? null);
+  /*
+   * §B220 — TWO PRESENTATION PATHS, and which one runs is decided by the row itself.
+   *
+   * `useOutputPresentation` binds a MAIN-PROGRAM target through `backend.present`. A row that
+   * carries `synthesis` has no such target — it is drawn by the preview system, which is why
+   * it presented nothing here. `synthesisRow` is that case, and it is null for every ordinary
+   * texture output, so the second path costs nothing when it is not needed.
+   */
+  const synthesisRow = selected?.synthesis === undefined ? null : selected;
+  const { canvasRef, canvasKey } = useOutputPresentation(
+    backend,
+    synthesisRow === null ? (selected?.resourceId ?? null) : null,
+  );
+  const synthesisCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  useViewerSynthesis({
+    backend,
+    canvasRef: synthesisCanvasRef,
+    output: synthesisRow,
+    previewFps,
+    previewLongEdge,
+    documentIdentity,
+    ...(orbits === undefined ? {} : { orbits }),
+  });
   const nativeOutput = useNativeOutput(backend, selected, documentIdentity, bus);
   /**
    * The probe's target, keyed on PRIMITIVES.
@@ -816,6 +857,27 @@ export function ViewerPane({
     interest.set(requestedNodeId);
     return () => interest.set(null);
   }, [interest, requestedNodeId]);
+
+  /*
+   * §B220 — ASK FOR THE PREVIEW, then present it below.
+   *
+   * Keyed on `requested` rather than on `selected`, and that is the whole reason this works:
+   * a scene-payload row DOES NOT EXIST until a sink watches it, so `selected` is undefined for
+   * exactly the nodes this fixes. Registering from the resolved output would be a sink that
+   * can only ever ask for rows that are already there.
+   */
+  const requestedKey = requested === null ? null : outputKey(requested);
+  useEffect(() => {
+    if (previewSinks === undefined) return;
+    if (requested === null) {
+      previewSinks.set([]);
+      return;
+    }
+    previewSinks.set([{ nodeId: requested.nodeId, portId: requested.portId }]);
+    return () => previewSinks.set([]);
+    // `requested` is a fresh object per render; its KEY is the identity that matters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [previewSinks, requestedKey]);
   /*
    * §T1311b(a) — AND THE OUTPUTS WHOSE SHADER DECLARED A VIEW CAMERA.
    *
@@ -1245,6 +1307,18 @@ export function ViewerPane({
           <p className={styles.note}>No output</p>
         ) : (
           <div ref={pictureRef} className={styles.picture} data-testid="viewer-picture">
+          {/* §B220: the preview-system surface, for rows the main program has no target for
+              (camera, light, geometry, material, pointset). Mounted only for those rows —
+              `useOutputPresentation` owns the canvas below and one WebGPU context cannot
+              have two owners, which is why this is a second element rather than a mode. */}
+          {synthesisRow === null ? null : (
+            <canvas
+              ref={synthesisCanvasRef}
+              className={styles.canvas}
+              aria-label="Rendered output"
+              data-testid="viewer-synthesis-canvas"
+            />
+          )}
           <canvas
             key={canvasKey}
             ref={(element) => {
@@ -1254,6 +1328,7 @@ export function ViewerPane({
             className={styles.canvas}
             aria-label="Rendered output"
             data-testid="viewer-canvas"
+            hidden={synthesisRow !== null}
             tabIndex={0}
             onPointerMove={(event) => {
               onCanvasPointer(event);

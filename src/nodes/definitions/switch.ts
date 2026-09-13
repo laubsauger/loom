@@ -206,7 +206,7 @@ export const switchNode: NodeDefinition = {
   title: "Switch",
   category: "utility",
   description:
-    "Shows one of its inputs, chosen by index. Drive the index to cut between sources. TD Switch TOP.",
+    "Shows one of its inputs, chosen by index. Drive the index to cut between sources.",
   inputs: [
     {
       id: "inputs",

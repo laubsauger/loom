@@ -35,7 +35,7 @@ export const feedbackNode: NodeDefinition = {
   title: "Feedback",
   category: "temporal",
   description:
-    "Outputs the previous frame of its input, making feedback loops legal. TD Feedback TOP.",
+    "Outputs the previous frame of its input, making feedback loops legal.",
   tags: ["temporal", "delay", "trails", "loop"],
   inputs: [
     {

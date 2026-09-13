@@ -10,25 +10,28 @@ import { DEVICE_HELPER_COMMAND } from "../../devices/helper.ts";
 
 /**
  * Person Mask (T1029) — person segmentation through the OS's own Vision framework,
- * reached over the device bridge. The Matte node's sibling with the opposite trade:
+ * reached through the device helper or explicit native GPU transport. The Matte
+ * node's sibling with the opposite trade:
  *
  *   Matte       downloaded weights, runs IN the page (worker + onnxruntime), works
  *               everywhere, and its bytes are hash-verified (§V858).
  *   PersonMask  ZERO download, ZERO weights, zero provenance question — an OS API has
- *               no bytes to verify — but it needs the local helper on macOS, and its
+ *               no downloaded weights to verify — but it needs macOS, and its
  *               model is whatever the OS shipped, so two machines may cut differently.
  *
  * Measured (Apple Silicon, warm, helper-side): 20–35 ms a frame at 640×360, with a
  * one-time ~2 s model load inside the first request. The in-page matte on WebGPU is
- * ~30 ms at 512² — so the argument for this node is never speed; it is the semantic
- * ("a person", the OS's own class), the empty download bar, and §V858.
+ * ~30 ms at 512². Those historical helper measurements do not benchmark the native
+ * GPU transport; both paths use the OS's person class without a model download.
  *
  * ## The same seam as every model node, deliberately
  *
  * compile() emits the SAME two-pass shape as Depth/Matte (§T736's registry claim):
- * a preprocess dispatch resamples the source into a scratch buffer the CPU half reads
- * back, and the result arrives as an external texture through the media registry. The
- * CPU half (`use-vision-bridge.ts`) rides `createInferenceSources` — the fill policies,
+ * a preprocess dispatch resamples the source into a scratch buffer, and the result
+ * arrives as an external texture through the media registry. The helper path reads
+ * back that buffer; native GPU packs it into an IOSurface for a Python/Vision worker
+ * and imports the result without CPU image readback. The helper adapter
+ * (`use-vision-bridge.ts`) rides `createInferenceSources` — the fill policies,
  * staleness ages, rate limit and coverage channel all apply unchanged; only the runner
  * differs (a bridge round trip instead of a worker message).
  *
@@ -70,11 +73,19 @@ export const personMaskNode: NodeDefinition = {
   title: "Person Mask",
   category: "generator",
   description:
-    `Person segmentation through the operating system's own Vision framework — no model download, no weights, nothing to verify. Needs the local helper (${DEVICE_HELPER_COMMAND}) on macOS; anywhere else the node stays neutral (zero mask, nobody) and says why. The OS supplies the model, so the cut may differ between machines and OS versions — for a hash-pinned, reproducible matte use the Matte node instead. White where the person is; every channel carries the mask.`,
+    `Person segmentation through the operating system's own Vision framework, without a model download. Choose Native GPU in the Apple Silicon desktop app, or Device helper (${DEVICE_HELPER_COMMAND}) on macOS. The OS supplies the model, so the cut may differ between machines and OS versions — for a hash-pinned matte use the Matte node instead. White where the person is; every channel carries the mask.`,
   tags: ["segmentation", "person", "mask", "vision", "matte", "device", "alpha"],
   inputs: [{ id: "input", label: "Input", type: RGBA_TEXTURE }],
   outputs: [{ id: "out", label: "Out", type: RGBA_TEXTURE }],
   parameters: {
+    transport: {
+      type: "enum",
+      compileTime: true,
+      label: "Transport",
+      default: "helper",
+      options: [{ value: "helper", label: "Device helper" }, { value: "native", label: "Native GPU (Electron)" }],
+      description: "Device helper transfers RGBA bytes. Native GPU uses the Apple Silicon Electron app and a Python-owned Vision worker without image readback or codecs. No automatic transport substitution.",
+    },
     rateLimit: {
       type: "number",
       label: "Min interval (s)",
@@ -84,7 +95,7 @@ export const personMaskNode: NodeDefinition = {
       range: "bounded",
       step: 0.05,
       description:
-        "Shortest gap between two segmentations, in timeline seconds. 0 runs as fast as results return. Each frame crosses the bridge (~1 MB), so the cap is a bandwidth dial as much as a CPU one.",
+        "Shortest gap between two segmentations, in timeline seconds. 0 runs as fast as results return. Limits model work and transport traffic: image bytes for Device helper, GPU surfaces for Native GPU.",
     },
     invert: {
       type: "boolean",
@@ -146,7 +157,7 @@ export const personMaskNode: NodeDefinition = {
           sourceId: inferenceSourceIdFor(nodeId),
           // A mask is a measurement: float, linear, single channel — Matte's reasoning
           // (T959) inherited verbatim.
-          format: "r32float",
+          format: parameters["transport"] === "native" ? "rgba16float" : "r32float",
         },
       ],
     };

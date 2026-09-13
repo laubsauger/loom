@@ -90,6 +90,10 @@ export interface ExampleProject {
    * never hand-assigned; `category` is its first medium member.
    */
   readonly tags: readonly ExampleTag[];
+  /** File-derived runtime dependencies, not a claim about this machine's grants. */
+  readonly requirements: readonly ExampleRuntimeRequirement[];
+  /** Malformed/unresolved files must never appear browser-compatible. */
+  readonly requirementsError?: string;
   /** `examples/thumbs/<stem>.png` if one has been rendered, else undefined (§T847). */
   readonly thumbnailUrl?: string;
 }
@@ -120,6 +124,7 @@ import {
   type ExampleCategory,
   type ExampleTag,
 } from "../../examples/capabilities.ts";
+import { exampleRuntimeRequirements, type ExampleRuntimeRequirement } from "../../examples/runtime-requirements.ts";
 
 export {
   EXAMPLE_CAPABILITIES,
@@ -151,6 +156,8 @@ function describe(fileName: string, text: string): ExampleProject {
   let name = fileName;
   let nodeCount = 0;
   const nodeTypes: string[] = [];
+  let requirements: readonly ExampleRuntimeRequirement[] = [];
+  let requirementsError: string | undefined;
   try {
     const parsed: unknown = JSON.parse(text);
     if (typeof parsed === "object" && parsed !== null) {
@@ -165,7 +172,9 @@ function describe(fileName: string, text: string): ExampleProject {
         }
       }
     }
-  } catch {
+    requirements = exampleRuntimeRequirements(parsed);
+  } catch (error) {
+    requirementsError = String(error);
     // A malformed shipped file is the loader's finding, not this list's: the row stays,
     // named by its file, and opening it reports the real reason.
   }
@@ -180,6 +189,8 @@ function describe(fileName: string, text: string): ExampleProject {
     description: markdown === undefined ? "" : firstParagraph(markdown),
     category: categoryOf(nodeTypes),
     tags: tagsOf(nodeTypes),
+    requirements,
+    ...(requirementsError === undefined ? {} : { requirementsError }),
     ...(thumbnailUrl === undefined ? {} : { thumbnailUrl }),
   };
 }
@@ -201,8 +212,11 @@ export function compareExamples(a: ExampleProject, b: ExampleProject): number {
 }
 
 /** Every shipped example, in natural file-name order so the list never reshuffles. */
+let catalogue: readonly ExampleProject[] | undefined;
 export function listExampleProjects(): readonly ExampleProject[] {
-  return Object.entries(RAW_EXAMPLES)
+  // Glob bytes are immutable for this module lifetime. Resolve embedded components
+  // once, not again whenever a library pane remounts. Vite replaces this module on edits.
+  return catalogue ??= Object.entries(RAW_EXAMPLES)
     .map(([path, text]) => describe(fileNameOf(path), text))
     .sort(compareExamples);
 }

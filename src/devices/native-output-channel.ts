@@ -13,9 +13,14 @@ export function nativeOutputSender(name: string) {
   let failure: Error | null = null;
   let framePort: MessagePort | null = null;
   let closed = false;
+  const waiters = new Set<{ resolve(): void; reject(error: Error): void }>();
+  const wake = (error?: Error) => {
+    for (const waiter of waiters) { if (error) waiter.reject(error); else waiter.resolve(); }
+    waiters.clear();
+  };
   const promise = new Promise<void>((resolve, reject) => {
     rejectPending = reject;
-    const fail = (error: Error) => { failure = error; done = true; reject(error); };
+    const fail = (error: Error) => { failure = error; done = true; wake(error); reject(error); };
     worker.onerror = () => fail(new Error("Native output surface worker failed"));
     worker.port.onmessageerror = () => fail(new Error("Native output acknowledgment could not be deserialized"));
     worker.port.onmessage = ({ data }) => {
@@ -24,7 +29,8 @@ export function nativeOutputSender(name: string) {
         const port: MessagePort = data.port;
         framePort = port;
         port.onmessage = ({ data: reply }) => {
-          if (reply.kind === "released" && busy) busy = false;
+          if (reply.kind === "released" && busy) { busy = false; wake(); }
+          else if (reply.kind === "error" && typeof reply.message === "string") fail(new Error(reply.message));
           else fail(new Error("Invalid native output frame acknowledgment"));
         };
         port.onmessageerror = () => fail(new Error("Native output frame acknowledgment could not be deserialized"));
@@ -34,13 +40,19 @@ export function nativeOutputSender(name: string) {
     };
     worker.port.start(); worker.port.postMessage({ kind: "producer" });
   });
-  return { promise, get sentFrames() { return sent; }, get available() { if (failure) throw failure; return done && !closed && !busy; }, send(frame: ImageBitmap) {
+  return { promise, async waitAvailable() {
+    await promise;
+    if (failure) throw failure;
+    if (closed) throw new Error("Native output channel is closed");
+    if (busy) await new Promise<void>((resolve, reject) => waiters.add({ resolve, reject }));
+  }, get sentFrames() { return sent; }, get available() { if (failure) throw failure; return done && !closed && !busy; }, send(frame: ImageBitmap) {
     if (failure) throw failure;
     if (!framePort || closed || busy) throw new Error("Native output frame port is unavailable or busy");
     framePort.postMessage({ kind: "frame", frame }, [frame]); busy = true; sent++;
   }, close() {
     if (closed) return;
     closed = true;
+    wake(new Error("Native output channel is closed"));
     framePort?.close();
     if (!done) { done = true; rejectPending(new Error("Native output surface acquisition cancelled")); }
     worker.port.postMessage({ kind: "close" }); worker.port.close();

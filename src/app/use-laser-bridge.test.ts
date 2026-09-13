@@ -4,7 +4,9 @@ import { PLAN_ATTRIBUTES } from "@nodes/definitions/laser-path.ts";
 import { pointStorageId } from "@nodes/definitions/point-storage.ts";
 import { packAttributes } from "@/points/packing.ts";
 import type { PassDescriptor } from "@runtime/backend/plan.ts";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import * as React from "react";
+vi.mock("react", async () => ({ ...await vi.importActual<typeof React>("react") }));
 import { DEVICE_HELPER_COMMAND } from "@devices/helper.ts";
 
 import { createNodeRegistry } from "../nodes/registry/registry.ts";
@@ -27,6 +29,22 @@ import { laserPumpNodeTypes, samplesFromBuffers, useLaserBridge } from "./use-la
  */
 
 const registry = createNodeRegistry(allNodeDefinitions).view();
+
+it("a graph without Laser Out queues no diagnostic state updates each frame", () => {
+  const original = React.useState, setters: ReturnType<typeof vi.fn>[] = [];
+  const spy = vi.spyOn(React, "useState").mockImplementation(((value?: unknown) => {
+    const [state, set] = original(value), setter = vi.fn(set);
+    setters.push(setter); return [state, setter];
+  }) as typeof React.useState);
+  try {
+    const view = renderHook(() => useLaserBridge({ deviceClient: () => null }));
+    const empty = { ...graph, nodes: {}, edges: {} };
+    setters.forEach(setter => setter.mockClear());
+    act(() => { for (let index = 0; index < 60; index++) view.result.current.sync(empty, registry, "blocked"); });
+    expect(setters.reduce((sum, setter) => sum + setter.mock.calls.length, 0)).toBe(0);
+    view.unmount();
+  } finally { spy.mockRestore(); }
+});
 
 const graph: GraphDocument = {
   revision: 1,

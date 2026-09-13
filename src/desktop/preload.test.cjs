@@ -5,11 +5,12 @@ const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const { runInNewContext } = require('node:vm');
-function harness() {
+function harness({ ndi = false } = {}) {
   let api, receive, handler = async name => name.endsWith('open') ? 'session' : { kind: 'sent' };
   const calls = [];
   const listeners = new Map();
   runInNewContext(readFileSync(join(__dirname, 'preload.cjs'), 'utf8'), {
+    process: { argv: ndi ? ['--loom-ndi-input'] : [] },
     Event: class { constructor(type) { this.type = type; } },
     window: { addEventListener(name, callback) { listeners.set(name, callback); }, dispatchEvent(event) { listeners.get(event.type)?.(event); } },
     require: () => ({
@@ -39,6 +40,32 @@ test('receiver is registered first; references survive asynchronous consumption 
   finish(); await delivery;
   assert.equal(h.closed, 1); assert.equal(h.released, 1);
   await assert.rejects(h.api.input.poll(id), /closed or unknown/);
+});
+
+test('NDI capability is explicit and its sessions cannot be used through the Syphon bridge', async () => {
+  assert.equal(harness().api.ndiInput, undefined);
+  const h = harness({ ndi: true });
+  h.handle(async name => name.includes('ndi') ? 'ndi-session' : 'syphon-session');
+  const syphon = await h.api.input.open('uuid', () => {});
+  const ndi = await h.api.ndiInput.open('Host (Feed)', () => {});
+  await assert.rejects(h.api.ndiInput.poll(syphon), /transport does not own/);
+  await assert.rejects(h.api.input.close(ndi), /transport does not own/);
+  await h.api.ndiInput.close(ndi);
+  assert.ok(h.calls.some(call => call[0] === 'loom-ndi-input-open'));
+  assert.ok(h.calls.some(call => call[0] === 'loom-ndi-input-close'));
+  await h.api.input.prepareForUnload();
+  assert.equal(h.beforeunload().prevented, true);
+  h.api.input.commitUnload();
+  assert.equal(h.beforeunload().prevented, false);
+});
+
+test('preparation-only Spout nodes do not advertise an unimplemented desktop transport', () => {
+  for (const options of [{}, { ndi: true }]) {
+    const h = harness(options);
+    assert.equal(h.api.spoutInput, undefined);
+    assert.equal(h.api.spoutOutput, undefined);
+    assert.equal(h.calls.length, 0);
+  }
 });
 test('active inputs block unload until explicit preparation and native-drain commit', async () => {
   const h = harness();
@@ -74,6 +101,39 @@ test('unload preparation waits for an opening input and prevents new sessions', 
   finish('session'); await opening; await preparation;
   await assert.rejects(h.api.input.poll('session'), /closed or unknown/);
   assert.equal(h.beforeunload().prevented, true);
+});
+test('denied NDI open during unload preserves its error but does not bypass or prevent native drainage', async () => {
+  const h = harness({ ndi: true }); let deny;
+  h.handle(() => new Promise((_resolve, reject) => { deny = reject; }));
+  const opening = h.api.ndiInput.open('Host (Feed)', () => {});
+  const rejected = assert.rejects(opening, /NDI local-network access denied/);
+  let prepared = false;
+  const preparation = h.api.input.prepareForUnload().then(() => { prepared = true; });
+  await Promise.resolve();
+  assert.equal(prepared, false);
+  deny(new Error('NDI local-network access denied'));
+  await rejected;
+  await preparation;
+  assert.equal(h.beforeunload().prevented, true, 'Preparation is not proof of native drainage');
+  await assert.rejects(h.api.ndiInput.open('Host (Feed)', () => {}), /retiring/);
+  h.api.input.commitUnload();
+  assert.equal(h.beforeunload().prevented, false);
+});
+
+test('NDI output is explicit, namespaced and participates in document unload', async () => {
+  assert.equal(harness().api.ndiOutput, undefined);
+  const h = harness({ ndi: true }); let finish;
+  h.handle(() => new Promise(resolve => { finish = resolve; }));
+  const opened = h.api.ndiOutput.open('output', 1920, 1080, 'Test');
+  assert.deepEqual(h.calls[0], ['loom-ndi-output-open', 'output', 1920, 1080, 'Test']);
+  assert.equal(h.beforeunload().prevented, true);
+  let prepared = false;
+  const preparing = h.api.input.prepareForUnload().then(() => { prepared = true; });
+  await Promise.resolve(); assert.equal(prepared, false);
+  finish(); await opened; await preparing;
+  assert.equal(h.beforeunload().prevented, true);
+  await assert.rejects(h.api.ndiOutput.open('new', 1920, 1080, 'New'), /retiring/);
+  h.api.input.commitUnload(); assert.equal(h.beforeunload().prevented, false);
 });
 test('pagehide releases a suspended consumer frame/import once, even when completion arrives later', async () => {
   const h = harness(); let finish;

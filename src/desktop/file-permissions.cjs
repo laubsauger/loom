@@ -2,13 +2,16 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 const { isAbsolute } = require('node:path');
 const { allowNavigation } = require('./policy.cjs');
+const { createMediaPermissions } = require('./media-permissions.cjs');
 
-function installFilePermissions({ session, origin, confirm, report }) {
+function installFilePermissions({ session, origin, confirm, report, requestSystemAccess, notify }) {
   const pending = new WeakSet();
+  const media = createMediaPermissions({ origin, confirm, report, requestSystemAccess, notify });
   // No broad grant cache. Chromium owns its document/path-scoped grants; checks
   // without one must reach the explicit request below, never auto-approve.
-  session.setPermissionCheckHandler(() => false);
+  session.setPermissionCheckHandler((...args) => media.check(...args));
   session.setPermissionRequestHandler((contents, permission, callback, details) => {
+    if (media.handles(permission)) { media.request(contents, permission, callback, details); return; }
     if (permission !== 'fileSystem' || !contents || contents.isDestroyed() ||
         !allowNavigation(contents.getURL(), origin) ||
         !allowNavigation(details?.requestingUrl, origin) ||
@@ -53,6 +56,7 @@ function installFilePermissions({ session, origin, confirm, report }) {
     report('Denied restricted filesystem path');
     callback('deny');
   });
+  return media;
 }
 
 module.exports = { installFilePermissions };

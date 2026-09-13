@@ -95,7 +95,7 @@ export const noiseNode: NodeDefinition = {
    * dimension for Time Speed to move along.
    */
   description:
-    "Procedural noise field with fractal harmonics: Perlin (2D/3D/4D), Simplex (2D/3D), Alligator (cellular) or Random. Only Perlin 4D and Random carry a fourth dimension for Time Speed to move along; the rest are a still slice you have to transform yourself. TD Noise TOP parameter names.",
+    "Procedural noise field with fractal harmonics: Perlin (2D/3D/4D), Simplex (2D/3D), Alligator (cellular) or Random. Only Perlin 4D and Random carry a fourth dimension for Time Speed to move along; the rest are a still slice you have to transform yourself.",
   inputs: [],
   outputs: [
     {
@@ -131,7 +131,7 @@ export const noiseNode: NodeDefinition = {
       scale: "log",
       group: "Noise",
       description:
-        "Feature size, in fractions of the image. Defaults smaller than TD's 1.0 because the field is sampled over the unit uv square rather than TD's world units.",
+        "Feature size, in fractions of the image. The field is sampled over the unit UV square.",
     },
     harmon: {
       type: "number",
@@ -281,7 +281,7 @@ export const noiseNode: NodeDefinition = {
       unit: "hz",
       group: "Transform",
       description:
-        "Not a TD parameter. Advances Translate 4D from FrameEvaluationInput until parameter expressions can bind time themselves (§V61).",
+        "Advances Translate 4D over time. Available for Perlin 4D and Random.",
       inactiveWhen: fourthDimensionMissing,
     },
   },

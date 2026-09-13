@@ -63,4 +63,17 @@ describe("native output direct frame channel", () => {
     await rejected;
     expect(sender.available).toBe(false);
   });
+
+  it("awaits the real release acknowledgment and rejects a waiting consumer on close", async () => {
+    const { sender, worker, frames } = setup();
+    worker.port.receive({ kind: "ready", port: frames }); await sender.promise;
+    sender.send({} as ImageBitmap);
+    let done = false;
+    const waiting = sender.waitAvailable().then(() => { done = true; });
+    await Promise.resolve(); expect(done).toBe(false);
+    frames.receive({ kind: "released" }); await waiting; expect(done).toBe(true);
+    sender.send({} as ImageBitmap);
+    const rejected = expect(sender.waitAvailable()).rejects.toThrow(/closed/);
+    await Promise.resolve(); sender.close(); await rejected;
+  });
 });

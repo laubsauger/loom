@@ -5,7 +5,7 @@ import { Buffer } from 'node:buffer';
 import console from 'node:console';
 
 /** Shared source isolates publisher scaling; receiver readbacks stay outside timing. */
-export async function verifyMultiOutputs({ app, page, receive, emptyProject }) {
+export async function verifyMultiOutputs({ app, page, receive, emptyProject, receiveSeconds = 0 }) {
   const load = async text => {
     const chooser = page.waitForEvent('filechooser');
     await page.getByTestId('project-open').click();
@@ -15,7 +15,7 @@ export async function verifyMultiOutputs({ app, page, receive, emptyProject }) {
   for (const count of [1, 2, 4]) {
     const names = Array.from({ length: count }, (_, index) => `Loom scaling ${count}-${index + 1}`);
     const fixture = await page.evaluate(async names => {
-      const { nativeOutputFixture } = await import('/src/desktop/testing/output-fixture.ts');
+      const { nativeOutputFixture } = await import(window.loomDesktopFixtureModules.output);
       return nativeOutputFixture(undefined, false, names);
     }, names);
     await load(fixture.text);
@@ -34,7 +34,10 @@ export async function verifyMultiOutputs({ app, page, receive, emptyProject }) {
       outputs: await Promise.all(sessions.map(name => window.loomDesktop.status(name))),
     }), sessions);
     await expect.poll(async () => (await snapshot()).outputs.every(output => output.copied >= 3 && output.size?.[0] === 1920 && output.size?.[1] === 1080)).toBe(true);
-    const received = await Promise.all(names.map(name => receive(3, name)));
+    const preflight = await Promise.allSettled(names.map(name => receive(3, name)));
+    const preflightFailure = preflight.find(result => result.status === 'rejected');
+    if (preflightFailure) throw preflightFailure.reason;
+    const received = preflight.map(result => result.value);
     for (let index = 0; index < received.length; index++) {
       const result = received[index];
       assert.equal(result.server.name, names[index]);
@@ -65,6 +68,50 @@ export async function verifyMultiOutputs({ app, page, receive, emptyProject }) {
       aggregateFps: streams.reduce((sum, stream) => sum + stream.fps, 0) };
     measurements.push(measurement);
     console.log('LOOM_MULTI_OUTPUT_MEASUREMENT', JSON.stringify(measurement));
+    if (receiveSeconds) {
+      const before = await snapshot();
+      const memory = [];
+      let finished = false;
+      // Await every bounded receiver even on failure; do not strand siblings
+      // while unwinding the publisher graph or its temporary native binaries.
+      const receiving = Promise.allSettled(names.map(name => receive({ seconds: receiveSeconds }, name)))
+        .then(results => { finished = true; return results; });
+      let results;
+      try {
+        while (!finished) {
+          await page.waitForTimeout(1000);
+          const sample = await snapshot();
+          for (const output of sample.outputs) assert.equal(output.error, null);
+          memory.push(await app.evaluate(({ app }) => app.getAppMetrics().map(metric => ({
+            pid: metric.pid, type: metric.type, memory: metric.memory,
+          }))));
+          if (memory.length % 10 === 0) console.log('LOOM_MULTI_RECEIVE_PROGRESS', JSON.stringify({ count, elapsed: (sample.time - before.time) / 1000 }));
+        }
+      } finally { results = await receiving; }
+      const failed = results.find(result => result.status === 'rejected');
+      if (failed) throw failed.reason;
+      const receivers = results.map(result => result.value);
+      for (let index = 0; index < receivers.length; index++) {
+        const result = receivers[index];
+        assert.equal(result.server.name, names[index]);
+        assert.equal(result.ok, true); assert.equal(result.gpuDrained, true);
+        assert.ok(result.frameCount >= 3); assert.equal(result.frames.length, 2);
+        assert.ok(result.elapsedSeconds >= receiveSeconds);
+        assert.ok(result.receiveFps > 0); assert.ok(result.intervalP95Ms >= result.intervalP50Ms);
+        for (const frame of result.frames) {
+          assert.equal(frame.width, 1920); assert.equal(frame.height, 1080);
+          assert.deepEqual(frame.samples.slice(0, 2).map(sample => sample.rgba), [[0, 0, 255, 255], [0, 0, 255, 255]]);
+          assert.deepEqual(frame.samples.slice(2, 4).map(sample => sample.rgba), [[0, 128, 0, 255], [0, 128, 0, 255]]);
+        }
+      }
+      const after = await snapshot();
+      console.log('LOOM_MULTI_RECEIVE_MEASUREMENT', JSON.stringify({ count, requestedSeconds: receiveSeconds,
+        size: [1920, 1080], staticSharedSource: true, oraclePixelReadback: true,
+        publisherWindowSeconds: (after.time - before.time) / 1000,
+        publishers: after.outputs.map((output, index) => ({ published: output.copied - before.outputs[index].copied,
+          busyDropped: output.dropped - before.outputs[index].dropped, error: output.error })),
+        receivers, memoryFirst: memory[0], memoryLast: memory.at(-1) }));
+    }
     await load(emptyProject);
     await expect.poll(() => windows.every(window => window.isClosed())).toBe(true);
   }

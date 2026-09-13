@@ -12,11 +12,11 @@ import type { LoomBackend } from "@runtime/backend/index.ts";
 vi.mock("@devices/native-output.ts", () => ({ desktopOutputBridge: vi.fn() }));
 vi.mock("@devices/native-output-session.ts", () => ({ createNativeOutputSession: vi.fn() }));
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.resetAllMocks(); });
-function setup() {
+function setup(type = "syphonOut") {
   const runtime = createAppRuntime({ identityStorage: null, actor: { kind: "human", id: "test", label: "Test" } });
   const graph: GraphDocument = { revision: 1, groups: {}, nodes: {
     source: { id: "source", type: "checker", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: {} },
-    sink: { id: "sink", type: "syphonOut", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: { name: "Test" } },
+    sink: { id: "sink", type, definitionVersion: 1, position: { x: 0, y: 0 }, parameters: { name: "Test" } },
   }, edges: { wire: { id: "wire", source: { nodeId: "source", portId: "out" }, target: { nodeId: "sink", portId: "input" } } } };
   const compiled = { order: ["source", "sink"], outputs: [{ nodeId: "source", portId: "out", resourceId: "source:out", size: [1920, 1080] }] } as unknown as CompiledGraph;
   const backend = {} as LoomBackend;
@@ -33,8 +33,8 @@ function setup() {
   const view = renderHook(({ graph, compiled }) => useNativeOutputs(runtime, backend, graph, compiled), { initialProps: { graph, compiled } });
   return { runtime, graph, compiled, sessions, tick, view };
 }
-it("publishes full input size, survives movement, closes on deletion", async () => {
-  const h = setup(); await h.tick();
+it.each(["syphonOut", "ndiOut", "spoutOut"])("%s publishes full input size, survives movement, closes on deletion", async type => {
+  const h = setup(type); await h.tick();
   expect(createNativeOutputSession).toHaveBeenCalledWith(expect.anything(), expect.anything(), { resourceId: "source:out", size: [1920, 1080] }, "Test");
   h.view.rerender({ graph: { ...h.graph, revision: 2 }, compiled: h.compiled }); await h.tick();
   expect(h.sessions).toHaveLength(1);
@@ -55,8 +55,8 @@ it("retiring one of two outputs leaves the other session intact", async () => {
   expect(h.sessions[0]!.close).not.toHaveBeenCalled();
   expect(h.sessions[1]!.close).toHaveBeenCalledOnce();
 });
-it("awaits GPU drainage, does not publish during a take, resumes afterward", async () => {
-  const h = setup(); await h.tick();
+it.each(["syphonOut", "ndiOut", "spoutOut"])("%s awaits GPU drainage, does not publish during a take, resumes afterward", async type => {
+  const h = setup(type); await h.tick();
   let finish!: () => void;
   vi.mocked(h.sessions[0]!.close).mockReturnValue(new Promise(resolve => { finish = resolve; }));
   let busy = true;
@@ -78,4 +78,50 @@ it("unsupported browser reports without creating transport", async () => {
   await h.tick();
   expect(createNativeOutputSession).not.toHaveBeenCalled();
   expect(view.result.current.diagnostics[0]?.message).toContain("macOS desktop");
+});
+
+it("NDI output selects its own capability and cannot reuse a Syphon session", async () => {
+  const h = setup();
+  const syphon = {} as never, ndi = {} as never;
+  vi.mocked(desktopOutputBridge).mockImplementation(transport => transport === "ndi" ? ndi : syphon);
+  await h.tick();
+  expect(createNativeOutputSession).toHaveBeenLastCalledWith(expect.anything(), syphon, expect.anything(), "Test");
+  const graph = { ...h.graph, nodes: { ...h.graph.nodes, sink: { ...h.graph.nodes["sink"]!, type: "ndiOut" } } };
+  h.view.rerender({ graph, compiled: h.compiled });
+  await h.tick(); await h.tick();
+  expect(h.sessions[0]!.close).toHaveBeenCalledOnce();
+  expect(createNativeOutputSession).toHaveBeenLastCalledWith(expect.anything(), ndi, expect.anything(), "Test");
+});
+
+it("NDI output without an SDK does not open Syphon instead", async () => {
+  const h = setup();
+  vi.mocked(desktopOutputBridge).mockImplementation(transport => transport === "ndi" ? undefined : {} as never);
+  const graph = { ...h.graph, nodes: { ...h.graph.nodes, sink: { ...h.graph.nodes["sink"]!, type: "ndiOut" } } };
+  h.view.rerender({ graph, compiled: h.compiled }); await h.tick();
+  expect(createNativeOutputSession).not.toHaveBeenCalled();
+  expect(h.view.result.current.diagnostics[0]?.message).toContain("explicit local NDI SDK");
+});
+
+it("Spout preparation reports unimplemented native sharing without opening another transport", async () => {
+  const h = setup("spoutOut");
+  vi.mocked(desktopOutputBridge).mockImplementation(transport => transport === "spout" ? undefined : {} as never);
+  await h.tick();
+  expect(desktopOutputBridge).toHaveBeenCalledWith("spout");
+  expect(createNativeOutputSession).not.toHaveBeenCalled();
+  expect(h.view.result.current.diagnostics[0]?.message).toMatch(/Windows.*not implemented/);
+});
+
+it("switching to Spout drains the previous publisher before opening a dedicated session", async () => {
+  const h = setup();
+  const syphon = {} as never, spout = {} as never;
+  vi.mocked(desktopOutputBridge).mockImplementation(transport => transport === "spout" ? spout : syphon);
+  await h.tick();
+  let finish!: () => void;
+  vi.mocked(h.sessions[0]!.close).mockReturnValue(new Promise(resolve => { finish = resolve; }));
+  h.view.rerender({ graph: { ...h.graph, nodes: { ...h.graph.nodes, sink: { ...h.graph.nodes["sink"]!, type: "spoutOut" } } }, compiled: h.compiled });
+  await h.tick();
+  expect(h.sessions).toHaveLength(1);
+  expect(h.sessions[0]!.close).toHaveBeenCalledOnce();
+  finish(); await h.tick(); await h.tick();
+  expect(createNativeOutputSession).toHaveBeenLastCalledWith(expect.anything(), spout, expect.anything(), "Test");
 });

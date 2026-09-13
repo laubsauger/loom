@@ -53,6 +53,20 @@ it("reports disconnect as stale and closes the native session without retry", as
   expect(h.report).toHaveBeenLastCalledWith(expect.stringMatching(/stale.*disconnected/));
   expect(h.bridge.close).toHaveBeenCalledTimes(1);
 });
+
+it("reports offline frames as stale without reopening and clears status on resumed video", async () => {
+  const h = setup(); await h.input.ready;
+  vi.mocked(h.bridge.poll).mockResolvedValue({ kind: "offline" });
+  await vi.advanceTimersByTimeAsync(64);
+  expect(h.report).toHaveBeenLastCalledWith(expect.stringMatching(/offline.*stale/));
+  expect(h.bridge.close).not.toHaveBeenCalled();
+  expect(h.bridge.open).toHaveBeenCalledTimes(1);
+  await h.deliver();
+  expect(h.report).toHaveBeenLastCalledWith(null);
+  expect(h.input.source.currentFrame()).toBeDefined();
+  h.input.dispose();
+  expect(h.bridge.close).toHaveBeenCalledTimes(1);
+});
 it("releases a retained renderer frame on navigation without racing main teardown", async () => {
   const h = setup(); await h.input.ready; await h.deliver();
   h.input.releaseForNavigation();
@@ -71,7 +85,7 @@ it("stops polling an explicitly retired session without a second close", async (
   await vi.advanceTimersByTimeAsync(2000);
   expect(h.bridge.poll).toHaveBeenCalledTimes(calls);
   expect(h.bridge.close).not.toHaveBeenCalled();
-  expect(h.report).toHaveBeenLastCalledWith("Syphon input session closed");
+  expect(h.report).toHaveBeenLastCalledWith("Native input session closed");
   expect(h.input.source.currentFrame()).toBeUndefined();
 });
 it("a close before open resolves retires the late session", async () => {

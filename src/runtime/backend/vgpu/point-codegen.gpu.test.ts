@@ -30,7 +30,10 @@ const KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
 }`;
 
 describe("generated point WGSL against real reflection (T117)", () => {
-  it("reflects, binds and dispatches through vgpu", async () => {
+  it.each([
+    KERNEL,
+    `/* outer /* inner */ ctx.dim ctx.pointer ctx.absTime ctx.value99 fieldAt(p.position) pointAt(0u) */\n${KERNEL}`,
+  ])("reflects, binds and dispatches through vgpu (case %#)", async (kernel) => {
     const capacity = 256;
     const layout = packAttributes(SCHEMA, capacity);
     if (!layout.ok) throw new Error(layout.errors.join("; "));
@@ -49,7 +52,7 @@ describe("generated point WGSL against real reflection (T117)", () => {
           ["position", "velocity"].map((name) => [name, region(name, "own:write")]),
         ),
       },
-      kernel: KERNEL,
+      kernel,
     });
     expect(module.ok).toBe(true);
     if (!module.ok) return;

@@ -1,15 +1,22 @@
 import type { MediaSource } from "@runtime/backend/backend-types.ts";
+import type { NativeVideoTransport } from "./native-video.ts";
 
 export interface NativeInputSourceInfo { id: string; name: string; app: string }
+export type NativeInputTransport = NativeVideoTransport;
 export interface NativeInputMetadata { session: string; sequence: number; width: number; height: number }
 export interface DesktopInputBridge {
   list(): Promise<NativeInputSourceInfo[]>;
   open(uuid: string, consume: (frame: VideoFrame, metadata: NativeInputMetadata) => Promise<void>): Promise<string>;
-  poll(session: string): Promise<{ kind: "busy" | "empty" | "sent" | "closed" }>;
+  poll(session: string): Promise<{ kind: "busy" | "empty" | "sent" | "closed" | "offline" }>;
   close(session: string): Promise<unknown>;
 }
-export function desktopInputBridge(): DesktopInputBridge | undefined {
-  return (window as Window & { loomDesktop?: { input?: DesktopInputBridge } }).loomDesktop?.input;
+export function desktopInputBridge(transport: NativeInputTransport = "syphon"): DesktopInputBridge | undefined {
+  const desktop = (window as Window & { loomDesktop?: { input?: DesktopInputBridge; ndiInput?: DesktopInputBridge; spoutInput?: DesktopInputBridge } }).loomDesktop;
+  switch (transport) {
+    case "syphon": return desktop?.input;
+    case "ndi": return desktop?.ndiInput;
+    case "spout": return desktop?.spoutInput;
+  }
 }
 
 /** One owned GPU frame. Never retain a preload-owned VideoFrame after callback return. */
@@ -32,7 +39,7 @@ export function createNativeInputSource(bridge: DesktopInputBridge, uuid: string
   };
   const fail = (error: unknown) => {
     if (closed) return;
-    options.report(`Syphon input unavailable; retained image is stale. ${String(error)}`);
+    options.report(`Native input unavailable; retained image is stale. ${String(error)}`);
     dispose();
   };
   const source: MediaSource = {
@@ -58,9 +65,11 @@ export function createNativeInputSource(bridge: DesktopInputBridge, uuid: string
     try {
       if (!pending) {
         const result = await bridge.poll(session);
+        if (result.kind === "offline" && !closed)
+          options.report("Native source offline; retained image is stale. Waiting for the selected source to return.");
         if (result.kind === "closed") {
           session = undefined; // Main already retired it; do not close it twice.
-          options.report("Syphon input session closed");
+          options.report("Native input session closed");
           dispose();
           return;
         }
@@ -68,7 +77,7 @@ export function createNativeInputSource(bridge: DesktopInputBridge, uuid: string
       if (!closed) timer = setTimeout(() => void poll(), 16);
     } catch (error) { fail(error); }
   };
-  options.report("Waiting for a Syphon frame");
+  options.report("Waiting for a native video frame");
   const ready = bridge.open(uuid, async (frame, metadata) => {
     if (closed) return;
     if (pending) throw new Error("Native input delivered while a frame is still owned");

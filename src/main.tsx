@@ -16,6 +16,14 @@ import "./ui/tokens.css";
 import "./ui/base.css";
 import { App } from "./app/app.tsx";
 import { armCrossOriginIsolation } from "./app/cross-origin-isolation.ts";
+import { startReactTimingRetention } from "./app/react-timing-retention.ts";
+
+if (import.meta.env.DEV) {
+  const stop = startReactTimingRetention();
+  // The document owns the observer (including BFCache restoration); hot module
+  // replacement is the boundary that needs explicit disconnection.
+  import.meta.hot?.dispose(stop);
+}
 
 // T1048 — on the HOSTED build only, put COOP/COEP back with a service worker so wasm gets
 // more than one thread; on the first visit that costs one reload, and exactly one. A dev

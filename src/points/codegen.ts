@@ -303,7 +303,7 @@ const PROCESS_SIGNATURE = /fn\s+process\s*\(\s*\w+\s*:\s*Point\s*,\s*\w+\s*:\s*P
  *
  * DETECTED, not declared: the ctx parameter's NAME is the kernel author's (`ctx`, `c`,
  * anything), so what is recognisable is the field ACCESS. Over-detection is harmless —
- * a kernel that says `.pointer` anywhere gets a member it may not read, which costs one
+ * non-comment code accessing `.pointer` on another struct gets a member it may not read, which costs one
  * vec4f. Under-detection is LOUD: the kernel names a member the struct does not declare
  * and Dawn refuses the module by name, which is the failure this codebase prefers over
  * a zero that looks like a pointer parked in the corner (§V288).
@@ -455,7 +455,29 @@ const TIMELINE_ANCHORED_DECLARATION = /timeline-anchored/i;
  * comment. So the READ is looked for in stripped source and the DECLARATION in raw source.
  */
 function stripWgslComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, " ");
+  // WGSL block comments nest; a block opener inside a line comment is inert.
+  // Keep token separators so `val/* note */ue1` never becomes `value1`.
+  const visible: string[] = [];
+  let depth = 0;
+  let line = false;
+  for (let index = 0; index < source.length; index++) {
+    const character = source[index]!;
+    const newline = "\n\r\v\f\u0085\u2028\u2029".includes(character);
+    if (line) {
+      if (!newline) continue;
+      line = false;
+    }
+    const pair = source.slice(index, index + 2);
+    if (pair === "/*") { depth++; visible.push(" "); index++; continue; }
+    if (depth > 0) {
+      if (pair === "*/") { depth--; index++; }
+      else if (newline) visible.push(character);
+      continue;
+    }
+    if (pair === "//") { line = true; visible.push(" "); index++; continue; }
+    visible.push(character);
+  }
+  return visible.join("");
 }
 
 /** An advisory a generated module carries out with it — never a refusal. */
@@ -563,7 +585,7 @@ function referencedValueSlots(...sources: ReadonlyArray<string>): number[] {
   const found = new Set<number>();
   for (const source of sources) {
     VALUE_REFERENCE.lastIndex = 0;
-    for (const match of source.matchAll(VALUE_REFERENCE)) found.add(Number(match[1]));
+    for (const match of stripWgslComments(source).matchAll(VALUE_REFERENCE)) found.add(Number(match[1]));
   }
   return [...found].sort((a, b) => a - b);
 }
@@ -647,7 +669,9 @@ export function generateKernelModule(request: KernelModuleRequest): KernelModule
      handing it zeros would divide by zero and put every point in cell (0, 0), which is a
      picture, and a plausible one (§V288). */
   const groupSource = typeof request.group === "string" ? request.group.trim() : "";
-  const usesDim = DIM_REFERENCE.test(kernel) || DIM_REFERENCE.test(groupSource);
+  const kernelCode = stripWgslComments(kernel);
+  const groupCode = stripWgslComments(groupSource);
+  const usesDim = DIM_REFERENCE.test(kernelCode) || DIM_REFERENCE.test(groupCode);
   const dim = request.dim;
   if (usesDim && dim === undefined) {
     errors.push(
@@ -663,7 +687,7 @@ export function generateKernelModule(request: KernelModuleRequest): KernelModule
   /* T477: the kernel samples a field nothing supplies. Refuse BY NAME — a helper that
      silently returned zeros would advect every point nowhere, which is a picture, and a
      plausible one (§V288). */
-  const usesField = FIELD_REFERENCE.test(kernel) || FIELD_REFERENCE.test(groupSource);
+  const usesField = FIELD_REFERENCE.test(kernelCode) || FIELD_REFERENCE.test(groupCode);
   if (usesField && request.field !== true) {
     errors.push(
       "kernel calls fieldAt(...), but nothing is wired to the field input — " +
@@ -678,7 +702,7 @@ export function generateKernelModule(request: KernelModuleRequest): KernelModule
      schema inside §V588's budget), so a Point assembled for another slot could only fill
      them with an invention. A neighbour that always reads back "alive, bearing no children"
      is precisely the plausible-wrong answer this codebase refuses to hand over. */
-  const usesNeighbor = NEIGHBOR_REFERENCE.test(kernel) || NEIGHBOR_REFERENCE.test(groupSource);
+  const usesNeighbor = NEIGHBOR_REFERENCE.test(kernelCode) || NEIGHBOR_REFERENCE.test(groupCode);
   if (usesNeighbor && lifecycle !== undefined) {
     errors.push(
       "kernel calls pointAt(...), which the advanced (lifecycle) kernel does not offer — the " +
@@ -949,7 +973,7 @@ fn groupMatch(p: Point, ctx: PointCtx) -> bool {
      shared frame block uses (x, y, buttons, unused) so the two carry identical numbers
      (§V182). Appended last: `count` ends the block at 20 bytes and a vec4f aligns to
      32, so no member that existed before this moves. */
-  const usesPointer = POINTER_REFERENCE.test(kernel) || POINTER_REFERENCE.test(groupSource);
+  const usesPointer = POINTER_REFERENCE.test(kernelCode) || POINTER_REFERENCE.test(groupCode);
   const framePointer = usesPointer ? "\n  pointer: vec4f," : "";
   const ctxPointer = usesPointer
     ? "\n  /* T367: viewer-normalised x, y (v DOWN, §V236), buttons, unused — the same\n     numbers the shared frame block hands every shader (§V182). */\n  pointer: vec4f,"
@@ -995,15 +1019,15 @@ fn groupMatch(p: Point, ctx: PointCtx) -> bool {
      — a member that moved would move every kernel already reading the one in front of it.
      The GROUP PREDICATE is scanned too: it is compiled against this same `PointCtx`, so a
      predicate reading `ctx.absTime` must be able to declare the member the kernel did not. */
-  const usesAbsClock = ABS_CLOCK_REFERENCE.test(kernel) || ABS_CLOCK_REFERENCE.test(groupSource);
+  const usesAbsClock = ABS_CLOCK_REFERENCE.test(kernelCode) || ABS_CLOCK_REFERENCE.test(groupCode);
   /* T510: appended after the absolute pair, for the same nothing-moves reason. */
   /* T510: a LIFECYCLE kernel always declares firstRun — its own live-count guard needs
      it (below), whether or not the user's kernel names it. Inferring freshness from
      frameIndex == 0 opened the guard to full capacity at every timeline lap. */
   const usesFirstRun =
     lifecycle !== undefined ||
-    FIRST_RUN_REFERENCE.test(kernel) ||
-    FIRST_RUN_REFERENCE.test(groupSource);
+    FIRST_RUN_REFERENCE.test(kernelCode) ||
+    FIRST_RUN_REFERENCE.test(groupCode);
   const frameFirstRun = usesFirstRun ? "\n  firstRun: u32," : "";
   const ctxFirstRun = usesFirstRun
     ? "\n  /* T510: 1u on exactly the dispatches whose storage was just created or cleared —\n     the seeding signal. A LAP is not this (frameIndex wraps, buffers keep); a seek and\n     a document load are (both clear, §V170/T519). */\n  firstRun: u32,"
@@ -1147,6 +1171,7 @@ export interface SpawnHookRequest {
 }
 
 export function generateSpawnHookModule(request: SpawnHookRequest): KernelModuleResult {
+  const hookCode = stripWgslComments(request.hook);
   const errors: string[] = [];
   const schemaCheck = validateAttributes(request.attributes);
   errors.push(...schemaCheck.errors);
@@ -1156,7 +1181,7 @@ export function generateSpawnHookModule(request: SpawnHookRequest): KernelModule
   /* T472: the hook runs on the advanced kernel, whose pointset is a spawning population
      with no grid connectivity at all — so `ctx.dim` is refused HERE by name rather than
      left to surface as Dawn's "struct PointCtx has no member named 'dim'". */
-  if (DIM_REFERENCE.test(request.hook)) {
+  if (DIM_REFERENCE.test(hookCode)) {
     errors.push(
       "spawn hook reads ctx.dim, but a spawning population has no grid topology — points are " +
         "born and killed, so there are no fixed cols×rows to index (T472).",
@@ -1168,7 +1193,7 @@ export function generateSpawnHookModule(request: SpawnHookRequest): KernelModule
      coherent frame for a neighbour read to belong to, which is a worse failure than the
      lifecycle kernel's (there the answer is unreadable; here it would be READABLE AND
      MEANINGLESS). Refused by name (§V288). */
-  if (NEIGHBOR_REFERENCE.test(request.hook)) {
+  if (NEIGHBOR_REFERENCE.test(hookCode)) {
     errors.push(
       "spawn hook calls pointAt(...), but it runs in place over just the newborn range after " +
         "the copy passes ∴ the buffers are mid-update and another slot holds no coherent " +
@@ -1180,7 +1205,7 @@ export function generateSpawnHookModule(request: SpawnHookRequest): KernelModule
      as its parent's copy, so the kernel (which just sampled the field to decide the
      birth) stashes whatever the child needs in an attribute and the copy pass carries
      it. A hook binding the texture would be a second sampling site for one decision. */
-  if (FIELD_REFERENCE.test(request.hook)) {
+  if (FIELD_REFERENCE.test(hookCode)) {
     errors.push(
       "spawn hook calls fieldAt(...), but the field input reaches the kernel only (T744) — " +
         "sample it in the kernel that decides the birth and stash what the child needs in an " +
@@ -1201,12 +1226,12 @@ export function generateSpawnHookModule(request: SpawnHookRequest): KernelModule
 
   /* T367, the hook's half: same optional member, same detection, same reason (§V309) —
      a hookless-then-hooked graph must not see its OTHER passes' text move either. */
-  const usesPointer = POINTER_REFERENCE.test(request.hook);
+  const usesPointer = POINTER_REFERENCE.test(hookCode);
   /* T489 (B97), the hook's half — and the hook is the surface where the absolute clock is
      LEAST optional: a spawn hook is the natural place to write "born with a phase taken
      from the clock", and on `ctx.time` every population born after a lap repeats the phases
      of the population born before it. Same detection, same optionality (§V309). */
-  const usesAbsClock = ABS_CLOCK_REFERENCE.test(request.hook);
+  const usesAbsClock = ABS_CLOCK_REFERENCE.test(hookCode);
   const hookFrameAbs = usesAbsClock ? "\n  absTimeSeconds: f32,\n  absFrameIndex: u32," : "";
   const hookCtxAbs = usesAbsClock
     ? "\n  /* T489: the clock that does NOT wrap at a timeline lap (T461), same numbers the\n     kernel on this node reads. B119: `absFrame` is u32 here (matching the `frameIndex`\n     above) and f32 in a shader's `frameU` block — convert, do not paste. */\n  absTime: f32,\n  absFrame: u32,"

@@ -65,8 +65,8 @@ afterEach(() => {
 });
 
 describe("useNodePreviews (T185)", () => {
-  it.each([true, false])("previews the Syphon Out input without a sink target (connected=%s)", (connected) => {
-    const graph = graphWith("syphonOut", "sink");
+  it.each([true, false].flatMap(connected => ["syphonOut", "ndiOut", "spoutOut"].map(type => ({ connected, type }))))("previews $type input without a sink target (connected=$connected)", ({ connected, type }) => {
+    const graph = graphWith(type, "sink");
     graph.nodes["source"] = graphWith("checker", "source").nodes["source"]!;
     if (connected) graph.edges["wire"] = {
       id: "wire", source: { nodeId: "source", portId: "out" },

@@ -8,11 +8,11 @@ import { buildProjectFile } from "@domain/project/project-file.ts";
 import { parseProjectDocument } from "@domain/project/serialize.ts";
 import { displacementStackDocument } from "../examples/documents/displacement-stack.ts";
 
-async function fixture(nested = false) {
+async function fixture(nested = false, type = "syphonIn") {
   const runtime = createAppRuntime({ identityStorage: null, actor: { kind: "human", id: "test", label: "Test" } });
   const { bus, invocation } = runtime;
   const added = await bus.execute("graph.applyPatch", { baseRevision: bus.store.getRevision(), label: "fixture", operations: [
-    { op: "addNode", ref: "$input", type: "syphonIn", position: { x: 0, y: 0 } },
+    { op: "addNode", ref: "$input", type, position: { x: 0, y: 0 } },
     { op: "addNode", ref: "$out", type: "output", position: { x: 200, y: 0 } },
     { op: "connect", source: { nodeId: "$input", portId: "out" }, target: { nodeId: "$out", portId: "input" } },
   ] }, invocation);
@@ -27,13 +27,13 @@ async function fixture(nested = false) {
   const second = await bus.execute("component.instantiate", { componentId: saved.output.componentId! }, invocation);
   expect(second.status).toBe("applied");
   bus.attachFlattenedGraph(() => runtime.flattened.current().graph);
-  const inputs = Object.values(runtime.flattened.current().graph.nodes).filter(node => node.type === "syphonIn");
+  const inputs = Object.values(runtime.flattened.current().graph.nodes).filter(node => node.type === type);
   expect(inputs).toHaveLength(2);
   return { runtime, inputs, first: saved.output.instanceNodeId!, second: second.output.nodeId! };
 }
 
-it.each([false, true])("keeps two linked receivers independently sized (nested=%s), without touching definitions", async nested => {
-  const { runtime, inputs, first } = await fixture(nested);
+it.each([false, true].flatMap(nested => ["syphonIn", "ndiIn", "spoutIn"].map(type => ({ nested, type }))))("keeps two linked $type receivers independently sized (nested=$nested), without touching definitions", async ({ nested, type }) => {
+  const { runtime, inputs, first } = await fixture(nested, type);
   const definitionsBefore = JSON.stringify(runtime.components.view().list());
   for (const [index, size] of [[1280, 720], [1920, 1080]].entries()) {
     const result = await runtime.bus.execute("node.setResolution", {

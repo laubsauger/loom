@@ -3,8 +3,9 @@ import type { GraphDocument } from "@domain/types/graph.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import { isSilencedSource } from "@domain/graph/bypass.ts";
 import { resolveParameters } from "@domain/parameters/index.ts";
-import { SYPHON_IN_TYPE, mediaSourceIdFor } from "@nodes/definitions/index.ts";
-import { createNativeInputSource, desktopInputBridge } from "@devices/native-input.ts";
+import { mediaSourceIdFor } from "@nodes/definitions/index.ts";
+import { NATIVE_INPUT_TRANSPORTS, NATIVE_VIDEO_LABELS, SPOUT_UNAVAILABLE } from "@devices/native-video.ts";
+import { createNativeInputSource, desktopInputBridge, type NativeInputTransport } from "@devices/native-input.ts";
 import type { LoomBackend } from "@runtime/backend/index.ts";
 import type { AppRuntime } from "./app-runtime.ts";
 import type { ResolvedSizeSource } from "./use-media-sources.ts";
@@ -16,16 +17,17 @@ export function useNativeInputs(runtime: AppRuntime, backend: LoomBackend | null
   const latest = useRef({ sizes, documentIdentity: runtime.documentIdentity });
   latest.current = { sizes, documentIdentity: runtime.documentIdentity };
   const requests = useMemo(() => Object.values(graph.nodes)
-    .filter(node => node.type === SYPHON_IN_TYPE && !isSilencedSource(node))
+    .filter(node => NATIVE_INPUT_TRANSPORTS[node.type] !== undefined && !isSilencedSource(node))
     .map(node => {
       const definition = runtime.registry.get(node.type)!;
       const values = resolveParameters(node, definition).values;
-      return { nodeId: node.id, uuid: String(values["source"] ?? "") };
+      const transport = NATIVE_INPUT_TRANSPORTS[node.type]!;
+      return { nodeId: node.id, uuid: String(values["source"] ?? ""), transport };
     }), [graph, runtime.registry]);
   const demanded = new Set(resolved?.order);
   const requested = requests.filter(request => demanded.has(request.nodeId) && sizes.has(request.nodeId));
   const key = JSON.stringify(requested);
-  const entries = useRef(new Map<string, { uuid: string; dispose(): void; releaseForNavigation?(): void }>());
+  const entries = useRef(new Map<string, { uuid: string; transport: NativeInputTransport; dispose(): void; releaseForNavigation?(): void }>());
   const reports = useRef(new Map<string, RuntimeDiagnostic>());
   useEffect(() => {
     const owned = entries.current;
@@ -51,16 +53,20 @@ export function useNativeInputs(runtime: AppRuntime, backend: LoomBackend | null
       setDiagnostics([...reports.current.values()]);
     };
     for (const [id, entry] of entries.current) {
-      if (!wanted.some(request => request.nodeId === id && request.uuid === entry.uuid)) {
+      if (!wanted.some(request => request.nodeId === id && request.uuid === entry.uuid && request.transport === entry.transport)) {
         entry.dispose(); entries.current.delete(id); report(id, null);
       }
     }
-    const bridge = desktopInputBridge();
-    for (const { nodeId, uuid } of wanted) {
+    for (const { nodeId, uuid, transport } of wanted) {
+      const bridge = desktopInputBridge(transport);
+      const label = NATIVE_VIDEO_LABELS[transport];
       if (entries.current.has(nodeId)) continue;
       if (!bridge || !uuid) {
-        report(nodeId, bridge ? "Select a Syphon source in the inspector" : "Syphon In requires the macOS desktop app");
-        entries.current.set(nodeId, { uuid, dispose() {} });
+        report(nodeId, bridge ? `Select a ${label} source in the inspector`
+          : transport === "spout" ? SPOUT_UNAVAILABLE
+            : transport === "ndi" ? "NDI In requires the desktop app with an explicit local NDI SDK"
+            : "Syphon In requires the macOS desktop app");
+        entries.current.set(nodeId, { uuid, transport, dispose() {} });
         continue;
       }
       let live = true;
@@ -77,7 +83,7 @@ export function useNativeInputs(runtime: AppRuntime, backend: LoomBackend | null
         report: message => { if (live) report(nodeId, message); },
       });
       const unregister = backend.registerMediaSource(mediaSourceIdFor(nodeId), input.source);
-      entries.current.set(nodeId, { uuid,
+      entries.current.set(nodeId, { uuid, transport,
         dispose() { live = false; unregister(); input.dispose(); },
         releaseForNavigation() { live = false; unregister(); input.releaseForNavigation(); },
       });

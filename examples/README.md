@@ -1,5 +1,24 @@
 # Examples
 
+## Desktop technical recipes
+
+These small graphs teach setup and copy-paste wiring rather than an art treatment.
+Their live integrations require the desktop/native environment described in each
+guide; browser/headless reference rendering is not proof of a live connection.
+
+| Example | Learning goal |
+| --- | --- |
+| [E71 Syphon Loopback](./E71-Syphon-Loopback.md) | Full-HD Mac GPU video publication and exact-source reception |
+| [E72 NDI Loopback](./E72-NDI-Loopback.md) | Full-HD network publication/reception with a separately supplied development SDK |
+| [E73 Native Person Mask](./E73-Native-Person-Mask.md) | Explicit native Apple Vision provider, camera consent and floating-point mask compositing |
+| [E74 Spout Loopback Preparation](./E74-Spout-Loopback-Preparation.md) | Windows node wiring only; native Spout transport is **not implemented** |
+
+E74 uses registered Spout node contracts for graph preparation, not live sharing.
+Spout's native adapter and SpoutCam integration remain unimplemented; no SDK,
+driver or working Windows round trip is implied.
+
+## Executable specifications
+
 These are not demos. Each file here is an executable specification (§C "example projects",
 §V88, §V89): a real `.loom.json`, loaded through the same loader a user's file goes
 through, compiled by the same compiler, and stepped by the same backend.

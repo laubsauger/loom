@@ -100,8 +100,8 @@ const MEDIUM_SIGNATURES: readonly Capability<ExampleCategory>[] = [
   {
     tag: "video",
     label: "video",
-    meaning: "Footage or a live camera is in the chain, not a generated picture.",
-    nodeTypes: new Set(["movieFileIn", "webcam", "depth", "slitScan"]),
+    meaning: "Footage, a live camera, or an external video stream is in the chain.",
+    nodeTypes: new Set(["movieFileIn", "webcam", "depth", "slitScan", "syphonIn", "syphonOut", "ndiIn", "ndiOut", "spoutIn", "spoutOut"]),
   },
   {
     tag: "3d",
@@ -200,8 +200,8 @@ const TECHNIQUE_SIGNATURES: readonly Capability[] = [
     // opening the DAC, which is why the meaning says "plans or drives" rather than "sends".
     tag: "device",
     label: "device",
-    meaning: "Plans or drives hardware over the local bridge: a laser, OSC, or MIDI.",
-    nodeTypes: new Set(["oscIn", "oscOut", "laserOut", "laserPath", "midiIn"]),
+    meaning: "Plans or connects external devices and streams: laser, OSC, MIDI, Syphon, or NDI.",
+    nodeTypes: new Set(["oscIn", "oscOut", "laserOut", "laserPath", "midiIn", "syphonIn", "syphonOut", "ndiIn", "ndiOut", "spoutIn", "spoutOut"]),
   },
   {
     tag: "component",

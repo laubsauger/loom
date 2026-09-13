@@ -946,7 +946,7 @@ export const renderPointsNode: NodeDefinition = {
   version: 1,
   title: "Render Points",
   category: "points",
-  description: "Draws a point set as soft billboarded sprites into a texture. TD-style POP render.",
+  description: "Draws a point set as soft billboarded sprites into a texture.",
   tags: ["points", "particles", "sprites", "render"],
   inputs: [
     {
@@ -1555,5 +1555,4 @@ export const pointNodeDefinitions: readonly NodeDefinition[] = [
   textureToAttributeNode,
   renderPointsNode,
 ];
-
 

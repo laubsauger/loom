@@ -1,5 +1,6 @@
-import { effect, frame, frameLoop, sampler, surface, timer } from "vgpu";
-import type { Effect, Frame, PingPongTargets, Surface, SurfaceCanvas, Target, Timer, TimerSpan } from "vgpu";
+import { effect, frame, frameLoop, sampler, surface, timer, uniforms } from "vgpu";
+import type { Effect, Frame, PingPongTargets, StorageBuffer, Surface, SurfaceCanvas, Target, Timer, TimerSpan } from "vgpu";
+import { nativeInputTransportSize, NATIVE_INPUT_PACK_WGSL } from "../../models/native-input-layout.ts";
 import type { RuntimeDiagnostic } from "../../../domain/types/diagnostics.ts";
 // T933: the ONE place the project rate's default is applied. The scheduler is the third
 // reader of `fps` after the settings pane and the clock, and it used to be the one that
@@ -178,11 +179,12 @@ interface PresentationState {
   readonly id: string;
   readonly canvas: PresentableCanvas;
   readonly label: string | undefined;
+  readonly modelInputSize?: readonly [number, number];
   outputId: string;
   surface: Surface | undefined;
   blit: Effect | undefined;
   /** The exact object currently bound as the blit source, for change detection. */
-  boundSource: Target | PingPongTargets | undefined;
+  boundSource: Target | PingPongTargets | StorageBuffer | undefined;
   disposed: boolean;
   /**
    * T739 diagnostics. `surfaceGeneration` is which device `surface` was configured
@@ -1303,7 +1305,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
     return program.resources.targets.get(outputId) ?? program.resources.pingPongs.get(outputId);
   }
 
-  const isPair = (source: Target | PingPongTargets): source is PingPongTargets => "swap" in source;
+  const isPair = (source: Target | PingPongTargets | StorageBuffer): source is PingPongTargets => "swap" in source;
 
   // T1307: sRGB storage already contains display bytes. The final blit must sample
   // those bytes without decoding them. Views share storage; no extra texture or copy.
@@ -1359,6 +1361,25 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         // question "was it configured, and against the live device" is otherwise
         // unanswerable from outside.
         p.surfaceGeneration = deviceGeneration;
+      }
+      if (p.modelInputSize) {
+        const [width, height] = p.modelInputSize;
+        const expected = nativeInputTransportSize(p.modelInputSize);
+        if (p.canvas.width !== expected[0] || p.canvas.height !== expected[1])
+          throw new Error("Native model canvas must match its packed input extent");
+        const source = program?.resources.buffers.get(p.outputId);
+        if (!source) { p.boundSource = undefined; return; }
+        if (source.size !== width * height * 16) throw new Error("Native model input must be a tightly packed vec4f image");
+        if (!p.blit) {
+          p.blit = effect(active.gpu, NATIVE_INPUT_PACK_WGSL, {
+            set: { modelInput: source, shape: uniforms(active.gpu, { width, height }) }, label: `model-input:${p.id}`,
+          });
+        } else if (p.boundSource !== source) {
+          evictBindGroups(p.blit);
+          p.blit.set({ modelInput: source });
+        }
+        p.boundSource = source;
+        return;
       }
       const source = presentationSource(p.outputId);
       if (source === undefined) {
@@ -2217,6 +2238,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         id: `present-${presentationCounter}`,
         canvas,
         label: options.label,
+        ...(options.modelInputSize ? { modelInputSize: options.modelInputSize } : {}),
         outputId: options.outputId,
         surface: undefined,
         blit: undefined,

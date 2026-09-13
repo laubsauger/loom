@@ -45,7 +45,7 @@ export const transformNode: NodeDefinition = {
   version: 1,
   title: "Transform",
   category: "filter",
-  description: "Translate, rotate, scale and pivot an image, with a choice of extend mode. TD Transform TOP.",
+  description: "Translate, rotate, scale and pivot an image, with a choice of extend mode.",
   inputs: [{ id: "input", label: "Input", type: RGBA_TEXTURE }],
   outputs: [{ id: "out", label: "Out", type: RGBA_TEXTURE }],
   parameters: {
@@ -120,7 +120,7 @@ export const cropNode: NodeDefinition = {
   title: "Crop",
   category: "filter",
   description:
-    "Blanks everything outside a rectangular region. Keeps the input resolution (TD's Crop TOP resizes).",
+    "Blanks everything outside a rectangular region. Keeps the input resolution.",
   inputs: [{ id: "input", label: "Input", type: RGBA_TEXTURE }],
   outputs: [{ id: "out", label: "Out", type: RGBA_TEXTURE }],
   parameters: {
@@ -171,7 +171,7 @@ export const tileNode: NodeDefinition = {
   version: 1,
   title: "Tile",
   category: "filter",
-  description: "Repeats the image in a grid, with optional mirroring for seamless tiling. TD Tile TOP.",
+  description: "Repeats the image in a grid, with optional mirroring for seamless tiling.",
   inputs: [{ id: "input", label: "Input", type: RGBA_TEXTURE }],
   outputs: [{ id: "out", label: "Out", type: RGBA_TEXTURE }],
   parameters: {
@@ -232,7 +232,7 @@ export const flipNode: NodeDefinition = {
   version: 1,
   title: "Flip",
   category: "filter",
-  description: "Reverses the image on either axis, exactly. TD Flip TOP.",
+  description: "Reverses the image on either axis, exactly.",
   inputs: [{ id: "input", label: "Input", type: RGBA_TEXTURE }],
   outputs: [{ id: "out", label: "Out", type: RGBA_TEXTURE }],
   parameters: {

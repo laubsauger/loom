@@ -289,6 +289,22 @@
   min-width: 0;
 }
 
+.exampleBadges {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.exampleBadges .cardTag {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.cardTag.requirementTag {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+
 .version {
   color: var(--signal);
   font-family: var(--font-mono);
@@ -441,15 +457,33 @@
   gap: var(--space-1);
 }
 
+/*
+ * The pills are sized to fit ONE ROW of the card's 256px thumbnail width, because a tag
+ * strip that wraps reads as a paragraph of metadata rather than as a facet set — which is
+ * the whole reason they are pills and not a dotted strip (above).
+ *
+ * ⚑ WRAPPING IS KEPT AS THE OVERFLOW BEHAVIOUR AND IS NOT A BUG. The tag count is DERIVED
+ * from the document's node types, so it is not bounded by design: a genuinely many-sided
+ * example can carry more capabilities than 256px holds at any legible size. Wrapping is the
+ * honest failure — a `nowrap` row would clip, and hiding a capability is worse than a second
+ * line, because the strip's entire job is to say what the example is made of.
+ */
 .cardTag {
-  padding: 0 var(--space-2);
+  padding: 0 var(--space-1);
   border: var(--hairline) solid var(--line);
   border-radius: var(--radius-pill);
   color: var(--text-dim);
   font-family: var(--font-mono);
+  /*
+   * `--fs-micro` is the app's SMALLEST type token and the pills stay on it. The weight they
+   * were carrying came from the pill, not the letters: `0 var(--space-2)` of side padding
+   * plus a 1.7 line box made each one about half again the size of its own text. Going below
+   * the floor would mean a new global size token for one component, which is a system-wide
+   * decision and not this row's to take.
+   */
   font-size: var(--fs-micro);
   /* The pill's height comes from the text, so a wrapped second row keeps the same rhythm. */
-  line-height: 1.7;
+  line-height: 1.45;
   white-space: nowrap;
 }
 

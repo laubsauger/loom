@@ -6,11 +6,47 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { Buffer } from 'node:buffer';
 import { dirname, join } from 'node:path';
+import { readFile } from 'node:fs/promises';
 import { verifyMultiOutputs } from './multi-output-smoke.mjs';
+import { verifyAnimatedOutput } from './animated-output-smoke.mjs';
 import { verifySelfInput } from './self-input-smoke.mjs';
+import { receiveSyphon } from './syphon-receiver.mjs';
+import { verifyMediaPermissions } from './media-permission-smoke.mjs';
+import { verifyNdiInput, verifyNdiOutput } from './ndi-input-smoke.mjs';
+import { ndiReceiveSeconds, ndiReceiveCounts } from './ndi-roundtrip.mjs';
+import { ndiOutputMode } from '../../devices/native/ndi-build.mjs';
 
-export async function verifyDesktop({ executable, main, env }) {
-  const app = await _electron.launch({ executablePath: executable, args: [main], env, timeout: 30000 });
+export async function verifyDesktop({ executable, main, env, startupOnly = false, fixtureModules, onStarted }) {
+  const mediaConsent = env.LOOM_DESKTOP_MEDIA_CONSENT_TEST === '1';
+  const ndiInput = env.LOOM_DESKTOP_NDI_TEST === '1';
+  const ndiSeconds = ndiReceiveSeconds(env.LOOM_DESKTOP_NDI_RECEIVE_SECONDS);
+  const outputMode = ndiOutputMode(env.LOOM_NDI_OUTPUT_MODE);
+  const ndiCounts = ndiReceiveCounts(env.LOOM_DESKTOP_NDI_STREAM_COUNT);
+  if (env.LOOM_DESKTOP_NDI_STREAM_COUNT !== undefined && !ndiInput)
+    throw new Error('NDI stream selection requires LOOM_DESKTOP_NDI_TEST=1');
+  const ndiCpuMeasurement = env.LOOM_DESKTOP_NDI_CPU_MEASUREMENT === '1';
+  if (env.LOOM_DESKTOP_NDI_CPU_MEASUREMENT !== undefined && !ndiCpuMeasurement)
+    throw new Error('LOOM_DESKTOP_NDI_CPU_MEASUREMENT must be 1 when supplied');
+  if (ndiCpuMeasurement && !ndiSeconds) throw new Error('NDI CPU measurement requires an explicit receive duration');
+  if (ndiSeconds && !ndiInput) throw new Error('NDI receive duration requires LOOM_DESKTOP_NDI_TEST=1');
+  if (ndiInput && (mediaConsent || startupOnly || env.LOOM_DESKTOP_SELF_INPUT || env.LOOM_DESKTOP_VISION_PHOTO || env.LOOM_DESKTOP_OUTPUT_RECEIVE_SECONDS))
+    throw new Error('NDI input smoke cannot combine with other native measurement scopes');
+  if (ndiInput && (!env.LOOM_NATIVE_NDI_ADDON || !env.LOOM_NDI_TEST_SENDER))
+    throw new Error('NDI input smoke requires the explicitly configured local SDK and sender');
+  if (mediaConsent && (startupOnly || env.LOOM_DESKTOP_SELF_INPUT || env.LOOM_DESKTOP_VISION_PHOTO || env.LOOM_DESKTOP_OUTPUT_RECEIVE_SECONDS))
+    throw new Error('Media consent smoke cannot combine with other native measurement scopes');
+  const receiveSeconds = env.LOOM_DESKTOP_OUTPUT_RECEIVE_SECONDS === undefined ? 0 : Number(env.LOOM_DESKTOP_OUTPUT_RECEIVE_SECONDS);
+  if (env.LOOM_DESKTOP_OUTPUT_RECEIVE_SECONDS !== undefined && (!Number.isInteger(receiveSeconds) || receiveSeconds < 1 || receiveSeconds > 600))
+    throw new Error('LOOM_DESKTOP_OUTPUT_RECEIVE_SECONDS must be an integer from 1 to 600');
+  if (receiveSeconds && (startupOnly || env.LOOM_DESKTOP_SELF_INPUT || env.LOOM_DESKTOP_VISION_PHOTO))
+    throw new Error('Receiver measurement requires the full Syphon smoke, not startup, self-input-only or Vision mode');
+  if (receiveSeconds && !env.LOOM_NATIVE_OUTPUT_ADDON)
+    throw new Error('Receiver measurement requires macOS native video addons');
+  if (startupOnly && !env.LOOM_NATIVE_OUTPUT_ADDON) throw new Error('Native startup smoke requires macOS native video addons');
+  const entry = fileURLToPath(new URL('./electron-entry.cjs', import.meta.url));
+  const app = await _electron.launch({ executablePath: executable,
+    args: [...(mediaConsent ? ['--use-fake-device-for-media-stream'] : []), entry], env, timeout: 30000 });
+  onStarted(app.process());
   let mainErrors = '';
   app.process().stderr.on('data', chunk => {
     mainErrors += String(chunk);
@@ -20,6 +56,8 @@ export async function verifyDesktop({ executable, main, env }) {
   try {
     app.on('window', output => output.on('pageerror', error => console.log('LOOM_OUTPUT_PAGE_ERROR', error.message)));
     const page = await app.firstWindow();
+    await page.addInitScript(modules => { window.loomDesktopFixtureModules = modules; }, fixtureModules);
+    await page.evaluate(modules => { window.loomDesktopFixtureModules = modules; }, fixtureModules);
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     page.on('dialog', dialog => {
@@ -30,6 +68,19 @@ export async function verifyDesktop({ executable, main, env }) {
       errors.push(`Unexpected ${dialog.type()} dialog: ${dialog.message()}`);
       void dialog.dismiss().catch(error => errors.push(error.message));
     });
+    if (mediaConsent) {
+      await verifyMediaPermissions({ app, page, fixtureModules });
+      assert.deepEqual(errors, []);
+      return;
+    }
+    if (ndiInput) {
+      await verifyNdiInput({ app, page, fixtureModules, senderExecutable: env.LOOM_NDI_TEST_SENDER });
+      for (const count of ndiCounts)
+        await verifyNdiOutput({ app, page, receiverExecutable: env.LOOM_NDI_TEST_SENDER, count, seconds: ndiSeconds, cpuMeasurement: ndiCpuMeasurement, outputMode });
+      assert.deepEqual(errors, []);
+      assert.doesNotMatch(mainErrors, /MaxListenersExceededWarning|LOOM_NATIVE_OUTPUT_PUBLISH_FAILED|LOOM_NATIVE_UNLOAD_FAILED/);
+      return;
+    }
     await expect(page.getByTestId('graph-canvas')).toBeVisible({ timeout: 30000 });
     await expect(page.locator('.react-flow__node').first()).toBeVisible();
     const capabilities = await page.evaluate(async () => {
@@ -65,6 +116,46 @@ export async function verifyDesktop({ executable, main, env }) {
     assert.equal(preferences.sandbox, true);
     assert.equal(preferences.contextIsolation, true);
     assert.equal(preferences.nodeIntegration, false);
+
+    if (env.LOOM_DESKTOP_VISION_PHOTO) {
+      const photo = `data:image/jpeg;base64,${(await readFile(env.LOOM_DESKTOP_VISION_PHOTO)).toString('base64')}`;
+      await page.exposeFunction('visionVerifyCapture', async expected => {
+        const windows = app.windows().filter(page => page.url().includes('/inference.html?'));
+        assert.equal(windows.length, 1);
+        await windows[0].evaluate(base64 => {
+          const source = document.querySelector('canvas');
+          const canvas = document.createElement('canvas'); canvas.width = source.width; canvas.height = source.height;
+          const context = canvas.getContext('2d'); context.drawImage(source, 0, 0);
+          const actual = context.getImageData(0, 0, canvas.width, canvas.height).data;
+          const expected = window.atob(base64);
+          for (let index = 0; index < expected.length; index++) {
+            const pixel = Math.floor(index / 3), channel = index % 3;
+            if (actual[pixel * 4 + channel] !== expected.charCodeAt(index))
+              throw new Error(`Native capture input byte ${index} changed: ${actual[pixel * 4 + channel]} != ${expected.charCodeAt(index)}`);
+            if (actual[pixel * 4 + 3] !== 255) throw new Error('Native packed capture lost opaque alpha');
+          }
+        }, expected);
+      });
+      const result = await page.evaluate(async photo => {
+        const { verifyVisionGraph } = await import(window.loomDesktopFixtureModules.vision);
+        return verifyVisionGraph(photo, window.visionVerifyCapture);
+      }, photo);
+      assert.deepEqual(errors, []);
+      console.log('LOOM_NATIVE_VISION_GRAPH_PASS', JSON.stringify(result));
+      await page.exposeFunction('visionInspectSessions', () => app.evaluate((_electron, path) => {
+        // eslint-disable-next-line no-undef
+        return process.getBuiltinModule('node:module').createRequire(path)(path).nativeInferenceDiagnostics();
+      }, main));
+      const concurrent = await page.evaluate(async photo => {
+        const { verifyConcurrentVisionGraph } = await import(window.loomDesktopFixtureModules.vision);
+        return verifyConcurrentVisionGraph(photo, window.visionInspectSessions);
+      }, photo);
+      console.log('LOOM_NATIVE_VISION_CONCURRENT_PASS', JSON.stringify(concurrent));
+      const { verifyVisionUI } = await import('./vision-ui-smoke.mjs');
+      await verifyVisionUI({ app, page, photo, soakSeconds: Number(env.LOOM_DESKTOP_VISION_SOAK_SECONDS ?? 0),
+        profileMemory: env.LOOM_DESKTOP_VISION_MEMORY_PROFILE === '1' });
+      return;
+    }
 
     const canvas = page.getByTestId('viewer-canvas');
     await expect(canvas).toBeVisible();
@@ -114,7 +205,7 @@ export async function verifyDesktop({ executable, main, env }) {
     }
     if (env.LOOM_NATIVE_OUTPUT_ADDON) {
       const fixture = await page.evaluate(async () => {
-        const { nativeOutputFixture } = await import('/src/desktop/testing/output-fixture.ts');
+        const { nativeOutputFixture } = await import(window.loomDesktopFixtureModules.output);
         Object.defineProperty(window, 'showOpenFilePicker', { value: undefined, configurable: true });
         return nativeOutputFixture();
       });
@@ -153,7 +244,7 @@ export async function verifyDesktop({ executable, main, env }) {
         assert.ok(layout.height <= 32, `Native toolbar grew to ${layout.height}px`);
         assert.ok(!layout.text.includes('Native GPU:'), 'Native counters leaked into toolbar');
         await page.mouse.move(0, 0);
-        await toolbar.screenshot({ path: fileURLToPath(new URL('../../.cache/native-output-toolbar.png', import.meta.url)) });
+        await toolbar.screenshot({ path: fileURLToPath(new URL('../../../.cache/native-output-toolbar.png', import.meta.url)) });
         console.log('LOOM_NATIVE_TOOLBAR_PASS', JSON.stringify(layout));
       } finally { await toolbar.evaluate((element, width) => { element.style.width = width; }, priorWidth); }
       const name = await output.evaluate(() => window.name);
@@ -179,22 +270,53 @@ export async function verifyDesktop({ executable, main, env }) {
       const beforeHidden = await page.evaluate(async name => (await window.loomDesktop.status(name)).copied, name);
       try {
         await mainWindow.evaluate(window => window.hide());
+        const hiddenTicks = await page.evaluate(() => new Promise(resolve => {
+          let ticks = 0;
+          let request;
+          const tick = () => { ticks++; request = window.requestAnimationFrame(tick); };
+          request = window.requestAnimationFrame(tick);
+          setTimeout(() => { window.cancelAnimationFrame(request); resolve(ticks); }, 2000);
+        }));
+        assert.ok(hiddenTicks > 2, `Hidden editor producer stopped: ${hiddenTicks} animation frames in two seconds`);
         await expect.poll(() => page.evaluate(async name => (await window.loomDesktop.status(name)).copied, name), {
           timeout: 5000, message: 'Hiding the editor stopped native publication',
         }).toBeGreaterThan(beforeHidden + 2);
       } finally { await mainWindow.evaluate(window => window.show()); }
       const nativeStatus = await page.evaluate(name => window.loomDesktop.status(name), name);
-      const receive = (count = 3, publisherName = name) => new Promise((resolve, reject) => {
-        const receiver = spawn(env.LOOM_SYPHON_RECEIVER, [publisherName, String(count), '15000'], { timeout: 20000, killSignal: 'SIGKILL' });
-        let text = '';
-        receiver.stdout.on('data', chunk => { text += chunk; });
-        receiver.stderr.on('data', chunk => { text += chunk; });
-        receiver.once('error', reject);
-        receiver.once('exit', (code, signal) => {
-          if (code !== 0) { reject(new Error(`Independent Syphon receiver failed ${code}/${signal}: ${text}`)); return; }
-          try { resolve(JSON.parse(text)); } catch (error) { reject(error); }
-        });
-      });
+      const receive = async (count = 3, publisherName = name) => {
+        try { return await receiveSyphon(env.LOOM_SYPHON_RECEIVER, publisherName, count); }
+        catch (error) {
+          let timer;
+          try {
+            const state = await Promise.race([
+              Promise.allSettled([
+                app.evaluate((_electron, path) => {
+                  // eslint-disable-next-line no-undef
+                  const load = process.getBuiltinModule('node:module').createRequire(path);
+                  return load(path).nativeOutputDiagnostics();
+                }, main),
+                page.evaluate(() => ({ visibility: document.visibilityState, text: document.body.innerText,
+                  toggle: document.querySelector('[data-testid="native-output-toggle"]')?.dataset,
+                })),
+                app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map(window => ({
+                  id: window.id, url: window.webContents.getURL(), visible: window.isVisible(),
+                  painting: window.webContents.isPainting(), size: window.getContentSize(),
+                }))),
+                Promise.allSettled(app.windows().filter(window => window.url().includes('/output.html?')).map(async output => {
+                  const surface = await output.evaluate(() => ({ session: window.name, visibility: document.visibilityState,
+                    canvas: document.querySelector('canvas') ? { width: document.querySelector('canvas').width,
+                      height: document.querySelector('canvas').height, ...document.querySelector('canvas').dataset } : null }));
+                  return { ...surface, native: await page.evaluate(session => window.loomDesktop.status(session), surface.session) };
+                })),
+              ]),
+              new Promise(resolve => { timer = setTimeout(() => resolve({ diagnosticError: 'Receiver failure-state capture timed out' }), 5000); }),
+            ]);
+            console.error('LOOM_RECEIVER_FAILURE_STATE', JSON.stringify({ publisherName, state },
+              (_key, value) => value instanceof Error ? { message: value.message } : value));
+          } finally { clearTimeout(timer); }
+          throw error;
+        }
+      };
       for (const selection of [{ key: fixture.a, width: 1280, height: 720, color: [255, 0, 0, 255] },
         { key: fixture.b, width: 1920, height: 1080, color: [0, 0, 255, 255] },
         { key: fixture.a, width: 1280, height: 720, color: [255, 0, 0, 255] }]) {
@@ -210,7 +332,7 @@ export async function verifyDesktop({ executable, main, env }) {
         const after = await metric();
         if (selection.width === 1920) {
           const input = await page.evaluate(async name => {
-            const { verifyNativeInput } = await import('/src/desktop/testing/input-fixture.ts');
+            const { verifyNativeInput } = await import(window.loomDesktopFixtureModules.input);
             return verifyNativeInput(name);
           }, name);
           assert.equal(input.frames, 3);
@@ -233,8 +355,23 @@ export async function verifyDesktop({ executable, main, env }) {
       assert.equal(finalStatus.allocation.queuesCreated, 1, 'Publisher recreated a Metal queue per frame');
       assert.equal(finalStatus.allocation.publishers, 1);
       console.log('LOOM_NATIVE_OUTPUT_SMOKE_PASS', JSON.stringify({ name, ...nativeStatus }));
-      await page.getByTestId('native-output-toggle').click();
+      // The real export command must retire viewer publishers as well as graph
+      // sinks. Encode a two-frame take; cancel only the final file picker.
+      await page.getByLabel('Out point', { exact: true }).fill('1');
+      await page.getByLabel('Out point', { exact: true }).press('Enter');
+      await page.evaluate(() => Object.defineProperty(window, 'showSaveFilePicker', {
+        configurable: true, value: async () => {
+          document.body.dataset.offlineViewerActive = document.querySelector('[data-testid="native-output-toggle"]')?.getAttribute('aria-pressed');
+          throw new window.DOMException('Smoke cancels saving the encoded take', 'AbortError');
+        },
+      }));
+      await page.getByRole('button', { name: 'Render the range', exact: true }).click();
+      await expect(page.locator('body')).toHaveAttribute('data-offline-viewer-active', 'false', { timeout: 15000 });
       await expect.poll(() => output.isClosed()).toBe(true);
+      await expect(page.getByTestId('native-output-toggle')).toHaveAttribute('data-native-output-ready', 'false');
+      await expect(page.getByRole('button', { name: 'Render the range', exact: true })).toBeEnabled();
+      await page.getByRole('button', { name: 'Play', exact: true }).click();
+      console.log('LOOM_NATIVE_VIEWER_OFFLINE_PREFLIGHT_PASS');
       const directory = dirname(env.LOOM_NATIVE_INPUT_ADDON);
       const publisher = spawn(executable, [fileURLToPath(new URL('./input-publisher.cjs', import.meta.url)),
         join(directory, 'input-fixture.node'), join(directory, 'publisher-profile')], { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -251,11 +388,13 @@ export async function verifyDesktop({ executable, main, env }) {
           });
         });
         const inputProject = await page.evaluate(async uuid => {
-          const { nativeOutputFixture } = await import('/src/desktop/testing/output-fixture.ts');
+          const { nativeOutputFixture } = await import(window.loomDesktopFixtureModules.output);
           return nativeOutputFixture(uuid, true);
         }, uuid);
         const inputChooser = page.waitForEvent('filechooser');
         await page.getByTestId('project-open').click();
+        // The export check changed this synthetic project's range through the UI.
+        await page.getByTestId('unsaved-changes-dialog').getByRole('button', { name: 'Discard', exact: true }).click();
         await (await inputChooser).setFiles({ name: 'native-input.loom.json', mimeType: 'application/json', buffer: Buffer.from(inputProject.text) });
         await expect.poll(() => page.getByTestId('viewer-output-select').locator('option').evaluateAll(options => options.map(option => option.value)))
           .toContain(inputProject.native);
@@ -280,19 +419,32 @@ export async function verifyDesktop({ executable, main, env }) {
         console.log('LOOM_SYPHON_GRAPH_INPUT_PASS', JSON.stringify({ uuid, nested: true, size: [1920, 1080], rgba: reference }));
       // Exercise main-process retirement independently of React cleanup: navigation
       // drains the owner while BOTH native directions still have live sources.
-      const reloadOutputPromise = app.waitForEvent('window');
-      await page.getByTestId('native-output-toggle').click();
-      const reloadOutput = await reloadOutputPromise;
-      const reloadName = new URL(reloadOutput.url()).searchParams.get('name');
-      try {
-        await expect.poll(() => page.evaluate(async name => (await window.loomDesktop.status(name)).copied, reloadName))
-          .toBeGreaterThan(0);
-      } catch (error) {
-        console.error('LOOM_RELOAD_OUTPUT_NOT_READY', await reloadOutput.evaluate(() => ({
-          received: document.querySelector('canvas')?.dataset.receivedFrames,
-          bridge: typeof window.loomNativeSurface, text: document.body.innerText,
-        })), await page.getByTestId('native-output-toggle').getAttribute('data-native-output-status'));
-        throw error;
+      let reloadOutput;
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const reloadOutputPromise = app.waitForEvent('window');
+        await page.getByTestId('native-output-toggle').click();
+        reloadOutput = await reloadOutputPromise;
+        const reloadName = new URL(reloadOutput.url()).searchParams.get('name');
+        try {
+          await expect.poll(() => page.evaluate(async name => (await window.loomDesktop.status(name)).copied, reloadName))
+            .toBeGreaterThan(0);
+        } catch (error) {
+          console.error('LOOM_RELOAD_OUTPUT_NOT_READY', await reloadOutput.evaluate(() => ({
+            received: document.querySelector('canvas')?.dataset.receivedFrames,
+            bridge: typeof window.loomNativeSurface, text: document.body.innerText,
+            canvas: !!document.querySelector('canvas'), readyState: document.readyState, name: window.name,
+            resources: window.performance.getEntriesByType('resource').map(entry => ({ name: entry.name, duration: entry.duration })),
+          })), await page.getByTestId('native-output-toggle').getAttribute('data-native-output-status'),
+          { attached: await page.getByTestId('native-output-toggle').getAttribute('data-native-output-ready') },
+          await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map(window => ({
+            url: window.webContents.getURL(), loading: window.webContents.isLoading(), workers: window.webContents.getAllSharedWorkers(),
+          }))));
+          throw error;
+        }
+        if (attempt < 4) {
+          await page.getByTestId('native-output-toggle').click();
+          await expect.poll(() => reloadOutput.isClosed()).toBe(true);
+        }
       }
       // Keep the smoke's in-memory upload route across reload. Native file-system
       // handles cannot refer to Playwright's synthetic File payloads.
@@ -310,9 +462,14 @@ export async function verifyDesktop({ executable, main, env }) {
       })).toBe(0);
       console.log('LOOM_NATIVE_OUTPUT_RELOAD_PASS', JSON.stringify({ publishers: 0, windowClosed: true }));
       } finally { publisher.kill('SIGTERM'); await exited; }
+      if (startupOnly) {
+        assert.deepEqual(errors, []);
+        console.log('LOOM_DESKTOP_STARTUP_SMOKE_PASS', JSON.stringify(capabilities));
+        return;
+      }
       const graphPublisher = 'Loom graph smoke';
       const outputProject = await page.evaluate(async name => {
-        const { nativeOutputFixture } = await import('/src/desktop/testing/output-fixture.ts');
+        const { nativeOutputFixture } = await import(window.loomDesktopFixtureModules.output);
         return nativeOutputFixture(undefined, false, name);
       }, graphPublisher);
       const graphWindowPromise = app.waitForEvent('window').catch(async error => {
@@ -335,7 +492,8 @@ export async function verifyDesktop({ executable, main, env }) {
       await (await clearChooser).setFiles({ name: 'no-syphon-output.loom.json', mimeType: 'application/json', buffer: Buffer.from(fixture.text) });
       await expect.poll(() => graphWindow.isClosed()).toBe(true);
       console.log('LOOM_SYPHON_GRAPH_OUTPUT_PASS', JSON.stringify({ frames: graphReceived.frames.length, size: [1920, 1080], publisherName: graphPublisher, retired: true }));
-      await verifyMultiOutputs({ app, page, receive, emptyProject: fixture.text });
+      await verifyMultiOutputs({ app, page, receive, emptyProject: fixture.text, receiveSeconds });
+      await verifyAnimatedOutput({ app, page, receive, emptyProject: fixture.text, main });
       await verifySelfInput({ app, page });
     }
     console.log('LOOM_DESKTOP_SMOKE_PASS', JSON.stringify(capabilities));

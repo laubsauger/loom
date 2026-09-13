@@ -4,6 +4,28 @@ import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { buildNotices } from "../../app/use-model-inference.ts";
+import { allNodeDefinitions } from "../../nodes/definitions/index.ts";
+import { DEFAULT_BINDINGS } from "../../editor/keymap/defaults.ts";
+
+describe("T424 — product metadata describes Loom without prior-product comparisons", () => {
+  it("checks rendered catalogue and shortcut text, not implementation comments or shader source", () => {
+    const findings: string[] = [];
+    let inspected = 0;
+    const visit = (value: unknown, path: string) => {
+      if (value === null || typeof value !== "object") return;
+      for (const [key, child] of Object.entries(value)) {
+        if (["title", "label", "description"].includes(key) && typeof child === "string") {
+          inspected++;
+          if (/\b(?:TD|TouchDesigner)\b/i.test(child)) findings.push(`${path}.${key}: ${child}`);
+        } else visit(child, `${path}.${key}`);
+      }
+    };
+    visit(allNodeDefinitions, "nodes");
+    visit(DEFAULT_BINDINGS, "shortcuts");
+    expect(inspected).toBeGreaterThan(100);
+    expect(findings).toEqual([]);
+  });
+});
 
 /**
  * Guards §V90/§V91/§V92 so inline prose cannot creep back into chrome one track at a

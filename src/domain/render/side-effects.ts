@@ -265,7 +265,11 @@ export const NODE_SIDE_EFFECTS: Readonly<Record<string, SideEffect>> = {
    */
   webcam: "none",
   syphonIn: "none",
+  ndiIn: "none",
+  spoutIn: "none",
   syphonOut: "emits",
+  ndiOut: "emits",
+  spoutOut: "emits",
   audioIn: "none",
   mouse: "none",
   midiIn: "none",

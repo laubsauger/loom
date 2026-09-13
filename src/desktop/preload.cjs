@@ -1,4 +1,4 @@
-/* global require, window, Event */
+/* global require, window, Event, process */
 /* eslint-disable @typescript-eslint/no-require-imports */
 const { contextBridge, ipcRenderer, sharedTexture } = require('electron');
 const inputs = new Map();
@@ -57,34 +57,27 @@ sharedTexture.setSharedTextureReceiver(async ({ importedSharedTexture: imported 
     if (record) forget(metadata.session, record);
   }
 });
-contextBridge.exposeInMainWorld('loomDesktop', {
-  input: {
-    prepareForUnload: async () => {
-      retiring = true;
-      window.dispatchEvent(new Event('loom-native-input-retire'));
-      await Promise.all([...opening]);
-      for (const record of inputs.values()) record.closed = true;
-      for (const release of [...deliveries]) release();
-    },
-    commitUnload: () => { unloadPrepared = true; },
-    list: () => ipcRenderer.invoke('loom-native-input-list'),
+function createInputBridge(prefix) {
+  return {
+    list: () => ipcRenderer.invoke(`${prefix}-list`),
     open: async (uuid, consume) => {
       if (retiring) throw new Error('Native input document is retiring');
       if (typeof consume !== 'function') throw new Error('Native input requires a frame consumer');
       usedNativeInput = true;
-      const pending = ipcRenderer.invoke('loom-native-input-open', uuid);
+      const pending = ipcRenderer.invoke(`${prefix}-open`, uuid);
       opening.add(pending);
       let id;
       try { id = await pending; } finally { opening.delete(pending); }
-      inputs.set(id, { consume, closed: false, polling: false, consuming: false, error: null });
+      inputs.set(id, { prefix, consume, closed: false, polling: false, consuming: false, error: null });
       return id;
     },
     poll: async id => {
       const record = input(id);
+      if (record.prefix !== prefix) throw new Error('Native input transport does not own this session');
       if (record.polling) throw new Error('Native input poll already in flight');
       record.polling = true;
       try {
-        const result = await ipcRenderer.invoke('loom-native-input-poll', id);
+        const result = await ipcRenderer.invoke(`${prefix}-poll`, id);
         if (result.kind === 'closed') record.closed = true;
         if (record.error) throw new Error(record.error);
         return result;
@@ -93,14 +86,69 @@ contextBridge.exposeInMainWorld('loomDesktop', {
     close: async id => {
       const record = inputs.get(id);
       if (!record || record.closed) throw new Error('Native input session is closed or unknown');
+      if (record.prefix !== prefix) throw new Error('Native input transport does not own this session');
       record.closed = true;
-      try { return await ipcRenderer.invoke('loom-native-input-close', id); }
+      try { return await ipcRenderer.invoke(`${prefix}-close`, id); }
       finally { forget(id, record); }
     },
+  };
+}
+function createOutputBridge(prefix) {
+  return {
+    nativeOutput: true,
+    open: async (name, width, height, publisherName) => {
+      if (retiring) throw new Error('Native output document is retiring');
+      usedNativeInput = true; // All native activity participates in the unload gate.
+      const pending = ipcRenderer.invoke(`${prefix}-open`, name, width, height, publisherName);
+      opening.add(pending);
+      try { await pending; } finally { opening.delete(pending); }
+    },
+    close: name => ipcRenderer.invoke(`${prefix}-close`, name),
+    resize: (name, width, height) => ipcRenderer.invoke(`${prefix}-resize`, name, width, height),
+    status: name => ipcRenderer.invoke(`${prefix}-status`, name),
+  };
+}
+contextBridge.exposeInMainWorld('loomDesktop', {
+  vision: {
+    open: async (name, width, height, outputWidth, outputHeight, consume) => {
+      if (retiring) throw new Error('Native inference document is retiring');
+      if (typeof consume !== 'function') throw new Error('Native inference requires a frame consumer');
+      usedNativeInput = true;
+      const pending = ipcRenderer.invoke('loom-native-vision-open', name, width, height, outputWidth, outputHeight);
+      opening.add(pending);
+      let id;
+      try { id = await pending; } finally { opening.delete(pending); }
+      inputs.set(id, { consume, closed: false, polling: false, consuming: false, error: null });
+      return id;
+    },
+    status: async id => {
+      const record = input(id);
+      const result = await ipcRenderer.invoke('loom-native-vision-status', id);
+      if (record.error) throw new Error(record.error);
+      return result;
+    },
+    close: async id => {
+      const record = inputs.get(id);
+      if (record) record.closed = true;
+      try { return await ipcRenderer.invoke('loom-native-vision-close', id); }
+      finally { if (record) forget(id, record); }
+    },
   },
-  nativeOutput: true,
-  open: (name, width, height, publisherName) => ipcRenderer.invoke('loom-native-output-open', name, width, height, publisherName),
-  close: name => ipcRenderer.invoke('loom-native-output-close', name),
-  resize: (name, width, height) => ipcRenderer.invoke('loom-native-output-resize', name, width, height),
-  status: name => ipcRenderer.invoke('loom-native-output-status', name),
+  input: {
+    prepareForUnload: async () => {
+      retiring = true;
+      window.dispatchEvent(new Event('loom-native-input-retire'));
+      // A denied/failed open still settles ownership. Its caller receives the
+      // rejection; main's retireOwner remains the authority for safe drainage.
+      await Promise.allSettled([...opening]);
+      for (const record of inputs.values()) record.closed = true;
+      for (const release of [...deliveries]) release();
+    },
+    commitUnload: () => { unloadPrepared = true; },
+    ...createInputBridge('loom-native-input'),
+  },
+  ...(process.argv.includes('--loom-ndi-input') ? {
+    ndiInput: createInputBridge('loom-ndi-input'), ndiOutput: createOutputBridge('loom-ndi-output'),
+  } : {}),
+  ...createOutputBridge('loom-native-output'),
 });

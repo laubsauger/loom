@@ -279,7 +279,7 @@ const TD_GRAPH_BINDINGS: readonly KeyBinding[] = [
     when: "hasSingleSelection",
     inputFrom: { from: "selection", as: "nodeIds" },
     label: "Edit / expose",
-    description: "TD's edit/expose. Here: open the node's shader source in the dock.",
+    description: "Open the node's shader source in the dock.",
   },
   {
     // §I lists `L layout` and `l layout all` — the reverse of the H/h and F/f case

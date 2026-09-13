@@ -23,9 +23,15 @@ import { matteNode } from "./matte.ts";
 import { personMaskNode } from "./person-mask.ts";
 import { mediaNodeDefinitions } from "./media.ts";
 import { syphonInNode } from "./syphon-in.ts";
+import { ndiInNode } from "./ndi-in.ts";
 import { syphonOutNode } from "./syphon-out.ts";
+import { ndiOutNode } from "./ndi-out.ts";
+import { spoutInNode, spoutOutNode } from "./spout.ts";
+export { spoutInNode, spoutOutNode, SPOUT_IN_TYPE, SPOUT_OUT_TYPE } from "./spout.ts";
+export { ndiOutNode, NDI_OUT_TYPE } from "./ndi-out.ts";
 export { syphonOutNode, SYPHON_OUT_TYPE } from "./syphon-out.ts";
 export { syphonInNode, SYPHON_IN_TYPE } from "./syphon-in.ts";
+export { ndiInNode, NDI_IN_TYPE } from "./ndi-in.ts";
 import { valueGraphNodeDefinitions } from "./value-graph-nodes.ts";
 export { audioFileInNode, audioInNode, audioPatternNode } from "./audio.ts";
 export { cameraNode, geometryNode, lightNode, renderNode, sceneNodeDefinitions } from "./scene.ts";
@@ -241,7 +247,11 @@ export const coreNodeDefinitions: readonly NodeDefinition[] = [
   personMaskNode,
   ...mediaNodeDefinitions,
   syphonInNode,
+  ndiInNode,
   syphonOutNode,
+  ndiOutNode,
+  spoutInNode,
+  spoutOutNode,
   ...valueGraphNodeDefinitions,
   audioInNode,
   audioFileInNode,

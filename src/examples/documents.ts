@@ -124,6 +124,8 @@ import { relayDocument } from "./documents/relay.ts";
 import { meterDocument } from "./documents/meter.ts";
 import { finsDocument } from "./documents/fins.ts";
 import { chimeraDocument } from "./documents/chimera.ts";
+import { syphonLoopbackDocument, ndiLoopbackDocument, spoutLoopbackDocument } from "./documents/native-video.ts";
+import { nativePersonMaskDocument } from "./documents/native-person-mask.ts";
 
 export const EXAMPLE_DOCUMENTS: readonly ProjectDocument[] = [
   feedbackEchoDocument,
@@ -188,5 +190,8 @@ export const EXAMPLE_DOCUMENTS: readonly ProjectDocument[] = [
   meterDocument,
   finsDocument,
   chimeraDocument,
+  syphonLoopbackDocument,
+  ndiLoopbackDocument,
+  nativePersonMaskDocument,
+  spoutLoopbackDocument,
 ];
-

@@ -22,6 +22,7 @@ import {
 } from "@ui/primitives/dialog.tsx";
 import { cx } from "@ui/cx.ts";
 import styles from "./project-settings.module.css";
+import { DesktopPermissionsPanel } from "./desktop-permissions.tsx";
 
 /**
  * Project settings (T266, T390, §V177, §V178, §V171).
@@ -397,6 +398,8 @@ export function ProjectSettingsDialog({
             />
           </ControlRow>
         </section>
+
+        {open && <DesktopPermissionsPanel />}
 
         <section className={styles.group} aria-label="Determinism">
           <h3 className={styles.groupTitle}>determinism</h3>

@@ -55,6 +55,8 @@ export interface PresentationOptions {
   /** Which compiled output this surface shows. */
   readonly outputId: string;
   readonly label?: string;
+  /** Present a vec4f model-input buffer as opaque packed RGBA8 data, not a viewer. */
+  readonly modelInputSize?: readonly [number, number];
 }
 
 /**

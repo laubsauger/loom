@@ -188,7 +188,7 @@ export const displaceNode: NodeDefinition = {
   title: "Displace",
   category: "filter",
   description:
-    "Offsets each pixel by a value read from a displacement field: RED moves x, GREEN moves y. TD Displace TOP. A monochrome field has red == green, so it shears everything along one diagonal — feed a two-channel field (UV, a vector map) for a lens.",
+    "Offsets each pixel by a value read from a displacement field: RED moves x, GREEN moves y. A monochrome field has red == green, so it shears everything along one diagonal — feed a two-channel field (UV, a vector map) for a lens.",
   inputs: [
     { id: "source", label: "Source", type: RGBA_TEXTURE, description: "The image being displaced." },
     {
@@ -300,7 +300,7 @@ export const remapNode: NodeDefinition = {
   title: "Remap",
   category: "filter",
   description:
-    "Samples the source at coordinates read from a UV map — absolute position, not an offset. TD Remap TOP.",
+    "Samples the source at coordinates read from a UV map — absolute position, not an offset.",
   inputs: [
     {
       id: "source",
@@ -405,7 +405,7 @@ export const edgeNode: NodeDefinition = {
   version: 1,
   title: "Edge",
   category: "filter",
-  description: "Sobel edge detection, per channel. TD Edge TOP.",
+  description: "Sobel edge detection, per channel.",
   inputs: [{ id: "input", label: "Input", type: RGBA_TEXTURE }],
   outputs: [{ id: "out", label: "Out", type: RGBA_TEXTURE }],
   parameters: {
@@ -467,7 +467,7 @@ export const convolveNode: NodeDefinition = {
   version: 1,
   title: "Convolve",
   category: "filter",
-  description: "Applies an arbitrary 3x3 kernel. TD Convolve TOP.",
+  description: "Applies an arbitrary 3x3 kernel.",
   inputs: [{ id: "input", label: "Input", type: RGBA_TEXTURE }],
   outputs: [{ id: "out", label: "Out", type: RGBA_TEXTURE }],
   parameters: {
@@ -563,7 +563,7 @@ export const slopeNode: NodeDefinition = {
   title: "Slope",
   category: "filter",
   description:
-    "The signed derivative of a height field: an offset field, a normal map, or an emboss. TD Slope TOP.",
+    "The signed derivative of a height field: an offset field, a normal map, or an emboss.",
   inputs: [
     {
       id: "input",

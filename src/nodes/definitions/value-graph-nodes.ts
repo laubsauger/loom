@@ -606,7 +606,7 @@ export const valueSwitchNode: NodeDefinition = {
   title: "Switch",
   category: "value",
   description:
-    "Passes ONE of its inputs through, chosen by index — the others contribute nothing. Drive the index to cut between sources. The index counts the CONNECTED inputs in port order and wraps, so -1 is the last. TD Switch CHOP. CLOCKLESS (§V436): it selects and reads no clock, so a timeline loop passes straight through it.",
+    "Passes ONE of its inputs through, chosen by index — the others contribute nothing. Drive the index to cut between sources. The index counts the CONNECTED inputs in port order and wraps, so -1 is the last. CLOCKLESS (§V436): it selects and reads no clock, so a timeline loop passes straight through it.",
   tags: ["value", "switch", "select", "route", "chop"],
   inputs: [
     { id: "in1", label: "In 1", type: VALUE_PORT, optional: true },
@@ -1019,7 +1019,7 @@ export const valueSpeedNode: NodeDefinition = {
   title: "Speed",
   category: "value",
   description:
-    "Integrates its input as a RATE (units per second) and outputs a POSITION. TD's Speed CHOP. This is what turns a level into MOTION: under a position map a constant input is a frozen picture, and under this a constant input is constant travel, so a drive built on it cannot stall or corner itself. At Limit uses the media transport's own words — Loop cycles, Hold stops, MIRROR bounces (the default: the only one that stays both continuous and alive), and a bounce makes a positive rate travel both ways, which is reverse for free. Starts at the MIDPOINT of the bounds. DELTA-DRIVEN (§V436), and it gives up random access: an integral depends on how you reached the frame, so a scrub does not find it (§V181).",
+    "Integrates its input as a RATE (units per second) and outputs a POSITION. This is what turns a level into MOTION: under a position map a constant input is a frozen picture, and under this a constant input is constant travel, so a drive built on it cannot stall or corner itself. At Limit uses the media transport's own words — Loop cycles, Hold stops, MIRROR bounces (the default: the only one that stays both continuous and alive), and a bounce makes a positive rate travel both ways, which is reverse for free. Starts at the MIDPOINT of the bounds. DELTA-DRIVEN (§V436), and it gives up random access: an integral depends on how you reached the frame, so a scrub does not find it (§V181).",
   tags: ["value", "speed", "integrate", "accumulate", "ramp", "motion", "chop"],
   inputs: [{ id: "in", label: "In", type: VALUE_PORT }],
   outputs: [{ id: "out", label: "Out", type: VALUE_PORT }],

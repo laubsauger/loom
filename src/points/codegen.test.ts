@@ -98,6 +98,43 @@ const GRAVITY_KERNEL = `fn process(p: Point, ctx: PointCtx) -> Point {
   return q;
 }`;
 
+describe("T514 comment-free feature detection", () => {
+  const mentions = "ctx.pointer ctx.dim ctx.absTime ctx.absFrame ctx.firstRun ctx.value1 ctx.value99 fieldAt(p.position) pointAt(0u)";
+  const request = { attributes: SCHEMA, reads: ["position", "velocity"], writes: ["position", "velocity"], kernel: GRAVITY_KERNEL };
+  for (const comment of [`// ${mentions}\n`, `/* ${mentions} */`, `/* outer /* inner */ ${mentions} */`]) {
+    it(`ignores kernel comments: ${comment.slice(0, 22)}`, () => {
+      const plain = kernelModule(request);
+      const module = kernelModule({ ...request, kernel: comment + GRAVITY_KERNEL });
+      expect(module.ok).toBe(true);
+      if (!module.ok) throw new Error(module.errors.join("; "));
+      expect({ ...module, wgsl: module.wgsl.replace(comment, "") }).toEqual(plain);
+      expect(kernelReadsValueSlot(1, comment)).toBe(false);
+      expect(kernelReadsValueSlot(99, comment)).toBe(false);
+    });
+    it(`ignores group comments: ${comment.slice(0, 22)}`, () => {
+      const plain = kernelModule({ ...request, group: "true" });
+      const module = kernelModule({ ...request, group: `${comment}true` });
+      expect(module.ok).toBe(true);
+      if (!module.ok || !plain.ok) throw new Error("Comment-only group changed validity");
+      expect(module.wgsl.replace(comment, "")).toBe(plain.wgsl);
+    });
+    it(`ignores spawn comments: ${comment.slice(0, 22)}`, () => {
+      const request = { attributes: [...SCHEMA, { name: "flags", type: "u32" as const, default: [1] }],
+        flagsAttribute: "flags", hook: "fn spawn(child: Point, ctx: PointCtx) -> Point { return child; }" };
+      const plain = spawnHookModule(request);
+      const module = spawnHookModule({ ...request, hook: comment + request.hook });
+      expect(module.ok).toBe(true);
+      if (!module.ok) throw new Error(module.errors.join("; "));
+      expect({ ...module, wgsl: module.wgsl.replace(comment, "") }).toEqual(plain);
+    });
+  }
+  it("keeps real slot reads across comments and ignores block openers inside line comments", () => {
+    expect(kernelReadsValueSlot(2, "ctx./* explanation */value2")).toBe(true);
+    expect(kernelReadsValueSlot(3, "// /* not a block\nctx.value3")).toBe(true);
+    expect(kernelReadsValueSlot(4, "ctx.val/* token separator */ue4")).toBe(false);
+  });
+});
+
 describe("attribute layout (§V72)", () => {
   it("vec3f strides 16 bytes, not 12 — the classic WGSL array-alignment trap", () => {
     expect(ATTRIBUTE_STRIDES["vec3f"]).toBe(16);

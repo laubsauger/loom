@@ -163,7 +163,7 @@ export const laserPathNode: NodeDefinition = {
       max: 32,
       range: "bounded",
       step: 1,
-      description: "Extra samples at a straight-through vertex. TD's mincornerhold.",
+      description: "Extra samples at a straight-through vertex.",
     },
     holdMax: {
       type: "number",
@@ -174,7 +174,7 @@ export const laserPathNode: NodeDefinition = {
       range: "bounded",
       step: 1,
       description:
-        "Extra samples at a full reversal, scaled linearly by angle steepness between the two (TD's maxcornerhold). 0 on both is the scope: an inertialess beam never dwells.",
+        "Extra samples at a full reversal, scaled linearly by angle steepness between the two. 0 on both is the scope: an inertialess beam never dwells.",
     },
     closed: {
       type: "boolean",

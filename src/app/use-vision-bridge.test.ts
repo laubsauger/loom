@@ -1,6 +1,10 @@
 // @vitest-environment jsdom
 import { act, renderHook } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import * as React from "react";
+// Expose a configurable module boundary for the state-dispatch allocation probe;
+// all hooks still delegate to the real React implementation.
+vi.mock("react", async () => ({ ...await vi.importActual<typeof React>("react") }));
 import { DEVICE_HELPER_COMMAND } from "@devices/helper.ts";
 
 import type { GraphDocument } from "../domain/types/graph.ts";
@@ -56,6 +60,23 @@ describe("T1029 — the pure halves, exact", () => {
 
 /* ------------------------------------------------------------------ the hook */
 
+it("unchanged native diagnostics do not enqueue React updates on every frame", () => {
+  const original = React.useState, setters: ReturnType<typeof vi.fn>[] = [];
+  const spy = vi.spyOn(React, "useState").mockImplementation(((value?: unknown) => {
+    const [state, set] = original(value), setter = vi.fn(set);
+    setters.push(setter); return [state, setter];
+  }) as typeof React.useState);
+  try {
+    const view = renderHook(() => useVisionBridge({ deviceClient: () => null }));
+    setters.forEach(setter => setter.mockClear());
+    act(() => { for (let index = 0; index < 60; index++) view.result.current.observe({
+      frameIndex: index, timeSeconds: index / 60, deltaSeconds: 1 / 60, mode: "offline", randomSeed: 1,
+    }); });
+    expect(setters.reduce((sum, setter) => sum + setter.mock.calls.length, 0)).toBe(0);
+    view.unmount();
+  } finally { spy.mockRestore(); }
+});
+
 const graph = {
   revision: 1,
   nodes: {
@@ -107,6 +128,18 @@ const flush = async (): Promise<void> => {
 const frame = { frameIndex: 1, timeSeconds: 0.1, deltaSeconds: 1 / 60, mode: "realtime", randomSeed: 7 } as never;
 
 describe("T1029 — the hook, per path", () => {
+  it("follows the compiler's native transport without asking a paired helper to substitute", async () => {
+    const { client, requests } = fakeClient({ ok: true, maskWidth: 1, maskHeight: 1, maskBase64: 'AA==', millis: 1 });
+    const { backend } = fakeBackend(new Float32Array(4));
+    const nativePlan = { ...compiled, resources: [{ kind: "externalTexture", id: "scratch:mask:modelResult", size: [4, 2], format: "rgba16float", sourceId: "inference:mask" }] } as unknown as CompiledGraph;
+    const view = renderHook(() => useVisionBridge({ deviceClient: () => client, backend: () => backend }));
+    act(() => view.result.current.track(graph, nativePlan));
+    act(() => view.result.current.observe(frame)); await flush();
+    expect(requests).toEqual([]);
+    expect(view.result.current.diagnostics.map(value => value.code)).toEqual(["vision.native.refused"]);
+    expect(view.result.current.resolver("mask1:ready", { frame } as never)).toBe(0);
+    view.unmount();
+  });
   it("NO HELPER: a WARNING at the node, coverage READS ZERO, and nothing ever crosses (T1067)", async () => {
     const { backend } = fakeBackend(new Float32Array(4));
     const view = renderHook(() =>

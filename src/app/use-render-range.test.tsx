@@ -12,6 +12,8 @@ import { createNodeRegistry } from "@nodes/registry/registry.ts";
 import { transportHolderFor } from "./transport-commands.ts";
 import { useRenderRange } from "./use-render-range.ts";
 import { renderRangeHolderFor } from "./render-range.ts";
+import { drainNativeViewerOutputs, registerNativeViewerOutput, trackNativeViewerDrain } from "./native-viewer-outputs.ts";
+import type { LoomBackend } from "@runtime/backend/index.ts";
 
 /**
  * T586 — THE WIRING GUARD for the render-time honest edge.
@@ -46,16 +48,24 @@ it("blocks the take and awaits output shutdown before evaluating its first frame
     stepOnce: () => frameInputs(1) } as never;
   let release!: () => void;
   const beforeRender = vi.fn(() => new Promise<void>(resolve => { release = resolve; }));
+  let releaseViewer!: () => void;
+  const backend = {} as LoomBackend;
+  const viewerDrain = new Promise<void>(resolve => { releaseViewer = resolve; });
+  const stopViewer = vi.fn(() => trackNativeViewerDrain(backend, viewerDrain));
+  registerNativeViewerOutput(backend, stopViewer);
   renderHook(() => useRenderRange({ bus, exports: fakeExports(), compiled: COMPILED, graph: graphWith("timeline"),
     registry: REGISTRY, settings: { ...SETTINGS, frameRange: { start: 0, end: 0 } }, latestFrame: () => frameInputs(0),
-    name: () => "test", beforeRender, loadEncoder: async () => fakeEncoder(),
+    name: () => "test", beforeRender: async () => { await Promise.all([beforeRender(), drainNativeViewerOutputs(backend)]); }, loadEncoder: async () => fakeEncoder(),
     write: async () => ({ kind: "cancelled" }) }));
   let pending!: Promise<unknown>;
   await act(async () => { pending = bus.execute("export.renderRange", {}, contextFor(alice)); });
   expect(beforeRender).toHaveBeenCalledOnce();
+  expect(stopViewer).toHaveBeenCalledOnce();
   expect(renderRangeHolderFor(bus).current!.busy()).toBe(true);
   expect(seek).not.toHaveBeenCalled();
-  await act(async () => { release(); await pending; });
+  await act(async () => { release(); });
+  expect(seek).not.toHaveBeenCalled();
+  await act(async () => { releaseViewer(); await pending; });
   expect(seek).toHaveBeenCalledOnce();
   expect(renderRangeHolderFor(bus).current!.busy()).toBe(false);
   beforeRender.mockRejectedValueOnce(new Error("GPU shutdown failed"));

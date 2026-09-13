@@ -12,7 +12,7 @@ function setup() {
   const transfer = vi.fn(() => bitmap);
   vi.stubGlobal("OffscreenCanvas", class { transferToImageBitmap = transfer; });
   const bridge = { nativeOutput: true as const, open: vi.fn(async () => {}), close: vi.fn(async () => {}), resize: vi.fn(async () => {}), status: vi.fn() };
-  const sender = { promise: Promise.resolve(), available: true, sentFrames: 0, send: vi.fn(), close: vi.fn() };
+  const sender = { promise: Promise.resolve(), waitAvailable: vi.fn(async () => {}), available: true, sentFrames: 0, send: vi.fn(), close: vi.fn() };
   vi.mocked(nativeOutputSender).mockReturnValue(sender);
   const presentation = { presentedFrames: vi.fn(() => 1), update: vi.fn(), dispose: vi.fn() };
   vi.mocked(attachNativeOutput).mockReturnValue(presentation);

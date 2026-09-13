@@ -57,7 +57,7 @@ describe("T949 — the scan is finding the real catalogue, or it is measuring no
     expect(definitionSources().length).toBeGreaterThan(30);
   });
 
-  it("names the world-acting nodes, and there are exactly two today", () => {
+  it("names every world-acting node explicitly", () => {
     const acting = Object.entries(NODE_SIDE_EFFECTS)
       .filter(([, value]) => value !== "none")
       .map(([type, value]) => `${type}:${value}`)
@@ -70,9 +70,11 @@ describe("T949 — the scan is finding the real catalogue, or it is measuring no
       // row names it). Its pump exists and is §T1005-registered; in this build the pump
       // constructs no transport at all, and the ledger row carries the full argument.
       "laserOut:emits",
+      "ndiOut:emits",
       // T942 tier 3. UDP at a host and port the document names — a lighting desk as often
       // as a synth. `pure` in NODE_REPRODUCIBILITY, and correctly so; see the ledger.
       "oscOut:emits",
+      "spoutOut:emits",
       "syphonOut:emits",
     ]);
   });

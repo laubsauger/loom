@@ -68,7 +68,7 @@ export const levelNode: NodeDefinition = {
   title: "Level",
   category: "color",
   description:
-    "Black/white level, invert, gamma, contrast, brightness and opacity, applied to linear values. TD Level TOP.",
+    "Black/white level, invert, gamma, contrast, brightness and opacity, applied to linear values.",
   inputs: [
     { id: "input", label: "Input", type: RGBA_TEXTURE, description: "Linear-space colour." },
   ],
@@ -83,7 +83,7 @@ export const levelNode: NodeDefinition = {
       min: 0,
       max: 1,
       range: "bounded",
-      description: "Blends towards the inverted image, as in TD, rather than a hard switch.",
+      description: "Blends towards the inverted image rather than a hard switch.",
     },
     gamma1: { type: "number", label: "Gamma", default: 1, min: 0.01, max: 8, range: "floor" },
     contrast: { type: "number", label: "Contrast", default: 1, min: 0, max: 8, range: "floor" },
@@ -144,7 +144,7 @@ export const hsvNode: NodeDefinition = {
   version: 1,
   title: "HSV",
   category: "color",
-  description: "Hue offset, saturation and value, in linear RGB. TD HSV Adjust TOP.",
+  description: "Hue offset, saturation and value, in linear RGB.",
   inputs: [
     { id: "input", label: "Input", type: RGBA_TEXTURE, description: "Linear-space colour." },
   ],
@@ -201,7 +201,7 @@ export const thresholdNode: NodeDefinition = {
   version: 1,
   title: "Threshold",
   category: "color",
-  description: "Turns a channel into a soft-edged mask. TD Threshold TOP.",
+  description: "Turns a channel into a soft-edged mask.",
   inputs: [
     { id: "input", label: "Input", type: RGBA_TEXTURE, description: "Linear-space colour." },
   ],
@@ -286,7 +286,7 @@ export const lookupNode: NodeDefinition = {
   version: 1,
   title: "Lookup",
   category: "color",
-  description: "Remaps a channel of the source through a lookup image (pair with Ramp). TD Lookup TOP.",
+  description: "Remaps a channel of the source through a lookup image (pair with Ramp).",
   inputs: [
     {
       id: "source",
@@ -388,7 +388,7 @@ export const limitNode: NodeDefinition = {
   version: 1,
   title: "Limit",
   category: "color",
-  description: "Clamps, loops, zigzags or quantizes channel values. TD Limit TOP.",
+  description: "Clamps, loops, zigzags or quantizes channel values.",
   inputs: [
     { id: "input", label: "Input", type: RGBA_TEXTURE, description: "Linear-space colour." },
   ],
@@ -519,7 +519,7 @@ export const reorderNode: NodeDefinition = {
   title: "Reorder",
   category: "color",
   description:
-    "Builds each output channel from any channel of either input, or from one or zero. TD Reorder TOP.",
+    "Builds each output channel from any channel of either input, or from one or zero.",
   inputs: [
     {
       id: "in1",

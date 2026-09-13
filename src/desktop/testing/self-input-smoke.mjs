@@ -8,7 +8,7 @@ import { fileURLToPath, URL } from 'node:url';
 export async function verifySelfInput({ app, page, shutdown = false }) {
   const publisherName = 'Loom self-input smoke';
   const fixture = await page.evaluate(async name => {
-    const { nativeOutputFixture } = await import('/src/desktop/testing/output-fixture.ts');
+    const { nativeOutputFixture } = await import(window.loomDesktopFixtureModules.output);
     return nativeOutputFixture('', false, name);
   }, publisherName);
   const chooser = page.waitForEvent('filechooser');
@@ -98,7 +98,7 @@ export async function verifySelfInput({ app, page, shutdown = false }) {
         })));
         if (stage === 0) {
           const diagnostic = await page.evaluate(async name => {
-            const { verifyNativeInput } = await import('/src/desktop/testing/input-fixture.ts');
+            const { verifyNativeInput } = await import(window.loomDesktopFixtureModules.input);
             try { return { raw: await verifyNativeInput(name) }; }
             catch (error) { return { rawError: String(error) }; }
           }, publisherName);
@@ -110,7 +110,7 @@ export async function verifySelfInput({ app, page, shutdown = false }) {
     }
     if (stage === 0) {
       const raw = await page.evaluate(async name => {
-        const { verifyNativeInput } = await import('/src/desktop/testing/input-fixture.ts');
+        const { verifyNativeInput } = await import(window.loomDesktopFixtureModules.input);
         return verifyNativeInput(name);
       }, publisherName);
       console.log('LOOM_SYPHON_SELF_INPUT_RAW', JSON.stringify(raw));

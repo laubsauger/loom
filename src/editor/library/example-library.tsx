@@ -18,6 +18,25 @@ import { filterExamples } from "./example-search.ts";
 import { categoriesOf } from "./search.ts";
 import styles from "./library.module.css";
 
+function ExampleBadges({ example, row = false }: { example: ExampleProject; row?: boolean }) {
+  return <span className={`${styles.cardTags} ${row ? styles.exampleBadges : ""}`}>
+    {example.requirementsError === undefined ? null : (
+      <span className={`${styles.cardTag} ${styles.requirementTag}`} title={example.requirementsError}>
+        Requirements unknown
+      </span>
+    )}
+    {example.requirements.map(requirement => (
+      <span className={`${styles.cardTag} ${styles.requirementTag}`} key={requirement.id} title={requirement.description}>
+        {requirement.label}
+      </span>
+    ))}
+    {example.tags.map(tag => {
+      const capability = capabilityOf(tag);
+      return <span className={styles.cardTag} key={tag} title={capability.meaning}>{capability.label}</span>;
+    })}
+  </span>;
+}
+
 /**
  * The example library (T189, §V93, §V88).
  *
@@ -201,16 +220,7 @@ export function ExampleLibrary({
             it"), which is a sentence about the TAG and so cannot go stale against the file
             the way a hand-written per-example claim would.
           */}
-          <span className={styles.cardTags}>
-            {example.tags.map((tag) => {
-              const capability = capabilityOf(tag);
-              return (
-                <span className={styles.cardTag} key={tag} title={capability.meaning}>
-                  {capability.label}
-                </span>
-              );
-            })}
-          </span>
+          <ExampleBadges example={example} />
           <span className={styles.cardMeta}>{example.nodeCount} nodes</span>
           {example.description === "" ? null : (
             <span className={styles.cardText}>{example.description}</span>
@@ -249,6 +259,7 @@ export function ExampleLibrary({
               >
                 <span className={styles.itemTitle}>{example.name}</span>
                 <span className={styles.itemMeta}>{example.nodeCount} nodes</span>
+                <ExampleBadges example={example} row />
               </button>
               {/*
                 T1278 — the SHARE half of the feature, a sibling button rather than

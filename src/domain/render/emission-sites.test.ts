@@ -83,6 +83,13 @@ const NOT_A_PUMP_SITE = [
    * Node and cannot import a Vite transform, so one table serves both readers.
    */
   "src/examples/capabilities.ts",
+  // Read-only file requirements: loads/expands an isolated document to classify
+  // helper/desktop dependencies. Names emitting operators as metadata, never
+  // installs an app pump, requests permission or opens a device/native transport.
+  "src/examples/runtime-requirements.ts",
+  // Pure node-type/transport-name tables shared by the inspector and existing
+  // native pumps. No bridge access, publication or device ownership in this file.
+  "src/devices/native-video.ts",
 ];
 
 /** Every non-test source module a pump could hide in: all of `src`, minus the exclusions. */
@@ -119,7 +126,9 @@ describe("T1005 — the pump ledger, held to the side-effect ledger", () => {
       // T950: registered in the same commit that declared laserOut "emits" — the gate
       // forcing exactly what it was built to force, before any transport exists.
       ["laserOut", "src/app/use-laser-bridge.ts"],
+      ["ndiOut", "src/app/use-native-outputs.ts"],
       ["oscOut", "src/app/use-osc-bridge.ts"],
+      ["spoutOut", "src/app/use-native-outputs.ts"],
       ["syphonOut", "src/app/use-native-outputs.ts"],
     ]);
   });

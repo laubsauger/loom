@@ -7,6 +7,7 @@ import { resolveParameters } from "@domain/parameters/index.ts";
 import { EMISSION_PUMPS } from "@domain/render/emission-pumps.ts";
 import { emissionRefusal } from "@domain/render/side-effects.ts";
 import { desktopOutputBridge } from "@devices/native-output.ts";
+import { NATIVE_OUTPUT_TRANSPORTS, NATIVE_VIDEO_LABELS, SPOUT_UNAVAILABLE } from "@devices/native-video.ts";
 import { createNativeOutputSession } from "@devices/native-output-session.ts";
 import type { LoomBackend } from "@runtime/backend/index.ts";
 import type { AppRuntime } from "./app-runtime.ts";
@@ -29,8 +30,10 @@ export function useNativeOutputs(runtime: AppRuntime, backend: LoomBackend | nul
         const edge = Object.values(graph.edges).find(edge => edge.target.nodeId === node.id && edge.target.portId === "input");
         const source = compiled?.outputs.find(output => output.nodeId === edge?.source.nodeId && output.portId === edge.source.portId);
         const selection = source && demanded.has(node.id) ? { resourceId: source.resourceId, size: source.size } : null;
-        return { id: node.id, definition, name: String(values["name"]), enabled: values["enabled"] === true,
-          selection, selectionKey: JSON.stringify(selection), key: JSON.stringify(values) };
+        const transport = NATIVE_OUTPUT_TRANSPORTS[node.type];
+        if (!transport) throw new Error(`No native output transport for ${node.type}`);
+        return { id: node.id, definition, transport, name: String(values["name"]), enabled: values["enabled"] === true,
+          selection, selectionKey: JSON.stringify(selection), key: JSON.stringify([transport, values]) };
       });
   }, [graph, compiled, runtime.registry]);
   const latest = useRef(requests); latest.current = requests;
@@ -41,7 +44,6 @@ export function useNativeOutputs(runtime: AppRuntime, backend: LoomBackend | nul
   const drainFailure = useRef<string | null>(null);
   useEffect(() => {
     if (!backend) return;
-    const bridge = desktopOutputBridge();
     const entries = new Map<string, Entry>();
     const draining = pendingDrains.current;
     const messages = new Map<string, RuntimeDiagnostic>();
@@ -81,12 +83,15 @@ export function useNativeOutputs(runtime: AppRuntime, backend: LoomBackend | nul
       }
       for (const id of messages.keys()) if (!wanted.some(request => request.id === id)) report(id, null);
       for (const request of wanted) {
+        const bridge = desktopOutputBridge(request.transport);
+        const label = NATIVE_VIDEO_LABELS[request.transport];
         if (drainFailure.current) { report(request.id, drainFailure.current); continue; }
         const refusal = emissionRefusal(request.definition, policy);
         if (refusal) { report(request.id, refusal); continue; }
         if (!request.enabled) { report(request.id, null); continue; }
-        if (!request.selection) { report(request.id, "Connect a compiled texture to Syphon Out"); continue; }
-        if (!bridge) { report(request.id, "Syphon Out requires the macOS desktop app"); continue; }
+        if (!request.selection) { report(request.id, `Connect a compiled texture to ${label} Out`); continue; }
+        if (!bridge) { report(request.id, request.transport === "spout" ? SPOUT_UNAVAILABLE : request.transport === "ndi"
+          ? "NDI Out requires the desktop app with an explicit local NDI SDK" : "Syphon Out requires the macOS desktop app"); continue; }
         if (draining.size) continue;
         let entry = entries.get(request.id);
         if (!entry) {

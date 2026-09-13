@@ -202,6 +202,11 @@ describe("T890 — a fenced reference resolves against the document, typed or no
    */
   const NOT_A_NODE: ReadonlyArray<{ doc: string; token: string; reason: string }> = [
     {
+      doc: "E73-Native-Person-Mask.md",
+      token: "python3",
+      reason: "The Python executable in the shell setup command, not a graph-node reference.",
+    },
+    {
       doc: "E40-Wake.md",
       token: "y1",
       reason:

@@ -23,6 +23,8 @@ function harness() {
   let answer;
   let fail;
   installFilePermissions({ session, origin, report: message => reports.push(message),
+    requestSystemAccess: async () => true,
+    notify: () => {},
     confirm: async (_contents, options) => {
       prompts.push(options);
       return new Promise((resolve, reject) => { answer = resolve; fail = reject; });

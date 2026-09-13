@@ -101,6 +101,10 @@ describe("examples: the gate", () => {
       "E69-Burnish.loom.json",
       "E7-LFO-Dissolve.loom.json",
       "E70-Chimera.loom.json",
+      "E71-Syphon-Loopback.loom.json",
+      "E72-NDI-Loopback.loom.json",
+      "E73-Native-Person-Mask.loom.json",
+      "E74-Spout-Loopback-Preparation.loom.json",
       "E8-Slit-Scan.loom.json",
       "E9-Ember.loom.json",
     ]);

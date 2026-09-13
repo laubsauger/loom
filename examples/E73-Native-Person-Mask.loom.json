@@ -1,0 +1,206 @@
+{
+  "assets": [],
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "calibration-source": {
+        "id": "calibration-source",
+        "order": 0,
+        "source": {
+          "nodeId": "calibration",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "source",
+          "portId": "inputs"
+        }
+      },
+      "camera-source": {
+        "id": "camera-source",
+        "order": 1,
+        "source": {
+          "nodeId": "camera",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "source",
+          "portId": "inputs"
+        }
+      },
+      "key-result": {
+        "id": "key-result",
+        "source": {
+          "nodeId": "key",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "resultOut",
+          "portId": "input"
+        }
+      },
+      "mask-key": {
+        "id": "mask-key",
+        "source": {
+          "nodeId": "mask",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "key",
+          "portId": "in2"
+        }
+      },
+      "source-key": {
+        "id": "source-key",
+        "source": {
+          "nodeId": "source",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "key",
+          "portId": "in1"
+        }
+      },
+      "source-mask": {
+        "id": "source-mask",
+        "source": {
+          "nodeId": "source",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "mask",
+          "portId": "input"
+        }
+      },
+      "source-reference": {
+        "id": "source-reference",
+        "source": {
+          "nodeId": "source",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "calibration": {
+        "definitionVersion": 1,
+        "id": "calibration",
+        "label": "calibration1",
+        "parameters": {
+          "mono": false,
+          "seed": 73,
+          "speed": 0.35,
+          "t4d": 0.37,
+          "type": "perlin4d"
+        },
+        "position": {
+          "x": -960,
+          "y": -200
+        },
+        "type": "noise"
+      },
+      "camera": {
+        "definitionVersion": 1,
+        "id": "camera",
+        "label": "camera1",
+        "parameters": {},
+        "position": {
+          "x": -960,
+          "y": 140
+        },
+        "type": "webcam"
+      },
+      "key": {
+        "definitionVersion": 1,
+        "id": "key",
+        "label": "key1",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": 120,
+          "y": 140
+        },
+        "type": "multiply"
+      },
+      "mask": {
+        "definitionVersion": 1,
+        "format": {
+          "format": "rgba16float",
+          "mode": "fixed"
+        },
+        "id": "mask",
+        "label": "mask1",
+        "parameters": {
+          "invert": false,
+          "rateLimit": 0.1,
+          "transport": "native"
+        },
+        "position": {
+          "x": -240,
+          "y": 140
+        },
+        "type": "personMask"
+      },
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "label": "reference1",
+        "parameters": {},
+        "position": {
+          "x": 480,
+          "y": -200
+        },
+        "type": "output"
+      },
+      "resultOut": {
+        "definitionVersion": 1,
+        "id": "resultOut",
+        "label": "person1",
+        "parameters": {},
+        "position": {
+          "x": 480,
+          "y": 140
+        },
+        "type": "output"
+      },
+      "source": {
+        "definitionVersion": 1,
+        "id": "source",
+        "label": "source1",
+        "parameters": {
+          "index": 0
+        },
+        "position": {
+          "x": -600,
+          "y": -200
+        },
+        "type": "switch"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E73 Native Person Mask",
+  "projectId": "example-e73-native-person-mask",
+  "schemaVersion": 3,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 73,
+    "workingFormat": "rgba8unorm-srgb"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}

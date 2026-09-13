@@ -36,6 +36,7 @@ const EXAMPLE = {
   // T1162: the category is the first medium tag, and `wgsl` is a technique tag with no
   // category counterpart — so this row exercises both halves of the card's badge strip.
   tags: ["points", "feedback", "wgsl"],
+  requirements: [],
   thumbnailUrl: "/examples/thumbs/E9-Test.png",
 } as const;
 
@@ -48,6 +49,7 @@ const OTHER = {
   description: "A velocity field carrying a dye.",
   category: "feedback",
   tags: ["feedback"],
+  requirements: [],
 } as const;
 
 /** A bus that answers `project.open` — the composition root registers the real one. */
@@ -85,6 +87,7 @@ describe("example catalogue (§V88)", () => {
       const stem = example.fileName.replace(/\.loom\.json$/, "");
       expect(example.description, `examples/${stem}.md is missing or has no prose`).not.toBe("");
       expect(example.category, example.fileName).not.toBe("");
+      expect(example.requirementsError, example.fileName).toBeUndefined();
     }
   });
 });
@@ -281,13 +284,35 @@ describe("ExampleLibrary (T189, §V93)", () => {
       within(card).getByText(capabilityOf("wgsl").label).getAttribute("title"),
     ).toBe(capabilityOf("wgsl").meaning);
 
-    // The row itself stays two columns wide (§T863): the badges are on the card, and a
-    // per-row badge strip is what that task refused for the categories.
+    // Tags now appear in the list too; discovering capabilities needs no hover.
     expect(
       within(screen.getByRole("button", { name: /^E9 Test/ })).queryByText(
         capabilityOf("wgsl").label,
       ),
-    ).toBeNull();
+    ).not.toBeNull();
+  });
+
+  it("shows runtime requirements and tags before opening or hovering an example", () => {
+    const { bus, opened } = busWithOpen();
+    const example = { ...EXAMPLE, requirements: [
+      { id: "desktop" as const, label: "Desktop only", description: "Not available in the hosted browser." },
+      { id: "apple-silicon" as const, label: "Apple Silicon", description: "Requires an Apple Silicon Mac." },
+    ] };
+    render(<ExampleLibrary bus={bus} context={context} dirty={false} examples={[example, OTHER]} />);
+    const row = within(screen.getByRole("button", { name: /^E9 Test/ }));
+    expect(row.getByText("Desktop only").getAttribute("title")).toBe("Not available in the hosted browser.");
+    expect(row.getByText("Apple Silicon")).toBeDefined();
+    for (const tag of EXAMPLE.tags) expect(row.getByText(capabilityOf(tag).label)).toBeDefined();
+    expect(within(screen.getByRole("button", { name: /^E12 Other/ })).queryByText("Desktop only")).toBeNull();
+    expect(opened).toHaveLength(0);
+  });
+
+  it("marks unresolved requirements instead of implying browser compatibility", () => {
+    const { bus } = busWithOpen();
+    render(<ExampleLibrary bus={bus} context={context} dirty={false}
+      examples={[{ ...EXAMPLE, requirementsError: "Unavailable component definition" }]} />);
+    const badge = within(screen.getByRole("button", { name: /^E9 Test/ })).getByText("Requirements unknown");
+    expect(badge.getAttribute("title")).toBe("Unavailable component definition");
   });
 
   it("finds an example by a capability its name and its description never mention", () => {

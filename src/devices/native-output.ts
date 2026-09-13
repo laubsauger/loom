@@ -1,5 +1,6 @@
 import type { LoomBackend } from "@runtime/backend/index.ts";
 import type { PresentableCanvas } from "@runtime/backend/backend-types.ts";
+import type { NativeVideoTransport } from "./native-video.ts";
 
 /** Transferred native-output surface, existing backend; never a graph copy. */
 export interface NativeOutputSelection {
@@ -13,8 +14,14 @@ export interface DesktopOutputBridge {
   resize(name: string, width: number, height: number): Promise<void>;
   status(name: string): Promise<{ copied: number; dropped: number; error: string | null }>;
 }
-export function desktopOutputBridge(): DesktopOutputBridge | undefined {
-  return (window as Window & { loomDesktop?: DesktopOutputBridge }).loomDesktop;
+export type NativeOutputTransport = NativeVideoTransport;
+export function desktopOutputBridge(transport: NativeOutputTransport = "syphon"): DesktopOutputBridge | undefined {
+  const desktop = (window as Window & { loomDesktop?: DesktopOutputBridge & { ndiOutput?: DesktopOutputBridge; spoutOutput?: DesktopOutputBridge } }).loomDesktop;
+  switch (transport) {
+    case "syphon": return desktop;
+    case "ndi": return desktop?.ndiOutput;
+    case "spout": return desktop?.spoutOutput;
+  }
 }
 export function attachNativeOutput(backend: LoomBackend, selection: NativeOutputSelection, canvas: PresentableCanvas) {
   canvas.width = selection.size[0]; canvas.height = selection.size[1];

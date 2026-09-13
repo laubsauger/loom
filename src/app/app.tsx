@@ -92,6 +92,7 @@ import type { LoomBackend } from "@runtime/backend/index.ts";
 import { useMediaSources } from "./use-media-sources.ts";
 import { useNativeInputs } from "./use-native-inputs.ts";
 import { useNativeOutputs } from "./use-native-outputs.ts";
+import { drainNativeViewerOutputs } from "./native-viewer-outputs.ts";
 import { createMediaControlRegistry, useMediaCommands } from "./media-commands.ts";
 import { useProject } from "./use-project.ts";
 import { useRenderRange } from "./use-render-range.ts";
@@ -429,6 +430,7 @@ export function App({
   });
   // T1029: the Person Mask's CPU half — Apple Vision over the same shared client.
   const vision = useVisionBridge({
+    scope: runtime.bus,
     deviceClient: osc.deviceClient,
     backend: () => backendRef.current,
     // T1067: the FLAT document, so a coverage spent inside a component resolves too.
@@ -1263,7 +1265,7 @@ export function App({
    */
   const nativeOutputs = useNativeOutputs(runtime, backend ?? null, compile.flatGraph, frameLoop.installedPlan);
   const renderRange = useRenderRange({
-    beforeRender: nativeOutputs.suspend,
+    beforeRender: async () => { await Promise.all([nativeOutputs.suspend(), drainNativeViewerOutputs(backend ?? null), vision.prepareForRender()]); },
     bus: runtime.bus,
     exports: agentPorts.exports,
     compiled: compile.compiled,
@@ -2035,6 +2037,12 @@ export function App({
                 probe={agentPorts.probe}
                 orbits={previewOrbits}
                 interest={previewInterest}
+                /* §B220: the viewer asks for its own preview. `interest` alone was a pin on a
+                   tile the GRAPH PANE had already made, so with that pane closed a camera,
+                   light, geometry, material or pointset selection reached nothing at all. */
+                previewSinks={previewSinks}
+                previewFps={runtime.settings.previewFps}
+                previewLongEdge={runtime.settings.previewLongEdge}
               />
             </ErrorBoundary>
           }

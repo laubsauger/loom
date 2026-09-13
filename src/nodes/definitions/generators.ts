@@ -135,7 +135,7 @@ export const rampNode: NodeDefinition = {
   version: 2,
   title: "Ramp",
   category: "generator",
-  description: "Multi-stop gradient: horizontal, vertical, radial or circular. TD Ramp TOP.",
+  description: "Multi-stop gradient: horizontal, vertical, radial or circular.",
   inputs: [],
   outputs: [{ id: "out", label: "Out", type: RGBA_TEXTURE, description: "Linear-space colour." }],
   parameters: {
@@ -309,7 +309,7 @@ export const checkerNode: NodeDefinition = {
   version: 1,
   title: "Checker",
   category: "generator",
-  description: "Two-colour checkerboard. TD Checker TOP.",
+  description: "Two-colour checkerboard.",
   inputs: [],
   outputs: [{ id: "out", label: "Out", type: RGBA_TEXTURE, description: "Linear-space colour." }],
   parameters: {
@@ -374,7 +374,7 @@ export const circleNode: NodeDefinition = {
   version: 1,
   title: "Circle",
   category: "generator",
-  description: "Anti-aliased ellipse, or its signed distance field. TD Circle TOP.",
+  description: "Anti-aliased ellipse, or its signed distance field.",
   inputs: [],
   outputs: [
     {
@@ -451,7 +451,7 @@ export const rectangleNode: NodeDefinition = {
   version: 1,
   title: "Rectangle",
   category: "generator",
-  description: "Anti-aliased rounded rectangle, or its signed distance field. TD Rectangle TOP.",
+  description: "Anti-aliased rounded rectangle, or its signed distance field.",
   inputs: [],
   outputs: [
     {

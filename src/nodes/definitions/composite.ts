@@ -214,31 +214,31 @@ function blendNode(
 export const overNode = blendNode(
   "over",
   "Over",
-  "Composites input 1 over input 2 using its alpha. TD Over TOP.",
+  "Composites input 1 over input 2 using its alpha.",
   "over",
 );
 export const addNode = blendNode(
   "add",
   "Add",
-  "Adds the two inputs channel by channel. TD Add TOP.",
+  "Adds the two inputs channel by channel.",
   "add",
 );
 export const multiplyNode = blendNode(
   "multiply",
   "Multiply",
-  "Multiplies the two inputs channel by channel. TD Multiply TOP.",
+  "Multiplies the two inputs channel by channel.",
   "multiply",
 );
 export const screenNode = blendNode(
   "screen",
   "Screen",
-  "Inverse-multiplies the two inputs: 1 - (1-a)(1-b). TD Composite TOP, screen operation.",
+  "Inverse-multiplies the two inputs: 1 - (1-a)(1-b).",
   "screen",
 );
 export const differenceNode = blendNode(
   "difference",
   "Difference",
-  "Absolute difference between the two inputs. TD Composite TOP, difference operation.",
+  "Absolute difference between the two inputs.",
   "difference",
 );
 
@@ -246,7 +246,7 @@ export const differenceNode = blendNode(
 export const compositeNode = blendNode(
   "composite",
   "Composite",
-  "Blends two inputs with a selectable operation. TD Composite TOP.",
+  "Blends two inputs with a selectable operation.",
   null,
 );
 
@@ -267,7 +267,7 @@ export const crossNode: NodeDefinition = {
   version: 1,
   title: "Cross",
   category: "composite",
-  description: "Dissolves between two inputs by a factor. TD Cross TOP.",
+  description: "Dissolves between two inputs by a factor.",
   inputs: [
     {
       id: "in1",

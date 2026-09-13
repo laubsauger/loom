@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { RefObject } from "react";
 import type { GraphDocument } from "@domain/types/graph.ts";
 import type { ResolvedOutput } from "@compiler/index.ts";
@@ -157,8 +157,11 @@ export function backgroundTiles(
 }
 
 export function useGraphBackground(inputs: GraphBackgroundInputs): void {
-  const inputsRef = useRef(inputs);
-  inputsRef.current = inputs;
+  // Selection follows immutable document/plan changes, not animation cadence.
+  // Large unchanged graphs must not be enumerated and sorted every display tick.
+  const marks = useMemo(() => graphBackgroundMarks(inputs.graph, inputs.compiledOutputs), [inputs.graph, inputs.compiledOutputs]);
+  const inputsRef = useRef({ ...inputs, marks });
+  inputsRef.current = { ...inputs, marks };
   /** The live tick body, for the T634 hidden-page resync below. Null while not mounted. */
   const stepRef = useRef<(() => void) | null>(null);
   /** The live document-boundary body, for the B143 effect below. Null while not mounted. */
@@ -223,7 +226,7 @@ export function useGraphBackground(inputs: GraphBackgroundInputs): void {
       // The commit-time effect below normally gets here first; this is the same call, for
       // the case where it did not (a load that never re-rendered this pane).
       crossDocumentBoundary(current.documentIdentity);
-      const marks = graphBackgroundMarks(current.graph, current.compiledOutputs);
+      const marks = current.marks;
       // Marking IS watching (T252): the refs keep their nodes materialized. The sink
       // store merges callers, so this coexists with the tile scheduler's own set.
       if (marks.length > 0) {

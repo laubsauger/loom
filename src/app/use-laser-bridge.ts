@@ -267,7 +267,8 @@ export function useLaserBridge(options: {
       }
       if (!hasPump) {
         // No pump means no diagnostics — the same list the loop below would have produced.
-        setDiagnostics((prior) => (prior.length === 0 ? prior : []));
+        // Avoid enqueueing a React update every frame just to eagerly bail out.
+        if (diagnostics.length > 0) setDiagnostics([]);
         return;
       }
       const next: RuntimeDiagnostic[] = [];
@@ -359,7 +360,7 @@ export function useLaserBridge(options: {
         return next;
       });
     },
-    [client, options, run],
+    [client, options, run, diagnostics.length],
   );
 
   return { diagnostics, session, sync };

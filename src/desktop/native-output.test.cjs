@@ -7,7 +7,8 @@ const { join } = require('node:path');
 const { runInNewContext } = require('node:vm');
 const { EventEmitter } = require('node:events');
 
-function harness(ready = true) {
+function harness(ready = true, options = {}) {
+  const prefix = options.transport === 'ndi' ? 'loom-ndi-output' : 'loom-native-output';
   const ipc = {}; const events = {}; const closers = []; let resume;
   let released = 0; let stopped = 0; let calls = 0; const publishedNames = [], stoppedNames = [];
   const owner = new EventEmitter();
@@ -16,7 +17,8 @@ function harness(ready = true) {
   const native = { publish(_surface, name) { calls++; publishedNames.push(name); return new Promise(resolve => { resume = resolve; }); }, stop(name) { stopped++; stoppedNames.push(name); }, stats() { return { publishers: 1, queuesCreated: 1 }; } };
   const module = { exports: {} };
   runInNewContext(readFileSync(join(__dirname, 'native-output.cjs'), 'utf8'), {
-    module, __dirname, require: name => name === 'node:path' ? { join } : ({ ipcMain: { handle(name, fn) { ipc[name] = fn; } } }),
+    module, __dirname, require: name => name === 'node:path' ? { join }
+      : name === 'node:buffer' ? require(name) : ({ ipcMain: { handle(name, fn) { ipc[name] = fn; } } }),
   });
   const contents = new EventEmitter();
   contents.mainFrame = {};
@@ -24,38 +26,64 @@ function harness(ready = true) {
   contents.startPainting = () => { painting = true; };
   contents.stopPainting = () => { painting = false; };
   contents.on('newListener', (name, fn) => { events[name] = fn; });
-  let closed = false;
+  let closed = false, strictDestroyedClose = false;
   const window = { get webContents() {
     if (closed) throw new TypeError('Object has been destroyed');
     return contents;
-  }, once(_name, fn) { closers.push(fn); }, setContentSize() {}, close() {
-    if (closed) return;
+  }, isDestroyed: () => closed, once(_name, fn) { closers.push(fn); }, setContentSize() {}, close() {
+    if (closed) {
+      if (strictDestroyedClose) throw new Error('Object has been destroyed');
+      return;
+    }
     closed = true;
     closers.forEach(fn => fn());
   } };
-  const adapter = module.exports.installNativeOutput(native, 'http://127.0.0.1:5187');
+  const adapter = module.exports.installNativeOutput(native, 'http://127.0.0.1:5187', options);
   adapter.attach(owner, window, 'test', 'Test publisher');
   const markReady = (sender = contents, senderFrame = contents.mainFrame) =>
-    ipc['loom-native-output-frame-ready']({ sender, senderFrame });
+    ipc[`${prefix}-frame-ready`]({ sender, senderFrame });
   if (ready) markReady();
   const event = sender => ({ sender, senderFrame: owner.mainFrame });
   return {
     paint: () => events.paint({ texture: { textureInfo: { pixelFormat: 'bgra', codedSize: { width: 1280, height: 720 }, handle: { ioSurface: {} } }, release() { released++; } } }),
     close: () => window.close(), resume: () => resume(), contents, markReady,
     emptyPaint: () => events.paint({}), get painting() { return painting; },
-    status: sender => ipc['loom-native-output-status'](event(sender), 'test'), owner,
-    closeIpc: sender => ipc['loom-native-output-close'](event(sender), 'test'),
-    invoke: (command, request) => ipc[`loom-native-output-${command}`](request, 'test', 1280, 720),
-    reattach: () => adapter.attach(owner, window, 'test', 'Test publisher'),
+    status: sender => ipc[`${prefix}-status`](event(sender), 'test'), owner,
+    closeIpc: sender => ipc[`${prefix}-close`](event(sender), 'test'),
+    invoke: (command, request) => ipc[`${prefix}-${command}`](request, 'test', 1280, 720),
+    reattach: (name = 'test') => adapter.attach(owner, window, name, name === 'test' ? 'Test publisher' : name),
     publishedNames, stoppedNames,
-    open: publisherName => ipc['loom-native-output-open'](event(owner), 'loom-native-output-00000000-0000-0000-0000-000000000000', 1920, 1080, publisherName),
+    diagnostics: () => adapter.diagnostics(),
+    open: (publisherName, suffix = '0') => ipc[`${prefix}-open`](event(owner), `loom-native-output-00000000-0000-0000-0000-00000000000${suffix}`, 1920, 1080, publisherName),
+    stopWith: callback => { native.stop = callback; },
+    strictClose: () => { strictDestroyedClose = true; },
+    retireOwner: () => adapter.retireOwner(owner),
     get released() { return released; }, get stopped() { return stopped; }, get calls() { return calls; },
   };
 }
+test('main-only diagnostics identify pending publishers and contain no native ownership objects', async () => {
+  const h = harness(false);
+  const initial = h.diagnostics()[0];
+  assert.deepEqual(Object.keys(initial).sort(), ['name', 'publisherName', 'frameReady', 'busy', 'closed', 'copied', 'dropped', 'error', 'size'].sort());
+  assert.equal(initial.publisherName, 'Test publisher');
+  assert.equal(initial.frameReady, false); assert.equal(initial.busy, false);
+  h.markReady();
+  const painting = h.paint();
+  assert.equal(h.diagnostics()[0].frameReady, true);
+  assert.equal(h.diagnostics()[0].busy, true);
+  h.resume(); await painting;
+  const completed = h.diagnostics()[0];
+  assert.equal(completed.busy, false); assert.equal(completed.copied, 1);
+  completed.size[0] = 1;
+  assert.equal(h.diagnostics()[0].size[0], 1280);
+  h.close();
+  assert.equal(h.diagnostics().length, 0);
+});
 test('output preload exposes only a no-argument readiness notification', async () => {
   let exposed;
   const calls = [];
   runInNewContext(readFileSync(join(__dirname, 'output-preload.cjs'), 'utf8'), {
+    process: { argv: [] },
     require: () => ({
       contextBridge: { exposeInMainWorld(name, api) { assert.equal(name, 'loomNativeSurface'); exposed = api; } },
       ipcRenderer: { invoke(...args) { calls.push(args); return Promise.resolve(); } },
@@ -181,4 +209,83 @@ test('invalid and duplicate publisher names are rejected before creating a windo
   for (const name of ['', ' ', null, 'x\0y', 'x'.repeat(257)]) await assert.rejects(h.open(name), /Invalid Syphon/);
   await assert.rejects(h.open('Test publisher'), /already in use/);
   assert.equal(h.calls, 0); h.close();
+});
+
+test('asynchronous SDK stop retains its slot and close acknowledgment until drainage', async () => {
+  const h = harness(); let finish;
+  h.stopWith(() => new Promise(resolve => { finish = resolve; }));
+  const closing = h.closeIpc(h.owner);
+  let done = false; closing.then(() => { done = true; });
+  await Promise.resolve();
+  assert.equal(done, false); assert.equal(h.diagnostics().length, 1);
+  assert.throws(() => h.reattach(), /Duplicate/);
+  finish(); await closing;
+  assert.equal(done, true); assert.equal(h.diagnostics().length, 0);
+});
+
+test('failed SDK stop rejects closure and owner retirement without reusing the publisher', async () => {
+  const h = harness();
+  h.strictClose();
+  h.stopWith(async () => { throw new Error('SDK drain failed'); });
+  await assert.rejects(h.closeIpc(h.owner), /SDK drain failed/);
+  assert.match(h.diagnostics()[0].error, /SDK drain failed/);
+  assert.throws(() => h.reattach(), /Duplicate/);
+  await assert.rejects(h.retireOwner(), /SDK drain failed/);
+});
+
+test('NDI denial rejects before a window or publisher can be created', async () => {
+  const h = harness(true, { transport: 'ndi', beforeAccess: async () => { throw new Error('Network denied'); } });
+  await assert.rejects(h.open('Denied'), /Network denied/);
+  assert.equal(h.calls, 0); assert.equal(h.diagnostics().length, 1);
+  h.close();
+});
+
+test('NDI validates its UTF8 byte bound before requesting network consent', async () => {
+  let prompts = 0;
+  const h = harness(true, { transport: 'ndi', beforeAccess: async () => { prompts++; } });
+  await assert.rejects(h.open('é'.repeat(65)), /128 UTF8 bytes/);
+  assert.equal(prompts, 0); assert.equal(h.calls, 0); h.close();
+});
+
+test('NDI rejects SDK-normalized publisher names before consent or window creation', async () => {
+  let prompts = 0;
+  const h = harness(true, { transport: 'ndi', beforeAccess: async () => { prompts++; } });
+  for (const reserved of ['\\', '/', ':', '*', '?', '"', '<', '>', '|'])
+    await assert.rejects(h.open(`Loom${reserved}Camera`), /reserved characters/);
+  assert.equal(prompts, 0); assert.equal(h.calls, 0); h.close();
+});
+
+test('NDI permission waits reserve capacity and cannot open after owner retirement', async () => {
+  let allow;
+  const gate = new Promise(resolve => { allow = resolve; });
+  const h = harness(true, { transport: 'ndi', beforeAccess: () => gate });
+  const requests = ['1', '2', '3'].map(id => h.open(`Pending ${id}`, id));
+  const rejected = requests.map(request => assert.rejects(request, /owner retired/));
+  await assert.rejects(h.open('Pending 1', '4'), /already in use/);
+  await assert.rejects(h.open('Over capacity', '4'), /limit/);
+  let retired = false;
+  const retirement = h.retireOwner().then(() => { retired = true; });
+  await Promise.resolve(); assert.equal(retired, false);
+  allow(); await Promise.all(rejected); await retirement;
+  assert.equal(h.calls, 0); assert.equal(h.diagnostics().length, 0);
+  assert.equal(h.owner.eventNames().length, 0);
+});
+
+test('NDI navigation during consent cannot create a late publisher', async () => {
+  let allow;
+  const h = harness(true, { transport: 'ndi', beforeAccess: () => new Promise(resolve => { allow = resolve; }) });
+  const opened = h.open('Pending');
+  h.owner.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false });
+  allow(); await assert.rejects(opened, /owner retired/);
+  assert.equal(h.calls, 0); h.close();
+});
+
+test('multiple outputs share one owner subscription and remove it after the last close', () => {
+  const h = harness();
+  for (const name of ['second', 'third', 'fourth']) h.reattach(name);
+  for (const event of ['destroyed', 'render-process-gone', 'did-start-navigation', 'did-navigate'])
+    assert.equal(h.owner.listenerCount(event), 1);
+  assert.equal(h.diagnostics().length, 4);
+  h.close();
+  assert.equal(h.diagnostics().length, 0); assert.equal(h.owner.eventNames().length, 0);
 });
