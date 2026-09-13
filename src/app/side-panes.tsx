@@ -29,7 +29,7 @@ import type { LoomBackend } from "@runtime/backend/index.ts";
 import { normalizedPointer } from "@runtime/execution/index.ts";
 import type { PointerRect, PointerSource } from "@runtime/execution/index.ts";
 import { fitInsideRegion } from "@editor/nodes/preview-fit.ts";
-import { usePixelReadout } from "@editor/viewer/index.ts";
+import { usePixelReadout, ViewerAxisGizmo } from "@editor/viewer/index.ts";
 import type { PixelReadoutOptions } from "@editor/viewer/index.ts";
 import type { PreviewOrbitStore } from "@editor/viewer/index.ts";
 import { ORBIT_REFERENCE_WIDTH, orbitDeltaFor, zoomFactorFor } from "@editor/viewer/orbit-gestures.ts";
@@ -1271,6 +1271,20 @@ export function ViewerPane({
             onKeyDown={onCanvasKeyDown}
             style={orbitable ? { cursor: "grab", touchAction: "none" } : undefined}
           />
+          {/*
+           * §T1311b(c) — THE CORNER GIZMO. A sibling of the canvas inside `.picture`, for
+           * `preview-gizmo-overlay.tsx`'s structural reason restated: a control drawn
+           * INSIDE the presented surface is painted over by the next present, and a press
+           * that lands on a descendant of the canvas would start `onOrbitDown`'s drag
+           * underneath itself. As a sibling it is neither.
+           *
+           * `orbitable ? flyBasis : null` is one expression and it is §V986: no basis means
+           * no measurable orientation, so the widget is ABSENT rather than pointing
+           * somewhere it guessed. The sentence saying WHY belongs to the camera toggle in
+           * the bar (§T1311b(b)), which reads `viewCameraAbsentReason()` — one fact, one
+           * wording (§V349).
+           */}
+          <ViewerAxisGizmo orbits={orbits} nodeId={orbitNodeId} basis={orbitable ? flyBasis : null} />
           </div>
         )}
       </div>

@@ -76,6 +76,17 @@
   --estop-fg: #ffffff;
   --component: #9a86e8; /* component-instance identity (T639c) — violet, no status hue */
 
+  /* ---- world axes ----------------------------------------------------
+     §T1311b(c) — the corner gizmo's X/Y/Z. Their own tokens rather than --error/--ok/a
+     blue, for --estop's reason one shelf over: these are not status, they are the
+     red-green-blue every 3D tool has agreed on since before this one existed, and the
+     whole value of the convention is that it does NOT move when the status palette is
+     retuned. Desaturated toward the ground so a 17px ball reads on a rendered picture
+     without shouting over it. */
+  --axis-x: #e0635e;
+  --axis-y: #79c470;
+  --axis-z: #5b8fd6;
+
   /* ---- derived surfaces --------------------------------------------
      No new hues: these interpolate between the ground steps above so the
      chrome stays a single neutral ramp. */

@@ -80,9 +80,11 @@ export {
 
 export {
   clampOrbitDistance,
+  clampOrbitElevation,
   clampOrbitFly,
   clampOrbitPan,
   DEFAULT_PREVIEW_ORBIT,
+  framedBasis,
   isDefaultOrbit,
   orbitEye,
   orbitFrame,

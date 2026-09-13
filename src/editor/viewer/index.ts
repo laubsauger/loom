@@ -55,6 +55,20 @@ export { handleScreenPoint, pointerToPlane, tileCamera } from "./gizmo-projectio
 export type { HandlePoint, PictureRect, TileCamera } from "./gizmo-projection.ts";
 
 /**
+ * §T1311b(c) — THE CORNER GIZMO, and it is NOT the two above despite the shared word.
+ *
+ * `PreviewGizmoOverlays` is a document-writing parameter handle welded to React Flow's node
+ * lookup; `gizmo-projection.ts` places a world POINT through a perspective matrix. This is
+ * an orthographic read-out of the view's ORIENTATION plus a click that stands the camera on
+ * a world axis, it writes only `PreviewOrbitStore` (which holds no bus), and it mounts in
+ * the viewer pane's picture. Nothing here may grow a dependency on either of those.
+ */
+export { ViewerAxisGizmo } from "./viewer-axis-gizmo.tsx";
+export type { ViewerAxisGizmoProps } from "./viewer-axis-gizmo.tsx";
+export { axisGizmoMarks, axisSnapDelta, axisSnapPose } from "./axis-gizmo.ts";
+export type { AxisMark, GizmoAxis } from "./axis-gizmo.ts";
+
+/**
  * The preview LENS (T336) — channel isolation, exposure and the tonemap, on the preview path
  * only (§V255, §V70a). The store is transient session state, never document state; the reason
  * is written down in `preview-view-store.ts` and it is a deliberate call, not an omission.

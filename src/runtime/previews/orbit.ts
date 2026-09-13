@@ -164,6 +164,19 @@ export function clampOrbitPan(offset: number): number {
 }
 
 /**
+ * §T1311b(c): the elevation clamp, EXPORTED for the same reason the distance clamp is.
+ *
+ * `orbitPose` has always applied it on read; the corner gizmo's axis snap needs to know
+ * where the fence IS, because clicking the +Y ball asks for a pole the rig refuses to
+ * reach. Computing the delta against an unclamped π/2 would leave the ACCUMULATOR 0.08 rad
+ * past the fence and hand the user a dead zone on the way back down — the exact defect
+ * §T656 exported `clampOrbitDistance` to prevent. One range, one spelling, two readers.
+ */
+export function clampOrbitElevation(elevation: number): number {
+  return Math.min(MAX_ELEVATION, Math.max(-MAX_ELEVATION, elevation));
+}
+
+/**
  * §T1311b(b): the fly offset's outer bound, and it is a RUNAWAY GUARD, not a fence.
  *
  * The pan clamp exists to keep the subject on screen; this one exists only so a stuck key
@@ -256,10 +269,7 @@ export function orbitPose(rawBasis: OrbitCameraBasis, orbit: PreviewOrbit): Orbi
   const dz = basis.eye[2] - basis.lookAt[2];
   const radius = Math.max(1e-6, Math.hypot(dx, dy, dz));
   const azimuth = Math.atan2(dx, dz) + orbit.azimuth;
-  const elevation = Math.min(
-    MAX_ELEVATION,
-    Math.max(-MAX_ELEVATION, Math.asin(dy / radius) + orbit.elevation),
-  );
+  const elevation = clampOrbitElevation(Math.asin(dy / radius) + orbit.elevation);
   const distance = radius * clampOrbitDistance(orbit.distance);
   const cosEl = Math.cos(elevation);
   // Unit vector from the look-at toward the eye — `lookAt`'s own +z basis vector.

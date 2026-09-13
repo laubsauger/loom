@@ -186,3 +186,76 @@
   border-color: var(--text-dim);
   cursor: not-allowed;
 }
+
+/*
+ * §T1311b(c) — THE CORNER GIZMO, drawn over the top-right of the viewer's picture.
+ *
+ * The corner, and not the bar: it has to be read WHILE flying, in the same glance as the
+ * thing it describes, and a control in the chrome above the image is a second place to
+ * look. It is also why the box is small and mostly transparent — an instrument that
+ * occludes its subject is a worse instrument.
+ */
+.axisGizmo {
+  position: absolute;
+  top: var(--space-4);
+  right: var(--space-4);
+  width: 68px;
+  height: 68px;
+  /* The layer is inert; each ball opts back in. A press on the gap between the balls is a
+     press on the picture, so the orbit drag under this widget still starts there. */
+  pointer-events: none;
+}
+
+.axisStems {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.axisStem {
+  stroke-width: 2;
+  stroke-linecap: round;
+  opacity: 0.55;
+}
+
+.axisStem[data-axis="x"] { stroke: var(--axis-x); }
+.axisStem[data-axis="y"] { stroke: var(--axis-y); }
+.axisStem[data-axis="z"] { stroke: var(--axis-z); }
+
+.axisBall {
+  position: absolute;
+  width: 17px;
+  height: 17px;
+  padding: 0;
+  margin: 0;
+  /* Overridden per axis below; the neutral is what an unlabelled ball would be, so a
+     missing `data-axis` reads as a bug rather than as X. */
+  border: 1.5px solid var(--text-dim);
+  border-radius: 50%;
+  /* A hollow ball is the NEGATIVE end — the convention that lets the letter live only on
+     the positive one, so the widget stays legible at 17px. */
+  background: transparent;
+  color: var(--bg-sunken);
+  font: 600 9px/1 var(--font-ui, inherit);
+  letter-spacing: 0;
+  cursor: pointer;
+  pointer-events: auto;
+  transform: translate(-50%, -50%);
+  transition: none;
+}
+
+.axisBall[data-axis="x"] { border-color: var(--axis-x); }
+.axisBall[data-axis="y"] { border-color: var(--axis-y); }
+.axisBall[data-axis="z"] { border-color: var(--axis-z); }
+
+.axisBall[data-positive="true"][data-axis="x"] { background: var(--axis-x); }
+.axisBall[data-positive="true"][data-axis="y"] { background: var(--axis-y); }
+.axisBall[data-positive="true"][data-axis="z"] { background: var(--axis-z); }
+
+.axisBall:hover,
+.axisBall:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 1px;
+}
