@@ -89,34 +89,65 @@ import { SHARED_UNIFORMS_WGSL } from "../../runtime/backend/shared-uniforms.ts";
  * The general form is worth more than the fix: A DISTANCE ESTIMATOR IS A PAIR — the map and
  * its derivative — AND CHANGING ONE WITHOUT THE OTHER PRODUCES A PICTURE, NOT AN ERROR.
  *
+ * ## ⚑ THE SUBJECT HOLDS STILL. THE CAMERA DOES ALL THE MOVING. (T1318b)
+ *
+ * The owner watched two passes of this and reversed their own earlier instruction:
+ *
+ *   *"it's still pumping, like pulsing instead of us doing it by camera, which then prevents
+ *   us that we can't have close-ups and flyovers that make sense without being noisy because
+ *   the thing itself rotates and pumps. So I think we really need to do this with the camera
+ *   instead."*
+ *
+ * That closes the object-motion route that `T1310b` opened on their earlier *"it doesn't
+ * have to be the camera that moves, it can also be the piece"*. **A camera move is a rigid
+ * transform of the view, so world-space detail stays coherent across frames and the eye can
+ * integrate it. A pump or a fast morph DEFORMS THE VERY STRUCTURE THE SHOT IS MAGNIFYING** —
+ * so at close range the detail is not sliding out of frame, it is being destroyed and
+ * rebuilt every frame, which is what reads as noise. The owner's two complaints ("can't do
+ * close-ups" and "noisy") are one consequence, and no shot-gating fixes it: only removing
+ * the deformation does.
+ *
+ * So: the audio lane that reached the shape is DELETED, the FORM clocks are about three
+ * times longer than they were, the LIGHT and COLOUR clocks are untouched, and the camera's
+ * own lap came down from 96 s to 41 s to carry the energy the form gave up.
+ * **LIGHT MAY FLASH AT BEAT RATE. FORM MAY NOT.**
+ *
  * ## THE CLOCKS, and they are mutually prime ON PURPOSE
  *
- * Six things move, at 19 / 37 / 47 / 53 / 73 / 113 seconds. Those are primes, so the
- * combined state's repeat period is their product — over five thousand years — and no
- * viewer will ever see the same frame twice or feel a cycle land. At any two times a viewer
- * compares, a DIFFERENT SUBSET has moved:
+ * Nine things move, on nine primes, so the combined state's repeat period is their product
+ * and no viewer will ever feel a cycle land. At any two times a viewer compares, a DIFFERENT
+ * SUBSET has moved. The table is split by what the owner's ruling splits:
  *
- *   morphPeriod      19 s   the fold rotation: the segmentation, always turning
- *   hueTurn          37 s   the colour lap, two hues travelling in OPPOSITION
- *   scalePeriod      47 s   the chain's magnification: the density of incident
- *   lightCycle       53 s   WHICH light is the key — the frame is lit from elsewhere
- *   characterPeriod  73 s   bulbPower 1 -> 5 -> 1: reef/skeleton -> bulb -> back
- *   seedPeriod     113 s   the seed offset's drift: the object's topology
+ *   FORM — slow, because a shot has to survive being pointed at it
+ *     morphPeriod     149 s   the fold rotation: the object's own turning
+ *     scalePeriod     181 s   the chain's magnification: the density of incident
+ *     characterPeriod 211 s   bulbPower 1 -> 4.2 -> 1: reef/skeleton -> bulb -> back
+ *     voidPeriod      239 s   the shells opening
+ *     seedPeriod      277 s   the seed offset's drift: the object's topology
+ *   LIGHT AND CAMERA — fast, because both are safe at speed
+ *     hueTurn          37 s   the colour lap, two hues travelling in OPPOSITION
+ *     orbitPeriod      41 s   one lap of the camera around the object
+ *     pushPeriod       43 s   the approach, and the SHOT LANE
+ *     lightCycle       53 s   WHICH light is the key — and now, which way the shadow falls
+ *     posePeriod       61 s   the camera's second axis
+ *     aimPeriod        67 s   where the camera looks when it is close
  *
  * `chimera-claims.gpu.test.ts` asserts this as a measurement rather than an intention: with
- * the audio cut AND THE ORBIT FROZEN (§V965 — a claim that compares two frames of a moving
- * camera is measuring the camera), frames at 0 / 15 / 45 / 90 s differ from each other, and
- * freezing the morph clock is what makes that claim fail.
+ * the audio cut AND THE WHOLE CAMERA RIG PARKED (§V965 — a claim that compares two frames of
+ * a moving camera is measuring the camera; and note that until T1318b that claim parked only
+ * the orbit, while the "pose" it left running was a camera move all along), frames out to
+ * 90 s differ from the one before, and freezing the clocks is what makes that claim fail.
  *
  * ## What is deliberately NOT driven by audio
  *
  * §V914 makes the no-track picture the shipped picture: every thumbnail and every headless
- * render has no audio. So the six clocks above run on `frameU.absTime` and NOTHING about
- * the object's identity is audio-driven — the piece is already fully alive in silence, and
- * the music only scales what is already moving (E55's finding, T1138). Audio rides
- * amplitude, never identity and never a clock.
+ * render has no audio. So the clocks above run on `frameU.absTime` and NOTHING about the
+ * object's SHAPE is audio-driven any more — not its identity and not, since T1318b, its
+ * looseness either. The piece is fully alive in silence and the music only scales what is
+ * already moving (E55's finding, T1138). Audio rides amplitude, never identity, never a
+ * clock, and never the form.
  *
- * Nothing drives the camera either, for §V965's reason: the orbit is the one stable
+ * Nothing drives the camera either, for §V965's reason: the camera is the one stable
  * reference the morph is legible against, and it is what makes every claim in the file
  * provable by holding the frame and cutting one lane.
  *
@@ -133,54 +164,77 @@ struct Params {
   iterations: f32,      // @default 11  links in the fold chain — HELD FIXED, never animated: it is an integer and a step in it is a pop
   scale: f32,           // @default -2.1  the affine magnification. NEGATIVE turns the structure inside out each link, which is what gives the chain its wound, shell-inside-shell reading
   scaleTravel: f32,     // @default 0.22  how far 'scale' drifts either side of itself over scalePeriod — the density of incident, breathing
-  foldLimit: f32,       // @default 1.05  the box fold's extent: the SKELETAL character. Wider than the point is the IDENTITY, so raising this turns the skeleton off by arithmetic rather than by a branch
+  foldLimit: f32,       // @default 1.45  the box fold's extent: the SKELETAL character, and ⚑ THE KNOB THAT DECIDES WHETHER THE SILHOUETTE IS A CUBE. 'clamp(p, -limit, limit) * 2 - p' reflects the domain about the faces of a cube, so a body shaped mostly by this operator HAS A CUBIC OUTLINE BY CONSTRUCTION and no amount of surface detail can answer it — detail on a cubic body is warts on a cube, which is the owner's phrase, twice. Measured on the subject mask's convolution (perimeter^2 / 4*pi*area): 1.05 -> 2.44, 1.6 -> 6.19, 2.6 -> 19.78, against a bulb-floor sweep over the same statistic that did not move at all (§V980). Wider than the point is the IDENTITY, so raising this turns the skeleton off by arithmetic rather than by a branch
   foldTravel: f32,      // @default 0.18  how far the fold limit breathes — creases opening and closing
   minRadius: f32,       // @default 0.47  inside this the sphere fold inverts hardest: the REEF character, and the knob that makes the surface read as grown rather than machined
   fixedRadius: f32,     // @default 1  the sphere fold's outer radius
-  bulbPower: f32,       // @default 1  the power map's exponent: the BULB character. EXACTLY 1 is the identity — no bulb, and no cost, because the whole term is skipped
+  bulbPower: f32,       // @default 2.4  ⚑ THE BULB'S *FLOOR*, AND IT USED TO BE 1 — WHICH IS THE IDENTITY, SO THE BULB WAS SWITCHED OFF AT REST. The character clock travels from here to 'bulbPeak' through a raised cosine that DWELLS AT BOTH ENDS, so a value of 1 meant the piece spent most of any viewing with NO bulb at all, and the only shaping operator actually running was the box fold. ⚠ A BOX FOLD IS A CUBE BY CONSTRUCTION ('clamp(p, -limit, limit) * 2 - p' reflects the domain about the faces of a cube) — so the owner's *"the thing looking less like a cube all day with warts"*, said after two passes of material work, was a correct reading of the DOMINANT OPERATOR from the silhouette, and no amount of surface detail could ever have answered it: detail on a cubic body IS warts on a cube. Above 1 the body is permanently lobed and the character clock varies an already-organic shape rather than switching organicity on and off
   bulbPeak: f32,        // @default 4.2  how far bulbPower travels at the top of its cycle. Lobe count rises with it and the travel is continuous, so the lobes GROW rather than appear
   seedOffset: vec4f,     // @default [0, 0, 0, 0]  added to the fold seed alongside the ray's own starting point: the object's identity. Drifting it merges lobes and opens shells — the strongest evolution axis in the file
   seedDrift: f32,      // @default 0.26  how far the constant wanders over seedPeriod
-  openness: f32,        // @default 0.5  ⚑ HOW FAR OPEN THE CHAIN SITS — the only audio lane that reaches the SHAPE, and it reaches its LOOSENESS rather than its IDENTITY. The owner asked for "sometimes more loose, sometimes less", and that is the same object breathing, not a different object: 'scale', 'bulbPower' and the seed still read nothing. It is centred on 0.5 so the RETAINED value is exactly neutral (§V914) — silence renders the shipped picture and nothing else
-  openSpread: f32,      // @default 0.5  how far the box fold's limit travels either side of itself across the full swing of 'openness'. The creases spread apart on energy and draw back in quiet
-  openVoid: f32,        // @default 0.22  how far the sphere fold's inner radius travels with 'openness' — the shells opening. Same mechanism the void clock uses, so it is still the chain's own parameter and the estimate stays exact
+  // ⚑ 'openness', 'openSpread' AND 'openVoid' ARE GONE (T1318b). They were the one audio lane
+  // that reached the SHAPE, and the owner cut them by name after watching the result:
+  // *"it's still pumping, like pulsing instead of us doing it by camera, which then prevents
+  // us that we can't have close-ups and flyovers that make sense without being noisy because
+  // the thing itself rotates and pumps. So I think we really need to do this with the camera
+  // instead."* That REVERSES their earlier *"it doesn't have to be the camera that moves"* and
+  // it is now the rule the file is built against: LIGHT MAY FLASH AT BEAT RATE, FORM MAY NOT.
+  // The reason is not taste — a camera move is a rigid transform of the view, so world-space
+  // detail stays coherent across frames and the eye integrates it, while a pump DEFORMS the
+  // very structure the shot is magnifying. Deleting the lane is byte-identical at rest, which
+  // is the whole argument for having centred it on 0.5 in the first place: the picture the
+  // piece shipped with no audio is exactly the picture it ships now.
   foldSpin: vec4f,      // @default [0.31, 0.47, 0.23, 0]  the rotation between iterations, in turns per lap, per axis — THE SEGMENTATION KNOB. An isometry, so the estimate stays exact at every angle and this can run forever
   detail: f32,          // @default 1  scales the march's termination threshold against the PIXEL'S OWN FOOTPRINT. Below 1 resolves finer structure and costs steps; above 1 stops sooner and is the cheapest quality knob in the file
   stepScale: f32,       // @default 0.78  how much of the estimate the march actually steps. Below 1 because a chain this long accumulates derivative error; it is the file's safety margin against marching THROUGH the surface at grazing angles
   bailout: f32,         // @default 256  escape radius — where a point is declared outside and the orbit stops
 
   // ─── THE CLOCKS (T1310b's acceptance criterion: what is different at 15 s, 45 s, 90 s) ──
+  // ⚑ EVERY *FORM* CLOCK BELOW IS ROUGHLY THREE TIMES LONGER THAN IT WAS (T1318b), AND THE
+  // LIGHT AND COLOUR CLOCKS ARE UNTOUCHED. That split is the owner's ruling stated as
+  // numbers: form may evolve visibly over a minute and may not restructure under a shot,
+  // light may do whatever the music asks. An approach lasts about thirteen seconds at
+  // 'pushPeriod' 43 — the window where the cubed travel is over half — so the test a form
+  // clock has to pass is "does the structure survive thirteen seconds of being looked at",
+  // and at 19 s the fold rotation used to turn through two thirds of a lap inside one.
   morphPhase: f32,      // @default 0.37  where in the fold rotation's lap the clock STARTS. ⚑ NOT cosmetic: at phase 0 the rotation is the IDENTITY and the object is its own axis-aligned degenerate case — a flat slab. Every thumbnail and every headless render begins at t=0, so phase 0 ships the single worst frame in the piece as the picture of it
-  morphPeriod: f32,     // @default 19  SECONDS for the fold rotation to make one lap — the fastest of the six, and the one the eye reads as "it is moving"
-  hueTurn: f32,         // @default 37  SECONDS for the colour to travel one lap of its arc
-  scalePeriod: f32,     // @default 47  SECONDS for the magnification to breathe
-  lightCycle: f32,      // @default 53  SECONDS for the key light to hand off to the next one
-  characterPeriod: f32, // @default 73  SECONDS for the shape to travel reef/skeleton -> bulb -> back
-  seedPeriod: f32,     // @default 113  SECONDS for the seed offset's drift
-  voidPeriod: f32,      // @default 89  SECONDS between the shells OPENING. The owner asked for negative space inside the sculpture "occasionally", and occasionally is a CLOCK rather than a setting
+  morphPeriod: f32,     // @default 89  SECONDS for the fold rotation to make one lap. ⚑ WAS 19, AND THIS IS THE OBJECT'S OWN ROTATION — the thing the owner meant by *"the thing itself rotates"*, as against the camera travel that was mislabelled as a pose
+  hueTurn: f32,         // @default 37  SECONDS for the colour to travel one lap of its arc. UNCHANGED: colour is light
+  scalePeriod: f32,     // @default 181  SECONDS for the magnification to breathe. ⚑ WAS 47 — this is the pump, and a pump is the one thing a magnified shot cannot survive
+  lightCycle: f32,      // @default 53  SECONDS for the key light to hand off to the next one. UNCHANGED: a light rig may move at any speed, and now that the key casts a shadow this clock is what sweeps that shadow across the form
+  characterPeriod: f32, // @default 71  SECONDS for the shape to travel through its character and back. ⚑ IT WENT 73 -> 211 -> 71 IN ONE PASS, AND BOTH MOVES WERE RIGHT AT THE TIME: 211 was the owner's "stop pumping" applied to the clock measured to be the file's biggest deformer, and 71 is the same owner, minutes later, saying *"the shape is still static"* about a character cycle NOBODY HAS EVER WATCHED COMPLETE. What reconciles them is that the TRAVEL shrank: with 'bulbPower' floored at 2.4 the character moves through 1.8 of exponent rather than 3.2, so the shape changes visibly in a quarter of a minute while deforming more slowly per second than it ever did
+  seedPeriod: f32,     // @default 277  SECONDS for the seed offset's drift. ⚑ WAS 113
+  voidPeriod: f32,      // @default 107  SECONDS between the shells OPENING. ⛑ WAS 89. The owner asked for negative space inside the sculpture "occasionally", and occasionally is a CLOCK rather than a setting
   voidTravel: f32,      // @default 0.26  how far the sphere fold's inner radius travels when they open. ⚑ THIS IS A CHAIN PARAMETER, NOT A CARVE: the voids are opened by the fold that already makes the shells, so the estimate stays exact. A hole cut with a min/max AGAINST the chain would cost a step-scale and make every cost figure in this file dishonest
   tempoScale: f32,      // @default 1  multiplies the MORPH clock only (T1309b). Driven from the track's own bpm over 112, so it RESTS AT EXACTLY 1 on the shipped pattern and the piece runs faster under faster music instead of being tuned to one tempo
 
-  // ─── THE POSE: THE OBJECT TUMBLES AND SWIMS IN; THE CAMERA STAYS PARKED ───────────────
-  // ⚑ THE OWNER ASKED FOR "different CAMERA POSITIONS so we sometimes follow one of the
-  // fractal knobs a little closer and see some angles", AND THEN SAID *"it doesn't have to
-  // be the camera that moves, it can also be the piece"*. That second sentence is what lets
-  // this be free AND provable. Moving the OBJECT gives the same angles, keeps §V965 intact
-  // (a claim comparing two frames of a moving camera measures the camera), and — because a
-  // rigid rotation and a uniform scale are exactly invertible — it is applied to the EYE AND
-  // THE RAY ONCE PER FRAGMENT rather than inside the march.
+  // ─── THE CAMERA'S SECOND AXIS, ITS APPROACH, AND ITS AIM ─────────────────────────────
+  // ⚑ THESE WERE DOCUMENTED AS "THE OBJECT'S POSE" AND THEY WERE NEVER THAT. The transform
+  // is 'transpose(rotY * rotX)' applied to the EYE AND THE RAY DIRECTION TOGETHER, and a
+  // rigid rotation applied to both is a CAMERA MOVE by definition — the eye walks a sphere
+  // about the origin while the object and the light rig stand still. Nothing visible ever
+  // distinguished the two readings, which is why a docblock could describe a camera orbit as
+  // an object rotation for two passes without any render disagreeing (§V973's class exactly:
+  // a claim nothing can contradict).
+  // ⚑ AND THAT MATTERS NOW, BECAUSE THE OWNER SAID *"the thing itself rotates and pumps"*.
+  // If this were the object rotating, the fix would be here. It is not: what actually rotates
+  // the OBJECT is 'foldSpin' on the morph clock, and what pumped it was the deleted
+  // 'openness' lane. So the repair went there, and this stayed — correctly named at last.
   // ⚠ DO NOT MOVE THIS INTO THE MARCH. Transforming the ray once costs one mat3 product per
   // pixel; transforming the sample point would cost one per DE evaluation, and a pixel makes
   // about a hundred and fifty of those.
-  posePeriod: f32,      // @default 61  SECONDS for the object to turn once on its own axis. Prime, and prime against all the others, so the angle you see and the shape you see never line up twice
-  poseTilt: f32,        // @default 0.42  how far the object nods as it turns, in radians — the reason you see its top and its underside rather than an equatorial band forever
-  pushPeriod: f32,      // @default 43  SECONDS between the object SWIMMING IN toward the frame. Prime
-  poseNear: f32,        // @default 2.05  how much bigger the object gets at the top of that push. ⚑ The travel is CUBED, so it is near zero for most of the period and rises to a peak briefly — the same "occasionally" idiom the void clock uses, because a dolly that never rests is a ride and the owner asked for a framed object
+  posePeriod: f32,      // @default 61  SECONDS for the camera to travel once around its second axis. Prime, and prime against all the others, so the angle you see and the shape you see never line up twice
+  poseTilt: f32,        // @default 0.42  how far the camera rises and dips across that travel, in radians — the reason you see the object's top and its underside rather than an equatorial band forever
+  pushPeriod: f32,      // @default 43  SECONDS between APPROACHES. Prime. This clock is also the SHOT LANE: 'shotAt' reads it for how close the camera is and for how much the rig should settle while it is there
+  poseNear: f32,        // @default 2.05  how much bigger the object gets at the top of an approach. ⚑ The travel is CUBED, so it is near zero for most of the period and rises to a peak briefly — the same "occasionally" idiom the void clock uses, because a dolly that never rests is a ride and the owner asked for a framed object
   aimPeriod: f32,       // @default 67  SECONDS for the framing to wander. Prime
-  poseAim: f32,         // @default 0.62  how far off the centroid the camera looks when the object is closest. ⚑ THIS IS THE "FOLLOW ONE OF THE KNOBS" HALF: a compact sculpture framed on its centroid is a portrait of the whole thing forever, and the interesting part of a fractal is never the middle. It rides the SAME push, so the frame only leaves the centre while there is something close enough to be worth looking at
+  poseAim: f32,         // @default 0.62  how far off the centroid the camera looks when it is closest. ⚑ THIS IS THE "FOLLOW ONE OF THE KNOBS" HALF: a compact sculpture framed on its centroid is a portrait of the whole thing forever, and the interesting part of a fractal is never the middle. It rides the SAME approach, so the frame only leaves the centre while there is something close enough to be worth looking at
+  punch: f32,           // @default 0  ⚑ THE TRANSIENT'S RIGID DESTINATION — a DOLLY on the kick's band envelope, and the reason it is allowed to be fast is the same reason the pump was not. A uniform scale of the eye is a CAMERA MOVE: it magnifies the structure and does not touch it, so world-space detail stays coherent frame to frame and the eye integrates a punch the way it integrates a cut. The deleted pump rebuilt the geometry under the magnification, which is a different operation wearing the same envelope. It is read CENTRED, so 0 is both the rest value and the driven mean and the silent picture is byte-identical to the lane deleted
+  punchGain: f32,       // @default 0.16  how far the camera thrusts at the top of a kick, as a share of its distance. The envelope carries the attack and the release (§V966), so the settle is the drum's own and not a number here
+  shotHold: f32,        // @default 1  ⚑ HOW MUCH THE RIG SETTLES AT THE TOP OF AN APPROACH — the shot lane, and it decides CAMERA behaviour rather than which drive is gated. At 1 the orbit, the second axis and the aim all come to a dead stop while the camera is close and resume as it pulls out, so a close-up is a HELD LOOK rather than a whip-pan through magnified detail. At 0 the rig runs exactly as it did before this existed, which is the isolation arm
 
   // ─── THE CAMERA: parked, because the OBJECT carries the motion ────────────────────────
-  orbitPeriod: f32,     // @default 96  SECONDS for one lap around the object. A STARTING POINT chosen to be brought to the owner from stills, not a fabricated bound (T1268)
+  orbitPeriod: f32,     // @default 41  SECONDS for one lap around the object. ⛑ WAS 96, AND IT CAME DOWN BECAUSE THE SHAPE SLOWED DOWN: the energy the form used to carry has to go somewhere, and the owner named where — *"we really need to do this with the camera instead"*. A lap in 41 s is a real fly-around rather than a drift, and it is safe at a speed no form clock is, because a camera move is a RIGID transform of the view and the detail stays coherent under it
   orbitSpeed: f32,      // @default 1  multiplier on the orbit. 0 parks the camera dead still, which is what a claim about the SHAPE's evolution must do (§V965)
   orbitRadius: f32,     // @default 12  how far the eye sits from the object's centre
   orbitHeight: f32,     // @default 1.15  the eye above the object's equator at rest
@@ -196,11 +250,17 @@ struct Params {
   veinRate: f32,        // @default 3.1  cells per unit along the conduit lattice: how long a run of vein is before the sequence decides again. The volume reads the same lattice COARSER, which is what makes the air agree with the surface (§V973)
   veinColor: vec4f,     // @default [0.1, 1, 0.72, 1]  the living light. OFF THE BLACKBODY CURVE on purpose — a hue nothing can burn to is the fastest way to say this was not lit by anything that burns
   shellGlow: f32,       // @default 0.5  a second, softer emission on the orbit's SHELL trap, so the object has lit membranes as well as lit filaments
+  nodeLinks: f32,       // @default 2  ⚑ HOW DEEP INTO THE CHAIN THE *NODE* TRAP LOOKS, and it is this file's cure for the magenta SALT. The trap is 'min(dot(p,p))' over the orbit, and the orbit's LATE links live at the chain's finest scale — where neighbouring rays visit genuinely different structure, so the trapped value is CHAOTIC FROM PIXEL TO PIXEL and every mark built on it is single-pixel noise. ⚠ AND WIDENING THE MARK CANNOT FIX THAT: a wider threshold on a chaotic field is a chaotic field with a wider threshold, which is why the pixel-footprint widening that works for the veins does nothing here (measured — the salt survived 'nodeGlow' 0 AND 'nodeSpill' 0 separately, so it was never a brightness). ⚠ AND THE SWEEP IS A CLIFF, NOT A SLOPE (§V981): 6 links and 4 links are INDISTINGUISHABLE from 11, and 2 is clean. Everything from the third link down is already under the pixel, so the whole of the noise lives there and a cautious value buys exactly nothing. Truncating the trap is a genuine level of detail: a node becomes a COARSE feature of the orbit, the marks get bigger and fewer, and the interleaving §V972 needs survives because six links is still six decades of scale in one frame
   nodeRadius: f32,      // @default 0.34  how close the orbit has to pass the ORIGIN to leave a node. A third KIND of mark — points, where the veins are lines and the membranes are sheets
   nodeGlow: f32,        // @default 22  how hard a node's CORE burns. 0 removes the cores
   nodeSpill: f32,       // @default 3.2  how hard a node lights the stone AROUND it — the difference between a light and a sprite. A wider window on the SAME trap (§V962), so the pool lands exactly where the pod is. It also lets the core sit lower than the impression needs, which is what stops it clipping to white and losing its hue
   nodeFade: f32,        // @default 15  METRES over which a node's SHARP core fades out, leaving only its spill. ⚑ A MIP LEVEL DONE AS A FADE, because a marcher has no derivatives to pick one with: a sixth-power falloff on a fractal is fine relief, and fine relief far away is smaller than a pixel and turns into SALT. Sanctum's fix for its own grain, taken rather than reinvented
   nodeColor: vec4f,     // @default [1, 0.36, 0.86, 1]  ⚑ THE SECOND HUE, AND IT IS CARRIED BY AN OBJECT (§V972). Six passes on the sibling piece put a second colour on a LIGHT and every one read as a wash; what fixed it was giving the hue to a THING the eye can point at. The nodes are that thing
+
+  // ─── THE BEAT'S ONLY DESTINATION, AND IT FIRES IN SUCCESSION (T1318b) ─────────────────
+  flare: f32,           // @default 0  ⚑ THE KICK'S BAND ENVELOPE, AND THE *ONLY* AUDIO LANE LEFT THAT TOUCHES THE PICTURE'S STRUCTURE. It is read TWICE — as an AMOUNT and as a POSITION — which is what makes the marks fire one after another instead of all at once. See 'emissionAt'
+  flareDepth: f32,      // @default 7  how many times over a mark burns at the top of its own turn in the sweep. This is the gain the global 'veinEmission' lane used to carry, moved onto the individual mark
+  flareWidth: f32,      // @default 0.3  what SHARE of the marks are lit at any one instant of the sweep. 1 is unison — every mark flares together, which is the global pump wearing a different coat — and small is a thin travelling wave. The owner's words were "the brightness of SOME of the glow areas"
 
   // ─── THE LIGHT RIG: three coloured sources with REACH, and a HIERARCHY ─────────────────
   keyColor: vec4f,      // @default [0.45, 0.72, 1, 1]  the cold key
@@ -213,6 +273,20 @@ struct Params {
   lightDistance: f32,   // @default 6.2  how far the three sources sit from the object's centre
   lightSwing: f32,      // @default 0.65  how much of the hierarchy actually hands over: 0 pins the key permanently, 1 takes each light to nothing at the bottom of its turn
   ambient: f32,         // @default 0.055  the floor under everything, so a surface facing away is a shape rather than a hole
+
+  // ─── THE KEY LIGHT CASTS A SHADOW, AND UNTIL T1318b NOTHING IN THIS FILE DID ──────────
+  // ⚑ The owner: *"the whole thing still looks too statically lit and still very grey and
+  // weird AS IF THE LIGHTS ARE ALL LIKE NOT CONES BUT JUST ALL GLOBAL GOD LIGHTS."* That was
+  // literally true and it was not a cone problem: the file had AMBIENT OCCLUSION and no cast
+  // shadow at all, so every surface facing a light was lit by it regardless of what stood in
+  // between. AO darkens creases by GEOMETRY ALONE, which means it looks the same wherever the
+  // lights are — which is exactly why the piece read *statically* lit while the lights
+  // demonstrably moved. On a deep-folded fractal self-shadowing is not a refinement; it is
+  // the term that makes a fold read as depth rather than as grey noise.
+  shadowStrength: f32,  // @default 1  how much of the key a shadow takes away. ⚑ 0 SKIPS THE SECOND MARCH ENTIRELY rather than multiplying its result by one — the same wavefront-uniform branch 'polish' uses, and the reason this stage's cost can be measured by alternating a parameter instead of editing the shader
+  shadowSoft: f32,      // @default 9  the penumbra. Low is a broad soft-edged shadow, high is a hard contact one. It is the ratio of the closest approach to the distance travelled, which is the standard DE penumbra estimate and costs nothing beyond the march that is already happening
+  shadowSteps: f32,     // @default 28  iterations for the SHADOW ray. A fraction of the primary's, like the reflection's — but unlike the reflection this march uses the FULL chain, because a shadow sampled from a coarser field is a shadow of a different object and would not land where the geometry is (§V973)
+  shadowReach: f32,     // @default 9  metres marched toward the key before the ray is declared unobstructed. The lights sit at 'lightDistance'; this bounds the worst case rather than the typical one, because on a folded surface most shadow rays terminate in a handful of steps
 
   // ─── MATERIAL: wet, chitinous ─────────────────────────────────────────────────────────
   baseColor: vec4f,     // @default [0.075, 0.088, 0.105, 1]  the shell under the lights — DARK, because a bioluminescent thing is read by what it emits, not by what it reflects
@@ -262,6 +336,9 @@ const SURFACE: f32 = 0.0009;
 const VEIN_PHASE: f32 = 0.317;
 /* A second for the volumetric dither, so re-jittering the air cannot move the veins. */
 const HAZE_SEED: u32 = 7021u;
+/* Where the FLARE sequence starts. See 'emissionAt' for why it is a second projection of the
+   same lattice rather than a second offset into the first one. */
+const FLARE_PHASE: f32 = 0.618;
 
 /* ── The three axis rotations, composed once per fragment ────────────────────────────────
    The matrix is built ONCE and passed down through every call that needs the chain. It is a
@@ -307,6 +384,52 @@ struct Shape {
   character: f32,
 };
 
+/**
+ * THE SHOT — how close the camera is, and how much the rig has settled to look at it.
+ *
+ * ⚑ A SHOT LANE IS A CAMERA DECISION, AND THAT IS THE WHOLE OF T1318b's SECOND ITEM ONCE THE
+ * OWNER RULED THAT FORM DOES NOT MOVE. It was originally specified as "close shots gate which
+ * drive is running"; with the form lanes deleted outright there is nothing left to gate, and
+ * what remains is the part that was always the point: A CLOSE-UP SHOULD BE A HELD LOOK.
+ *
+ * ⚑ AND THE HOLD IS AN INTEGRAL, NOT A MULTIPLY — which is the only difficult line in it.
+ * Scaling the camera's ANGLE by (1 - close) does not stop the camera: it winds the angle
+ * BACK toward where the lap started as the shot closes, which is a bigger move than the one
+ * it replaced and in the wrong direction. "Stop" is a statement about the RATE, so the angle
+ * has to be the integral of (1 - close) dt. That integrand has an exact antiderivative, which
+ * is why this costs four instructions and carries no state:
+ *
+ *     d/du [ (2.5u - 4 sin u + 0.75 sin 2u + sin^3 u / 3) / 8 ]  =  ((1 - cos u) / 2)^3
+ *
+ * Expanded rather than eyeballed: 2.5 - 4c + 1.5(2c^2 - 1) + (1 - c^2)c = 1 - 3c + 3c^2 - c^3,
+ * which is (1 - c)^3. The mean of the cubed travel is 2.5/8 = 0.3125, so the SECULAR quarter
+ * of the integral is exactly 0.3125 * t and is subtracted in closed form — otherwise the term
+ * would be computed as the difference of two large and nearly equal numbers, which in f32 is
+ * how a camera develops a jitter at minute fifteen.
+ */
+struct Shot {
+  /* 0 = a wide shot, 1 = the top of an approach. */
+  close: f32,
+  /* SECONDS OF CAMERA TIME: real time with the approach's own dwell removed. Every lap in the
+     rig reads this instead of 't', so they all settle together and resume together. */
+  held: f32,
+};
+
+fn shotAt(t: f32) -> Shot {
+  let period = max(params.pushPeriod, 1.0);
+  let u = (t / period) * TAU;
+  /* CUBED, so the camera is wide most of the period and close briefly — the owner's word for
+     the negative space was "occasionally" and a dolly that never rests is a ride. */
+  let phase = 0.5 - 0.5 * cos(u);
+  var s: Shot;
+  s.close = phase * phase * phase;
+  let sn = sin(u);
+  let swing = (-4.0 * sn + 0.75 * sin(2.0 * u) + sn * sn * sn / 3.0) / 8.0;
+  let dwell = 0.3125 * t + (period / TAU) * swing;
+  s.held = t - clamp(params.shotHold, 0.0, 1.0) * dwell;
+  return s;
+}
+
 fn shapeAt(t: f32) -> Shape {
   var s: Shape;
 
@@ -350,31 +473,20 @@ fn shapeAt(t: f32) -> Shape {
      is not what a plain sine would have given. */
   let voidPhase = 0.5 - 0.5 * cos((t / max(params.voidPeriod, 1.0)) * TAU);
 
-  /* ⚑ LOOSENESS, AND IT IS THE ONE AUDIO LANE THAT REACHES THE SHAPE.
-     T1310b ruled the object's IDENTITY undriven and that ruling stands — if the music
-     decided what the object IS, silence would be a different object, and silence is what
-     every thumbnail renders. But there is a third category between "identity" and "not the
-     shape at all", and the owner's own words drew the line: *"sometimes more loose,
-     sometimes less"* is not a different object, it is THE SAME OBJECT BREATHING. The fold
-     limit and the sphere fold's inner radius are already moving continuously on their own
-     clocks; this widens the region of that same parameter space the piece visits, driven by
-     how much is going on in the music.
-     ⚑ AND §V914 IS SATISFIED BY THE CENTRING, NOT BY REFUSING TO DRIVE: 'openness' is read
-     as an offset from 0.5, and 0.5 is exactly what it retains. So the no-audio picture is
-     bit-for-bit the picture this piece would render with the lane removed, and the drive
-     only ever takes it either side of that. The retained value IS the driven mean by
-     construction rather than by a measurement somebody has to redo after a retune. */
-  let open = clamp(params.openness, 0.0, 1.0) - 0.5;
-
-  s.minRadius = max(
-    0.05,
-    params.minRadius + params.voidTravel * voidPhase * voidPhase * voidPhase + params.openVoid * open,
-  );
+  /* ⚑ NOTHING AUDIO-DRIVEN REACHES THIS FUNCTION ANY MORE (T1318b), AND THE DELETION WAS
+     BYTE-IDENTICAL AT REST — which is the dividend of having centred the lane on its own
+     neutral value rather than on its floor. The lane that used to be here read 'openness'
+     as an offset from 0.5 and retained exactly 0.5, so the term it added was exactly zero
+     with no audio; removing it therefore cannot move the no-track picture by one bit, and
+     §V914 is satisfied by the SAME arithmetic that satisfied it when the lane was added.
+     What the piece lost is the owner's *"sometimes more loose, sometimes less"* — and what
+     it bought is the shot the owner asked for instead. A close-up is a magnification, and a
+     magnification of a surface that is being rebuilt every frame is noise however good the
+     rest of the frame is. The music now moves LIGHT (see 'flare'); the camera moves. */
+  s.minRadius = max(0.05, params.minRadius + params.voidTravel * voidPhase * voidPhase * voidPhase);
   s.foldLimit = max(
     0.4,
-    params.foldLimit
-      + params.foldTravel * sin((t / max(params.scalePeriod, 1.0)) * TAU * 0.63 + 2.1)
-      + params.openSpread * open,
+    params.foldLimit + params.foldTravel * sin((t / max(params.scalePeriod, 1.0)) * TAU * 0.63 + 2.1),
   );
 
   return s;
@@ -438,6 +550,8 @@ fn chainAt(start: vec3f, shape: Shape, links: i32) -> Trace {
      uniform, so the whole wavefront takes this branch together and "no bulb" is genuinely
      free — the same discipline as 'polish' on the reflection. */
   let withBulb = shape.bulbPower > 1.0005;
+  /* See 'nodeLinks': the node trap stops at a depth the pixel can still resolve. */
+  let nodeLinks = i32(clamp(params.nodeLinks, 1.0, 24.0));
   let bail = max(params.bailout, 16.0);
 
   for (var i = 0; i < links; i = i + 1) {
@@ -464,7 +578,7 @@ fn chainAt(start: vec3f, shape: Shape, links: i32) -> Trace {
        reading of a detector pointed at the wrong place. The tell was that the radius sweep
        fell to ZERO marks rather than to FEWER — a mark that vanishes between 0.2 and 0.12
        is not a mark that is too rare, it is a mark that was never there. */
-    node2 = min(node2, r2);
+    if (i < nodeLinks) { node2 = min(node2, r2); }
     if (r2 < minR2) {
       let f = fixR2 / minR2;
       p = p * f;
@@ -573,6 +687,63 @@ fn occlusionAt(p: vec3f, n: vec3f, shape: Shape, links: i32) -> f32 {
   return clamp(1.0 - params.occlusion * occluded, 0.0, 1.0);
 }
 
+/**
+ * ⚑ THE KEY LIGHT'S CAST SHADOW — THE TERM THIS FILE DID NOT HAVE.
+ *
+ * The owner's *"as if the lights are all like not cones but just all global god lights"* was
+ * a literally correct reading of the code. 'occlusionAt' above is AMBIENT occlusion: it asks
+ * "how enclosed is this point" and knows nothing about where any light is, so it darkens the
+ * same creases by the same amount whatever the rig does. 'lightAt' below had a distance
+ * falloff and a lambert term and NOTHING BETWEEN THE LIGHT AND THE SURFACE — so every
+ * surface facing a light was lit by it regardless of what stood in the way. That is why the
+ * piece read *statically* lit while the lights demonstrably moved: moving a light changed its
+ * tint and its intensity and could not change the SHADING PATTERN, because nothing in the
+ * shading pattern depended on where the light was.
+ *
+ * On a deep-folded fractal this is not a refinement. A fold reads as depth because the far
+ * wall of it is dark; with only AO, a fold reads as a grey crease of fixed darkness, and a
+ * frame full of those is the "very even grey" three passes have been chasing (§V977).
+ *
+ * ⚑ THE KEY ALONE, AND THAT IS A DIVISION RATHER THAN A CORNER CUT. This is a second full
+ * march per light and the frame cannot buy three of them. What fill and rim become without it
+ * is AMBIENT WRAP — soft, directionless fill, which is what a fill light is FOR — and the
+ * cinematic convention is the same one: the key carries the modelling and the shadow, and the
+ * fill exists to keep the shadow from going to black. 'lightSwing' at 0.35 is what makes this
+ * hold across 'lightCycle': the key's weight never falls below 0.65, so the shadowed source
+ * is the dominant one at every moment of the lap rather than at two thirds of it.
+ *
+ * ⚑ AND IT MARCHES THE FULL CHAIN, unlike the reflection's short one. A shadow sampled from a
+ * coarser field is the shadow of a DIFFERENT OBJECT, and it lands where that object is, not
+ * where this one is — §V973's exact failure, and the one shape of it that a viewer WOULD
+ * notice, because a shadow that misses its own geometry is the most visible kind of wrong.
+ */
+fn shadowAt(p: vec3f, l: vec3f, far: f32, start: f32, shape: Shape, links: i32) -> f32 {
+  /* 0 SKIPS THE MARCH ENTIRELY rather than multiplying its result by one — a branch the
+     whole wavefront takes together, which is what makes the stage's cost measurable by
+     alternating a parameter instead of by editing the shader ('polish' does the same). */
+  if (params.shadowStrength < 0.001) { return 1.0; }
+  let count = i32(clamp(params.shadowSteps, 4.0, 96.0));
+  let k = max(params.shadowSoft, 0.5);
+  let reach = min(far, max(params.shadowReach, 0.2));
+  var shade = 1.0;
+  var travelled = start;
+  for (var i = 0; i < count; i = i + 1) {
+    let d = deAt(p + l * travelled, shape, links);
+    /* A hit: fully occluded, and the common case on a folded surface — most shadow rays
+       terminate in a handful of steps, which is why the worst-case step count above is much
+       larger than the typical one. */
+    if (d < 1.0e-4) { return 1.0 - clamp(params.shadowStrength, 0.0, 1.0); }
+    /* THE PENUMBRA, and it is free: the ratio of the ray's closest approach to how far it
+       had travelled when it got there is exactly "how wide a light would have to be for this
+       to be a partial shadow". Nothing is sampled for it that the march was not sampling. */
+    shade = min(shade, k * d / travelled);
+    if (shade < 0.003) { break; }
+    travelled = travelled + d * params.stepScale;
+    if (travelled > reach) { break; }
+  }
+  return mix(1.0, clamp(shade, 0.0, 1.0), clamp(params.shadowStrength, 0.0, 1.0));
+}
+
 /* THE ENVIRONMENT — what a REFLECTION and the grazing rim see, and no longer what the
    camera sees where it hits nothing.
    ⚑ THE TWO WERE ONE FUNCTION AND THE OWNER CAUGHT IT: *"needs a black background instead
@@ -675,7 +846,7 @@ fn goldenPick3(cell: vec3f, offset: f32) -> f32 {
  * which is why it survived three passes and a written defence. Making the width and the rate
  * ARGUMENTS is what makes "smoother" structurally unable to become "different".
  */
-fn emissionAt(trace: Trace, p: vec3f, widthScale: f32, rate: f32, detail: f32) -> Emission {
+fn emissionAt(trace: Trace, p: vec3f, widthScale: f32, nodeScale: f32, rate: f32, detail: f32) -> Emission {
   /* Which cells carry a live conduit, and how principal each one is. */
   let cell = floor(p * max(rate, 0.05));
   let pick = goldenPick3(cell, VEIN_PHASE);
@@ -683,6 +854,35 @@ fn emissionAt(trace: Trace, p: vec3f, widthScale: f32, rate: f32, detail: f32) -
   let alive = 1.0 - smoothstep(density - 0.14, density + 0.02, pick);
   /* 0 = this region's principal conduit, 1 = the least of the ones that made the cut. */
   let rank = clamp(pick / density, 0.0, 1.0);
+
+  /* ⚑ THE BEAT, AND IT ARRIVES ONE MARK AT A TIME (T1318b).
+     The owner asked for *"the brightness of SOME of the glow areas"*, and every audio lane
+     this file had reached EVERY mark at once: 'veinEmission' was a global multiplier on the
+     vein term, so a kick lifted the whole network together. Unison across every mark is the
+     same global pump wearing a different coat, and it reads as the picture inflating rather
+     than as anything happening IN it.
+     ⚑ THE ENVELOPE IS READ TWICE — AS AN AMOUNT AND AS A POSITION — which is what buys the
+     succession without any per-mark state. A kick's band envelope rises in a millisecond and
+     decays over about four hundred, so '1 - flare' TRAVELS from 0 to 1 across the release;
+     read as a position in the sequence below, it sweeps through the marks in order, and each
+     one is lit only while the sweep is passing it. At rest 'flare' is its driven mean and the
+     sweep parks; with the lane deleted it is zero and every mark is exactly its own base
+     value again, so there is no term here that silence turns into a different picture.
+     ⚑ AND THE PHASE IS A *SECOND PROJECTION* OF THE SAME LATTICE, NOT A SECOND OFFSET INTO
+     THE FIRST. 'fract(pick + c)' looks like a new sequence and is a rigid rotation of the old
+     one — perfectly correlated with it — so the marks would have fired strictly in order of
+     RANK and only the principal conduits would ever have flared brightly. The same three R3
+     generators assigned to different axes give an equidistributed sequence that is
+     independent of the membership pick, for one more dot product and one more fract. */
+  let markPhase = fract(dot(cell, vec3f(0.4301597090, 0.7548776662, 0.5698402910)) + FLARE_PHASE);
+  let beat = clamp(params.flare, 0.0, 1.0);
+  let sweep = 1.0 - beat;
+  let turn = 1.0 - smoothstep(0.0, max(params.flareWidth, 0.02), abs(sweep - markPhase));
+  let burst = 1.0 + max(params.flareDepth, 0.0) * beat * turn;
+  /* The pool a flaring mark casts takes half the gain: a mark that brightens has to brighten
+     the stone around it or it is a sprite again (§V972), but a spill driven as hard as the
+     core is a wash driven as hard as the core, which is the defect §V977 measured. */
+  let wash = mix(1.0, burst, 0.5);
 
   let base = max(params.veinWidth, 0.0008) * max(widthScale, 0.05);
   /* SIZING COVARIES WITH THE DISTRIBUTION. An even spread of identical marks is a grid. */
@@ -716,7 +916,13 @@ fn emissionAt(trace: Trace, p: vec3f, widthScale: f32, rate: f32, detail: f32) -
      The lesson is worth more than the number: A BRIGHTNESS AND A FALLOFF ARE ONE DECISION.
      Raising a source's gain without steepening its falloff spreads it; what looks like
      "the mark is too strong" is usually "the mark's tail is now visible". */
-  let reach = max(params.nodeRadius, 0.01) * max(widthScale, 0.05);
+  /* ⚑ THE NODE IS WIDENED AGAINST ITS *OWN* WIDTH, NOT THE VEIN'S. One 'lod' was computed as
+     '1 + epsilon / veinWidth' and spent on both marks, and that ratio is the right multiplier
+     for a mark of width 'veinWidth' and the wrong one for anything else — over-widening the
+     nodes here (they are six times the veins' width) and under-widening them for any tuning
+     where they are narrower. The widening is free either way; being free is not a reason to
+     compute it once and use it twice. */
+  let reach = max(params.nodeRadius, 0.01) * max(nodeScale, 0.05);
   let near = 1.0 - smoothstep(0.0, reach * reach, trace.node);
   let near2 = near * near;
   /* ⚑ AND THE SHARP CORE FADES WITH VIEW DISTANCE WHILE THE SPILL DOES NOT — which is a MIP
@@ -730,8 +936,24 @@ fn emissionAt(trace: Trace, p: vec3f, widthScale: f32, rate: f32, detail: f32) -
      mip level is, and it is why this does not cost the interleaving the second hue depends
      on: a far node still lights its patch of stone, it simply stops trying to resolve a core
      narrower than the pixel looking at it. */
-  out.node = near2 * near2 * near2 * mix(0.45, 1.0, alive) * detail;
-  out.nodeSpill = near * mix(0.3, 1.0, alive);
+  /* ⚑ A POD IN A DEAD CELL IS A POD THE LATTICE SAID SHOULD NOT BE THERE, and the floor used
+     to be 0.45 — so every cell the conduit break had switched OFF still carried nearly half a
+     pod, and the marks appeared everywhere the orbit passed the origin rather than where the
+     network is. Swept by distance, that measured 1584 separate magenta marks in one frame at
+     the shipped radius, averaging 8 px: not salt (they resolve, and their count FALLS as the
+     camera pulls back rather than exploding, which is what would have said under-resolved)
+     but FRECKLES — the owner's word — because there were simply too many of them. The break
+     is the lattice's own statement about where the light lives; the pods obey it now. */
+  out.node = near2 * near2 * near2 * mix(0.06, 1.0, alive) * detail;
+  out.nodeSpill = near * mix(0.06, 1.0, alive);
+
+  /* THE FLARE APPLIES TO THE MARKS AND NOT TO THE FIELD. Both kinds of mark take it — a
+     conduit run and a pod in the same cell flare together, which is what makes a flare read
+     as a REGION lighting up rather than as one motif blinking. */
+  out.core = out.core * burst;
+  out.node = out.node * burst;
+  out.spill = out.spill * wash;
+  out.nodeSpill = out.nodeSpill * wash;
   return out;
 }
 
@@ -822,7 +1044,7 @@ fn reflectionAt(p: vec3f, n: vec3f, viewDir: vec3f, shape: Shape, links: i32, hu
      bright things — which here means the living light. */
   let q = p + dir * travelled;
   let trace = chainAt(q, shape, links);
-  let glow = emissionAt(trace, q, 1.0, params.veinRate, 1.0);
+  let glow = emissionAt(trace, q, 1.0, 1.0, params.veinRate, 1.0);
   let tint = rotateHue(params.veinColor.rgb, hue);
   let fade = 1.0 - smoothstep(0.0, reach, travelled);
   /* The nodes reflect too, and on a wet shell that is most of what a reflection is FOR: a
@@ -888,7 +1110,7 @@ fn volumeAlong(
        ⚠ "SMOOTHER" MEANS THE SAME FIELD AT A COARSER SCALE. It does not mean a different
        field, and the reason §V973 exists is that those two read identically in a docblock and
        nothing can ever look wrong enough to tell them apart. */
-    let em = emissionAt(coarse, q, params.hazeWidth, rate, 1.0);
+    let em = emissionAt(coarse, q, params.hazeWidth, params.hazeWidth, rate, 1.0);
     let burn = em.core * params.veinEmission + em.spill * params.veinSpill;
     let pods = em.node * params.nodeGlow + em.nodeSpill * params.nodeSpill;
     sum = sum + (tint * (params.hazeBase + burn) + nodeTint * pods) * near * radial;
@@ -924,8 +1146,18 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
      reference the morph is legible against — and freezing it is what lets a claim measure
      the shape's own evolution rather than the camera's (§V965). The ANGLES the owner asked
      for are delivered by the object's own pose, below, for exactly that reason. */
-  let lap = (t / max(params.orbitPeriod, 1.0)) * TAU * params.orbitSpeed;
-  let rise = sin((t / max(params.orbitPeriod, 1.0)) * TAU * 0.37 * params.orbitSpeed) * params.orbitRise;
+  /* ⚑ THE WHOLE RIG READS 'shot.held' AND NOT 't'. That is the shot lane: camera time is
+     real time with the top of an approach removed, so the orbit, the second axis and the aim
+     all come to a stop together while the camera is close and resume together as it pulls
+     out. A close-up is then a HELD LOOK at magnified structure rather than a whip-pan across
+     it, which is the owner's *"we actually can appreciate the fractality of some parts there
+     without them moving out of view and constantly slipping around"*. The SHAPE clocks below
+     are deliberately not held — they are slow enough now to be looked at, and a piece whose
+     every clock stops for six seconds is a piece that has stopped. */
+  let shot = shotAt(t);
+  let tc = shot.held;
+  let lap = (tc / max(params.orbitPeriod, 1.0)) * TAU * params.orbitSpeed;
+  let rise = sin((tc / max(params.orbitPeriod, 1.0)) * TAU * 0.37 * params.orbitSpeed) * params.orbitRise;
   let worldEye = vec3f(
     sin(lap) * params.orbitRadius,
     params.orbitHeight + rise,
@@ -969,8 +1201,8 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
      tiny by construction: 'skyAt' reads only 'dir.y', and a rotation about Y — which is all
      of the tumble but the nod — does not change '.y' at all. What is left is the nod's own
      'poseTilt' radians, on a gradient whose two ends are 0.02 and 0.055. */
-  let poseLap = (t / max(params.posePeriod, 1.0)) * TAU;
-  let nod = sin((t / max(params.posePeriod, 1.0)) * TAU * 0.41) * params.poseTilt;
+  let poseLap = (tc / max(params.posePeriod, 1.0)) * TAU;
+  let nod = sin((tc / max(params.posePeriod, 1.0)) * TAU * 0.41) * params.poseTilt;
   /* World -> object. 'transpose' of a rotation is its inverse, exactly. */
   let toObject = transpose(rotY(poseLap) * rotX(nod));
 
@@ -978,15 +1210,21 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
      of its period and rises to a peak briefly — "occasionally", the owner's word for the
      negative space, and the same reason applies to a dolly. A push that never rests is a
      ride, and a VJ patch wants a framed object. */
-  let pushPhase = 0.5 - 0.5 * cos((t / max(params.pushPeriod, 1.0)) * TAU);
-  let push = pushPhase * pushPhase * pushPhase;
-  let closeness = mix(1.0, max(params.poseNear, 0.2), push);
+  /* THE APPROACH ITSELF READS REAL TIME, and it must: it is the clock the hold is derived
+     FROM, so holding it against its own integral would be circular and the camera would
+     never come back out. */
+  let push = shot.close;
+  /* ⚑ AND THE BEAT RIDES THE SAME AXIS AS THE APPROACH, WHICH IS WHY IT IS SAFE TO MAKE IT
+     FAST. A dolly is a rigid transform of the view; magnified structure stays exactly as
+     coherent across a punch as it was standing still. This is the lane the deleted pump was
+     doing badly: same envelope, same felt impulse, and nothing in the field moves. */
+  let closeness = mix(1.0, max(params.poseNear, 0.2), push) * (1.0 + params.punchGain * params.punch);
 
   /* THE AIM: where the camera looks WHEN it is close. The interesting part of a fractal is
      never the middle, and a compact sculpture framed on its centroid is the same portrait
      forever. It rides the push, so the frame only leaves the centre while there is something
      near enough to be worth framing. */
-  let aimLap = (t / max(params.aimPeriod, 1.0)) * TAU;
+  let aimLap = (tc / max(params.aimPeriod, 1.0)) * TAU;
   let aim = params.poseAim * push * vec3f(sin(aimLap), cos(aimLap * 0.71 + 1.3), sin(aimLap * 0.53));
 
   let eye = (toObject * worldEye) / closeness - aim;
@@ -1045,7 +1283,8 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
        conduits must still be there — they are the structure — they simply stop trying to
        resolve detail finer than the image can carry. */
     let lod = 1.0 + epsilon / max(params.veinWidth, 1.0e-4);
-    let glow = emissionAt(trace, p, lod, params.veinRate, detail);
+    let nodeLod = 1.0 + epsilon / max(params.nodeRadius, 1.0e-4);
+    let glow = emissionAt(trace, p, lod, nodeLod, params.veinRate, detail);
     let occ = occlusionAt(p, n, shape, links);
     let specPower = mix(4.0, 220.0, 1.0 - clamp(params.roughness, 0.0, 1.0));
 
@@ -1071,9 +1310,22 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
     let fillTint = params.fillColor.rgb;
     let veinTint = rotateHue(params.veinColor.rgb, veinHue);
 
+    /* ⚑ THE KEY CASTS, AND IT IS THE ONLY ONE THAT DOES (T1318b).
+       The march starts four pixel-footprints off the surface rather than at a constant
+       offset: 'epsilon' is what the primary march already decided this pixel can resolve, so
+       a fixed start would be acne on the near half of the object and a floating shadow on
+       the far half. It is the same quantity, used the same way, as the mark-widening below.
+       Fill and rim stay unshadowed on purpose — that is what makes them AMBIENT WRAP, and it
+       is the division that lets one shadow march buy the whole cue. */
+    let toKey = lightPosition(0.0, t) - p;
+    let keyDist = length(toKey);
+    let shadow = shadowAt(
+      p, toKey / max(keyDist, 1.0e-4), keyDist, max(epsilon * 4.0, SURFACE * 4.0), shape, links,
+    );
+
     /* THREE COLOURED SOURCES, each with reach, and a hierarchy that hands over. The rim
        does not morph, for the reason given at its declaration. */
-    var lit = lightAt(p, n, view, 0.0, t, keyTint, params.keyIntensity, specPower);
+    var lit = lightAt(p, n, view, 0.0, t, keyTint, params.keyIntensity, specPower) * shadow;
     lit = lit + lightAt(p, n, view, 1.0, t, fillTint, params.fillIntensity, specPower);
     lit = lit + lightAt(p, n, view, 2.0, t, params.rimColor.rgb, params.rimIntensity, specPower);
 

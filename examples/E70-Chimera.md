@@ -331,31 +331,52 @@ single-frame step, *and they still land*.
 | `veinSpread` | `hit1.hat` envelope | finer reaction to finer detail: a hat widens the glow, not the veins |
 | `haze` | `lvl1.low` rank | the medium breathes |
 | `fillIntensity` | `lvl1.highMid` rank | the opposition light opens |
-| `foldTravel` | `lvl1.level` rank | the creases open and close — an amplitude on a morph already running |
 | `specular` | `lvl1.high` rank | the wetness follows the top end |
 | `saturation` | `lvl1.centroid` rank | spectral brightness opens the chroma |
-| `openness` | `lvl1.level` rank | **how far open the chain sits** — see below |
-| the camera | **nothing** | the orbit is the stable reference the morph is legible against |
+| `punch` | `hit1.kick` envelope, **centred** | the camera THRUSTS on the beat and eases back between — a rigid dolly, read centred so it retains exactly 0 |
+| `keyIntensity` | `hit1.kick` envelope | the key punches, and because the key now CASTS, its shadow snaps with it |
+| the shape | **nothing at all** | see below |
 
 Every retained value is the lane's **driven mean**, not its floor and not its peak: the value
 that stands when no drive arrives has to look like the piece, because that is the picture the
 thumbnail shows.
 
-### Looseness is driven; identity still is not
+### Light may flash at beat rate. Form may not.
 
-The owner asked the shape to be *"sometimes more loose, sometimes less"* and to *"react to the
-energy and the song"*. The ruling that nothing audio-driven may touch the object's **identity**
-stands — if the music decided what the object *is*, silence would be a different object. But
-"looser" is not a different object, it is the same object breathing, and the box fold's limit
-and the sphere fold's inner radius were already travelling on their own clocks. `openness`
-widens the region of that same parameter space the piece visits.
+The piece used to drive its **shape** from the music — `openness` for how far open the chain
+sat, `foldTravel` for the creases. The owner watched it and cut both by name:
 
-⚑ **§V914 is satisfied here by arithmetic rather than by a measurement anyone has to redo.**
-The lane is `0.25 + 0.5 × rank` on a rank that rests at its middle, so it retains **exactly
-0.5**, and the shader reads `openness − 0.5`. The rest picture is therefore *byte-identical*
-to the picture this file would render with the lane deleted — which the claims assert, both
-halves: zero differing pixels at rest, and a measurably different shape when it is driven to
-the top of its range.
+> *"it's still pumping, like pulsing instead of us doing it by camera, which then prevents us
+> that we can't have close-ups and flyovers that make sense without being noisy because the
+> thing itself rotates and pumps. So I think we really need to do this with the camera
+> instead."*
+
+That reverses their earlier *"it doesn't have to be the camera that moves, it can also be the
+piece"*, and the reason it is right is measurable rather than aesthetic. **A camera move is a
+rigid transform of the view, so world-space detail stays coherent frame to frame and the eye
+integrates it. A pump deforms the very structure the shot is magnifying** — at close range the
+detail is not sliding out of frame, it is being destroyed and rebuilt every frame, which is
+what reads as noise. No shot-gating fixes that; only removing the deformation does.
+
+So the **form** clocks are long and read no audio at all, and the **transient** goes to three
+places that are all either light or camera: a rigid dolly punch, the key's intensity (and
+therefore its cast shadow), and the per-mark flare. Measured per FRAME at 60 fps, camera and
+every clock stopped so the only thing left moving is the drum:
+
+| arm | on the hit | between hits |
+| --- | --- | --- |
+| live | **5.07** | 1.12 |
+| camera punch cut | 0.41 | 0.11 |
+| flare cut | 4.89 | 1.07 |
+| every drive cut (control) | **0.000** | **0.000** |
+
+⚑ **The camera punch is 92% of it.** The flare is real and small; the control reads exactly
+zero, which is what says the rest of the frame is genuinely still.
+
+⚑ **§V914 was satisfied by arithmetic, and it paid out at the deletion rather than at the
+landing.** `openness` was centred so it retained *exactly* its neutral value — so removing it
+is bit-for-bit invisible in the no-track picture. A lane centred on its floor could not have
+been removed without a retune. `punch` is built the same way, for the same reason.
 
 ## It works at any tempo
 

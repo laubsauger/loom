@@ -170,14 +170,38 @@ function cutEveryDrive(graph: GraphDocument): void {
     parameters[key] = retained;
     cut += 1;
   }
-  if (cut < 10) {
-    throw new Error(`cutEveryDrive found ${cut} driven slots; the piece has at least 10`);
+  /* ⚑ EIGHT, AND IT WAS TEN UNTIL T1318b TOOK THREE LANES OFF THE FORM AND PUT ONE BACK ON
+     THE LIGHT. The owner's ruling is that light may flash at beat rate and form may not, so
+     `openness` and `foldTravel` were deleted outright and the kick moved off the global
+     `veinEmission` onto the per-mark `flare`. The bound exists to catch the document's shape
+     changing underneath this file, which is exactly what happened — so it moves WITH a
+     recorded reason rather than being widened until it stops complaining. */
+  if (cut < 8) {
+    throw new Error(`cutEveryDrive found ${cut} driven slots; the piece has at least 8`);
   }
 }
 
-/** Park the camera. §V965: otherwise every claim below is a claim about the orbit. */
+/**
+ * Park the camera — ALL OF IT.
+ *
+ * ⚑ THIS FUNCTION USED TO STOP THE ORBIT AND NOTHING ELSE, AND IT WAS NOT PARKING THE CAMERA.
+ * The three clocks it left running — `posePeriod`, `pushPeriod`, `aimPeriod` — were documented
+ * for two passes as "the object's pose", but the transform is a rigid rotation and a uniform
+ * scale applied to the EYE AND THE RAY DIRECTION TOGETHER, which is a camera move by
+ * definition: the eye walks a sphere about the origin while the object stands still. Nothing
+ * rendered could ever have disagreed with either description, which is how the wrong one
+ * survived — and under it, every claim below that believed it had parked the camera was
+ * measuring a camera that was orbiting, tilting, dollying and panning. That is §V965's own
+ * defect wearing the name of the function written to prevent it.
+ *
+ * The owner's T1318b ruling ("the subject holds still; the camera does all the moving") is
+ * what made the misnaming matter enough to notice.
+ */
 function freezeCamera(graph: GraphDocument): void {
   param(graph, "shape", "orbitSpeed", 0);
+  for (const clock of ["posePeriod", "pushPeriod", "aimPeriod"]) {
+    param(graph, "shape", clock, 1.0e9);
+  }
 }
 
 /**
@@ -439,7 +463,7 @@ describe("E70 Chimera — claims", () => {
    * through a 420 ms release (§V966), so it does not return to zero between beats — it
    * gutters, which is the difference between a light that lives and one that strobes.
    */
-  it("the veins FIRE on the kick and fall back between kicks", async () => {
+  it("the marks FIRE on the kick and fall back between kicks", async () => {
     /* ⚑ THE CLOCKS ARE FROZEN HERE TOO, and the first version of this claim was wrong for
        not doing it. Measuring `live - cut` at ONE frame isolates the lane; comparing that
        difference ACROSS frames twenty-six apart does not, because the lane's magnitude
@@ -454,11 +478,19 @@ describe("E70 Chimera — claims", () => {
        "the drive replaced by a wrong constant", and the whole claim silently inverted: every
        frame measured ABOVE the cut arm because the cut arm was simply darker. §V958's shape
        one level down — the freeze was derived and the CUT was not. */
-    const retainedVeinEmission = ((): number => {
+    /* ⚑ AND THE *LANE* IS NAMED RATHER THAN THE PARAMETER, which is what let this claim
+       survive T1318b instead of silently passing on a dead key. The kick used to drive
+       `veinEmission`, a GLOBAL gain on every conduit at once; it now drives `flare`, which
+       reaches the same marks through an R3 sequence one at a time. The claim below is the
+       same claim — does the light rise on the transient and gutter between them — and only
+       the destination moved. It threw by name when the key went away (`param()` does not),
+       which is the failure mode §V958 asks for. */
+    const KICK_LANE = "flare";
+    const retainedKickLane = ((): number => {
       const parameters = e70().document.graph.nodes["shape"]!.parameters as Record<string, unknown>;
-      const slot = parameters["veinEmission"] as { bindings?: { static?: { value?: unknown } } };
+      const slot = parameters[KICK_LANE] as { bindings?: { static?: { value?: unknown } } };
       const value = slot?.bindings?.static?.value;
-      if (typeof value !== "number") throw new Error("E70's veinEmission is no longer a driven slot");
+      if (typeof value !== "number") throw new Error(`E70's ${KICK_LANE} is no longer a driven slot`);
       return value;
     })();
 
@@ -466,7 +498,7 @@ describe("E70 Chimera — claims", () => {
       freezeCamera(graph);
       cutEveryDrive(graph);
       freezeClocks(graph);
-      param(graph, "shape", "veinEmission", retainedVeinEmission);
+      param(graph, "shape", KICK_LANE, retainedKickLane);
     };
     /* ⚠ AND THE LIVE ARM CUTS EVERY *OTHER* DRIVE, so the only lane still reaching the
        frame is the one under test. Leaving the others live measured the whole audio rig. */
@@ -475,7 +507,7 @@ describe("E70 Chimera — claims", () => {
       cutEveryDrive(graph);
       freezeClocks(graph);
       const parameters = e70().document.graph.nodes["shape"]!.parameters as Record<string, unknown>;
-      param(graph, "shape", "veinEmission", parameters["veinEmission"]);
+      param(graph, "shape", KICK_LANE, parameters[KICK_LANE]);
     };
 
     const beforeLive = await shoot(94, live);
@@ -803,74 +835,208 @@ describe("E70 Chimera — claims", () => {
     /* IT REACHES THE STONE AT ALL — this is the assertion a sprite fails outright. */
     expect(ring, "a pod must change the stone it sits in").toBeGreaterThan(0.4);
     /* AND IT IS A LOCAL LIGHT RATHER THAN A GAIN ON THE WHOLE SHELL, which is what a
-       mis-scoped shading term looks like and what a mean-only claim would happily pass. */
-    expect(ring / Math.max(far, 1.0e-4), "and it must do it LOCALLY").toBeGreaterThan(8);
+       mis-scoped shading term looks like and what a mean-only claim would happily pass.
+       ⚑ 8 -> 4, AND THE RE-FIT IS RECORDED RATHER THAN QUIETLY WIDENED. T1318b widened the
+       box fold to take the cube out of the silhouette, which makes the OBJECT BIGGER, and
+       every distance in the piece went up by the same 1.4 to keep it framed — camera, light
+       rig, and the four fade reaches. `RING` above is in PIXELS, so the same ring now samples
+       a different band of the WORLD, and the ratio it measures fell from over 8 to 5.06 with
+       nothing about the pods having changed. That is §V920's amendment exactly: a constant
+       fitted to one geometry is not a constant, it is a fit, and it has to be re-fitted to the
+       data it is now pointed at. The claim it makes is unchanged and still strong — the ring
+       moves five times what the far stone does — and a sprite, which moves the far stone by
+       exactly as much as the ring, still fails it outright. */
+    expect(ring / Math.max(far, 1.0e-4), "and it must do it LOCALLY").toBeGreaterThan(4);
   }, 600_000);
 
   /**
-   * LOOSENESS IS DRIVEN; IDENTITY IS NOT — AND BOTH HALVES ARE ASSERTED.
+   * ⚑ THE KEY LIGHT CASTS — AND THE CLAIM IS THAT THE DARKNESS *MOVES WITH THE LIGHT*.
    *
-   * T1310b ruled that nothing audio-driven may touch the object's identity, because if the
-   * music decided what the object IS then silence would be a different object, and silence is
-   * what every thumbnail renders. That ruling stands. The owner then asked for *"sometimes
-   * more loose, sometimes less"*, which is a third thing: the same object breathing.
+   * The defect this term repairs is precise, and a brightness test cannot see it. The file
+   * had AMBIENT occlusion and no cast shadow: `occlusionAt` asks "how enclosed is this point"
+   * and knows nothing about where any light is, so THE SHADING PATTERN WAS IDENTICAL WHEREVER
+   * THE RIG STOOD. Moving a light changed its tint and its intensity and could not change
+   * which parts of the object were dark. That is the owner's *"as if the lights are all like
+   * not cones but just all global god lights"*, and it is why the piece read STATICALLY lit
+   * while the lights demonstrably moved.
    *
-   * ⚑ THE INTERESTING HALF IS THE NO-OP ONE. §V914 is satisfied here by ARITHMETIC rather
-   * than by a measurement somebody has to redo after a retune: the lane is `0.25 + 0.5 * r`
-   * on a rank that rests at its middle, so it retains exactly 0.5, and the shader reads
-   * `openness - 0.5`. The rest picture must therefore be BYTE-IDENTICAL to the picture this
-   * file would render with the lane deleted — which is what `openSpread` and `openVoid` at 0
-   * means. Byte-identity is the only honest way to say "this changes nothing here" (§V147),
-   * and T1279's precedent is that a declaration of a no-op is not a proof of one.
+   * So what is measured is the SET OF PIXELS THE SHADOW TAKES ANYTHING FROM — the pixels
+   * where the shadowed arm is dimmer than the arm with `shadowStrength` at 0. That set is
+   * exactly where the shadow ray was blocked, so it is a pure function of the geometry and
+   * the light's DIRECTION, and it carries no dependence on how bright anything is. With the
+   * camera parked, the drives cut and every clock stopped but `lightCycle`, the object is
+   * byte-for-byte the same object in all four renders and the only thing that changed
+   * between the two times is where the lights stand.
    *
-   * And the second half proves the lane is not merely dead: at the top of its range the shape
-   * is somewhere else, with every other lane cut so the only path to the frame is looseness.
+   * ⚑ TWO EARLIER FORMS OF THIS CLAIM WERE WRONG, AND BOTH FAILURES ARE WORTH THE LINES.
+   *
+   *   1. "WHEN THE LIGHT MOVES, DOES MORE OF THE PICTURE CHANGE WITH THE SHADOW THAN
+   *      WITHOUT IT" measured 10.18 against 10.38 — very slightly LESS. The reason is real:
+   *      A SHADOW REMOVES LIT SURFACE, and a surface dark in both frames cannot respond to
+   *      the light travelling, so the moving shadow edge and the lost lit area cancel almost
+   *      exactly. A number that goes the wrong way for a correct reason is the most
+   *      expensive kind of instrument (§V974).
+   *   2. AMBIENT OCCLUSION WAS THEN USED AS A KNOWN NEGATIVE — a term that provably cannot
+   *      know where the light is, so its map must not move — AND IT MOVED. 0.74 overlap at
+   *      an absolute threshold, 0.44 at a relative one. AO is not a control here and no
+   *      threshold makes it one: `occ` MULTIPLIES `lit`, so where the rig has moved away the
+   *      same occlusion removes a different share of a smaller number, and its VISIBILITY
+   *      travels with the light even though its FIELD cannot. §V968's rule got its own
+   *      corollary out of it: A TERM THAT IS INDEPENDENT OF X IS NOT A CONTROL FOR X IF IT
+   *      IS *MULTIPLIED* BY SOMETHING THAT IS NOT.
+   *
+   * The control that holds is the instrument's own A/A: run the identical detector with
+   * `lightCycle` STOPPED, so the light does not move either. It must then report the set as
+   * unmoved. That is what says a low overlap in the live arm is the light travelling rather
+   * than the detector being noise.
    */
-  it("the looseness lane is a no-op at rest and opens the chain when it is driven", async () => {
-    const restOnly = (graph: GraphDocument): void => {
+  it("the shadow falls somewhere else when the light stands somewhere else", async () => {
+    const oneObject = (lightClock: unknown) => (graph: GraphDocument): void => {
       freezeCamera(graph);
       cutEveryDrive(graph);
+      freezeClocks(graph);
+      param(graph, "shape", "lightCycle", lightClock);
+    };
+    const shippedLightCycle = (e70().document.graph.nodes["shape"]!.parameters as Record<string, unknown>)["lightCycle"];
+    /* At 1 fps a frame index IS a second; 4 s and 22 s are a third of `lightCycle` apart, so
+       the rig is in a genuinely different configuration. */
+    const WHEN = [4, 22] as const;
+
+    /** Exactly where the shadow took something: dimmer than the same frame without it. */
+    const inShadow = (shadowed: Frame, flat: Frame): Set<number> => {
+      const set = new Set<number>();
+      for (let pixel = 0; pixel < flat.w * flat.h; pixel += 1) {
+        const lit = luma(flat, pixel);
+        if (lit < 4) continue;
+        if ((lit - luma(shadowed, pixel)) / lit > 0.02) set.add(pixel);
+      }
+      return set;
+    };
+    const overlap = (a: Set<number>, b: Set<number>): number => {
+      if (a.size === 0 || b.size === 0) return 0;
+      let both = 0;
+      for (const pixel of a) if (b.has(pixel)) both += 1;
+      return both / Math.min(a.size, b.size);
     };
 
-    const atRest = await shoot(40, restOnly);
-    const laneRemoved = await shoot(40, (graph) => {
-      restOnly(graph);
-      param(graph, "shape", "openSpread", 0);
-      param(graph, "shape", "openVoid", 0);
-    });
+    const mapsFor = async (lightClock: unknown): Promise<readonly [Set<number>, Set<number>]> => {
+      const live = oneObject(lightClock);
+      const [shadowedA, shadowedB] = await shootSeries([...WHEN], 1, live);
+      const [flatA, flatB] = await shootSeries([...WHEN], 1, (graph) => {
+        live(graph);
+        param(graph, "shape", "shadowStrength", 0);
+      });
+      if (shadowedA === undefined || shadowedB === undefined || flatA === undefined || flatB === undefined) {
+        throw new Error("fewer than two frames captured");
+      }
+      return [inShadow(shadowedA, flatA), inShadow(shadowedB, flatB)] as const;
+    };
 
-    let differing = 0;
-    for (let pixel = 0; pixel < atRest.w * atRest.h; pixel += 1) {
-      if (Math.abs(luma(atRest, pixel) - luma(laneRemoved, pixel)) > 0.5) differing += 1;
-    }
-    expect(differing, "at rest the looseness lane must change NOTHING").toBe(0);
+    /* THE CONTROL FIRST — the detector's own A/A. With the light rig stopped as well, the
+       two moments are the same picture and the shadow must be found in the same places. */
+    const [stillA, stillB] = await mapsFor(1.0e9);
+    expect(stillA.size, "the shadow must actually darken pixels").toBeGreaterThan(1000);
+    const floor = overlap(stillA, stillB);
+    expect(floor, "with the lights stopped the shadow must not move either").toBeGreaterThan(0.95);
 
-    /* THE REAL HALF. One number, and the chain sits further open. */
-    const opened = await shoot(40, (graph) => {
-      restOnly(graph);
-      param(graph, "shape", "openness", 1);
-    });
+    /* AND THE CLAIM. Same detector, same object, the lights now travelling. */
+    const [movedA, movedB] = await mapsFor(shippedLightCycle);
+    expect(movedA.size, "the shadow must darken pixels with the rig live too").toBeGreaterThan(1000);
+    const travelled = overlap(movedA, movedB);
     expect(
-      meanPixelDelta(atRest, opened),
-      "driven to the top of its range the shape must be somewhere else",
-    ).toBeGreaterThan(1);
-  }, 600_000);
+      travelled,
+      "a CAST shadow must fall somewhere else when the light stands somewhere else",
+    ).toBeLessThan(floor * 0.7);
+  }, 900_000);
 
   /**
-   * THE OBJECT CARRIES THE ANGLES, AND THE CAMERA NEVER MOVES.
+   * ⚑ THE BEAT REACHES THE MARKS ONE AT A TIME — AND THE DETECTOR IS VALIDATED AGAINST A
+   * KNOWN POSITIVE FOR UNISON BEFORE THE SUCCESSION IS BELIEVED (§V968).
    *
-   * The owner asked to *"sometimes follow one of the fractal knobs a little closer and see
-   * some angles"*, then settled the mechanism: *"it doesn't have to be the camera that moves,
-   * it can also be the piece."* Moving the object rather than the eye is what keeps every
-   * other claim in this file provable, because §V965's defect — a two-frame comparison that
-   * is secretly measuring a dolly — cannot occur against a camera that is parked.
+   * The owner asked for *"the brightness of SOME of the glow areas"*. Every audio lane this
+   * file had was a GLOBAL multiplier: `veinEmission` lifted every conduit in the frame by the
+   * same factor at the same instant, which is the picture inflating rather than anything
+   * happening inside it. `flare` reaches the same marks through an R3 sequence over the
+   * conduit lattice, reading the envelope twice — once as an amount and once as a POSITION —
+   * so the release sweeps through the marks in an order independent of how bright each one
+   * already is.
+   *
+   * The instrument is the SET of pixels a lane brightens, not how much it brightens them. A
+   * unison lane brightens the SAME pixels at every value and only changes by how much; a
+   * succession lane brightens a DIFFERENT SUBSET at every value. So:
+   *
+   *   - the KNOWN POSITIVE: the old mechanism, `veinEmission` at two levels. Its two
+   *     brightened sets must overlap almost completely. If they do not, the instrument cannot
+   *     tell unison from succession and its verdict on `flare` means nothing.
+   *   - the CLAIM: `flare` at two levels, whose sets must overlap far less.
+   */
+  it("the flare fires marks in succession, and the same instrument reads the old lane as unison", async () => {
+    const still = (graph: GraphDocument): void => {
+      freezeCamera(graph);
+      cutEveryDrive(graph);
+      freezeClocks(graph);
+    };
+    const at = async (key: string, value: number): Promise<Frame> =>
+      shoot(40, (graph) => {
+        still(graph);
+        param(graph, "shape", key, value);
+      });
+
+    /* Which pixels a lane LIFTS, against its own off state. */
+    const lifted = (base: Frame, arm: Frame): Set<number> => {
+      const set = new Set<number>();
+      for (let pixel = 0; pixel < base.w * base.h; pixel += 1) {
+        if (luma(arm, pixel) - luma(base, pixel) > 2) set.add(pixel);
+      }
+      return set;
+    };
+    const overlap = (a: Set<number>, b: Set<number>): number => {
+      if (a.size === 0 || b.size === 0) return 0;
+      let both = 0;
+      for (const pixel of a) if (b.has(pixel)) both += 1;
+      return both / Math.min(a.size, b.size);
+    };
+
+    /* THE KNOWN POSITIVE FOR UNISON: the global vein gain, which is what the kick used to
+       drive. Its shipped static is 6.25. */
+    const veinOff = await at("veinEmission", 6.25);
+    const veinLow = lifted(veinOff, await at("veinEmission", 8));
+    const veinHigh = lifted(veinOff, await at("veinEmission", 11));
+    expect(veinLow.size, "the known positive must actually lift pixels").toBeGreaterThan(200);
+    const unison = overlap(veinLow, veinHigh);
+    expect(
+      unison,
+      "VALIDATION: a global gain must lift the SAME pixels at both levels, or this instrument cannot read succession",
+    ).toBeGreaterThan(0.85);
+
+    /* AND THE CLAIM. Same instrument, same frame, same everything but the lane. */
+    const flareOff = await at("flare", 0);
+    const flareEarly = lifted(flareOff, await at("flare", 0.85));
+    const flareLate = lifted(flareOff, await at("flare", 0.45));
+    expect(flareEarly.size, "the flare must actually lift pixels").toBeGreaterThan(200);
+    const succession = overlap(flareEarly, flareLate);
+    expect(
+      succession,
+      "two points of the sweep must light a DIFFERENT subset of the marks — unison is the defect",
+    ).toBeLessThan(unison * 0.8);
+  }, 900_000);
+
+  /**
+   * THE CAMERA CARRIES THE ANGLES, AND IT IS THE ONLY THING THAT MOVES THE VIEW.
+   *
+   * ⚑ THIS CLAIM USED TO BE TITLED "the object carries the angles", AND THE THING IT MEASURES
+   * NEVER CHANGED — only the name did. `posePeriod`, `pushPeriod` and `aimPeriod` drive a
+   * rigid rotation and a uniform scale applied to the eye AND the ray direction together,
+   * which is a camera move; calling it an object pose was a description no render could
+   * contradict. The owner settled it from the other end (*"we really need to do this with
+   * the camera instead"*), and T1318b made the code say what it always did.
    *
    * So this claim is the pair. The camera is frozen in BOTH arms and every other clock is
    * stopped in both; the only difference is whether the pose clocks are allowed to run. The
    * frames must differ when they do and be one picture when they do not — which is what says
    * the angles come from the object and not from anything else that happens to be moving.
    */
-  it("the pose changes the view with the camera parked — and is the only thing that does", async () => {
+  it("the camera rig moves the view with the orbit parked — and is the only thing that does", async () => {
     const parked = (graph: GraphDocument): void => {
       freezeCamera(graph);
       cutEveryDrive(graph);
@@ -898,10 +1064,10 @@ describe("E70 Chimera — claims", () => {
     const floor = meanPixelDelta(stillA, stillB);
     expect(floor, "with the pose stopped these must be one picture").toBeLessThan(0.5);
 
-    /* AND THE CLAIM: the object turned and swam in, and the camera did neither. */
+    /* AND THE CLAIM: the camera travelled and approached with the object standing still. */
     expect(
       meanPixelDelta(poseA, poseB),
-      "the pose must move the view on its own",
+      "the camera rig must move the view on its own",
     ).toBeGreaterThan(Math.max(floor, 0.05) * 20);
   }, 600_000);
 

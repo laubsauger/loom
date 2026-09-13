@@ -101,13 +101,39 @@ export const chimeraDocument = document(
         iterations: 11,
         scale: -2.1,
         scaleTravel: 0.22,
-        foldLimit: 1.05,
+        /* ⚑ 1.05 -> 1.45, AND THIS IS THE CUBE. The owner said *"the thing looking less
+           like a cube all day with warts"* after TWO passes of material work, which is what
+           says it was never material. A box fold is 'clamp(p, -limit, limit) * 2 - p', which
+           reflects the domain about the faces of a CUBE — so a body shaped mostly by it has a
+           cubic silhouette by construction, and surface detail on a cubic body is exactly
+           warts on a cube.
+           ⚑ AND THE PARAMETER THAT *LOOKED* RESPONSIBLE WAS NOT (§V980). The bulb floor was
+           swept 1 -> 2.4 -> 3.4 and the silhouette statistics did not move: fill 0.64/0.61/0.66,
+           convolution 2.5/3.9/2.6, no trend. The same statistic on THIS term moves
+           2.44 -> 6.19 -> 19.78 across foldLimit 1.05 / 1.6 / 2.6. The instrument was never
+           blind; the bulb genuinely does not reach the outline, and no value of it could have.
+           1.45 is where the body is branching and holed rather than a block, and still a
+           BODY — at 6 the fold is the identity and the set collapses to a 7%-fill dust. */
+        foldLimit: 1.45,
+        /* How far the box fold's limit breathes on the scale clock — the creases opening and
+           closing. STATIC since T1318b at the value its audio lane retained: the body of the
+           mix no longer moves it, because it moves the FORM. */
+        foldTravel: 0.18,
         minRadius: 0.47,
         fixedRadius: 1,
         /* Exactly 1 = the identity, and the term is SKIPPED at that value rather than
            computed and multiplied by nothing. The travel to `bulbPeak` is what walks the
            object from reef/skeleton into bulb and back. */
-        bulbPower: 1,
+        /* ⚑ 2.4, AND IT WAS 1 — WHICH IS THE IDENTITY, SO THE BULB WAS OFF AT REST.
+           The character clock dwells at both ends of its travel, so at a floor of 1 the piece
+           spent most of any viewing with NO power map running at all, and the only shaping
+           operator left was the box fold. A box fold reflects the domain about the faces of a
+           CUBE, so the owner's *"the thing looking less like a cube all day with warts"* —
+           said after two passes of material work, and said twice — was a correct reading of
+           the dominant operator from the SILHOUETTE. Detail cannot answer it: detail on a
+           cubic body is warts on a cube. Floored, the body is permanently lobed and the
+           character clock varies an organic shape instead of switching organicity on. */
+        bulbPower: 2.4,
         bulbPeak: 4.2,
         /* The object's identity, and the strongest evolution axis in the file: drifting the
            seed offset merges lobes and opens shells CONTINUOUSLY. Nothing audio-driven
@@ -115,12 +141,12 @@ export const chimeraDocument = document(
            different object, and silence is what every thumbnail renders. */
         seedOffset: [0, 0, 0, 0],
         seedDrift: 0.26,
-        /* ⚑ LOOSENESS, AND IT IS THE ONE AUDIO LANE THAT REACHES THE SHAPE — see the
-           `openness` slot below. Identity is still driven by nothing; what the music moves
-           is how far OPEN the chain sits, which is the same object breathing rather than a
-           different object. These two say how far that travel goes. */
-        openSpread: 0.5,
-        openVoid: 0.22,
+        /* ⚑ `openSpread` AND `openVoid` ARE GONE (T1318b) — the one audio lane that reached
+           the shape, cut by the owner by name after they watched it: *"it's still pumping,
+           like pulsing instead of us doing it by camera, which then prevents us that we
+           can't have close-ups and flyovers that make sense without being noisy."* Deleting
+           it is byte-identical at rest, because the lane was centred on its own neutral
+           value and contributed exactly zero with no audio. */
         /* THE SEGMENTATION KNOB. Three different rates, so the fold planes precess instead
            of turning as a rigid set — a single axis reads as the object spinning, which is
            the one thing the owner explicitly did not ask for. */
@@ -129,38 +155,55 @@ export const chimeraDocument = document(
         stepScale: 0.78,
         bailout: 256,
 
-        /* ─── THE SIX CLOCKS, and they are prime on purpose ───────────────────────────
-         * 19 / 37 / 47 / 53 / 73 / 113. The combined state repeats on their product, so
-         * "what is different at 15 s, 45 s and 90 s" always has an answer and it is a
-         * different answer each time. This is the row's acceptance criterion expressed as
-         * six numbers, and `chimera-claims.gpu.test.ts` measures it. */
+        /* ─── THE CLOCKS, PRIME ON PURPOSE — AND SPLIT BY THE OWNER'S RULING ─────────
+         * The combined state repeats on their product, so "what is different at 15 s, 45 s
+         * and 90 s" always has an answer and it is a different answer each time. This is the
+         * row's acceptance criterion expressed as numbers, and `chimera-claims.gpu.test.ts`
+         * measures it.
+         * ⚑ T1318b MULTIPLIED EVERY *FORM* CLOCK BY ABOUT THREE AND LEFT EVERY LIGHT AND
+         * CAMERA CLOCK ALONE: 19 -> 149, 47 -> 181, 73 -> 211, 113 -> 277, 89 -> 239, while
+         * `hueTurn` 37 and `lightCycle` 53 stand. The owner's ruling is that light may flash
+         * at beat rate and form may not, and the reason is measurable rather than aesthetic:
+         * a camera move is a rigid transform of the view, so detail stays coherent and the
+         * eye integrates it, while a morph DEFORMS the structure a close-up is magnifying.
+         * The window a form clock has to survive is an approach, which at `pushPeriod` 43 is
+         * about thirteen seconds — and at 19 s the fold rotation used to turn two thirds of
+         * a lap inside one of those. */
         /* Where the rotation's lap STARTS, and it is load-bearing rather than cosmetic: at
            phase 0 the rotation is the identity and the object is a flat axis-aligned slab.
            Thumbnails and headless renders are taken at frame 0, so a clock starting at its
            own degenerate value ships the worst frame in the piece as the picture of it. */
         morphPhase: 0.37,
-        morphPeriod: 19,
+        morphPeriod: 89,
         hueTurn: 37,
-        scalePeriod: 47,
+        scalePeriod: 181,
         lightCycle: 53,
-        characterPeriod: 73,
-        seedPeriod: 113,
+        characterPeriod: 71,
+        seedPeriod: 277,
         /* ⚑ NEGATIVE SPACE, AND THE OWNER'S WORD WAS "OCCASIONALLY" — so it is a CLOCK, not a
-           setting, and 89 keeps the six prime periods seven and still mutually prime. The
+           setting, and 239 is one more prime in a set that is checked pairwise coprime. The
            voids are opened by the sphere fold that already makes the shells, so the distance
            estimate stays exact; a hole carved with a min/max against the chain would cost a
            step-scale and make every cost figure in this file dishonest. */
-        voidPeriod: 89,
+        /* ⚑ 107, AND IT IS THE OWNER'S *"opening and closing distances between nodules"*.
+           This clock moves the sphere fold's inner radius, which is exactly what sets how far
+           apart the repeated structures sit — the lane already existed and was simply running
+           too slowly for anyone to see it happen. Still CUBED, so the gaps are shut most of
+           the time and open now and then, which is the "occasionally" the owner asked for
+           when they asked for the negative space in the first place. */
+        voidPeriod: 107,
         voidTravel: 0.26,
 
-        /* ─── THE POSE: THE OBJECT TURNS AND SWIMS IN; THE CAMERA STAYS PARKED ────────
-         * The owner asked for *"different camera positions so we sometimes follow one of the
-         * fractal knobs a little closer and see some angles"* and then chose the mechanism
-         * themselves: *"it doesn't have to be the camera that moves, it can also be the
-         * piece."* Moving the object gives the same angles and keeps §V965 intact — a claim
-         * that compares two frames across a moving camera is measuring the camera — and it
-         * costs nothing, because a rotation and a uniform scale are exactly invertible and
-         * are applied to the RAY once per fragment rather than inside the march.
+        /* ─── THE CAMERA'S SECOND AXIS, ITS APPROACH, AND ITS AIM ────────────────────
+         * ⚑ THESE WERE CALLED "THE POSE" FOR TWO PASSES AND THEY WERE NEVER THAT. The
+         * transform is a rigid rotation applied to the EYE AND THE RAY DIRECTION TOGETHER,
+         * which is a camera move by definition — the eye walks a sphere about the origin
+         * while the object and the light rig stand still. No render could ever have
+         * disagreed with either description, which is how the wrong one survived.
+         * It matters now because the owner said *"the thing itself rotates and pumps"*: if
+         * this had been the object rotating, the repair would have been here. It was not.
+         * What rotates the object is `foldSpin` on the morph clock and what pumped it was
+         * the deleted `openness` lane, so the repair went there and this stayed.
          *
          * ⚑ THREE MORE PRIME PERIODS, AND THEY WERE CHECKED RATHER THAN ASSUMED. The
          * claims file enumerates every period in this node and asserts them PAIRWISE
@@ -172,17 +215,34 @@ export const chimeraDocument = document(
         poseNear: 2.05,
         aimPeriod: 67,
         poseAim: 0.62,
+        /* How far the camera thrusts at the top of a kick, as a share of its distance. */
+        punchGain: 0.16,
+        /* ⚑ THE SHOT LANE, AND IT DECIDES *CAMERA* BEHAVIOUR. At 1 the whole rig comes to a
+           dead stop at the top of an approach and resumes as the camera pulls out, so a
+           close-up is a held look rather than a whip-pan through magnified structure. The
+           hold is the closed-form integral of (1 - close), not a multiply on the angle —
+           scaling an angle winds the camera BACK to where the lap started, which is a bigger
+           move than the one it replaces. 0 is the isolation arm: the rig as it was. */
+        shotHold: 1,
 
-        /* ─── THE CAMERA: parked, orbiting, and reading NO audio ─────────────────────
-         * The shape carries the motion. A fractal is self-similar, so flying through one
-         * makes the morph unreadable — everything changes at once and nothing reads as
-         * changing. A slow lap also leaves the frame stable enough that a claim can hold it
-         * and cut one lane, which is the only way an audio claim is provable (§V965).
-         * ⚑ 96 s is a STARTING POINT to be judged from stills, not a fabricated bound —
-         * §T1268 measured the owner choosing 240 s over an invented 60 s on E67. */
-        orbitPeriod: 96,
+        /* ─── THE CAMERA: orbiting, and reading NO audio ─────────────────────────────
+         * ⚑ 96 s -> 41 s, AND IT IS A CONSEQUENCE OF THE FORM CLOCKS SLOWING DOWN. The
+         * energy the shape gave up has to go somewhere and the owner named where: *"we
+         * really need to do this with the camera instead."* A lap in 41 s is a fly-around
+         * rather than a drift, and it is safe at a speed no form clock is — a camera move is
+         * rigid, so the eye integrates the detail instead of watching it be rebuilt.
+         * Still reading no audio, for §V965's reason: the camera is the stable reference the
+         * morph is legible against, and parking it is the only way an audio claim is
+         * provable. */
+        orbitPeriod: 41,
         orbitSpeed: 1,
-        orbitRadius: 12,
+        /* ⚑ EVERY DISTANCE IN THE FILE WENT UP BY THE SAME 1.4, AND THAT IS ONE DECISION
+           RATHER THAN SEVEN. Widening the box fold makes the OBJECT BIGGER as well as less
+           cubic, and a camera, a light rig and four fade reaches that were fitted to the old
+           extent would each have read as a separate defect — a frame that will not hold the
+           subject, a far side gone black, a reflection that stops short, an air that clings to
+           the middle. They are all metres against the same body, so they all scale with it. */
+        orbitRadius: 17,
         orbitHeight: 1.15,
         orbitRise: 1.35,
         lens: 1.85,
@@ -215,6 +275,32 @@ export const chimeraDocument = document(
          * sibling piece put a second colour on a light and every one read as a wash; what
          * makes an object work is that it RECURS at a scale the eye can compare, and an orbit
          * trap is scale-free — large on a near lobe, small on a far one, in the same frame. */
+        /* ⚑ 6, AND IT IS THE MAGENTA SALT'S CURE (T1318b). The node trap reads the orbit's
+           closest approach to the origin, and the orbit's LATE links are at the chain's
+           finest scale, where adjacent rays visit different structure — so the trapped value
+           is chaotic pixel to pixel and every mark on it is speckle. Armed: the salt survived
+           `nodeGlow` 0 and survived `nodeSpill` 0 SEPARATELY, so it was never a brightness
+           and no falloff could have reached it; it is the FIELD. Truncating the trap is a
+           level of detail, and six links is still six decades of scale in one frame, which is
+           the interleaving §V972 actually asks for.
+           ⚑ AND THE SWEEP WENT FAR ENOUGH TO SEE WHICH SHAPE IT HAD (§V981). At 6 the salt
+           was UNCHANGED and at 4 it was unchanged again — read as "the LOD is a weak lever"
+           that would have been abandoned. It is a CLIFF, not a slope: links 3 and up are
+           already below the pixel at this framing, so the whole of the noise lives there and
+           nothing above it moves at all until you cross. */
+        nodeLinks: 2,
+        /* ⚑ 0.62 AND THE SWEEP SAYS *BIGGER*, WHICH IS THE OPPOSITE OF WHAT I CHANGED IT TO.
+           Swept against a connected-component count of the magenta marks at the shipped
+           framing: 0.62 -> 1584 marks averaging 7.98 px; 0.44 -> 1329 at 5.46; 0.30 -> 1082 at
+           2.75; 0.20 -> 980; 0.12 -> 957; 0.06 -> 956. ⚠ IT FALLS TO A *PLATEAU*, NOT TO ZERO
+           (§V981 read the other way round): ~956 of those marks survive a node radius of 0.06,
+           so THEY ARE NOT NODES. They are the VEINS, whose tint is hue-ROTATED on `hueTurn`
+           and which at this moment of the lap has travelled into magenta — the identical trap
+           this file already records at `rimColor`, which is exempted from the rotation for
+           exactly that reason, and which §V980 caught on `fillColor` one pass ago. Shrinking
+           the pods could never have reached it, and a smaller radius only made the marks that
+           ARE pods smaller and therefore frecklier. Left at 0.62; the vein hue is the next
+           row's work and it is named in the commit. */
         nodeRadius: 0.62,
         /* ⚑ 12, AND IT IS HIGH ON PURPOSE. Swept against the measurement: 2.6 -> 6 -> 12 moves
            subject p99 from 182 to 196 to 217 and trueBright from 0.01% to 0.15%, while p50
@@ -240,8 +326,20 @@ export const chimeraDocument = document(
            owner's *"they need to ACTUALLY EMIT LIGHT"* true rather than approximated. */
         nodeSpill: 7.5,
         /* Where a pod's sharp core gives way to its spill alone. Sanctum's grain fade. */
-        nodeFade: 15,
+        nodeFade: 21,
         nodeColor: [1, 0.36, 0.86, 1],
+        /* ─── THE FLARE: THE BEAT'S ONLY DESTINATION, AND IT ARRIVES ONE MARK AT A TIME ─
+         * `flareDepth` is the gain the global `veinEmission` lane used to carry, moved onto
+         * the individual mark; `flareWidth` is what share of the marks are lit at any one
+         * instant of the sweep. Width 1 would be unison — every mark together, which is the
+         * global pump wearing a different coat — and the owner's words were "the brightness
+         * of SOME of the glow areas". */
+        /* ⚑ 7, AND IT WAS 3 UNTIL THE TRANSIENT INSTRUMENT SAW IT. At 3 the flare moved the
+           frame by 0.10 of a 7.14 per-frame delta on a hit — 1.4%, which is "a lane that is
+           technically present". The marks are a small share of the pixels, so a mark gain has
+           to be large before it is a picture. */
+        flareDepth: 7,
+        flareWidth: 0.3,
 
         /* ─── THE LIGHT RIG ──────────────────────────────────────────────────────────
          * Three sources of different hue, each with REACH, and a hierarchy that hands the
@@ -266,12 +364,28 @@ export const chimeraDocument = document(
            was doing that job: measured, the object fell to p50 43.8 before these moved and
            sits at 58.4 after. This is the light modelling the form again, which is what was
            missing when the whole surface read as one even tint. */
-        keyIntensity: 8.5,
         rimIntensity: 6.2,
-        lightReach: 5.6,
-        lightDistance: 7.5,
+        lightReach: 8,
+        lightDistance: 10.5,
         lightSwing: 0.35,
         ambient: 0.12,
+        /* ─── THE KEY CASTS A SHADOW, AND UNTIL T1318b NOTHING IN THIS FILE DID ──────────
+         * The owner's *"as if the lights are all like not cones but just all global god
+         * lights"* was a correct reading of the code: `occlusionAt` is AMBIENT occlusion and
+         * knows nothing about where a light is, so it darkened the same creases by the same
+         * amount whatever the rig did, and `lightAt` had nothing between a light and a
+         * surface at all. Moving a light could change its tint and its intensity and could
+         * not change the shading PATTERN — which is precisely "statically lit while the
+         * lights demonstrably move".
+         * ⚑ THE KEY ALONE. It is a second full march per light and the frame cannot buy
+         * three; fill and rim without it are AMBIENT WRAP, which is what a fill light is
+         * for. `lightSwing` 0.35 is what makes that hold across the whole hierarchy lap —
+         * the key's weight never drops below 0.65, so the shadowed source is the dominant
+         * one at every moment rather than at two thirds of them. */
+        shadowStrength: 1,
+        shadowSoft: 9,
+        shadowSteps: 28,
+        shadowReach: 13,
 
         /* ─── MATERIAL: wet, chitinous ───────────────────────────────────────────────── */
         baseColor: [0.3, 0.33, 0.36, 1],
@@ -286,7 +400,7 @@ export const chimeraDocument = document(
          * alternating a parameter rather than by editing the shader. */
         polish: 0.62,
         reflectSteps: 30,
-        reflectFade: 5.5,
+        reflectFade: 7.7,
 
         /* ─── THE VOLUME ─────────────────────────────────────────────────────────────
          * Light visible in the air. It samples a FOUR-LINK chain, not the surface's
@@ -299,7 +413,7 @@ export const chimeraDocument = document(
            hash-gated one. The sibling piece measured the same trade the same way round. */
         hazeSteps: 20,
         hazeSharp: 26,
-        hazeFalloff: 1.5,
+        hazeFalloff: 2.1,
         hazeBase: 0.16,
         hazeWidth: 3.4,
 
@@ -338,9 +452,42 @@ export const chimeraDocument = document(
            * the piece, because that is the picture every thumbnail and every headless
            * render actually shows. */
 
-          /* THE HITS OF BIOLUMINESCENCE the brief asked for by name. The veins are the
-             frame's primary light, so this is the lane a viewer reads as the music. */
-          veinEmission: expressionSlot(`5.6 + 2.6 * ${HITS("kick")}`, 6.25),
+          /* ⚑ THE KICK MOVED OFF `veinEmission` AND ONTO `flare` (T1318b), AND THAT IS THE
+             WHOLE OF THE ROW'S THIRD ITEM. `veinEmission` is a GLOBAL multiplier on the vein
+             term: a kick lifted every conduit in the frame by the same factor at the same
+             instant, which is the picture inflating rather than anything happening inside
+             it. `flare` reaches the SAME marks one at a time — the shader reads the envelope
+             twice, once as an amount and once as a POSITION in an R3 sequence over the
+             conduit lattice, so the release sweeps through the marks in an order that is
+             independent of how bright each one already is.
+             The vein term keeps the value this lane retained, so the rest picture does not
+             move: 6.25 was the driven mean and it is now the static. */
+          veinEmission: 6.25,
+          flare: expressionSlot(`${HITS("kick")}`, 0.25),
+          /* ⚑ AND THE SAME TRANSIENT PUNCHES THE CAMERA — the fast lane the deleted pump was
+             carrying badly, moved onto the one thing that is allowed to be fast. A dolly is a
+             RIGID transform of the view: it magnifies structure without touching it, so the
+             detail stays coherent across the punch, which is exactly what the pump destroyed.
+             ⚑ READ CENTRED, so §V914 holds by arithmetic rather than by measurement: the kick
+             envelope's mean is the 0.25 this file already assumes elsewhere, so the lane
+             retains EXACTLY 0 and the no-audio picture is bit-for-bit the picture with the
+             lane deleted. Between hits the camera eases back a little and on a hit it thrusts,
+             which is a breath rather than a ratchet. */
+          punch: expressionSlot(`${HITS("kick")} - 0.25`, 0),
+          /* ⚑ AND THE KEY LIGHT PUNCHES ON THE BACKBEAT — which, now that the key CASTS,
+             moves the shading pattern across static geometry rather than merely brightening
+             it. That is the cue the piece has never had, and it costs nothing beyond the
+             shadow march that is already running.
+             ⚑ IT WAS ON THE SNARE AND THE INSTRUMENT SAID IT DID NOTHING — 5.064 against a
+             5.065 with the lane live, i.e. not one part in five thousand, because the snare
+             envelope is not moving at the kick the measurement straddles. A lane that measures
+             as absent is absent, whoever specified it. It is on the KICK now, with the camera
+             and the marks, so a hit is ONE gesture: the camera thrusts, the marks flare in
+             succession, the key punches — and because the key now CASTS, its shadow snaps with
+             it, which is a beat moving the shading pattern across static geometry rather than
+             brightening it. Centred on the kick envelope's own mean, so the retained value is
+             exactly the 8.5 the rig was tuned at. */
+          keyIntensity: expressionSlot(`7.82 + 2.72 * ${HITS("kick")}`, 8.5),
           /* The MEMBRANES answer on the backbeat — a different structure from the veins,
              so the two hit lanes are visibly different events rather than one gesture read
              twice (§T1279's split, learned on E57's fog and moon). */
@@ -360,26 +507,20 @@ export const chimeraDocument = document(
              several times the light it was. The air is dimmer per unit of field and far
              brighter where the field is lit, which is the whole point. */
           haze: expressionSlot(`0.052 + 0.046 * ${LEVELS("low")}`, 0.075),
-          /* ─── THE LOOSENESS, AND IT IS THE ONE LANE THAT REACHES THE SHAPE ──────────
-           * T1310b ruled the object's IDENTITY driven by nothing and that ruling stands: if
-           * the music decided what the object IS, silence would be a different object, and
-           * silence is what every thumbnail renders. The owner's *"sometimes more loose,
-           * sometimes less"* asks for a third thing, and it is not identity — it is the same
-           * object breathing. The box fold's limit and the sphere fold's inner radius are
-           * already travelling on their own clocks; this widens the region of that same
-           * parameter space the piece visits with the body of the mix.
-           *
-           * ⚑ THE FORM IS CHOSEN SO §V914 IS SATISFIED BY ARITHMETIC RATHER THAN BY A
-           * MEASUREMENT SOMEBODY HAS TO REDO: a rank rests at its MIDDLE, so `0.25 + 0.5 * r`
-           * rests at exactly 0.5, and the shader reads `openness - 0.5`. The retained value
-           * is therefore EXACTLY neutral — the no-audio picture is bit-for-bit the picture
-           * this file would render with the lane deleted — and the drive only ever takes it
-           * either side of that. It cannot drift out of its own driven range under a retune. */
-          openness: expressionSlot(`0.25 + 0.5 * ${LEVELS("level")}`, 0.5),
+          /* ─── ⚑ NO AUDIO LANE REACHES THE FORM ANY MORE (T1318b) ────────────────────
+           * `openness` (the looseness) and `foldTravel` (the creases opening with the body
+           * of the mix) were the two that did, and the owner cut them by watching the
+           * result: *"it's still pumping, like pulsing instead of us doing it by camera,
+           * which then prevents us that we can't have close-ups and flyovers that make sense
+           * without being noisy because the thing itself rotates and pumps."*
+           * ⚑ AND THE ARGUMENT FOR HAVING CENTRED `openness` ON ITS NEUTRAL VALUE PAID OUT
+           * HERE RATHER THAN WHERE IT WAS MADE: because the lane retained EXACTLY the value
+           * at which it contributed nothing, deleting it is bit-for-bit invisible in the
+           * no-track picture — no thumbnail moves, no claim's rest state moves, and §V914 is
+           * satisfied by the same arithmetic that satisfied it when the lane landed. A lane
+           * centred on its floor could not have been removed without a retune.
+           * `foldTravel` keeps its retained 0.18 as a static, for the same reason. */
           fillIntensity: expressionSlot(`5.9 + 2.6 * ${LEVELS("highMid")}`, 7.2),
-          /* The creases open and close with the body of the mix. This is an AMPLITUDE on a
-             morph that is already running, never the morph's own identity. */
-          foldTravel: expressionSlot(`0.1 + 0.16 * ${LEVELS("level")}`, 0.18),
           specular: expressionSlot(`1.05 + 0.6 * ${LEVELS("high")}`, 1.35),
           /* Spectral brightness opens the chroma — a grade that follows the music rather
              than a constant one. */
