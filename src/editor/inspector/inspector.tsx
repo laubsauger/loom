@@ -744,6 +744,7 @@ export function Inspector({
         nodeId={node.id}
         nodeType={node.type}
         device={typeof resolved.values["device"] === "string" ? (resolved.values["device"] as string) : ""}
+        syncOffset={typeof resolved.values["syncOffset"] === "number" ? (resolved.values["syncOffset"] as number) : 0}
         status={audioStatus()}
         editor={editor}
       />

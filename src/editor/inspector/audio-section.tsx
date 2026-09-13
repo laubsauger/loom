@@ -33,6 +33,12 @@ export interface AudioSectionProps {
   nodeType: "audioIn" | "audioFileIn";
   /** Stored device id ("" = system default). */
   device: string;
+  /**
+   * T1319b(b) — the Sync Offset in effect, seconds. The suggestion is useless without it:
+   * a button that writes a value while the value is invisible gives the user no way to tell
+   * whether it landed, which is exactly what the owner reported.
+   */
+  syncOffset?: number;
   status: AudioCaptureStatus;
   editor: ParameterEditor;
 }
@@ -95,7 +101,10 @@ export function audioSectionParameters(nodeType: "audioIn" | "audioFileIn"): rea
   return nodeType === "audioIn" ? ["device"] : [];
 }
 
-export function AudioSection({ nodeId, nodeType, device, status, editor }: AudioSectionProps) {
+/** Seconds as the status line says them: whole milliseconds, which is the resolution anyone can hear. */
+const msText = (seconds: number): string => `${(seconds * 1000).toFixed(0)} ms`;
+
+export function AudioSection({ nodeId, nodeType, device, syncOffset = 0, status, editor }: AudioSectionProps) {
   const { devices, unlabelled } = useAudioDevices(nodeType === "audioIn");
   /*
    * T1319b — the measurement the Sync Offset description has been asking for since §T1312b.
@@ -111,6 +120,10 @@ export function AudioSection({ nodeId, nodeType, device, status, editor }: Audio
    * measurement needs (§T1320b holds the question of where the value should ultimately live).
    */
   const latency = nodeType === "audioFileIn" && status.kind === "live" ? (status.latency ?? null) : undefined;
+  /** What the button would write, rounded as it writes it — so "applied" compares like with like. */
+  const suggested = latency === null || latency === undefined ? 0 : Number(latency.suggestedSeconds.toFixed(3));
+  /** Half a millisecond: below what anyone can hear, and below the resolution the line prints. */
+  const applied = Math.abs(syncOffset - suggested) < 0.0005;
 
   return (
     <section className={styles.section} aria-label="Audio capture">
@@ -128,17 +141,36 @@ export function AudioSection({ nodeId, nodeType, device, status, editor }: Audio
           {latency === null ? null : (
             <>
               {" "}
-              <button
-                type="button"
-                onClick={() => {
-                  // The same editor the device picker writes through: one value, one write
-                  // path, one undo entry (§V15). `commit`, because this is a single act and
-                  // not a drag.
-                  editor.setParameter(nodeId, "syncOffset", Number(latency.suggestedSeconds.toFixed(3)), "commit");
-                }}
-              >
-                Use as Sync Offset
-              </button>
+              {/*
+                T1319b(b) — THE FEEDBACK IS THE STATE, not a flash.
+                The owner: "not getting any feedback when I use the sync offset button… we
+                don't really feel like is this applied now?" A toast would have answered that
+                for two seconds and left the same question on the third. So the value in
+                effect is shown beside the suggestion, the button NAMES the number it will
+                write, and once they agree the button is replaced by the applied mark — the
+                surface reads its own state at any moment, including long after the click.
+              */}
+              <span className={styles.statusHint} data-sync-offset={applied ? "applied" : "pending"}>
+                Sync Offset {msText(syncOffset)}
+                {applied ? " — applied" : ""}
+              </span>
+              {applied ? null : (
+                <>
+                  {" "}
+                  <button
+                    type="button"
+                    className={styles.statusAction}
+                    onClick={() => {
+                      // The same editor the device picker writes through: one value, one
+                      // write path, one undo entry (§V15). `commit`, because this is a single
+                      // act and not a drag.
+                      editor.setParameter(nodeId, "syncOffset", suggested, "commit");
+                    }}
+                  >
+                    Use {msText(suggested)}
+                  </button>
+                </>
+              )}
             </>
           )}
         </div>

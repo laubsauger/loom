@@ -286,6 +286,35 @@
   line-height: var(--lh-ui);
 }
 
+/*
+  T1319b(b) — the status line's own action. It had NO class at all and rendered as raw
+  browser chrome, which is half of what the owner saw. Borrowed from the kit's control
+  surface (`controls.module.css` `.picker`): hairline border, sunken ground, hover to the
+  hot line. Inline-sized, because it sits inside a sentence and must not become a block.
+*/
+.statusAction {
+  display: inline-block;
+  padding: 0 var(--space-2);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  line-height: calc(var(--control-h) - 2px);
+  cursor: pointer;
+  transition: border-color var(--dur-instant) var(--ease-out);
+}
+
+.statusAction:hover {
+  border-color: var(--line-hot);
+}
+
+.statusAction:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
 .statusHint {
   color: var(--text-dim);
   font-family: var(--font-ui);
