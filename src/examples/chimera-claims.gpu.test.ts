@@ -224,13 +224,21 @@ function freezeCamera(graph: GraphDocument): void {
  * this file, and a rename fails loudly here instead of quietly freezing nothing.
  */
 function clocksOf(parameters: Record<string, unknown>): string[] {
-  const clocks = Object.keys(parameters).filter((key) => key.endsWith("Period"));
-  /* The two clocks whose names say what they turn rather than that they are periods. */
-  for (const named of ["hueTurn", "lightCycle"]) {
-    if (!(named in parameters)) {
+  /* ⚑ DERIVED BY SUFFIX, ALL THREE OF THEM (T1324b) — AND THIS IS §V958 CATCHING THIS EXACT
+     FUNCTION. The list used to be "everything ending in Period, plus these TWO NAMED ONES",
+     and a hand-maintained tail on a derived list is a list that is one edit away from wrong:
+     `paletteTurn` landed, was not in the tail, and the control arm that asserts "with every
+     clock stopped these are the same picture" read 1.026 against its own 0.5 ceiling. The
+     claim did not silently pass — which is the good outcome — but it failed for a reason
+     that has nothing to do with what it tests. Every clock in this file is named for what it
+     turns or how long it takes, so the suffix IS the rule. */
+  const clocks = Object.keys(parameters).filter(
+    (key) => key.endsWith("Period") || key.endsWith("Turn") || key.endsWith("Cycle"),
+  );
+  for (const named of ["hueTurn", "lightCycle", "paletteTurn"]) {
+    if (!clocks.includes(named)) {
       throw new Error(`E70 no longer has a ${named} clock — the clock list is stale`);
     }
-    clocks.push(named);
   }
   return clocks;
 }
@@ -1187,16 +1195,28 @@ describe("E70 Chimera — claims", () => {
       "cutting the pods must leave most of the speckle standing — it is not a mark problem",
     ).toBeGreaterThan(base * 0.6);
 
-    /* AND THE POSITIVE: the march's own step scale moves it. Stepping MORE of the estimate is
-       what the file did before this row, and it overshoots thin features at grazing angles,
-       which is a land-or-miss per pixel. */
-    const looseMarch = await shoot(20, (graph) => {
+    /* AND THE POSITIVE, AND IT CHANGED HANDS (T1324b). It used to be `stepScale`: stepping
+       MORE of the estimate overshoots thin features at grazing angles, which is a land-or-miss
+       per pixel, and at the old density it read cleanly (0.5 -> 0.42 -> 0.32 gives
+       1.024 -> 0.873 -> 0.767 per cent of lit pixels).
+       ⚑ AT THE OPEN DENSITY THIS PASS SHIPS, IT IS NO LONGER A LEVER AT ALL, AND THE ARM WENT
+       THE WRONG WAY: `stepScale` 0.78 measured 0.0105 against a shipped 0.0133 — a LOOSER
+       march speckling LESS — and swept at the new density it is flat and non-monotone
+       (1.035 / 0.957 / 0.984 / 1.018 across 0.50 / 0.42 / 0.36 / 0.30). A more open body is
+       more thin structure seen edge-on per pixel, and the step size stops being what decides
+       whether a ray finds it.
+       ⚑ SO THE CLAIM KEEPS ITS MEANING AND CHANGES ITS INSTRUMENT: the OTHER march term still
+       owns it, and far more strongly. `detail` scales the termination threshold against the
+       pixel's own footprint, so a smaller value resolves structure the pixel cannot carry —
+       which is the mechanism this claim is about, stated directly. A knob that no longer moves
+       the number is not a weak positive control, it is the wrong one (§V981). */
+    const finerMarch = await shoot(20, (graph) => {
       parked(graph);
-      param(graph, "shape", "stepScale", 0.78);
+      param(graph, "shape", "detail", 1);
     });
     expect(
-      speckRate(looseMarch),
-      "a looser march must speckle MORE — the march is what owns this",
+      speckRate(finerMarch),
+      "a march resolving finer than the pixel must speckle MORE — the march is what owns this",
     ).toBeGreaterThan(base * 1.2);
   }, 600_000);
 
@@ -1267,5 +1287,565 @@ describe("E70 Chimera — claims", () => {
       crossings(openA, openB),
       "and it must move the SILHOUETTE — gaps opening is geometry, not a gain",
     ).toBeGreaterThan(Math.max(stillCrossings, 0.0002) * 8);
+  }, 600_000);
+
+  /**
+   * ⚑⚑ THE PODS ARE NOT DICED BY THE CONDUIT LATTICE, AND THAT IS THE OWNER'S CHECKERBOARD
+   * (T1324b). *"Still some SQUARE PATTERNS OR ALMOST CHECKERBOARD IN THE MAGENTA LIGHTS."*
+   *
+   * The cause was a granularity mismatch, not a colour or a hash: a pod is 2 * nodeRadius =
+   * 1.24 units across and it was gated, and flared, on `floor(p * veinRate)` — cells 1/3.1 =
+   * 0.32 units across. A membership test on cells four times smaller than the object it gates
+   * does not gate the object, it MULTIPLIES it by an axis-aligned piecewise constant that
+   * steps 0.06 -> 1 across planes crossing its own face.
+   *
+   * ⚑ THE GUARD IS AGAINST THE CAUSE, NOT THE OBSERVABLE: `veinRate` is the conduit lattice's
+   * own knob, so if the pods ever read that lattice again, moving it will move them. And the
+   * arm that keeps the guard honest is the legitimate case it could swallow — the VEINS must
+   * still respond to `veinRate`, or this would pass just as well with the whole lattice
+   * deleted.
+   */
+  it("the conduit lattice moves the veins and does not touch the pods", async () => {
+    if (dawnError !== undefined) throw new Error(dawnError);
+    const still = (graph: GraphDocument): void => {
+      freezeCamera(graph);
+      cutEveryDrive(graph);
+      freezeClocks(graph);
+    };
+    /* Each arm isolates ONE population so neither statistic can be moved by the other. */
+    const podsOnly = (graph: GraphDocument): void => {
+      still(graph);
+      for (const off of ["veinEmission", "veinSpill", "shellGlow"]) param(graph, "shape", off, 0);
+    };
+    const veinsOnly = (graph: GraphDocument): void => {
+      still(graph);
+      for (const off of ["nodeGlow", "nodeSpill"]) param(graph, "shape", off, 0);
+    };
+    const coarser = (inner: Mutate): Mutate => (graph) => {
+      inner(graph);
+      param(graph, "shape", "veinRate", 0.4);
+    };
+
+    const podBase = await shoot(20, podsOnly);
+    const podControl = await shoot(20, podsOnly);
+    const podCoarse = await shoot(20, coarser(podsOnly));
+    const veinBase = await shoot(20, veinsOnly);
+    const veinCoarse = await shoot(20, coarser(veinsOnly));
+
+    /* THE A/A FLOOR FIRST — these renders are deterministic, so it is exactly zero, and every
+       number below is quoted against it (§V984). */
+    const floor = meanPixelDelta(podBase, podControl);
+    expect(floor, "the A/A floor on this statistic must be zero").toBeLessThan(0.001);
+
+    /* THE LEGITIMATE CASE THE GUARD COULD SWALLOW: the lattice still owns the veins. Measured
+       at 0.094 mean absolute luma against the 0.000 floor — a small number because the veins
+       are thin and this arm has the pods switched off, which is the point. */
+    const veinMoved = meanPixelDelta(veinBase, veinCoarse);
+    expect(
+      veinMoved,
+      "the conduit lattice must still decide where the veins are — otherwise this guard is vacuous",
+    ).toBeGreaterThan(0.05);
+
+    /* AND THE CLAIM: the pods do not read it. Not "less", NOTHING — the pod's gate is taken
+       on `trace.nodeCell` now, which no value of `veinRate` can reach. Stated as a ratio to
+       the vein arm as well as against the floor, so the two halves cannot both drift. */
+    const podMoved = meanPixelDelta(podBase, podCoarse);
+    expect(
+      podMoved,
+      "the pods must not read the conduit lattice — that lattice is what diced them into cubes",
+    ).toBeLessThan(Math.max(floor, 0.001));
+    expect(
+      veinMoved,
+      "and the separation must be total rather than merely favourable",
+    ).toBeGreaterThan(Math.max(podMoved, 0.0005) * 50);
+  }, 600_000);
+
+  /**
+   * ⚑⚑ AND THE OWNER'S ACTUAL OBSERVABLE, WITH THE ONLY CONTROL THAT MAKES IT MEAN ANYTHING
+   * (T1324b). *"Square patterns or almost checkerboard in the magenta lights."*
+   *
+   * The claim above guards the CAUSE. This one holds the number, because the number is quoted
+   * in the shipped page and nothing else in this file could fail if it drifted.
+   *
+   * ⚑ THE STATISTIC IS INTERIOR STEP DENSITY: of the pixels strictly inside the pod mask, the
+   * share whose luma changes by more than 12/255 across ONE pixel. A shading ramp does not do
+   * that; a piecewise-constant lattice does it along every cell plane. It is validated inside
+   * the test on a smoothly shaded synthetic disc (0.00 %) and on the same disc multiplied by
+   * an axis-aligned piecewise constant (18.67 %) — §V968, because a step detector that fires
+   * on nothing would make this claim pass forever.
+   *
+   * ⚑⚑ AND THE CONTROL IS THE STONE, READ THROUGH THE SAME MASK WITH THE SAME THRESHOLD —
+   * WHICH IS WHAT TURNS A NUMBER INTO A CLAIM. A pod is a glow painted on a fractal surface
+   * whose own relief steps everywhere, so there is a FLOOR under this statistic that has
+   * nothing to do with the defect, and an absolute threshold would have been a number somebody
+   * liked. Swept at t = 0 / 5 / 20 / 40 / 60 s:
+   *
+   *     pods, shipped   27.0  31.4  34.1  33.5  28.0     ratio to the stone 0.76 .. 1.02
+   *     the same stone  35.4  36.0  33.4  34.4  32.5
+   *     pods, DEFECT    48.3  49.3  49.6  51.1  50.1     ratio to the stone 1.43 .. 1.58
+   *
+   * ⚠ RED-VERIFIED ON THE DEFECT'S OWN SIGNATURE (§V974): the bottom row is the shipped shader
+   * with the conduit gate put back, re-rendered at the same five moments. The defect is not
+   * "a bit rougher" — it is HALF AGAIN ROUGHER THAN THE SURFACE ITSELF, at every moment, and
+   * the fixed build never exceeds the surface by more than 2 %.
+   *
+   * ⚑ SO THE CLAIM IS A RATIO AND NOT A NUMBER, and the ceiling sits at 1.05: above the
+   * shipped worst case (1.02) and far below the defect's best (1.43). An absolute threshold
+   * would have been measuring the fractal, which moves under its own clocks.
+   *
+   * ⚠ AND ONE HYPOTHESIS DIED HERE. The pod was diagnosed as "a sphere seen through the box
+   * fold, whose pre-image has FLAT FACES". It does not: `clamp(p,-L,L)*2 - p` is a REFLECTION
+   * per component, an isometry, so the pre-image of a ball is a union of reflected BALLS. A
+   * boundary-orientation detector (validated: synthetic disc 59.1 %, synthetic square 99.4 %)
+   * puts the pod outline at 60.0 % shipped and 65.1 % with the defect restored — both at the
+   * disc end, neither near the square. The pods were never boxes in OUTLINE; the "square
+   * patterns" were interior steps, which is what this measures.
+   */
+  it("the pods are smoother inside than the stone they are painted on", async () => {
+    if (dawnError !== undefined) throw new Error(dawnError);
+
+    /* Of the pixels strictly inside `mask`, the share sitting on a one-pixel luma step. */
+    const stepShare = (value: Float32Array, mask: Uint8Array, w: number, h: number): { inside: number; share: number } => {
+      let inside = 0;
+      let steps = 0;
+      for (let y = 1; y < h - 1; y += 1) {
+        for (let x = 1; x < w - 1; x += 1) {
+          const i = y * w + x;
+          if (mask[i] !== 1 || mask[i - 1] !== 1 || mask[i + 1] !== 1 || mask[i - w] !== 1 || mask[i + w] !== 1) continue;
+          inside += 1;
+          const gx = Math.abs((value[i + 1] ?? 0) - (value[i - 1] ?? 0)) / 2;
+          const gy = Math.abs((value[i + w] ?? 0) - (value[i - w] ?? 0)) / 2;
+          if (Math.max(gx, gy) > 12) steps += 1;
+        }
+      }
+      return { inside, share: steps / Math.max(inside, 1) };
+    };
+
+    /* §V968 — the detector against two cases whose answers are known before it is run. */
+    const shadedDisc = (diced: boolean): { value: Float32Array; mask: Uint8Array; side: number } => {
+      const side = 256;
+      const value = new Float32Array(side * side);
+      const mask = new Uint8Array(side * side);
+      for (let y = 0; y < side; y += 1) {
+        for (let x = 0; x < side; x += 1) {
+          const r = Math.hypot(x - 128, y - 128);
+          if (r >= 90) continue;
+          mask[y * side + x] = 1;
+          const ramp = 200 * (1 - (r / 90) ** 2);
+          const cell = Math.floor(x / 18) + Math.floor(y / 18);
+          value[y * side + x] = diced && cell % 2 !== 0 ? ramp * 0.06 : ramp;
+        }
+      }
+      return { value, mask, side };
+    };
+    const smooth = shadedDisc(false);
+    const diced = shadedDisc(true);
+    expect(
+      stepShare(smooth.value, smooth.mask, smooth.side, smooth.side).share,
+      "a smooth shading ramp must read no interior steps",
+    ).toBeLessThan(0.005);
+    expect(
+      stepShare(diced.value, diced.mask, diced.side, diced.side).share,
+      "and the detector must FIRE on the defect, synthesised — otherwise its zeros mean nothing",
+    ).toBeGreaterThan(0.1);
+
+    const still = (graph: GraphDocument): void => {
+      freezeCamera(graph);
+      cutEveryDrive(graph);
+    };
+    /* The pods are isolated by DIFFERENCE rather than by colour: the same frame with the pod
+       terms at zero is the stone underneath, so `on - off` is exactly the pod's contribution
+       and `off` is exactly the surface it is painted on. Nothing here has to guess a hue. */
+    const podsOnly = (graph: GraphDocument): void => {
+      still(graph);
+      for (const off of ["veinEmission", "veinSpill", "shellGlow"]) param(graph, "shape", off, 0);
+    };
+    const noPods = (graph: GraphDocument): void => {
+      podsOnly(graph);
+      for (const off of ["nodeGlow", "nodeSpill"]) param(graph, "shape", off, 0);
+    };
+
+    const withPods = await shootSeries([0, 20, 60], 1, podsOnly);
+    const without = await shootSeries([0, 20, 60], 1, noPods);
+
+    for (const [index, on] of withPods.entries()) {
+      const off = without[index];
+      if (off === undefined) throw new Error("missing stone arm");
+      const count = on.w * on.h;
+      const mask = new Uint8Array(count);
+      const glow = new Float32Array(count);
+      const stone = new Float32Array(count);
+      let lit = 0;
+      for (let pixel = 0; pixel < count; pixel += 1) {
+        const delta = luma(on, pixel) - luma(off, pixel);
+        glow[pixel] = delta;
+        stone[pixel] = luma(off, pixel);
+        if (delta > 24) { mask[pixel] = 1; lit += 1; }
+      }
+      /* Without this the claim is satisfied by a frame with no pods in it at all (§V997: an
+         absence is satisfied by any other presence, including an empty one). */
+      expect(lit, "there must BE pods to measure — measured 3.7k to 12k px").toBeGreaterThan(1500);
+
+      const pod = stepShare(glow, mask, on.w, on.h);
+      const surface = stepShare(stone, mask, on.w, on.h);
+      expect(pod.inside, "and enough of them to have an interior").toBeGreaterThan(1000);
+      expect(
+        pod.share / surface.share,
+        "the pod glow must be no rougher inside than the stone it sits on — with the conduit gate restored it reads HALF AGAIN rougher",
+      ).toBeLessThan(1.05);
+    }
+  }, 600_000);
+
+  /**
+   * ⚑⚑ NEGATIVE SPACE, COUNTED (T1324b). The owner: *"LESS IS MORE sometimes. I think we still
+   * need to EMBRACE NEGATIVE SPACE a little bit better."*
+   *
+   * That reads as taste and it is a connectivity property: a piece with negative space has
+   * ENCLOSED BACKGROUND REGIONS inside its own outline; a solid knobbly mass does not. So the
+   * statistic is holes — background components not reachable from the frame edge — and the
+   * claim is about the FORM, which is why it is asserted against the spacing lane rather than
+   * against a number somebody liked.
+   *
+   * ⚑ THE COUNTER IS VALIDATED AGAINST A KNOWN POSITIVE BEFORE IT IS BELIEVED (§V968), inside
+   * the test, on a synthetic disc with a known number of holes punched in it. A hole counter
+   * that returns zero on everything would make this claim pass forever in the failing
+   * direction if it were only ever asserted downwards.
+   *
+   * ⚠ AND IT IS ASSERTED AGAINST SHRINKING THE OBJECT, which is the way this ask gets
+   * satisfied dishonestly: a smaller body is an emptier FRAME, not negative space. Coverage is
+   * checked to have stayed in the band the piece has always occupied.
+   */
+  it("the body has holes in it, and they come from the form rather than from shrinking", async () => {
+    if (dawnError !== undefined) throw new Error(dawnError);
+
+    /* Enclosed background inside the silhouette. Background is flood-filled from the frame
+       edge; anything unlit and unreached is a hole. */
+    const holesOf = (frame: Frame, threshold: number): { holes: number; share: number; coverage: number } => {
+      const { w, h } = frame;
+      const lit = new Uint8Array(w * h);
+      let area = 0;
+      for (let pixel = 0; pixel < w * h; pixel += 1) {
+        if (luma(frame, pixel) > threshold) { lit[pixel] = 1; area += 1; }
+      }
+      const outside = new Uint8Array(w * h);
+      const stack: number[] = [];
+      const push = (pixel: number): void => {
+        if (lit[pixel] === 1 || outside[pixel] === 1) return;
+        outside[pixel] = 1; stack.push(pixel);
+      };
+      for (let x = 0; x < w; x += 1) { push(x); push((h - 1) * w + x); }
+      for (let y = 0; y < h; y += 1) { push(y * w); push(y * w + w - 1); }
+      while (stack.length > 0) {
+        const pixel = stack.pop() ?? 0;
+        const x = pixel % w;
+        const y = (pixel - x) / w;
+        if (x > 0) push(pixel - 1);
+        if (x < w - 1) push(pixel + 1);
+        if (y > 0) push(pixel - w);
+        if (y < h - 1) push(pixel + w);
+      }
+      const seen = new Uint8Array(w * h);
+      let holes = 0;
+      let holeArea = 0;
+      for (let start = 0; start < w * h; start += 1) {
+        if (lit[start] === 1 || outside[start] === 1 || seen[start] === 1) continue;
+        let size = 0;
+        seen[start] = 1; stack.push(start);
+        while (stack.length > 0) {
+          const pixel = stack.pop() ?? 0;
+          size += 1;
+          const x = pixel % w;
+          const y = (pixel - x) / w;
+          for (const next of [x > 0 ? pixel - 1 : -1, x < w - 1 ? pixel + 1 : -1, y > 0 ? pixel - w : -1, y < h - 1 ? pixel + w : -1]) {
+            if (next < 0 || lit[next] === 1 || outside[next] === 1 || seen[next] === 1) continue;
+            seen[next] = 1; stack.push(next);
+          }
+        }
+        if (size >= 24) { holes += 1; holeArea += size; }
+      }
+      return { holes, share: holeArea / Math.max(area + holeArea, 1), coverage: area / (w * h) };
+    };
+
+    /* §V968 — the counter against a case whose answer is known before it is run. */
+    const punched = (count: number): Frame => {
+      const side = 300;
+      const d = new Uint8ClampedArray(side * side * 4);
+      for (let y = 0; y < side; y += 1) {
+        for (let x = 0; x < side; x += 1) {
+          let on = Math.hypot(x - 150, y - 150) < 110;
+          for (let k = 0; k < count; k += 1) {
+            const angle = (k / Math.max(count, 1)) * Math.PI * 2;
+            if (Math.hypot(x - (150 + 60 * Math.cos(angle)), y - (150 + 60 * Math.sin(angle))) < 15) on = false;
+          }
+          const pixel = (y * side + x) * 4;
+          const value = on ? 200 : 0;
+          d[pixel] = value; d[pixel + 1] = value; d[pixel + 2] = value; d[pixel + 3] = 255;
+        }
+      }
+      return { w: side, h: side, d };
+    };
+    for (const known of [0, 1, 4]) {
+      expect(holesOf(punched(known), 6).holes, `the counter must find ${known} punched holes`).toBe(known);
+    }
+
+    const still = (graph: GraphDocument): void => {
+      freezeCamera(graph);
+      cutEveryDrive(graph);
+    };
+    const solid = (graph: GraphDocument): void => {
+      still(graph);
+      /* The spacing lane at the value it shipped before this pass: the operator is the same,
+         parked below the threshold where it opens anything. */
+      param(graph, "shape", "fixedRadius", 1);
+      param(graph, "shape", "spacingOpen", 0.11);
+    };
+
+    /* TWO MOMENTS, AT 1 fps, AND BOTH OF THOSE ARE FINDINGS RATHER THAN CONVENIENCE.
+       ⚑ ONE MOMENT IS NOT ENOUGH, AND THE RED-VERIFY IS WHAT SHOWED IT: with `fixedRadius`
+       parked back at 1 the old body reads 12 holes at t = 20 s and ZERO at t = 40 s. A claim
+       that samples 20 s alone would have had to assert "more than 8 holes" to pass, and the
+       body this row exists to replace CLEARS THAT BAR at that instant. The defect is a body
+       that is solid AT SOME MOMENTS, so the claim has to look at more than one.
+       ⚑ AND 1 fps IS THE SAME PICTURE, CHECKED RATHER THAN ASSUMED: every clock reads
+       `absTime = frameIndex / fps` and every drive is cut here, so frame 20 at 1 fps and frame
+       1200 at 60 fps are the same absTime. Measured BIT-IDENTICAL (mean absolute channel delta
+       0.000000 on both moments, and the hole statistics agree to every digit). It costs 41
+       renders instead of 2 402. */
+    const openFrames = await shootSeries([20, 40], 1, still);
+    const closedFrames = await shootSeries([20, 40], 1, solid);
+    const openStats = openFrames.map((frame) => holesOf(frame, 6));
+    const closedStats = closedFrames.map((frame) => holesOf(frame, 6));
+
+    for (const [index, stats] of openStats.entries()) {
+      const parked = closedStats[index];
+      if (parked === undefined) throw new Error("missing parked arm");
+
+      /* THE CLAIM, AND IT IS PUT ON THE *AREA* RATHER THAN THE COUNT — because the count is
+         what the red-verify slipped through. Measured: shipped 13.61 % / 8.13 % of the body's
+         own interior at 20 s / 40 s, against 1.45 % / 0.00 % for the body this replaces. */
+      expect(
+        stats.share,
+        "the shipped body must have real enclosed negative space in it, at every moment",
+      ).toBeGreaterThan(0.04);
+      expect(
+        stats.holes,
+        "and that space must be MANY separate gaps rather than one big bite out of it",
+      ).toBeGreaterThan(8);
+
+      /* AND THE SPACING OPERATOR IS WHAT BUYS IT. */
+      expect(
+        stats.share,
+        "parked low, the same body is nearly solid — the operator is what holes it",
+      ).toBeGreaterThan(Math.max(parked.share, 0.002) * 4);
+
+      /* ⚠ AND NOT BY SHRINKING, WHICH IS THE DISHONEST WAY TO SATISFY THIS ASK: a smaller body
+         is an emptier FRAME, not negative space. T1316b measured this piece between 16.7 % and
+         39.1 % of the frame.
+         ⚑ THE ROUTE WAS TRIED, AND IT DOES NOT EVEN WORK: pulling the camera back on the OLD
+         body (`orbitRadius` 26, then 34) reads 2 holes / 1.11 % / 8.2 % coverage and then
+         0 holes / 0.00 % / 0.0 % — shrinking LOSES holes, because the gaps stop resolving
+         before the silhouette does. The guard is kept anyway; it is cheap, and it is the
+         assertion that makes the number above mean what it says. */
+      expect(stats.coverage, "the holes must not be bought by shrinking the object").toBeGreaterThan(0.12);
+    }
+  }, 600_000);
+
+  /**
+   * ⚑⚑ THE PALETTE EVOLVES, AND NOTHING EVOLVES *RELATIVE TO* ANYTHING (T1324b). The owner:
+   * *"the lights color should probably evolve over time and maybe also slightly change in
+   * shade with beat or something."*
+   *
+   * That ask is in direct tension with §V996, which this file earned the hard way: an
+   * UNBOUNDED hue rotation walked the veins into the key light's blue at t = 20 s and
+   * cancelled the two-temperature design the piece is built on. The resolution is to rotate
+   * the palette as a RIGID BODY — `rotateHue` is a rotation about the grey diagonal, so one
+   * turn applied to every colour is an isometry of the wheel and every pairwise arc is
+   * preserved exactly. §V996's defect is PER-ELEMENT drift; common-mode drift has none.
+   *
+   * ⚠ AND §V995 IS WHY THAT PARAGRAPH IS NOT THE TEST. The isometry is exact in the ALGEBRA
+   * and the rendered hue of an element is not its tint: it is the tint through a base colour,
+   * an exposure, a tone map and a saturation grade, none of which commute with a rotation. So
+   * the arcs are read off RENDERED PIXELS, at the palette's two extremes as well as at its
+   * two zero crossings, and the parked palette is carried as a control in the same run.
+   *
+   * ⚑⚑ AND THE FIRST INSTRUMENT FOR THIS WAS WRONG IN THE WAY §V994 NAMES — IT REPORTED THE
+   * TURN CLOSING THE TIGHTEST PAIR FROM 0.041 TO 0.023, WHICH WOULD HAVE CONDEMNED THE
+   * FEATURE. It isolated an element by rendering the frame with only that element's gains
+   * left on, and *"the frame with only the veins on"* IS NOT *"the veins"*: the sky, the
+   * environment rim and the stone are still in it, they do not travel with the palette, and
+   * on the dim arms they outvoted the thing being measured (vein chroma read 0.036 against
+   * 0.153 once isolated properly). The honest isolation is a DIFFERENCE — the same frame with
+   * the element's own gains at zero, subtracted — which is the element's contribution and
+   * nothing else.
+   *
+   * ⚠ RED-VERIFIED ON §V996's OWN DEFECT (§V974), and it took two goes to fail for the RIGHT
+   * reason. Restoring `hueArc` to 0.5 — the unbounded per-element rotation this file shipped
+   * before T1322b — first made the claim red on "the veins arm must actually light something",
+   * which is a failure a dim frame would also produce. With a hue-neutral inclusion test and
+   * an emptiness floor that is a floor rather than a tolerance, the same arm now fails where
+   * it should: *"pods and veins must not arrive at the same colour at 49 s"*, 0.0535 against
+   * the 0.06 bound.
+   */
+  it("the palette travels as a whole, and no colour travels relative to another", async () => {
+    if (dawnError !== undefined) throw new Error(dawnError);
+
+    /* Chroma-weighted mean hue, in TURNS, of what `on` has and `off` does not. */
+    const hueOfDiff = (on: Frame, off: Frame): { hue: number; px: number } => {
+      let x = 0;
+      let y = 0;
+      let px = 0;
+      for (let pixel = 0; pixel < on.w * on.h; pixel += 1) {
+        const r = ((on.d[pixel * 4] ?? 0) - (off.d[pixel * 4] ?? 0)) / 255;
+        const g = ((on.d[pixel * 4 + 1] ?? 0) - (off.d[pixel * 4 + 1] ?? 0)) / 255;
+        const b = ((on.d[pixel * 4 + 2] ?? 0) - (off.d[pixel * 4 + 2] ?? 0)) / 255;
+        if (r < 0 || g < 0 || b < 0) continue;
+        const max = Math.max(r, g, b);
+        /* ⚑ THE INCLUSION TEST IS THE BRIGHTEST CHANNEL, NOT THE LUMA, AND THAT IS §V974
+           RATHER THAN pedantry: luma weights green 0.72 against blue 0.07, so a HUE ROTATION
+           changes how many pixels clear a luma threshold. Red-verified with `hueArc` at 0.5 —
+           the defect §V996 was filed for — this claim went red on "the veins arm must light
+           something" (162 px against a 400 floor) instead of on the arc it exists to defend:
+           a failure for the WEAK reason, which cannot tell the defect from a dim frame. The
+           brightest channel is hue-neutral by construction. */
+        if (max < 0.03) continue;
+        px += 1;
+        const chroma = max - Math.min(r, g, b);
+        if (chroma < 0.02) continue;
+        let sixth: number;
+        if (max === r) sixth = ((g - b) / chroma + 6) % 6;
+        else if (max === g) sixth = (b - r) / chroma + 2;
+        else sixth = (r - g) / chroma + 4;
+        const angle = (sixth / 6) * Math.PI * 2;
+        x += Math.cos(angle) * chroma;
+        y += Math.sin(angle) * chroma;
+      }
+      return { hue: (Math.atan2(y, x) / (Math.PI * 2) + 1) % 1, px };
+    };
+    /* Shortest way round the wheel, in turns: 0 = the same colour, 0.5 = opposite. */
+    const arc = (a: number, b: number): number => {
+      const delta = Math.abs(a - b) % 1;
+      return Math.min(delta, 1 - delta);
+    };
+
+    /* `paletteTurn` is 197 s and the swing is a sine, so these four are the palette PARKED,
+       at its positive extreme, parked again, and at its negative extreme. A grid that only
+       sampled zero crossings would be a control arm pretending to be a claim. */
+    const TIMES = [0, 49, 98, 147] as const;
+    const ELEMENTS: ReadonlyArray<readonly [string, readonly string[]]> = [
+      ["pods", ["nodeGlow", "nodeSpill"]],
+      ["veins", ["veinEmission", "veinSpill"]],
+      ["key", ["keyIntensity"]],
+    ];
+
+    const readHues = async (parked: boolean): Promise<Record<string, number[]>> => {
+      const base = (graph: GraphDocument): void => {
+        freezeCamera(graph);
+        cutEveryDrive(graph);
+        if (parked) param(graph, "shape", "paletteTurn", 1.0e9);
+      };
+      const on = await shootSeries([...TIMES], 1, base);
+      const hues: Record<string, number[]> = {};
+      for (const [name, gains] of ELEMENTS) {
+        const off = await shootSeries([...TIMES], 1, (graph) => {
+          base(graph);
+          for (const gain of gains) param(graph, "shape", gain, 0);
+        });
+        hues[name] = on.map((frame, index) => {
+          const other = off[index];
+          if (other === undefined) throw new Error("missing isolation arm");
+          const read = hueOfDiff(frame, other);
+          /* §V997 — an empty difference has a hue too, and it means nothing. */
+          /* ⚠ AND THE FLOOR IS LOW ON PURPOSE. The veins are filaments and this arm has every
+             drive cut, so their own contribution is the smallest population in the frame
+             (1355 px shipped, 377 under the `hueArc` defect arm) — a floor set near the
+             shipped number would turn every hue move into a failure of this guard instead of
+             a failure of the claim. It is here to catch an EMPTY difference (§V997), nothing
+             more. */
+          expect(read.px, `the ${name} arm must actually light something`).toBeGreaterThan(120);
+          return read.hue;
+        });
+      }
+      return hues;
+    };
+
+    const turning = await readHues(false);
+    const parked = await readHues(true);
+
+    /* THE POSITIVE FIRST: the palette MOVES. Without this everything below is satisfied by
+       `paletteArc` 0 — a colour that never travels never collides. At the swing's extreme
+       every element has moved, measured pods 0.214, veins 0.145, key 0.123 of a turn. */
+    for (const [name] of ELEMENTS) {
+      const moved = arc(turning[name]?.[1] ?? 0, parked[name]?.[1] ?? 0);
+      expect(moved, `the palette must actually carry ${name} somewhere`).toBeGreaterThan(0.06);
+    }
+
+    /* ⚑⚑ AND THE CLAIM, AND IT IS NOT THE ONE THE ALGEBRA PREDICTS — §V995, MEASURED RATHER
+       THAN DERIVED. A rigid rotation preserves every arc EXACTLY in tint space, and the
+       rendered hues do not: the three elements' own travel under the same turn reads 0.214 /
+       0.145 / 0.123, because a bright clipping source and a diffuse lit stone put the same
+       rotation through different parts of the tone map. So the pairwise arcs DO move, by up
+       to 0.092 of a turn, and the tightest pair in the piece (veins against key) closes from
+       0.126 parked to 0.103 turning — an eighteen per cent squeeze, not the zero the isometry
+       argument claims.
+       ⚑ WHAT THE BOUND ACTUALLY BUYS IS THEREFORE THE THING §V996 IS ABOUT: no pair can be
+       WALKED INTO another. Each arc keeps at least four fifths of itself (worst measured
+       ratio 0.82) and no arc anywhere over the lap comes near zero (worst 0.103). Both halves
+       are asserted, because "the arcs are preserved" is the sentence that would have shipped
+       on the strength of the derivation alone. */
+    for (let i = 0; i < ELEMENTS.length; i += 1) {
+      for (let j = i + 1; j < ELEMENTS.length; j += 1) {
+        const a = ELEMENTS[i]?.[0] ?? "";
+        const b = ELEMENTS[j]?.[0] ?? "";
+        for (let k = 0; k < TIMES.length; k += 1) {
+          const moving = arc(turning[a]?.[k] ?? 0, turning[b]?.[k] ?? 0);
+          const still = arc(parked[a]?.[k] ?? 0, parked[b]?.[k] ?? 0);
+          expect(
+            moving,
+            `the turn must not spend ${a} against ${b}'s separation — it may carry them, not close them`,
+          ).toBeGreaterThan(still * 0.6);
+          /* §V996's own assertion, and the bound is set by the TIGHTEST pair rather than by
+             the pair anybody was worried about: veins against key, which reads 0.103. */
+          expect(
+            moving,
+            `${a} and ${b} must not arrive at the same colour at ${TIMES[k]} s`,
+          ).toBeGreaterThan(0.06);
+        }
+      }
+    }
+
+    /* ⚑ AND THE ONE PER-ELEMENT MOVE IN THE FILE, WHICH IS THE ONE §V996 ACTUALLY GOVERNS:
+       the beat's shade nudge on the pods. It must be REAL and it must be SMALL, and both
+       halves are asserted because either one alone is satisfied by a value of zero at one end
+       and by a disaster at the other. Measured at the palette's extreme: pod hue 0.0639 with
+       the lane deleted, 0.0712 at its driven rest, 0.0864 at the peak of a kick — a travel of
+       0.0156 of a turn, and the pod/key arc WIDENS across it (0.3655 to 0.3881) rather than
+       closing, because the pods and the key sit a third of the wheel apart. ⚑ AND THE PODS
+       ARE NOT IN THE TIGHTEST PAIR AT ALL — that is veins against key, which this lane cannot
+       reach — so the one per-element move in the file is nowhere near the one gap §V996 has
+       to protect. */
+    const beat = async (flare: number | undefined): Promise<number> => {
+      const base = (graph: GraphDocument): void => {
+        freezeCamera(graph);
+        cutEveryDrive(graph);
+        if (flare !== undefined) param(graph, "shape", "flare", flare);
+      };
+      const [on] = await shootSeries([49], 1, base);
+      const [off] = await shootSeries([49], 1, (graph) => {
+        base(graph);
+        for (const gain of ["nodeGlow", "nodeSpill"]) param(graph, "shape", gain, 0);
+      });
+      if (on === undefined || off === undefined) throw new Error("no beat frame");
+      return hueOfDiff(on, off).hue;
+    };
+    const silent = await beat(0);
+    const peak = await beat(1);
+    expect(
+      arc(silent, peak),
+      "a transient must MOVE the pod's shade — the owner asked for it and a zero here is the lane missing",
+    ).toBeGreaterThan(0.004);
+    expect(
+      arc(silent, peak),
+      "and it must stay a NUDGE — this is the only per-element hue move in the file, so §V996 governs it",
+    ).toBeLessThan(0.04);
   }, 600_000);
 });

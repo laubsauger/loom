@@ -206,6 +206,9 @@ struct Params {
   // and at 19 s the fold rotation used to turn through two thirds of a lap inside one.
   morphPhase: f32,      // @default 0.37  where in the fold rotation's lap the clock STARTS. ⚑ NOT cosmetic: at phase 0 the rotation is the IDENTITY and the object is its own axis-aligned degenerate case — a flat slab. Every thumbnail and every headless render begins at t=0, so phase 0 ships the single worst frame in the piece as the picture of it
   morphPeriod: f32,     // @default 89  SECONDS for the fold rotation to make one lap. ⚑ WAS 19, AND THIS IS THE OBJECT'S OWN ROTATION — the thing the owner meant by *"the thing itself rotates"*, as against the camera travel that was mislabelled as a pose
+  paletteTurn: f32,     // @default 197  ⚑⚑ SECONDS FOR THE WHOLE PALETTE TO SWING ONCE THROUGH ITS ARC AND BACK. The owner asked for *"the lights color should evolve over time"* and §V996 forbids an unbounded rotation because it walks one colour into another's. ⚑ BOTH ARE SATISFIED BY ROTATING THE PALETTE AS A *RIGID BODY*: 'rotateHue' is a Rodrigues rotation about the luma axis, so one turn applied to EVERY colour is an isometry of the wheel and EVERY pairwise arc is preserved EXACTLY, for every t. §V996's defect is PER-ELEMENT drift — a colour moving RELATIVE to the others — and common-mode drift cannot produce it. ⚠ §V995 BINDS AND THE ALGEBRA IS NOT THE MEASUREMENT: the pairwise arcs are asserted from rendered pixels, not from this paragraph. 1e9 parks the palette exactly where its author put it, which is the isolation arm
+  paletteArc: f32,      // @default 0.16  ⚑ HOW FAR THE WHOLE PALETTE MAY TRAVEL, IN TURNS — AND A *BOUNDED COMMON-MODE SWING* IS THE FORM THIS TOOK AFTER THE UNBOUNDED LAP WAS RENDERED AND LOOKED AT (T1324b). The isometry argument is exactly true and it is an argument about ARCS: rotating every colour together preserves every angle, so §V996's collision cannot happen at any phase. ⚠ IT DOES ⊥ FOLLOW THAT EVERY PHASE IS THE SAME DESIGN, BECAUSE THE EYE IS ⊥ ROTATION-INVARIANT: measured, at 0.30 of a turn the piece is yellow pods on pink stone, with every arc intact and nothing left of the teal-against-magenta the frame was built on. ⚑ SO THE BOUND IS ⊥ §V996's BOUND & IT IS ⊥ REDUNDANT WITH IT — 'hueArc' stops two colours COLLIDING, this stops the palette WANDERING OUT OF ITS OWN FAMILY, and those are two different failures needing two different ceilings. 0.5 restores the full-wheel behaviour, which is the arm the yellow frame came from; 0 pins the palette exactly as authored
+  beatShade: f32,       // @default 0.018  ⚑ HOW FAR A TRANSIENT NUDGES THE POD'S SHADE, IN TURNS — the owner's *"maybe also slightly change in shade with beat"*. §V990 permits a transient to move something that RETURNS, and a hue is exactly that: the envelope decays and the colour comes back. ⚠ IT IS A SHADE AND NOT A BRIGHTNESS — a beat-rate gain on a source is the pump the owner rejected three times, wearing a colour's clothes. ⚠ AND IT IS THE ONE PER-ELEMENT HUE MOVE IN THE FILE ∴ §V996 APPLIES TO IT AND NOT TO 'paletteTurn': the arc it may open or close is measured against EVERY other pair, and 0.018 is set by the tightest one. Read UN-CENTRED like 'burst' beside it, so the no-audio picture is the DRIVEN MEAN's colour (§V914 by the same arithmetic as every other lane here)
   hueTurn: f32,         // @default 37  SECONDS for the colour to travel one lap of its arc. UNCHANGED: colour is light
   hueArc: f32,          // @default 0.045  ⚑ HOW FAR A HUE MAY TRAVEL FROM WHERE ITS AUTHOR PUT IT, IN TURNS — AND IT IS THE GUARD ON A TRANSFORM THAT HAS BITTEN THIS FILE THREE TIMES. 'fillTint' rotated into magenta and was neutralised, 'rimColor' carries a standing exemption for the same reason, and the vein tint was the third. ⚑ THE DEFECT WAS NEVER A BAD VALUE, IT WAS AN UNBOUNDED LAP: the hue clock reads 't / hueTurn' and GROWS WITHOUT BOUND ∴ the rotation visits EVERY hue, including whichever one another object in the frame owns. Bounding the travel makes that impossible by ARITHMETIC instead of by a comment asking the next person to be careful, which is what three annotations have already failed to do. ⚠ AND THE VALUE IS SET BY THE *TIGHTEST* PAIR, WHICH IS NOT THE ONE THE BUG WAS ABOUT — the first value tried, 0.075, fixed the vein-against-pod separation (0.003 turns at a full lap, i.e. IDENTICAL, up to 0.341) and drove the vein-against-KEY separation to EXACTLY 0.000, because those two travel in OPPOSITION and an opposition closes a gap at TWICE the arc. The vein and the key start only 0.137 turns apart ∴ the arc must stay under half of that. At 0.045 the worst case over a full lap is 0.375 turns from the pods and 0.048 from the key, both positive and both bounded for all t. ⚑ THE GENERAL FORM: A BOUND ON A TRAVEL IS SET BY THE CLOSEST PAIR IT CAN BRING TOGETHER, & OPPOSED TRAVELS CLOSE AT THE SUM OF THEIR ARCS. 0 pins both colours exactly as authored, which is the isolation arm; 0.5 restores the old full-wheel behaviour
   scalePeriod: f32,     // @default 181  SECONDS for the magnification to breathe. ⚑ WAS 47 — this is the pump, and a pump is the one thing a magnified shot cannot survive
@@ -583,8 +586,31 @@ struct Trace {
      coarse structure and at fine structure alike — so the nodes are large on the near lobes
      and small on the far ones, which is the interleaving, for free.
      It is also the cheapest thing in this file: the sphere fold ALREADY computes the radius
-     it is trapped on, so this is one 'min' per link and nothing else. */
+     it is trapped on, so this is one 'min' per link and nothing else.
+     ⚠⚠ AND THE "RECURS AT EVERY SCALE" CLAIM ABOVE IS FALSE AS SHIPPED, MEASURED (T1324b):
+     'nodeLinks' 1 / 2 / 6 give BIT-IDENTICAL pods (8 pods, 2834 px, the same two shape
+     statistics to three decimals) because the FIRST link wins the min essentially everywhere
+     the pods are visible — at i = 0 the trapped quantity is |boxFold(rot * p)|, a fixed
+     world-space ball, so the pods are ONE size on ONE lattice rather than an interleaving.
+     The claim is left standing above as the intent it was written for; this is what it
+     actually does. Read the two together before tuning anything here. */
   node: f32,
+  /* ⚑⚑ WHICH POD THIS IS — THE POD'S OWN IDENTITY, CONSTANT OVER THE WHOLE POD BY
+     CONSTRUCTION, AND IT IS THE FIX FOR THE OWNER'S "SQUARE PATTERNS / CHECKERBOARD IN THE
+     MAGENTA LIGHTS" (T1324b).
+     The pod used to be gated and flared on 'floor(p * veinRate)' — the CONDUIT lattice — and
+     that cell is 1/3.1 = 0.32 units across while a pod is 2 * nodeRadius = 1.24 units across.
+     A membership test evaluated on cells FOUR TIMES SMALLER THAN THE OBJECT IT GATES does not
+     gate the object, IT DICES IT: every pod was multiplied by a piecewise-constant,
+     AXIS-ALIGNED field that stepped up to 16x across planes running through its own face.
+     That is the flat faces, the hard edges and the grid on the face, and it is a checkerboard
+     in the strict sense — a square lattice of alternating levels.
+     WHAT MAKES THIS EXACT RATHER THAN MERELY COARSER: the pod is the set where the folded
+     point is within 'reach' of the origin, so the UNFOLDED point is within 'reach' of a box
+     fold lattice site 2 * foldLimit apart. reach (0.62) is smaller than foldLimit (1.45), so
+     'round(unfolded / (2 * foldLimit))' names the same site at every point of the pod and
+     CANNOT step inside one. A coarser 'floor' lattice would only have made the seams rarer. */
+  nodeCell: vec3f,
   /* 0..1 — how far through the chain the point survived. The large-scale structure, and
      what keeps the colour from being uniform across the whole object. */
   escape: f32,
@@ -596,6 +622,9 @@ fn chainAt(start: vec3f, shape: Shape, links: i32) -> Trace {
   var trap2 = 1.0e9;
   var shell2 = 1.0e9;
   var node2 = 1.0e9;
+  /* See 'Trace.nodeCell': the box fold lattice site that owns whichever link wins the node
+     trap, i.e. the POD's identity. Constant across a pod because reach < foldLimit. */
+  var nodeCell = vec3f(0.0);
   var survived = links;
 
   let minR = max(shape.minRadius, 0.02);
@@ -619,6 +648,7 @@ fn chainAt(start: vec3f, shape: Shape, links: i32) -> Trace {
     p = shape.rot * p;
 
     // 2. BOX FOLD — a reflection: |J| = 1. Wider than the point, this is the identity.
+    let unfolded = p;
     p = clamp(p, -limit, limit) * 2.0 - p;
 
     // 3. SPHERE FOLD — the inversion that makes the surface read as GROWN.
@@ -638,7 +668,14 @@ fn chainAt(start: vec3f, shape: Shape, links: i32) -> Trace {
        reading of a detector pointed at the wrong place. The tell was that the radius sweep
        fell to ZERO marks rather than to FEWER — a mark that vanishes between 0.2 and 0.12
        is not a mark that is too rare, it is a mark that was never there. */
-    if (i < nodeLinks) { node2 = min(node2, r2); }
+    /* ⚑ THE MIN IS WRITTEN OUT SO THE WINNER CAN BE NAMED (T1324b). The pod's gate and its
+       flare phase have to be constant over a pod, and the only thing that is, is the lattice
+       site of whichever link actually trapped it — see 'Trace.nodeCell'. The '+ 7 i' keeps
+       one link's sites from picking the same membership as another's. */
+    if (i < nodeLinks && r2 < node2) {
+      node2 = r2;
+      nodeCell = round(unfolded / (2.0 * limit.x)) + vec3f(f32(i) * 7.0);
+    }
     if (r2 < minR2) {
       let f = fixR2 / minR2;
       p = p * f;
@@ -702,6 +739,7 @@ fn chainAt(start: vec3f, shape: Shape, links: i32) -> Trace {
   /* Squared, for the same reason 'shell' is: the zero set is identical and a square root here
      would be one per link of every evaluation. 'nodeRadius' is squared where it is read. */
   out.node = node2;
+  out.nodeCell = nodeCell;
   out.escape = f32(survived) / max(f32(links), 1.0);
   return out;
 }
@@ -939,6 +977,38 @@ fn emissionAt(trace: Trace, p: vec3f, widthScale: f32, nodeScale: f32, rate: f32
   let sweep = 1.0 - beat;
   let turn = 1.0 - smoothstep(0.0, max(params.flareWidth, 0.02), abs(sweep - markPhase));
   let burst = 1.0 + max(params.flareDepth, 0.0) * beat * turn;
+
+  /* ⚑⚑ THE POD READS ITS OWN CELL, NOT THE CONDUIT'S (T1324b) — THE OWNER'S CHECKERBOARD.
+     Everything above is the VEIN lattice: cells 1/veinRate = 0.32 units across, which is the
+     right granularity for a filament of width 'veinWidth' 0.1 and the WRONG one for a pod of
+     width 2 * nodeRadius = 1.24. Gating a 1.24-unit object on a 0.32-unit lattice does not
+     decide whether the pod is there, it multiplies the pod by an axis-aligned piecewise
+     constant that steps 0.06 -> 1 (SIXTEEN TIMES) across planes crossing its own face, and
+     'burst' put a second such lattice on top of it at rest. Measured inside the pod mask, on
+     a detector validated first against a synthetic disc (0.00 %) and a synthetic disc times
+     exactly this kind of lattice (13.55 %): interior step density 36.35 % of pod pixels
+     against an A/A floor of 0.00.
+     'trace.nodeCell' is the pod's OWN identity and is constant across it by construction, so
+     the two decisions the lattice is for — is this pod lit, and when does it flare — survive
+     intact and are now taken ONCE PER POD, which is what they always meant. */
+  let nodePick = goldenPick3(trace.nodeCell, VEIN_PHASE);
+  let nodeAlive = 1.0 - smoothstep(density - 0.14, density + 0.02, nodePick);
+  /* ⚠ AND RANKING THE POD'S GAIN THE WAY THE CONDUITS ABOVE RANK THEIRS WAS TRIED, MEASURED
+     AND REJECTED (T1324b) — THE ARM CONTRADICTED ITS OWN ARGUMENT. The reasoning was the
+     file's own rule ('core' and 'bright' covary with 'rank' because an even spread of
+     identical marks is a grid) plus a real observable: 16.0 % of pod pixels at t = 25 s have
+     gone WHITE — every channel's MINIMUM above 225, so no hue left to carry — which is the
+     second hue of a two-hue piece spent on a clipped disc. 'mix(1.0, 0.45, nodePick/density)'
+     took that to 13.4 % and took the OTHER two sampled moments to 0.0 % and 0.2 % from 1.3 %
+     and 2.0 %. ⚑ BUT THE POINT OF IT WAS VARIETY, AND MEASURED AS VARIETY IT WENT BACKWARDS:
+     the per-pod brightness spread FELL, cv 0.350 / 0.449 / 0.387 to 0.330 / 0.424 / 0.342 —
+     because the rank multiplier is correlated with the gate, so it dims the pods that were
+     already dimmest and flattens the population it was meant to spread. It also cut the pod
+     pixel count by 13 %, i.e. it spent the brightness the owner asked for twice. The pods
+     already vary by a third of their own mean from distance and incidence alone. */
+  let nodePhase = fract(dot(trace.nodeCell, vec3f(0.4301597090, 0.7548776662, 0.5698402910)) + FLARE_PHASE);
+  let nodeTurn = 1.0 - smoothstep(0.0, max(params.flareWidth, 0.02), abs(sweep - nodePhase));
+  let nodeBurst = 1.0 + max(params.flareDepth, 0.0) * beat * nodeTurn;
   /* The pool a flaring mark casts takes half the gain: a mark that brightens has to brighten
      the stone around it or it is a sprite again (§V972), but a spill driven as hard as the
      core is a wash driven as hard as the core, which is the defect §V977 measured. */
@@ -1004,16 +1074,22 @@ fn emissionAt(trace: Trace, p: vec3f, widthScale: f32, nodeScale: f32, rate: f32
      camera pulls back rather than exploding, which is what would have said under-resolved)
      but FRECKLES — the owner's word — because there were simply too many of them. The break
      is the lattice's own statement about where the light lives; the pods obey it now. */
-  out.node = near2 * near2 * near2 * mix(0.06, 1.0, alive) * detail;
-  out.nodeSpill = near * mix(0.06, 1.0, alive);
+  out.node = near2 * near2 * near2 * mix(0.06, 1.0, nodeAlive) * detail;
+  out.nodeSpill = near * mix(0.06, 1.0, nodeAlive);
 
-  /* THE FLARE APPLIES TO THE MARKS AND NOT TO THE FIELD. Both kinds of mark take it — a
-     conduit run and a pod in the same cell flare together, which is what makes a flare read
-     as a REGION lighting up rather than as one motif blinking. */
+  /* THE FLARE APPLIES TO THE MARKS AND NOT TO THE FIELD.
+     ⚑ AND THE TWO KINDS OF MARK NO LONGER FLARE ON THE SAME CLOCK (T1324b). They used to
+     share 'markPhase', so a conduit run and a pod in the same conduit cell lit together and
+     the flare read as a REGION rather than as one motif blinking — which was the intent, and
+     which the cell size made a lie: the pods are four times the cell, so "the same cell" was
+     never a pod, it was a SLICE of one, and the succession was arriving as a grid drawn
+     across each pod's face. A pod now flares once, whole, on its own lattice site's phase.
+     The region reading survives because both phases come from the same R3 generators on the
+     same box-fold lattice, so neighbouring marks still land near each other in the sweep. */
   out.core = out.core * burst;
-  out.node = out.node * burst;
+  out.node = out.node * nodeBurst;
   out.spill = out.spill * wash;
-  out.nodeSpill = out.nodeSpill * wash;
+  out.nodeSpill = out.nodeSpill * mix(1.0, nodeBurst, 0.5);
   return out;
 }
 
@@ -1098,7 +1174,7 @@ fn lightAt(
  * 1385 of the 1519 standing, which is what overturned §V988's reading.
  */
 fn reflectionAt(
-  p: vec3f, n: vec3f, viewDir: vec3f, shape: Shape, links: i32, hue: f32,
+  p: vec3f, n: vec3f, viewDir: vec3f, shape: Shape, links: i32, hue: f32, podTint: vec3f,
   surfaceEpsilon: f32, surfaceDetail: f32,
 ) -> vec3f {
   let dir = reflect(viewDir, n);
@@ -1165,7 +1241,7 @@ fn reflectionAt(
   /* The nodes reflect too, and on a wet shell that is most of what a reflection is FOR: a
      small bright thing seen twice is what says the surface is polished. */
   let burn = tint * (glow.core * params.veinEmission + glow.spill * params.veinSpill)
-    + params.nodeColor.rgb * (glow.node * params.nodeGlow + glow.nodeSpill * params.nodeSpill);
+    + podTint * (glow.node * params.nodeGlow + glow.nodeSpill * params.nodeSpill);
   return (burn + skyAt(dir) * 0.5) * fade;
 }
 
@@ -1312,9 +1388,20 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
      person to be careful. The two hues still travel in OPPOSITION and still separate and
      re-converge over the lap — which was the whole point of having them — they simply do it
      inside their own families. */
+  /* ⚑⚑ THE PALETTE TRAVELS AS A WHOLE (T1324b), AND THAT IS WHY IT IS ALLOWED TO BE
+     UNBOUNDED WHERE THE SWING ABOVE IS NOT. Every tint below takes the SAME 'paletteHue', so
+     the transform applied to the palette is one rotation of the RGB cube about its grey
+     diagonal: an isometry. It moves every colour and changes no angle between any two, which
+     is precisely the property §V996 is protecting — that invariant names RELATIVE drift as
+     the defect, and a rigid rotation has none by construction. See 'paletteTurn'. */
+  let paletteHue = sin((t / max(params.paletteTurn, 1.0)) * TAU) * clamp(params.paletteArc, 0.0, 0.5);
   let swing = sin(hue * TAU) * clamp(params.hueArc, 0.0, 0.5);
-  let veinHue = swing;
-  let keyHue = -swing;
+  let veinHue = swing + paletteHue;
+  let keyHue = -swing + paletteHue;
+  /* THE POD'S OWN SHADE, AND IT IS THE ONLY THING IN THE FILE THAT MOVES RELATIVE TO THE
+     REST — so it is the only one §V996's pair enumeration has to bound. See 'beatShade'. */
+  let podHue = paletteHue + clamp(params.beatShade, 0.0, 0.08) * clamp(params.flare, 0.0, 1.0);
+  let podTint = rotateHue(params.nodeColor.rgb, podHue);
 
   /* THE CAMERA: parked, orbiting slowly, and reading NO audio. The orbit is the stable
      reference the morph is legible against — and freezing it is what lets a claim measure
@@ -1483,8 +1570,18 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
        exempted, so RETUNING ITS COLOUR COULD NOT FIX IT: an amber fill was measured and came
        back magenta anyway, because the rotation took it there. A neutral tint has no hue for
        the rotation to walk, so the light models form and contributes no colour at all. */
-    let fillTint = params.fillColor.rgb;
+    /* ⚑ ROTATED BY THE COMMON-MODE TURN ONLY (T1324b). 'fillColor' is very nearly neutral
+       precisely because §V980 measured it walking into magenta when it had a hue to walk,
+       and a rotation of a near-grey is very nearly the identity — so this joins the
+       palette's rigid turn without re-opening that defect, and the isolation arm for it is
+       'paletteTurn' 1e9 rather than a second exemption. */
+    let fillTint = rotateHue(params.fillColor.rgb, paletteHue);
     let veinTint = rotateHue(params.veinColor.rgb, veinHue);
+    /* The warm rim still does not travel ON ITS OWN — the standing exemption at its
+       declaration is about a rotation RELATIVE to the rest of the frame, and the palette's
+       common-mode turn is not one. Left OUT of the turn and it would be the only colour
+       standing still, which is per-element drift with the sign flipped. */
+    let rimTint = rotateHue(params.rimColor.rgb, paletteHue);
 
     /* ⚑ THE KEY CASTS, AND IT IS THE ONLY ONE THAT DOES (T1318b).
        The march starts four pixel-footprints off the surface rather than at a constant
@@ -1503,7 +1600,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
        does not morph, for the reason given at its declaration. */
     var lit = lightAt(p, n, view, 0.0, t, keyTint, params.keyIntensity, specPower) * shadow;
     lit = lit + lightAt(p, n, view, 1.0, t, fillTint, params.fillIntensity, specPower);
-    lit = lit + lightAt(p, n, view, 2.0, t, params.rimColor.rgb, params.rimIntensity, specPower);
+    lit = lit + lightAt(p, n, view, 2.0, t, rimTint, params.rimIntensity, specPower);
 
     /* ⚑ THE VEINS ARE A LIGHT, NOT A DECAL. The spill term lights the shell around a
        conduit, so the emission is a source in the scene rather than a bright texture on it —
@@ -1515,7 +1612,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
        pod throws its hue onto the stone it sits in. Without this the pods were sprites —
        bright where they covered a pixel and changing nothing anywhere else. */
     let bleed = (veinTint * glow.spill * params.veinSpill
-      + params.nodeColor.rgb * glow.nodeSpill * params.nodeSpill)
+      + podTint * glow.nodeSpill * params.nodeSpill)
       * mix(1.0, occ, params.translucency);
 
     /* The grazing rim. On an all-curved silhouette this is where the environment shows —
@@ -1529,7 +1626,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
       /* ⚑ 'epsilon' AND 'detail' GO IN (T1322b): the reflection's marks are widened and faded
          against the primary's own footprint. Passing 1.0 for both is what made three quarters
          of the frame's magenta freckles. */
-      reflected = reflectionAt(p, n, dir, shape, links, veinHue, epsilon, detail)
+      reflected = reflectionAt(p, n, dir, shape, links, veinHue, podTint, epsilon, detail)
         * params.polish * mix(0.15, 1.0, fresnel);
     }
 
@@ -1548,7 +1645,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
        on a near lobe and small on a far one within the same frame.
        It is NOT multiplied by 'baseColor' or by the occlusion: a node is a source, and a
        source is not shaded by the shell it sits in. */
-    let nodes = params.nodeColor.rgb * glow.node * params.nodeGlow;
+    let nodes = podTint * glow.node * params.nodeGlow;
     let surface = shell + burn + nodes + rim + reflected;
 
     /* Aerial perspective, which is also what lets the march stop early without a visible
@@ -1562,7 +1659,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   if (params.haze > 0.0005) {
     let far = select(MAX_DISTANCE, travelled, hit);
     colour = colour + volumeAlong(
-      eye, dir, far, uv * frameU.resolution, shape, veinHue, params.nodeColor.rgb,
+      eye, dir, far, uv * frameU.resolution, shape, veinHue, podTint,
     );
   }
 

@@ -154,7 +154,27 @@ derivative error, so stepping less of the estimate is the file's margin against 
 land-or-miss per pixel. Raising `detail` buys a better number by resolving less structure, and
 it shows: at `detail` 3 the silhouette visibly coarsens.
 
-## There is no checkerboard, and the hash was innocent
+### T1324b: the lever is nearly exhausted, and the two asks pull against each other
+
+The owner said "noisy, grizzly" for the fifth time and, in the same message, asked for **less**
+— *"LESS IS MORE… embrace negative space"*. Those two interact, and the interaction is the
+finding: **opening the form costs noise by itself.** The same statistic reads 1.02 % at the old
+density and 1.54 % at the top of the new spacing lane's travel, because a sparser body is more
+thin structure seen edge-on per pixel.
+
+And at that new density `stepScale` stops being a lever at all: 1.035 / 0.957 / 0.984 / 1.018
+across 0.50 / 0.42 / 0.36 / 0.30 — flat and non-monotone, where at the old density the same
+sweep read 1.024 / 0.873 / 0.767. The arm that used to be the claim's positive control went the
+**wrong way**: `stepScale` 0.78 measured 0.0105 against a shipped 0.0133.
+
+What ships is `stepScale` 0.36 with `detail` 2.5 → 3, which lands **0.943 %** — slightly
+quieter than the build the owner called noisy, on a body with nine times the negative space.
+⚠ And `detail` is bounded from the other side by the same trade: at 4 it fills the very holes
+this pass exists to open (holes 31 → 18, hole share 5.52 % → 1.38 %), because a coarser
+termination threshold stops rays in the thin places and paints the gaps solid. **A quality knob
+that buys the noise number by spending the thing the row is about is not a quality knob.**
+
+## The checkerboard: right symptom, wrong place to look — twice
 
 The owner reported *"a CHECKERBOARD TEXTURE IN THE MAGENTA GLOW"*, and the volume march's
 per-pixel jitter was indicted for it: `hash2i` multiplies each coordinate by an **odd**
@@ -170,7 +190,49 @@ white noise 0.98, gradient 0.95, stripes 0.00, a synthetic checkerboard 8×10¹�
 **0.10 to 0.44** on this frame, at cell sizes 1/2/4/8 px, at eight times across the run, at
 every shot state. `haze` 0 did not move it.
 
-So if a checkerboard is visible it is in the **display path**, not in this image — a
+### And then the owner sent a close-up, and there WAS one (T1324b)
+
+The Haar sweep above is honest and it answered a different question: it swept the **whole
+frame**, and the defect is a **local patch on one object**, which averages away to nothing in a
+frame-wide statistic. Measured inside the pod mask instead — on a detector validated first
+against a synthetic shaded disc (0.00 % interior steps) and the same disc multiplied by an
+axis-aligned piecewise-constant lattice (18.67 %) — the pods read **48–51 %** of their own
+interior pixels sitting on a hard luminance step, at every moment across a minute.
+
+⚑ **The cause is a granularity mismatch and nothing to do with a hash.** A pod is
+`2 × nodeRadius` = 1.24 units across. It was gated (*is this pod lit?*) and flared (*when does
+it burst?*) on `floor(p × veinRate)` — the **conduit** lattice, cells 1/3.1 = **0.32** units
+across. A membership test evaluated on cells four times smaller than the object it gates does
+not gate the object, **it dices it**: every pod was multiplied by an axis-aligned piecewise
+constant stepping 0.06 → 1, sixteenfold, across planes running through its own face. Flat
+faces, hard edges, a grid on the face.
+
+⚠ **Two other diagnoses were measured and killed.** The trap was thought to be a sphere seen
+through the box fold, and the `min` across links was thought to crease: `nodeLinks` 1 / 2 / 6
+give **bit-identical pods** (9 pods, 3122 px, both shape statistics to three decimals), because
+the first link wins the trap essentially everywhere a pod is visible. Neither hypothesis had
+anything to answer for.
+
+The fix gives the pod its own identity — `Trace.nodeCell`, the box-fold lattice site of
+whichever link trapped it, which is **constant across a pod by construction** because the
+trap's reach (0.62) is smaller than `foldLimit` (1.45), so the site index cannot change inside
+one. Interior step density **48–51 % → 27–34 %**, and the number that makes that mean
+something is the **stone's own relief read through the identical mask**: 32–36 %. The pod was
+half again rougher than the surface it is painted on; it is now at or below it, which is as
+smooth as a glow on this surface can be. Both are claims: a guard asserts the pods no longer
+read `veinRate` at all (and that the veins still do), and a second one holds the ratio.
+
+⚠ **A third diagnosis died here too, and it was the one that named this row.** The pod was
+read as *"a sphere seen through the box fold, whose pre-image has flat faces"*. It has none:
+`clamp(p,-L,L)*2 - p` is a **reflection** per component — an isometry — so the pre-image of a
+ball is a union of reflected **balls**. A boundary-orientation detector (validated: synthetic
+disc 59.1 %, synthetic square 99.4 %) puts the pod outline at **60.0 %** shipped and **65.1 %**
+with the defect restored: both at the disc end, neither anywhere near the square. The pods were
+never boxes in outline. The owner's *"square patterns"* were the interior steps above, and
+rounding the shape was never the fix.
+
+So the **frame-wide** reading stands: there is no global checkerboard, and if one is visible at
+that scale it is in the display path, not in this image — a
 non-integer canvas scale resampling fine static grain will manufacture one. The jitter is an
 R2 sequence now rather than a hash, and the page says plainly what that bought: **not less
 noise** (A/B'd on one build, hash 4.25 % / R2 4.13 % / a constant half-stride 4.79 %, against
@@ -178,7 +240,7 @@ a reference that disagrees with itself by 3.21 % — three arms inside the instr
 floor) but one dot product instead of a PCG finaliser, and the retirement of the file's last
 hash along with its `// @use hash` include.
 
-## Ten clocks, and they are prime — checked, not asserted
+## Twelve clocks, and they are prime — checked, not asserted
 
 This is the answer to "not boring after fifteen seconds", and it is structural rather than
 decorative.
@@ -197,8 +259,9 @@ decorative.
 | `voidPeriod` | **107 s** | the shells opening: negative space *inside* the sculpture |
 | `scalePeriod` | **181 s** | the chain's magnification: the density of incident |
 | `seedPeriod` | **277 s** | the seed offset's drift: the object's topology |
+| `paletteTurn` | **197 s** | **the whole palette's swing: the colour evolving without any colour moving relative to another** |
 
-Eleven primes, split by the ruling that splits them: **form may evolve over a minute and may
+Twelve primes, split by the ruling that splits them: **form may evolve over a minute and may
 not restructure under a shot; light and camera may do whatever the music asks.** The combined
 state repeats on their product, so no viewer ever sees a cycle land.
 
@@ -365,6 +428,97 @@ A vein also **gutters**: a share of its run is dark, hashed on a lattice so it f
 same places on every device. A line that cannot fail reads as tape; a line that can reads as a
 conduit.
 
+## The palette travels as a rigid body
+
+The owner: *"the lights color should probably evolve over time and maybe also slightly change
+in shade with beat or something."* That is in direct tension with the bound this file put on
+its hue rotation one pass earlier, after an **unbounded** lap walked the veins into the key
+light's blue at t = 20 s and cancelled the two-temperature design the piece is built on.
+
+⚑ **The resolution is to rotate the palette as a whole.** `rotateHue` is a Rodrigues rotation
+about the grey diagonal, so one turn applied to *every* colour is an **isometry**: every
+pairwise arc is preserved exactly, at every t. The defect the bound exists to prevent is drift
+of one colour **relative** to the others, and common-mode drift has none by construction.
+
+⚠ **And the algebra is not the measurement.** The unbounded common-mode lap was built,
+rendered and then bounded: at 0.30 of a turn every arc is exactly intact and the frame is
+**yellow pods on pink stone** — the eye is not rotation-invariant, so "every relative arc
+preserved" does not mean "the same colour design". `paletteArc` 0.16 is a **second** ceiling
+for a **second** failure: `hueArc` stops two colours colliding, this stops the palette leaving
+its own family. Over a minute the swing travels about 0.10 of a turn, which is visible
+evolution and still this piece.
+
+The arcs are read off rendered pixels, with each element isolated by **difference** — the same
+frame with that element's own gains at zero, subtracted. Two instruments were wrong before that
+one. The first bucketed pixels by brightness and its parked-palette control moved
+(0.032 → 0.002 → 0.422 with the palette frozen): it was measuring which population happened to
+be bright. The second rendered each element **alone**, which sounds like isolation and is not —
+the sky, the environment rim and the stone are still in the frame, they do not travel with the
+palette, and on the dim arms they outvoted the thing being measured (vein chroma 0.036 against
+0.153 once isolated properly). That instrument reported the turn closing the tightest pair from
+0.041 to 0.023, which would have condemned the feature.
+
+⚑ **And the honest answer is not the one the isometry argument predicts.** Measured properly,
+the three elements' own travel under the same turn reads **0.214 / 0.145 / 0.123** — a rigid
+rotation of the tints, put through a base colour, an exposure, a tone map and a saturation
+grade, none of which commute with it. So the pairwise arcs do move, by up to 0.092 of a turn,
+and the tightest pair in the piece — veins against key — closes from **0.126 parked to 0.103
+turning**, an eighteen per cent squeeze rather than the zero the algebra claims. What the bound
+buys is therefore the thing §V996 is actually about: no pair can be **walked into** another.
+Every arc keeps at least four fifths of itself and none comes near zero. That is a claim now,
+red-verified against `hueArc` 0.5 — the unbounded per-element rotation this file shipped two
+passes ago — which fails it at *"pods and veins must not arrive at the same colour at 49 s"*,
+0.0535 against a 0.06 bound.
+
+The beat half is a **shade** nudge on the pods and nothing else — 0.018 of a turn at the peak
+of a kick, measured pod hue 0.9889 silent / 0.9990 at rest / 0.0295 at the peak. A hue is
+exactly the kind of thing a transient may move, because it **returns**. A beat-rate gain on a
+source is the pump this owner has rejected three times.
+
+## Negative space is not a constant — it is what the piece looks like in the quiet parts
+
+The owner, fifth pass: *"LESS IS MORE sometimes. I think we still need to EMBRACE NEGATIVE
+SPACE a little bit better… and have enough going on in the actual DRIVING PART OF THE SONG."*
+Four earlier passes had asked for **more development**, and the natural answer to that is more
+lanes, more marks, more motion. This is the correction: the body was too **uniformly dense** —
+structure everywhere and rest nowhere.
+
+That reads as taste and it is a connectivity property. **Enclosed background regions inside the
+silhouette**: a piece with negative space has them, a solid knobbly mass does not. On a counter
+validated first against a synthetic disc with 0 / 1 / 5 holes punched in it (it returned 0 / 1
+/ 5), the body measured **0.02–2.09 %** of its own interior across a minute — against 8.87 %
+for that five-hole disc. Solid, exactly as described.
+
+⚑ **The operator that fixes it was already in the file, parked where it does nothing.** Every
+candidate was swept with all clocks frozen:
+
+| operator | what it moves | holes |
+| --- | --- | --- |
+| `minRadius` 0.30 / 0.62 / 0.80 | **nothing at all — bit-identical** | 4 / 4 / 4 |
+| `foldLimit` 1.10 / 1.90 | coverage 13.3 % → 33.7 % | 1 / 1 |
+| `bulbPower` 1.6 / 3.6 | coverage 16.5 % → 22.4 % | 1 / 7 |
+| **`fixedRadius`, effective 1.11 / 1.41 / 1.56 / 1.91** | **hole share 0.74 % → 1.06 % → 4.08 % → 16.92 %** | **4 / 12 / 31 / 43** |
+
+⚠ `minRadius` being a **no-op** is worth saying out loud: the orbit's radius essentially never
+goes below it, so the inner branch of the sphere fold does not fire — which makes both the
+"reef character" and `voidTravel`'s whole lane inert at the shipped settings.
+
+⚠ And the spacing lane has a **threshold**, which is why it read as working while buying no
+form. Below an effective ~1.25 the shape statistics do not move at all (0.60 and 1.20 are
+identical to 1.00 on coverage, holes and convolution) even though the **pixels** do — RMS 6.93
+and 8.88 against 0.00 for the A/A control. It was moving the surface and not the body, and only
+a statistic that can see the **silhouette** could tell those apart.
+
+Centred at 1.45 and travelling, the body reads **9–40 holes and 3.87–13.61 %** hole share
+across a minute, up from 1–15 and 0.02–2.09 %. Coverage fell only 19.8 % → 16.9 %, which is the
+half that matters: **the holes came from the form, not from the object getting smaller.**
+
+And the sustained lane now drives *that*. Sparse and still when the music is, dense and active
+when it drives — "less is more" and "enough going on" are the two ends of one lane rather than
+two competing targets. It reads `lowMid` because that band carries the most slow movement on
+the owner's own track through this exact window (σ of a 30 s moving average: low .1006,
+lowMid .1323, highMid .1303, high .1211), and this is the file's only slow structural lane.
+
 ## The audio rides amplitude, never identity
 
 Every clock above runs on `absTime`. **Nothing about the shape's identity is audio-driven** —
@@ -386,7 +540,7 @@ single-frame step, *and they still land*.
 | `fillIntensity` | `lvl1.highMid` rank | the opposition light opens |
 | `specular` | `lvl1.high` rank | the wetness follows the top end |
 | `saturation` | `lvl1.centroid` rank | spectral brightness opens the chroma |
-| `spacingOpen` | `lvl1.low` rank, **centred** | **sustained** energy holds the gaps between the nodules open — the one lane that reaches the form, and the only kind that may |
+| `spacingOpen` | `lvl1.lowMid` rank, **centred**, **inverted** | **sustained** energy CLOSES the gaps: sparse and open when the track is quiet, dense and busy when it drives — the one lane that reaches the form, and the only kind that may |
 | `keyIntensity` | `hit1.kick` envelope | the key punches, and because the key now CASTS, its shadow snaps with it |
 | the shape | **nothing at all** | see below |
 

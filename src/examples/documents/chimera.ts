@@ -120,7 +120,28 @@ export const chimeraDocument = document(
            mix no longer moves it, because it moves the FORM. */
         foldTravel: 0.18,
         minRadius: 0.47,
-        fixedRadius: 1,
+        /* ⚑⚑ 1.45, AND IT WAS 1 — WHICH PUT THE WHOLE SPACING LANE IN A DEAD ZONE (T1324b).
+           The owner: *"LESS IS MORE… we still need to EMBRACE NEGATIVE SPACE a little bit
+           better"*, and that is a claim a connectivity test can settle. Enclosed background
+           regions inside the silhouette, on a counter validated first against a synthetic
+           disc with 0 / 1 / 5 punched holes (it returned 0 / 1 / 5): the body measured
+           0.02–2.09% of its own interior across a minute, against 8.87% for that five-hole
+           disc. It is a solid knobbly mass, exactly as described.
+           ⚑ AND THE OPERATOR THAT FIXES IT IS THE ONE THE FILE ALREADY HAS, PARKED WHERE IT
+           DOES NOTHING. Sweeping every candidate with all clocks frozen (foldLimit, minRadius,
+           scale, bulbPower, iterations, this): `minRadius` moves the hole statistic NOT AT ALL
+           (0.30 / 0.62 / 0.80 are bit-identical — the orbit's radius essentially never goes
+           below it, so the inner branch of the sphere fold does not fire and BOTH the "reef
+           character" and `voidTravel`'s lane are no-ops), `foldLimit` moves coverage 13% -> 34%
+           with holes flat at 1, and this one moves holes 4 -> 12 -> 31 -> 43 and holeShare
+           0.74% -> 1.06% -> 4.08% -> 16.92% across effective 1.11 / 1.41 / 1.56 / 1.91.
+           ⚠ AND IT HAS A THRESHOLD, WHICH IS WHY THE LANE READ AS WORKING WHILE BUYING NO
+           FORM: below an effective ~1.25 the shape statistics do not move at all (0.60 and
+           1.20 are identical to 1.00 on coverage, holes and convolution) even though the
+           PIXELS do (RMS 6.93 and 8.88 against 0.00 for the A/A control). The lane was moving
+           the surface and not the body, and only a statistic that can see the SILHOUETTE
+           could tell those apart. It ships centred where the holes are real. */
+        fixedRadius: 1.45,
         /* ─── ⚑ THE SPACING LANE: THE GAPS BETWEEN THE NODULES, OPENING AND CLOSING ──────
          * The owner has asked for this THREE TIMES and until now it did not exist:
          * *"the shape is still kinda boring in terms of stuff actually moving away from
@@ -134,7 +155,11 @@ export const chimeraDocument = document(
          * pure scaling: every structure moves away from every other one and the distance
          * estimate stays exactly an estimate. A gap cut with a min/max against the chain
          * would cost the file its step scale and make every cost number in it dishonest. */
-        spacingTravel: 0.24,
+        /* ⚑ THE TRAVEL NARROWS BECAUSE THE LANE IS NOW *STEEP*. At the old base the operator
+           was flat, so 0.24 of travel bought nothing; centred at 1.45 the same 0.24 would run
+           from a nearly-solid body to the 3% dust at the top of the range. 0.10 keeps the slow
+           clock inside the region where every value is a form worth looking at. */
+        spacingTravel: 0.1,
         spacingPeriod: 103,
         /* Exactly 1 = the identity, and the term is SKIPPED at that value rather than
            computed and multiplied by nothing. The travel to `bulbPeak` is what walks the
@@ -166,7 +191,17 @@ export const chimeraDocument = document(
            of turning as a rigid set — a single axis reads as the object spinning, which is
            the one thing the owner explicitly did not ask for. */
         foldSpin: [0.31, 0.47, 0.23, 0],
-        detail: 2.5,
+        /* ⚑ 2.5 -> 3.0 (T1324b), AND THE ARGUMENT AGAINST RAISING IT — written below and
+           correct at the time — HAS AN EXPIRY DATE ON IT: it says `detail` buys quiet by
+           RESOLVING LESS STRUCTURE. The owner has since asked for exactly that (*"LESS IS
+           MORE… embrace negative space"*), so the cost and the goal now point the same way.
+           ⚠ BUT ONLY JUST, AND THE LIMIT WAS MEASURED: at the new density `detail` 4 fills
+           the very holes this pass exists to open — holes 31 -> 18, holeShare 5.52% -> 1.38%
+           — because a coarser termination threshold stops rays in the thin places and paints
+           the gaps solid. 3.0 WITH `stepScale` 0.36 keeps them (34 holes, 6.62%) and reads
+           0.943% speckle against 1.035% for the pair it replaces. A quality knob that buys
+           the noise number by spending the thing the row is about is not a quality knob. */
+        detail: 3,
         /* ⚑ 0.78 -> 0.5, AND IT IS THE SPECKLE FIX (T1322b) — THE ONLY TERM IN THE FILE THAT
            MOVED IT. The owner's *"speckled with noisy stuff… a freckly noisy mess"* has now
            survived three passes of MATERIAL work, and this pass measured why: it is not a
@@ -186,8 +221,21 @@ export const chimeraDocument = document(
            against marching THROUGH a thin feature at a grazing angle — and an overshoot at a
            grazing angle IS a land-or-miss per pixel. Raising `detail` instead buys the same
            statistic by resolving less structure, and it shows: at `detail` 3 the silhouette
-           visibly coarsens and the marks along the veins get WORSE. */
-        stepScale: 0.5,
+           visibly coarsens and the marks along the veins get WORSE.
+           ⛑ T1324b — 0.5 -> 0.36, AND THE HONEST HEADLINE IS THAT THIS LEVER IS NEARLY
+           EXHAUSTED. At the shipped density it still works (0.5 -> 0.42 -> 0.32 reads
+           1.024 -> 0.873 -> 0.767 and turns back up at 0.25 as rays start running out of
+           steps before the surface, coverage 21.1% -> 19.9%). AT THE NEW, OPEN DENSITY IT
+           BARELY MOVES AT ALL: 1.035 / 0.957 / 0.984 / 1.018 across 0.50 / 0.42 / 0.36 / 0.30.
+           ⚑ AND THE TWO ASKS PULL AGAINST EACH OTHER, WHICH IS WORTH MORE THAN THE NUMBER:
+           opening the form COSTS noise by itself — the same statistic reads 1.02% at the old
+           density and 1.54% at the top of the new lane's travel — because a sparser body is
+           more thin structure seen edge-on per pixel. 0.36 with `detail` 3 lands 0.943%, i.e.
+           slightly better than the build the owner called noisy, while the body it is
+           measured on has nine times the negative space. That is the whole of what the march
+           had left to give; a fifth complaint about noise needs a different idea, not a
+           sixth value of this. */
+        stepScale: 0.36,
         bailout: 256,
 
         /* ─── THE CLOCKS, PRIME ON PURPOSE — AND SPLIT BY THE OWNER'S RULING ─────────
@@ -210,6 +258,30 @@ export const chimeraDocument = document(
            own degenerate value ships the worst frame in the piece as the picture of it. */
         morphPhase: 0.37,
         morphPeriod: 89,
+        /* ⚑⚑ THE PALETTE TRAVELS AS A WHOLE (T1324b) — the owner's *"the lights color should
+           probably evolve over time"*, answered WITHOUT re-opening §V996. That invariant
+           forbids an UNBOUNDED rotation because it walks one colour into another's; what it
+           actually forbids is drift RELATIVE to the rest of the palette. `rotateHue` is a
+           rotation about the grey diagonal, so one turn applied to every colour together is
+           an isometry of the wheel and every pairwise arc is preserved exactly, at every t.
+           197 s is prime and coprime with every other clock here.
+           ⚠⚠ AND THE UNBOUNDED LAP WAS BUILT, RENDERED AND THEN BOUNDED — §V995 EARNING ITS
+           KEEP, because the algebra was right and the picture was not. At 0.30 of a turn the
+           arcs are all exactly intact and the frame is YELLOW PODS ON PINK STONE: the eye is
+           not rotation-invariant, so "every relative arc preserved" does not mean "the same
+           colour design". `paletteArc` 0.16 is a second ceiling for a second failure — §V996
+           stops two colours COLLIDING, this stops the palette leaving its own family — and
+           the swing still travels about 0.10 of a turn over a minute, which is visible
+           evolution. The arcs are asserted from rendered pixels, not from this paragraph. */
+        paletteTurn: 197,
+        paletteArc: 0.16,
+        /* The pod's shade nudge on the beat — *"maybe also slightly change in shade with
+           beat"*. It is the ONE per-element hue move in the file, so §V996's pair enumeration
+           is what sets it: 0.018 of a turn against a tightest measured pair of 0.048
+           (vein against key) leaves every arc positive for every t and every phase of the
+           drum. A shade and not a gain, because a beat-rate gain on a source is the pump this
+           owner has rejected three times. */
+        beatShade: 0.018,
         hueTurn: 37,
         /* ⚑ THE HUE TRAVEL IS BOUNDED NOW (T1322b), AND THAT IS A GUARD ON THE TRANSFORM
            rather than a third annotation on a third site. The rotation read `t / hueTurn`,
@@ -380,7 +452,19 @@ export const chimeraDocument = document(
            for 13 units of peak. The very brightest pixels still clip to white, which is what
            a bright source does in a photograph; what changes is that the pod is PINK rather
            than a white disc with a pink edge. */
-        nodeGlow: 9,
+        /* ⛑ 9 -> 5.5 (T1324b), AND IT IS A CONSEQUENCE OF THE GATE FIX RATHER THAN A TASTE
+           TWEAK. The pod used to be diced by the CONDUIT lattice, so most of any pod sat at
+           6% of this gain and only the fragments that landed on a live cell reached the top of
+           the range. Taking the gate once per pod puts a live pod at FULL gain over its whole
+           face, so the same number is now a much larger dose and the cores blew to white —
+           losing the hue they exist to carry, which is a standing item since pass 2.
+           ⚠ THE FIRST MEASUREMENT OF THIS COULD NOT SEE IT (§V994 again, in miniature): it
+           counted clipped pixels INSIDE the magenta mask, and a pixel that has gone white is
+           not magenta by construction, so it read 0.00% at every gain from 9 down to 2.5.
+           Counted directly — every channel above 225, as a share of lit pixels — it isolates
+           cleanly to this term: 0.174% shipped, 0.003% with `nodeGlow` 0, 0.142% with
+           `nodeSpill` 0, 0.153% with the flare removed entirely. 5.5 halves it to 0.100%. */
+        nodeGlow: 5.5,
         /* The pool a pod casts on the stone it sits in. This is the term that makes the
            owner's *"they need to ACTUALLY EMIT LIGHT"* true rather than approximated. */
         nodeSpill: 7.5,
@@ -647,8 +731,27 @@ export const chimeraDocument = document(
            * is silently compensating for unequal band spans. When the decorrelated contrast
            * channels land this lane REPOINTS AT THEM and the coefficient below is refitted;
            * it is not hand-decorrelated here, because two answers to one question is worse
-           * than one poor answer with a note on it. */
-          spacingOpen: expressionSlot(`0.22 * ${LEVELS("low")}`, 0.11),
+           * than one poor answer with a note on it.
+           * ⛑⛑ T1324b — THE LANE NOW CARRIES *DENSITY*, IT RUNS THE OTHER WAY, AND IT READS A
+           * DIFFERENT BAND. THREE CHANGES, EACH WITH ITS OWN REASON.
+           *   (1) DIRECTION. The owner: *"EMBRACE NEGATIVE SPACE"* and, in the same message,
+           *   *"have enough going on in the actual DRIVING PART OF THE SONG"*. Those are not
+           *   two targets, they are the TWO ENDS OF ONE LANE — sparse and open when the track
+           *   is quiet, closing up and proliferating when it drives — so the coefficient is
+           *   NEGATIVE. Raising `fixedRadius` pushes every structure away from every other,
+           *   which is what opens the holes, so more energy means a SMALLER offset.
+           *   (2) BAND. It reads `lowMid` rather than `low`, and that is measured rather than
+           *   preferred. §T1323b, on the owner's own track through this exact 60 s window, put
+           *   the surviving slow movement (σ of a 30 s moving average) at low .1006 /
+           *   lowMid .1323 / highMid .1303 / high .1211: `low` carries the LEAST slow
+           *   structure of the four and this lane is the file's only slow structural lane.
+           *   It is the same measurement that set the window; `haze` keeps `low`.
+           *   (3) SPAN. 0.18 of offset against an operator whose hole statistic runs
+           *   0.74% -> 16.92% over 0.8 of travel is a real excursion, and the retained 0.15
+           *   is the driven mean (the rank rests at 0.5), so §V914 still holds by arithmetic
+           *   — with no track the piece sits at the middle of its own density range, which
+           *   the stills show is the form worth looking at rather than either extreme. */
+          spacingOpen: expressionSlot(`0.24 - 0.18 * ${LEVELS("lowMid")}`, 0.15),
           fillIntensity: expressionSlot(`5.9 + 2.6 * ${LEVELS("highMid")}`, 7.2),
           specular: expressionSlot(`1.05 + 0.6 * ${LEVELS("high")}`, 1.35),
           /* Spectral brightness opens the chroma — a grade that follows the music rather
