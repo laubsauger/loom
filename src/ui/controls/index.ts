@@ -97,6 +97,13 @@ export type { Orientation } from "./orientation.ts";
 export { TextField } from "./text-field.tsx";
 export type { TextFieldProps } from "./text-field.tsx";
 
+export { ReferenceField } from "./reference-field.tsx";
+export type {
+  ReferenceCandidateView,
+  ReferenceFieldProps,
+  ReferenceTargetView,
+} from "./reference-field.tsx";
+
 export { VectorField } from "./vector-field.tsx";
 export type { VectorFieldProps } from "./vector-field.tsx";
 export { AXIS_LABELS, specForVector } from "./vector-spec.ts";
@@ -116,7 +123,7 @@ export { curvePolyline } from "./curve-polyline.ts";
 export type { CurvePoint } from "./curve-polyline.ts";
 
 export { ParameterControl } from "./parameter-control.tsx";
-export type { ParameterControlProps } from "./parameter-control.tsx";
+export type { ParameterControlProps, ReferenceParameter } from "./parameter-control.tsx";
 
 export type { ExpressionReferenceSource } from "./expression-completion.ts";
 

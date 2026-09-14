@@ -21,6 +21,44 @@ import type { NodeId } from "@domain/types/ids.ts";
  * node's own chrome.
  */
 
+/**
+ * One tier BELOW the wire each kind echoes (T391).
+ *
+ * The owner's verdict on the first landing was "ugly", twice: a heavy light-grey dash was
+ * the loudest thing on a canvas of thin muted wires, while describing the WEAKER of the
+ * two relationships. So the hue keeps saying which kind of relationship it is, and every
+ * one of them is pulled down a step from the port token a real edge would use — `driven`
+ * furthest, because `--port-value` is deliberately the lightest token in the set (see
+ * `tokens.css`) and was the one on screen. Weight and opacity do the rest, in the
+ * stylesheet; §V17 keeps every literal colour in the token file.
+ *
+ * ⚑ IT LIVES HERE, IN THE PURE MODULE, BECAUSE THERE ARE TWO SURFACES NOW (T987). The
+ * canvas strokes a dashed line with it; the inspector's reference control wears the same
+ * hue on the parameter that CAUSES that line. Before T987 there was no visual relation
+ * between the two at all — a reference sat in a plain text box, and the owner read the
+ * text box, found nothing tying it to the dashed line on the canvas, and reported the UI
+ * parameter as MISSING. A second copy of this table in the panel would re-open exactly
+ * that gap the first time one of the two is re-hued.
+ */
+export const REFERENCE_KIND_COLOR: Record<ParameterDependencyKind, string> = {
+  // Still the number family, one tier down from the CHOP wire it echoes.
+  driven: "var(--port-scalar)",
+  // An expression reference belongs to no family; quiet grey, clearly not a signal.
+  reference: "var(--text-dim)",
+  // T350: the feedback loop the user used to WIRE — the temporal family's own hue,
+  // because this line is the loop. It reads as a loop at this weight, not as a wire.
+  feedback: "var(--port-texture2d)",
+  // T447: scene assembly, hued per role so a Render's camera, lights and geometry read
+  // apart at a glance — and apart from feedback's temporal hue.
+  camera: "var(--port-vector)",
+  light: "var(--port-scalar)",
+  // T704: a projector reference reads in the light family's hue — it IS a light to the
+  // renderer, and a separate hue would imply a separate assembly concept.
+  projector: "var(--port-scalar)",
+  scene: "var(--port-pointset)",
+  material: "var(--text-dim)",
+};
+
 export interface Rect {
   readonly x: number;
   readonly y: number;

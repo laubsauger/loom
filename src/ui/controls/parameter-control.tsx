@@ -31,6 +31,8 @@ import {
 } from "./label-drag.ts";
 import { NumberField } from "./number-field.tsx";
 import { PulseField } from "./pulse-field.tsx";
+import { ReferenceField } from "./reference-field.tsx";
+import type { ReferenceFieldProps } from "./reference-field.tsx";
 import { StopsField } from "./stops-field.tsx";
 import { ParameterModePanel } from "./parameter-mode.tsx";
 import type { ExpressionReferenceSource } from "./expression-completion.ts";
@@ -67,6 +69,16 @@ import styles from "./controls.module.css";
  * channel drivable while its siblings stay constant. And a compound value edit is ONE
  * patch: picking a colour is one undo entry, never four (§V114).
  */
+
+/**
+ * T987 — everything a reference row needs that only the layer above can answer: what the
+ * parameter names now, what it may name, whether it is a list, and the relationship's hue.
+ * The label, the disabled state and the write path come from the row, as for every field.
+ */
+export type ReferenceParameter = Omit<
+  ReferenceFieldProps,
+  "label" | "disabled" | "id" | "describedBy" | "onChange"
+>;
 
 export interface ParameterControlProps {
   parameterKey: string;
@@ -112,6 +124,18 @@ export interface ParameterControlProps {
   inactive?: string | null;
   /** The stored mode envelope at the bare key, when the document holds one. */
   slot?: ParameterSlot | undefined;
+  /**
+   * T987 — this string parameter NAMES another node, and here is what it may name.
+   *
+   * Injected exactly as `codeField` is, and for the same reason: the fact is real but this
+   * kit cannot reach it. "Which parameters are references" is on the node DEFINITION
+   * (`sourceReferences`), "what may fill this one" is a question about the DOCUMENT, and
+   * the relationship's hue is the canvas's `REFERENCE_KIND_COLOR` — three things the layer
+   * above holds and this one must not import. Absent, a reference parameter falls back to
+   * the plain text field it has always been, which is what every test of the kit alone and
+   * every node-embedded row still sees.
+   */
+  reference?: ReferenceParameter | undefined;
   /**
    * T492: the REAL code editor, injected by the layer that owns it. The control kit
    * cannot import CodeMirror (it is the leaf layer), and a second lightweight editor
@@ -180,6 +204,7 @@ function ParameterControlImpl({
   inactive = null,
   onPulse,
   slot: storedSlot,
+  reference,
   codeField,
   components,
   diagnostic = null,
@@ -561,6 +586,28 @@ function ParameterControlImpl({
     }
 
     case "string":
+      /*
+       * T987 — a string that NAMES A NODE is not text, and the row says so: the picker
+       * carries the referenced node's type beside its name and a dashed mark in the very
+       * colour the canvas strokes that relationship's line with. The plain text field is
+       * the fallback for every caller that cannot resolve the graph (a node-embedded row,
+       * a test of this kit alone), never the answer for a reference the caller DID resolve.
+       */
+      if (reference !== undefined) {
+        return row(
+          <ReferenceField
+            {...shared}
+            id={controlId}
+            color={reference.color}
+            targets={reference.targets}
+            candidates={reference.candidates}
+            list={reference.list}
+            noun={reference.noun}
+            onChange={(next, phase) => emit(next, phase)}
+          />,
+          { hint: reference.noun },
+        );
+      }
       return row(
         <TextField
           {...shared}

@@ -4,6 +4,7 @@ import { isParameterSlot } from "../parameters/slots.ts";
 import { parseExpression, type ExpressionAst } from "../expressions/index.ts";
 import { nodeNames } from "./names.ts";
 import { sourceReferenceTokens, sourceReferencesOf } from "./source-references.ts";
+import type { SourceReferenceSpec } from "./source-references.ts";
 
 /**
  * What a parameter DEPENDS ON, as edges between nodes (T248, §V154).
@@ -166,6 +167,37 @@ export function bindingTargets(
   return targets;
 }
 
+/**
+ * WHICH RELATIONSHIP a source-reference spec states — the thing the canvas hues its
+ * dashed line by.
+ *
+ * Exported (T987) because a second surface now has to answer the same question: the
+ * inspector's reference control wears the SAME hue as the line the parameter causes,
+ * and that tie is the whole repair — the owner read a `camera` name in a plain text box
+ * and concluded the UI parameter was missing, because nothing on screen related the two.
+ * A private copy of this mapping in the panel would let the swatch and the line drift
+ * into saying different things about one relationship, which is the §V154 shape (a
+ * picture that disagrees with the walk) wearing a colour instead of a topology.
+ */
+export function sourceReferenceKind(
+  nodeType: string,
+  spec: SourceReferenceSpec,
+): ParameterDependencyKind {
+  if (nodeType === "feedback") return "feedback";
+  switch (spec.input) {
+    case "camera":
+      return "camera";
+    case "lights":
+      return "light";
+    case "projectors":
+      return "projector";
+    case "material":
+      return "material";
+    default:
+      return "scene";
+  }
+}
+
 /** The `kind: "feedback"` half: a source-reference parameter, resolved like any name. */
 function sourceReferenceDependency(
   node: GraphNode,
@@ -174,18 +206,7 @@ function sourceReferenceDependency(
 ): ParameterDependency[] {
   const found: ParameterDependency[] = [];
   for (const spec of sourceReferencesOf(node.type)) {
-    const kind: ParameterDependencyKind =
-      node.type === "feedback"
-        ? "feedback"
-        : spec.input === "camera"
-          ? "camera"
-          : spec.input === "lights"
-            ? "light"
-            : spec.input === "projectors"
-              ? "projector"
-            : spec.input === "material"
-              ? "material"
-              : "scene";
+    const kind = sourceReferenceKind(node.type, spec);
     for (const name of sourceReferenceTokens(spec, node.parameters)) {
       const to = byName.get(name);
       if (to === undefined) continue;

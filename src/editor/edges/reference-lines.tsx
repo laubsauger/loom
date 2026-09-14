@@ -1,8 +1,9 @@
 import { memo, useMemo } from "react";
 import { ViewportPortal, useNodes, useStore as useFlowStore } from "@xyflow/react";
-import type { ParameterDependency, ParameterDependencyKind } from "@domain/graph/parameter-dependencies.ts";
+import type { ParameterDependency } from "@domain/graph/parameter-dependencies.ts";
 import { MIN_NODE_SIZE } from "@domain/types/graph.ts";
 import {
+  REFERENCE_KIND_COLOR,
   arrowPoints,
   referenceLinesOf,
   screenScale,
@@ -46,36 +47,6 @@ import styles from "./reference-lines.module.css";
  * where the node actually is, so panning away takes the line with it; we never synthesise
  * a stub at the viewport edge, because a stub points at nothing and invites being clicked.
  */
-
-/**
- * One tier BELOW the wire each kind echoes (T391).
- *
- * The owner's verdict on the first landing was "ugly", twice: a heavy light-grey dash was
- * the loudest thing on a canvas of thin muted wires, while describing the WEAKER of the
- * two relationships. So the hue keeps saying which kind of relationship it is, and every
- * one of them is pulled down a step from the port token a real edge would use — `driven`
- * furthest, because `--port-value` is deliberately the lightest token in the set (see
- * `tokens.css`) and was the one on screen. Weight and opacity do the rest, in the
- * stylesheet; §V17 keeps every literal colour in the token file.
- */
-const KIND_COLOR: Record<ParameterDependencyKind, string> = {
-  // Still the number family, one tier down from the CHOP wire it echoes.
-  driven: "var(--port-scalar)",
-  // An expression reference belongs to no family; quiet grey, clearly not a signal.
-  reference: "var(--text-dim)",
-  // T350: the feedback loop the user used to WIRE — the temporal family's own hue,
-  // because this line is the loop. It reads as a loop at this weight, not as a wire.
-  feedback: "var(--port-texture2d)",
-  // T447: scene assembly, hued per role so a Render's camera, lights and geometry read
-  // apart at a glance — and apart from feedback's temporal hue.
-  camera: "var(--port-vector)",
-  light: "var(--port-scalar)",
-  // T704: a projector reference reads in the light family's hue — it IS a light to the
-  // renderer, and a separate hue would imply a separate assembly concept.
-  projector: "var(--port-scalar)",
-  scene: "var(--port-pointset)",
-  material: "var(--text-dim)",
-};
 
 /**
  * Tighter and lighter than a data edge, and all four scale with zoom (T391).
@@ -178,7 +149,7 @@ export const ReferenceLines = memo(function ReferenceLines({ dependencies }: Ref
         aria-hidden
       >
         {drawn.map(({ line, segment }) => {
-          const color = KIND_COLOR[line.kind];
+          const color = REFERENCE_KIND_COLOR[line.kind];
           return (
             <g
               key={line.key}

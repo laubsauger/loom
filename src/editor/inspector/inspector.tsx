@@ -21,6 +21,7 @@ import { TabsContent, TabsList, TabsRoot, TabsTrigger } from "@ui/primitives/tab
 import { CommonReadout, CommonSection } from "./common-section.tsx";
 import { ConnectionsSection } from "./connections-section.tsx";
 import { connectionModel } from "./connections.ts";
+import { referenceParameters } from "./reference-parameters.ts";
 import { AudioSection, audioSectionParameters } from "./audio-section.tsx";
 import { SyncOffsetSuggestion } from "./sync-offset-suggestion.tsx";
 import { WebcamSection, webcamSectionParameters } from "./webcam-section.tsx";
@@ -609,6 +610,17 @@ export function Inspector({
   const groups = groupParameters(
     resolved.entries.filter((entry) => !presentedBySections.has(entry.key)),
   );
+  /*
+   * T987 — the rows whose value is another node's NAME, and what each may name.
+   *
+   * Empty for every node type that declares no `sourceReferences`, which is nearly all of
+   * them, so the lookup below costs one `Map.get` per row and changes nothing anywhere
+   * else. It is rebuilt per render deliberately: the candidates ARE the document, so a
+   * camera added or renamed while the panel is open has to appear in the picker, and the
+   * row memo still bails out because `sameProps` compares this structurally rather than
+   * by identity.
+   */
+  const referenceRows = referenceParameters(graph, bus.registry, node);
 
   const inputs: readonly InputResolution[] =
     inputResolutions ??
@@ -861,6 +873,13 @@ export function Inspector({
                 // whole defect — `expression-references.test.tsx` mounts this pane and
                 // fails if this line goes away (§V272/§V844).
                 references={references}
+                /*
+                 * T987: a name-reference parameter reads as a REFERENCE — a picker over
+                 * the nodes it may legally name, wearing the same hue the canvas strokes
+                 * the dashed line with. Absent on every other row, which keeps the plain
+                 * field it has always had.
+                 */
+                reference={referenceRows.get(entry.key)}
                 {...(entry.components === undefined ? {} : { components: entry.components })}
                 diagnostic={entry.diagnostic}
                 // §V114: whatever the control hands over — a mode envelope, or all four

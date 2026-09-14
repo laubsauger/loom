@@ -1341,3 +1341,97 @@
   background: none;
   color: var(--text-disabled);
 }
+
+/* ---- reference (T987) ----------------------------------------------- */
+
+/*
+  A parameter that NAMES another node, rather than a parameter that holds text.
+
+  The whole point of this block is the DASHED MARK below: it is the canvas's reference
+  line, at row scale, painted from `--reference-hue` — which the control sets from
+  `REFERENCE_KIND_COLOR`, the same table the line itself is stroked from. Before T987
+  these parameters were plain text boxes with no visual relation to the dashed line they
+  cause, and the owner concluded the UI parameter was missing when it was merely
+  unrecognisable. §V17 holds throughout: the hue arrives as a `var(--port-…)` reference.
+*/
+
+.reference {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.referencePick {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+/*
+  The line, at chip scale. Dashed, in the relationship's hue, and the same subordinate
+  weight the canvas uses — a hairline, not a rule. `flex: 0 0 auto` so it never gives way:
+  it is the shortest thing in the row and the one that says what the row IS.
+*/
+.referenceDash {
+  flex: 0 0 auto;
+  width: 12px;
+  border-top: var(--hairline) dashed var(--reference-hue, var(--text-dim));
+}
+
+.referenceChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.referenceChip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: 0 var(--space-1);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+}
+
+.referenceName {
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-meta);
+}
+
+/* §V369: a name nothing is called is an ERROR, not a quietly smaller scene. */
+.referenceDangling {
+  border-color: var(--error);
+}
+
+.referenceMissing {
+  color: var(--error);
+}
+
+.referenceRemove {
+  flex: 0 0 auto;
+  padding: 0 var(--space-1);
+  border: 0;
+  background: none;
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+  font-size: var(--fs-meta);
+  line-height: 1;
+  cursor: default;
+}
+
+.referenceRemove:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.referenceRemove:disabled {
+  color: var(--text-disabled);
+}

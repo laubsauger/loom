@@ -1,6 +1,12 @@
 export { SignalEdge } from "./signal-edge.tsx";
 export { ReferenceLines } from "./reference-lines.tsx";
-export { arrowPoints, referenceLinesOf, screenScale, segmentBetween } from "./reference-geometry.ts";
+export {
+  REFERENCE_KIND_COLOR,
+  arrowPoints,
+  referenceLinesOf,
+  screenScale,
+  segmentBetween,
+} from "./reference-geometry.ts";
 export type { Rect, ReferenceLine, Segment } from "./reference-geometry.ts";
 export {
   REFERENCE_LINES_DEFAULT,

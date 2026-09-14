@@ -60,11 +60,15 @@ test("a render node offers no input sockets, and a named camera paints a hued re
   expect(camName.length).toBeGreaterThan(0);
 
   await selectNode(page, render);
-  const field = page.locator('input[aria-label="Camera"]');
+  /*
+   * T987: the camera reference is a PICKER now, not a text box — the parameter that
+   * causes the dashed line reads as a reference instead of as text. The claim below is
+   * unchanged; what moved is how the name gets written, and the picker offering the
+   * camera AT ALL is itself part of the fix (it lists what the compiler would accept).
+   */
+  const field = page.locator('select[aria-label="Camera"]');
   await field.scrollIntoViewIfNeeded();
-  await field.click();
-  await field.fill(camName);
-  await field.press("Enter");
+  await field.selectOption(camName);
 
   // (b) B54's lesson, as pixels: the line is in the DOM AND spans real distance, hued
   // as the camera relationship (T248/T391) — the visibility the socket used to fake.
