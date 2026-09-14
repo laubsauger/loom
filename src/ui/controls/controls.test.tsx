@@ -419,6 +419,33 @@ describe("manifest-driven dispatch covers every ParameterDefinition variant", ()
     expect(screen.getAllByText("px").length).toBeGreaterThan(0);
   });
 
+  it("T1321b — a caller's note JOINS the range on the label, it does not replace it", () => {
+    render(
+      <ParameterControl
+        parameterKey="syncOffset"
+        definition={{ type: "number", label: "Sync Offset", default: 0, min: -0.5, max: 0.5 }}
+        value={0}
+        hintSuffix="suggest ≥ 43 ms"
+        onChange={vi.fn()}
+      />,
+    );
+    // The range is what a user reads to know what the field accepts; a suggestion that
+    // silently ate it would trade one fact for another.
+    expect(screen.getByText("-0.5…0.5 · suggest ≥ 43 ms")).toBeDefined();
+  });
+
+  it("T1321b — no note, no change: the hint is the range alone", () => {
+    render(
+      <ParameterControl
+        parameterKey="syncOffset"
+        definition={{ type: "number", label: "Sync Offset", default: 0, min: -0.5, max: 0.5 }}
+        value={0}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("-0.5…0.5")).toBeDefined();
+  });
+
   it("keeps node-embedded controls compact: no hints, no descriptions (doc §8.1)", () => {
     render(
       <ParameterControl

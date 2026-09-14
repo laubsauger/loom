@@ -93,6 +93,26 @@ describe("T994 — each section claims the keys it presents", () => {
     expect(genericDeviceBox()).toBeNull();
   });
 
+  it("T1321b — the measured floor rides the Sync Offset field itself", async () => {
+    await mount("audioFileIn", {
+      audioStatus: () => ({
+        kind: "live" as const,
+        latency: { outputSeconds: 0.021, baseSeconds: 0.005, frameSeconds: 1 / 60, suggestedSeconds: 0.0427 },
+      }),
+    });
+    // The number and the box it belongs in are now the same place. "≥" because it is a
+    // FLOOR: the browser cannot see the render and display path (§V985).
+    expect(screen.getByText(/suggest ≥ 43 ms/)).toBeDefined();
+  });
+
+  it("T1321b/§V986 — nothing measured, nothing claimed: no suggestion at all", async () => {
+    await mount("audioFileIn", { audioStatus: () => ({ kind: "live" as const, latency: null }) });
+    // The field still reads 0 and is still editable by hand — that is the manual slider the
+    // owner asked about, and it was always there. What must NOT happen is an unmeasured 0
+    // acquiring the authority of a measured one by wearing a suggestion beside it.
+    expect(screen.queryByText(/suggest/)).toBeNull();
+  });
+
   it("GUARD: audioIn with NO session surface keeps the generic device control editable", async () => {
     await mount("audioIn");
     // No surface, no section — and the claim must lapse with it: the raw field is the

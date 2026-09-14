@@ -113,6 +113,20 @@ export interface ParameterControlProps {
   /** The stored mode envelope at the bare key, when the document holds one. */
   slot?: ParameterSlot | undefined;
   /**
+   * T1321b — a caller's note about this parameter, joined to the range on the label.
+   *
+   * The owner asked for the measured audio latency to appear AT the field it is for, not
+   * only in the panel's status line: a number and the box it belongs in, in different parts
+   * of the panel, are not connected by anything the reader can see.
+   *
+   * A SUGGESTION, never a value. It is rendered beside the range and writes nothing —
+   * `syncOffset` is stored in the document and applied identically to an offline render, so
+   * a machine-derived prefill would quietly retime a shipped take when the project is opened
+   * on a different box. Absent when the caller has nothing to say, which is how §V986's
+   * distinction survives: no measurement produces no claim, never a confident zero.
+   */
+  hintSuffix?: string | null;
+  /**
    * T492: the REAL code editor, injected by the layer that owns it. The control kit
    * cannot import CodeMirror (it is the leaf layer), and a second lightweight editor
    * here would be the two-implementations shape T356 deleted — so the editor arrives
@@ -178,6 +192,7 @@ function ParameterControlImpl({
   disabled = false,
   driven = false,
   inactive = null,
+  hintSuffix = null,
   onPulse,
   slot: storedSlot,
   codeField,
@@ -444,6 +459,13 @@ function ParameterControlImpl({
    */
   const sharedLocked = { ...shared, disabled: disabled || drivenBy !== null };
 
+  /** The range and the caller's note, in that order. Either alone is the whole hint. */
+  const withSuffix = (base: string | null): string | null => {
+    const suffix = hintSuffix ?? null;
+    if (suffix === null || suffix === "") return base;
+    return base === null || base === "" ? suffix : `${base} · ${suffix}`;
+  };
+
   const row = (
     children: ReactNode,
     options?: {
@@ -496,7 +518,7 @@ function ParameterControlImpl({
           {...(definition.unit === undefined ? {} : { unit: definition.unit })}
           onChange={(next, phase) => emit(next, phase)}
         />,
-        { hint: describeRange(definition) },
+        { hint: withSuffix(describeRange(definition)) },
       );
 
     case "boolean":

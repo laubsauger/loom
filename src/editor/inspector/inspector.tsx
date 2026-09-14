@@ -814,6 +814,31 @@ export function Inspector({
       />
     ) : null;
 
+  /*
+   * T1321b — THE MEASURED FLOOR, AT THE FIELD IT IS FOR.
+   *
+   * The owner, after T1319b shipped the suggestion in the Audio capture status line: *"it
+   * could be a slider or something that we can manually adjust and we just prefill it with
+   * this adjusted value."* The slider already exists — `syncOffset` is a plain number
+   * parameter, default 0, always hand-editable. What was missing is that the NUMBER and the
+   * FIELD it belongs in sat in different parts of the panel, so nothing connected them.
+   *
+   * Read ONCE here rather than per row: `audioStatus()` builds a fresh object per call, and
+   * calling it inside the map would allocate one per parameter on every render.
+   *
+   * It never writes. `syncOffset` is stored in the document and applied identically offline
+   * — that is what makes a take reproduce what was heard — so a machine-derived prefill
+   * would silently retime a finished piece when it is opened on another machine. Suggest
+   * always; write only on the gesture the Audio section already offers.
+   *
+   * §V986 one surface along: with no measurement there is NO hint, so an unmeasured 0 never
+   * acquires the authority of a measured one.
+   */
+  const suggestedSyncOffset =
+    audioStatus === undefined ? null : (audioStatus().latency?.suggestedSeconds ?? null);
+  const syncOffsetHint =
+    suggestedSyncOffset === null ? null : `suggest ≥ ${(suggestedSyncOffset * 1000).toFixed(0)} ms`;
+
   const parameterSections =
     groups.length === 0 ? (
       // §V91: name the STATE, not the pane's purpose. A node with no parameters is a
@@ -855,6 +880,10 @@ export function Inspector({
                 // named the bug. The predicate reads the node's EFFECTIVE values, so a
                 // type driven by an expression dims the same parameters a typed one does.
                 inactive={entry.definition.inactiveWhen?.(resolved.values) ?? null}
+                // T1321b: the measured floor rides the label's own hint, beside the range.
+                {...(entry.key === "syncOffset" && syncOffsetHint !== null
+                  ? { hintSuffix: syncOffsetHint }
+                  : {})}
                 slot={entry.slot}
                 // T990: the graph itself, so `op('` offers the node names and their
                 // members instead of an empty menu. THE call site whose absence was the
