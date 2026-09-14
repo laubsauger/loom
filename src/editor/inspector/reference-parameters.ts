@@ -1,10 +1,16 @@
 import { nodeNames } from "@domain/graph/names.ts";
-import { sourceReferenceKind } from "@domain/graph/parameter-dependencies.ts";
+import {
+  channelTargetName,
+  dependenciesFrom,
+  sourceReferenceKind,
+} from "@domain/graph/parameter-dependencies.ts";
+import { effectiveParameterSchema } from "@domain/parameters/resolve.ts";
+import { isComponentKeyOf, parseComponentKey } from "@domain/parameters/slots.ts";
 import { sourceReferenceTokens, sourceReferencesOf } from "@domain/graph/source-references.ts";
 import type { GraphDocument, GraphNode } from "@domain/types/graph.ts";
 import type { NodeDefinition } from "@domain/types/node-definition.ts";
 import { REFERENCE_KIND_COLOR } from "@editor/edges/index.ts";
-import type { ReferenceParameter } from "@ui/controls/index.ts";
+import type { ParameterSourceView, ReferenceParameter } from "@ui/controls/index.ts";
 
 /**
  * What the inspector must answer for a parameter that NAMES another node — T987.
@@ -91,4 +97,98 @@ export function referenceParameters(
   }
 
   return models;
+}
+
+/**
+ * WHICH NODES each of a node's rows READS — T1336b, the other half of the same tie.
+ *
+ * §T987 above answers it for a parameter whose VALUE is a node's name. This answers it for
+ * a parameter whose BINDING names one: `op('lfo1').chan.value` in an expression, or a
+ * `driven` slot addressing a channel. Those two produce the overwhelming majority of the
+ * dashed lines on the canvas, and until now the panel named the node behind NONE of them —
+ * the name was written once, inside the expression text, behind the mode-panel disclosure.
+ * The owner reported the parameter as missing twice over for exactly that reason.
+ *
+ * ⚑ THE WALK IS `dependenciesFrom`, WHICH IS THE CANVAS'S OWN. `parameterDependencies` is
+ * what `graph-canvas.tsx` flattens into lines; `dependenciesFrom` is its single-node form,
+ * already exported and already used by the cycle gate. Re-deriving "which node does this
+ * expression read" here would be a third opinion on §V154's union, and the §T248 docblock
+ * is explicit that a picture disagreeing with the walk is worse than no picture. So the
+ * inspector reads the dependencies the canvas draws, and hues them from the table the
+ * canvas strokes with.
+ *
+ * Two things are deliberately left out:
+ *
+ *  - the SOURCE-REFERENCE kinds (`camera`, `scene`, `feedback`, …). `ReferenceField` names
+ *    those on the control itself, in this same hue; naming them a second time under the
+ *    field would be two marks for one relationship.
+ *  - a name that resolves to NOTHING. `dependenciesFrom` drops it, the canvas draws no
+ *    line for it, and so there is no line here to tie a mark to. `op('ghost')` is reported
+ *    where it belongs — as the row's diagnostic, at resolution.
+ *
+ * Keyed by the ROW's parameter key: a binding on `rotate.y` (§V113 — E10's own, and the
+ * one the owner was looking at) belongs to the `rotate` row, because that is the row that
+ * exists. The component/base split is `isComponentKeyOf`, the schema's own rule, so a
+ * parameter whose name merely contains a dot is not silently re-homed onto a row that does
+ * not exist.
+ */
+export function parameterSources(
+  graph: GraphDocument,
+  registry: ReferenceRegistry,
+  node: GraphNode,
+): ReadonlyMap<string, readonly ParameterSourceView[]> {
+  const rows = new Map<string, ParameterSourceView[]>();
+  /*
+   * §T903 — a node INSTANCE is in hand, so the schema comes through the funnel. A
+   * component's promoted parameters exist only in its effective schema, and reading the
+   * DECLARED one here would decide that `blur.radius` is not a component key on exactly
+   * the nodes whose keys are assembled at runtime.
+   */
+  const schema = effectiveParameterSchema(registry.get(node.type), node.parameters);
+
+  for (const dependency of dependenciesFrom(graph, node, node.id)) {
+    if (dependency.kind !== "reference" && dependency.kind !== "driven") continue;
+    const target = graph.nodes[dependency.to];
+    if (target === undefined) continue;
+
+    const parsed = parseComponentKey(dependency.parameterKey);
+    const component =
+      parsed === null || !isComponentKeyOf(schema, dependency.parameterKey) ? null : parsed;
+    const rowKey = component?.base ?? dependency.parameterKey;
+    const view: ParameterSourceView = {
+      // The canvas's own table, read rather than copied — §T987's tie, on §T986's half of
+      // the parameter model.
+      color: REFERENCE_KIND_COLOR[dependency.kind],
+      // The name AS THE DOCUMENT WROTE IT, which is the label `nodeNames` resolved and the
+      // text the user will find in the expression (§B170: never an id). A channel address
+      // carries a channel after the colon; only the part before it names the node.
+      name:
+        dependency.kind === "driven"
+          ? channelTargetName(dependency.address)
+          : dependency.address,
+      type: target.type,
+      channel: component?.component ?? null,
+      address: dependency.address,
+    };
+
+    const existing = rows.get(rowKey);
+    if (existing === undefined) {
+      rows.set(rowKey, [view]);
+      continue;
+    }
+    // `op('lfo1').chan.a + op('lfo1').chan.b` is ONE relationship read twice, and the
+    // canvas collapses it to one line for the same reason (`referenceLinesOf`). Two
+    // identical marks under one field would say there are two of something.
+    if (
+      existing.some(
+        (entry) =>
+          entry.name === view.name && entry.channel === view.channel && entry.color === view.color,
+      )
+    ) {
+      continue;
+    }
+    existing.push(view);
+  }
+
+  return rows;
 }

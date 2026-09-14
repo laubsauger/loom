@@ -21,7 +21,7 @@ import { TabsContent, TabsList, TabsRoot, TabsTrigger } from "@ui/primitives/tab
 import { CommonReadout, CommonSection } from "./common-section.tsx";
 import { ConnectionsSection } from "./connections-section.tsx";
 import { connectionModel } from "./connections.ts";
-import { referenceParameters } from "./reference-parameters.ts";
+import { parameterSources, referenceParameters } from "./reference-parameters.ts";
 import { AudioSection, audioSectionParameters } from "./audio-section.tsx";
 import { SyncOffsetSuggestion } from "./sync-offset-suggestion.tsx";
 import { WebcamSection, webcamSectionParameters } from "./webcam-section.tsx";
@@ -634,6 +634,15 @@ export function Inspector({
    * by identity.
    */
   const referenceRows = referenceParameters(graph, bus.registry, node);
+  /*
+   * T1336b — WHO each row's bindings read, so an expression names its source at rest.
+   *
+   * The same walk the canvas draws its dashed lines from (`dependenciesFrom`, §V154), so
+   * the two surfaces cannot disagree about who reads whom. Empty for every row bound to
+   * nothing, which is nearly all of them, and rebuilt per render for the reason above: a
+   * node renamed while the panel is open has to move the name under the field with it.
+   */
+  const sourceRows = parameterSources(graph, bus.registry, node);
 
   const inputs: readonly InputResolution[] =
     inputResolutions ??
@@ -898,6 +907,11 @@ export function Inspector({
                  * field it has always had.
                  */
                 reference={referenceRows.get(entry.key)}
+                /*
+                 * T1336b: the nodes this row reads, named under the field in the hue of
+                 * the line they cause. Absent on every row bound to nothing.
+                 */
+                sources={sourceRows.get(entry.key)}
                 {...(entry.components === undefined ? {} : { components: entry.components })}
                 diagnostic={entry.diagnostic}
                 // §V114: whatever the control hands over — a mode envelope, or all four

@@ -1390,6 +1390,16 @@
   list-style: none;
 }
 
+/*
+  T1336b — the same chips, read-only, sitting UNDER the field rather than above a picker.
+  The one thing that differs is the gap to the control above, which §T987's list gets from
+  its parent's `flex-direction: column` and this one has no parent to get it from. Nothing
+  else is restated: a second chip would be a second answer to "a node, and what it is".
+*/
+.parameterSources {
+  margin-top: var(--space-1);
+}
+
 .referenceChip {
   display: flex;
   align-items: center;

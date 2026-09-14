@@ -3,6 +3,8 @@ import type { KeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from
 import { cx } from "../cx.ts";
 import { DRAG_THRESHOLD_PX, dragModifierFrom } from "./drag-math.ts";
 import type { LabelDragHandlers } from "./label-drag.ts";
+import { ParameterSources } from "./parameter-sources.tsx";
+import type { ParameterSourceView } from "./parameter-sources.tsx";
 import styles from "./controls.module.css";
 
 /**
@@ -42,6 +44,18 @@ export interface ControlRowProps {
    * only ever meant "a driver, somewhere".
    */
   drivenBadge?: string | null;
+  /**
+   * T1336b — the nodes a binding on this row READS, named under the control.
+   *
+   * `drivenBadge` says a mode decides this value; this says WHICH NODE it reads, which is
+   * the half the owner could not find. It rides under the field rather than in the label
+   * line because the label column is `minmax(64px, 40%)` with `overflow: hidden` — a name
+   * and a type badge put there would be ellipsised away at exactly the widths the panel is
+   * usually docked at, which is a fix that is invisible where it is needed (§V1016).
+   *
+   * Empty or absent on every row whose bindings name nothing, which is nearly all of them.
+   */
+  sources?: readonly ParameterSourceView[];
   variant?: ControlVariant;
   /** Renders the label above the control — for multiline text and wide controls. */
   stacked?: boolean;
@@ -204,6 +218,7 @@ export function ControlRow({
   inactive = null,
   driven = false,
   drivenBadge = null,
+  sources,
   variant = "inspector",
   stacked = false,
   controlId,
@@ -315,7 +330,17 @@ export function ControlRow({
         ) : null}
         {!compact && hint ? <span className={styles.hint}>{hint}</span> : null}
       </LabelBox>
-      <div className={styles.control}>{children}</div>
+      <div className={styles.control}>
+        {children}
+        {/*
+          T1336b — under the field, in the control's own column, so the mark lines up with
+          the value it explains and wraps instead of truncating. The node variant never
+          gets the prop: an embedded row is the compact one (doc §8.1).
+        */}
+        {compact || sources === undefined ? null : (
+          <ParameterSources label={label} sources={sources} />
+        )}
+      </div>
       {expanded && expansion !== undefined ? (
         <div className={styles.expansion}>{expansion}</div>
       ) : null}

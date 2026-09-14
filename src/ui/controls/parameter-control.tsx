@@ -31,6 +31,7 @@ import {
 } from "./label-drag.ts";
 import { NumberField } from "./number-field.tsx";
 import { PulseField } from "./pulse-field.tsx";
+import type { ParameterSourceView } from "./parameter-sources.tsx";
 import { ReferenceField } from "./reference-field.tsx";
 import type { ReferenceFieldProps } from "./reference-field.tsx";
 import { StopsField } from "./stops-field.tsx";
@@ -137,6 +138,17 @@ export interface ParameterControlProps {
    */
   reference?: ReferenceParameter | undefined;
   /**
+   * T1336b — the nodes THIS row's bindings read, for the row to name under the field.
+   *
+   * Injected exactly as `reference` and `codeField` are: the fact is real, and this kit
+   * cannot reach it. Resolving `op('lfo1')` to a node — and to the hue the canvas draws
+   * that dashed line in — is a question about the DOCUMENT and about `src/editor`'s
+   * `REFERENCE_KIND_COLOR`, neither of which the leaf layer may import. Absent, the row is
+   * exactly what it was, which is what every test of the kit alone and every node-embedded
+   * row still sees.
+   */
+  sources?: readonly ParameterSourceView[] | undefined;
+  /**
    * T492: the REAL code editor, injected by the layer that owns it. The control kit
    * cannot import CodeMirror (it is the leaf layer), and a second lightweight editor
    * here would be the two-implementations shape T356 deleted — so the editor arrives
@@ -205,6 +217,7 @@ function ParameterControlImpl({
   onPulse,
   slot: storedSlot,
   reference,
+  sources,
   codeField,
   components,
   diagnostic = null,
@@ -486,6 +499,9 @@ function ParameterControlImpl({
         inactive={inactive}
         driven={driven}
         drivenBadge={drivenBadge}
+        // T1336b: WHO this row reads, named under the field — absent on every row whose
+        // bindings name nobody, which leaves those rows byte-identical to before.
+        {...(sources === undefined ? {} : { sources })}
         description={definition.description}
         hint={options?.hint ?? null}
         stacked={options?.stacked ?? false}

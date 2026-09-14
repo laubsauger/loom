@@ -97,6 +97,9 @@ export type { Orientation } from "./orientation.ts";
 export { TextField } from "./text-field.tsx";
 export type { TextFieldProps } from "./text-field.tsx";
 
+export { ParameterSources } from "./parameter-sources.tsx";
+export type { ParameterSourceView, ParameterSourcesProps } from "./parameter-sources.tsx";
+
 export { ReferenceField } from "./reference-field.tsx";
 export type {
   ReferenceCandidateView,
