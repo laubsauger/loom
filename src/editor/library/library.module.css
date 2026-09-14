@@ -287,11 +287,51 @@
 .exampleRow .item {
   flex: 1 1 auto;
   min-width: 0;
+  /*
+    ONE LINE PER EXAMPLE. The badges used to carry `grid-column: 1 / -1`, which is not a
+    wrap — it is an explicit SECOND GRID ROW, and it made every item in the list two rows
+    tall whether it had three tags or one. The row gets a third track instead: the name, its
+    badges, then the node count. The name keeps a floor and the badges take the slack, so a
+    long name truncates before the facets do.
+  */
+  grid-template-columns: minmax(4.5rem, auto) minmax(0, 1fr) minmax(0, auto);
+}
+
+/*
+  ⚑ EVERY CELL PINS ITS ROW, AND THAT IS THE WHOLE FIX — naming the COLUMN was not enough.
+  Grid auto-placement is SPARSE: the cursor only ever moves forward. The markup order is
+  title, then meta, then badges, so meta at column 3 walks the cursor past column 2, and the
+  badges — which ask for column 2 and no row — cannot be placed behind it. They land on row
+  TWO, which is why the list still read as two lines after the tracks were widened to hold
+  them. It was never a wrap: a wrapped flex row would have stacked the tags inside their own
+  column, not dropped them to a full line under the title.
+
+  `grid-row: 1` on all three is order-independent, so re-arranging the markup later cannot
+  quietly reintroduce it. The alternative — moving the badges before the meta in the DOM —
+  would fix the picture and leave the trap armed for the next edit.
+*/
+.exampleRow .itemTitle {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.exampleRow .itemMeta {
+  grid-column: 3;
+  grid-row: 1;
+  justify-self: end;
 }
 
 .exampleBadges {
-  grid-column: 1 / -1;
+  grid-column: 2;
+  grid-row: 1;
   min-width: 0;
+  /*
+    Wrapping is inherited from `.cardTags` DELIBERATELY and is not restated as `nowrap`: the
+    tag set is derived from the document's node types, so it is unbounded, and the note on
+    `.cardTags` rules that hiding a capability is worse than a second line. A row with three
+    tags — which is nearly all of them — now fits on one; a genuinely many-sided example
+    still says everything it is, and gives way by wrapping inside its own column.
+  */
 }
 
 .exampleBadges .cardTag {
