@@ -3,6 +3,39 @@
   "createdAt": "2026-08-29T00:00:00.000Z",
   "graph": {
     "edges": {
+      "bars-chart": {
+        "id": "bars-chart",
+        "source": {
+          "nodeId": "bars",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "chart",
+          "portId": "in2"
+        }
+      },
+      "chart-signal": {
+        "id": "chart-signal",
+        "source": {
+          "nodeId": "chart",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "signal",
+          "portId": "in2"
+        }
+      },
+      "mark-signal": {
+        "id": "mark-signal",
+        "source": {
+          "nodeId": "mark",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "signal",
+          "portId": "in1"
+        }
+      },
       "receive-return": {
         "id": "receive-return",
         "source": {
@@ -35,10 +68,114 @@
           "nodeId": "send",
           "portId": "input"
         }
+      },
+      "tint-chart": {
+        "id": "tint-chart",
+        "source": {
+          "nodeId": "tint",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "chart",
+          "portId": "in1"
+        }
       }
     },
     "groups": {},
     "nodes": {
+      "bars": {
+        "definitionVersion": 1,
+        "id": "bars",
+        "label": "bars1",
+        "parameters": {
+          "color1": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "color2": [
+            1,
+            1,
+            1,
+            1
+          ],
+          "offset": [
+            0,
+            0
+          ],
+          "size": [
+            8,
+            5
+          ]
+        },
+        "position": {
+          "x": -1320,
+          "y": -320
+        },
+        "type": "checker"
+      },
+      "chart": {
+        "definitionVersion": 1,
+        "id": "chart",
+        "label": "chart1",
+        "parameters": {
+          "opacity": 1
+        },
+        "position": {
+          "x": -960,
+          "y": -200
+        },
+        "type": "multiply"
+      },
+      "mark": {
+        "definitionVersion": 1,
+        "id": "mark",
+        "label": "mark1",
+        "parameters": {
+          "aspectcorrect": true,
+          "bgcolor": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "center": [
+            0.5,
+            0.5
+          ],
+          "center.x": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('sweep1').chan.value"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.5
+              }
+            },
+            "mode": "expression"
+          },
+          "fillcolor": [
+            1,
+            1,
+            1,
+            1
+          ],
+          "mode": "fill",
+          "radius": [
+            0.07,
+            0.07
+          ],
+          "softness": 0.01
+        },
+        "position": {
+          "x": -1320,
+          "y": 160
+        },
+        "type": "circle"
+      },
       "out": {
         "definitionVersion": 1,
         "id": "out",
@@ -93,17 +230,84 @@
         "id": "signal",
         "label": "signal1",
         "parameters": {
-          "mono": false,
-          "seed": 71,
-          "speed": 0.35,
-          "t4d": 0.37,
-          "type": "perlin4d"
+          "opacity": 1
         },
         "position": {
           "x": -600,
           "y": -200
         },
-        "type": "noise"
+        "type": "over"
+      },
+      "sweep": {
+        "definitionVersion": 1,
+        "id": "sweep",
+        "label": "sweep1",
+        "parameters": {
+          "amplitude": 0.4,
+          "frequency": 0.09,
+          "offset": 0.5,
+          "phase": 0,
+          "shape": "triangle"
+        },
+        "position": {
+          "x": -1320,
+          "y": 400
+        },
+        "type": "lfo"
+      },
+      "tint": {
+        "definitionVersion": 2,
+        "id": "tint",
+        "label": "tint1",
+        "parameters": {
+          "interp": "linear",
+          "period": 1,
+          "phase": 0,
+          "stops": [
+            {
+              "color": [
+                0.1,
+                0.85,
+                1,
+                1
+              ],
+              "position": 0
+            },
+            {
+              "color": [
+                1,
+                0.78,
+                0.15,
+                1
+              ],
+              "position": 0.38
+            },
+            {
+              "color": [
+                1,
+                0.2,
+                0.55,
+                1
+              ],
+              "position": 0.72
+            },
+            {
+              "color": [
+                1,
+                1,
+                1,
+                1
+              ],
+              "position": 1
+            }
+          ],
+          "type": "horizontal"
+        },
+        "position": {
+          "x": -1320,
+          "y": -80
+        },
+        "type": "ramp"
       }
     },
     "revision": 1

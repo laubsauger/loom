@@ -15,9 +15,13 @@ and multiply the returned mask into the original image.
    ```
 
    No model download or automatic Python-package installation is needed.
-2. Open the example. **source1** starts at index **0**, an animated calibration
-   texture containing no person. An empty mask is expected and **does not prove
-   person detection works**. **reference1** displays the selected source.
+2. Open the example. **source1** starts at index **0**, `signal1` — an animated
+   calibration chart containing no person. An empty mask is expected and **does not
+   prove person detection works**. **reference1** displays the selected source.
+   The chart is a checkerboard tinted by a colour sweep with a marker crossing it:
+   the checker shows any resampling as moiré, the sweep shows orientation and
+   channel order, and the marker shows the graph is live. A noise field, which is
+   what this was, answers none of those questions about a pipeline.
 3. Change **source1** Index to **1** for **camera1**, and approve camera access
    when prompted. Review permissions in Settings. A visible webcam preview can
    also demand access; opening the file is not consent.
@@ -25,7 +29,7 @@ and multiply the returned mask into the original image.
    **person1** in the viewer and stand in view. Inspect `mask1` for the
    white-where-person mask; `key1` applies that mask to the original image.
 
-`calibration1 / camera1 → source1 → mask1 → key1 → person1`, with
+`signal1 / camera1 → source1 → mask1 → key1 → person1`, with
 `source1 → key1` and `source1 → reference1` as the original-image branches.
 Replace the selected source with a Movie File In node for your own footage.
 No personal media, camera identifier or downloaded fixture ships.

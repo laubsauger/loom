@@ -17,6 +17,13 @@ remain separate so a running generator cannot masquerade as a working connection
    Both should animate. The `send1` preview alone proves only its local input.
 
 `signal1 → send1`, `signal1 → reference1`, `receive1 → returned1`.
+
+What `signal1` sends is a **reference chart**, not a texture chosen for looks: a
+black-and-white checkerboard tinted by a four-stop colour sweep, with a marker
+crossing the frame. Each part answers a question the round trip poses — the checker
+shows resampling as moiré on its edges, the sweep shows orientation and channel
+order, and the marker shows liveness and, if the return lags, how far behind it is.
+Comparing two panes of noise, which is what this used to send, answers none of them.
 Copy either branch into your project; give additional publishers distinct names.
 Choose another app's publisher to use this as an external-input recipe.
 

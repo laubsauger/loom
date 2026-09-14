@@ -18,10 +18,35 @@ function example(number: number) {
   return result.document;
 }
 
+/**
+ * T1332b — THE TWO BRANCHES ARE INDEPENDENT, asserted as reachability rather than as a
+ * literal edge list.
+ *
+ * The old form listed all three edges, so it re-failed the moment the sent picture stopped
+ * being a single `noise` node and became a reference chart — while the property it exists to
+ * protect (nothing the receiver shows can have come from the sender in the same document,
+ * or the example would appear to work with no transport at all) was never in question. This
+ * walks the graph instead: it says WHAT must not be true.
+ */
+function feeds(graph: { edges: Record<string, { source: { nodeId: string }; target: { nodeId: string } }> }, from: string): Set<string> {
+  const reached = new Set<string>([from]);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const { source, target } of Object.values(graph.edges)) {
+      if (reached.has(source.nodeId) && !reached.has(target.nodeId)) {
+        reached.add(target.nodeId);
+        grew = true;
+      }
+    }
+  }
+  return reached;
+}
+
 describe("desktop technical recipes", () => {
   it("E74 prepares Spout wiring without promising or enabling a native transport", () => {
     const doc = example(74);
-    const { nodes, edges } = doc.graph;
+    const { nodes } = doc.graph;
     expect(doc.name).toBe("E74 Spout Loopback Preparation");
     expect(doc.settings.outputResolution).toEqual({ width: 1920, height: 1080 });
     expect(doc.settings.workingFormat).toBe(DEFAULT_PROJECT_SETTINGS.workingFormat);
@@ -29,27 +54,33 @@ describe("desktop technical recipes", () => {
     expect(nodes["send"]?.parameters["enabled"]).toBe(false);
     expect(nodes["receive"]?.type).toBe("spoutIn");
     expect(nodes["receive"]?.parameters["source"]).toBe("");
-    expect(Object.values(edges).map(({ source, target }) => [source.nodeId, target.nodeId]).sort()).toEqual([
-      ["receive", "returnOut"], ["signal", "out"], ["signal", "send"],
-    ]);
+    // The sent picture reaches the transport and the local reference, and NOTHING else.
+    expect([...feeds(doc.graph, "signal")].sort()).toEqual(["out", "send", "signal"]);
+    // What the receiver shows cannot have come from this document's own signal.
+    expect([...feeds(doc.graph, "receive")].sort()).toEqual(["receive", "returnOut"]);
     expect(exampleRuntimeRequirements(doc).map(({ id }) => id)).toEqual(["desktop", "windows", "not-implemented"]);
     expect(tagsOf(Object.values(nodes).map(({ type }) => type))).toEqual(expect.arrayContaining(["video", "device"]));
   });
 
   it.each([[71, "syphon"], [72, "ndi"]] as const)("E%i has independent send and receive branches", (number, transport) => {
     const doc = example(number);
-    const { nodes, edges } = doc.graph;
+    const { nodes } = doc.graph;
     expect(doc.settings.outputResolution).toEqual({ width: 1920, height: 1080 });
     expect(doc.settings.workingFormat).toBe(DEFAULT_PROJECT_SETTINGS.workingFormat);
-    expect(nodes["signal"]?.parameters["type"]).toBe("perlin4d");
-    expect(nodes["signal"]?.parameters["speed"]).toBeGreaterThan(0);
+    /* T1332b: what goes out is a REFERENCE CHART, and each part of it answers a question a
+       loopback poses — the checker resampling, the ramp orientation and channel order, the
+       marker liveness and latency. A noise field answered none of them and failed §T521's
+       contrast floor at 0.2646..0.2976 of 0.30 while it was at it. */
+    expect(nodes["bars"]?.type).toBe("checker");
+    expect(nodes["tint"]?.type).toBe("ramp");
+    expect(nodes["mark"]?.type).toBe("circle");
+    expect(nodes["signal"]?.type).toBe("over");
     expect(nodes["send"]?.type).toBe(`${transport}Out`);
     expect(nodes["send"]?.parameters["enabled"]).toBe(true);
     expect(nodes["receive"]?.type).toBe(`${transport}In`);
     expect(nodes["receive"]?.parameters["source"]).toBe("");
-    expect(Object.values(edges).map(({ source, target }) => [source.nodeId, target.nodeId]).sort()).toEqual([
-      ["receive", "returnOut"], ["signal", "out"], ["signal", "send"],
-    ]);
+    expect([...feeds(doc.graph, "signal")].sort()).toEqual(["out", "send", "signal"]);
+    expect([...feeds(doc.graph, "receive")].sort()).toEqual(["receive", "returnOut"]);
     expect(nodes["out"]?.label).toBe("reference1");
     expect(nodes["returnOut"]?.label).toBe("returned1");
   });

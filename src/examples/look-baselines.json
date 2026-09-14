@@ -341,6 +341,30 @@
     "cardFloor": 0,
     "phrase": 0.04515
   },
+  "E71-Syphon-Loopback.loom.json": {
+    "motion": 0.01183,
+    "range": 1,
+    "f0max": 1,
+    "cardFloor": 0
+  },
+  "E72-NDI-Loopback.loom.json": {
+    "motion": 0.01183,
+    "range": 1,
+    "f0max": 1,
+    "cardFloor": 0
+  },
+  "E73-Native-Person-Mask.loom.json": {
+    "motion": 0.01183,
+    "range": 1,
+    "f0max": 1,
+    "cardFloor": 0
+  },
+  "E74-Spout-Loopback-Preparation.loom.json": {
+    "motion": 0.01183,
+    "range": 1,
+    "f0max": 1,
+    "cardFloor": 0
+  },
   "E8-Slit-Scan.loom.json": {
     "motion": 0.11307,
     "range": 0.6484,
