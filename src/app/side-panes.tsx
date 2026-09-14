@@ -162,6 +162,11 @@ export interface InspectorPaneProps {
   unknownParameters?: readonly UnknownParameter[];  /** T434(b)/T432: the session audio capture's status, for the Inspector's Audio section. */
   audioStatus?: () => { kind: "idle" | "live" | "error"; message?: string };
   /**
+   * T1043: what a webcam node's camera was asked for and what it granted, read live for
+   * the Inspector's Camera section. Passed straight through; this pane measures nothing.
+   */
+  cameraStatus?: (nodeId: NodeId) => import("@/app/camera-request.ts").CameraStatus | null;
+  /**
    * T942: the session's ONE Web MIDI access, for the Inspector's MIDI section — its state,
    * its ports, its permission request and its learn arming. Absent = no session MIDI
    * wiring (tests, embeds), and the section is then hidden the way the Audio one is.
@@ -263,6 +268,7 @@ export function InspectorPane({
   status,
   unknownParameters = [],
   audioStatus,
+  cameraStatus,
   midi,
   laser,
 }: InspectorPaneProps) {
@@ -338,6 +344,7 @@ export function InspectorPane({
       {...(latestFrame === undefined ? {} : { latestFrame })}
       {...(channelNames === undefined ? {} : { channelNames })}
       {...(audioStatus === undefined ? {} : { audioStatus })}
+      {...(cameraStatus === undefined ? {} : { cameraStatus })}
       {...(midi === undefined ? {} : { midi })}
       {...(laser === undefined ? {} : { laser })}
     />

@@ -2006,6 +2006,9 @@ export function App({
                 status={status}
                 unknownParameters={runtime.unknownParameters}
                 audioStatus={audioInput.status}
+                /* T1043: the camera's REQUEST beside its GRANT, read live per render
+                   (§V986) — the media hook is the only thing holding the open track. */
+                cameraStatus={media.cameraStatus}
                 midi={midi}
                 laser={laser.session}
               />

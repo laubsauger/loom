@@ -12,8 +12,20 @@ import { createVideoMediaSource } from "./media-sources.ts";
 import type { MediaElement } from "./media-sources.ts";
 import type { TextMediaSource, TextRaster } from "./text-source.ts";
 import type { FrameEvaluationInput } from "@domain/types/frame.ts";
-import type { MediaEnvironment, MediaWiring, ResolvedSizeSource } from "./use-media-sources.ts";
+import type {
+  MediaEnvironment,
+  MediaWiring,
+  OpenedCamera,
+  ResolvedSizeSource,
+} from "./use-media-sources.ts";
 import { useMediaSources } from "./use-media-sources.ts";
+import { cameraShortfall } from "./camera-request.ts";
+import type {
+  CameraGrant,
+  CameraLimits,
+  CameraRequest,
+  CameraStatus,
+} from "./camera-request.ts";
 
 /**
  * T264 — media nodes are black until something registers a source (§V135, §V136).
@@ -66,6 +78,35 @@ function fakeElement(width = 640, height = 360) {
     },
   };
   return element;
+}
+
+/**
+ * T1043 — a live camera stand-in: an element, plus the two things only a real track knows.
+ *
+ * `grant` and `limits` are read as FUNCTIONS here because they are functions in the
+ * product for a reason (§V986) — a test that took a snapshot could not tell a live read
+ * from a captured one, which is the very distinction the grant depends on. `stop` records
+ * that it was called, so the camera-light claim has something to assert.
+ */
+function fakeCamera(
+  element: ReturnType<typeof fakeElement>,
+  grant: CameraGrant | null = null,
+  limits: CameraLimits | null = null,
+): OpenedCamera & { stops: number; grantReads: number } {
+  const camera = {
+    element: element as unknown as MediaElement,
+    stops: 0,
+    grantReads: 0,
+    grant() {
+      camera.grantReads += 1;
+      return grant;
+    },
+    limits: () => limits,
+    stop() {
+      camera.stops += 1;
+    },
+  };
+  return camera;
 }
 
 function fakeBackend() {
@@ -146,7 +187,7 @@ describe("media sources reach the backend (T264)", () => {
     const environment: MediaEnvironment = {
       openStill: () => Promise.reject(new Error("no still in this test")),
       openFile: () => Promise.reject(new Error("not used")),
-      openCamera: () => Promise.resolve(element as unknown as MediaElement),
+      openCamera: () => Promise.resolve(fakeCamera(element)),
     };
 
     await act(async () => {
@@ -210,9 +251,9 @@ describe("media sources reach the backend (T264)", () => {
     const environment: MediaEnvironment = {
       openStill: () => Promise.reject(new Error("no still in this test")),
       openFile: () => Promise.reject(new Error("not used")),
-      openCamera: (device: string) => {
-        askedFor.push(device);
-        return Promise.resolve(element as unknown as MediaElement);
+      openCamera: (request: CameraRequest) => {
+        askedFor.push(request.device);
+        return Promise.resolve(fakeCamera(element));
       },
     };
 
@@ -247,14 +288,14 @@ describe("media sources reach the backend (T264)", () => {
     const environment: MediaEnvironment = {
       openStill: () => Promise.reject(new Error("no still in this test")),
       openFile: () => Promise.reject(new Error("not used")),
-      openCamera: (device: string) => {
-        askedFor.push(device);
-        if (device !== "") {
+      openCamera: (request: CameraRequest) => {
+        askedFor.push(request.device);
+        if (request.device !== "") {
           return Promise.reject(
             Object.assign(new Error("gone"), { name: "OverconstrainedError" }),
           );
         }
-        return Promise.resolve(element as unknown as MediaElement);
+        return Promise.resolve(fakeCamera(element));
       },
     };
 
@@ -276,6 +317,494 @@ describe("media sources reach the backend (T264)", () => {
     expect(askedFor).toEqual(["unplugged-9", ""]);
     const latest = messages.at(-1) ?? [];
     expect(latest.some((message) => message.includes("system default"))).toBe(true);
+  });
+
+  /**
+   * ═════════════════════════════════════════════════════════════════════════════════
+   * T1043 — THE CAPTURE PARAMETERS, AND THE GRANT THAT IS NOT THE REQUEST
+   * ═════════════════════════════════════════════════════════════════════════════════
+   *
+   * The knobs are the easy half. The half that decides whether they are worth having is
+   * whether a user can TELL when the camera declined: `getUserMedia` substitutes silently,
+   * so a Resolution field with no readout beside it is a control that reads back a number
+   * that is not true of the picture (§B172's shape, §V827(2)'s rule).
+   *
+   * So the claims below are about what a CONSUMER READS BACK — the reported grant, the
+   * reported shortfall, the node's own resolution — and never about which constraint
+   * object was handed to the browser, with one deliberate exception: the door test, which
+   * is the only place the request itself is observable and is the wiring §V827(4) needs.
+   */
+  it("the Capture parameters reach the camera door as a request — ideal under Prefer", async () => {
+    const runtime = newRuntime();
+    const { backend, registered } = fakeBackend();
+    const element = fakeElement();
+    const asked: CameraRequest[] = [];
+    const environment: MediaEnvironment = {
+      openStill: () => Promise.reject(new Error("no still in this test")),
+      openFile: () => Promise.reject(new Error("not used")),
+      openCamera: (request: CameraRequest) => {
+        asked.push(request);
+        return Promise.resolve(fakeCamera(element));
+      },
+    };
+
+    await act(async () => {
+      render(
+        <Harness
+          runtime={runtime}
+          backend={backend}
+          graph={graphWith({
+            cam: {
+              type: "webcam",
+              parameters: { width: 1920, height: 1080, frameRate: 60, facing: "environment" },
+            },
+          })}
+          environment={environment}
+        />,
+      );
+    });
+
+    await waitFor(() => {
+      expect(registered.has(mediaSourceIdFor("cam"))).toBe(true);
+    });
+    // `fit` unstored, so the shipped default: PREFER. A stored knob that arrived as
+    // `exact: true` would make every unset document refuse cameras it used to open.
+    expect(asked).toEqual([
+      { device: "", width: 1920, height: 1080, frameRate: 60, facing: "environment", exact: false },
+    ]);
+  });
+
+  /**
+   * THE ROW'S OWN SENTENCE: *ask for 1920x1080 and get 1280x720 SILENTLY*.
+   *
+   * This is the KNOWN POSITIVE (§V968): a camera that declines, and a reader that has to
+   * be able to see both numbers. If `cameraStatus` ever echoed the request — the one
+   * failure this whole design exists to prevent — `granted` would read 1920x1080 here and
+   * this case says so by name rather than by a generic undefined.
+   */
+  it("a camera that grants less than was asked reports BOTH numbers, measured not echoed", async () => {
+    const runtime = newRuntime();
+    const { backend, registered } = fakeBackend();
+    let wiring: MediaWiring | null = null;
+    const camera = fakeCamera(
+      fakeElement(1280, 720),
+      { width: 1280, height: 720, frameRate: 30 },
+      { maxWidth: 1280, maxHeight: 720, maxFrameRate: 30 },
+    );
+    const environment: MediaEnvironment = {
+      openStill: () => Promise.reject(new Error("no still in this test")),
+      openFile: () => Promise.reject(new Error("not used")),
+      openCamera: () => Promise.resolve(camera),
+    };
+
+    await act(async () => {
+      render(
+        <Harness
+          runtime={runtime}
+          backend={backend}
+          graph={graphWith({
+            cam: { type: "webcam", parameters: { width: 1920, height: 1080 } },
+          })}
+          environment={environment}
+          onWiring={(next) => {
+            wiring = next;
+          }}
+        />,
+      );
+    });
+
+    await waitFor(() => {
+      expect(registered.has(mediaSourceIdFor("cam"))).toBe(true);
+    });
+    const status = (wiring as MediaWiring | null)?.cameraStatus("cam" as never) ?? null;
+    expect(status).not.toBeNull();
+    const live = status as CameraStatus;
+    expect(live.kind).toBe("live");
+    // The request, unchanged — it is the document and it must still read back.
+    expect(live.requested.width).toBe(1920);
+    expect(live.requested.height).toBe(1080);
+    // The grant, measured off the track. THE TWO ARE DIFFERENT AND BOTH ARE VISIBLE.
+    expect(live.granted).toEqual({ width: 1280, height: 720, frameRate: 30 });
+    // And the camera's own ceiling, which is what tells the user 1920 was never available
+    // (§V985: the control and the means of knowing what to put in it ship together).
+    expect(live.limits).toEqual({ maxWidth: 1280, maxHeight: 720, maxFrameRate: 30 });
+  });
+
+  /**
+   * §V968's KNOWN NEGATIVE for the same detector, and it is not a formality: a shortfall
+   * test that only ever sees a declining camera cannot distinguish "reports the truth"
+   * from "always reports a shortfall", and the second would put a warning under every
+   * camera in the product.
+   */
+  it("a camera that grants exactly what was asked reports NO shortfall", async () => {
+    const runtime = newRuntime();
+    const { backend, registered } = fakeBackend();
+    let wiring: MediaWiring | null = null;
+    const camera = fakeCamera(fakeElement(1280, 720), { width: 1280, height: 720, frameRate: 30 });
+    const environment: MediaEnvironment = {
+      openStill: () => Promise.reject(new Error("no still in this test")),
+      openFile: () => Promise.reject(new Error("not used")),
+      openCamera: () => Promise.resolve(camera),
+    };
+
+    await act(async () => {
+      render(
+        <Harness
+          runtime={runtime}
+          backend={backend}
+          graph={graphWith({
+            cam: { type: "webcam", parameters: { width: 1280, height: 720, frameRate: 30 } },
+          })}
+          environment={environment}
+          onWiring={(next) => {
+            wiring = next;
+          }}
+        />,
+      );
+    });
+
+    await waitFor(() => {
+      expect(registered.has(mediaSourceIdFor("cam"))).toBe(true);
+    });
+    const live = (wiring as MediaWiring | null)?.cameraStatus("cam" as never) as CameraStatus;
+    expect(cameraShortfall(live.requested, live.granted)).toBeNull();
+  });
+
+  /**
+   * §V986 — AN UNMEASURABLE VALUE READS AS ABSENT, NEVER AS A CONFIDENT DEFAULT.
+   *
+   * A browser whose `getSettings()` says nothing this node reads must produce a NULL
+   * grant, not `{ width: 0, height: 0 }`. A zero there is indistinguishable from a real
+   * measurement of a camera producing no pixels, and it is the number a reader would
+   * believe.
+   */
+  it("a browser that reports no track settings reads as ABSENT, never as zeros", async () => {
+    const runtime = newRuntime();
+    const { backend, registered } = fakeBackend();
+    let wiring: MediaWiring | null = null;
+    // Grant AND limits null: the stand-in for an engine with neither `getSettings` data
+    // nor `getCapabilities` at all.
+    const camera = fakeCamera(fakeElement(640, 360));
+    const environment: MediaEnvironment = {
+      openStill: () => Promise.reject(new Error("no still in this test")),
+      openFile: () => Promise.reject(new Error("not used")),
+      openCamera: () => Promise.resolve(camera),
+    };
+
+    await act(async () => {
+      render(
+        <Harness
+          runtime={runtime}
+          backend={backend}
+          graph={graphWith({ cam: { type: "webcam", parameters: { width: 1920 } } })}
+          environment={environment}
+          onWiring={(next) => {
+            wiring = next;
+          }}
+        />,
+      );
+    });
+
+    await waitFor(() => {
+      expect(registered.has(mediaSourceIdFor("cam"))).toBe(true);
+    });
+    const live = (wiring as MediaWiring | null)?.cameraStatus("cam" as never) as CameraStatus;
+    expect(live.granted).toBeNull();
+    expect(live.limits).toBeNull();
+    // And nothing is claimed about a request we cannot check: an unreported grant is an
+    // UNKNOWN, not a decline, so no shortfall sentence appears.
+    expect(cameraShortfall(live.requested, live.granted)).toBeNull();
+  });
+
+  /**
+   * §V986's SECOND HALF: a measurement that can go stale is read PER CALL.
+   *
+   * A track renegotiates and several platforms settle on their real frame rate a beat
+   * after the open, so a grant captured once at open time goes quietly stale while still
+   * looking like a measurement. Two calls, two reads — a status built from a snapshot
+   * would read the track exactly once however often it was asked.
+   */
+  it("the grant is read from the live track on EVERY call, never captured at open", async () => {
+    const runtime = newRuntime();
+    const { backend, registered } = fakeBackend();
+    let wiring: MediaWiring | null = null;
+    const camera = fakeCamera(fakeElement(), { width: 640, height: 360 });
+    const environment: MediaEnvironment = {
+      openStill: () => Promise.reject(new Error("no still in this test")),
+      openFile: () => Promise.reject(new Error("not used")),
+      openCamera: () => Promise.resolve(camera),
+    };
+
+    await act(async () => {
+      render(
+        <Harness
+          runtime={runtime}
+          backend={backend}
+          graph={graphWith({ cam: { type: "webcam" } })}
+          environment={environment}
+          onWiring={(next) => {
+            wiring = next;
+          }}
+        />,
+      );
+    });
+
+    await waitFor(() => {
+      expect(registered.has(mediaSourceIdFor("cam"))).toBe(true);
+    });
+    const live = wiring as MediaWiring | null;
+    const before = camera.grantReads;
+    live?.cameraStatus("cam" as never);
+    live?.cameraStatus("cam" as never);
+    expect(camera.grantReads).toBe(before + 2);
+  });
+
+  /**
+   * REQUIRE IS THE ONLY THING THAT MAKES `exact` DIFFERENT FROM `ideal`, so a required
+   * format this camera cannot do must NOT quietly retry without it. Two claims, and the
+   * second is the one that makes the failure legible: nothing registers (the node stays
+   * black, which is what refusing means), and the diagnostic names the NUMBERS rather than
+   * saying "the camera is unavailable" about a camera that is fine.
+   */
+  it("REQUIRE refuses a format the camera cannot do, and names it", async () => {
+    const runtime = newRuntime();
+    const { backend, registered } = fakeBackend();
+    const messages: string[][] = [];
+    let opens = 0;
+    const environment: MediaEnvironment = {
+      openStill: () => Promise.reject(new Error("no still in this test")),
+      openFile: () => Promise.reject(new Error("not used")),
+      openCamera: () => {
+        opens += 1;
+        return Promise.reject(
+          Object.assign(new Error("over"), { name: "OverconstrainedError", constraint: "width" }),
+        );
+      },
+    };
+
+    await act(async () => {
+      render(
+        <Harness
+          runtime={runtime}
+          backend={backend}
+          graph={graphWith({
+            cam: {
+              type: "webcam",
+              parameters: { width: 3840, height: 2160, frameRate: 60, fit: "require" },
+            },
+          })}
+          environment={environment}
+          onDiagnostics={(next) => messages.push([...next])}
+        />,
+      );
+    });
+
+    await waitFor(() => {
+      expect(messages.at(-1)?.length).toBeGreaterThan(0);
+    });
+    expect(registered.size).toBe(0);
+    // ONE attempt. A second would be the silent drop of the constraint that Require exists
+    // to refuse, and it would make Require and Prefer the same control.
+    expect(opens).toBe(1);
+    const latest = messages.at(-1) ?? [];
+    expect(latest.some((message) => message.includes("3840 x 2160 at 60 fps"))).toBe(true);
+    expect(latest.some((message) => message.includes("REQUIRED"))).toBe(true);
+  });
+
+  /**
+   * The T810 fallback and the T1043 refusal are BOTH `OverconstrainedError`, and they want
+   * opposite answers. The browser says which constraint failed; this is the case that
+   * proves the discrimination is read rather than guessed — a vanished DEVICE still falls
+   * back even while an exact format is in force, because the format is not what failed.
+   */
+  it("a vanished device still falls back when the browser blames deviceId, not the format", async () => {
+    const runtime = newRuntime();
+    const { backend, registered } = fakeBackend();
+    const asked: CameraRequest[] = [];
+    const environment: MediaEnvironment = {
+      openStill: () => Promise.reject(new Error("no still in this test")),
+      openFile: () => Promise.reject(new Error("not used")),
+      openCamera: (request: CameraRequest) => {
+        asked.push(request);
+        if (request.device !== "") {
+          return Promise.reject(
+            Object.assign(new Error("gone"), {
+              name: "OverconstrainedError",
+              constraint: "deviceId",
+            }),
+          );
+        }
+        return Promise.resolve(fakeCamera(fakeElement(1280, 720)));
+      },
+    };
+
+    await act(async () => {
+      render(
+        <Harness
+          runtime={runtime}
+          backend={backend}
+          graph={graphWith({
+            cam: {
+              type: "webcam",
+              parameters: { device: "unplugged-9", width: 1280, height: 720, fit: "require" },
+            },
+          })}
+          environment={environment}
+        />,
+      );
+    });
+
+    await waitFor(() => {
+      expect(registered.has(mediaSourceIdFor("cam"))).toBe(true);
+    });
+    // The retry drops the DEVICE and keeps the required format: the size is not what the
+    // browser refused, and dropping it would be the silent widening Require forbids.
+    expect(asked.map((request) => request.device)).toEqual(["unplugged-9", ""]);
+    expect(asked[1]).toMatchObject({ width: 1280, height: 720, exact: true });
+  });
+
+  /**
+   * THE ONE A USER SEES WITHOUT OPENING THE INSPECTOR: the node's own resolution follows
+   * WHAT ARRIVED, never what was asked. `copyExternalImageToTexture` asserts matching
+   * extents, so a node that adopted the REQUESTED 1920x1080 against a 1280x720 stream
+   * would fail every upload — the request being a request is not a UI nicety here.
+   */
+  it("the node's resolution follows the GRANTED size, not the requested one", async () => {
+    const runtime = newRuntime();
+    await runtime.bus.execute(
+      "graph.applyPatch",
+      {
+        baseRevision: runtime.bus.store.getRevision(),
+        label: "seed",
+        operations: [{ op: "addNode", ref: "$cam", type: "webcam", position: { x: 0, y: 0 } }],
+      },
+      runtime.invocation,
+    );
+    const nodeId = Object.keys(runtime.bus.store.getGraph().nodes)[0];
+    if (nodeId === undefined) throw new Error("expected a seeded webcam node");
+    await runtime.bus.execute(
+      "graph.applyPatch",
+      {
+        baseRevision: runtime.bus.store.getRevision(),
+        label: "ask for 1080p",
+        operations: [{ op: "setParameters", nodeId, parameters: { width: 1920, height: 1080 } }],
+      },
+      runtime.invocation,
+    );
+
+    const { backend } = fakeBackend();
+    // The camera declined: 1280x720 arrives however hard the document asked for 1080p.
+    const camera = fakeCamera(fakeElement(1280, 720), { width: 1280, height: 720 });
+    const environment: MediaEnvironment = {
+      openStill: () => Promise.reject(new Error("no still in this test")),
+      openFile: () => Promise.reject(new Error("not used")),
+      openCamera: () => Promise.resolve(camera),
+    };
+
+    await act(async () => {
+      render(
+        <Harness
+          runtime={runtime}
+          backend={backend}
+          graph={runtime.bus.store.getGraph()}
+          environment={environment}
+        />,
+      );
+    });
+
+    await waitFor(() => {
+      expect(runtime.bus.store.getGraph().nodes[nodeId]?.resolution).toEqual({
+        mode: "fixed",
+        width: 1280,
+        height: 720,
+      });
+    });
+  });
+
+  /**
+   * A changed Capture knob RE-OPENS the camera. A constraint is handed to `getUserMedia`
+   * at open time and nowhere else, so a size that did not re-open would be a control that
+   * writes a number to the document and changes nothing until the next reload — T810's
+   * defect, one parameter over.
+   */
+  it("changing a Capture parameter re-opens the camera with the new request", async () => {
+    const runtime = newRuntime();
+    const { backend } = fakeBackend();
+    const asked: CameraRequest[] = [];
+    const environment: MediaEnvironment = {
+      openStill: () => Promise.reject(new Error("no still in this test")),
+      openFile: () => Promise.reject(new Error("not used")),
+      openCamera: (request: CameraRequest) => {
+        asked.push(request);
+        return Promise.resolve(fakeCamera(fakeElement()));
+      },
+    };
+
+    const view = render(
+      <Harness
+        runtime={runtime}
+        backend={backend}
+        graph={graphWith({ cam: { type: "webcam", parameters: { width: 640 } } })}
+        environment={environment}
+      />,
+    );
+    await waitFor(() => {
+      expect(asked.length).toBe(1);
+    });
+
+    await act(async () => {
+      view.rerender(
+        <Harness
+          runtime={runtime}
+          backend={backend}
+          graph={graphWith({ cam: { type: "webcam", parameters: { width: 1280 } } })}
+          environment={environment}
+        />,
+      );
+    });
+
+    await waitFor(() => {
+      expect(asked.map((request) => request.width)).toEqual([640, 1280]);
+    });
+  });
+
+  /**
+   * THE CAMERA LIGHT. `pause()` on the element detaches the sink; the `MediaStream`'s
+   * tracks keep capturing, so before T1043 a deleted webcam node left the camera running
+   * and its indicator lit. The microphone path has stopped its tracks since T434; this
+   * half never did, and only the door that opened the stream can reach them.
+   */
+  it("stops the camera's tracks when the node goes away, not just the element", async () => {
+    const runtime = newRuntime();
+    const { backend } = fakeBackend();
+    const camera = fakeCamera(fakeElement());
+    const environment: MediaEnvironment = {
+      openStill: () => Promise.reject(new Error("no still in this test")),
+      openFile: () => Promise.reject(new Error("not used")),
+      openCamera: () => Promise.resolve(camera),
+    };
+
+    const view = render(
+      <Harness
+        runtime={runtime}
+        backend={backend}
+        graph={graphWith({ cam: { type: "webcam" } })}
+        environment={environment}
+      />,
+    );
+    await waitFor(() => {
+      expect(camera.stops).toBe(0);
+    });
+
+    await act(async () => {
+      view.rerender(
+        <Harness runtime={runtime} backend={backend} graph={graphWith({})} environment={environment} />,
+      );
+    });
+
+    await waitFor(() => {
+      expect(camera.stops).toBe(1);
+    });
   });
 
   it("does not open anything for a movie node with no file yet", async () => {
@@ -325,7 +854,7 @@ describe("media sources reach the backend (T264)", () => {
     const environment: MediaEnvironment = {
       openStill: () => Promise.reject(new Error("no still in this test")),
       openFile: () => Promise.reject(new Error("not used")),
-      openCamera: () => Promise.resolve(element as unknown as MediaElement),
+      openCamera: () => Promise.resolve(fakeCamera(element)),
     };
 
     await act(async () => {
@@ -485,7 +1014,7 @@ describe("media sources reach the backend (T264)", () => {
     const environment: MediaEnvironment = {
       openStill: () => Promise.reject(new Error("no still in this test")),
       openFile: () => Promise.reject(new Error("not used")),
-      openCamera: () => Promise.resolve(fakeElement() as unknown as MediaElement),
+      openCamera: () => Promise.resolve(fakeCamera(fakeElement())),
     };
 
     const view = render(

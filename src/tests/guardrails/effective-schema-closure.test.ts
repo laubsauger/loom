@@ -337,6 +337,15 @@ const RAW_SCHEMA_READS: Readonly<Record<string, { readonly reason: string; reado
     reads: ["convolveNode.parameters", "displaceNode.parameters", "slopeNode.parameters", "uvNode.parameters"],
   },
   "src/nodes/definitions/generators.test.ts": { reason: TYPE_ONLY_UNIT_TEST, reads: ["rampNode.parameters"] },
+  "src/app/camera-request.test.ts": {
+    reason:
+      "T1043's compatibility claim: `cameraRequestOf` reads a webcam's STORED values, so " +
+      "the declared default and the absent-key answer are independently authored and could " +
+      "silently disagree — a `fit` default of \"require\" would show Require in the " +
+      "inspector while the hook negotiated Prefer. The claim is about what the TYPE " +
+      "declares against what an empty bag yields; no instance exists to reflect from.",
+    reads: ["webcamNode.parameters"],
+  },
   "src/nodes/definitions/media.test.ts": {
     reason: TYPE_ONLY_UNIT_TEST,
     // T1223 added the third: the file slot's declared KIND is what the picker's accept

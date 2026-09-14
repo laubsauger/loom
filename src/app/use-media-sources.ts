@@ -10,6 +10,7 @@ import { resolveParameters } from "@domain/parameters/index.ts";
 import { mediaNodeDefinitions, mediaSourceIdFor } from "@nodes/definitions/index.ts";
 import type { NodeRegistryView } from "@nodes/registry/registry.ts";
 import type { LoomBackend } from "@runtime/backend/index.ts";
+import type { CameraStatus } from "./camera-request.ts";
 import type { AppRuntime } from "./app-runtime.ts";
 import type { MediaControlRegistry } from "./media-commands.ts";
 import {
@@ -29,6 +30,17 @@ import { awaitMediaReady, createStillMediaSource, createVideoMediaSource } from 
 import type { MediaElement, StillImage, VideoMediaSource } from "./media-sources.ts";
 import { createTextMediaSource } from "./text-source.ts";
 import type { TextAlign, TextMediaSource, TextRaster, TextVerticalAlign } from "./text-source.ts";
+import {
+  NO_CAMERA_REQUEST,
+  cameraConstraints,
+  cameraGrantOf,
+  cameraLimitsOf,
+  cameraRequestOf,
+  requiredFormatText,
+  type CameraGrant,
+  type CameraLimits,
+  type CameraRequest,
+} from "./camera-request.ts";
 
 /**
  * Media inputs, wired (T264, §V135, §V136, §V29).
@@ -66,6 +78,30 @@ import type { TextAlign, TextMediaSource, TextRaster, TextVerticalAlign } from "
  */
 
 /**
+ * T1043 — A LIVE CAMERA: the element to blit, and the two things only the track knows.
+ *
+ * `grant` and `limits` are FUNCTIONS, not captured values, and that is §V986's second half
+ * rather than a style choice: `getSettings()` moves. A track renegotiates when the camera
+ * is reconfigured, several platforms settle on their real frame rate a beat after the open,
+ * and a number snapshotted at open time goes quietly stale while looking authoritative —
+ * which is the exact disease this row exists to treat. Two property lookups per read.
+ */
+export interface OpenedCamera {
+  readonly element: MediaElement;
+  /** What the track says it is doing NOW. Null where the browser reports nothing. */
+  grant(): CameraGrant | null;
+  /** What the camera says it CAN do (§V985). Null where the browser reports nothing. */
+  limits(): CameraLimits | null;
+  /**
+   * Release the capture. `pause()` on the element does NOT stop a `MediaStream` track —
+   * the camera keeps running and its indicator light stays on for a node that is gone —
+   * so the door that opened the stream is the one that has to close it, exactly as the
+   * microphone path already does (`use-audio-input.ts` stops its tracks on teardown).
+   */
+  stop(): void;
+}
+
+/**
  * The environment this hook needs. Injectable, so a test needs no camera, no codec — and,
  * since T243, no canvas: jsdom's `getContext("2d")` returns null, so a text source built
  * on the real factory would register and then quietly draw nothing in a test.
@@ -90,8 +126,14 @@ export interface MediaEnvironment {
    * loop owns the retry-bare fallback and the diagnostic that names it, so the
    * environment stays a dumb door (the same split `use-audio-input` made for T434).
    * Throws (permission denied, no device) to report failure.
+   *
+   * T1043 — it takes the whole `CameraRequest` and hands back an `OpenedCamera` rather
+   * than a bare element, because a camera's SIZE AND RATE ARE NEGOTIATED and the only
+   * party that knows what was actually granted is the live `MediaStreamTrack` the door
+   * opened. Returning the element alone would leave the grant unreachable and the node's
+   * Capture parameters unverifiable, which is the whole defect T1043 exists to close.
    */
-  openCamera(device: string): Promise<MediaElement>;
+  openCamera(request: CameraRequest): Promise<OpenedCamera>;
   /** Text rasterizer factory (T243). Defaults to the browser one. */
   createTextSource?(): TextMediaSource;
 }
@@ -112,8 +154,11 @@ interface MediaRequest {
   readonly type: string;
   /** The file a movie node names. Empty for a webcam, and for a movie with no file yet. */
   readonly url: string;
-  /** T810: the webcam's chosen camera ("" = system default). Empty for every other type. */
-  readonly device: string;
+  /**
+   * T1043: everything the webcam asks the camera for, T810's `device` included. The
+   * shipped default for every other node type, which asks for nothing.
+   */
+  readonly camera: CameraRequest;
 }
 
 /**
@@ -143,12 +188,10 @@ function mediaRequests(graph: GraphDocument): MediaRequest[] {
       // and the transport's `inactiveWhen` — three surfaces that must agree about which
       // file a node names, or the picker, the loader and the dimming disagree.
       url: pictureFileUrl(node.parameters["file"]),
-      // T810: raw read, like `url` above — the picker writes a plain string commit, and
-      // driving a camera choice from an expression is not a thing this hook supports.
-      device:
-        node.type === "webcam" && typeof node.parameters["device"] === "string"
-          ? node.parameters["device"]
-          : "",
+      // T810/T1043: raw read, like `url` above — the picker writes a plain string commit,
+      // and driving a camera choice or a capture format from an expression is not a thing
+      // this hook supports (see `cameraRequestOf`).
+      camera: node.type === "webcam" ? cameraRequestOf(node.parameters) : NO_CAMERA_REQUEST,
     });
   }
   return requests;
@@ -271,19 +314,39 @@ export function browserMediaEnvironment(): MediaEnvironment {
         colorSpaceConversion: "default",
       });
     },
-    async openCamera(device) {
+    /**
+     * T810: an exact deviceId when one is chosen, exactly as the microphone path (T434).
+     * A vanished device throws OverconstrainedError, which the open loop turns into a
+     * named fallback rather than a silent default.
+     *
+     * T1043: the size, rate and facing ride the same constraint object, built by
+     * `cameraConstraints` — which returns literal `true` when nothing was asked, so a
+     * document storing none of the new keys negotiates byte-for-byte as it did. The
+     * VIDEO TRACK is kept, because it is the only thing that knows what was granted.
+     */
+    async openCamera(request) {
       const media = navigator.mediaDevices;
       if (media === undefined) throw new Error("This browser exposes no camera API.");
-      // T810: an exact deviceId when one is chosen, exactly as the microphone path
-      // (T434). A vanished device throws OverconstrainedError, which the open loop
-      // turns into a named fallback rather than a silent default.
       const stream = await media.getUserMedia({
-        video: device.trim() === "" ? true : { deviceId: { exact: device } },
+        video: cameraConstraints(request),
         audio: false,
       });
       const video = document.createElement("video");
       video.srcObject = stream;
-      return prepare(video);
+      const element = await prepare(video);
+      const track = stream.getVideoTracks()[0];
+      return {
+        element,
+        // Read per call, never captured (§V986) — see `OpenedCamera`.
+        grant: () => cameraGrantOf(track?.getSettings()),
+        // `getCapabilities` is OPTIONAL on MediaStreamTrack and some browsers have none
+        // for video at all. Absent is a different fact from "no limits", and the section
+        // says which (§V986); the optional call is what keeps them distinguishable.
+        limits: () => cameraLimitsOf(track?.getCapabilities?.()),
+        stop: () => {
+          for (const entry of stream.getTracks()) entry.stop();
+        },
+      };
     },
   };
 }
@@ -324,6 +387,14 @@ export interface MediaWiring {
    * notices, and an element left running would drift arbitrarily far while nothing moved.
    */
   setRunning(running: boolean): void;
+  /**
+   * T1043 — what one webcam node's camera is ASKING FOR and what it actually GOT.
+   *
+   * A function, called once per inspector render, because the grant it reads is live
+   * (§V986) — `audioStatus`'s shape and for the same stated reason. Null for a node that
+   * is not a webcam, or one whose camera has not been opened in this session.
+   */
+  cameraStatus(nodeId: NodeId): CameraStatus | null;
 }
 
 export function useMediaSources(
@@ -369,8 +440,15 @@ export function useMediaSources(
   const requests = useMemo(() => mediaRequests(graph), [graph]);
   // T810: `device` is part of a request's identity — picking a different camera must
   // re-run the open effect, or the picker writes a parameter nothing reads until reload.
+  // T1043: so is every other Capture knob, for exactly the same reason — a constraint is
+  // handed to `getUserMedia` at OPEN time, so a size or rate that did not re-open would be
+  // a control that writes a number and changes nothing until the next reload.
   const key = requests
-    .map((request) => `${request.nodeId}|${request.type}|${request.url}|${request.device}`)
+    .map((request) => {
+      const { device, width, height, frameRate, facing, exact } = request.camera;
+      const camera = `${device}|${String(width)}x${String(height)}@${String(frameRate)}|${facing}|${String(exact)}`;
+      return `${request.nodeId}|${request.type}|${request.url}|${camera}`;
+    })
     .join("\n");
 
   const runtimeRef = useRef(runtime);
@@ -390,6 +468,15 @@ export function useMediaSources(
   const playersRef = useRef(
     new Map<NodeId, { element: PlayableMedia; runner: MediaTransportRunner }>(),
   );
+  /**
+   * T1043 — live cameras by node: what was asked for, and the door that can still be asked
+   * what was granted. An entry with a null `camera` is a camera that FAILED to open, kept
+   * so the Camera section can say why where the user is looking rather than only in the
+   * problems pane.
+   */
+  const camerasRef = useRef(
+    new Map<NodeId, { requested: CameraRequest; camera: OpenedCamera | null; message?: string }>(),
+  );
   const runningRef = useRef(true);
   /** The value graph's resolver, refreshed per frame by `sync`. */
   const channelsRef = useRef<ChannelResolver | undefined>(undefined);
@@ -404,6 +491,8 @@ export function useMediaSources(
       unregister: () => void;
       /** T577: what the cleanup has to STOP, not merely unhook. */
       element: MediaElement;
+      /** T1043: a camera's live tracks, which `pause()` does NOT stop. Null for a file. */
+      camera: OpenedCamera | null;
     }> = [];
     /** T1223: stills, which have no element to stop — only a decoded bitmap to free. */
     const stillOpened: Array<{ source: VideoMediaSource; unregister: () => void }> = [];
@@ -413,6 +502,9 @@ export function useMediaSources(
     const liveText = textSourcesRef.current;
     // Same capture rule as `liveText`, for the same reason (T493).
     const livePlayers = playersRef.current;
+    // Same capture rule again, for the same reason (T1043).
+    const liveCameras = camerasRef.current;
+    const cameraOpened: NodeId[] = [];
     const playerOpened: NodeId[] = [];
     const released: Array<() => void> = [];
     const reported: RuntimeDiagnostic[] = [];
@@ -540,10 +632,11 @@ export function useMediaSources(
         }
 
         let element: MediaElement;
+        let camera: OpenedCamera | null = null;
         try {
           if (request.type === "webcam") {
             try {
-              element = await env.openCamera(request.device);
+              camera = await env.openCamera(request.camera);
             } catch (constrained) {
               /*
                * T810 — the chosen camera has VANISHED (unplugged between sessions).
@@ -552,9 +645,25 @@ export function useMediaSources(
                * path made for T434. Any other failure (permission denied, no camera at
                * all) falls through to the ordinary unavailable diagnostic, and the
                * §V687 understudy keeps the document playing either way.
+               *
+               * T1043 — THERE ARE NOW TWO WAYS TO BE OVERCONSTRAINED AND THEY WANT
+               * OPPOSITE ANSWERS: a device that vanished (retry without it — the camera
+               * the user meant is gone but a camera is better than black), and a REQUIRED
+               * size or rate this camera does not have (do NOT retry — dropping the
+               * constraint is exactly what Require exists to refuse, and a silent retry
+               * would make Require and Prefer the same control).
+               *
+               * `OverconstrainedError.constraint` is the browser naming which one failed,
+               * so the discrimination is read rather than guessed. Where it names nothing
+               * — older engines leave it empty — the device is blamed, which is the
+               * pre-T1043 behaviour and the only one a document with no format request
+               * can possibly mean.
                */
+              const failing = (constrained as { constraint?: string }).constraint ?? "";
+              const blamesDevice = failing === "" || failing === "deviceId";
               if (
-                request.device === "" ||
+                request.camera.device === "" ||
+                !blamesDevice ||
                 (constrained as { name?: string }).name !== "OverconstrainedError"
               ) {
                 throw constrained;
@@ -567,32 +676,60 @@ export function useMediaSources(
                 ),
               );
               if (live) setDiagnostics([...reported]);
-              element = await env.openCamera("");
+              camera = await env.openCamera({ ...request.camera, device: "" });
             }
+            element = camera.element;
           } else {
             element = await env.openFile(request.url);
           }
         } catch (error) {
-          reported.push(
-            diagnostic(
-              request.nodeId,
-              request.type === "webcam"
-                ? `The camera for "${request.nodeId}" is unavailable.`
-                : `The file for "${request.nodeId}" could not be played.`,
-              error instanceof Error ? error.name : "The browser refused the request.",
-            ),
-          );
+          /*
+           * T1043 — a REQUIRED format this camera cannot do is refused BY NAME, with the
+           * numbers in the sentence. "The camera is unavailable" would be true and useless
+           * here: the camera is fine, the request is not, and the user cannot tell those
+           * apart from a message that names neither.
+           */
+          const overconstrained =
+            request.type === "webcam" &&
+            (error as { name?: string }).name === "OverconstrainedError" &&
+            request.camera.exact;
+          const message = overconstrained
+            ? `The camera for "${request.nodeId}" cannot do the REQUIRED ${requiredFormatText(request.camera)}.`
+            : request.type === "webcam"
+              ? `The camera for "${request.nodeId}" is unavailable.`
+              : `The file for "${request.nodeId}" could not be played.`;
+          const suggestion = overconstrained
+            ? "Set Fit to Prefer to take the camera's nearest mode instead, or ask for a size and rate this camera has."
+            : error instanceof Error
+              ? error.name
+              : "The browser refused the request.";
+          reported.push(diagnostic(request.nodeId, message, suggestion));
+          if (request.type === "webcam") {
+            liveCameras.set(request.nodeId, {
+              requested: request.camera,
+              camera: null,
+              message,
+            });
+            cameraOpened.push(request.nodeId);
+          }
           if (live) setDiagnostics([...reported]);
           continue;
         }
-        if (!live) return;
+        if (!live) {
+          camera?.stop();
+          return;
+        }
+        if (camera !== null) {
+          liveCameras.set(request.nodeId, { requested: request.camera, camera });
+          cameraOpened.push(request.nodeId);
+        }
 
         const media = createVideoMediaSource(element);
         const unregister = backend.registerMediaSource(
           mediaSourceIdFor(request.nodeId),
           media.source,
         );
-        opened.push({ source: media, unregister, element });
+        opened.push({ source: media, unregister, element, camera });
 
         // T493: a FILE gets a transport; a camera does not. A live stream has no playhead
         // to derive — asking a webcam to seek to second four is not a thing — so the
@@ -643,6 +780,14 @@ export function useMediaSources(
         // structurally through `playableMedia` for the same reason the transport does: it
         // is the one place that knows what "an element you can drive" means.
         playableMedia(entry.element)?.pause();
+        /*
+         * T1043 — and `pause()` IS NOT ENOUGH FOR A CAMERA. Pausing the element detaches
+         * the sink; the `MediaStream`'s tracks keep capturing and the camera's indicator
+         * light stays on for a node that no longer exists. Only the door that opened the
+         * stream holds the tracks, which is why stopping them is on `OpenedCamera` — the
+         * microphone path has stopped its tracks since T434 and this half never did.
+         */
+        entry.camera?.stop();
       }
       for (const entry of stillOpened) {
         entry.unregister();
@@ -656,6 +801,7 @@ export function useMediaSources(
         liveText.delete(entry.nodeId);
       }
       for (const nodeId of playerOpened) livePlayers.delete(nodeId);
+      for (const nodeId of cameraOpened) liveCameras.delete(nodeId);
       for (const release of released) release();
       setDiagnostics(NO_DIAGNOSTICS);
     };
@@ -707,8 +853,41 @@ export function useMediaSources(
     }
   }, []);
 
+  /**
+   * T1043 — the request beside the grant, for ONE webcam node.
+   *
+   * The grant is read HERE, on every call, straight off the live track (§V986) — never
+   * copied into a ref at open time. `audioStatus` recomputes its latency for the same
+   * reason and says so; a camera's settings move for a longer list of reasons than an
+   * `AudioContext`'s latency does.
+   *
+   * NOTHING IN HERE EVER FILLS THE GRANT FROM THE REQUEST. That is the one line that keeps
+   * this from becoming §B172's echo: a camera with no reportable settings comes back with
+   * `granted: null`, and the section says the browser did not report — never the number the
+   * user typed, dressed up as a measurement.
+   */
+  const cameraStatus = useCallback((nodeId: NodeId): CameraStatus | null => {
+    const entry = camerasRef.current.get(nodeId);
+    if (entry === undefined) return null;
+    if (entry.camera === null) {
+      return {
+        kind: "error",
+        ...(entry.message === undefined ? {} : { message: entry.message }),
+        requested: entry.requested,
+        granted: null,
+        limits: null,
+      };
+    }
+    return {
+      kind: "live",
+      requested: entry.requested,
+      granted: entry.camera.grant(),
+      limits: entry.camera.limits(),
+    };
+  }, []);
+
   // T465: the problems tab's Clear empties every ACCUMULATING source; anything still
   // real re-reports on its own and thereby proves it is live.
   const clearDiagnostics = useCallback(() => setDiagnostics([]), []);
-  return { diagnostics, clearDiagnostics, sync, setRunning };
+  return { diagnostics, clearDiagnostics, sync, setRunning, cameraStatus };
 }

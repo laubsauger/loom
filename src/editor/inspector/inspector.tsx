@@ -25,6 +25,7 @@ import { referenceParameters } from "./reference-parameters.ts";
 import { AudioSection, audioSectionParameters } from "./audio-section.tsx";
 import { SyncOffsetSuggestion } from "./sync-offset-suggestion.tsx";
 import { WebcamSection, webcamSectionParameters } from "./webcam-section.tsx";
+import type { CameraStatus } from "@/app/camera-request.ts";
 import { NativeInputSection, nativeInputSectionParameters } from "./syphon-section.tsx";
 import { NATIVE_INPUT_TRANSPORTS } from "@devices/native-video.ts";
 import { MidiSection, midiSectionParameters } from "./midi-section.tsx";
@@ -164,6 +165,17 @@ export interface InspectorProps {
       | null;
   };
   /**
+   * T1043: what a webcam node's camera was asked for and what it granted, read LIVE —
+   * called once per render, never captured (§V986), exactly as `audioStatus` is.
+   *
+   * Optional, and its absence does NOT hide the Camera section the way a missing
+   * `audioStatus` hides the Audio one: the device PICKER is a document edit and works with
+   * no session wiring at all, while the grant is the part that needs a live camera. So an
+   * embed or a test keeps the picker and simply says nothing about a grant — which is the
+   * §V986 answer to "we cannot see" rather than a fabricated stand-in.
+   */
+  cameraStatus?: (nodeId: NodeId) => CameraStatus | null;
+  /**
    * T942: the session's ONE Web MIDI access, for the MIDI section shown on `midiIn`.
    * Absent = no session MIDI wiring (tests, embeds) — section hidden, exactly as the
    * Audio one is. NEVER a fabricated stand-in: a picker over an access nobody holds
@@ -298,6 +310,7 @@ export function Inspector({
   latestFrame,
   channelNames,
   audioStatus,
+  cameraStatus,
   midi,
   laser,
   components,
@@ -791,6 +804,11 @@ export function Inspector({
       <WebcamSection
         nodeId={node.id}
         device={typeof resolved.values["device"] === "string" ? (resolved.values["device"] as string) : ""}
+        /* T1043 — read HERE, once per render, never captured (§V986): a track's granted
+           size and rate move, and a number snapshotted when the panel opened goes quietly
+           stale while still looking like a measurement. `audioStatus` is read the same
+           way three lines up, for the same stated reason. */
+        status={cameraStatus?.(node.id) ?? null}
         editor={editor}
       />
     ) : null;

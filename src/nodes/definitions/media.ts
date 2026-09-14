@@ -1,4 +1,5 @@
 import type { CompiledNodeDescription, NodeDefinition } from "../../domain/types/node-definition.ts";
+import type { ParameterValue } from "../../domain/types/parameters.ts";
 import type { EffectPassDescriptor } from "../../runtime/backend/plan.ts";
 import { SHARED_SAMPLER_ID, scratchResourceId } from "../../compiler/resources.ts";
 import { MEDIA_TRANSPORT_PARAMETERS } from "../../domain/media/transport.ts";
@@ -120,12 +121,79 @@ export const movieFileInNode: NodeDefinition = {
   compile: compileMedia,
 };
 
+const CAMERA_FIT_OPTIONS = [
+  { value: "prefer", label: "Prefer" },
+  { value: "require", label: "Require" },
+] as const;
+
+const CAMERA_FACING_OPTIONS = [
+  { value: "any", label: "Any" },
+  { value: "user", label: "Front (user)" },
+  { value: "environment", label: "Back (environment)" },
+] as const;
+
+/** Nothing in the Capture group is asked for. The Fit control has nothing to apply to. */
+function asksForNothing(values: Readonly<Record<string, ParameterValue>>): boolean {
+  const asked = (key: string): boolean => {
+    const value = values[key];
+    return typeof value === "number" && Number.isFinite(value) && value > 0;
+  };
+  return !asked("width") && !asked("height") && !asked("frameRate");
+}
+
+/**
+ * T1043 — THE CAMERA, WITH THE KNOBS THE BROWSER ACTUALLY HAS.
+ *
+ * The owner: *"the webcam node probably can have some more features, some more parameters
+ * like resolution and whatnot — I think we can probably pull a few more things from there."*
+ *
+ * ## THE DESIGN DECISION, BEFORE THE KNOBS: these are REQUESTS, and the node says so
+ *
+ * `getUserMedia` constraints are a NEGOTIATION. Ask for 1920x1080 and a camera that has no
+ * such mode hands you 1280x720 — successfully, silently, no error. A Resolution parameter
+ * that stopped there would be a control that reads back the number you typed and is wrong
+ * about the picture, which is §B172's lying readout with a different face.
+ *
+ * So every parameter here names, IN ITS OWN DESCRIPTION, what happens when the browser
+ * declines — and the node REPORTS THE GRANT BESIDE THE REQUEST (§V827's obligation (2):
+ * measured, never echoed). The grant is read per call from the live `MediaStreamTrack` and
+ * rendered by the inspector's Camera section; where the browser reports nothing it reads
+ * ABSENT rather than as a confident zero (§V986). `camera-request.ts` holds that split.
+ *
+ * The node's OUTPUT resolution already followed the grant before this row existed —
+ * `copyExternalImageToTexture` asserts matching extents, so the media hook writes the size
+ * the camera actually produced into the node as a `setNodeResolution` patch. That is why
+ * Width/Height here cannot be the node's resolution override: the override is the ANSWER,
+ * and this is the QUESTION. They are two values and the row exists because they differ.
+ *
+ * ## WHY NOT ASPECT RATIO, which `getUserMedia` also takes
+ *
+ * It fights Width and Height rather than adding to them: a request for 1280x720 already
+ * states 16:9, and a request for 16:9 alongside a height of 720 is the same sentence said
+ * twice in a form where the two can contradict each other. TouchDesigner's Video Device In
+ * has resolution and rate, not an aspect constraint, for the same reason. The one thing
+ * aspect ratio gives that W/H does not — "any width, but widescreen" — is served by asking
+ * for a height alone, which this node already allows (0 = unasked, per axis).
+ *
+ * ## Resolution is not cosmetic here (§V859)
+ *
+ * A smaller capture feeding a segmentation or depth node is a REAL saving: those models
+ * work at a fixed internal size and upsample, so a 1080p frame buys no detail and costs a
+ * 1080p readback every frame. Asking the camera for 640x360 is the cheapest possible
+ * version of that saving, because the pixels are never produced at all.
+ */
 export const webcamNode: NodeDefinition = {
   type: "webcam",
+  // Still version 1, deliberately (§V10), on T810's precedent and for T493's reason: every
+  // T1043 key carries a DEFAULT, and the defaults are the exact negotiation this node
+  // already made (`video: true`, no size, no rate, no facing). No stored document changed
+  // shape and none renders differently, so a `migrate` would have nothing to rewrite and a
+  // bump without one would emit "nothing describes what changed" on every old file.
   version: 1,
   title: "Webcam",
   category: "input",
-  description: "A live camera. Frames arrive on the device's schedule; the last frame holds if the stream ends.",
+  description:
+    "A live camera. Frames arrive on the device's schedule; the last frame holds if the stream ends. The Capture parameters ASK the camera for a size, a rate and a facing — they are requests, not settings, and the inspector's Camera section reports what the camera actually granted beside what was asked for. The node's output resolution always follows what ARRIVED.",
   tags: ["media", "camera", "live", "capture"],
   inputs: [],
   outputs: [{ id: "out", label: "Out", type: RGBA_TEXTURE }],
@@ -142,6 +210,71 @@ export const webcamNode: NodeDefinition = {
       default: "",
       description:
         "Camera device id, from the inspector's device picker. Empty = the system default. Device names are hidden by the browser until camera access is granted.",
+    },
+    width: {
+      type: "number",
+      label: "Width",
+      group: "Capture",
+      default: 0,
+      min: 0,
+      max: 7680,
+      step: 1,
+      range: "floor",
+      unit: "px",
+      description:
+        "Capture width to ASK the camera for. 0 asks for nothing and takes whatever the camera offers, which is what this node did before it had this parameter. IT IS A REQUEST: on Prefer the browser substitutes its nearest mode and the camera still opens, so you may well get a different number — the Camera section reports the granted size beside this one, and the node's output resolution follows the GRANT. On Require a camera with no such mode refuses to open and the node says which constraint it could not meet. Changing this re-opens the camera.",
+    },
+    height: {
+      type: "number",
+      label: "Height",
+      group: "Capture",
+      default: 0,
+      min: 0,
+      max: 4320,
+      step: 1,
+      range: "floor",
+      unit: "px",
+      description:
+        "Capture height to ASK the camera for, on the same terms as Width: 0 asks for nothing, Prefer lets the browser substitute, Require refuses a camera that cannot do it. Asking for a height alone — height 720, width 0 — is how you ask for a size without pinning the aspect. Changing this re-opens the camera.",
+    },
+    frameRate: {
+      type: "number",
+      label: "Frame Rate",
+      group: "Capture",
+      default: 0,
+      min: 0,
+      max: 240,
+      step: 1,
+      range: "floor",
+      unit: "hz",
+      description:
+        "Frames per second to ASK the camera for. 0 asks for nothing. A request like Width and Height: Prefer takes the nearest mode the camera has, Require refuses to open one that has no such mode. The rate that actually arrived is reported in the Camera section — and where the browser reports no rate at all it says so rather than showing a number it does not have. Changing this re-opens the camera.",
+    },
+    facing: {
+      type: "enum",
+      label: "Facing",
+      group: "Capture",
+      default: "any",
+      options: [...CAMERA_FACING_OPTIONS],
+      description:
+        "Which camera to prefer where the device has more than one — the front or the back camera of a phone or tablet. ALWAYS asked as a preference, never a requirement, even under Require: most desktop webcams report no facing mode at all, so an exact request would refuse to open the only camera on the machine. A camera that reports no facing is reported as unknown rather than guessed at. Changing this re-opens the camera.",
+      inactiveWhen: (values) =>
+        typeof values["device"] === "string" && values["device"].trim() !== ""
+          ? "A specific camera is chosen in Device, so the facing preference does not apply — the device decides which camera this is."
+          : null,
+    },
+    fit: {
+      type: "enum",
+      label: "Fit",
+      group: "Capture",
+      default: "prefer",
+      options: [...CAMERA_FIT_OPTIONS],
+      description:
+        "What a request this camera cannot meet should mean. PREFER asks with `ideal`: the browser picks its nearest mode, the camera always opens, and the Camera section reports what actually arrived beside what was asked for. REQUIRE asks with `exact`: a camera with no matching mode REFUSES TO OPEN — the node stays black and names the constraint it could not meet, which is the only thing that makes requiring different from preferring. Facing is always a preference either way.",
+      inactiveWhen: (values) =>
+        asksForNothing(values)
+          ? "Width, Height and Frame Rate are all 0, so nothing is being requested and there is nothing to prefer or require."
+          : null,
     },
   },
   resolutionPolicy: { kind: "project" },
