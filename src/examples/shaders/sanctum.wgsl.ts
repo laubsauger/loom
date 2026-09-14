@@ -133,6 +133,9 @@ struct Params {
   inlaySpill: f32,    // @default 4.2  how hard the channels light the stone around them — this is the hall's PRIMARY light, not a decoration on it
   inlayDensity: f32,  // @default 0.4  share of veins that are live — a dead conduit is still a channel in the stone
   stoneColor: vec4f,  // @default [0.29, 0.27, 0.25, 1]  the stone under the key
+  stoneWarm: vec4f,   // @default [1, 0.55, 0.45, 1]  one quarry: the terracotta bed, the stone that has iron in it — and its hue is off BOTH conduit axes on purpose
+  stoneCool: vec4f,   // @default [0.62, 0.82, 0.62, 1]  the other quarry: the sage bed, a green the piece contains nowhere else
+  stoneVary: f32,     // @default 0.75  how far a single block departs from the mean stone, 0 is the ONE FLAT ALBEDO the whole hall used to be
   keyColor: vec4f,    // @default [0.52, 0.62, 0.78, 1]  the cold light from the doorway
   keyIntensity: f32,  // @default 1.35  how hard that light drives
   roomPeriod: f32,    // @default 52.8  metres between the walls — TWELVE BAYS, and it must stay an exact multiple of 'bay' or a doorway lands mid-colonnade
@@ -876,6 +879,90 @@ fn grainNormal(p: vec3f, n: vec3f, viewDist: f32) -> vec3f {
   return normalize(n - (tangential * params.grain * detail * (1.0 - onFloor)));
 }
 
+/**
+ * THE STONE'S OWN COLOUR, PER BLOCK — and the reason it is the lever is MEASURED, because
+ * six passes of adding colour to this file added it to terms the eye never receives.
+ *
+ * Each of the palette's four colours was neutralised in turn AT ITS OWN LUMINANCE, so the
+ * arm removes a hue without removing light, and the frame's mean chroma was read at three
+ * moments of the hue lap (t = 0, 10, 20 s), 640x360:
+ *
+ *   shipped                        0.149  0.155  0.232
+ *   conduit colours neutralised    0.045  0.045  0.050     <- the frame goes grey
+ *   key colour neutralised         0.150  0.158  0.228
+ *   stone albedo neutralised       0.132  0.156  0.223
+ *   warm rake neutralised          0.150  0.155  0.234
+ *
+ * THREE OF THE FOUR COLOURS IN THE PALETTE DO NOT REACH THE EYE AT ALL. Every colour in
+ * this picture is the conduits', which is exactly the "cyan and amber" reading, and it is
+ * why a seventh light would have failed the way the first six did: 'inlaySpill' at 9 is the
+ * hall's illumination, the fill is 65% conduit-tinted and the bounce 50%, so every lit
+ * surface is already multiplied by one of two hues. A new light competes with that. An
+ * ALBEDO does not — it multiplies INTO it, and a red stone under a cyan light is a colour
+ * neither of them has. That is how a material gets a colour, and this hall had none: one
+ * flat 'stoneColor' of chroma 0.138 on the floor, the columns, the vault and the walls.
+ *
+ * So the block is the unit, the way the courses and the perpends already are: one hash per
+ * block decides which QUARRY it came from, a second how dark that block was cut. The eye
+ * gets variety at the scale it is standing at — which is the other half of the ask — and the
+ * frame gets hues that are not on the conduits' axis.
+ *
+ * ⚑ BOUNDED BY CONSTRUCTION rather than by a clamp (§V996): a block mixes between two
+ * AUTHORED quarry colours by 'stoneVary', so there is no rotation that can walk into another
+ * element's hue however long it runs. The pairs are still checked IN PIXELS (§V999) — a
+ * multiply commutes with nothing downstream of it either.
+ */
+fn stoneAlbedoAt(p: vec3f, n: vec3f) -> vec3f {
+  let h = max(params.courseHeight, 0.08);
+  let courseIndex = floor(p.y / h);
+  /* The SAME block identity 'beddingAt' cuts the joints with — course, position around the
+     shaft, staggered half a block per course — so the colour changes exactly where the joint
+     is, and never across the middle of a stone. */
+  let q = columnLocal(p);
+  let around = (atan2(q.z, q.x) / 6.2831853) + 0.5;
+  let blocks = max(params.courseBlocks, 1.0);
+  let stagger = fract(courseIndex * 0.5) * 0.5;
+  /* The floor is not coursed, it is SLABBED, and it is keyed on the same cell the settlement
+     already uses — otherwise the floor would take the colour of whatever course its height
+     happened to fall in, which is a horizontal stripe across a slab. */
+  let slab = max(params.slabSize, 0.2);
+  let cell = vec2i(floor(vec2f(p.x, p.z) / slab));
+  let onFloor = (n.y > 0.75) && (p.y < 0.6);
+  let block = select(
+    vec3i(i32(courseIndex), i32(floor((around * blocks) + stagger)), i32(bayOf(p.z))),
+    vec3i(cell.x, cell.y, 101),
+    onFloor,
+  );
+  let share = clamp(params.stoneVary, 0.0, 1.0);
+  let roll = unitFloat(hash3i(block, STONE_SEED));
+  /* A quarry is a BED, not a gradient: 'smoothstep' with a narrow middle puts most blocks
+     firmly in one bed or the other and leaves a few in between, which is what a wall built
+     from two deliveries looks like. */
+  let quarry = mix(params.stoneWarm.rgb, params.stoneCool.rgb, smoothstep(0.3, 0.7, roll));
+  let shade = mix(0.84, 1.16, unitFloat(hash3i(block + vec3i(0, 0, 19), STONE_SEED)));
+  /* ⚑ A BED CHANGES HUE AT CONSTANT REFLECTANCE, which is the tone-curve lesson of this file
+     run backwards: a grade that moves tone must not move chroma, and a colour that moves
+     chroma must not move tone. A coloured multiplier is DARKER than the neutral one it
+     replaces — mean 0.776 of it over the two beds here — so the first version of this dimmed
+     the hall by a fifth and the liveness gate caught it as an 11% loss of motion, because
+     the light that moves had less stone to move on. Dividing each bed by its own luminance
+     leaves exactly the hue and the chroma behind. The block-to-block BRIGHTNESS variation is
+     'shade', which is deliberate, author-controlled and averages one. */
+  /* ⚑ AND THERE IS NO SECOND TERM HERE, WHICH IS A MEASURED DECISION RATHER THAN AN
+     OMISSION. This function shipped for one pass with an iron-oxide stain that started at a
+     bedding joint and wept down the face below it — the file's own rule about decay
+     FOLLOWING structure, applied to colour instead of to shape. It was cut because it was
+     measured against its own cut arm and it did not reach the eye: 0.11 to 0.19 mean levels
+     over the frame, 1.1% to 1.5% of pixels moved by more than two levels, against the
+     quarries' 9.1 to 14.7 levels and 81% to 86%. Two thirds of this hall's stone sits below
+     luma 90 and the rest of it is beside a conduit, so a 35% albedo mix on a sixth of the
+     vertical faces lands either in the mud or under the spill. The red it was there to add
+     is in the terracotta bed instead, at block scale, on every surface. */
+  let tint = mix(vec3f(1.0), quarry, share);
+  let tone = max(dot(tint, vec3f(0.2126, 0.7152, 0.0722)), 1.0e-4);
+  return params.stoneColor.rgb * (tint / tone) * mix(1.0, shade, share);
+}
+
 fn normalAt(p: vec3f) -> vec3f {
   let e = vec2f(0.0016, 0.0);
   return normalize(vec3f(
@@ -1238,6 +1325,11 @@ fn reflectionAt(hitPoint: vec3f, n: vec3f, viewDir: vec3f, hue: vec3f, warmth: v
   let spill = inlaySpillAt(p) * params.inlaySpill * 0.4;
   // The junctions carry their own colour into the reflection too, or the wet floor would
   // be the one place in the hall where the second hue does not exist.
+  /* ⚑ THE REFLECTION KEEPS THE MEAN STONE rather than the per-block albedo, and that is a
+     cost decision stated rather than an oversight: 'stoneAlbedoAt' wants a normal, and the
+     reflected hit has none — taking one costs a second 'normalAt', which is four more full
+     'sceneAt' evaluations, for a term that is already scaled to 0.4 and faded out by
+     'reflectFade' within a few metres. */
   let colour = (mix(hue, warmth, channel.y) * params.inlayEmission * channel.x)
     + (params.stoneColor.rgb * hue * spill);
   // Near the eye it is a mirror, far away a sheen.
@@ -1469,7 +1561,10 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
     let dayLocalZ = (fract(p.z / max(params.bay, 0.1) + 0.5) - 0.5) * max(params.bay, 0.1);
     let dayPool = 1.0 - smoothstep(dayR * 0.28, dayR * 0.95, length(vec2f(p.x - dayX, dayLocalZ)));
     let daylight = params.dayColor.rgb * params.breachLight * 0.55 * dayOpen * dayPool * max(n.y, 0.0);
-    let lit = (params.stoneColor.rgb * ((params.keyColor.rgb * params.keyIntensity * key * lambert) + fill + bounced + warm + daylight)) + emission;
+    /* ⚑ THE ALBEDO IS PER BLOCK, and it is the frame's only source of colour that is not a
+       light — see 'stoneAlbedoAt' for the measurement that says why that matters here. */
+    let albedo = stoneAlbedoAt(p, n);
+    let lit = (albedo * ((params.keyColor.rgb * params.keyIntensity * key * lambert) + fill + bounced + warm + daylight)) + emission;
     var reflected = vec3f(0.0);
     /* The FLOOR, and the test is position as well as orientation. A normal pointing up is
        not enough: the eroded vault has pockets whose local normals point any way at all, so

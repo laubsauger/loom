@@ -179,6 +179,16 @@ export const sanctumDocument = document(
         inlaySpill: 9.0,
         inlayDensity: 0.4,
         stoneColor: [0.29, 0.27, 0.25, 1],
+        /* ⚑ THE COLOUR THE FRAME WAS MISSING IS THE STONE'S OWN. Measured rather
+           than argued: neutralising the conduit colours at their own luminance takes the
+           frame's mean chroma from 0.149 to 0.045, while neutralising the key, the warm rake
+           or the stone albedo moves it by less than 0.02. Three of the four colours in the
+           palette were not reaching the eye, because the hall is lit BY the conduits and a
+           near-neutral albedo can only pass their hue along. Two quarries and a per-block
+           roll give the stone a colour of its own to multiply into that light. */
+        stoneWarm: [1, 0.55, 0.45, 1],
+        stoneCool: [0.62, 0.82, 0.62, 1],
+        stoneVary: 0.75,
         keyColor: [0.52, 0.62, 0.78, 1],
         keyIntensity: 1.35,
         /* The doorway's half-width, and its head is an ARCH — the flat rectangle was "the

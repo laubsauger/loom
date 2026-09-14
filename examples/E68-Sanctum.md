@@ -150,6 +150,92 @@ ones small.
 The interleaving is the win, not the object-ness alone: a mark that appeared in only one
 place would not have done it.
 
+## Three of the four colours in the palette were not reaching the eye
+
+The reading after that pass was that the frame is still **cyan and amber**, and the next six
+ideas were all more light. They would have failed the same way, and the measurement says
+why. Each colour in the palette was neutralised **at its own luminance** — so the arm removes
+a hue without removing light — and the frame's mean chroma was read at three moments of the
+hue lap, at 640×360:
+
+| arm | t = 0 s | t = 10 s | t = 20 s |
+| --- | --- | --- | --- |
+| shipped | 0.149 | 0.155 | 0.232 |
+| conduit colours neutralised | **0.045** | **0.045** | **0.050** |
+| key colour neutralised | 0.150 | 0.158 | 0.228 |
+| stone albedo neutralised | 0.132 | 0.156 | 0.223 |
+| warm rake neutralised | 0.150 | 0.155 | 0.234 |
+
+Neutralise the conduits and the picture goes grey. Neutralise the key, the rake or the stone
+and nothing measurable happens. **Every colour in this hall is the conduits'**, because
+`inlaySpill` at 9 is what actually lights it: the fill is 65 % conduit-tinted and the bounce
+50 %, so every lit surface is already multiplied by one of two hues. A seventh light competes
+with that. An **albedo** does not — it multiplies *into* it, and a red stone under a cyan
+light is a colour neither of them has.
+
+The albedo had the leverage all along and was not using it. A ceiling test settled that
+before anything was tuned: an absurd `stoneColor` of (0.5, 0.08, 0.08) takes the frame's mean
+chroma from 0.149 to **0.371** and paints the whole picture red. The shipped stone was not
+weak in effect, it was weak in **chroma** — one flat value of 0.138 across the floor, the
+columns, the vault and the walls.
+
+So the block is the unit, the way the courses and the perpends already are. One hash per
+block picks which **quarry** it came from — a terracotta bed and a sage bed, both chosen off
+the conduits' hue axes — and a second decides how dark that block was cut. The identity is
+the one `beddingAt` already cuts the joints with, so the colour changes exactly where the
+joint is and never across the middle of a stone; the floor is keyed on its slab cell instead,
+or a course line would run a stripe across a slab.
+
+Against its own cut arm, at the same moments: **7.3 to 11.3 mean levels over the frame, 71 %
+to 80 % of pixels moved by more than two**. The two dominant hue bins fall from 65.7 % of the
+frame's chroma weight to 54.9 %, and the median **within-tile** hue spread — the close-range
+question, computed per tile and then summarised rather than over the union (§V1002) — rises
+from 0.0419 to 0.0654 turns.
+
+⚑ **A BED CHANGES HUE AT CONSTANT REFLECTANCE, and the gate is what taught it.** The first
+version simply multiplied the albedo by the bed's colour, and a coloured multiplier is darker
+than the neutral one it replaces — mean 0.776 of it over these two beds. The liveness gate
+caught it immediately and correctly, as an **11 % loss of motion** (0.1389 → 0.12368): the
+light that moves had a fifth less stone to move on. Dividing each bed by its own luminance
+leaves exactly the hue and the chroma behind, and the baseline then passes untouched. It is
+this file's tone-curve lesson run backwards — a grade that moves tone must not move chroma, so
+a colour that moves chroma must not move tone. The block-to-block *brightness* variation is a
+separate term that averages one, because that variety is wanted and this one was not.
+
+⚑ **And the claim is checked across a whole lap of the hue morph, not at one moment.** The
+quarries do not rotate but the conduits do, so a pair could close at a time nobody looked at
+(§V996). At all eight moments of a 41-second lap the shipped frame carries more variety than
+the cut arm — **1.11× at its worst moment, 2.52× at its best**, with frame entropy up at every
+one, by +0.12 bits at worst.
+
+⚑ **Per-element hue enumeration was tried first and abandoned, because the instrument cannot
+support it.** Isolating a bed and reading its hue does not measure the bed: every stone pixel
+is albedo *multiplied by* the conduit light, so the readings swing 0.003 to 0.506 with the lap
+and report the light rather than the material (§V999 — an isolation arm must be checked for
+what it failed to remove). What is separable is the picture's variety, arm against cut arm, at
+the same moment, which is what the table above reports.
+
+**It costs nothing this machine can measure**, and that is quoted as a PAIRED DIFFERENCE
+rather than as an absolute, because the absolute would not have been attributable: E57, the
+control, read 5.571 and then 4.391 ms in the same run against its own documented quiet-machine
+3.670 — 52 % and 20 % inflated, and drifting by a fifth between its own two runs. So the two
+E68 arms differ by one line (the call site of `stoneAlbedoAt`) and are interleaved, so drift
+cannot land on one of them: **14.156 / 13.107 and 20.316 / 20.972 ms p50** for off / on. The
+sign disagrees between the pairs — the change measures FASTER in the first and slower in the
+second — which is the signature of a difference that is not there. Two hashes, an `atan2` and
+a normalise per *shaded pixel*, never per march step. All arms reported a complete set of
+spans (340 of 340), so none of these figures is a fraction of its passes.
+
+⚑ **What is NOT here, and it is a measured decision rather than an omission.** This pass also
+carried an iron-oxide stain that began at a bedding joint and wept down the face below it —
+this file's own rule that decay *follows* structure, applied to colour instead of to shape.
+It was cut because it was measured against its own cut arm and it did not reach the eye:
+**0.11 to 0.19 mean levels, 1.1 % to 1.5 % of pixels**, against the quarries' 7.3 to 11.3 and
+71 %. Two thirds of this hall's stone sits below luma 90 and the rest of it is beside a
+conduit, so a 35 % albedo mix on a sixth of the vertical faces lands either in the mud or
+under the spill. The red it was there to add is in the terracotta bed instead — at block
+scale, on every surface.
+
 ## Independent uniform hashes clump — that is what they are for
 
 The conduits were selected by rolling a number per slot and lighting it if it fell under the
