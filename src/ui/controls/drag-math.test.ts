@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { NumberParameter } from "@domain/types/parameters.ts";
+import { parseProjectDocument, serializeProjectDocument } from "@domain/project/index.ts";
+import { testDocument } from "@domain/project/test-support.ts";
 import {
   DRAG_MODIFIER_FACTOR,
   PIXELS_PER_DECADE,
@@ -151,6 +153,104 @@ describe("T989 — a derived step drives the gesture and never the document", ()
     expect(formatNumber(0.25, { min: -360, max: 360 })).toBe("0.25");
     // The derived decimals are still a FLOOR, so a drag's digits do not jitter.
     expect(formatNumber(720, { min: -360, max: 360 })).toBe("720.0");
+  });
+});
+
+describe("T997 — the noise floor and the smallest storable value are two numbers (§V832)", () => {
+  /**
+   * T989's shape one order down. `MAX_DECIMALS = 6` was rounding EVERY committed value to
+   * six decimal places, for one reason — so `0.30000000000000004` never reaches a saved
+   * file — and in doing so it also decided that 1e-7 IS ZERO. Killing representation noise
+   * and deciding the smallest number the product can hold are different jobs, and the
+   * second one was nobody's decision.
+   *
+   * The two jobs are now two constants, and only one of them is absolute:
+   *   the NOISE floor is relative to the parameter's own declared scale (`storageDecimals`);
+   *   the READOUT width is absolute, and lifts rather than print a non-zero value as 0.
+   */
+
+  /** A rate. 1e-7 per frame is slow, not off — and "off" is a different graph. */
+  const rate: NumericSpec = { min: 0, max: 1 };
+
+  it("stores a value below 1e-6 instead of silently making it zero", () => {
+    // The defect's own signature: this returned 0, and 0 on a rate parameter is not a
+    // rounding of the user's entry, it is a different behaviour.
+    expect(normalizeValue(1e-7, rate)).toBe(1e-7);
+    expect(normalizeValue(2.5e-9, rate)).toBe(2.5e-9);
+    expect(normalizeValue(-1e-7, { min: -1, max: 1 })).toBe(-1e-7);
+  });
+
+  it("still kills float noise — the job the constant was actually hired for", () => {
+    // The known negative (§V968): a detector that let 1e-7 through by ROUNDING LESS would
+    // also let this through, and that is the regression this pair of assertions blocks.
+    expect(normalizeValue(0.1 + 0.2, rate)).toBe(0.3);
+    expect(String(normalizeValue(0.1 + 0.2, rate))).toBe("0.3");
+    expect(normalizeValue((20 - 0.1) / 100, { min: 0.1, max: 20 })).toBe(0.199);
+  });
+
+  it("still lands a drag that returns to zero EXACTLY on zero", () => {
+    // Measured, not imagined: a Rotate field (-360…360, derived step 7.2) fine-dragged
+    // back through its start lands on -7.105427357601002e-15. An absolute round to six
+    // decimals used to flatten that to 0; a purely relative one would STORE it, and then
+    // "rotation is zero" is false in a document where the user put the value back.
+    const spin: NumericSpec = { min: -360, max: 360 };
+    const start = dragStepFor(spin) * 7;
+    const residue = start + (-140 / PIXELS_PER_STEP) * dragStepFor(spin) * 0.1;
+    expect(residue).not.toBe(0);
+    expect(Math.abs(residue)).toBeGreaterThan(1e-15);
+    // Through the magnitude, because rounding a tiny negative yields -0 and always has:
+    // the claim is "the residue is gone", not "the sign bit is clear".
+    const landed = valueFromDrag({ startValue: start, deltaX: -140, spec: spin, modifier: "fine" });
+    expect(Math.abs(landed)).toBe(0);
+  });
+
+  it("never reads a non-zero value back as a confident 0 (§V986)", () => {
+    // The failure that makes the stored value worthless: the field holds 1e-7 and prints
+    // "0.000000", so the user cannot tell "too small to show" from "zero".
+    expect(formatNumber(1e-7, rate)).toBe("0.0000001");
+    expect(formatNumber(1.5e-7, rate)).toBe("0.00000015");
+    expect(Number(formatNumber(1e-7, rate))).toBe(1e-7);
+    // ...while every value big enough for the readout still prints at its usual width.
+    expect(formatNumber(0.5, { step: 0.01 })).toBe("0.50");
+    expect(formatNumber(1 / 3, rate)).toBe("0.333333");
+  });
+
+  it("survives the trip the field itself makes: display, then commit", () => {
+    // T648's round trip, at the magnitude it could not reach. The field seeds text entry
+    // with `formatNumber` and commits through `normalizeValue`; a value that cannot make
+    // that loop is destroyed by a click and a click away.
+    for (const value of [1e-7, 1.5e-7, 2.5e-9, 0.25, 0.3]) {
+      expect(normalizeValue(Number(formatNumber(value, rate)), rate)).toBe(value);
+    }
+  });
+
+  it("survives a SAVE and a LOAD, which is the trip that actually matters", () => {
+    // A value that survives the field but not the file is a worse bug than the one this
+    // row fixes, and nothing else in this module would notice.
+    const stored = normalizeValue(1e-7, rate);
+    const document = testDocument();
+    const node = document.graph.nodes["n1"];
+    if (node === undefined) throw new Error("fixture lost its node");
+    const saved = serializeProjectDocument({
+      ...document,
+      graph: {
+        ...document.graph,
+        nodes: { ...document.graph.nodes, n1: { ...node, parameters: { ...node.parameters, angle: stored } } },
+      },
+    });
+    const parsed = parseProjectDocument(saved);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.document.graph.nodes["n1"]?.parameters["angle"]).toBe(1e-7);
+  });
+
+  it("still lets a DECLARED precision decide, because that one is a statement (§V832)", () => {
+    // The author's number is the one thing allowed to quantise. What changed is that it is
+    // no longer capped by the noise constant, and the readout no longer disagrees with
+    // what was stored: 0.000 is the truth here, where "0.000000" for 1e-7 was a lie.
+    expect(normalizeValue(1e-7, { min: 0, max: 1, precision: 3 })).toBe(0);
+    expect(formatNumber(0, { min: 0, max: 1, precision: 3 })).toBe("0.000");
+    expect(normalizeValue(1.2345678e-7, { min: 0, max: 1, precision: 9 })).toBe(1.23e-7);
   });
 });
 

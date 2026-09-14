@@ -33,7 +33,44 @@ export const PIXELS_PER_DECADE = 200;
 /** Decimals used for a log-scaled parameter that declares no precision. */
 const LOG_DECIMALS = 4;
 
-const MAX_DECIMALS = 6;
+/**
+ * T997 — THE READOUT'S WIDTH, and nothing else.
+ *
+ * This is a legibility number: how many decimals a numeric field prints before the digits
+ * stop being readable at a glance and start jittering under a drag. It is deliberately
+ * ABSOLUTE, because a readout is read by a human at a fixed size.
+ *
+ * It used to do a second job as well — it was the count `normalizeValue` rounded every
+ * committed value to — and that made it a FLOOR ON MAGNITUDE that nobody declared: a rate
+ * of 1e-7 became exactly 0 on its way into the document, which is not a rounding of the
+ * user's entry but a different graph. §V832's shape one order down from T989: a constant
+ * justified by a sensation ("readable at a glance") reached persistent state. The noise
+ * job now belongs to `NOISE_SIGNIFICANT_DIGITS`, and this one never decides what can be
+ * stored — see `readoutDecimals`, where it LIFTS rather than print a non-zero value as 0.
+ */
+const MAX_READOUT_DECIMALS = 6;
+
+/**
+ * T997 — THE FLOAT-NOISE FLOOR, and nothing else.
+ *
+ * `0.30000000000000004` must never reach a saved file. That artefact lives in the last two
+ * or three of a double's ~16 significant digits, so the number that kills it is a count of
+ * SIGNIFICANT digits, measured against the parameter's own declared scale (`scaleOf`) —
+ * RELATIVE, because noise is relative. Twelve leaves four digits of headroom for noise
+ * accumulated over a drag's arithmetic while sitting far below anything a human types.
+ *
+ * Measured, which is why it is not simply "round less": a Rotate field (-360…360) dragged
+ * back through its own start lands on -7.105427357601002e-15, and a parameter that reads
+ * -7e-15 where the user put zero back is the same lie in the other direction. A relative
+ * floor kills that residue at every scale; an absolute one only killed it at this one.
+ */
+const NOISE_SIGNIFICANT_DIGITS = 12;
+
+/**
+ * `10 ** decimals` overflows to Infinity past ~308 and `toFixed` throws past 100. An
+ * arithmetic limit, not a product decision — no shipped parameter comes near it.
+ */
+const DECIMAL_LIMIT = 100;
 
 export interface ModifierState {
   shiftKey: boolean;
@@ -103,8 +140,13 @@ function decimalsOf(value: number): number {
   const text = String(Math.abs(value));
   const exponent = text.indexOf("e-");
   if (exponent >= 0) {
-    // 1e-7 and friends: the exponent is the decimal count, capped below anyway.
-    return Number(text.slice(exponent + 2));
+    // The exponent PLUS the mantissa's own decimals: "1.5e-7" is eight, not seven (T997).
+    // It read seven until values this small could be stored at all, and every caller then
+    // capped it at six, so the error had nowhere to show.
+    const mantissa = text.slice(0, exponent);
+    const point = mantissa.indexOf(".");
+    const fraction = point < 0 ? 0 : mantissa.length - point - 1;
+    return Number(text.slice(exponent + 2)) + fraction;
   }
   const dot = text.indexOf(".");
   return dot < 0 ? 0 : text.length - dot - 1;
@@ -121,36 +163,77 @@ function decimalsOf(value: number): number {
 export function decimalsFor(spec: NumericSpec): number {
   const { precision } = spec;
   if (precision !== undefined && Number.isInteger(precision) && precision >= 0) {
-    return Math.min(precision, MAX_DECIMALS);
+    return Math.min(precision, MAX_READOUT_DECIMALS);
   }
   if (spec.scale === "log") return LOG_DECIMALS;
   // The DERIVED step carries float noise — `(20 - 0.1) / 100` is `0.19900000000000004` —
   // and counting its decimals literally printed six of them for a 0.1…20 parameter.
-  return Math.min(decimalsOf(roundToDecimals(dragStepFor(spec), MAX_DECIMALS)), MAX_DECIMALS);
+  return Math.min(
+    decimalsOf(roundToDecimals(dragStepFor(spec), noiseDecimals(spec))),
+    MAX_READOUT_DECIMALS,
+  );
 }
 
 /**
- * Decimals a value KEEPS when it is written to the document (T989).
+ * The parameter's OWN magnitude, as its author declared it (T997).
  *
- * The declared precision when there is one — an author who says `precision: 1` means it —
- * and otherwise as many as this module can represent. Rounding at all is what stops
- * `0.30000000000000004` reaching a saved file; rounding to anything NARROWER than the
- * author asked for is the data loss this task exists to end. In particular it is NOT
- * `decimalsFor`, whose fallback comes from the derived drag step: an unbounded-precision
- * parameter on a wide range derived ZERO decimals, so every fraction a user typed into it
- * was rounded to an integer on the way in.
+ * What the noise floor is measured against. A parameter that says it runs to a million and
+ * one that says it runs to one do not carry their float noise in the same decimal place,
+ * which is exactly why the floor cannot be a constant. A spec that declares no bound has
+ * told us nothing, so it gets unit scale.
+ */
+function scaleOf(spec: NumericSpec): number {
+  const bound = Math.max(
+    Number.isFinite(spec.min ?? 0) ? Math.abs(spec.min ?? 0) : 0,
+    Number.isFinite(spec.max ?? 0) ? Math.abs(spec.max ?? 0) : 0,
+  );
+  if (bound > 0) return bound;
+  const step = declaredStep(spec);
+  return step ?? 1;
+}
+
+/**
+ * Decimals at which a value on THIS parameter's scale is indistinguishable from float
+ * noise (T997) — `NOISE_SIGNIFICANT_DIGITS` significant digits of `scaleOf`.
+ *
+ * Floored at the readout's width on purpose, and that is a constraint between the two
+ * numbers rather than a return of the old conflation: a field that PRINTS six decimals
+ * must be able to STORE six, or it shows the user digits it is about to throw away.
+ */
+function noiseDecimals(spec: NumericSpec): number {
+  const order = Math.floor(Math.log10(scaleOf(spec)));
+  return Math.max(MAX_READOUT_DECIMALS, NOISE_SIGNIFICANT_DIGITS - 1 - order);
+}
+
+/**
+ * Decimals a value KEEPS when it is written to the document (T989, widened by T997).
+ *
+ * The declared precision when there is one — an author who says `precision: 1` means it,
+ * and that is a STATEMENT ABOUT THE VALUE, the same class of thing as `step` — and
+ * otherwise the float-noise floor at this parameter's own scale. Rounding at all is what
+ * stops `0.30000000000000004` reaching a saved file; rounding to anything NARROWER than
+ * the author asked for is the data loss T989 existed to end.
+ *
+ * T997 removed the two remaining places where a constant did the deciding instead of an
+ * author: the fallback was a flat six decimals, so 1e-7 committed as 0 on every parameter
+ * in the catalogue; and a declared `precision` was capped at that same six, so an author
+ * could not ask for more even explicitly. The smallest storable value is now a property of
+ * the parameter's own declared range — 1e-11 of it, or the readout's six decimals,
+ * whichever is finer — rather than a property of this module.
  */
 function storageDecimals(spec: NumericSpec): number {
   const { precision } = spec;
   if (precision !== undefined && Number.isInteger(precision) && precision >= 0) {
-    return Math.min(precision, MAX_DECIMALS);
+    return precision;
   }
-  return MAX_DECIMALS;
+  return noiseDecimals(spec);
 }
 
 export function roundToDecimals(value: number, decimals: number): number {
   if (!Number.isFinite(value)) return value;
-  const factor = 10 ** decimals;
+  // T997 — the factor is what breaks first: `10 ** 400` is Infinity, and `value * Infinity`
+  // rounds to NaN. Clamped here, the one choke point, rather than at each caller.
+  const factor = 10 ** Math.min(DECIMAL_LIMIT, Math.max(0, decimals));
   // The extra round-trip through the factor is what kills 0.1 + 0.2 artefacts.
   return Math.round(value * factor) / factor;
 }
@@ -325,7 +408,7 @@ export function decadeForModifier(decade: number, modifier: DragModifier): numbe
  * parameter round every value to the same number, which is the ladder doing nothing.
  */
 export function decimalsForDecade(spec: NumericSpec, decade: number): number {
-  return Math.min(MAX_DECIMALS, Math.max(decimalsFor(spec), decimalsOf(decade)));
+  return Math.min(MAX_READOUT_DECIMALS, Math.max(decimalsFor(spec), decimalsOf(decade)));
 }
 
 /**
@@ -425,14 +508,31 @@ export function nudge({ value, direction, spec, modifier, steps = 1, decade }: N
  * The floor used to be the whole answer, and it was derived from the drag step, so a
  * parameter on -360…360 printed ONE decimal and showed a spin rate of 0.25°/frame as
  * "0.3" — the user could not read back the number they had typed, and the field's own
- * commit path then wrote that reading back. Float noise past `MAX_DECIMALS` is rounded
- * off before the count, so a driven value of `0.30000000000000004` widens to nothing.
+ * commit path then wrote that reading back. Float noise is rounded off before the count,
+ * so a driven value of `0.30000000000000004` widens to nothing.
  */
 export function formatNumber(value: number, spec: NumericSpec, decade?: number): string {
   if (!Number.isFinite(value)) return "0";
   const floor = decade === undefined ? decimalsFor(spec) : decimalsForDecade(spec, decade);
-  const needed = decimalsOf(roundToDecimals(value, MAX_DECIMALS));
-  return value.toFixed(Math.min(MAX_DECIMALS, Math.max(floor, needed)));
+  const needed = decimalsOf(roundToDecimals(value, storageDecimals(spec)));
+  return value.toFixed(Math.min(readoutDecimals(value), Math.max(floor, needed)));
+}
+
+/**
+ * The readout's width for THIS value (T997, §V986).
+ *
+ * `MAX_READOUT_DECIMALS`, except where that would print a non-zero value as "0.000000" —
+ * then it widens to put the value's own digits on screen. A field holding 1e-7 and
+ * printing zero is the confident-0 failure: the user cannot tell "too small to show" from
+ * "off", they read the parameter as disabled, and clicking into the field and away
+ * commits the zero they were shown. Six SIGNIFICANT digits once it has to go small, so
+ * what is displayed is what is stored and the T648 display-then-commit loop is closed.
+ */
+function readoutDecimals(value: number): number {
+  if (value === 0 || !Number.isFinite(value)) return MAX_READOUT_DECIMALS;
+  const leading = -Math.floor(Math.log10(Math.abs(value)));
+  if (leading <= MAX_READOUT_DECIMALS) return MAX_READOUT_DECIMALS;
+  return Math.min(DECIMAL_LIMIT, leading - 1 + MAX_READOUT_DECIMALS);
 }
 
 /** A ladder rung as its label: "0.001", "1", "100" — never "1e-3". */
