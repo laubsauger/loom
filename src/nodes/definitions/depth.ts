@@ -15,7 +15,6 @@ import {
 import { RGBA_TEXTURE } from "./common-ports.ts";
 import { readCompileInputs } from "./compile-context.ts";
 import { wgsl } from "../../runtime/backend/wgsl.ts";
-import type { EmittedWgsl } from "../../runtime/backend/wgsl.ts";
 
 /**
  * Depth — a monocular depth map, inferred (T385, T715, §V585, §V586).
@@ -159,8 +158,8 @@ export function depthModelChoiceFor(stored: Readonly<Record<string, unknown>>): 
  * measuring machine here is what stops all three of them reading as a claim about every
  * machine. `inference-node.test.ts` gates it.
  */
-function measuredCost(choice: DepthModelChoice): EmittedWgsl {
-  return wgsl`${(choice.cpuMillisAt518 / 1000).toFixed(1)} s per run on the CPU path at ${DEPTH_INPUT_SIDE} px, ${measuredOn("2026-09-01")}`;
+function measuredCost(choice: DepthModelChoice): string {
+  return `${(choice.cpuMillisAt518 / 1000).toFixed(1)} s per run on the CPU path at ${DEPTH_INPUT_SIDE} px, ${measuredOn("2026-09-01")}`;
 }
 
 /**

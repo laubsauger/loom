@@ -53,6 +53,24 @@
  * `params-reflection.ts`'s `remember`, and branding every string in the application is a
  * different project. If those should live under one seam it is a row of its own, argued
  * rather than assumed.
+ *
+ * ## ⚠ THE LIMIT OF THE BRAND, AND IT WAS FOUND THE EMBARRASSING WAY
+ *
+ * `EmittedWgsl` is a BRANDED STRING, so the type gate runs in one direction only: it stops a
+ * raw literal REACHING a pass, and it cannot stop a non-shader BEING BRANDED. The guarantee
+ * is therefore only as narrow as the set of things wearing the brand, and every careless tag
+ * widens it.
+ *
+ * That is not hypothetical. The landing commit branded seven helpers that emit no WGSL at
+ * all — two inspector dropdown labels in `matte.ts`, a cost label, a byte-size label, two
+ * resource ids and a pass id — because they were converted by a pattern over
+ * `): string {` rather than by reading them. Under that commit, a matte dropdown label was
+ * assignable to a pass descriptor's `shader`. Nothing failed, which is the point: the
+ * compiler cannot tell UI copy from shader source once the tag is on.
+ *
+ * So the rule the type cannot carry, stated here because it is the one a reviewer has to:
+ * **tag a string only where WGSL is what it is.** If the answer to "would Dawn compile this?"
+ * is no, it is a `string`.
  */
 
 declare const emitted: unique symbol;

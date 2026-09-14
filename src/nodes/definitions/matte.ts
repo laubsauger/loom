@@ -22,7 +22,6 @@ import {
   letterboxPreprocessWgsl,
 } from "./inference-node.ts";
 import { wgsl } from "../../runtime/backend/wgsl.ts";
-import type { EmittedWgsl } from "../../runtime/backend/wgsl.ts";
 
 /**
  * Matte — a person MATTE from a single image, inferred (T957).
@@ -418,16 +417,16 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
  * label names the PROVIDER the number came off, which is what a reader can act on here,
  * and the machine is stated once in the description these labels hang under.
  */
-function inputSideLabel(option: MatteInputSideCost): EmittedWgsl {
+function inputSideLabel(option: MatteInputSideCost): string {
   const cpu = `${(option.cpuMillis / 1000).toFixed(1)} s`;
   const damage = option.costsYou === undefined ? "" : ` — ${option.costsYou}`;
-  return wgsl`${option.side} px — ${option.gpuMillis} ms on the GPU provider, ${cpu} on the CPU provider${damage}`;
+  return `${option.side} px — ${option.gpuMillis} ms on the GPU provider, ${cpu} on the CPU provider${damage}`;
 }
 
 /** One ratio option: the fraction, what it MEASURED, and what it costs the picture. */
-function ratioLabel(option: MatteRatioCost): EmittedWgsl {
+function ratioLabel(option: MatteRatioCost): string {
   const damage = option.costsYou === undefined ? "" : ` — ${option.costsYou}`;
-  return wgsl`${option.ratio} — ${option.cpuMillis} ms, ${option.stateMb} MB of state${damage}`;
+  return `${option.ratio} — ${option.cpuMillis} ms, ${option.stateMb} MB of state${damage}`;
 }
 
 function matteParameters(stored: Readonly<Record<string, unknown>>) {

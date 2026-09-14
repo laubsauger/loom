@@ -9,8 +9,6 @@ import { COMPONENT_COUNTS, type PointAttributeType } from "../../points/attribut
 import { packAttributes } from "../../points/packing.ts";
 import { pointStorageId } from "./point-storage.ts";
 import { parseAttributes } from "./points.ts";
-import { wgsl } from "../../runtime/backend/wgsl.ts";
-import type { EmittedWgsl } from "../../runtime/backend/wgsl.ts";
 
 /**
  * Fixtures for the catalogue's unit tests (T70, T40).
@@ -73,8 +71,8 @@ export function inputResourceId(portId: PortId, index = 0): string {
 }
 
 /** Resource id this fixture assigns to an output port. */
-export function outputResourceId(portId: PortId): EmittedWgsl {
-  return wgsl`target:${portId}`;
+export function outputResourceId(portId: PortId): string {
+  return `target:${portId}`;
 }
 
 /**

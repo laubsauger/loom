@@ -17,8 +17,6 @@ import { createTileAtlas } from "./tile-atlas.ts";
 import type { TileAtlas } from "./tile-atlas.ts";
 import { previewKey } from "./types.ts";
 import type { AllocatedPreview, PreviewProgram } from "./types.ts";
-import { wgsl } from "../backend/wgsl.ts";
-import type { EmittedWgsl } from "../backend/wgsl.ts";
 
 /**
  * Turns a schedule into plan data (T34).
@@ -41,8 +39,8 @@ export const PREVIEW_SAMPLER: SamplerResourceDescriptor = Object.freeze({
   addressMode: "clamp-to-edge",
 });
 
-export function previewPassId(key: string): EmittedWgsl {
-  return wgsl`preview/pass/${key}`;
+export function previewPassId(key: string): string {
+  return `preview/pass/${key}`;
 }
 
 /**

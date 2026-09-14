@@ -33,8 +33,8 @@ import type { EmittedWgsl } from "../../runtime/backend/wgsl.ts";
  */
 
 /** MB with one decimal, from the measured byte count — the number the consent moment shows. */
-function megabytes(bytes: number): EmittedWgsl {
-  return wgsl`${(bytes / 1_048_576).toFixed(1)} MB`;
+function megabytes(bytes: number): string {
+  return `${(bytes / 1_048_576).toFixed(1)} MB`;
 }
 
 /**

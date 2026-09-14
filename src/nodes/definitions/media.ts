@@ -5,7 +5,6 @@ import { MEDIA_TRANSPORT_PARAMETERS } from "../../domain/media/transport.ts";
 import { RGBA_TEXTURE } from "./common-ports.ts";
 import { readCompileInputs } from "./compile-context.ts";
 import { wgsl } from "../../runtime/backend/wgsl.ts";
-import type { EmittedWgsl } from "../../runtime/backend/wgsl.ts";
 
 /**
  * Media inputs (T263, §V135, §V167): Movie File In, Webcam — and Text (T243).
@@ -41,8 +40,8 @@ import type { EmittedWgsl } from "../../runtime/backend/wgsl.ts";
 export const MEDIA_TEXTURE_KEY = "media";
 
 /** The media-registry key for a node — `registerMediaSource(mediaSourceIdFor(nodeId), ...)`. */
-export function mediaSourceIdFor(nodeId: string): EmittedWgsl {
-  return wgsl`media:${nodeId}`;
+export function mediaSourceIdFor(nodeId: string): string {
+  return `media:${nodeId}`;
 }
 
 const MEDIA_BLIT_WGSL = wgsl`@group(0) @binding(0) var mediaSampler: sampler;
