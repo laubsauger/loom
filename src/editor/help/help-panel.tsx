@@ -20,6 +20,7 @@ import type { HelpSection } from "./command.ts";
 import { ExpressionHelp } from "./expression-help.tsx";
 import { McpSetup } from "./mcp-setup.tsx";
 import { nodeReferenceSections } from "./node-reference.ts";
+import type { NodeReference } from "./node-reference.ts";
 import { conflictWith, shortcutSections } from "./shortcut-reference.ts";
 import type { ShortcutEntry } from "./shortcut-reference.ts";
 import styles from "./help.module.css";
@@ -305,6 +306,11 @@ export function HelpPanel({
                         <span className={styles.nodeTitle}>{node.title}</span>
                         <span className={styles.nodeType}>{node.type}</span>
                       </header>
+                      {/* T1337b — the author's own first sentence, always. This is the
+                          line that used to exist only inside a `title=` tooltip. */}
+                      {node.summary === undefined ? null : (
+                        <p className={styles.summary}>{node.summary}</p>
+                      )}
                       <p className={styles.ports}>
                         {node.inputs.map((port) => `${port.label}: ${port.type}`).join(" · ")}
                         {node.inputs.length > 0 && node.outputs.length > 0 ? " → " : ""}
@@ -321,6 +327,7 @@ export function HelpPanel({
                             .join(" · ")}
                         </p>
                       )}
+                      <NodeDetails node={node} />
                     </article>
                   ))}
                 </section>
@@ -340,5 +347,97 @@ export function HelpPanel({
         </TabsRoot>
       </DialogContent>
     </DialogRoot>
+  );
+}
+
+/** One documented thing: what it is called, what it IS, and what it MEANS. */
+interface GlossaryEntry {
+  readonly key: string;
+  readonly name: string;
+  /** The machine fact — a port's type, a parameter's type and unit. */
+  readonly meta: string;
+  readonly text: string;
+}
+
+/**
+ * The rest of a node's reference, on demand (T1337b, T1338b).
+ *
+ * A `<details>` rather than a hover: the whole finding behind these rows is that the only
+ * surface this prose had was a native `title=`, which **cannot be scrolled or selected and
+ * dismisses on pointer move** (§V998). What opens here stays open, sits inside the panel's
+ * own scroller, and is selectable text — and it is the author's bytes, uncut.
+ *
+ * Absent entirely when there is nothing behind the summary, so the 216 single-sentence
+ * manifests of the 485 shipped strings do not grow an affordance that opens onto nothing.
+ */
+function NodeDetails({ node }: { node: NodeReference }) {
+  const ports = (entries: NodeReference["inputs"]): readonly GlossaryEntry[] =>
+    entries
+      .filter((port) => port.description !== undefined && port.description !== "")
+      .map((port) => ({
+        key: port.id,
+        name: port.label,
+        // T1338b: the authored sentence SUPPLEMENTS the type, it never replaces it — a
+        // connection is refused on the type, so the type is the fact that must survive,
+        // and the meaning is the elaboration that follows it.
+        meta: port.optional ? `${port.type} · optional` : port.type,
+        text: port.description ?? "",
+      }));
+
+  const inputs = ports(node.inputs);
+  const outputs = ports(node.outputs);
+  const parameters = node.parameters
+    .filter((parameter) => parameter.description !== undefined && parameter.description !== "")
+    .map((parameter) => ({
+      key: parameter.key,
+      name: parameter.label,
+      meta: parameter.unit === undefined ? parameter.type : `${parameter.type} · ${parameter.unit}`,
+      text: parameter.description ?? "",
+    }));
+
+  if (
+    node.detail === "" &&
+    inputs.length === 0 &&
+    outputs.length === 0 &&
+    parameters.length === 0
+  ) {
+    return null;
+  }
+
+  return (
+    <details className={styles.more}>
+      <summary className={styles.moreToggle}>Full reference</summary>
+      {node.detail === "" ? null : <p className={styles.detail}>{node.detail}</p>}
+      <Glossary title="Inputs" entries={inputs} />
+      <Glossary title="Outputs" entries={outputs} />
+      <Glossary title="Parameters" entries={parameters} />
+    </details>
+  );
+}
+
+/**
+ * Name, type, meaning — stacked, never a grid.
+ *
+ * §V1016: this panel is read at every width from a 92vw phone to an 880px desktop dialog,
+ * and a three-column row would put the authored sentence in a track narrow enough to
+ * ellipsise exactly where it is most needed. Each row is two blocks that wrap.
+ */
+function Glossary({ title, entries }: { title: string; entries: readonly GlossaryEntry[] }) {
+  if (entries.length === 0) return null;
+  return (
+    <>
+      <h4 className={styles.glossaryHeader}>{title}</h4>
+      <dl className={styles.glossary}>
+        {entries.map((entry) => (
+          <div key={entry.key} className={styles.glossaryRow}>
+            <dt className={styles.glossaryTerm}>
+              <span className={styles.glossaryName}>{entry.name}</span>
+              <span className={styles.glossaryMeta}>{entry.meta}</span>
+            </dt>
+            <dd className={styles.glossaryText}>{entry.text}</dd>
+          </div>
+        ))}
+      </dl>
+    </>
   );
 }

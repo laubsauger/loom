@@ -12,7 +12,8 @@ import {
   expressionVariables,
   previewExpression,
 } from "./expression-reference.ts";
-import { nodeReferenceSections } from "./node-reference.ts";
+import { nodeReference, nodeReferenceSections, splitLede } from "./node-reference.ts";
+import { allNodeDefinitions } from "@nodes/definitions/index.ts";
 import { shortcutSections } from "./shortcut-reference.ts";
 
 /**
@@ -95,6 +96,91 @@ describe("node reference ← the manifests (§V105)", () => {
     expect(blur?.parameters.map((parameter) => parameter.key).sort()).toEqual(
       Object.keys(manifest.parameters).sort(),
     );
+  });
+});
+
+/**
+ * The authored prose (T1337b, T1338b, §V998).
+ *
+ * These rows exist because `description` was declared on `NodeReference`, filled from the
+ * manifest, and then dropped — and because ports and parameters never carried theirs at
+ * all. The claims below are about the DERIVATION reaching the panel's hands intact; that
+ * the panel then RENDERS it is asserted in `help-panel.test.tsx`, because those are the
+ * two halves §V998 says each look complete from their own side.
+ */
+describe("the manifests' prose reaches the reference (T1337b, T1338b)", () => {
+  it("splits at the author's own sentence end, and never inside a number", () => {
+    // The lede is the summary the author already wrote. `9.6` must not end a sentence:
+    // the rule needs whitespace after the stop, and a decimal point has none.
+    expect(splitLede("Automatic prefers the GPU — 9.6x faster. Ask for CPU to compare.")).toEqual({
+      summary: "Automatic prefers the GPU — 9.6x faster.",
+      detail: "Ask for CPU to compare.",
+    });
+    // A signature line is a perfectly good lede, and the period after `Point` is a real
+    // sentence end — this is the shape every point-shader parameter opens with.
+    expect(splitLede("fn process(p: Point, ctx: PointCtx) -> Point. q.alive = 0u kills.")).toEqual({
+      summary: "fn process(p: Point, ctx: PointCtx) -> Point.",
+      detail: "q.alive = 0u kills.",
+    });
+    // One sentence is the majority case: there is nothing behind it, and the panel must
+    // be able to tell that from "there is more", so it does not offer an empty disclosure.
+    expect(splitLede("Linear-space colour.")).toEqual({
+      summary: "Linear-space colour.",
+      detail: "",
+    });
+    // An abbreviation is not a sentence end, or the lede stops at "e.g.".
+    expect(splitLede("Accepts a channel name, e.g. level or onset. Wire it or drive it.")).toEqual({
+      summary: "Accepts a channel name, e.g. level or onset.",
+      detail: "Wire it or drive it.",
+    });
+  });
+
+  it("LOSES NO BYTE of any shipped description — the split is a container, not an edit", () => {
+    // §T1055 measured the population and concluded the long tail is house style, not a
+    // defect. So the one thing this split must never do is shorten anything: for all 115
+    // shipped node descriptions, summary + detail must reconstitute the author's text.
+    const squash = (text: string): string => text.replace(/\s+/g, " ").trim();
+    let checked = 0;
+    for (const definition of allNodeDefinitions) {
+      if (definition.description === undefined) continue;
+      const reference = nodeReference(definition);
+      expect(squash(`${reference.summary ?? ""} ${reference.detail}`), definition.type).toBe(
+        squash(definition.description),
+      );
+      checked += 1;
+    }
+    // The loop must have had something to check — 115 descriptions ship today.
+    expect(checked).toBeGreaterThan(100);
+  });
+
+  it("carries every port and parameter description a manifest authors", () => {
+    // Read back from the shipped catalogue, not from a copy: the count is whatever the
+    // manifests hold today, and the assertion is that NONE of them stop at the manifest.
+    let ports = 0;
+    let parameters = 0;
+    for (const definition of allNodeDefinitions) {
+      const reference = nodeReference(definition);
+      const referencePorts = [...reference.inputs, ...reference.outputs];
+      for (const port of [...definition.inputs, ...definition.outputs]) {
+        if (port.description === undefined) continue;
+        expect(
+          referencePorts.find((candidate) => candidate.id === port.id)?.description,
+          `${definition.type}.${port.id}`,
+        ).toBe(port.description);
+        ports += 1;
+      }
+      for (const [key, schema] of Object.entries(definition.parameters)) {
+        if (schema.description === undefined) continue;
+        expect(
+          reference.parameters.find((candidate) => candidate.key === key)?.description,
+          `${definition.type}.${key}`,
+        ).toBe(schema.description);
+        parameters += 1;
+      }
+    }
+    // T1338b's 77 port strings and T1337b's 293 parameter strings, still authored.
+    expect(ports).toBeGreaterThan(50);
+    expect(parameters).toBeGreaterThan(200);
   });
 });
 

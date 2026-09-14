@@ -256,7 +256,13 @@ const RAW_SCHEMA_READS: Readonly<Record<string, { readonly reason: string; reado
     reads: ["manifest.parameters", "manifest.parameters", "manifest.parameters"],
   },
   "src/domain/components/registry.test.ts": { reason: COMPONENT_MANIFEST, reads: ["manifest.parameters"] },
-  "src/editor/help/help-reference.test.ts": { reason: COMPONENT_MANIFEST, reads: ["manifest.parameters"] },
+  "src/editor/help/help-reference.test.ts": {
+    reason:
+      `${COMPONENT_MANIFEST} ${CATALOGUE_AUDIT} T1337b added the second: it walks every shipped ` +
+      "manifest asserting each AUTHORED parameter description reaches the help reference, which " +
+      "is a question about what the types declare — no node is placed anywhere in it.",
+    reads: ["manifest.parameters", "definition.parameters"],
+  },
 
   // ── A definition's own unit test ───────────────────────────────────────────────────
   "src/agent/surface.test.ts": {

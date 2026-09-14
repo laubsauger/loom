@@ -171,11 +171,114 @@
   color: var(--text-dim);
   font-family: var(--font-mono);
   font-size: var(--fs-micro);
+  /*
+   * §V1016, measured: a width sweep of this tab found the ONLY horizontal clip in it, and
+   * it was here — `component:displacementStack@1` is 29 characters with no space in them,
+   * so at a 320 px window the panel ran 18 px wide (`scrollWidth - clientWidth`) while
+   * every prose block below wrapped at 0. A machine identifier has no break opportunity
+   * of its own; it has to be given one.
+   */
+  overflow-wrap: anywhere;
 }
 
 .nodeType {
   margin: 0;
   color: var(--line-hot);
+}
+
+/*
+ * The authored prose (T1337b, T1338b). Reading text, so it is the UI font at the body
+ * size with real leading — the mono/micro treatment above is for the machine facts.
+ */
+
+.summary {
+  margin: var(--space-2) 0 0;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-body);
+  line-height: 1.55;
+}
+
+.more {
+  margin: var(--space-2) 0 0;
+}
+
+.moreToggle {
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+  font-weight: var(--weight-header);
+  letter-spacing: var(--tracking-display);
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.moreToggle:hover {
+  color: var(--text);
+}
+
+.detail {
+  margin: var(--space-3) 0 0;
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+  font-size: var(--fs-body);
+  line-height: 1.55;
+  /* Authored prose carries identifiers (`frameU.absFrame`, `texture2d<f32,4,linear>`)
+     that no width can break on a space — without this they push the panel sideways. */
+  overflow-wrap: anywhere;
+}
+
+.glossaryHeader {
+  margin: var(--space-4) 0 var(--space-1);
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+  font-size: var(--fs-micro);
+  font-weight: var(--weight-header);
+  letter-spacing: var(--tracking-display);
+  text-transform: uppercase;
+}
+
+.glossary {
+  margin: 0;
+}
+
+/* Stacked, never a grid (§V1016): the sentence gets the full width at every width. */
+.glossaryRow {
+  padding: var(--space-2) 0;
+  border-bottom: var(--border-hairline);
+}
+
+.glossaryRow:last-child {
+  border-bottom: none;
+}
+
+.glossaryTerm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.glossaryName {
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-meta);
+}
+
+.glossaryMeta {
+  color: var(--line-hot);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  overflow-wrap: anywhere;
+}
+
+.glossaryText {
+  margin: var(--space-1) 0 0;
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+  font-size: var(--fs-body);
+  line-height: 1.55;
+  overflow-wrap: anywhere;
 }
 
 /* Expression help — used both in the panel and beside a parameter. */

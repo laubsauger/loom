@@ -6,7 +6,8 @@ import { evaluateExpression, scopeFromFrame } from "@domain/expressions/index.ts
 import type { FrameEvaluationInput } from "@domain/types/frame.ts";
 import { createComponentHarness, graphOf } from "@domain/components/test-support.ts";
 import { createTestRegistry } from "@nodes/registry/test-nodes.ts";
-import { nodeReferenceSections } from "./node-reference.ts";
+import { friendlyPortLabel } from "@editor/library/search.ts";
+import { nodeReferenceSections, splitLede } from "./node-reference.ts";
 import { DEFAULT_BINDINGS } from "@editor/keymap/defaults.ts";
 import { KeymapProvider } from "@editor/keymap/keymap-provider.tsx";
 import { KEYMAP_STORAGE_KEY } from "@editor/keymap/storage.ts";
@@ -16,6 +17,10 @@ import type { KeyBinding } from "@editor/keymap/types.ts";
 import { createMemoryStorage, installDomStubs } from "@ui/testing/install-dom-stubs.ts";
 import { ExpressionHelp } from "./expression-help.tsx";
 import { HelpHost } from "./help-host.tsx";
+import { HelpPanel } from "./help-panel.tsx";
+import { blurNode } from "@nodes/registry/test-nodes.ts";
+import { allNodeDefinitions } from "@nodes/definitions/index.ts";
+import type { NodeDefinition } from "@domain/types/node-definition.ts";
 
 /**
  * The help panel end to end (T200, T201, §V105, §V90).
@@ -357,5 +362,174 @@ describe("§T1178 — the node search filters built references", () => {
       for (const type of expected) expect(within(dialog).getByText(type)).toBeDefined();
       expect(within(dialog).getAllByRole("article")).toHaveLength(expected.length);
     }
+  });
+});
+
+/**
+ * T1337b / T1338b — the panel RENDERS the prose, which is the half §V998 says looks
+ * complete from the other side.
+ *
+ * `NodeReference.description` was declared, filled from the manifest and then dropped by
+ * this panel; ports and parameters never carried theirs at all. The only human surface
+ * the 91,646 authored bytes had was a native `title=`, a container that cannot be
+ * scrolled or selected and dismisses on pointer move. So these claims assert the DEFECT'S
+ * OWN SIGNATURE (§V974): the authored sentence is in the rendered panel, as text.
+ *
+ * Positively stated throughout (§V997) — "the type line is still there" rather than "the
+ * description did not replace it", because an absence is satisfied by any other presence.
+ */
+
+const documentedNode: NodeDefinition = {
+  ...blurNode,
+  type: "test.documented",
+  title: "Documented",
+  description:
+    "Blurs the input in one pass. The radius is in pixels of the OUTPUT, so a resize " +
+    "changes how strong the blur looks at the same setting.",
+  inputs: [
+    {
+      id: "source",
+      label: "Source",
+      type: blurNode.outputs[0]?.type ?? { kind: "texture2d", sample: "float", channels: 4 },
+      description: "Linear-space colour; alpha is premultiplied.",
+    },
+  ],
+  parameters: {
+    radius: {
+      type: "number",
+      label: "Radius",
+      default: 4,
+      min: 0,
+      max: 64,
+      unit: "px",
+      description: "How far each sample reaches from the pixel being written.",
+    },
+  },
+};
+
+/** One sentence, no documented ports or parameters — the 216-of-485 majority shape. */
+const briefNode: NodeDefinition = {
+  ...blurNode,
+  type: "test.brief",
+  title: "Brief",
+  description: "A named number the patch can share.",
+  parameters: {},
+};
+
+function showNodes(nodes: readonly NodeDefinition[]): HTMLElement {
+  render(
+    <HelpPanel
+      open
+      onOpenChange={() => undefined}
+      section="nodes"
+      onSectionChange={() => undefined}
+      nodes={nodes}
+    />,
+  );
+  return screen.getByRole("dialog");
+}
+
+function articleFor(dialog: HTMLElement, type: string): HTMLElement {
+  const article = within(dialog).getByText(type).closest("article");
+  if (article === null) throw new Error(`no article for ${type}`);
+  return article;
+}
+
+describe("the node reference renders what the manifests wrote (T1337b, T1338b, §V998)", () => {
+  it("shows the author's first sentence as text, without any hover", () => {
+    const dialog = showNodes([documentedNode]);
+    const article = articleFor(dialog, "test.documented");
+    // The sentence is CONTENT. Before this row the only place this string existed in the
+    // product was a `title=` attribute, so `textContent` is exactly the discriminating
+    // read: an attribute satisfies neither `getByText` nor this.
+    expect(within(article).getByText(/Blurs the input in one pass\./)).toBeDefined();
+    expect(article.textContent).toContain("Blurs the input in one pass.");
+  });
+
+  it("keeps the rest of the description one click away, and it STAYS open", () => {
+    const dialog = showNodes([documentedNode]);
+    const article = articleFor(dialog, "test.documented");
+    const details = article.querySelector("details");
+    if (details === null) throw new Error("no disclosure");
+    // Closed to start: the list stays a list, which is what makes 91 KB browsable.
+    expect(details.open).toBe(false);
+
+    fireEvent.click(within(article).getByText("Full reference"));
+    expect(details.open).toBe(true);
+
+    // The remainder, verbatim — this row's whole point is that nothing is cut (§T1055).
+    expect(details.textContent).toContain(
+      "The radius is in pixels of the OUTPUT, so a resize changes how strong the blur " +
+        "looks at the same setting.",
+    );
+
+    // A tooltip dismisses on pointer move; this does not. Moving the pointer anywhere in
+    // the panel leaves the text exactly where it was — the property the row asked for.
+    fireEvent.mouseMove(dialog);
+    fireEvent.mouseLeave(article);
+    expect(details.open).toBe(true);
+    expect(details.textContent).toContain("The radius is in pixels of the OUTPUT");
+  });
+
+  it("gives a port its authored meaning ALONGSIDE its type (T1338b)", () => {
+    const dialog = showNodes([documentedNode]);
+    const article = articleFor(dialog, "test.documented");
+    fireEvent.click(within(article).getByText("Full reference"));
+
+    // Both facts, both present. The type is what a connection is refused on, so it
+    // survives; the sentence is what the port MEANS, which had reached no chrome at all.
+    expect(within(article).getByText("Linear-space colour; alpha is premultiplied.")).toBeDefined();
+    const term = within(article).getByText("Source").parentElement;
+    // Asked of the same function the reference uses (§V105) — a copied "RGBA texture"
+    // here would keep passing after the label form changed under it.
+    const port = documentedNode.inputs[0];
+    if (port === undefined) throw new Error("no port");
+    expect(term?.textContent).toContain(friendlyPortLabel(port.type));
+  });
+
+  it("gives a parameter its authored meaning, with its type and unit", () => {
+    const dialog = showNodes([documentedNode]);
+    const article = articleFor(dialog, "test.documented");
+    fireEvent.click(within(article).getByText("Full reference"));
+
+    expect(
+      within(article).getByText("How far each sample reaches from the pixel being written."),
+    ).toBeDefined();
+    const term = within(article).getByText("Radius").parentElement;
+    expect(term?.textContent).toContain("number");
+    expect(term?.textContent).toContain("px");
+  });
+
+  it("puts a one-sentence node's WHOLE description on screen with nothing to open", () => {
+    const dialog = showNodes([briefNode]);
+    const article = articleFor(dialog, "test.brief");
+    // Everything the manifest wrote is already visible — which is the positive form of
+    // "no disclosure": an affordance that opens onto nothing is worse than none.
+    expect(article.textContent).toContain("A named number the patch can share.");
+    expect(article.querySelector("details")).toBeNull();
+  });
+
+  it("renders the SHIPPED catalogue's longest description in full — the 91 KB, on screen", () => {
+    // Derived from the registry, never a copied string (§V105, §V957): whatever the
+    // longest authored description is today is the one that must arrive whole.
+    const longest = [...allNodeDefinitions]
+      .filter((definition) => definition.description !== undefined)
+      .sort((a, b) => (b.description?.length ?? 0) - (a.description?.length ?? 0))[0];
+    if (longest?.description === undefined) throw new Error("no shipped description");
+    expect(longest.description.length).toBeGreaterThan(1000);
+
+    const dialog = showNodes([longest]);
+    const article = articleFor(dialog, longest.type);
+    fireEvent.click(within(article).getByText("Full reference"));
+
+    // The two halves are not adjacent in the DOM — the port and parameter signature lines
+    // sit between them — so the claim is made on each half, plus the identity that makes
+    // the pair exhaustive. Together: every byte the author wrote is on this screen.
+    const squash = (text: string): string => text.replace(/\s+/g, " ").trim();
+    const rendered = squash(article.textContent ?? "");
+    const { summary, detail } = splitLede(longest.description);
+    expect(rendered).toContain(squash(summary));
+    expect(rendered).toContain(squash(detail));
+    expect(squash(`${summary} ${detail}`)).toBe(squash(longest.description));
   });
 });
