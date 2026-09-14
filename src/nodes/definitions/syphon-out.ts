@@ -13,6 +13,8 @@ export const syphonOutNode: NodeDefinition = {
     name: { type: "string", label: "Publisher name", default: "Loom", description: "Unique name shown in receiving apps." },
     enabled: { type: "boolean", label: "Publish", default: true },
   },
+  // T1340b: declared here, read by every surface that states it.
+  requires: ["desktop", "macos"],
   // The session presents the upstream resource directly. No graph copy or sink target.
   compile: () => ({ passes: [] }),
 };

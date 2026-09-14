@@ -16,6 +16,11 @@ export const spoutInNode: NodeDefinition = {
     source: { type: "string", label: "Source", default: "",
       description: "Exact Spout publisher name. Empty means unselected, never the system's active sender." },
   },
+  // T1340b: `not-implemented` is the `unsupported` category and is NOT a requirement —
+  // nobody can satisfy it on any machine, so it must never wear the actionable colour
+  // the other two here do. It rides in the same list because it is the same QUESTION
+  // ("can this run here"); the category is what keeps the ANSWER honest.
+  requires: ["desktop", "windows", "not-implemented"],
   resolutionPolicy: { kind: "project" }, compile: compileMedia,
 };
 
@@ -30,5 +35,6 @@ export const spoutOutNode: NodeDefinition = {
       description: "Distinct Spout publisher name shown in receiving apps." },
     enabled: { type: "boolean", label: "Publish", default: true },
   },
+  requires: ["desktop", "windows", "not-implemented"],
   compile: () => ({ passes: [] }),
 };

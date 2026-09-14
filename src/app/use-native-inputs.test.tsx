@@ -53,11 +53,29 @@ it("replacing the document retires the old session even when the node IDs match"
   expect(createNativeInputSource).toHaveBeenCalledTimes(2);
   view.unmount(); expect(h.dispose).toHaveBeenCalledTimes(2);
 });
-it("reports unsupported capability and clears old diagnostics on document replacement", () => {
-  const h = setup(); vi.mocked(desktopInputBridge).mockReturnValue(undefined);
+/* T1340b: the three "there is no bridge" cases below used to assert a sentence THIS hook
+   minted — a fourth wording of a fact the library tagged and the inspector re-phrased, and
+   one that only appeared for a node the render was already demanding. The sentence moved to
+   the node's own requirement warning; what this hook still owns, and what these assert, is
+   that an absent bridge opens NOTHING and never substitutes a different transport. The
+   warning itself is asserted against the same node type in
+   `use-requirement-diagnostics.test.ts`, so neither half can go quiet unnoticed. */
+it("clears its own diagnostics on document replacement", () => {
+  const h = setup(); vi.mocked(desktopInputBridge).mockReturnValue({} as never);
+  h.graph.nodes["input"]!.parameters = { source: "" };
   const view = renderHook(({ runtime, graph }) => useNativeInputs(runtime, h.backend, graph, h.resolved), { initialProps: { runtime: h.runtime, graph: h.graph } });
-  expect(view.result.current.diagnostics[0]?.message).toMatch(/macOS desktop/);
+  expect(view.result.current.diagnostics[0]?.message).toContain("Select a Syphon source");
   view.rerender({ runtime: { ...h.runtime, documentIdentity: "empty" }, graph: { ...h.graph, nodes: {} } });
+  expect(view.result.current.diagnostics).toEqual([]);
+});
+
+it("opens nothing at all when the machine has no Syphon bridge", () => {
+  const h = setup(); vi.mocked(desktopInputBridge).mockReturnValue(undefined);
+  const view = renderHook(() => useNativeInputs(h.runtime, h.backend, h.graph, h.resolved));
+  expect(createNativeInputSource).not.toHaveBeenCalled();
+  // And it does not mint a sentence of its own: the node carries exactly one requirement
+  // warning, in the one vocabulary. Two rows saying the same thing differently is the
+  // drift this row deleted.
   expect(view.result.current.diagnostics).toEqual([]);
 });
 
@@ -75,12 +93,14 @@ it("selects NDI explicitly and retires an identically named Syphon session on tr
   expect(createNativeInputSource).toHaveBeenCalledTimes(2);
 });
 
-it("reports an absent NDI capability without opening another transport", () => {
+it("refuses to stand a Syphon bridge in for an absent NDI one", () => {
   const h = setup();
   vi.mocked(desktopInputBridge).mockImplementation(transport => transport === "ndi" ? undefined : {} as never);
   const graph = { ...h.graph, nodes: { input: { ...h.graph.nodes["input"]!, type: "ndiIn" } } };
-  const view = renderHook(() => useNativeInputs(h.runtime, h.backend, graph, h.resolved));
-  expect(view.result.current.diagnostics[0]?.message).toContain("explicit local NDI SDK");
+  renderHook(() => useNativeInputs(h.runtime, h.backend, graph, h.resolved));
+  // A Syphon bridge IS available in this test, which is the substitution the claim is
+  // about: asking for NDI and silently getting the other transport's picture.
+  expect(desktopInputBridge).toHaveBeenCalledWith("ndi");
   expect(createNativeInputSource).not.toHaveBeenCalled();
 });
 
@@ -89,7 +109,7 @@ it("Spout preparation reports unimplemented native sharing without opening anoth
   vi.mocked(desktopInputBridge).mockImplementation(transport => transport === "spout" ? undefined : {} as never);
   const view = renderHook(() => useNativeInputs(h.runtime, h.backend, h.graph, h.resolved));
   expect(desktopInputBridge).toHaveBeenCalledWith("spout");
-  expect(view.result.current.diagnostics[0]?.message).toMatch(/Windows.*not implemented/);
+  expect(view.result.current.diagnostics).toEqual([]);
   expect(createNativeInputSource).not.toHaveBeenCalled();
 });
 

@@ -12,5 +12,8 @@ export const ndiInNode: NodeDefinition = {
     source: { type: "string", label: "Source", default: "",
       description: "Exact NDI source name selected in the inspector. No source substitution." },
   },
+  // T1340b: the SDK is an `external` requirement — a thing the user installs — and it
+  // is deliberately separate from the host and platform facts beside it.
+  requires: ["desktop", "macos", "ndi-sdk"],
   resolutionPolicy: { kind: "project" }, compile: compileMedia,
 };

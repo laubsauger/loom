@@ -88,6 +88,7 @@ import { useMidiInput } from "./use-midi-input.ts";
 import { useOscBridge } from "./use-osc-bridge.ts";
 import { useLaserBridge } from "./use-laser-bridge.ts";
 import { useVisionBridge } from "./use-vision-bridge.ts";
+import { helperFactFrom, readHostFacts, useRequirementDiagnostics } from "./use-requirement-diagnostics.ts";
 import type { LoomBackend } from "@runtime/backend/index.ts";
 import { useMediaSources } from "./use-media-sources.ts";
 import { useNativeInputs } from "./use-native-inputs.ts";
@@ -633,9 +634,22 @@ export function App({
     () => [externalChannels, valueGraph.resolver],
     [externalChannels, valueGraph.resolver],
   );
+  /**
+   * T1340b — the machine, as this page can honestly establish it. The helper's fact comes
+   * from the device bridge's own state, which has THREE values and not two: on load, and
+   * whenever nothing has asked for a device, it is `idle` — NOT PROBED — and that maps to
+   * `unknown`, never to "the helper is not running" (§V986).
+   */
+  const hostFacts = useMemo(() => readHostFacts(helperFactFrom(osc.state)), [osc.state]);
+  /**
+   * T1340b — "this node cannot run on this machine", as a REAL diagnostic. It joins both
+   * lists below, so the node's badge, the problems pane and the dock's warning tally all
+   * count the same warning rather than each drawing a lookalike.
+   */
+  const requirements = useRequirementDiagnostics(runtime, hostFacts);
   const sessionNodeDiagnostics = useMemo(
-    () => [...vision.diagnostics, ...laser.diagnostics],
-    [vision.diagnostics, laser.diagnostics],
+    () => [...vision.diagnostics, ...laser.diagnostics, ...requirements],
+    [vision.diagnostics, laser.diagnostics, requirements],
   );
   const compile = useGraphCompile(runtime, capabilities, previewSinks, driverChannels, sessionNodeDiagnostics);
   const recovery = useGpuRecovery(status.kind === "ready" ? status.backend : null);
@@ -1308,6 +1322,9 @@ export function App({
       ...media.diagnostics,
       ...nativeInputs.diagnostics,
       ...nativeOutputs.diagnostics,
+      // T1340b — the host-level limitation a node declares about itself. Same list as
+      // everything else, which is what makes the node badge and this panel agree.
+      ...requirements,
       // T942 tier 3 — why OSC is not working, keyed to the node it concerns. It joins the
       // ONE list rather than growing a panel of its own: the owner's ruling is that a
       // device's interface lives in its NODE, so its degraded reason belongs on the
@@ -1340,6 +1357,7 @@ export function App({
     nativeOutputs.diagnostics,
     osc.diagnostics,
     laser.diagnostics,
+    requirements,
     vision.diagnostics,
     project.diagnostics,
     recovery.diagnostics,

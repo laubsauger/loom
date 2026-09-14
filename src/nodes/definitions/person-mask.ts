@@ -105,6 +105,24 @@ export const personMaskNode: NodeDefinition = {
       description: "Black where the person is — a background mask instead of a person mask.",
     },
   },
+  /**
+   * T1340b — the FUNCTION form, because this node's requirement is chosen by a parameter:
+   * Native GPU is the Apple Silicon desktop app, Device helper is a process on localhost,
+   * and macOS is true of both because the Vision framework is macOS's. A flat list would
+   * have to claim every member of both branches and tell the reader they need a desktop
+   * app they do not.
+   *
+   * It THROWS on a transport it does not recognise rather than classifying by the default.
+   * Only a hand-edited file can produce one, and "we quietly assumed helper" is precisely
+   * the confident wrong answer §V986 forbids — the caller must be able to say it cannot
+   * tell.
+   */
+  requires(values) {
+    const transport = values["transport"];
+    if (transport === "native") return ["desktop", "macos", "apple-silicon"];
+    if (transport === "helper") return ["helper", "macos"];
+    throw new Error(`unknown Vision transport ${String(transport)}`);
+  },
   /** The mask follows the input's shape, exactly as Matte's does. */
   resolutionPolicy: { kind: "inherit", input: "input" },
   compile(context): CompiledNodeDescription {

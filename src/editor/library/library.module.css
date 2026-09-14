@@ -341,8 +341,10 @@
     mono, size, case and tint all come from ONE place. What used to live here was a second
     implementation of that badge: the same intent with a different border radius and its
     own line height, which is exactly the drift `NodeIdentity`'s docblock warned about.
-    The class stays so the hover card's tests and the requirement tint have something to
-    address; it must not re-acquire a single property the badge already owns.
+    The class stays so the hover card's tests have something to address; it must not
+    re-acquire a single property the badge already owns. T1340b: the requirement tint is
+    NOT one of them — it rides the badge's own `data-category` attribute beside the node
+    shelves, so there is no second place where a requirement hue could be set.
   */
 }
 

@@ -4,7 +4,7 @@ import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import { isSilencedSource } from "@domain/graph/bypass.ts";
 import { resolveParameters } from "@domain/parameters/index.ts";
 import { mediaSourceIdFor } from "@nodes/definitions/index.ts";
-import { NATIVE_INPUT_TRANSPORTS, NATIVE_VIDEO_LABELS, SPOUT_UNAVAILABLE } from "@devices/native-video.ts";
+import { NATIVE_INPUT_TRANSPORTS, NATIVE_VIDEO_LABELS } from "@devices/native-video.ts";
 import { createNativeInputSource, desktopInputBridge, type NativeInputTransport } from "@devices/native-input.ts";
 import type { LoomBackend } from "@runtime/backend/index.ts";
 import type { AppRuntime } from "./app-runtime.ts";
@@ -62,10 +62,15 @@ export function useNativeInputs(runtime: AppRuntime, backend: LoomBackend | null
       const label = NATIVE_VIDEO_LABELS[transport];
       if (entries.current.has(nodeId)) continue;
       if (!bridge || !uuid) {
-        report(nodeId, bridge ? `Select a ${label} source in the inspector`
-          : transport === "spout" ? SPOUT_UNAVAILABLE
-            : transport === "ndi" ? "NDI In requires the desktop app with an explicit local NDI SDK"
-            : "Syphon In requires the macOS desktop app");
+        /* T1340b: NO BRIDGE is a HOST fact and the node already carries exactly one warning
+           for it, from its own `requires` declaration (`use-requirement-diagnostics.ts`),
+           in the words the library tags and the inspector section share. The three
+           sentences that used to live here were a fourth wording of the same fact, written
+           where nobody could see the other three — and they fired only for a node the
+           render was already demanding, so the Syphon node you had just dropped said
+           nothing at all. What stays is the part this hook alone knows: a bridge exists and
+           no source has been picked. */
+        report(nodeId, bridge ? `Select a ${label} source in the inspector` : null);
         entries.current.set(nodeId, { uuid, transport, dispose() {} });
         continue;
       }

@@ -329,6 +329,33 @@
   --category-output: #c08a8a;
   --category-utility: #98a2b3;
   /*
+   * T1340b — the REQUIREMENT tints: what a node or an example needs from the machine.
+   * Owner: *"make up clear and concise CATEGORIES and then give them a COLOR CODING so
+   * that it becomes clear like 'hey we need this shit here'."*
+   *
+   * One token per CATEGORY, never per tag, which is the whole point of the taxonomy: a
+   * reader learns three hues instead of seven words, and an eighth requirement added
+   * tomorrow inherits a colour by declaring a category rather than by someone remembering
+   * to pick one.
+   *
+   * ⚑ NOT A STATUS HUE, and not `--warn`, which is what all seven used to wear.
+   * `--warn`/`--signal`/`--error`/`--ok` are spent on RUN STATE (§V90 — one colour, one
+   * meaning), and "this needs the desktop app" is not a fault: the document is correct,
+   * the machine is simply not the one it wants. The three actionable hues sit in the
+   * cyan → periwinkle → orchid arc that the status palette does not occupy, and they are
+   * held at low chroma for §T964's reason one shelf up — a saturated tag strip reads as
+   * an alarm.
+   *
+   * ⚠ `--requirement-unsupported` IS DELIBERATELY NOT ONE OF THEM. It is a dead grey,
+   * quieter than `--text-dim`, because `not-implemented` is the one tag nobody can
+   * satisfy on any machine. Painting it like the other three says "go find the Windows
+   * box" about a thing no Windows box can do — a lie the reader acts on.
+   */
+  --requirement-host: #5cc8c0;
+  --requirement-platform: #7f9ee6;
+  --requirement-external: #c98ad6;
+  --requirement-unsupported: #767d8d;
+  /*
    * T1010 — the COST ramp for the per-node timing overlay. Owner: the bars *"could
    * probably be colour coded depending on if they take a lot or just a little, so it's
    * even easier to see at a distance and who's doing what."*

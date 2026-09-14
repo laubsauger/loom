@@ -10,6 +10,7 @@ import { effectiveParameterSchema } from "@domain/parameters/resolve.ts";
 import { nodeHasAnimatedParameters } from "@domain/channels/graph-channels.ts";
 import type { FrameInputs } from "@domain/types/backend.ts";
 import type { FrameEvaluationInput } from "@domain/types/frame.ts";
+import { nodeRuntimeRequirements } from "@domain/types/node-definition.ts";
 import type { TextureFormat } from "@domain/types/node-definition.ts";
 import type { ParameterValue, StoredParameter } from "@domain/types/parameters.ts";
 import type { EditPhase } from "@ui/controls/types.ts";
@@ -821,7 +822,10 @@ export function Inspector({
         editor={editor}
       />
     ) : null;
+  /* T1340b: the node's OWN requirement declaration, resolved for this instance, so the
+     section's tags cannot disagree with the library's or with the node's warning. */
   const syphonSection = nativeInputTransport ? <NativeInputSection nodeId={node.id} transport={nativeInputTransport}
+    requirements={nodeRuntimeRequirements(definition, resolved.values)}
     source={typeof resolved.values["source"] === "string" ? resolved.values["source"] as string : ""} editor={editor} /> : null;
 
   /* T942: the controller gets its learn table and its ONE honest sentence about why there

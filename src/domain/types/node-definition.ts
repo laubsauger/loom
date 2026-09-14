@@ -3,6 +3,7 @@ import type { PortDefinition } from "./ports.ts";
 import type { ParameterSchema, ParameterValue } from "./parameters.ts";
 import type { AudioFeatures, FrameEvaluationInput } from "./frame.ts";
 import type { RuntimeDiagnostic } from "./diagnostics.ts";
+import type { RuntimeRequirementId } from "./requirements.ts";
 
 export type ResolutionPolicy =
   | { kind: "inherit"; input: PortId }
@@ -377,6 +378,30 @@ export interface NodeDefinition {
   };
   capabilities?: CapabilityRequirement[];
   /**
+   * T1340b: WHAT THIS NODE NEEDS FROM THE MACHINE — the desktop app, the local helper,
+   * macOS, an installed SDK. Absent means "a plain browser tab is enough", which is the
+   * overwhelming majority and is why the default is UNSTATED rather than a `"browser"`
+   * member: a requirement list says what is EXTRA.
+   *
+   * ⚑ DECLARED HERE RATHER THAN LOOKED UP BY TYPE, and the row that moved it says why:
+   * this lived as a `switch` on node type inside the EXAMPLE LIST, so the example library
+   * knew a Syphon node needs macOS and the node did not know it about itself. Every
+   * second surface then had to re-derive the map or import the examples layer, and the
+   * hand-kept duplicate is how four different sentences for one fact got written. Pure
+   * data, so §V11 is untroubled — no definition imports react, ui or editor for this.
+   *
+   * The FUNCTION form is for a node whose requirement depends on a compile-time parameter
+   * — Person Mask's `transport` picks between the desktop app on Apple Silicon and the
+   * local helper, and a flat list would have to claim both. Same shape and same reason as
+   * `outputWhen`/`msaaWhen`: a structural fact that a parameter selects. It is handed the
+   * node's RESOLVED effective values, and it may THROW on a value it does not recognise —
+   * a caller that cannot tell must say so, never fall back to the default and report a
+   * confident wrong answer (§V986).
+   */
+  requires?:
+    | readonly RuntimeRequirementId[]
+    | ((values: Readonly<Record<string, unknown>>) => readonly RuntimeRequirementId[]);
+  /**
    * Kernel ABI version this definition was written against (§V77). Checked before a
    * point kernel runs; a mismatch refuses with a diagnostic rather than running a
    * generated `Point` struct against a signature that no longer matches it.
@@ -526,6 +551,25 @@ export interface NodeDefinition {
  */
 export function isPureValueSource(definition: NodeDefinition | undefined): boolean {
   return definition?.valueChannel !== undefined && definition.valueEvaluate === undefined;
+}
+
+/**
+ * T1340b: the ONE read path for `requires` — normalises the list and the function form so
+ * no caller has to know which a given definition uses.
+ *
+ * `values` are the node's RESOLVED effective parameter values. An unrecognised value
+ * propagates the definition's own throw; callers decide whether "we cannot classify this
+ * document" is fatal (the example list: it refuses rather than promising browser support)
+ * or merely unreportable (the editor: the compiler is already complaining about the same
+ * value, and a second shout adds nothing).
+ */
+export function nodeRuntimeRequirements(
+  definition: NodeDefinition | undefined,
+  values: Readonly<Record<string, unknown>>,
+): readonly RuntimeRequirementId[] {
+  const declared = definition?.requires;
+  if (declared === undefined) return [];
+  return typeof declared === "function" ? declared(values) : declared;
 }
 
 /**

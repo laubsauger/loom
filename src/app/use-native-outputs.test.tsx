@@ -69,7 +69,11 @@ it.each(["syphonOut", "ndiOut", "spoutOut"])("%s awaits GPU drainage, does not p
   await h.tick(); expect(h.sessions).toHaveLength(1);
   busy = false; await h.tick(); expect(h.sessions).toHaveLength(2);
 });
-it("unsupported browser reports without creating transport", async () => {
+/* T1340b: the host-absent SENTENCE moved onto the node (see the note in
+   `use-native-inputs.test.tsx`). What these three still assert is this hook's own claim —
+   an absent bridge publishes nothing and never substitutes a different transport — plus
+   that it mints no second wording of its own. */
+it("publishes nothing, and says nothing of its own, when there is no bridge", async () => {
   vi.mocked(desktopOutputBridge).mockReturnValue(undefined);
   const h = setup(); h.view.unmount();
   vi.mocked(desktopOutputBridge).mockReturnValue(undefined);
@@ -77,7 +81,7 @@ it("unsupported browser reports without creating transport", async () => {
   const view = renderHook(() => useNativeOutputs(h.runtime, backend, h.graph, h.compiled));
   await h.tick();
   expect(createNativeOutputSession).not.toHaveBeenCalled();
-  expect(view.result.current.diagnostics[0]?.message).toContain("macOS desktop");
+  expect(view.result.current.diagnostics).toEqual([]);
 });
 
 it("NDI output selects its own capability and cannot reuse a Syphon session", async () => {
@@ -93,22 +97,24 @@ it("NDI output selects its own capability and cannot reuse a Syphon session", as
   expect(createNativeOutputSession).toHaveBeenLastCalledWith(expect.anything(), ndi, expect.anything(), "Test");
 });
 
-it("NDI output without an SDK does not open Syphon instead", async () => {
+it("refuses to publish through Syphon when the NDI bridge is absent", async () => {
   const h = setup();
   vi.mocked(desktopOutputBridge).mockImplementation(transport => transport === "ndi" ? undefined : {} as never);
   const graph = { ...h.graph, nodes: { ...h.graph.nodes, sink: { ...h.graph.nodes["sink"]!, type: "ndiOut" } } };
   h.view.rerender({ graph, compiled: h.compiled }); await h.tick();
+  // A Syphon bridge IS available here — the substitution the claim is about.
+  expect(desktopOutputBridge).toHaveBeenCalledWith("ndi");
   expect(createNativeOutputSession).not.toHaveBeenCalled();
-  expect(h.view.result.current.diagnostics[0]?.message).toContain("explicit local NDI SDK");
+  expect(h.view.result.current.diagnostics).toEqual([]);
 });
 
-it("Spout preparation reports unimplemented native sharing without opening another transport", async () => {
+it("Spout preparation opens no other transport in place of the one that does not exist", async () => {
   const h = setup("spoutOut");
   vi.mocked(desktopOutputBridge).mockImplementation(transport => transport === "spout" ? undefined : {} as never);
   await h.tick();
   expect(desktopOutputBridge).toHaveBeenCalledWith("spout");
   expect(createNativeOutputSession).not.toHaveBeenCalled();
-  expect(h.view.result.current.diagnostics[0]?.message).toMatch(/Windows.*not implemented/);
+  expect(h.view.result.current.diagnostics).toEqual([]);
 });
 
 it("switching to Spout drains the previous publisher before opening a dedicated session", async () => {

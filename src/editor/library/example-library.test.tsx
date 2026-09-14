@@ -5,6 +5,7 @@ import { alice, contextFor } from "@domain/commands/test-support.ts";
 import { createComponentHarness, graphOf } from "@domain/components/test-support.ts";
 import type { LoomBus } from "@domain/commands/bus.ts";
 import { installDomStubs } from "@ui/testing/install-dom-stubs.ts";
+import { runtimeRequirement } from "@domain/types/requirements.ts";
 import { capabilityOf, listExampleProjects } from "./example-catalogue.ts";
 import { ExampleLibrary } from "./example-library.tsx";
 import { readExampleLink, resolveExampleLink } from "./example-link.ts";
@@ -294,17 +295,48 @@ describe("ExampleLibrary (T189, §V93)", () => {
 
   it("shows runtime requirements and tags before opening or hovering an example", () => {
     const { bus, opened } = busWithOpen();
-    const example = { ...EXAMPLE, requirements: [
-      { id: "desktop" as const, label: "Desktop only", description: "Not available in the hosted browser." },
-      { id: "apple-silicon" as const, label: "Apple Silicon", description: "Requires an Apple Silicon Mac." },
-    ] };
+    // T1340b: the REAL table, not a hand-written pair. A fixture that spells its own
+    // labels and descriptions is the drift this row deleted — it would keep passing after
+    // the shipped words changed underneath it.
+    const desktop = runtimeRequirement("desktop");
+    const silicon = runtimeRequirement("apple-silicon");
+    const example = { ...EXAMPLE, requirements: [desktop, silicon] };
     render(<ExampleLibrary bus={bus} context={context} dirty={false} examples={[example, OTHER]} />);
     const row = within(screen.getByRole("button", { name: /^E9 Test/ }));
-    expect(row.getByText("Desktop only").getAttribute("title")).toBe("Not available in the hosted browser.");
-    expect(row.getByText("Apple Silicon")).toBeDefined();
+    expect(row.getByText(desktop.label).getAttribute("title")).toBe(desktop.description);
+    expect(row.getByText(silicon.label)).toBeDefined();
     for (const tag of EXAMPLE.tags) expect(row.getByText(capabilityOf(tag).label)).toBeDefined();
-    expect(within(screen.getByRole("button", { name: /^E12 Other/ })).queryByText("Desktop only")).toBeNull();
+    expect(within(screen.getByRole("button", { name: /^E12 Other/ })).queryByText(desktop.label)).toBeNull();
     expect(opened).toHaveLength(0);
+  });
+
+  /**
+   * T1340b — the COLOUR, asserted as the thing that carries it rather than as a
+   * screenshot: every requirement badge declares its CATEGORY, and `node-identity.module.css`
+   * keys the hue off that one attribute. The three actionable categories and the
+   * unsatisfiable one must never arrive wearing the same word, because the stylesheet has
+   * no other way to tell them apart — and a `not-implemented` tag painted like "Device
+   * helper" sends the reader looking for a machine that would fix it.
+   */
+  it("tags each requirement with its category, and never files the unsatisfiable one with the actionable ones", () => {
+    const { bus } = busWithOpen();
+    const requirements = [
+      runtimeRequirement("helper"),
+      runtimeRequirement("windows"),
+      runtimeRequirement("ndi-sdk"),
+      runtimeRequirement("not-implemented"),
+    ];
+    render(<ExampleLibrary bus={bus} context={context} dirty={false}
+      examples={[{ ...EXAMPLE, requirements }]} />);
+    const row = within(screen.getByRole("button", { name: /^E9 Test/ }));
+    const categoryOf = (label: string) => row.getByText(label).getAttribute("data-category");
+    expect(categoryOf("Device helper")).toBe("host");
+    expect(categoryOf("Windows")).toBe("platform");
+    expect(categoryOf("NDI SDK")).toBe("external");
+    expect(categoryOf("Not implemented")).toBe("unsupported");
+    // The capability tags share the badge and must stay UNTINTED: they say what the file
+    // demonstrates, not what your machine is missing.
+    expect(row.getByText(capabilityOf(EXAMPLE.tags[0]!).label).getAttribute("data-category")).toBeNull();
   });
 
   it("marks unresolved requirements instead of implying browser compatibility", () => {

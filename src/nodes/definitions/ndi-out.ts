@@ -14,5 +14,7 @@ export const ndiOutNode: NodeDefinition = {
       description: 'Distinct NDI publisher name shown in receiving apps. Loom limit: 128 UTF8 bytes. Reserved characters: \\ / : * ? " < > |.' },
     enabled: { type: "boolean", label: "Publish", default: true },
   },
+  // T1340b: same three as NDI In — host, platform, and the SDK the user supplies.
+  requires: ["desktop", "macos", "ndi-sdk"],
   compile: () => ({ passes: [] }),
 };

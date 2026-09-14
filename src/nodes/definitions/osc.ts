@@ -155,6 +155,9 @@ export const oscInNode: NodeDefinition = {
    * this node — `use-osc-bridge.test.tsx` measures exactly that.
    */
   listensOn: { channelPrefix: OSC_CHANNEL_PREFIX, portParameter: "port" },
+  // T1340b: `helper` is a HOST requirement — a browser tab plus a process on localhost.
+  // Declared here so no surface has to know that "oscIn" implies it.
+  requires: ["helper"],
   inputs: [],
   outputs: [{ id: "out", label: "Out", type: VALUE_PORT }],
   parameters: OSC_IN_PARAMETERS,
@@ -211,6 +214,9 @@ export const oscOutNode: NodeDefinition = {
    * every Dawn gate send nothing, by a check rather than by nobody having built a pump.
    */
   sideEffect: "emits",
+  // T1340b: same HOST requirement as OSC In, and for the same reason — a page cannot
+  // speak UDP, so a process on localhost has to.
+  requires: ["helper"],
   inputs: [{ id: "in", label: "In", type: VALUE_PORT }],
   outputs: [{ id: "out", label: "Out", type: VALUE_PORT }],
   parameters: {

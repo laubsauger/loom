@@ -29,3 +29,78 @@ test("example rows expose requirements and tags without overflowing the library"
   }
   await page.screenshot({ path: testInfo.outputPath("example-requirements.png") });
 });
+
+/**
+ * T1340b — THE COLOUR CODING, measured in a real browser.
+ *
+ * Owner: *"make up clear and concise CATEGORIES and then give them a COLOR CODING so that
+ * it becomes clear like 'hey we need this shit here'."* The hue is a CSS var keyed off
+ * `data-category`, so jsdom — which resolves no custom properties and lays out no flex —
+ * cannot tell a working tint from a missing one. It could not tell before, either: the
+ * class these badges asked for (`styles.requirementTag`) did not exist in the stylesheet,
+ * so `undefined` reached `className` and the seven tags rendered in the badge's default
+ * grey while every comment still called them warning-tinted.
+ */
+test("each requirement category is a distinct colour, and the unsatisfiable one is not one of them", async ({ page }) => {
+  await openApp(page);
+  await page.getByRole("tab", { name: "examples", exact: true }).click();
+  const colourOf = async (rowName: string, label: string) => {
+    const row = page.getByRole("button", { name: new RegExp(`^${rowName}`) });
+    await row.scrollIntoViewIfNeeded();
+    const badge = row.getByText(label, { exact: true });
+    await expect(badge).toBeVisible();
+    return badge.evaluate(element => getComputedStyle(element).color);
+  };
+  const host = await colourOf("E71 Syphon Loopback", "Desktop only");
+  const platform = await colourOf("E71 Syphon Loopback", "macOS");
+  const external = await colourOf("E72 NDI Loopback", "NDI SDK");
+  const unsupported = await colourOf("E74 Spout Loopback Preparation", "Not implemented");
+  // Three actionable hues the reader can learn, all different from each other.
+  expect(new Set([host, platform, external]).size).toBe(3);
+  // ⚑ AND THE ONE NOBODY CAN ACT ON IS NOT DRESSED AS ONE OF THEM. Painting "Not
+  // implemented" like "Desktop only" sends the reader to find a Windows machine that
+  // cannot help — a lie they act on.
+  expect(unsupported).not.toBe(host);
+  expect(unsupported).not.toBe(platform);
+  expect(unsupported).not.toBe(external);
+  // The same tag is the same colour wherever it appears: one vocabulary, not one per pane.
+  expect(await colourOf("E73 Native Person Mask", "Desktop only")).toBe(host);
+  expect(await colourOf("E74 Spout Loopback Preparation", "Windows")).toBe(platform);
+});
+
+/**
+ * T1340b — THE NODE ITSELF CARRIES THE WARNING, in a real browser, in the chrome every
+ * other problem already uses.
+ *
+ * Owner: *"ideally THE NODE ITSELF would also be highlighted as if there's a warning on it,
+ * with the usual warning text exposed ON THE NODE as we do with all other kinds of warnings
+ * and errors."*
+ *
+ * ⚑ THE DEFECT'S OWN SIGNATURE: a Syphon graph opened in a browser tab showed a perfectly
+ * clean node. The library row knew the file needed macOS and the desktop app, the inspector
+ * said so in grey under a disabled dropdown, and the node — the thing you are looking at —
+ * said nothing at all. This runs in Chromium, which IS a browser tab with no `loomDesktop`,
+ * so the host fact under test is the real one rather than a fake.
+ */
+test("a Syphon node opened in a browser tab carries the warning on the node", async ({ page }, testInfo) => {
+  await openApp(page);
+  await page.getByRole("tab", { name: "examples", exact: true }).click();
+  const row = page.getByRole("button", { name: /^E71 Syphon Loopback/ });
+  await row.scrollIntoViewIfNeeded();
+  await row.click();
+  // The warning rides the node's ordinary message line — the same element a compiler
+  // diagnostic uses — so finding it there is what makes it the SAME chrome and not a
+  // lookalike built beside it.
+  const warning = page.locator(".react-flow__node").getByText(/Syphon In cannot run on this machine/);
+  await expect(warning.first()).toBeVisible();
+  // And it is COUNTED as a warning everywhere warnings are counted: the dock's tally is a
+  // different derivation from a different array, so agreement here is the claim that the
+  // node badge and the panel cannot disagree.
+  // …and the SAME warning is in the problems pane, which is a different derivation over a
+  // different array. Agreement here is the whole claim: a node badge that says one and a
+  // panel that says none teaches the user to trust whichever they saw first.
+  await page.getByRole("tab", { name: /problems/ }).click();
+  await expect(page.getByRole("tabpanel", { name: "problems" }))
+    .toContainText(/Syphon In cannot run on this machine/);
+  await page.screenshot({ path: testInfo.outputPath("syphon-node-warning.png") });
+});

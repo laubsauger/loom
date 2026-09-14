@@ -323,6 +323,18 @@
 }
 
 /*
+  T1340b — the requirement tags under a control this machine cannot drive. Layout only:
+  every pixel of the badge itself (border, radius, mono, size, case and the category tint)
+  comes from `TypeBadge`, which is the same badge the example library and the node list
+  wear. A width here would be a fourth answer to "what does a facet look like".
+*/
+.requirementTags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+/*
   T1321b — a note that belongs to the ROW IT SITS UNDER, not to the section.
 
   Full width rather than indented into the control column: it is a sentence that has to

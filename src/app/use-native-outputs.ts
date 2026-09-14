@@ -7,7 +7,7 @@ import { resolveParameters } from "@domain/parameters/index.ts";
 import { EMISSION_PUMPS } from "@domain/render/emission-pumps.ts";
 import { emissionRefusal } from "@domain/render/side-effects.ts";
 import { desktopOutputBridge } from "@devices/native-output.ts";
-import { NATIVE_OUTPUT_TRANSPORTS, NATIVE_VIDEO_LABELS, SPOUT_UNAVAILABLE } from "@devices/native-video.ts";
+import { NATIVE_OUTPUT_TRANSPORTS, NATIVE_VIDEO_LABELS } from "@devices/native-video.ts";
 import { createNativeOutputSession } from "@devices/native-output-session.ts";
 import type { LoomBackend } from "@runtime/backend/index.ts";
 import type { AppRuntime } from "./app-runtime.ts";
@@ -90,8 +90,10 @@ export function useNativeOutputs(runtime: AppRuntime, backend: LoomBackend | nul
         if (refusal) { report(request.id, refusal); continue; }
         if (!request.enabled) { report(request.id, null); continue; }
         if (!request.selection) { report(request.id, `Connect a compiled texture to ${label} Out`); continue; }
-        if (!bridge) { report(request.id, request.transport === "spout" ? SPOUT_UNAVAILABLE : request.transport === "ndi"
-          ? "NDI Out requires the desktop app with an explicit local NDI SDK" : "Syphon Out requires the macOS desktop app"); continue; }
+        // T1340b: the node's own requirement warning says this, once, in the one
+        // vocabulary — see the note in `use-native-inputs.ts`. Nothing is published either
+        // way, so the entry is simply not opened.
+        if (!bridge) { report(request.id, null); continue; }
         if (draining.size) continue;
         let entry = entries.get(request.id);
         if (!entry) {

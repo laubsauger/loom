@@ -29,19 +29,25 @@ import styles from "./library.module.css";
  * this app", and the two had already drifted. `NodeIdentity`'s own docblock had asked for
  * this in advance: share the STRUCTURE, not just the stylesheet.
  *
- * What stays local is the one thing the badge cannot know: a requirement is a WARNING,
- * not a facet, so it keeps a tint of its own over the shared chrome.
+ * T1340b: the tint is the badge's OWN `data-category` mechanism, fed the requirement's
+ * CATEGORY (`host` / `platform` / `external` / `unsupported`) instead of a node shelf.
+ * It used to be a local class that no stylesheet actually defined — `styles.requirementTag`
+ * resolved to `undefined`, so the seven tags had drifted all the way to NO colour while
+ * still being described as warning-tinted. One mechanism, one vocabulary, one place to
+ * change a hue.
  */
 function ExampleBadges({ example, row = false }: { example: ExampleProject; row?: boolean }) {
   return <span className={`${styles.cardTags} ${row ? styles.exampleBadges : ""}`}>
     {example.requirementsError === undefined ? null : (
-      <TypeBadge label="Requirements unknown" className={styles.requirementTag} title={example.requirementsError} />
+      /* Unknown is its own answer and must not borrow a category's colour: the app could
+         not read the file, so it knows nothing about what the file needs (§V986). */
+      <TypeBadge label="Requirements unknown" title={example.requirementsError} />
     )}
     {example.requirements.map(requirement => (
       <TypeBadge
         key={requirement.id}
         label={requirement.label}
-        className={styles.requirementTag}
+        category={requirement.category}
         title={requirement.description}
       />
     ))}

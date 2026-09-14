@@ -12,5 +12,8 @@ export const syphonInNode: NodeDefinition = {
     source: { type: "string", label: "Source", default: "",
       description: "Exact Syphon discovery UUID, selected in the inspector. No automatic source substitution." },
   },
+  // T1340b: the declaration of record. The example list and the node's own warning
+  // both read THIS; neither carries a type switch of its own.
+  requires: ["desktop", "macos"],
   resolutionPolicy: { kind: "project" }, compile: compileMedia,
 };

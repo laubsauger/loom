@@ -64,6 +64,8 @@ export const laserOutNode: NodeDefinition = {
    * consults it to exist and to be registered.
    */
   sideEffect: "emits",
+  // T1340b: a HOST requirement — a page cannot open TCP, so the helper holds the socket.
+  requires: ["helper"],
   /* §V25: a declared sink — the compiler keeps the planner chain above this node
      compiled even though nothing draws it, which is what the pump will read. */
   sink: true,
