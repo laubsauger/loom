@@ -1,3 +1,5 @@
+import { wgsl } from "../../runtime/backend/wgsl.ts";
+import type { EmittedWgsl } from "../../runtime/backend/wgsl.ts";
 /**
  * Switch — one of N inputs, chosen by a number (T235). TD's Switch TOP.
  *
@@ -23,7 +25,7 @@
  * crossfaded. `next` arrives as a uniform rather than being derived here as
  * `(index + 1) % count`, keeping the CPU the single author of what wrapping means (T235).
  */
-export function switchFragmentWgsl(inputs: number): string {
+export function switchFragmentWgsl(inputs: number): EmittedWgsl {
   const count = Math.max(1, Math.floor(inputs));
   const declarations = Array.from(
     { length: count },
@@ -36,7 +38,7 @@ export function switchFragmentWgsl(inputs: number): string {
     (_, index) => `    case ${index}u: { return ${sample(index)}; }`,
   ).join("\n");
 
-  return `struct Params {
+  return wgsl`struct Params {
   index: f32,
   next: f32,
   blend: f32,

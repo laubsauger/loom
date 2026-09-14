@@ -1,6 +1,8 @@
 import type { LogicalExecutionPlan } from "../../../domain/types/backend.ts";
 import type { PassDescriptor, ResourceDescriptor, UniformValues } from "../plan.ts";
 import { SHARED_UNIFORMS_WGSL } from "../shared-uniforms.ts";
+import { wgsl } from "../wgsl.ts";
+import type { EmittedWgsl } from "../wgsl.ts";
 
 /**
  * A small but complete plan: a generator pass, a feedback pair with a swap, and a
@@ -9,7 +11,7 @@ import { SHARED_UNIFORMS_WGSL } from "../shared-uniforms.ts";
  * Shared by the backend tests; kept out of a `.test.ts` file so the driver tests can reuse it.
  */
 
-export const GENERATE_WGSL = `${SHARED_UNIFORMS_WGSL}
+export const GENERATE_WGSL = wgsl`${SHARED_UNIFORMS_WGSL}
 struct Params { amount: f32, tint: f32 };
 @group(0) @binding(0) var<uniform> frameU: SharedFrame;
 @group(0) @binding(1) var<uniform> params: Params;
@@ -19,7 +21,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
 }`;
 
 /** Same bindings, different body — an edit that must force a rebuild (§V5 control case). */
-export const GENERATE_WGSL_EDITED = `${SHARED_UNIFORMS_WGSL}
+export const GENERATE_WGSL_EDITED = wgsl`${SHARED_UNIFORMS_WGSL}
 struct Params { amount: f32, tint: f32 };
 @group(0) @binding(0) var<uniform> frameU: SharedFrame;
 @group(0) @binding(1) var<uniform> params: Params;
@@ -28,7 +30,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   return vec4f(uv.yx * params.amount, params.tint * frameU.deltaTime, 1.0);
 }`;
 
-export const FEEDBACK_WGSL = `@group(0) @binding(0) var inputSampler: sampler;
+export const FEEDBACK_WGSL = wgsl`@group(0) @binding(0) var inputSampler: sampler;
 @group(0) @binding(1) var sceneTexture: texture_2d<f32>;
 @group(0) @binding(2) var historyTexture: texture_2d<f32>;
 @fragment
@@ -38,7 +40,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   return mix(scene, history, 0.5);
 }`;
 
-export const COMPOSITE_WGSL = `@group(0) @binding(0) var inputSampler: sampler;
+export const COMPOSITE_WGSL = wgsl`@group(0) @binding(0) var inputSampler: sampler;
 @group(0) @binding(1) var historyTexture: texture_2d<f32>;
 @fragment
 fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
@@ -49,7 +51,7 @@ export interface FixtureOptions {
   readonly size?: readonly [number, number];
   readonly uniforms?: UniformValues;
   /** Swapped in to prove that a *structural* change does rebuild (§V5 control case). */
-  readonly generateShader?: string;
+  readonly generateShader?: EmittedWgsl;
   /** Adds an unrelated generator + target: the T143 "one new node must not wipe feedback" case. */
   readonly extraGenerator?: boolean;
 }
@@ -106,7 +108,7 @@ export function fixturePlan(options: FixtureOptions = {}): LogicalExecutionPlan 
       kind: "effect",
       id: "extra-generate",
       nodeId: "node-extra",
-      shader: `@fragment fn fs(@location(0) uv: vec2f) -> @location(0) vec4f { return vec4f(uv, 0.5, 1.0); }`,
+      shader: wgsl`@fragment fn fs(@location(0) uv: vec2f) -> @location(0) vec4f { return vec4f(uv, 0.5, 1.0); }`,
       target: "extra",
     });
   }

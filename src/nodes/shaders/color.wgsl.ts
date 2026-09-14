@@ -1,4 +1,5 @@
 import { WGSL_CHANNEL, WGSL_HSV, WGSL_LUMA } from "./common.wgsl.ts";
+import { wgsl } from "../../runtime/backend/wgsl.ts";
 
 /**
  * Fragment shaders for the colour operators: Level, HSV, Threshold, Lookup (T40).
@@ -19,7 +20,7 @@ import { WGSL_CHANNEL, WGSL_HSV, WGSL_LUMA } from "./common.wgsl.ts";
  * then opacity on alpha. Alpha is otherwise untouched: brightening an image should not
  * change what it covers.
  */
-export const LEVEL_FRAGMENT_WGSL = `struct Params {
+export const LEVEL_FRAGMENT_WGSL = wgsl`struct Params {
   blacklevel: f32,
   whitelevel: f32,
   brightness: f32,
@@ -58,7 +59,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
  * catalogue, and a round trip through an encoding curve inside a colour node would be the
  * silent conversion §V13 forbids.
  */
-export const HSV_FRAGMENT_WGSL = `${WGSL_HSV}
+export const HSV_FRAGMENT_WGSL = wgsl`${WGSL_HSV}
 
 struct Params {
   hueoffset: f32,
@@ -86,7 +87,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
  * composited as a matte without a channel-shuffling node in between. That makes the output
  * DATA in the §V56 sense even though it is shaped like a colour — noted on the port.
  */
-export const THRESHOLD_FRAGMENT_WGSL = `${WGSL_CHANNEL}
+export const THRESHOLD_FRAGMENT_WGSL = wgsl`${WGSL_CHANNEL}
 
 struct Params {
   threshold: f32,
@@ -117,7 +118,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
  * colour, not the source's. Resolution therefore comes from `source` and format from
  * `lookup`, which is unusual enough to be stated in both places.
  */
-export const LOOKUP_FRAGMENT_WGSL = `${WGSL_CHANNEL}
+export const LOOKUP_FRAGMENT_WGSL = wgsl`${WGSL_CHANNEL}
 
 struct Params {
   channel: f32,
@@ -156,7 +157,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
  * quantizing alpha turns a soft edge into a stair — which is never what someone posterising
  * an image was asking for.
  */
-export const LIMIT_FRAGMENT_WGSL = `struct Params {
+export const LIMIT_FRAGMENT_WGSL = wgsl`struct Params {
   mode: f32,
   low: f32,
   high: f32,
@@ -224,7 +225,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
  * change the space its inputs are in — but it can change what the values MEAN, and that
  * is the user's intent: alpha routed into rgb is coverage being looked at, not light.
  */
-export const REORDER_FRAGMENT_WGSL = `${WGSL_LUMA}
+export const REORDER_FRAGMENT_WGSL = wgsl`${WGSL_LUMA}
 
 struct Params {
   outr: f32,
@@ -292,7 +293,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
  * trip were not the identity, the sandwich would change the picture in the very case it
  * exists to fix.
  */
-export const PREMULTIPLY_FRAGMENT_WGSL = `struct Params {
+export const PREMULTIPLY_FRAGMENT_WGSL = wgsl`struct Params {
   mode: f32,
 };
 @group(0) @binding(0) var<uniform> params: Params;

@@ -1,3 +1,4 @@
+import { wgsl } from "../../runtime/backend/wgsl.ts";
 /**
  * Fragment shader for the Feedback node (T152, §V22).
  *
@@ -19,7 +20,7 @@
  *
  * COLOUR (§V56): operates on linear working-space values, like the rest of the catalogue.
  */
-export const FEEDBACK_FRAGMENT_WGSL = `struct Params {
+export const FEEDBACK_FRAGMENT_WGSL = wgsl`struct Params {
   clearColor: vec4f,
   persistence: f32,
   hold: f32,

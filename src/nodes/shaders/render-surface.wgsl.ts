@@ -1,3 +1,4 @@
+import { wgsl } from "../../runtime/backend/wgsl.ts";
 /**
  * The surface render shader (T301): a shaded surface over a point grid with ANALYTIC
  * topology — no index buffer, no mesh asset. The vertex index IS the connectivity:
@@ -11,7 +12,7 @@
  * vertex uses a one-cell forward/backward difference) — analytic, per-frame correct
  * under any deform, and free of a normal-recompute pass.
  */
-export const RENDER_SURFACE_WGSL = `struct SurfaceParams {
+export const RENDER_SURFACE_WGSL = wgsl`struct SurfaceParams {
   viewProjection: mat4x4f,
   color: vec4f,
   cols: u32,

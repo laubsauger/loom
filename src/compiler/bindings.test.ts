@@ -13,6 +13,7 @@ import {
   testNode,
   testSettings,
 } from "./test-support.ts";
+import { wgsl } from "../runtime/backend/wgsl.ts";
 
 /**
  * T328 / B33 — a plan the GPU will decline is refused before a GPU exists.
@@ -30,7 +31,7 @@ const dispatch = (id: string, buffers: number): PassDescriptor =>
   ({
     kind: "dispatch",
     id,
-    shader: "// kernel",
+    shader: wgsl`// kernel`,
     entryPoint: "main",
     workgroups: [1, 1, 1],
     buffers: Array.from({ length: buffers }, (_, index) => ({
@@ -92,7 +93,7 @@ describe("counting a pass's bindings (T328)", () => {
     const effect = {
       kind: "effect",
       id: "over",
-      shader: "// blend",
+      shader: wgsl`// blend`,
       target: "t",
       textures: Array.from({ length: 17 }, (_, index) => ({
         binding: `t${index}`,
@@ -154,7 +155,7 @@ describe("T1076 — the per-binding SIZE budget", () => {
     ({
       kind: "dispatch",
       id,
-      shader: "// kernel",
+      shader: wgsl`// kernel`,
       entryPoint: "main",
       workgroups: [1, 1, 1],
       buffers: [{ binding: "pk_0", resourceId: "points", offset: 0, bytes }],
@@ -182,7 +183,7 @@ describe("T1076 — the per-binding SIZE budget", () => {
     const mixed = {
       kind: "dispatch",
       id: "sim:kernel",
-      shader: "// kernel",
+      shader: wgsl`// kernel`,
       entryPoint: "main",
       workgroups: [1, 1, 1],
       buffers: [
@@ -232,7 +233,7 @@ function hungryNode(count: number): NodeDefinition {
             kind: "dispatch",
             id: `${nodeId}:step`,
             nodeId,
-            shader: "// kernel",
+            shader: wgsl`// kernel`,
             entryPoint: "main",
             workgroups: [1, 1, 1] as const,
             buffers: keys.map((key) => ({

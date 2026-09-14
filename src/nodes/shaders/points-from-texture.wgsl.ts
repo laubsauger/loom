@@ -1,3 +1,4 @@
+import { wgsl } from "../../runtime/backend/wgsl.ts";
 /**
  * Positions FROM a texture (T743).
  *
@@ -22,7 +23,7 @@
  * an all-zero keypoint texture parks every point, which is exactly what "no person in
  * frame" does, so the unavailable-model state needs no special case anywhere.
  */
-export const POINTS_FROM_TEXTURE_WGSL = `struct TexturePointsParams {
+export const POINTS_FROM_TEXTURE_WGSL = wgsl`struct TexturePointsParams {
   count: u32,
   mode: u32,          // 0 = grid (coordinate is position), 1 = value (texel is position)
   cols: u32,

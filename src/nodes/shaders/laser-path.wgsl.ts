@@ -1,3 +1,5 @@
+import { wgsl } from "../../runtime/backend/wgsl.ts";
+import type { EmittedWgsl } from "../../runtime/backend/wgsl.ts";
 /**
  * T947 — the laser path planner's four passes.
  *
@@ -46,8 +48,8 @@ const COUNT_MASK = "0xFFFFu";
  * straight-through vertex takes holdMin extra samples and a full reversal holdMax.
  * An OPEN path's endpoints are full reversals — the beam turns around there.
  */
-function planPointWgsl(slotsPerPoint: number): string {
-  return `
+function planPointWgsl(slotsPerPoint: number): EmittedWgsl {
+  return wgsl`
 const SLOTS_PER_POINT: u32 = ${slotsPerPoint}u;
 
 struct PointPlan {
@@ -108,8 +110,8 @@ const PARAMS_WGSL = `struct LaserParams {
 @group(0) @binding(0) var<uniform> params: LaserParams;`;
 
 /** COUNT — one thread per input point; packs (hold << 16) | count for the scan. */
-export function laserCountWgsl(slotsPerPoint: number): string {
-  return `${PARAMS_WGSL}
+export function laserCountWgsl(slotsPerPoint: number): EmittedWgsl {
+  return wgsl`${PARAMS_WGSL}
 @group(0) @binding(1) var<storage, read> in_position: array<vec3f>;
 @group(0) @binding(2) var<storage, read_write> counts: array<u32>;
 ${planPointWgsl(slotsPerPoint)}
@@ -129,8 +131,8 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
  * SCAN LOCAL — the lifecycle module's Hillis–Steele exclusive scan, restated here over
  * the packed counts (extract = raw & 0xFFFF). Deterministic by data order (§V74).
  */
-export function laserScanLocalWgsl(): string {
-  return `struct ScanParams { count: u32 };
+export function laserScanLocalWgsl(): EmittedWgsl {
+  return wgsl`struct ScanParams { count: u32 };
 @group(0) @binding(0) var<uniform> params: ScanParams;
 @group(0) @binding(1) var<storage, read> counts: array<u32>;
 @group(0) @binding(2) var<storage, read_write> scanned: array<u32>;
@@ -169,8 +171,8 @@ fn main(
 }
 
 /** SCAN BLOCKS — one thread, serial exclusive scan of block totals; writes the total. */
-export function laserScanBlocksWgsl(): string {
-  return `struct ScanParams { count: u32 };
+export function laserScanBlocksWgsl(): EmittedWgsl {
+  return wgsl`struct ScanParams { count: u32 };
 @group(0) @binding(0) var<uniform> params: ScanParams;
 @group(0) @binding(1) var<storage, read_write> blockSums: array<u32>;
 @group(0) @binding(2) var<storage, read_write> total: array<u32>;
@@ -200,8 +202,8 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
  * slice are lit; the rest keep their place in the plan but carry zero colour. Slots
  * past the plan's total park at the codebase's park spot.
  */
-export function laserEmitWgsl(slotsPerPoint: number): string {
-  return `${PARAMS_WGSL}
+export function laserEmitWgsl(slotsPerPoint: number): EmittedWgsl {
+  return wgsl`${PARAMS_WGSL}
 @group(0) @binding(1) var<storage, read> in_position: array<vec3f>;
 @group(0) @binding(2) var<storage, read> counts: array<u32>;
 @group(0) @binding(3) var<storage, read> scanned: array<u32>;

@@ -3,6 +3,7 @@ import type { PassDescriptor, ResourceDescriptor } from "@runtime/backend/plan.t
 import type { ResolvedOutput } from "@compiler/index.ts";
 import { buildNodeInfo, formatDecision, resolutionDecision } from "./node-info-model.ts";
 import { compiledOf, graphOf, hubWith, node, testRegistry } from "./test-support.ts";
+import { wgsl } from "../../runtime/backend/wgsl.ts";
 
 /**
  * The node info model (T145, T146, §I.info, §V85, §V86, §V87).
@@ -25,7 +26,7 @@ const target = (id: string, size: readonly [number, number]): ResourceDescriptor
 const effect = (id: string, nodeId: string, resourceId: string): PassDescriptor => ({
   kind: "effect",
   id,
-  shader: "",
+  shader: wgsl``,
   target: resourceId,
   nodeId,
 });

@@ -7,6 +7,7 @@ import { inferenceSourceIdFor } from "../../runtime/execution/inference-sources.
 import { letterboxPreprocessWgsl } from "./inference-node.ts";
 // T1110: one spelling of the helper command, in `devices/helper.ts`. Constants only.
 import { DEVICE_HELPER_COMMAND } from "../../devices/helper.ts";
+import { wgsl } from "../../runtime/backend/wgsl.ts";
 
 /**
  * Person Mask (T1029) — person segmentation through the OS's own Vision framework,
@@ -51,7 +52,7 @@ export const PERSON_MASK_RESULT_KEY = "modelResult";
  *  budget constant and needs no parameter. */
 export const PERSON_MASK_INPUT_SIDE = 512;
 
-const PERSON_MASK_BLIT_WGSL = `struct MaskParams { invert: f32 };
+const PERSON_MASK_BLIT_WGSL = wgsl`struct MaskParams { invert: f32 };
 
 @group(0) @binding(0) var<uniform> params: MaskParams;
 @group(0) @binding(1) var maskTexture: texture_2d<f32>;

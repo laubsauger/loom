@@ -9,6 +9,7 @@ import { FrameEncodingViolation } from "../frame-guard.ts";
 import { GENERATE_WGSL_EDITED, fixturePlan } from "./plan-fixture.ts";
 import { mockGpuHost, type MockGpuHost, type MockInstrumentation } from "./mock-gpu-host.ts";
 import { createVgpuBackend, type VgpuBackend } from "./vgpu-backend.ts";
+import { wgsl } from "../wgsl.ts";
 
 const teardown: Array<() => void> = [];
 
@@ -460,7 +461,7 @@ describe("vgpu backend — plan handling", () => {
           {
             kind: "effect",
             id: "orphan",
-            shader: "@fragment fn fs() -> @location(0) vec4f { return vec4f(1.0); }",
+            shader: wgsl`@fragment fn fs() -> @location(0) vec4f { return vec4f(1.0); }`,
             target: "missing",
           },
         ],
@@ -559,7 +560,7 @@ describe("vgpu backend — plan handling", () => {
     expect(backend.status.stale).toBe(false);
 
     await expect(
-      backend.compile(fixturePlan({ generateShader: "this is not wgsl at all {" })),
+      backend.compile(fixturePlan({ generateShader: wgsl`this is not wgsl at all {` })),
     ).rejects.toThrow();
 
     // §V9/§V27: the problems tab listens on onDiagnostic, so the failure must arrive
@@ -597,7 +598,7 @@ describe("vgpu backend — plan handling", () => {
     // Parses fine (the marker is a comment), so reflection passes and nothing throws
     // synchronously — exactly Dawn's shape for a semantic error.
     const broken = fixturePlan({
-      generateShader: `${GENERATE_WGSL_EDITED}\n// __B9_SEMANTIC_ERROR__`,
+      generateShader: wgsl`${GENERATE_WGSL_EDITED}\n// __B9_SEMANTIC_ERROR__`,
     });
     await expect(backend.compile(broken)).rejects.toThrow();
 
@@ -873,7 +874,7 @@ describe("vgpu backend — presentation seam (T87, §V64/§V70)", () => {
 });
 
 describe("vgpu backend — preview host (T161, §V7, §V28)", () => {
-  const PREVIEW_WGSL = `@group(0) @binding(0) var previewSampler: sampler;
+  const PREVIEW_WGSL = wgsl`@group(0) @binding(0) var previewSampler: sampler;
 @group(0) @binding(1) var previewSource: texture_2d<f32>;
 @fragment
 fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
@@ -1458,7 +1459,7 @@ describe("the idle cook gate (T254, §V157)", () => {
       {
         kind: "effect" as const,
         id: "fill",
-        shader: `@fragment\nfn fs(@location(0) uv: vec2f) -> @location(0) vec4f { return vec4f(uv, 0.0, 1.0); }`,
+        shader: wgsl`@fragment\nfn fs(@location(0) uv: vec2f) -> @location(0) vec4f { return vec4f(uv, 0.0, 1.0); }`,
         target: "flat",
       },
     ],

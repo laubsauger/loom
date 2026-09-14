@@ -1,3 +1,4 @@
+import { wgsl } from "../../runtime/backend/wgsl.ts";
 /**
  * Cache — the blit both of the node's passes use (T237).
  *
@@ -12,7 +13,7 @@
  * merely of n — see `cache.ts` for why an async source's own reported lag is the thing you
  * point it at. Per-PIXEL time displacement (slit-scan, T321) is a different shader still.
  */
-export const CACHE_BLIT_WGSL = `@group(0) @binding(0) var inputSampler: sampler;
+export const CACHE_BLIT_WGSL = wgsl`@group(0) @binding(0) var inputSampler: sampler;
 @group(0) @binding(1) var inputTexture: texture_2d<f32>;
 
 @fragment
@@ -32,7 +33,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
  * `Ring.tapView` exactly, §V229 clamp included: before the ring fills, the deepest
  * readable slice stands in for a deeper tap — never a layer nobody has written.
  */
-export const CACHE_READ_WGSL = `@group(0) @binding(0) var inputSampler: sampler;
+export const CACHE_READ_WGSL = wgsl`@group(0) @binding(0) var inputSampler: sampler;
 @group(0) @binding(1) var ringTexture: texture_2d_array<f32>;
 @group(0) @binding(3) var liveTexture: texture_2d<f32>;
 

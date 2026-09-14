@@ -1,3 +1,5 @@
+import { wgsl } from "../../runtime/backend/wgsl.ts";
+import type { EmittedWgsl } from "../../runtime/backend/wgsl.ts";
 /**
  * The scene Render shader (T377/T428): the surface mesh machinery of T301 with the
  * SHADING GENERATED per material model — the V349 fix. The legacy renderers keep their
@@ -386,9 +388,9 @@ const ENV_CONE_WGSL = (taps: number): string => `fn sampleEnvironmentCone(direct
  * degenerate: parallel rays see one point of an environment at infinity. Stated because
  * a flat sky under an ortho camera otherwise reads as a bug (§V403).
  */
-export function backdropWgsl(options: { readonly environment?: boolean } = {}): string {
+export function backdropWgsl(options: { readonly environment?: boolean } = {}): EmittedWgsl {
   if (options.environment !== true) {
-    return `struct Backdrop { color: vec4f };
+    return wgsl`struct Backdrop { color: vec4f };
 @group(0) @binding(0) var<uniform> backdrop: Backdrop;
 @vertex
 fn vs(@builtin(vertex_index) v: u32) -> @builtin(position) vec4f {
@@ -401,7 +403,7 @@ fn vs(@builtin(vertex_index) v: u32) -> @builtin(position) vec4f {
 @fragment
 fn fs() -> @location(0) vec4f { return backdrop.color; }`;
   }
-  return `struct Backdrop {
+  return wgsl`struct Backdrop {
   color: vec4f,       // rgb unused when the environment draws; a = the backdrop's alpha
   right: vec4f,       // camera right × tan(fovY/2) × aspect (zero under an ortho camera)
   up: vec4f,          // camera up × tan(fovY/2)             (zero under an ortho camera)
@@ -440,8 +442,8 @@ fn fs(input: BackdropOut) -> @location(0) vec4f {
  * source (§V349). The lit template's emitted text is byte-identical to before the
  * extraction — the golden scene hashes are the proof.
  */
-function surfaceMeshWgsl(pointColor: boolean): string {
-  return `struct VertexOut {
+function surfaceMeshWgsl(pointColor: boolean): EmittedWgsl {
+  return wgsl`struct VertexOut {
   @builtin(position) position: vec4f,
   @location(0) normal: vec3f,
   @location(1) world: vec3f,
@@ -537,7 +539,7 @@ fn vs(@builtin(vertex_index) vertex: u32) -> VertexOut {
  * Outside the volume (uv or depth out of range) means UNSHADOWED: the volume is
  * explicit (V426), and beyond it the light simply shines.
  */
-function shadowFactorWgsl(slot: number, radius: number): string {
+function shadowFactorWgsl(slot: number, radius: number): EmittedWgsl {
   const r = Math.max(0, Math.floor(radius));
   /* The reach factor is r+1 texels — see the docblock. It is a substitution in CODE, never
      inside the emitted comment (§V685's gate: a `${…}` hidden in a WGSL comment runs
@@ -572,7 +574,7 @@ function shadowFactorWgsl(slot: number, radius: number): string {
         let sdims = vec2f(textureDimensions(shadowMap${slot}, 0));
 `;
   if (r === 0) {
-    return `${head}        let stored = textureLoad(shadowMap${slot}, vec2i(suv * (sdims - vec2f(1.0))), 0).r;
+    return wgsl`${head}        let stored = textureLoad(shadowMap${slot}, vec2i(suv * (sdims - vec2f(1.0))), 0).r;
 ${bias}        if (sc.z - bias > stored) { shadow = 0.0; }
       }
     }
@@ -582,7 +584,7 @@ ${bias}        if (sc.z - bias > stored) { shadow = 0.0; }
   /* Clamped to the map's own edge rather than treated as out-of-volume: a receiver one
      texel inside the border would otherwise take a partly-lit average from taps that
      fell off the map, which reads as a bright fringe all the way round the volume. */
-  return `${head}        let scentre = vec2i(suv * (sdims - vec2f(1.0)));
+  return wgsl`${head}        let scentre = vec2i(suv * (sdims - vec2f(1.0)));
         let slast = vec2i(sdims) - vec2i(1);
 ${bias}        var slit = 0.0;
         for (var oy = -${r}; oy <= ${r}; oy = oy + 1) {
@@ -597,7 +599,7 @@ ${bias}        var slit = 0.0;
 `;
 }
 
-export function sceneSurfaceWgsl(options: SceneShadingOptions): string {
+export function sceneSurfaceWgsl(options: SceneShadingOptions): EmittedWgsl {
   const lightCount = Math.max(0, Math.floor(options.lightCount));
   const pointColor = options.pointColor === true;
   const albedoMap = options.maps?.albedo === true;
@@ -726,7 +728,7 @@ ${
 ${Array.from({ length: lightCount }, (_, index) => lightBlock(index)).join("")}`
 }${projectors.term}${envTerm}  return vec4f(lit * cover, albedo.a * cover);`;
 
-  return `struct SceneParams {
+  return wgsl`struct SceneParams {
   viewProjection: mat4x4f,
   eye: vec4f,
   ambientColor: vec4f,      // rgb colour, a = intensity
@@ -773,7 +775,7 @@ ${options.model === "unlit" ? "" : `  let roughness = ${roughnessExpr};\n  _ = r
  * shadowing the WGSL builtin) and a fourth shape added to one copy would render
  * as a box in every other.
  */
-export const INSTANCE_SHAPES_WGSL = `fn quadCorner(v: u32) -> vec2f {
+export const INSTANCE_SHAPES_WGSL = wgsl`fn quadCorner(v: u32) -> vec2f {
   var corners = array<vec2f, 6>(
     vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0, 1.0),
     vec2f(-1.0, 1.0), vec2f(1.0, -1.0), vec2f(1.0, 1.0),
@@ -952,7 +954,7 @@ export function sceneInstancesWgsl(options: {
    * byte changes (§V309).
    */
   sphericalPoints?: boolean;
-}): string {
+}): EmittedWgsl {
   const pointColor = options.pointColor === true;
   const billboard = options.billboard === true;
   const spherical = options.sphericalPoints === true && billboard;
@@ -1101,7 +1103,7 @@ ${
 ${Array.from({ length: lightCount }, (_, index) => lightBlock(index)).join("")}`
 }${projectors.term}${envTerm}  return vec4f(lit * cover, albedo.a * cover);`;
 
-  return `struct SceneParams {
+  return wgsl`struct SceneParams {
   viewProjection: mat4x4f,
   eye: vec4f,
   ambientColor: vec4f,
@@ -1248,7 +1250,7 @@ ${
  * same way the render's backdrop paints its background (T444): a cleared shadow map
  * must read "nothing here", and the target's own clear colour is not ours to choose.
  */
-export const SHADOW_CLEAR_WGSL = `@vertex
+export const SHADOW_CLEAR_WGSL = wgsl`@vertex
 fn vs(@builtin(vertex_index) v: u32) -> @builtin(position) vec4f {
   var corners = array<vec2f, 6>(
     vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0, 1.0),
@@ -1279,7 +1281,7 @@ export interface DepthPassOptions {
 }
 
 /** The surface mesh from the light's view — grid arithmetic identical to the lit draw. */
-export function shadowSurfaceWgsl(options: DepthPassOptions = {}): string {
+export function shadowSurfaceWgsl(options: DepthPassOptions = {}): EmittedWgsl {
   const linear = options.linearDepth === true;
   const depthExpr = linear
     ? `dot(params.depthRow, vec4f(gridPosition(gx, gy), 1.0)) / max(params.depthRange.x, 1e-6)`
@@ -1289,7 +1291,7 @@ export function shadowSurfaceWgsl(options: DepthPassOptions = {}): string {
   depthRange: vec4f,       // x = far plane
 `
     : "";
-  return `struct ShadowParams {
+  return wgsl`struct ShadowParams {
   lightViewProjection: mat4x4f,
   grid: vec4f,              // cols, rows, wrapU, wrapV
 ${linearFields}};
@@ -1353,7 +1355,7 @@ export function shadowInstancesWgsl(
      */
     pointOrient?: boolean;
   } = {},
-): string {
+): EmittedWgsl {
   const linear = options.linearDepth === true;
   /* T642: an excluded instance must not cast a GHOST SHADOW — the depth pass gates on
      the same predicate, from the same shared block, or an invisible instance would
@@ -1405,7 +1407,7 @@ fn qrot(q: vec4f, v: vec3f) -> vec3f {
   depthRange: vec4f,       // x = far plane
 `
     : "";
-  return `struct ShadowParams {
+  return wgsl`struct ShadowParams {
   lightViewProjection: mat4x4f,
   instance: vec4f,          // x = scale, y = shape (0 quad, 1 box, 2 octahedron)
 ${linearFields}};
@@ -1497,7 +1499,7 @@ fn fs(input: VertexOut) -> @location(0) vec4f {
  * pole rows average toward their own neighbourhood rather than wrapping onto the far
  * side of the sphere — the error is a slightly sharper pole, not a wrong direction.
  */
-export const ENV_BLIT_WGSL = `@group(0) @binding(0) var sourceTex: texture_2d<f32>;
+export const ENV_BLIT_WGSL = wgsl`@group(0) @binding(0) var sourceTex: texture_2d<f32>;
 @vertex
 fn vs(@builtin(vertex_index) v: u32) -> @builtin(position) vec4f {
   var corners = array<vec2f, 6>(
@@ -1520,7 +1522,7 @@ const ENV_WRAP_X = `fn envWrapX(x: i32, width: i32) -> i32 {
 `;
 
 /** The horizontal half, decimating: [1,3,3,1]/8 across a wrapped longitude. */
-export const ENV_DOWN_WGSL = `@group(0) @binding(0) var sourceTex: texture_2d<f32>;
+export const ENV_DOWN_WGSL = wgsl`@group(0) @binding(0) var sourceTex: texture_2d<f32>;
 ${ENV_WRAP_X}@vertex
 fn vs(@builtin(vertex_index) v: u32) -> @builtin(position) vec4f {
   var corners = array<vec2f, 6>(
@@ -1545,7 +1547,7 @@ fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
 }`;
 
 /** The vertical half: [1,4,6,4,1]/16 at the level's own resolution, clamped at the poles. */
-export const ENV_VBLUR_WGSL = `@group(0) @binding(0) var sourceTex: texture_2d<f32>;
+export const ENV_VBLUR_WGSL = wgsl`@group(0) @binding(0) var sourceTex: texture_2d<f32>;
 @vertex
 fn vs(@builtin(vertex_index) v: u32) -> @builtin(position) vec4f {
   var corners = array<vec2f, 6>(
@@ -1581,7 +1583,7 @@ export const GLASS_SPECTRAL_SAMPLES = 7;
  * purpose: the samples ARE the coverage, and any wider kernel would blur detail the
  * supersampling paid to keep.
  */
-export const SSAA_RESOLVE_WGSL = `@group(0) @binding(0) var sourceTex: texture_2d<f32>;
+export const SSAA_RESOLVE_WGSL = wgsl`@group(0) @binding(0) var sourceTex: texture_2d<f32>;
 @vertex
 fn vs(@builtin(vertex_index) v: u32) -> @builtin(position) vec4f {
   var corners = array<vec2f, 6>(
@@ -1600,7 +1602,7 @@ fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
   return (a + b + c + d) * 0.25;
 }`;
 
-export const GLASS_BLIT_WGSL = `@group(0) @binding(0) var sourceTex: texture_2d<f32>;
+export const GLASS_BLIT_WGSL = wgsl`@group(0) @binding(0) var sourceTex: texture_2d<f32>;
 @vertex
 fn vs(@builtin(vertex_index) v: u32) -> @builtin(position) vec4f {
   var corners = array<vec2f, 6>(
@@ -1619,7 +1621,7 @@ fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
  * kernel centred between its two source columns, averaging the two source rows it
  * straddles — decimation and the horizontal half of the Gaussian in one pass.
  */
-export const GLASS_DOWN_WGSL = `@group(0) @binding(0) var sourceTex: texture_2d<f32>;
+export const GLASS_DOWN_WGSL = wgsl`@group(0) @binding(0) var sourceTex: texture_2d<f32>;
 @vertex
 fn vs(@builtin(vertex_index) v: u32) -> @builtin(position) vec4f {
   var corners = array<vec2f, 6>(
@@ -1644,7 +1646,7 @@ fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
 }`;
 
 /** The vertical half: a [1,4,6,4,1]/16 kernel at the level's own resolution. */
-export const GLASS_VBLUR_WGSL = `@group(0) @binding(0) var sourceTex: texture_2d<f32>;
+export const GLASS_VBLUR_WGSL = wgsl`@group(0) @binding(0) var sourceTex: texture_2d<f32>;
 @vertex
 fn vs(@builtin(vertex_index) v: u32) -> @builtin(position) vec4f {
   var corners = array<vec2f, 6>(
@@ -1713,12 +1715,12 @@ ${branches}  return mix(samplePyr${top - 1}(uv), samplePyr${top}(uv), l - ${(top
  * the extended sample point stays ON the eye ray and projects to this very fragment —
  * a polished, non-absorbing, ior-1 pane is byte-identical to the pixels behind it.
  */
-function glassFragmentWgsl(options: GlassShaderOptions): string {
+function glassFragmentWgsl(options: GlassShaderOptions): EmittedWgsl {
   const reflectionExpr =
     options.environment === true
       ? "sampleEnvironment(reflected) * params.glassB.w"
       : "params.fallback.rgb";
-  return `fn spectralWeight(t: f32) -> vec3f {
+  return wgsl`fn spectralWeight(t: f32) -> vec3f {
   return vec3f(
     exp(-pow((t - 0.05) / 0.45, 2.0)),
     exp(-pow((t - 0.50) / 0.38, 2.0)),
@@ -1778,7 +1780,7 @@ fn fs(input: VertexOut) -> @location(0) vec4f {
 }`;
 }
 
-function glassBindingsWgsl(options: GlassShaderOptions): string {
+function glassBindingsWgsl(options: GlassShaderOptions): EmittedWgsl {
   const levels = Array.from(
     { length: GLASS_PYRAMID_LEVELS },
     (_, level) => `@group(0) @binding(${2 + level}) var pyr${level}: texture_2d<f32>;\n`,
@@ -1787,12 +1789,12 @@ function glassBindingsWgsl(options: GlassShaderOptions): string {
     options.environment === true
       ? `@group(0) @binding(${2 + GLASS_PYRAMID_LEVELS}) var environmentMap: texture_2d<f32>;\n${ENV_SAMPLE_WGSL}`
       : "";
-  return `${levels}${env}`;
+  return wgsl`${levels}${env}`;
 }
 
 /** The glass draw for SURFACE geometry — the lit generator's own mesh, new optics. */
-export function glassSurfaceWgsl(options: GlassShaderOptions = {}): string {
-  return `struct SceneParams {
+export function glassSurfaceWgsl(options: GlassShaderOptions = {}): EmittedWgsl {
+  return wgsl`struct SceneParams {
   viewProjection: mat4x4f,
   eye: vec4f,
   glassA: vec4f,            // ior, roughness, thickness, dispersion
@@ -1810,8 +1812,8 @@ ${glassFragmentWgsl(options)}`;
 }
 
 /** The glass draw for INSTANCES geometry — plain primitives (no group/billboard/beam). */
-export function glassInstancesWgsl(options: GlassShaderOptions = {}): string {
-  return `struct SceneParams {
+export function glassInstancesWgsl(options: GlassShaderOptions = {}): EmittedWgsl {
+  return wgsl`struct SceneParams {
   viewProjection: mat4x4f,
   eye: vec4f,
   glassA: vec4f,            // ior, roughness, thickness, dispersion

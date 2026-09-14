@@ -20,6 +20,7 @@ import { PerformanceView } from "./performance-panel.tsx";
 import { compiledOf, graphOf, hubWith, node, testRegistry } from "./test-support.ts";
 import { allNodeDefinitions } from "@nodes/definitions/index.ts";
 import { createNodeRegistry } from "@nodes/registry/registry.ts";
+import { wgsl } from "../../runtime/backend/wgsl.ts";
 
 /**
  * The node info surface (T145, T41, §V85, §V86, §V19).
@@ -46,7 +47,7 @@ const target = (id: string): ResourceDescriptor => ({
 const effect = (id: string, nodeId: string, resourceId: string): PassDescriptor => ({
   kind: "effect",
   id,
-  shader: "",
+  shader: wgsl``,
   target: resourceId,
   nodeId,
 });

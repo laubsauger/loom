@@ -1,3 +1,4 @@
+import { wgsl } from "../../runtime/backend/wgsl.ts";
 /**
  * WGSL fragments shared by the core node catalogue (T40, T70).
  *
@@ -23,7 +24,7 @@
  * silently do, gives a noticeably wrong answer for saturated colours. Every node that
  * reduces a colour to one number (Threshold, Displace, Mask, Lookup) goes through here.
  */
-export const WGSL_LUMA = `fn luma(c: vec3f) -> f32 {
+export const WGSL_LUMA = wgsl`fn luma(c: vec3f) -> f32 {
   return dot(c, vec3f(0.2126, 0.7152, 0.0722));
 }`;
 
@@ -31,7 +32,7 @@ export const WGSL_LUMA = `fn luma(c: vec3f) -> f32 {
  * Channel selection shared by every node with a "which channel drives this?" parameter.
  * Index order is fixed by `CHANNEL_OPTIONS` in `parameter-readers.ts`; the two must agree.
  */
-export const WGSL_CHANNEL = `${WGSL_LUMA}
+export const WGSL_CHANNEL = wgsl`${WGSL_LUMA}
 fn channelValue(c: vec4f, which: f32) -> f32 {
   switch (u32(which + 0.5)) {
     case 0u: { return luma(c.rgb); }
@@ -52,7 +53,7 @@ fn channelValue(c: vec4f, which: f32) -> f32 {
  *
  * Index order is fixed by `EXTEND_OPTIONS` in `parameter-readers.ts`.
  */
-export const WGSL_EXTEND = `fn extendCoord(uv: vec2f, mode: f32) -> vec2f {
+export const WGSL_EXTEND = wgsl`fn extendCoord(uv: vec2f, mode: f32) -> vec2f {
   let m = u32(mode + 0.5);
   if (m == 1u) {
     return fract(uv);
@@ -80,7 +81,7 @@ fn sampleExtend(tex: texture_2d<f32>, smp: sampler, uv: vec2f, mode: f32) -> vec
  * numerically identical to the same rotation in TouchDesigner when TD's project is set to
  * an 8-bit sRGB working format — the HSV node's doc comment states that explicitly.
  */
-export const WGSL_HSV = `fn rgb2hsv(c: vec3f) -> vec3f {
+export const WGSL_HSV = wgsl`fn rgb2hsv(c: vec3f) -> vec3f {
   let maxc = max(c.r, max(c.g, c.b));
   let minc = min(c.r, min(c.g, c.b));
   let d = maxc - minc;
@@ -130,7 +131,7 @@ fn hsv2rgb(c: vec3f) -> vec3f {
  * i32 with a value conversion is a different (and less useful) operation than
  * reinterpreting its bits, and lattice coordinates go negative constantly.
  */
-export const WGSL_HASH = `fn hashU32(x: u32) -> u32 {
+export const WGSL_HASH = wgsl`fn hashU32(x: u32) -> u32 {
   var s: u32 = (x * 747796405u) + 2891336453u;
   let r: u32 = (s >> 28u) + 4u;
   let t: u32 = (s >> r) ^ s;
@@ -174,7 +175,7 @@ fn unitFloat(h: u32) -> f32 {
  *
  * Index order is fixed by `TRANSFORM_ORDER_OPTIONS` in `parameter-readers.ts`.
  */
-export const WGSL_TRANSFORM2D = `fn invScale2(q: vec2f, s: vec2f) -> vec2f {
+export const WGSL_TRANSFORM2D = wgsl`fn invScale2(q: vec2f, s: vec2f) -> vec2f {
   let safe = select(s, vec2f(1e-6), abs(s) < vec2f(1e-6));
   return q / safe;
 }

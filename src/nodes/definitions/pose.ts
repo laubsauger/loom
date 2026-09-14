@@ -9,6 +9,7 @@ import { POSE_ACCURATE, POSE_LIVE, POSE_MODELS, measuredOn } from "../../runtime
 import { inferenceModelSchema, inferenceResetSchema, letterboxPreprocessWgsl } from "./inference-node.ts";
 import { RGBA_TEXTURE } from "./common-ports.ts";
 import { readCompileInputs } from "./compile-context.ts";
+import { wgsl } from "../../runtime/backend/wgsl.ts";
 
 /**
  * Pose — human keypoints, inferred (T743, T386, T715).
@@ -61,7 +62,7 @@ export const POSE_RESULT_KEY = "modelResult";
  * MoveNet plausibly and silently; a letterbox without the un-letterbox would have put
  * every joint off by the bar width, equally plausibly.
  */
-const POSE_BLIT_WGSL = `@group(0) @binding(0) var poseSampler: sampler;
+const POSE_BLIT_WGSL = wgsl`@group(0) @binding(0) var poseSampler: sampler;
 @group(0) @binding(1) var poseTexture: texture_2d<f32>;
 
 @fragment

@@ -14,6 +14,8 @@ import {
 } from "./inference-node.ts";
 import { RGBA_TEXTURE } from "./common-ports.ts";
 import { readCompileInputs } from "./compile-context.ts";
+import { wgsl } from "../../runtime/backend/wgsl.ts";
+import type { EmittedWgsl } from "../../runtime/backend/wgsl.ts";
 
 /**
  * Depth — a monocular depth map, inferred (T385, T715, §V585, §V586).
@@ -157,8 +159,8 @@ export function depthModelChoiceFor(stored: Readonly<Record<string, unknown>>): 
  * measuring machine here is what stops all three of them reading as a claim about every
  * machine. `inference-node.test.ts` gates it.
  */
-function measuredCost(choice: DepthModelChoice): string {
-  return `${(choice.cpuMillisAt518 / 1000).toFixed(1)} s per run on the CPU path at ${DEPTH_INPUT_SIDE} px, ${measuredOn("2026-09-01")}`;
+function measuredCost(choice: DepthModelChoice): EmittedWgsl {
+  return wgsl`${(choice.cpuMillisAt518 / 1000).toFixed(1)} s per run on the CPU path at ${DEPTH_INPUT_SIDE} px, ${measuredOn("2026-09-01")}`;
 }
 
 /**
@@ -541,7 +543,7 @@ const DEPTH_PREPROCESS_WGSL = letterboxPreprocessWgsl();
    a protocol field, a re-run of a multi-second model to see a change, and a knob whose
    effect arrives seconds after the drag. The model's numbers are untouched; only how they
    are published changes. */
-const DEPTH_BLIT_WGSL = `struct DepthOutput { invert: f32, low: f32, high: f32 };
+const DEPTH_BLIT_WGSL = wgsl`struct DepthOutput { invert: f32, low: f32, high: f32 };
 
 @group(0) @binding(0) var<uniform> params: DepthOutput;
 @group(0) @binding(1) var depthTexture: texture_2d<f32>;

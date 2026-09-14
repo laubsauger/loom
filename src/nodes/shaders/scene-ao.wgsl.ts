@@ -1,3 +1,5 @@
+import { wgsl } from "../../runtime/backend/wgsl.ts";
+import type { EmittedWgsl } from "../../runtime/backend/wgsl.ts";
 /**
  * T624 — AMBIENT OCCLUSION, screen-space, as a RENDER capability.
  *
@@ -66,9 +68,9 @@ fn vs(@builtin(vertex_index) v: u32) -> VertexOut {
  * perspective camera; the ortho half-width and half-height for an orthographic one),
  * z = the far plane the prepass normalised by, w = 1 when the camera is orthographic.
  */
-export function aoResolveWgsl(sampleCount: number): string {
+export function aoResolveWgsl(sampleCount: number): EmittedWgsl {
   const taps = Math.max(4, Math.floor(sampleCount));
-  return `struct AoParams {
+  return wgsl`struct AoParams {
   projection: vec4f,        // x,y = half-extents, z = far, w = ortho flag
   settings: vec4f,          // x = radius (world), y = intensity, z = bias, w = power
 };
@@ -174,9 +176,9 @@ fn fs(input: VertexOut) -> @location(0) vec4f {
  * than the tolerance is dropped, so occlusion never bleeds across a silhouette — the
  * one artefact that makes screen-space AO read as a smudge rather than as contact.
  */
-export function aoBlurWgsl(radius: number): string {
+export function aoBlurWgsl(radius: number): EmittedWgsl {
   const r = Math.max(1, Math.floor(radius));
-  return `struct AoBlurParams {
+  return wgsl`struct AoBlurParams {
   settings: vec4f,          // x = depth tolerance (normalised units), yzw reserved
 };
 

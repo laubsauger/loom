@@ -38,6 +38,7 @@ import {
 } from "../diagnostics.ts";
 import { createFrameGuard } from "../frame-guard.ts";
 import { createPacedGate } from "../frame-pacing.ts";
+import { wgsl } from "../wgsl.ts";
 import {
   bytesPerPixelFor,
   estimateResourceBytes,
@@ -198,7 +199,7 @@ interface PresentationState {
 }
 
 /** Presenting is a GPU-to-GPU copy (§V7): sample the output, write the surface. */
-const BLIT_WGSL = `@group(0) @binding(0) var blitSampler: sampler;
+const BLIT_WGSL = wgsl`@group(0) @binding(0) var blitSampler: sampler;
 @group(0) @binding(1) var blitSource: texture_2d<f32>;
 @fragment
 fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {

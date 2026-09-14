@@ -2,6 +2,8 @@ import type { EnumParameter, ParameterSchema } from "../../domain/types/paramete
 import { refusalFor, type ModelDescriptor } from "../../runtime/models/model-acquisition.ts";
 import { measuredOn } from "../../runtime/models/model-catalogue.ts";
 import { signatureFor } from "../../runtime/models/model-signatures.ts";
+import { wgsl } from "../../runtime/backend/wgsl.ts";
+import type { EmittedWgsl } from "../../runtime/backend/wgsl.ts";
 
 /**
  * §V827 — WHAT EVERY MODEL-RUNNING NODE OWES, the schema-side half, shared by
@@ -31,8 +33,8 @@ import { signatureFor } from "../../runtime/models/model-signatures.ts";
  */
 
 /** MB with one decimal, from the measured byte count — the number the consent moment shows. */
-function megabytes(bytes: number): string {
-  return `${(bytes / 1_048_576).toFixed(1)} MB`;
+function megabytes(bytes: number): EmittedWgsl {
+  return wgsl`${(bytes / 1_048_576).toFixed(1)} MB`;
 }
 
 /**
@@ -367,8 +369,8 @@ export function inferenceAcceptsInputSize(modelId: string): boolean {
  * function of this buffer up to its own documented affine normalisation, so a transfer
  * added for one of them fails there instead of shipping.
  */
-export function letterboxPreprocessWgsl(): string {
-  return `struct PreprocessParams { side: f32 };
+export function letterboxPreprocessWgsl(): EmittedWgsl {
+  return wgsl`struct PreprocessParams { side: f32 };
 
 @group(0) @binding(0) var<uniform> params: PreprocessParams;
 @group(0) @binding(1) var sourceTexture: texture_2d<f32>;

@@ -8,6 +8,8 @@ import {
 import { remember } from "../nodes/definitions/params-reflection.ts";
 import { MAX_SPAWN_PER_PARENT } from "./lifecycle.ts";
 import { regionAccessorWgsl, regionStoreWgsl } from "./packing.ts";
+import type { EmittedWgsl } from "../runtime/backend/wgsl.ts";
+import { wgsl } from "../runtime/backend/wgsl.ts";
 
 /**
  * The attribute→WGSL codegen module (T117) — named the TOP RISK of the P3a slice, which
@@ -235,7 +237,9 @@ export function kernelParamUniformKey(name: string): string {
 
 export interface KernelModule {
   readonly ok: true;
-  readonly wgsl: string;
+  /* §T1335b: the brand travels with the generated text, so a pass built from a module is
+     branded without the definition site having to know that it was. */
+  readonly wgsl: EmittedWgsl;
   /** Storage bindings in binding-index order. Binding 0 is always the uniforms block. */
   readonly buffers: ReadonlyArray<PointBufferBinding>;
   readonly contractVersion: number;
@@ -1110,7 +1114,7 @@ fn groupMatch(p: Point, ctx: PointCtx) -> bool {
      contract (the salt keys randomness to the timeline frame so a replayed frame
      reproduces). What this file must never do is INFER storage freshness from
      frameIndex == 0 — that is `ctx.firstRun` (T510); the clock audit counts these reads. */
-  const wgsl = `// Generated point kernel (T117, contract v${POINT_KERNEL_CONTRACT_VERSION}). Do not edit by hand.
+  const text = wgsl`// Generated point kernel (T117, contract v${POINT_KERNEL_CONTRACT_VERSION}). Do not edit by hand.
 struct KernelFrame {
   timeSeconds: f32,
   deltaSeconds: f32,
@@ -1156,7 +1160,7 @@ ${stores}
 
   return {
     ok: true,
-    wgsl,
+    wgsl: text,
     buffers: bindings,
     contractVersion: lifecycle === undefined ? POINT_KERNEL_CONTRACT_VERSION : ADVANCED_KERNEL_CONTRACT_VERSION,
     workgroupSize,
@@ -1348,7 +1352,7 @@ export function generateSpawnHookModule(request: SpawnHookRequest): KernelModule
     ),
   ].join("\n\n");
 
-  const wgsl = `// Generated spawn hook (T339, contract v${ADVANCED_KERNEL_CONTRACT_VERSION}). Do not edit by hand.
+  const text = wgsl`// Generated spawn hook (T339, contract v${ADVANCED_KERNEL_CONTRACT_VERSION}). Do not edit by hand.
 struct KernelFrame {
   timeSeconds: f32,
   deltaSeconds: f32,
@@ -1403,7 +1407,7 @@ ${shaped.map((attribute) => `  pointStore_${attribute.name}(index, q.${attribute
   // kernel-level fact, so the hook never declares it.
   return {
     ok: true,
-    wgsl,
+    wgsl: text,
     buffers: bindings,
     contractVersion: ADVANCED_KERNEL_CONTRACT_VERSION,
     workgroupSize,

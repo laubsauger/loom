@@ -1,4 +1,5 @@
 import { WGSL_CHANNEL, WGSL_EXTEND } from "./common.wgsl.ts";
+import { wgsl } from "../../runtime/backend/wgsl.ts";
 
 /**
  * Fragment shaders for Blur and Displace (T40).
@@ -33,7 +34,7 @@ import { WGSL_CHANNEL, WGSL_EXTEND } from "./common.wgsl.ts";
  * Cost is now proportional to the size rather than fixed: the default size of 8 takes 2 x
  * 25 taps, where the old shader always took 81.
  */
-export const BLUR_FRAGMENT_WGSL = `${WGSL_EXTEND}
+export const BLUR_FRAGMENT_WGSL = wgsl`${WGSL_EXTEND}
 
 // dir    (1,0) on the horizontal pass, (0,1) on the vertical one.
 // stride pixels between adjacent taps; <= 1 until the node's tap cap is reached.
@@ -84,7 +85,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
  * colour-converted on its way in, which is why the node declares it as such rather than
  * treating both inputs the same.
  */
-export const DISPLACE_FRAGMENT_WGSL = `${WGSL_EXTEND}
+export const DISPLACE_FRAGMENT_WGSL = wgsl`${WGSL_EXTEND}
 ${WGSL_CHANNEL}
 
 struct Params {
@@ -130,7 +131,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
  * a coordinate moves the sample somewhere else entirely, which is the §V56 failure in its
  * purest form.
  */
-export const REMAP_FRAGMENT_WGSL = `${WGSL_EXTEND}
+export const REMAP_FRAGMENT_WGSL = wgsl`${WGSL_EXTEND}
 ${WGSL_CHANNEL}
 
 struct Params {
@@ -173,7 +174,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
  * use `|gx| + |gy|` because it is cheaper; that is anisotropic — it reports diagonal edges
  * up to 41% stronger than axis-aligned ones — and the saving is irrelevant on a GPU.
  */
-export const EDGE_FRAGMENT_WGSL = `${WGSL_EXTEND}
+export const EDGE_FRAGMENT_WGSL = wgsl`${WGSL_EXTEND}
 
 struct Params {
   texel: vec2f,
@@ -222,7 +223,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
  * `bias` is added after, which is how a zero-sum kernel's negative results are made
  * visible: an emboss kernel without a 0.5 bias is half black.
  */
-export const CONVOLVE_FRAGMENT_WGSL = `${WGSL_EXTEND}
+export const CONVOLVE_FRAGMENT_WGSL = wgsl`${WGSL_EXTEND}
 
 struct Params {
   texel: vec2f,
@@ -289,7 +290,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
  * (§V56) coverage is not light, and differentiating it would hand back a fully transparent
  * image wherever the input was uniformly opaque.
  */
-export const SLOPE_FRAGMENT_WGSL = `${WGSL_EXTEND}
+export const SLOPE_FRAGMENT_WGSL = wgsl`${WGSL_EXTEND}
 ${WGSL_CHANNEL}
 
 struct Params {

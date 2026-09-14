@@ -28,6 +28,7 @@ import {
   CUSTOM_WGSL_TEXTURE_BINDING,
   CUSTOM_WGSL_UNIFORM_BINDING,
 } from "../shaders/custom-wgsl-default.wgsl.ts";
+import { wgsl } from "../../runtime/backend/wgsl.ts";
 
 /**
  * CustomWGSL — the user-authored fragment effect (T15, T166; §I custom WGSL node contract).
@@ -322,7 +323,11 @@ export const customWgslNode: NodeDefinition = {
         };
       }
     }
-    const expanded = `${shared.prelude}${shader}`;
+    /* ⚑ THE ONE PLACE A DOCUMENT'S OWN WGSL BECOMES A PASS (§T1335b). Both halves are
+       stable strings from the store, so the tag's per-site trie hits on every frame the user
+       is not typing — and on the frame they ARE typing, the key changes with the bytes,
+       which is the invalidation rather than a policy about it. */
+    const expanded = wgsl`${shared.prelude}${shader}`;
 
     // Bind EXACTLY the fields the shader's own `struct Params` declares (T880), each shaped to
     // its WGSL type. vgpu refuses a value with no matching field, and E43/E45's §V147 identity

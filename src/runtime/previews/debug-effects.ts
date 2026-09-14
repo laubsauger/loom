@@ -9,6 +9,7 @@ import type {
   PreviewModeKind,
   PreviewView,
 } from "./types.ts";
+import type { EmittedWgsl } from "../backend/wgsl.ts";
 
 /**
  * The debug preview effect for a mode and the DECLARED space of what it is previewing
@@ -19,7 +20,7 @@ import type {
  * values already. Defaulting it would let a caller that never heard of §V57 re-encode an
  * encoded picture and see a plausible, wrong image — B47's exact failure.
  */
-export function previewShader(mode: PreviewModeKind, space: ColorSpace): string {
+export function previewShader(mode: PreviewModeKind, space: ColorSpace): EmittedWgsl {
   return previewShaderSource(mode, space);
 }
 

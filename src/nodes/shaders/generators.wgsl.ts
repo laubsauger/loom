@@ -1,3 +1,4 @@
+import { wgsl } from "../../runtime/backend/wgsl.ts";
 /**
  * Fragment shaders for the source nodes: Ramp, UV, Checker, Circle (T40).
  *
@@ -36,7 +37,7 @@
  * hard edge at that segment rather than a re-sorted gradient: the user's list order is
  * the answer, and re-sorting it here would mean the picture disagreed with the editor.
  */
-export const RAMP_FRAGMENT_WGSL = `const MAX_STOPS: u32 = 16u;
+export const RAMP_FRAGMENT_WGSL = wgsl`const MAX_STOPS: u32 = 16u;
 
 struct Params {
   c0: vec4f, c1: vec4f, c2: vec4f, c3: vec4f,
@@ -124,7 +125,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
  * through a colour transform would be meaningless. It exists to feed Displace and Lookup,
  * and to make "what is this node doing to my coordinates?" visible at a glance.
  */
-export const UV_FRAGMENT_WGSL = `struct Params {
+export const UV_FRAGMENT_WGSL = wgsl`struct Params {
   flipv: f32,
 };
 @group(0) @binding(0) var<uniform> params: Params;
@@ -136,7 +137,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
 }`;
 
 /** Checker — TD's Checker TOP: two colours in an n-by-m grid, with a phase offset. */
-export const CHECKER_FRAGMENT_WGSL = `struct Params {
+export const CHECKER_FRAGMENT_WGSL = wgsl`struct Params {
   color1: vec4f,
   color2: vec4f,
   size: vec2f,
@@ -164,7 +165,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
  * dual-mode port stays linear and both of its uses keep working, the same dissolution
  * Threshold's note got.
  */
-export const CIRCLE_FRAGMENT_WGSL = `struct Params {
+export const CIRCLE_FRAGMENT_WGSL = wgsl`struct Params {
   fillcolor: vec4f,
   bgcolor: vec4f,
   center: vec2f,
@@ -211,7 +212,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
  * because beyond that the corners would overlap and the field would fold inside out — at
  * exactly that value a square becomes a circle, which is the correct limit.
  */
-export const RECTANGLE_FRAGMENT_WGSL = `struct Params {
+export const RECTANGLE_FRAGMENT_WGSL = wgsl`struct Params {
   fillcolor: vec4f,
   bgcolor: vec4f,
   center: vec2f,

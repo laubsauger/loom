@@ -1,4 +1,6 @@
 import { SHARED_UNIFORMS_WGSL } from "../../runtime/backend/shared-uniforms.ts";
+import { wgsl } from "../../runtime/backend/wgsl.ts";
+import type { EmittedWgsl } from "../../runtime/backend/wgsl.ts";
 
 /**
  * Shaders for the point family (T121, T122).
@@ -41,7 +43,7 @@ import { SHARED_UNIFORMS_WGSL } from "../../runtime/backend/shared-uniforms.ts";
  * never on the table either — the editor recompiles per keystroke, so a hard refusal blacks
  * the node out mid-typing (§V940).
  */
-export const DEFAULT_POINT_KERNEL = `struct Params {
+export const DEFAULT_POINT_KERNEL = wgsl`struct Params {
   jitter: f32,   // @default 1  How hard the random walk shoves each point; 0 is a clean fall.
   gravity: f32,  // @default 0.05  The steady downward pull, in clip units per second squared.
 }
@@ -81,7 +83,7 @@ export function spriteRenderWgsl(options?: {
    * trick — no discard cost, no indirect rewrite).
    */
   group?: { expression: string; binds: ReadonlyArray<{ attribute: string; type: string }> };
-}): string {
+}): EmittedWgsl {
   const sizeMap = options?.sizeMap;
   const colorMap = options?.colorMap === true;
   const group = options?.group;
@@ -143,7 +145,7 @@ ${fields}};
         ? "mapSizes[instance]"
         : `mapSizes[instance].${sizeMap.channel}`;
   const colorExpr = colorMap ? "input.color" : "params.color";
-  return `${SHARED_UNIFORMS_WGSL}
+  return wgsl`${SHARED_UNIFORMS_WGSL}
 ${structBlock}@group(0) @binding(0) var<uniform> frameU: SharedFrame;
 ${paramsBinding}@group(0) @binding(2) var<storage, read> positions: array<vec3f>;
 ${sizeBinding}${colorBinding}${groupBindings}
@@ -191,7 +193,7 @@ export const SPRITE_RENDER_WGSL = spriteRenderWgsl();
  * write the sample to this node's own pair and copy position through so downstream
  * consumers read a coherent set from ONE producer.
  */
-export const TEXTURE_TO_ATTRIBUTE_WGSL = `struct BridgeFrame {
+export const TEXTURE_TO_ATTRIBUTE_WGSL = wgsl`struct BridgeFrame {
   count: u32,
 };
 
@@ -242,7 +244,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
  * surface, cheap everywhere. A miss writes hit = 0 with the ray's end, so downstream
  * kernels can branch without a sentinel convention.
  */
-export function pointRayWgsl(options: { steps: number; directionAttribute: boolean }): string {
+export function pointRayWgsl(options: { steps: number; directionAttribute: boolean }): EmittedWgsl {
   const steps = Math.max(1, Math.floor(options.steps));
   const directionDeclaration = options.directionAttribute
     ? "@group(0) @binding(2) var<storage, read> in_direction: array<vec3f>;\n"
@@ -251,7 +253,7 @@ export function pointRayWgsl(options: { steps: number; directionAttribute: boole
     ? "normalize(in_direction[index])"
     : "normalize(rayFrame.direction.xyz)";
   const outBase = options.directionAttribute ? 3 : 2;
-  return `struct RayFrame {
+  return wgsl`struct RayFrame {
   count: u32,
   extent: f32,
   heightScale: f32,
@@ -341,7 +343,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
  * draws twice at beam alpha. Cheap, visually harmless, and deduping would cost a second
  * pass — documented rather than fixed.
  */
-export function pointProximityWgsl(options: { neighbors: number; counted: boolean }): string {
+export function pointProximityWgsl(options: { neighbors: number; counted: boolean }): EmittedWgsl {
   const k = Math.max(1, Math.min(8, Math.floor(options.neighbors)));
   const countDeclaration = options.counted
     ? "@group(0) @binding(2) var<storage, read> in_count: array<u32>;\n"
@@ -355,7 +357,7 @@ export function pointProximityWgsl(options: { neighbors: number; counted: boolea
      neighbour's colour, degree or any other attribute — which is why every consumer that
      wanted an adjacency had to rebuild the scan. §V73's word: a slot is ADDRESSING, and
      the address is the one thing `tip` cannot carry. */
-  return `struct ProximityParams {
+  return wgsl`struct ProximityParams {
   count: u32,
   radius: f32,
   falloff: f32,
@@ -468,7 +470,7 @@ export function pointRangeWgsl(options: {
   /** The tested attribute IS position — no second input binding. */
   positionIsSource: boolean;
   counted: boolean;
-}): string {
+}): EmittedWgsl {
   const scalar = options.attributeType === "u32" ? "u32" : "f32";
   const source = options.positionIsSource ? "in_position" : "in_attr";
   let binding = 2;
@@ -482,7 +484,7 @@ export function pointRangeWgsl(options: {
   const valueExpression =
     scalar === "u32" ? `f32(${source}[index]${options.component})` : `${source}[index]${options.component}`;
   /* "from" is a WGSL reserved keyword — the struct spells the range lo/hi. */
-  return `struct RangeParams {
+  return wgsl`struct RangeParams {
   count: u32,
   keepInside: u32,
   lo: f32,
@@ -555,7 +557,7 @@ export function pointGatherWgsl(options: {
   weighted: boolean;
   /** Links per point — the link set's fixed source-major stride. */
   k: number;
-}): string {
+}): EmittedWgsl {
   const { attributeType, outputType, reduce, weighted, k } = options;
   const degree = reduce === "degree";
   /* The strength buffer is bound when a weight is actually read. Degree IS the weight sum,
@@ -580,7 +582,7 @@ export function pointGatherWgsl(options: {
       case "vec4u":
         return "vec4u(0u)";
       default:
-        return `${outputType}(0.0)`;
+        return wgsl`${outputType}(0.0)`;
     }
   })();
 
@@ -594,11 +596,11 @@ export function pointGatherWgsl(options: {
         return "";
       case "sum":
       case "mean":
-        return `    acc = acc + in_attr[slot] * w;`;
+        return wgsl`    acc = acc + in_attr[slot] * w;`;
       case "min":
-        return `    acc = select(min(acc, in_attr[slot]), in_attr[slot], found == 1u);`;
+        return wgsl`    acc = select(min(acc, in_attr[slot]), in_attr[slot], found == 1u);`;
       case "max":
-        return `    acc = select(max(acc, in_attr[slot]), in_attr[slot], found == 1u);`;
+        return wgsl`    acc = select(max(acc, in_attr[slot]), in_attr[slot], found == 1u);`;
     }
   })();
   const finish = ((): string => {
@@ -611,14 +613,14 @@ export function pointGatherWgsl(options: {
         /* Divided by the WEIGHT, not by the count: a weighted mean whose normaliser is the
            count is not a mean of anything. An all-zero weight sum falls back with the empty
            case, because dividing by it would be a NaN wearing a value's clothes. */
-        return `  let result = select(in_attr[index], acc / wsum, found > 0u && wsum > 0.0);`;
+        return wgsl`  let result = select(in_attr[index], acc / wsum, found > 0u && wsum > 0.0);`;
       case "min":
       case "max":
-        return `  let result = select(in_attr[index], acc, found > 0u);`;
+        return wgsl`  let result = select(in_attr[index], acc, found > 0u);`;
     }
   })();
 
-  return `struct GatherParams {
+  return wgsl`struct GatherParams {
   count: u32,
 };
 
@@ -709,13 +711,13 @@ const PARKED_WGSL = "const PARKED: vec3f = vec3f(0.0, 0.0, -1.0e6);";
  * every barrier is uniform. Summation order is fixed by the tree, so two runs agree to the
  * bit — the property a "roughly the middle" reduction would have thrown away for nothing.
  */
-export function pointCentroidPartialsWgsl(options: { counted: boolean }): string {
+export function pointCentroidPartialsWgsl(options: { counted: boolean }): EmittedWgsl {
   const size = TRANSFORM_REDUCE_WORKGROUP_SIZE;
   const countDeclaration = options.counted
     ? "@group(0) @binding(3) var<storage, read> in_count: array<u32>;\n"
     : "";
   const liveExpression = options.counted ? "min(params.count, in_count[0])" : "params.count";
-  return `struct CentroidParams {
+  return wgsl`struct CentroidParams {
   count: u32,
 };
 
@@ -772,8 +774,8 @@ fn main(
  * transform a scale about the origin rather than a NaN. The mean of no points is undefined
  * and the origin is the one answer that renders as "nothing moved" instead of as nothing.
  */
-export function pointCentroidFinalizeWgsl(): string {
-  return `struct FinalizeParams {
+export function pointCentroidFinalizeWgsl(): EmittedWgsl {
+  return wgsl`struct FinalizeParams {
   blocks: u32,
 };
 
@@ -821,7 +823,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 export function pointTransformWgsl(options: {
   /** 0 = centroid (the reduction runs), 1 = origin, 2 = the authored point. */
   pivot: "centroid" | "origin" | "point";
-}): string {
+}): EmittedWgsl {
   const centroidDeclaration =
     options.pivot === "centroid"
       ? "@group(0) @binding(3) var<storage, read> centroid: array<vec4f>;\n"
@@ -832,7 +834,7 @@ export function pointTransformWgsl(options: {
       : options.pivot === "point"
       ? "params.pivotPoint"
       : "vec3f(0.0)";
-  return `struct TransformParams {
+  return wgsl`struct TransformParams {
   translate: vec3f,
   scale: vec3f,
   rotate: vec3f,

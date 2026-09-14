@@ -1,4 +1,5 @@
 import { WGSL_EXTEND, WGSL_TRANSFORM2D } from "./common.wgsl.ts";
+import { wgsl } from "../../runtime/backend/wgsl.ts";
 
 /**
  * Fragment shaders for the geometry filters: Transform, Crop, Tile (T40).
@@ -13,7 +14,7 @@ import { WGSL_EXTEND, WGSL_TRANSFORM2D } from "./common.wgsl.ts";
  * is equivalent on our single-mip targets.
  */
 
-export const TRANSFORM_FRAGMENT_WGSL = `${WGSL_EXTEND}
+export const TRANSFORM_FRAGMENT_WGSL = wgsl`${WGSL_EXTEND}
 ${WGSL_TRANSFORM2D}
 
 struct Params {
@@ -51,7 +52,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
  *
  * Bounds are fractions with y UP (bottom = 0), matching TD, while `uv.y` runs down.
  */
-export const CROP_FRAGMENT_WGSL = `struct Params {
+export const CROP_FRAGMENT_WGSL = wgsl`struct Params {
   bounds: vec4f,
 };
 @group(0) @binding(0) var<uniform> params: Params;
@@ -69,7 +70,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
 }`;
 
 /** Tile — TD's Tile TOP: repeat the image n by m, optionally mirroring alternate tiles. */
-export const TILE_FRAGMENT_WGSL = `struct Params {
+export const TILE_FRAGMENT_WGSL = wgsl`struct Params {
   repeat: vec2f,
   offset: vec2f,
   mirror: vec2f,
@@ -108,7 +109,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
  * want machinery we do not have yet (a resolution policy that swaps its axes), so neither is
  * pretended at here.
  */
-export const FLIP_FRAGMENT_WGSL = `struct Params {
+export const FLIP_FRAGMENT_WGSL = wgsl`struct Params {
   flip: vec2f,
 };
 @group(0) @binding(0) var<uniform> params: Params;
@@ -143,7 +144,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
  * edge maps to -0.6 — so this samples through the shared extend helper rather than
  * pretending the range is safe.
  */
-export const MIRROR_FRAGMENT_WGSL = `${WGSL_EXTEND}
+export const MIRROR_FRAGMENT_WGSL = wgsl`${WGSL_EXTEND}
 
 ${WGSL_TRANSFORM2D}
 

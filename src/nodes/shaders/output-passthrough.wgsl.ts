@@ -1,5 +1,7 @@
 import type { SinkDisplayTransform } from "../../domain/color/display.ts";
 import { SRGB_TRANSFER_WGSL, TONE_MAP_WGSL } from "../../domain/color/display.ts";
+import { wgsl } from "../../runtime/backend/wgsl.ts";
+import type { EmittedWgsl } from "../../runtime/backend/wgsl.ts";
 
 /**
  * Output's fragment shaders (T15, T375).
@@ -50,7 +52,7 @@ const SAMPLE = `@group(0) @binding(0) var inputSampler: sampler;
 const CLAMPED_ALPHA = `clamp(source.a, 0.0, 1.0)`;
 
 /** `displayTransform: "none"` or a `data` target: raw values out, ALPHA INCLUDED (§V56). */
-export const OUTPUT_PASSTHROUGH_WGSL = `${SAMPLE}
+export const OUTPUT_PASSTHROUGH_WGSL = wgsl`${SAMPLE}
 @fragment
 fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   return textureSample(inputTexture, inputSampler, uv);
@@ -61,7 +63,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
  * and only alpha is bounded. Split out from `OUTPUT_PASSTHROUGH_WGSL` by T678 — the two
  * were one string, which is what made a display sink indistinguishable from a data dump.
  */
-export const OUTPUT_ALPHA_CLAMP_WGSL = `${SAMPLE}
+export const OUTPUT_ALPHA_CLAMP_WGSL = wgsl`${SAMPLE}
 @fragment
 fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   let source = textureSample(inputTexture, inputSampler, uv);
@@ -69,7 +71,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
 }`;
 
 /** `displayTransform: "srgb"`. Alpha is never encoded, in any sRGB variant. */
-export const OUTPUT_DISPLAY_ENCODE_WGSL = `${SAMPLE}
+export const OUTPUT_DISPLAY_ENCODE_WGSL = wgsl`${SAMPLE}
 
 ${SRGB_TRANSFER_WGSL}
 
@@ -92,7 +94,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
  * encode. Tone mapping display-encoded values would be arithmetic on the wrong numbers, in
  * exactly the way `previewCommonWgsl` already refuses to do it for the preview lens.
  */
-export function outputDisplayShader(transform: SinkDisplayTransform): string {
+export function outputDisplayShader(transform: SinkDisplayTransform): EmittedWgsl {
   if (transform.toneMap === "none") {
     if (transform.encode) return OUTPUT_DISPLAY_ENCODE_WGSL;
     // T678: `encode: false` is returned by THREE different decisions and only one of them
@@ -103,7 +105,7 @@ export function outputDisplayShader(transform: SinkDisplayTransform): string {
   const curve = transform.toneMap === "filmic" ? "tonemapFilmic" : "tonemapReinhard";
   const graded = `${curve}(source.rgb)`;
   const shown = transform.encode ? `encodeDisplay(${graded})` : graded;
-  return `${SAMPLE}
+  return wgsl`${SAMPLE}
 
 ${TONE_MAP_WGSL}
 ${transform.encode ? `\n${SRGB_TRANSFER_WGSL}\n` : ""}

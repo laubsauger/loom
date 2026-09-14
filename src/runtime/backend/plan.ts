@@ -4,6 +4,8 @@ import type { TextureFormat } from "../../domain/types/node-definition.ts";
 import type { RuntimeDiagnostic } from "../../domain/types/diagnostics.ts";
 import type { LogicalExecutionPlan } from "../../domain/types/backend.ts";
 import { BackendDiagnosticCode, backendDiagnostic } from "./diagnostics.ts";
+import type { EmittedWgsl } from "./wgsl.ts";
+import { wgslFromPlan } from "./wgsl.ts";
 
 /**
  * The backend's view of a `LogicalExecutionPlan`.
@@ -223,8 +225,17 @@ export interface BufferBindingDescriptor {
 export interface EffectPassDescriptor {
   readonly kind: "effect";
   readonly id: string;
-  /** WGSL fragment source. Part of the structural signature — editing it recompiles. */
-  readonly shader: string;
+  /**
+   * WGSL fragment source. Part of the structural signature — editing it recompiles.
+   *
+   * ⚑ `EmittedWgsl`, NOT `string` (§T1335b). §T259 compiles every frame, so a pass that
+   * builds its own text rebuilds it sixty times a second from bytes that did not change —
+   * measured at 39.4% of all main-thread script time on E32 Pasture. The type is the fix:
+   * only `wgsl.ts` beside this file can produce this, and everything it produces is cached by
+   * construction, so an uncached emitter does not typecheck rather than being caught later
+   * by a gate or a reviewer.
+   */
+  readonly shader: EmittedWgsl;
   /** Id of a `target` (or a `pingPong`, whose write half is rendered into). */
   readonly target: string;
   readonly clear?: boolean;
@@ -310,7 +321,7 @@ export interface DispatchPassDescriptor {
   readonly kind: "dispatch";
   readonly id: string;
   readonly nodeId?: string;
-  readonly shader: string;
+  readonly shader: EmittedWgsl;
   readonly entryPoint: string;
   /** Literal workgroup counts, or a counter resource read on the GPU (indirect). */
   readonly workgroups: readonly [number, number, number] | { readonly indirect: string };
@@ -332,7 +343,7 @@ export interface DrawPassDescriptor {
   readonly kind: "draw";
   readonly id: string;
   readonly nodeId?: string;
-  readonly shader: string;
+  readonly shader: EmittedWgsl;
   readonly target: string;
   readonly topology: "point-list" | "line-list" | "triangle-list" | "triangle-strip";
   /** A literal count, or a counter resource so the GPU decides how much to draw. */
@@ -634,7 +645,7 @@ export function readPass(value: unknown): PassDescriptor | undefined {
   return {
     kind: "effect",
     id,
-    shader,
+    shader: wgslFromPlan(shader),
     target,
     textures,
     samplers,
@@ -701,7 +712,7 @@ function readDispatchPass(id: string, value: Record<string, unknown>): DispatchP
   return {
     kind: "dispatch",
     id,
-    shader,
+    shader: wgslFromPlan(shader),
     entryPoint,
     workgroups,
     buffers,
@@ -762,7 +773,7 @@ function readDrawPass(id: string, value: Record<string, unknown>): DrawPassDescr
   return {
     kind: "draw",
     id,
-    shader,
+    shader: wgslFromPlan(shader),
     target,
     topology,
     instances,

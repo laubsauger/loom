@@ -4,6 +4,7 @@ import { readCompileInputs } from "../../nodes/definitions/compile-context.ts";
 import { inferenceSourceIdFor } from "../../runtime/execution/inference-sources.ts";
 import type { CompiledNodeDescription, NodeDefinition } from "../../domain/types/node-definition.ts";
 import type { DispatchPassDescriptor, EffectPassDescriptor } from "../../runtime/backend/plan.ts";
+import { wgsl } from "../../runtime/backend/wgsl.ts";
 
 /**
  * Phase 4's depth node with the model taken out (T715/T384, §V585).
@@ -23,7 +24,7 @@ export const INPUT_SIDE = 256;
 export const INPUT_KEY = "modelInput";
 export const RESULT_KEY = "modelResult";
 
-const PREPROCESS_WGSL = `struct P { side: f32 };
+const PREPROCESS_WGSL = wgsl`struct P { side: f32 };
 @group(0) @binding(0) var<uniform> params: P;
 @group(0) @binding(1) var sourceTexture: texture_2d<f32>;
 @group(0) @binding(2) var<storage, read_write> modelInput: array<vec4f>;
@@ -38,7 +39,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   modelInput[gid.y * side + gid.x] = textureLoad(sourceTexture, texel, 0);
 }`;
 
-const RESULT_BLIT_WGSL = `@group(0) @binding(0) var resultSampler: sampler;
+const RESULT_BLIT_WGSL = wgsl`@group(0) @binding(0) var resultSampler: sampler;
 @group(0) @binding(1) var resultTexture: texture_2d<f32>;
 
 @fragment

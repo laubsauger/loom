@@ -5,6 +5,8 @@ import {
   type PointAttributeSchema,
 } from "./attributes.ts";
 import type { PackedLayout } from "./packing.ts";
+import type { EmittedWgsl } from "../runtime/backend/wgsl.ts";
+import { wgsl } from "../runtime/backend/wgsl.ts";
 
 /**
  * Scan-based lifecycle compaction (T119, §V74/§V76).
@@ -60,7 +62,7 @@ export const COUNTS_BIRTHS = 3;
 
 export interface LifecyclePass {
   readonly name: string;
-  readonly wgsl: string;
+  readonly wgsl: EmittedWgsl;
   readonly entryPoint: "main";
   /**
    * How to size the dispatch: "perPoint" = ceil(capacity / workgroup), "single" = one
@@ -105,6 +107,8 @@ const PARAMS_WGSL = `struct LifecycleParams {
  */
 export type FlagsExtract = "raw" | "aliveBit" | "spawnCount";
 
+/* A FRAGMENT interpolated into the passes below, not a shader in its own right —
+   `EmittedWgsl` is for what reaches a pass descriptor (§T1335b). */
 function extractWgsl(extract: FlagsExtract): string {
   switch (extract) {
     case "raw":
@@ -116,8 +120,8 @@ function extractWgsl(extract: FlagsExtract): string {
   }
 }
 
-function scanLocalWgsl(extract: FlagsExtract): string {
-  return `${PARAMS_WGSL}
+function scanLocalWgsl(extract: FlagsExtract): EmittedWgsl {
+  return wgsl`${PARAMS_WGSL}
 @group(0) @binding(1) var<storage, read> flags: array<u32>;
 @group(0) @binding(2) var<storage, read_write> scanned: array<u32>;
 @group(0) @binding(3) var<storage, read_write> blockSums: array<u32>;
@@ -162,8 +166,8 @@ fn main(
 }`;
 }
 
-function scanBlocksWgsl(targetSlot = 0): string {
-  return `${PARAMS_WGSL}
+function scanBlocksWgsl(targetSlot = 0): EmittedWgsl {
+  return wgsl`${PARAMS_WGSL}
 @group(0) @binding(1) var<storage, read_write> blockSums: array<u32>;
 @group(0) @binding(2) var<storage, read_write> aliveCount: array<u32>;
 
@@ -191,6 +195,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
  * `destination`, inside packed buffers that share ONE layout. `vec3f` moves three words
  * out of its four-word stride — the padding word was never read and is not copied.
  */
+/* A FRAGMENT pasted into the passes below (§T1335b: the brand is for pass text). */
 function copyRegionWgsl(layout: PackedLayout, indent: string): string {
   return layout.regions
     .flatMap((region) => {
@@ -207,13 +212,13 @@ function copyRegionWgsl(layout: PackedLayout, indent: string): string {
     .join("\n");
 }
 
-function scatterWgsl(layout: PackedLayout, extract: FlagsExtract): string {
+function scatterWgsl(layout: PackedLayout, extract: FlagsExtract): EmittedWgsl {
   const declarations =
     "@group(0) @binding(4) var<storage, read> in_points: array<u32>;\n" +
     "@group(0) @binding(5) var<storage, read_write> out_points: array<u32>;";
   const copies = copyRegionWgsl(layout, "  ");
 
-  return `${PARAMS_WGSL}
+  return wgsl`${PARAMS_WGSL}
 @group(0) @binding(1) var<storage, read> flags: array<u32>;
 @group(0) @binding(2) var<storage, read> scanned: array<u32>;
 @group(0) @binding(3) var<storage, read> blockSums: array<u32>;
@@ -338,8 +343,8 @@ export function scratchBytes(capacity: number): { scanned: number; blockSums: nu
  * hold a previous frame's flags in the write half, and the scan would resurrect them.
  * Frame zero exempts itself (the kernel processed the full capacity).
  */
-export function clearDeadTailWgsl(): string {
-  return `struct TailParams {
+export function clearDeadTailWgsl(): EmittedWgsl {
+  return wgsl`struct TailParams {
   timeSeconds: f32,
   deltaSeconds: f32,
   frameIndex: u32,
@@ -370,8 +375,8 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
  * T322 glue kernel: live count → indirect DRAW arguments. One workgroup, one thread;
  * the consumer bakes its per-instance vertex count in and clamps by its own max.
  */
-export function drawArgsWgsl(): string {
-  return `struct ArgsParams {
+export function drawArgsWgsl(): EmittedWgsl {
+  return wgsl`struct ArgsParams {
   vertexCount: u32,
   maxInstances: u32,
 };
@@ -421,12 +426,12 @@ const SPAWN_PARAMS_WGSL = `struct SpawnParams {
  * hook's `in`/`out` pair could not be chunked any smaller against the old budget — and
  * with the schema packed, the pass binds 6 storage buffers whatever n is.
  */
-function spawnCopyWgsl(layout: PackedLayout, copied: ReadonlySet<string>): string {
+function spawnCopyWgsl(layout: PackedLayout, copied: ReadonlySet<string>): EmittedWgsl {
   const copyLayout: PackedLayout = {
     ...layout,
     regions: layout.regions.filter((region) => copied.has(region.name)),
   };
-  return `${SPAWN_PARAMS_WGSL}
+  return wgsl`${SPAWN_PARAMS_WGSL}
 @group(0) @binding(1) var<storage, read> flags: array<u32>;
 @group(0) @binding(2) var<storage, read> spawnScanned: array<u32>;
 @group(0) @binding(3) var<storage, read> spawnBlockSums: array<u32>;
@@ -462,7 +467,7 @@ ${copyRegionWgsl(copyLayout, "      ")}
  * buffer, binding it twice as `read_write` is a writable ALIAS, which vgpu refuses at
  * dispatch ("`src` and writable `dst` alias"). One binding, two offsets.
  */
-function spawnIdentityWgsl(layout: PackedLayout, idAttribute: string, flagsAttribute: string): string {
+function spawnIdentityWgsl(layout: PackedLayout, idAttribute: string, flagsAttribute: string): EmittedWgsl {
   const id = layout.byName.get(idAttribute);
   const flagsRegion = layout.byName.get(flagsAttribute);
   if (id === undefined || flagsRegion === undefined) {
@@ -470,7 +475,7 @@ function spawnIdentityWgsl(layout: PackedLayout, idAttribute: string, flagsAttri
   }
   const idWord = `${id.offset / 4}u + slot * ${id.stride / 4}u`;
   const flagsWord = `${flagsRegion.offset / 4}u + slot * ${flagsRegion.stride / 4}u`;
-  return `${SPAWN_PARAMS_WGSL}
+  return wgsl`${SPAWN_PARAMS_WGSL}
 @group(0) @binding(1) var<storage, read> flags: array<u32>;
 @group(0) @binding(2) var<storage, read> spawnScanned: array<u32>;
 @group(0) @binding(3) var<storage, read> spawnBlockSums: array<u32>;
@@ -503,8 +508,8 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 }`;
 }
 
-function spawnFinalizeWgsl(): string {
-  return `${SPAWN_PARAMS_WGSL}
+function spawnFinalizeWgsl(): EmittedWgsl {
+  return wgsl`${SPAWN_PARAMS_WGSL}
 @group(0) @binding(1) var<storage, read_write> counts: array<u32>;
 
 @compute @workgroup_size(1)

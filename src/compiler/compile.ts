@@ -38,6 +38,7 @@ import { synthesizeSourceReferenceEdges } from "./source-reference-edges.ts";
 import { bindingOverflows, describeOverflow } from "./bindings.ts";
 import { flattenComponents, redirectSink, withSourcePath } from "./flatten.ts";
 import type { ComponentSource } from "./flatten.ts";
+import { wgsl } from "../runtime/backend/wgsl.ts";
 import { resolveNodeFormat } from "./format.ts";
 import { presentsPicture, pruneToActiveSinks, resolveSinks } from "./prune.ts";
 import { resolveNodeResolution } from "./resolution.ts";
@@ -184,7 +185,7 @@ const GEOMETRY_PREVIEW_EYE = [1.7, 1.2, 2.4, 0] as const;
  * geometry shaders — which the geometry preview reuses verbatim — do not, so it gets the
  * Render's own backdrop pass instead. An unlit object on unpainted black is no preview.
  */
-const SCENE_PREVIEW_BACKDROP_WGSL = `struct Backdrop { color: vec4f };
+const SCENE_PREVIEW_BACKDROP_WGSL = wgsl`struct Backdrop { color: vec4f };
 @group(0) @binding(0) var<uniform> backdrop: Backdrop;
 @vertex
 fn vs(@builtin(vertex_index) v: u32) -> @builtin(position) vec4f {

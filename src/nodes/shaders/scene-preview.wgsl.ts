@@ -1,4 +1,6 @@
 import { ggxSpecularWgsl, INSTANCE_SHAPES_WGSL } from "./scene-render.wgsl.ts";
+import { wgsl } from "../../runtime/backend/wgsl.ts";
+import type { EmittedWgsl } from "../../runtime/backend/wgsl.ts";
 /**
  * Scene-payload PREVIEWS (T462, §V85): a material, a light or a camera is a THING whose
  * whole job is a look, and until this file each one showed nothing. Every preview here
@@ -101,7 +103,7 @@ export interface ScenePreviewBallOptions {
   readonly maps?: { readonly albedo?: boolean; readonly roughness?: boolean };
 }
 
-export function scenePreviewBallWgsl(options: ScenePreviewBallOptions): string {
+export function scenePreviewBallWgsl(options: ScenePreviewBallOptions): EmittedWgsl {
   const lightCount = Math.max(0, Math.floor(options.lightCount));
   const albedoMap = options.maps?.albedo === true;
   const roughnessMap = options.maps?.roughness === true;
@@ -237,7 +239,7 @@ ${
 ${Array.from({ length: lightCount }, (_, index) => lightBlock(index)).join("")}`
 }  return vec4f(lit, 1.0);`;
 
-  return `struct PreviewParams {
+  return wgsl`struct PreviewParams {
   viewProjection: mat4x4f,
   eye: vec4f,
   ambientColor: vec4f,      // rgb colour, a = intensity
@@ -315,8 +317,8 @@ export const CAMERA_PREVIEW_VERTEX_COUNT = 6 + 6 + 36;
  * box, through the camera's OWN matrix. Face colours are flat and exact — the preview
  * answers "where am I and what do I see", not "how is it lit".
  */
-export function cameraPreviewWgsl(): string {
-  return `struct PreviewParams {
+export function cameraPreviewWgsl(): EmittedWgsl {
+  return wgsl`struct PreviewParams {
   viewProjection: mat4x4f,
   background: vec4f,
 };

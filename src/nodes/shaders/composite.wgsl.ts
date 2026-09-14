@@ -1,4 +1,6 @@
 import { WGSL_CHANNEL } from "./common.wgsl.ts";
+import { wgsl } from "../../runtime/backend/wgsl.ts";
+import type { EmittedWgsl } from "../../runtime/backend/wgsl.ts";
 
 /**
  * Fragment shaders for the compositing family: Over, Add, Multiply, Screen, Difference,
@@ -56,7 +58,7 @@ import { WGSL_CHANNEL } from "./common.wgsl.ts";
  * `opacity` scales the FRONT and nothing else, unchanged from the two-input version: it is
  * the layer you are placing, not the stack you are placing it on.
  */
-export function blendFragmentWgsl(expr: string, layers = 1): string {
+export function blendFragmentWgsl(expr: string, layers = 1): EmittedWgsl {
   const count = Math.max(1, Math.floor(layers));
   const declarations = Array.from(
     { length: count },
@@ -68,7 +70,7 @@ export function blendFragmentWgsl(expr: string, layers = 1): string {
       `  acc = blendPixel(acc, textureSampleLevel(backTexture${index}, inputSampler, uv, 0.0));`,
   ).join("\n");
 
-  return `fn blendPixel(front: vec4f, back: vec4f) -> vec4f {
+  return wgsl`fn blendPixel(front: vec4f, back: vec4f) -> vec4f {
   return ${expr};
 }
 
@@ -114,8 +116,8 @@ const PORTER_DUFF_WGSL = `fn porterDuff(front: vec4f, back: vec4f, fa: f32, fb: 
 }`;
 
 /** Builds one Porter-Duff operator from its coverage weights. */
-function porterDuffFragmentWgsl(fa: string, fb: string, layers: number): string {
-  return `${PORTER_DUFF_WGSL}
+function porterDuffFragmentWgsl(fa: string, fb: string, layers: number): EmittedWgsl {
+  return wgsl`${PORTER_DUFF_WGSL}
 
 ${blendFragmentWgsl(`porterDuff(front, back, ${fa}, ${fb})`, layers)}`;
 }
@@ -151,7 +153,7 @@ export function isBlendType(value: unknown): value is BlendType {
 }
 
 /** The shader for one operation folding `layers` inputs behind the front one. */
-export function blendShaderFor(blend: BlendType, layers: number): string {
+export function blendShaderFor(blend: BlendType, layers: number): EmittedWgsl {
   return BLEND_BUILDERS[blend](layers);
 }
 
@@ -169,7 +171,7 @@ export function blendShaderFor(blend: BlendType, layers: number): string {
  * dissolve interpolates coverage as well as colour, so a transparent image crossing into
  * an opaque one becomes progressively more opaque.
  */
-export const CROSS_FRAGMENT_WGSL = `struct Params {
+export const CROSS_FRAGMENT_WGSL = wgsl`struct Params {
   cross: f32,
 };
 @group(0) @binding(0) var<uniform> params: Params;
@@ -203,7 +205,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
  * changes approximately never, and `alpha` keeps the text it has always had so upgrading
  * moves no existing project's pixels OR its structural key.
  */
-const maskShader = (carveColour: boolean) => `${WGSL_CHANNEL}
+const maskShader = (carveColour: boolean) => wgsl`${WGSL_CHANNEL}
 
 struct Params {
   channel: f32,
@@ -241,6 +243,6 @@ export function isMaskApply(value: unknown): value is MaskApply {
   return MASK_APPLY_OPTIONS.some((option) => option.value === value);
 }
 
-export function maskShaderFor(apply: MaskApply): string {
+export function maskShaderFor(apply: MaskApply): EmittedWgsl {
   return apply === "colour" ? MASK_COLOUR_FRAGMENT_WGSL : MASK_FRAGMENT_WGSL;
 }

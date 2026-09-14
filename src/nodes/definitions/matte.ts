@@ -21,6 +21,8 @@ import {
   inferenceResetSchema,
   letterboxPreprocessWgsl,
 } from "./inference-node.ts";
+import { wgsl } from "../../runtime/backend/wgsl.ts";
+import type { EmittedWgsl } from "../../runtime/backend/wgsl.ts";
 
 /**
  * Matte — a person MATTE from a single image, inferred (T957).
@@ -368,7 +370,7 @@ export function mattePostFor(stored: Readonly<Record<string, unknown>>): MattePo
 /* T959's rule holds here from birth: the result is r32float (no filtering sampler, no
    byte rounding), read nearest — a matte edge blended bilinearly would invent coverage
    between subject and background that neither owns. */
-const MATTE_BLIT_WGSL = `struct MatteParams {
+const MATTE_BLIT_WGSL = wgsl`struct MatteParams {
   blackPoint: f32,
   whitePoint: f32,
   gamma: f32,
@@ -416,16 +418,16 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
  * label names the PROVIDER the number came off, which is what a reader can act on here,
  * and the machine is stated once in the description these labels hang under.
  */
-function inputSideLabel(option: MatteInputSideCost): string {
+function inputSideLabel(option: MatteInputSideCost): EmittedWgsl {
   const cpu = `${(option.cpuMillis / 1000).toFixed(1)} s`;
   const damage = option.costsYou === undefined ? "" : ` — ${option.costsYou}`;
-  return `${option.side} px — ${option.gpuMillis} ms on the GPU provider, ${cpu} on the CPU provider${damage}`;
+  return wgsl`${option.side} px — ${option.gpuMillis} ms on the GPU provider, ${cpu} on the CPU provider${damage}`;
 }
 
 /** One ratio option: the fraction, what it MEASURED, and what it costs the picture. */
-function ratioLabel(option: MatteRatioCost): string {
+function ratioLabel(option: MatteRatioCost): EmittedWgsl {
   const damage = option.costsYou === undefined ? "" : ` — ${option.costsYou}`;
-  return `${option.ratio} — ${option.cpuMillis} ms, ${option.stateMb} MB of state${damage}`;
+  return wgsl`${option.ratio} — ${option.cpuMillis} ms, ${option.stateMb} MB of state${damage}`;
 }
 
 function matteParameters(stored: Readonly<Record<string, unknown>>) {

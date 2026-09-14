@@ -1,3 +1,4 @@
+import { wgsl } from "../../runtime/backend/wgsl.ts";
 /**
  * The generator kernel (T298): ONE module for every preset, per the Composite/Over
  * "both, one implementation" convention — grid, line, circle, sphere, tube, torus and
@@ -12,7 +13,7 @@
  * Everything lands centred on the origin in the units of `size`/`radius`, ready for
  * §V198's published transform order downstream.
  */
-export const POINT_GENERATOR_WGSL = `struct GeneratorParams {
+export const POINT_GENERATOR_WGSL = wgsl`struct GeneratorParams {
   count: u32,
   shape: u32,          // 0=line 1=circle 2=grid 3=sphere 4=tube 5=torus 6=box
   cols: u32,

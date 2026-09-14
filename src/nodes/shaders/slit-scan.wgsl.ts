@@ -1,3 +1,4 @@
+import { wgsl } from "../../runtime/backend/wgsl.ts";
 /**
  * SlitScan — per-pixel time displacement (T321).
  *
@@ -16,7 +17,7 @@
  * across LAYERS would blend two moments of time, which is a different effect (and a
  * later parameter), and unfiltered reads keep every renderable format legal (§V57).
  */
-export const SLIT_SCAN_WGSL = `struct ScanParams {
+export const SLIT_SCAN_WGSL = wgsl`struct ScanParams {
   depth: f32,
   ringLatest: u32,
   ringWritten: u32,

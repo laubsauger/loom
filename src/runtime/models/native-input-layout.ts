@@ -1,3 +1,4 @@
+import { wgsl } from "../backend/wgsl.ts";
 /** Four numeric RGBA bytes per model pixel, carried in opaque RGB compositor pixels. */
 export function nativeInputTransportSize(size: readonly [number, number]): readonly [number, number] {
   const [width, height] = size;
@@ -7,7 +8,7 @@ export function nativeInputTransportSize(size: readonly [number, number]): reado
 }
 
 /** Same clamp/round as the CPU model packer, with alpha carried as ordinary data. */
-export const NATIVE_INPUT_PACK_WGSL = `
+export const NATIVE_INPUT_PACK_WGSL = wgsl`
 struct InputShape { width: u32, height: u32 };
 @group(0) @binding(0) var<uniform> shape: InputShape;
 @group(0) @binding(1) var<storage, read> modelInput: array<vec4f>;

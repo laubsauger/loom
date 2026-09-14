@@ -1,5 +1,6 @@
 import { SHARED_UNIFORMS_WGSL } from "../../runtime/backend/shared-uniforms.ts";
 import { WGSL_HASH } from "./common.wgsl.ts";
+import { wgsl } from "../../runtime/backend/wgsl.ts";
 
 /**
  * The Noise fragment shader (T70).
@@ -232,7 +233,7 @@ const WORLEY = `fn worley2(p: vec2f, seed: u32) -> f32 {
   return sqrt(best);
 }`;
 
-export const NOISE_FRAGMENT_WGSL = `${SHARED_UNIFORMS_WGSL}
+export const NOISE_FRAGMENT_WGSL = wgsl`${SHARED_UNIFORMS_WGSL}
 ${WGSL_HASH}
 ${GRADIENTS}
 ${PERLIN}

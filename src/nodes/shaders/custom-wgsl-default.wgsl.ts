@@ -1,4 +1,5 @@
 import { SHARED_UNIFORMS_WGSL } from "../../runtime/backend/shared-uniforms.ts";
+import { wgsl } from "../../runtime/backend/wgsl.ts";
 
 /**
  * The default `source` a new CustomWGSL node ships with, and what the shader editor (T20)
@@ -68,7 +69,7 @@ import { SHARED_UNIFORMS_WGSL } from "../../runtime/backend/shared-uniforms.ts";
  * shader that lacks a `Params` block (§V940: the editor recompiles per keystroke, so a hard
  * refusal blacks the node out mid-typing).
  */
-export const CUSTOM_WGSL_DEFAULT_SOURCE = `${SHARED_UNIFORMS_WGSL}
+export const CUSTOM_WGSL_DEFAULT_SOURCE = wgsl`${SHARED_UNIFORMS_WGSL}
 struct Params {
   amount: f32,
   tint: vec3f, // @default 1  Multiplies the image — white leaves it alone, anything else colours it.

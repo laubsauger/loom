@@ -2,6 +2,7 @@ import { absFrameIndexOf, absTimeSecondsOf, wallDeltaSecondsOf, wallSecondsOf } 
 import type { FrameEvaluationInput } from "../../domain/types/frame.ts";
 import type { FrameInputs } from "../../domain/types/backend.ts";
 import type { UniformValues } from "./plan.ts";
+import { wgsl } from "./wgsl.ts";
 
 /**
  * The per-frame uniform block every pass may bind (§T16).
@@ -54,7 +55,7 @@ export interface SharedUniformValues extends Record<string, unknown> {
 // The abs pair slots in after the wall pair: every shader includes this text verbatim, so
 // all of them regenerate together and no shader can hold the old layout (V380: NAMED
 // members, never an array — uniform arrays defeat the writer's reflection).
-export const SHARED_UNIFORMS_WGSL = `struct SharedFrame {
+export const SHARED_UNIFORMS_WGSL = wgsl`struct SharedFrame {
   time: f32,
   deltaTime: f32,
   frameIndex: f32,

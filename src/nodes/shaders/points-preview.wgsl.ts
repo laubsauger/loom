@@ -1,3 +1,5 @@
+import { wgsl } from "../../runtime/backend/wgsl.ts";
+import type { EmittedWgsl } from "../../runtime/backend/wgsl.ts";
 /**
  * The pointset PREVIEW splat (T373, §V85).
  *
@@ -111,7 +113,7 @@ export function pointsPreviewWgsl(options?: {
    * the §V219 trick — instead of splatting whatever a dead slot's position holds.
    */
   counted?: boolean;
-}): string {
+}): EmittedWgsl {
   const counted = options?.counted === true;
   const countBinding = counted
     ? `@group(0) @binding(2) var<storage, read> counts: array<u32>;\n`
@@ -125,7 +127,7 @@ export function pointsPreviewWgsl(options?: {
   }
 `
     : "";
-  return `struct PreviewParams {
+  return wgsl`struct PreviewParams {
   viewProjection: mat4x4f,
   /* NDC half-extent per axis (T952) — see 'pointSplatNdcExtent'. Per-axis, because one
      NDC unit is width/2 texels across and height/2 down: a scalar drew an ellipse. */

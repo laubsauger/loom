@@ -3,6 +3,7 @@ import type { DispatchPassDescriptor } from "../../runtime/backend/plan.ts";
 import { RGBA_TEXTURE } from "./common-ports.ts";
 import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
 import { scratchResourceId } from "../../compiler/resources.ts";
+import { wgsl } from "../../runtime/backend/wgsl.ts";
 
 /**
  * Analyze (T236, §V144): texture → scalar. The node that closes the image→parameter
@@ -22,7 +23,7 @@ import { scratchResourceId } from "../../compiler/resources.ts";
 
 export const ANALYZE_RESULT_KEY = "result";
 
-export const ANALYZE_WGSL = `struct AnalyzeParams {
+export const ANALYZE_WGSL = wgsl`struct AnalyzeParams {
   channel: f32,
 };
 

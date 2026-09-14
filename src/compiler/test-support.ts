@@ -5,6 +5,7 @@ import type { NodeDefinition, TextureFormat } from "../domain/types/node-definit
 import { TEXTURE_FORMATS } from "../domain/types/node-definition.ts";
 import { createNodeRegistry, type NodeRegistry } from "../nodes/registry/registry.ts";
 import { asCompilerContext, type CompilerNodeContext } from "./types.ts";
+import { wgsl } from "../runtime/backend/wgsl.ts";
 
 /**
  * Fixtures for the compiler tests.
@@ -25,10 +26,10 @@ const number = (context: CompilerNodeContext, key: string, fallback: number): nu
 const textureOf = (context: CompilerNodeContext, portId: PortId): string | undefined =>
   context.inputs[portId]?.[0]?.resourceId;
 
-export const GENERATOR_WGSL = `@fragment
+export const GENERATOR_WGSL = wgsl`@fragment
 fn fs(@location(0) uv: vec2f) -> @location(0) vec4f { return vec4f(uv, 0.0, 1.0); }`;
 
-export const FILTER_WGSL = `@group(0) @binding(0) var inputSampler: sampler;
+export const FILTER_WGSL = wgsl`@group(0) @binding(0) var inputSampler: sampler;
 @group(0) @binding(1) var inputTexture: texture_2d<f32>;
 @fragment
 fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {

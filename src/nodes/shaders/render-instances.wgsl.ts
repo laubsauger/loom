@@ -1,4 +1,6 @@
 import { INSTANCE_SHAPES_WGSL } from "./scene-render.wgsl.ts";
+import type { EmittedWgsl } from "../../runtime/backend/wgsl.ts";
+import { wgsl } from "../../runtime/backend/wgsl.ts";
 /**
  * The instance render shader (T299): a procedural primitive per point, vertex-pulled
  * from the SoA position buffer — no vertex buffers, no mesh assets, no new pass kind.
@@ -34,7 +36,7 @@ export function renderInstancesWgsl(options?: {
   colorMap?: boolean;
   /** T333: draw-time group over `p.<attribute>` — binds resolved from the typed edge (§V308). */
   group?: { expression: string; binds: ReadonlyArray<{ attribute: string; type: string }> };
-}): string {
+}): EmittedWgsl {
   const group = options?.group;
   const colorMap = options?.colorMap === true;
   const groupBindings =
@@ -75,7 +77,7 @@ ${colorMap ? "    gated.color = vec4f(0.0);\n" : ""}    return gated;
     ? "@group(0) @binding(4) var<storage, read> mapColors: array<vec4f>;\n"
     : "";
   const colorExpr = colorMap ? "input.color" : "params.color";
-  return `struct InstanceParams {
+  return wgsl`struct InstanceParams {
   viewProjection: mat4x4f,
 ${colorMap ? "" : "  color: vec4f,\n"}  rotate: vec3f,       // radians; applied X then Y then Z (published order)
   scale: f32,
