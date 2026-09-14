@@ -1,3 +1,4 @@
+import { remember } from "../definitions/params-reflection.ts";
 import { WGSL_HASH } from "./common.wgsl.ts";
 
 /**
@@ -123,6 +124,29 @@ export interface SharedModuleResolution {
  * without the code it asked for is §V288's bug wearing a new hat.
  */
 export function resolveSharedModules(source: string): SharedModuleResolution {
+  const hit = resolutionsBySource.get(source);
+  if (hit !== undefined) return hit;
+  return remember(resolutionsBySource, source, resolveModules(source));
+}
+
+/**
+ * ⚑ MEMOISED FOR THE SAME REASON AS THE POINT KERNEL'S SCANS (§T1333b), and found the same
+ * way: 3.37% of all script time on E55 Reactor, in the production build, mapped back through
+ * the bundle's sourcemap. §T259 compiles every frame, `customWgsl`'s compile calls this, and
+ * the answer is a pure function of bytes that do not change between frames.
+ *
+ * It is a SMALLER number than the kernel's 39.4%, and the gap is the argument rather than a
+ * reason to skip it: which emitter is hot is a property of the DOCUMENT, not of the emitter.
+ * E32 Pasture made the point kernel a third of the main thread and never touched this; E55
+ * does the reverse; E24 makes neither measurable. Nobody can know at authoring time which
+ * document will make their emitter the expensive one, which is what §T1335b's seam is for.
+ *
+ * ⚠ The value is SHARED, like every `remember`ed value: `names`, `missing` and `prelude` are
+ * `readonly` on the interface and no caller may mutate what comes back.
+ */
+const resolutionsBySource = new Map<string, SharedModuleResolution>();
+
+function resolveModules(source: string): SharedModuleResolution {
   const asked: string[] = [];
   for (const match of source.matchAll(USE_DIRECTIVE)) {
     for (const raw of (match[1] ?? "").split(",")) {
