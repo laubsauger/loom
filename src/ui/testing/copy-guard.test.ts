@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { buildNotices } from "../../app/use-model-inference.ts";
+import { effectiveParameterSchema } from "../../domain/parameters/resolve.ts";
 import { allNodeDefinitions } from "../../nodes/definitions/index.ts";
 import { DEFAULT_BINDINGS } from "../../editor/keymap/defaults.ts";
 
@@ -442,5 +443,231 @@ describe("§V852 — model notices fit in one sentence", () => {
     // The gate must be MEASURING something: a `buildNotices` that returned nothing would
     // satisfy every assertion above and prove no rule at all.
     expect(measured).toBeGreaterThan(6);
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ * §V852 EXTENDED TO REFERENCE COPY — A DESCRIPTION IS NOT A DOCUMENT (T1055)
+ * ═══════════════════════════════════════════════════════════════════════════════════
+ *
+ * §V852's ceiling above is a BANNER budget: 90 characters, one sentence, because a notice
+ * appears unbidden while someone is trying to see what is going on. A node's `description`
+ * is a different artefact and MUST NOT inherit that number. It is pull, not push — nobody
+ * reads it unless they went looking — and the population proves the project means it:
+ * MEASURED over all 115 installed definitions (T1055),
+ *
+ *   485 description strings (115 node, 293 parameter, 77 port)
+ *   total    median  96   p75 207   p90 419   p95 572   p99 1239   max 3539
+ *   lede     median  50   p75  79   p90 124   p95 151   p99  252   max  553
+ *
+ * — and there is NO CLIFF in any dimension (total length, first sentence, longest
+ * sentence, or bytes per file: the worst file holds 13.7 % of the prose, spread over 38).
+ * A banner-shaped ceiling anywhere in the 90-160 range flags 19-96 EXISTING strings — at
+ * the banner's own 90, a FIFTH of the population — and §V852's allowlist is required to
+ * SHRINK, not to become the population. So the honest
+ * reading is that the long tail is the house style for reference copy and not a defect,
+ * and this gate does not argue with it.
+ *
+ * What it does rule on is the point where the field has outgrown itself. These strings
+ * have exactly ONE human surface — a native `title=` attribute, on the node library card
+ * (`node-library.tsx`), the node search row (`node-search.tsx`) and the inspector's
+ * parameter label (`control-row.tsx`). A `title` tooltip cannot be scrolled, cannot be
+ * selected, and dismisses the moment the pointer moves. Nothing else renders this text:
+ * `help/node-reference.ts` DERIVES `description` for the help panel and `help-panel.tsx`
+ * never renders it, and `PortDefinition.description` reaches no chrome at all (it is read
+ * only by the agent manifest tools). So past about a thousand characters the field stops
+ * being a description of a thing and becomes a document about it — and this schema has
+ * nowhere to put a document: enum options carry a `value` and a `label` and no prose of
+ * their own, which is how `matte.model` came to hold four models' measured comparisons,
+ * eighteen sentences, in one balloon on one label.
+ *
+ * ∴ the budget is a THOUSAND characters, ~11x the banner's, and the list below is the
+ * decision it forces: eleven fields over it today, each named, each with the split that
+ * would retire it. THE FIX IS A SPLIT, NEVER A CUT (§V403) — every one of these carries
+ * measured numbers with their machine and date attached, and shortening one by deleting
+ * its evidence would be a worse outcome than the length. The list must only ever get
+ * shorter: an entry that comes back under budget FAILS here, so retiring one is visible.
+ */
+describe("§V852/T1055 — a node's reference copy is a description, not a document", () => {
+  /**
+   * Eleven times the banner's 90. Not a style rule about sentences: the point at which the
+   * text needs a surface this schema does not have.
+   */
+  const BUDGET = 1000;
+
+  /**
+   * Over budget TODAY, and each entry names what it is really two of. Every one of these
+   * is answering more than one question in a field that can only answer one.
+   */
+  const OVER_BUDGET: ReadonlyArray<{ id: string; split: string }> = [
+    {
+      id: "matte.model",
+      split:
+        "four models' measured comparisons — brightness cliff, provider times, licences — in " +
+        "one enum's prose, because a `ParameterOption` carries a `value` and a `label` and no " +
+        "text of its own. Each model's paragraph wants to live beside its own option.",
+    },
+    {
+      id: "matte.backend",
+      split:
+        "what the control asks for, plus the METHOD for unfamiliar hardware (pin each provider " +
+        "in turn, read the info popup). The method is one fact about this node and `matte.model` " +
+        "states it a second time.",
+    },
+    {
+      id: "matte.downsampleRatio",
+      split:
+        "what the ratio does, plus a restatement of the measured times that are ALREADY in the " +
+        "option labels this description hangs under.",
+    },
+    {
+      id: "movieFileIn",
+      split:
+        "what it plays (formats, stills, the refusal of EXR/.hdr), plus the free-run vs " +
+        "TIMELINE-ANCHORED playhead contract (§V436). The second belongs on Play Mode — the " +
+        "control that makes the choice — where `audioFileIn` repeats it verbatim.",
+    },
+    {
+      id: "audioIn",
+      split:
+        "the channel catalogue, plus the tempo CLAIM and what bpmConfidence is worth. " +
+        "`audioIn.tempoMode` already carries the second in its own 246 characters.",
+    },
+    {
+      id: "audioFileIn",
+      split:
+        "three: the transport, the channel catalogue, and the tempo + playhead contract. Its own " +
+        "`extend`, `tempoMode` and `syncOffset` already hold pieces of the last one.",
+    },
+    {
+      id: "audioPattern",
+      split:
+        "its own synthesized beat, plus a restatement of the whole Audio In channel catalogue " +
+        "('publishes EVERY channel Audio In does'). One catalogue, written out in two nodes.",
+    },
+    {
+      id: "midiIn",
+      split:
+        "the channel contract and what is NOT read, plus the learn/Range/Toggle flow. The flow " +
+        "belongs on the Controls parameters, which is where the reader is standing when they need it.",
+    },
+    {
+      id: "oscIn",
+      split:
+        "the channel contract and the helper requirement, plus the per-row Address/Rest and " +
+        "multi-argument addressing rules — the same split `midiIn` needs, in the same shape.",
+    },
+    {
+      id: "pointKernel.kernel",
+      split:
+        "the ctx CLOCK contract (absTime/absFrame vs time/frameIndex), plus the struct Params " +
+        "knobs contract. The clock half is a node-level fact and is duplicated verbatim in " +
+        "`pointKernelAdvanced.kernel`.",
+    },
+    {
+      id: "pointKernelAdvanced.kernel",
+      split: "the same two as `pointKernel.kernel`, carrying the same duplicated clock contract.",
+    },
+  ];
+
+  interface Copy {
+    readonly id: string;
+    readonly text: string;
+  }
+
+  /**
+   * Every user-facing prose field a definition declares, keyed by where a reader meets it.
+   *
+   * §V1014: this walks the `NodeDefinition` CONTRACT's own `description` fields rather than
+   * grepping for `description:`, because that name is also worn by command metadata, agent
+   * tool copy and `decoderConfig.description` (a byte array).
+   *
+   * §T903/§V814: the schema comes through `effectiveParameterSchema`, once per enum option,
+   * because a PER-INSTANCE control has prose too — `matte.downsampleRatio` is 1067 characters
+   * that only exist while RVM is the chosen model, and a declared-schema sweep reports it
+   * clean. The funnel is also why this file needs no entry in the raw-schema-read ledger.
+   */
+  function collectCopy(): Copy[] {
+    const out: Copy[] = [];
+    const add = (id: string, text: unknown) => {
+      if (typeof text !== "string") return;
+      const flat = text.replace(/\s+/g, " ").trim();
+      if (flat.length > 0) out.push({ id, text: flat });
+    };
+    const seen = new Set<string>();
+    const addOnce = (id: string, text: unknown) => {
+      if (seen.has(id)) return;
+      seen.add(id);
+      add(id, text);
+    };
+    for (const definition of allNodeDefinitions) {
+      add(definition.type, definition.description);
+      for (const port of definition.inputs) add(`${definition.type}.in:${port.id}`, port.description);
+      for (const port of definition.outputs) add(`${definition.type}.out:${port.id}`, port.description);
+      const base = effectiveParameterSchema(definition, {});
+      // `asset` and `pulse` declare no `default` (a binding and an event, not values), so the
+      // stored document omits them; nothing here branches on either.
+      const defaults = Object.fromEntries(
+        Object.entries(base).flatMap(([key, schema]) =>
+          schema.type === "asset" || schema.type === "pulse" ? [] : [[key, schema.default]],
+        ),
+      );
+      // One stored document per enum option, not the cross product: a per-instance schema is
+      // chosen by ONE enum (the model, the backend), and the cross product would buy nothing
+      // for the cost of exploding.
+      const schemas = [base];
+      for (const [key, schema] of Object.entries(base)) {
+        if (schema.type !== "enum") continue;
+        for (const option of schema.options) {
+          schemas.push(effectiveParameterSchema(definition, { ...defaults, [key]: option.value }));
+        }
+      }
+      for (const schema of schemas) {
+        for (const [key, parameter] of Object.entries(schema)) {
+          addOnce(`${definition.type}.${key}`, parameter.description);
+        }
+      }
+    }
+    return out;
+  }
+
+  it("keeps every description inside the budget, and the over-budget list only shrinks", () => {
+    const copy = collectCopy();
+    // The gate must be MEASURING something: an empty registry would satisfy every
+    // assertion below and prove no rule at all (§V968, and the notices gate's own shape).
+    expect(copy.length, "the definition walk found no reference copy at all").toBeGreaterThan(400);
+
+    const over = copy.filter((entry) => entry.text.length > BUDGET);
+    const named = new Set(OVER_BUDGET.map((entry) => entry.id));
+    const unexpected = over.filter((entry) => !named.has(entry.id));
+    if (unexpected.length > 0) {
+      const report = unexpected
+        .map((entry) => `  ${entry.id}  ${entry.text.length} chars (budget ${BUDGET})`)
+        .join("\n");
+      throw new Error(
+        `${unexpected.length} node description(s) over the reference-copy budget (§V852, T1055). ` +
+          `This text has one surface — a native \`title\` tooltip that cannot be scrolled or ` +
+          `selected — and past ${BUDGET} characters it is a document in a balloon. SPLIT it ` +
+          `(it is answering two questions; give the second one its own parameter, port or ` +
+          `node description), do NOT cut it: the measured numbers and their machines are the ` +
+          `point of this prose:\n${report}`,
+      );
+    }
+
+    // §V852: the list SHRINKS. An entry that came back under budget is a retirement, and it
+    // has to be deleted here rather than left to make the list look like more work than it is.
+    const lengths = new Map(copy.map((entry) => [entry.id, entry.text.length]));
+    for (const entry of OVER_BUDGET) {
+      // The list may only grow by a NAMED decision: an entry whose `split` is empty is an
+      // exemption nobody argued for, which is how an allowlist becomes the population.
+      expect(entry.split.length, `${entry.id} is exempted without naming its split`).toBeGreaterThan(40);
+      const length = lengths.get(entry.id);
+      expect(length, `${entry.id} is named over-budget but no longer exists`).not.toBeUndefined();
+      expect(
+        length,
+        `${entry.id} is ${String(length)} chars, inside the ${BUDGET} budget — delete its OVER_BUDGET entry`,
+      ).toBeGreaterThan(BUDGET);
+    }
   });
 });
