@@ -5,6 +5,7 @@ import {
   type PointAttributeSchema,
   type PointAttributeType,
 } from "./attributes.ts";
+import { remember } from "../nodes/definitions/params-reflection.ts";
 import { MAX_SPAWN_PER_PARENT } from "./lifecycle.ts";
 import { regionAccessorWgsl, regionStoreWgsl } from "./packing.ts";
 
@@ -455,6 +456,37 @@ const TIMELINE_ANCHORED_DECLARATION = /timeline-anchored/i;
  * comment. So the READ is looked for in stripped source and the DECLARATION in raw source.
  */
 function stripWgslComments(source: string): string {
+  const hit = strippedBySource.get(source);
+  if (hit !== undefined) return hit;
+  return remember(strippedBySource, source, stripComments(source));
+}
+
+/**
+ * ⚑ MEMOISED, AND THE NUMBER IS WHY: `stripWgslComments` WAS 24% OF ALL SCRIPT TIME.
+ *
+ * Measured on E32 Pasture (77 nodes, one `pointKernel`, five `renderPoints`) in the
+ * PRODUCTION build, through a Chromium CPU profile mapped back to source: of the main
+ * thread's script time, `stripWgslComments` took 24.2% at rest and 21.6% while the canvas
+ * was being panned, with `referencedValueSlots` a further 10.5%. A third of every script
+ * millisecond in that document went to rescanning kernel text that had not changed.
+ *
+ * The cause is structural rather than a slow loop: §T259 runs the whole compiler EVERY
+ * FRAME for any animated document, `generateKernelModule` is called from a node's
+ * `compile()`, and it strips the same kernel and group sources four times per call. The
+ * character walk itself is correct and cheap per byte — it is paid sixty times a second
+ * for an answer that is a pure function of bytes that are identical each time.
+ *
+ * The key IS the source string, so an edited kernel is a different key and a hit can only
+ * be an answer about what was asked. `remember` is imported rather than re-written for the
+ * reason its own docblock gives: a second copy of the eviction rule is how two caches drift
+ * apart. That import points from `src/points` into `src/nodes/definitions`, which is the
+ * opposite of the usual direction here — `params-reflection.ts` imports only domain types
+ * and its own readers, so there is no module cycle, and one eviction rule is worth the
+ * unusual edge.
+ */
+const strippedBySource = new Map<string, string>();
+
+function stripComments(source: string): string {
   // WGSL block comments nest; a block opener inside a line comment is inert.
   // Keep token separators so `val/* note */ue1` never becomes `value1`.
   const visible: string[] = [];
@@ -583,11 +615,27 @@ const VALUE_REFERENCE = /\.\s*value(\d+)\b/g;
 /** Slot ordinals a kernel actually reads, ascending. Out-of-range ordinals come back too. */
 function referencedValueSlots(...sources: ReadonlyArray<string>): number[] {
   const found = new Set<number>();
-  for (const source of sources) {
-    VALUE_REFERENCE.lastIndex = 0;
-    for (const match of stripWgslComments(source).matchAll(VALUE_REFERENCE)) found.add(Number(match[1]));
-  }
+  for (const source of sources) for (const slot of slotsIn(source)) found.add(slot);
   return [...found].sort((a, b) => a - b);
+}
+
+/**
+ * The same memo one level down, because the caller is VARIADIC and its callers pass
+ * different groupings of the same strings: the kernel alone from `inactiveWhen`, the kernel
+ * and the group together from `generateKernelModule`. Keyed per SOURCE, those are the same
+ * two answers rather than two unrelated ones, and this is the 10.5% of script the scan above
+ * does not cover. The returned array is remembered and therefore SHARED — the caller above
+ * copies it into its own Set, which is what keeps that contract.
+ */
+const slotsBySource = new Map<string, readonly number[]>();
+
+function slotsIn(source: string): readonly number[] {
+  const hit = slotsBySource.get(source);
+  if (hit !== undefined) return hit;
+  const found = new Set<number>();
+  VALUE_REFERENCE.lastIndex = 0;
+  for (const match of stripWgslComments(source).matchAll(VALUE_REFERENCE)) found.add(Number(match[1]));
+  return remember(slotsBySource, source, [...found].sort((a, b) => a - b));
 }
 
 /**
