@@ -236,6 +236,34 @@ export const chimeraDocument = document(
            had left to give; a fifth complaint about noise needs a different idea, not a
            sixth value of this. */
         stepScale: 0.36,
+        /* ⚑⚑ 6, AND IT IS THE ANSWER TO *"very very noisy due to all these surfaces at
+           anything but close up distance"* (T1328b). THE COMPLAINT IS DISTANCE-DEPENDENT so
+           it is aliasing, and the brief's proposed instrument — a level of detail on the
+           ITERATION COUNT — TURNED OUT NOT TO EXIST HERE. Measured with a literal in the
+           source: `links` 11, 6, 5, 3 and 2 all render a BIT-IDENTICAL frame (mean luma
+           7.2474, 102905 lit pixels) and only `links` 1 differs (1.4982, 11443). The chain's
+           estimate is converged by its second link at this epsilon; `iterations: 11` has
+           nothing to cut and is itself a measured no-op. A LOD on the iteration count would
+           have been a pass spent on a knob that does not move the picture.
+           ⚑ WHAT THE FIZZ ACTUALLY IS, BY ISOLATION AT orbitRadius 22: the NORMAL. Widening
+           its own central differences took the pixel-scale grain 0.1462 -> 0.0950 while every
+           other term in the frame moved it by less than a hundredth — `occlusion` 0 (0.1465),
+           `specular` 0 (0.1472), `translucency` 0 (0.1462), `haze` 0 (0.1463), `polish` 0
+           (0.1430) and ALL FIVE EMISSION TERMS CUT (0.1476), against 0.1462 shipped.
+           ⚑ AND IT IS A DISTANCE LOD FOR FREE, because `epsilon` already scales with the
+           pixel's footprint: the same multiplier moves orbitRadius 12 by 0.0739 -> 0.0733,
+           i.e. THE CLOSE-UPS, WHICH THE OWNER SAYS ARE ALREADY RIGHT, ARE UNTOUCHED. The fall
+           with the multiplier is a SLOPE and not a cliff (§V981): x1 0.1462, x2 0.1397, x3
+           0.1301, x4 0.1157, x6 0.0950, x8 0.0877.
+           ⚑ AND THE SILHOUETTE SURVIVES, which is the thing a LOD cut too deep loses first:
+           coverage 11.17 % -> 11.17 % and the convolution statistic 6.28 -> 6.38 at 22,
+           15.19 -> 15.12 % and 198.06 -> 198.70 at 12.
+           ⚠ 1 IS THE ISOLATION ARM AND RESTORES THE OLD BEHAVIOUR EXACTLY. ⚠ AND THE
+           PRINCIPLED-LOOKING VERSION IS REFUTED: widening by the grazing angle instead
+           (`epsilon / abs(dot(n, dir))`, the pixel's footprint ON the surface) measured WORSE
+           at both ranges — 0.1579 at 22 and 0.0826 at 12 — because that cosine is itself
+           noisy, so dividing by it injects the noise it was meant to filter. */
+        normalWiden: 6,
         bailout: 256,
 
         /* ─── THE CLOCKS, PRIME ON PURPOSE — AND SPLIT BY THE OWNER'S RULING ─────────
@@ -502,6 +530,39 @@ export const chimeraDocument = document(
            becomes a lever once the pod's peak is near the ceiling, and PAIRED with (c) it
            still only moved the plateau r=7 -> r=6. NOT SHIPPED: a measured no-op does not
            ship, whatever its rationale (§V994's rule, applied to this pass's own idea). */
+        /* ⚑⚑ 0.15 AND 1.4 — THE POD'S OWN SHADING, AND IT IS THE OTHER HALF OF §V1001
+           (T1326b). The four arms above are the ones that could not reach it; this is the
+           one that does, and it starts from a structural fact none of the seven passes had:
+           ⚑ THE POD'S VISIBLE SURFACE IS A LEVEL SET OF THE VERY QUANTITY THE MARK IS BUILT
+           ON. `trace.node` is the orbit's closest approach to the origin and the sphere
+           fold's inner inversion makes the pod a ball of ONE radius, so every visible pixel
+           of a pod reads the SAME trap value. ∴ no function of `trace.node` can vary across
+           a pod — which is why the window's shape, the pod's gain and the volume were all
+           measured no-ops, and why six passes on the MARK could not have worked. Rendered on
+           its own, `glow.node` is a flat-topped disc with a hard edge: that IS the sticker.
+           ⚑ MEASURED PER POD, NOT OVER THE MASK (§V1002) — 17 pods at 25 s, rank span within
+           each pod as a share of its own median, median over the pods. The candidates: the
+           shell's own three-light luminance 1.113, the key cosine 0.739, the view cosine
+           0.447, the shadow 0.156, the ambient occlusion 0.030. The lit shell wins, and the
+           §V1001 arm is the known positive that says what the ceiling is: cut both pod terms
+           and the ball underneath reads 1.206 against the shipped pod's 0.154.
+           ⚑ AND IT GOES IN TWO PLACES BECAUSE ONE IS NOT ENOUGH, WHICH IS ALSO MEASURED. On
+           the EMISSION alone it is T1325b's refuted arm (e) for the bright pods, because the
+           shoulder erases it; on the CEILING alone it reaches only the pods whose peak clears
+           the knee — a flat ceiling scale of 0.25 left TEN OF SEVENTEEN pods' median luma
+           unchanged to the byte, because `nodeFade` has faded their cores and they are
+           carried by their pool. Together: per-pod span 0.154 -> 0.695 and the correlation
+           with the ball's own shading 0.513 -> 0.888.
+           ⚠ AND `podShadeLevel` IS SWEPT AGAINST THE PEAK, because a shading term that dims
+           the whole pod is §V977's defect wearing a repair's clothes — and the claim's own
+           brightness guard caught it: at 3.5 the pod core's luma falls 192.7 -> 153.3 and the
+           test goes red. At 1.4 the core is 185.1, the within-pod span is HIGHER (0.628 ->
+           0.714) and the core keeps more chroma. The lit side saturates; only the terminator
+           is paid for. ⚠ 1 IS THE ISOLATION ARM and it is what `chimera-claims` now uses to
+           restore the white-clipping defect, because this term alone takes the shoulder-off
+           control from 16.0 % white down to 1.24 % — the control had stopped controlling. */
+        podShade: 0.15,
+        podShadeLevel: 1.4,
         /* Where a pod's sharp core gives way to its spill alone. Sanctum's grain fade. */
         nodeFade: 21,
         nodeColor: [1, 0.36, 0.86, 1],
@@ -607,7 +668,25 @@ export const chimeraDocument = document(
            hash-gated one. The sibling piece measured the same trade the same way round. */
         hazeSteps: 20,
         hazeSharp: 26,
-        hazeFalloff: 2.1,
+        /* ⚑⚑ 2.1 -> 1.1, AND IT IS THE OWNER'S *"what are these small coloured dots? are
+           those light rays but just badly implemented?"* (T1327b). THEY ARE NOT RAYS AND THEY
+           ARE NOT THE R2 JITTER EITHER — that diagnosis is refuted at `volumeAlong`, with the
+           detector validated against a synthetic dot field placed on the R2 lattice itself.
+           They are THIS STAGE's own marks, sub-pixel and already converged: twelve times the
+           samples (`hazeSteps` 20 -> 240) leaves the mean void luma at 0.0050, unmoved.
+           ⚑ THE TRADE, MEASURED AT ONE FRAME: the WHOLE volume stage lifts the subject's mean
+           luma by 0.213 — three tenths of one per cent of the picture — and puts 177 separate
+           dots, median ONE pixel, up to luma 184, into a void that is otherwise pure black.
+           At 1.1 the lift is 0.064 and the dots are 42 at a peak of 151. ∴ 76 % OF THE
+           ARTEFACT FOR 0.15 LUMA OF A GLOW THAT IS 0.3 % OF THE FRAME.
+           ⚠ AND THE REPAIR THIS FILE USES EVERYWHERE ELSE MAKES IT WORSE, which is why the
+           lever is the REACH and not the width: widening the volume's marks to the pixel's
+           own footprint took the dots 177 -> 270 and their peak 184 -> 216, because a wider
+           mark is a mark that more rays catch. Fading them with range instead is a no-op
+           (177 -> 171). ⛑ THE BIGGER NUMBER IS THE 0.213 AND IT IS AN OWNER QUESTION, NOT
+           MINE: a stage that runs twenty four-link chain evaluations per pixel to move the
+           subject by two tenths of a luma is a stage whose keep-or-cut is a look decision. */
+        hazeFalloff: 1.1,
         hazeBase: 0.16,
         hazeWidth: 3.4,
 

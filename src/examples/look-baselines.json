@@ -335,11 +335,11 @@
     "f0max": 0.8388
   },
   "E70-Chimera.loom.json": {
-    "motion": 0.0194,
-    "range": 0.3715,
-    "f0max": 0.5731,
+    "motion": 0.01853,
+    "range": 0.3963,
+    "f0max": 0.604,
     "cardFloor": 0,
-    "phrase": 0.04411
+    "phrase": 0.04515
   },
   "E8-Slit-Scan.loom.json": {
     "motion": 0.11307,

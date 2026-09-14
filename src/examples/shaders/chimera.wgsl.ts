@@ -194,6 +194,7 @@ struct Params {
   foldSpin: vec4f,      // @default [0.31, 0.47, 0.23, 0]  the rotation between iterations, in turns per lap, per axis — THE SEGMENTATION KNOB. An isometry, so the estimate stays exact at every angle and this can run forever
   detail: f32,          // @default 1  scales the march's termination threshold against the PIXEL'S OWN FOOTPRINT. Below 1 resolves finer structure and costs steps; above 1 stops sooner and is the cheapest quality knob in the file
   stepScale: f32,       // @default 0.78  how much of the estimate the march actually steps. Below 1 because a chain this long accumulates derivative error; it is the file's safety margin against marching THROUGH the surface at grazing angles
+  normalWiden: f32,     // @default 1  how many termination epsilons wide the NORMAL's central differences are, and 1 is the shipped-before-T1328b behaviour exactly, so it doubles as the isolation arm. ⚑ THIS IS THE FILE'S DISTANCE LEVEL OF DETAIL AND IT LIVES ON THE *NORMAL*, NOT ON THE ITERATION COUNT (T1328b). 'epsilon' already scales with the pixel's footprint, so a constant multiplier here is automatically wider at range and untouched close up — measured, at the same frame: pixel-scale grain 0.1462 -> 0.0950 at orbitRadius 22 and 0.0739 -> 0.0733 at 12, with coverage 11.17 -> 11.17 % and the silhouette's convolution 6.28 -> 6.38 ∴ the fizz goes and the OUTLINE does not move. ⚠ THE DOCBLOCK AT 'normalAt' ARGUED THE OPPOSITE ('a normal sampled wider than the feature it sits on reads as a melted object') AND THE SWEEP OVERRULED IT — at range the feature IS below the pixel and averaging it is the only honest answer. ⚠ AND THE GRAZING-ADAPTIVE VERSION IS REFUTED: dividing the width by 'abs(dot(n, dir))' measured WORSE at both ranges (0.1462 -> 0.1579 at 22, 0.0739 -> 0.0826 at 12), because that cosine is itself noisy and dividing by a noisy quantity injects noise
   bailout: f32,         // @default 256  escape radius — where a point is declared outside and the orbit stops
 
   // ─── THE CLOCKS (T1310b's acceptance criterion: what is different at 15 s, 45 s, 90 s) ──
@@ -280,6 +281,8 @@ struct Params {
   nodeGlow: f32,        // @default 22  how hard a node's CORE burns. 0 removes the cores
   nodeSpill: f32,       // @default 3.2  how hard a node lights the stone AROUND it — the difference between a light and a sprite. A wider window on the SAME trap (§V962), so the pool lands exactly where the pod is. It also lets the core sit lower than the impression needs, which is what stops it clipping to white and losing its hue
   nodeFade: f32,        // @default 15  METRES over which a node's SHARP core fades out, leaving only its spill. ⚑ A MIP LEVEL DONE AS A FADE, because a marcher has no derivatives to pick one with: a sixth-power falloff on a fractal is fine relief, and fine relief far away is smaller than a pixel and turns into SALT. Sanctum's fix for its own grain, taken rather than reinvented
+  podShade: f32,        // @default 0.15  how dark a pod's own emission goes on the side of it that the rig does not light, as a fraction of its lit side. ⚑ 1 IS THE PRE-T1326b BEHAVIOUR EXACTLY AND IS THE ISOLATION ARM. A pod is GEOMETRY (§V1001) and a self-lit ball's own shading is drowned by its own emission; this is the factor that lets the shading survive the light. See 'podShadeLevel'
+  podShadeLevel: f32,   // @default 1.4  the shell luminance at which a pod's emission reaches full. ⚑ SWEPT AGAINST THE PEAK, BECAUSE A SHADING TERM THAT DIMS THE WHOLE POD IS §V977's DEFECT WEARING A REPAIR'S CLOTHES: at 3.5 the pod's core luma falls 192.7 -> 153.3 and the claim's own brightness guard catches it; at 1.4 it is 185.1 and the within-pod span is HIGHER (0.628 -> 0.714), because the lit side saturates and only the TERMINATOR is paid for. The core chroma goes the other way (0.349 -> 0.257) and both are well above the 0.226 this replaced, which is the trade: 1.4 buys back 32 luma of peak for 0.09 of chroma the pod did not have before. The pod's modulation is 'mix(podShade, 1, clamp(shellLuma / podShadeLevel, 0, 1))' — the ball's OWN three-light response, which is the one quantity measured to vary across a pod (per-pod rank span 1.113, against 0.030 for the ambient occlusion and 0.156 for the shadow)
   nodeColor: vec4f,     // @default [1, 0.36, 0.86, 1]  ⚑ THE SECOND HUE, AND IT IS CARRIED BY AN OBJECT (§V972). Six passes on the sibling piece put a second colour on a LIGHT and every one read as a wash; what fixed it was giving the hue to a THING the eye can point at. The nodes are that thing
 
   // ─── THE BEAT'S ONLY DESTINATION, AND IT FIRES IN SUCCESSION (T1318b) ─────────────────
@@ -1304,7 +1307,33 @@ fn volumeAlong(
      values are THE SAME PICTURE, and a per-frame jitter breaks them. A control traded for a
      dither is a bad trade.
      The two generators are the plastic constants 'goldenPick3' and the flare phase already
-     use, one dimension down. */
+     use, one dimension down.
+
+     ⚑⚑ AND R2 WAS THEN INDICTED A SECOND TIME, FOR THE OWNER'S *"what are these small coloured
+     dots? are those light rays but just badly implemented?"*, ON A DERIVATION THAT IS TRUE
+     AND STILL DOES NOT REACH THE PICTURE (T1327b). The algebra of the indictment is sound:
+     R2's constants are low-discrepancy over a SEQUENCE INDEX, so 'fract(a1 x + a2 y)' read as
+     a SCALAR over a 2-D integer grid is a plane wave whose near-rational approximations put
+     near-identical offsets 4 to 7 px apart. ⚑ MEASURED IN THE FRAME, IT IS NOT THERE. An
+     autocorrelation detector over the void, validated first against a SYNTHETIC DOT FIELD
+     PLACED ON THIS EXACT R2 LATTICE (peak 0.411 at lag (11,10)) and against a random field at
+     the same density (0.011), reads NO peak at any R2 lag on the real frame: the shipped
+     frame's largest lags are (2,1) and (2,0) at 0.128, which is blob-neighbour correlation
+     and nothing else. ⚑ AND THE TWO REPLACEMENT ARMS SAY THE SAME: a real 2-D integer hash
+     gives 0.026 % lit void against the shipped 0.027 %, and a CONSTANT half-stride — no
+     per-pixel jitter at all — gives 0.037 %. THE DOTS DO NOT COME FROM THE JITTER.
+     ⚑ WHAT THEY ARE, BY ARMS: they are the volume's own marks. 'haze' 0 removes them (0.17 %
+     of the void lit falls to 0.01 %); cutting the pod terms in the air halves them and
+     cutting the vein terms halves them; and they are NOT quadrature error — TWELVE TIMES the
+     samples ('hazeSteps' 20 -> 240) leaves the mean void luma at 0.0050, unmoved. They are
+     converged, sub-pixel, and irreducible by sampling. ⚠ AND WIDENING THEM TO THE PIXEL, THE
+     REPAIR THIS FILE USES EVERYWHERE ELSE, MAKES THEM WORSE: 177 blobs -> 270 and peak 184 ->
+     216, because a wider mark is a mark more rays catch.
+     ⚑ WHAT MOVED THEM IS 'hazeFalloff' — THE VOLUME'S REACH — AND THE REASON THAT IS THE
+     RIGHT LEVER IS THAT THE VOLUME BUYS ALMOST NOTHING AT RANGE. Measured at the same frame:
+     the WHOLE volume stage lifts the subject's mean luma by 0.213, and 2.1 -> 1.1 keeps 0.064
+     of that while taking the void's dot count 177 -> 42 and its peak 184 -> 151. See
+     'hazeFalloff' in the document for the trade written out. */
   let jitter = fract(pixel.x * 0.7548776662 + pixel.y * 0.5698402910 + VEIN_PHASE);
   let tint = rotateHue(params.veinColor.rgb, hue);
   let falloff = max(params.hazeFalloff, 0.2);
@@ -1524,10 +1553,27 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
     if (travelled > MAX_DISTANCE) { break; }
   }
 
+  /* ⚑ THE POD'S OWN SHADING, CARRIED OUT TO THE SHOULDER (T1326b). The grade's ceiling is
+     the last thing that happens to a pixel, and a pod whose peak clears the knee arrives
+     there at the ceiling WHATEVER its emission was — so a shading term applied upstream is
+     erased on exactly the pods that look flattest. This carries the ball's own response to
+     the one place the ceiling cannot erase it: the ceiling. 1 everywhere else. */
+  var ceilScale = 1.0;
   var colour = params.backdrop.rgb;
   if (hit) {
     let p = eye + dir * travelled;
-    let n = normalAt(p, shape, links, epsilon);
+    /* ⚑ THE NORMAL IS SAMPLED WIDER THAN THE MARCH STOPPED, AND THAT IS THIS FILE'S DISTANCE
+       LEVEL OF DETAIL (T1328b). The owner: *"very very noisy due to all these surfaces at
+       anything but close up distance"* — a DISTANCE-dependent complaint, so it is aliasing,
+       and the fizz was isolated to this one line: at orbitRadius 22, widening the normal's
+       own central differences took the pixel-scale grain 0.1462 -> 0.0950 while EVERY other
+       term in the frame moved it by less than a hundredth (occlusion 0, specular 0,
+       translucency 0, haze 0 and ALL FIVE EMISSION TERMS CUT all read 0.146 - 0.148).
+       'epsilon' already scales with the pixel's footprint, so one constant multiplier is a
+       LOD by construction: at orbitRadius 12 the same arm moves the grain 0.0739 -> 0.0733,
+       i.e. it costs the close-ups nothing, which is the half the owner says is already right.
+       See 'normalWiden' for the arms this replaced and the one it refuted. */
+    let n = normalAt(p, shape, links, epsilon * max(params.normalWiden, 1.0));
     let view = -dir;
     let trace = chainAt(p, shape, links);
     /* Sanctum's mip-as-a-fade, on the distance this ray actually travelled. */
@@ -1613,8 +1659,36 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
        lights on the shell here, not marks on it: a vein pools in the creases around it and a
        pod throws its hue onto the stone it sits in. Without this the pods were sprites —
        bright where they covered a pixel and changing nothing anywhere else. */
+    /* ⚑⚑ THE POD IS A BALL AND ITS OWN SHADING HAS TO SURVIVE ITS OWN LIGHT (T1326b, §V1001).
+       THE STRUCTURAL FACT SIX PASSES DID NOT HAVE: the pod's visible surface is a LEVEL SET
+       OF THE VERY QUANTITY THE MARK IS BUILT ON. 'trace.node' is the orbit's closest
+       approach to the origin, the sphere fold's inner inversion makes the pod a ball of one
+       radius, and every visible pixel of that ball therefore reads the SAME trap value. ∴ NO
+       FUNCTION OF 'trace.node' CAN EVER VARY ACROSS A POD — which is why the falloff window's
+       shape (0 -> 300 moved three luma), the pod's gain (5.5/7.5 -> 1.2/1.3 scales the
+       profile, plateau unmoved) and the volume were all measured no-ops, and why six passes
+       on the MARK could not reach it. Rendered on its own, 'glow.node' is a flat-topped disc
+       with a hard edge: that IS the sticker.
+       ⚑ SO THE SHADING COMES FROM THE ONE QUANTITY THAT DOES VARY ACROSS A POD, MEASURED PER
+       POD RATHER THAN OVER THE MASK (§V1002). Rank span within each pod, median over 17 pods:
+       the shell's own three-light luminance 1.113, the key cosine 0.739, the view cosine
+       0.447, the shadow 0.156, the ambient occlusion 0.030. The lit shell wins, and it wins
+       because it is the same quantity the §V1001 arm exposes — cut both pod terms and what is
+       left is a SMOOTH SHADED BALL, per-pod span 1.206 against the shipped 0.154.
+       ⚑ AND IT IS APPLIED IN TWO PLACES BECAUSE ONE IS NOT ENOUGH, WHICH IS ALSO MEASURED.
+       Modulating the EMISSION alone is T1325b's refuted arm (e) for the bright pods — the
+       shoulder erases it — and modulating the CEILING alone reaches only the pods whose peak
+       clears the knee, which is 7 of 17 (a flat ceiling scale of 0.25 left ten pods' median
+       luma unchanged to the byte). Together: per-pod span 0.154 -> 0.695 and the correlation
+       with the ball's own shading 0.513 -> 0.888, against the ball's own 1.206. See 'ceilScale' below for the other half.
+       ⚠ IT IS A COMMON SCALE ON ALL THREE CHANNELS, NOT A ROTATION (§V999), so the palette's
+       measured arcs are untouched by it. */
+    let podBall = mix(
+      clamp(params.podShade, 0.0, 1.0), 1.0,
+      clamp(dot(lit, vec3f(0.2126, 0.7152, 0.0722)) / max(params.podShadeLevel, 1.0e-3), 0.0, 1.0),
+    );
     let bleed = (veinTint * glow.spill * params.veinSpill
-      + podTint * glow.nodeSpill * params.nodeSpill)
+      + podTint * glow.nodeSpill * params.nodeSpill * podBall)
       * mix(1.0, occ, params.translucency);
 
     /* The grazing rim. On an all-curved silhouette this is where the environment shows —
@@ -1647,7 +1721,11 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
        on a near lobe and small on a far one within the same frame.
        It is NOT multiplied by 'baseColor' or by the occlusion: a node is a source, and a
        source is not shaded by the shell it sits in. */
-    let nodes = podTint * glow.node * params.nodeGlow;
+    let nodes = podTint * glow.node * params.nodeGlow * podBall;
+    /* How much of this pixel IS a pod. Read off the SPILL as well as the core: the core is
+       faded with view distance by 'nodeFade', so the far pods are carried almost entirely by
+       their pool and a gate on the core alone misses them (measured: ten of seventeen). */
+    ceilScale = mix(1.0, podBall, smoothstep(0.05, 0.45, glow.nodeSpill + glow.node));
     let surface = shell + burn + nodes + rim + reflected;
 
     /* Aerial perspective, which is also what lets the march stop early without a visible
@@ -1705,9 +1783,14 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
      forms measure within a few points of each other on every statistic (core flatness 4% vs
      7% at 1.3, 47% vs 57% at 2.2). THE CEILING IS THE LEVER. The hyperbolic form is kept for
      the monotonicity, not because it bought the result. */
+  /* ⚑ AND THE KNEE AND THE CEILING BOTH RIDE 'ceilScale' (T1326b). Scaling the pair rather
+     than the ceiling alone keeps the curve's SHAPE and moves only where it sits, so a pod's
+     dark side is the same tone curve at a lower exposure rather than a different one; and
+     because the operator's output is 'saturated * rolled / peak', a scale on the pair is a
+     COMMON scale on all three channels, which is what keeps the hue exactly (§V999). */
   let peak = max(max(saturated.r, saturated.g), saturated.b);
-  let knee = max(params.highlightKnee, 1.0e-3);
-  let head = max(params.highlightCeiling - knee, 1.0e-3);
+  let knee = max(params.highlightKnee, 1.0e-3) * ceilScale;
+  let head = max(params.highlightCeiling * ceilScale - knee, 1.0e-3);
   let rolled = knee + head * (1.0 - 1.0 / (1.0 + (peak - knee) / head));
   return vec4f(saturated * select(1.0, rolled / max(peak, 1.0e-5), peak > knee), 1.0);
 }

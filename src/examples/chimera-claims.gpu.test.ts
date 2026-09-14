@@ -1339,12 +1339,19 @@ describe("E70 Chimera — claims", () => {
 
     /* THE LEGITIMATE CASE THE GUARD COULD SWALLOW: the lattice still owns the veins. Measured
        at 0.094 mean absolute luma against the 0.000 floor — a small number because the veins
-       are thin and this arm has the pods switched off, which is the point. */
+       are thin and this arm has the pods switched off, which is the point.
+       ⚑ 0.094 -> 0.035 WHEN `hazeFalloff` CAME IN (T1327b), AND THE ATTRIBUTION IS AN ARM
+       RATHER THAN A GUESS: with the three T1326b-T1328b terms taken off one at a time this
+       statistic reads 0.0401 shipped, 0.0413 with `normalWiden` 1, 0.0401 with `podShade` 1
+       and 0.0871 with `hazeFalloff` back at 2.1. ∴ MORE THAN HALF OF WHAT THIS GUARD WAS
+       MEASURING WAS THE VOLUME'S response to the lattice, not the SURFACE's — which is worth
+       knowing on its own, and the surface half is what the guard is for. Restated on the
+       measurement; the separation assertion below is the half that carries the claim. */
     const veinMoved = meanPixelDelta(veinBase, veinCoarse);
     expect(
       veinMoved,
       "the conduit lattice must still decide where the veins are — otherwise this guard is vacuous",
-    ).toBeGreaterThan(0.05);
+    ).toBeGreaterThan(0.02);
 
     /* AND THE CLAIM: the pods do not read it. Not "less", NOTHING — the pod's gate is taken
        on `trace.nodeCell` now, which no value of `veinRate` can reach. Stated as a ratio to
@@ -1497,12 +1504,20 @@ describe("E70 Chimera — claims", () => {
         if (delta > 24) { mask[pixel] = 1; lit += 1; }
       }
       /* Without this the claim is satisfied by a frame with no pods in it at all (§V997: an
-         absence is satisfied by any other presence, including an empty one). */
-      expect(lit, "there must BE pods to measure — measured 3.7k to 12k px").toBeGreaterThan(1500);
+         absence is satisfied by any other presence, including an empty one).
+         ⚑ THE NUMBERS FELL AND THE REASON IS THE REPAIR, NOT A REGRESSION (T1326b). The mask
+         is "the pod's own contribution above 24 luma", and `podShade` scales that contribution
+         by the ball's own light response — so a pod's UNLIT HALF now falls under the line
+         while its lit half is untouched. Measured at the three times, `podShade` 1 -> 0.15:
+         3010/4462/12311 -> 1320/3234/9863 lit, 2049/3409/10115 -> 694/2387/7970 interior.
+         That is the sticker becoming a ball, read by a threshold that cannot tell the two
+         apart — the guard is restated on the new measurement rather than the mask being
+         widened to hide the move. */
+      expect(lit, "there must BE pods to measure — measured 1.3k to 9.9k px").toBeGreaterThan(1000);
 
       const pod = stepShare(glow, mask, on.w, on.h);
       const surface = stepShare(stone, mask, on.w, on.h);
-      expect(pod.inside, "and enough of them to have an interior").toBeGreaterThan(1000);
+      expect(pod.inside, "and enough of them to have an interior — measured 0.7k to 8.0k px").toBeGreaterThan(600);
       /* ⚑ THE BOUND WAS 1.05 AND IT CAUGHT A DENOMINATOR MOVE (T1325b). The highlight
          shoulder put this at 1.0524 and the obvious reading — "the shoulder diced the pods"
          — is FALSE: measured on both arms at 20 s, the POD's own step share is 34.11% with
@@ -1552,10 +1567,18 @@ describe("E70 Chimera — claims", () => {
 
     const still = (graph: GraphDocument): void => { freezeCamera(graph); cutEveryDrive(graph); };
     /* The shoulder made into the identity: the knee is put past every value in the frame, so
-       nothing else about the render changes. This is the DEFECT, restored. */
+       nothing else about the render changes. This is the DEFECT, restored.
+       ⚑ AND IT NOW TAKES TWO PARAMETERS, BECAUSE THE REPAIR DOES (T1326b). `podShade` scales
+       a pod's emission by the ball's own light response, so a pod's dark half no longer
+       reaches the ceiling even with the shoulder gone: with the shoulder alone removed the
+       detector reads 1.24% white against the 16.0% §T1324b measured, i.e. THE CONTROL ARM HAD
+       STOPPED BEING A CONTROL. `podShade` 1 is that term's own isolation arm and restores the
+       pre-T1326b emission exactly. §V968 is the reason this matters: a detector that cannot
+       be seen to fire cannot license the zero on the other side of it. */
     const flatten = (graph: GraphDocument): void => {
       param(graph, "shape", "highlightKnee", 1.0e9);
       param(graph, "shape", "highlightCeiling", 1.0e9 + 1);
+      param(graph, "shape", "podShade", 1);
     };
     const noPods = (graph: GraphDocument): void => {
       for (const off of ["nodeGlow", "nodeSpill"]) param(graph, "shape", off, 0);
