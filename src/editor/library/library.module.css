@@ -321,6 +321,38 @@
   justify-self: end;
 }
 
+/*
+  T1341b — the "does this run here" mark, inside the badge strip.
+
+  ⚑ IT IS NOT A GRID ITEM AND MUST NOT BECOME ONE. `.exampleRow` is a three-track grid whose
+  every cell pins `grid-row: 1`, because auto-placement is sparse: a new cell naming only a
+  column lands on row TWO and the list reads as two lines again (§T1278). This mark is a
+  flex child of `.cardTags`, which is already one pinned cell, so the trap cannot be re-armed
+  by adding it.
+
+  ⚑ NO SECOND COLOUR SYSTEM. An unmet mark inherits its hue from `data-category` — the same
+  four tokens the requirement badges wear (§T1340b) — so the glyph and the tag it refers to
+  are the same colour. `unknown` takes none of them on purpose: a tinted "?" would imply the
+  page knows which way it goes, and the whole point of the third verdict is that it does not.
+*/
+.runsHere {
+  flex: 0 0 auto;
+  align-self: center;
+  font-size: var(--fs-meta);
+  line-height: 1;
+  cursor: help;
+}
+
+.runsHere[data-verdict="unknown"] {
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+}
+
+.runsHere[data-category="host"] { color: var(--requirement-host); }
+.runsHere[data-category="platform"] { color: var(--requirement-platform); }
+.runsHere[data-category="external"] { color: var(--requirement-external); }
+.runsHere[data-category="unsupported"] { color: var(--requirement-unsupported); }
+
 .exampleBadges {
   grid-column: 2;
   grid-row: 1;

@@ -11,7 +11,6 @@ import {
   type RuntimeRequirementId,
 } from "@domain/types/requirements.ts";
 import type { OscBridgeState } from "@domain/osc/osc-status.ts";
-import { desktopShellPresent, hostOperatingSystem } from "@devices/host-shell.ts";
 import type { NodeRegistryView } from "@nodes/registry/registry.ts";
 
 /**
@@ -75,11 +74,6 @@ export function helperFactFrom(state: OscBridgeState): HostFacts["helper"] {
     case "connecting":
       return "unknown";
   }
-}
-
-/** The machine, as the page can honestly establish it. Pure given its two probes. */
-export function readHostFacts(helper: HostFacts["helper"]): HostFacts {
-  return { shell: desktopShellPresent() ? "desktop" : "browser", helper, os: hostOperatingSystem() };
 }
 
 /**

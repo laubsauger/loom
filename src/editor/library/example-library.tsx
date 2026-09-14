@@ -3,6 +3,8 @@ import type { LoomBus } from "@domain/commands/bus.ts";
 import type { InvocationContext } from "@domain/types/commands.ts";
 import { Button } from "@ui/primitives/button.tsx";
 import { TypeBadge } from "@ui/primitives/node-identity.tsx";
+import { assessRequirements, describeRunVerdict, type HostFacts } from "@domain/types/requirements.ts";
+import { pageHostFacts } from "@devices/host-shell.ts";
 import {
   DialogContent,
   DialogDescription,
@@ -18,6 +20,51 @@ import { exampleLinkUrl } from "./example-link.ts";
 import { filterExamples } from "./example-search.ts";
 import { categoriesOf } from "./search.ts";
 import styles from "./library.module.css";
+
+/**
+ * T1341b — DOES THIS MACHINE RUN IT, before anything is opened.
+ *
+ * Owner: *"our examples probably could also use a little WARNING SIGN inline… that shows
+ * us some requirement is not fulfilled ON THE SYSTEM… they don't have to open it up and
+ * then look for a node with an error in there."*
+ *
+ * ⚑ THREE VERDICTS, AND THE THIRD IS THE ONE THAT EARNS ITS KEEP. `⚠` means this will not
+ * run here; `?` means the page CANNOT CHECK — an NDI SDK is a machine install a browser
+ * cannot see, and Apple Silicon is not reliably reported. A tick on either would say "this
+ * will work" on no evidence, and the reader finds out by opening it, which is the exact
+ * journey this mark exists to spare them (§V986). Nothing at all means it runs.
+ *
+ * ⚑ NOT DISABLED. §V93's grain and the owner's own constraint: the row still opens, because
+ * an example that cannot run on this machine is still its own documentation — the graph,
+ * the claims and the prose read identically on any machine, and a disabled row teaches
+ * nothing and cannot be inspected.
+ *
+ * ⚑ NO SECOND COLOUR SYSTEM: an `unmet` mark wears the CATEGORY HUE of the requirement
+ * blocking it, so the glyph and the tag beside it are the same colour and the reader learns
+ * one vocabulary. `unknown` deliberately takes no category hue — a tinted "?" would imply
+ * we know which way it goes.
+ *
+ * ⚑ IT LIVES INSIDE THE BADGE STRIP, which is one already-pinned grid cell (§T1278: every
+ * cell in `.exampleRow` names `grid-row: 1`, because auto-placement is sparse and a new
+ * cell that names only a column lands on row two). A mark that is not a grid item cannot
+ * re-arm that trap.
+ */
+function RunsHere({ example, host }: { example: ExampleProject; host: HostFacts }) {
+  // An unreadable file's requirements are unknown in a stronger sense — the "Requirements
+  // unknown" badge beside this already says so, and a second mark would be the same
+  // sentence twice.
+  if (example.requirementsError !== undefined) return null;
+  const verdict = describeRunVerdict(assessRequirements(example.requirements.map(entry => entry.id), host));
+  if (verdict === null) return null;
+  return <span
+    className={styles.runsHere}
+    data-verdict={verdict.verdict}
+    {...(verdict.verdict === "unmet" ? { "data-category": verdict.blocking.category } : {})}
+    role="img"
+    aria-label={verdict.summary}
+    title={verdict.summary}
+  >{verdict.verdict === "unmet" ? "\u26a0" : "?"}</span>;
+}
 
 /**
  * The facets an example carries — requirements first, then capabilities.
@@ -36,8 +83,9 @@ import styles from "./library.module.css";
  * still being described as warning-tinted. One mechanism, one vocabulary, one place to
  * change a hue.
  */
-function ExampleBadges({ example, row = false }: { example: ExampleProject; row?: boolean }) {
+function ExampleBadges({ example, row = false, host }: { example: ExampleProject; row?: boolean; host: HostFacts }) {
   return <span className={`${styles.cardTags} ${row ? styles.exampleBadges : ""}`}>
+    <RunsHere example={example} host={host} />
     {example.requirementsError === undefined ? null : (
       /* Unknown is its own answer and must not borrow a category's colour: the app could
          not read the file, so it knows nothing about what the file needs (§V986). */
@@ -120,6 +168,17 @@ export interface ExampleLibraryProps {
   /** Test seams for the link's two halves. Default to THIS page's own address. */
   linkOrigin?: string;
   linkBase?: string;
+  /**
+   * T1341b — the machine, for the "does this run here" mark. Injected so the verdict is a
+   * PURE function of (requirements, host) and can be asserted headlessly against a fake
+   * host, which is the difference between a claim on the test ladder and one that needs a
+   * browser.
+   *
+   * The default reads the page and reports the helper as `unknown`: this pane holds no
+   * bridge, and a surface that has not probed a socket must not say the helper is absent
+   * (§V986). `app.tsx` passes the live facts, helper state included.
+   */
+  host?: HostFacts;
 }
 
 function writeToClipboard(text: string): void {
@@ -135,6 +194,7 @@ export function ExampleLibrary({
   copyLink = writeToClipboard,
   linkOrigin,
   linkBase,
+  host,
 }: ExampleLibraryProps) {
   /*
    * The link's prefix, read HERE rather than baked into `example-link.ts`: the base is
@@ -143,6 +203,10 @@ export function ExampleLibrary({
    */
   const origin = linkOrigin ?? globalThis.location.origin;
   const base = linkBase ?? import.meta.env.BASE_URL;
+  /* T1341b: the machine every row's verdict is measured against. Defaulted rather than
+     required, so a test or a stand-alone mount still renders — with the helper honestly
+     reported as unprobed. */
+  const machine = host ?? pageHostFacts("unknown");
   const catalogue = useMemo(() => examples ?? listExampleProjects(), [examples]);
   const [pending, setPending] = useState<ExampleProject | null>(null);
   const [busy, setBusy] = useState(false);
@@ -241,7 +305,7 @@ export function ExampleLibrary({
             it"), which is a sentence about the TAG and so cannot go stale against the file
             the way a hand-written per-example claim would.
           */}
-          <ExampleBadges example={example} />
+          <ExampleBadges example={example} host={machine} />
           <span className={styles.cardMeta}>{example.nodeCount} nodes</span>
           {example.description === "" ? null : (
             <span className={styles.cardText}>{example.description}</span>
@@ -280,7 +344,7 @@ export function ExampleLibrary({
               >
                 <span className={styles.itemTitle}>{example.name}</span>
                 <span className={styles.itemMeta}>{example.nodeCount} nodes</span>
-                <ExampleBadges example={example} row />
+                <ExampleBadges example={example} row host={machine} />
               </button>
               {/*
                 T1278 — the SHARE half of the feature, a sibling button rather than

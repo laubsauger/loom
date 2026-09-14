@@ -317,3 +317,52 @@ export function describeRequirementProblem(
     suggestion: `${unmet.map((entry) => entry.requirement.description).join(" ")}${unverified}`,
   };
 }
+
+/**
+ * T1341b — CAN *THIS* MACHINE RUN IT, as one sentence and one blocking requirement, for a
+ * surface that must answer BEFORE anything is opened.
+ *
+ * Returns null when the answer is "yes" — the mark is absent for the overwhelming majority,
+ * which is what makes it worth noticing on the few.
+ *
+ * ## Why this is not `describeRequirementProblem`
+ *
+ * That one is the NODE's warning and skips `liveState` requirements, because three device
+ * pumps narrate the helper per node with far more than it knows. THIS one is a list row: it
+ * has no pump to defer to, and "needs the device helper" is exactly the thing the reader
+ * wants to know before spending a click. So the helper IS counted here, and its
+ * not-yet-probed state is what makes the third verdict do real work — on a page that has
+ * not opened a bridge socket, a helper example is `unknown`, not `unmet`.
+ *
+ * ## `blocking` is what carries the COLOUR
+ *
+ * One requirement, not a set: the mark is a glyph, and a glyph can wear one hue. Unmet
+ * outranks unverifiable, and within each the canonical order decides — so the answer is
+ * stable for a given document and machine rather than depending on node order.
+ */
+export function describeRunVerdict(
+  assessments: readonly RequirementAssessment[],
+): { readonly verdict: "unmet" | "unknown"; readonly blocking: RuntimeRequirement; readonly summary: string } | null {
+  const unmet = assessments.filter((entry) => entry.verdict === "unmet");
+  const unknown = assessments.filter((entry) => entry.verdict === "unknown");
+  if (unmet.length > 0) {
+    return {
+      verdict: "unmet",
+      blocking: unmet[0]!.requirement,
+      // §V93's grain, said out loud: the row still OPENS. An example that cannot run here
+      // is still its own documentation — the graph, the claims and the prose are worth
+      // reading on any machine, and a disabled row teaches none of it.
+      summary: `Will not run on this machine — needs ${tags(unmet.map((entry) => entry.requirement.label))}. It still opens and reads.`,
+    };
+  }
+  if (unknown.length > 0) {
+    return {
+      verdict: "unknown",
+      blocking: unknown[0]!.requirement,
+      // ⚠ NOT a tick and NOT a warning. Claiming this will work is §V986's confident zero
+      // in a new costume: the reader believes it, opens it, and finds out.
+      summary: `Cannot tell from here — ${tags(unknown.map((entry) => entry.requirement.label))} is not something this page can check.`,
+    };
+  }
+  return null;
+}

@@ -88,7 +88,8 @@ import { useMidiInput } from "./use-midi-input.ts";
 import { useOscBridge } from "./use-osc-bridge.ts";
 import { useLaserBridge } from "./use-laser-bridge.ts";
 import { useVisionBridge } from "./use-vision-bridge.ts";
-import { helperFactFrom, readHostFacts, useRequirementDiagnostics } from "./use-requirement-diagnostics.ts";
+import { helperFactFrom, useRequirementDiagnostics } from "./use-requirement-diagnostics.ts";
+import { pageHostFacts } from "@devices/host-shell.ts";
 import type { LoomBackend } from "@runtime/backend/index.ts";
 import { useMediaSources } from "./use-media-sources.ts";
 import { useNativeInputs } from "./use-native-inputs.ts";
@@ -640,7 +641,7 @@ export function App({
    * whenever nothing has asked for a device, it is `idle` — NOT PROBED — and that maps to
    * `unknown`, never to "the helper is not running" (§V986).
    */
-  const hostFacts = useMemo(() => readHostFacts(helperFactFrom(osc.state)), [osc.state]);
+  const hostFacts = useMemo(() => pageHostFacts(helperFactFrom(osc.state)), [osc.state]);
   /**
    * T1340b — "this node cannot run on this machine", as a REAL diagnostic. It joins both
    * lists below, so the node's badge, the problems pane and the dock's warning tally all
@@ -1673,10 +1674,13 @@ export function App({
            * where they were and must leave this where it was too.
            */
           onOpened={rememberOpenedExample}
+          /* T1341b — the live machine, helper state included, so a row can say whether THIS
+             tab will run it before anyone spends a click on finding out. */
+          host={hostFacts}
         />
       </ErrorBoundary>
     ),
-    [dirty.dirty, rememberOpenedExample, runtime.bus, runtime.invocation],
+    [dirty.dirty, hostFacts, rememberOpenedExample, runtime.bus, runtime.invocation],
   );
   const performancePane = useMemo(
     () => (

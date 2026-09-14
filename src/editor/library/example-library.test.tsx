@@ -5,7 +5,7 @@ import { alice, contextFor } from "@domain/commands/test-support.ts";
 import { createComponentHarness, graphOf } from "@domain/components/test-support.ts";
 import type { LoomBus } from "@domain/commands/bus.ts";
 import { installDomStubs } from "@ui/testing/install-dom-stubs.ts";
-import { runtimeRequirement } from "@domain/types/requirements.ts";
+import { runtimeRequirement, type HostFacts } from "@domain/types/requirements.ts";
 import { capabilityOf, listExampleProjects } from "./example-catalogue.ts";
 import { ExampleLibrary } from "./example-library.tsx";
 import { readExampleLink, resolveExampleLink } from "./example-link.ts";
@@ -500,5 +500,94 @@ describe("copying a link to an example (T1278)", () => {
     expect(opened).toEqual([]);
     // …and no confirmation dialog either: nothing was at risk.
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+/**
+ * T1341b — the row answers "will this run on MY machine" BEFORE anything is opened.
+ *
+ * Owner: *"they don't have to open it up and then look for a node with an error in there."*
+ *
+ * The verdict is a pure function of (requirements, host facts), so these run against FAKE
+ * hosts on the headless ladder rather than needing a browser per machine. jsdom resolves no
+ * custom properties, so what is asserted here is the ATTRIBUTE that carries the colour —
+ * the hue itself is measured in `example-requirements.spec.ts`.
+ */
+describe("T1341b — does this example run here", () => {
+  const BROWSER_MAC: HostFacts = { shell: "browser", helper: "unknown", os: "macos" };
+  const MAC_DESKTOP: HostFacts = { shell: "desktop", helper: "paired", os: "macos" };
+  const withRequirements = (...ids: Parameters<typeof runtimeRequirement>[0][]) =>
+    ({ ...EXAMPLE, requirements: ids.map(runtimeRequirement) });
+  const markIn = (name: RegExp) =>
+    within(screen.getByRole("button", { name })).queryByRole("img");
+
+  it("marks a desktop-only example unrunnable in a browser tab, in the blocking requirement's own colour", () => {
+    const { bus } = busWithOpen();
+    render(<ExampleLibrary bus={bus} context={context} dirty={false} host={BROWSER_MAC}
+      examples={[withRequirements("desktop", "macos")]} />);
+    const mark = markIn(/^E9 Test/);
+    expect(mark).not.toBeNull();
+    // The hue comes from the CATEGORY of what is blocking — the same four tokens the tag
+    // beside it wears, so there is one vocabulary and not two.
+    expect(mark!.getAttribute("data-verdict")).toBe("unmet");
+    expect(mark!.getAttribute("data-category")).toBe("host");
+    expect(mark!.getAttribute("aria-label")).toContain("Will not run on this machine");
+    // §V93 and the owner's own constraint: NOT DISABLED. The graph, the claims and the
+    // prose read identically on a machine that cannot run it, and a disabled row teaches
+    // none of that.
+    expect((screen.getByRole("button", { name: /^E9 Test/ }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("says nothing at all about an example this machine can run", () => {
+    const { bus } = busWithOpen();
+    render(<ExampleLibrary bus={bus} context={context} dirty={false} host={MAC_DESKTOP}
+      examples={[withRequirements("desktop", "macos"), OTHER]} />);
+    // Absence is the default and is what makes the mark worth noticing on the few rows that
+    // carry it. Both the satisfied example and the one that declares nothing stay unmarked.
+    expect(markIn(/^E9 Test/)).toBeNull();
+    expect(markIn(/^E12 Other/)).toBeNull();
+  });
+
+  it("renders CANNOT TELL as cannot-tell, never as a pass", () => {
+    /* ⚑ §V986's confident zero in a new costume: an NDI SDK is a machine install a browser
+       cannot see, so on a Mac desktop every OTHER requirement of E72 checks out and the
+       honest answer is still "we do not know". A row with no mark would have told the user
+       it works, and they would have found out by opening it. */
+    const { bus } = busWithOpen();
+    render(<ExampleLibrary bus={bus} context={context} dirty={false} host={MAC_DESKTOP}
+      examples={[withRequirements("desktop", "macos", "ndi-sdk")]} />);
+    const mark = markIn(/^E9 Test/);
+    expect(mark!.getAttribute("data-verdict")).toBe("unknown");
+    // And it takes NO category hue: a tinted "?" would imply the page knows which way it
+    // goes. The sentence names what could not be checked.
+    expect(mark!.getAttribute("data-category")).toBeNull();
+    expect(mark!.getAttribute("aria-label")).toContain(runtimeRequirement("ndi-sdk").label);
+  });
+
+  it("does not call an unprobed helper absent", () => {
+    // The third state doing real work: this page has opened no bridge socket, so a helper
+    // example is "cannot tell", not "will not run" — and it becomes "will not run" only
+    // once something has actually looked.
+    const { bus } = busWithOpen();
+    const example = withRequirements("helper", "macos");
+    const { rerender } = render(<ExampleLibrary bus={bus} context={context} dirty={false}
+      host={{ shell: "browser", helper: "unknown", os: "macos" }} examples={[example]} />);
+    expect(markIn(/^E9 Test/)!.getAttribute("data-verdict")).toBe("unknown");
+    rerender(<ExampleLibrary bus={bus} context={context} dirty={false}
+      host={{ shell: "browser", helper: "absent", os: "macos" }} examples={[example]} />);
+    expect(markIn(/^E9 Test/)!.getAttribute("data-verdict")).toBe("unmet");
+    rerender(<ExampleLibrary bus={bus} context={context} dirty={false}
+      host={{ shell: "browser", helper: "paired", os: "macos" }} examples={[example]} />);
+    expect(markIn(/^E9 Test/)).toBeNull();
+  });
+
+  it("stays silent when it could not read the file at all", () => {
+    // "Requirements unknown" is already on the row and is a stronger statement than the
+    // mark's: we do not know what the file NEEDS, let alone whether this machine has it.
+    const { bus } = busWithOpen();
+    render(<ExampleLibrary bus={bus} context={context} dirty={false} host={BROWSER_MAC}
+      examples={[{ ...EXAMPLE, requirementsError: "Unavailable component definition" }]} />);
+    expect(markIn(/^E9 Test/)).toBeNull();
+    expect(within(screen.getByRole("button", { name: /^E9 Test/ })).getByText("Requirements unknown")).toBeDefined();
   });
 });

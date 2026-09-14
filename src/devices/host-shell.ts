@@ -1,3 +1,5 @@
+import type { HostFacts } from "@domain/types/requirements.ts";
+
 /**
  * T1340b — WHAT SHELL AND WHAT MACHINE, as two probes rather than as guesses scattered
  * through the surfaces that ask.
@@ -55,4 +57,16 @@ export function hostOperatingSystem(): HostOperatingSystem {
   if (hinted === null) return legacy ?? "unknown";
   if (legacy === null) return hinted;
   return hinted === legacy ? hinted : "unknown";
+}
+
+/**
+ * The machine, as THIS PAGE can honestly establish it.
+ *
+ * The helper is the caller's to supply, because it is the one fact that is not a property
+ * of the page: it is a live socket state owned by the device bridge, with three values
+ * (§V986). A caller that has not got it passes `"unknown"`, which is true rather than
+ * convenient — a surface with no bridge in reach genuinely has not probed one.
+ */
+export function pageHostFacts(helper: HostFacts["helper"]): HostFacts {
+  return { shell: desktopShellPresent() ? "desktop" : "browser", helper, os: hostOperatingSystem() };
 }

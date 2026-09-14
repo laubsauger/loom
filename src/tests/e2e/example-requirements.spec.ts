@@ -104,3 +104,47 @@ test("a Syphon node opened in a browser tab carries the warning on the node", as
     .toContainText(/Syphon In cannot run on this machine/);
   await page.screenshot({ path: testInfo.outputPath("syphon-node-warning.png") });
 });
+
+/**
+ * T1341b — WHERE THE MARK GOES IS A §V1016 QUESTION, AND THE ROW HAS A TRAP IN IT.
+ *
+ * `.exampleRow` is a three-track grid whose every cell pins `grid-row: 1`, because grid
+ * auto-placement is SPARSE: a new cell that names a column and no row lands on row TWO, and
+ * the list reads as two lines again (§T1278, fixed the same night). The mark is deliberately
+ * NOT a grid item — it is a flex child of the badge strip, which is already one pinned cell
+ * — and this is what proves that rather than asserting it in a comment: the mark's top must
+ * line up with the title's, at every width, and the row must never scroll sideways.
+ *
+ * jsdom lays out no grid and no flex, so none of this is knowable on the test ladder, and a
+ * screenshot at ONE width cannot distinguish a fix from a non-fix.
+ */
+test("the run-here mark shares the title's row and never widens it, across a width sweep", async ({ page }) => {
+  await openApp(page);
+  await page.getByRole("tab", { name: "examples", exact: true }).click();
+  const report: string[] = [];
+  for (const width of [1440, 1280, 1100, 960, 820]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const name of ["E71 Syphon Loopback", "E72 NDI Loopback", "E74 Spout Loopback Preparation"]) {
+      const row = page.getByRole("button", { name: new RegExp(`^${name}`) });
+      await row.scrollIntoViewIfNeeded();
+      const measured = await row.evaluate((element) => {
+        const mark = element.querySelector<HTMLElement>('[role="img"]');
+        const title = element.firstElementChild as HTMLElement;
+        return {
+          overflow: element.scrollWidth - element.clientWidth,
+          markTop: mark?.getBoundingClientRect().top ?? null,
+          titleTop: title.getBoundingClientRect().top,
+          rowHeight: element.getBoundingClientRect().height,
+        };
+      });
+      report.push(`${width}px ${name}: overflow ${measured.overflow}px, height ${Math.round(measured.rowHeight)}px`);
+      // The mark exists on all three of these — every one declares something a browser tab
+      // cannot satisfy — so a null here is the mark having gone missing, not a pass.
+      expect(measured.markTop, `${name} at ${width}px has no mark`).not.toBeNull();
+      // ONE LINE: the mark's box overlaps the title's, which a row-two cell cannot do.
+      expect(Math.abs(measured.markTop! - measured.titleTop), `${name} at ${width}px`).toBeLessThan(14);
+      expect(measured.overflow, `${name} at ${width}px`).toBeLessThanOrEqual(1);
+    }
+  }
+  console.log(report.join("\n"));
+});
