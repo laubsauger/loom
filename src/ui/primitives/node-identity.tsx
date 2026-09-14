@@ -1,6 +1,48 @@
 import { cx } from "../cx.ts";
 import styles from "./node-identity.module.css";
 
+export interface TypeBadgeProps {
+  /** The machine type or capability the badge names. Rendered verbatim. */
+  label: string;
+  /** T964's subtle tint, keyed off a declared category. Absent means the default. */
+  readonly category?: string | undefined;
+  /** Layout the surface owns. The badge's own chrome is NOT the surface's to restate. */
+  className?: string | undefined;
+  /** Hover copy, per §V90 — help hangs off the label, on demand. */
+  title?: string | undefined;
+  /**
+   * What the badge IS, for surfaces that are asked "which of these words is the machine
+   * type?". `NodeIdentity` marks its badge as the addressable name; a surface naming
+   * something else (a derived facet, say) passes its own attribute or none.
+   */
+  readonly machineType?: string | undefined;
+}
+
+/**
+ * The small quiet badge — T954's chrome, extracted so it can be WORN rather than copied.
+ *
+ * ⚑ EXTRACTED BECAUSE `NodeIdentity`'S OWN DOCBLOCK ASKED FOR IT: "share the STRUCTURE,
+ * not just the stylesheet, or the surfaces drift apart again." The example library had
+ * grown its own pill — same intent, different border radius, its own line height, a
+ * hand-kept colour — and the owner read the two side by side and said so. A second
+ * implementation of a badge is a second answer to "what does a facet look like here".
+ *
+ * The badge owns border, radius, mono, size, case and tint. The surface owns layout and
+ * nothing else.
+ */
+export function TypeBadge({ label, category, className, title, machineType }: TypeBadgeProps) {
+  return (
+    <span
+      {...(category === undefined ? {} : { "data-category": category })}
+      className={cx(styles.type, className)}
+      {...(machineType === undefined ? {} : { "data-machine-type": machineType })}
+      {...(title === undefined ? {} : { title })}
+    >
+      {label}
+    </span>
+  );
+}
+
 export interface NodeIdentityProps {
   /**
    * T964: the node's declared category, rendered as a subtle tint on the type badge.
@@ -64,16 +106,17 @@ export function NodeIdentity({
       >
         {name}
       </span>
-      <span
-        {...(category === undefined ? {} : { "data-category": category })}
-        className={cx(styles.type, typeClassName)}
-        // The badge is the ADDRESSABLE name — marked in the DOM so a surface can be
-        // asked "which of these words is the machine type?" without guessing at classes.
-        data-machine-type={type}
+      {/*
+        The badge is the ADDRESSABLE name — marked in the DOM so a surface can be asked
+        "which of these words is the machine type?" without guessing at classes.
+      */}
+      <TypeBadge
+        label={type}
+        machineType={type}
+        {...(category === undefined ? {} : { category })}
+        {...(typeClassName === undefined ? {} : { className: typeClassName })}
         {...(typeTitle === undefined ? {} : { title: typeTitle })}
-      >
-        {type}
-      </span>
+      />
     </>
   );
 }

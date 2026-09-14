@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { LoomBus } from "@domain/commands/bus.ts";
 import type { InvocationContext } from "@domain/types/commands.ts";
 import { Button } from "@ui/primitives/button.tsx";
+import { TypeBadge } from "@ui/primitives/node-identity.tsx";
 import {
   DialogContent,
   DialogDescription,
@@ -18,21 +19,35 @@ import { filterExamples } from "./example-search.ts";
 import { categoriesOf } from "./search.ts";
 import styles from "./library.module.css";
 
+/**
+ * The facets an example carries — requirements first, then capabilities.
+ *
+ * ⚑ THESE WEAR `TypeBadge`, THE SAME BADGE THE NODE LIST USES, AND OWN NO CHROME OF THEIR
+ * OWN. They used to be a hand-built pill: same intent, different border radius, its own
+ * line height, its own size. The owner put the two lists side by side and named it — a
+ * second implementation of a badge is a second answer to "what does a facet look like in
+ * this app", and the two had already drifted. `NodeIdentity`'s own docblock had asked for
+ * this in advance: share the STRUCTURE, not just the stylesheet.
+ *
+ * What stays local is the one thing the badge cannot know: a requirement is a WARNING,
+ * not a facet, so it keeps a tint of its own over the shared chrome.
+ */
 function ExampleBadges({ example, row = false }: { example: ExampleProject; row?: boolean }) {
   return <span className={`${styles.cardTags} ${row ? styles.exampleBadges : ""}`}>
     {example.requirementsError === undefined ? null : (
-      <span className={`${styles.cardTag} ${styles.requirementTag}`} title={example.requirementsError}>
-        Requirements unknown
-      </span>
+      <TypeBadge label="Requirements unknown" className={styles.requirementTag} title={example.requirementsError} />
     )}
     {example.requirements.map(requirement => (
-      <span className={`${styles.cardTag} ${styles.requirementTag}`} key={requirement.id} title={requirement.description}>
-        {requirement.label}
-      </span>
+      <TypeBadge
+        key={requirement.id}
+        label={requirement.label}
+        className={styles.requirementTag}
+        title={requirement.description}
+      />
     ))}
     {example.tags.map(tag => {
       const capability = capabilityOf(tag);
-      return <span className={styles.cardTag} key={tag} title={capability.meaning}>{capability.label}</span>;
+      return <TypeBadge key={tag} label={capability.label} title={capability.meaning} />;
     })}
   </span>;
 }

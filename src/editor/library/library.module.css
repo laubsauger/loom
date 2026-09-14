@@ -335,21 +335,15 @@
 }
 
 .exampleBadges .cardTag {
-  max-width: 100%;
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-
-.cardTag.requirementTag {
-  color: var(--warn);
-  border-color: var(--warn);
-}
-
-.version {
-  color: var(--signal);
-  font-family: var(--font-mono);
-  font-size: var(--fs-micro);
-  white-space: nowrap;
+  /*
+    ⚑ EMPTY ON PURPOSE — AND KEPT AS A HOOK, NOT AS CHROME. These facets wear `TypeBadge`
+    now (`example-library.tsx`), the same badge the node list uses, so border, radius,
+    mono, size, case and tint all come from ONE place. What used to live here was a second
+    implementation of that badge: the same intent with a different border radius and its
+    own line height, which is exactly the drift `NodeIdentity`'s docblock warned about.
+    The class stays so the hover card's tests and the requirement tint have something to
+    address; it must not re-acquire a single property the badge already owns.
+  */
 }
 
 .notice {
