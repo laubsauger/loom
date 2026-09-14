@@ -126,9 +126,23 @@
  *
  * One row per fact meant the value sat flush right against a pane that can be 1800px
  * wide, so every row was a label, a horizon of nothing, and a two-character value. The
- * columns are laid out by WIDTH rather than by a breakpoint because this lives in a
- * resizable dock: `auto-fit` gives as many columns as fit and collapses to one when the
- * pane is narrow, with no media query to keep in sync with the splitter.
+ * facts are laid out by WIDTH rather than by a breakpoint because this lives in a
+ * resizable dock: WRAPPED FLEX fits as many per line as the width allows and falls to
+ * one per line when the pane is narrow, with no media query to keep in sync with the
+ * splitter.
+ *
+ * ⚑ THIS PARAGRAPH SAID `auto-fit` UNTIL SOMEONE READ IT AGAINST THE RULE. There is no
+ * grid here and there never was — `display: flex; flex-wrap: wrap` below. The BEHAVIOUR
+ * the old wording promised is what happens, which is why the drift survived: a comment
+ * that describes the right outcome by the wrong mechanism reads as correct and sends the
+ * next reader hunting for a grid template that does not exist. It matters here more than
+ * most, because grid and wrapped flex fail DIFFERENTLY — grid auto-placement is sparse,
+ * so a cell naming a column but no row lands on the next row, and someone debugging this
+ * block against the wrong model would go looking for exactly that.
+ *
+ * Measured across ten pane widths: one 33px line down to ~500px, the title wrapping off
+ * first at ~420, two fact lines to ~220, one fact per line below ~180 — and
+ * `scrollWidth - clientWidth` is 0 at every width down to 140px. It wraps; it never clips.
  */
 .facts {
   display: flex;
