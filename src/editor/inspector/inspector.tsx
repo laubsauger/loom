@@ -992,7 +992,8 @@ export function Inspector({
      section's tags cannot disagree with the library's or with the node's warning. */
   const syphonSection = nativeInputTransport ? <NativeInputSection nodeId={node.id} transport={nativeInputTransport}
     requirements={nodeRuntimeRequirements(definition, resolved.values)}
-    source={typeof resolved.values["source"] === "string" ? resolved.values["source"] as string : ""} editor={editor} /> : null;
+    source={typeof resolved.values["source"] === "string" ? resolved.values["source"] as string : ""} editor={editor}
+    identity={"sourceName" in resolved.values ? { app: String(resolved.values["sourceApp"] ?? ""), name: String(resolved.values["sourceName"] ?? "") } : undefined} /> : null;
 
   /* T942: the controller gets its learn table and its ONE honest sentence about why there
      is no MIDI — keyed on the node TYPE, as the mic and camera sections are. */
