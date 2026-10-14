@@ -99,14 +99,25 @@ describe("native output display encode", () => {
   ] as const)("%s %s under %o encodes: %s", (format, space, policy, expected) => {
     expect(nativeOutputEncodes({ format, space }, policy)).toBe(expected);
   });
-  it("presents with the encode and refuses to change it in place", () => {
-    const presentation = { setOutput: vi.fn(), dispose: vi.fn() };
-    const present = vi.fn(() => presentation);
+  it("swaps the presentation in place on an encode change, and the frame count never drops", () => {
+    const made: Array<{ setOutput: ReturnType<typeof vi.fn>; dispose: ReturnType<typeof vi.fn>; describe: () => { presentedFrames: number } }> = [];
+    const present = vi.fn(() => {
+      const handle = { setOutput: vi.fn(), dispose: vi.fn(), describe: () => ({ presentedFrames: 5 }) };
+      made.push(handle); return handle;
+    });
     const canvas = { width: 0, height: 0, getContext: () => null };
     const attached = attachNativeOutput({ present } as unknown as LoomBackend, { resourceId: "a", size: [4, 4], encode: true }, canvas);
-    expect(present).toHaveBeenCalledWith(canvas, { outputId: "a", label: "native-sdr-output", displayEncode: true });
+    expect(present).toHaveBeenLastCalledWith(canvas, { outputId: "a", label: "native-sdr-output", displayEncode: true });
     attached.update({ resourceId: "b", size: [4, 4], encode: true });
-    expect(presentation.setOutput).toHaveBeenCalledWith("b");
-    expect(() => attached.update({ resourceId: "b", size: [4, 4], encode: false })).toThrow("cannot change in place");
+    expect(made[0]!.setOutput).toHaveBeenCalledWith("b");
+    expect(present).toHaveBeenCalledTimes(1);
+    expect(attached.presentedFrames()).toBe(5);
+    attached.update({ resourceId: "c", size: [8, 8], encode: false });
+    expect(made[0]!.dispose).toHaveBeenCalledOnce();
+    expect(present).toHaveBeenLastCalledWith(canvas, { outputId: "c", label: "native-sdr-output", displayEncode: false });
+    expect([canvas.width, canvas.height]).toEqual([8, 8]);
+    expect(attached.presentedFrames()).toBe(10);
+    attached.dispose();
+    expect(made[1]!.dispose).toHaveBeenCalledOnce();
   });
 });

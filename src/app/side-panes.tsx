@@ -49,6 +49,8 @@ import { useOutputPresentation } from "./use-output-presentation.ts";
 import type { ScreenCaptureWiring } from "./use-screen-sources.ts";
 import { useViewerSynthesis } from "./use-viewer-synthesis.ts";
 import { useNativeOutput } from "./use-native-output.ts";
+import { nativeOutputSelectionOf } from "@devices/native-output.ts";
+import { colorPolicyOf } from "@domain/color/display.ts";
 import { useViewCameraOverride } from "./use-view-camera.ts";
 import { useViewerMapping, VIEWER_MAPPING_HINT, VIEWER_MAPPING_HINT_ON } from "./use-viewer-mapping.ts";
 import type { LiveReads } from "./perform-mapping.ts";
@@ -612,7 +614,7 @@ export function ViewerPane({
 }: ViewerPaneProps) {
   // T726: `documentIdentity` — WHICH document the pin below was made in. Taken from the
   // runtime because the runtime IS the loaded document (`adoptDocument`, `app.tsx`).
-  const { bus, documentIdentity, invocation, registry } = useAppRuntime();
+  const { bus, documentIdentity, invocation, registry, settings } = useAppRuntime();
   const outputs = useMemo(() => compiled?.outputs ?? [], [compiled]);
   // Selection is a demand, not evidence that a node is already being cooked.
   // Keep declared preview outputs selectable while visibility prunes their GPU work.
@@ -800,7 +802,13 @@ export function ViewerPane({
     ...(orbits === undefined ? {} : { orbits }),
     liveOutputs,
   });
-  const nativeOutput = useNativeOutput(backend, selected, documentIdentity, bus);
+  // VNB25: what the Output node would show for the pinned output, as the graph's own
+  // Syphon/NDI Out nodes send it (`nativeOutputSelectionOf`).
+  const nativeSelection = useMemo(
+    () => (selected === null ? null : nativeOutputSelectionOf(selected, colorPolicyOf(settings))),
+    [selected, settings],
+  );
+  const nativeOutput = useNativeOutput(backend, nativeSelection, documentIdentity, bus);
   /*
    * §T1536b (viewer slice) — EDIT MAPPING over this picture: the perform window's layer in a
    * host box over the frame (`use-viewer-mapping.ts` decides which node's handles, and the

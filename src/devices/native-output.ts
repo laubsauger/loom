@@ -12,8 +12,7 @@ export interface NativeOutputSelection {
   readonly size: readonly [number, number];
   /**
    * VNB25: the presentation blit applies the display encode (`nativeOutputEncodes`). Absent
-   * is the raw copy — what the viewer's own native-output toggle (`use-native-output.ts`)
-   * still sends; it is not this lane's path.
+   * is the raw copy. Every product caller sets it, through `nativeOutputSelectionOf`.
    */
   readonly encode?: boolean;
 }
@@ -64,7 +63,15 @@ export function nativeOutputSelection(
 ): NativeOutputSelection | null {
   const edge = Object.values(graph.edges).find(edge => edge.target.nodeId === nodeId && edge.target.portId === "input");
   const source = outputs.find(output => output.nodeId === edge?.source.nodeId && output.portId === edge.source.portId);
-  return source ? { resourceId: source.resourceId, size: source.size, encode: nativeOutputEncodes(source, policy) } : null;
+  return source ? nativeOutputSelectionOf(source, policy) : null;
+}
+
+/** The selection for one known source row: the viewer's pinned output, or a wired input. */
+export function nativeOutputSelectionOf(
+  source: Pick<NativeOutputSource, "resourceId" | "size" | "format" | "space">,
+  policy: ColorPolicy,
+): NativeOutputSelection {
+  return { resourceId: source.resourceId, size: source.size, encode: nativeOutputEncodes(source, policy) };
 }
 
 export interface DesktopOutputBridge {
@@ -87,26 +94,37 @@ export function desktopOutputBridge(transport: NativeOutputTransport = "syphon")
 export function attachNativeOutput(backend: LoomBackend, selection: NativeOutputSelection, canvas: PresentableCanvas) {
   canvas.width = selection.size[0]; canvas.height = selection.size[1];
   let disposed = false;
-  const encode = selection.encode === true;
-  const presentation = backend.present(canvas, { outputId: selection.resourceId, label: "native-sdr-output", displayEncode: encode });
+  let encode = selection.encode === true;
+  const present = (outputId: string) =>
+    backend.present(canvas, { outputId, label: "native-sdr-output", displayEncode: encode });
+  let presentation = present(selection.resourceId);
+  const framesOf = (handle: typeof presentation) => {
+    if (!handle.describe) throw new Error("Native output requires presentation progress diagnostics");
+    return handle.describe().presentedFrames;
+  };
+  // Frames presented by retired presentations, so the count the pump compares never drops.
+  let carried = 0;
   const dispose = () => {
     if (disposed) return;
     disposed = true;
     presentation.dispose();
   };
   return {
-    presentedFrames() {
-      if (!presentation.describe) throw new Error("Native output requires presentation progress diagnostics");
-      return presentation.describe().presentedFrames;
-    },
+    presentedFrames: () => carried + framesOf(presentation),
     update(next: NativeOutputSelection) {
       if (disposed) throw new Error("Native output is closed");
-      // The blit's shader is fixed for the presentation's life: a change of encode is a new
-      // session (`use-native-outputs.ts` keys the session on it), never an in-place update.
-      if ((next.encode === true) !== encode) throw new Error("Native output display encode cannot change in place");
       if (canvas.width !== next.size[0]) canvas.width = next.size[0];
       if (canvas.height !== next.size[1]) canvas.height = next.size[1];
-      presentation.setOutput(next.resourceId);
+      const nextEncode = next.encode === true;
+      if (nextEncode === encode) { presentation.setOutput(next.resourceId); return; }
+      // VNB25: the blit's shader is fixed for a presentation's life, so a change of encode
+      // (a rewire between a linear and an encoded source, a display-transform setting)
+      // replaces the PRESENTATION on the same canvas. The native session, its publisher
+      // name and the receivers subscribed to it stay as they are.
+      carried += framesOf(presentation);
+      presentation.dispose();
+      encode = nextEncode;
+      presentation = present(next.resourceId);
     },
     dispose,
   };

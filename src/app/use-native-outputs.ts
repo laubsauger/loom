@@ -47,9 +47,9 @@ export function useNativeOutputs(runtime: AppRuntime, backend: LoomBackend | nul
         const transport = NATIVE_OUTPUT_TRANSPORTS[node.type];
         if (!transport) throw new Error(`No native output transport for ${node.type}`);
         return { id: node.id, definition, transport, name: String(values["name"]), enabled,
-          // VNB25: the blit's encode is fixed for a presentation's life, so a change of it
-          // (a rewire to an encoded source, a display-transform setting) opens a new session.
-          selection, selectionKey: JSON.stringify(selection), key: JSON.stringify([transport, values, selection?.encode]) };
+          // VNB25: a change of encode is a selection change: `attachNativeOutput` swaps the
+          // presentation in place and the publisher stays up.
+          selection, selectionKey: JSON.stringify(selection), key: JSON.stringify([transport, values]) };
       });
   }, [graph, compiled, runtime.registry, runtime.bus, runtime.settings]);
   const latest = useRef(requests); latest.current = requests;

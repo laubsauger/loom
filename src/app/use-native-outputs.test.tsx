@@ -222,28 +222,24 @@ it("§T1559b — Publish driven by an expression opens and closes on the resolve
 /*
  * VNB25: a native output sends what the Output node would show. The selection says whether
  * the presentation blit encodes, from the space the compiler published for the SOURCE and
- * the project's display transform — and a change of it is a new session, never an update,
- * because the blit's shader is fixed for a presentation's life.
+ * the project's display transform. A change of it is a selection update: the publisher
+ * stays up and `attachNativeOutput` swaps the presentation.
  */
-it.each(["syphonOut", "ndiOut", "spoutOut"])("%s encodes a linear source, passes encoded and data through, and reopens on a change", async type => {
+it.each(["syphonOut", "ndiOut", "spoutOut"])("%s encodes a linear source, passes encoded and data through, and keeps its publisher on a change", async type => {
   const h = setup(type);
   const withSource = (format: string, space: string) => ({ ...h.compiled,
     outputs: h.compiled.outputs.map(output => ({ ...output, format, space })) }) as unknown as CompiledGraph;
   const linear = withSource("rgba16float", "linear");
   h.view.rerender({ graph: h.graph, compiled: linear }); await h.tick(); await h.tick();
-  const selections = () => vi.mocked(createNativeOutputSession).mock.calls.map(call => call[2]);
-  expect(selections().at(-1)).toEqual({ resourceId: "source:out", size: [1920, 1080], encode: true });
-  let current: boolean = true;
+  expect(vi.mocked(createNativeOutputSession).mock.calls.at(-1)![2]).toEqual({ resourceId: "source:out", size: [1920, 1080], encode: true });
+  const session = h.sessions.at(-1)!;
   for (const [format, space, encode] of [["rgba16float", "encoded", false], ["rgba16float", "data", false],
     ["rgba8unorm-srgb", "linear", false], ["rgba8unorm", "linear", true]] as const) {
-    const previous = h.sessions.at(-1)!;
     h.view.rerender({ graph: h.graph, compiled: withSource(format, space) }); await h.tick(); await h.tick();
-    const changed = encode !== current; current = encode;
-    expect(previous.close).toHaveBeenCalledTimes(changed ? 1 : 0);
-    if (changed) expect(selections().at(-1)).toEqual({ resourceId: "source:out", size: [1920, 1080], encode });
-    else expect(h.sessions.at(-1)).toBe(previous); // the same picture: the same publisher
+    expect(vi.mocked(session.update).mock.calls.at(-1)?.[0]).toEqual({ resourceId: "source:out", size: [1920, 1080], encode });
   }
-  expect(h.sessions).toHaveLength(3);
+  expect(h.sessions.at(-1)).toBe(session);
+  expect(session.close).not.toHaveBeenCalled();
   // `displayTransform: "none"` is raw values out at the Output node, so here too.
   await act(async () => {
     const result = await h.runtime.bus.execute("project.setSettings",
@@ -251,5 +247,5 @@ it.each(["syphonOut", "ndiOut", "spoutOut"])("%s encodes a linear source, passes
     expect(result.status).toBe("applied");
   });
   h.view.rerender({ graph: h.graph, compiled: linear }); await h.tick(); await h.tick();
-  expect(selections().at(-1)).toEqual({ resourceId: "source:out", size: [1920, 1080], encode: false });
+  expect(vi.mocked(session.update).mock.calls.at(-1)![0]).toEqual({ resourceId: "source:out", size: [1920, 1080], encode: false });
 });

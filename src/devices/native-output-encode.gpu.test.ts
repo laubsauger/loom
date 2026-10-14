@@ -138,23 +138,35 @@ async function publish(workingFormat: ProjectSettings["workingFormat"]) {
       // The Output node's own target, `encoded`: a native output of it must not encode again.
       output: { resourceId: outputRow.resourceId, size: outputRow.size, encode: nativeOutputEncodes(outputRow, DEFAULT_COLOR_POLICY) },
     };
+    const attached: Record<string, ReturnType<typeof attachNativeOutput>> = {};
     const surfaces = Object.fromEntries(Object.entries(selections).map(([key, selection]) => {
       if (selection === null) throw new Error(`${key} selected nothing`);
       const canvas = stubCanvas(device); canvases.push(canvas);
-      attachNativeOutput(backend, selection, canvas as never);
+      attached[key] = attachNativeOutput(backend, selection, canvas as never);
       return [key, canvas];
     })) as Record<keyof typeof selections, ReturnType<typeof stubCanvas>>;
-    backend.render(compiled, { frame: { timeSeconds: 0, deltaSeconds: 1 / 60, frameIndex: 0, mode: "offline", randomSeed: 1 },
-      pointer: { x: 0, y: 0, buttons: 0 }, resolution: [SIZE, SIZE] });
-    await device.queue.onSubmittedWorkDone();
-    const bytes: Record<string, Uint8Array> = {};
-    for (const [key, canvas] of Object.entries(surfaces)) {
-      const texture = canvas.texture();
+    const render = async (frameIndex: number) => {
+      backend.render(compiled, { frame: { timeSeconds: frameIndex / 60, deltaSeconds: 1 / 60, frameIndex, mode: "offline", randomSeed: 1 },
+        pointer: { x: 0, y: 0, buttons: 0 }, resolution: [SIZE, SIZE] });
+      await device.queue.onSubmittedWorkDone();
+    };
+    const read = async (key: keyof typeof selections) => {
+      const texture = surfaces[key].texture();
       if (texture === undefined) throw new Error(`${key} surface unconfigured`);
-      bytes[key] = await readTexture(device, texture);
-    }
+      return readTexture(device, texture);
+    };
+    await render(0);
+    const bytes: Record<string, Uint8Array> = {};
+    for (const key of Object.keys(surfaces) as Array<keyof typeof selections>) bytes[key] = await read(key);
+    // The in-place swap a change of encode makes (a rewire, a display-transform setting):
+    // the same canvas, a new presentation, and a frame count that keeps climbing.
+    const frames = [attached["syphonSolid"]!.presentedFrames()];
+    attached["syphonSolid"]!.update({ ...selections.syphonSolid!, encode: false });
+    await render(1);
+    frames.push(attached["syphonSolid"]!.presentedFrames());
+    bytes["syphonSolidRaw"] = await read("syphonSolid");
     expect(errors).toEqual([]);
-    return { plan, selections, bytes };
+    return { plan, selections, bytes, frames };
   } finally {
     backend.dispose();
     for (const canvas of canvases) canvas.texture()?.destroy();
@@ -169,7 +181,7 @@ const rgbaAt = (bytes: Uint8Array, x: number) => {
 
 it("Syphon Out of a linear 0.5 source publishes the Output node's 188, not the raw 128 (rgba16float)", async () => {
   if (dawnError !== undefined) throw new Error(`Dawn unavailable: ${dawnError}`);
-  const { plan, selections, bytes } = await publish("rgba16float");
+  const { plan, selections, bytes, frames } = await publish("rgba16float");
   const solid = plan.outputs.find(row => row.nodeId === "solid_half")!;
   expect([solid.format, solid.space]).toEqual(["rgba16float", "linear"]);
   expect(selections.syphonSolid?.encode).toBe(true);
@@ -177,6 +189,9 @@ it("Syphon Out of a linear 0.5 source publishes the Output node's 188, not the r
   expect(srgbToLinear(LINEAR_HALF_AS_DISPLAY)).toBeCloseTo(0.5, 12);
   expect(ENCODED_HALF).toBe(188);
   for (const x of [0, 3, 7]) expect(rgbaAt(bytes["syphonSolid"]!, x)).toEqual([188, 188, 188, 255]);
+  // Swapped in place to the raw copy: the pre-VNB25 bytes, linear 0.5 as 127.5 rounded.
+  expect([127, 128]).toContain(rgbaAt(bytes["syphonSolidRaw"]!, 3)[0]);
+  expect(frames[1]).toBeGreaterThan(frames[0]!);
   // What the Output node shows for the same input, and a native output of THAT: one picture.
   expect(selections.output.encode).toBe(false);
   for (const x of [0, 3, 7]) expect(rgbaAt(bytes["output"]!, x)).toEqual([188, 188, 188, 255]);

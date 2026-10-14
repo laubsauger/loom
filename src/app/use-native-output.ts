@@ -51,15 +51,18 @@ export function useNativeOutput(backend: LoomBackend | null, selection: NativeOu
   }, [backend, close]);
   const resourceId = selection?.resourceId;
   const width = selection?.size[0]; const height = selection?.size[1];
+  // VNB25: the display encode follows the selected output; a change swaps the presentation
+  // in place (`attachNativeOutput`), so the publisher stays up.
+  const encode = selection?.encode === true;
   useEffect(() => {
     if (!session.current || !bridge) return;
     if (resourceId === undefined || width === undefined || height === undefined) { close(); return; }
     const owner = session.current;
-    owner.update({ resourceId, size: [width, height] });
+    owner.update({ resourceId, size: [width, height], encode });
     void bridge.resize(name.current, width, height).catch(error => {
       if (session.current === owner) { close(); setStatus(String(error)); }
     });
-  }, [resourceId, width, height, bridge, close]);
+  }, [resourceId, width, height, encode, bridge, close]);
   useEffect(() => {
     if (!active || !bridge) return;
     let retired = false;
