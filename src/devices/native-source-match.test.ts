@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nativeSourceLabel, resolveNativeSource } from "./native-source-match.ts";
+import { nativeSourceBindOperations, nativeSourceLabel, resolveNativeSource } from "./native-source-match.ts";
 
 /* VN113: the one rule for which live server a stored Syphon In means. Owner ruling
    (2026-10-10): by app + name, so a pipeline survives a publisher relaunch; the UUID only
@@ -48,5 +48,24 @@ describe("resolveNativeSource", () => {
   it("names a server as app – name", () => {
     expect(nativeSourceLabel({ app: "Arena", name: "LED FX" })).toBe("Arena – LED FX");
     expect(nativeSourceLabel({ app: "", name: "LED FX" })).toBe("LED FX");
+  });
+});
+
+describe("VN113 nativeSourceBindOperations", () => {
+  const bind = { source: "u2", sourceApp: "Arena", sourceName: "DS" };
+  it("a root node patches itself", () => {
+    expect(nativeSourceBindOperations("syphon1", bind, new Map())).toEqual([{ op: "setParameters", nodeId: "syphon1", parameters: bind }]);
+  });
+  it("inside an instance: published keys go to their root origin, the rest to the instance's override, override first", () => {
+    const origins = new Map([["feeds/syphonDS", { source: { nodeId: "feeds", key: "serverDS" } }]]);
+    expect(nativeSourceBindOperations("feeds/syphonDS", bind, origins)).toEqual([
+      { op: "setParameters", nodeId: "feeds", internalNodeId: "syphonDS", parameters: { sourceApp: "Arena", sourceName: "DS" } },
+      { op: "setParameters", nodeId: "feeds", parameters: { serverDS: "u2" } },
+    ]);
+  });
+  it("nested: the override is addressed from the root instance", () => {
+    expect(nativeSourceBindOperations("rig/feeds/syphonDS", { source: "u2" }, undefined)).toEqual([
+      { op: "setParameters", nodeId: "rig", internalNodeId: "feeds/syphonDS", parameters: { source: "u2" } },
+    ]);
   });
 });

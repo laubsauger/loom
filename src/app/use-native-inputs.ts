@@ -11,7 +11,7 @@ import {
   type DesktopInputBridge, type NativeInputSourceInfo, type NativeInputTransport,
 } from "@devices/native-input.ts";
 import {
-  duplicateSourceWarning, resolveNativeSource, waitingForSourceMessage, type StoredNativeSource,
+  duplicateSourceWarning, nativeSourceBindOperations, resolveNativeSource, waitingForSourceMessage, type StoredNativeSource,
 } from "@devices/native-source-match.ts";
 import type { LoomBackend } from "@runtime/backend/index.ts";
 import type { AppRuntime } from "./app-runtime.ts";
@@ -114,17 +114,17 @@ export function useNativeInputs(runtime: AppRuntime, backend: LoomBackend | null
       entry.waiting ? waitingForSourceMessage(storedOf(entry.request)) : entry.sourceMessage);
     const forget = (nodeId: string) => { report(nodeId, nodeId, null); report(matchKey(nodeId), nodeId, null); };
 
-    /** VN113: a system-actor patch, so the document records what the node is bound to. */
+    /** VN113: one system-actor patch, so the document records what the node is bound to.
+     * `nodeId` is the PLAN's id; a node inside a component instance persists through its
+     * instance — a published key on the instance's page, any other as the instance's own
+     * internal override (`nativeSourceBindOperations`) — so a save keeps it there too. */
     const writeBack = (nodeId: string, parameters: Record<string, string>) => {
       if (latest.current.documentIdentity !== runtime.documentIdentity) return;
-      // A node inside a component has a flattened id with no root node to patch: the bus
-      // refuses the patch and nothing is written. It still resolves by name at runtime; it
-      // just does not persist what it learned.
       const system: InvocationContext = { actor: { kind: "system", id: "native-input", label: "Native input" },
         projectId: runtime.invocation.projectId, capabilities: [] };
+      const operations = nativeSourceBindOperations(nodeId, parameters, runtime.flattened.current().publishedOrigins);
       void runtime.bus.execute("graph.applyPatch", {
-        baseRevision: runtime.bus.store.getRevision(), label: "Bind native source",
-        operations: [{ op: "setParameters", nodeId, parameters }],
+        baseRevision: runtime.bus.store.getRevision(), label: "Bind native source", operations,
       }, system).catch(() => undefined);
     };
 

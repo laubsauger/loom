@@ -993,7 +993,10 @@ export function Inspector({
   const syphonSection = nativeInputTransport ? <NativeInputSection nodeId={node.id} transport={nativeInputTransport}
     requirements={nodeRuntimeRequirements(definition, resolved.values)}
     source={typeof resolved.values["source"] === "string" ? resolved.values["source"] as string : ""} editor={editor}
-    identity={"sourceName" in resolved.values ? { app: String(resolved.values["sourceApp"] ?? ""), name: String(resolved.values["sourceName"] ?? "") } : undefined} /> : null;
+    identity={"sourceName" in resolved.values ? { app: String(resolved.values["sourceApp"] ?? ""), name: String(resolved.values["sourceName"] ?? "") } : undefined}
+    // VN113: inside an instance the pick persists through the instance, as the hook's bind does.
+    instance={instanceParameters === undefined || flattened === undefined ? undefined
+      : { bus: instanceParameters.bus, context, planNodeId: nodeIdInPlan, origins: () => flattened().publishedOrigins }} /> : null;
 
   /* T942: the controller gets its learn table and its ONE honest sentence about why there
      is no MIDI — keyed on the node TYPE, as the mic and camera sections are. */

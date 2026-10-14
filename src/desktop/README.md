@@ -512,8 +512,14 @@ animated-frame freshness, or sustained active-multistream benchmark.
 
 Add **Syphon In** in the node library and select a publisher in the inspector's
 Source picker. The picker only discovers; the demanded graph owns the session.
-It saves the exact discovery UUID, not a native handle. A restarted publisher gets
-a new UUID and requires explicit re-selection; no arbitrary replacement is chosen.
+It saves the publishing app and server name (`sourceApp`, `sourceName`) with the
+last discovery UUID (`source`), never a native handle. A restarted publisher gets a
+new UUID; the node waits for a server with the same app and name, rebinds to it with
+no re-selection, and writes the new UUID back. The UUID only breaks a tie between
+servers that share an app and name. A node inside a component instance saves the
+same keys through the instance: a key the component publishes on the instance's
+page, any other as the instance's own internal override, so a save and open keep it
+and the shared definition is untouched (VN113).
 Browser-only mode reports that the macOS desktop capability is required.
 
 The node adopts incoming dimensions through `node.setResolution`, including inside

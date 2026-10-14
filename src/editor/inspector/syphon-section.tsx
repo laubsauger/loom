@@ -1,7 +1,12 @@
 import { useEffect, useState } from "react";
 import { desktopInputBridge, type NativeInputSourceInfo, type NativeInputTransport } from "@devices/native-input.ts";
 import { NATIVE_VIDEO_LABELS } from "@devices/native-video.ts";
-import { duplicateSourceWarning, nativeSourceLabel, resolveNativeSource } from "@devices/native-source-match.ts";
+import {
+  duplicateSourceWarning, nativeSourceBindOperations, nativeSourceLabel, resolveNativeSource, type NativeSourceOrigins,
+} from "@devices/native-source-match.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
+import type { InvocationContext } from "@domain/types/commands.ts";
+import type { NodeId } from "@domain/types/ids.ts";
 import { orderRequirements } from "@domain/types/requirements.ts";
 import type { RuntimeRequirementId } from "@domain/types/requirements.ts";
 import { ControlRow } from "@ui/controls/control-row.tsx";
@@ -29,13 +34,33 @@ export function nativeInputSectionParameters(): readonly string[] { return ["sou
  * which is where "why is this black" gets answered. This is the reference copy under the
  * control it disables — §V90's place for help, not a second alarm.
  */
-export function NativeInputSection({ nodeId, source, identity, editor, transport, requirements }: {
+/**
+ * VN113: a node inspected INSIDE a component instance (the editor dived in). Its pick is
+ * written where the background bind writes it — the instance's published page, else the
+ * instance's own override — by the one rule (`nativeSourceBindOperations`), on the
+ * project's bus, as one patch. The parameter editor would split the three keys between the
+ * instance and the definition, refuse the mix, and an override learned at runtime would
+ * shadow a definition write anyway.
+ */
+export interface NativeSourceInstanceBinding {
+  /** The project's (root) bus: the instance lives there. */
+  readonly bus: LoomBus;
+  readonly context: InvocationContext;
+  /** The node's id in the plan (`instance/inner`). */
+  readonly planNodeId: NodeId;
+  /** The flattening's published origins, read at pick time. */
+  readonly origins: () => NativeSourceOrigins;
+}
+
+export function NativeInputSection({ nodeId, source, identity, editor, transport, requirements, instance }: {
   nodeId: string; source: string; editor: ParameterEditor; transport: NativeInputTransport;
   /** VN113: the stored app + server name, for a node that keeps them (Syphon In). Absent
    * for a transport whose id is already its name (NDI) — the picker then writes `source` only. */
   identity?: { readonly app: string; readonly name: string } | undefined;
   /** The node's own declaration, resolved for this instance's parameters. */
   requirements: readonly RuntimeRequirementId[];
+  /** Present when the node is inside a component instance; see `NativeSourceInstanceBinding`. */
+  instance?: NativeSourceInstanceBinding | undefined;
 }) {
   const [sources, setSources] = useState<readonly NativeInputSourceInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -70,9 +95,14 @@ export function NativeInputSection({ nodeId, source, identity, editor, transport
     : `Bound to ${nativeSourceLabel(match.source)}`;
   const choose = (value: string) => {
     const entry = sources.find(candidate => candidate.id === value);
-    if (identity === undefined) editor.setParameter(nodeId, "source", value, "commit");
+    if (identity === undefined) { editor.setParameter(nodeId, "source", value, "commit"); return; }
     // One patch: the id (a tie-breaker) and the identity it is kept by.
-    else editor.setStored(nodeId, { source: value, sourceApp: entry?.app ?? "", sourceName: entry?.name ?? "" }, "commit");
+    const bind = { source: value, sourceApp: entry?.app ?? "", sourceName: entry?.name ?? "" };
+    if (instance === undefined) { editor.setStored(nodeId, bind, "commit"); return; }
+    void instance.bus.execute("graph.applyPatch", {
+      baseRevision: instance.bus.store.getRevision(), label: "Set source",
+      operations: nativeSourceBindOperations(instance.planNodeId, bind, instance.origins()),
+    }, instance.context);
   };
   return <section className={styles.section} aria-label={label}>
     <div className={styles.sectionHeader}><span>{label}</span><span className={styles.sectionRule} aria-hidden /></div>

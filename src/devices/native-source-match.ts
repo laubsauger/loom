@@ -1,3 +1,6 @@
+import type { NodeId } from "@domain/types/ids.ts";
+import type { GraphPatchOperation } from "@domain/types/patch.ts";
+import { enteredThrough } from "@domain/components/addressing.ts";
 import type { NativeInputSourceInfo } from "./native-input.ts";
 
 /**
@@ -54,4 +57,40 @@ export function duplicateSourceWarning(source: { readonly app: string; readonly 
 /** The one sentence while a stored source is not live. */
 export function waitingForSourceMessage(stored: StoredNativeSource): string {
   return `Waiting for ${nativeSourceLabel(stored)}; retained image is stale until it appears.`;
+}
+
+/** Flattened node id → key → the root parameter that value is published from (the
+ * flattening's `publishedOrigins`, structurally: this module stays free of the compiler). */
+export type NativeSourceOrigins = ReadonlyMap<NodeId, Readonly<Record<string, { readonly nodeId: NodeId; readonly key: string }>>>;
+
+/**
+ * VN113 — where a bind is WRITTEN so a save keeps it, for a node addressed by its id in the
+ * plan (the flattened id). The hook's write-back and the inspector's pick both build their
+ * one patch here, so the two cannot persist a source to different places.
+ *
+ * - A root node: its own `setParameters`.
+ * - A node inside a component instance (`instance/inner`, nested `outer/two/inner`): each key
+ *   the component PUBLISHES goes to the root parameter it is published from (the instance's
+ *   page, which is what the instance stores and a save keeps). Every other key becomes the
+ *   instance's own internal override (`setParameters` with `internalNodeId`, stored in the
+ *   instance's `componentOverrides`), so it persists per instance without touching the
+ *   definition every other instance shares. The override goes first: the patch refuses an
+ *   internal write once the same patch has changed the instance's parameters.
+ */
+export function nativeSourceBindOperations(planNodeId: NodeId, parameters: Readonly<Record<string, string>>,
+  origins: NativeSourceOrigins | undefined): GraphPatchOperation[] {
+  const entered = enteredThrough(planNodeId);
+  if (entered === undefined) return [{ op: "setParameters", nodeId: planNodeId, parameters: { ...parameters } }];
+  const published = origins?.get(planNodeId) ?? {};
+  const internal: Record<string, string> = {};
+  const owners = new Map<NodeId, Record<string, string>>();
+  for (const [key, value] of Object.entries(parameters)) {
+    const origin = published[key];
+    if (origin === undefined) { internal[key] = value; continue; }
+    owners.set(origin.nodeId, { ...owners.get(origin.nodeId), [origin.key]: value });
+  }
+  return [
+    ...(Object.keys(internal).length === 0 ? [] : [{ op: "setParameters" as const, nodeId: entered.instance, internalNodeId: entered.rest, parameters: internal }]),
+    ...[...owners].map(([nodeId, values]) => ({ op: "setParameters" as const, nodeId, parameters: values })),
+  ];
 }
