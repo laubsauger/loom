@@ -10,7 +10,8 @@ import { createNativeOutputSession } from "@devices/native-output-session.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
 import type { CompiledGraph } from "@compiler/index.ts";
 import type { LoomBackend } from "@runtime/backend/index.ts";
-vi.mock("@devices/native-output.ts", () => ({ desktopOutputBridge: vi.fn() }));
+// VNB25: the encode decision (`nativeOutputEncodes`) is the real one; only the bridge is stubbed.
+vi.mock("@devices/native-output.ts", async original => ({ ...await original<object>(), desktopOutputBridge: vi.fn() }));
 vi.mock("@devices/native-output-session.ts", () => ({ createNativeOutputSession: vi.fn() }));
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.resetAllMocks(); });
 function setup(type = "syphonOut", backend = {} as LoomBackend) {
@@ -35,13 +36,13 @@ function setup(type = "syphonOut", backend = {} as LoomBackend) {
 }
 it.each(["syphonOut", "ndiOut", "spoutOut"])("%s publishes full input size, survives movement, closes on deletion", async type => {
   const h = setup(type); await h.tick();
-  expect(createNativeOutputSession).toHaveBeenCalledWith(expect.anything(), expect.anything(), { resourceId: "source:out", size: [1920, 1080] }, "Test");
+  expect(createNativeOutputSession).toHaveBeenCalledWith(expect.anything(), expect.anything(), { resourceId: "source:out", size: [1920, 1080], encode: false }, "Test");
   h.view.rerender({ graph: { ...h.graph, revision: 2 }, compiled: h.compiled }); await h.tick();
   expect(h.sessions).toHaveLength(1);
   const resized = { ...h.compiled, outputs: h.compiled.outputs.map(output => ({ ...output, size: [1280, 720] as const })) };
   h.view.rerender({ graph: h.graph, compiled: resized }); await h.tick();
   expect(h.sessions).toHaveLength(1);
-  expect(h.sessions[0]!.update).toHaveBeenCalledWith({ resourceId: "source:out", size: [1280, 720] });
+  expect(h.sessions[0]!.update).toHaveBeenCalledWith({ resourceId: "source:out", size: [1280, 720], encode: false });
   h.view.rerender({ graph: { ...h.graph, nodes: {} }, compiled: h.compiled }); await h.tick();
   expect(h.sessions[0]!.close).toHaveBeenCalledOnce();
 });
@@ -216,4 +217,39 @@ it("§T1559b — Publish driven by an expression opens and closes on the resolve
   // t = 4: off again — closed once, and not reopened.
   expect(h.sessions[0]!.close).toHaveBeenCalledOnce();
   expect(h.sessions).toHaveLength(1);
+});
+
+/*
+ * VNB25: a native output sends what the Output node would show. The selection says whether
+ * the presentation blit encodes, from the space the compiler published for the SOURCE and
+ * the project's display transform — and a change of it is a new session, never an update,
+ * because the blit's shader is fixed for a presentation's life.
+ */
+it.each(["syphonOut", "ndiOut", "spoutOut"])("%s encodes a linear source, passes encoded and data through, and reopens on a change", async type => {
+  const h = setup(type);
+  const withSource = (format: string, space: string) => ({ ...h.compiled,
+    outputs: h.compiled.outputs.map(output => ({ ...output, format, space })) }) as unknown as CompiledGraph;
+  const linear = withSource("rgba16float", "linear");
+  h.view.rerender({ graph: h.graph, compiled: linear }); await h.tick(); await h.tick();
+  const selections = () => vi.mocked(createNativeOutputSession).mock.calls.map(call => call[2]);
+  expect(selections().at(-1)).toEqual({ resourceId: "source:out", size: [1920, 1080], encode: true });
+  let current: boolean = true;
+  for (const [format, space, encode] of [["rgba16float", "encoded", false], ["rgba16float", "data", false],
+    ["rgba8unorm-srgb", "linear", false], ["rgba8unorm", "linear", true]] as const) {
+    const previous = h.sessions.at(-1)!;
+    h.view.rerender({ graph: h.graph, compiled: withSource(format, space) }); await h.tick(); await h.tick();
+    const changed = encode !== current; current = encode;
+    expect(previous.close).toHaveBeenCalledTimes(changed ? 1 : 0);
+    if (changed) expect(selections().at(-1)).toEqual({ resourceId: "source:out", size: [1920, 1080], encode });
+    else expect(h.sessions.at(-1)).toBe(previous); // the same picture: the same publisher
+  }
+  expect(h.sessions).toHaveLength(3);
+  // `displayTransform: "none"` is raw values out at the Output node, so here too.
+  await act(async () => {
+    const result = await h.runtime.bus.execute("project.setSettings",
+      { settings: { colorPolicy: { workingSpace: "linear", displayTransform: "none" } } } as never, h.runtime.invocation);
+    expect(result.status).toBe("applied");
+  });
+  h.view.rerender({ graph: h.graph, compiled: linear }); await h.tick(); await h.tick();
+  expect(selections().at(-1)).toEqual({ resourceId: "source:out", size: [1920, 1080], encode: false });
 });

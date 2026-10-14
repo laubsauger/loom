@@ -96,6 +96,14 @@ export interface PresentationOptions {
   readonly sizing?: "layout" | "source";
   /** Display-only coverage inspection. Raw RGB is the default for transport integrity. */
   readonly alphaDisplay?: "rgba" | "rgb";
+  /**
+   * VNB25: apply the sRGB display encode in the blit — the Output node's encode, for a
+   * surface that shows a texture with no Output node in front of it (a native SDR output).
+   * The CALLER decides from the source's published space (`nativeOutputEncodes`); the
+   * backend never infers it. Absent or false is the raw copy every other surface gets.
+   * Exclusive with `alphaDisplay: "rgba"`, which is a viewer inspection of encoded values.
+   */
+  readonly displayEncode?: boolean;
 }
 
 /**

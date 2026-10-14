@@ -16,5 +16,8 @@ export const syphonOutNode: NodeDefinition = {
   // T1340b: declared here, read by every surface that states it.
   requires: ["desktop", "macos"],
   // The session presents the upstream resource directly. No graph copy or sink target.
+  // VNB25: through the Output node's display encode when that resource holds linear light
+  // (`nativeOutputEncodes` in `src/devices/native-output.ts`), so a receiver sees what the
+  // Output node shows. No tone map: Output's `none`, which clamps.
   compile: () => ({ passes: [] }),
 };

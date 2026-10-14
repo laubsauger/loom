@@ -76,7 +76,7 @@ import { authoredPosition, type AuthoredPosition, type WgslSourceMap } from "../
 import { describeCapabilities, meetsBaseline } from "./capabilities.ts";
 import { browserGpuHost, type GpuHost, type GpuSession } from "./gpu-host.ts";
 import { preparedShader } from "./prepared-shader.ts";
-import { BLIT_WGSL, RGBA_BLIT_WGSL } from "./presentation-shaders.ts";
+import { BLIT_WGSL, ENCODE_BLIT_WGSL, RGBA_BLIT_WGSL } from "./presentation-shaders.ts";
 import {
   ResourceBuildError,
   bufferRegion,
@@ -344,6 +344,8 @@ interface PresentationState {
   /** §T1391b: `"source"` = backing store is the presented target's size, never the box's. */
   readonly sizing: "layout" | "source";
   readonly alphaDisplay: "rgba" | "rgb";
+  /** VNB25: the blit applies the display encode (a native SDR output). Fixed for its life. */
+  readonly displayEncode: boolean;
   outputId: string;
   surface: Surface | undefined;
   blit: Effect | undefined;
@@ -2293,7 +2295,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       if (isPair(source)) preparePresentationView(source.write);
       const bindValue = presentationBinding(readTarget);
       if (!p.blit) {
-        p.blit = effect(active.gpu, preparedShader(p.alphaDisplay === "rgba" ? RGBA_BLIT_WGSL : BLIT_WGSL, `present:${p.id}`), {
+        p.blit = effect(active.gpu, preparedShader(p.displayEncode ? ENCODE_BLIT_WGSL : p.alphaDisplay === "rgba" ? RGBA_BLIT_WGSL : BLIT_WGSL, `present:${p.id}`), {
           set: { blitSampler: presentSampler, blitSource: bindValue },
           label: `present:${p.id}`,
         });
@@ -3429,6 +3431,8 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       if (disposed) throw new Error("present() called after dispose().");
       if (!session && !recovery) throw new Error("present() called before initialize().");
       guard.assertOutsideFrame("surface attach");
+      if (options.displayEncode === true && options.alphaDisplay === "rgba")
+        throw new Error("present(): displayEncode and alphaDisplay \"rgba\" are exclusive.");
 
       presentationCounter += 1;
       const p: PresentationState = {
@@ -3438,6 +3442,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         ...(options.modelInputSize ? { modelInputSize: options.modelInputSize } : {}),
         sizing: options.sizing ?? "layout",
         alphaDisplay: options.alphaDisplay ?? "rgb",
+        displayEncode: options.displayEncode === true,
         outputId: options.outputId,
         surface: undefined,
         blit: undefined,

@@ -16,5 +16,6 @@ export const ndiOutNode: NodeDefinition = {
   },
   // T1340b: same three as NDI In — host, platform, and the SDK the user supplies.
   requires: ["desktop", "macos", "ndi-sdk"],
+  // As Syphon Out: the session presents the upstream resource, display-encoded (VNB25).
   compile: () => ({ passes: [] }),
 };
