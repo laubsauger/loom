@@ -1,0 +1,10 @@
+Studio Small 02 — Greg Zaal / Poly Haven, CC0.
+Source: https://polyhaven.com/a/studio_small_02
+Original: studio_small_02_1k.hdr, MD5 4485d3e4af57d136e7d3ffe0e92b9c85.
+
+studio-small-02-rgbe.png is an encoded radiance asset, not a display image.
+RGB stores sRGB-encoded mantissas. Alpha stores the shared base-2 exponent + 128.
+The movie node's sRGB decode restores linear mantissas. wgsl_studio decodes each
+texel before bilinear interpolation, then neutralizes and scales the studio.
+The 1K source reaches linear radiance 692; it is not tone mapped or clipped to 1.
+Keep this PNG with the network. Direct HDR/EXR picture imports remain unsupported.

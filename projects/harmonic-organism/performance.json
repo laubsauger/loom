@@ -1,0 +1,40 @@
+{
+  "project": "harmonic-organism.loom.json",
+  "probeCase": "final",
+  "adapter": "Metal driver on macOS Version 26.7.2 (Build 25G332)",
+  "machine": "Apple M3 Max, 30 GPU cores",
+  "resolution": [
+    1920,
+    1080
+  ],
+  "fpsTarget": 30,
+  "frameBudgetMs": 33.333333333333336,
+  "warmupFrames": 30,
+  "measuredFrames": 90,
+  "passes": 156,
+  "estimatedResourceBytes": 223935424,
+  "gpuFrame": {
+    "medianMs": 6.029312,
+    "p95Ms": 7.667712,
+    "maxMs": 8.716288
+  },
+  "cpuEvaluateAnimateEncode": {
+    "medianMs": 6.2478329999999005,
+    "p95Ms": 7.89366700000005,
+    "maxMs": 8.28533299999981
+  },
+  "completedWithReadback": {
+    "medianMs": 16.193874999999935,
+    "p95Ms": 18.225124999999935,
+    "maxMs": 22.484541000000263
+  },
+  "notes": [
+    "Real Dawn/Metal GPU frame extents, not the sum of nested pass spans.",
+    "Animation uses the shipping value graph, frame compiler, uniform animator, and backend.",
+    "Each measured frame waits for a full-resolution readback; this is conservative relative to GPU-only playback.",
+    "Excludes browser compositor, React editor, and concurrent node previews."
+  ],
+  "diagnostics": [],
+  "networkSha256": "efe69259a58561d7e55d43c974b2ab66c62854a867f14de86a0e5822ec69a7ee",
+  "verifiedAtUtc": "2026-11-12T02:55:16.076390+00:00"
+}
