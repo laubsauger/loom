@@ -13,6 +13,7 @@ import type { ComponentSource } from "./flatten.ts";
 import type { DrawPassDescriptor, PassDescriptor, ResourceDescriptor } from "../runtime/backend/plan.ts";
 import type { ParameterResolution } from "./validate.ts";
 import type { ColorSpace } from "./color-space.ts";
+import type { PreviewOrbit } from "../runtime/previews/orbit.ts";
 
 /**
  * Compiler surface types (§P track E).
@@ -34,13 +35,25 @@ export type SinkKind =
   /** A feedback pair that must keep advancing even when nothing is looking at it. */
   | "feedback"
   /** Readback / debug: export, screenshot, headless capture (§V48). */
-  | "readback";
+  | "readback"
+  /**
+   * §T1732b: a LOOK at a renderer (a node with a camera input), sent by the editor while a
+   * look is moved off the camera. Keeps nothing alive: it asks for a clone of a renderer
+   * that is already kept, drawn through the moved camera into a target nothing else reads
+   * (`compiler/look.ts`).
+   */
+  | "look";
 
 export interface ActiveSink {
   readonly nodeId: NodeId;
   /** Defaults to the definition's first output port. */
   readonly portId?: PortId;
   readonly kind: SinkKind;
+  /**
+   * §T1732b, a `look` sink only: where the look's orbit is read, at each frame. View state,
+   * so it is read and never compared (`sameSinks` compares the node and the kind).
+   */
+  readonly orbit?: () => PreviewOrbit | undefined;
 }
 
 export interface CompileRequest {
@@ -213,6 +226,27 @@ export interface ResolvedOutput {
    * the gizmo was offered only on a camera nothing rendered through.
    */
   readonly previewCamera?: PreviewCameraControl;
+  /**
+   * §T1732b: this picture is drawn through a camera node, and can be LOOKED AROUND without
+   * moving it: the renderer whose look it is (the flat id a `look` sink names, which is also
+   * the key its look's orbit is kept under), and that camera's pose at this compile, for the
+   * axes a fly key moves along. On a renderer's own picture and on a camera's borrowed one.
+   *
+   * `picture` is the look itself, present while a `look` sink asks for it: the renderer
+   * drawn again through the moved camera, into a target nothing else reads. A surface that
+   * shows this row while looking shows `picture`; the row's own resource is still the
+   * renderer's real output, byte for byte.
+   */
+  readonly look?: {
+    readonly renderer: NodeId;
+    readonly basis: { readonly eye: readonly [number, number, number]; readonly lookAt: readonly [number, number, number] };
+    readonly picture?: {
+      readonly resourceId: string;
+      readonly size: readonly [number, number];
+      readonly format: TextureFormat;
+      readonly space: ColorSpace;
+    };
+  };
 }
 
 /**

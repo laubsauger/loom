@@ -353,6 +353,19 @@ A **look** is a role, not a type: a node (in practice a component instance) whos
 
 The first time a look that has never been compiled is switched on, it may hitch while its pipelines build. Pre-warming is a later row.
 
+**On/off for any node (added 2026-11-12, §T1770b).** A preset's `on` map names any root node or component instance, not only a Layer, and writes the same flag in the same patch. Off is the node's bypass:
+
+- a Layer passes its stack;
+- an effect passes its input;
+- a source has nothing to pass and is silent;
+- a component instance that is off is not inlined, so nothing inside it is compiled or evaluated.
+
+A bank with one preset per source, each holding the whole `on` row, is the exclusive choice among sources: a recall is one patch, so no frame reads two of them on, or none. Wire the sources into a **Value Switch** and read its output through a Lag. An input takes one wire, and a source that is off is not a branch of the switch, so with one source live the switch passes it whatever its index says. For rest values while nothing is live, use an **Expression** node as the bus instead: its In takes any number of wires and its Defaults supply a channel nobody is publishing.
+
+**One switch, and Store (added 2026-11-12, §T1771b).** Any node named on a Panel's board that is not a widget, a bank, a Layer, a cue list or a look's instance is drawn as its on/off switch, on the desk and on the phone; drop the node on the Panel, or use the board's "+ Add…". It is the Layer's write (`setNodeUi { bypassed }`, the state pressed). Store captures a node's on/off only for a target spelled `node.@on` (a Toggle's own parameter is `node.on`), and writes it into the preset's `on` row; a whole-node target stores parameters only, as before. A recall whose preset switches only part of what its bank's other presets switch says so (`preset.on.partial`) and still applies.
+
+A cue list that follows the timeline switches Layers only. A timed cue whose preset switches another node says so (`cue.timeline.switch`) and skips that switch; fired live, the same cue switches it (§T1772b lifts this).
+
 ### 7.3 Swapping looks
 
 Changing `picture` from `"city"` to `"smoke"` is one parameter write that a preset can hold, and only the named look cooks. It is always a cut (§5.3). A crossfade uses two layers: a shot switches the upper layer on and morphs its opacity up. **Switching the lower layer off afterwards is left to the performer** (ruling 13), usually as the next cue.

@@ -63,9 +63,9 @@ export function learnControlMidiPlan(
   if (control === undefined) return refuse("control.node", `No node "${nodeId}".`);
   if (!supported(control, parameterKey)) return refuse("control.midi.target", `"${controlNameOf(control)}.${parameterKey}" is not a MIDI control target.`);
   if (portId === "" || !Number.isInteger(source.channel) || source.channel < 1 || source.channel > 16 ||
-      (source.kind !== "cc" && source.kind !== "pitchBend") ||
-      (source.kind === "cc" && (!Number.isInteger(source.number) || (source.number ?? -1) < 0 || (source.number ?? 128) > 127))) {
-    return refuse("control.midi.source", "MIDI learning requires a captured input port and a valid CC or pitch bend source.");
+      (source.kind !== "cc" && source.kind !== "pitchBend" && source.kind !== "note") ||
+      (source.kind !== "pitchBend" && (!Number.isInteger(source.number) || (source.number ?? -1) < 0 || (source.number ?? 128) > 127))) {
+    return refuse("control.midi.source", "MIDI learning requires a captured input port and a valid CC, note or pitch bend source.");
   }
   const current = retained(control, registry, parameterKey);
   const boolean = control.type === "toggle" || control.type === "button";

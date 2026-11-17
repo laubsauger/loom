@@ -292,6 +292,17 @@ export interface LoomBackend extends RenderBackend {
   readBuffer(resourceId: string): Promise<ArrayBuffer>;
 
   /**
+   * T1739b — SUMS AN OUTPUT'S FRAMES ON THE GPU, in linear light, and reads the sum back
+   * ONCE. What a shutter of N sub-frames needs: N adds that read nothing back, then one
+   * readback, where reading every sub-frame back and summing in script cost 3–10× the
+   * GPU's own work. `decode` says what each stored channel pattern is in linear light, so
+   * a sum here and one on the CPU decode through the same numbers. Throws for an unknown
+   * output, tables that do not fit its format, or a sum larger than the device can bind.
+   * Optional: only a backend with a device has anything to sum on.
+   */
+  accumulateOutput?(outputId: string, decode: LinearDecode): OutputAccumulator;
+
+  /**
    * Per-pass GPU timings in milliseconds, keyed by PASS ID (T163, §V16) — node and
    * component attribution key on that. Fires only when the device has timestamp-query
    * (§V12: `capabilities.timestampQuery`); without it, no listener ever fires and every
@@ -438,6 +449,40 @@ export interface GpuTimingDrop {
 }
 
 export type CookPolicy = "always" | "auto";
+
+/**
+ * T1739b — what one stored channel pattern of an output is in LINEAR light, as two tables
+ * indexed by that pattern: a half's 16 bits for `rgba16float`, the byte for `rgba8unorm`
+ * and `rgba8unorm-srgb`. `colour` decodes R, G and B; `alpha` decodes A. The caller owns
+ * the rule (the declared space decides it, §V57), so the backend sums exactly the values a
+ * CPU average of the same readbacks would. `premultiply` weights colour by alpha.
+ */
+export interface LinearDecode {
+  readonly colour: Float32Array;
+  readonly alpha: Float32Array;
+  readonly premultiply: boolean;
+}
+
+/** T1739b: what an `OutputAccumulator` read back — the sum of `count` frames. */
+export interface AccumulatedSum {
+  readonly width: number;
+  readonly height: number;
+  /** How many frames were added into it. */
+  readonly count: number;
+  /** `width * height * 4` sums, row-major, top row first: R, G and B (weighted when premultiplied), A. */
+  readonly sum: Float32Array;
+}
+
+/** T1739b: one output's running sum on the GPU (`LoomBackend.accumulateOutput`). */
+export interface OutputAccumulator {
+  /** Adds what the output holds now (the last frame rendered). GPU work only: nothing is read back. */
+  add(): void;
+  /** Frames added since the last `read`. */
+  readonly count: number;
+  /** The sum, in ONE readback (counted with the rest, §V48), and a zero sum after it. */
+  read(): Promise<AccumulatedSum>;
+  dispose(): void;
+}
 
 /**
  * One decoded frame offered by a media source (T229).

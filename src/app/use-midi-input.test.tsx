@@ -3,6 +3,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, renderHook } from "@testing-library/react";
 import type { MidiLearnEvent } from "./use-midi-input.ts";
 import { useMidiInput } from "./use-midi-input.ts";
+import { midiEventCountName, midiEventName, unpackMidiEvent } from "@domain/midi/midi-events.ts";
+import { createNodeRegistry } from "@nodes/registry/registry.ts";
+import { allNodeDefinitions } from "@nodes/definitions/index.ts";
 
 /**
  * T942 tier 1 — THE AUTOMATED HALF, so nobody needs a controller in the room.
@@ -168,6 +171,85 @@ describe("the three absences, each reaching a DIFFERENT state (§V359)", () => {
   });
 });
 
+describe("T1762b — notes cross the seam as an ORDERED list, and MIDI Notes reads them back", () => {
+  const grantTwo = async () => {
+    const keys = new FakePort("port-keys", "Nord Piano");
+    const pads = new FakePort("port-pads", "Launchpad");
+    const hook = renderHook(() => useMidiInput({ requestAccess: () => Promise.resolve(asAccess(new FakeAccess([keys, pads]))) }));
+    await act(async () => {
+      hook.result.current.request();
+    });
+    return { hook, keys, pads };
+  };
+  /** The real node, reading the real hook's resolver: one evaluation per call, one frame apart. */
+  const nodeOver = (resolver: (name: string, context: never) => unknown, device = "") => {
+    const definition = createNodeRegistry(allNodeDefinitions).view().get("midiNotes");
+    if (definition?.valueEvaluate === undefined) throw new Error("midiNotes has no value hook");
+    const evaluate = definition.valueEvaluate;
+    const state: Record<string, unknown> = {};
+    let index = 0;
+    return (): Record<string, number> => {
+      const frame = { timeSeconds: index / 60, deltaSeconds: 1 / 60, frameIndex: index, mode: "realtime" as const, randomSeed: 1 };
+      index += 1;
+      return evaluate({ inputs: {}, values: { device }, frame, state, channels: (name) => read(resolver, name) as number | undefined });
+    };
+  };
+
+  it("every channel-voice message is counted and kept in arrival order, per device and merged; clock and SysEx are not events", async () => {
+    const { hook, keys, pads } = await grantTwo();
+    act(() => {
+      keys.send([0x90, 60, 100]);
+      pads.send([0xb0, 64, 127]);
+      keys.send([0xf8]);
+      keys.send([0x80, 60, 64]);
+    });
+    const resolver = hook.result.current.resolver;
+    expect([read(resolver, midiEventCountName("")), read(resolver, midiEventCountName("port-keys")), read(resolver, midiEventCountName("port-pads"))]).toEqual([3, 2, 1]);
+    const merged = [0, 1, 2].map((index) => unpackMidiEvent(read(resolver, midiEventName("", index)) as number));
+    expect(merged.map((event) => [event.kind, event.data1, event.data2])).toEqual([
+      [0x90, 60, 100],
+      [0xb0, 64, 127],
+      [0x80, 60, 64],
+    ]);
+    // A learnable control still publishes its latest value as before: the ring is beside the readings.
+    expect(read(resolver, "midi:port-pads:cc1.64")).toBe(127);
+  });
+
+  it("a key struck, pedalled and released on the keyboard is a sounding, unheld voice on the node — and the other order is a released one", async () => {
+    const { hook, keys } = await grantTwo();
+    const evaluate = nodeOver(hook.result.current.resolver);
+    evaluate();
+    act(() => {
+      keys.send([0x90, 60, 100]);
+      keys.send([0xb0, 64, 127]);
+      keys.send([0x80, 60, 64]);
+    });
+    const caught = evaluate();
+    expect([caught["voice0Pitch"], caught["voice0Held"], caught["voice0Sounding"], caught["voice0Envelope"], caught["sustain"]]).toEqual([60, 0, 1, 100 / 127, 1]);
+    act(() => {
+      keys.send([0xb0, 64, 0]);
+      keys.send([0x90, 64, 90]);
+      keys.send([0x80, 64, 0]);
+      keys.send([0xb0, 64, 127]);
+    });
+    const missed = evaluate();
+    // 60 was let go by the pedal lift; 64 came up before the pedal went back down.
+    expect([missed["voice0Sounding"], missed["voice1Pitch"], missed["voice1Sounding"], missed["sustain"], missed["heldCount"]]).toEqual([0, 64, 0, 1, 0]);
+  });
+
+  it("a node that picked the keyboard does not hear the pads", async () => {
+    const { hook, keys, pads } = await grantTwo();
+    const evaluate = nodeOver(hook.result.current.resolver, "port-keys");
+    evaluate();
+    act(() => {
+      pads.send([0x90, 36, 127]);
+      keys.send([0x90, 72, 80]);
+    });
+    const bag = evaluate();
+    expect([bag["heldCount"], bag["voice0Pitch"]]).toEqual([1, 72]);
+  });
+});
+
 describe("readings reach the channel seam, under both names", () => {
   const grantOne = async () => {
     const port = new FakePort("port-7", "Launch Control");
@@ -204,16 +286,28 @@ describe("readings reach the channel seam, under both names", () => {
     expect(read(hook.result.current.resolver, "meter1")).toBeUndefined();
   });
 
-  it("publishes NOTHING for a message this row does not support", async () => {
+  it("publishes no READING for a message that is not a learnable control (aftertouch, a clock tick)", async () => {
     const { hook, port } = await grantOne();
     act(() => {
-      port.send([0x90, 60, 100]); // note on
+      port.send([0xa0, 60, 100]); // polyphonic aftertouch
       port.send([0xf8]); // clock
     });
     // Both directions (§V461): the supported message DID publish above, so an empty map
     // here is the decoder dropping these rather than nothing working at all.
     expect(read(hook.result.current.resolver, "midi:*:cc1.60")).toBeUndefined();
+    expect(read(hook.result.current.resolver, "midi:*:note1.60")).toBeUndefined();
     expect(read(hook.result.current.resolver, "midi:port-7:bend1")).toBeUndefined();
+  });
+
+  it("T1787b: a key publishes its GATE, under its own name and under any-device: 127 down, 0 up", async () => {
+    const { hook, port } = await grantOne();
+    act(() => port.send([0x90, 60, 12]));
+    expect(read(hook.result.current.resolver, "midi:port-7:note1.60")).toBe(127);
+    expect(read(hook.result.current.resolver, "midi:*:note1.60")).toBe(127);
+    // A key is not the controller of the same number.
+    expect(read(hook.result.current.resolver, "midi:*:cc1.60")).toBeUndefined();
+    act(() => port.send([0x80, 60, 0]));
+    expect(read(hook.result.current.resolver, "midi:*:note1.60")).toBe(0);
   });
 
   it("does not re-render the tree per message — readings are a ref, not state (§V16)", async () => {
@@ -299,11 +393,22 @@ describe("MIDI-learn — the next message binds, once", () => {
     const seen: MidiLearnEvent[] = [];
     act(() => {
       hook.result.current.arm((event) => seen.push(event));
-      port.send([0x90, 60, 100]);
+      port.send([0xa0, 60, 100]);
       port.send([0xb0, 19, 64]);
     });
     expect(seen).toHaveLength(1);
     expect(seen[0]?.reading.source).toEqual({ kind: "cc", channel: 1, number: 19 });
+  });
+
+  it("T1787b: a key PRESS is learned; the release of a key that was down when the row was armed is not", async () => {
+    const { hook, port } = await grantOne();
+    const seen: MidiLearnEvent[] = [];
+    act(() => {
+      hook.result.current.arm((event) => seen.push(event));
+      port.send([0x80, 48, 0]);
+      port.send([0x90, 36, 30]);
+    });
+    expect(seen).toEqual([{ reading: { source: { kind: "note", channel: 1, number: 36 }, raw: 127 }, portId: "port-7" }]);
   });
 
   it("can be disarmed, so an armed row the user gave up on is not a trap", async () => {

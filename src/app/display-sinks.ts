@@ -45,7 +45,7 @@ export function createDisplaySinkStore(): DisplaySinkStore {
  * display sinks. Same identity until either half changes, which is what the compile memo
  * keys on (`useSyncExternalStore` + `previous.sinks === scheduledPreviews`).
  */
-export function mergeSinkStores(preview: PreviewSinkStore, display: DisplaySinkStore): PreviewSinkStore {
+export function mergeSinkStores(preview: PreviewSinkStore, display: Pick<DisplaySinkStore, "get" | "subscribe">): PreviewSinkStore {
   let lastPreview: readonly ActiveSink[] | undefined;
   let lastDisplay: readonly ActiveSink[] | undefined;
   let merged: readonly ActiveSink[] = NONE;

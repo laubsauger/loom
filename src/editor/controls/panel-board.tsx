@@ -18,6 +18,7 @@ import {
   controlNameOf,
   surfaceNameOf,
   panelLacks,
+  panelLacksSwitch,
   type BoardRect,
   type PanelBoard,
   type PanelBoardItem,
@@ -329,6 +330,13 @@ export function PanelBoardEditor({ graph, panelId, board, write, bus, invocation
       : Object.values(graph.nodes)
           .filter((node) => panelLacks(graph, panel, node, catalogue))
           .sort((a, b) => controlNameOf(a).localeCompare(controlNameOf(b)));
+  // T1771b: and every other node, as its on/off switch (`switchesOnBoard`) — listed apart, it is most of the document.
+  const switchable =
+    panel === undefined
+      ? []
+      : Object.values(graph.nodes)
+          .filter((node) => panelLacksSwitch(graph, panel, node, catalogue))
+          .sort((a, b) => controlNameOf(a).localeCompare(controlNameOf(b)));
   // T1619b: what "Set all as default" would write, asked of the command's own plan.
   const setAll = planControlDefaults("setDefault", graph, { nodeIds: [panelId] });
 
@@ -364,20 +372,29 @@ export function PanelBoardEditor({ graph, panelId, board, write, bus, invocation
           aria-label="Add to panel"
           title="Put a node on this Panel"
           value=""
-          disabled={joinable.length === 0}
+          disabled={joinable.length === 0 && switchable.length === 0}
           onChange={(event) => {
-            const node = joinable.find((each) => each.id === event.target.value);
+            const node = [...joinable, ...switchable].find((each) => each.id === event.target.value);
             if (node === undefined) return;
             apply(joinPanelOperations(graph, node.id, panelId, catalogue), "Add to panel");
             setSelected(`member:${controlNameOf(node)}`);
           }}
         >
-          <option value="">{joinable.length === 0 ? "Nothing to add" : "+ Add…"}</option>
+          <option value="">{joinable.length === 0 && switchable.length === 0 ? "Nothing to add" : "+ Add…"}</option>
           {joinable.map((node) => (
             <option key={node.id} value={node.id}>
               {controlNameOf(node)}
             </option>
           ))}
+          {switchable.length === 0 ? null : (
+            <optgroup label="On/off switch for">
+              {switchable.map((node) => (
+                <option key={node.id} value={node.id}>
+                  {controlNameOf(node)}
+                </option>
+              ))}
+            </optgroup>
+          )}
         </select>
         {/* T1619b: authoring lives where arranging does — every control here takes its value as its default. */}
         <button

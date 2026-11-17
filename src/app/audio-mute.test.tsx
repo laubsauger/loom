@@ -283,6 +283,12 @@ describe("T555 — which node the session captures, once a node can be off", () 
       // OWNER's constant rather than copied as a second literal, so the next change to the
       // defaults moves this with it instead of staling it again.
       detector: AUDIO_DETECTOR_DEFAULTS,
+      // T1751b: no tonal node in this document, so no tonal pass.
+      tonal: false,
+      // T1769b: the node that supplied the capture, and its Input Gain at rest.
+      sourceNodeId: "music",
+      inputGainDb: 0,
+      voiceProcessing: false,
     });
   });
 });

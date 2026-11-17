@@ -1,10 +1,13 @@
 import type { AudioFeatures } from "@domain/types/frame.ts";
 import { createHopAnalyser } from "@domain/audio/analysis/hop-analyser.ts";
+import { decodeChords, decodeKeys } from "@domain/audio/analysis/chord.ts";
+import { createLeadPitch } from "@domain/audio/analysis/pitch.ts";
+import { createTonalAnalyser, estimateTuningOver } from "@domain/audio/analysis/tonal-analyser.ts";
 import { beatTrack, estimateBar } from "@domain/audio/analysis/tempo.ts";
 import { NO_TEMPO_CLAIM, createFeatureTrackRecorder } from "@domain/audio/feature-track.ts";
 import type { FeatureTrack } from "@domain/audio/feature-track.ts";
 import { createAudioHopReducer } from "./audio-analysis-frame.ts";
-import { analysisOptionsFor } from "./audio-analysis-protocol.ts";
+import { analysisOptionsFor, inputGainLinear } from "./audio-analysis-protocol.ts";
 import type { DetectorSettings } from "./audio-analysis-protocol.ts";
 
 /**
@@ -73,17 +76,83 @@ const ESTIMATE_CONFIDENCE_CEILING = 0.99;
  * the same lateness for every beat, so phase between beats is unaffected.
  */
 export function analyseOffline(
-  samples: Float32Array,
+  decoded: Float32Array,
   sampleRate: number,
   fps: number,
   detector: DetectorSettings,
+  /**
+   * T1751b: walk the tonal pass too — the analyser the worklet runs.
+   *
+   * T1752b: and BETTER than live, in the two ways having the whole file allows (the tempo
+   * above is the precedent). (1) Frame i reads the window CENTRED on i / fps — windows sit
+   * on a grid of `tonal.hop` from sample 0, the file padded with silence at both ends — so
+   * the pitch classes describe the sound at the frame, not 85 ms before it, and the
+   * record's `tonalLag` is 0. (2) The tuning is measured ONCE over the file
+   * (`estimateTuningOver`) and applied from the first frame; a live input has to learn it.
+   * The lag is a field of the record, so the two paths differ by a number a consumer can
+   * read, not by a version.
+   *
+   * T1753b: (3) the CHORD and the KEY are decoded over the whole file (`decodeChords`,
+   * `decodeKeys`: Viterbi, and a key window centred on the frame) and written back into
+   * every frame, as the tempo is — so a chord begins on the frame its notes do, where the
+   * live decode reports it a few tenths of a second after.
+   */
+  tonal: boolean,
+  /**
+   * T1769b: the source node's Input Gain, in decibels — the trim the live capture applies
+   * ahead of its analysers, applied here to the decoded samples before anything reads them
+   * (the hop engine, the tonal pass and the tuning estimate alike), so the track a scrub or
+   * an offline render reads is the trimmed file's. 0 walks the caller's samples untouched.
+   * The caller's array is never written: the PCM an export carries stays at unity.
+   * Required: every caller decides.
+   */
+  inputGainDb: number,
 ): OfflineAnalysis {
+  const gain = inputGainLinear(inputGainDb);
+  // Float32, as a `GainNode`'s output is: the engine then sees what the live trim would hand it.
+  const samples = gain === 1 ? decoded : decoded.map((sample) => sample * gain);
   if (!(sampleRate > 0) || !(fps > 0)) throw new Error(`analyseOffline: bad rates ${String(sampleRate)}/${String(fps)}`);
-  const options = analysisOptionsFor(detector, sampleRate);
+  const options = analysisOptionsFor(detector, sampleRate, tonal);
   const { fftSize, hop } = options;
   const analyser = createHopAnalyser({ ...options, sampleRate });
   const reducer = createAudioHopReducer(fftSize, sampleRate);
-  const recorder = createFeatureTrackRecorder(fps, { detector });
+  const recorder = createFeatureTrackRecorder(fps, { detector, tonal });
+  const tonalOptions = options.tonal;
+  const tonalAnalyser =
+    tonalOptions === undefined
+      ? null
+      : createTonalAnalyser({ sampleRate, windowSize: tonalOptions.windowSize, tuning: estimateTuningOver(samples, sampleRate, tonalOptions.windowSize) });
+  const leadPitch = tonalOptions === undefined ? null : createLeadPitch({ sampleRate, windowSize: fftSize, hop, everyHops: tonalOptions.pitchEveryHops });
+  const tonalWindow = new Float64Array(tonalOptions?.windowSize ?? 0);
+  /** The centre of the next tonal window, in samples: 0, hop, 2·hop, … */
+  let nextTonalCentre = 0;
+  /** T1753b: every tonal window's profile and confidence, for the whole-file decode. */
+  const tonalProfiles: number[] = [];
+  const tonalConfidences: number[] = [];
+  /** Per project frame: the tonal window it read (−1 before any). */
+  const tonalIndexOf: number[] = [];
+  /** Pushes every tonal window centred at or before `sample`, so the frame there reads the one centred on it (within a hop). */
+  const pushTonalUpTo = (sample: number): void => {
+    if (tonalAnalyser === null || tonalOptions === undefined) return;
+    const half = tonalOptions.windowSize / 2;
+    while (nextTonalCentre <= sample) {
+      for (let i = 0; i < tonalOptions.windowSize; i += 1) {
+        const at = nextTonalCentre - half + i;
+        tonalWindow[i] = at < 0 || at >= samples.length ? 0 : (samples[at] as number);
+      }
+      const analysed = tonalAnalyser.analyse(tonalWindow, nextTonalCentre === 0 ? 0 : tonalOptions.hop);
+      reducer.pushTonal({ ...analysed, lag: 0 });
+      tonalProfiles.push(...analysed.chroma);
+      tonalConfidences.push(analysed.confidence);
+      nextTonalCentre += tonalOptions.hop;
+    }
+  };
+  /** One project frame: the tonal windows up to it, then the reducer's record. */
+  const readFrame = (index: number): AudioFeatures => {
+    pushTonalUpTo(index * samplesPerFrame);
+    tonalIndexOf.push(tonalConfidences.length - 1);
+    return reducer.read().features;
+  };
   const samplesPerFrame = sampleRate / fps;
   // Frames up to and including the one at the file's end, so a playhead at `duration` reads
   // a recorded frame rather than SILENCE.
@@ -98,17 +167,49 @@ export function analyseOffline(
   for (let end = fftSize; end <= samples.length; end += hop) {
     const frame = Math.ceil(end / samplesPerFrame);
     while (cursor < frame) {
-      frames.push(reducer.read().features);
+      frames.push(readFrame(cursor));
       cursor += 1;
     }
     for (let i = 0; i < fftSize; i += 1) window[i] = samples[end - fftSize + i] as number;
     const features = analyser.analyse(window);
     envelope.push(features.bandFlux[0] as number);
     reducer.push(features);
+    // T1755b: the lead pitch off the same window, on the hops the worklet reads it.
+    const pitched = leadPitch?.push(window) ?? null;
+    if (pitched !== null) reducer.pushPitch(pitched);
   }
   while (cursor < frameCount) {
-    frames.push(reducer.read().features);
+    frames.push(readFrame(cursor));
     cursor += 1;
+  }
+
+  // T1753b: the whole-file chord and key, written over what the analyser claimed while walking.
+  if (tonalOptions !== undefined && tonalConfidences.length > 0) {
+    const profiles = Float64Array.from(tonalProfiles);
+    const step = tonalOptions.hop / sampleRate;
+    const chords = decodeChords(profiles, tonalConfidences, step);
+    const keys = decodeKeys(profiles, tonalConfidences, step);
+    for (let index = 0; index < frameCount; index += 1) {
+      const at = tonalIndexOf[index] as number;
+      if (at < 0) continue;
+      const chord = chords[at] as (typeof chords)[number];
+      const key = keys[at] as (typeof keys)[number];
+      let changes = 0;
+      for (let window = (index === 0 ? -1 : (tonalIndexOf[index - 1] as number)) + 1; window <= at; window += 1) {
+        if ((chords[window] as (typeof chords)[number]).changed) changes += 1;
+      }
+      frames[index] = {
+        ...(frames[index] as AudioFeatures),
+        chordRoot: chord.root,
+        chordQuality: chord.quality,
+        chordConfidence: chord.confidence,
+        chordChangeCount: changes,
+        chordAge: chord.age,
+        keyTonic: key.tonic,
+        keyMode: key.mode,
+        keyConfidence: key.confidence,
+      };
+    }
   }
 
   const hopRate = sampleRate / hop;

@@ -122,6 +122,8 @@ describe("examples: the gate", () => {
       "E88-Photo-Mapping-Ribbon-Peel.loom.json",
       "E89-Cymatics.loom.json",
       "E9-Ember.loom.json",
+      "E90-Chord-Wheel.loom.json",
+      "E91-Music-Features.loom.json",
     ]);
   });
 });

@@ -693,7 +693,8 @@ function isFormat(value: unknown): value is TextureFormat {
   return typeof value === "string" && (TEXTURE_FORMATS as ReadonlyArray<string>).includes(value);
 }
 
-function isUniformValue(value: unknown): value is UniformValue {
+/** One uniform value as the plan reader accepts it; also what a value function's block is held to (T1719b). */
+export function isUniformValue(value: unknown): value is UniformValue {
   if (typeof value === "number") return Number.isFinite(value);
   if (typeof value === "boolean") return true;
   return Array.isArray(value) && value.every((entry) => typeof entry === "number");

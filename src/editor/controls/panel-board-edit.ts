@@ -6,6 +6,7 @@ import type { BankCatalogue } from "@domain/presets/bank-view.ts";
 import {
   BOARD_MAX_COLUMNS,
   joinsBoardByName,
+  switchesOnBoard,
   PANEL_INPUT,
   boardDefaultSize,
   boardMemberSize,
@@ -79,7 +80,8 @@ export function boardWithLabel(board: PanelBoard, text: string): { readonly stor
  * which only the catalogue can tell.
  */
 export function boardWithMember(board: PanelBoard, node: GraphNode, catalogue?: BankCatalogue): StoredBoard | null {
-  if (!joinsBoardByName(node, catalogue)) return null;
+  // T1771b: and any other node, as its on/off switch.
+  if (!joinsBoardByName(node, catalogue) && !switchesOnBoard(node, catalogue)) return null;
   if (board.items.some((item) => item.kind === "widget" && item.node.id === node.id)) return null;
   const stored = storedBoardOf(board);
   const rect = firstFreeRect(board.items.map((item) => item.rect), board.columns, boardMemberSize(node, catalogue));

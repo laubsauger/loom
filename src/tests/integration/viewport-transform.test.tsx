@@ -229,7 +229,7 @@ describe("§V142 — a camera move costs no allocation (B13)", () => {
     const baseline = { ...counters };
     const framing = transformOf(view.container);
 
-    // --- PAN: middle-drag, which is what `panOnDrag={[1]}` binds ------------------------
+    // --- PAN: middle-drag, one of the two buttons `panOnDrag={[0, 1]}` binds ------------
     await act(async () => {
       mouse(pane, "mousedown", { button: 1, buttons: 4, clientX: 500, clientY: 400 });
       for (let step = 1; step <= 20; step += 1) {

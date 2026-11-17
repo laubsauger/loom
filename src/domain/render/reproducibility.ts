@@ -118,6 +118,8 @@ export const NODE_REPRODUCIBILITY: Readonly<Record<string, Reproducibility>> = {
   // What DOES apply is the first half — a take samples whatever the performer happened
   // to be touching, twice takes are two performances, and no parameter changes that.
   midiIn: "external-live",
+  // T1762b: the same live device, read as notes: what a take holds is what was played while it ran.
+  midiNotes: "external-live",
   // T942 tier 3. OSC arriving over the device bridge, through the same `channels` seam.
   // `external-live` for `midiIn`'s reason and one extra: a reading crosses a loopback
   // socket, so it is at most one PUSH plus one frame old — still bounded, still not a
@@ -414,11 +416,16 @@ export const NODE_REPRODUCIBILITY: Readonly<Record<string, Reproducibility>> = {
   presets: "pure",
   // T1500b: a cue list — no ports, no passes; a GO is a document edit, never a frame read.
   cueList: "pure",
+  // T1787b: reads `frame.tempo`. A render's transport stamps the document's BPM along the
+  // frame's absolute time (§V1038), so a take's beats are a function of the frame.
+  tempo: "pure",
   // VN61: curves of the frame index — no clock, no state, no device.
   automation: "pure",
   valueBeat: "pure",
   valueSelect: "pure",
   audioPattern: "pure",
+  harmony: "pure",
+  noteField: "pure",
   // MEDIA FILES ARE PURE AS TYPES, and this is the split the module note argues for. A
   // bound file locked to the timeline is `f(frame)`; free run is a PARAMETER fact and
   // `freeRunMediaNodes` reads it per document, per node, through `resolveParameters`.
@@ -428,6 +435,16 @@ export const NODE_REPRODUCIBILITY: Readonly<Record<string, Reproducibility>> = {
   // A saved float map is fixed data; preparation never runs during rendering.
   floatMapIn: "pure",
   audioFileIn: "pure",
+  // T1751b: a projection of the session's capture, which it cannot open by itself. Whatever
+  // makes a take over it not reproduce is a SOURCE fact and is reported there: a microphone
+  // needs an `audioIn` (external-live above), a free-running file is `freeRunMediaNodes`'.
+  // Calling this external-live would condemn it over a locked file, where it is `f(frame)`.
+  audioChroma: "pure",
+  // T1753b: the same projection, of the chord and key the record claims.
+  audioChord: "pure",
+  audioNotes: "pure",
+  // T1757b: a function of the frame clock and its parameters: no capture at all.
+  tonePattern: "pure",
 };
 
 /** Why one node in the document will not reproduce. */

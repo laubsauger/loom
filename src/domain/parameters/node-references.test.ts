@@ -7,10 +7,12 @@ import { describe, expect, it } from "vitest";
 import type { NodeRegistryView } from "../../nodes/registry/registry.ts";
 import { diagnosticClass } from "../diagnostics/classes.ts";
 import { evaluateExpression } from "../expressions/index.ts";
+import type { FrameEvaluationInput } from "../types/frame.ts";
 import type { GraphDocument, GraphNode } from "../types/graph.ts";
 import type { ParameterSchema } from "../types/parameters.ts";
 import { NO_FLATTENING, parameterReadOptions } from "./node-references.ts";
 import { resolveParameterSchema } from "./resolve.ts";
+import type { ChannelResolver } from "./resolve.ts";
 import { testRead } from "./test-support.ts";
 
 /**
@@ -744,6 +746,89 @@ describe("T1172 — the per-reader memo of a referenced node's parameters", () =
     const [cleanFirst, cyclicSecond] = readsOf(["nn", "nt"]);
     expect(cleanFirst?.value).toBe(5);
     expect(cleanFirst?.diagnostic).toBeNull();
+    expect(cyclicSecond?.diagnostic?.message).toContain("cycle");
+  });
+});
+
+/**
+ * T1720b — A READER THAT REMEMBERS SUBEXPRESSIONS: each repeated subtree evaluated once for
+ * the reader's life, which a frame's compile asks for (`frame-compile.ts`). The same two
+ * hazards as §T1172's memo, held the same way: a remembered value must move with the frame
+ * (a reader is per frame, §B181), and a value reached through a ring must not be served to a
+ * clean path (§V152).
+ */
+describe("T1720b — a reader that remembers repeated subexpressions", () => {
+  const registry = { get: () => ({ parameters: SCHEMA }) } as unknown as NodeRegistryView;
+  const remembering = (graph: GraphDocument, channels: ChannelResolver | undefined, frame?: FrameEvaluationInput) =>
+    parameterReadOptions({ graph: flatDocument(graph), registry, frame, channels, flattening: NO_FLATTENING }, { expressions: true });
+
+  it("evaluates one text once for two parameters that carry it, and twice for a reader that remembers nothing", () => {
+    const lfo = node("n1", "lfo1");
+    const p = node("n2", "p", { gain: expression("op('lfo1').chan.value * 2") });
+    const q = node("n3", "q", { gain: expression("op('lfo1').chan.value * 2") });
+    const graph = graphOf(lfo, p, q);
+    let asks = 0;
+    const channels: ChannelResolver = (address) => (address === "lfo1:value" ? ((asks += 1), 0.25) : undefined);
+
+    const once = remembering(graph, channels);
+    expect([p, q].map((subject) => resolveParameterSchema(subject, SCHEMA, once).get("gain")?.value)).toEqual([0.5, 0.5]);
+    expect(asks).toBe(1);
+
+    asks = 0;
+    const plain = parameterReadOptions({ graph: flatDocument(graph), registry, frame: undefined, channels, flattening: NO_FLATTENING });
+    expect([p, q].map((subject) => resolveParameterSchema(subject, SCHEMA, plain).get("gain")?.value)).toEqual([0.5, 0.5]);
+    expect(asks).toBe(2);
+  });
+
+  it("evaluates a subtree two different texts share once, and twice for a reader that remembers nothing", () => {
+    const lfo = node("n1", "lfo1");
+    const p = node("n2", "p", { gain: expression("op('lfo1').chan.value * 2") });
+    const q = node("n3", "q", { gain: expression("op('lfo1').chan.value * 2 + 1") });
+    const graph = graphOf(lfo, p, q);
+    let asks = 0;
+    const channels: ChannelResolver = (address) => (address === "lfo1:value" ? ((asks += 1), 0.25) : undefined);
+    const once = remembering(graph, channels);
+    expect([p, q].map((subject) => resolveParameterSchema(subject, SCHEMA, once).get("gain")?.value)).toEqual([0.5, 1.5]);
+    expect(asks).toBe(1);
+    asks = 0;
+    const plain = parameterReadOptions({ graph: flatDocument(graph), registry, frame: undefined, channels, flattening: NO_FLATTENING });
+    expect([p, q].map((subject) => resolveParameterSchema(subject, SCHEMA, plain).get("gain")?.value)).toEqual([0.5, 1.5]);
+    expect(asks).toBe(2);
+  });
+
+  it("gives the readers of two frames two numbers for one text (§B181)", () => {
+    const subject = node("n1", "s", { gain: expression("time * 2") });
+    const at = (timeSeconds: number) =>
+      resolveParameterSchema(subject, SCHEMA, remembering(graphOf(subject), undefined, { timeSeconds, deltaSeconds: 1 / 60, frameIndex: timeSeconds * 60, mode: "realtime", randomSeed: 1 })).get("gain")?.value;
+    expect([at(1), at(2)]).toEqual([2, 4]);
+  });
+
+  it("does not serve a text first reached through a ring to a clean path that carries the same text (§V152)", () => {
+    // §T1172's poisoning fixture, where `x.aim.z` and `n.gain` carry the SAME text: reached
+    // from `t` it is inside the ring through `aim.z`; reached from `n` it is worth 5.
+    const two: ParameterSchema = {
+      gain: { type: "number", label: "Gain", default: 1 },
+      aim: { type: "vector", size: 3, label: "Aim", default: [0, 0, 0] },
+    };
+    const graph = graphOf(
+      node("nx", "x", { aim: [5, 0, 0], "aim.z": expression("op('b').par.gain") }),
+      node("nb", "b", { gain: expression("op('x').par.aim.x") }),
+      node("nn", "n", { gain: expression("op('b').par.gain") }),
+      node("nt", "t", { gain: expression("op('x').par.aim.z") }),
+    );
+    const readsOf = (order: readonly string[]) => {
+      const options = parameterReadOptions(
+        { graph: flatDocument(graph), registry: { get: () => ({ parameters: two }) } as unknown as NodeRegistryView, frame: undefined, channels: undefined, flattening: NO_FLATTENING },
+        { expressions: true },
+      );
+      return order.map((id) => resolveParameterSchema(graph.nodes[id]!, two, options).get("gain"));
+    };
+    const [cyclicFirst, cleanSecond] = readsOf(["nt", "nn"]);
+    expect(cyclicFirst?.diagnostic?.message).toContain("cycle");
+    expect(cleanSecond?.value).toBe(5);
+    expect(cleanSecond?.diagnostic).toBeNull();
+    const [cleanFirst, cyclicSecond] = readsOf(["nn", "nt"]);
+    expect(cleanFirst?.value).toBe(5);
     expect(cyclicSecond?.diagnostic?.message).toContain("cycle");
   });
 });

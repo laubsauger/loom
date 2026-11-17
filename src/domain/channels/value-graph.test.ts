@@ -263,6 +263,31 @@ describe("a shadowed channel says so (T509)", () => {
     expect(shadowed[0]?.nodeId).toBe("lag1");
   });
 
+  it("T1793b: three wires into one port — every loser is named, the FIRST arrival included, and the last value flows", () => {
+    // The first bag to reach a port is recorded lazily (most ports get one wire). It must
+    // still be the named loser when a second arrives, and the second when a third does.
+    const session = createValueGraphSession(registry);
+    const graph = graphOf(
+      [
+        node("cA", "constant", { parameters: { value: 1 } }),
+        node("cB", "constant", { parameters: { value: 2 } }),
+        node("cC", "constant", { parameters: { value: 3 } }),
+        node("sel1", "valueSelect"),
+      ],
+      [
+        ["cA", "out", "sel1", "in"],
+        ["cB", "out", "sel1", "in"],
+        ["cC", "out", "sel1", "in"],
+      ],
+    );
+    const result = session.evaluate(flatDocument(graph), frameAt(0), { flattening: NO_FLATTENING });
+    const shadowed = result.diagnostics.filter((d) => d.code === "valueGraph.channelShadowed").map((d) => d.message);
+    expect(shadowed).toHaveLength(2);
+    expect(shadowed[0]).toContain('arrives from both "cA" and "cB"');
+    expect(shadowed[1]).toContain('arrives from both "cB" and "cC"');
+    expect(result.byName.get("sel1")).toEqual({ value: 3 });
+  });
+
   it("a clash-free composition stays silent — the warning is for losses, not for merges", () => {
     const session = createValueGraphSession(registry);
     // One source: nothing shadowed, nothing to say.
@@ -615,5 +640,32 @@ describe("T814 — asymmetric release and the high-pass tap", () => {
     expect(result.byName.get("math1")).toEqual({ value: 1.5 });
     // …and the output boundary publishes it unchanged: the channel reached the parent.
     expect(result.byName.get("out1")).toEqual({ value: 1.5 });
+  });
+});
+
+describe("T1179 — a node's stored constants are resolved once per node object, never past an edit", () => {
+  const expression = (source: string): ParameterSlot => ({ mode: "expression", bindings: {
+    static: { kind: "static", value: 0 }, expression: { kind: "expression", source },
+  } });
+
+  it("a constant edited between two frames reads its new value, and a moving key moves beside it", () => {
+    const session = createValueGraphSession(registry);
+    const at = (graph: GraphDocument, time: number) =>
+      session.evaluate(flatDocument(graph), frameAt(time), { flattening: NO_FLATTENING, pointer: { x: 0, y: 0, buttons: 0 } });
+    // `math1` holds one constant (`operation`) and one moving key (`operand`, read off the clock).
+    const graphWith = (operation: string) =>
+      graphOf(
+        [
+          node("src1", "constant", { parameters: { value: 2 } }),
+          node("math1", "valueMath", { parameters: { operation, operand: expression("time * 10") } }),
+        ],
+        [["src1", "out", "math1", "a"]],
+      );
+    const first = graphWith("multiply");
+    expect(at(first, 0.5).byName.get("math1")).toEqual({ value: 10 });
+    // The same node object a frame later: the moving key moved, the constant held.
+    expect(at(first, 1).byName.get("math1")).toEqual({ value: 20 });
+    // An edit is another node object: the constant it stores now is the one read.
+    expect(at(graphWith("add"), 1).byName.get("math1")).toEqual({ value: 12 });
   });
 });

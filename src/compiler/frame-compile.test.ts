@@ -4,12 +4,14 @@ import { createComponentSystem } from "../domain/components/index.ts";
 import { loadProject } from "../domain/project/index.ts";
 import { hasAnimatedParameters, nodeHasAnimatedParameters, graphChannelResolver } from "../domain/channels/graph-channels.ts";
 import { effectiveParameterSchema } from "../domain/parameters/resolve.ts";
+import type { ChannelResolver } from "../domain/parameters/resolve.ts";
 import type { GraphDocument, GraphNode, ProjectSettings } from "../domain/types/graph.ts";
 import type { NodeId } from "../domain/types/ids.ts";
 import type { FrameEvaluationInput } from "../domain/types/frame.ts";
-import type { NodeDefinition, NodeCompileContext } from "../domain/types/node-definition.ts";
+import type { NodeDefinition, NodeCompileContext, NodeFrameValues } from "../domain/types/node-definition.ts";
 import type { ParameterDefinition, ParameterSlot, ParameterValue } from "../domain/types/parameters.ts";
 import { RGBA_TEXTURE } from "../nodes/definitions/common-ports.ts";
+import type { PassDescriptor } from "../runtime/backend/plan.ts";
 import { allNodeDefinitions } from "../nodes/definitions/index.ts";
 import { minimalGraphFor } from "../nodes/definitions/test-support.ts";
 import { createNodeRegistry } from "../nodes/registry/registry.ts";
@@ -462,6 +464,249 @@ describe("T1421b: the camera's path derivative splices exactly as the full compi
     }
     expect(seen[0]).not.toEqual(seen[1]);
   });
+});
+
+describe("T1684b: the frame's reader asks the channel resolver once per address", () => {
+  it("two reads of one channel are one ask, while the camera's time probe still reads its own moments", () => {
+    const node = (id: string, type: string, parameters: Record<string, unknown>, label: string) => ({ id, type, label, definitionVersion: 1, position: { x: 0, y: 0 }, parameters });
+    const graph = {
+      revision: 1,
+      groups: {},
+      nodes: {
+        pic: node("pic", "solid", {}, "pic1"),
+        turn: node("turn", "lfo", {}, "lfo_turn"),
+        cam: node("cam", "camera", { eye: [0, 0, 0], lookAt: [0, 0, -10], "lookAt.x": expressionSlot("op('lfo_turn').chan.value * 10", 0), "lookAt.z": expressionSlot("op('lfo_turn').chan.value * 5 - 10", -10), fov: expressionSlot("50 + op('lfo_turn').chan.value", 55) }, "cam1"),
+        blur: node("blur", "cameraBlur", { camera: "cam1" }, "blur1"),
+        out: node("out", "output", {}, "out1"),
+      },
+      edges: {
+        e1: { id: "e1", source: { nodeId: "pic", portId: "out" }, target: { nodeId: "blur", portId: "input" } },
+        e2: { id: "e2", source: { nodeId: "blur", portId: "out" }, target: { nodeId: "out", portId: "input" } },
+      },
+    } as unknown as GraphDocument;
+    // A channel whose answer depends on the moment it is asked at, as the graph shorthand's does.
+    const asks = new Map<string, number>();
+    const channels: ChannelResolver = (channel, context) => {
+      if (channel !== "lfo_turn:value") return undefined;
+      const at = context.frame?.timeSeconds ?? 0;
+      asks.set(`${channel}@${at}`, (asks.get(`${channel}@${at}`) ?? 0) + 1);
+      return Math.sin(at * 3);
+    };
+    const prepared = prepareFrameCompiler(requestFor(graph, { resolution: { channels } }));
+    expect(prepared.uniformOnly, prepared.reason ?? "").toBe(true);
+    const blurUniforms = (plan: { passes: ReadonlyArray<unknown> }) =>
+      plan.passes.filter((pass) => typeof pass === "object" && pass !== null && "nodeId" in pass && pass.nodeId === "blur" && "uniforms" in pass).map((pass) => (pass as { uniforms: Record<string, unknown> }).uniforms);
+    const seen: unknown[] = [];
+    for (const frameIndex of [1, 20]) {
+      const frame = frameAt(frameIndex);
+      asks.clear();
+      const spliced = prepared.compileFrame({ frame, channels });
+      expect(spliced, prepared.reason ?? "").not.toBeNull();
+      // The frame's own reader: three expressions read the channel, and the resolver answers once.
+      expect(asks.get(`lfo_turn:value@${frame.timeSeconds}`)).toBe(1);
+      // The probe's moments are other moments, asked at their own times, not served this frame's answer.
+      expect([...asks.keys()].filter((key) => !key.endsWith(`@${frame.timeSeconds}`)).length).toBe(2);
+      // And the plan is the full compile's, which remembers nothing between reads.
+      expect(spliced?.passes).toEqual(compileGraph(requestFor(graph, { resolution: { frame, channels } })).passes);
+      seen.push(blurUniforms(spliced as { passes: ReadonlyArray<unknown> })[0]?.["right"]);
+    }
+    expect(seen[0]).not.toEqual(seen[1]);
+  });
+});
+
+describe("T1721b: a camera resolves itself at other moments only when something reads its motion", () => {
+  it("with no Camera Blur, the turning camera is asked at its own frame and nowhere else, and still splices the full compile", () => {
+    const node = (id: string, type: string, parameters: Record<string, unknown>, label: string) => ({ id, type, label, definitionVersion: 1, position: { x: 0, y: 0 }, parameters });
+    const graph = {
+      revision: 1,
+      groups: {},
+      nodes: {
+        turn: node("turn", "lfo", {}, "lfo_turn"),
+        cam: node("cam", "camera", { eye: [0, 0, 0], lookAt: [0, 0, -10], "lookAt.x": expressionSlot("op('lfo_turn').chan.value * 10", 0) }, "cam1"),
+        geo: node("geo", "geometry", {}, "geometry1"),
+        render: node("render", "render", { camera: "cam1" }, "render1"),
+        out: node("out", "output", {}, "out1"),
+      },
+      edges: {
+        e1: { id: "e1", source: { nodeId: "geo", portId: "out" }, target: { nodeId: "render", portId: "scene" } },
+        e2: { id: "e2", source: { nodeId: "render", portId: "out" }, target: { nodeId: "out", portId: "input" } },
+      },
+    } as unknown as GraphDocument;
+    const askedAt = new Set<number>();
+    const channels: ChannelResolver = (channel, context) => {
+      if (channel !== "lfo_turn:value") return undefined;
+      askedAt.add(context.frame?.timeSeconds ?? 0);
+      return Math.sin((context.frame?.timeSeconds ?? 0) * 3);
+    };
+    const prepared = prepareFrameCompiler(requestFor(graph, { resolution: { channels } }));
+    expect(prepared.uniformOnly, prepared.reason ?? "").toBe(true);
+    for (const frameIndex of [1, 20]) {
+      const frame = frameAt(frameIndex);
+      askedAt.clear();
+      const spliced = prepared.compileFrame({ frame, channels });
+      expect(spliced, prepared.reason ?? "").not.toBeNull();
+      expect([...askedAt]).toEqual([frame.timeSeconds]);
+      expect(spliced?.passes).toEqual(compileGraph(requestFor(graph, { resolution: { frame, channels } })).passes);
+    }
+  });
+});
+
+describe("T1719b: a node's value function stands in for its compile on a values-only frame", () => {
+  const level = allNodeDefinitions.find((definition) => definition.type === "level") as NodeDefinition;
+
+  it("Level is asked for its values and not compiled again, and its pass keeps the base's structure by reference (V1031)", () => {
+    let compiles = 0;
+    const counted = { ...level, compile: (context: NodeCompileContext) => ((compiles += 1), level.compile(context)) } as NodeDefinition;
+    const countedRegistry = createNodeRegistry([...allNodeDefinitions.filter((definition) => definition !== level), counted]).view();
+    const graph = withParameter(minimalGraphFor(counted, countedRegistry) as unknown as GraphDocument, "subject", "brightness", expressionSlot("1 + sin(time * 3)", 1));
+    const request = (resolution?: CompileRequest["resolution"]): CompileRequest => ({ ...requestFor(graph), registry: countedRegistry, ...(resolution === undefined ? {} : { resolution }) });
+    const prepared = prepareFrameCompiler(request());
+    expect(prepared.uniformOnly, prepared.reason ?? "").toBe(true);
+    const levelPass = (plan: { passes: ReadonlyArray<PassDescriptor> }) => plan.passes.find((pass) => "nodeId" in pass && pass.nodeId === "subject") as PassDescriptor & { uniforms: Record<string, unknown>; textures: unknown; samplers: unknown; shader: string };
+    const base = levelPass(prepared.base);
+    const brightness: unknown[] = [];
+    for (const frameIndex of [1, 20]) {
+      const before = compiles;
+      const spliced = prepared.compileFrame({ frame: frameAt(frameIndex) });
+      expect(spliced, prepared.reason ?? "").not.toBeNull();
+      expect(compiles, "a values-only frame ran Level's compile").toBe(before);
+      const pass = levelPass(spliced as { passes: ReadonlyArray<PassDescriptor> });
+      expect(pass.shader).toBe(base.shader);
+      expect(pass.textures).toBe(base.textures);
+      expect(pass.samplers).toBe(base.samplers);
+      expect(spliced?.passes).toEqual(compileGraph(request({ frame: frameAt(frameIndex) })).passes);
+      brightness.push(pass.uniforms["brightness"]);
+    }
+    // The values moved: the function is not handing back the base's numbers.
+    expect(brightness[0]).not.toEqual(brightness[1]);
+  });
+
+  /** V1032 for one compiled document: every value function gives, at the base context, its description's own values. */
+  const holdsOneSource = (requests: ReadonlyArray<readonly [string, CompileRequest]>): string[] => {
+    const adopters: string[] = [];
+    for (const [label, request] of requests) {
+      const result = compileGraphRetaining(request);
+      for (const record of result.retained?.nodes.values() ?? []) {
+        if (record.values === undefined) continue;
+        if (!adopters.includes(record.definition.type)) adopters.push(record.definition.type);
+        const description = record.definition.compile(record.context);
+        const values = record.values(record.context);
+        const named = `${label}: ${record.node.type} "${record.node.id}"`;
+        expect(values.passes.length, named).toBe(description.passes.length);
+        description.passes.forEach((raw, index) => {
+          const pass = raw as { id?: string; kind?: string; uniforms?: unknown; skip?: boolean; instances?: unknown; vertexCount?: number; values?: unknown };
+          const moved = values.passes[index];
+          const at = `${named} pass #${String(index)} (${String(pass.id)})`;
+          if (moved?.id !== undefined) expect(moved.id, at).toBe(pass.id);
+          if (moved?.uniforms !== undefined || pass.uniforms !== undefined) expect(moved?.uniforms, at).toEqual(pass.uniforms);
+          if (moved?.skip !== undefined) expect(moved.skip, at).toBe(pass.skip === true);
+          if (moved?.instances !== undefined) expect(moved.instances, at).toBe(pass.instances);
+          if (moved?.vertexCount !== undefined) expect(moved.vertexCount, at).toBe(pass.vertexCount);
+          if (moved?.values !== undefined || pass.kind === "write") expect(moved?.values, at).toEqual(pass.values);
+        });
+        const published = (description as { scene?: unknown }).scene;
+        if (values.scene !== undefined || published !== undefined) expect(values.scene, `${named} scene`).toEqual(published);
+      }
+    }
+    return adopters;
+  };
+
+  it("every registered definition that hands back a value function computes its base values through it (V1032)", () => {
+    const adopters = holdsOneSource(allNodeDefinitions.map((definition) => [definition.type, requestFor(minimalGraphFor(definition, registry) as unknown as GraphDocument)] as const));
+    expect(adopters).toContain("level");
+  });
+
+  it("every value function in every shipped example gives its own description's values at the base (V1032)", () => {
+    const registryBase = createNodeRegistry(allNodeDefinitions).view();
+    const requests = listExamples().flatMap((file): Array<readonly [string, CompileRequest]> => {
+      const system = createComponentSystem(registryBase);
+      const loaded = loadProject(file.text, { nodes: system.nodes });
+      if (!loaded.ok) return [];
+      for (const definition of loaded.components) system.components.register(definition);
+      return [[file.fileName, { graph: loaded.document.graph, settings: loaded.document.settings, registry: system.nodes, capabilities: TIER_B_CAPABILITIES, components: system.components.view() }]];
+    });
+    // The Render is the adopter the shipped set exercises; Level where an example animates one.
+    expect(holdsOneSource(requests)).toContain("render");
+  });
+
+  describe("a value function that gets the shape of its values wrong degrades the lane by name", () => {
+    const wrong = (values: (gain: number) => NodeFrameValues): NodeDefinition =>
+      ({
+        type: "wrongValues",
+        version: 1,
+        label: "Wrong Values",
+        category: "generators",
+        description: "A value function that does not match the passes it emitted.",
+        inputs: [],
+        outputs: [{ id: "out", label: "Out", type: RGBA_TEXTURE }],
+        parameters: { gain: { type: "number", label: "Gain", default: 1 } },
+        resolutionPolicy: { kind: "project" },
+        compile(raw: NodeCompileContext) {
+          const gain = asCompilerContext(raw).parameters["gain"] as number;
+          return {
+            passes: [{ kind: "effect", id: "main", shader: "@fragment fn fs() -> @location(0) vec4f { return vec4f(1); }", uniforms: { gain }, uniformBinding: "params" }],
+            values: (next: NodeCompileContext) => values(asCompilerContext(next).parameters["gain"] as number),
+          };
+        },
+      }) as unknown as NodeDefinition;
+    const cases: ReadonlyArray<readonly [string, (gain: number) => NodeFrameValues, string]> = [
+      ["a name its base block lacks", (gain) => ({ passes: [{ uniforms: { gain, extra: 1 } }] }), 'gave pass "subject#main" a uniform block'],
+      ["a name missing", () => ({ passes: [{ uniforms: {} }] }), 'gave pass "subject#main" a uniform block'],
+      ["a value that is not finite", () => ({ passes: [{ uniforms: { gain: Number.NaN } }] }), 'gave pass "subject#main" a uniform block'],
+      ["a pass more than it emitted", (gain) => ({ passes: [{ uniforms: { gain } }, {}] }), "gave values for 2 passes at this frame and emitted 1 at the base"],
+      ["another pass's id", (gain) => ({ passes: [{ id: "other", uniforms: { gain } }] }), 'gave values for pass "subject#other" where the base has "subject#main"'],
+      ["a draw's skip on an effect", (gain) => ({ passes: [{ uniforms: { gain }, skip: true }] }), "a draw's values, and it is not a draw"],
+      ["a buffer write's rows on an effect", (gain) => ({ passes: [{ uniforms: { gain }, values: { rows: [1], count: 1 } }] }), "a buffer write's rows, and it is not a buffer write"],
+    ];
+    for (const [what, values, said] of cases) {
+      it(what, () => {
+        const definition = wrong(values);
+        const wrongRegistry = createNodeRegistry([...allNodeDefinitions, definition]).view();
+        const graph = withParameter(minimalGraphFor(definition, wrongRegistry) as unknown as GraphDocument, "subject", "gain", expressionSlot("1 + time", 1));
+        const prepared = prepareFrameCompiler({ ...requestFor(graph), registry: wrongRegistry });
+        expect(prepared.uniformOnly, prepared.reason ?? "").toBe(true);
+        expect(prepared.compileFrame({ frame: frameAt(5) })).toBeNull();
+        expect(prepared.reason).toContain('Node "subject" (wrongValues)');
+        expect(prepared.reason).toContain(said);
+      });
+    }
+  });
+});
+
+describe("T1719b: a value function gives a scene payload on every output the base published one on, and no other", () => {
+  const publisher = (values: (gain: number) => NodeFrameValues): NodeDefinition =>
+    ({
+      type: "wrongScene",
+      version: 1,
+      label: "Wrong Scene",
+      category: "generators",
+      description: "Publishes a scene payload on `out`, and a value function that does not match it.",
+      inputs: [],
+      outputs: [{ id: "out", label: "Out", type: RGBA_TEXTURE }],
+      parameters: { gain: { type: "number", label: "Gain", default: 1 } },
+      resolutionPolicy: { kind: "project" },
+      compile(raw: NodeCompileContext) {
+        const gain = asCompilerContext(raw).parameters["gain"] as number;
+        return { passes: [], scene: { out: { kind: "probe", gain } }, values: (next: NodeCompileContext) => values(asCompilerContext(next).parameters["gain"] as number) };
+      },
+    }) as unknown as NodeDefinition;
+  const cases: ReadonlyArray<readonly [string, (gain: number) => NodeFrameValues, string]> = [
+    ["none given", () => ({ passes: [] }), "gave scene payloads on [] and published them on [out] at the base"],
+    ["one more given", (gain) => ({ passes: [], scene: { out: { kind: "probe", gain }, other: { kind: "probe", gain } } as never }), "gave scene payloads on [out, other] and published them on [out] at the base"],
+    ["a payload with no kind", (gain) => ({ passes: [], scene: { out: { gain } } as never }), 'gave output "out" a scene payload with no kind'],
+  ];
+  for (const [what, values, said] of cases) {
+    it(what, () => {
+      const definition = publisher(values);
+      const wrongRegistry = createNodeRegistry([...allNodeDefinitions, definition]).view();
+      const graph = withParameter(minimalGraphFor(definition, wrongRegistry) as unknown as GraphDocument, "subject", "gain", expressionSlot("1 + time", 1));
+      const prepared = prepareFrameCompiler({ ...requestFor(graph), registry: wrongRegistry });
+      expect(prepared.uniformOnly, prepared.reason ?? "").toBe(true);
+      expect(prepared.compileFrame({ frame: frameAt(5) })).toBeNull();
+      expect(prepared.reason).toContain('Node "subject" (wrongScene)');
+      expect(prepared.reason).toContain(said);
+    });
+  }
 });
 
 describe("T1182: loop counts and scene payloads move with the frame", () => {

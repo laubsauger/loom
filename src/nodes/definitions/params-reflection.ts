@@ -545,6 +545,22 @@ export function reflectedParamCollisions(
  * collide with a member the generator owns; a `customWgsl` passes no prefix and binds by the
  * author's own names.
  */
+/**
+ * T1719b: `paramForField(field)` per field object. A value function asks for the uniforms of
+ * the same reflected fields on every frame (a compiled kernel's, a Custom WGSL's), and the
+ * control a field maps to is a pure function of the field: its label, help text and default
+ * were rebuilt sixty times a second to read two of their members.
+ */
+const controlsByField = new WeakMap<ReflectedField, ParameterDefinition | null>();
+function controlOf(field: ReflectedField): ParameterDefinition | undefined {
+  let control = controlsByField.get(field);
+  if (control === undefined) {
+    control = paramForField(field) ?? null;
+    controlsByField.set(field, control);
+  }
+  return control ?? undefined;
+}
+
 export function reflectedUniforms(
   fields: readonly ReflectedField[],
   parameters: Readonly<Record<string, ParameterValue>>,
@@ -552,7 +568,7 @@ export function reflectedUniforms(
 ): Record<string, number | readonly number[]> {
   const uniforms: Record<string, number | readonly number[]> = {};
   for (const field of fields) {
-    const param = paramForField(field);
+    const param = controlOf(field);
     if (param === undefined) continue;
     const key = `${prefix}${field.name}`;
     if (param.type === "number") {

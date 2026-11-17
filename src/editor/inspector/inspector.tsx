@@ -723,7 +723,9 @@ export function Inspector({
   const showsWebcamSection = node.type === "webcam";
   const nativeInputTransport = NATIVE_INPUT_TRANSPORTS[node.type];
   const showsSyphonSection = nativeInputTransport !== undefined;
-  const showsMidiSection = midi !== undefined && node.type === "midiIn";
+  // T1762b: MIDI Notes shows the same section without the learn table: it needs the access
+  // status, the button that asks and the device picker, and learns nothing.
+  const showsMidiSection = midi !== undefined && (node.type === "midiIn" || node.type === "midiNotes");
   // The CONSTANT, not the literal: §T1005's tripwire reads an emitting type's literal
   // in session code as an unregistered pump's tell, and this section is a surface.
   const showsLaserSection = laser !== undefined && node.type === LASER_OUT_TYPE;
@@ -1069,11 +1071,11 @@ export function Inspector({
   ) : null;
 
   const midiSection =
-    showsMidiSection && node.type === "midiIn" ? (
+    showsMidiSection ? (
       <MidiSection
         nodeId={node.id}
         device={typeof resolved.values["device"] === "string" ? (resolved.values["device"] as string) : ""}
-        mapping={typeof resolved.values["mapping"] === "string" ? (resolved.values["mapping"] as string) : ""}
+        mapping={node.type === "midiNotes" ? null : typeof resolved.values["mapping"] === "string" ? (resolved.values["mapping"] as string) : ""}
         midi={midi}
         editor={editor}
       />

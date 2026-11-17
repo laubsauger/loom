@@ -105,3 +105,102 @@ describe("§T1507b — layerWarmRequest / compileLayerWarmPlan", () => {
     expect(flattened.graph.nodes["layerFx"]!.ui?.bypassed).toBe(true);
   });
 });
+
+/**
+ * T1771b — WITH `every`, ANY NODE THAT IS OFF IS BUILT AHEAD. A preset or a board switch
+ * turns any node off and on (§T1770b), so the property §T1507b names holds for all of them:
+ * every pass the real switch-on compiles has its id and bytes in the warm plan. The case with
+ * something to get wrong is a component INSTANCE: off, it is not inlined, so its passes exist
+ * only after the document is flattened again with it on.
+ */
+describe("T1771b — the warm plan with every off node on", () => {
+  const node = (id: string, type: string, parameters: Record<string, unknown> = {}, bypassed = false): GraphDocument["nodes"][string] =>
+    ({ id, type, definitionVersion: 1, position: { x: 0, y: 0 }, parameters, label: id, ...(bypassed ? { ui: { bypassed: true } } : {}) }) as never;
+  const edge = (id: string, from: readonly [string, string], to: readonly [string, string]) =>
+    ({ id, source: { nodeId: from[0], portId: from[1] }, target: { nodeId: to[0], portId: to[1] } }) as never;
+
+  const system = createComponentSystem(registry);
+  system.components.register({
+    componentId: "grade",
+    version: 1,
+    name: "Grade",
+    graph: {
+      revision: 1,
+      groups: {},
+      nodes: { picIn: node("picIn", "componentIn"), dark: node("dark", "level", { brightness: 0.25 }), picOut: node("picOut", "componentOut") },
+      edges: { a: edge("a", ["picIn", "out"], ["dark", "input"]), b: edge("b", ["dark", "out"], ["picOut", "in"]) },
+    },
+    inputs: [],
+    outputs: [],
+    parameters: [],
+  } as never);
+  const gradeType = system.nodes.get("component:grade@1")!;
+
+  /** `solid → [Grade instance] → blur → output`, with the instance and the blur off or on. */
+  function stage(instanceOff: boolean, blurOff: boolean): CompileRequest {
+    const graph = {
+      revision: 1,
+      groups: {},
+      nodes: {
+        solid: node("solid", "solid", { color: [1, 1, 1, 1] }),
+        grade: node("grade", "component:grade@1", {}, instanceOff),
+        soft: node("soft", "blur", { size: 4 }, blurOff),
+        out: node("out", "output"),
+      },
+      edges: {
+        e0: edge("e0", ["solid", "out"], ["grade", gradeType.inputs[0]!.id]),
+        e1: edge("e1", ["grade", gradeType.outputs[0]!.id], ["soft", "input"]),
+        e2: edge("e2", ["soft", "out"], ["out", "input"]),
+      },
+    } as never as GraphDocument;
+    const components = system.components.view();
+    return {
+      graph,
+      settings: setListDocument.settings,
+      registry: system.nodes,
+      capabilities: TIER_B_CAPABILITIES,
+      sinks: [],
+      components,
+      flattened: flattenComponents({ graph, registry: system.nodes, components }),
+    };
+  }
+  const keysOf = (request: CompileRequest): Map<string, string> => {
+    const plan = compileGraph(request);
+    expect(plan.diagnostics.filter((each) => each.severity === "error")).toEqual([]);
+    return effectKeys(plan);
+  };
+
+  it("an off instance and an off filter: the warm plan is the plan with both on, pass for pass", () => {
+    const off = stage(true, true);
+    const on = keysOf(stage(false, false));
+    // What the switch brings back: the instance's interior and the blur.
+    const brought = [...on.keys()].filter((id) => !keysOf(off).has(id));
+    expect(brought.some((id) => id.startsWith("grade/dark"))).toBe(true);
+    expect(brought.some((id) => id.startsWith("soft"))).toBe(true);
+    const warm = compileLayerWarmPlan(off, { every: true });
+    expect(warm).not.toBeNull();
+    expect(effectKeys(warm!)).toEqual(on);
+    // The caller's document and flattening are not touched.
+    expect(off.graph.nodes["grade"]!.ui?.bypassed).toBe(true);
+    expect(off.flattened!.graph.nodes["grade"]!.ui?.bypassed).toBe(true);
+  });
+
+  it("without `every` neither is switched on: Layers only, as §V1030's gate reads it", () => {
+    expect(layerWarmRequest(stage(true, true))).toBeNull();
+  });
+
+  it("a muted node is not off in a switch's sense, and stays muted", () => {
+    const request = stage(false, false);
+    const muted = { ...request.graph.nodes["soft"]!, ui: { muted: true, bypassed: true } };
+    const graph = { ...request.graph, nodes: { ...request.graph.nodes, soft: muted } };
+    const withMuted: CompileRequest = { ...request, graph, flattened: flattenComponents({ graph, registry: system.nodes, components: request.components! }) };
+    expect(layerWarmRequest(withMuted, { every: true })).toBeNull();
+  });
+
+  it("with no catalogue the instance cannot be flattened again, so it is left off and the rest is warmed", () => {
+    const { components: _components, ...bare } = stage(true, true);
+    const warm = layerWarmRequest(bare, { every: true })!;
+    expect(warm.flattened!.graph.nodes["soft"]!.ui?.bypassed).toBe(false);
+    expect(warm.flattened!.graph.nodes["grade"]!.ui?.bypassed).toBe(true);
+  });
+});

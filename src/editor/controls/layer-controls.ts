@@ -4,7 +4,7 @@ import type { GraphNode } from "@domain/types/graph.ts";
 import type { NodeId } from "@domain/types/ids.ts";
 import { effectiveParameterSchema } from "@domain/parameters/resolve.ts";
 import { isParameterSlot, staticBindingValue } from "@domain/parameters/slots.ts";
-import { controlNameOf } from "@nodes/definitions/controls.ts";
+import { LAYER_NODE_TYPE, controlNameOf } from "@nodes/definitions/controls.ts";
 
 /**
  * A LAYER'S SWITCH AND FADER, as every desk surface writes and reads them — the board's
@@ -26,7 +26,8 @@ export function setLayerOn(bus: LoomBus, invocation: InvocationContext, nodeId: 
     "graph.applyPatch",
     {
       baseRevision: bus.store.getRevision(),
-      label: `${next ? "Layer on" : "Layer off"} (${controlNameOf(node)})`,
+      // T1771b: any node's board switch writes through here; only a Layer is called one.
+      label: `${node.type === LAYER_NODE_TYPE ? "Layer" : "Switch"} ${next ? "on" : "off"} (${controlNameOf(node)})`,
       operations: [{ op: "setNodeUi", nodeId, ui: { bypassed: !next } }],
     },
     invocation,

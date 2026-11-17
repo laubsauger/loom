@@ -289,11 +289,13 @@ describe("B67 — a graph binding stops firing once the user clicks into another
     const { runtime, container } = await mountWithNodes(2);
     const node = container.querySelector(".react-flow__node");
     if (node === null) throw new Error("expected a node to render");
+    // The canvas is clicked FIRST: a click on empty canvas deselects, as TouchDesigner's
+    // does (T1724b), so the node is selected after it, and the canvas keeps the focus.
+    await clickBackgroundOf(container, ".react-flow__pane");
     await act(async () => {
       fireEvent.pointerDown(node, { button: 0, isPrimary: true });
       fireEvent.click(node);
     });
-    await clickBackgroundOf(container, ".react-flow__pane");
 
     await act(async () => {
       fireEvent.keyDown(focusTarget(), { key: "Backspace" });

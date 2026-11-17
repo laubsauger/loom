@@ -10,6 +10,9 @@ import {
 import type { AudioFeatures } from "../types/frame.ts";
 import { AUDIO_SPECTRUM_BANDS } from "./spectrum-bands.ts";
 import { distinctSpectrumBands } from "./spectrum-bands.fixture.ts";
+import { distinctTonalFields } from "./tonal-fields.fixture.ts";
+import { PITCH_CLARITY, PITCH_FUNDAMENTAL_SHARE, PITCH_MAX_HZ, PITCH_ONSET_SEMITONES, PITCH_PEAK_SHARE } from "./analysis/pitch.ts";
+import { CHROMA_CONFIDENCE_FULL, PITCH_ANALYSIS, TONAL_ANALYSIS } from "./tonal-fields.ts";
 import {
   FEATURE_TRACK_FIELDS,
   FEATURE_TRACK_STRIDE,
@@ -47,6 +50,8 @@ const features = (level: number): AudioFeatures => ({
   beatCount: 6,
   // T1347b: eighteen more, each distinct — `band80` is level × 20, `band16000` level × 37.
   ...distinctSpectrumBands(level),
+  // T1751b: and the tonal fields, each distinct.
+  ...distinctTonalFields(level + 40),
 });
 
 describe("§V352 — the recorded CONTRACT is pinned, and changing it is a versioning event", () => {
@@ -75,7 +80,7 @@ describe("§V352 — the recorded CONTRACT is pinned, and changing it is a versi
     expect(CENTROID_RANGE_HZ).toEqual([20, 16000]);
     // The field set and its ORDER are equally part of the layout this version describes:
     // the eight v1 fields verbatim and in place, then what v2 added.
-    expect([...FEATURE_TRACK_FIELDS]).toEqual([
+    expect(FEATURE_TRACK_FIELDS.slice(0, 38)).toEqual([
       "level",
       "low",
       "lowMid",
@@ -139,8 +144,90 @@ describe("§V352 — the recorded CONTRACT is pinned, and changing it is a versi
       ["band11700", 10025.1, 13691.2],
       ["band16000", 13691.2, 18698.1],
     ]);
+    // T1751b — the tonal fields, in record order, and the analysis their values are defined
+    // over. A longer window, a different range or another reference pitch makes every
+    // recorded `chroma*` describe a different sound while parsing perfectly.
+    expect(FEATURE_TRACK_FIELDS.slice(38)).toEqual([
+      "chroma0",
+      "chroma1",
+      "chroma2",
+      "chroma3",
+      "chroma4",
+      "chroma5",
+      "chroma6",
+      "chroma7",
+      "chroma8",
+      "chroma9",
+      "chroma10",
+      "chroma11",
+      "chromaConfidence",
+      "tuning",
+      "tonalLag",
+      "chordRoot",
+      "chordQuality",
+      "chordConfidence",
+      "chordChangeCount",
+      "chordAge",
+      "keyTonic",
+      "keyMode",
+      "keyConfidence",
+      // T1755b — the lead pitch, then five voices of six fields.
+      "pitch",
+      "pitchConfidence",
+      "pitchOnsetCount",
+      "pitchLag",
+      "voiceCount",
+      ...[0, 1, 2, 3, 4].flatMap((voice) => ["Pitch", "Level", "Confidence", "Age", "OnsetCount", "Id"].map((field) => `voice${String(voice)}${field}`)),
+    ]);
+    expect(FEATURE_TRACK_STRIDE).toBe(96);
+    expect(PITCH_ANALYSIS).toEqual({ everyHops: 2 });
+    expect([PITCH_PEAK_SHARE, PITCH_CLARITY, PITCH_FUNDAMENTAL_SHARE, PITCH_MAX_HZ, PITCH_ONSET_SEMITONES]).toEqual([0.93, 0.9, 0.1, 2000, 0.8]);
+    expect(TONAL_ANALYSIS).toEqual({
+      windowSize: 8192,
+      hop: 2048,
+      lowHz: 55,
+      highHz: 4200,
+      floorDecibels: -60,
+      floorAmplitude: 1e-5,
+      silenceMeanSquare: 1e-7,
+      referenceHz: 440,
+    });
+    expect(CHROMA_CONFIDENCE_FULL).toBe(0.9);
     // Change any of the above and this line is the one you must change too.
-    expect(FEATURE_TRACK_VERSION).toBe(3);
+    expect(FEATURE_TRACK_VERSION).toBe(5);
+  });
+
+  it("T1755b — a version 4 track refuses by name rather than replaying with no lead pitch", () => {
+    const stored = JSON.stringify({ version: 4, fps: 60, frames: new Array(61 * 96).fill(0.25) });
+    const result = parseFeatureTrack(stored);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe("audio.track.version");
+    expect(result.message).toContain("version 4");
+  });
+
+  it("T1751b — a version 3 track refuses by name rather than replaying with dead pitch classes", () => {
+    // Thirty-eight numbers per frame under v3; 61 frames of thirty-eight is exactly 38
+    // frames of sixty-one, so the stride check alone would let it through.
+    const stored = JSON.stringify({ version: 3, fps: 60, frames: new Array(38 * 61).fill(0.25) });
+    const result = parseFeatureTrack(stored);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe("audio.track.version");
+    expect(result.message).toContain("version 3");
+  });
+
+  it("T1751b — provenance says whether the tonal pass ran, and round-trips", () => {
+    const recorder = createFeatureTrackRecorder(60, { detector: { threshold: 0.05, retrigger: 0.032 }, tonal: true });
+    recorder.capture(0, features(0.5));
+    const round = parseFeatureTrack(serializeFeatureTrack(recorder.track()));
+    expect(round.ok).toBe(true);
+    if (!round.ok) return;
+    expect(round.track.provenance).toEqual({ detector: { threshold: 0.05, retrigger: 0.032 }, tonal: true });
+    const bad = parseFeatureTrack(JSON.stringify({ ...recorder.track(), provenance: { detector: { threshold: 0.05, retrigger: 0.032 }, tonal: "yes" } }));
+    expect(bad.ok).toBe(false);
+    if (bad.ok) return;
+    expect(bad.code).toBe("audio.track.provenance");
   });
 
   it("T1227 — a version 1 track refuses by name, and the reader never widens it into twenty fields", () => {

@@ -513,6 +513,28 @@ const APP_BINDINGS: readonly KeyBinding[] = [
   },
   {
     /**
+     * T1785b — tap tempo. `t` was free in every context, and a tap key has to be one
+     * bare key: nobody taps a chord in time. A bare letter stays out of `global` (it would
+     * fire in every pane), so it is bound twice, where a tap is tapped: the graph and the
+     * viewer.
+     */
+    id: "tempo.tap",
+    keys: "t",
+    context: "graph",
+    command: "tempo.tap",
+    label: "Tap tempo",
+    description: "Tap the project tempo: the latest tap sets the beat, the last taps set the rate.",
+  },
+  {
+    id: "tempo.tap.viewer",
+    keys: "t",
+    context: "viewer",
+    command: "tempo.tap",
+    label: "Tap tempo",
+    description: "Tap the project tempo: the latest tap sets the beat, the last taps set the rate.",
+  },
+  {
+    /**
      * T433. `L` is the loop key everywhere that has one, and both `l` and `L` are already
      * spent on the graph's reference lines — so this is the free chord one modifier out,
      * the same reasoning `mod+shift+f` records below. `global`, not `viewer`: looping is

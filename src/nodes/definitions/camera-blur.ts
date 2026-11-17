@@ -63,7 +63,7 @@ export const cameraBlurNode: NodeDefinition = {
     },
     // Reference-fed plumbing (§V373): the `camera` PARAMETER names the node and the compiler
     // synthesizes this edge, exactly as for the renderers.
-    { id: "camera", label: "Camera", optional: true, type: { kind: "camera" } },
+    { id: "camera", label: "Camera", optional: true, type: { kind: "camera" }, readsMotion: true },
   ],
   outputs: [{ id: "out", label: "Out", type: RGBA_TEXTURE }],
   sourceReferences: [{ parameter: "camera", input: "camera" }],

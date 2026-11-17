@@ -347,6 +347,16 @@ function synthesisOf(live: LiveSynthesis, output: ResolvedOutput): { synthesis?:
 /** T1655b: the middle of the 16 px corner control, in node pixels from the tile's corner. */
 const CHROME_CORNER_INSET = 11;
 
+/**
+ * What a tile shows of its row: the row's own picture, or (§T1732b) the LOOK at it while one is
+ * drawn. The look is the renderer drawn again through the moved camera, so its target is the
+ * row's own size and format; the row's resource stays the renderer's real output.
+ */
+function pictureOf(output: ResolvedOutput): { resourceId: string; size: readonly [number, number]; format: ResolvedOutput["format"]; space: ResolvedOutput["space"] } {
+  const shown = output.look?.picture ?? output;
+  return { resourceId: shown.resourceId, size: shown.size, format: shown.format, space: shown.space };
+}
+
 export function useNodePreviews(inputs: NodePreviewInputs): void {
   // These indexes depend on the immutable plan/document, never on frame cadence.
   // Preserve first bindable row and last resolved facts for each port (T527/T1174).
@@ -799,12 +809,7 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
             const areaScale = Math.min(1, current.previewLongEdge / longEdge);
             requests.push({
               ref: { nodeId, portId },
-              source: {
-                resourceId: output.resourceId,
-                size: output.size,
-                format: output.format,
-                space: output.space,
-              },
+              source: pictureOf(output),
               // "Composite nowhere", stated once and shared with the backend's composite
               // loop, which must recognise it rather than hand it to vgpu as a viewport.
               rect: { ...OFF_SURFACE_TILE_RECT },
@@ -900,12 +905,7 @@ export function useNodePreviews(inputs: NodePreviewInputs): void {
           // T375 (§V57): `space` travels with the texture. `output` is the compiler's
           // ResolvedOutput, which already carries it — the preview shader is told what it
           // is looking at rather than assuming linear (B47).
-          source: {
-            resourceId: output.resourceId,
-            size: output.size,
-            format: output.format,
-            space: output.space,
-          },
+          source: pictureOf(output),
           rect: screenRect,
           // T1102: where the DOM lets this tile paint. Absent when nothing is in front.
           ...(clip === undefined ? {} : { clip }),

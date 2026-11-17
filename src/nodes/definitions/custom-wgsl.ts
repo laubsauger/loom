@@ -1,10 +1,10 @@
-import type { NodeDefinition, CompiledNodeDescription } from "../../domain/types/node-definition.ts";
+import type { NodeDefinition, CompiledNodeDescription, NodeValueFunction } from "../../domain/types/node-definition.ts";
 import type { EffectPassDescriptor } from "../../runtime/backend/plan.ts";
 import { SHADER_SOURCE_PARAMETER } from "../../domain/commands/apply-patch.ts";
 import { codeParametersLast } from "../../domain/parameters/code.ts";
 import { storedStaticValue } from "../../domain/parameters/slots.ts";
 import { DATA_TEXTURE, RGBA_TEXTURE } from "./common-ports.ts";
-import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
+import { missingCompileResource, readCompileInputs, readValueInputs } from "./compile-context.ts";
 import { declaredNames, resolveSharedModules, SHARED_WGSL_MODULES } from "../shaders/shared-modules.ts";
 import {
   REFLECTED_PARAMETER_KEYS_NOTE,
@@ -393,7 +393,12 @@ export const customWgslNode: NodeDefinition = {
       // the prelude is a shared module's, not the author's.
       sourceMap: [placed(SHADER_SOURCE_PARAMETER, shader, endOf(shared.prelude))],
     };
-    return viewDiagnostics.length === 0 ? { passes: [pass] } : { passes: [pass], diagnostics: viewDiagnostics };
+    // T1719b: a values-only frame asks for the block alone, from the same fields and the same
+    // reflector; the text, its reflection and its bindings above are the base's.
+    const values: NodeValueFunction = (next) => ({
+      passes: [Object.keys(uniforms).length === 0 ? {} : { uniforms: reflectedUniforms(fields, readValueInputs(next).parameters) }],
+    });
+    return viewDiagnostics.length === 0 ? { passes: [pass], values } : { passes: [pass], diagnostics: viewDiagnostics, values };
   },
 };
 

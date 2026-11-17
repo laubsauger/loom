@@ -17,8 +17,9 @@ the bridge state so edits reach the intended document.
 For ordinary network authoring, change only the `.loom.json` and required assets at the
 requested destination (or `projects/` for an in-repo deliverable). Do not create TypeScript
 builders, render scripts, tests, custom node registrations, dependencies, launch configs or
-files under `src/`. Existing `src/projects/` builders are historical tooling, not a template
-for consumers. If tools are unavailable, report the blocker; a file-only task stays within
+files under `src/`. To render a saved network offline (stills, clips, pre-rendered video),
+use `pnpm render` (see Commands) instead of writing a render script. Existing `src/projects/`
+builders are historical tooling, not a template for consumers. If tools are unavailable, report the blocker; a file-only task stays within
 the validated Loom format. If a capability needs implementation work, identify the gap and
 ask before changing Loom. The contributor instructions below apply to explicitly requested
 Loom development, including changes to generated shipped examples and starter components.
@@ -61,12 +62,14 @@ pnpm build               # tsc -b && vite build  (CI runs this; vite-only breaka
 pnpm lint                # eslint . — custom invariant rules, see below
 pnpm typecheck           # THE type gate. Bare `tsc --noEmit` at root checks nothing (solution tsconfig).
 pnpm test                # vitest run, both workspace projects — 580 files, 8k+ tests, >2 min
-pnpm test:gates          # the 63 gate files no selector can find — ~15 s. See "Scoping test runs". Cap it with `pnpm test:gates --maxWorkers=2` (NO `--` before the flags: pnpm forwards it and vitest then ignores them).
+pnpm test:gates          # the gate files no selector can find (61 on 2026-11-06) — ~20 s on every core. See "Scoping test runs". Cap it with `pnpm test:gates --maxWorkers=2` (~40 s; NO `--` before the flags: pnpm forwards it and vitest then ignores them). The cap works because `vitest.config.ts` sets `minWorkers: 1`; vitest 2.1 otherwise floors the pool at cpus - 1 and refuses any lower cap.
 pnpm test:first-import   # every module under src/domain, src/compiler, src/runtime imported as the FIRST module of a fresh node (§V1028) — ~10 s
 pnpm test:headless       # only the "headless" (node env) project
 pnpm test:e2e            # playwright, src/tests/e2e, boots dev server itself
 pnpm helper              # the local helper: stdio MCP server + loopback device bridge (was `mcp:serve`, still aliased)
 pnpm helper --devices-only  # the DEVICE door alone — OSC/laser/Vision, no MCP server (T1111)
+pnpm helper --force        # stop the Loom helper that holds the bridge port, then start; combines with every flag; refuses a non-Loom holder (T1773b)
+pnpm render <file.loom.json> --at 0,30 | --clip S --from T   # offline render of any saved project on Dawn (T1738b): 16-bit PNG stills, ProRes 4444 / HEVC Main 10 clips; --spp N (summed on the GPU, T1739b), --warmup S (default: from 0 s when the plan carries state, T1745b), --quality final, --set label.param=json, --help for the rest. Heavy: `tools/heavy.sh pnpm render …`
 pnpm deploy              # triggers the GitHub Pages workflow — only when the user explicitly asks
 ```
 
@@ -100,7 +103,7 @@ The bare `node --experimental-strip-types src/...` form is dead and has been "fi
 `pnpm test` is >2 minutes and most changes cannot reach most of it. **Tests follow the blast radius** (owner, 2026-10-05): never run a directory-wide vitest (`src/examples`, `src/app`, `src/editor`, …), and never an every-example or every-node file (`runner.test.ts`, `examples.gpu.test.ts`, `catalogue-dawn.gpu.test.ts`, `cook-oracle.test.ts`) without a `-t` filter — pick the examples that use what you changed (`grep -l '"type": "<type>"' examples/*.loom.json`). Default to this ladder instead:
 
 1. **`pnpm vitest run <paths>`** — the tests for what you touched, named directly. Seconds.
-2. **`pnpm test:gates`** — ~15 s of every core, so run it **when the change can reach what it walks, and then once**: you added, moved, renamed or deleted a file under `src/`, or changed a node definition's shape (ports, parameters), a command registration, an exported `create*`/`open*` factory, a storage key, a shipped example or its `.md`, a doc that names commands, `package.json` scripts or eslint config. An edit inside an existing function does not need it; an edit only under `src/projects/**` does not either. These 63 files walk the *source tree* (`readdirSync`, globs) or the *document set* rather than importing what they check, so **no dependency-graph selector can find them and your own file's tests will never pull them in** (§V957): `composition-seams` (a factory no product entry point reaches), `command-holder` (a command with no coverage row), `emission-sites` (an unregistered pump), `rename-gate` (an unregistered storage address), `layout` (§V389, two nodes on top of each other in a shipped document), `doc-drift`, `tokens`, `helper`, `copy-guard`, `headless`, `side-effects`, and the `guardrails/`. They are the ones that catch what you did not know you touched.
+2. **`pnpm test:gates`** — ~20 s of every core, so run it **when the change can reach what it walks, and then once**: you added, moved, renamed or deleted a file under `src/`, or changed a node definition's shape (ports, parameters), a command registration, an exported `create*`/`open*` factory, a storage key, a shipped example or its `.md`, a doc that names commands, `package.json` scripts or eslint config. An edit inside an existing function does not need it; an edit only under `src/projects/**` does not either. These files walk the *source tree* (`readdirSync`, globs) or the *document set* rather than importing what they check, so **no dependency-graph selector can find them and your own file's tests will never pull them in** (§V957): `composition-seams` (a factory no product entry point reaches), `command-holder` (a command with no coverage row), `emission-sites` (an unregistered pump), `rename-gate` (an unregistered storage address), `layout` (§V389, two nodes on top of each other in a shipped document), `doc-drift`, `tokens`, `helper`, `copy-guard`, `headless`, `side-effects`, and the `guardrails/`. They are the ones that catch what you did not know you touched.
 
    **The list is derived, not remembered** (T1273). `gate-list.test.ts` walks `src/**` for tests that discover their subjects by `readdirSync`/`import.meta.glob`, AND (T1274) for non-GPU tests that IMPORT a document-set enumerator (`listExamples`, `EXAMPLE_DOCUMENTS`, …), and fails when one is not named in the `test:gates` script — because a hand-maintained list of the gates nothing can find is one edit away from being wrong, and was: `layout.test.ts` was off it while §V389 sat red on two freshly-landed rows. Add a gate of that class to the script, or exempt it by name with a reason. If it is not CHEAP, give it its own script instead: this one runs before every commit.
 3. **`pnpm typecheck`** — always. It is the cheapest cross-file blast-radius check you have.
@@ -112,7 +115,7 @@ The bare `node --experimental-strip-types src/...` form is dead and has been "fi
 
 ## Heavy commands share one queue
 
-Several agent sessions and the owner share this machine. Run anything heavy through `tools/heavy.sh <command…>`: GPU/Dawn tests (`*.gpu.test.ts`), Playwright, `pnpm build`, `pnpm test:gates`, render and build scripts under `src/projects/**`, and any vitest run over more than about twenty files. It is a machine-wide counting semaphore (two slots by default, `LOOM_HEAVY_SLOTS` to change), shared by every session and git worktree, so six agents never render at once; the rest wait in line. `pnpm typecheck`, eslint and a few named test files do not need it.
+Several agent sessions and the owner share this machine. Run anything heavy through `tools/heavy.sh <command…>`: GPU/Dawn tests (`*.gpu.test.ts`), Playwright, `pnpm build`, `pnpm test:gates`, `pnpm render`, render and build scripts under `src/projects/**`, and any vitest run over more than about twenty files. It is a machine-wide counting semaphore (two slots by default, `LOOM_HEAVY_SLOTS` to change), shared by every session and git worktree, so six agents never render at once; the rest wait in line. `pnpm typecheck`, eslint and a few named test files do not need it.
 
 ## GPU tests (Dawn)
 

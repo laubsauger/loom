@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { avcCodecString, mp4StreamParts, muxMp4, sampleDurationFor, timescaleFor } from "./mp4-muxer.ts";
+import { avcCodecString, hevcCodecString, mp4StreamParts, muxMp4, sampleDurationFor, timescaleFor } from "./mp4-muxer.ts";
 import type { Mp4AudioTrack, Mp4Sample } from "./mp4-muxer.ts";
 
 /**
@@ -334,5 +334,92 @@ describe("mp4 muxing", () => {
       },
     });
     expect(parts.moov.byteLength).toBeGreaterThan(audioSamples.length * 4);
+  });
+});
+
+/**
+ * T1741b — the HEVC sample entry. The record below is the one Chrome 157's VideoToolbox
+ * encoder reported for a 1920x1080 HEVC Main 10 take (`decoderConfig.description`, measured
+ * 2026-11-08): profile_idc 2, compatibility flag 2, 4:2:0, 10-bit luma and chroma, VPS/SPS/PPS
+ * arrays with array_completeness set. Its key frames carried SEI and IDR NAL units only, so
+ * the parameter sets are in this record and nowhere else: what `hvc1` (not `hev1`) declares.
+ */
+const CHROME_HVCC = Uint8Array.from(
+  ("010220000000b000000000007bf000fcfdfafa00000f03a00001001840010c01ffff022000000300b00000030000" +
+    "03007b1b0240a10001002a420101022000000300b0000003000003007ba003c0801107cad881bb916452ffcb9fc4" +
+    "fea6a020202010a2000100074401c072f05324").match(/../g)!.map((pair) => parseInt(pair, 16)),
+);
+
+describe("HEVC muxing (T1741b)", () => {
+  const timescale = timescaleFor(60);
+  const frames = samples(4, sampleDurationFor(60));
+  const file = muxMp4({ width: 1920, height: 1080, timescale, samples: frames, codec: "hevc", codecDescription: CHROME_HVCC });
+
+  it("reads the record the way a demuxer does: Main 10, 4:2:0, 10-bit", () => {
+    // The facts a player takes from hvcC before it decodes a sample.
+    expect(CHROME_HVCC[1]! & 0x1f).toBe(2); // general_profile_idc: Main 10
+    expect(CHROME_HVCC[16]! & 0x03).toBe(1); // chroma_format_idc: 4:2:0
+    expect((CHROME_HVCC[17]! & 0x07) + 8).toBe(10); // bit_depth_luma
+    expect((CHROME_HVCC[18]! & 0x07) + 8).toBe(10); // bit_depth_chroma
+    expect((CHROME_HVCC[21]! & 0x03) + 1).toBe(4); // NAL length size, which the samples use
+  });
+
+  it("writes an hvc1 sample entry carrying the encoder's hvcC record and the real dimensions", () => {
+    const stsd = find(file, ["moov", "trak", "mdia", "minf", "stbl", "stsd"]);
+    const sampleEntry = boxes(stsd.payload.subarray(8))[0];
+    expect(sampleEntry?.type).toBe("hvc1");
+    const entry = sampleEntry?.payload ?? new Uint8Array(0);
+    const view = new DataView(entry.buffer, entry.byteOffset, entry.byteLength);
+    expect(view.getUint16(24)).toBe(1920);
+    expect(view.getUint16(26)).toBe(1080);
+    const children = boxes(entry, 78);
+    expect(children.map((box) => box.type)).toEqual(["hvcC"]);
+    expect(children[0]?.payload).toEqual(CHROME_HVCC);
+  });
+
+  it("does not claim the avc1 brand in an HEVC file, and still does in an H.264 one", () => {
+    const brands = (bytes: Uint8Array): string[] => {
+      const ftyp = find(bytes, ["ftyp"]).payload;
+      return Array.from({ length: (ftyp.length - 8) / 4 }, (_value, index) =>
+        String.fromCharCode(...ftyp.subarray(8 + index * 4, 12 + index * 4)));
+    };
+    expect(brands(file)).toEqual(["isom", "iso2", "mp41"]);
+    const avc = muxMp4({ width: 320, height: 240, timescale, samples: frames, codecDescription: DESCRIPTION });
+    expect(brands(avc)).toEqual(["isom", "iso2", "avc1", "mp41"]);
+    expect(boxes(avc).map((box) => box.type)).toEqual(["ftyp", "mdat", "moov"]);
+  });
+
+  it("streams the same moov for a disk-spooled take", () => {
+    const parts = mp4StreamParts({
+      width: 1920, height: 1080, timescale, codec: "hevc", codecDescription: CHROME_HVCC,
+      samples: frames.map((frame) => ({ byteLength: frame.bytes!.length, keyFrame: frame.keyFrame, duration: frame.duration })),
+    });
+    const stsd = find(parts.moov, ["moov", "trak", "mdia", "minf", "stbl", "stsd"]);
+    expect(boxes(stsd.payload.subarray(8))[0]?.type).toBe("hvc1");
+    expect(boxes(parts.ftyp).map((box) => box.type)).toEqual(["ftyp"]);
+  });
+
+  it("derives the codec string from the record: the level the encoder wrote, not the one asked for", () => {
+    expect(hevcCodecString(CHROME_HVCC)).toBe("hvc1.2.4.L123.B0");
+    // A Main record (profile 1, compatible with Main and Main 10, level 3.1) for contrast.
+    const main = Uint8Array.from(CHROME_HVCC);
+    main[1] = 0x01;
+    main.set([0x60, 0, 0, 0], 2);
+    main[12] = 93;
+    expect(hevcCodecString(main)).toBe("hvc1.1.6.L93.B0");
+    // High tier with no constraint flags.
+    const high = Uint8Array.from(CHROME_HVCC);
+    high[1] = 0x22;
+    high.fill(0, 6, 12);
+    high[12] = 153;
+    expect(hevcCodecString(high)).toBe("hvc1.2.4.H153");
+  });
+
+  it("refuses to mux without an hvcC record, or with something that is not one", () => {
+    expect(() => muxMp4({ width: 8, height: 8, timescale, samples: frames, codec: "hevc", codecDescription: new Uint8Array(0) }))
+      .toThrow(/hvcC/);
+    // An avcC handed to the HEVC path: too short to be an HEVCDecoderConfigurationRecord.
+    expect(() => muxMp4({ width: 8, height: 8, timescale, samples: frames, codec: "hevc", codecDescription: DESCRIPTION }))
+      .toThrow(/not an HEVCDecoderConfigurationRecord/);
   });
 });

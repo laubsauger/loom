@@ -3,9 +3,10 @@ import { expect, test } from "@playwright/test";
 import type { Locator, Page } from "@playwright/test";
 
 import { buildProjectFile } from "@domain/project/project-file.ts";
+import type { GraphComponentDefinition } from "@domain/types/components.ts";
 import type { GraphDocument, GraphNode } from "@domain/types/graph.ts";
 import { FLY_BOOST, FLY_RADII_PER_SECOND } from "@editor/viewer/orbit-gestures.ts";
-import { document, edge, expressionSlot, graph, named, settings } from "@/examples/documents/builders.ts";
+import { document, edge, expressionSlot, graph, named, namedInstance, node, settings } from "@/examples/documents/builders.ts";
 import { APP_VIEWPORT, fitAll, focusGraph, modKey, openApp, selectNode, viewportSettled } from "./app.ts";
 
 /**
@@ -242,10 +243,19 @@ test("the viewer flies the camera its Render is framed by: hold W, the stored po
   await page.mouse.up();
   expect(await storedPose(page, "camera_shot"), "the viewer moved a camera it was not locked to").toEqual(start);
 
-  const before = await canvas.screenshot();
   await button.click();
   await expect(button).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId("viewer-camera-note")).toHaveText("Flying camera_shot: every move is an edit, undo steps back.");
+  // §T1732b: the unarmed drag above LOOKED around; arming sends the look home, so the picture
+  // the flight starts from is the camera's own, once it has settled there.
+  await expect
+    .poll(async () => {
+      const first = await canvas.screenshot();
+      await page.waitForTimeout(150);
+      return changed(page, first, await canvas.screenshot());
+    })
+    .toBeLessThan(STILL);
+  const before = await canvas.screenshot();
 
   // HOLD W. A held key is a flight (the keymap says which key; the pane integrates it).
   await page.keyboard.down("w");
@@ -451,8 +461,9 @@ test("at 35 % zoom the tile's camera toggle is still 12 px and on top, and a par
   await open(page, "small", nodes, wires);
   const toggle = page.getByTestId("preview-inspect-camera_shot");
   await expect(toggle).toHaveCount(1);
-  // §T1659b item 6: it flies on five channels and holds one, and now says which.
-  await expect(toggle).toHaveAttribute("title", /Stays driven: Eye x \(Expression\)\.$/);
+  // §T1659b item 6: it flies on five channels and holds one, and now says which, on the
+  // control that moves it (§T1732b: M; C only looks, and holds nothing back).
+  await expect(page.getByTestId("preview-move-camera_shot")).toHaveAttribute("title", /Stays driven: Eye x \(Expression\)\.$/);
 
   // Wheel out, about the middle of the canvas, to about 35 %.
   const pane = await page.getByTestId("graph-canvas").boundingBox();
@@ -824,3 +835,223 @@ test("⚑ v pressed in the same breath as a click shows the node just clicked, n
   await Promise.all([page.mouse.click(source.x, source.y), page.keyboard.press("v")]);
   await expect(select).toHaveValue("grid_source:out");
 });
+
+/**
+ * A CAMERA INSIDE A COMPONENT. The owner, on PillarPreviz (2026-11-06): *"that's the camera
+ * that doesn't show these controls. neither on the top level nor inside the subcomponent
+ * where the camera actually is… hitting C doesn't do anything and I don't see any button"*,
+ * while the same camera at the root had both. Slice 1 listed "a camera inside a component"
+ * as NOT CHECKED.
+ *
+ * The shot from `shot()` is wrapped whole in a component (`ShotRig`), and the root holds one
+ * instance of it and the Output. Inside, the plan's rows carry FLAT ids (`shotrig_rig/camera_shot`)
+ * while the dived canvas and its bus speak the component's own (`camera_shot`).
+ */
+async function openRig(page: Page, camera: GraphNode): Promise<void> {
+  const { nodes, wires } = shot(camera);
+  const inner = nodes.filter((each) => each.type !== "output");
+  const out = node("out_shot", "componentOut", at(2, 1), {}, { label: "shot" });
+  const rig: GraphComponentDefinition = {
+    componentId: "shotRig",
+    version: 1,
+    name: "ShotRig",
+    graph: graph(
+      [...inner, out],
+      [
+        ...wires.filter(([, to]) => to !== "output_final").map(([from, to, port], index) => {
+          const [source = from, sourcePort = "out"] = from.split(":");
+          return edge(`e${String(index)}`, [source, sourcePort], [to, port]);
+        }),
+        edge("e-out", ["render_shot", "out"], ["out_shot", "in"]),
+      ],
+    ),
+    inputs: [],
+    outputs: [{ externalId: "shot", label: "shot", nodeId: "out_shot", portId: "in" }],
+    parameters: [],
+  };
+  const project = document(
+    "rig",
+    "Camera fly in a component",
+    settings({ outputResolution: { width: 640, height: 360 } }),
+    graph(
+      [namedInstance("rig", "ShotRig", "component:shotRig@1", at(0, 0)), named("final", "output", at(1, 0))],
+      [edge("e0", ["shotrig_rig", "shot"], ["output_final", "input"])],
+    ),
+  );
+  const file = buildProjectFile({ document: project, components: [rig], now: () => project.updatedAt });
+  await openApp(page);
+  const chooser = page.waitForEvent("filechooser");
+  await page.getByRole("button", { name: "File", exact: true }).click();
+  await page.getByTestId("project-open").click();
+  await (await chooser).setFiles({ name: "rig.loom.json", mimeType: "application/json", buffer: Buffer.from(file.text) });
+  await expect(page.locator(".react-flow__node")).toHaveCount(2);
+  await fitAll(page);
+}
+
+async function diveInto(page: Page, id: string): Promise<void> {
+  const box = await page.locator(`.react-flow__node[data-id="${id}"]`).boundingBox();
+  if (box === null) throw new Error(`the instance "${id}" has no bounding box`);
+  await page.mouse.dblclick(box.x + box.width / 2, box.y + Math.min(box.height / 2, 200));
+  await expect(page.locator('.react-flow__node[data-id="camera_shot"]')).toBeVisible();
+  await fitAll(page);
+}
+
+test("⚑ inside a component, the camera's tile offers its camera and the viewer flies it: the edit lands in the component, one undo puts it back", async ({ page }) => {
+  await openRig(page, named("shot", "camera", at(0, 1), { eye: [0, 0.5, 3], lookAt: [0, 0, 0] }));
+  await diveInto(page, "shotrig_rig");
+
+  // THE TILES: the camera's own toggle, and a scene tile's inspection orbit, as at the root.
+  await expect(page.getByTestId("preview-inspect-camera_shot")).toHaveCount(1);
+  await expect(page.getByTestId("preview-inspect-geometry_boxes")).toHaveCount(1);
+
+  // THE VIEWER, pointed at the Render from inside: the button names the camera.
+  const start = await storedPose(page, "camera_shot");
+  expect(start).toEqual({ eye: [0, 0.5, 3], lookAt: [0, 0, 0] });
+  await page.getByTestId("node-name-render_shot").click();
+  await page.keyboard.press("v");
+  await expect(page.getByTestId("viewer-output-select")).toHaveValue("shotrig_rig/render_shot:out");
+  const canvas = page.getByTestId("viewer-canvas");
+  await expect(canvas).toBeVisible();
+  const button = page.getByTestId("viewer-fly-camera");
+  await expect(button).toHaveText("Fly camera_shot");
+  await button.click();
+  await expect(button).toHaveAttribute("aria-pressed", "true");
+
+  const before = await canvas.screenshot();
+  await page.keyboard.down("w");
+  await page.waitForTimeout(500);
+  await page.keyboard.up("w");
+  await expect.poll(async () => changed(page, before, await canvas.screenshot()), { message: "the picture did not move with the flight" }).toBeGreaterThan(MOVED);
+  const flown = await storedPose(page, "camera_shot");
+  expect(flown.eye[2] - start.eye[2], "W did not carry the camera inside the component forward").toBeLessThan(-0.2);
+
+  await undo(page);
+  expect(await storedPose(page, "camera_shot")).toEqual(start);
+});
+
+test("at the root, a picture framed by a camera inside a component says where that camera is, and offers no flight it cannot make", async ({ page }) => {
+  await openRig(page, named("shot", "camera", at(0, 1), { eye: [0, 0.5, 3], lookAt: [0, 0, 0] }));
+  await page.getByTestId("viewer-output-select").selectOption("shotrig_rig/render_shot:out");
+  await expect(page.getByTestId("viewer-canvas")).toBeVisible();
+  await expect(page.getByTestId("viewer-fly-camera")).toHaveCount(0);
+  await expect(page.getByTestId("viewer-camera-note")).toHaveText("Framed by shotrig_rig/camera_shot. Dive into shotrig_rig to fly camera_shot.");
+});
+
+/**
+ * §T1732b — LOOK: the viewer's and the tiles' default camera on a picture drawn through a
+ * camera node. View only: the picture turns and the document does not move, so a camera
+ * whose pose is driven (the owner's PillarPreviz guest camera) can be looked around too.
+ */
+test("§T1732b not locked, a drag on the viewer LOOKS around the Render: the picture turns, the camera stays, h returns to the camera", async ({ page }) => {
+  const { nodes, wires } = shot(named("shot", "camera", at(0, 1), { eye: [0, 0.5, 3], lookAt: [0, 0, 0] }));
+  await open(page, "look", nodes, wires);
+  const start = await storedPose(page, "camera_shot");
+  const canvas = await view(page, "render_shot");
+  const before = await canvas.screenshot();
+  const box = await canvas.boundingBox();
+  if (box === null) throw new Error("the viewer's picture has no box");
+  const centre = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  const drag = async (dx: number): Promise<void> => {
+    await page.mouse.move(centre.x, centre.y);
+    await page.mouse.down();
+    await page.mouse.move(centre.x + box.width * dx, centre.y + box.height * 0.1, { steps: 8 });
+    await page.mouse.up();
+  };
+
+  await drag(0.25);
+  await expect(page.getByTestId("viewer-camera-note")).toHaveText("Looking around: view only, the camera does not move. H returns to the camera.");
+  await expect(page.getByTestId("viewer-fly-camera")).toHaveAttribute("aria-pressed", "false");
+  // Compared look against look, under the same sentence: the readout's line changed with the
+  // first drag, and a line that wraps differently resizes the picture by itself.
+  const looked = await settled(page, () => canvas.screenshot());
+  await drag(0.2);
+  expect(await changed(page, looked, await settled(page, () => canvas.screenshot())), "a drag on the viewer did not look around the Render").toBeGreaterThan(MOVED);
+  expect(await storedPose(page, "camera_shot"), "a look wrote the camera").toEqual(start);
+
+  await canvas.focus();
+  await page.keyboard.press("h");
+  expect(await changed(page, before, await settled(page, () => canvas.screenshot())), "h did not return to the camera's picture").toBeLessThan(STILL);
+  expect(await storedPose(page, "camera_shot")).toEqual(start);
+});
+
+test("§T1732b a fully driven camera is looked around from its Render's tile, and nothing is written", async ({ page }) => {
+  // Every channel of Eye and Look At on an expression: MOVE is not offered, LOOK is.
+  const channels = {
+    "eye.x": expressionSlot("0.6", 0),
+    "eye.y": expressionSlot("0.5", 0.5),
+    "eye.z": expressionSlot("3", 3),
+    "lookAt.x": expressionSlot("0", 0),
+    "lookAt.y": expressionSlot("0", 0),
+    "lookAt.z": expressionSlot("0", 0),
+  };
+  const { nodes, wires } = shot(named("shot", "camera", at(0, 1), {}, { parameters: channels }));
+  await open(page, "driven-look", nodes, wires);
+  await expect(page.getByTestId("preview-inspect-render_shot")).toHaveCount(1);
+  await expect(page.getByTestId("preview-move-render_shot")).toHaveCount(0);
+  await settledTile(page, "render_shot");
+  const before = await tilePicture(page, "render_shot");
+  await altDragTile(page, "render_shot");
+  expect(await changed(page, before, await settled(page, () => tilePicture(page, "render_shot"))), "a look did not turn the driven camera's picture").toBeGreaterThan(MOVED);
+  // The expressions stand, as the saved file holds them: six, exactly as written.
+  const saved = await savedParameters(page, "camera_shot");
+  for (const [key, slot] of Object.entries(channels)) expect([key, saved[key]], "a look replaced a channel").toEqual([key, slot]);
+});
+
+test("§T1732b inside a component, the Render's tile looks around without writing the camera in the component", async ({ page }) => {
+  await openRig(page, named("shot", "camera", at(0, 1), { eye: [0, 0.5, 3], lookAt: [0, 0, 0] }));
+  await diveInto(page, "shotrig_rig");
+  const start = await storedPose(page, "camera_shot");
+  await fitAll(page);
+  await expect(page.getByTestId("preview-inspect-render_shot")).toHaveCount(1);
+  await expect(page.getByTestId("preview-move-render_shot")).toHaveAttribute("aria-label", "Move camera_shot");
+  await settledTile(page, "render_shot");
+  const before = await tilePicture(page, "render_shot");
+  await altDragTile(page, "render_shot");
+  expect(await changed(page, before, await settled(page, () => tilePicture(page, "render_shot"))), "a look inside the component did not turn the Render's tile").toBeGreaterThan(MOVED);
+  expect(await storedPose(page, "camera_shot"), "a look wrote the camera inside the component").toEqual(start);
+});
+
+/** A tile's picture off the glass, inset clear of the node frame and the corner chrome. */
+async function tilePicture(page: Page, nodeId: string): Promise<Buffer> {
+  const box = await page.getByTestId(`node-preview-${nodeId}`).boundingBox();
+  if (box === null) throw new Error(`the tile of ${nodeId} is not on screen`);
+  const inset = Math.min(box.width, box.height) * 0.16;
+  return page.screenshot({ clip: { x: box.x + inset, y: box.y + inset, width: box.width - inset * 2, height: box.height - inset * 2 } });
+}
+
+async function settledTile(page: Page, nodeId: string): Promise<void> {
+  await expect(page.getByTestId(`node-preview-${nodeId}`).locator("[data-preview-state]")).toHaveAttribute("data-preview-state", "live");
+  await expect
+    .poll(async () => {
+      const first = await tilePicture(page, nodeId);
+      await page.waitForTimeout(150);
+      return changed(page, first, await tilePicture(page, nodeId));
+    })
+    .toBeLessThan(STILL);
+}
+
+/** Alt+drag on a tile, the path that needs no chrome; the pointer is parked off it after. */
+async function altDragTile(page: Page, nodeId: string): Promise<void> {
+  const box = await page.getByTestId(`node-preview-${nodeId}`).boundingBox();
+  if (box === null) throw new Error(`the tile of ${nodeId} is not on screen`);
+  const centre = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  await page.mouse.move(centre.x, centre.y);
+  await page.keyboard.down("Alt");
+  await page.mouse.down();
+  await page.mouse.move(centre.x + box.width * 0.22, centre.y + box.height * 0.1, { steps: 8 });
+  await page.mouse.up();
+  await page.keyboard.up("Alt");
+  await page.mouse.move(box.x + box.width / 2, box.y - 40);
+}
+
+/** A picture once two shots of it agree: what is ON screen, not a frame of a plan being installed. */
+async function settled(page: Page, shoot: () => Promise<Buffer>): Promise<Buffer> {
+  let previous = await shoot();
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    await page.waitForTimeout(150);
+    const next = await shoot();
+    if ((await changed(page, previous, next)) < STILL) return next;
+    previous = next;
+  }
+  throw new Error("the picture never settled");
+}

@@ -5,6 +5,7 @@ import { parameterReadOptions, type ParameterReadContext } from "@domain/paramet
 import type { CameraPose } from "./camera-gizmo-store.ts";
 import { cameraFrame, worldUpInCameraFrame } from "@domain/geometry/camera.ts";
 import { MODE_LABELS } from "@ui/controls/parameter-slot.ts";
+import { componentKey } from "@domain/parameters/slots.ts";
 
 /**
  * T1314b / §B219 — WHAT THE CAMERA GIZMO IS ALLOWED TO MOVE, read from the RESOLVED
@@ -248,11 +249,15 @@ export function cameraPoseAt(node: GraphNode, definition: NodeDefinition | undef
   const facts = readCameraPoseFacts(node, definition, parameterReadOptions(scope));
   if (facts === null) return null;
   const { eye, lookAt } = poseFromFacts(facts);
+  const eyeComponents = AXIS.map((axis) => node.parameters[componentKey("eye", axis)] !== undefined);
+  const lookAtComponents = AXIS.map((axis) => node.parameters[componentKey("lookAt", axis)] !== undefined);
   return {
     eye,
     lookAt,
     eyeMask: movableChannels(facts.eye),
     lookAtMask: movableChannels(facts.lookAt),
+    ...(facts.eye.every((channel) => channel.drivenBy === null) && eyeComponents.some(Boolean) ? { eyeComponents } : {}),
+    ...(facts.lookAt.every((channel) => channel.drivenBy === null) && lookAtComponents.some(Boolean) ? { lookAtComponents } : {}),
     ...(facts.up === undefined ? {} : { up: facts.up }),
   };
 }

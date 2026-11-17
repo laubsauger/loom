@@ -52,7 +52,7 @@ it.each(["success", "failure", "cancel", "unavailable"] as const)("owns canvas c
   const { bus } = createHarness();
   let current = 0;
   transportHolderFor(bus).current = {
-    isPlaying: () => false, togglePlay() {}, resetAbsoluteClock() {},
+    isPlaying: () => false, togglePlay() {}, resetAbsoluteClock() {}, resetState() {},
     seek: (frame: number) => { current = frame; return frame; },
     stepOnce: () => frameInputs(++current),
   } as never;
@@ -207,6 +207,7 @@ it("reports throughput from only the latest 32 completed output frames", async (
     isPlaying: () => false,
     togglePlay() {},
     resetAbsoluteClock() {},
+    resetState() {},
     seek: (frame: number) => { current = frame; return frame; },
     stepOnce: () => frameInputs(++current),
   } as never;
@@ -269,7 +270,7 @@ it("reports throughput from only the latest 32 completed output frames", async (
 it("blocks the take and awaits output shutdown before evaluating its first frame", async () => {
   const { bus } = createHarness();
   const seek = vi.fn((frame: number) => frame);
-  transportHolderFor(bus).current = { isPlaying: () => false, togglePlay() {}, resetAbsoluteClock() {}, seek,
+  transportHolderFor(bus).current = { isPlaying: () => false, togglePlay() {}, resetAbsoluteClock() {}, resetState() {}, seek,
     stepOnce: () => frameInputs(1) } as never;
   let release!: () => void;
   const beforeRender = vi.fn(() => new Promise<void>(resolve => { release = resolve; }));
@@ -307,6 +308,7 @@ it("cancels an active take and restores hook state without saving a partial file
     isPlaying: () => false,
     togglePlay() {},
     resetAbsoluteClock() {},
+    resetState() {},
     seek,
     stepOnce: () => frameInputs(1),
   } as never;
@@ -364,6 +366,7 @@ it("passes deterministic range audio to the MP4 encoder", async () => {
     isPlaying: () => false,
     togglePlay() {},
     resetAbsoluteClock() {},
+    resetState() {},
     seek: (frame: number) => { current = frame; return frame; },
     stepOnce: () => frameInputs(++current),
   } as never;
@@ -417,6 +420,7 @@ it("renders video-only when audio is excluded, even if the source is not reprodu
     isPlaying: () => false,
     togglePlay() {},
     resetAbsoluteClock() {},
+    resetState() {},
     seek: (frame: number) => frame,
     stepOnce: () => frameInputs(1),
   } as never;
@@ -466,6 +470,7 @@ it("awaits timeline-file analysis for video-only reactivity without encoding its
     isPlaying: () => false,
     togglePlay() {},
     resetAbsoluteClock() {},
+    resetState() {},
     seek: (frame: number) => frame,
     stepOnce: () => frameInputs(1),
   } as never;
@@ -514,6 +519,7 @@ it("releases prepared audio after an encoder failure so monitoring can be restor
     isPlaying: () => false,
     togglePlay() {},
     resetAbsoluteClock() {},
+    resetState() {},
     seek: (frame: number) => frame,
     stepOnce: () => frameInputs(1),
   } as never;
@@ -553,6 +559,7 @@ it("releases prepared audio after cancellation so monitoring can be restored", a
     isPlaying: () => false,
     togglePlay() {},
     resetAbsoluteClock() {},
+    resetState() {},
     seek: (frame: number) => frame,
     stepOnce: () => frameInputs(1),
   } as never;
@@ -740,6 +747,7 @@ async function takeOver(graph: GraphDocument, stall = false) {
     isPlaying: () => false,
     togglePlay: () => undefined,
     resetAbsoluteClock: () => undefined,
+    resetState: () => undefined,
     seek: (frameIndex: number) => {
       current = frameIndex;
       return frameIndex;
@@ -846,5 +854,146 @@ describe("T586 — a take over free-run media reports itself, and a locked one d
     const codes = session.diagnostics.map((d) => d.code);
     expect(codes.length, "nothing from below this hook reached the session").toBeGreaterThan(0);
     expect(codes.some((code) => code.includes("uplicate") || code.includes("ecording"))).toBe(true);
+  });
+});
+
+/**
+ * T1741b — THE FORMAT GOES THROUGH THE BUS AND DECIDES THE PATH.
+ *
+ * Set with `export.setRenderFormat` exactly as the dialog's picker sets it, then rendered
+ * with `export.renderRange`. What is asserted is what decides the file: which format the
+ * encoder was loaded for, whether the 8-bit canvas was captured or the float Output read,
+ * and that an 8-bit Output is refused for a 10-bit format instead of rendered.
+ */
+describe("recording format (T1741b)", () => {
+  function floatExports(format: "rgba16float" | "rgba8unorm-srgb", reads: { count: number }): ExportInterface {
+    const output = { ref: { nodeId: "out", portId: "in" }, resourceId: "r0", width: 2, height: 2, format, space: "encoded" as const };
+    return {
+      listOutputs: () => [output],
+      describe: () => output,
+      read: () => {
+        reads.count += 1;
+        return Promise.resolve({ width: 2, height: 2, format, rowStride: 16, bytes: new Uint8Array(32) });
+      },
+      stats: { readbacks: 0, duringPlayback: 0, refused: 0, bytesRead: 0 },
+    } as unknown as ExportInterface;
+  }
+
+  function attachTransport(bus: ReturnType<typeof createHarness>["bus"]) {
+    let current = 0;
+    transportHolderFor(bus).current = {
+      isPlaying: () => false, togglePlay() {}, resetAbsoluteClock() {}, resetState() {},
+      seek: (frame: number) => { current = frame; return frame; },
+      stepOnce: () => frameInputs(++current),
+    } as never;
+    return () => current;
+  }
+
+  it("renders HEVC Main 10 from the float Output, with no canvas capture, after the format is set on the bus", async () => {
+    const { bus } = createHarness();
+    const current = attachTransport(bus);
+    const reads = { count: 0 };
+    const createCapture = vi.fn(unusedCapture);
+    const loaded: LoadEncoderOptions[] = [];
+    const probed: Array<string | undefined> = [];
+    const planes: number[] = [];
+    const view = renderHook(() => useRenderRange({
+      createCapture, bus, exports: floatExports("rgba16float", reads), compiled: COMPILED, graph: graphWith("timeline"),
+      registry: REGISTRY, settings: SETTINGS, latestFrame: () => frameInputs(current()), name: () => "test",
+      write: async () => ({ kind: "cancelled" }),
+      probeEncoder: async (_config, options) => {
+        probed.push(options?.format);
+        return { supported: true, codec: "hvc1.2.4.L93.B0", reason: null };
+      },
+      loadEncoder: async (options) => {
+        loaded.push(options!);
+        return { ...fakeEncoder(), encodeYuv10: (frame) => { planes.push(frame.frameIndex); } };
+      },
+    }));
+    let set: unknown;
+    await act(async () => { set = await bus.execute("export.setRenderFormat", { format: "hevc-main10" }, contextFor(alice)); });
+    expect(set).toMatchObject({ status: "applied", output: { format: "hevc-main10" } });
+    expect(view.result.current.renderSettings.format).toBe("hevc-main10");
+    expect(probed.at(-1)).toBe("hevc-main10");
+
+    let result: unknown;
+    await act(async () => { result = await bus.execute("export.renderRange", {}, contextFor(alice)); });
+    expect(result).toMatchObject({ status: "applied", output: { frames: 3 } });
+    expect(loaded).toHaveLength(1);
+    expect(loaded[0]!.format).toBe("hevc-main10");
+    expect(loaded[0]!.captureFrame).toBeUndefined();
+    expect(createCapture).not.toHaveBeenCalled();
+    expect(reads.count).toBe(3);
+    expect(planes).toEqual([0, 1, 2]);
+  });
+
+  it("refuses HEVC Main 10 of an 8-bit Output by name, before any encoder or capture exists", async () => {
+    const { bus } = createHarness();
+    attachTransport(bus);
+    const createCapture = vi.fn(unusedCapture);
+    const loadEncoder = vi.fn(async () => fakeEncoder());
+    const view = renderHook(() => useRenderRange({
+      createCapture, bus, exports: floatExports("rgba8unorm-srgb", { count: 0 }), compiled: COMPILED, graph: graphWith("timeline"),
+      registry: REGISTRY, settings: SETTINGS, latestFrame: () => frameInputs(0), name: () => "test",
+      write: async () => ({ kind: "cancelled" }), loadEncoder,
+      probeEncoder: async () => ({ supported: true, codec: "hvc1.2.4.L93.B0", reason: null }),
+    }));
+    await act(async () => { await bus.execute("export.setRenderFormat", { format: "hevc-main10" }, contextFor(alice)); });
+    // The dialog reads this: the browser could encode it, the Output cannot feed it.
+    expect(view.result.current.encoderSupport).toMatchObject({
+      supported: false,
+      reason: expect.stringContaining("this Output is rgba8unorm-srgb") as unknown,
+    });
+    let result: unknown;
+    await act(async () => { result = await bus.execute("export.renderRange", {}, contextFor(alice)); });
+    expect(result).toMatchObject({ status: "rejected", diagnostics: [{ code: "export.formatNeedsFloatOutput" }] });
+    expect(loadEncoder).not.toHaveBeenCalled();
+    expect(createCapture).not.toHaveBeenCalled();
+  });
+
+  it("names both blockers when the browser has no encoder AND the Output is 8-bit", async () => {
+    const { bus } = createHarness();
+    attachTransport(bus);
+    const browserReason = "This browser has no HEVC Main 10 encoder for 2x2 at 60 fps.";
+    const view = renderHook(() => useRenderRange({
+      createCapture: unusedCapture, bus, exports: floatExports("rgba8unorm-srgb", { count: 0 }), compiled: COMPILED,
+      graph: graphWith("timeline"), registry: REGISTRY, settings: SETTINGS, latestFrame: () => frameInputs(0), name: () => "test",
+      write: async () => ({ kind: "cancelled" }),
+      probeEncoder: async () => ({ supported: false, codec: "hvc1.2.4.L93.B0", reason: browserReason }),
+    }));
+    await act(async () => { await bus.execute("export.setRenderFormat", { format: "hevc-main10" }, contextFor(alice)); });
+    const reason = view.result.current.encoderSupport?.reason ?? "";
+    expect(view.result.current.encoderSupport?.supported).toBe(false);
+    expect(reason.startsWith(browserReason)).toBe(true);
+    expect(reason).toContain("this Output is rgba8unorm-srgb");
+  });
+
+  it("keeps the 8-bit formats on the canvas capture, and the default on H.264", async () => {
+    const { bus } = createHarness();
+    const current = attachTransport(bus);
+    const reads = { count: 0 };
+    const createCapture = vi.fn(() => ({
+      captureFrame: (timing: { timestampMicros: number; durationMicros: number }) => ({
+        codedWidth: 2, codedHeight: 2, timestamp: timing.timestampMicros, duration: timing.durationMicros, close() {},
+      }),
+      dispose() {},
+    }));
+    const loaded: LoadEncoderOptions[] = [];
+    renderHook(() => useRenderRange({
+      createCapture, bus, exports: floatExports("rgba16float", reads), compiled: COMPILED, graph: graphWith("timeline"),
+      registry: REGISTRY, settings: SETTINGS, latestFrame: () => frameInputs(current()), name: () => "test",
+      write: async () => ({ kind: "cancelled" }),
+      loadEncoder: async (options) => {
+        loaded.push(options!);
+        return { ...fakeEncoder(), encodeCapturedFrame(timing) { options!.captureFrame!(timing).close(); } };
+      },
+    }));
+    await act(async () => { await bus.execute("export.renderRange", {}, contextFor(alice)); });
+    await act(async () => { await bus.execute("export.setRenderFormat", { format: "h264-high" }, contextFor(alice)); });
+    await act(async () => { await bus.execute("export.renderRange", {}, contextFor(alice)); });
+    expect(loaded.map((options) => options.format)).toEqual(["h264", "h264-high"]);
+    expect(loaded.every((options) => typeof options.captureFrame === "function")).toBe(true);
+    expect(createCapture).toHaveBeenCalledTimes(2);
+    expect(reads.count).toBe(0);
   });
 });

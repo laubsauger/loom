@@ -533,6 +533,24 @@ describe("§T1537b — the timeline's STRUCTURE: piecewise constant, a pure func
     expect(applyTimelineStructure(graph, DOCUMENT_STRUCTURE)).toBe(graph);
   });
 
+  it("a timed cue that switches a node that is not a Layer is refused by name, and its Layer switch still lands (T1770b)", () => {
+    // A preset switches any node, live. The timeline cannot yet: a segment's structure is
+    // applied to the flat graph, where an instance that is off was never inlined. So the cue
+    // says so, naming the node, rather than filing a switch that would change nothing.
+    const graph = doc([
+      { ...node("layer", "layer", "layer1", { picture: "a", opacity: 1 }), ui: { bypassed: true } } as GraphNode,
+      node("grade", "level", "level1", { brightness: 0.2 }),
+      presetBankNode("stage", "stage", "", [{ name: "go", values: {}, on: { layer1: true, level1: false } }]),
+      list("show", "show", [{ name: "in", bank: "stage", preset: "go", morph: CUT, at: 1 }]),
+    ]);
+    const plan = planTimelineCues(graph, registry);
+    expect(plan.warnings.map((each) => [each.cue, each.diagnostic.code])).toEqual([["in", "cue.timeline.switch"]]);
+    expect(plan.warnings[0]?.diagnostic.message).toContain('switches "level1" off');
+    expect([...plan.structure.keys()]).toEqual(["layer"]);
+    const structure = buildTimelineStructure({ document: graph, registry });
+    expect(structure?.at(frame(30)).bypassed).toEqual(new Map([["layer", false]]));
+  });
+
   it("a cue that sets what is already stored changes no structure — no crossing worth a compile", () => {
     // Stored ON; the cue turns it on: the segment after 1.0 s IS the document's structure.
     const structure = buildTimelineStructure({ document: stage(CUES.slice(0, 1), "timeline", false), registry });

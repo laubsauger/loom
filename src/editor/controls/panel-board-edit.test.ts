@@ -18,6 +18,7 @@ import {
   boardWithout,
   removeFromPanelOperations,
 } from "./panel-board-edit.ts";
+import { joinPanelOperations, panelUnderDrop } from "./panel-join.ts";
 
 /**
  * T1516b — WHAT ARRANGING A BOARD WRITES. The owner's board is a performance surface, so the
@@ -131,5 +132,43 @@ describe("T1516b — labels and removal, one patch each", () => {
     expect(desk.graph().nodes[desk.ids["$invert"]!]).toBeDefined();
     await desk.bus.execute("graph.undo", {}, contextFor(alice));
     expect(rects(desk.current())["member:invert"]).toEqual({ x: 6, y: 3, w: 2, h: 1 });
+  });
+});
+
+/**
+ * T1771b — DROPPING ANY NODE ON A PANEL PUTS ITS ON/OFF SWITCH THERE. The drop is the way a
+ * performer says "this one, on this Panel", so it must find the Panel under a plain node
+ * (not only under a widget or a bank), write one board item naming it, and write nothing
+ * for a node that is already there or for a Panel dropped on a Panel.
+ */
+describe("T1771b — a plain node joins a Panel by name, as its switch", () => {
+  const blur = (id: string, label: string): GraphNode => ({ id, type: "blur", label, definitionVersion: 1, position: { x: 0, y: 0 }, parameters: {} }) as GraphNode;
+  const stage = (board?: string): GraphDocument =>
+    ({
+      revision: 1,
+      groups: {},
+      edges: {},
+      nodes: {
+        soft: blur("soft", "blur_soft"),
+        panel: { id: "panel", type: "panel", label: "panel1", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: board === undefined ? {} : { board } },
+        other: { id: "other", type: "panel", label: "panel2", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: {} },
+      },
+    }) as never;
+  const box = (id: NodeId) => (id === "panel" ? { x: 0, y: 0, width: 100, height: 100 } : id === "other" ? { x: 500, y: 0, width: 100, height: 100 } : null);
+
+  it("the Panel under the drop takes it, as one board item at the switch's size", () => {
+    const graph = stage();
+    expect(panelUnderDrop(graph, "soft" as NodeId, { x: 50, y: 50 }, box)).toBe("panel");
+    expect(panelUnderDrop(graph, "soft" as NodeId, { x: 300, y: 50 }, box)).toBeNull();
+    expect(joinPanelOperations(graph, "soft" as NodeId, "panel" as NodeId)).toEqual([
+      { op: "setParameters", nodeId: "panel", parameters: { board: serializePanelBoard({ columns: 8, items: [{ member: "blur_soft", rect: { x: 0, y: 0, w: 2, h: 1 } }] }) } },
+    ]);
+  });
+
+  it("already on the board, or a Panel on a Panel: nothing is written", () => {
+    const placed = stage(serializePanelBoard({ columns: 8, items: [{ member: "blur_soft", rect: { x: 0, y: 0, w: 2, h: 1 } }] }));
+    expect(joinPanelOperations(placed, "soft" as NodeId, "panel" as NodeId)).toEqual([]);
+    expect(panelUnderDrop(stage(), "other" as NodeId, { x: 50, y: 50 }, box)).toBeNull();
+    expect(joinPanelOperations(stage(), "other" as NodeId, "panel" as NodeId)).toEqual([]);
   });
 });

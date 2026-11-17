@@ -11,8 +11,8 @@ import type { GraphDocument } from "@domain/types/graph.ts";
 import { nonReproducibleRenderWarning } from "@domain/render/reproducibility.ts";
 import type { CompiledGraph } from "@compiler/index.ts";
 import { presentsPicture } from "@compiler/index.ts";
-import type { AudioEncoderSupport, AudioPcmProvider, EncoderFinishProgress, ExportInterface, ExportOutput, OutputRef, VideoEncoderSupport } from "@runtime/export/index.ts";
-import { ExportError, loadVideoEncoder, probeAudioEncoderSupport, probeVideoEncoderSupport } from "@runtime/export/index.ts";
+import type { AudioEncoderSupport, AudioPcmProvider, EncoderFinishProgress, ExportInterface, ExportOutput, OutputRef, VideoEncoderSupport, VideoFormatId } from "@runtime/export/index.ts";
+import { DEFAULT_VIDEO_FORMAT, ExportError, loadVideoEncoder, probeAudioEncoderSupport, probeVideoEncoderSupport, videoFormatInfo, videoFormatSourceRefusal } from "@runtime/export/index.ts";
 import type { RenderCanvasCapture } from "./render-canvas-capture.ts";
 import type { RenderAudioRequirement } from "./use-audio-input.ts";
 import { transportHolderFor } from "./transport-commands.ts";
@@ -65,6 +65,11 @@ export interface RenderRangeSession {
   readonly recentFramesPerSecond: number | null;
   /** Encoded media already written to bounded temporary disk storage. */
   readonly spooledBytes: number;
+  /**
+   * Whether the take's format can be written here: the browser's answer for this size and
+   * rate, or a refusal naming why this Output cannot feed it (T1741b: a 10-bit format of an
+   * 8-bit Output). `null` while the probe runs.
+   */
   readonly encoderSupport: VideoEncoderSupport | null;
   readonly audioSupport: AudioEncoderSupport | null;
   readonly audioRequirement: RenderAudioRequirement;
@@ -98,6 +103,11 @@ export interface RenderJobSettings {
    * unless the user asks for it.
    */
   readonly preRollFrames?: number | undefined;
+  /**
+   * T1741b: the recording format, set through `export.setRenderFormat`. Absent is H.264,
+   * the compatible default (`DEFAULT_VIDEO_FORMAT`).
+   */
+  readonly format?: VideoFormatId | undefined;
 }
 
 export interface UseRenderRangeInputs {
@@ -191,6 +201,7 @@ export function useRenderRange(inputs: UseRenderRangeInputs): RenderRangeSession
   const outputWidth = renderSettings.resolution.width;
   const outputHeight = renderSettings.resolution.height;
   const outputFps = renderSettings.outputFps;
+  const format = renderSettings.format ?? DEFAULT_VIDEO_FORMAT;
   const [progress, setProgress] = useState<RenderExportProgress>({
     stage: "frames",
     completedFrames: 0,
@@ -246,13 +257,14 @@ export function useRenderRange(inputs: UseRenderRangeInputs): RenderRangeSession
       height: outputHeight,
       fps: outputFps,
     };
-    void (inputsRef.current.probeEncoder ?? probeVideoEncoderSupport)(config).then((support) => {
+    void (inputsRef.current.probeEncoder ?? probeVideoEncoderSupport)(config, { format }).then((support) => {
       if (current) setEncoderSupport(support);
     });
     return () => {
       current = false;
     };
   }, [
+    format,
     outputFps,
     outputHeight,
     outputWidth,
@@ -270,10 +282,31 @@ export function useRenderRange(inputs: UseRenderRangeInputs): RenderRangeSession
     };
   }, [audioRequirement.kind, includeAudio]);
 
+  const setRenderSettings = useCallback((patch: Partial<RenderJobSettings>) => {
+    const current = renderSettingsRef.current;
+    const nextRate = patch.outputFps ?? current.outputFps;
+    const convertedRange = patch.outputFps !== undefined && patch.range === undefined && nextRate !== current.outputFps
+      ? {
+          start: Math.round((current.range.start * nextRate) / current.outputFps),
+          end: Math.max(
+            Math.round((current.range.start * nextRate) / current.outputFps),
+            Math.round(((current.range.end + 1) * nextRate) / current.outputFps) - 1,
+          ),
+        }
+      : current.range;
+    const next = { ...current, ...patch, range: patch.range ?? convertedRange };
+    // Read back by the next call before React re-renders: two edits in one turn compose.
+    renderSettingsRef.current = next;
+    const update = inputsRef.current.onRenderSettingsChange;
+    if (update === undefined) setFallbackRenderSettings(next);
+    else update(next);
+  }, []);
+
   useEffect(() => {
     const holder = registerRenderRangeCommand(inputs.bus);
     const handlers = {
       busy: () => renderingRef.current,
+      setFormat: (next: VideoFormatId) => setRenderSettings({ format: next }),
       cancel: () => {
         if (abortRef.current === null) return;
         setCancelling(true);
@@ -306,10 +339,11 @@ export function useRenderRange(inputs: UseRenderRangeInputs): RenderRangeSession
         }
         const described = api.describe(ref);
         const wanted = renderSettingsRef.current.resolution;
+        const takeFormat = renderSettingsRef.current.format ?? DEFAULT_VIDEO_FORMAT;
         if (wanted.width % 2 !== 0 || wanted.height % 2 !== 0) {
           return refuse(
             "export.invalidVideoSize",
-            "H.264 video export requires an even width and height.",
+            `${videoFormatInfo(takeFormat).name} video export requires an even width and height.`,
             "Set both render dimensions to multiples of two.",
           );
         }
@@ -319,6 +353,11 @@ export function useRenderRange(inputs: UseRenderRangeInputs): RenderRangeSession
             `The renderer is still applying ${wanted.width}x${wanted.height} render resolution.`,
             "Wait for the graph to finish recompiling, then render again.",
           );
+        }
+        // T1741b: a 10-bit file of an 8-bit Output is 8-bit data under a 10-bit label.
+        const sourceRefusal = videoFormatSourceRefusal(takeFormat, described.format);
+        if (sourceRefusal !== null) {
+          return refuse("export.formatNeedsFloatOutput", sourceRefusal, "Or choose H.264 High for the best 8-bit file.");
         }
         const transport = transportHolderFor(live.bus).current;
         if (transport === null) {
@@ -491,11 +530,15 @@ export function useRenderRange(inputs: UseRenderRangeInputs): RenderRangeSession
             throw new Error("The timeline audio file is not ready for deterministic export.");
           }
           if (controller.signal.aborted) throw new RenderRangeCancelledError();
-          capture = live.createCapture(described);
+          // T1741b: the canvas is 8-bit, so a 10-bit take has no canvas capture: the recorder
+          // reads the Output at full precision through the export interface instead.
+          const tenBit = videoFormatInfo(takeFormat).bitDepth === 10;
+          capture = tenBit ? null : live.createCapture(described);
           const encoder = await (live.loadEncoder ?? loadVideoEncoder)(
             {
+              format: takeFormat,
               ...(includeSoundtrack && preparedAudio !== null ? { audio: preparedAudio.pcm } : {}),
-              captureFrame: capture.captureFrame,
+              ...(capture === null ? {} : { captureFrame: capture.captureFrame }),
               onFinishProgress,
               onSpoolProgress,
               yieldControl: yieldToBrowser,
@@ -505,8 +548,8 @@ export function useRenderRange(inputs: UseRenderRangeInputs): RenderRangeSession
           if (encoder === null) {
             return refuse(
               "export.encoderUnavailable",
-              "This browser cannot encode the requested H.264/AAC MP4.",
-              "WebCodecs H.264 and AAC-LC encoders are required.",
+              `This browser cannot encode the requested ${videoFormatInfo(takeFormat).name}/AAC MP4.`,
+              "WebCodecs video and AAC-LC encoders are required.",
             );
           }
           const rendered = await renderFrameRange({
@@ -632,7 +675,7 @@ export function useRenderRange(inputs: UseRenderRangeInputs): RenderRangeSession
     return () => {
       if (holder.current === handlers) holder.current = null;
     };
-  }, [inputs.bus, refreshElapsed]);
+  }, [inputs.bus, refreshElapsed, setRenderSettings]);
 
   const cancel = useCallback(() => {
     if (abortRef.current === null) return;
@@ -668,27 +711,11 @@ export function useRenderRange(inputs: UseRenderRangeInputs): RenderRangeSession
   const setIncludeAudio = useCallback((include: boolean) => {
     setIncludeAudioState(include);
   }, []);
-  const setRenderSettings = useCallback((patch: Partial<RenderJobSettings>) => {
-    const current = renderSettingsRef.current;
-    const nextRate = patch.outputFps ?? current.outputFps;
-    const convertedRange = patch.outputFps !== undefined && patch.range === undefined && nextRate !== current.outputFps
-      ? {
-          start: Math.round((current.range.start * nextRate) / current.outputFps),
-          end: Math.max(
-            Math.round((current.range.start * nextRate) / current.outputFps),
-            Math.round(((current.range.end + 1) * nextRate) / current.outputFps) - 1,
-          ),
-        }
-      : current.range;
-    const next = { ...current, ...patch, range: patch.range ?? convertedRange };
-    const update = inputsRef.current.onRenderSettingsChange;
-    if (update === undefined) setFallbackRenderSettings(next);
-    else update(next);
-  }, []);
   const described = sink === null ? null : inputs.exports?.describe(sink) ?? null;
   const outputReady = described !== null &&
     described.width === renderSettings.resolution.width &&
     described.height === renderSettings.resolution.height;
+  const sourceRefusal = described === null ? null : videoFormatSourceRefusal(format, described.format);
   return {
     rendering,
     cancelling,
@@ -699,7 +726,14 @@ export function useRenderRange(inputs: UseRenderRangeInputs): RenderRangeSession
     elapsedMilliseconds,
     recentFramesPerSecond,
     spooledBytes,
-    encoderSupport,
+    // Both reasons when both hold, so fixing one does not uncover the other one take later.
+    encoderSupport: encoderSupport !== null && sourceRefusal !== null
+      ? {
+          ...encoderSupport,
+          supported: false,
+          reason: encoderSupport.supported ? sourceRefusal : `${encoderSupport.reason ?? ""} ${sourceRefusal}`.trim(),
+        }
+      : encoderSupport,
     audioSupport,
     audioRequirement,
     includeAudio: includeAudio && hasAudioSource,

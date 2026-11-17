@@ -1,6 +1,7 @@
 import { compileGraph, compiledWithoutCatalogue, flattenComponents, timelineStructureRequest } from "../../compiler/index.ts";
 import type { CompileRequest } from "../../compiler/types.ts";
 import type { ComponentRegistryView } from "../../domain/components/index.ts";
+import { createComponentAwareRegistry } from "../../domain/components/index.ts";
 import type { CompiledGraph } from "../../compiler/types.ts";
 import type { BackendCapabilities, LogicalExecutionPlan } from "../../domain/types/backend.ts";
 import type { TransportSource } from "../../domain/types/frame.ts";
@@ -24,11 +25,14 @@ import { createUniformAnimator } from "../../app/animate-parameters.ts";
 import type { AudioFeatures } from "../../domain/types/frame.ts";
 import type { FeatureTrackRecorder } from "../../domain/audio/feature-track.ts";
 import type { GpuHost } from "../../runtime/backend/vgpu/gpu-host.ts";
+import type { AccumulatedSum, LinearDecode, OutputAccumulator } from "../../runtime/backend/backend-types.ts";
+import type { ColorSpace } from "../../domain/types/ports.ts";
 import { analyzeChannelEntries, analyzeOperationOf, createAnalyzeChannels } from "../../runtime/execution/analyze-channels.ts";
 import { NO_INSTANCES, NO_PAGES } from "../../domain/parameters/node-references.ts";
 import { createFrameDriver } from "../../runtime/execution/frame-driver.ts";
 import { inferenceSourceIdFor } from "../../runtime/execution/inference-sources.ts";
 import { offlineTransport } from "../../runtime/execution/offline-transport.ts";
+import { documentTempo } from "../../domain/tempo/project-tempo.ts";
 import { createPointerSource, type PointerState } from "../../runtime/execution/pointer.ts";
 import { OUTPUT_NODE_ID, paritySettings } from "../fixtures/parity-graphs.ts";
 
@@ -61,7 +65,7 @@ export interface HeadlessRenderRequest {
   readonly host: GpuHost;
   readonly graph: GraphDocument;
   readonly settings?: ProjectSettings;
-  /** How many frames to step. Frame indices are 0..frames-1. */
+  /** How many frames to step. Frame indices are 0..frames-1 (after a `warmup` run-up's, which are negative). */
   readonly frames?: number;
   /** Which frame indices to read back. Defaults to the last frame only. */
   readonly capture?: ReadonlyArray<number>;
@@ -115,8 +119,38 @@ export interface HeadlessRenderRequest {
   readonly canvas?: HTMLCanvasElement;
   /** Called once after compile, before any frame. Used by the resize case. */
   readonly beforeFrames?: (control: HarnessControl) => void;
-  /** Called after frame `at`, before the next step. Used by the resize case. */
-  readonly betweenFrames?: (control: HarnessControl, frameIndex: number) => void;
+  /**
+   * Called after frame `at`, before the next step. Used by the resize case. A returned
+   * promise is awaited (T1745b: a decoder fills the next frame's movie bytes here, run-up
+   * frames included), and a run-up frame's index is negative.
+   */
+  readonly betweenFrames?: (control: HarnessControl, frameIndex: number) => void | Promise<void>;
+  /**
+   * T1745b — A RUN-UP: frames stepped BEFORE frame 0 and never read back, so the history a
+   * feedback, a cache, a simulation or a stateful value node carries into frame 0 is the one
+   * those frames built. Called once with the first compiled plan (what holds state is the
+   * plan's to say); it returns how many frames. The transport starts that many frames before
+   * `startFrame`, so frame 0 still lands on `startFrame / fps`, and with a run-up of
+   * `startFrame` the render steps exactly the frames a render from 0 steps: frame 0 here IS
+   * that render's frame `startFrame`. A run-up frame's index is negative (−n … −1) wherever
+   * a callback is told the frame; nothing can capture or probe one. It may not reach before
+   * the timeline's frame 0. Absent: no run-up, the render starts cold at frame 0.
+   */
+  readonly warmup?: (plan: CompiledGraph) => number;
+  /**
+   * T1739b — SUM THE CAPTURED FRAMES ON THE GPU instead of reading each one back. Every
+   * captured frame is added, in linear light, to a float sum of the read output
+   * (`LoomBackend.accumulateOutput`), and every `every` captures the sum is read back ONCE,
+   * handed to `onSum` and zeroed. `decode` gets the read output's format, declared space,
+   * size and the device's limits; returning undefined reads each captured frame back to
+   * `onCapture` instead, as without this option. The capture count must be a multiple of
+   * `every`.
+   */
+  readonly accumulate?: {
+    readonly every: number;
+    readonly decode: (output: AccumulateTarget) => LinearDecode | undefined;
+    readonly onSum: (sum: AccumulatedSum & { readonly frameIndex: number }) => void | Promise<void>;
+  };
   /**
    * T442 (T431's skeleton): evaluate the VALUE GRAPH each frame and push driven
    * parameter values through the animator before the encode — the live app's T340
@@ -253,12 +287,32 @@ export interface HeadlessRenderRequest {
    */
   readonly pictures?: Readonly<Record<string, (size: readonly [number, number]) => Uint8Array>>;
   /**
+   * T1737b — MOVING PICTURES for Movie File In nodes, by node id: given the texture's size and
+   * the index of the frame being stepped (0-based, counted from this render's first frame;
+   * negative in a `warmup` run-up), return that frame's RGBA8 bytes (row-major, top row first). Asked once per stepped frame,
+   * and the upload advances with it, so a pre-rendered clip plays on a surface in ONE render.
+   * A still in `pictures` is uploaded once and holds, which made a clip cost one whole render
+   * per frame. The callback is synchronous: a consumer streaming frames from a decoder fills
+   * its buffer in `onCapture`, which is awaited between frames.
+   */
+  readonly movies?: Readonly<Record<string, (size: readonly [number, number], frame: number) => Uint8Array>>;
+  /**
    * T1354b — STREAM captured frames instead of returning them. Each captured frame is handed
    * here (awaited, so a consumer can back-pressure, e.g. an encoder pipe) and NOT retained,
    * so a thirty-second clip does not hold a gigabyte of readbacks. `frames` in the result is
    * then empty.
    */
   readonly onCapture?: (frame: RenderedFrame) => void | Promise<void>;
+}
+
+/** T1739b: the output a GPU sum would read, as `HeadlessRenderRequest.accumulate.decode` is told it. */
+export interface AccumulateTarget {
+  readonly format: TextureFormat;
+  /** The output's declared space (§V57), which decides how its stored values decode. */
+  readonly space: ColorSpace;
+  readonly size: readonly [number, number];
+  /** The device's limits (`maxStorageBufferBindingSize` bounds the sum). */
+  readonly limits: Readonly<Record<string, number>>;
 }
 
 export interface HarnessControl {
@@ -368,10 +422,17 @@ export interface ProbedFrame {
   readonly buffers: Readonly<Record<string, ArrayBuffer>>;
 }
 
-function registry(extra?: Iterable<NodeDefinition>) {
-  return createNodeRegistry(
+/**
+ * B302: with `components`, the COMPONENT-AWARE view, as the app and `prepareProject` hand the
+ * compiler. An instance that is muted or bypassed is not inlined (§T1032), so its node
+ * reaches validation as itself and must have a type: with the bare node registry every
+ * render of a document holding one stopped at `compiler/unknown-node-type`.
+ */
+function registry(extra?: Iterable<NodeDefinition>, components?: ComponentRegistryView) {
+  const nodes = createNodeRegistry(
     extra === undefined ? allNodeDefinitions : [...allNodeDefinitions, ...extra],
   ).view();
+  return components === undefined ? nodes : createComponentAwareRegistry(nodes, components);
 }
 
 /** The resource the sink presents into, resolved from the plan rather than reconstructed. */
@@ -882,6 +943,12 @@ export async function renderHeadless(unmeasured: HeadlessRenderRequest): Promise
       throw new Error(`probeFrames asks for frame ${outside.join(", ")}, and this render steps frames 0 to ${frameCount - 1}.`);
     }
   }
+  // T1739b: a sum of a partial group would be resolved by nobody.
+  if (request.accumulate !== undefined) {
+    const every = request.accumulate.every;
+    if (!Number.isInteger(every) || every < 1) throw new Error(`accumulate.every must be a whole number of at least 1, not ${every}.`);
+    if (capture.length % every !== 0) throw new Error(`accumulate sums ${every} captured frames at a time, and ${capture.length} are captured.`);
+  }
   const probedFrames: ProbedFrame[] = [];
   const outputNodeId = request.outputNodeId ?? OUTPUT_NODE_ID;
   // T933: the DOCUMENT's rate when the request does not override it. A bare `?? 60`
@@ -905,6 +972,8 @@ export async function renderHeadless(unmeasured: HeadlessRenderRequest): Promise
     diagnostics.push(diagnostic);
     note(diagnostic);
   });
+  /** T1739b: the GPU sum of captured frames, when `accumulate` made one; released with the backend. */
+  let accumulator: { readonly resourceId: string; readonly sum: OutputAccumulator } | undefined;
   try {
     // §V12: compile against the capabilities the DEVICE reports, never against assumed
     // ones. A device without float32-filterable must produce a plan that says so.
@@ -923,19 +992,19 @@ export async function renderHeadless(unmeasured: HeadlessRenderRequest): Promise
         ? undefined
         : flattenComponents({
             graph: request.graph,
-            registry: registry(request.nodes),
+            registry: registry(request.nodes, request.components),
             components: request.components,
           });
     /** What the value graph and every compile read. §V437: the raw document is not it. */
     const logicalGraph = flattened?.graph ?? compiledWithoutCatalogue(request.graph);
     /** T1497b: the preset morphs in flight — the flattening's, or the document's own. */
-    const morphs = flattened?.morphs ?? buildMorphIndex({ document: request.graph, registry: registry(request.nodes) });
+    const morphs = flattened?.morphs ?? buildMorphIndex({ document: request.graph, registry: registry(request.nodes, request.components) });
 
     /** The request every compile below starts from: the document's own structure, no frame. */
     const baseRequest: CompileRequest = {
       graph: request.graph,
       settings,
-      registry: registry(request.nodes),
+      registry: registry(request.nodes, request.components),
       capabilities,
       ...(flattened === undefined ? {} : { flattened }),
       // §T1311b(a): the editor's preview sinks, when a test is standing where the editor
@@ -958,7 +1027,7 @@ export async function renderHeadless(unmeasured: HeadlessRenderRequest): Promise
      */
     const structure = buildTimelineStructure({
       document: request.graph,
-      registry: registry(request.nodes),
+      registry: registry(request.nodes, request.components),
       ...(request.components === undefined ? {} : { components: request.components }),
       flattened,
     });
@@ -1029,7 +1098,7 @@ export async function renderHeadless(unmeasured: HeadlessRenderRequest): Promise
     const atRest = documentFindings({
       graph: request.graph,
       settings,
-      registry: registry(request.nodes),
+      registry: registry(request.nodes, request.components),
       ...(request.components === undefined ? {} : { components: request.components }),
       capabilities,
       compiled: { plan, flattened },
@@ -1104,14 +1173,43 @@ export async function renderHeadless(unmeasured: HeadlessRenderRequest): Promise
     };
     // T650: media draws SOMETHING attributable in headless, or nothing by stated design.
     registerSyntheticMediaSources(sourcesOnce, plan, logicalGraph, () => steppingFrame);
+    // T1738b: a Movie File In on a branch no sink reaches has no texture in the plan and
+    // nothing reads it, so a feed named for it is left unfed. Any other id is still refused.
+    const prunedMovie = (nodeId: string): boolean => logicalGraph.nodes[nodeId as keyof typeof logicalGraph.nodes]?.type === "movieFileIn";
     // T1407b: a real picture replaces the card for the nodes the caller names.
     for (const [nodeId, bytesFor] of Object.entries(request.pictures ?? {})) {
       const resource = plan.resources.find((entry) => (entry as { sourceId?: string }).sourceId === `media:${nodeId}`) as { size?: readonly [number, number] } | undefined;
+      if (resource?.size === undefined && prunedMovie(nodeId)) continue;
       if (resource?.size === undefined) throw new Error(`pictures: "${nodeId}" has no media texture in the plan (is it a Movie File In?).`);
       const bytes = bytesFor(resource.size);
       if (bytes.length !== resource.size[0] * resource.size[1] * 4) throw new Error(`pictures: "${nodeId}" returned ${bytes.length} bytes for a ${resource.size[0]}×${resource.size[1]} RGBA8 texture.`);
       registeredSources.add(`media:${nodeId}`);
       backend.registerMediaSource(`media:${nodeId}`, { currentFrame: () => ({ frameId: 1, bytes }) });
+    }
+    // T1737b: a moving picture asks for the frame being stepped, and its frameId advances with
+    // it, so the backend (which uploads only when the frameId moves) uploads every frame.
+    for (const [nodeId, bytesAt] of Object.entries(request.movies ?? {})) {
+      const resource = plan.resources.find((entry) => (entry as { sourceId?: string }).sourceId === `media:${nodeId}`) as { size?: readonly [number, number] } | undefined;
+      if (resource?.size === undefined && prunedMovie(nodeId)) continue;
+      if (resource?.size === undefined) throw new Error(`movies: "${nodeId}" has no media texture in the plan (is it a Movie File In?).`);
+      const size = resource.size;
+      // T1745b: a run-up frame's index is negative, so "none shown yet" is not a frame number.
+      let shownFrame: number | undefined;
+      let shown: Uint8Array = new Uint8Array(0);
+      let uploads = 0;
+      registeredSources.add(`media:${nodeId}`);
+      backend.registerMediaSource(`media:${nodeId}`, {
+        currentFrame: () => {
+          if (steppingFrame !== shownFrame) {
+            const bytes = bytesAt(size, steppingFrame);
+            if (bytes.length !== size[0] * size[1] * 4) throw new Error(`movies: "${nodeId}" returned ${bytes.length} bytes for a ${size[0]}×${size[1]} RGBA8 texture at frame ${steppingFrame}.`);
+            shownFrame = steppingFrame;
+            shown = bytes;
+            uploads += 1;
+          }
+          return { frameId: uploads, bytes: shown };
+        },
+      });
     }
     // T1353b: the mesh feed — one static frame per source, prepared the loader's way.
     for (const [nodeId, glb] of Object.entries(request.meshes ?? {})) {
@@ -1151,9 +1249,17 @@ export async function renderHeadless(unmeasured: HeadlessRenderRequest): Promise
       );
     registerInference(plan);
 
+    // T1745b: the run-up, decided by the caller from the plan, before any frame is stepped.
+    const runUp = request.warmup?.(plan) ?? 0;
+    if (!Number.isInteger(runUp) || runUp < 0) throw new Error(`warmup must be a whole number of frames, not ${runUp}.`);
+    if (runUp > (request.startFrame ?? 0)) {
+      throw new Error(`warmup asks for ${runUp} frames before frame ${request.startFrame ?? 0}; a run-up cannot start before the timeline's frame 0.`);
+    }
+    const firstStepped = (request.startFrame ?? 0) - runUp;
     // §V45: the seed is the project's, not the transport's own invention. Hoisted so the
     // control below can wrap it (T1508b).
-    const clock = offlineTransport({ fps, seed: settings.randomSeed, mode: "fixed-step", ...(request.subframes === undefined ? {} : { subframes: request.subframes }), ...(request.startFrame === undefined ? {} : { startFrame: request.startFrame }), ...(request.absEpoch === undefined ? {} : { epoch: request.absEpoch }) });
+    // T1785b: the document's tempo along the take's absolute clock.
+    const clock = offlineTransport({ fps, seed: settings.randomSeed, mode: "fixed-step", tempo: documentTempo(() => settings), ...(request.subframes === undefined ? {} : { subframes: request.subframes }), ...(firstStepped === 0 ? {} : { startFrame: firstStepped }), ...(request.absEpoch === undefined ? {} : { epoch: request.absEpoch }) });
     /**
      * §T1537b: the loop below PULLS each frame before stepping it, so the plan for that
      * frame's playhead is installed first; the driver then steps the pulled frame. With no
@@ -1208,7 +1314,7 @@ export async function renderHeadless(unmeasured: HeadlessRenderRequest): Promise
       request.animate === true
         ? (() => {
             const allocated = new Set(plan.resources.map((resource) => resource.id));
-            return analyzeChannelEntries(logicalGraph, registry(request.nodes)).filter((entry) =>
+            return analyzeChannelEntries(logicalGraph, registry(request.nodes, request.components)).filter((entry) =>
               allocated.has(entry.resourceId),
             );
           })()
@@ -1231,7 +1337,7 @@ export async function renderHeadless(unmeasured: HeadlessRenderRequest): Promise
      */
     let analyzeTracked = analyzeEntries;
 
-    const valueSession = request.animate === true ? createValueGraphSession(registry(request.nodes)) : null;
+    const valueSession = request.animate === true ? createValueGraphSession(registry(request.nodes, request.components)) : null;
     const animator = request.animate === true ? createUniformAnimator() : null;
     // One closure serves both directions, so a render can replay a track and record what
     // it replayed — which is what makes "record, replay, record again, compare" a test of
@@ -1324,7 +1430,7 @@ export async function renderHeadless(unmeasured: HeadlessRenderRequest): Promise
                 const read = { frame: inputs.frame, channels, flattening: { morphs, instanceChannels: flattened?.instanceChannels ?? NO_INSTANCES, instancePages: flattened?.instancePages ?? NO_PAGES } };
                 const nextEntries = analyzeTracked.map((entry) => {
                   const node = logicalGraph.nodes[entry.nodeId as keyof typeof logicalGraph.nodes];
-                  const operation = node === undefined ? entry.operation : analyzeOperationOf(node, logicalGraph, registry(request.nodes), read);
+                  const operation = node === undefined ? entry.operation : analyzeOperationOf(node, logicalGraph, registry(request.nodes, request.components), read);
                   if (operation === entry.operation) return entry;
                   changed = true;
                   return { ...entry, operation };
@@ -1373,8 +1479,35 @@ export async function renderHeadless(unmeasured: HeadlessRenderRequest): Promise
 
     const captured: RenderedFrame[] = [];
     const wanted = new Set(capture);
+    /**
+     * T1739b: the decode a GPU sum of the read output goes through, or undefined to read
+     * each captured frame back. Asked once, of the plan the render starts in.
+     */
+    const decode = (() => {
+      if (request.accumulate === undefined) return undefined;
+      const resource = plan.resources.find(
+        (entry) => entry.id === outputResourceId && (entry.kind === "target" || entry.kind === "pingPong"),
+      );
+      const output = plan.outputs.find((entry) => entry.resourceId === outputResourceId);
+      if (resource === undefined || (resource.kind !== "target" && resource.kind !== "pingPong") || output === undefined) {
+        throw new Error(`accumulate: the plan has no texture for "${outputResourceId}" to sum.`);
+      }
+      return request.accumulate.decode({ format: resource.format, space: output.space, size: resource.size, limits: capabilities.limits });
+    })();
+    /** The sum, made for the output resource it reads: a segment that moves the output starts a new one between groups. */
+    const sumOf = (resourceId: string, using: LinearDecode): OutputAccumulator => {
+      if (accumulator?.resourceId === resourceId) return accumulator.sum;
+      if (accumulator !== undefined && accumulator.sum.count > 0) {
+        throw new Error(`accumulate: the output moved from "${accumulator.resourceId}" to "${resourceId}" inside one sum.`);
+      }
+      accumulator?.sum.dispose();
+      accumulator = { resourceId, sum: backend.accumulateOutput(resourceId, using) };
+      return accumulator.sum;
+    };
     const breathe = frameLoopBreather();
-    for (let index = 0; index < frameCount; index += 1) {
+    // T1745b: a run-up's frames come first, as −runUp … −1. `0 - runUp`, not `-runUp`: with
+    // no run-up that is −0, a frame index no caller's 0 equals.
+    for (let index = 0 - runUp; index < frameCount; index += 1) {
       // T1132: see `frameLoopBreather` — the loop must let the process answer.
       await breathe();
       steppingFrame = index;
@@ -1413,7 +1546,15 @@ export async function renderHeadless(unmeasured: HeadlessRenderRequest): Promise
         // extra readback microtasks from shifting the sampling phase.
         await analyze.sample(index);
       }
-      if (wanted.has(index)) {
+      if (wanted.has(index) && decode !== undefined) {
+        // T1739b: added on the device, and read back once a group is whole.
+        const sum = sumOf(liveOutputResourceId, decode);
+        sum.add();
+        if (sum.count === request.accumulate!.every) {
+          const read = await sum.read();
+          await request.accumulate!.onSum({ ...read, frameIndex: index });
+        }
+      } else if (wanted.has(index)) {
         // §V48/§V7: readback happens between frames, never inside the loop, which is why
         // `step()` exists as a separate entry point at all.
         // T173: readOutput returns the full descriptor now — width/format/stride come
@@ -1435,7 +1576,9 @@ export async function renderHeadless(unmeasured: HeadlessRenderRequest): Promise
         for (const resourceId of request.probeBuffers ?? []) buffers[resourceId] = await backend.readBuffer(resourceId);
         probedFrames.push({ frameIndex: index, buffers });
       }
-      request.betweenFrames?.(control, index);
+      // Awaited only when it returns a promise: a synchronous caller's frames keep their timing.
+      const between = request.betweenFrames?.(control, index);
+      if (between !== undefined) await between;
     }
 
     // T791: a per-frame error fails the render the way a structural one does — loudly,
@@ -1485,6 +1628,7 @@ export async function renderHeadless(unmeasured: HeadlessRenderRequest): Promise
       findings: [...found.values()],
     };
   } finally {
+    accumulator?.sum.dispose();
     backend.dispose();
   }
 }

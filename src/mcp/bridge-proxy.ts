@@ -224,7 +224,12 @@ export function createBridgeProxy(options: BridgeProxyOptions): BridgeProxy {
         if (typeof pid === "number") incumbentPid = pid;
         incumbentCode = typeof code === "string" ? code : null;
         detail = `Proxying the Loom bridge on 127.0.0.1:${options.port}${incumbentPid === null ? "" : ` (PID ${incumbentPid})`}; tool calls reach the same document that bridge serves.`;
-        notice({ severity: "info", message: detail });
+        // T1773b: the code that works is the incumbent's, and this is the terminal a person
+        // is reading, so it is printed here rather than left to `bridge_status` alone.
+        notice({
+          severity: "info",
+          message: incumbentCode === null ? detail : `${detail} Pairing code ${incumbentCode} — that bridge's, not this process's.`,
+        });
         send({ type: "listTools", id: nextId++ });
         return;
       }

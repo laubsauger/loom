@@ -418,6 +418,29 @@ const DELIBERATELY_STILL: Record<string, string> = {
   "E89-Cymatics.loom.json toggle_song.song": "Toggle: flips by hand only",
   "E89-Cymatics.loom.json toggle_tour.tour": "Toggle: flips by hand only",
   "E89-Cymatics.loom.json toggle_xy.xy": "Toggle: flips by hand only",
+  /* E90 (T1757b): twelve lamps, and the song is in D major. Its four chords and their
+     partials sound eleven of the twelve classes; C is the one they never touch, so its lamp
+     is dark for the whole piece — which is the picture being right, not a dead wire (turn
+     Key to 0 and it is the brightest). And a Tone Pattern's lead never rests, so the bead is
+     always on; from a Notes node the same channel falls to 0 in every rest. */
+  "E90-Chord-Wheel.loom.json tones_song.chroma0": "C is the one pitch class D major's four chords never sound; Key 0 lights it",
+  "E90-Chord-Wheel.loom.json tones_song.pitchConfidence": "a Tone Pattern's lead never rests; a Notes node's falls to 0 in a rest",
+  /* MusicFeatures and MidiFeatures (T1805b), in their own files and embedded in E91.
+     `constant_*smooth` is the Smoothing knob as a channel: a statement cannot read a
+     parameter (§T1800b), so the page writes a Constant and three hold-offs read it. It moves
+     when the knob does. `ga` and `gh` are sample-and-hold gates (§T1795b): 1 while a note is
+     tracked or a key sounds. Tone Pattern's notes never rest, so MusicFeatures' gate is up
+     for the whole piece; a headless run has no keyboard, so MidiFeatures' two never rise and
+     its level stays 0. `music-features-claims.test.ts` replays a keyboard and holds all of
+     it to the contract. */
+  "E91-Music-Features.loom.json constant_audiosmooth.value": "the Smoothing knob as a channel (T1800b); moves when the knob does",
+  "E91-Music-Features.loom.json expression_audionrange.ga": "the note-tracked gate; a Tone Pattern's notes never rest, a Notes node's do",
+  "MusicFeatures.loom.json constant_audiosmooth.value": "the Smoothing knob as a channel (T1800b); moves when the knob does",
+  "MusicFeatures.loom.json expression_audionrange.ga": "the note-tracked gate; a Tone Pattern's notes never rest, a Notes node's do",
+  "MidiFeatures.loom.json constant_keyssmooth.value": "the Smoothing knob as a channel (T1800b); moves when the knob does",
+  "MidiFeatures.loom.json expression_keysrange.ga": "the key-sounding gate; no keyboard in a headless run",
+  "MidiFeatures.loom.json expression_keysrange.gh": "the key-held gate; no keyboard in a headless run",
+  "MidiFeatures.loom.json select_levels.level": "the level of the keys played; no keyboard in a headless run",
   "TimeGrid.loom.json lfo_churnx.value": "TimeGrid ships Churn at its 0 default; E51 turns it up",
   "TimeGrid.loom.json lfo_churny.value": "TimeGrid ships Churn at its 0 default; E51 turns it up",
   /* ⚑ E70's TEMPO LANE, AND IT IS A DIFFERENT KIND OF ROW FROM THE FOUR ABOVE — not a knob

@@ -47,7 +47,7 @@ export interface Preset {
   readonly name: string;
   /** node NAME → key → the STORED form, written back verbatim (ruling 2). */
   readonly values: PresetValues;
-  /** Layer NAME → on/off (the design doc §7.2). A recall writes it as `ui.bypassed = !on`. Always a cut. */
+  /** Node NAME → on/off (the design doc §7.2; any node, T1770b). A recall writes it as `ui.bypassed = !on`. Always a cut. */
   readonly on?: Readonly<Record<string, boolean>>;
   /**
    * A SHOT (T1499b, the design doc §8.1): other banks' presets recalled in the same patch,
@@ -195,6 +195,15 @@ export interface PresetTarget {
   /** Absent = every non-pulse parameter of the node (ruling 3). */
   readonly key?: string;
 }
+
+/**
+ * T1771b — THE TARGET KEY THAT ASKS STORE FOR A NODE'S ON/OFF: `rig_keys.@on`. Store then
+ * writes the node's switch (not bypassed = on) into the preset's `on` row, which a recall
+ * writes back (§T1770b). Only a target that asks: a whole-node target captures parameters,
+ * as it always has, so no existing bank starts storing switches. `@` cannot begin a
+ * parameter key, so it cannot be mistaken for one (a Toggle's own parameter is `on`).
+ */
+export const PRESET_ON_TARGET_KEY = "@on";
 
 /**
  * `targets` as a list: node names or `node.key`, separated by spaces or commas like

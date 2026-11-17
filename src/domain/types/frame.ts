@@ -1,4 +1,5 @@
 import type { AudioSpectrumBands } from "../audio/spectrum-bands.ts";
+import type { AudioTonalFields } from "../audio/tonal-fields.ts";
 import { DEFAULT_PROJECT_FPS } from "./graph.ts";
 
 /**
@@ -110,6 +111,69 @@ export interface FrameEvaluationInput {
    * that draws its own shutter blur reads it to stand down when accumulation provides one.
    */
   subframes?: number;
+  /**
+   * T1785b — the PROJECT TEMPO at this frame: the transport's beat clock, read by any
+   * expression as `bpm`, `beat`, `beatphase`, `beatpulse`, `bar`, `barphase`, `tempolocked`.
+   *
+   * It arrives here and nowhere else (§V44, §V1038): a tap, a MIDI clock pulse and an audio
+   * tempo claim all happen on the wall clock, and the app's beat clock turns them into this
+   * reading once per frame. An offline render gets it from the frame's absolute time and
+   * the document's BPM, so the same project renders the same beat on any day.
+   * Optional (§V68): a transport that states none is read through `tempoOf`, which counts
+   * the default tempo along the absolute clock.
+   */
+  tempo?: FrameTempo;
+}
+
+/**
+ * T1785b — where a tempo comes from. `manual` is the document's BPM (typed or tapped),
+ * `audio` follows the audio analysis' tempo claim, `midiClock` follows MIDI realtime.
+ */
+export const TEMPO_SOURCES = ["manual", "audio", "midiClock"] as const;
+export type TempoSourceKind = (typeof TEMPO_SOURCES)[number];
+
+/** T1785b — the tempo a document that states none has, and a frame whose transport stamps none. */
+export const DEFAULT_PROJECT_BPM = 120;
+/** T1785b — the beat clock counts bars of four beats; a time signature is T1790b. */
+export const BEATS_PER_BAR = 4;
+
+/** T1785b — the beat clock's reading for one frame. */
+export interface FrameTempo {
+  /** Beats per minute in effect for this frame. */
+  readonly bpm: number;
+  /** Position on the beat grid at this frame, in beats since the downbeat; never negative. */
+  readonly beats: number;
+  /** Beats that landed in this frame: 0 between beats, 1 on the frame a beat lands (more when a frame spans several). */
+  readonly pulse: number;
+  readonly source: TempoSourceKind;
+  /**
+   * The source is delivering: always for `manual`; for `audio` while the claim is confident;
+   * for `midiClock` while pulses arrive. False means the tempo is the last one held.
+   */
+  readonly locked: boolean;
+}
+
+/**
+ * T1785b — a tempo counted along a clock, the arithmetic every deterministic reading uses:
+ * `seconds` is where the frame is on that clock and `deltaSeconds` the step that got it there.
+ * A frame with no step (the first of a run) pulses when it sits exactly on a beat.
+ */
+export function tempoAlong(bpm: number, seconds: number, deltaSeconds: number, source: TempoSourceKind = "manual"): FrameTempo {
+  const beats = Math.max(0, (seconds * bpm) / 60);
+  const before = Math.max(0, ((seconds - deltaSeconds) * bpm) / 60);
+  const pulse = deltaSeconds > 0 ? Math.max(0, Math.floor(beats) - Math.floor(before)) : beats === Math.floor(beats) ? 1 : 0;
+  return { bpm, beats, pulse, source, locked: source === "manual" };
+}
+
+/**
+ * T1785b — a frame's tempo; a frame that carries none counts the default tempo along its absolute clock.
+ * T1787b: such a frame with no step is not a moment of playback (the compile's zero frame,
+ * a redraw), so no beat lands in it: it used to pulse whenever it sat on a beat, time zero included.
+ */
+export function tempoOf(frame: FrameEvaluationInput): FrameTempo {
+  if (frame.tempo !== undefined) return frame.tempo;
+  const counted = tempoAlong(DEFAULT_PROJECT_BPM, absTimeSecondsOf(frame), frame.deltaSeconds);
+  return frame.deltaSeconds > 0 ? counted : { ...counted, pulse: 0 };
 }
 
 /**
@@ -174,7 +238,13 @@ export interface FrameClock {
  *    that can count it (`audioPattern`, a declared `beatsPerBar` + reset, or an offline
  *    pre-analysis, T1229).
  */
-export interface AudioFeatures extends AudioSpectrumBands {
+/*
+ * T1751b: the record also carries the TONAL fields (`AudioTonalFields`: twelve pitch-class
+ * energies `chroma0` … `chroma11`, their confidence, the tuning, the lag, and the chord and
+ * key claims §T1753b fills). Version 4 of the record. The audio SOURCE nodes do not publish
+ * them; the tonal nodes (`audio-tonal.ts`) do.
+ */
+export interface AudioFeatures extends AudioSpectrumBands, AudioTonalFields {
   /** Broadband RMS of the current analysis window. */
   readonly level: number;
   /**
@@ -343,6 +413,8 @@ export function frameFromClock(reading: FrameClockReading): EvaluationFrame {
     ...(reading.absEpoch === undefined ? {} : { absEpoch: reading.absEpoch }),
     fps: reading.fps,
     subframes: reading.subframes ?? 1,
+    // T1785b: omitted, never `undefined`, when the transport stamps no tempo (`tempoOf`).
+    ...(reading.tempo === undefined ? {} : { tempo: reading.tempo }),
   };
 }
 

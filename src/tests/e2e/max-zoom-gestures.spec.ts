@@ -18,7 +18,8 @@ import { APP_VIEWPORT, addNode, fitAll, openApp, viewportSettled } from "./app.t
  * wide, larger than the canvas, so wheel-zooming into a picture — the one thing max zoom
  * is FOR (T490) — leaves nothing under the pointer but a node. React Flow gives every
  * node wrapper its `nopan` class and its node-drag filter ignores modifier keys, so
- * alt+drag — the only pan gesture a trackpad has — starts a node drag on a header and is
+ * alt+drag — then the only pan gesture a trackpad had, and still the one that works OVER a
+ * node — starts a node drag on a header and is
  * refused outright on the preview tile (whose own wrapper is `nodrag nopan`). The wheel
  * still works, which is why zooming OUT always frees the user — and why it reads as "the
  * graph has a maximum size". A middle button would have panned (React Flow lets button 1
@@ -124,7 +125,7 @@ async function zoomIntoTile(
   return { nodeId, at };
 }
 
-/** Alt+drag from `at` — `panActivationKeyCode`, the trackpad's only pan gesture. */
+/** Alt+drag from `at` — `panActivationKeyCode`, the pan that works over a node. */
 async function altDrag(page: Page, at: { x: number; y: number }): Promise<void> {
   await page.mouse.move(at.x, at.y);
   await page.keyboard.down("Alt");

@@ -110,6 +110,8 @@ happened:
 | [E87 Photo Mapping Falling Facade](./E87-Photo-Mapping-Falling-Facade.md) | Photographic sections release in a staggered wave, tumble and fall, then reform; cohort attributes carry warm fracture highlights. |
 | [E88 Photo Mapping Ribbon Peel](./E88-Photo-Mapping-Ribbon-Peel.md) | Architectural relief peels into moving horizontal ribbons; a bend attribute drives colour independently of the camera. |
 | [E89 Cymatics](./E89-Cymatics.md) | A shaken dish of liquid filmed from above under a rig of coloured lamps: a shallow-water simulation with a Faraday drive and meniscus waves in a seven-lobed vessel, lit by a banded ring lamp that draws the waves as contour lines of slope. A lab signal generator, a tour of notes, a song mode on the shipped beat, and an oscilloscope with a hertz readout beside the dish, all on one Panel. |
+| [E90 Chord Wheel](./E90-Chord-Wheel.md) | Which notes sound, as a ring of twelve lamps: pitch classes, the chord's root and the lead note from a Tone Pattern, the test signal that publishes what the Chroma, Chord and Notes nodes do. |
+| [E91 Music Features](./E91-Music-Features.md) | The MusicFeatures component's contract at a glance: five voice lamps coloured by pitch class, a bar that jumps on the kick, the harmony's root on a strip of twelve, the backdrop as bright as the form's energy, from an Audio Pattern and a Tone Pattern. MidiFeatures publishes the same channel names from a keyboard. |
 
 ## Running them
 
@@ -135,8 +137,8 @@ step — there is no list to add it to.
 ## `components/` — the starter component set
 
 `components/` holds the shipped components (T190, §V94): FeedbackEcho, Bloom, Bloom Pyramid,
-Kaleidoscope, DisplacementStack, MediaGrade, AudioLevel, AudioAnalysis, DepthPoints,
-DepthCut, TimeGrid, Antialias, and MatteCut. They are a **different library with a
+Kaleidoscope, DisplacementStack, MediaGrade, AudioLevel, AudioAnalysis, MusicFeatures,
+MidiFeatures, DepthPoints, DepthCut, TimeGrid, Antialias, and MatteCut. They are a **different library with a
 different verb** — you *instantiate* a component, you *open* an example (§V93) — which is
 why they sit in a subdirectory: `listExamples` and the browser's example glob both read
 this directory non-recursively, so a component can never appear as a project to open.

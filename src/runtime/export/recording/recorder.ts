@@ -1,6 +1,7 @@
 import type { FrameEvaluationInput } from "../../../domain/types/frame.ts";
 import type { RuntimeDiagnostic } from "../../../domain/types/diagnostics.ts";
 import { boundedSize, toRgba8At } from "../image.ts";
+import { toI420P10 } from "./yuv10.ts";
 import type { ExportOutput } from "../types.ts";
 import { ExportDiagnosticCode, ExportError, exportDiagnostic, outputRefKey } from "../types.ts";
 import type {
@@ -171,6 +172,15 @@ export function createFrameRecorder(options: FrameRecorderOptions): FrameRecorde
       frames += 1;
       return;
     }
+    if (options.encoder.encodeYuv10 !== undefined) {
+      // T1741b: a 10-bit format reads the Output in its own float format and converts it
+      // to 10-bit planes. Never via `toRgba8At`, which would quantise to 8 bits first.
+      const image = await options.api.read(options.ref, { reason: "recording" });
+      const yuv = toI420P10(image, options.api.describe(options.ref)?.space ?? "linear");
+      await options.encoder.encodeYuv10({ yuv, ...timing });
+      frames += 1;
+      return;
+    }
     // Reason "recording" is what tells the export interface this read is expected to happen
     // while the loop runs (§V7). It is counted, not waved through.
     const image = await options.api.read(options.ref, { reason: "recording" });
@@ -231,6 +241,26 @@ export function createFrameRecorder(options: FrameRecorderOptions): FrameRecorde
       // silently padded depending on the encoder. Rounding down here keeps the size the
       // recorder promises and the size the encoder gets identical.
       size = [Math.max(2, width - (width % 2)), Math.max(2, height - (height % 2))];
+      if (options.encoder.encodeYuv10 !== undefined) {
+        // T1741b: refused before the first frame, by name. A 10-bit take of an 8-bit Output
+        // would band exactly like the 8-bit file; and the 10-bit path does not resample.
+        const message = output.format !== "rgba16float" && output.format !== "r32float"
+          ? `Cannot record "${outputRefKey(options.ref)}" in 10 bits: the Output is ${output.format}, ` +
+            "which holds 8 bits per channel. Set the project's working format to rgba16float."
+          : size[0] !== output.width || size[1] !== output.height
+            ? `Cannot record "${outputRefKey(options.ref)}" in 10 bits at ${size[0]}x${size[1]}: ` +
+              `the 10-bit path records the Output's own ${output.width}x${output.height} and does not resample.`
+            : null;
+        if (message !== null) {
+          const diagnostic = exportDiagnostic("error", ExportDiagnosticCode.unsupportedFormat, message, {
+            nodeId: options.ref.nodeId,
+            portId: options.ref.portId,
+          });
+          error = new ExportError(diagnostic);
+          state = "failed";
+          throw error;
+        }
+      }
       await options.encoder.configure({
         width: size[0],
         height: size[1],

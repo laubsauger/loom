@@ -28,6 +28,7 @@ import {
   CONTROL_WIDGET_TYPES,
   LAYER_NODE_TYPE,
   surfaceNameOf,
+  switchesOnBoard,
   layerPicture,
   controlButtonNode,
   controlChannel,
@@ -253,7 +254,7 @@ function phoneWidget(node: WidgetNode): PhoneWidget {
 
 /* ------------------------------------------------- banks, layers, cue lists (T1503b) */
 
-type MemberKind = "preset" | "layer" | "cueList";
+type MemberKind = "preset" | "layer" | "cueList" | "switch";
 
 /** The phone kind a board's by-name member is drawn as, by node type (`BOARD_NAMED_TYPES`). */
 const MEMBER_KINDS: Readonly<Record<string, MemberKind>> = {
@@ -265,8 +266,13 @@ const MEMBER_KINDS: Readonly<Record<string, MemberKind>> = {
 /** T1505b: the bank a `preset` member reads — a Presets node, or a look's instance (its component's presets). */
 const presetBankOf = (node: GraphNode, components: Catalogue): BankView | undefined => bankViewOf(node, components);
 
+/**
+ * T1771b: any OTHER node a board names is its on/off switch (`switchesOnBoard`, the desk's
+ * rule). The phone is sent a `toggle` for it, the widget it already draws and presses, so
+ * the page and the wire are unchanged; what a press WRITES is decided here, by the node.
+ */
 const memberKind = (node: GraphNode, components: Catalogue): MemberKind | null =>
-  MEMBER_KINDS[node.type] ?? (presetBankOf(node, components)?.kind === "instance" ? "preset" : null);
+  MEMBER_KINDS[node.type] ?? (presetBankOf(node, components)?.kind === "instance" ? "preset" : switchesOnBoard(node, components) ? "switch" : null);
 
 /**
  * The other half of the one decision: bank / layer / cue-list node id → node, for every one
@@ -388,6 +394,9 @@ function memberWidget(
         current: textOf(node.parameters[presetBankOf(node, components)?.currentKey ?? "current"]) || null,
         morphing: runningMorphs(node, clock, components).length > 0,
       };
+    case "switch":
+      // On means not bypassed, as for a Layer.
+      return { kind: "toggle", handle, caption, on: node.ui?.bypassed !== true };
     case "layer": {
       const opacity = layerOpacity(node);
       return {
@@ -520,7 +529,7 @@ export type PhoneVet =
       readonly phase: PhoneSet["phase"];
     }
   | ({ readonly ok: true; readonly action: "command" } & PhoneCommandCall)
-  | { readonly ok: true; readonly action: "layerOn"; readonly nodeId: NodeId; readonly caption: string; readonly on: boolean }
+  | { readonly ok: true; readonly action: "layerOn"; readonly nodeId: NodeId; readonly caption: string; readonly on: boolean; /** T1771b: any other node's board switch — the same write, named for what it is. */ readonly what?: "switch" }
   /**
    * `nodeId` (T1526b) is the control the refusal is about, present only when the write
    * named one that IS published — the id the snapshot gave the phone, so it is the page's
@@ -630,7 +639,8 @@ function vetMember(node: GraphNode, kind: MemberKind, set: PhoneSet, components:
   const values = typeof set.values === "object" && set.values !== null ? set.values : {};
   const keys = Object.keys(values);
   if (keys.length === 0) return no(`A phone's write to “${caption}” carried no values.`);
-  const writable: readonly string[] = PHONE_WRITABLE_KEYS[kind];
+  // T1771b: a switch is drawn as a toggle, and takes what a toggle sends.
+  const writable: readonly string[] = PHONE_WRITABLE_KEYS[kind === "switch" ? "toggle" : kind];
   if (!keys.every((key) => writable.includes(key))) {
     return no(`A phone tried to write a key a ${kind} does not let a phone write, on “${caption}”.`);
   }
@@ -642,6 +652,13 @@ function vetMember(node: GraphNode, kind: MemberKind, set: PhoneSet, components:
   const call = (command: PhoneCommandCall): PhoneVet => ({ ok: true, action: "command", ...command });
 
   switch (kind) {
+    case "switch": {
+      // T1771b: the node's on/off — the Layer's write, the state asked for and never a flip.
+      const live = pressOnly("its switch");
+      if (live !== null) return live;
+      if (typeof value !== "boolean") return no(`A phone sent “${caption}” something that is not true or false.`);
+      return { ok: true, action: "layerOn", nodeId: node.id, caption, on: value, what: "switch" };
+    }
     case "preset": {
       const live = pressOnly("a recall");
       if (live !== null) return live;

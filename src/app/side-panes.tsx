@@ -14,6 +14,8 @@ import type { CompiledGraph } from "@compiler/index.ts";
 import type { UnknownParameter } from "@domain/project/index.ts";
 import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import type { GraphDocument } from "@domain/types/graph.ts";
+import type { LoomBus } from "@domain/commands/bus.ts";
+import { toInstance } from "@domain/components/addressing.ts";
 import { previewCameraAbsenceSentence } from "@compiler/preview-orbit.ts";
 import { POSE_MOVED_FROM_ITS_TILE } from "@editor/viewer/camera-pose.ts";
 import type { NodeId } from "@domain/types/ids.ts";
@@ -36,7 +38,7 @@ import type { PointerRect, PointerSource } from "@runtime/execution/index.ts";
 import { fitInsideRegion } from "@editor/nodes/preview-fit.ts";
 import { usePixelReadout, ViewerAxisGizmo } from "@editor/viewer/index.ts";
 import type { PixelReadoutOptions } from "@editor/viewer/index.ts";
-import type { PreviewOrbitStore } from "@editor/viewer/index.ts";
+import type { LookStore, PreviewOrbitStore } from "@editor/viewer/index.ts";
 import { ORBIT_REFERENCE_WIDTH, orbitDeltaFor, zoomFactorFor } from "@editor/viewer/orbit-gestures.ts";
 import type { FlyAxis } from "@editor/viewer/orbit-gestures.ts";
 import type { OrbitCameraBasis, PixelProbe } from "@runtime/previews/index.ts";
@@ -58,6 +60,7 @@ import {
   flyCameraHint,
   flyCameraLabel,
   flyingCameraSentence,
+  LOOKING_SENTENCE,
   useViewerCameraLock,
   type ViewerCameraLock,
 } from "./use-viewer-camera-lock.ts";
@@ -542,6 +545,11 @@ export interface ViewerPaneProps {
    */
   orbits?: PreviewOrbitStore | undefined;
   /**
+   * §T1732b — the app's shared LOOKS (the tiles hold the same one): when the selected picture
+   * is drawn through a camera node, a drag looks around it, view only, as its tile's C does.
+   */
+  looks?: LookStore | undefined;
+  /**
    * §B220 — the viewer's own preview SINK, and it is not the same thing as `interest`.
    *
    * `interest` is a PIN: it keeps a tile the graph canvas already materialised alive. It is
@@ -566,6 +574,12 @@ export interface ViewerPaneProps {
    * up resolving without it.
    */
   liveReads: LiveReads;
+  /**
+   * The component the editor is inside, when it is (§T970 inside a component): the viewer
+   * keeps rendering the root's plan, but a camera directly inside this component is flown
+   * through the session bus that edits its definition, as the inspector and its tile do.
+   */
+  component?: { readonly path: readonly NodeId[]; readonly bus: LoomBus; readonly graph: GraphDocument } | undefined;
 }
 
 /**
@@ -604,11 +618,13 @@ export function ViewerPane({
   probe,
   readoutOptions,
   orbits,
+  looks,
   interest,
   previewSinks,
   previewFps = 20,
   previewLongEdge = 192,
   liveReads,
+  component,
 }: ViewerPaneProps) {
   // T726: `documentIdentity` — WHICH document the pin below was made in. Taken from the
   // runtime because the runtime IS the loaded document (`adoptDocument`, `app.tsx`).
@@ -688,6 +704,16 @@ export function ViewerPane({
     return sink;
   }, [outputs, pinnedKey, requested, sink]);
 
+  const [outputSearch, setOutputSearch] = useState({ documentIdentity, query: "" });
+  const outputQuery = outputSearch.documentIdentity === documentIdentity ? outputSearch.query : "";
+  const selectedOutputKey = requested !== null ? outputKey(requested) : selected === null ? "" : outputKey(selected);
+  const matchingChoices = choices.filter((output) => {
+    const node = graph.nodes[output.nodeId as NodeId];
+    return `${node?.label ?? output.nodeId} ${node?.type ?? ""} ${output.portId}`.toLowerCase().includes(outputQuery.trim().toLowerCase());
+  });
+  // Typing locates a choice; only choosing it changes the picture.
+  const currentOutsideSearch = choices.find((output) => outputKey(output) === selectedOutputKey && !matchingChoices.includes(output));
+
   /**
    * T440/§V354 — `v` points the viewer here.
    *
@@ -701,6 +727,8 @@ export function ViewerPane({
   outputsRef.current = choices;
   const graphNow = useRef(graph);
   graphNow.current = graph;
+  const componentNow = useRef(component);
+  componentNow.current = component;
   /** §T1536b: filled from `useViewerMapping` below, which needs the presentation's key. */
   const editMappingRef = useRef<(on: boolean | undefined) => boolean>(() => false);
   useEffect(() => {
@@ -710,15 +738,25 @@ export function ViewerPane({
         /* §T1659b(2): the node's PICTURE, which is the port its tile shows, and only then any
            row at all. The rows are sorted by key, so a Render with Depth Output on answered
            `v` with `depth` (it sorts before `out`): seen on the owner's `render_shot`. */
-        const pictureOf = (id: string): (typeof outputsRef.current)[number] | undefined => {
-          const type = graphNow.current.nodes[id as NodeId]?.type;
+        const pictureOf = (id: string, doc: GraphDocument): (typeof outputsRef.current)[number] | undefined => {
+          const type = doc.nodes[nodeId as NodeId]?.type;
           const port = type === undefined ? undefined : previewablePort(registry.get(type)?.outputs ?? []);
           return port === undefined ? undefined : outputsRef.current.find((output) => output.nodeId === id && output.portId === port.id);
         };
-        const match = pictureOf(nodeId) ?? outputsRef.current.find((output) => output.nodeId === nodeId);
-        if (match === undefined) return null;
-        setPinnedKey(outputKey(match));
-        return match.portId;
+        /* §T1697b's defect, for this door: inside a component the canvas hands the id a node has
+           in the definition, and the plan's rows carry it under the instance. That spelling first. */
+        const inside = componentNow.current;
+        const spellings: Array<{ id: string; doc: GraphDocument }> = [
+          ...(inside === undefined ? [] : [{ id: toInstance(inside.path, nodeId as NodeId), doc: inside.graph }]),
+          { id: nodeId, doc: graphNow.current },
+        ];
+        for (const { id, doc } of spellings) {
+          const match = pictureOf(id, doc) ?? outputsRef.current.find((output) => output.nodeId === id);
+          if (match === undefined) continue;
+          setPinnedKey(outputKey(match));
+          return match.portId;
+        }
+        return null;
       },
       /* T380: the keymap's `h`, through a real command so it rebinds and shows in the
          shortcut editor — while the orbit store itself still holds no bus (§V527). */
@@ -783,7 +821,8 @@ export function ViewerPane({
   const [alphaDisplay, setAlphaDisplay] = useState<"rgba" | "rgb">("rgba");
   const { canvasRef, canvasKey } = useOutputPresentation(
     backend,
-    synthesisRow === null ? (selected?.resourceId ?? null) : null,
+    // §T1732b: while a look is drawn, the picture shown is the look's; the row's own is untouched.
+    synthesisRow === null ? (selected?.look?.picture?.resourceId ?? selected?.resourceId ?? null) : null,
     alphaDisplay,
   );
   const synthesisCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -1058,11 +1097,29 @@ export function ViewerPane({
    * inspection one. `gesture*` is that one decision, made once, so no handler can route a
    * drag to one store and its wheel to the other.
    */
-  const lock = useViewerCameraLock({ bus, invocation, registry, graph, selected });
-  const gestureStore = lock.armed ? lock.store : orbits;
-  const gestureNodeId = lock.armed ? lock.target : orbitNodeId;
-  const gestureLive = lock.armed || orbitable;
-  const fly = useViewerFly({ orbits: gestureStore, nodeId: gestureNodeId, basis: !lock.armed && orbitable ? flyBasis : null });
+  const lock = useViewerCameraLock({ bus, invocation, registry, graph, selected, component });
+  /*
+   * §T1732b — A PICTURE DRAWN THROUGH A CAMERA NODE IS LOOKED AROUND, view only, by the same
+   * gestures, unless the lock is armed (then the camera itself moves). The look is the tile's:
+   * one store, keyed by the renderer, so the viewer and the tiles show one look at one picture.
+   */
+  const lookRenderer = looks === undefined ? null : (selected?.look?.renderer ?? null);
+  const lookBasis = useMemo<OrbitCameraBasis | null>(() => selected?.look?.basis ?? null, [selected]);
+  const inspectStore = lookRenderer === null ? orbits : looks;
+  const inspectNodeId = lookRenderer ?? orbitNodeId;
+  const inspectable = orbitable || lookRenderer !== null;
+  const looking = useSyncExternalStore(
+    useCallback((listener: () => void) => (looks === undefined || lookRenderer === null ? () => {} : looks.subscribe(lookRenderer, listener)), [looks, lookRenderer]),
+    () => looks !== undefined && lookRenderer !== null && looks.mode(lookRenderer) === "adjustable",
+  );
+  // Arming the lock moves the camera itself, which is then seen through itself: the look goes home.
+  useEffect(() => {
+    if (lock.armed && looks !== undefined && lookRenderer !== null) looks.setMode(lookRenderer, "home");
+  }, [lock.armed, lookRenderer, looks]);
+  const gestureStore = lock.armed ? lock.store : inspectStore;
+  const gestureNodeId = lock.armed ? lock.target : inspectNodeId;
+  const gestureLive = lock.armed || inspectable;
+  const fly = useViewerFly({ orbits: gestureStore, nodeId: gestureNodeId, basis: lock.armed ? null : orbitable ? flyBasis : lookBasis });
   /*
    * T1655b — WHY THIS 3D PICTURE HAS NO CAMERA HERE, as the tile says it (one fact, one
    * sentence: the compiler's reason on the row). A picture drawn through a node's own Eye
@@ -1073,6 +1130,8 @@ export function ViewerPane({
     if (orbitable || selected === null || selected === undefined || control === undefined || control.kind === "orbit") return null;
     // §T970: locked, the one thing to say is that the picture's gestures are edits.
     if (lock.armed) return flyingCameraSentence(lock.name, lock.held);
+    // §T1732b: looking, that they are not.
+    if (looking) return LOOKING_SENTENCE;
     if (control.kind === "none") {
       const framed = previewCameraAbsenceSentence(control.reason, (id) => graph.nodes[id]?.label ?? id);
       // A Render whose camera cannot be flown says whose it is AND why not.
@@ -1082,7 +1141,7 @@ export function ViewerPane({
     // unless the pose is driven, or the node is not in the document this pane edits.
     if (lock.target !== null) return null;
     return lock.refusal ?? POSE_MOVED_FROM_ITS_TILE;
-  }, [graph, lock.armed, lock.held, lock.name, lock.refusal, lock.target, orbitable, selected]);
+  }, [graph, lock.armed, lock.held, lock.name, lock.refusal, lock.target, looking, orbitable, selected]);
   /** T379: measure the selected preview's positions — the frame-content readback. */
   const measureBounds = useCallback(async (): Promise<
     { lookAt: readonly [number, number, number]; radius: number } | undefined
@@ -1131,11 +1190,11 @@ export function ViewerPane({
     frameContent?: () => Promise<{ lookAt: readonly [number, number, number]; radius: number } | undefined>;
     fly: (direction: FlyAxis) => boolean;
     lock: ViewerCameraLock;
-  }>({ orbits, nodeId: orbitNodeId, orbitable, frameContent: measureBounds, fly: fly.step, lock });
+  }>({ orbits: inspectStore, nodeId: inspectNodeId, orbitable: inspectable, frameContent: measureBounds, fly: fly.step, lock });
   orbitStateRef.current = {
-    orbits,
-    nodeId: orbitNodeId,
-    orbitable,
+    orbits: inspectStore,
+    nodeId: inspectNodeId,
+    orbitable: inspectable,
     frameContent: measureBounds,
     fly: fly.step,
     lock,
@@ -1260,7 +1319,7 @@ export function ViewerPane({
    */
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   const surface = useCallback(() => surfaceRef.current, []);
-  useFullscreenSurface(bus, surface);
+  const activateFullscreen = useFullscreenSurface(bus, surface);
 
   /**
    * T1158 — THE PICTURE LETTERBOXES INSIDE THE PANE. IT NEVER STRETCHES.
@@ -1342,8 +1401,9 @@ export function ViewerPane({
   }, []);
 
   const toggleFullscreen = useCallback(() => {
+    activateFullscreen();
     void bus.execute("view.toggleFullscreen", {}, invocation);
-  }, [bus, invocation]);
+  }, [activateFullscreen, bus, invocation]);
 
   /*
    * T813 — DOUBLE-CLICK toggles fullscreen, on the owner's word ("double click to
@@ -1396,6 +1456,8 @@ export function ViewerPane({
     <div
       {...viewerPaneProps}
       className={styles.viewer}
+      onFocusCapture={activateFullscreen}
+      onPointerDownCapture={activateFullscreen}
       onKeyDown={(event) => {
         // §T1536b: Escape leaves Edit mapping first, and only while it is on.
         if (!mapping.onKeyDown(event)) fly.onKeyDown(event);
@@ -1408,16 +1470,33 @@ export function ViewerPane({
         <label className={styles.barLabel} htmlFor="viewer-output">
           output
         </label>
+        <input
+          type="search"
+          aria-label="Find output"
+          placeholder="Find output…"
+          className={styles.outputSearch}
+          value={outputQuery}
+          onChange={(event) => setOutputSearch({ documentIdentity, query: event.target.value })}
+          disabled={choices.length === 0}
+        />
         <select
           id="viewer-output"
           data-testid="viewer-output-select"
           className={cx(styles.select, styles.outputSelect)}
-          value={requested !== null ? outputKey(requested) : selected === null ? "" : outputKey(selected)}
+          value={selectedOutputKey}
           onChange={(event) => setPinnedKey(event.target.value === "" ? null : event.target.value)}
           disabled={choices.length === 0}
         >
           {choices.length === 0 ? <option value="">no outputs</option> : null}
-          {choices.map((output) => (
+          {currentOutsideSearch === undefined ? null : (
+            <optgroup label="Current output">
+              <option value={outputKey(currentOutsideSearch)}>
+                {`${graph.nodes[currentOutsideSearch.nodeId as NodeId]?.label ?? currentOutsideSearch.nodeId}:${currentOutsideSearch.portId}`}
+              </option>
+            </optgroup>
+          )}
+          {choices.length > 0 && matchingChoices.length === 0 ? <option disabled>No matching outputs</option> : null}
+          {matchingChoices.map((output) => (
             <option key={outputKey(output)} value={outputKey(output)}>
               {/* T622 (§V539's boundary rule): the NAME the user gave the node (§V129:
                   the label IS the name), resolved here where the row is composed — the
@@ -1598,13 +1677,17 @@ export function ViewerPane({
            * that lands on a descendant of the canvas would start `onOrbitDown`'s drag
            * underneath itself. As a sibling it is neither.
            *
-           * `orbitable ? flyBasis : null` is one expression and it is §V986: no basis means
-           * no measurable orientation, so the widget is ABSENT rather than pointing
-           * somewhere it guessed. The sentence saying WHY belongs to the camera toggle in
-           * the bar (§T1311b(b)), which reads `viewCameraAbsentReason()` — one fact, one
-           * wording (§V349).
+           * Read the same inspection store, key and framing as the canvas gestures: a
+           * camera's borrowed picture and its renderer share the renderer's Look. While
+           * locked, the explicit controller reads the live authored camera's world pose
+           * and snaps through its existing undoable gesture store.
            */}
-          <ViewerAxisGizmo orbits={orbits} nodeId={orbitNodeId} basis={orbitable ? flyBasis : null} />
+          <ViewerAxisGizmo
+            orbits={gestureStore}
+            nodeId={gestureNodeId}
+            basis={orbitable ? flyBasis : lookBasis}
+            camera={lock.armed ? lock.axisCamera : undefined}
+          />
           </div>
         )}
         {/* §T1536b (viewer slice): the Edit mapping layer's host — empty to React, filled by

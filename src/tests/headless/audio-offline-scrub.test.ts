@@ -69,7 +69,7 @@ function scrub(track: FeatureTrack, transport: MediaTransportValues) {
 }
 
 describe("T1229 — a pre-analysed file renders reproducibly, indexed by the transport", async () => {
-  const { track } = analyseOffline(clickTrack(), SAMPLE_RATE, FPS, AUDIO_DETECTOR_DEFAULTS);
+  const { track } = analyseOffline(clickTrack(), SAMPLE_RATE, FPS, AUDIO_DETECTOR_DEFAULTS, false, 0);
 
   // T1234: E24 instances the AudioAnalysis component; the starter library supplies it.
   const components = await starterComponentsView();
@@ -99,7 +99,7 @@ describe("T1229 — a pre-analysed file renders reproducibly, indexed by the tra
 
     // NON-VACUITY: the first click lands inside these 40 frames (0.5 s, frame 31), so a
     // file with no click must render a different picture through the identical path.
-    const silent = analyseOffline(new Float32Array(SAMPLE_RATE * SECONDS), SAMPLE_RATE, FPS, AUDIO_DETECTOR_DEFAULTS);
+    const silent = analyseOffline(new Float32Array(SAMPLE_RATE * SECONDS), SAMPLE_RATE, FPS, AUDIO_DETECTOR_DEFAULTS, false, 0);
     const inSilence = await renderHeadless({ ...common, audio: scrub(silent.track, TIMELINE) });
     expect(
       Buffer.compare(first.frames[0]?.bytes as Uint8Array, inSilence.frames[0]?.bytes as Uint8Array),

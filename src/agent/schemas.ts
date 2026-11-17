@@ -65,7 +65,7 @@ export const PARAMETER_MODES =
   "A parameter is either a bare value or a mode envelope {mode, bindings}. " +
   "What each mode can reach: `static` a literal; " +
   "`expression` any node, in Loom's own grammar (`op('constant1').par.value` for a parameter, " +
-  "`op('lfo1').chan.value` for a published channel) plus `time`, `abstime`, maths; " +
+  "`op('lfo1').chan.value` for a published channel) plus `time`, `abstime`, the project tempo (`bpm`, `beat`, `beatphase`, `beatpulse`, `bar`, `barphase`), maths; " +
   "`bind` a parameter ALREADY IN SCOPE — a sibling on this same node (`radius`, `color.r`) " +
   "or `parent.<key>` inside a component — and NOTHING on another node; " +
   "`map` a per-point attribute on a points input; " +

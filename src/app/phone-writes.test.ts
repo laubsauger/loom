@@ -292,6 +292,31 @@ describe("T1503b — a phone's presses on banks, layers and cue lists", () => {
     expect(bus.store.getHistory(phoneActor("p1")).undo).toHaveLength(0);
   });
 
+  it("T1771b: any node named on the board is switched the same way, as the phone, in one step", async () => {
+    const { bus, id } = await show();
+    // Put the Blur on the published board: its item is its on/off switch.
+    const panel = bus.store.getGraph().nodes[id("stage")]!;
+    const stored = JSON.parse(panel.parameters["board"] as string) as { columns: number; items: unknown[] };
+    await bus.execute(
+      "graph.applyPatch",
+      {
+        baseRevision: bus.store.getRevision(),
+        operations: [{ op: "setParameters", nodeId: id("stage"), parameters: { board: JSON.stringify({ ...stored, items: [...stored.items, { member: "blur1", rect: { x: 0, y: 4, w: 2, h: 1 } }] }) } }],
+      },
+      desk,
+    );
+    const writes = phone(bus);
+    const auditBefore = bus.store.getAudit().length;
+    void writes.write("p1", press(id("blur"), { on: false }));
+    await writes.write("p1", press(id("blur"), { on: false }));
+    expect(bypassed(bus, id("blur"))).toBe(true);
+    expect(bus.store.getGraph().nodes[id("blur")]!.parameters["size"]).toBe(9);
+    expect(bus.store.getHistory(phoneActor("p1")).undo).toHaveLength(1);
+    expect(bus.store.getAudit().slice(auditBefore).map((entry) => [entry.actor.id, entry.status])).toEqual([["remote-p1", "applied"]]);
+    await writes.write("p1", press(id("blur"), { on: true }));
+    expect(bypassed(bus, id("blur"))).toBe(false);
+  });
+
   it("a layer's switch is written as the state asked for: off twice is ONE step, and it cannot flip back", async () => {
     const { bus, id } = await show();
     const writes = phone(bus);

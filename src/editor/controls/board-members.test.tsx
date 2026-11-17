@@ -138,6 +138,11 @@ async function drag(track: HTMLElement, toX: number): Promise<void> {
   });
 }
 
+/** The "+ Add…" list's own options: the nodes that join as what they are (a strip, a layer, GO and BACK). */
+const named = (picker: HTMLSelectElement): Array<string | null> => [...picker.options].filter((option) => option.parentElement === picker).map((option) => option.textContent);
+/** T1771b: the options in its "On/off switch for" group — every other node, as a switch. */
+const switches = (picker: HTMLSelectElement): Array<string | null> => [...picker.options].filter((option) => option.parentElement !== picker).map((option) => option.textContent);
+
 describe("T1501b — a bank's preset strip", () => {
   it("a press recalls the preset into its target and lights the button; one undo restores the target", async () => {
     const { runtime, ids } = await desk();
@@ -362,6 +367,59 @@ describe("T1501b — a layer's switch and fader", () => {
   });
 });
 
+/**
+ * T1771b — ANY NODE NAMED ON A BOARD IS ITS ON/OFF SWITCH. The performer's case is one
+ * effect or one source rig to take out and bring back mid-show, with no bank built for it:
+ * the tile must switch the node itself (its bypass, the flag a Layer's switch and a preset's
+ * `on` write), and must write the state pressed, so a double tap cannot switch it back.
+ */
+describe("T1771b — any other node on a board is its on/off switch", () => {
+  const withBlur: StoredBoardItem[] = [...BOARD, { member: "blur1", rect: { x: 6, y: 0, w: 2, h: 1 } }];
+
+  it("a board item naming a Blur draws a switch; OFF bypasses the node, twice is one undo step, ON brings it back", async () => {
+    const { runtime, ids } = await desk({ board: withBlur });
+    render(<Tab runtime={runtime} />);
+    const toggle = () => within(tabItem("member:blur1")).getByRole("switch", { name: /^blur1/ });
+    expect(tabItem("member:blur1").querySelector("[data-board-member]")?.getAttribute("data-board-member")).toBe("switch");
+    expect(toggle().getAttribute("aria-checked")).toBe("true");
+    const before = undoDepth(runtime);
+
+    await act(async () => {
+      fireEvent.click(toggle());
+      fireEvent.click(toggle());
+      await settle();
+    });
+    expect(nodeOf(runtime, ids["$blur"]!).ui?.bypassed).toBe(true);
+    // The flag a preset's `on` and a Layer's switch write: not mute, and no parameter moved.
+    expect(nodeOf(runtime, ids["$blur"]!).ui?.muted ?? false).toBe(false);
+    expect(nodeOf(runtime, ids["$blur"]!).parameters["size"]).toBe(9);
+    expect(undoDepth(runtime)).toBe(before + 1);
+    expect(toggle().getAttribute("aria-checked")).toBe("false");
+
+    await click(toggle());
+    expect(nodeOf(runtime, ids["$blur"]!).ui?.bypassed).toBe(false);
+  });
+
+  it("“+ Add…” puts it on the board as one patch, where it is then drawn as that switch", async () => {
+    const { runtime, ids } = await desk();
+    render(<Tab runtime={runtime} />);
+    await click(screen.getByRole("button", { name: "Edit board" }));
+    const picker = () => screen.getByRole("combobox", { name: "Add to panel" }) as HTMLSelectElement;
+    expect(switches(picker())).toEqual(["blur1"]);
+    const before = undoDepth(runtime);
+    await act(async () => {
+      fireEvent.change(picker(), { target: { value: ids["$blur"]! } });
+      await settle();
+    });
+    expect(undoDepth(runtime)).toBe(before + 1);
+    expect(switches(picker())).toEqual([]);
+    expect(tabItem("member:blur1").querySelector("[data-board-member]")?.getAttribute("data-board-member")).toBe("switch");
+    // It did not get the Blur's own "+ panel" button: that door stays the named kinds' (one per node of the document otherwise).
+    const own = render(<OnCanvas runtime={runtime} nodeId={ids["$blur"]!} />);
+    expect(within(own.container).queryByRole("button", { name: "Add to panel" })).toBeNull();
+  });
+});
+
 describe("T1501b — a cue list's GO and BACK", () => {
   it("GO fires the standby cue and the list moves on; past the last cue it is refused, saying why; BACK fires the one before", async () => {
     const { runtime, ids } = await desk();
@@ -572,8 +630,10 @@ describe("T1501b — joining and leaving a Panel", () => {
     await click(screen.getByRole("tab", { name: "Stage" }));
     await click(screen.getByRole("button", { name: "Edit board" }));
     const picker = () => screen.getByRole("combobox", { name: "Add to panel" }) as HTMLSelectElement;
-    // What Stage lacks, by name: the three named kinds, and nothing that cannot join a Panel (blur1).
-    expect([...picker().options].map((option) => option.textContent)).toEqual(["+ Add…", "fx", "looks", "set"]);
+    // What Stage lacks, by name: the three named kinds. T1771b: any other node (blur1) is
+    // offered apart, as its on/off switch — it joins as a switch, never as one of these.
+    expect(named(picker())).toEqual(["+ Add…", "fx", "looks", "set"]);
+    expect(switches(picker())).toEqual(["blur1"]);
     const before = undoDepth(runtime);
 
     await act(async () => {
@@ -586,7 +646,7 @@ describe("T1501b — joining and leaving a Panel", () => {
     expect(boardOf(runtime, ids["$panel"]!)).toEqual([{ member: "looks", rect: { x: 0, y: 0, w: 4, h: 1 } }]);
     expect(Object.keys(runtime.bus.store.getGraph().edges)).toEqual([]);
     expect(undoDepth(runtime)).toBe(before + 1);
-    expect([...picker().options].map((option) => option.textContent)).toEqual(["+ Add…", "fx", "looks"]);
+    expect(named(picker())).toEqual(["+ Add…", "fx", "looks"]);
     expect(document.querySelector('[data-controls-pane] [data-board-item="member:set"]')).not.toBeNull();
 
     await undo(runtime);
@@ -707,7 +767,9 @@ describe("T1541b — a look's instance joins a Panel", () => {
     await click(screen.getByRole("tab", { name: "Stage" }));
     await click(screen.getByRole("button", { name: "Edit board" }));
     const picker = () => screen.getByRole("combobox", { name: "Add to panel" }) as HTMLSelectElement;
-    expect([...picker().options].map((option) => option.textContent)).toEqual(["+ Add…", "city"]);
+    // T1771b: the plain instance is no look, so it is offered as its on/off switch instead.
+    expect(named(picker())).toEqual(["+ Add…", "city"]);
+    expect(switches(picker())).toEqual(["other"]);
     const before = undoDepth(runtime);
 
     await act(async () => {
@@ -718,7 +780,8 @@ describe("T1541b — a look's instance joins a Panel", () => {
     expect(boardOf(runtime, ids["$panel2"]!)).toEqual([{ member: "city", rect: { x: 0, y: 0, w: 4, h: 2 } }]);
     expect(boardOf(runtime, ids["$panel1"]!)).toEqual([]);
     expect(undoDepth(runtime)).toBe(before + 1);
-    expect([...picker().options].map((option) => option.textContent)).toEqual(["Nothing to add"]);
+    expect(named(picker())).toEqual(["+ Add…"]);
+    expect(switches(picker())).toEqual(["other"]);
   });
 
   /**

@@ -89,8 +89,8 @@ test("Shift+F frames the interior once the canvas is inside a component (T1195)"
 
   /*
    * Displace the camera so a fit has somewhere to come back FROM, and hold the pointer
-   * over the canvas rather than dragging: `selectionOnDrag` is on, so a drag here would
-   * marquee-select instead of panning, and the test would be measuring a selection.
+   * over the canvas rather than dragging: a drag that started on a node would move the node
+   * instead of panning, and the test would be measuring a node move.
    */
   const canvasBox = await page.getByTestId("graph-canvas").boundingBox();
   if (canvasBox === null) throw new Error("the graph canvas has no bounding box");
@@ -159,8 +159,8 @@ test("diving frames the interior with no key pressed (T1195b)", async ({ page })
 
   /*
    * The PARENT camera, positioned deliberately so the restore below has something real to
-   * put back. Wheel over the canvas rather than a drag: `selectionOnDrag` is on, so a drag
-   * here marquee-selects instead of panning.
+   * put back. Wheel over the canvas rather than a drag, which on a node would move the node
+   * instead of panning.
    */
   const canvasBox = await page.getByTestId("graph-canvas").boundingBox();
   if (canvasBox === null) throw new Error("the graph canvas has no bounding box");

@@ -3,6 +3,33 @@ import { liveClock } from "./live-clock.ts";
 
 /** §V45: same seed and frame index must reproduce the same frame input. */
 describe("liveClock", () => {
+  it("samples an authoritative audio clock without inventing time during suspension", () => {
+    let milliseconds = 0;
+    const clock = liveClock({ fps: 30, now: () => milliseconds, presenting: () => true, authoritativeClock: () => true });
+    clock.next();
+    for (let tick = 0; tick < 120; tick++) {
+      const held = clock.next();
+      expect(held.timeSeconds).toBe(0);
+      expect(held.absTimeSeconds).toBe(0);
+      expect(held.deltaSeconds).toBe(0);
+    }
+    milliseconds = 100;
+    expect(clock.next().absTimeSeconds).toBeCloseTo(0.1);
+    milliseconds = 5100;
+    const caughtUp = clock.next();
+    expect(caughtUp.absTimeSeconds).toBeCloseTo(5.1);
+    expect(caughtUp.timeSeconds).toBeCloseTo(5.1);
+    expect(caughtUp.deltaSeconds).toBe(5);
+    expect(caughtUp.frameIndex).toBe(153);
+  });
+
+  it("keeps manual/offline stepping deterministic with an authoritative source present", () => {
+    const clock = liveClock({ fps: 30, now: () => 0, presenting: () => false, authoritativeClock: () => true });
+    expect(clock.next().frameIndex).toBe(0);
+    expect(clock.next().frameIndex).toBe(1);
+    expect(clock.next().frameIndex).toBe(2);
+  });
+
   it("advances frameIndex monotonically from zero", () => {
     let t = 0;
     const clock = liveClock({ now: () => (t += 16.67) });

@@ -232,6 +232,12 @@ export interface BridgeHostOptions {
   readonly handoffDir?: string;
   /** How often a losing host retries the incumbent. Injectable so a test does not wait. */
   readonly proxyRetryMs?: number;
+  /**
+   * T1773b — what to add when another process holds the port: who it is and how to take it.
+   * Given by the entry points only, because answering asks the operating system (`lsof`),
+   * and a host built inside a test suite must not. Asked once per lost bind, not per retry.
+   */
+  readonly heldRemedy?: (port: number) => string;
   /** The proxy's socket, for a test that wants to watch the bytes. */
   readonly proxySocketFactory?: (url: string) => BridgeSocket;
   /**
@@ -1219,12 +1225,21 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
     (rebind as { unref?: () => void }).unref?.();
   };
 
+  /** T1773b: the holder and the remedy, said on the first lost bind and not on its retries. */
+  let heldSaid = false;
+  const sayHeld = (): void => {
+    if (heldSaid || options.heldRemedy === undefined) return;
+    heldSaid = true;
+    notice({ severity: "warning", message: options.heldRemedy(wantedPort) });
+  };
+
   const enterProxyMode = (): void => {
     if (disposed || proxy !== null) return;
     notice({
       severity: "warning",
       message: `Bridge could not bind ${BRIDGE_HOST}:${wantedPort} — something already owns it. This server (PID ${process.pid}) will PROXY that bridge if it is a Loom one, so its tool calls reach the same document rather than a headless copy the user cannot see, and will keep retrying the bind until the port frees.`,
     });
+    sayHeld();
     proxy = createBridgeProxy({
       port: wantedPort,
       handoffDir,
@@ -1254,6 +1269,7 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
       onListening: (port) => {
         boundPort = port;
         listenError = null;
+        heldSaid = false;
         // Published BEFORE the banner, so a sibling that reads it the same millisecond finds
         // a complete file rather than a port with no token (T921).
         //
@@ -1310,6 +1326,7 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
             severity: "warning",
             message: `Another process already owns ${BRIDGE_HOST}:${wantedPort}. If that is another Loom helper it already serves devices — pair with the code IT printed, not this one. Retrying the bind every ${Math.round(retryMs / 1000)}s in case it stops.`,
           });
+          sayHeld();
           scheduleRebind();
           return;
         }

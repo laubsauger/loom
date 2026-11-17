@@ -77,8 +77,12 @@ export interface MidiSectionProps {
   nodeId: NodeId;
   /** Stored port id ("" = any attached input). */
   device: string;
-  /** The stored `mapping` parameter, verbatim. */
-  mapping: string;
+  /**
+   * The stored `mapping` parameter, verbatim. NULL for a node that learns nothing — MIDI
+   * Notes (T1762b) reads the keyboard whole — and then the section is the access status,
+   * the button that asks, and the device picker: the half every MIDI node needs.
+   */
+  mapping: string | null;
   midi: MidiSectionSurface;
   editor: ParameterEditor;
 }
@@ -104,7 +108,8 @@ export function midiSectionParameters(): readonly string[] {
 }
 
 export function MidiSection({ nodeId, device, mapping, midi, editor }: MidiSectionProps) {
-  const parsed = parseMidiMapping(mapping);
+  const learns = mapping !== null;
+  const parsed = parseMidiMapping(mapping ?? "[]");
   const [learning, setLearning] = useState<string | null>(null);
   const disarm = useRef<(() => void) | null>(null);
 
@@ -201,6 +206,8 @@ export function MidiSection({ nodeId, device, mapping, midi, editor }: MidiSecti
         </p>
       )}
 
+      {learns ? (
+        <>
       <div className={rows.rows}>
         {parsed.bindings.length === 0 ? (
           <span className={styles.emptyPage}>No controls learned yet.</span>
@@ -312,6 +319,8 @@ export function MidiSection({ nodeId, device, mapping, midi, editor }: MidiSecti
           Add control
         </Button>
       </div>
+        </>
+      ) : null}
     </section>
   );
 }

@@ -47,7 +47,7 @@ export function transferForSpace(space: ColorSpace): TransferMode {
  * target in an 8-bit or float working format). Both mean "do not encode again", and both
  * mean a RESIZE has to decode first or it averages in the wrong space.
  */
-function bytesAreEncoded(format: TextureFormat, space: ColorSpace): boolean {
+export function bytesAreEncoded(format: TextureFormat, space: ColorSpace): boolean {
   return format === "rgba8unorm-srgb" || space === "encoded";
 }
 

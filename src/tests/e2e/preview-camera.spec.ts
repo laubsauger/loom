@@ -192,7 +192,8 @@ test("a pointset: its tile orbits on alt+drag, and so does the viewer when it is
     .toBeGreaterThan(MOVED);
 });
 
-test("a camera with ONE Render: a drag on the camera's tile moves the camera, both pictures follow, one undo puts it back", async ({ page }) => {
+/** A camera, a sun and a grid of boxes, framed by one Render. */
+async function openShot(page: Page): Promise<void> {
   await open(
     page,
     "shot",
@@ -215,23 +216,62 @@ test("a camera with ONE Render: a drag on the camera's tile moves the camera, bo
   );
   await live(page, "camera_shot");
   await live(page, "render_shot");
+}
 
-  // The Render is a picture taken through another node's camera: no control, and it says whose.
-  await expect(page.getByTestId("preview-inspect-render_shot")).toHaveCount(0);
-  await expect(page.getByTestId("preview-camera-note-render_shot")).toHaveText("Framed by camera_shot.");
-  // The camera has the control, visibly, though its picture is the Render's own (T546).
+test("§T1732b a camera with ONE Render: alt-drag LOOKS around, both tiles turn, the camera stays, h returns to it", async ({ page }) => {
+  await openShot(page);
+  // Both tiles carry the pair: C looks (view only), M moves the camera (an edit). The Render
+  // said whose camera it was in that corner; the sentence now rides on the toggles' hover text.
+  await expectToggleVisible(page, "render_shot");
   await expectToggleVisible(page, "camera_shot");
+  await expect(page.getByTestId("preview-move-render_shot")).toHaveAttribute("aria-label", "Move camera_shot");
+  await expect(page.getByTestId("preview-move-camera_shot")).toHaveAttribute("aria-label", "Move camera_shot");
+  await expect(page.getByTestId("preview-camera-note-render_shot")).toHaveCount(0);
+  await expect(page.getByTestId("preview-inspect-render_shot")).toHaveAttribute("title", /Framed by camera_shot\.$/);
 
+  const startX = await eyeX(page, "camera_shot");
+  await fitAll(page);
+  await live(page, "render_shot");
+  const cameraBefore = await picture(page, "camera_shot");
+  const renderBefore = await picture(page, "render_shot");
+
+  await altDrag(page, "render_shot");
+
+  // SETTLED first: the look's first drag asks for its picture, and the plan that draws it is
+  // installed a moment later, so a shot taken in between is a transition, not the look.
+  await live(page, "render_shot");
+  expect(await changed(page, renderBefore, await picture(page, "render_shot")), "a look on the Render's tile did not turn its picture").toBeGreaterThan(MOVED);
+  // One picture, one look: the camera's tile shows the Render's picture, so it turned too.
+  await live(page, "camera_shot");
+  expect(await changed(page, cameraBefore, await picture(page, "camera_shot")), "the camera's tile did not show the Render's look").toBeGreaterThan(MOVED);
+  await expect(page.getByTestId("preview-inspect-render_shot")).toHaveAttribute("aria-pressed", "true");
+  // A look writes nothing: the camera is where it was.
+  expect(await eyeX(page, "camera_shot")).toBe(startX);
+
+  // h over the tile goes home, which is the camera's own picture again.
+  await fitAll(page);
+  await tile(page, "render_shot").hover();
+  await page.keyboard.press("h");
+  await expect(page.getByTestId("preview-inspect-render_shot")).toHaveAttribute("aria-pressed", "false");
+  await viewportSettled(page);
+  await expect.poll(async () => changed(page, renderBefore, await picture(page, "render_shot")), { message: "home did not return to the camera's picture" }).toBeLessThan(STILL);
+});
+
+test("a camera with ONE Render: M on the Render's tile moves the camera, both pictures follow, one undo puts it back", async ({ page }) => {
+  await openShot(page);
   const startX = await eyeX(page, "camera_shot");
   await fitAll(page);
   await live(page, "camera_shot");
   const cameraBefore = await picture(page, "camera_shot");
   const renderBefore = await picture(page, "render_shot");
 
-  await altDrag(page, "camera_shot");
+  const move = page.getByTestId("preview-move-render_shot");
+  await move.click();
+  await expect(move).toHaveAttribute("aria-pressed", "true");
+  await altDrag(page, "render_shot");
 
+  await expect.poll(async () => changed(page, renderBefore, await picture(page, "render_shot")), { message: "the Render through the moved camera did not move" }).toBeGreaterThan(MOVED);
   await expect.poll(async () => changed(page, cameraBefore, await picture(page, "camera_shot")), { message: "the camera's own tile did not move" }).toBeGreaterThan(MOVED);
-  await expect.poll(async () => changed(page, renderBefore, await picture(page, "render_shot")), { message: "the Render through this camera did not move" }).toBeGreaterThan(MOVED);
   // What moved is the DOCUMENT (T692), not a view of it.
   const movedX = await eyeX(page, "camera_shot");
   expect(Math.abs(movedX - startX)).toBeGreaterThan(0.1);
@@ -239,6 +279,11 @@ test("a camera with ONE Render: a drag on the camera's tile moves the camera, bo
   // One gesture, one undo step, landing back where the drag began (§V15).
   await focusGraph(page);
   await page.keyboard.press(`${await modKey(page)}+z`);
+  expect(await eyeX(page, "camera_shot")).toBe(startX);
+  await fitAll(page);
+  // M off again (it is lit, and the lit button reaches into the picture's clip). Not an edit.
+  await move.click();
+  await expect(move).toHaveAttribute("aria-pressed", "false");
   expect(await eyeX(page, "camera_shot")).toBe(startX);
   await fitAll(page);
   await viewportSettled(page);
@@ -298,7 +343,7 @@ test("a fully driven camera offers no control, and says why where the control wo
   expect(readable.opacity).toBe("1");
 });
 
-test("chrome is not painted on the node in front: a covered Render's sentence is not drawn on the node that covers it", async ({ page }) => {
+test("chrome is not painted on the node in front: a covered Render's controls are not drawn on the node that covers it", async ({ page }) => {
   /*
    * The owner's document overlaps its nodes, and the chrome layer sits above all of them.
    * There, a covered geometry's "No object drawn on this tile." lay across the material tile
@@ -343,9 +388,12 @@ test("chrome is not painted on the node in front: a covered Render's sentence is
   );
   expect(owner, "the fixture no longer covers the Render's corner, so nothing is being gated").toBe("noise_front");
 
-  // The legitimate case first: the Render nothing covers says whose camera it is.
-  await expect(page.getByTestId("preview-camera-note-render_clear")).toHaveText("Framed by camera_shot.");
-  // And the covered one says nothing on the node in front of it.
+  // The legitimate case first: the Render nothing covers carries its camera controls (§T1732b:
+  // look and move, where it used to say only whose camera it is).
+  await expect(page.getByTestId("preview-inspect-render_clear")).toHaveCount(1);
+  // And the covered one draws nothing on the node in front of it.
+  await expect(page.getByTestId("preview-inspect-render_covered")).toHaveCount(0);
+  await expect(page.getByTestId("preview-move-render_covered")).toHaveCount(0);
   await expect(page.getByTestId("preview-camera-note-render_covered")).toHaveCount(0);
 });
 

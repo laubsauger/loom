@@ -25,6 +25,7 @@ import type { NodeDefinition } from "../domain/types/node-definition.ts";
 import type { PortType } from "../domain/types/ports.ts";
 import type { ChannelMask } from "../domain/types/graph.ts";
 import { compareEdgeOrder } from "../domain/graph/edge-order.ts";
+import { bypassPassthroughPairs } from "../domain/graph/bypass.ts";
 import { channelMaskBoundaryDefinition } from "./channel-mask-boundary.ts";
 import {
   PARENT_BINDINGS_STATE_KEY,
@@ -36,6 +37,7 @@ import {
   instanceOwnParameters,
   internalParameterPath,
   isComponentInstance,
+  isComponentNodeType,
   parentBindResolver,
   parentScopeDrivers,
   parseInternalParameterPath,
@@ -1133,7 +1135,7 @@ export function flattenComponents(request: FlattenRequest): FlattenedGraph {
     graph,
     sources,
     instanceOutputs,
-    instanceChannels: instanceChannelsOf(instanceNodes, instanceOutputs, nodes, request.registry),
+    instanceChannels: instanceChannelsOf(instanceNodes, instanceOutputs, nodes, edges, request.registry),
     instancePages: instancePagesOf(instanceNodes, pageSchemas),
     sinks,
     recursion: null,
@@ -1160,6 +1162,7 @@ function instanceChannelsOf(
   instanceNodes: ReadonlyMap<NodeId, GraphNode>,
   instanceOutputs: ReadonlyMap<NodeId, ReadonlyMap<PortId, FlatEndpoint>>,
   nodes: Readonly<Record<NodeId, GraphNode>>,
+  edges: Readonly<Record<string, GraphEdge>>,
   registry: NodeRegistryView,
 ): InstanceChannelSources {
   const byLabel = new Map<string, readonly InstanceChannelSource[]>();
@@ -1178,6 +1181,49 @@ function instanceChannelsOf(
       sources.push({ port, publisher: inner.label });
     }
     byLabel.set(label, sources);
+  }
+  /*
+   * T1779b (§V1035) — A BYPASSED INSTANCE IS WIRES BY NAME TOO. It is not inlined (§T1032), so
+   * it has no `instanceOutputs`; its value outputs pass the value inputs the rule pairs them
+   * with (`bypassPassthroughPairs`), so `op('<instance>').chan.<c>` reads what is wired INTO
+   * those inputs: the publisher behind each, followed back through further bypassed nodes.
+   * An output with no partner, and an input nothing is wired to, name no publisher. A MUTED
+   * instance gets no entry: it publishes nothing by any route.
+   */
+  const edgeIds = Object.keys(edges).sort();
+  const publishersBehind = (nodeId: NodeId, portId: PortId, seen: ReadonlySet<string>): string[] => {
+    const node = nodes[nodeId];
+    const key = `${nodeId}\u0000${portId}`;
+    if (node === undefined || seen.has(key)) return [];
+    const definition = registry.get(node.type);
+    if (definition?.outputs.find((output) => output.id === portId)?.type.kind !== "value") return [];
+    if (node.ui?.muted === true) return [];
+    // Any node but an instance publishes under its own label (its own bypass is the value graph's, per frame).
+    if (!isComponentNodeType(node.type)) return node.label === undefined ? [] : [node.label];
+    // An instance still in the flat graph was not inlined; only a bypassed one passes anything.
+    if (node.ui?.bypassed !== true) return [];
+    const input = bypassPassthroughPairs(definition).get(portId);
+    if (input === undefined) return [];
+    const next = new Set(seen).add(key);
+    return edgeIds.flatMap((id) => {
+      const edge = edges[id];
+      return edge !== undefined && edge.target.nodeId === nodeId && edge.target.portId === input ? publishersBehind(edge.source.nodeId, edge.source.portId, next) : [];
+    });
+  };
+  for (const nodeId of Object.keys(nodes).sort()) {
+    const node = nodes[nodeId];
+    if (node?.label === undefined || byLabel.has(node.label)) continue;
+    if (!isComponentNodeType(node.type) || node.ui?.bypassed !== true || node.ui.muted === true) continue;
+    const sources: InstanceChannelSource[] = [];
+    const seen = new Set<string>();
+    for (const output of registry.get(node.type)?.outputs ?? []) {
+      for (const publisher of publishersBehind(nodeId, output.id, new Set())) {
+        if (seen.has(publisher)) continue;
+        seen.add(publisher);
+        sources.push({ port: output.id, publisher });
+      }
+    }
+    byLabel.set(node.label, sources);
   }
   return byLabel;
 }

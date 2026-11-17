@@ -50,7 +50,7 @@ import { ComponentBar } from "./component-bar.tsx";
 import { useComponentEditing } from "./use-component-editing.ts";
 import { useProblems } from "./use-problems.ts";
 import { GraphPane } from "./graph-pane.tsx";
-import { createPreviewInterestStore, createPreviewOrbitStore } from "@editor/viewer/index.ts";
+import { createLookStore, createPreviewInterestStore, createPreviewOrbitStore } from "@editor/viewer/index.ts";
 import type { GraphActions, PortDragOrigin } from "./graph-pane.tsx";
 import type { GpuStatus } from "./gpu-status.ts";
 import { sharedGpuProbe } from "./gpu-status.ts";
@@ -63,6 +63,8 @@ import { InspectorPane, LibraryPane, ViewerPane } from "./side-panes.tsx";
 import { TimelineMetrics, TimelineReadout } from "./timeline-readout.tsx";
 import { frameClockVerdict } from "@runtime/telemetry/frame-clock.ts";
 import { TimelineScrubber } from "./timeline-scrubber.tsx";
+import { TempoControl } from "./tempo-control.tsx";
+import { projectBpm, projectTempoSource } from "@domain/tempo/project-tempo.ts";
 import { TopBar } from "./top-bar.tsx";
 import { FrameMsReadout } from "./gpu-readout.tsx";
 import { useAgentSurface } from "./use-agent-surface.ts";
@@ -98,6 +100,8 @@ import { canvasShows, controlsShow, inspectorShows } from "./use-live-graph.ts";
 import type { ChannelResolver } from "@domain/parameters/resolve.ts";
 import { useValueGraph } from "./use-value-graph.ts";
 import { useMidiInput } from "./use-midi-input.ts";
+import { useHarmonyAudio } from "./use-harmony-audio.ts";
+import { transportHolderFor } from "./transport-commands.ts";
 import { useOscBridge } from "./use-osc-bridge.ts";
 import { useLaserBridge } from "./use-laser-bridge.ts";
 import { useVisionBridge } from "./use-vision-bridge.ts";
@@ -118,6 +122,7 @@ import { createMediaControlRegistry, useMediaCommands } from "./media-commands.t
 import { useProject } from "./use-project.ts";
 import { useRenderRange } from "./use-render-range.ts";
 import type { RenderJobSettings } from "./use-render-range.ts";
+import type { VideoFormatId } from "@runtime/export/index.ts";
 import { RenderVideoDialog } from "./render-video-dialog.tsx";
 import { PhotoMappingHost } from "./photo-mapping-host.tsx";
 import { useFloatMapSources } from "./use-float-map-sources.ts";
@@ -412,7 +417,14 @@ export function App({
   const previewSinks = usePerDocument(runtime.documentIdentity, createPreviewSinkStore);
   // §T1391b: which Window Outs have an open perform window — they render only then.
   const displaySinks = usePerDocument(runtime.documentIdentity, createDisplaySinkStore);
-  const compileSinks = useMemo(() => mergeSinkStores(previewSinks, displaySinks), [previewSinks, displaySinks]);
+  /* §T1732b: the LOOKS — an orbit around a picture drawn through a camera, which asks the
+     compile for a second drawing of its renderer while it is moved off the camera. Shared by
+     the tiles and the viewer (one picture, one look), view state, per document. */
+  const looks = usePerDocument(runtime.documentIdentity, createLookStore);
+  const compileSinks = useMemo(
+    () => mergeSinkStores(mergeSinkStores(previewSinks, displaySinks), { get: () => looks.sinks, subscribe: looks.subscribeSinks }),
+    [previewSinks, displaySinks, looks],
+  );
   /* T379 — ONE inspection-orbit store, shared by the graph pane's tiles and the viewer
      pane: both surfaces show the SAME preview target per node (the tile's request is
      what renders it), so one camera per node is the truthful model — a viewer drag and
@@ -475,7 +487,8 @@ export function App({
    * Chrome has prompted for all Web MIDI since 124 and a prompt on load is §V476's ambush
    * applied to every document rather than to one example.
    */
-  const midi = useMidiInput();
+  // T1786b: MIDI realtime (clock, start, continue, stop) goes to the project tempo.
+  const midi = useMidiInput({ onRealtime: runtime.tempo.midiRealtime });
 
   /**
    * T950 — the laser pump, §T1005's second registered emission site. In this build it
@@ -958,8 +971,17 @@ export function App({
     fps: projectFps(runtime.settings),
     name: () => project.fileName ?? runtime.project.name,
   });
+  const harmonyAudio = useHarmonyAudio({
+    graph: () => fileGraphRef.current,
+    registry: runtime.registry,
+    documentKey: runtime.documentIdentity,
+    flattening: () => runtime.flattened.current(),
+  });
   const frameLoop = useFrameLoop({
+    now: harmonyAudio.now,
+    authoritativeClock: harmonyAudio.ownsClock,
     bus: runtime.bus,
+    tempo: runtime.tempo,
     backend: backend ?? null,
     audio: audioTrack.read,
     compiled: compile.compiled,
@@ -971,6 +993,12 @@ export function App({
     // Before `animate` reads the channels, every rendered frame (§V179, §V155).
     advanceChannels: (inputs) => {
       valueGraph.evaluate(inputs);
+      harmonyAudio.sync(
+        inputs.frame,
+        valueGraph.resolver,
+        transportHolderFor(runtime.bus).current?.isPlaying() === true,
+        renderRangeHolderFor(runtime.bus).current?.busy() === true,
+      );
       // T493: media positions derive from THIS frame, and after the value graph so a
       // DRIVEN speed or trim reads this frame's channels rather than the last one's
       // (§V179, the same order contract the animator is held to).
@@ -1021,6 +1049,7 @@ export function App({
     },
     observe: observeFrame,
     onReset: () => {
+      harmonyAudio.pause();
       valueGraph.reset();
       // Audio has one frame of Jacobi state too. A seek/replay must start from the
       // document's retained transport rather than the live frame that preceded it.
@@ -1122,7 +1151,8 @@ export function App({
   useEffect(() => {
     media.setRunning(frameLoop.playing);
     audioInput.setRunning(frameLoop.playing);
-  }, [audioInput, frameLoop.playing, media]);
+    if (!frameLoop.playing) harmonyAudio.pause();
+  }, [audioInput, frameLoop.playing, media, harmonyAudio]);
 
   // §V29/§V52 — the same two commands the keymap binds `space` and `.` to (T184):
   // the button and the hotkey cannot drift into two different code paths for one action.
@@ -1166,6 +1196,10 @@ export function App({
     setRenderJobSettings(projectRenderDefaults());
     setRenderVideoOpen(true);
   }, [projectRenderDefaults]);
+  // T1741b: the dialog's format picker is a caller of its command, like the Render button.
+  const onRenderFormatChange = useCallback((format: VideoFormatId) => {
+    void runtime.bus.execute("export.setRenderFormat", { format }, runtime.invocation).then(reportRefusal);
+  }, [reportRefusal, runtime]);
   const onConfirmRenderRange = useCallback(() => {
     void prepareRenderDestinationRef.current().then((ready) => {
       if (ready) void runtime.bus.execute("export.renderRange", {}, runtime.invocation).then(reportRefusal);
@@ -1459,13 +1493,14 @@ export function App({
   const muteInputMonitorForRender = audioInput.muteMonitorForRender;
   const muteMovieMonitorForRender = media.muteMonitorForRender;
   const muteAudioMonitor = useCallback(() => {
+    harmonyAudio.pause();
     const releaseInput = muteInputMonitorForRender();
     const releaseMovies = muteMovieMonitorForRender();
     return () => {
       releaseMovies();
       releaseInput();
     };
-  }, [muteInputMonitorForRender, muteMovieMonitorForRender]);
+  }, [muteInputMonitorForRender, muteMovieMonitorForRender, harmonyAudio]);
   const renderRange = useRenderRange({
     createCapture: output => {
       if (backend === undefined || backend === null) throw new Error("No GPU device for video capture.");
@@ -1529,12 +1564,21 @@ export function App({
         : NO_DIAGNOSTICS,
     [status],
   );
+  const harmonyStatus = harmonyAudio.status();
+  const harmonyMessage = harmonyStatus.kind === "unavailable" ? harmonyStatus.message : undefined;
+  const harmonyProblems = useMemo<readonly RuntimeDiagnostic[]>(() => {
+    if (harmonyStatus.kind === "unavailable") return [{ severity: "error", code: "harmony.audioUnavailable", message: harmonyMessage! }];
+    if (harmonyStatus.kind === "loading") return [{ severity: "info", code: "harmony.audioLoading", message: "Loading recorded grand piano. Musical time waits until the instrument is ready." }];
+    if (harmonyStatus.kind === "suspended") return [{ severity: "info", code: "harmony.audioSuspended", message: "Harmony audio is waiting for a user gesture. Click the editor or press Play to enable sound." }];
+    return NO_DIAGNOSTICS;
+  }, [harmonyStatus.kind, harmonyMessage]);
   const { problems, clearProblems } = useProblems(
     [
       { id: "gpu", read: () => gpuProblems },
       { id: "compile", read: () => compile.diagnostics },
       { id: "valueGraph", read: () => valueGraph.diagnostics },
       { id: "media", read: () => media.diagnostics, clear: () => media.clearDiagnostics() },
+      { id: "harmonyAudio", read: () => harmonyProblems },
       { id: "fileReferences", read: () => fileReferences.diagnostics },
       { id: "floatMaps", read: () => floatMaps.diagnostics },
       { id: "screenCapture", read: () => screenCapture.diagnostics },
@@ -1917,6 +1961,7 @@ export function App({
     ),
     [clearPortDrag, graphActions, portDrag],
   );
+  const componentPosition = useCallback(() => actionsRef.current?.viewportCentre(), []);
   const componentLibrary = useMemo(
     () => (
       <ErrorBoundary name="Components">
@@ -1927,11 +1972,14 @@ export function App({
           context={runtime.invocation}
           components={componentsView}
           selection={selection}
+          // §B300: at the viewport's centre, as a node type's click does. With no position
+          // the command places at the origin, which a wide project's view does not show.
+          position={componentPosition}
           onPlaced={selectNodes}
         />
       </ErrorBoundary>
     ),
-    [componentsView, editing.bus, runtime.invocation, selectNodes, selection],
+    [componentPosition, componentsView, editing.bus, runtime.invocation, selectNodes, selection],
   );
   const exampleLibrary = useMemo(
     () => (
@@ -2000,6 +2048,9 @@ export function App({
    * `project.setSettings` replaces it, which is exactly when the scrubber must re-read.
    */
   const frameRange = projectRange(runtime.settings);
+  // T1785b: likewise from the live settings, so an undo or an agent's edit shows in the bar.
+  const tempoBpm = projectBpm(runtime.settings);
+  const tempoSource = projectTempoSource(runtime.settings);
   const topBar = useMemo(
     () => (
       <TopBar
@@ -2014,6 +2065,7 @@ export function App({
         onResetTime={onResetTime}
         onToggleLoop={onToggleLoop}
         looping={frameLoop.looping}
+        tempo={<TempoControl bus={runtime.bus} invocation={runtime.invocation} tempo={runtime.tempo} bpm={tempoBpm} source={tempoSource} onResult={reportRefusal} />}
         scrubber={
           <TimelineScrubber
             latestFrame={frameLoop.latestFrame}
@@ -2084,7 +2136,10 @@ export function App({
       project.save,
       renderRange.frames,
       renderRange.rendering,
+      reportRefusal,
       runtime,
+      tempoBpm,
+      tempoSource,
     ],
   );
 
@@ -2255,6 +2310,7 @@ export function App({
                  * camera — gated), and interest already matches on either spelling.
                  */
                 orbits={previewOrbits}
+                looks={looks}
                 interest={previewInterest}
                 // T1512b: the Panel's header phone icon opens this door's popover.
                 phone={phoneView}
@@ -2361,6 +2417,7 @@ export function App({
                 pointer={pointer}
                 probe={agentPorts.probe}
                 orbits={previewOrbits}
+                looks={looks}
                 interest={previewInterest}
                 /* §B220: the viewer asks for its own preview. `interest` alone was a pin on a
                    tile the GRAPH PANE had already made, so with that pane closed a camera,
@@ -2370,6 +2427,8 @@ export function App({
                 previewLongEdge={runtime.settings.previewLongEdge}
                 /* §T1539b: Edit mapping resolves a driven Corner Pin as the perform window does. */
                 liveReads={{ ...liveReads, frame: () => frameLoop.latestFrame()?.frame }}
+                /* §T970 inside a component: a camera in the component the canvas is in is flown through its session bus. */
+                component={insideComponent ? { path: editing.path, bus: editing.bus, graph: editing.graph } : undefined}
               />
             </ErrorBoundary>
           }
@@ -2436,6 +2495,7 @@ export function App({
           settings={runtime.settings}
           session={renderRange}
           onRender={onConfirmRenderRange}
+          onFormatChange={onRenderFormatChange}
         />
         {/* T1188/§V307: the pipeline inspector, opened by `ui.showPipeline`.
             ⚑ `installed` is the latch, NOT `compile.compiled` — §B179 and §T1163 are the

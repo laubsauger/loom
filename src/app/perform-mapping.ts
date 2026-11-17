@@ -1,5 +1,5 @@
 import { synthesizeSourceReferenceEdges } from "@compiler/source-reference-edges.ts";
-import { bypassPassthroughPorts } from "@domain/graph/bypass.ts";
+import { bypassPassthroughPairs } from "@domain/graph/bypass.ts";
 import { parameterReadOptions, resolveParameters } from "@domain/parameters/index.ts";
 import type { ResolvedParameters } from "@domain/parameters/resolve.ts";
 import type { LiveParameterReads } from "@domain/parameters/index.ts";
@@ -154,8 +154,17 @@ function walkMappingTargets(
   // By-name sources become the edges the compile would synthesize (B233's wire-or-name rule).
   const wired = synthesizeSourceReferenceEdges(graph, registry).graph;
   const edges = Object.values(wired.edges);
-  const into = (nodeId: string, portId: string): string | undefined =>
-    edges.find((edge) => edge.target.nodeId === nodeId && edge.target.portId === portId)?.source.nodeId;
+  /**
+   * T1779b: the OUTPUT the walk came in by, beside the node — a bypassed node passes each
+   * output its own input (§V1035), so which input to follow depends on the port read.
+   * Undefined where the walk starts ON a node (the viewer): its first output.
+   */
+  let enteredBy: string | undefined;
+  const into = (nodeId: string, portId: string): string | undefined => {
+    const source = edges.find((edge) => edge.target.nodeId === nodeId && edge.target.portId === portId)?.source;
+    enteredBy = source?.portId;
+    return source?.nodeId;
+  };
 
   const targets: MappingTarget[] = [];
   /** §T1538b: the Corner Pins crossed so far with nothing blocking, nearest the window first. */
@@ -179,14 +188,15 @@ function walkMappingTargets(
       const policy = definition.resolutionPolicy;
       return policy?.kind === "inherit" ? policy.input : undefined;
     };
-    // §T250: a bypassed node is a wire, first matching input to first output.
-    const bypass = node.ui?.bypassed === true ? bypassPassthroughPorts(definition) : undefined;
+    // §T250, §V1035: a bypassed node is a wire, from the output read to the input paired with it.
+    const readOutput = enteredBy ?? definition.outputs[0]?.id;
+    const bypass = node.ui?.bypassed === true && readOutput !== undefined ? bypassPassthroughPairs(definition).get(readOutput) : undefined;
     let follow: string | undefined;
     if (node.ui?.muted === true || (node.ui?.bypassed === true && bypass === undefined)) {
       blocker ??= `${named} is muted`;
       follow = listOn();
     } else if (bypass !== undefined) {
-      follow = bypass.input;
+      follow = bypass;
     } else if (definition.passthrough !== undefined) {
       follow = definition.passthrough.input;
     } else if (MAPPING_KINDS[node.type] !== undefined) {

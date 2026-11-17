@@ -1,8 +1,9 @@
-import type { CompiledNodeDescription, NodeDefinition, ScratchRequest } from "../../domain/types/node-definition.ts";
+import type { CompiledNodeDescription, NodeCompileContext, NodeDefinition, NodeValueFunction, PassFrameValues, ScratchRequest } from "../../domain/types/node-definition.ts";
 import type { ParameterSchema, StoredParameter } from "../../domain/types/parameters.ts";
 import { isParameterSlot, storedStaticValue } from "../../domain/parameters/slots.ts";
 import { instanceShapeIndex, parseInstanceShape } from "./render-instances.ts";
 import type { BufferBindingDescriptor, BufferWritePassDescriptor, DispatchPassDescriptor, DrawPassDescriptor } from "../../runtime/backend/plan.ts";
+import type { EmittedWgsl } from "../../runtime/backend/wgsl.ts";
 import { relocated, type WgslSourceMap } from "../../runtime/backend/wgsl-source-map.ts";
 import type { CameraMotion, CameraPose } from "../../domain/types/scene.ts";
 import type { CameraPayload, GeometryPayload, LightPayload, MapExtend, MaterialPayload, ProjectorPayload, ScenePairRef, ScenePayload } from "../../domain/types/scene.ts";
@@ -11,10 +12,12 @@ import { DEFAULT_MATERIAL } from "../../domain/types/scene.ts";
 import { cameraBasis, cameraFrame, cameraPayloadMatrix, directionalShadowMatrix, inCameraFrame, lookAt, pointShadowFaceMatrices, pointShadowFaceReaches, projectorDepthRange, projectorMatrix } from "../../domain/geometry/camera.ts";
 import { identityMatrix, normalMatrix, objectMatrix } from "../../domain/geometry/transform.ts";
 import { gridPointCount, gridSheets, gridVertexCount, parseTopology } from "../../points/topology.ts";
-import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
+import { missingCompileResource, readCompileInputs, readValueInputs } from "./compile-context.ts";
 import { DATA_TEXTURE, RGBA_TEXTURE } from "./common-ports.ts";
 import { DANGLING_CAMERA_SUGGESTION, danglingCameraRefusal } from "./camera-reference.ts";
 import { readColor, readNumber, readVector } from "./parameter-readers.ts";
+import type { Params } from "./parameter-readers.ts";
+import type { TimeProbe } from "../../compiler/time-probe.ts";
 import { countedDrawSupport, resolveColorMap, resolveScalarMap } from "./points.ts";
 import { attributeBinding } from "./point-storage.ts";
 import { instanceRecordStorage, isPackedType, packedGroups } from "./instance-records.ts";
@@ -272,34 +275,47 @@ export const cameraNode: NodeDefinition = {
   },
   compile(context): CompiledNodeDescription {
     const { parameters, timeProbe } = readCompileInputs(context);
-    // §T1656b: the payload carries WORLD positions (`composedCameraPose`), so no consumer of
-    // a camera (a Render, the tile, Camera Blur's motion) knows the frame exists.
-    const pose = composedCameraPose;
-    // T1421b: the path's derivative, both sides, for a motion blur (Camera Blur) — published
-    // only when the camera MOVES there, so a still camera's payload is the same with or
-    // without a frame (the values-only frame path never re-runs a camera that animates nothing).
-    const now = pose(parameters);
-    const before = timeProbe?.parametersAt(-CAMERA_MOTION_SECONDS);
-    const after = timeProbe?.parametersAt(CAMERA_MOTION_SECONDS);
-    const motion: CameraMotion | undefined =
-      timeProbe === undefined || before === undefined || after === undefined || (samePose(pose(before), now) && samePose(pose(after), now))
-        ? undefined
-        : { dt: CAMERA_MOTION_SECONDS, frameSeconds: timeProbe.frameSeconds, before: pose(before), after: pose(after) };
-    const payload: CameraPayload = {
-      kind: "camera",
-      eye: now.eye,
-      lookAt: now.lookAt,
-      fovDeg: readNumber(parameters, "fov", 55),
-      near: readNumber(parameters, "near", 0.1),
-      far: readNumber(parameters, "far", 100),
-      ortho: parameters["ortho"] === true,
-      orthoHeight: readNumber(parameters, "orthoHeight", 2),
-      roll: readNumber(parameters, "roll", 0),
-      ...(motion === undefined ? {} : { motion }),
-    };
-    return { passes: [], scene: { out: payload } } as CompiledNodeDescription;
+    // T1719b: the payload is all a camera publishes, so its value function is the payload's.
+    return {
+      passes: [],
+      scene: { out: cameraPayloadAt(parameters, timeProbe) },
+      values: (next) => {
+        const read = readValueInputs(next);
+        return { passes: [], scene: { out: cameraPayloadAt(read.parameters, read.timeProbe) } };
+      },
+    } as CompiledNodeDescription;
   },
 };
+
+/** The camera's payload from its resolved parameters, and its motion where it is probed (T1421b, T1721b). */
+function cameraPayloadAt(parameters: Params, timeProbe: TimeProbe | undefined): CameraPayload {
+  // §T1656b: the payload carries WORLD positions (`composedCameraPose`), so no consumer of
+  // a camera (a Render, the tile, Camera Blur's motion) knows the frame exists.
+  const pose = composedCameraPose;
+  // T1421b: the path's derivative, both sides, for a motion blur (Camera Blur) — published
+  // only when the camera MOVES there, so a still camera's payload is the same with or
+  // without a frame (the values-only frame path never re-runs a camera that animates nothing).
+  const now = pose(parameters);
+  const before = timeProbe?.parametersAt(-CAMERA_MOTION_SECONDS);
+  const after = timeProbe?.parametersAt(CAMERA_MOTION_SECONDS);
+  const motion: CameraMotion | undefined =
+    timeProbe === undefined || before === undefined || after === undefined || (samePose(pose(before), now) && samePose(pose(after), now))
+      ? undefined
+      : { dt: CAMERA_MOTION_SECONDS, frameSeconds: timeProbe.frameSeconds, before: pose(before), after: pose(after) };
+  const payload: CameraPayload = {
+    kind: "camera",
+    eye: now.eye,
+    lookAt: now.lookAt,
+    fovDeg: readNumber(parameters, "fov", 55),
+    near: readNumber(parameters, "near", 0.1),
+    far: readNumber(parameters, "far", 100),
+    ortho: parameters["ortho"] === true,
+    orthoHeight: readNumber(parameters, "orthoHeight", 2),
+    roll: readNumber(parameters, "roll", 0),
+    ...(motion === undefined ? {} : { motion }),
+  };
+  return payload;
+}
 
 /**
  * T704 — a projector: a camera pose that THROWS a texture into the scene.
@@ -732,44 +748,25 @@ export const lightNode: NodeDefinition = {
        every map: one light has no points to read a per-point value from. */
     const unhonoured = lightMapRefusal(nodeId, parameterMaps, pointsMode);
     if (unhonoured !== undefined) return unhonoured;
-    const color = readColor(parameters, "color", [1, 1, 1, 1]);
-    /* T1598b: the two lists as the ids of the nodes the names resolved to. A Render matches
-       them against the geometries it draws, so a light shared by two Renders casts in each
-       from what that Render has. */
-    const named = (portId: string): string[] =>
-      ((context as { inputs?: Record<string, ReadonlyArray<{ sourceNodeId?: string }>> }).inputs?.[portId] ?? []).flatMap((binding) =>
-        binding.sourceNodeId === undefined ? [] : [binding.sourceNodeId],
-      );
-    const casters = named("shadowCasters");
-    const excluded = named("shadowExclude");
-    const payload: LightPayload = {
-      kind: "light",
-      light: {
-        /* A spot stands at a place, as a point light does. */
-        type: parameters["kind"] === "point" || parameters["kind"] === "spot" ? "point" : "directional",
-        color: [color[0] ?? 1, color[1] ?? 1, color[2] ?? 1],
-        intensity: readNumber(parameters, "intensity", 1),
-        direction: vec3(parameters, "direction", [-0.4, -0.8, -0.45]),
-        position: vec3(parameters, "position", [1, 2, 1.5]),
-        shadows: parameters["shadows"] === true,
-        /* T1688b: out only when it says so; a document from before the parameter has it on. */
-        ...(parameters["shadowOn"] === false ? { shadowOn: false } : {}),
-        shadowExtent: readNumber(parameters, "shadowExtent", 8),
-        shadowSoftness: readNumber(parameters, "shadowSoftness", 2),
-        shadowBias: Math.max(0, readNumber(parameters, "shadowBias", 0)),
-        shadowCenter: vec3(parameters, "shadowCenter", [0, 0, 0]),
-        ...(casters.length === 0 ? {} : { shadowCasters: casters }),
-        ...(excluded.length === 0 ? {} : { shadowExclude: excluded }),
-        falloff: parameters["falloff"] === "inverseSquare" ? "inverseSquare" : "soft",
-        range: Math.max(0, readNumber(parameters, "range", 0)),
-        /* T1623b: a spot's cone, for the row this Light is in a Render's table. */
-        ...(parameters["kind"] === "spot" ? { spot: { cone: readNumber(parameters, "cone", 60), softness: readNumber(parameters, "coneSoftness", 0.4) } } : {}),
-      },
-    };
+    const payload = singleLightPayload(context, parameters);
     /* T1589b: one light at every point of the Points input, resolved once a frame into
        records a Render culls (light-points.ts). */
-    if (pointsMode) return compileLightPoints({ nodeId, points: inputs["points"], parameters, parameterMaps, light: payload.light });
-    const single = { passes: [], scene: { out: payload } } as CompiledNodeDescription;
+    if (pointsMode) {
+      return compileLightPoints({
+        nodeId,
+        points: inputs["points"],
+        parameters,
+        parameterMaps,
+        light: payload.light,
+        lightAt: (next) => singleLightPayload(next, readValueInputs(next).parameters).light,
+      });
+    }
+    // T1719b: a Light in Single mode publishes its payload alone, so its value function is the payload's.
+    const single = {
+      passes: [],
+      scene: { out: payload },
+      values: (next: NodeCompileContext) => ({ passes: [], scene: { out: singleLightPayload(next, readValueInputs(next).parameters) } }),
+    } as CompiledNodeDescription;
     /* T1623b slice 3: a Light in Single mode that does not cast is a row of each Render's
        light table, and a spot is a kind of row. A CASTING one is still a block of the lit
        shader, which takes no cone: it shines as a point light and SAYS so. A warning and
@@ -778,6 +775,44 @@ export const lightNode: NodeDefinition = {
     return parameters["kind"] === "spot" && payload.light.shadows ? { ...single, diagnostics: [lightSpotUnbuilt(nodeId)] } : single;
   },
 };
+
+/** A Light's payload in Single mode, from its resolved parameters and the names its caster lists resolved to (T1719b: one source for `compile` and its values). */
+function singleLightPayload(context: NodeCompileContext, parameters: Params): LightPayload {
+  const color = readColor(parameters, "color", [1, 1, 1, 1]);
+  /* T1598b: the two lists as the ids of the nodes the names resolved to. A Render matches
+     them against the geometries it draws, so a light shared by two Renders casts in each
+     from what that Render has. */
+  const named = (portId: string): string[] =>
+    ((context as { inputs?: Record<string, ReadonlyArray<{ sourceNodeId?: string }>> }).inputs?.[portId] ?? []).flatMap((binding) =>
+      binding.sourceNodeId === undefined ? [] : [binding.sourceNodeId],
+    );
+  const casters = named("shadowCasters");
+  const excluded = named("shadowExclude");
+  return {
+    kind: "light",
+    light: {
+      /* A spot stands at a place, as a point light does. */
+      type: parameters["kind"] === "point" || parameters["kind"] === "spot" ? "point" : "directional",
+      color: [color[0] ?? 1, color[1] ?? 1, color[2] ?? 1],
+      intensity: readNumber(parameters, "intensity", 1),
+      direction: vec3(parameters, "direction", [-0.4, -0.8, -0.45]),
+      position: vec3(parameters, "position", [1, 2, 1.5]),
+      shadows: parameters["shadows"] === true,
+      /* T1688b: out only when it says so; a document from before the parameter has it on. */
+      ...(parameters["shadowOn"] === false ? { shadowOn: false } : {}),
+      shadowExtent: readNumber(parameters, "shadowExtent", 8),
+      shadowSoftness: readNumber(parameters, "shadowSoftness", 2),
+      shadowBias: Math.max(0, readNumber(parameters, "shadowBias", 0)),
+      shadowCenter: vec3(parameters, "shadowCenter", [0, 0, 0]),
+      ...(casters.length === 0 ? {} : { shadowCasters: casters }),
+      ...(excluded.length === 0 ? {} : { shadowExclude: excluded }),
+      falloff: parameters["falloff"] === "inverseSquare" ? "inverseSquare" : "soft",
+      range: Math.max(0, readNumber(parameters, "range", 0)),
+      /* T1623b: a spot's cone, for the row this Light is in a Render's table. */
+      ...(parameters["kind"] === "spot" ? { spot: { cone: readNumber(parameters, "cone", 60), softness: readNumber(parameters, "coneSoftness", 0.4) } } : {}),
+    },
+  };
+}
 
 /**
  * T1598b: a sphere through an object matrix (column-major, the Transform group's: translate
@@ -2182,12 +2217,16 @@ export const renderNode: NodeDefinition = {
   },
   resolutionPolicy: { kind: "project" },
   formatPolicy: { kind: "project" },
-  compile(context): CompiledNodeDescription {
+  compile(context: NodeCompileContext, mode: RenderMode = "full"): CompiledNodeDescription {
     const { nodeId, outputs, parameters, resolution } = readCompileInputs(context);
     const outTarget = outputs["out"];
     if (outTarget === undefined) {
       return { passes: [], diagnostics: [missingCompileResource(nodeId, 'output port "out"')] };
     }
+    /* T1719b S3: a values-only frame describes the same passes and keeps the base's text, so
+       no generator runs and no key is walked for it (`renderValues`). Every generated shader
+       below is built through this; nothing below reads a shader it built. */
+    const text = <T,>(make: () => T): T => (mode === "full" ? make() : (VALUES_ONLY_TEXT as T));
     /* T939 — SSAA: with antialias on, EVERY scene pass renders into a 2x scratch (the
        glass pyramid reads it too, so transmission sees the supersampled scene), and one
        box resolve at the end writes the real output. `target` below IS the scene
@@ -2365,6 +2404,17 @@ export const renderNode: NodeDefinition = {
      */
     const blockLights = casting.map(({ light }) => light);
     const blockShadows = casting.map((_, slot) => slot);
+    /* The camera, the casting lights and their shadow slots are the same in every lit draw:
+       their uniforms are built once a compile and shared, not rebuilt once a geometry. */
+    const viewProjectionUniform = Array.from(viewProjectionMatrix);
+    const blockLightUniforms = Object.fromEntries(
+      blockLights.flatMap((light, lightIndex) => [
+        [`light${lightIndex}Meta`, lightMetaUniform(light)],
+        [`light${lightIndex}Color`, [...light.color, 0]],
+        [`light${lightIndex}Vector`, [...(light.type === "point" ? light.position : light.direction), 0]],
+      ]),
+    );
+    const shadowSlotUniforms = Object.fromEntries(shadowUniforms());
     const named: NamedLight[] = lights.flatMap((light, index) => (light.shadows ? [] : [{ nodeId: lightSources[index] ?? "?", light, number: lightNumbers[index] ?? index }]));
     /** The spots among them, by name: what a draw with no cone says (`lightSpotDraw`). */
     const namedSpots = named.filter((entry) => entry.light.spot !== undefined).map((entry) => entry.nodeId);
@@ -2571,7 +2621,7 @@ export const renderNode: NodeDefinition = {
             kind: "draw",
             id: `${nodeId}:${options.prefix}:${geometryIndex}`,
             nodeId,
-            shader: sceneInstancesWgsl({
+            shader: text(() => sceneInstancesWgsl({
               model: "unlit", lightCount: 0, cameraDepth: true,
               ...(billboard ? { billboard: true } : { beam: true }),
               ...(instance.spherical === true ? { sphericalPoints: true } : {}),
@@ -2581,7 +2631,7 @@ export const renderNode: NodeDefinition = {
                 pointScale: { type: payload.scaleAttribute.type,
                   ...(payload.scaleAttribute.channel === undefined ? {} : { channel: payload.scaleAttribute.channel }) },
               }),
-            }),
+            })),
             target: options.target,
             topology: "triangle-list",
             instances: counted?.instances ?? payload.capacity,
@@ -2655,7 +2705,7 @@ export const renderNode: NodeDefinition = {
             kind: "draw",
             id: `${nodeId}:${options.prefix}:${geometryIndex}`,
             nodeId,
-            shader: depthShader(shadowMeshWgsl({ ...depthOptions, instanced: storage.option })),
+            shader: text(() => depthShader(shadowMeshWgsl({ ...depthOptions, instanced: storage.option }))),
             target: options.target,
             topology: "triangle-list",
             instances: proxy?.drawArgs === undefined ? meshInstanceCount(payload) : { indirect: proxy.drawArgs },
@@ -2691,7 +2741,7 @@ export const renderNode: NodeDefinition = {
             kind: "draw",
             id: `${nodeId}:${options.prefix}:${geometryIndex}`,
             nodeId,
-            shader: depthShader(shadowInstancesWgsl({
+            shader: text(() => depthShader(shadowInstancesWgsl({
               ...depthOptions,
               ...(payload.group === undefined ? {} : { group: payload.group }),
               /* T721: the depth sweep sizes each primitive exactly as the lit draw does,
@@ -2708,7 +2758,7 @@ export const renderNode: NodeDefinition = {
                  shadow is the shadow of the right shape, a wrongly-oriented one is the
                  silhouette of a thing that is not in the picture. */
               ...(payload.orientAttribute === undefined ? {} : { pointOrient: true }),
-            })),
+            }))),
             target: options.target,
             topology: "triangle-list",
             instances: counted?.instances ?? payload.capacity,
@@ -2745,7 +2795,7 @@ export const renderNode: NodeDefinition = {
             kind: "draw",
             id: `${nodeId}:${options.prefix}:${geometryIndex}`,
             nodeId,
-            shader: depthShader(shadowMeshWgsl(depthOptions)),
+            shader: text(() => depthShader(shadowMeshWgsl(depthOptions))),
             target: options.target,
             topology: "triangle-list",
             instances: 1,
@@ -2769,7 +2819,7 @@ export const renderNode: NodeDefinition = {
           id: `${nodeId}:${options.prefix}:${geometryIndex}`,
           nodeId,
           /* T1587b: a grid of several sheets is still this ONE draw, of every sheet's cells. */
-          shader: depthShader(shadowSurfaceWgsl(gridSheets(topology) > 1 ? { ...depthOptions, sheets: true } : depthOptions)),
+          shader: text(() => depthShader(shadowSurfaceWgsl(gridSheets(topology) > 1 ? { ...depthOptions, sheets: true } : depthOptions))),
           target: options.target,
           topology: "triangle-list",
           instances: 1,
@@ -3017,7 +3067,7 @@ export const renderNode: NodeDefinition = {
       const levels = ENV_PREFILTER_SPREADS.map((spread, level) => {
         const target = prefilterTarget(`envLevel${level}`, ENV_PREFILTER_SIDES.levels[level] ?? 32);
         const radius = Math.sqrt(spread * spread - previousSpread * previousSpread);
-        fullscreen(`level${level}`, envPrefilterLevelWgsl(radius), target, [{ binding: "sourceTex", resourceId: previous.id }]);
+        fullscreen(`level${level}`, text(() => envPrefilterLevelWgsl(radius)), target, [{ binding: "sourceTex", resourceId: previous.id }]);
         previous = target;
         previousSpread = spread;
         return target;
@@ -3164,7 +3214,7 @@ export const renderNode: NodeDefinition = {
         kind: "draw",
         id: `${nodeId}:ao:resolve`,
         nodeId,
-        shader: aoResolveWgsl(aoSampleCount(String(parameters["aoQuality"] ?? "medium"))),
+        shader: text(() => aoResolveWgsl(aoSampleCount(String(parameters["aoQuality"] ?? "medium")))),
         target: aoRawTarget,
         topology: "triangle-list",
         instances: 1,
@@ -3179,7 +3229,7 @@ export const renderNode: NodeDefinition = {
         kind: "draw",
         id: `${nodeId}:ao:blur`,
         nodeId,
-        shader: aoBlurWgsl(AO_BLUR_RADIUS),
+        shader: text(() => aoBlurWgsl(AO_BLUR_RADIUS)),
         target: aoTargetId,
         topology: "triangle-list",
         instances: 1,
@@ -3231,7 +3281,7 @@ export const renderNode: NodeDefinition = {
       kind: "draw",
       id: `${nodeId}:backdrop`,
       nodeId,
-      shader: backdropWgsl(drawEnvironment ? { environment: true } : {}),
+      shader: text(() => backdropWgsl(drawEnvironment ? { environment: true } : {})),
       target,
       // Background colour must not occlude real geometry near the camera's far plane.
       depthWrite: false,
@@ -3421,7 +3471,7 @@ export const renderNode: NodeDefinition = {
           /* T917: additive LIGHT — sums onto what is drawn and stops writing depth (it
              still tests), so overlapping beams add instead of fighting the z-buffer. */
           ...(payload.blend === "additive" ? { blend: "additive" as const, depthWrite: false } : {}),
-          shader: sceneInstancesWgsl({
+          shader: text(() => sceneInstancesWgsl({
             model,
             lightCount: lights.length,
             ...(payload.instance?.spherical === true ? { sphericalPoints: true } : {}),
@@ -3445,7 +3495,7 @@ export const renderNode: NodeDefinition = {
             ...(beam ? { beam: true } : {}),
             /* T723: the turn, and the generator rotates the NORMALS with it. */
             ...(payload.orientAttribute === undefined ? {} : { pointOrient: true }),
-          }),
+          })),
           target,
           topology: "triangle-list",
           instances: counted?.instances ?? payload.capacity,
@@ -3712,6 +3762,7 @@ export const renderNode: NodeDefinition = {
         /* T1589b: the draw that LIGHTS walks the light table. A G-buffer layer lights nothing,
            and an unlit material takes no light of any kind. */
         const walks = lightTable !== undefined && options.gbuffer === undefined && options.model !== "unlit";
+        if (mode === "values") return { shader: VALUES_ONLY_TEXT };
         const module = sceneSurfaceModule(walks ? { ...options, lightGrid: true } : options);
         const map = material.custom?.sourceMap;
         return { shader: module.wgsl, ...(map === undefined ? {} : { sourceMap: customSurfaceSourceMap(map, module.placed) }) };
@@ -3796,7 +3847,7 @@ export const renderNode: NodeDefinition = {
               ],
             }),
         uniforms: {
-          viewProjection: Array.from(viewProjectionMatrix),
+          viewProjection: viewProjectionUniform,
           /* T1581b: an instance's record already holds the object matrix. */
           ...(instancedStorage === undefined ? modelAndNormalOf(payload) : {}),
           eye: [camera.eye[0], camera.eye[1], camera.eye[2], 0],
@@ -3810,16 +3861,8 @@ export const renderNode: NodeDefinition = {
                 material.custom.fields.map((field) => [materialParamUniformKey(field.name), material.custom?.uniforms[field.name] ?? 0]),
               )),
           grid: topology.kind === "grid" ? [topology.cols, topology.rows, topology.wrapU ? 1 : 0, topology.wrapV ? 1 : 0] : [0, 0, 0, 0],
-          ...Object.fromEntries(
-            blockLights.flatMap((light, lightIndex) => [
-              [`light${lightIndex}Meta`, lightMetaUniform(light)],
-              [`light${lightIndex}Color`, [...light.color, 0]],
-              [`light${lightIndex}Vector`, [...(light.type === "point" ? light.position : light.direction), 0]],
-            ]),
-          ),
-          ...Object.fromEntries(
-            shadowUniforms(),
-          ),
+          ...blockLightUniforms,
+          ...shadowSlotUniforms,
           ...(environmentResource === undefined || !envLit(model)
             ? {}
             : { environment: [environmentIntensity, 0, 0, 0] }),
@@ -4034,7 +4077,7 @@ export const renderNode: NodeDefinition = {
             kind: "draw",
             id: `${nodeId}:glass:${index}`,
             nodeId,
-            shader: glassInstancesWgsl(glassShaderOptions),
+            shader: text(() => glassInstancesWgsl(glassShaderOptions)),
             target,
             topology: "triangle-list",
             instances: counted?.instances ?? payload.capacity,
@@ -4069,7 +4112,7 @@ export const renderNode: NodeDefinition = {
             kind: "draw",
             id: `${nodeId}:glass:${index}`,
             nodeId,
-            shader: glassMeshWgsl(glassShaderOptions),
+            shader: text(() => glassMeshWgsl(glassShaderOptions)),
             target,
             topology: "triangle-list",
             instances: 1,
@@ -4109,7 +4152,7 @@ export const renderNode: NodeDefinition = {
           id: `${nodeId}:glass:${index}`,
           nodeId,
           // T1587b: several sheets, as the lit grid draws them.
-          shader: glassSurfaceWgsl(gridSheets(topology) > 1 ? { ...glassShaderOptions, sheets: true } : glassShaderOptions),
+          shader: text(() => glassSurfaceWgsl(gridSheets(topology) > 1 ? { ...glassShaderOptions, sheets: true } : glassShaderOptions)),
           target,
           topology: "triangle-list",
           instances: 1,
@@ -4163,7 +4206,7 @@ export const renderNode: NodeDefinition = {
       } as DrawPassDescriptor);
     }
 
-    const ledger = textureLedger(nodeId, passes, materialTextureNames);
+    const ledger = mode === "full" ? textureLedger(nodeId, passes, materialTextureNames) : undefined;
     if (ledger !== undefined) diagnostics.push(ledger);
 
     if (diagnostics.some((diagnostic) => diagnostic.severity === "error")) {
@@ -4173,9 +4216,39 @@ export const renderNode: NodeDefinition = {
       passes,
       ...(scratch.length === 0 ? {} : { scratch }),
       ...(diagnostics.length === 0 ? {} : { diagnostics }),
+      ...(mode === "full" ? { values: renderValues } : {}),
     };
   },
 };
+
+/**
+ * T1719b S3 — THE RENDER'S VALUES AT ANOTHER FRAME.
+ *
+ * The Render is one long description of its passes, with every uniform computed where the
+ * pass is built. So its value function IS that description, run again in `"values"` mode:
+ * the same code computes the same numbers from this frame's context (V1032 by construction),
+ * and leaves the shader text unbuilt (`text`, `surface`), which is where its emission cost
+ * was. Each pass's id comes back with its values, so passes that came out in another order
+ * degrade the frame by name instead of landing on the wrong pass.
+ */
+type RenderMode = "full" | "values";
+const VALUES_ONLY_TEXT = "" as EmittedWgsl;
+const renderValues: NodeValueFunction = (context) => {
+  const compile = renderNode.compile as (context: NodeCompileContext, mode: RenderMode) => CompiledNodeDescription;
+  return { passes: compile(context, "values").passes.map((pass) => passFrameValues(pass as DrawPassDescriptor | DispatchPassDescriptor | BufferWritePassDescriptor)) };
+};
+
+function passFrameValues(pass: DrawPassDescriptor | DispatchPassDescriptor | BufferWritePassDescriptor): PassFrameValues {
+  if (pass.kind === "write") return { id: pass.id, values: pass.values };
+  if (pass.kind === "dispatch") return pass.uniforms === undefined ? { id: pass.id } : { id: pass.id, uniforms: pass.uniforms };
+  return {
+    id: pass.id,
+    ...(pass.uniforms === undefined ? {} : { uniforms: pass.uniforms }),
+    skip: pass.skip === true,
+    ...(typeof pass.instances === "number" ? { instances: pass.instances } : {}),
+    ...(pass.vertexCount === undefined ? {} : { vertexCount: pass.vertexCount }),
+  };
+}
 
 /**
  * T428 — the MATERIAL family. Each material is a THING geometries reference by name;

@@ -23,6 +23,8 @@ import type { TelemetryHub } from "@runtime/telemetry/index.ts";
 import type { LayoutStorage } from "./layout-storage.ts";
 import { defaultLayoutStorage } from "./layout-storage.ts";
 import { registerProjectCommands } from "./project-commands.ts";
+import { createProjectTempo, type ProjectTempo } from "@domain/tempo/project-tempo.ts";
+import { registerTempoCommands } from "@domain/tempo/tempo-commands.ts";
 import { registerControlCommands } from "@editor/controls/control-commands.ts";
 import { readProjectFile, writeProjectFile } from "./project-io.ts";
 import { retainedProjectAssets } from "@domain/media/file-reference.ts";
@@ -57,6 +59,12 @@ export interface AppRuntime {
   readonly flattened: FlattenedGraphSource;
   /** Status / GPU-ms / agent-activity channel. Never the document store (§V16). */
   readonly nodeRuntime: NodeRuntimeStore;
+  /**
+   * T1785b — THE project tempo: the session's beat clock, one beside the one bus. The frame
+   * loop stamps its reading on every frame (`frame.tempo`), the `tempo.*` commands and the
+   * MIDI clock input move it, the transport bar shows it.
+   */
+  readonly tempo: ProjectTempo;
   /**
    * The ONE metrics pipe (T41/T42, §V16). Built here so there is exactly one, sunk into
    * the canvas's existing per-node channel rather than standing up a second one, and
@@ -288,6 +296,10 @@ export function createAppRuntime(options: AppRuntimeOptions = {}): AppRuntime {
     ...componentFiles,
   });
   registerProjectCommands(bus);
+  // T1785b: the wall clock taps and Web MIDI timestamps are on, in seconds. The one clock
+  // the tempo reads; node definitions get the beat from the frame (§V44, §V1038).
+  const tempo = createProjectTempo({ now: () => performance.now() / 1000, settings: () => bus.store.getSettings() });
+  registerTempoCommands(bus, tempo);
   // T1514b: mapping starts from the parameter — the Inspector's right-click rows name these.
   // §T1695b: graph edits, so through the one registrar every document bus is given.
   const registerDocumentCommands = (target: LoomBus): void => registerControlCommands(target);
@@ -354,6 +366,7 @@ export function createAppRuntime(options: AppRuntimeOptions = {}): AppRuntime {
     components,
     flattened,
     nodeRuntime,
+    tempo,
     telemetry,
     invocation,
     // T519: per CONSTRUCTION, not per project id — see `documentIdentity` above. Random

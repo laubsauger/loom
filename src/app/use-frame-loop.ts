@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { liveClock } from "@domain/transport/live-clock.ts";
+import { documentTempo, type ProjectTempo } from "@domain/tempo/project-tempo.ts";
 import type { CompiledGraph } from "@compiler/index.ts";
 import type { EvaluationFrame, FrameEvaluationInput } from "@domain/types/frame.ts";
 import type { LoomBus } from "@domain/commands/bus.ts";
@@ -159,7 +160,17 @@ export type AnimateFrame = (frame: FrameEvaluationInput) => CompiledGraph | null
  * Named fields make the swap impossible instead of unlikely.
  */
 export interface FrameLoopOptions {
+  /** Composition-root clock; generated sound supplies the shared audio clock in milliseconds. */
+  readonly now?: (() => number) | undefined;
+  readonly authoritativeClock?: (() => boolean) | undefined;
   readonly bus: LoomBus;
+  /**
+   * T1785b: the project tempo (`AppRuntime.tempo`). Its reading is stamped on every frame
+   * this loop produces, it hears each frame's audio tempo claim, and a take restarts it on
+   * the take's clock. Absent (a test's loop): frames count the document's BPM along the
+   * absolute clock, as an offline render does.
+   */
+  readonly tempo?: ProjectTempo | undefined;
   readonly backend: LoomBackend | null | undefined;
   readonly compiled: CompiledGraph | null;
   readonly settings: ProjectSettings;
@@ -410,6 +421,10 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
   observeRef.current = observe;
   const advanceChannelsRef = useRef<((inputs: FrameInputs) => void) | null>(advanceChannels);
   advanceChannelsRef.current = advanceChannels;
+  const nowRef = useRef(options.now);
+  nowRef.current = options.now;
+  const authoritativeClockRef = useRef(options.authoritativeClock);
+  authoritativeClockRef.current = options.authoritativeClock;
   const onResetRef = useRef<(() => void) | null>(onReset);
   onResetRef.current = onReset;
   // Read, not depended on: it changes in lockstep with `compiled`, and putting it in the
@@ -548,6 +563,11 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
   const pointerRef = useRef<PointerSource | null>(null);
   const audioRef = useRef<((frame: FrameEvaluationInput) => AudioFeatures | null) | null>(options.audio ?? null);
   audioRef.current = options.audio ?? null;
+  // T1785b: refs, read per frame, so neither a new tempo object nor a settings edit rebuilds the transport.
+  const tempoRef = useRef<ProjectTempo | null>(options.tempo ?? null);
+  tempoRef.current = options.tempo ?? null;
+  const tempoSettingsRef = useRef(settings);
+  tempoSettingsRef.current = settings;
   const generationRef = useRef(0);
 
   // Read live so a resize needs no driver restart — `FrameDriverOptions.resolution` is
@@ -684,7 +704,12 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
     // same reason fps is — the answer changes while the transport does not.
     // T1497b: a new clock counts from zero, so it counts in a new epoch. See `epochRef`.
     epochRef.current = mintClockEpoch();
+    const documentBeat = documentTempo(() => tempoSettingsRef.current);
     const clock = liveClock({
+      // T1785b: the beat clock's reading, on every frame (§V1038).
+      tempo: (reading) => (tempoRef.current?.read ?? documentBeat)(reading),
+      now: () => nowRef.current?.() ?? performance.now(),
+      authoritativeClock: () => authoritativeClockRef.current?.() === true,
       fps: () => fpsRef.current,
       // T1100: the document's seed, per frame (§V45's live half). See `seedRef` above.
       seed: () => seedRef.current,
@@ -772,7 +797,12 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
       pointer,
       // Read through the ref PER TICK: an audio source that appears later (the user
       // adds an audioIn node mid-session) must not need a driver restart.
-      audio: (frame) => audioRef.current?.(frame) ?? null,
+      audio: (frame) => {
+        const audio = audioRef.current?.(frame) ?? null;
+        // T1785b: the tempo claim the `audio` source follows, heard once per frame.
+        tempoRef.current?.observeAudio(audio);
+        return audio;
+      },
       resolution: () => {
         const { width, height } = resolutionRef.current;
         return [width, height] as const;
@@ -987,6 +1017,8 @@ export function useFrameLoop(options: FrameLoopOptions): FrameLoopResult {
       resetAbsoluteClock: (at) => {
         transport.resetAbsolute(at);
         epochRef.current = mintClockEpoch();
+        // T1785b: and the beat is counted from the take's clock, so a take's beats are its own.
+        tempoRef.current?.restartAt((at ?? 0) / fpsRef.current);
       },
       isLooping: () => loopingRef.current,
       toggleLoop: () => {

@@ -421,7 +421,9 @@ function frameAnimator(input: {
   // per-frame compile at all — which killed the component's internal EXPRESSIONS too,
   // even though flattening preserves those perfectly. Nothing was broken about the
   // expression; nothing was ever asked to evaluate it.
-  if (!hasAnimatedParameters(flatGraph)) return null;
+  // §T1732b: a look moves without a revision, so a document with one is re-resolved at every frame.
+  const looking = request.sinks?.some((sink) => sink.kind === "look") === true;
+  if (!looking && !hasAnimatedParameters(flatGraph)) return null;
   /**
    * T1497b — A FADE ENDS, AND THEN THE DOCUMENT IS STILL AGAIN (the design doc §5.3).
    *
@@ -434,7 +436,7 @@ function frameAnimator(input: {
    * stopping with it would leave the GPU one step short of the destination.
    */
   const morphs = flattened.morphs;
-  const morphsOnly = !Object.values(flatGraph.nodes).some(nodeHasAnimatedParameters);
+  const morphsOnly = !looking && !Object.values(flatGraph.nodes).some(nodeHasAnimatedParameters);
   let landingOwed = false;
   /**
    * T1182 — the per-frame compile is VALUES-ONLY wherever the compiler can prove it.
@@ -1156,7 +1158,8 @@ export function useGraphCompile(
             return ahead.compiled.ok ? ahead.compiled : null;
           }
         }
-        return compileLayerWarmPlan(segmentRequest);
+        // T1771b: every node that is off, since any node is switched from a preset or a board.
+        return compileLayerWarmPlan(segmentRequest, { every: true });
       },
       timeline,
       values,

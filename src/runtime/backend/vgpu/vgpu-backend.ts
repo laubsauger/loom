@@ -34,6 +34,8 @@ import type {
   PreviewHostHandle,
   PreviewProgram,
   LoomBackend,
+  LinearDecode,
+  OutputAccumulator,
 } from "../backend-types.ts";
 import {
   BackendDiagnosticCode,
@@ -91,6 +93,7 @@ import {
   type ResourceSet,
 } from "./resources.ts";
 import { createWarmEffects, type WarmEffects } from "./warm-effects.ts";
+import { createOutputAccumulator } from "./output-accumulator.ts";
 import { createEnvironmentPreparation } from "./environment-preparation.ts";
 
 /**
@@ -145,6 +148,8 @@ export interface VgpuBackend extends LoomBackend {
   whenSettled(): Promise<void>;
   /** T1604b: this backend has runs, so the switch is always there (optional on `LoomBackend`). */
   setExactPassTiming(exact: boolean): void;
+  /** T1739b: this backend has a device to sum on (optional on `LoomBackend`). */
+  accumulateOutput(outputId: string, decode: LinearDecode): OutputAccumulator;
 }
 
 /** Intrinsic copy extent; element CSS dimensions never describe video/image pixels. */
@@ -167,6 +172,8 @@ interface Program {
   signature: string;
   resourceDescriptors: ReadonlyArray<ResourceDescriptor>;
   readonly passes: ReadonlyArray<PassDescriptor>;
+  /** `passes` by id (ids are unique, `plan.ts`), so a per-frame value write never walks the plan. */
+  readonly passById: ReadonlyMap<string, PassDescriptor>;
   readonly textureFrames: Map<string, DispatchSourceFrame>;
   /**
    * T387: plan order with every substep region expanded — the order the ENCODER walks.
@@ -1065,7 +1072,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
    */
   const regionsToWrite = new WeakMap<Program, Set<string>>();
   const regionPass = (target: Program, passId: string): BufferWritePassDescriptor | undefined => {
-    const pass = target.passes.find((entry) => entry.id === passId);
+    const pass = target.passById.get(passId);
     return pass?.kind === "write" ? pass : undefined;
   };
   function pendingRegions(target: Program): Set<string> {
@@ -2902,6 +2909,7 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
         signature,
         resourceDescriptors: read.resources,
         passes: read.passes,
+        passById: new Map(read.passes.map((pass) => [pass.id, pass])),
         textureFrames: new Map(),
         encodePasses: expandLoops(read.passes),
         loopCounts: new Map(
@@ -3332,10 +3340,8 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
        * iteration count the encoder reads. The animator pushes it through this same
        * entry point so a driven substeps parameter animates like any uniform (§V5).
        */
-      const loopBegin = program.passes.find(
-        (pass) => pass.id === update.passId && pass.kind === "loop" && pass.edge === "begin",
-      );
-      if (loopBegin !== undefined && loopBegin.kind === "loop") {
+      const loopBegin = program.passById.get(update.passId);
+      if (loopBegin?.kind === "loop" && loopBegin.edge === "begin") {
         const requested = update.values["count"];
         if (typeof requested === "number" && Number.isFinite(requested)) {
           setLoopCount(program, loopBegin.loopId, requested);
@@ -3735,6 +3741,48 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       }
       readbacks += 1;
       return buffer.read();
+    },
+
+    accumulateOutput(outputId, decode) {
+      // §V48: built, fed and read between frames only; the read is counted as a readback.
+      guard.assertOutsideFrame("output accumulation");
+      const active = requireSession("accumulateOutput()");
+      if (halted) throw new Error(`accumulateOutput("${outputId}") while GPU submission is halted.`);
+      const descriptor = program?.resourceDescriptors.find(
+        (resource) => resource.id === outputId && (resource.kind === "target" || resource.kind === "pingPong"),
+      );
+      if (descriptor === undefined || (descriptor.kind !== "target" && descriptor.kind !== "pingPong")) {
+        const message = `accumulateOutput() referenced unknown output "${outputId}".`;
+        hub.report(backendDiagnostic("error", BackendDiagnosticCode.unknownOutput, message));
+        throw new Error(message);
+      }
+      const [width, height] = descriptor.size;
+      const sum = createOutputAccumulator(active.gpu.gpu, { width, height, format: descriptor.format }, decode);
+      /** A sum belongs to the device it was made on; a recovered device starts with none. */
+      const usable = (what: string): void => {
+        guard.assertOutsideFrame(what);
+        if (halted || session !== active) throw new Error(`accumulateOutput("${outputId}"): the device was lost, and the sum with it.`);
+      };
+      return {
+        get count() {
+          return sum.count;
+        },
+        add() {
+          usable("output accumulation");
+          // The half `readOutput` reads: a ping-pong's read half is the frame just finished.
+          const target = lookupTargets(outputId)[0];
+          if (target === undefined) throw new Error(`accumulateOutput("${outputId}"): the output is no longer in the plan.`);
+          sum.add(target.color.gpu);
+        },
+        async read() {
+          usable("output readback");
+          readbacks += 1;
+          return sum.read();
+        },
+        dispose() {
+          sum.dispose();
+        },
+      };
     },
 
     async warmPasses(plan) {

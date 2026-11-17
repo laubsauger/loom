@@ -42,7 +42,9 @@ function run(parameters: Record<string, unknown>, signal: readonly number[], del
   const doc = graph(parameters);
   const session = createValueGraphSession(registry);
   return signal.map((value, index) => {
-    (doc.nodes["src"]!.parameters as Record<string, unknown>)["value"] = value;
+    // An edit is another node object, as in a real document: the session keeps a node's
+    // stored constants by the object (T1179), so a value written in place is never seen.
+    (doc.nodes as Record<string, unknown>)["src"] = { ...doc.nodes["src"]!, parameters: { value } };
     const result = session.evaluate(flatDocument(doc), frameAt(index, deltaSeconds), { flattening: NO_FLATTENING });
     expect(result.diagnostics).toEqual([]);
     return result.byName.get("beat1")!["value"]!;

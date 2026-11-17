@@ -29,6 +29,7 @@ import { TIME_GRID_BREAK_WGSL, TIME_GRID_MAP_WGSL, TIME_GRID_SWEEP_WGSL } from "
 import { SHARED_UNIFORMS_WGSL } from "../runtime/backend/shared-uniforms.ts";
 import { SHADER_SOURCE_PARAMETER } from "../domain/commands/apply-patch.ts";
 import { bloomPyramidGraph } from "./bloom-pyramid.ts";
+import { midiFeaturesSource, musicFeaturesSource } from "./music-features.ts";
 
 /**
  * The starter component set (T190, §V94, §V79).
@@ -104,6 +105,15 @@ export interface StarterComponentSpec {
   readonly publish: readonly PublishedParameter[];
   /** Rename boundary nodes through authoring commands while preserving socket addresses. */
   readonly boundaryLabels?: Readonly<Record<NodeId, string>>;
+  /**
+   * The order of the sockets, as boundary node ids top to bottom (T1805b).
+   *
+   * §V109: a socket's place is CANVAS ORDER, and the tidy ranks boundary nodes by depth, so
+   * a component with several outputs gets them in an order nobody chose (MusicFeatures'
+   * six came out beats, notes, tempo, harmony, levels, form). This is the author dragging
+   * them into a column after the tidy: inputs left of everything, outputs right of it.
+   */
+  readonly socketOrder?: { readonly inputs?: readonly NodeId[]; readonly outputs?: readonly NodeId[] };
   /** Extra useful results, exposed through the same command as user-authored ports. */
   readonly exposeOutputs?: readonly { nodeId: NodeId; portId: string; externalId: string; label: string }[];
 }
@@ -1371,6 +1381,19 @@ const bloomPyramidHost = document("component-bloom-pyramid", "Bloom Pyramid", se
 ]));
 
 /**
+ * The two music feature hosts (T1805b): the graphs are `music-features.ts`'s, where the
+ * members, the expression templates and the contract they publish are written.
+ */
+export const musicFeaturesHost: ProjectDocument = document(
+  "component-music-features", "MusicFeatures", settings({ outputResolution: { width: 640, height: 360 } }),
+  graph(musicFeaturesSource.nodes, musicFeaturesSource.edges),
+);
+export const midiFeaturesHost: ProjectDocument = document(
+  "component-midi-features", "MidiFeatures", settings({ outputResolution: { width: 640, height: 360 } }),
+  graph(midiFeaturesSource.nodes, midiFeaturesSource.edges),
+);
+
+/**
  * Antialias's host (T1276): a picture with hard staircases in it, the pass, and an output.
  *
  * Noise cut by a Threshold at zero softness, because every contour of a hard threshold is a
@@ -1920,6 +1943,30 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
     ],
   },
   {
+    componentId: "musicFeatures",
+    name: "MusicFeatures",
+    description:
+      "Music features from audio, in six groups (levels, beats, tempo, notes, harmony, form): the same channel names MidiFeatures publishes, every channel on every frame, at its rest value with zero confidence where audio cannot know it. Wire an Audio In or Audio File In into audio; tonal (optional) replaces the inner Chroma, Chord and Notes with channels of the same names.",
+    host: musicFeaturesHost,
+    // The sources stay OUTSIDE (any audio node takes the seat, and any tonal one); the six
+    // taps stay outside so the cut value edges make the six outputs (T822).
+    selection: musicFeaturesSource.selection,
+    portNames: musicFeaturesSource.portNames,
+    socketOrder: musicFeaturesSource.socketOrder,
+    publish: musicFeaturesSource.publish,
+  },
+  {
+    componentId: "midiFeatures",
+    name: "MidiFeatures",
+    description:
+      "Music features from a MIDI keyboard, in six groups (levels, beats, tempo, notes, harmony, form): the same channel names MusicFeatures publishes, every channel on every frame, at its rest value where MIDI has nothing (no sound level, no drums, no detected tempo). A seventh output, lanes, is MIDI only: laneNOnset and laneNVelocity, every strike by where it lies between the bass and the top note.",
+    host: midiFeaturesHost,
+    selection: midiFeaturesSource.selection,
+    portNames: midiFeaturesSource.portNames,
+    socketOrder: midiFeaturesSource.socketOrder,
+    publish: midiFeaturesSource.publish,
+  },
+  {
     componentId: "depthPoints",
     name: "DepthPoints",
     description:
@@ -2295,6 +2342,10 @@ export const STARTER_COMPONENT_SPECS: readonly StarterComponentSpec[] = [
   },
 ];
 
+/** `socketOrder`'s column: one tidy column away from the graph, one tidy row a socket. */
+const SOCKET_COLUMN = 340;
+const SOCKET_ROW = 190;
+
 /** Everything a failed authoring step needs to say, without a half-built component. */
 export class StarterComponentError extends Error {
   constructor(spec: StarterComponentSpec, step: string, detail: string) {
@@ -2414,6 +2465,28 @@ async function authorComponent(
           "graph.layoutAll",
           laid.diagnostics.map((diagnostic) => diagnostic.message).join(" ") || "rejected",
         );
+      }
+    }
+
+    if (spec.socketOrder !== undefined) {
+      const placed = Object.values(session.store.view.getGraph().nodes);
+      const xs = placed.map((node) => node.position.x);
+      const top = Math.min(...placed.map((node) => node.position.y));
+      const column = (ids: readonly NodeId[], x: number): [NodeId, { x: number; y: number }][] =>
+        ids.map((id, index) => [id, { x, y: top + index * SOCKET_ROW }]);
+      const moved = await session.bus.execute("graph.applyPatch", {
+        baseRevision: session.bus.store.getRevision(),
+        operations: [{
+          op: "moveNodes" as const,
+          positions: Object.fromEntries([
+            ...column(spec.socketOrder.inputs ?? [], Math.min(...xs) - SOCKET_COLUMN),
+            ...column(spec.socketOrder.outputs ?? [], Math.max(...xs) + SOCKET_COLUMN),
+          ]),
+        }],
+      }, AUTHORING_CONTEXT);
+      if (moved.status !== "applied") {
+        throw new StarterComponentError(spec, "socketOrder",
+          moved.diagnostics.map(diagnostic => diagnostic.message).join(" ") || "rejected");
       }
     }
 

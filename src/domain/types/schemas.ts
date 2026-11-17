@@ -255,6 +255,9 @@ export const projectSettingsSchema = z.object({
     .optional(),
   /** T1432b: the width pixel-sized effects are authored at; absent or 0 = no scaling. */
   referenceWidth: z.number().int().min(0).max(16384).optional(),
+  /** T1785b: the project tempo. Optional so documents written before it parse (§V68); absent is 120, manual. */
+  bpm: z.number().min(20).max(999).optional(),
+  tempoSource: z.enum(["manual", "audio", "midiClock"]).optional(),
   /** T84: optional so pre-colour-policy documents parse; absent means the default. */
   colorPolicy: z
     .object({

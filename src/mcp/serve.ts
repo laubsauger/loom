@@ -31,10 +31,18 @@ import {
   HELPER_ALL_DEVICES_ONLY_REFUSAL,
   HELPER_ALL_FLAG,
   HELPER_DEVICES_ONLY_FLAG,
+  HELPER_FORCE_FLAG,
   HELPER_PHONE_BANNER,
   HELPER_PHONE_FLAG,
   HELPER_TERMINAL_FLAG,
+  bridgeForceRefused,
+  bridgeHeldRemedy,
+  bridgeTakenOver,
+  pairingCodeBlock,
 } from "@devices/helper.ts";
+import { BRIDGE_PORT } from "@devices/transport/bridge-wire.ts";
+import { defaultHandoffDir } from "./bridge-handoff.ts";
+import { findBridgeHolder, takeOverBridge } from "./bridge-takeover.ts";
 
 /**
  * The out-of-process MCP server (T290, T294): a HEADLESS Loom on stdio — store,
@@ -140,6 +148,8 @@ export interface HeadlessMcpServerOptions {
     readonly handoffDir?: string;
     /** How often a server that lost the bind retries. Injectable so a test does not wait. */
     readonly proxyRetryMs?: number;
+    /** T1773b — see `BridgeHostOptions.heldRemedy`. Given by `serveStdio` only. */
+    readonly heldRemedy?: (port: number) => string;
     /**
      * Where a HUMAN reads the bridge's news — the pairing code above all.
      *
@@ -394,6 +404,7 @@ export function createHeadlessMcpServer(options: HeadlessMcpServerOptions): Head
           ...(options.bridge.port === undefined ? {} : { port: options.bridge.port }),
           ...(options.bridge.handoffDir === undefined ? {} : { handoffDir: options.bridge.handoffDir }),
           ...(options.bridge.proxyRetryMs === undefined ? {} : { proxyRetryMs: options.bridge.proxyRetryMs }),
+          ...(options.bridge.heldRemedy === undefined ? {} : { heldRemedy: options.bridge.heldRemedy }),
           onToolsChanged: () => {
             connection.refreshTools();
           },
@@ -560,10 +571,61 @@ function terminalDoorBanner(door: TerminalHost): string {
   return `Terminal door OPEN: paired Loom tabs served from localhost (and only those) may open one ${shell} per terminal pane in ${cwd}, as ${userInfo().username}. Every shell dies with its pane, and all of them with this helper.`;
 }
 
+/**
+ * T1773b — where the two entry points bind, and the sentence they add when they cannot.
+ * `port` and `handoffDir` are set only by a gate (through the environment, see the entry
+ * block below): a tab dials `BRIDGE_PORT` and nothing else.
+ */
+export interface HelperBinding {
+  readonly port?: number;
+  readonly handoffDir?: string;
+}
+
+function heldRemedyFor(binding: HelperBinding): (port: number) => string {
+  return (port) => {
+    const found = findBridgeHolder(port, binding.handoffDir ?? defaultHandoffDir());
+    return bridgeHeldRemedy(port, found.kind === "held" ? found.holder : null);
+  };
+}
+
+/**
+ * T1778b — prints `pairingCodeBlock` on stderr after the notices of the same turn, once per
+ * code that works: this helper's own once it is listening, the holder's while proxying. A
+ * changed code, port or owner (a promotion after the holder left, a new holder) prints it
+ * again. Call the returned function after every announced line.
+ */
+function pairingBlockPrinter(status: () => BridgeStatus | null): () => void {
+  let printed = "";
+  let pending = false;
+  return () => {
+    if (pending) return;
+    pending = true;
+    // Deferred, so a notice written in the same turn (a handoff warning) lands above it.
+    setImmediate(() => {
+      pending = false;
+      const now = status();
+      if (now === null || now.pairingCode === null || now.port === null) return;
+      if (!now.listening && now.mode !== "proxying") return;
+      const key = `${now.mode}:${now.port}:${now.pairingCode}`;
+      if (key === printed) return;
+      printed = key;
+      process.stderr.write(
+        pairingCodeBlock({
+          pairingCode: now.pairingCode,
+          port: now.port,
+          ...(now.mode === "proxying" ? { holderPid: now.incumbent?.pid ?? null } : {}),
+          emphasis: process.stderr.isTTY === true && process.env["NO_COLOR"] === undefined,
+        }),
+      );
+    });
+  };
+}
+
 export function serveStdio(
-  options: { readonly terminal?: boolean; readonly grantExport?: boolean; readonly phone?: boolean } = {},
+  options: { readonly terminal?: boolean; readonly grantExport?: boolean; readonly phone?: boolean } & HelperBinding = {},
 ): void {
-  const server = createHeadlessMcpServer({
+  const showPairingCode = pairingBlockPrinter(() => server.bridgeStatus());
+  const server: HeadlessMcpServer = createHeadlessMcpServer({
     send: (message) => {
       process.stdout.write(`${JSON.stringify(message)}\n`);
     },
@@ -575,9 +637,13 @@ export function serveStdio(
     bridge: {
       announce: (message) => {
         process.stderr.write(`[loom bridge] ${message}\n`);
+        showPairingCode();
       },
       ...(options.terminal === true ? { terminal: { enabled: true } } : {}),
       ...(options.phone === true ? { phone: { enabled: true } } : {}),
+      ...(options.port === undefined ? {} : { port: options.port }),
+      ...(options.handoffDir === undefined ? {} : { handoffDir: options.handoffDir }),
+      heldRemedy: heldRemedyFor(options),
     },
   });
   if (options.terminal === true || options.phone === true) {
@@ -660,6 +726,8 @@ export interface DeviceHelperOptions {
   readonly handoffDir?: string;
   /** How often a helper that lost the bind retries it. Injectable so a test does not wait. */
   readonly retryMs?: number;
+  /** T1773b — see `BridgeHostOptions.heldRemedy`. Given by `serveDevices` only. */
+  readonly heldRemedy?: (port: number) => string;
 }
 
 export interface DeviceHelper {
@@ -695,6 +763,7 @@ export function createDeviceHelper(options: DeviceHelperOptions = {}): DeviceHel
     ...(options.port === undefined ? {} : { port: options.port }),
     ...(options.handoffDir === undefined ? {} : { handoffDir: options.handoffDir }),
     ...(options.retryMs === undefined ? {} : { proxyRetryMs: options.retryMs }),
+    ...(options.heldRemedy === undefined ? {} : { heldRemedy: options.heldRemedy }),
     onNotice: (report) => {
       // One audience here, not two: there is no MCP client to notify, so the operator's
       // terminal is the whole channel and the pairing code has to reach it (§V233).
@@ -714,15 +783,22 @@ export function createDeviceHelper(options: DeviceHelperOptions = {}): DeviceHel
 }
 
 /** `pnpm helper --devices-only`: the device bridge, and a process that stays up for it. */
-export function serveDevices(options: { readonly terminal?: boolean; readonly phone?: boolean } = {}): void {
-  const helper = createDeviceHelper({
+export function serveDevices(
+  options: { readonly terminal?: boolean; readonly phone?: boolean } & HelperBinding = {},
+): void {
+  const showPairingCode = pairingBlockPrinter(() => helper.status());
+  const helper: DeviceHelper = createDeviceHelper({
     ...(options.terminal === true ? { terminal: true } : {}),
     ...(options.phone === true ? { phone: true } : {}),
+    ...(options.port === undefined ? {} : { port: options.port }),
+    ...(options.handoffDir === undefined ? {} : { handoffDir: options.handoffDir }),
+    heldRemedy: heldRemedyFor(options),
     announce: (message) => {
       // stderr, exactly as `serveStdio` uses it, so there is one announce channel and one
       // shape of line in the two modes. Nothing writes stdout here — there is no protocol
       // on it — but a human piping the output should still find the code where it always is.
       process.stderr.write(`[loom helper] ${message}\n`);
+      showPairingCode();
     },
   });
   /*
@@ -732,10 +808,17 @@ export function serveDevices(options: { readonly terminal?: boolean; readonly ph
    * e-stopped by this process before it exits (G2) rather than left to the DAC's own
    * timeout. Both signals, because a supervisor sends TERM and a keyboard sends INT.
    */
+  /*
+   * T1773b: a helper that LOST the bind has no listener, and the bridge's retry timer is
+   * unref'd, so nothing held this process open: it printed "Retrying the bind every 2s" and
+   * exited 0 before the first retry. This is what "stays up" rests on when the port is held.
+   */
+  const stayUp = setInterval(() => undefined, 0x7fffffff);
   let closing = false;
   const close = (): void => {
     if (closing) return;
     closing = true;
+    clearInterval(stayUp);
     helper.dispose();
     process.exit(0);
   };
@@ -763,11 +846,13 @@ export function serveDevices(options: { readonly terminal?: boolean; readonly ph
  */
 export type HelperInvocation =
   | { readonly kind: "refused"; readonly reason: string }
-  | { readonly kind: "devices"; readonly terminal: boolean; readonly phone: boolean }
+  | { readonly kind: "devices"; readonly terminal: boolean; readonly phone: boolean; readonly force: boolean }
   | {
       readonly kind: "stdio";
       readonly terminal: boolean;
       readonly phone: boolean;
+      /** T1773b — stop the Loom helper that holds the bridge port before binding. */
+      readonly force: boolean;
       readonly grantExport: boolean;
       /** The `--all` startup line, or null when this invocation opened nothing extra. */
       readonly banner: string | null;
@@ -781,30 +866,79 @@ export function resolveHelperInvocation(args: readonly string[]): HelperInvocati
   if (all && devicesOnly) return { kind: "refused", reason: HELPER_ALL_DEVICES_ONLY_REFUSAL };
   const terminal = all || args.includes(HELPER_TERMINAL_FLAG);
   const phone = args.includes(HELPER_PHONE_FLAG);
-  if (devicesOnly) return { kind: "devices", terminal, phone };
+  // T1773b: no door and no grant, so it combines with every mode and `--all` does not imply it.
+  const force = args.includes(HELPER_FORCE_FLAG);
+  if (devicesOnly) return { kind: "devices", terminal, phone, force };
   return {
     kind: "stdio",
     terminal,
     phone,
+    force,
     grantExport: all || args.includes("--grant-export"),
     banner: all ? HELPER_ALL_BANNER : null,
   };
 }
 
+/**
+ * T1773b — `--force`, run before anything binds: stop the Loom helper that holds the port,
+ * say who it was, or refuse by name. Returns whether this helper may start.
+ */
+async function forceBridge(binding: HelperBinding): Promise<boolean> {
+  const port = binding.port ?? BRIDGE_PORT;
+  const taken = await takeOverBridge({ port, handoffDir: binding.handoffDir ?? defaultHandoffDir() });
+  if (taken.kind === "free") return true;
+  if (taken.kind === "refused") {
+    process.stderr.write(`[loom helper] ${bridgeForceRefused(port, taken.holder, taken.why)}\n`);
+    return false;
+  }
+  process.stderr.write(`[loom helper] ${bridgeTakenOver(port, taken.holder, taken.signal)}\n`);
+  return true;
+}
+
 // Started directly (not imported): serve.
 if (process.argv[1]?.endsWith("serve.ts") === true) {
   const invocation = resolveHelperInvocation(process.argv.slice(2));
+  /*
+   * T1773b: the gate's seam, and only that. `helper-force.test.ts` runs this entry point on
+   * a port no tab dials and a handoff directory outside the home directory, so it can never
+   * meet a helper somebody is using. Not a flag and not documented for users: a helper on
+   * another port is one no Loom tab can find.
+   */
+  const testPort = Number(process.env["LOOM_TEST_BRIDGE_PORT"]);
+  const testHandoffDir = process.env["LOOM_TEST_HANDOFF_DIR"];
+  const binding: HelperBinding = {
+    ...(Number.isInteger(testPort) && testPort > 0 ? { port: testPort } : {}),
+    ...(testHandoffDir === undefined || testHandoffDir === "" ? {} : { handoffDir: testHandoffDir }),
+  };
   if (invocation.kind === "refused") {
     // stderr and a non-zero exit, because the caller asked for two incompatible things and
     // got neither: a refusal that exits 0 reads as a helper that started (§V288).
     process.stderr.write(`[loom helper] ${invocation.reason}\n`);
     process.exit(2);
-  } else if (invocation.kind === "devices") {
-    serveDevices({ terminal: invocation.terminal, phone: invocation.phone });
   } else {
-    // Before the doors open, not after: the reader of the one-command form learns what is
-    // reachable from the line that scrolls past first (T1343b).
-    if (invocation.banner !== null) process.stderr.write(`[loom helper] ${invocation.banner}\n`);
-    serveStdio({ terminal: invocation.terminal, grantExport: invocation.grantExport, phone: invocation.phone });
+    const start = (): void => {
+      if (invocation.kind === "devices") {
+        serveDevices({ terminal: invocation.terminal, phone: invocation.phone, ...binding });
+        return;
+      }
+      // Before the doors open, not after: the reader of the one-command form learns what is
+      // reachable from the line that scrolls past first (T1343b).
+      if (invocation.banner !== null) process.stderr.write(`[loom helper] ${invocation.banner}\n`);
+      serveStdio({
+        terminal: invocation.terminal,
+        grantExport: invocation.grantExport,
+        phone: invocation.phone,
+        ...binding,
+      });
+    };
+    if (invocation.force) {
+      void forceBridge(binding).then((mayStart) => {
+        // The same exit as the refusal above, for the same reason: asked for, and not done.
+        if (mayStart) start();
+        else process.exit(2);
+      });
+    } else {
+      start();
+    }
   }
 }

@@ -215,9 +215,11 @@ function unresolvableIn(fileName: string, graph: GraphDocument, logical: Logical
  *
  * Three are LIVE-SOURCE reads — a person mask and a matte publish their coverage
  * through the external-channel ladder T1067 wired into `app.tsx`, and no headless walk of
- * the document can see it. The other three are COMPONENT-INTERNAL chains: `limit_probe` and
+ * the document can see it. The other five are COMPONENT-INTERNAL chains: `limit_probe` and
  * `limit_hits` are Limits whose input crosses the component boundary, so evaluated standalone
- * they publish nothing (AudioAnalysis carries two such probes, one per output, T1230).
+ * they publish nothing (AudioAnalysis carries two such probes, one per output, T1230), and
+ * the `select_*` taps of MusicFeatures and MidiFeatures are the same shape (T1805b;
+ * `music-features-claims.test.ts` holds every tap to its channel set).
  */
 const UNVERIFIABLE = [
   "AudioAnalysis.loom.json  glow.brightness  op('limit_probe').chan.low  [valueLimit]",
@@ -226,6 +228,8 @@ const UNVERIFIABLE = [
   "E52-Presence.loom.json  wash.brightness  op('personmask1').chan.coverage  [personMask]",
   "E53-Two-Cuts.loom.json  washC.brightness  op('personmask_seg').chan.coverage  [personMask]",
   "E53-Two-Cuts.loom.json  washW.brightness  op('matte1').chan.coverage  [matte]",
+  "MidiFeatures.loom.json  level_pulse.brightness  op('select_levels').chan.level  [valueSelect]",
+  "MusicFeatures.loom.json  level_pulse.brightness  op('select_beats').chan.kick  [valueSelect]",
 ];
 
 describe("every shipped op().chan reference names a channel that is PUBLISHED (T1074)", () => {

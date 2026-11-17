@@ -423,6 +423,21 @@ export interface ProjectSettings {
   /** Absent in older documents; consumers read `settings.colorPolicy ?? DEFAULT_COLOR_POLICY`. */
   colorPolicy?: ColorPolicy;
   /**
+   * T1785b — the project TEMPO in beats per minute: what the transport's beat clock counts
+   * at when its source is `manual`, what a tap writes, and what an offline render counts at
+   * whatever the source. Read it through `projectBpm()` (`domain/tempo/project-tempo.ts`).
+   *
+   * Optional (§V68): a document written before it is at 120. NOT structural (§V178): the
+   * clock reads it per frame.
+   */
+  bpm?: number;
+  /**
+   * T1785b — what drives the beat clock live: `manual` (this BPM, typed or tapped), `audio`
+   * (the analysis' tempo claim while it is confident) or `midiClock` (MIDI realtime in).
+   * Absent = `manual`. NOT structural.
+   */
+  tempoSource?: "manual" | "audio" | "midiClock";
+  /**
    * T1432b — the output WIDTH the document's pixel-sized effects are authored at.
    *
    * A blur radius or a grain size in pixels is a size in the PICTURE, so a render at twice

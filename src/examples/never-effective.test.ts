@@ -118,7 +118,7 @@ describe("no shipped document holds something that can never take effect (T1641b
       for (const frameIndex of FRAMES) {
         const frame = frameFromClock({ timeSeconds: frameIndex / 60, deltaSeconds: 1 / 60, frameIndex, mode: "offline", randomSeed: document.settings.randomSeed, fps: 60 });
         const evaluated = session.evaluate(flattened.graph, frame, { flattening: flattened });
-        const resolved = validateGraph(flattened.graph, registry, { frame, channels: evaluated.resolver, morphs: flattened.morphs, instances: flattened.instanceChannels });
+        const resolved = validateGraph(flattened.graph, registry, { frame, channels: evaluated.resolver, morphs: flattened.morphs, instances: flattened.instanceChannels, instancePages: flattened.instancePages });
         for (const diagnostic of [...evaluated.diagnostics, ...resolved.diagnostics]) {
           const key = `${diagnostic.code}|${diagnostic.nodeId ?? ""}`;
           if (atRest.has(key) || seen.has(key)) continue;

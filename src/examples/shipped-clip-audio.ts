@@ -5,6 +5,7 @@ import { mediaTransportFrom } from "../domain/media/transport.ts";
 import type { FeatureTrack } from "../domain/audio/feature-track.ts";
 import { analyseOffline } from "../app/audio-offline-analysis.ts";
 import { readTrackAtPlayhead } from "../app/audio-pre-analysis.ts";
+import { inputGainDbOf } from "../app/audio-capture-config.ts";
 import { AUDIO_DETECTOR_DEFAULTS } from "../nodes/definitions/audio.ts";
 import { SHOWCASE_BEAT, SHOWCASE_BEAT_FILE, renderShowcaseBeat } from "./build-showcase-beat.ts";
 
@@ -49,13 +50,14 @@ export const SHIPPED_CLIPS: Readonly<Record<string, ShippedClip>> = {
 /** One walk per (file, fps, knobs) for the process — the walk is ~1 s and every gate asks. */
 const tracks = new Map<string, { track: FeatureTrack; duration: number }>();
 
-function trackFor(file: string, clip: ShippedClip, fps: number, threshold: number, retrigger: number) {
-  const key = `${file}|${String(fps)}|${String(threshold)}|${String(retrigger)}`;
+function trackFor(file: string, clip: ShippedClip, fps: number, threshold: number, retrigger: number, inputGainDb: number) {
+  const key = `${file}|${String(fps)}|${String(threshold)}|${String(retrigger)}|${String(inputGainDb)}`;
   const held = tracks.get(key);
   if (held !== undefined) return held;
   const samples = clip.render();
   const walked = {
-    track: analyseOffline(samples, clip.sampleRate, fps, { threshold, retrigger }).track,
+    // T1751b: no shipped example reads a tonal node off an audio FILE (E90 reads a Tone Pattern), so no tonal pass.
+    track: analyseOffline(samples, clip.sampleRate, fps, { threshold, retrigger }, false, inputGainDb).track,
     duration: samples.length / clip.sampleRate,
   };
   tracks.set(key, walked);
@@ -98,6 +100,8 @@ export function shippedClipAudio(
     fps,
     number("threshold", AUDIO_DETECTOR_DEFAULTS.threshold),
     number("retrigger", AUDIO_DETECTOR_DEFAULTS.retrigger),
+    // T1769b: the node's Input Gain, by the app's own reading of it (the same clamp).
+    inputGainDbOf(read),
   );
   const transport = mediaTransportFrom(read);
   // T1312b: the document's sync offset, applied here for the same reason the transport is —

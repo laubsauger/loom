@@ -28,6 +28,7 @@
     "test:headless": "vitest run --project headless",
     "test:e2e": "playwright test --pass-with-no-tests",
     "helper": "node --import ./src/tooling/alias-hooks.ts ./src/mcp/serve.ts",
+    "render": "node --import ./src/tooling/alias-hooks.ts src/tooling/render-project.ts",
     "mcp:serve": "node --import ./src/tooling/alias-hooks.ts ./src/mcp/serve.ts"
   },
   "dependencies": {

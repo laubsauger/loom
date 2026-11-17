@@ -100,7 +100,7 @@ const DECLARED: ReadonlyArray<{ file: string; reads: number; why: string }> = [
   {
     file: "app/use-viewer-camera-lock.ts",
     reads: 1,
-    why: "§T970: NOT per frame — the pose a viewer gesture on a locked camera STARTS from (a drag, a wheel burst, a flight), read once per gesture and then accumulated locally (§V657). The same read `graph-pane.tsx` makes for the tile's gizmo, for the same reason: the pane's `graph` prop does not move for a values-only revision, and a flight is a run of exactly those. It addresses an AUTHORED camera node, the one the user's edit is written to.",
+    why: "§T970: the authored camera document is retained on mount and command-store notifications, including values-only edits that do not rerender the pane. Gestures and the corner gizmo read that retained snapshot; frame polling resolves its animated drivers through the current read scope and never calls getGraph. The camera is the authored node the user's undoable edits target.",
   },
   {
     file: "app/revision-watch.ts",

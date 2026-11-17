@@ -23,6 +23,8 @@ export { createPreviewSlotBounds } from "./preview-slot-bounds.ts";
 export type { PreviewSlotBoundsStore } from "./preview-slot-bounds.ts";
 export { createPreviewOrbitStore, prefixedOrbitStore } from "./preview-orbit-store.ts";
 export type { PreviewOrbitStore } from "./preview-orbit-store.ts";
+export { createLookStore, lookOrMove, rekeyedOrbitStore } from "./look-store.ts";
+export type { LookMoveStore, LookStore, PictureCamera } from "./look-store.ts";
 
 /**
  * T892 — the camera toggle, drawn on the bottom-right corner of the tile it drives.

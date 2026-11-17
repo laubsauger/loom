@@ -429,6 +429,18 @@
   min-width: 12ch;
 }
 
+.outputSearch {
+  flex: 0 1 14ch;
+  width: 14ch;
+  min-width: 8ch;
+  padding: 2px 5px;
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg-sunken);
+  color: var(--text);
+  font: inherit;
+}
+
 .displaySelect {
   flex: 0 0 auto;
 }

@@ -1,5 +1,5 @@
 import type { RuntimeDiagnostic } from "../../domain/types/diagnostics.ts";
-import type { CompiledNodeDescription } from "../../domain/types/node-definition.ts";
+import type { CompiledNodeDescription, NodeCompileContext } from "../../domain/types/node-definition.ts";
 import type { CameraPayload, LightPayload } from "../../domain/types/scene.ts";
 import type { BufferBindingDescriptor, BufferWritePassDescriptor, DispatchPassDescriptor } from "../../runtime/backend/plan.ts";
 import {
@@ -19,6 +19,7 @@ import {
 } from "../shaders/scene-lights.wgsl.ts";
 import type { PointAttributeType } from "../../points/attributes.ts";
 import type { NodeCompileInputs } from "./compile-context.ts";
+import { readValueInputs } from "./compile-context.ts";
 import { packedGroups } from "./instance-records.ts";
 import { LIGHT_RECORD_WORDS, MAX_LIGHT_SLOTS, lightGridDimensions, lightNamedStorage, lightRecordStorage, lightTableStorage, namedLightCapacity } from "./light-records.ts";
 import { readNumber, readVector } from "./parameter-readers.ts";
@@ -153,6 +154,8 @@ export function compileLightPoints(request: {
   readonly parameters: NodeCompileInputs["parameters"];
   readonly parameterMaps: NodeCompileInputs["parameterMaps"];
   readonly light: LightPayload["light"];
+  /** T1719b: the Light's own row at another frame, for the value function this returns. */
+  readonly lightAt?: (context: NodeCompileContext) => LightPayload["light"];
 }): CompiledNodeDescription {
   const { nodeId, parameters, parameterMaps, light } = request;
   const pointset = request.points?.pointset;
@@ -203,7 +206,31 @@ export function compileLightPoints(request: {
   const directionRead = direction.map === undefined ? undefined : sources.read(direction.map, "vec3f");
   const orientRead = orient.map === undefined ? undefined : sources.read(orient.map, "vec4f");
   const coneRead = cone.map === undefined ? undefined : scalar(cone.map);
-  const turn = readVector(parameters as never, "orient", [0, 0, 0, 1]);
+  /* T1719b: the pass's numbers and the payload, from resolved values over the structure above;
+     the compile fills them through these and a values-only frame asks them again. */
+  const uniformsAt = (values: NodeCompileInputs["parameters"], at: LightPayload["light"]): NonNullable<DispatchPassDescriptor["uniforms"]> => {
+    const turn = readVector(values as never, "orient", [0, 0, 0, 1]);
+    return {
+      color: [at.color[0], at.color[1], at.color[2], at.intensity],
+      /* The Type is a value of the row (T1623b): a set of suns, of lamps and of spots are one text. */
+      shape: [Math.max(0, readNumber(values, "range", 0)), at.falloff === "inverseSquare" ? 1 : 0, lightKindNumber(values["kind"]), 0],
+      aim: [at.direction[0], at.direction[1], at.direction[2], 0],
+      orient: [turn[0] ?? 0, turn[1] ?? 0, turn[2] ?? 0, turn[3] ?? 1],
+      cone: [readNumber(values, "cone", 60), readNumber(values, "coneSoftness", 0.4), 0, 0],
+      count: pointset.capacity,
+    };
+  };
+  const payloadAt = (values: NodeCompileInputs["parameters"], at: LightPayload["light"]): LightPayload => ({
+    kind: "light",
+    /* A pointset's lights cast no shadow (the casting few are Lights in Single mode, T1622b). */
+    light: { ...at, shadows: false },
+    points: {
+      records: records.resourceId,
+      capacity: pointset.capacity,
+      /* T1623b: a sun, and a placed light whose Range is 0 with no attribute to scale it. */
+      always: lightKindNumber(values["kind"]) === 0 || (Math.max(0, readNumber(values, "range", 0)) === 0 && rangeRead === undefined),
+    },
+  });
   const pass: DispatchPassDescriptor = {
     kind: "dispatch",
     id: `${nodeId}:lights:resolve`,
@@ -225,30 +252,25 @@ export function compileLightPoints(request: {
       ...(pointset.count === undefined ? [] : [{ binding: LIGHT_LIVE_BINDING, resourceId: pointset.count.buffer }]),
       ...sources.bindings(LIGHT_SOURCE_PREFIX),
     ],
-    uniforms: {
-      color: [light.color[0], light.color[1], light.color[2], light.intensity],
-      /* The Type is a value of the row (T1623b): a set of suns, of lamps and of spots are one text. */
-      shape: [Math.max(0, readNumber(parameters, "range", 0)), light.falloff === "inverseSquare" ? 1 : 0, lightKindNumber(parameters["kind"]), 0],
-      aim: [light.direction[0], light.direction[1], light.direction[2], 0],
-      orient: [turn[0] ?? 0, turn[1] ?? 0, turn[2] ?? 0, turn[3] ?? 1],
-      cone: [readNumber(parameters, "cone", 60), readNumber(parameters, "coneSoftness", 0.4), 0, 0],
-      count: pointset.capacity,
-    },
+    uniforms: uniformsAt(parameters, light),
     uniformBinding: "params",
     nodeId,
   };
-  const payload: LightPayload = {
-    kind: "light",
-    /* A pointset's lights cast no shadow (the casting few are Lights in Single mode, T1622b). */
-    light: { ...light, shadows: false },
-    points: {
-      records: records.resourceId,
-      capacity: pointset.capacity,
-      /* T1623b: a sun, and a placed light whose Range is 0 with no attribute to scale it. */
-      always: lightKindNumber(parameters["kind"]) === 0 || (Math.max(0, readNumber(parameters, "range", 0)) === 0 && rangeRead === undefined),
-    },
-  };
-  return { passes: [pass], scratch: [records.scratch], scene: { out: payload } } as CompiledNodeDescription;
+  const lightAt = request.lightAt;
+  return {
+    passes: [pass],
+    scratch: [records.scratch],
+    scene: { out: payloadAt(parameters, light) },
+    ...(lightAt === undefined
+      ? {}
+      : {
+          values: (next: NodeCompileContext) => {
+            const values = readValueInputs(next).parameters;
+            const at = lightAt(next);
+            return { passes: [{ uniforms: uniformsAt(values, at) }], scene: { out: payloadAt(values, at) } };
+          },
+        }),
+  } as CompiledNodeDescription;
 }
 
 /* ------------------------------------------------------------------------------------ */

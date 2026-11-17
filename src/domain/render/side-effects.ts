@@ -293,11 +293,15 @@ export const NODE_SIDE_EFFECTS: Readonly<Record<string, SideEffect>> = {
   presets: "none",
   // T1500b: a cue list writes the document through the bus; nothing leaves the process.
   cueList: "none",
+  // T1787b: publishes the project clock; its Tap writes the document's BPM through the bus.
+  tempo: "none",
   // VN61: publishes channels; nothing leaves the process.
   automation: "none",
   valueBeat: "none",
   valueSelect: "none",
   audioPattern: "none",
+  harmony: "none",
+  noteField: "none",
   channelIn: "none",
   /*
    * READING IS NOT ACTING, and these are why the two axes had to be separate records.
@@ -323,6 +327,8 @@ export const NODE_SIDE_EFFECTS: Readonly<Record<string, SideEffect>> = {
   audioIn: "none",
   mouse: "none",
   midiIn: "none",
+  // T1762b: reads the keyboard; sends nothing back to it.
+  midiNotes: "none",
   oscIn: "none",
   analyze: "none",
   // Media files and model nodes: a decode and a worker round trip, both inside the page.
@@ -330,6 +336,11 @@ export const NODE_SIDE_EFFECTS: Readonly<Record<string, SideEffect>> = {
   // Saved scalar numerical assets are decoded inside this process.
   floatMapIn: "none",
   audioFileIn: "none",
+  // T1751b: reads the capture's record; sends nothing anywhere.
+  audioChroma: "none",
+  audioChord: "none",
+  audioNotes: "none",
+  tonePattern: "none",
   depth: "none",
   pose: "none",
   matte: "none",

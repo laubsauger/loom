@@ -10,6 +10,7 @@ import {
   rewriteOf,
   scopeFromFrame,
 } from "./evaluate.ts";
+import type { ExpressionAst } from "./evaluate.ts";
 import { acceptedFunctionCalls, CANDIDATE_FUNCTIONS } from "./reference.ts";
 import { offlineTransport } from "../../runtime/execution/offline-transport.ts";
 import { liveClock } from "../transport/live-clock.ts";
@@ -34,6 +35,7 @@ const frame: FrameEvaluationInput = {
 import {
   FREE_RUNNING_CLOCK_NAMES,
   FRAME_RATE_NAMES,
+  TEMPO_NAMES,
   WRAPPING_CLOCK_NAMES,
 } from "./evaluate.ts";
 
@@ -47,7 +49,8 @@ describe("clock families match the scope (T505)", () => {
   it("the two lists and the rates are disjoint and together are EXACTLY the bare scope's keys", () => {
     const frame = { timeSeconds: 1, deltaSeconds: 1 / 60, frameIndex: 60, mode: "realtime", randomSeed: 0 } as never;
     const keys = Object.keys(scopeFromFrame(frame)).sort();
-    const union = [...WRAPPING_CLOCK_NAMES, ...FREE_RUNNING_CLOCK_NAMES, ...FRAME_RATE_NAMES].sort();
+    // T1785b: and the project tempo's names, a fourth family.
+    const union = [...WRAPPING_CLOCK_NAMES, ...FREE_RUNNING_CLOCK_NAMES, ...FRAME_RATE_NAMES, ...TEMPO_NAMES].sort();
     expect(union).toEqual(keys);
     for (const name of FRAME_RATE_NAMES) {
       expect([...WRAPPING_CLOCK_NAMES, ...FREE_RUNNING_CLOCK_NAMES]).not.toContain(name);
@@ -386,11 +389,24 @@ describe("T1172 — the expression parse memo", () => {
     // FIFO eviction. The hazard is not eviction but an entry surviving under the wrong
     // key, so an evicted source and a fresh one must both still parse as themselves.
     expect(value("a + 1", { a: 1 })).toBe(2);
-    for (let index = 0; index < 1200; index += 1) {
+    for (let index = 0; index < 5000; index += 1) {
       expect(value(`a + ${index}`, { a: 0 })).toBe(index);
     }
     expect(value("a + 1", { a: 1 })).toBe(2);
     expect(value("a * 7", { a: 6 })).toBe(42);
+  });
+
+  it("T1767b — a document of 1000 distinct expressions is parsed once, not once a frame", () => {
+    // The cache exists so a frame does not parse. Under FIFO a working set larger than
+    // the cap evicts what the same frame needs, and every statement is parsed again every
+    // frame: silk-medusa (646 distinct expressions) lost about 1.8 ms a frame to a cap of
+    // 512. The second frame's result must be the FIRST frame's object, not an equal one.
+    const sources = Array.from({ length: 1000 }, (_, index) => `t1767b + ${index} * 2`);
+    const firstFrame = sources.map((source) => parseExpression(source));
+    const secondFrame = sources.map((source) => parseExpression(source));
+    for (let index = 0; index < sources.length; index += 1) {
+      expect(secondFrame[index]).toBe(firstFrame[index]);
+    }
   });
 });
 
@@ -595,5 +611,41 @@ describe("why an expression failed (T1641b)", () => {
       expect(rewriteOf(name), `${name}() is refused with nothing to write instead: add a row to REWRITES in evaluate.ts`).not.toBeNull();
     }
     for (const name of accepted) expect(rewriteOf(name), `${name}() is in the grammar: its row would never be said`).toBeNull();
+  });
+});
+
+describe("T1720b — one object per subtree structure", () => {
+  const astOf = (source: string): ExpressionAst => {
+    const parsed = parseExpression(source);
+    if (!parsed.ok) throw new Error(`${source} does not parse`);
+    return parsed.ast;
+  };
+
+  it("shares a subtree that two different texts carry, by identity", () => {
+    const one = astOf("sin(time * 3) * 2 + 1");
+    const two = astOf("4 - sin(time * 3) * 2");
+    expect(one.kind === "binary" && two.kind === "binary").toBe(true);
+    if (one.kind !== "binary" || two.kind !== "binary") return;
+    expect(one.left).toBe(two.right);
+  });
+
+  it("keeps structures that differ in any field apart", () => {
+    const pairs: ReadonlyArray<readonly [string, string]> = [
+      ["time * 2", "time * 3"],
+      ["time * 2", "time / 2"],
+      ["time * 2", "frame * 2"],
+      ["op('a').par.gain", "op('a').chan.gain"],
+      ["op('a').par.gain", "op('b').par.gain"],
+      ["sin(time)", "cos(time)"],
+      ["-time", "+time"],
+      ["1 - 2 - 3", "1 - (2 - 3)"],
+    ];
+    for (const [a, b] of pairs) expect(astOf(a), `${a} | ${b}`).not.toBe(astOf(b));
+  });
+
+  it("evaluates a shared tree to what each text says", () => {
+    const scope = { time: 0.5, frame: 30 };
+    expect(evaluateExpression("sin(time * 3) * 2 + 1", scope)).toEqual({ ok: true, value: Math.sin(1.5) * 2 + 1 });
+    expect(evaluateExpression("4 - sin(time * 3) * 2", scope)).toEqual({ ok: true, value: 4 - Math.sin(1.5) * 2 });
   });
 });

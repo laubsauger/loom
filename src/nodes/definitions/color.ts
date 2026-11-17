@@ -1,8 +1,9 @@
 import type { NodeDefinition, CompiledNodeDescription } from "../../domain/types/node-definition.ts";
-import type { EffectPassDescriptor } from "../../runtime/backend/plan.ts";
+import type { EffectPassDescriptor, UniformValues } from "../../runtime/backend/plan.ts";
 import { ARITHMETIC_TEXTURE, RGBA_TEXTURE } from "./common-ports.ts";
-import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
+import { missingCompileResource, readCompileInputs, readValueInputs } from "./compile-context.ts";
 import { CHANNEL_OPTIONS, readEnumIndex, readNumber } from "./parameter-readers.ts";
+import type { Params } from "./parameter-readers.ts";
 import {
   LIMIT_FRAGMENT_WGSL,
   LIMIT_FLOAT_FRAGMENT_WGSL,
@@ -120,21 +121,27 @@ export const levelNode: NodeDefinition = {
       textures: [{ binding: "inputTexture", resourceId: source.resource, ...(scalar ? { sampled: "unfiltered" as const } : {}) }],
       samplers: scalar ? [] : [{ binding: "inputSampler", resourceId: source.sampler }],
       uniformBinding: "params",
-      uniforms: {
-        blacklevel: readNumber(parameters, "blacklevel", 0),
-        whitelevel: readNumber(parameters, "whitelevel", 1),
-        brightness: readNumber(parameters, "brightness", 1),
-        gamma1: readNumber(parameters, "gamma1", 1),
-        contrast: readNumber(parameters, "contrast", 1),
-        opacity: readNumber(parameters, "opacity", 1),
-        invert: readNumber(parameters, "invert", 0),
-      },
+      uniforms: levelUniforms(parameters),
       nodeId,
       label: "Level",
     };
-    return { passes: [pass] };
+    // T1719b: a values-only frame asks this for the numbers instead of compiling again.
+    return { passes: [pass], values: (next) => ({ passes: [{ uniforms: levelUniforms(readValueInputs(next).parameters) }] }) };
   },
 };
+
+/** Level's uniform block, the one place its numbers are computed (T1719b, V1032). */
+function levelUniforms(parameters: Params): UniformValues {
+  return {
+    blacklevel: readNumber(parameters, "blacklevel", 0),
+    whitelevel: readNumber(parameters, "whitelevel", 1),
+    brightness: readNumber(parameters, "brightness", 1),
+    gamma1: readNumber(parameters, "gamma1", 1),
+    contrast: readNumber(parameters, "contrast", 1),
+    opacity: readNumber(parameters, "opacity", 1),
+    invert: readNumber(parameters, "invert", 0),
+  };
+}
 
 /**
  * HSV — TD's HSV Adjust TOP.

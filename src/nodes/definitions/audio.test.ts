@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import { SILENCE } from "../../domain/audio/feature-track.ts";
 import { distinctSpectrumBands } from "../../domain/audio/spectrum-bands.fixture.ts";
 import { SPECTRUM_BAND_NAMES } from "../../domain/audio/spectrum-bands.ts";
+import { distinctTonalFields } from "../../domain/audio/tonal-fields.fixture.ts";
+import { TONAL_FIELD_NAMES } from "../../domain/audio/tonal-fields.ts";
 import { createValueGraphSession } from "../../domain/channels/value-graph.ts";
 import { flatDocument } from "../../compiler/test-support.ts";
 import { NO_FLATTENING } from "../../domain/parameters/node-references.ts";
@@ -56,7 +58,19 @@ const FEATURES: AudioFeatures = {
   beatCount: 5,
   // T1347b: the eighteen spectrum bands, each its own number too.
   ...distinctSpectrumBands(0.61),
+  // T1751b: the tonal fields too, non-zero, so a source that leaked one would show it.
+  ...distinctTonalFields(0.2),
 };
+
+/**
+ * T1751b — what a SOURCE publishes of a record: every field but the tonal ones, which the
+ * tonal nodes publish (`audio-tonal.test.ts` pins that half, and that the two halves
+ * together are the whole record).
+ */
+function sourceFieldsOf(record: AudioFeatures): Record<string, number> {
+  const tonal = new Set<string>(TONAL_FIELD_NAMES);
+  return Object.fromEntries(Object.entries(record).filter(([name]) => !tonal.has(name)));
+}
 
 function audioGraph(extra: GraphDocument["nodes"] = {}, edges: GraphDocument["edges"] = {}): GraphDocument {
   return {
@@ -81,7 +95,7 @@ describe("audioIn (T414)", () => {
   it("projects the frame's features as channels, verbatim", () => {
     const session = createValueGraphSession(registry);
     const result = session.evaluate(flatDocument(audioGraph()), frame(0), { flattening: NO_FLATTENING, audio: FEATURES });
-    expect(result.byName.get("audio1")).toEqual(FEATURES);
+    expect(result.byName.get("audio1")).toEqual(sourceFieldsOf(FEATURES));
   });
 
   it("is SILENT — all zeros, not absent — when the session has no audio (§V329)", () => {
@@ -89,7 +103,7 @@ describe("audioIn (T414)", () => {
     const result = session.evaluate(flatDocument(audioGraph()), frame(0), { flattening: NO_FLATTENING });
     // Zeros, so every downstream stage keeps evaluating deterministically; a missing
     // bag would make `driven` parameters dangle instead.
-    expect(result.byName.get("audio1")).toEqual(SILENCE);
+    expect(result.byName.get("audio1")).toEqual(sourceFieldsOf(SILENCE));
   });
 
   it("REPLAY: the same feature track produces the same numbers — determinism by construction (§V45)", () => {
@@ -356,7 +370,7 @@ describe("detector knobs on audioIn / audioFileIn (T1230)", () => {
       audio: FEATURES,
       state: {},
     });
-    expect(channels).toEqual(FEATURES);
+    expect(channels).toEqual(sourceFieldsOf(FEATURES));
   });
 });
 
@@ -370,7 +384,7 @@ describe("audioFileIn (T434)", () => {
       audio: FEATURES,
       state: {},
     });
-    expect(channels).toEqual(FEATURES);
+    expect(channels).toEqual(sourceFieldsOf(FEATURES));
     // The movieFileIn analogy is the CONTRACT: one asset parameter, kind "audio".
     const file = definition?.parameters["file"];
     expect(file?.type).toBe("asset");

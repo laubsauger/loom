@@ -1,6 +1,14 @@
 import type { CompiledNodeDescription, NodeDefinition, StatefulDeclaration } from "../../domain/types/node-definition.ts";
 import { VALUE_PORT } from "./common-ports.ts";
-import { evaluateExpression, parseExpression, scopeFromFrame } from "../../domain/expressions/evaluate.ts";
+import {
+  evaluateAst,
+  parseExpression,
+  scopeFromFrame,
+  FRAME_RATE_NAMES,
+  FREE_RUNNING_CLOCK_NAMES,
+  WRAPPING_CLOCK_NAMES,
+  type ExpressionAst,
+} from "../../domain/expressions/evaluate.ts";
 import { readCompileInputs } from "./compile-context.ts";
 
 /**
@@ -287,6 +295,120 @@ export function parseExpressionStatements(source: string): Array<{ name: string;
     });
 }
 
+/**
+ * T1793b — A STATEMENT LIST, PARSED ONCE PER SOURCE TEXT.
+ *
+ * The node split its text, matched every statement and looked its tree up by a freshly
+ * trimmed string on every frame. The list is a pure function of the text (as the tree is,
+ * see `parseExpression`), so it is kept by the text: the statements that parse, in order,
+ * with their trees. FIFO past a cap that sits well above one document's Expression nodes
+ * (T1767b: a cache smaller than its working set hits nothing).
+ */
+interface ProgramStatement {
+  readonly name: string;
+  readonly ast: ExpressionAst;
+  /** This statement's name is read by it or by a statement before it: publishing it stales what was remembered. */
+  readonly stales: boolean;
+}
+interface Program {
+  readonly statements: readonly ProgramStatement[];
+  /**
+   * Subtree values while the program runs, or `undefined` for a program that repeats too
+   * little to pay for the lookups. Empty between runs: only its capacity is kept.
+   */
+  readonly remembered: Map<ExpressionAst, number> | undefined;
+  /**
+   * No statement reads a name (`since = 99; gain = 68 * 0.5 / 120`, most Defaults): the
+   * results are the same on every frame, so the first run's are kept here.
+   */
+  readonly readsNothing: boolean;
+  constant?: Readonly<Record<string, number>>;
+}
+const PROGRAM_CACHE_LIMIT = 4096;
+const programBySource = new Map<string, Program>();
+/** A program whose trees hold at least this many nodes per DISTINCT node remembers subtrees. */
+const REPEAT_RATIO = 1.5;
+const NEVER_FIRED = (): number => 0;
+
+function programOf(source: string): Program {
+  const hit = programBySource.get(source);
+  if (hit !== undefined) return hit;
+  const statements: ProgramStatement[] = [];
+  const read = new Set<string>();
+  const distinct = new Set<ExpressionAst>();
+  let total = 0;
+  const walk = (ast: ExpressionAst): void => {
+    if (ast.kind === "variable") read.add(ast.name);
+    if (ast.kind === "number" || ast.kind === "variable") return;
+    total += 1;
+    distinct.add(ast);
+    if (ast.kind === "call") for (const arg of ast.args) walk(arg);
+    else if (ast.kind === "unary") walk(ast.operand);
+    else if (ast.kind === "binary") {
+      walk(ast.left);
+      walk(ast.right);
+    }
+  };
+  for (const statement of parseExpressionStatements(source)) {
+    if ("error" in statement) continue;
+    const parsed = parseExpression(statement.expression);
+    if (!parsed.ok) continue;
+    walk(parsed.ast);
+    statements.push({ name: statement.name, ast: parsed.ast, stales: read.has(statement.name) });
+  }
+  const program: Program = {
+    statements,
+    remembered: total >= REPEAT_RATIO * distinct.size && total > distinct.size ? new Map() : undefined,
+    readsNothing: read.size === 0,
+  };
+  programBySource.set(source, program);
+  if (programBySource.size > PROGRAM_CACHE_LIMIT) {
+    const oldest = programBySource.keys().next();
+    if (oldest.done !== true) programBySource.delete(oldest.value);
+  }
+  return program;
+}
+
+/** The names `scopeFromFrame` writes AFTER a node's own context: no channel or statement can take them. */
+const CLOCK_NAMES: ReadonlySet<string> = new Set<string>([...WRAPPING_CLOCK_NAMES, ...FREE_RUNNING_CLOCK_NAMES, ...FRAME_RATE_NAMES]);
+
+/**
+ * T1793b — ONE SCOPE PER PROGRAM, GROWN BY EACH STATEMENT.
+ *
+ * Every statement used to get a scope built from scratch: all of the frame's names, every
+ * channel, every earlier result, copied again. At 78 statements over 67 channels that was
+ * most of the node. The scope a statement reads is the previous statement's scope plus the
+ * one name that statement published, so it is built once from `known` and each result is
+ * written into it. A clock name stays the clock (`scopeFromFrame` writes the clocks last,
+ * so a statement named `time` never shadowed it), and a tempo name is taken, as before.
+ * Returns the results in the order their names were first published.
+ *
+ * REPEATED SUBTREES ARE EVALUATED ONCE (`SubtreeMemory`, T1720b). Equal subtrees are one
+ * object, and a generated program repeats them (one of silk-medusa's is 75 KB of text over
+ * a few hundred distinct terms). A remembered value is a function of the names its subtree
+ * reads, so it holds until one of those names is published: a statement whose name nothing
+ * so far reads leaves the memory standing, any other clears it. A failure is never kept.
+ */
+function runProgram(program: Program, frame: Parameters<typeof scopeFromFrame>[0], known: Readonly<Record<string, number>>): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (program.statements.length === 0) return out;
+  if (program.constant !== undefined) return { ...program.constant };
+  const scope = scopeFromFrame(frame, known) as Record<string, number>;
+  const remembered = program.remembered;
+  const memory = remembered === undefined ? undefined : { values: remembered, fired: NEVER_FIRED };
+  for (const statement of program.statements) {
+    const result = evaluateAst(statement.ast, scope, undefined, memory);
+    if (!result.ok || !Number.isFinite(result.value)) continue;
+    out[statement.name] = result.value;
+    if (CLOCK_NAMES.has(statement.name)) continue;
+    scope[statement.name] = result.value;
+    if (statement.stales) remembered?.clear();
+  }
+  remembered?.clear();
+  if (program.readsNothing) program.constant = { ...out };
+  return out;
+}
+
 export const valueExpressionNode: NodeDefinition = {
   type: "valueExpression",
   version: 1,
@@ -314,23 +436,12 @@ export const valueExpressionNode: NodeDefinition = {
   },
   valueEvaluate: ({ inputs, values, frame }) => {
     const source = typeof values["expressions"] === "string" ? (values["expressions"] as string) : "";
-    // Defaults first, so every wired channel of the same name overrides its default.
-    const fallback: Record<string, number> = {};
     const defaults = typeof values["defaults"] === "string" ? (values["defaults"] as string) : "";
-    for (const statement of parseExpressionStatements(defaults)) {
-      if ("error" in statement) continue;
-      const result = evaluateExpression(statement.expression, scopeFromFrame(frame, fallback));
-      if (result.ok && Number.isFinite(result.value)) fallback[statement.name] = result.value;
-    }
-    const channels: Record<string, number> = { ...fallback, ...(inputs["in"] ?? {}) };
-    const out: Record<string, number> = {};
-    for (const statement of parseExpressionStatements(source)) {
-      if ("error" in statement) continue;
-      // Earlier statements are readable by later ones, like lines of a small program.
-      const result = evaluateExpression(statement.expression, scopeFromFrame(frame, { ...channels, ...out }));
-      if (result.ok && Number.isFinite(result.value)) out[statement.name] = result.value;
-    }
-    return out;
+    // Defaults first, so every wired channel of the same name overrides its default. A
+    // default reads the clocks and the defaults before it, never a wire.
+    const fallback = runProgram(programOf(defaults), frame, {});
+    // Earlier statements are readable by later ones, like lines of a small program.
+    return runProgram(programOf(source), frame, { ...fallback, ...(inputs["in"] ?? {}) });
   },
   compile(context): CompiledNodeDescription {
     const { nodeId, parameters } = readCompileInputs(context as Parameters<typeof readCompileInputs>[0]);

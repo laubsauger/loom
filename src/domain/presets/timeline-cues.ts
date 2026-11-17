@@ -192,6 +192,9 @@ interface StructuralLink {
 /** The target a structural link sets: `on` for a Layer's switch, otherwise the key. */
 const LAYER_SWITCH_TARGET = "\u0000on";
 
+/** The node type whose switch the timeline follows: `layerNode.type` (`src/nodes/definitions/layer.ts`). */
+const LAYER_NODE_TYPE = "layer";
+
 /** A warning about a following list, and the cue it is about (`null`: the list itself). */
 export interface TimelineCueWarning {
   readonly list: NodeId;
@@ -337,6 +340,22 @@ export function planTimelineCues(document: GraphDocument, registry: NodeRegistry
       for (const { nodeId: layerId, bypassed } of end.layers) {
         const layer = document.nodes[layerId];
         if (layer === undefined) continue;
+        if (layer.type !== LAYER_NODE_TYPE) {
+          /*
+           * T1770b: a preset switches any node, and the timeline follows a Layer's switch
+           * only. A segment's structure is applied to the FLAT graph (`applyTimelineStructure`),
+           * where an instance that is off was never inlined and cannot be switched on, and the
+           * value graph evaluates the stored document's flattening, not the segment's. Refused
+           * by name until §T1772b applies the segment before flattening.
+           */
+          warn(
+            cue.name,
+            "cue.timeline.switch",
+            `${where} switches "${nameOf(layer)}" ${bypassed ? "off" : "on"}, and the timeline switches Layers only: a ${layer.type} node is not switched at the cue's time, so it is skipped.`,
+            "Fire the cue from a live list (GO), or recall the preset from a Panel.",
+          );
+          continue;
+        }
         fileStructural(layer, LAYER_SWITCH_TARGET, `${nameOf(layer)}.on`, { bypassed });
       }
       for (const [nodeName, keys] of Object.entries(end.after)) {

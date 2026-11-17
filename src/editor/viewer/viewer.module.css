@@ -120,6 +120,11 @@
   transform-origin: 0 0;
 }
 
+/* §T1732b: the second button of a picture's pair (M, move the camera) sits left of the first. */
+.inspectToggleSecond {
+  transform: scale(var(--chrome-zoom, 1)) translate(calc(-200% - 6px), calc(-100% - 3px));
+}
+
 .inspectToggle:hover {
   background: var(--bg-hover);
   border-color: var(--text-dim);
@@ -318,3 +323,34 @@
   outline: 2px solid var(--text);
   outline-offset: 1px;
 }
+
+.cameraPad {
+  position: absolute;
+  top: 76px;
+  left: 0;
+  width: 68px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2px;
+}
+
+.cameraPad button {
+  min-width: 0;
+  height: 22px;
+  padding: 0;
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg-sunken);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.cameraPad button:first-child { grid-column: 2; }
+.cameraPad button:nth-child(2) { grid-column: 1; }
+.cameraPad button:nth-child(3) { grid-column: 3; }
+.cameraPad button:nth-child(4) { grid-column: 2; }
+.cameraPad button:nth-child(5) { grid-column: 1; }
+.cameraPad button:nth-child(6) { grid-column: 3; }
+.cameraPad button:focus-visible { outline: 2px solid var(--text); outline-offset: 1px; }

@@ -209,7 +209,13 @@ export const NODE_KINDS: Readonly<Record<string, string>> = {
   audioIn: "audioin",
   // `audio` alone would not say which of the three audio sources it is.
   audioFileIn: "audiofile",
+  // T1751b: a tonal node is named for what it reads off the capture, as a person says it.
+  audioChroma: "chroma",
+  audioChord: "chord",
+  audioNotes: "notes",
   midiIn: "midiin",
+  // T1762b: the keyboard's notes. `notes` is the audio Notes node's word (§T1755b).
+  midiNotes: "keys",
   oscIn: "oscin",
 
   // outputs
@@ -227,8 +233,14 @@ export const NODE_KINDS: Readonly<Record<string, string>> = {
   timer: "timer",
   analyze: "analyze",
   mouse: "mouse",
+  // T1787b: the project tempo and beat clock.
+  tempo: "tempo",
   channelIn: "channelin",
   audioPattern: "pattern",
+  // T1757b: the tonal nodes' test signal. `pattern` is Audio Pattern's.
+  tonePattern: "tones",
+  harmony: "harmony",
+  noteField: "notefield",
 
   // values: operators. The `value` family word is dropped; the word left is the title.
   // Four of them are the same operation as a texture or point node and share its kind,

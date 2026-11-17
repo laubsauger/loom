@@ -26,7 +26,10 @@
  */
 import type { AudioFeatures } from "@domain/types/frame.ts";
 import type { HopFeatures } from "@domain/audio/analysis/hop-analyser.ts";
+import type { LeadPitchFrame } from "@domain/audio/analysis/pitch.ts";
+import type { TonalFrame } from "@domain/audio/analysis/tonal-analyser.ts";
 import { NO_TEMPO_CLAIM } from "@domain/audio/feature-track.ts";
+import { CHROMA_NAMES, NOTE_VOICE_COUNT, NO_TONAL_CLAIM, type AudioTonalFields } from "@domain/audio/tonal-fields.ts";
 import { DETECTOR_STREAM, STREAM_COUNT } from "./audio-analysis-protocol.ts";
 import { computeAudioFeatures, type AudioAnalysisState } from "./audio-features.ts";
 
@@ -39,6 +42,14 @@ export interface AudioFrameFeatures {
 
 export interface AudioHopReducer {
   push(hop: HopFeatures): void;
+  /**
+   * T1751b: one tonal window. The LATEST one is what a frame reads, held until the next
+   * arrives (a window every 43 ms against a frame every 17), the way the bands hold between
+   * hops. Never called on a capture with no tonal pass, and the record then reads NO CLAIM.
+   */
+  pushTonal(frame: TonalFrame): void;
+  /** T1755b: one lead-pitch reading. The latest is what a frame reads; its onsets are counted over the interval. */
+  pushPitch(frame: LeadPitchFrame): void;
   /** Reduce everything pushed since the last read into one frame, and start the next interval. */
   read(): AudioFrameFeatures;
 }
@@ -52,8 +63,54 @@ export function createAudioHopReducer(fftSize: number, sampleRate: number): Audi
   let max = 0;
   const bandFlux = new Float64Array(STREAM_COUNT);
   const bandEvents = new Uint32Array(STREAM_COUNT);
+  let tonal: AudioTonalFields = NO_TONAL_CLAIM;
+  /** T1753b: chord changes among the tonal windows since the last read — interval-shaped, like the detector counts. */
+  let chordChanges = 0;
+  /** T1755b: the latest lead-pitch reading, and the note onsets since the last read. */
+  let pitch: LeadPitchFrame | null = null;
+  let pitchOnsets = 0;
+  /** T1756b: each voice's onsets among the tonal windows since the last read. */
+  const voiceOnsets = new Array<number>(NOTE_VOICE_COUNT).fill(0);
 
   return {
+    pushPitch(frame) {
+      pitch = frame;
+      if (frame.onset) pitchOnsets += 1;
+    },
+    pushTonal(frame) {
+      const fields: Record<string, number> = { ...NO_TONAL_CLAIM };
+      CHROMA_NAMES.forEach((name, pitchClass) => {
+        fields[name] = frame.chroma[pitchClass] as number;
+      });
+      fields["chromaConfidence"] = frame.confidence;
+      fields["tuning"] = frame.tuning;
+      fields["tonalLag"] = frame.lag;
+      // T1753b: the claims as the analyser makes them. `chordChangeCount` is written at the read.
+      fields["chordRoot"] = frame.chord.root;
+      fields["chordQuality"] = frame.chord.quality;
+      fields["chordConfidence"] = frame.chord.confidence;
+      fields["chordAge"] = frame.chord.age;
+      fields["keyTonic"] = frame.key.tonic;
+      fields["keyMode"] = frame.key.mode;
+      fields["keyConfidence"] = frame.key.confidence;
+      if (frame.chord.changed) chordChanges += 1;
+      // T1756b: the voices as tracked. Each `voiceNOnsetCount` is written at the read.
+      let alive = 0;
+      for (let slot = 0; slot < NOTE_VOICE_COUNT; slot += 1) {
+        const voice = frame.voices[slot];
+        if (voice === undefined) continue;
+        const prefix = `voice${String(slot)}`;
+        fields[`${prefix}Pitch`] = voice.pitch;
+        fields[`${prefix}Level`] = voice.level;
+        fields[`${prefix}Confidence`] = voice.confidence;
+        fields[`${prefix}Age`] = voice.age;
+        fields[`${prefix}Id`] = voice.id;
+        if (voice.confidence > 0) alive += 1;
+        if (voice.onset) voiceOnsets[slot] = (voiceOnsets[slot] as number) + 1;
+      }
+      fields["voiceCount"] = alive;
+      tonal = fields as unknown as AudioTonalFields;
+    },
     push(hop) {
       if (hop.bandFlux.length !== STREAM_COUNT || hop.bandEvents.length !== STREAM_COUNT) {
         throw new Error(
@@ -89,9 +146,17 @@ export function createAudioHopReducer(fftSize: number, sampleRate: number): Audi
         hat: bandFlux[DETECTOR_STREAM.hat] as number,
         hatCount: bandEvents[DETECTOR_STREAM.hat] as number,
         ...NO_TEMPO_CLAIM,
+        ...tonal,
+        chordChangeCount: chordChanges,
+        ...(pitch === null ? {} : { pitch: pitch.pitch, pitchConfidence: pitch.confidence, pitchLag: pitch.lag }),
+        pitchOnsetCount: pitchOnsets,
+        ...Object.fromEntries(voiceOnsets.map((onsets, slot) => [`voice${String(slot)}OnsetCount`, onsets])),
       };
       const frame: AudioFrameFeatures = { features, hops };
       hops = 0;
+      chordChanges = 0;
+      pitchOnsets = 0;
+      voiceOnsets.fill(0);
       count = 0;
       max = 0;
       bandFlux.fill(0);

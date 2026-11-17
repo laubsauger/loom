@@ -10,6 +10,7 @@ import { applyGraphPatch } from "../commands/apply-patch.ts";
 import { z } from "zod";
 import { finiteInput, idInput, nodeIdInput } from "../commands/input-schema.ts";
 import { nodeByName } from "../graph/names.ts";
+import { TEMPO_RESYNC_COMMAND, TEMPO_TAP_COMMAND } from "../tempo/project-tempo.ts";
 import { effectiveParameterSchema, resolveParameters, resolveStored } from "../parameters/resolve.ts";
 import { parameterReadOptions, type ParameterReadContext } from "../parameters/node-references.ts";
 import {
@@ -24,6 +25,7 @@ import { defaultParameterValue, validateParameters } from "../parameters/validat
 import {
   MORPH_CURVES,
   isPresetName,
+  PRESET_ON_TARGET_KEY,
   parsePresetBank,
   parsePresetTargets,
   serializePresetBank,
@@ -135,12 +137,17 @@ import { CUE_BACK_COMMAND, CUE_GO_COMMAND } from "./cue-list.ts";
  * patch: `current` is "the last preset recalled", and a Panel beside the shots bank would
  * otherwise go on highlighting the look the shot just replaced.
  *
- * ## Layer on/off (T1498b's seam, the design doc §4.4 step 5 and §7.2)
+ * ## On/off (T1498b's seam, the design doc §4.4 step 5 and §7.2; any node since T1770b)
  *
- * A preset's `on` map is written as `setNodeUi { bypassed: !on }` on each named Layer, in
- * the same patch, so a layer's on/off is undone with the rest of the recall. Always a cut
- * — it is structural. Only a Layer: the doc's `on` is "layer on/off", and bypassing an
- * arbitrary node from a bank is not something it rules in.
+ * A preset's `on` map is written as `setNodeUi { bypassed: !on }` on each named node, in
+ * the same patch, so an on/off is undone with the rest of the recall. Always a cut — it is
+ * structural. It began as the Layer's switch and T1770b took the fence down: off is the
+ * bypass flag on ANY root node or instance (ruling 9, one flag for one idea). A Layer
+ * passes its stack, an effect passes its input, a source has nothing to pass and is silent
+ * (`bypassPassthroughPorts`), and an instance that is off is not inlined, so its interior
+ * costs nothing (T1032). A bank whose presets each hold the whole `on` row of a set of
+ * sources is therefore the exclusive choice among them: one patch, so no frame reads two
+ * of them on, or none.
  *
  * ## The seam the cue list uses
  *
@@ -173,7 +180,15 @@ export const PRESET_RECALL_COMMAND = "preset.recall";
  * (`src/app/pulse-firing.ts`). The cue list's GO and BACK (T1500b) are recalls with a
  * position attached, so its two pulses are here for the same reason.
  */
-export const RENDER_BLOCKED_PULSE_COMMANDS: ReadonlySet<string> = new Set([PRESET_RECALL_COMMAND, CUE_GO_COMMAND, CUE_BACK_COMMAND]);
+export const RENDER_BLOCKED_PULSE_COMMANDS: ReadonlySet<string> = new Set([
+  PRESET_RECALL_COMMAND,
+  CUE_GO_COMMAND,
+  CUE_BACK_COMMAND,
+  // T1787b: a Tempo node's Tap stores the tapped BPM in the document, and its Resync moves
+  // the beat a take counts from its own zero (§V1038).
+  TEMPO_TAP_COMMAND,
+  TEMPO_RESYNC_COMMAND,
+]);
 
 export interface PresetStoreInput {
   /** The bank node. */
@@ -497,6 +512,8 @@ function copied(stored: StoredParameter): StoredParameter {
 
 export interface PresetCapture {
   readonly values: PresetValues;
+  /** T1771b: node NAME → on (not bypassed), for every `name.@on` target. */
+  readonly on: Readonly<Record<string, boolean>>;
   readonly captured: number;
   /** Target tokens (or `node.key`) that could not be captured. */
   readonly missing: readonly string[];
@@ -519,6 +536,7 @@ export function capturePresetValues(
   targets: readonly PresetTarget[],
 ): PresetCapture {
   const values: Record<string, Record<string, StoredParameter>> = {};
+  const on: Record<string, boolean> = {};
   const missing: string[] = [];
   const diagnostics: RuntimeDiagnostic[] = [];
   const skip = (name: string, code: string, message: string, nodeId?: NodeId): void => {
@@ -535,6 +553,11 @@ export function capturePresetValues(
     }
     if (node.id === bankNodeId) {
       skip(target.token, "preset.target.self", `Target "${target.token}" is the bank itself; a bank does not store its own presets.`, node.id);
+      continue;
+    }
+    // T1771b: `name.@on` asks for the node's switch, whatever its type; it is no parameter.
+    if (target.key === PRESET_ON_TARGET_KEY) {
+      on[target.node] = node.ui?.bypassed !== true;
       continue;
     }
     const definition = registry.get(node.type);
@@ -573,8 +596,8 @@ export function capturePresetValues(
   for (const name of Object.keys(values)) {
     if (Object.keys(values[name] ?? {}).length === 0) delete values[name];
   }
-  const captured = Object.values(values).reduce((sum, record) => sum + Object.keys(record).length, 0);
-  return { values, captured, missing, diagnostics };
+  const captured = Object.values(values).reduce((sum, record) => sum + Object.keys(record).length, 0) + Object.keys(on).length;
+  return { values, on, captured, missing, diagnostics };
 }
 
 export interface PresetRecallPlan {
@@ -667,9 +690,6 @@ function recallValue(existing: StoredParameter | undefined, stored: StoredParame
  * down a chain and a fifth hop is refused.
  */
 export const MAX_RECALL_DEPTH = 4;
-
-/** The node type a preset's `on` switches: `layerNode.type` (`src/nodes/definitions/layer.ts`). */
-const LAYER_NODE_TYPE = "layer";
 
 /** One preset on a recall's expansion, and how many `recalls` hops it sits from the recalled one. */
 interface RecallStep {
@@ -924,7 +944,32 @@ export function planPresetRecall(
     }
   }
 
-  // Layer on/off (the design doc §4.4 step 5, §7.2): the bypass flag, in the same patch.
+  /*
+   * T1771b — THE EXCLUSIVE CHOICE LEFT PARTIAL. A bank whose presets each switch the same set
+   * of nodes is a selector: whichever is recalled, every node of the set is told on or off.
+   * A preset that switches SOME of what its siblings switch leaves the rest as it found
+   * them, so what is on after it depends on what was recalled before. That is legitimate
+   * (a preset may mean "and leave the others"), so it is a remark and nothing is skipped; a
+   * preset with no `on` row at all is a plain value preset and is not remarked on.
+   */
+  if (view.kind === "node" && Object.keys(preset.on ?? {}).length > 0) {
+    const parsed = parsePresetBank(view.bank.parameters["presets"]);
+    const own = new Set(Object.keys(preset.on ?? {}));
+    const left = parsed.ok ? [...new Set(parsed.bank.presets.flatMap((each) => Object.keys(each.on ?? {})))].filter((name) => !own.has(name)).sort() : [];
+    if (left.length > 0) {
+      diagnostics.push(
+        diagnostic(
+          "warning",
+          "preset.on.partial",
+          `Preset "${preset.name}" (${bankName(bankNode)}) switches ${[...own].sort().map((name) => `"${name}"`).join(", ")} and leaves ${left.map((name) => `"${name}"`).join(", ")} as ${left.length === 1 ? "it is" : "they are"}: other presets of this bank switch ${left.length === 1 ? "it" : "them"}, so what is on after this recall depends on the one before.`,
+          bankNode.id,
+          `Give "${preset.name}" an on/off for ${left.map((name) => `"${name}"`).join(", ")} too, so the bank chooses exactly one state.`,
+        ),
+      );
+    }
+  }
+
+  // On/off (the design doc §4.4 step 5, §7.2; any node, T1770b): the bypass flag, in the same patch.
   for (const layerName of [...layers.keys()].sort()) {
     const laid = layers.get(layerName);
     if (laid === undefined) continue;
@@ -933,10 +978,6 @@ export function planPresetRecall(
     const node = nodeId === undefined ? undefined : graph.nodes[nodeId];
     if (node === undefined) {
       skip(name, "preset.on.missing", `${said(laid.from)}: no node is named "${layerName}"; its on/off was skipped.`);
-      continue;
-    }
-    if (node.type !== LAYER_NODE_TYPE) {
-      skip(name, "preset.on.notLayer", `${said(laid.from)}: "${layerName}" is a ${node.type} node, and on/off switches a Layer; skipped.`, node.id);
       continue;
     }
     operations.push({ op: "setNodeUi", nodeId: node.id, ui: { bypassed: !laid.value } });
@@ -1112,11 +1153,24 @@ function recallRefusal(
 function captureFor(context: CommandContext, view: BankView, targets: readonly PresetTarget[]): PresetCapture {
   if (view.kind === "node") return capturePresetValues(context.graph, context.registry, view.holder.id, targets);
   const instance = bankName(view.holder);
-  const onInstance = targets.map((target): PresetTarget => ({ ...target, node: instance }));
+  // T1771b: a look's preset reaches only its page (`preset.page.on` at recall), so it stores no switch.
+  const paged = targets.filter((target) => target.key !== PRESET_ON_TARGET_KEY);
+  const onInstance = paged.map((target): PresetTarget => ({ ...target, node: instance }));
   // No bank id to skip as "itself": the instance IS the one target.
   const capture = capturePresetValues(context.graph, context.registry, "", onInstance);
   const values = Object.fromEntries(Object.entries(capture.values).map(([name, keys]) => [name === instance ? PAGE_TARGET : name, keys]));
-  return { ...capture, values };
+  const refused = targets.filter((target) => target.key === PRESET_ON_TARGET_KEY);
+  return {
+    ...capture,
+    values,
+    missing: [...capture.missing, ...refused.map((target) => target.token)],
+    diagnostics: [
+      ...capture.diagnostics,
+      ...refused.map((target) =>
+        diagnostic("warning", "preset.page.on", `Target "${target.token}": a look's preset reaches only its page, so it stores no on/off; switch the instance from a bank beside it.`, view.holder.id),
+      ),
+    ],
+  };
 }
 
 /**
@@ -1196,10 +1250,12 @@ export function registerPresetCommands(bus: LoomBus): void {
         );
       }
       const index = bank.presets.findIndex((preset) => preset.name === name);
+      // T1771b: the switches the targets asked for (`name.@on`). None asked: a row written by hand stays.
+      const switches = Object.keys(capture.on).length === 0 ? {} : { on: capture.on };
       const presets =
         index < 0
-          ? [...bank.presets, { name, values: capture.values }]
-          : bank.presets.map((preset, at) => (at === index ? { ...preset, values: capture.values } : preset));
+          ? [...bank.presets, { name, values: capture.values, ...switches }]
+          : bank.presets.map((preset, at) => (at === index ? { ...preset, values: capture.values, ...switches } : preset));
       if (view.kind === "instance" && catalogue !== undefined) {
         const written = commitPageBank(context, catalogue, view, presets);
         if (!written.ok) return storeRefusal(revision, [...capture.diagnostics, ...written.diagnostics], capture.missing);

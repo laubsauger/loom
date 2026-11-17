@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { HopFeatures } from "@domain/audio/analysis/hop-analyser.ts";
 import { SILENCE } from "@domain/audio/feature-track.ts";
+import { NO_KEY } from "@domain/audio/analysis/chord.ts";
+import { TONAL_FIELD_NAMES } from "@domain/audio/tonal-fields.ts";
 import { createAudioHopReducer } from "./audio-analysis-frame.ts";
 import { DETECTOR_STREAM, STREAM_COUNT } from "./audio-analysis-protocol.ts";
 import { computeAudioFeatures, ONSET_EVENT_THRESHOLD } from "./audio-features.ts";
@@ -167,3 +169,102 @@ describe("createAudioHopReducer", () => {
     );
   });
 });
+
+describe("T1751b — the reducer carries the latest tonal window", () => {
+  const tonalFrame = (pitchClass: number, confidence: number) => {
+    const chroma = new Float64Array(12);
+    chroma[pitchClass] = 1;
+    return { chroma, confidence, tuning: -7, lag: 0.085, chord: NO_CHORD, key: NO_KEY, voices: [] };
+  };
+  const NO_CHORD = { root: 0, quality: 0, confidence: 0, changed: false, age: 0 };
+
+  it("with no tonal window ever pushed, every tonal field is NO CLAIM — a capture without the pass", () => {
+    const reducer = createAudioHopReducer(FFT_SIZE, SAMPLE_RATE);
+    reducer.push(hop({ level: 200 }));
+    const { features } = reducer.read();
+    expect(TONAL_FIELD_NAMES.map((name) => features[name])).toEqual(new Array(TONAL_FIELD_NAMES.length).fill(0));
+  });
+
+  it("a frame reads the LATEST window, and it holds across frames until the next arrives", () => {
+    const reducer = createAudioHopReducer(FFT_SIZE, SAMPLE_RATE);
+    reducer.pushTonal(tonalFrame(2, 0.4));
+    reducer.pushTonal(tonalFrame(9, 0.8));
+    const first = reducer.read().features;
+    expect([first.chroma2, first.chroma9, first.chromaConfidence, first.tuning, first.tonalLag]).toEqual([0, 1, 0.8, -7, 0.085]);
+    // No new window before the next frame (a window every 43 ms, a frame every 17): same reading.
+    const held = reducer.read().features;
+    expect([held.chroma9, held.chromaConfidence, held.tonalLag]).toEqual([1, 0.8, 0.085]);
+    // A window that claims no chord and no key leaves those fields at NO CLAIM beside a live chroma.
+    expect([held.chordRoot, held.chordQuality, held.chordConfidence, held.keyTonic, held.keyMode, held.keyConfidence]).toEqual([0, 0, 0, 0, 0, 0]);
+  });
+
+  it("T1753b — the latest window's chord and key are the record's; chord CHANGES are counted over the interval and then start again", () => {
+    const reducer = createAudioHopReducer(FFT_SIZE, SAMPLE_RATE);
+    const withClaims = (root: number, changed: boolean, age: number) => ({
+      ...tonalFrame(root, 1),
+      chord: { root, quality: 1, confidence: 0.8, changed, age },
+      key: { tonic: 7, mode: 2, confidence: 0.6 },
+    });
+    // Two changes between two frames (a passing chord): both are counted, the later chord is the one read.
+    reducer.pushTonal(withClaims(0, true, 0));
+    reducer.pushTonal(withClaims(5, true, 0));
+    reducer.pushTonal(withClaims(5, false, 0.04));
+    const first = reducer.read().features;
+    expect([first.chordRoot, first.chordQuality, first.chordConfidence, first.chordChangeCount, first.chordAge]).toEqual([5, 1, 0.8, 2, 0.04]);
+    expect([first.keyTonic, first.keyMode, first.keyConfidence]).toEqual([7, 2, 0.6]);
+    // No new window: the chord holds, and nothing changed in THIS interval.
+    const held = reducer.read().features;
+    expect([held.chordRoot, held.chordChangeCount]).toEqual([5, 0]);
+  });
+});
+
+describe("T1755b — the reducer carries the latest lead pitch and counts its onsets", () => {
+  const reading = (pitch: number, onset: boolean) => ({ pitch, confidence: pitch > 0 ? 0.96 : 0, onset, lag: 0.043 });
+
+  it("with no reading ever pushed the pitch fields are NO CLAIM, lag included", () => {
+    const { features } = createAudioHopReducer(FFT_SIZE, SAMPLE_RATE).read();
+    expect([features.pitch, features.pitchConfidence, features.pitchOnsetCount, features.pitchLag]).toEqual([0, 0, 0, 0]);
+  });
+
+  it("a frame reads the latest reading; two notes begun between two frames are two onsets; the count then starts again", () => {
+    const reducer = createAudioHopReducer(FFT_SIZE, SAMPLE_RATE);
+    reducer.pushPitch(reading(60, true));
+    reducer.pushPitch(reading(64, true));
+    const first = reducer.read().features;
+    expect([first.pitch, first.pitchConfidence, first.pitchOnsetCount, first.pitchLag]).toEqual([64, 0.96, 2, 0.043]);
+    const held = reducer.read().features;
+    expect([held.pitch, held.pitchOnsetCount]).toEqual([64, 0]);
+    // The claim ending is read as ending: pitch 0 at confidence 0, the lag still the path's.
+    reducer.pushPitch(reading(0, false));
+    const ended = reducer.read().features;
+    expect([ended.pitch, ended.pitchConfidence, ended.pitchLag]).toEqual([0, 0, 0.043]);
+  });
+});
+
+describe("T1756b — the reducer carries the voices and counts each one's onsets", () => {
+  const voice = (pitch: number, onset: boolean, id: number, confidence = 0.9) => ({ pitch, level: 0.7, confidence, age: 0.1, onset, id });
+  const EMPTY = { pitch: 0, level: 0, confidence: 0, age: 0, onset: false, id: 0 };
+  const frameWith = (...voices: Array<ReturnType<typeof voice>>) => ({
+    chroma: new Float64Array(12),
+    confidence: 1,
+    tuning: 0,
+    lag: 0.085,
+    chord: { root: 0, quality: 0, confidence: 0, changed: false, age: 0 },
+    key: NO_KEY,
+    voices: [...voices, ...new Array(5 - voices.length).fill(EMPTY)],
+  });
+
+  it("each slot's fields are the latest window's; onsets are summed per slot over the interval; voiceCount counts the slots in use", () => {
+    const reducer = createAudioHopReducer(FFT_SIZE, SAMPLE_RATE);
+    reducer.pushTonal(frameWith(voice(60, true, 1), voice(67, true, 2)));
+    reducer.pushTonal(frameWith(voice(60, false, 1), voice(72, true, 3)));
+    const first = reducer.read().features;
+    expect([first.voice0Pitch, first.voice0Level, first.voice0Confidence, first.voice0Age, first.voice0Id, first.voice0OnsetCount]).toEqual([60, 0.7, 0.9, 0.1, 1, 1]);
+    // Slot 1 held two notes inside one frame interval: the later one is read, both onsets are counted.
+    expect([first.voice1Pitch, first.voice1Id, first.voice1OnsetCount, first.voiceCount]).toEqual([72, 3, 2, 2]);
+    expect([first.voice2Confidence, first.voice2OnsetCount]).toEqual([0, 0]);
+    const held = reducer.read().features;
+    expect([held.voice0OnsetCount, held.voice1OnsetCount, held.voiceCount]).toEqual([0, 0, 2]);
+  });
+});
+

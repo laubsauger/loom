@@ -2,12 +2,17 @@ import { describe, expect, it } from "vitest";
 
 import type { GraphDocument } from "@domain/types/graph.ts";
 import { createHopAnalyser } from "@domain/audio/analysis/hop-analyser.ts";
+import { createTonalAnalyser } from "@domain/audio/analysis/tonal-analyser.ts";
+import { CHROMA_NAMES } from "@domain/audio/tonal-fields.ts";
 import { DETECTOR_STREAM, analysisOptionsFor } from "./audio-analysis-protocol.ts";
 import { DETECTOR_EVENT_PICKER } from "./audio-features.ts";
 import {
   audioReplayBaselineOf,
   captureConfigOf,
   captureKeyOf,
+  polledAnalyserSize,
+  polledReader,
+  workletFallbackMessage,
   monitorGainLevel,
   renderAudioRequirementOf,
   syncAudioMediaElement,
@@ -51,6 +56,13 @@ describe("captureConfigOf (T434)", () => {
       // T493: a mic has no playhead, so there is no node whose transport drives it.
       nodeId: null,
       detector: { threshold: 0.05, retrigger: 0.032 },
+      // T1751b: no tonal node in the document, no tonal pass.
+      tonal: false,
+      // T1769b: the node that supplied the capture, and its Input Gain at rest (0 dB unstored).
+      sourceNodeId: "a",
+      inputGainDb: 0,
+      // T1776b: the raw device unless the node asks for voice processing.
+      voiceProcessing: false,
     });
     expect(
       captureConfigOf(graphOf({ a: { type: "audioIn", parameters: { device: "dev-42" } } }))?.device,
@@ -73,6 +85,10 @@ describe("captureConfigOf (T434)", () => {
       monitor: true,
       nodeId: "a",
       detector: { threshold: 0.05, retrigger: 0.032 },
+      tonal: false,
+      sourceNodeId: "a",
+      inputGainDb: 0,
+      voiceProcessing: false,
     });
     // No file chosen yet: the node is waiting, not capturing — the mic keeps the session.
     const unbound = captureConfigOf(
@@ -211,9 +227,9 @@ describe("detector knobs on the source node (T1230)", () => {
 
   it("the defaults ARE the recorded contract's picker, to the hop, at 48 kHz", () => {
     expect(defaults).toBeDefined();
-    expect(analysisOptionsFor(defaults!, 48_000).picker).toEqual(DETECTOR_EVENT_PICKER);
+    expect(analysisOptionsFor(defaults!, 48_000, false).picker).toEqual(DETECTOR_EVENT_PICKER);
     // 44.1 kHz: 0.032 s is 2.76 hops, and the gap rounds to the same 3 rather than a shorter 2.
-    expect(analysisOptionsFor(defaults!, 44_100).picker.minGapHops).toBe(3);
+    expect(analysisOptionsFor(defaults!, 44_100, false).picker.minGapHops).toBe(3);
   });
 
   it("the knobs carry through from either door, in seconds, and become hops on the context's grid", () => {
@@ -224,7 +240,7 @@ describe("detector knobs on the source node (T1230)", () => {
     );
     expect(file?.detector).toEqual({ threshold: 0.12, retrigger: 0.05 });
     // 0.05 s at 48 kHz is 4.69 hops of 512: 5.
-    expect(analysisOptionsFor(file!.detector, 48_000).picker).toEqual({ historyHops: 96, delta: 0.12, minGapHops: 5 });
+    expect(analysisOptionsFor(file!.detector, 48_000, false).picker).toEqual({ historyHops: 96, delta: 0.12, minGapHops: 5 });
   });
 
   it("a changed knob changes the capture key — the rebuild door — and an unchanged one does not", () => {
@@ -278,7 +294,7 @@ describe("detector knobs on the source node (T1230)", () => {
     const tone = new Float64Array(fftSize);
     for (let n = 0; n < fftSize; n += 1) tone[n] = 0.001 * Math.sin((2 * Math.PI * 5 * n) / fftSize);
     const kickEvents = (threshold: number): number => {
-      const options = analysisOptionsFor({ threshold, retrigger: 0.032 }, 48_000);
+      const options = analysisOptionsFor({ threshold, retrigger: 0.032 }, 48_000, false);
       const engine = createHopAnalyser({ ...options, sampleRate: 48_000 });
       engine.analyse(silence);
       engine.analyse(silence);
@@ -286,5 +302,106 @@ describe("detector knobs on the source node (T1230)", () => {
     };
     expect(kickEvents(0.05)).toBe(1);
     expect(kickEvents(0.3)).toBe(0);
+  });
+});
+
+describe("T1751b — the tonal pass runs only while the document holds a tonal node", () => {
+  it("a Chroma node turns it on for the mic and for a file; a muted one does not; and it is part of the capture's key", () => {
+    const mic = captureConfigOf(graphOf({ a: { type: "audioIn" } }));
+    const micTonal = captureConfigOf(graphOf({ a: { type: "audioIn" }, c: { type: "audioChroma" } }));
+    const fileTonal = captureConfigOf(
+      graphOf({ a: { type: "audioFileIn", parameters: { file: "blob:track" } }, c: { type: "audioChroma" } }),
+    );
+    expect([mic?.tonal, micTonal?.tonal, fileTonal?.tonal]).toEqual([false, true, true]);
+    // A silenced tonal node asks for nothing, as a silenced source captures nothing (T555).
+    const muted = graphOf({ a: { type: "audioIn" }, c: { type: "audioChroma" } });
+    (muted.nodes["c"] as { ui?: { muted: boolean } }).ui = { muted: true };
+    expect(captureConfigOf(muted)?.tonal).toBe(false);
+    // Adding the first tonal node must REBUILD the capture: the pass is built into the engine.
+    expect(captureKeyOf(micTonal, 0)).not.toBe(captureKeyOf(mic, 0));
+    // A tonal node alone captures nothing: it reads a capture, it does not open one.
+    expect(captureConfigOf(graphOf({ c: { type: "audioChroma" } }))).toBeNull();
+  });
+
+  it("the engine's options carry the tonal window only when asked", () => {
+    expect(analysisOptionsFor({ threshold: 0.05, retrigger: 0.032 }, 48_000, false).tonal).toBeUndefined();
+    expect(analysisOptionsFor({ threshold: 0.05, retrigger: 0.032 }, 48_000, true).tonal).toEqual({ windowSize: 8192, hop: 2048, pitchEveryHops: 2 });
+  });
+
+  it("T1752b — the polled fallback's message is the one sentence again: the tonal channels are no longer missing there", () => {
+    expect(workletFallbackMessage("no worklet")).toBe(
+      "Analysis worklet unavailable (no worklet); polling the analyser's window once per frame.",
+    );
+  });
+});
+
+describe("T1752b — the polled fallback runs the tonal pass on the same core", () => {
+  const SAMPLE_RATE = 48_000;
+  const options = analysisOptionsFor({ threshold: 0.05, retrigger: 0.032 }, SAMPLE_RATE, true);
+  /** An analyser holding the last `fftSize` samples of `signal` at `clock.currentTime`. */
+  function rig(signal: (index: number) => number, fftSize = polledAnalyserSize(options)) {
+    const clock = { sampleRate: SAMPLE_RATE, currentTime: 1 };
+    const analyser = {
+      fftSize,
+      getFloatTimeDomainData(array: Float32Array): void {
+        const end = Math.round(clock.currentTime * SAMPLE_RATE);
+        for (let i = 0; i < array.length; i += 1) array[i] = signal(end - array.length + i);
+      },
+    };
+    return { clock, analyser };
+  }
+  const a4 = (index: number): number => 0.4 * Math.sin((2 * Math.PI * 440 * index) / SAMPLE_RATE);
+  const d5 = (index: number): number => 0.4 * Math.sin((2 * Math.PI * 440 * 2 ** (5 / 12) * index) / SAMPLE_RATE);
+
+  it("opens the analyser at the tonal window when the pass is on, and at the hop window when it is not", () => {
+    expect(polledAnalyserSize(options)).toBe(8192);
+    expect(polledAnalyserSize(analysisOptionsFor({ threshold: 0.05, retrigger: 0.032 }, SAMPLE_RATE, false))).toBe(2048);
+  });
+
+  it("its chroma is the tonal analyser's own reading of the analyser's window — the worklet's and the offline walk's core", () => {
+    const { clock, analyser } = rig(a4);
+    const features = polledReader(clock, analyser, options)();
+    const window = new Float32Array(8192);
+    analyser.getFloatTimeDomainData(window);
+    const direct = createTonalAnalyser({ sampleRate: SAMPLE_RATE, windowSize: 8192 }).analyse(Float64Array.from(window), 0);
+    expect(CHROMA_NAMES.map((name) => features[name])).toEqual([...direct.chroma]);
+    expect([features.chroma9, features.chromaConfidence, features.tonalLag]).toEqual([1, 1, 8192 / 2 / SAMPLE_RATE]);
+  });
+
+  it("the bands do not move: the hop core reads the last 2048 samples, as it did with a 2048 analyser", () => {
+    const long = rig(a4);
+    const short = rig(a4, 2048);
+    const withPass = polledReader(long.clock, long.analyser, options)();
+    const without = polledReader(short.clock, short.analyser, analysisOptionsFor({ threshold: 0.05, retrigger: 0.032 }, SAMPLE_RATE, false))();
+    for (const name of ["level", "low", "lowMid", "highMid", "high", "centroid", "band380", "band519"] as const) expect(withPass[name], name).toBe(without[name]);
+  });
+
+  it("the tonal window is retaken once a tonal hop of samples has gone by, not every frame, and holds between", () => {
+    let signal = a4;
+    const { clock, analyser } = rig((index) => signal(index));
+    const read = polledReader(clock, analyser, options);
+    expect(read().chroma9).toBe(1);
+    // The sound changes to D, but only 800 samples (one frame) pass: the reading holds.
+    signal = d5;
+    clock.currentTime += 800 / SAMPLE_RATE;
+    expect([read().chroma9, read().chroma2]).toEqual([1, 0]);
+    // Past a whole tonal hop (2048 samples) the window is retaken, and it is the D.
+    clock.currentTime += 1600 / SAMPLE_RATE;
+    const retaken = read();
+    expect([retaken.chroma9, retaken.chroma2]).toEqual([0, 1]);
+  });
+
+  it("T1755b — the lead pitch too: a single note reads its pitch on the polled path, on the first read", () => {
+    const partials = (index: number): number => [1, 2, 3].reduce((sum, h) => sum + (0.3 / h) * Math.sin((2 * Math.PI * 220 * h * index) / SAMPLE_RATE), 0);
+    const { clock, analyser } = rig(partials);
+    const features = polledReader(clock, analyser, options)();
+    expect(Math.abs(features.pitch - 57) * 100).toBeLessThan(3);
+    expect(features.pitchConfidence).toBeGreaterThan(0.99);
+    expect(features.pitchOnsetCount).toBe(1);
+  });
+
+  it("refuses an analyser too short for the pass by name, instead of analysing a window it does not have", () => {
+    const { clock, analyser } = rig(a4, 2048);
+    expect(() => polledReader(clock, analyser, options)).toThrow(/holds 2048 samples, and the engine needs 8192/);
   });
 });

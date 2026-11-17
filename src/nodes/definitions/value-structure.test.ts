@@ -37,7 +37,9 @@ function run(type: string, parameters: Record<string, unknown>, signal: readonly
   } as unknown as GraphDocument;
   const session = createValueGraphSession(registry);
   return signal.map((value, index) => {
-    (doc.nodes["src"]!.parameters as Record<string, unknown>)["value"] = value;
+    // An edit is another node object, as in a real document: the session keeps a node's
+    // stored constants by the object (T1179), so a value written in place is never seen.
+    (doc.nodes as Record<string, unknown>)["src"] = { ...doc.nodes["src"]!, parameters: { value } };
     const result = session.evaluate(flatDocument(doc), frameAt(index), { flattening: NO_FLATTENING });
     expect(result.diagnostics).toEqual([]);
     return result.byName.get("subject1")!;
@@ -114,3 +116,66 @@ describe("T1370b — Expression computes channels from wired channels", () => {
     expect(compiled.diagnostics?.map((d) => d.message)).toEqual([expect.stringMatching(/bad:/)]);
   });
 });
+
+/**
+ * T1793b — the Expression node keeps ONE scope per program and writes each result into it,
+ * remembers repeated subtrees, and keeps the results of a program that reads no name. What a
+ * consumer reads must be what the per-statement rebuild gave: these are the cases where a
+ * wrong scope, a stale remembered value or a wrongly kept result publishes another number.
+ */
+describe("T1793b — an Expression program reads like lines of a program, whatever it shares", () => {
+  it("a statement may overwrite a wired channel, and the lines after it read the new value", () => {
+    const read = run("valueExpression", { expressions: "value = value + 1; twice = value * 2" }, [3, 5]);
+    expect(read).toEqual([{ value: 4, twice: 8 }, { value: 6, twice: 12 }]);
+  });
+
+  it("a name published twice holds its latest value for the lines after, and keeps its first place in the bag", () => {
+    const [bag] = run("valueExpression", { expressions: "b = 1; a = b + 1; b = b + 10; c = a + b" }, [0]);
+    expect(bag).toEqual({ b: 11, a: 2, c: 13 });
+    expect(Object.keys(bag!)).toEqual(["b", "a", "c"]);
+  });
+
+  it("a statement that fails publishes nothing and leaves the earlier value standing: an unknown name, a division by zero, an overflow", () => {
+    const [bag] = run("valueExpression", { expressions: "a = 2; a = missing + 1; b = a; c = 1 / (value - value); d = 10 ^ 400; e = b + 1" }, [7]);
+    expect(bag).toEqual({ a: 2, b: 2, e: 3 });
+  });
+
+  it("a clock keeps its name: `time = 5` is published, and the lines after still read the clock", () => {
+    // Frame 30 at 60 fps: the clock reads 0.5. The channel `time` leaves the node as 5.
+    const read = run("valueExpression", { expressions: "time = 5; t2 = time * 2; frame = 9; f2 = frame + 1" }, [0, 0]);
+    expect(read[1]).toEqual({ time: 5, t2: (1 / FPS) * 2, frame: 9, f2: 2 });
+  });
+
+  it("a tempo name is the node's to take: a statement or a wire named `bpm` is what the lines after read", () => {
+    const [bag] = run("valueExpression", { expressions: "was = bpm; bpm = 90; now = bpm" }, [0]);
+    expect(bag?.["now"]).toBe(90);
+    expect(bag?.["was"]).not.toBe(90);
+  });
+
+  it("a repeated term is recomputed once a name it reads is published again", () => {
+    // `(x * 2)` is one tree, written eight times. After `x = x + 10` it is another number,
+    // and after the next frame's wire it is another again.
+    const expressions = "x = value + 1; y = (x * 2) + (x * 2) + (x * 2) + (x * 2); x = x + 10; z = (x * 2) + (x * 2) + (x * 2) + (x * 2)";
+    const read = run("valueExpression", { expressions }, [1, 2]);
+    expect(read).toEqual([{ x: 12, y: 16, z: 96 }, { x: 13, y: 24, z: 104 }]);
+  });
+
+  it("a repeated term that failed is asked again once the name it lacked exists", () => {
+    const expressions = "y = (late * 2) + (late * 2) + (late * 2); late = value; z = (late * 2) + (late * 2) + (late * 2)";
+    const [bag] = run("valueExpression", { expressions }, [5]);
+    expect(bag).toEqual({ late: 5, z: 30 });
+  });
+
+  it("a default reads the clock and the defaults before it, never the wire of the same name", () => {
+    // `value` is wired (1, then 2). `since` is not, so it reads its default, which is built
+    // from the DEFAULT `value` (100) and the clock, on every frame.
+    const read = run("valueExpression", { expressions: "late = since + value", defaults: "value = 100; since = value + frame" }, [1, 2]);
+    expect(read.map((bag) => bag["late"])).toEqual([100 + 0 + 1, 100 + 1 + 2]);
+  });
+
+  it("defaults that read nothing give the same numbers on every frame, and two nodes with one text do not share a wire", () => {
+    const read = run("valueExpression", { expressions: "out = since * 2 + value; k = 3 * 4", defaults: "since = 68 * 0.5 / 4; value = 100" }, [1, 2, 3]);
+    expect(read).toEqual([{ out: 18, k: 12 }, { out: 19, k: 12 }, { out: 20, k: 12 }]);
+  });
+});
+

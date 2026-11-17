@@ -1,8 +1,10 @@
 import {
   absFrameIndexOf,
   absTimeSecondsOf,
+  BEATS_PER_BAR,
   fpsOf,
   subframesOf,
+  tempoOf,
   wallDeltaSecondsOf,
   wallSecondsOf,
 } from "../types/frame.ts";
@@ -151,7 +153,23 @@ export type NodeReferenceReader = ((name: string, path: readonly string[]) => No
    * own node and from another node could answer differently. Absent on a hand-built reader.
    */
   readonly readingFrom?: (nodeId: string, key: string) => NodeReferenceReader;
+  /** T1720b: subtree values for this reader's life (see {@link SubtreeMemory}). Absent: none are kept. */
+  readonly subtrees?: SubtreeMemory;
 };
+
+/**
+ * T1720b — WHAT A READER REMEMBERS OF A TREE.
+ *
+ * Structurally equal subtrees are one object (`internAst`), so a subtree's value is kept by
+ * identity and a repeat anywhere in the reader's frame costs a lookup. The rule is §T1172's:
+ * a value computed while the reader's cycle guard fired depends on the path that asked, and
+ * is not kept.
+ */
+export interface SubtreeMemory {
+  readonly values: Map<ExpressionAst, number>;
+  /** How many times the reader's cycle guard (§V152) has fired so far. */
+  readonly fired: () => number;
+}
 
 /**
  * The function whitelist (T370) — closed, small, and argued name by name.
@@ -393,11 +411,39 @@ export const FREE_RUNNING_CLOCK_NAMES = ["walltime", "walldelta", "abstime", "ab
  */
 export const FRAME_RATE_NAMES = ["fps", "subframes"] as const;
 
+/**
+ * T1785b: the PROJECT TEMPO, the transport's beat clock (`FrameEvaluationInput.tempo`).
+ * `bpm` is the tempo in effect; `beat` and `bar` COUNT (whole numbers since the downbeat,
+ * four beats to the bar); `beatphase` and `barphase` RAMP 0..1 inside each; `beatpulse` is
+ * the beats that landed in this frame (0, and 1 on the frame a beat lands); `tempolocked`
+ * is 1 while the tempo source is delivering and 0 while the last tempo is held.
+ */
+export const TEMPO_NAMES = ["bpm", "beat", "beatphase", "beatpulse", "bar", "barphase", "tempolocked"] as const;
+
+function tempoScope(frame: FrameEvaluationInput): Record<(typeof TEMPO_NAMES)[number], number> {
+  const tempo = tempoOf(frame);
+  const beat = Math.floor(tempo.beats);
+  const bars = tempo.beats / BEATS_PER_BAR;
+  return {
+    bpm: tempo.bpm,
+    beat,
+    beatphase: tempo.beats - beat,
+    beatpulse: tempo.pulse,
+    bar: Math.floor(bars),
+    barphase: bars - Math.floor(bars),
+    tempolocked: tempo.locked ? 1 : 0,
+  };
+}
+
 export function scopeFromFrame(
   frame: FrameEvaluationInput,
   nodeContext: ExpressionScope = {},
 ): ExpressionScope {
   return {
+    // T1785b: BEFORE the node's own context, unlike the clocks below. These names arrived
+    // after documents existed, and a node that hands `bpm` or `beat` to its expressions
+    // (an Audio In wired into an Expression, a parameter key) keeps reading its own.
+    ...tempoScope(frame),
     ...nodeContext,
     // T271/§V172 — `time` is TIMELINE time and `delta` is its step; `walltime` and
     // `walldelta` are the other clock. Never a mix: an expression reading `time` and a
@@ -943,8 +989,17 @@ function parseParentReference(cursor: Cursor, at: number): ExpressionAst {
  * FIFO past a cap, for the same reason the reflection memo (T1172) is: the working set is
  * the distinct expressions in one document, and the only way past the cap is somebody
  * TYPING one, where every keystroke mints a new key and the oldest entry is the coldest.
+ *
+ * ⚠ THE CAP MUST SIT ABOVE A REAL DOCUMENT'S WORKING SET, OR FIFO DEFEATS THE CACHE
+ * (T1767b). At 512 it did not: `projects/silk-medusa` holds 646 distinct expression
+ * strings, so every frame evicted entries the same frame needed and each statement was
+ * parsed again, sixty times a second — measured at about 1.8 ms a frame on that
+ * document and about 4 ms on its audio variant (548 in the value graph alone). A cache
+ * smaller than the set cycling through it hits nothing. 4096 entries is a few megabytes
+ * of AST at most and is the cap; a document past it thrashes again, which is the row's
+ * open half.
  */
-const PARSE_CACHE_LIMIT = 512;
+const PARSE_CACHE_LIMIT = 4096;
 const parsedBySource = new Map<string, ParseResult>();
 
 export function parseExpression(input: string): ParseResult {
@@ -954,7 +1009,8 @@ export function parseExpression(input: string): ParseResult {
   const hit = parsedBySource.get(trimmed);
   if (hit !== undefined) return hit;
 
-  const parsed = parse(trimmed);
+  const read = parse(trimmed);
+  const parsed: ParseResult = read.ok ? { ...read, ast: internAst(read.ast) } : read;
   parsedBySource.set(trimmed, parsed);
   if (parsedBySource.size > PARSE_CACHE_LIMIT) {
     const oldest = parsedBySource.keys().next();
@@ -983,14 +1039,85 @@ function parse(trimmed: string): ParseResult {
   }
 }
 
+/**
+ * T1720b — ONE OBJECT PER STRUCTURE.
+ *
+ * Every subtree a parse produces is replaced by the canonical object for its structure, so
+ * `sin(time * 3) * 10` written in fifty expressions is one tree, and a reader that remembers
+ * subtrees (`SubtreeMemory`) evaluates it once a frame. sentinel-bot's expressions are 91 %
+ * repeats by tree node (§T1684b). A key names a node's kind, its own fields and its
+ * children's canonical ids, so two keys are equal only for equal structures; spans
+ * (`parentRef.at`/`end`) are fields like any other. The tree is immutable already (see the
+ * parse memo above), which is what makes sharing it legal. Past the cap the table starts
+ * again: later parses then share less, never wrongly.
+ */
+const INTERN_LIMIT = 65_536;
+let interned = new Map<string, ExpressionAst>();
+const internIds = new WeakMap<ExpressionAst, number>();
+let nextInternId = 0;
+
+export function internAst(ast: ExpressionAst): ExpressionAst {
+  let node: ExpressionAst;
+  let key: string;
+  switch (ast.kind) {
+    case "number":
+      node = ast;
+      key = Object.is(ast.value, -0) ? "n-0" : `n${String(ast.value)}`;
+      break;
+    case "variable":
+      node = ast;
+      key = `v${ast.name}`;
+      break;
+    case "opRef":
+      node = ast;
+      key = `o${JSON.stringify([ast.name, ast.path])}`;
+      break;
+    case "parentRef":
+      node = ast;
+      key = `p${JSON.stringify([ast.hops, ast.path, ast.at, ast.end])}`;
+      break;
+    case "call": {
+      const args = ast.args.map(internAst);
+      node = { ...ast, args };
+      key = `c${ast.name}(${args.map(idOf).join(",")})`;
+      break;
+    }
+    case "unary": {
+      const operand = internAst(ast.operand);
+      node = { ...ast, operand };
+      key = `u${ast.operator}${idOf(operand)}`;
+      break;
+    }
+    case "binary": {
+      const left = internAst(ast.left);
+      const right = internAst(ast.right);
+      node = { ...ast, left, right };
+      key = `b${ast.operator}${idOf(left)},${idOf(right)}`;
+      break;
+    }
+  }
+  const known = interned.get(key);
+  if (known !== undefined) return known;
+  if (interned.size >= INTERN_LIMIT) interned = new Map();
+  interned.set(key, node);
+  internIds.set(node, nextInternId++);
+  return node;
+}
+
+function idOf(ast: ExpressionAst): number {
+  return internIds.get(ast) as number;
+}
+
 /** Parse-once, evaluate-per-frame: bound parameters keep the AST and call this each frame. */
 export function evaluateAst(
   ast: ExpressionAst,
   scope: ExpressionScope = {},
   readNode?: NodeReferenceReader,
+  /** T1793b: a caller with no reader may still remember subtrees, for as long as ITS scope holds still. */
+  memory: SubtreeMemory | undefined = readNode?.subtrees,
 ): EvaluateResult {
   try {
-    const value = evaluateNode(ast, scope, readNode);
+    const value = evaluateNode(ast, scope, readNode, memory);
     if (!Number.isFinite(value)) return { ok: false, kind: "value", reason: "result is not a finite number" };
     return { ok: true, value };
   } catch (thrown) {
@@ -1003,6 +1130,23 @@ function evaluateNode(
   ast: ExpressionAst,
   scope: ExpressionScope,
   readNode: NodeReferenceReader | undefined,
+  memory: SubtreeMemory | undefined,
+): number {
+  // T1720b: a leaf costs less than the lookup; a failure throws past the store and is not kept.
+  if (memory === undefined || ast.kind === "number" || ast.kind === "variable") return evaluateFresh(ast, scope, readNode, memory);
+  const kept = memory.values.get(ast);
+  if (kept !== undefined) return kept;
+  const fired = memory.fired();
+  const value = evaluateFresh(ast, scope, readNode, memory);
+  if (memory.fired() === fired) memory.values.set(ast, value);
+  return value;
+}
+
+function evaluateFresh(
+  ast: ExpressionAst,
+  scope: ExpressionScope,
+  readNode: NodeReferenceReader | undefined,
+  memory: SubtreeMemory | undefined,
 ): number {
   switch (ast.kind) {
     case "number":
@@ -1052,15 +1196,15 @@ function evaluateNode(
       if (ast.args.length !== spec.params.length) {
         fail("syntax", `${ast.name}() takes ${spec.params.length} arguments, got ${ast.args.length}`);
       }
-      return spec.apply(ast.args.map((arg) => evaluateNode(arg, scope, readNode)));
+      return spec.apply(ast.args.map((arg) => evaluateNode(arg, scope, readNode, memory)));
     }
     case "unary": {
-      const operand = evaluateNode(ast.operand, scope, readNode);
+      const operand = evaluateNode(ast.operand, scope, readNode, memory);
       return ast.operator === "-" ? -operand : operand;
     }
     case "binary": {
-      const left = evaluateNode(ast.left, scope, readNode);
-      const right = evaluateNode(ast.right, scope, readNode);
+      const left = evaluateNode(ast.left, scope, readNode, memory);
+      const right = evaluateNode(ast.right, scope, readNode, memory);
       switch (ast.operator) {
         case "+":
           return left + right;

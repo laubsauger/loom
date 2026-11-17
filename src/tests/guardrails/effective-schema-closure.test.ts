@@ -348,6 +348,10 @@ const RAW_SCHEMA_READS: Readonly<Record<string, { readonly reason: string; reado
     reason: `${TYPE_ONLY_UNIT_TEST} The second read is T1228's: the Tempo group's own \`inactiveWhen\` on each door.`,
     reads: ["definition.parameters", "definition.parameters"],
   },
+  "src/nodes/definitions/harmony.test.ts": {
+    reason: TYPE_ONLY_UNIT_TEST,
+    reads: ["node.parameters", "harmonyNode.parameters"],
+  },
   "src/nodes/definitions/cache.test.ts": {
     reason: TYPE_ONLY_UNIT_TEST,
     reads: ["cacheNode.parameters", "cacheNode.parameters"],

@@ -85,6 +85,9 @@ export type {
   EncoderConfig,
   EncoderFrame,
   EncoderFrameTiming,
+  I420P10Image,
+  Yuv10ColorSpace,
+  Yuv10EncoderFrame,
   CapturedVideoFrame,
   EncoderFinishProgress,
   AudioPcmProvider,
@@ -97,8 +100,20 @@ export type {
   VideoEncoderSink,
 } from "./recording/types.ts";
 
-export { avcCodecString, muxMp4, sampleDurationFor, timescaleFor } from "./recording/mp4-muxer.ts";
-export type { Mp4AudioSample, Mp4AudioTrack, Mp4MuxInput, Mp4Sample } from "./recording/mp4-muxer.ts";
+export { avcCodecString, hevcCodecString, muxMp4, sampleDurationFor, timescaleFor } from "./recording/mp4-muxer.ts";
+export type { Mp4AudioSample, Mp4AudioTrack, Mp4MuxInput, Mp4Sample, Mp4VideoCodec } from "./recording/mp4-muxer.ts";
+
+export {
+  DEFAULT_VIDEO_FORMAT,
+  HEVC_TEN_BIT_CHROME_SWITCH,
+  VIDEO_FORMATS,
+  VIDEO_FORMAT_IDS,
+  videoCodecFor,
+  videoFormatInfo,
+  videoFormatSourceRefusal,
+} from "./recording/video-format.ts";
+export type { VideoFormatId, VideoFormatInfo } from "./recording/video-format.ts";
+export { YUV10_COLOR_SPACE, toI420P10 } from "./recording/yuv10.ts";
 
 export { isRecordingAvailable, loadVideoEncoder, probeAudioEncoderSupport, probeVideoEncoderSupport } from "./recording/encoder-loader.ts";
 export type { AudioEncoderSupport, LoadEncoderOptions, VideoEncoderSupport } from "./recording/encoder-loader.ts";

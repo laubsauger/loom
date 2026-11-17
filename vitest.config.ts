@@ -41,5 +41,12 @@ export default defineConfig({
     // environment below regardless of which project picks the file up.
     environment: "node",
     environmentMatchGlobs: [["src/**/*.test.tsx", "jsdom"]],
+    /* The floor of the worker pool, so a cap (`--maxWorkers=2`, as CLAUDE.md and AGENTS.md
+       tell every session sharing this machine to use) can be BELOW the default. Vitest 2.1
+       defaults the floor to cpus - 1 (13 on a 14-core Mac), so `--maxWorkers=2` asked for a
+       pool of at least 13 and at most 2, and Tinypool refused to start: "options.minThreads
+       and options.maxThreads must not conflict". Workers are still spawned as files queue,
+       up to the cap or the default ceiling, so an uncapped run is unchanged. */
+    minWorkers: 1,
   },
 });

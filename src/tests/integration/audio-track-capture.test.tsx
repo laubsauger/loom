@@ -5,6 +5,7 @@ import { createMemoryStorage, installDomStubs } from "@ui/testing/install-dom-st
 import { installFlowStubs } from "@editor/graph-canvas/testing.tsx";
 import { parseFeatureTrack, featureTrackLength } from "@domain/audio/feature-track.ts";
 import { distinctSpectrumBands } from "@domain/audio/spectrum-bands.fixture.ts";
+import { distinctTonalFields } from "@domain/audio/tonal-fields.fixture.ts";
 import type { GraphPatchOperation } from "@domain/types/patch.ts";
 import { App } from "../../app/app.tsx";
 import { createAppRuntime } from "../../app/app-runtime.ts";
@@ -67,21 +68,50 @@ async function mount(operations: GraphPatchOperation[] = []) {
   return { runtime, container: view.container };
 }
 
+/**
+ * The capture controls live in the File menu (T860: the transport's record slot went to
+ * the render dialog, and the feature capture moved out of it). So the test opens the menu
+ * the way a user does and reads its items; a menu is rendered only while it is open, and
+ * choosing an item closes it.
+ */
+async function openFileMenu(container: HTMLElement): Promise<HTMLElement> {
+  const trigger = container.querySelector('button[aria-label="File"]');
+  if (trigger === null) throw new Error("expected the File menu's button in the top bar");
+  await act(async () => {
+    fireEvent.click(trigger);
+  });
+  const menu = document.querySelector<HTMLElement>('[role="menu"][aria-label="File actions"]');
+  if (menu === null) throw new Error("the File menu did not open");
+  return menu;
+}
+
+const ARM = "Record audio features to a track";
+
+function menuItem(menu: HTMLElement, name: string): HTMLButtonElement | null {
+  return [...menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
+    .find((item) => item.textContent?.trim() === name) ?? null;
+}
+
 describe("T452 — recording a performance is something a user can do", () => {
   it("(a) offers an ARM control rather than recording whatever it hears", async () => {
     const { container } = await mount();
-    const arm = container.querySelector('button[aria-label="Record audio features"]');
+    const menu = await openFileMenu(container);
+    const arm = menuItem(menu, ARM);
     expect(arm, "no control arms a recording — capture would have to be always-on").not.toBeNull();
-    // Nothing has been recorded, so nothing offers to be saved: a save button that can
-    // only refuse is the shape §V123 calls a button that lies.
-    expect(container.querySelector('button[aria-label="Save audio track"]')).toBeNull();
+    expect(arm?.disabled).toBe(false);
+    // Nothing has been recorded, so nothing can be saved: the menu's save row says so (zero
+    // frames) and is disabled. A save that can only refuse is the shape §V123 calls a
+    // button that lies.
+    const save = menuItem(menu, "Save audio feature track (0 frames)");
+    expect(save, "the save row is missing, or claims frames nobody recorded").not.toBeNull();
+    expect(save?.disabled).toBe(true);
   });
 
   it("refuses by name when armed with no live capture, rather than recording silence", async () => {
     // §V288: a recording of nothing looks exactly like a working recording, right up
     // until someone replays it. jsdom has no microphone, so this is the real case.
     const { container } = await mount();
-    const arm = container.querySelector('button[aria-label="Record audio features"]');
+    const arm = menuItem(await openFileMenu(container), ARM);
     if (arm === null) throw new Error("expected the arm control");
 
     await act(async () => {
@@ -92,8 +122,10 @@ describe("T452 — recording a performance is something a user can do", () => {
     });
 
     expect(container.textContent ?? "").toContain("would capture nothing but silence");
-    // And it did NOT arm: the button still offers to start.
-    expect(container.querySelector('button[aria-label="Record audio features"]')).not.toBeNull();
+    // And it did NOT arm: the menu still offers to start, not to stop.
+    const after = await openFileMenu(container);
+    expect(menuItem(after, ARM)).not.toBeNull();
+    expect(menuItem(after, "Stop recording audio features")).toBeNull();
   });
 
   it("(b) leaves the document alone — a performance is not the project", async () => {
@@ -103,7 +135,7 @@ describe("T452 — recording a performance is something a user can do", () => {
     const before = runtime.bus.store.getRevision();
     const serialisedBefore = JSON.stringify(runtime.bus.store.getGraph());
 
-    const arm = container.querySelector('button[aria-label="Record audio features"]');
+    const arm = menuItem(await openFileMenu(container), ARM);
     if (arm === null) throw new Error("expected the arm control");
     await act(async () => {
       fireEvent.click(arm);
@@ -154,6 +186,7 @@ describe("T452 — the track a save produces is a real, parseable artifact", () 
       kick: 0.35, kickCount: 1, snare: 0.25, snareCount: 1, hat: 0.15, hatCount: 2,
       centroid: 0.45, bpm: 120, bpmConfidence: 1, beatPhase: 0.5, beat: 8, beatCount: 1,
       ...distinctSpectrumBands(0.01),
+      ...distinctTonalFields(0.02),
     });
 
     let written: { fileName: string; text: string; mime: string } | null = null;

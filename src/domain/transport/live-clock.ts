@@ -1,6 +1,7 @@
 import { frameFromClock } from "../types/frame.ts";
 import type { EvaluationFrame, TransportSource } from "../types/frame.ts";
 import { DEFAULT_PROJECT_FPS, projectFps } from "../types/graph.ts";
+import type { TempoReader } from "../tempo/project-tempo.ts";
 
 export interface LiveClockOptions {
   /**
@@ -17,6 +18,13 @@ export interface LiveClockOptions {
   seed?: number | (() => number);
   maxDeltaSeconds?: number;
   now?: () => number;
+  /**
+   * T1785b: the project tempo, asked once per frame produced and stamped as `frame.tempo`.
+   * Absent = the frame carries none, and a reader counts the default tempo (`tempoOf`).
+   */
+  tempo?: TempoReader;
+  /** Sample a media clock exactly: hold on suspension and skip frames after a stall. */
+  authoritativeClock?: () => boolean;
   /**
    * Frames per second the TIMELINE advances at (T271). The scheduler must be capped to
    * the same number, or timeline time runs fast on a 120 Hz display and slow on a
@@ -214,7 +222,8 @@ export function liveClock(options: LiveClockOptions = {}): LiveClock {
       lastMs = nowMs;
 
       // Clamp so a backgrounded tab does not hand simulations an enormous step.
-      const wallDeltaSeconds = Math.min(Math.max(rawDelta, 0), maxDelta);
+      const authoritative = presenting() && options.authoritativeClock?.() === true;
+      const wallDeltaSeconds = authoritative ? Math.max(rawDelta, 0) : Math.min(Math.max(rawDelta, 0), maxDelta);
       // Wall time accumulates from the same clamped deltas the simulations would consume:
       // otherwise a 10-minute background jump moves time-driven nodes 600s while
       // delta-driven ones step 0.25s, and the two halves of one graph diverge.
@@ -240,8 +249,10 @@ export function liveClock(options: LiveClockOptions = {}): LiveClock {
       let steps = 0;
       if (!first) {
         if (presenting()) {
-          carrySeconds = Math.min(Math.max(carrySeconds + wallDeltaSeconds, -1 / fps), maxDelta);
-          steps = Math.max(1, Math.round(carrySeconds * fps));
+          carrySeconds = authoritative
+            ? carrySeconds + wallDeltaSeconds
+            : Math.min(Math.max(carrySeconds + wallDeltaSeconds, -1 / fps), maxDelta);
+          steps = Math.max(authoritative ? 0 : 1, Math.round(carrySeconds * fps));
           carrySeconds -= steps / fps;
         } else {
           // Not a presentation: one call, one frame, no clock (see `presenting`). The
@@ -266,10 +277,12 @@ export function liveClock(options: LiveClockOptions = {}): LiveClock {
       // The absolute clock keeps its own "first", because `reset` deliberately does not
       // clear it (T461): the tick after a seek is frame zero for the timeline and an
       // ordinary continuing frame for abstime, and it must still advance by a step.
+      let absDeltaSeconds = 0;
       if (hasEmittedAbs) {
-        const absSteps = Math.max(1, steps);
+        const absSteps = Math.max(authoritative ? 0 : 1, steps);
         absFrameIndex += absSteps;
-        absSeconds += absSteps / fps;
+        absDeltaSeconds = absSteps / fps;
+        absSeconds += absDeltaSeconds;
       }
       hasEmittedAbs = true;
       const absIndex = absFrameIndex;
@@ -312,6 +325,8 @@ export function liveClock(options: LiveClockOptions = {}): LiveClock {
         // T1426b: the project's rate, not the display's; live frames are never accumulated.
         fps,
         subframes: 1,
+        // T1785b: live playback follows the wall clock, a step counts its own step.
+        ...(options.tempo === undefined ? {} : { tempo: options.tempo({ absTimeSeconds: absSeconds, absDeltaSeconds, presenting: presenting() }) }),
       });
     },
     /**

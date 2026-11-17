@@ -1,9 +1,13 @@
 import { ExportDiagnosticCode, ExportError, exportDiagnostic } from "../types.ts";
-import { avcCodecString, mp4FileTypeBox, mp4StreamParts, sampleDurationFor, timescaleFor } from "./mp4-muxer.ts";
+import { avcCodecString, hevcCodecString, mp4FileTypeBox, mp4StreamParts, sampleDurationFor, timescaleFor } from "./mp4-muxer.ts";
 import type { Mp4AudioSample, Mp4AudioTrack, Mp4Sample } from "./mp4-muxer.ts";
 import { createMediaSpool } from "./media-spool.ts";
 import type { MediaSpool, MediaSpoolMode } from "./media-spool.ts";
-import type { CapturedVideoFrame, EncodedVideo, EncoderConfig, EncoderFinishProgress, EncoderFrame, EncoderFrameTiming, VideoEncoderSink } from "./types.ts";
+import type { CapturedVideoFrame, EncodedVideo, EncoderConfig, EncoderFinishProgress, EncoderFrame, EncoderFrameTiming, VideoEncoderSink, Yuv10EncoderFrame } from "./types.ts";
+import { DEFAULT_VIDEO_FORMAT, codecFamilyOf, unsupportedVideoFormatReason, videoCodecFor, videoFormatInfo } from "./video-format.ts";
+import type { VideoFormatId } from "./video-format.ts";
+
+export { h264CodecFor } from "./video-format.ts";
 
 /**
  * The WebCodecs encoder — the ONLY browser-only module in `src/runtime/export/**` (T111).
@@ -29,7 +33,12 @@ export function isWebCodecsAvailable(): boolean {
 }
 
 export interface WebCodecsEncoderOptions {
-  /** Default: H.264 baseline 4.2 through 1080p, High 5.2 above 1080p. */
+  /**
+   * T1741b: the recording format. Default `h264`: H.264 baseline 4.2 through 1080p, High 5.2
+   * above 1080p. `hevc-main10` takes only full-precision frames (`encodeYuv10`).
+   */
+  readonly format?: VideoFormatId;
+  /** Overrides the format's codec string (level and profile); the format still decides the bit depth. */
   readonly codec?: string;
   readonly bitrate?: number;
   readonly latencyMode?: "quality" | "realtime";
@@ -92,6 +101,11 @@ function unavailable(detail: string): ExportError {
   );
 }
 
+/** The browser has no encoder for this format: the format's own sentence, nothing about MediaRecorder. */
+function formatUnavailable(reason: string): ExportError {
+  return new ExportError(exportDiagnostic("error", ExportDiagnosticCode.encoderUnavailable, reason));
+}
+
 export interface WebCodecsSupport {
   readonly supported: boolean;
   readonly codec: string;
@@ -139,27 +153,21 @@ export async function probeWebCodecsAudioEncoder(
   }
 }
 
-/**
- * H.264 policy for Loom's two production size classes.
- *
- * Baseline level 4.2 covers the ordinary 1080p path. UHD needs a profile/level that can
- * describe 3840x2160 at 60 fps, so it uses High level 5.2. This is selected before probing;
- * an unavailable hardware/software encoder is reported, never replaced silently.
- */
-export function h264CodecFor(config: EncoderConfig): string {
-  return config.width > 1920 || config.height > 1080 ? "avc1.640034" : "avc1.42002a";
-}
+/** The DOM lib predates WebCodecs' HEVC config; Chrome reads `hevc.format` exactly like `avc.format`. */
+type CodecEncoderConfig = VideoEncoderConfig & { readonly hevc?: { readonly format: "hevc" | "annexb" } };
 
 function encoderConfigFor(
   config: EncoderConfig,
   options: WebCodecsEncoderOptions,
-): VideoEncoderConfig {
+): CodecEncoderConfig {
+  const codec = options.codec ?? videoCodecFor(options.format ?? DEFAULT_VIDEO_FORMAT, config);
   return {
-    codec: options.codec ?? h264CodecFor(config),
+    codec,
     width: config.width,
     height: config.height,
     framerate: config.fps,
-    avc: { format: "avc" },
+    // Length-prefixed samples plus an avcC/hvcC record: what an MP4 sample entry needs.
+    ...(codecFamilyOf(codec) === "hevc" ? { hevc: { format: "hevc" as const } } : { avc: { format: "avc" as const } }),
     latencyMode: options.latencyMode ?? "quality",
     bitrate: config.bitrate ?? options.bitrate ?? estimateBitrate(config),
   };
@@ -169,7 +177,8 @@ export async function probeWebCodecsEncoder(
   config: EncoderConfig,
   options: WebCodecsEncoderOptions = {},
 ): Promise<WebCodecsSupport> {
-  const codec = options.codec ?? h264CodecFor(config);
+  const format = options.format ?? DEFAULT_VIDEO_FORMAT;
+  const codec = options.codec ?? videoCodecFor(format, config);
   if (!isWebCodecsAvailable()) {
     return { supported: false, codec, reason: "VideoEncoder is not available in this browser." };
   }
@@ -188,9 +197,7 @@ export async function probeWebCodecsEncoder(
     return {
       supported: support.supported === true,
       codec,
-      reason: support.supported === true
-        ? null
-        : `No H.264 encoder supports ${config.width}x${config.height} at ${config.fps} fps.`,
+      reason: support.supported === true ? null : unsupportedVideoFormatReason(format, config),
     };
   } catch (error) {
     return {
@@ -203,6 +210,17 @@ export async function probeWebCodecsEncoder(
 
 export function createWebCodecsEncoder(options: WebCodecsEncoderOptions = {}): VideoEncoderSink {
   const captureFrame = options.captureFrame;
+  const format = options.format ?? DEFAULT_VIDEO_FORMAT;
+  // T1741b: the bit depth of the FILE. A 10-bit encoder accepts only 10-bit planes; the
+  // canvas capture and `encode`'s RGBA are 8-bit, and either would ship 8-bit data in a
+  // 10-bit stream. Refused here, at the cause, rather than discovered in a player.
+  const tenBit = videoFormatInfo(format).bitDepth === 10;
+  if (tenBit && captureFrame !== undefined) {
+    throw new TypeError(
+      `${videoFormatInfo(format).name} cannot encode a canvas capture: the canvas holds 8 bits per channel.`,
+    );
+  }
+  let family: "avc" | "hevc" = "avc";
   let encoder: VideoEncoder | null = null;
   let audioEncoder: AudioEncoder | null = null;
   let audioDecoder: AudioDecoder | null = null;
@@ -262,20 +280,19 @@ export function createWebCodecsEncoder(options: WebCodecsEncoderOptions = {}): V
     async configure(next) {
       if (!isWebCodecsAvailable()) throw unavailable("VideoEncoder is not defined in this context.");
       config = next;
+      const encoderConfig = encoderConfigFor(next, options);
+      family = codecFamilyOf(encoderConfig.codec);
       try {
-        spool = await createMediaSpool(options.spool ?? "opfs", mp4FileTypeBox());
+        spool = await createMediaSpool(options.spool ?? "opfs", mp4FileTypeBox(family));
       } catch (error) {
         throw unavailable(error instanceof Error ? error.message : String(error));
       }
       sampleDuration = sampleDurationFor(next.fps);
       maxQueuedFrames = Math.max(1, Math.floor((64 * 1024 * 1024) / (next.width * next.height * 4)));
-      const encoderConfig = encoderConfigFor(next, options);
 
       const support = await VideoEncoder.isConfigSupported(encoderConfig);
       if (support.supported !== true) {
-        throw unavailable(
-          `no encoder for ${encoderConfig.codec} at ${next.width}x${next.height} and ${next.fps} fps.`,
-        );
+        throw formatUnavailable(unsupportedVideoFormatReason(format, next));
       }
 
       encoder = new VideoEncoder({
@@ -300,6 +317,9 @@ export function createWebCodecsEncoder(options: WebCodecsEncoderOptions = {}): V
 
     encode(frame: EncoderFrame) {
       throwIfCancelled(options.signal);
+      if (tenBit) {
+        throw new TypeError(`${videoFormatInfo(format).name} takes 10-bit planes, not 8-bit RGBA.`);
+      }
       const video = new VideoFrame(frame.image.data, {
         format: "RGBA",
         codedWidth: frame.image.width,
@@ -315,6 +335,34 @@ export function createWebCodecsEncoder(options: WebCodecsEncoderOptions = {}): V
         video.close();
       }
     },
+
+    ...(!tenBit ? {} : {
+      encodeYuv10(frame: Yuv10EncoderFrame) {
+        throwIfCancelled(options.signal);
+        if (config === null) throw new Error("Encoder used before configure().");
+        const { yuv } = frame;
+        if (yuv.width !== config.width || yuv.height !== config.height) {
+          throw new RangeError(
+            `10-bit frame is ${String(yuv.width)}x${String(yuv.height)}; encoder requires ` +
+            `${String(config.width)}x${String(config.height)}.`,
+          );
+        }
+        const video = new VideoFrame(yuv.data, {
+          // The DOM lib's VideoPixelFormat predates the high-bit-depth formats Chrome takes.
+          format: "I420P10" as VideoPixelFormat,
+          codedWidth: yuv.width,
+          codedHeight: yuv.height,
+          timestamp: frame.timestampMicros,
+          duration: frame.durationMicros,
+          colorSpace: yuv.colorSpace,
+        });
+        try {
+          return encodeVideoFrame(video, frame.keyFrame);
+        } finally {
+          video.close();
+        }
+      },
+    }),
 
     ...(captureFrame === undefined ? {} : {
       encodeCapturedFrame(timing: EncoderFrameTiming) {
@@ -361,7 +409,7 @@ export function createWebCodecsEncoder(options: WebCodecsEncoderOptions = {}): V
       encoder = null;
       if (failure) throw failure;
       if (description === null) {
-        throw unavailable("the encoder never reported an avcC decoder description.");
+        throw unavailable(`the encoder never reported an ${family === "hevc" ? "hvcC" : "avcC"} decoder description.`);
       }
       const audio = options.audio === undefined
         ? undefined
@@ -376,6 +424,7 @@ export function createWebCodecsEncoder(options: WebCodecsEncoderOptions = {}): V
         height: config.height,
         timescale: timescaleFor(config.fps),
         samples,
+        codec: family,
         codecDescription: description,
         ...(audio === undefined ? {} : { audio }),
       };
@@ -386,10 +435,11 @@ export function createWebCodecsEncoder(options: WebCodecsEncoderOptions = {}): V
       const stored = await target.finish(mp4StreamParts(muxInput));
       throwIfCancelled(options.signal);
       spool = null;
+      const videoCodec = family === "hevc" ? hevcCodecString(description) : avcCodecString(description);
       return {
         mimeType: audio === undefined
-          ? `video/mp4; codecs="${avcCodecString(description)}"`
-          : `video/mp4; codecs="${avcCodecString(description)}, mp4a.40.2"`,
+          ? `video/mp4; codecs="${videoCodec}"`
+          : `video/mp4; codecs="${videoCodec}, mp4a.40.2"`,
         bytes: stored.file,
         dispose: stored.dispose,
         frameCount: samples.length,

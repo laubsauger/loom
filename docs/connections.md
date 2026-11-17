@@ -18,9 +18,26 @@ connection serves devices and agents. Optional flags enable additional access:
 | `--all` | Devices, terminal panes and pixels |
 | `--devices-only` | Devices without the MCP server |
 | `--phone` | Arm a phone control panel on your local network |
+| `--force` | Stop the Loom helper that holds the bridge, then start |
 
 Terminal and pixel access are enabled only at helper startup. `--all` does not
 include phone access and cannot be combined with `--devices-only`.
+
+## When another helper holds the bridge
+
+The bridge uses one fixed loopback port, and the first helper to start holds it. Each
+agent session starts its own helper, so one you start in a terminal often finds the
+port taken. It then prints the PID and command line of the process that holds it.
+Without `--devices-only` it also prints that helper's pairing code and forwards agent
+tool calls to it, but the access flags you passed do not apply to that helper.
+
+`--force` combines with every other flag. It sends the holding helper SIGTERM, then
+SIGKILL if it is still running after three seconds, prints which process it stopped,
+and starts normally with its own pairing code. The session that started the stopped
+helper loses its Loom tools until it restarts them. `--force` stops only a Loom helper:
+if any other program holds the port, or the holder cannot be identified (no `lsof`, as
+on Windows), it names what it found, stops nothing and exits. Use it in a terminal, not
+in an MCP client configuration, where two servers started together would stop each other.
 
 ## Terminal panes
 
@@ -39,8 +56,14 @@ editor disconnects.
 
 A MIDI In node publishes named control channels that can drive parameters,
 including shader controls. Arm a row in the inspector's MIDI section and move a
-knob to learn it. Loom reads 7-bit Control Change and 14-bit pitch bend. It does not
-read notes, velocity, MIDI clock, 14-bit CC pairs or SysEx.
+knob, or press a key, to learn it. MIDI In reads 7-bit Control Change, 14-bit pitch
+bend and a note as a gate (1 while the key is down, whatever the velocity). It does not
+read velocity, 14-bit CC pairs or SysEx. The MIDI Notes node reads a keyboard as
+voices, and MIDI clock can drive the project tempo.
+
+To tap the tempo from a key or a pedal, add a Tempo node, learn the key or pedal on a
+MIDI In row named `tap`, and set the Tempo node's Tap to the expression
+`op('midiin1').chan.tap >= 0.5`.
 
 The browser asks for access when you press the permission button. When MIDI is
 unavailable, disconnected or denied, learned channels use their rest values and the

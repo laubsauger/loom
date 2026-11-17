@@ -192,6 +192,37 @@ test("the viewer letterboxes the project's aspect instead of stretching to the p
   ).toBeLessThan(ASPECT_TOLERANCE);
 });
 
+test("fullscreen expands the active viewer with another viewer mounted", async ({ page }) => {
+  await openApp(page);
+  await buildPicture(page);
+  await page.getByTestId("viewer-surface").evaluate(element => element.setAttribute("data-active-viewer", "true"));
+  await page.getByRole("button", { name: "Add a tab to this area", exact: true }).first().click();
+  await page.getByRole("button", { name: "Add viewer as a new tab", exact: true }).click();
+  await expect(page.getByTestId("viewer-surface")).toHaveCount(2);
+  const surface = page.locator('[data-active-viewer="true"]');
+  const canvas = surface.getByTestId("viewer-canvas");
+  await canvas.click();
+  await page.keyboard.press("ControlOrMeta+Shift+f");
+  const assertExpanded = async () => {
+    await expect.poll(() => surface.evaluate(element => element.ownerDocument.fullscreenElement === element)).toBe(true);
+    await expect.poll(() => surface.evaluate(element => {
+      const picture = element.querySelector<HTMLCanvasElement>('[data-testid="viewer-canvas"]');
+      if (picture === null) throw new Error("fullscreen viewer has no picture");
+      const box = picture.getBoundingClientRect();
+      const frame = element.getBoundingClientRect();
+      return Math.max(box.width / frame.width, box.height / frame.height);
+    })).toBeGreaterThan(0.98);
+    const box = await canvas.boundingBox();
+    if (box === null) throw new Error("fullscreen canvas is not laid out");
+    expect(Math.abs(box.width / box.height - 16 / 9)).toBeLessThan(ASPECT_TOLERANCE);
+  };
+  await assertExpanded();
+  await page.evaluate(() => document.exitFullscreen());
+  await canvas.dblclick();
+  await assertExpanded();
+  await page.evaluate(() => document.exitFullscreen());
+});
+
 for (const width of [360, 300, 240]) {
   test(`the viewer footer stays one line while probing a ${width}px pane`, async ({ page }) => {
     await openApp(page);

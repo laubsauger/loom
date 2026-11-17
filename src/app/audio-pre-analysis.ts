@@ -22,8 +22,8 @@ import type { DetectorSettings } from "./audio-analysis-protocol.ts";
  *
  * ## Cached in memory, by content
  *
- * Keyed by the SHA-256 of the file bytes plus everything else the walk reads (`fps` and the
- * detector knobs) — never by URL, which a blob: source changes on every pick. A re-bound
+ * Keyed by the SHA-256 of the file bytes plus everything else the walk reads (`fps`, the
+ * detector knobs, the tonal flag and the Input Gain) — never by URL, which a blob: source changes on every pick. A re-bound
  * file or a re-pick of the same file is a hit; a knob change is a miss and a fresh walk.
  * The cache lives for the session. Persisting it across reloads (the asset row, §T230) is
  * the named follow-up; the key here is the one that store would use.
@@ -44,6 +44,10 @@ export interface OfflineAnalysisRequest {
   readonly sampleRate: number;
   readonly fps: number;
   readonly detector: DetectorSettings;
+  /** T1751b: whether to walk the tonal pass. */
+  readonly tonal: boolean;
+  /** T1769b: the source node's Input Gain, in decibels; the walk applies it to its own copy of the samples. */
+  readonly inputGainDb: number;
 }
 
 export type OfflineAnalysisResponse =
@@ -87,8 +91,8 @@ export async function contentHash(bytes: ArrayBuffer): Promise<string> {
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-export function preAnalysisKey(hash: string, fps: number, detector: DetectorSettings): string {
-  return `${hash}|${String(fps)}|${String(detector.threshold)}|${String(detector.retrigger)}`;
+export function preAnalysisKey(hash: string, fps: number, detector: DetectorSettings, tonal: boolean, inputGainDb: number): string {
+  return `${hash}|${String(fps)}|${String(detector.threshold)}|${String(detector.retrigger)}|${tonal ? "tonal" : "plain"}|${String(inputGainDb)}`;
 }
 
 /** One walk in a Worker of its own; rejects with the reason where it could not run there. */
@@ -114,7 +118,7 @@ export function runInWorker(request: OfflineAnalysisRequest): Promise<OfflineAna
 
 export interface PreAnalysisOutcome {
   readonly analysis: OfflineAnalysis;
-  /** Fixed-rate mono PCM from the same decode the analysis walked. */
+  /** Fixed-rate mono PCM from the same decode the analysis walked — at UNITY: the Input Gain trims the analysis, never this (T1769b). */
   readonly pcm: MonoPcm;
   /** Null when the walk ran off the main thread; otherwise the reason it did not. */
   readonly fallback: string | null;
@@ -127,7 +131,7 @@ export interface PreAnalyserDeps {
 }
 
 export interface PreAnalyser {
-  analyse(bytes: ArrayBuffer, fps: number, detector: DetectorSettings): Promise<PreAnalysisOutcome>;
+  analyse(bytes: ArrayBuffer, fps: number, detector: DetectorSettings, tonal: boolean, inputGainDb: number): Promise<PreAnalysisOutcome>;
 }
 
 const BROWSER_DEPS: PreAnalyserDeps = { decode: decodeAtFixedRate, hash: contentHash, run: runInWorker };
@@ -138,18 +142,18 @@ export function createPreAnalyser(deps: Partial<PreAnalyserDeps> = {}): PreAnaly
   const cache = new Map<string, Promise<PreAnalysisOutcome>>();
   let nextId = 0;
 
-  const walk = async (bytes: ArrayBuffer, fps: number, detector: DetectorSettings): Promise<PreAnalysisOutcome> => {
+  const walk = async (bytes: ArrayBuffer, fps: number, detector: DetectorSettings, tonal: boolean, inputGainDb: number): Promise<PreAnalysisOutcome> => {
     const { samples, sampleRate } = await decode(bytes);
     const id = nextId;
     nextId += 1;
     try {
       // The worker takes the buffer with it; the fallback below needs its own copy.
-      const analysis = await run({ id, samples: samples.slice(0), sampleRate, fps, detector });
+      const analysis = await run({ id, samples: samples.slice(0), sampleRate, fps, detector, tonal, inputGainDb });
       return { analysis, pcm: { samples, sampleRate }, fallback: null };
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
       return {
-        analysis: analyseOffline(samples, sampleRate, fps, detector),
+        analysis: analyseOffline(samples, sampleRate, fps, detector, tonal, inputGainDb),
         pcm: { samples, sampleRate },
         fallback: `Pre-analysis ran on the main thread: ${reason}.`,
       };
@@ -157,11 +161,11 @@ export function createPreAnalyser(deps: Partial<PreAnalyserDeps> = {}): PreAnaly
   };
 
   return {
-    async analyse(bytes, fps, detector) {
-      const key = preAnalysisKey(await hash(bytes), fps, detector);
+    async analyse(bytes, fps, detector, tonal, inputGainDb) {
+      const key = preAnalysisKey(await hash(bytes), fps, detector, tonal, inputGainDb);
       const held = cache.get(key);
       if (held !== undefined) return held;
-      const pending = walk(bytes, fps, detector);
+      const pending = walk(bytes, fps, detector, tonal, inputGainDb);
       cache.set(key, pending);
       // A failed decode is not a result to keep: the next bind tries again.
       pending.catch(() => cache.delete(key));

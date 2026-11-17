@@ -95,7 +95,7 @@ export interface PresetView {
   readonly name: string;
   /** `node.key` for every value the preset holds. The values are the bank's `presets` parameter. */
   readonly keys: readonly string[];
-  /** Layer name → on/off, switched in the same step as the recall. */
+  /** Node name → on/off (a Layer, or any node or component instance: off is its bypass, T1770b), switched in the same step as the recall. */
   readonly on: Readonly<Record<string, boolean>>;
   /** Other banks' presets recalled in the same step (a shot), in the order laid. */
   readonly recalls: ReadonlyArray<{ readonly bank: string; readonly preset: string }>;
@@ -251,7 +251,7 @@ export const listPresets: AgentTool<ListPresetsInput, PresetListing> = {
   name: "list_presets",
   title: "List presets",
   description:
-    "Every Presets bank: its targets, the preset recalled last (current), and each preset with the keys it holds, the layers it switches, the other banks' presets it recalls and the morph a plain recall of it uses. morphs lists the fades running right now with their progress (0 to 1) on this surface's transport clock. clockSeconds null means this surface has no transport (the headless server): nothing fades there and morphs is always empty. The stored values themselves are the bank's presets parameter; read them with get_node. A component instance whose component holds a preset bank targeting parent is a bank too (component names it): its presets live in the component, and store_preset on it writes the component for every instance; current and morphs are that instance's own.",
+    "Every Presets bank: its targets, the preset recalled last (current), and each preset with the keys it holds, the nodes it switches on or off (on: a Layer, or any node or component instance; off is its bypass, so a source goes silent and an instance's interior stops costing anything), the other banks' presets it recalls and the morph a plain recall of it uses. morphs lists the fades running right now with their progress (0 to 1) on this surface's transport clock. clockSeconds null means this surface has no transport (the headless server): nothing fades there and morphs is always empty. The stored values themselves are the bank's presets parameter; read them with get_node. A component instance whose component holds a preset bank targeting parent is a bank too (component names it): its presets live in the component, and store_preset on it writes the component for every instance; current and morphs are that instance's own.",
   kind: "read",
   inputSchema: listPresetsInput,
   requires: { queries: ["graph.get"] },
@@ -285,7 +285,7 @@ export const storePreset: AgentTool<StorePresetInput, PresetStoreOutput> = {
   name: "store_preset",
   title: "Store preset",
   description:
-    "Store a bank's targets under a preset name: every parameter of each node named in the bank's targets parameter, or the single node.key named there, captured as stored, so an expression stays an expression. An existing name is overwritten in place; the name must be an identifier. One undo step. A bank with no targets, or none that can be captured, is refused: set its targets parameter first.",
+    "Store a bank's targets under a preset name: every parameter of each node named in the bank's targets parameter, or the single node.key named there, or for a target written node.@on whether that node is on (not bypassed), captured as stored, so an expression stays an expression. An existing name is overwritten in place; the name must be an identifier. One undo step. A bank with no targets, or none that can be captured, is refused: set its targets parameter first.",
   kind: "mutate",
   inputSchema: storePresetInput,
   requires: { commands: ["preset.store"] },
@@ -303,7 +303,7 @@ const HOW_IT_LANDED =
 export const recallPreset: AgentTool<RecallPresetInput, RecallPresetData> = {
   name: "recall_preset",
   title: "Recall preset",
-  description: `Recall a bank's preset: every value it holds is written back in ONE step that one undo reverses, together with the other banks' presets and the layer switches it names. Omit name for the preset in the bank's Select. morph {seconds, curve} overrides the preset's and the bank's own morph for this recall; seconds 0 forces a cut. ${HOW_IT_LANDED} A target that is gone is skipped and named in skipped; a recall with nothing left to apply is refused.`,
+  description: `Recall a bank's preset: every value it holds is written back in ONE step that one undo reverses, together with the other banks' presets and the on/off switches it names. Omit name for the preset in the bank's Select. morph {seconds, curve} overrides the preset's and the bank's own morph for this recall; seconds 0 forces a cut. ${HOW_IT_LANDED} A target that is gone is skipped and named in skipped; a recall with nothing left to apply is refused.`,
   kind: "mutate",
   inputSchema: recallPresetInput,
   requires: { commands: ["preset.recall"], queries: ["graph.get"] },

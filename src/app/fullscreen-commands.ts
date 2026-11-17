@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
 
 import type { LoomBus } from "@domain/commands/bus.ts";
 import { sharedForBus } from "@domain/commands/command-holder.ts";
@@ -162,11 +162,18 @@ export function useFullscreenSurface(
   bus: LoomBus,
   surface: FullscreenSurface,
   target: FullscreenTarget = "viewer",
-): void {
+): () => void {
+  // Several viewers can be mounted, including inactive tabs. User interaction, rather
+  // than mount order, determines which viewer the shared command operates on.
+  const activate = useCallback(() => {
+    const holder = fullscreenHolderFor(bus);
+    if (target === "app") holder.app = surface;
+    else holder.current = surface;
+  }, [bus, surface, target]);
   useEffect(() => {
     const holder = registerFullscreenCommand(bus);
     if (target === "app") holder.app = surface;
-    else holder.current = surface;
+    else if (holder.current === null) holder.current = surface;
     return () => {
       // Only relinquish what is still ours: StrictMode runs mount → cleanup → mount, and
       // a cleanup that clears unconditionally would erase the newer mount's surface
@@ -178,4 +185,5 @@ export function useFullscreenSurface(
       }
     };
   }, [bus, surface, target]);
+  return activate;
 }

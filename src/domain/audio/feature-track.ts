@@ -1,5 +1,6 @@
 import type { AudioFeatures } from "../types/frame.ts";
 import { SILENT_SPECTRUM_BANDS, SPECTRUM_BAND_NAMES } from "./spectrum-bands.ts";
+import { NO_TONAL_CLAIM, TONAL_FIELD_NAMES } from "./tonal-fields.ts";
 
 /**
  * Recorded audio feature tracks — the replay half of the sound determinism seam
@@ -42,8 +43,20 @@ import { SILENT_SPECTRUM_BANDS, SPECTRUM_BAND_NAMES } from "./spectrum-bands.ts"
  * document driven from `band109` would render a performance that never happened, and
  * look entirely plausible doing it. No shipped example carries a track, so nothing is
  * stranded; a user's own v2 recording re-records.
+ *
+ * 4 (T1751b): the thirty-eight v3 fields verbatim, then the tonal fields
+ * (`TONAL_FIELD_NAMES`): twelve pitch-class energies, their confidence, the tuning, the
+ * lag, and the chord and key claims, which read NO CLAIM until §T1753b estimates them. A
+ * v3 track refuses for §T1347b's reason: a document driven from `chroma7` would replay a
+ * performance that never happened. Still no shipped track, and the pre-analysis cache is
+ * in memory, so nothing is stranded.
+ *
+ * 5 (T1755b): the sixty-one v4 fields verbatim, then the lead pitch (`pitch`,
+ * `pitchConfidence`, `pitchOnsetCount`, `pitchLag`), `voiceCount` and five voices of six
+ * fields each, which read NO CLAIM until §T1756b tracks them. A v4 track refuses for the
+ * same reason every earlier one does.
  */
-export const FEATURE_TRACK_VERSION = 3;
+export const FEATURE_TRACK_VERSION = 5;
 
 /**
  * Field order IS part of the contract, which is why it lives in one exported constant
@@ -77,6 +90,8 @@ export const FEATURE_TRACK_FIELDS = [
   // 3 (T1347b): the twenty v2 fields verbatim, then the eighteen spectrum bands in
   // ascending frequency — `SPECTRUM_BAND_NAMES` is the one spelling of that order.
   ...SPECTRUM_BAND_NAMES,
+  // 4 (T1751b): then the tonal fields — `TONAL_FIELD_NAMES` is the one spelling of that order.
+  ...TONAL_FIELD_NAMES,
 ] as const satisfies ReadonlyArray<keyof AudioFeatures>;
 
 export const FEATURE_TRACK_STRIDE = FEATURE_TRACK_FIELDS.length;
@@ -92,6 +107,12 @@ export const FEATURE_TRACK_STRIDE = FEATURE_TRACK_FIELDS.length;
 export interface FeatureTrackProvenance {
   /** The source node's picker knobs, in seconds — `DetectorSettings` in `app/audio-analysis-protocol.ts`. */
   readonly detector: { readonly threshold: number; readonly retrigger: number };
+  /**
+   * T1751b: whether the tonal pass ran. It runs only while the document holds a tonal node,
+   * so a track taken without one carries NO CLAIM in every tonal field, and this is how a
+   * reader tells that from music with no pitch in it. Absent reads as false.
+   */
+  readonly tonal?: boolean;
 }
 
 export interface FeatureTrack {
@@ -135,6 +156,7 @@ export const SILENCE: AudioFeatures = {
   centroid: 0,
   ...NO_TEMPO_CLAIM,
   ...SILENT_SPECTRUM_BANDS,
+  ...NO_TONAL_CLAIM,
 };
 
 export function featureTrackLength(track: FeatureTrack): number {
@@ -296,9 +318,22 @@ export function parseFeatureTrack(text: string): TrackReadResult {
         message: "The feature track names its detector settings, but not as a finite threshold and retrigger.",
       };
     }
+    const tonal = (provenance as { tonal?: unknown }).tonal;
+    if (tonal !== undefined && typeof tonal !== "boolean") {
+      return {
+        ok: false,
+        code: "audio.track.provenance",
+        message: "The feature track says whether its tonal pass ran, but not as true or false.",
+      };
+    }
     return {
       ok: true,
-      track: { version: FEATURE_TRACK_VERSION, fps, frames: frames as number[], provenance: { detector: { threshold, retrigger } } },
+      track: {
+        version: FEATURE_TRACK_VERSION,
+        fps,
+        frames: frames as number[],
+        provenance: tonal === undefined ? { detector: { threshold, retrigger } } : { detector: { threshold, retrigger }, tonal },
+      },
     };
   }
   return { ok: true, track: { version: FEATURE_TRACK_VERSION, fps, frames: frames as number[] } };

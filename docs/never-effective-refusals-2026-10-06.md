@@ -279,7 +279,7 @@ Three readers that cannot see, found while filling this in:
 | `preset.bank.notInstalled` | error | `domain/presets/commands.ts`, `domain/presets/move-command.ts` | ELSEWHERE (build) | the component is not installed here |
 | `preset.bank.unnamed` | error | `domain/presets/commands.ts` | NOT YET | the instance has no name yet |
 | `preset.on.missing` | warning | `domain/presets/commands.ts` | NOT YET | on/off for a Layer that is not in the document |
-| `preset.on.notLayer` | warning | `domain/presets/commands.ts` | NEVER | on/off for a node that is not a Layer; a WARNING, and only at recall |
+| `preset.on.notLayer` | warning | `domain/presets/commands.ts` | NEVER | on/off for a node that is not a Layer; a WARNING, and only at recall. **Retired 2026-11-12 (§T1770b): a preset's on/off switches any node, so nothing emits this code; the counts in this survey are as taken.** |
 | `preset.page.notParent` | warning | `domain/presets/commands.ts` | NEVER | a page bank's preset holding values for a name other than parent |
 | `preset.page.on` | warning | `domain/presets/commands.ts` | NEVER | a page bank's preset carrying on/off: it reaches only its page |
 | `preset.page.recalls` | warning | `domain/presets/commands.ts` | NEVER | a page bank's preset carrying recalls: it reaches only its page |

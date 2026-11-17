@@ -8,6 +8,7 @@ import {
   SPECTRUM_BAND_NAMES,
   type AudioSpectrumBands,
 } from "../../domain/audio/spectrum-bands.ts";
+import type { AudioTonalFields } from "../../domain/audio/tonal-fields.ts";
 
 /**
  * T1228 — A DECLARED TEMPO, the cheap half of §T825, shipped before the estimator.
@@ -165,6 +166,49 @@ const ANALYSIS_PARAMETERS: ParameterSchema = {
   },
 };
 
+/**
+ * T1769b — THE INPUT GAIN: a trim on the source BEFORE the analysis, in decibels.
+ *
+ * The bands are a decibel window (`getByteFrequencyData`'s [-100, -30] dB on 0..1, T701), so
+ * an input that arrives quiet sits at the floor and nothing downstream can recover what the
+ * analyser never saw: a microphone hearing speakers across a room read the snare and hat
+ * bands at 0.01 and every hit count at 0. The trim is the one stage ahead of every analysis
+ * consumer (the hop engine, the polled fallback, the tonal pass, the offline walk), so every
+ * published channel is measured on the trimmed signal.
+ *
+ * It is the mirror of `audioFileIn.volume` and the two never cross: Volume is the MONITOR
+ * level and does not touch the analysis; Input Gain is the ANALYSIS level and does not touch
+ * the monitor (`use-audio-input.ts` taps the monitor off the source, beside the trim).
+ *
+ * The two doors read it differently, and each description says how:
+ *  - `audioIn` reads it per frame like any value (expression, preset, Panel), and a change is
+ *    ramped on the audio thread; it never rebuilds the capture.
+ *  - `audioFileIn` reads it AT REST, with the detector knobs: the file's features under the
+ *    timeline lock are a pre-analysed track, which is walked at one gain, so a change is the
+ *    rebuild door and the offline render reads the same stored number.
+ *
+ * The range is what the two cases measured need: +48 lifts an input 48 dB under full scale to
+ * it, -24 brings a line-level loopback that clips the window back inside it. The capture hook
+ * clamps to it (`inputGainDbOf`), so an expression cannot ask for more.
+ */
+export const AUDIO_INPUT_GAIN_DB = { min: -24, max: 48, default: 0 } as const;
+
+function inputGainParameter(description: string): ParameterSchema {
+  return {
+    inputGain: {
+      type: "number",
+      label: "Input Gain (dB)",
+      group: "Analysis",
+      default: AUDIO_INPUT_GAIN_DB.default,
+      min: AUDIO_INPUT_GAIN_DB.min,
+      max: AUDIO_INPUT_GAIN_DB.max,
+      range: "bounded",
+      step: 0.5,
+      description,
+    },
+  };
+}
+
 /** The tempo claim plus the bar structure, as channels: the same arithmetic for every node that can make one. */
 interface TempoChannels {
   readonly bpm: number;
@@ -251,7 +295,7 @@ export const audioInNode: NodeDefinition = {
   title: "Audio In",
   category: "input",
   description:
-    "The session's audio input as channels: level (RMS), low / lowMid / highMid / high band energies, the SPECTRUM as eighteen log-spaced bands band80 … band16000 (each row the same 0..1 analyser reading as the four musical bands, 80 Hz to 16 kHz, one per ~0.45 octave — pick one with Select and Range it), and onset — a spectral-flux envelope that rises on ANY energy increase, not a beat detector; threshold it with Trigger, or read onsetCount (events this frame) and onsetMax (the frame's peak). kick / snare / hat and kickCount / snareCount / hatCount are BAND HEURISTICS: the same onset envelope and event count confined to the band each drum mostly lives in (30-150, 150-2500, 5000-16000 Hz) — on a mix a bass note or a consonant can fire them; on a drums stem they are a measurement. Hit Threshold and Retrigger (Analysis) tune what the counts count. centroid is where the spectrum's weight sits, 0..1 over 20-16000 Hz — brightness. bpm, bpmConfidence, beatPhase, beat and beatCount are a TEMPO CLAIM and bpmConfidence says what it is worth: 0 is no claim (all five read 0), 1 is a DECLARED tempo, anything between is an estimate. A live input estimates nothing yet, so with Tempo on Auto all five read 0. Set Tempo to Declared and give the BPM you are playing to: the node then claims it at 1 and counts beat / beatPhase / beatCount from Beat Offset along the TIMELINE — the same clock Audio Pattern counts along — and publishes bar / barPhase in Beats / Bar, because a declared tempo makes the bar a fact. On Auto there are NO bar channels: a downbeat guessed from live input would be confidently wrong. Silent (all zeros) when no audio input is live. The ANALYSIS channels are CLOCKLESS (§V436): the numbers come from what the analyser heard this frame, so a timeline loop passes straight through them; the declared beat clock is TIMELINE-ANCHORED, so it wraps with the lap by design.",
+    "The session's audio input as channels: level (RMS), low / lowMid / highMid / high band energies, the SPECTRUM as eighteen log-spaced bands band80 … band16000 (each row the same 0..1 analyser reading as the four musical bands, 80 Hz to 16 kHz, one per ~0.45 octave — pick one with Select and Range it), and onset — a spectral-flux envelope that rises on ANY energy increase, not a beat detector; threshold it with Trigger, or read onsetCount (events this frame) and onsetMax (the frame's peak). kick / snare / hat and kickCount / snareCount / hatCount are BAND HEURISTICS: the same onset envelope and event count confined to the band each drum mostly lives in (30-150, 150-2500, 5000-16000 Hz) — on a mix a bass note or a consonant can fire them; on a drums stem they are a measurement. Hit Threshold and Retrigger (Analysis) tune what the counts count, and Input Gain (Analysis) trims the input, in decibels, before any of it is measured: raise it when a quiet input leaves the bands at the floor. centroid is where the spectrum's weight sits, 0..1 over 20-16000 Hz — brightness. bpm, bpmConfidence, beatPhase, beat and beatCount are a TEMPO CLAIM and bpmConfidence says what it is worth: 0 is no claim (all five read 0), 1 is a DECLARED tempo, anything between is an estimate. A live input estimates nothing yet, so with Tempo on Auto all five read 0. Set Tempo to Declared and give the BPM you are playing to: the node then claims it at 1 and counts beat / beatPhase / beatCount from Beat Offset along the TIMELINE — the same clock Audio Pattern counts along — and publishes bar / barPhase in Beats / Bar, because a declared tempo makes the bar a fact. On Auto there are NO bar channels: a downbeat guessed from live input would be confidently wrong. Silent (all zeros) when no audio input is live. The ANALYSIS channels are CLOCKLESS (§V436): the numbers come from what the analyser heard this frame, so a timeline loop passes straight through them; the declared beat clock is TIMELINE-ANCHORED, so it wraps with the lap by design.",
   tags: ["value", "input", "audio", "sound", "music", "fft"],
   inputs: [],
   outputs: [{ id: "out", label: "Out", type: VALUE_PORT }],
@@ -270,6 +314,25 @@ export const audioInNode: NodeDefinition = {
       description:
         "Microphone device id, from the inspector's device picker. Empty = the system default. Device names are hidden by the browser until microphone access is granted.",
     },
+    /*
+     * T1776b — the browser's own input processing, OFF unless asked for. `getUserMedia`'s
+     * defaults are a telephone's: echo cancellation, noise suppression and automatic gain,
+     * all three tuned for one voice near the microphone. On music they are the wrong
+     * instrument (see the description), so the capture asks for the raw device and this
+     * switch is the way back for a speech source. One switch, not three: the three are one
+     * decision ("is this a voice call or a measurement"), and no case was found for a mix.
+     * Read by the capture hook at rest; they are constraints, fixed when the device opens.
+     */
+    voiceProcessing: {
+      type: "boolean",
+      label: "Voice Processing",
+      default: false,
+      description:
+        "Off (the default): the microphone is opened RAW, with the browser's echo cancellation, noise suppression and automatic gain control all asked off, which is what an analysis of music needs. Automatic gain flattens the dynamics every level-driven mapping follows; noise suppression is tuned for speech and gates or thins sustained notes and percussion; echo cancellation subtracts what this machine is playing through its own speakers, which is exactly the music a microphone in the room is there to hear. On: all three are asked on, for a single voice close to the microphone. The browser may not grant what is asked: the Audio capture status line names anything it kept or would not report. Changing it restarts the capture.",
+    },
+    ...inputGainParameter(
+      "A trim on the input BEFORE the analysis, in decibels: 0 leaves it alone, +6 doubles it, +20 is ten times. Every channel the session publishes (level, the bands, the spectrum, onset, the hit counts, the tonal nodes) is measured on the trimmed signal. Raise it for a quiet input: the bands are a window from -100 to -30 dB, so a microphone hearing speakers across a room sits at the floor, and nothing downstream can recover what the analyser never saw. Lower it for a hot one: past full scale level stops at 1 and a band stops at 1, so the peaks flatten. Watch level and the bands while you set it. A value like any other, so drive it, store it in a preset or put it on a Panel; a change is ramped over a few hundredths of a second and never restarts the capture. A live input is not monitored, so this changes nothing you hear.",
+    ),
     ...ANALYSIS_PARAMETERS,
     ...tempoParameters(
       "Declared only: the second on the TIMELINE where beat one falls. Beats count from there; before it, beat and the phases read 0.",
@@ -287,8 +350,17 @@ export const audioInNode: NodeDefinition = {
  * Both audio nodes publish the SAME channels: the session has one feature record. Every
  * field of it, by name (T1227): a field the record carries and the node did not publish
  * would be the "built, never wired" hole, and `audio.test.ts` pins the set.
+ *
+ * T1751b: every SOURCE field. The record's tonal fields (`AudioTonalFields`) are published
+ * by the tonal nodes (`audio-tonal.ts`) and not here: thirty more channels on every audio
+ * node would be paid by every consumer of one (an Expression copies its input bag once per
+ * statement), in every document, including the ones that never read a pitch. The pin is
+ * now "each record field is published by exactly one family", and `audio-tonal.test.ts`
+ * holds the other half.
  */
-function projectFeatures(audio: AudioFeatures | undefined): Record<keyof AudioFeatures, number> {
+export type AudioSourceFields = Omit<AudioFeatures, keyof AudioTonalFields>;
+
+function projectFeatures(audio: AudioFeatures | undefined): Record<keyof AudioSourceFields, number> {
   return {
     level: audio?.level ?? 0,
     low: audio?.low ?? 0,
@@ -359,7 +431,7 @@ export const audioFileInNode: NodeDefinition = {
   title: "Audio File In",
   category: "input",
   description:
-    "Plays an audio file with a transport — play mode, speed, cue, trim, at-end behaviour and volume — and publishes its features as channels: level, low / lowMid / highMid / high, the spectrum as eighteen log-spaced bands band80 … band16000, onset (an energy-rise envelope, not a beat detector — threshold it with Trigger) with onsetCount / onsetMax, the kick / snare / hat band heuristics with their counts (the onset envelope confined to each drum's band — a guess on a mix, a measurement on a drums stem; Hit Threshold and Retrigger in the Analysis group tune what the counts count), and centroid (brightness, 0..1). The tempo channels — bpm, bpmConfidence, beatPhase, beat, beatCount — are a CLAIM, and bpmConfidence says what it is worth: 0 is no claim, 1 is a DECLARED tempo, anything between is an estimate. Nothing here estimates an arbitrary file's tempo yet, so with Tempo on Auto all five read 0. Set Tempo to Declared and give the track's BPM: the node claims it at 1 and counts beat / beatPhase / beatCount along the FILE — Beat Offset is the second into the file where beat one falls, and trim, speed and cue move the beats with the sound — and publishes bar / barPhase in Beats / Bar, because a declared tempo makes the bar a fact. Lock Play Mode to the timeline and that beat clock IS the playhead's; under Free Run the beats count as if it were locked, so they only line up with the sound while the free-run playhead does. Wrapping at the trim window is not counted, so loop a window that is a whole number of beats. On Auto there are NO bar channels: a bar count guessed from a file would be confidently wrong at exactly the moment you built a phrase on it. A bound file takes over the session's single audio capture. Its CHANNELS are clockless (§V436): they report what was heard this frame, so a timeline loop passes straight through them. Its PLAYHEAD is FREE RUN by default (T586): it keeps its own playhead, so Play and Cue Pulse drive it and a track you just dropped in plays as soon as you press Play, whatever the timeline is doing. Lock it to the timeline and the playhead becomes TIMELINE-ANCHORED instead: the position derives from the frame, so bar one of the track lands on the in point, a scrub finds the same second every time, and an offline render reproduces. Free run gives up all three of those, and a render says so by name rather than quietly handing you a take that differs from what you heard.",
+    "Plays an audio file with a transport — play mode, speed, cue, trim, at-end behaviour and volume — and publishes its features as channels: level, low / lowMid / highMid / high, the spectrum as eighteen log-spaced bands band80 … band16000, onset (an energy-rise envelope, not a beat detector — threshold it with Trigger) with onsetCount / onsetMax, the kick / snare / hat band heuristics with their counts (the onset envelope confined to each drum's band — a guess on a mix, a measurement on a drums stem; Hit Threshold and Retrigger in the Analysis group tune what the counts count), and centroid (brightness, 0..1). Input Gain (Analysis) trims the file, in decibels, before any of that is measured; Volume is the monitor level, and neither touches the other. The tempo channels — bpm, bpmConfidence, beatPhase, beat, beatCount — are a CLAIM, and bpmConfidence says what it is worth: 0 is no claim, 1 is a DECLARED tempo, anything between is an estimate. Nothing here estimates an arbitrary file's tempo yet, so with Tempo on Auto all five read 0. Set Tempo to Declared and give the track's BPM: the node claims it at 1 and counts beat / beatPhase / beatCount along the FILE — Beat Offset is the second into the file where beat one falls, and trim, speed and cue move the beats with the sound — and publishes bar / barPhase in Beats / Bar, because a declared tempo makes the bar a fact. Lock Play Mode to the timeline and that beat clock IS the playhead's; under Free Run the beats count as if it were locked, so they only line up with the sound while the free-run playhead does. Wrapping at the trim window is not counted, so loop a window that is a whole number of beats. On Auto there are NO bar channels: a bar count guessed from a file would be confidently wrong at exactly the moment you built a phrase on it. A bound file takes over the session's single audio capture. Its CHANNELS are clockless (§V436): they report what was heard this frame, so a timeline loop passes straight through them. Its PLAYHEAD is FREE RUN by default (T586): it keeps its own playhead, so Play and Cue Pulse drive it and a track you just dropped in plays as soon as you press Play, whatever the timeline is doing. Lock it to the timeline and the playhead becomes TIMELINE-ANCHORED instead: the position derives from the frame, so bar one of the track lands on the in point, a scrub finds the same second every time, and an offline render reproduces. Free run gives up all three of those, and a render says so by name rather than quietly handing you a take that differs from what you heard.",
   tags: ["value", "input", "audio", "music", "file", "fft", "transport"],
   inputs: [],
   outputs: [{ id: "out", label: "Out", type: VALUE_PORT }],
@@ -376,7 +448,7 @@ export const audioFileInNode: NodeDefinition = {
       range: "floor",
       step: 0.01,
       description:
-        "Monitoring level. Does NOT touch the analysis — the channels report the file at unity however loud you are playing it, so turning the room down does not silently rescale everything driven by it.",
+        "Monitoring level. Does NOT touch the analysis — the channels report the file at the level Input Gain (Analysis) sets, unity by default, however loud you are playing it, so turning the room down does not silently rescale everything driven by it.",
     },
     monitor: {
       type: "boolean",
@@ -385,6 +457,9 @@ export const audioFileInNode: NodeDefinition = {
       default: true,
       description: "Play the file audibly while analysing it.",
     },
+    ...inputGainParameter(
+      "A trim on the file BEFORE the analysis, in decibels: 0 leaves it alone, +6 doubles it, +20 is ten times. Every channel is measured on the trimmed file, so a quiet master can be lifted off the floor of the bands' -100 to -30 dB window and a hot one brought back under it (past full scale level stops at 1 and a band stops at 1). It does NOT touch what you hear or the sound an export carries: Volume is the monitor level and does not touch the analysis, this is the analysis level and does not touch the monitor. Read at rest, like Hit Threshold: changing it restarts the capture and re-analyses the file, and an offline render reads the same stored number.",
+    ),
     ...ANALYSIS_PARAMETERS,
     syncOffset: {
       type: "number",

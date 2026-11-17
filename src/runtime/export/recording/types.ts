@@ -37,6 +37,31 @@ export interface EncoderFrame extends EncoderFrameTiming {
   readonly image: Rgba8Image;
 }
 
+/** What 10-bit codes mean: written into the stream so a player decodes them as intended. */
+export interface Yuv10ColorSpace {
+  readonly primaries: "bt709";
+  readonly transfer: "iec61966-2-1";
+  readonly matrix: "bt709";
+  readonly fullRange: false;
+}
+
+/**
+ * One 4:2:0 frame of 10-bit codes in 16-bit samples, the layout WebCodecs calls `I420P10`
+ * (T1741b). Built from a full-precision Output readback (`./yuv10.ts`), never from 8-bit
+ * bytes: that is what makes a 10-bit file of it honest.
+ */
+export interface I420P10Image {
+  readonly width: number;
+  readonly height: number;
+  /** Y (`width * height`), then Cb, then Cr (`width/2 * height/2` each), tightly packed. */
+  readonly data: Uint16Array;
+  readonly colorSpace: Yuv10ColorSpace;
+}
+
+export interface Yuv10EncoderFrame extends EncoderFrameTiming {
+  readonly yuv: I420P10Image;
+}
+
 /** Browser-neutral shape of a frame captured from a GPU presentation surface. */
 export interface CapturedVideoFrame {
   readonly codedWidth: number;
@@ -85,6 +110,12 @@ export interface VideoEncoderSink {
   encode(frame: EncoderFrame): Promise<void> | void;
   /** Present only when the encoder was explicitly configured with a surface capture. */
   encodeCapturedFrame?(timing: EncoderFrameTiming): Promise<void> | void;
+  /**
+   * Present only when the encoder writes a 10-bit format (T1741b). The recorder then reads
+   * the Output at full precision and hands it 10-bit planes; `encode` and a canvas capture,
+   * both 8-bit, are refused by such an encoder.
+   */
+  encodeYuv10?(frame: Yuv10EncoderFrame): Promise<void> | void;
   /** Flushes and muxes. Called once. */
   finish(): Promise<EncodedVideo>;
   /** Releases resources after a cancelled take. */

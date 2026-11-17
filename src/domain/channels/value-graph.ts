@@ -4,9 +4,11 @@ import type { AudioFeatures, FrameEvaluationInput } from "../types/frame.ts";
 import type { RuntimeDiagnostic } from "../types/diagnostics.ts";
 import type { NodeDefinition, ValueChannels } from "../types/node-definition.ts";
 import type { NodeRegistryView } from "../../nodes/registry/registry.ts";
-import type { ChannelResolver } from "../parameters/resolve.ts";
+import type { ChannelResolver, ParameterMorphs, ParameterReadOptions } from "../parameters/resolve.ts";
+import type { ParameterSchema, ParameterValue } from "../types/parameters.ts";
+import { animatedParameterRoots } from "./graph-channels.ts";
 import { resolveParameterSchema, effectiveParameterSchema } from "../parameters/resolve.ts";
-import { bypassPassthroughPorts } from "../graph/bypass.ts";
+import { bypassPassthroughPairs, bypassPassthroughPorts } from "../graph/bypass.ts";
 import { nodeNames } from "../graph/names.ts";
 import { bindingTargets, channelTargetName, keyReads, type KeyRead } from "../graph/parameter-dependencies.ts";
 import { channelDependenciesOf } from "../graph/reference-cycles.ts";
@@ -144,13 +146,238 @@ function isValueNode(definition: NodeDefinition | undefined): definition is Node
 const valuePortIds = (definition: NodeDefinition): ReadonlySet<PortId> =>
   new Set(definition.inputs.filter((port) => port.type.kind === "value").map((port) => port.id));
 
+/**
+ * T1179 — WHAT A DOCUMENT'S STRUCTURE DECIDES ABOUT ITS VALUE GRAPH: which nodes are value
+ * nodes, the value edges into each, the order they evaluate in (and which of them sit on a
+ * cycle), and the names they publish under. All of it was rebuilt every frame, sorts inside
+ * Kahn included; it is a function of the structure alone, so the session keeps it per
+ * structure, as it already kept the references walk (T1668b). What a frame can move (a mute,
+ * a bypass, a parameter, a state) is read per frame by `evaluate`, never from here.
+ */
+interface Member {
+  readonly nodeId: NodeId;
+  readonly definition: NodeDefinition;
+}
+
+interface ValueTopology {
+  readonly members: ReadonlyMap<NodeId, Member>;
+  readonly incoming: ReadonlyMap<NodeId, ReadonlyArray<{ edgeId: string; source: NodeId; port: PortId }>>;
+  readonly order: readonly NodeId[];
+  readonly cycled: readonly NodeId[];
+  readonly valueNames: ReadonlySet<string | undefined>;
+}
+
+function valueTopology(graph: FlatGraph, flattening: FlatteningReads, registry: NodeRegistryView): ValueTopology {
+  const members = new Map<NodeId, Member>();
+  for (const nodeId of Object.keys(graph.nodes).sort()) {
+    const node = graph.nodes[nodeId];
+    const definition = node === undefined ? undefined : registry.get(node.type);
+    if (isValueNode(definition)) members.set(nodeId, { nodeId, definition });
+  }
+
+  /** Value edges between members, target input port → sorted upstream sources. */
+  const incoming = new Map<NodeId, Array<{ edgeId: string; source: NodeId; port: PortId }>>();
+  const dependents = new Map<NodeId, Set<NodeId>>();
+  const indegree = new Map<NodeId, number>();
+  for (const nodeId of members.keys()) indegree.set(nodeId, 0);
+  const orderAfter = (source: NodeId, target: NodeId): void => {
+    const dependentList = dependents.get(source) ?? new Set<NodeId>();
+    if (dependentList.has(target)) return;
+    dependentList.add(target);
+    dependents.set(source, dependentList);
+    indegree.set(target, (indegree.get(target) ?? 0) + 1);
+  };
+  const edgeIds = Object.keys(graph.edges).sort();
+  /*
+   * B301 (§V1035) — A BYPASSED NODE THAT IS NOT A VALUE NODE IS A WIRE HERE TOO. A value
+   * member's own bypass is read per frame in `evaluate`. What never reached this graph is a
+   * component instance that is bypassed: flattening leaves it un-inlined (§T1032), it is no
+   * member, and every value edge through it was dropped — the texture compiler passed its
+   * input through and this graph went silent. So an edge that leaves such a node is followed
+   * back through it, by the pairing the compiler splices by (`bypassPassthroughPairs`: output
+   * k passes the k-th input of its kind), to the member that really publishes. Structural: a
+   * bypass flag is not a values-only revision, so the topology is rebuilt when it moves.
+   * Muted wins over bypassed, as in the compiler: a muted node passes nothing.
+   */
+  const publishersBehind = (nodeId: NodeId, portId: PortId, seen: ReadonlySet<string> = new Set()): NodeId[] => {
+    if (members.has(nodeId)) return [nodeId];
+    const node = graph.nodes[nodeId];
+    const key = `${nodeId}\u0000${portId}`;
+    if (node === undefined || node.ui?.bypassed !== true || node.ui.muted === true || seen.has(key)) return [];
+    const definition = registry.get(node.type);
+    if (definition?.outputs.find((port) => port.id === portId)?.type.kind !== "value") return [];
+    const input = bypassPassthroughPairs(definition).get(portId);
+    if (input === undefined) return [];
+    const next = new Set(seen).add(key);
+    return edgeIds.flatMap((id) => {
+      const feeding = graph.edges[id];
+      return feeding !== undefined && feeding.target.nodeId === nodeId && feeding.target.portId === input
+        ? publishersBehind(feeding.source.nodeId, feeding.source.portId, next)
+        : [];
+    });
+  };
+  for (const edgeId of edgeIds) {
+    const edge = graph.edges[edgeId];
+    if (edge === undefined) continue;
+    const target = members.get(edge.target.nodeId);
+    if (target === undefined) continue;
+    if (!valuePortIds(target.definition).has(edge.target.portId)) continue;
+    for (const source of publishersBehind(edge.source.nodeId, edge.source.portId)) {
+      const list = incoming.get(edge.target.nodeId) ?? [];
+      list.push({ edgeId, source, port: edge.target.portId });
+      incoming.set(edge.target.nodeId, list);
+      orderAfter(source, edge.target.nodeId);
+    }
+  }
+  {
+    /*
+     * §B293 — WHICH BAGS A MEMBER'S OWN BAG WAITS FOR, walked over (node, key).
+     *
+     * A member's bag is made from all of its parameters, so the walk starts at every
+     * one of them and follows what each READS: another parameter (of any node, its own
+     * included), which is walked in turn; or a channel, which is a bag to wait for when
+     * a member publishes it, and the parameters it is composed from when a definition
+     * declares them (a camera's pose). It used to walk node to node, so a value node
+     * whose parameter read another parameter of ITS OWN node waited for itself: a
+     * "cycle", and it emitted nothing. A member that reads its own CHANNEL does wait
+     * for itself, and that is still the cycle it is.
+     *
+     * T1485b: `op('<instance>')` names no node of the flattening (the instance was
+     * inlined). The read goes to the inner nodes the instance's value outputs publish
+     * from, and it is ordered after them like any other, or a reader whose id sorts
+     * first reads a bag that is not published yet. The instances are the flattening's
+     * own, so they are as fixed as the graph this memo is keyed on.
+     *
+     * VN36: `op('<instance>').par.<key>` (what `parent()` becomes) names no node either.
+     * The read is of the instance's PAGE, which the walk follows like any node's
+     * parameter, so a page knob reading `op('lfo1').chan.value` orders its readers after
+     * `lfo1`. Without it the reader evaluates before the LFO and lags a frame.
+     */
+    const named = nodeNames(graph);
+    const pages = new Map<NodeId, GraphNode>();
+    for (const page of flattening.instancePages.values()) pages.set(page.node.id, page.node);
+    const nodeOf = (id: NodeId): GraphNode | undefined => graph.nodes[id] ?? pages.get(id);
+    const readsByNode = new Map<NodeId, readonly KeyRead[]>();
+    const readsOf = (owner: NodeId): readonly KeyRead[] => {
+      const known = readsByNode.get(owner);
+      if (known !== undefined) return known;
+      const reads = keyReads(nodeOf(owner)?.parameters ?? {});
+      readsByNode.set(owner, reads);
+      return reads;
+    };
+    const compiled = new Map<NodeId, Set<NodeId>>();
+    for (const target of members.keys()) {
+      const sources = new Set<NodeId>();
+      const visited = new Set<string>();
+      /** A parameter to walk; `null` is every parameter the node has. */
+      const pending: Array<readonly [NodeId, string | null]> = [[target, null]];
+      const bagOf = (publisher: NodeId): void => {
+        if (members.has(publisher)) sources.add(publisher);
+      };
+      while (pending.length > 0) {
+        const [owner, key] = pending.pop()!;
+        const id = `${owner}\u0000${key ?? ""}`;
+        if (visited.has(id) || visited.has(`${owner}\u0000`)) continue;
+        visited.add(id);
+        const ownerNode = nodeOf(owner);
+        if (ownerNode === undefined) continue;
+        // A legacy `driven` slot names a channel outright.
+        for (const driven of bindingTargets(ownerNode.parameters)) {
+          if (driven.kind !== "driven") continue;
+          if (key !== null && driven.parameterKey.split(".")[0] !== key) continue;
+          const publisher = named.get(channelTargetName(driven.address));
+          if (publisher !== undefined) bagOf(publisher);
+        }
+        for (const read of readsOf(owner)) {
+          if (key !== null && read.from !== key) continue;
+          const instance = read.node === null || read.kind !== "channel" ? undefined : flattening.instanceChannels.get(read.node);
+          if (instance !== undefined) {
+            for (const source of instance) {
+              const publisher = named.get(source.publisher);
+              if (publisher !== undefined) bagOf(publisher);
+            }
+            continue;
+          }
+          const to =
+            read.node === null
+              ? owner
+              : (named.get(read.node) ?? (read.kind === "parameter" ? flattening.instancePages.get(read.node)?.node.id : undefined));
+          const toNode = to === undefined ? undefined : nodeOf(to);
+          if (to === undefined || toNode === undefined) continue;
+          if (read.kind === "parameter") {
+            pending.push([to, read.key]);
+            continue;
+          }
+          if (members.has(to)) {
+            sources.add(to);
+            continue;
+          }
+          const composed = channelDependenciesOf(registry.get(toNode.type));
+          if (composed !== null && composed !== "all") for (const parameter of composed) pending.push([to, parameter]);
+        }
+      }
+      if (sources.size > 0) compiled.set(target, sources);
+    }
+    for (const [target, sources] of compiled) {
+      for (const source of sources) orderAfter(source, target);
+    }
+  }
+
+  // Kahn, deterministic: the ready set stays sorted.
+  const order: NodeId[] = [];
+  const ready = [...members.keys()].filter((nodeId) => (indegree.get(nodeId) ?? 0) === 0).sort();
+  while (ready.length > 0) {
+    const nodeId = ready.shift() as NodeId;
+    order.push(nodeId);
+    for (const next of [...(dependents.get(nodeId) ?? [])].sort()) {
+      const remaining = (indegree.get(next) ?? 1) - 1;
+      indegree.set(next, remaining);
+      if (remaining === 0) {
+        ready.push(next);
+        ready.sort();
+      }
+    }
+  }
+  const cycled = order.length < members.size ? [...members.keys()].filter((nodeId) => !order.includes(nodeId)).sort() : [];
+  const valueNames = new Set([...members.keys()].map((nodeId) => graph.nodes[nodeId]?.label));
+  return { members, incoming, order, cycled, valueNames };
+}
+
 export function createValueGraphSession(registry: NodeRegistryView): ValueGraphSession {
   /** nodeId → persistent state bag. Survives frames; dies on reset() or node removal. */
   const states = new Map<NodeId, Record<string, unknown>>();
   // Authored reference parsing belongs to graph changes, never the frame path — and, T1668b,
   // to changes of STRUCTURE: keyed on the flattening's `structure` where it has one, so a
   // value written (another document object, the same references) parses nothing again.
-  const dependenciesByGraph = new WeakMap<StructureKey, ReadonlyMap<NodeId, ReadonlySet<NodeId>>>();
+  // T1179: and so does everything else the structure decides (`valueTopology`).
+  const topologyByStructure = new WeakMap<StructureKey, ValueTopology>();
+  /**
+   * T1179 — A NODE'S STORED CONSTANTS, RESOLVED ONCE PER NODE OBJECT.
+   *
+   * Only a key in expression, driven or bind mode can read the frame (`animatedParameterRoots`,
+   * the frame compiler's own list); every other key a value node stores resolves the same at
+   * every frame, and was resolved at every frame. They are resolved once, for the node object
+   * the document holds (an edit is another object), and each frame resolves the moving keys
+   * alone, the whole schema riding along as siblings so a bind finds its sibling (§T1172's
+   * one-key resolve). A node a preset morph covers resolves whole, as before: a fade moves
+   * keys no mode gives away.
+   */
+  const constantsByNode = new WeakMap<GraphNode, { readonly schema: ParameterSchema; readonly moving: ParameterSchema; readonly constants: Readonly<Record<string, ParameterValue>> }>();
+  const valuesAt = (node: GraphNode, definition: NodeDefinition, read: ParameterReadOptions, morphs: ParameterMorphs): Readonly<Record<string, ParameterValue>> => {
+    if (morphs.keysOf(node.id) !== undefined) return resolveParameterSchema(node, effectiveParameterSchema(definition, node.parameters), read).values;
+    let known = constantsByNode.get(node);
+    if (known === undefined) {
+      const schema = effectiveParameterSchema(definition, node.parameters);
+      const roots = animatedParameterRoots(node);
+      const moving: Record<string, ParameterSchema[string]> = {};
+      const still: Record<string, ParameterSchema[string]> = {};
+      for (const [key, parameter] of Object.entries(schema)) (roots.has(key) ? moving : still)[key] = parameter;
+      known = { schema, moving, constants: resolveParameterSchema(node, still, { ...read, schema }).values };
+      constantsByNode.set(node, known);
+    }
+    if (Object.keys(known.moving).length === 0) return known.constants;
+    return { ...known.constants, ...resolveParameterSchema(node, known.moving, { ...read, schema: known.schema }).values };
+  };
 
   return {
     reset() {
@@ -161,161 +388,19 @@ export function createValueGraphSession(registry: NodeRegistryView): ValueGraphS
       const diagnostics: RuntimeDiagnostic[] = [];
       const { flattening } = extras;
 
-      interface Member {
-        readonly nodeId: NodeId;
-        readonly definition: NodeDefinition;
+      const structure = flattening.structure ?? graph;
+      let topology = topologyByStructure.get(structure);
+      if (topology === undefined) {
+        topology = valueTopology(graph, flattening, registry);
+        topologyByStructure.set(structure, topology);
       }
-      const members = new Map<NodeId, Member>();
-      for (const nodeId of Object.keys(graph.nodes).sort()) {
-        const node = graph.nodes[nodeId];
-        const definition = node === undefined ? undefined : registry.get(node.type);
-        if (isValueNode(definition)) members.set(nodeId, { nodeId, definition });
-      }
+      const { members, incoming, order, cycled, valueNames } = topology;
       // Drop state for nodes that left the document, so a deleted-and-recreated Lag
       // starts fresh rather than inheriting a stranger's trajectory.
       for (const nodeId of [...states.keys()]) {
         if (!members.has(nodeId)) states.delete(nodeId);
       }
-
-      /** Value edges between members, target input port → sorted upstream sources. */
-      const incoming = new Map<NodeId, Array<{ edgeId: string; source: NodeId; port: PortId }>>();
-      const dependents = new Map<NodeId, Set<NodeId>>();
-      const indegree = new Map<NodeId, number>();
-      for (const nodeId of members.keys()) indegree.set(nodeId, 0);
-      const orderAfter = (source: NodeId, target: NodeId): void => {
-        const dependentList = dependents.get(source) ?? new Set<NodeId>();
-        if (dependentList.has(target)) return;
-        dependentList.add(target);
-        dependents.set(source, dependentList);
-        indegree.set(target, (indegree.get(target) ?? 0) + 1);
-      };
-      for (const edgeId of Object.keys(graph.edges).sort()) {
-        const edge = graph.edges[edgeId];
-        if (edge === undefined) continue;
-        const source = members.get(edge.source.nodeId);
-        const target = members.get(edge.target.nodeId);
-        if (source === undefined || target === undefined) continue;
-        if (!valuePortIds(target.definition).has(edge.target.portId)) continue;
-        const list = incoming.get(edge.target.nodeId) ?? [];
-        list.push({ edgeId, source: edge.source.nodeId, port: edge.target.portId });
-        incoming.set(edge.target.nodeId, list);
-        orderAfter(edge.source.nodeId, edge.target.nodeId);
-      }
-      const structure = flattening.structure ?? graph;
-      let dependencies = dependenciesByGraph.get(structure);
-      if (dependencies === undefined) {
-/*
-         * §B293 — WHICH BAGS A MEMBER'S OWN BAG WAITS FOR, walked over (node, key).
-         *
-         * A member's bag is made from all of its parameters, so the walk starts at every
-         * one of them and follows what each READS: another parameter (of any node, its own
-         * included), which is walked in turn; or a channel, which is a bag to wait for when
-         * a member publishes it, and the parameters it is composed from when a definition
-         * declares them (a camera's pose). It used to walk node to node, so a value node
-         * whose parameter read another parameter of ITS OWN node waited for itself: a
-         * "cycle", and it emitted nothing. A member that reads its own CHANNEL does wait
-         * for itself, and that is still the cycle it is.
-         *
-         * T1485b: `op('<instance>')` names no node of the flattening (the instance was
-         * inlined). The read goes to the inner nodes the instance's value outputs publish
-         * from, and it is ordered after them like any other, or a reader whose id sorts
-         * first reads a bag that is not published yet. The instances are the flattening's
-         * own, so they are as fixed as the graph this memo is keyed on.
-         *
-         * VN36: `op('<instance>').par.<key>` (what `parent()` becomes) names no node either.
-         * The read is of the instance's PAGE, which the walk follows like any node's
-         * parameter, so a page knob reading `op('lfo1').chan.value` orders its readers after
-         * `lfo1`. Without it the reader evaluates before the LFO and lags a frame.
-         */
-        const named = nodeNames(graph);
-        const pages = new Map<NodeId, GraphNode>();
-        for (const page of flattening.instancePages.values()) pages.set(page.node.id, page.node);
-        const nodeOf = (id: NodeId): GraphNode | undefined => graph.nodes[id] ?? pages.get(id);
-        const readsByNode = new Map<NodeId, readonly KeyRead[]>();
-        const readsOf = (owner: NodeId): readonly KeyRead[] => {
-          const known = readsByNode.get(owner);
-          if (known !== undefined) return known;
-          const reads = keyReads(nodeOf(owner)?.parameters ?? {});
-          readsByNode.set(owner, reads);
-          return reads;
-        };
-        const compiled = new Map<NodeId, Set<NodeId>>();
-        for (const target of members.keys()) {
-          const sources = new Set<NodeId>();
-          const visited = new Set<string>();
-          /** A parameter to walk; `null` is every parameter the node has. */
-          const pending: Array<readonly [NodeId, string | null]> = [[target, null]];
-          const bagOf = (publisher: NodeId): void => {
-            if (members.has(publisher)) sources.add(publisher);
-          };
-          while (pending.length > 0) {
-            const [owner, key] = pending.pop()!;
-            const id = `${owner}\u0000${key ?? ""}`;
-            if (visited.has(id) || visited.has(`${owner}\u0000`)) continue;
-            visited.add(id);
-            const ownerNode = nodeOf(owner);
-            if (ownerNode === undefined) continue;
-            // A legacy `driven` slot names a channel outright.
-            for (const driven of bindingTargets(ownerNode.parameters)) {
-              if (driven.kind !== "driven") continue;
-              if (key !== null && driven.parameterKey.split(".")[0] !== key) continue;
-              const publisher = named.get(channelTargetName(driven.address));
-              if (publisher !== undefined) bagOf(publisher);
-            }
-            for (const read of readsOf(owner)) {
-              if (key !== null && read.from !== key) continue;
-              const instance = read.node === null || read.kind !== "channel" ? undefined : flattening.instanceChannels.get(read.node);
-              if (instance !== undefined) {
-                for (const source of instance) {
-                  const publisher = named.get(source.publisher);
-                  if (publisher !== undefined) bagOf(publisher);
-                }
-                continue;
-              }
-              const to =
-                read.node === null
-                  ? owner
-                  : (named.get(read.node) ?? (read.kind === "parameter" ? flattening.instancePages.get(read.node)?.node.id : undefined));
-              const toNode = to === undefined ? undefined : nodeOf(to);
-              if (to === undefined || toNode === undefined) continue;
-              if (read.kind === "parameter") {
-                pending.push([to, read.key]);
-                continue;
-              }
-              if (members.has(to)) {
-                sources.add(to);
-                continue;
-              }
-              const composed = channelDependenciesOf(registry.get(toNode.type));
-              if (composed !== null && composed !== "all") for (const parameter of composed) pending.push([to, parameter]);
-            }
-          }
-          if (sources.size > 0) compiled.set(target, sources);
-        }
-        dependencies = compiled;
-        dependenciesByGraph.set(structure, dependencies);
-      }
-      for (const [target, sources] of dependencies) {
-        for (const source of sources) orderAfter(source, target);
-      }
-
-      // Kahn, deterministic: the ready set stays sorted.
-      const order: NodeId[] = [];
-      const ready = [...members.keys()].filter((nodeId) => (indegree.get(nodeId) ?? 0) === 0).sort();
-      while (ready.length > 0) {
-        const nodeId = ready.shift() as NodeId;
-        order.push(nodeId);
-        for (const next of [...(dependents.get(nodeId) ?? [])].sort()) {
-          const remaining = (indegree.get(next) ?? 1) - 1;
-          indegree.set(next, remaining);
-          if (remaining === 0) {
-            ready.push(next);
-            ready.sort();
-          }
-        }
-      }
-      if (order.length < members.size) {
-        const cycled = [...members.keys()].filter((nodeId) => !order.includes(nodeId)).sort();
+      if (cycled.length > 0) {
         diagnostics.push({
           severity: "error",
           code: "valueGraph.cycle",
@@ -323,10 +408,8 @@ export function createValueGraphSession(registry: NodeRegistryView): ValueGraphS
           suggestion: "Break the loop — a feedback stage (Lag reading itself) needs an explicit delay, not a wire loop (§V152).",
         });
       }
-
       const byId = new Map<NodeId, ValueChannels>();
       const byName = new Map<string, ValueChannels>();
-      const valueNames = new Set([...members.keys()].map(nodeId => graph.nodes[nodeId]?.label));
       const resolver: ChannelResolver = (channel) => {
         const colon = channel.indexOf(":");
         const name = colon < 0 ? channel : channel.slice(0, colon);
@@ -342,7 +425,14 @@ export function createValueGraphSession(registry: NodeRegistryView): ValueGraphS
         if (valueNames.has(name)) return resolver(channel, context);
         return extras.channels?.(channel);
       };
-      const readOptions = parameterReadOptions({ graph, registry, channels, frame, flattening });
+      /*
+       * T1720b: this reader remembers repeated subexpressions too, though nodes publish while
+       * it reads. A read of a member's channel resolves only once that member has published
+       * (the order puts every publisher first, and `byName` starts empty each frame), and a
+       * read that comes too early FAILS, which is never remembered. So whatever is kept is
+       * what every later reader of the frame would compute.
+       */
+      const readOptions = parameterReadOptions({ graph, registry, channels, frame, flattening }, { expressions: true });
       /** Publishes a node's bag. A node that never calls this is SILENT (see the note). */
       const publish = (nodeId: NodeId, bag: ValueChannels): void => {
         // Non-finite numbers never leave a stage: downstream math on NaN is a graph
@@ -375,6 +465,8 @@ export function createValueGraphSession(registry: NodeRegistryView): ValueGraphS
         const inputs: Record<PortId, ValueChannels> = {};
         /** T509: who currently supplies each channel of each port, for the shadow report. */
         const providers = new Map<string, NodeId>();
+        /** Ports holding one bag so far, and whose it is: `providers` is filled from it on demand. */
+        let firstInto: Map<PortId, NodeId> | undefined;
         for (const entry of incoming.get(nodeId) ?? []) {
           // Merged over sorted edge ids: later channels win on a name clash, which is
           // deterministic and lets a multi-wire input compose bags (V457 — the merge
@@ -386,7 +478,24 @@ export function createValueGraphSession(registry: NodeRegistryView): ValueGraphS
           // branch. §V457's merge simply loses a contributor, deliberately.
           const arriving = byId.get(entry.source);
           if (arriving === undefined) continue;
-          const existing = inputs[entry.port] ?? {};
+          const existing = inputs[entry.port];
+          /*
+           * T1793b: the FIRST bag to reach a port shadows nothing, and most ports get one.
+           * Its channels used to be entered in `providers` one string key each, every frame
+           * (311 of them on one Select of silk-medusa), for a second wire that never came.
+           * Now the port remembers who came first, and the entries are written when a second
+           * bag does arrive. A copy, never the source's own bag (see the bypass note below).
+           */
+          if (existing === undefined) {
+            inputs[entry.port] = { ...arriving };
+            (firstInto ??= new Map()).set(entry.port, entry.source);
+            continue;
+          }
+          const first = firstInto?.get(entry.port);
+          if (first !== undefined) {
+            for (const name of Object.keys(existing)) providers.set(`${entry.port}:${name}`, first);
+            firstInto?.delete(entry.port);
+          }
           for (const name of Object.keys(arriving)) {
             const holder = providers.get(`${entry.port}:${name}`);
             if (holder !== undefined && holder !== entry.source && name in existing) {
@@ -423,7 +532,7 @@ export function createValueGraphSession(registry: NodeRegistryView): ValueGraphS
           continue;
         }
 
-        const resolved = resolveParameterSchema(node, effectiveParameterSchema(member.definition, node.parameters), readOptions);
+        const resolved = { values: valuesAt(node, member.definition, readOptions, flattening.morphs) };
         const state = states.get(nodeId) ?? {};
         states.set(nodeId, state);
 

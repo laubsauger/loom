@@ -97,6 +97,7 @@ const NOT_A_DIAGNOSTIC: Ledger<string> = {
   "src/nodes/definitions/material-wgsl.ts": { "{ code, params }": WGSL, "{ code, paramsDeclaration, fields, uniforms, ..., ..., sourceMap }": WGSL },
   "src/nodes/shaders/scene-render.wgsl.ts": { "{ code, paramsDeclaration, fields }": WGSL, "{ ..., code }": WGSL },
   "src/runtime/backend/vgpu/vgpu-backend.ts": { "{ code, label }": "a shader module's descriptor", "{ code }": "a shader module's descriptor" },
+  "src/runtime/backend/vgpu/output-accumulator.ts": { "{ label, code }": "a shader module's descriptor" },
   "src/runtime/backend/photo-depth-refinement.ts": { "{ label, code }": "a shader module's descriptor; code holds WGSL source" },
 };
 

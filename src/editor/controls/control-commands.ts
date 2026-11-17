@@ -65,7 +65,7 @@ export const UNBIND_CONTROL_COMMAND = "control.unbindParameter";
 
 // T1556b (added by the lead when the bus began parsing input): the learned hardware control.
 const midiSourceInput = z.object({
-  kind: z.enum(["cc", "pitchBend"]),
+  kind: z.enum(["cc", "pitchBend", "note"]),
   channel: z.number().int().min(1).max(16),
   number: z.number().int().min(0).max(127).optional(),
 }).strict();

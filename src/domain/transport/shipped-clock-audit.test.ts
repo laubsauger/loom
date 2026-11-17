@@ -261,6 +261,16 @@ const DECLARED: Readonly<
       "transport states no fps. A lane is a position IN the piece, so it wraps at a loop and " +
       "follows a scrub, as the Timer does, and the node's description says so.",
   },
+  "src/nodes/definitions/audio-tonal.ts": {
+    kind: "timeline-anchored",
+    reads: 1,
+    reason:
+      "T1757b's Tone Pattern, and it is Audio Pattern's case with chords: the bar a chord " +
+      "sits in is a POSITION IN THE PIECE, so bar one has to fall on the in point every lap " +
+      "and a scrub has to find the same chord every time. Classified `timeline-anchored` in " +
+      "CLOCK_OWNERSHIP, and the node's description says so. The tonal PROJECTIONS in the same " +
+      "file (Chroma, Chord, Notes) read no clock position at all.",
+  },
   "src/nodes/definitions/audio.ts": {
     kind: "timeline-anchored",
     reads: 4,

@@ -70,9 +70,14 @@ use the helper.
 | `pnpm helper --all` | Device, terminal and pixel access |
 | `pnpm helper --devices-only` | Device connections without the MCP server |
 | `pnpm helper --phone` | A phone control panel on your local network |
+| `pnpm helper --force` | Stops the Loom helper that holds the bridge, then starts |
 
 Shell and pixel access require their flags when you start the helper. Phone access
 is separate from `--all`.
+
+Only one helper holds the bridge at a time. If another one (an agent session's, for
+example) already holds it, yours says which process that is; add `--force` to any of
+the commands above to stop that helper and get a pairing code from yours.
 
 [Helper, MIDI and OSC setup](./docs/connections.md)
 

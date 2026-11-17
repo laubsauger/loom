@@ -124,6 +124,9 @@ const APP_REGISTERED = [
   // on its bus and its door buses — whether the overview map is on screen is a property
   // of a look at the graph, persisted per person. Live, not planned: this row and `o`.
   "view.toggleMinimap",
+  // T1724b: registered beside it by the mounted graph canvas (`scroll-pan-command.ts`): what
+  // a two-finger scroll does, persisted per person. Live, not planned: the canvas menu's row.
+  "view.toggleScrollPan",
   // T1514b: registered by the composition root (`registerControlCommands` in
   // `app-runtime.ts`), like the component commands — the plans live with the controls
   // editor, not in the domain. Live, not planned: the parameter menu's three control rows.

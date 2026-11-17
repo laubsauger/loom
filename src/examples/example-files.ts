@@ -24,6 +24,7 @@ export const EXAMPLE_COMPONENT_IDS: Readonly<Record<string, readonly string[]>> 
   "example-ember-monoliths": ["audioAnalysis", "timeGrid"],
   "example-aether-orrery": ["audioAnalysis", "timeGrid"],
   "example-crucible": ["audioAnalysis"],
+  "example-e91-music-features": ["musicFeatures"],
 };
 
 /**

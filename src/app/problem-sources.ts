@@ -47,6 +47,7 @@ export function clearProblemSources(sources: readonly ProblemSource[]): void {
  * app source makes the author decide what the headless server should say about it.
  */
 export const HEADLESS_ABSENT_PROBLEM_SOURCES: Readonly<Record<string, string>> = {
+  harmonyAudio: "generated audio playback uses the browser's shared AudioContext; headless graph evaluation is silent.",
   valueGraph:
     "no value graph runs headless. A channel reference that cannot resolve is reported by the compile instead (`parameter.channels.unavailable`).",
   media:

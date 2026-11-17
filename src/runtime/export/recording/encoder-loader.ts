@@ -1,6 +1,7 @@
 import type { CapturedVideoFrame, EncoderFrameTiming, VideoEncoderSink } from "./types.ts";
 import type { AudioPcmProvider, EncoderConfig, EncoderFinishProgress } from "./types.ts";
 import type { MediaSpoolMode } from "./media-spool.ts";
+import type { VideoFormatId } from "./video-format.ts";
 
 /**
  * The WebCodecs/headless boundary, in one file.
@@ -24,6 +25,8 @@ export function isRecordingAvailable(): boolean {
 }
 
 export interface LoadEncoderOptions {
+  /** T1741b: the recording format; absent is H.264 (`DEFAULT_VIDEO_FORMAT`). */
+  readonly format?: VideoFormatId;
   readonly codec?: string;
   readonly bitrate?: number;
   readonly latencyMode?: "quality" | "realtime";

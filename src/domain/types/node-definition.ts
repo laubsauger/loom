@@ -4,6 +4,7 @@ import type { ParameterSchema, ParameterValue, StoredParameter } from "./paramet
 import type { AudioFeatures, FrameEvaluationInput } from "./frame.ts";
 import type { RuntimeDiagnostic } from "./diagnostics.ts";
 import type { RuntimeRequirementId } from "./requirements.ts";
+import type { ScenePayload } from "./scene.ts";
 
 export type ResolutionPolicy =
   | { kind: "inherit"; input: PortId }
@@ -357,6 +358,50 @@ export interface CompiledNodeDescription {
     >
   >;
   diagnostics?: RuntimeDiagnostic[];
+  /**
+   * T1719b — the values of THESE passes at another frame. Absent: a values-only frame re-runs
+   * `compile` for this node, as it always has. See {@link NodeValueFunction}.
+   */
+  values?: NodeValueFunction;
+}
+
+/**
+ * T1719b — WHAT A VALUES-ONLY FRAME ASKS OF A NODE THAT ALREADY COMPILED.
+ *
+ * Called with the context `compile` would have been called with at this frame. It returns
+ * this frame's values and nothing else: there is no field for a shader, a binding, a target,
+ * a pass count or an id, so it cannot change the plan's structure (V1031). `compile` fills
+ * its own passes' values through the same function (V1032), so the two cannot disagree.
+ * `docs/value-functions-design-2026-11-03.md`.
+ */
+export type NodeValueFunction = (context: NodeCompileContext) => NodeFrameValues;
+
+export interface NodeFrameValues {
+  /** One entry per pass the description emitted, in emission order. */
+  readonly passes: ReadonlyArray<PassFrameValues>;
+  /**
+   * This frame's payload on every scene output the description published, and on no other:
+   * a camera's pose travels its scene edge as values (T1719b S2).
+   */
+  readonly scene?: Readonly<Record<string, ScenePayload>>;
+}
+
+export interface PassFrameValues {
+  /**
+   * The pass's own id, as the description emitted it. Given, it is checked against the base
+   * pass at the same place, so a function whose passes came out in another order says so.
+   */
+  readonly id?: string;
+  /** The pass's uniform block: the same keys as the base pass's, this frame's numbers. */
+  readonly uniforms?: Readonly<Record<string, number | boolean | readonly number[]>>;
+  /** A draw's per-frame skip (T1598b: a caster out of its light's reach). */
+  readonly skip?: boolean;
+  /** A draw's literal instance count, where the base pass's is literal. */
+  readonly instances?: number;
+  /** A draw's vertex count. */
+  readonly vertexCount?: number;
+  /** A buffer write's rows and their count (§T1623b). */
+  readonly values?: { readonly rows: readonly number[]; readonly count: number };
 }
 
 export interface MigrationResult {

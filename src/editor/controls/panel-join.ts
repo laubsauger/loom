@@ -2,7 +2,7 @@ import type { GraphDocument, GraphNode } from "@domain/types/graph.ts";
 import type { NodeId } from "@domain/types/ids.ts";
 import type { GraphPatchOperation } from "@domain/types/patch.ts";
 import type { BankCatalogue } from "@domain/presets/bank-view.ts";
-import { CONTROL_WIDGET_TYPES, PANEL_INPUT, joinsBoardByName, panelBoard, panelLacks } from "@nodes/definitions/controls.ts";
+import { CONTROL_WIDGET_TYPES, PANEL_INPUT, joinsBoardByName, panelBoard, panelLacks, panelLacksSwitch, switchesOnBoard } from "@nodes/definitions/controls.ts";
 import { boardOperations, boardWithMember } from "./panel-board-edit.ts";
 
 /**
@@ -23,13 +23,16 @@ import { boardOperations, boardWithMember } from "./panel-board-edit.ts";
  * a bank from outside and joins exactly as a bank does, by name. Whether an instance is one
  * only the component catalogue can say (`bankOf`), so every function here takes it; the
  * callers read it off the bus (`presetCatalogueHolderFor`). Without one, no instance joins.
+ *
+ * T1771b — ANY OTHER NODE joins by name as its on/off switch (`switchesOnBoard`), by a drop
+ * on the Panel or the board's "+ Add…": the same one board write.
  */
 
 type Graph = Pick<GraphDocument, "nodes" | "edges">;
 
 /** The nodes a Panel takes: the widgets it wires in, and the ones its board names. */
 const joinsPanel = (node: GraphNode | undefined, catalogue: BankCatalogue | undefined): boolean =>
-  node !== undefined && (CONTROL_WIDGET_TYPES.has(node.type) || joinsBoardByName(node, catalogue));
+  node !== undefined && (CONTROL_WIDGET_TYPES.has(node.type) || joinsBoardByName(node, catalogue) || switchesOnBoard(node, catalogue));
 
 /**
  * What putting this node on that Panel writes, or nothing when it is already there: a
@@ -40,8 +43,9 @@ export function joinPanelOperations(graph: Graph, widgetId: NodeId, panelId: Nod
   const panel = graph.nodes[panelId];
   // T1527b: whether there is anything to write is `panelLacks` — the same answer the "+ panel"
   // button and the layout model's room for it come from (`soloPanelFor`, `controls.ts`).
-  if (widget === undefined || panel === undefined || !panelLacks(graph, panel, widget, catalogue)) return [];
-  if (joinsBoardByName(widget, catalogue)) {
+  if (widget === undefined || panel === undefined) return [];
+  if (!panelLacks(graph, panel, widget, catalogue) && !panelLacksSwitch(graph, panel, widget, catalogue)) return [];
+  if (joinsBoardByName(widget, catalogue) || switchesOnBoard(widget, catalogue)) {
     const board = panelBoard(graph, panel);
     const stored = board === null ? null : boardWithMember(board, widget, catalogue);
     return stored === null ? [] : boardOperations(panelId, stored);

@@ -224,6 +224,43 @@ describe("T394 — fullscreen the viewer", () => {
     runtime.dispose();
   });
 
+  it("fullscreens the active viewer rather than the last mounted viewer", async () => {
+    const runtime = await mountApp();
+    const original = surfaceElement();
+    const user = userEvent.setup({ delay: null });
+    await user.click(screen.getAllByRole("button", { name: "Add a tab to this area" })[0]!);
+    await user.click(screen.getByRole("button", { name: "Add viewer as a new tab" }));
+    expect(document.querySelectorAll('[data-testid="viewer-surface"]')).toHaveLength(2);
+
+    await act(async () => {
+      fireEvent.pointerDown(original, { clientX: 10, clientY: 10 });
+      fireEvent.pointerUp(original, { clientX: 10, clientY: 10 });
+      fireEvent.keyDown(window, {
+        key: "F", code: "KeyF", shiftKey: true,
+        metaKey: detectPlatform() === "mac", ctrlKey: detectPlatform() !== "mac",
+      });
+    });
+    expect(spy.requests).toHaveLength(1);
+    expect(spy.requests[0]).toBe(original);
+    await act(async () => spy.escape());
+    await act(async () => fireEvent.doubleClick(original));
+    expect(spy.requests).toHaveLength(2);
+    expect(spy.requests[1]).toBe(original);
+    await act(async () => spy.escape());
+    const other = Array.from(document.querySelectorAll<HTMLElement>('[data-testid="viewer-surface"]'))
+      .find(element => element !== original)!;
+    await act(async () => {
+      other.closest<HTMLElement>('[data-keymap-context="viewer"]')!.focus();
+      fireEvent.keyDown(window, {
+        key: "F", code: "KeyF", shiftKey: true,
+        metaKey: detectPlatform() === "mac", ctrlKey: detectPlatform() !== "mac",
+      });
+    });
+    expect(spy.requests).toHaveLength(3);
+    expect(spy.requests[2]).toBe(other);
+    runtime.dispose();
+  });
+
   it("a drag's tail never fullscreens: past the 3px threshold the double-click is suppressed", async () => {
     const runtime = await mountApp();
     const surface = surfaceElement();

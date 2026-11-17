@@ -163,10 +163,22 @@ export function hasAnimatedParameters(graph: GraphDocument): boolean {
  * through a sibling that is one of the first two.
  */
 export function nodeHasAnimatedParameters(node: GraphDocument["nodes"][string]): boolean {
-  for (const stored of Object.values(node.parameters)) {
+  return animatedParameterRoots(node).size > 0;
+}
+
+/**
+ * The ROOT keys of a node's parameters that can read the frame: expression, driven or bind
+ * mode, a component key (`color.g`) under its compound's root. Everything else the node
+ * stores is a constant, resolved the same at every frame. The one list of those modes: the
+ * frame compiler's `animatedRootKeys` (which adds the keys a preset morph covers) and the
+ * value graph's per-node resolve (T1719b, T1179) both read it.
+ */
+export function animatedParameterRoots(node: GraphDocument["nodes"][string]): ReadonlySet<string> {
+  const keys = new Set<string>();
+  for (const [key, stored] of Object.entries(node.parameters)) {
     if (typeof stored !== "object" || stored === null || Array.isArray(stored)) continue;
     const mode = (stored as { mode?: unknown }).mode;
-    if (mode === "expression" || mode === "driven" || mode === "bind") return true;
+    if (mode === "expression" || mode === "driven" || mode === "bind") keys.add(key.split(".")[0] as string);
   }
-  return false;
+  return keys;
 }

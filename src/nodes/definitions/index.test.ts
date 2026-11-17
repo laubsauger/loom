@@ -169,6 +169,9 @@ describe("core catalogue (T70, T40)", () => {
       "movieFileIn",
       "webcam",
       "text",
+      // Photo mapping (SPEC §I "photo preparation for projection mapping"): a numerical
+      // depth or mask map as a data texture.
+      "floatMapIn",
       "screenIn",
       "syphonIn",
       "ndiIn",
@@ -227,6 +230,8 @@ describe("core catalogue (T70, T40)", () => {
       "presets",
       // T1500b: the cue list — GO / BACK through an ordered list of preset recalls.
       "cueList",
+      // T1787b: the project tempo and beat clock as channels; Tap and Resync as pulses.
+      "tempo",
       // VN61: keyframed lanes over the playhead, each published as a channel.
       "automation",
       // T414: sound as channels — the value family's third input source after Mouse
@@ -234,10 +239,22 @@ describe("core catalogue (T70, T40)", () => {
       "audioIn",
       "audioFileIn",
       "audioPattern",
+      // T1751b: the tonal projections of the capture — which notes sound.
+      "audioChroma",
+      // T1753b: the chord and key.
+      "audioChord",
+      // T1755b: the lead pitch (and, from T1756b, the voices).
+      "audioNotes",
+      // T1757b: the tonal nodes' understudy.
+      "tonePattern",
+      "harmony",
+      "noteField",
       // T942: the controller as channels. Page-native Web MIDI, learned bindings held in
       // the node's own `mapping` parameter, read through the `channels` seam analyze
       // already publishes into — no new port type and no compiler change.
       "midiIn",
+      // T1762b: the keyboard as voices.
+      "midiNotes",
       // T942 tier 3: OSC as channels, and OSC back out. Both need the local helper — a
       // page cannot speak UDP — and neither is a new port type or a compiler change.
       "oscIn",
@@ -394,6 +411,12 @@ describe("reset is exposed where it is declared (§V123, T216)", () => {
     valueNovelty: "no command can reach one value node's state; the feedback table holds textures",
     valueCount: "no command can reach one value node's state; the feedback table holds textures",
     valueDelay: "no command can reach one value node's state; the feedback table holds textures",
+    // T1751b: its Attack/Release follower is value-node state like Lag's; the transport's reset clears it.
+    audioChroma: "no command can reach one value node's state; the feedback table holds textures",
+    // T1755b: its Glide and Hold are value-node state, as Chroma's follower is.
+    audioNotes: "no command can reach one value node's state; the feedback table holds textures",
+    // T1762b: the keyboard model (keys, pedals, voices) is value-node state; the transport's reset clears it.
+    midiNotes: "no command can reach one value node's state; the feedback table holds textures",
   };
 
   it("every stateful node either fires a reset or is a listed gap", () => {
@@ -451,9 +474,14 @@ describe("T438 (§V316) — the channel publishers are DECLARED, not a category"
     expect(publishers).toEqual(
       [
         "analyze", // measuredChannel: the one publisher with no port and no hook
+        "audioChord", // T1753b
+        "audioChroma", // T1751b
+        "audioNotes", // T1755b
         "audioFileIn",
         "audioIn",
         "audioPattern",
+        "harmony",
+        "noteField",
         "automation",
         "channelIn",
         "componentInValue", // T822: the value boundary forwards a channel bag, so it publishes
@@ -468,12 +496,15 @@ describe("T438 (§V316) — the channel publishers are DECLARED, not a category"
         // T942: a controller's learned controls are a channel bag, so the node plots and
         // previews exactly as Mouse does — no special case anywhere for it being hardware.
         "midiIn",
+        "midiNotes", // T1762b
         "mouse",
+        "tempo", // T1787b: the project clock as a channel bag
         // T942 tier 3: oscIn publishes its learned addresses; oscOut publishes the bag it
         // is SENDING, so a plot on it shows exactly what left the machine.
         "oscIn",
         "oscOut",
         "timer",
+        "tonePattern", // T1757b
         "valueFilter",
         "valueLag",
         "valueLimit",

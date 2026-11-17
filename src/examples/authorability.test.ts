@@ -278,12 +278,18 @@ describe("(b1) every stored value is one the command bus would accept", () => {
  * declaration explains why the value need not fail; it does not explain why the control
  * cannot reach it, and those are different claims.
  *
- * EMPTY (T856). §T848 found one: `limit.high = 6` in E13-Prism, E33-Obol and E34-Lidar,
+ * TWO ENTRIES, both one Speed's bounds (T1805b, below), which wait on §T1797b. It was
+ * empty before them (T856). §T848 found one: `limit.high = 6` in E13-Prism, E33-Obol and E34-Lidar,
  * each clamping HDR headroom before tone-mapping, against travel that stopped at 4.
  * Ruled ruling 2: `limit.low`/`limit.high` travel widened to ±8. Same disposition as
  * §T823's own — the value was right and the slider was short.
  */
-const TYPING_ONLY_PENDING_RULING: Readonly<Record<string, string>> = {};
+const TYPING_ONLY_PENDING_RULING: Readonly<Record<string, string>> = {
+  // T1805b: MusicFeatures' and MidiFeatures' `beats`, a count that must not wrap. Argues for
+  // §T1797b: a Speed with no bounds (At Limit `none`) and a Start value, not a wider slider.
+  "valueSpeed.maximum = 1000000000 (travel -1000…1000, range soft)": "a free-running beat count: wants §T1797b's unbounded Speed, not more travel",
+  "valueSpeed.minimum = -1000000000 (travel -1000…1000, range soft)": "the same Speed: symmetric bounds are what start it at 0 (§T1797b)",
+};
 
 interface Overshoot {
   readonly id: string;

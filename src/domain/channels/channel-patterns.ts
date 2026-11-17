@@ -42,6 +42,8 @@ export interface ChannelPattern {
   /** A `^` pattern: removes its matches from the selection so far. */
   readonly exclude: boolean;
   readonly regex: RegExp;
+  /** The whole name this pattern matches, when it holds no glob syntax: the match is then an equality. */
+  readonly literal?: string;
 }
 
 /** Numeric ranges wider than this are refused as ranges and read as a character set. */
@@ -102,20 +104,37 @@ function compile(glob: string): RegExp {
   return new RegExp(`^${out}$`);
 }
 
+/**
+ * T1793b: a Select parsed its pattern text, and compiled one RegExp per pattern, on every
+ * frame. The list is a pure function of the text, so it is kept by the text, FIFO past a cap
+ * above any document's set (T1767b). The list and its patterns are shared: nothing writes them.
+ */
+const PATTERN_CACHE_LIMIT = 4096;
+const patternsBySource = new Map<string, readonly ChannelPattern[]>();
+
 /** Space- or comma-separated patterns; `^` in front of one makes it an exclusion. */
 export function parseChannelPatterns(source: string): readonly ChannelPattern[] {
-  return source
+  const hit = patternsBySource.get(source);
+  if (hit !== undefined) return hit;
+  const patterns = source
     .split(/[\s,]+/)
     .filter((token) => token !== "" && token !== "^")
     .map((token) => {
       const exclude = token.startsWith("^");
       const glob = exclude ? token.slice(1) : token;
-      return { source: glob, exclude, regex: compile(glob) };
+      // No glob syntax: the pattern matches its own text and nothing else.
+      return { source: glob, exclude, regex: compile(glob), ...(/[*?[]/.test(glob) ? {} : { literal: glob }) };
     });
+  patternsBySource.set(source, patterns);
+  if (patternsBySource.size > PATTERN_CACHE_LIMIT) {
+    const oldest = patternsBySource.keys().next();
+    if (oldest.done !== true) patternsBySource.delete(oldest.value);
+  }
+  return patterns;
 }
 
 export function matchesChannel(name: string, pattern: ChannelPattern): boolean {
-  return pattern.regex.test(name);
+  return pattern.literal !== undefined ? name === pattern.literal : pattern.regex.test(name);
 }
 
 /**
@@ -127,13 +146,29 @@ export function matchesChannel(name: string, pattern: ChannelPattern): boolean {
  */
 export function selectChannels(names: readonly string[], patterns: readonly ChannelPattern[]): readonly string[] {
   let selected: string[] = patterns[0]?.exclude === true ? [...names] : [];
+  // T1793b: sets beside the lists, so "is it there" and "is it chosen" are lookups. A literal
+  // pattern (most of a long Select) asks one question instead of testing every name.
+  let chosen = new Set(selected);
+  let present: Set<string> | undefined;
   for (const pattern of patterns) {
     if (pattern.exclude) {
       selected = selected.filter((name) => !matchesChannel(name, pattern));
+      chosen = new Set(selected);
+      continue;
+    }
+    if (pattern.literal !== undefined) {
+      present ??= new Set(names);
+      if (present.has(pattern.literal) && !chosen.has(pattern.literal)) {
+        selected.push(pattern.literal);
+        chosen.add(pattern.literal);
+      }
       continue;
     }
     for (const name of names) {
-      if (matchesChannel(name, pattern) && !selected.includes(name)) selected.push(name);
+      if (matchesChannel(name, pattern) && !chosen.has(name)) {
+        selected.push(name);
+        chosen.add(name);
+      }
     }
   }
   return selected;

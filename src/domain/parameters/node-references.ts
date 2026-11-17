@@ -1,6 +1,7 @@
 import { nodeByName, nodeNames } from "../graph/names.ts";
 import { nearestSpelling } from "../expressions/index.ts";
 import type {
+  SubtreeMemory,
   KindedNodeReferenceResult as NodeReferenceResult,
   NodeReferenceReader,
   ReferenceFailureKind,
@@ -332,10 +333,22 @@ function asNumber(value: ParameterValue | undefined, reference: string): NodeRef
   };
 }
 
-export function createNodeReferenceReader(options: NodeReferenceOptions): NodeReferenceReader {
-  const scope: ReaderScope = { index: null, resolved: new Map(), cycles: 0 };
+export function createNodeReferenceReader(options: NodeReferenceOptions, remember: ReaderMemory = {}): NodeReferenceReader {
+  const scope: ReaderScope = { index: null, resolved: new Map(), cycles: 0, subtrees: null };
+  if (remember.expressions === true) scope.subtrees = { values: new Map(), fired: () => scope.cycles };
   return askedBy(options, new Set(), scope);
 }
+
+/**
+ * T1720b — what a reader may remember beyond §T1172's targets, asked for by a caller that
+ * knows nothing it reads moves while the reader lives once it has been read: a frame's
+ * compile, whose channels were settled before it began (`frame-compile.ts`), and the value
+ * graph, whose channels are each read only after their publisher ran (`value-graph.ts`).
+ */
+export interface ReaderMemory {
+  readonly expressions?: boolean;
+}
+
 
 /**
  * A reader on a path, with what a caller asks of it beside a read: the spelling help, and
@@ -345,6 +358,7 @@ export function createNodeReferenceReader(options: NodeReferenceOptions): NodeRe
  */
 function askedBy(options: NodeReferenceOptions, visited: ReadonlySet<ReadKey>, scope: ReaderScope): NodeReferenceReader {
   const reader: NodeReferenceReader = Object.assign(readerWithin(options, visited, scope), {
+    ...(scope.subtrees === null ? {} : { subtrees: scope.subtrees }),
     spelledLike: (bare: string): SpelledLike => spelledLike(options, scope, bare),
     readingFrom: (nodeId: string, key: string): NodeReferenceReader => {
       const dot = key.indexOf(".");
@@ -436,6 +450,12 @@ interface ReaderScope {
   readonly resolved: Map<ReadKey, ResolvedParameters>;
   /** T1172: how many times §V152's cycle guard has fired. See `targetOf`. */
   cycles: number;
+  /**
+   * T1720b: subtree values by interned tree for the reader's life, or null for a reader that
+   * remembers none. Kept under §T1172's rule: a value computed while the cycle guard fired is
+   * not kept (`SubtreeMemory`, `evaluate.ts`).
+   */
+  subtrees: SubtreeMemory | null;
 }
 
 function nodeIdNamed(scope: ReaderScope, graph: GraphDocument, name: string): NodeId | undefined {
@@ -623,7 +643,7 @@ export interface ParameterReadContext {
  * remembered to hand them to. They are required now (`ParameterReadContext`), and
  * `parameter-read-context.test.ts` holds that no product file builds a reader any other way.
  */
-export function parameterReadOptions(context: ParameterReadContext): ParameterReadOptions {
+export function parameterReadOptions(context: ParameterReadContext, remember: ReaderMemory = {}): ParameterReadOptions {
   const { morphs, instanceChannels, instancePages } = context.flattening;
   const base = {
     ...(context.channels === undefined ? {} : { channels: context.channels }),
@@ -649,7 +669,7 @@ export function parameterReadOptions(context: ParameterReadContext): ParameterRe
       instances: instanceChannels,
       pages: instancePages,
       declaredChannelsOf: (node) => context.registry.get(node.type)?.parameterChannels,
-    }),
+    }, remember),
     ...base,
   });
 }

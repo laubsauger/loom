@@ -4,28 +4,32 @@ import type { FlatGraph, FrameRange, GraphDocument, GraphNode } from "@domain/ty
 import type { NodeId } from "@domain/types/ids.ts";
 import type { ChannelResolver } from "@domain/parameters/resolve.ts";
 import { NO_FLATTENING, type FlatteningReads } from "@domain/parameters/node-references.ts";
+import { parameterReadOptions, resolveParameters } from "@domain/parameters/index.ts";
 import type { ParameterValue } from "@domain/types/parameters.ts";
 import { isSilencedSource } from "@domain/graph/bypass.ts";
 import { createHopAnalyser } from "@domain/audio/analysis/hop-analyser.ts";
+import { createLeadPitch } from "@domain/audio/analysis/pitch.ts";
+import { createTonalAnalyser } from "@domain/audio/analysis/tonal-analyser.ts";
 import { mediaTransportFrom, type MediaPlayhead, type MediaTransportValues } from "@domain/media/transport.ts";
 import { awaitMediaReady } from "./media-sources.ts";
 import { appAudioContext } from "./app-audio-context.ts";
 import { createAudioHopReducer } from "./audio-analysis-frame.ts";
 import {
-  AUDIO_ANALYSIS_OPTIONS,
   AUDIO_ANALYSIS_PROCESSOR_NAME,
   analysisOptionsFor,
+  inputGainLinear,
   type AudioAnalysisProcessorOptions,
   type AudioAnalysisStopMessage,
   type AudioAnalysisWorkletMessage,
   type DetectorSettings,
 } from "./audio-analysis-protocol.ts";
-import { AUDIO_DETECTOR_DEFAULTS } from "@nodes/definitions/audio.ts";
 import { AUDIO_ANALYSIS_WORKLET_URL } from "./audio-analysis-worklet-url.ts";
 import type { AppRuntime } from "./app-runtime.ts";
 import type { MediaControlRegistry } from "./media-commands.ts";
 import { audioLatencyEstimate, type AudioLatencyEstimate } from "./audio-latency.ts";
 import { createPreAnalyser, readTrackAtPlayhead } from "./audio-pre-analysis.ts";
+import { captureAudioConstraints, captureConfigOf, captureProcessingMessage, inputGainDbOf, staticValueOf, syncLeadOf, urlOf, type CaptureConfig } from "./audio-capture-config.ts";
+export { captureConfigOf, inputGainDbOf, syncLeadOf, type CaptureConfig } from "./audio-capture-config.ts";
 import type { OfflineAnalysis } from "./audio-offline-analysis.ts";
 import { createOfflineAudioCapture } from "./offline-render-audio.ts";
 import type { OfflineAudioCapture } from "./offline-render-audio.ts";
@@ -59,8 +63,12 @@ import {
  * of missed. The analyser stays in the chain for two reasons: it is the NAMED fallback
  * when the worklet cannot load (§V288 — the status says so, and `polledReader` below
  * runs the SAME engine core on the analyser's window once per frame, so every field of
- * the record is produced by the same code on both paths, T1225/T1227), and for a file
- * it is where the monitoring gain hangs (see the placement note below).
+ * the record is produced by the same code on both paths, T1225/T1227).
+ *
+ * T1769b — THE TRIM. One `GainNode` sits between the source and BOTH of those: the source
+ * node's Input Gain, so the worklet engine, the polled fallback and the tonal pass all hear
+ * the trimmed signal and no consumer scales anything itself. A file's monitor is tapped off
+ * the SOURCE, beside the trim, so the two levels never cross (see the placement note below).
  *
  * Failure is LOUD but not fatal: a denied microphone or an unloadable URL parks the
  * capture in an error status (readable for UI) and the reader returns null — the same
@@ -85,7 +93,7 @@ import {
  */
 
 /** §V288: the fallback is taken AND named. Anything reading "Live" with this beside it is on the polled path. */
-function workletFallbackMessage(reason: string): string {
+export function workletFallbackMessage(reason: string): string {
   return `Analysis worklet unavailable (${reason}); polling the analyser's window once per frame.`;
 }
 
@@ -100,9 +108,31 @@ type FeatureReader = () => AudioFeatures;
  * is fidelity and nothing else: one window per frame instead of four, and the picker's
  * hop-counted history and gap are counted in frames — which the status names.
  */
-function polledReader(
-  context: AudioContext,
-  analyser: AnalyserNode,
+/**
+ * T1752b — the polled path runs the TONAL pass too, on the same core. The analyser is opened
+ * at the tonal window's size when the capture asks for the pass (`polledAnalyserSize`), so
+ * one read hands back the long window; the hop core takes the LAST `fftSize` samples of it,
+ * which are the samples it always took, so the bands do not move. The tonal core runs when
+ * a whole tonal hop of samples has gone by since it last ran — the worklet's grid, kept by
+ * the context's own clock — and is told how many samples that was, its only clock.
+ */
+export function polledAnalyserSize(options: AudioAnalysisProcessorOptions): number {
+  return Math.max(options.fftSize, options.tonal?.windowSize ?? 0);
+}
+
+/** The slices of `AudioContext` and `AnalyserNode` the polled path reads, so a test can hand in plain objects. */
+export interface PolledClock {
+  readonly sampleRate: number;
+  readonly currentTime: number;
+}
+export interface PolledAnalyser {
+  readonly fftSize: number;
+  getFloatTimeDomainData(array: Float32Array<ArrayBuffer>): void;
+}
+
+export function polledReader(
+  context: PolledClock,
+  analyser: PolledAnalyser,
   options: AudioAnalysisProcessorOptions,
 ): FeatureReader {
   const core = createHopAnalyser({
@@ -115,9 +145,28 @@ function polledReader(
   });
   const reducer = createAudioHopReducer(options.fftSize, context.sampleRate);
   const samples = new Float32Array(analyser.fftSize);
+  if (samples.length < polledAnalyserSize(options)) {
+    throw new Error(`polled analysis: the analyser holds ${samples.length} samples, and the engine needs ${polledAnalyserSize(options)}`);
+  }
+  const short = samples.subarray(samples.length - options.fftSize);
+  const tonal = options.tonal === undefined ? null : { ...options.tonal, core: createTonalAnalyser({ sampleRate: context.sampleRate, windowSize: options.tonal.windowSize }) };
+  const long = tonal === null ? samples : samples.subarray(samples.length - tonal.windowSize);
+  // T1755b: the lead pitch off the hop core's window, once per frame here (a frame is about a hop and a half).
+  const leadPitch = tonal === null ? null : createLeadPitch({ sampleRate: context.sampleRate, windowSize: options.fftSize, hop: Math.round(context.sampleRate / 60), everyHops: 1 });
+  /** The context's sample count at the last tonal window, or null before the first. */
+  let tonalAt: number | null = null;
   return () => {
     analyser.getFloatTimeDomainData(samples);
-    reducer.push(core.analyse(samples));
+    reducer.push(core.analyse(short));
+    const pitched = leadPitch?.push(short) ?? null;
+    if (pitched !== null) reducer.pushPitch(pitched);
+    if (tonal !== null) {
+      const at = Math.round(context.currentTime * context.sampleRate);
+      if (tonalAt === null || at - tonalAt >= tonal.hop) {
+        reducer.pushTonal(tonal.core.analyse(long, tonalAt === null ? 0 : at - tonalAt));
+        tonalAt = at;
+      }
+    }
     return reducer.read().features;
   };
 }
@@ -158,6 +207,8 @@ async function attachAnalysisEngine(
     const reducer = createAudioHopReducer(options.fftSize, context.sampleRate);
     node.port.onmessage = (event: MessageEvent<AudioAnalysisWorkletMessage>) => {
       if (event.data.type === "hop") reducer.push(event.data);
+      else if (event.data.type === "tonal") reducer.pushTonal(event.data);
+      else if (event.data.type === "pitch") reducer.pushPitch(event.data);
     };
     return { node, read: () => reducer.read().features };
   } catch (error) {
@@ -186,7 +237,7 @@ const preAnalyser = createPreAnalyser();
 async function preAnalyseFile(config: CaptureConfig, fps: number): Promise<Awaited<ReturnType<typeof preAnalyser.analyse>>> {
   const response = await fetch(config.url);
   if (!response.ok) throw new Error(`the file could not be read (${String(response.status)})`);
-  return preAnalyser.analyse(await response.arrayBuffer(), fps, config.detector);
+  return preAnalyser.analyse(await response.arrayBuffer(), fps, config.detector, config.tonal, config.inputGainDb);
 }
 
 /**
@@ -241,7 +292,7 @@ export interface PreparedRenderAudio {
   close(): void;
 }
 
-/** Monitoring is the speaker path only; analysis and exported PCM stay at unity upstream. */
+/** Monitoring is the speaker path only: it never reaches the analysis (which hears the source through the Input Gain trim, T1769b) or the exported PCM (unity). */
 export function monitorGainLevel(level: number, renderMuted: boolean): number {
   return renderMuted ? 0 : level;
 }
@@ -262,72 +313,6 @@ export function syncAudioMediaElement(
   if (!offlineRender) return applyMediaPlayhead(element, transport, head, continuous, correction);
   if (!element.paused) element.pause();
   return false;
-}
-
-export interface CaptureConfig {
-  readonly source: "mic" | "file";
-  /** File URL for `source: "file"`; microphone deviceId (or "") for `source: "mic"`. */
-  readonly url: string;
-  readonly device: string;
-  readonly monitor: boolean;
-  /**
-   * T493 — WHICH node's transport drives this capture. The session has one capture, so it
-   * has one transport, and it belongs to the node that supplied the file. Null for a mic:
-   * a live input has no playhead, exactly as a webcam has none.
-   */
-  readonly nodeId: NodeId | null;
-  /**
-   * T1230 — the capturing node's detector knobs. Part of the config KEY, so a change
-   * re-acquires: the picker is built into the engine when the capture is, and rebuilding
-   * the capture is the one door every structural change already goes through.
-   */
-  readonly detector: DetectorSettings;
-}
-
-/** Static parameter value, mode-envelope tolerant. Capture config never animates. */
-function staticValueOf(node: GraphNode, key: string): unknown {
-  const stored = node.parameters[key];
-  if (typeof stored === "object" && stored !== null && "bindings" in stored) {
-    const slot = stored as { bindings?: { static?: { value?: unknown } } };
-    return slot.bindings?.static?.value;
-  }
-  return stored;
-}
-
-/** An asset parameter's URL: a plain string, or `{ url }` — the media-sources tolerance. */
-function urlOf(value: unknown): string {
-  if (typeof value === "string") return value;
-  if (typeof value === "object" && value !== null) {
-    const url = (value as { url?: unknown }).url;
-    if (typeof url === "string") return url;
-  }
-  return "";
-}
-
-/** T1230: the node's detector knobs, or the shipped defaults where it never stored them. */
-function detectorOf(node: GraphNode): DetectorSettings {
-  const number = (key: keyof DetectorSettings): number => {
-    const value = staticValueOf(node, key);
-    return typeof value === "number" && Number.isFinite(value) ? value : AUDIO_DETECTOR_DEFAULTS[key];
-  };
-  return { threshold: number("threshold"), retrigger: number("retrigger") };
-}
-
-/**
- * T1312b — the capturing node's sync offset, in seconds, from a resolved parameter read.
- *
- * Exported and pure so the two claims that matter can be pinned without an AudioContext:
- * an absent or non-finite value is 0 (a document that never stored the parameter hears
- * exactly what it heard before), and the number passes through untouched.
- *
- * It is deliberately absent from `CaptureConfig` and therefore from `captureKeyOf`: the
- * detector knobs are STRUCTURAL — changing one rebuilds the capture and re-analyses the
- * file — and routing the offset through that door would re-analyse the whole track on
- * every drag of the slider. It is a value, read per frame beside `volume`.
- */
-export function syncLeadOf(read: (key: string) => ParameterValue | undefined): number {
-  const value = read("syncOffset");
-  return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
 export interface AudioReplayBaseline {
@@ -355,8 +340,10 @@ export function audioReplayBaselineOf(
 export function captureKeyOf(config: CaptureConfig | null, reloadToken: number, analysisFps?: number): string {
   if (config === null) return "";
   const { detector } = config;
-  const analysisGrid = config.source === "file" ? `|${String(analysisFps ?? "none")}` : "";
-  return `${config.source}|${config.url}|${config.device}|${config.monitor}|${detector.threshold}|${detector.retrigger}|${reloadToken}${analysisGrid}`;
+  // T1769b: a file's Input Gain is walked into its pre-analysed track, so it rebuilds; a
+  // microphone's is a live value on the trim node and must not.
+  const analysisGrid = config.source === "file" ? `|${String(analysisFps ?? "none")}|${String(config.inputGainDb)}` : "";
+  return `${config.source}|${config.url}|${config.device}|${config.voiceProcessing ? "voice" : "raw"}|${config.monitor}|${detector.threshold}|${detector.retrigger}|${config.tonal ? "tonal" : "plain"}|${reloadToken}${analysisGrid}`;
 }
 
 /**
@@ -375,52 +362,6 @@ export function hasUnboundAudioFile(graph: GraphDocument): boolean {
       !isSilencedSource(node as GraphNode) &&
       urlOf(staticValueOf(node as GraphNode, "file")).trim() === "",
   );
-}
-
-export function captureConfigOf(graph: GraphDocument): CaptureConfig | null {
-  const nodesOf = (type: string): GraphNode[] =>
-    Object.keys(graph.nodes)
-      .filter((nodeId) => graph.nodes[nodeId]?.type === type)
-      .sort()
-      .map((nodeId) => graph.nodes[nodeId] as GraphNode);
-
-  for (const node of nodesOf("audioFileIn")) {
-    // T555 (T541's rule, the AUDIBLE half). The owner: "audio file in is muted but still
-    // audible. that probably needs to not play if the node is not actually cooking / is
-    // bypassed / muted." A silenced node is not a capture CANDIDATE at all — the exact
-    // analogue of the compiler dropping a muted node from the graph (T250) — which is
-    // what stops the sound at its source rather than turning a gain down after it.
-    //
-    // MUTE OVERRIDES `monitor`, and the ordering is structural rather than a rule someone
-    // has to remember: `monitor` says "route this to the speakers" and is only ever read
-    // for a node that got this far, so an off node never reaches the question.
-    //
-    // It also promotes the NEXT candidate, and answers for the microphone below, which
-    // has no gain stage to turn down — a muted `audioIn` must not open the device at all
-    // (§V476's spirit: a permission prompt from a node that is switched off is an ambush).
-    if (isSilencedSource(node)) continue;
-    const url = urlOf(staticValueOf(node, "file"));
-    if (url.trim() === "") continue;
-    return {
-      source: "file",
-      url,
-      device: "",
-      monitor: staticValueOf(node, "monitor") !== false,
-      nodeId: node.id,
-      detector: detectorOf(node),
-    };
-  }
-  const mic = nodesOf("audioIn").find((node) => !isSilencedSource(node));
-  if (mic === undefined) return null;
-  const device = staticValueOf(mic, "device");
-  return {
-    source: "mic",
-    url: "",
-    device: typeof device === "string" ? device : "",
-    monitor: false,
-    nodeId: null,
-    detector: detectorOf(mic),
-  };
 }
 
 export function renderAudioRequirementOf(graph: GraphDocument): RenderAudioRequirement {
@@ -442,8 +383,36 @@ interface LiveCapture {
   readonly dispose: () => void;
   /** T493: present only for a file capture — a mic has no playhead to drive. */
   readonly element?: PlayableMedia;
-  /** T493: monitoring level, AFTER the analyser, so volume never rescales the channels. */
+  /** T493: monitoring level, on a branch of its own off the source, so volume never rescales the channels. */
   readonly gain?: GainNode;
+  /** T1769b: the Input Gain, between the source and every analysis consumer. */
+  readonly trim: GainNode;
+}
+
+/**
+ * T1769b — the time constant a changed Input Gain is approached with on the audio thread.
+ * A step in gain is a step in the signal, which the onset detectors would count as a hit of
+ * its own; 20 ms settles within a few hops and is far below anything a hand does to a slider.
+ */
+export const INPUT_GAIN_SMOOTHING_SECONDS = 0.02;
+
+/**
+ * T1769b: the capturing node's Input Gain as resolved on this frame, in decibels — or its
+ * value at rest where nothing can resolve it (no registry: a test that pins capture alone).
+ */
+export function resolvedInputGainDb(
+  config: CaptureConfig,
+  frame: FrameEvaluationInput,
+  graph: FlatGraph,
+  registry: AppRuntime["registry"] | undefined,
+  channels: ChannelResolver | undefined,
+  flattening: FlatteningReads,
+): number {
+  const node = graph.nodes[config.sourceNodeId];
+  const definition = node === undefined ? undefined : registry?.get(node.type);
+  if (node === undefined || definition === undefined || registry === undefined) return config.inputGainDb;
+  const resolved = resolveParameters(node, definition, parameterReadOptions({ graph, registry, frame, channels, flattening }));
+  return inputGainDbOf((key) => resolved.get(key)?.value);
 }
 
 export function useAudioInput(
@@ -476,6 +445,8 @@ export function useAudioInput(
   const renderCaptureRef = useRef<OfflineAudioCapture | null>(null);
   const renderMutedRef = useRef(false);
   const monitorLevelRef = useRef(1);
+  /** T1769b: the Input Gain the live trim was last sent to, in decibels. */
+  const trimDbRef = useRef(0);
   /** T1229: the transport as `sync` last resolved it — the previous frame's channels (§V887). */
   const transportRef = useRef<MediaTransportValues | null>(null);
   /** T1312b: the capturing node's sync offset, resolved with the transport it belongs to. */
@@ -553,10 +524,27 @@ export function useAudioInput(
       };
       const analyser = made(context.createAnalyser());
       // The engine's window, so the polled fallback analyses exactly what the worklet would.
-      analyser.fftSize = AUDIO_ANALYSIS_OPTIONS.fftSize;
+      analyser.fftSize = polledAnalyserSize(analysisOptionsFor(config.detector, context.sampleRate, config.tonal));
       // Zero: valueLag downstream owns smoothing; the default 0.8 would pre-damp
       // every transient before a trigger could see it.
       analyser.smoothingTimeConstant = 0;
+      /*
+       * T1769b — THE TRIM SITS AHEAD OF EVERY ANALYSIS CONSUMER, and it is a node in the
+       * graph rather than a factor inside each analysis.
+       *
+       * The analyser (the polled fallback's window) and the worklet (the hop engine and the
+       * tonal pass) are both fed from this one node, so there is one place the level is set
+       * and none of the three can be forgotten. As an `AudioParam` it is ramped on the audio
+       * thread, sample-accurate, with no message to the worklet and no rebuild. The graph
+       * carries floats, so a trimmed signal above full scale passes through unclipped; what
+       * saturates is the analysers' own byte map (`stft.ts`: a sample past ±1 reads the end
+       * of the time-domain byte, a bin past -30 dB reads 255), exactly as an input that
+       * arrived that loud would.
+       */
+      const trim = made(context.createGain());
+      trim.gain.value = inputGainLinear(config.inputGainDb);
+      trimDbRef.current = config.inputGainDb;
+      trim.connect(analyser);
 
       /*
        * T1226: the engine first — it depends on nothing the source does, and a fallback
@@ -565,7 +553,7 @@ export function useAudioInput(
        */
       const messages: string[] = [];
       // T1230: the source's detector knobs, on this context's hop grid — both paths get the same picker.
-      const options = analysisOptionsFor(config.detector, context.sampleRate);
+      const options = analysisOptionsFor(config.detector, context.sampleRate, config.tonal);
       const engine = await attachAnalysisEngine(context, options);
       if ("failure" in engine) messages.push(workletFallbackMessage(engine.failure));
       else {
@@ -606,30 +594,37 @@ export function useAudioInput(
            * fallback is taken AND the status names it.
            */
           let stream: MediaStream;
-          if (config.device.trim() === "") {
-            stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          } else {
-            try {
-              stream = await navigator.mediaDevices.getUserMedia({
-                audio: { deviceId: { exact: config.device } },
-              });
-            } catch (constrained) {
-              if ((constrained as { name?: string }).name !== "OverconstrainedError") throw constrained;
-              stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-              messages.push("The selected device is unavailable; using the system default.");
-            }
+          /*
+           * T1776b: the device is asked for RAW unless the node's Voice Processing is on.
+           * `{ audio: true }` took the browser's defaults, which are a telephone's (echo
+           * cancellation, noise suppression, automatic gain), on every path including the
+           * fallback below. The three are plain (ideal) constraints, so they can never be the
+           * reason a device is refused; only the exact deviceId can.
+           */
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({ audio: captureAudioConstraints(config.voiceProcessing, config.device) });
+          } catch (constrained) {
+            if (config.device.trim() === "" || (constrained as { name?: string }).name !== "OverconstrainedError") throw constrained;
+            stream = await navigator.mediaDevices.getUserMedia({ audio: captureAudioConstraints(config.voiceProcessing, "") });
+            messages.push("The selected device is unavailable; using the system default.");
           }
+          // A constraint is a request: read back what the track was granted and name the difference (§V288).
+          const processing = captureProcessingMessage(config.voiceProcessing, stream.getAudioTracks()[0]?.getSettings() as Record<string, unknown> | undefined);
+          if (processing !== null) messages.push(processing);
           if (cancelled) {
             for (const track of stream.getTracks()) track.stop();
             release();
             return;
           }
           const input = made(context.createMediaStreamSource(stream));
-          input.connect(analyser);
-          attachEngine(input);
+          // T1769b: through the trim, and nowhere else — a live input is never routed to the
+          // speakers, so no gain here can feed back or change what is heard.
+          input.connect(trim);
+          attachEngine(trim);
           captureRef.current = {
             context,
             analyser,
+            trim,
             dispose: () => {
               for (const track of stream.getTracks()) track.stop();
               release();
@@ -649,20 +644,25 @@ export function useAudioInput(
           element.loop = false;
           element.src = config.url;
           const input = made(context.createMediaElementSource(element));
-          input.connect(analyser);
-          attachEngine(input);
+          input.connect(trim);
+          attachEngine(trim);
           /*
-           * T493 — VOLUME SITS AFTER THE ANALYSER, and that placement is the feature.
+           * T493 — VOLUME IS NOT UPSTREAM OF THE ANALYSER, and that placement is the feature.
            *
-           * The analyser gets the file at unity whatever the monitoring level is, so
-           * turning the room down does not silently rescale every parameter driven by
-           * `level`. A gain node upstream of the analyser would have made the volume
-           * slider a hidden master fader on the whole graph — the plausible-wrong wiring,
-           * with no error to find it by.
+           * The analysis gets the file whatever the monitoring level is, so turning the room
+           * down does not silently rescale every parameter driven by `level`. A volume node
+           * upstream of the analyser would have made the volume slider a hidden master fader
+           * on the whole graph — the plausible-wrong wiring, with no error to find it by.
+           *
+           * T1769b — and the mirror: THE MONITOR IS NOT DOWNSTREAM OF THE TRIM. It used to
+           * hang off the analyser's output, which was the source at unity; the analyser now
+           * sits behind the Input Gain, so the monitor is tapped off the SOURCE instead. Two
+           * branches from one source: source → trim → analysis, source → volume → speakers.
+           * Raising the Input Gain by 40 dB therefore moves no loudspeaker.
            */
           const gain = made(context.createGain());
           gain.gain.value = monitorGainLevel(monitorLevelRef.current, renderMutedRef.current);
-          analyser.connect(gain);
+          input.connect(gain);
           if (config.monitor) gain.connect(context.destination);
           // T493/§V369: kicked, never AWAITED. `play()` on a source that never decodes
           // stays pending forever, so awaiting it left the capture in `idle` — reading
@@ -680,6 +680,7 @@ export function useAudioInput(
             analyser,
             element,
             gain,
+            trim,
             dispose: () => {
               element.pause();
               element.src = "";
@@ -830,6 +831,28 @@ export function useAudioInput(
     channelsRef.current = channels;
     const capture = captureRef.current;
     const runner = runnerRef.current;
+    /*
+     * T1769b — a MICROPHONE's Input Gain, per frame, through the one read path (§V61), so it
+     * takes every mode: a typed number, an expression, a preset fade, a Panel fader. It is a
+     * VALUE in the sense `volume` below is: sent to the trim node as a ramp, never through
+     * the capture key, so listening goes on without a gap while it moves. A file's is read
+     * at rest by the capture config instead (its pre-analysed track is walked at one gain).
+     */
+    const config = configRef.current;
+    if (capture !== null && config !== null && config.source === "mic") {
+      const decibels = resolvedInputGainDb(
+        config,
+        frame,
+        getGraphRef.current(),
+        registryRef.current,
+        channels,
+        getFlatteningRef.current?.() ?? NO_FLATTENING,
+      );
+      if (decibels !== trimDbRef.current) {
+        trimDbRef.current = decibels;
+        capture.trim.gain.setTargetAtTime(inputGainLinear(decibels), capture.context.currentTime, INPUT_GAIN_SMOOTHING_SECONDS);
+      }
+    }
     if (capture?.element === undefined || runner === null) return;
     const stepped = runner.step(frame, durationOf(capture.element), capture.element.currentTime);
     if (stepped === null) return;

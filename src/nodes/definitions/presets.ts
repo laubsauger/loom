@@ -41,7 +41,7 @@ export const presetsNode: NodeDefinition = {
       label: "Targets",
       default: "",
       description:
-        "What Store captures: node names (every parameter of that node) or node.key (one parameter), separated by spaces or commas. Names, so a rename or a paste keeps them pointed at the right node.",
+        "What Store captures: node names (every parameter of that node), node.key (one parameter), or node.@on (whether that node is switched on, so a recall switches it), separated by spaces or commas. Names, so a rename or a paste keeps them pointed at the right node.",
     },
     select: {
       type: "string",

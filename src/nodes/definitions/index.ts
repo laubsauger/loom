@@ -50,9 +50,14 @@ import { controlNodeDefinitions } from "./controls.ts";
 import { presetsNode } from "./presets.ts";
 import { cueListNode } from "./cue-list.ts";
 import { automationNode } from "./automation.ts";
+import { tempoNode } from "./tempo.ts";
 export { audioFileInNode, audioInNode, audioPatternNode } from "./audio.ts";
 export { cameraNode, geometryNode, lightNode, renderNode, sceneNodeDefinitions } from "./scene.ts";
 import { audioFileInNode, audioInNode, audioPatternNode } from "./audio.ts";
+import { audioChordNode, audioChromaNode, audioNotesNode, tonePatternNode } from "./audio-tonal.ts";
+export { audioChordNode, audioChromaNode, audioNotesNode, tonePatternNode } from "./audio-tonal.ts";
+import { harmonyNode, noteFieldNode } from "./harmony.ts";
+export { harmonyNode, noteFieldNode } from "./harmony.ts";
 import { sceneNodeDefinitions } from "./scene.ts";
 import { pointGeneratorDefinitions } from "./point-generators.ts";
 import { renderInstancesNode } from "./render-instances.ts";
@@ -74,6 +79,8 @@ import { laserOutNode } from "./laser-out.ts";
 import { pointKernelAdvancedNode } from "./point-kernel-advanced.ts";
 import { slitScanNode } from "./slit-scan.ts";
 import { midiInNode } from "./midi.ts";
+import { midiNotesNode } from "./midi-notes.ts";
+export { midiNotesNode } from "./midi-notes.ts";
 import { oscInNode, oscOutNode } from "./osc.ts";
 import { annotateNode } from "./annotate.ts";
 
@@ -126,6 +133,7 @@ export { slitScanNode } from "./slit-scan.ts";
 export { midiInNode } from "./midi.ts";
 export { presetsNode } from "./presets.ts";
 export { cueListNode } from "./cue-list.ts";
+export { tempoNode } from "./tempo.ts";
 export { automationNode, AUTOMATION_NODE_TYPE } from "./automation.ts";
 export { oscInNode, oscOutNode } from "./osc.ts";
 export {
@@ -318,14 +326,25 @@ export const coreNodeDefinitions: readonly NodeDefinition[] = [
   presetsNode,
   // T1500b: the cue list — GO / BACK through an ordered list of preset recalls.
   cueListNode,
+  // T1787b: the project tempo as channels, Tap and Resync as pulses.
+  tempoNode,
   // VN61: keyframed lanes over the playhead, each published as a channel.
   automationNode,
   audioInNode,
   audioFileInNode,
   audioPatternNode,
+  // T1751b: the tonal projections of the same capture.
+  audioChromaNode,
+  audioChordNode,
+  audioNotesNode,
+  tonePatternNode,
+  harmonyNode,
+  noteFieldNode,
   // T942: the controller as channels — the value family's fourth input source, after
   // Mouse, the trio and the audio pair. Page-native, no helper, no bridge.
   midiInNode,
+  // T1762b: the keyboard as voices, beside the learned-controls node.
+  midiNotesNode,
   // T942 tier 3: OSC as channels, and OSC back OUT. Both need the local helper — a page
   // cannot speak UDP — and both degrade to their declared rests with none running.
   oscInNode,

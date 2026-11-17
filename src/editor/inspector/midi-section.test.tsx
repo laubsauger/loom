@@ -224,3 +224,21 @@ describe("§V359 — the section is PRESENT when MIDI is not, and names which ab
     expect(select.value).toBe("");
   });
 });
+
+describe("T1762b — a node that learns nothing (MIDI Notes) gets the access half of the section and no learn table", () => {
+  it("offers the button that asks and the device picker, and no Add control or Learn", () => {
+    const midi = midiStub({ kind: "idle" }, [{ id: "port-keys", name: "Nord Piano" }]);
+    const editor = editorStub();
+    render(<MidiSection nodeId={"k" as never} device="" mapping={null} midi={midi.surface} editor={editor} />);
+    fireEvent.click(screen.getByRole("button", { name: "Enable MIDI" }));
+    expect(midi.requests).toHaveLength(1);
+    expect([...(screen.getByLabelText("MIDI input") as HTMLSelectElement).options].map((option) => option.textContent)).toEqual(["Any input", "Nord Piano"]);
+    expect(screen.queryByRole("button", { name: "Add control" })).toBeNull();
+    expect(screen.queryByText("No controls learned yet.")).toBeNull();
+    // With a mapping, the same section does carry the table: the difference is the prop.
+    cleanup();
+    render(<MidiSection nodeId={"m" as never} device="" mapping="[]" midi={midi.surface} editor={editor} />);
+    expect(screen.queryByRole("button", { name: "Add control" })).not.toBeNull();
+  });
+});
+

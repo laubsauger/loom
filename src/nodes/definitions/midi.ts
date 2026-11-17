@@ -46,7 +46,7 @@ import { VALUE_PORT } from "./common-ports.ts";
  *
  * ## What it decodes, and what it does not
  *
- * 7-bit CC and 14-bit pitch bend. Not notes, not clock, not 14-bit CC pairs, not SysEx —
+ * 7-bit CC, 14-bit pitch bend and a note as a gate (T1787b). Not clock, not 14-bit CC pairs, not SysEx —
  * `midi-mapping.ts`'s module note states each one and what happens instead. An
  * unsupported message is dropped at the decoder, so it can never be learned and can never
  * publish; it does nothing rather than something surprising.
@@ -64,7 +64,7 @@ export const midiInNode: NodeDefinition = {
   title: "MIDI In",
   category: "input",
   description:
-    "A MIDI controller as channels: every control you have learned, published under the name you gave it, so midi1:cutoff drives a parameter and a Lag on the node smooths all of them at once. Learn a control in the inspector — arm a row, move the knob — rather than typing CC numbers. Reads 7-bit Control Change and 14-bit pitch bend; notes, velocity, MIDI clock, 14-bit CC pairs and SysEx are NOT read, and an unsupported message is ignored rather than approximated. Range maps 0..1 to the band you want at the source, so nothing downstream has to rebuild a gain and bias per knob; set it to 0..127 to read the raw controller value instead. Toggle mode latches a momentary pad. With no Web MIDI, no permission or no device attached the node still publishes every learned channel at its Rest value, so the document loads and renders — the inspector's MIDI section says which of those it is. CLOCKLESS (§V436): it reports where the controls are, so a timeline loop passes straight through it. Live hardware: a render over it does not reproduce.",
+    "A MIDI controller as channels: every control you have learned, published under the name you gave it, so midi1:cutoff drives a parameter and a Lag on the node smooths all of them at once. Learn a control in the inspector — arm a row, move the knob — rather than typing CC numbers. Reads 7-bit Control Change, 14-bit pitch bend and a note as a gate (1 while the key is down, whatever the velocity: a key is a button here, and MIDI Notes is the keyboard as voices); velocity, MIDI clock, 14-bit CC pairs and SysEx are NOT read, and an unsupported message is ignored rather than approximated. Range maps 0..1 to the band you want at the source, so nothing downstream has to rebuild a gain and bias per knob; set it to 0..127 to read the raw controller value instead. Toggle mode latches a momentary pad. With no Web MIDI, no permission or no device attached the node still publishes every learned channel at its Rest value, so the document loads and renders — the inspector's MIDI section says which of those it is. CLOCKLESS (§V436): it reports where the controls are, so a timeline loop passes straight through it. Live hardware: a render over it does not reproduce.",
   tags: ["value", "input", "midi", "controller", "cc", "learn"],
   inputs: [],
   outputs: [{ id: "out", label: "Out", type: VALUE_PORT }],
@@ -105,7 +105,7 @@ export const midiInNode: NodeDefinition = {
       label: "Mapping",
       default: "[]",
       description:
-        "The learned controls, as a list: channel (the published name), source (cc/pitchBend, MIDI channel, controller number), range, mode, and rest. Written by the inspector's Learn buttons; editable here when you want to retype a name or a band by hand.",
+        "The learned controls, as a list: channel (the published name), source (cc/pitchBend/note, MIDI channel, controller or key number), range, mode, and rest. Written by the inspector's Learn buttons; editable here when you want to retype a name or a band by hand.",
     },
   },
   valueEvaluate: ({ values, channels, state }) => {

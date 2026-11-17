@@ -193,10 +193,18 @@ describe("expression reference ← the evaluator (§V105, §V71)", () => {
     expect(variables.map((variable) => variable.name)).toEqual([
       "absframe",
       "abstime",
+      // T1785b: the project tempo's names, beside the clocks.
+      "bar",
+      "barphase",
+      "beat",
+      "beatphase",
+      "beatpulse",
+      "bpm",
       "delta",
       "fps",
       "frame",
       "subframes",
+      "tempolocked",
       "time",
       "walldelta",
       "walltime",

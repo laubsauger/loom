@@ -389,3 +389,89 @@ describe("recording refuses what it cannot do", () => {
     expect(encoder.frames.map((f) => f.frameIndex)).toEqual([0]);
   });
 });
+
+/**
+ * T1741b — a 10-bit encoder gets the Output's own float values, not the 8-bit RGBA every
+ * other path quantises to. The source below writes a grey level between two bytes; if any
+ * step of the recorder went through 8 bits, the 10-bit code would land on a multiple of
+ * the 8-bit grid instead of the code the float value derives.
+ */
+describe("10-bit recording (T1741b)", () => {
+  const FLOAT_OUTPUT: ExportOutput = { ...OUTPUT, width: 4, height: 2, format: "rgba16float", space: "encoded" };
+  /** 0.25 + 3/1024 in binary16: 8 bits round it to 64/255; BT.709 limited gives Y = 286. */
+  const LEVEL_BITS = (13 << 10) | 12;
+
+  function floatApi(output: ExportOutput, reads: { count: number }): ExportInterface {
+    return createExportInterface({
+      source: {
+        read: (_target, region) => {
+          reads.count += 1;
+          const rowStride = region.width * 8 + 16;
+          const bytes = new Uint8Array(rowStride * region.height);
+          const view = new DataView(bytes.buffer);
+          for (let y = 0; y < region.height; y += 1) {
+            for (let x = 0; x < region.width; x += 1) {
+              for (let channel = 0; channel < 3; channel += 1) view.setUint16(y * rowStride + x * 8 + channel * 2, LEVEL_BITS, true);
+              view.setUint16(y * rowStride + x * 8 + 6, 0x3c00, true);
+            }
+          }
+          return Promise.resolve({ width: region.width, height: region.height, format: output.format, rowStride, bytes });
+        },
+      },
+      outputs: () => [output],
+    });
+  }
+
+  function tenBitEncoder() {
+    const planes: Array<{ frameIndex: number; y: number[]; transfer: string }> = [];
+    const encoder: VideoEncoderSink = {
+      configure: vi.fn(),
+      encode: vi.fn(),
+      encodeYuv10(frame) {
+        planes.push({
+          frameIndex: frame.frameIndex,
+          y: Array.from(frame.yuv.data.subarray(0, frame.yuv.width * frame.yuv.height)),
+          transfer: frame.yuv.colorSpace.transfer,
+        });
+      },
+      finish: () => Promise.resolve({ mimeType: "video/mp4", bytes: new Uint8Array(1), frameCount: planes.length, durationSeconds: 0 }),
+    };
+    return { encoder, planes };
+  }
+
+  it("reads the float Output and hands the encoder 10-bit planes of it, never 8-bit RGBA", async () => {
+    const reads = { count: 0 };
+    const { encoder, planes } = tenBitEncoder();
+    const recorder = createFrameRecorder({ api: floatApi(FLOAT_OUTPUT, reads), ref: REF, encoder, fps: 30 });
+    await recorder.start();
+    await recorder.captureFrame(frame(0));
+    await recorder.captureFrame(frame(1));
+    await recorder.finish();
+    expect(reads.count).toBe(2);
+    expect(encoder.encode).not.toHaveBeenCalled();
+    expect(planes.map((plane) => plane.frameIndex)).toEqual([0, 1]);
+    // 64 + 876 × (0.25 + 3/1024) = 285.57 → 286. Through a byte it would be 64 + 876 × 64/255 = 283.9 → 284.
+    expect(planes[0]!.y).toEqual(Array.from({ length: 8 }, () => 286));
+    expect(planes[0]!.transfer).toBe("iec61966-2-1");
+  });
+
+  it("refuses an 8-bit Output before configuring or reading anything", async () => {
+    const reads = { count: 0 };
+    const { encoder } = tenBitEncoder();
+    const output = { ...FLOAT_OUTPUT, format: "rgba8unorm-srgb" as const };
+    const recorder = createFrameRecorder({ api: floatApi(output, reads), ref: REF, encoder, fps: 30 });
+    await expect(recorder.start()).rejects.toMatchObject({
+      diagnostic: { code: "export/unsupported-format", message: expect.stringContaining("rgba8unorm-srgb, which holds 8 bits") as unknown },
+    });
+    expect(recorder.state).toBe("failed");
+    expect(encoder.configure).not.toHaveBeenCalled();
+    expect(reads.count).toBe(0);
+  });
+
+  it("refuses to resample: the 10-bit path records the Output's own size", async () => {
+    const { encoder } = tenBitEncoder();
+    const recorder = createFrameRecorder({ api: floatApi(FLOAT_OUTPUT, { count: 0 }), ref: REF, encoder, fps: 30, maxWidth: 2 });
+    await expect(recorder.start()).rejects.toThrow(/does not resample/);
+    expect(encoder.configure).not.toHaveBeenCalled();
+  });
+});

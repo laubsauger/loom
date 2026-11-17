@@ -5,6 +5,7 @@ import type { NodeId } from "../types/ids.ts";
 import type { FrameEvaluationInput } from "../types/frame.ts";
 import type { AudioFeatures } from "../types/frame.ts";
 import { distinctSpectrumBands } from "../audio/spectrum-bands.fixture.ts";
+import { distinctTonalFields } from "../audio/tonal-fields.fixture.ts";
 import type { NodeDefinition } from "../types/node-definition.ts";
 import { createNodeRegistry } from "../../nodes/registry/registry.ts";
 import { allNodeDefinitions } from "../../nodes/definitions/index.ts";
@@ -119,6 +120,7 @@ const AUDIO: AudioFeatures = {
   beat: 3,
   beatCount: 1,
   ...distinctSpectrumBands(0.35),
+  ...distinctTonalFields(0.55),
 };
 
 const bag = (result: { byName: ReadonlyMap<string, Record<string, number>> }, name: string) => {
@@ -417,6 +419,17 @@ describe("EVERY value node honours mute and bypass (T541, §V437)", () => {
     lanes: JSON.stringify({ version: 1, lanes: [{ id: "lane1", name: "level", keys: [{ id: "key1", t: 0, v: 0.5 }] }] }),
   };
 
+  /**
+   * The node that feeds the subject, where a moving pointer cannot. The sweep's feed is a
+   * Mouse, and almost every stage has something to say about any bag. Note Field does not:
+   * it reads the structured bag a Harmony publishes and REFUSES anything else by name (a
+   * `valueGraph.evaluate` error and no bag), so fed a pointer it is silent, and a silent
+   * node cannot prove a mute (§V461). Its row hands it the one source it accepts.
+   */
+  const FEEDS: Readonly<Record<string, string>> = {
+    noteField: "harmony",
+  };
+
   const evaluateOne = (
     definition: NodeDefinition,
     flags: { muted?: boolean; bypassed?: boolean },
@@ -426,7 +439,7 @@ describe("EVERY value node honours mute and bypass (T541, §V437)", () => {
     const nodes = [node("subject", definition.type, { parameters: { ...LOUD }, ui: { ...flags } })];
     const edges: Array<[string, string, string, string]> = [];
     if (feed && through !== undefined) {
-      nodes.unshift(node("feed", "mouse"));
+      nodes.unshift(node("feed", FEEDS[definition.type] ?? "mouse"));
       edges.push(["feed", "out", "subject", through.input]);
     }
     // A downstream reader, so "the port is absent" is asserted from where it matters.
@@ -471,10 +484,12 @@ describe("EVERY value node honours mute and bypass (T541, §V437)", () => {
         return;
       }
       // A WIRE: the feed's bag, verbatim, out of the node and out of the reader behind it.
-      expect(bag(result, "subject"), `${definition.type} bypassed did not pass its input through`).toEqual(
-        POINTER_NEXT,
-      );
-      expect(bag(result, "reader")).toEqual(POINTER_NEXT);
+      // The Mouse feed's bag is the pointer, by literal; a FEEDS row's is whatever that
+      // source published this frame, which has to be something or the wire carries nothing.
+      const fed = FEEDS[definition.type] === undefined ? POINTER_NEXT : bag(result, "feed");
+      expect(Object.keys(fed ?? {}).length, `${definition.type}'s feed published nothing`).toBeGreaterThan(0);
+      expect(bag(result, "subject"), `${definition.type} bypassed did not pass its input through`).toEqual(fed);
+      expect(bag(result, "reader")).toEqual(fed);
     });
 
     it(`${definition.type}: bypassed with NOTHING wired is silent`, () => {

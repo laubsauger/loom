@@ -156,7 +156,8 @@ export function createPhoneWrites(options: PhoneWritesOptions): PhoneWrites {
               "graph.applyPatch",
               {
                 baseRevision: bus.store.getRevision(),
-                label: `${vet.on ? "Layer on" : "Layer off"} (${vet.caption})`,
+                // T1771b: a board switch of any node writes through here; the vet says which it is.
+                label: `${vet.what === "switch" ? "Switch" : "Layer"} ${vet.on ? "on" : "off"} (${vet.caption})`,
                 operations: [{ op: "setNodeUi", nodeId: vet.nodeId, ui: { bypassed: !vet.on } }],
               },
               lane.context,

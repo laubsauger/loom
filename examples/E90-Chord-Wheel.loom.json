@@ -1,0 +1,320 @@
+{
+  "assets": [],
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e-stage-wheel": {
+        "id": "e-stage-wheel",
+        "source": {
+          "nodeId": "stage",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "wheel",
+          "portId": "input"
+        }
+      },
+      "e-wheel-out": {
+        "id": "e-wheel-out",
+        "source": {
+          "nodeId": "wheel",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "out",
+          "portId": "input"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "out": {
+        "definitionVersion": 1,
+        "id": "out",
+        "label": "output1",
+        "parameters": {},
+        "position": {
+          "x": 0,
+          "y": -60
+        },
+        "type": "output"
+      },
+      "song": {
+        "definitionVersion": 1,
+        "id": "song",
+        "label": "tones_song",
+        "parameters": {
+          "amount": 1,
+          "bpm": 90,
+          "key": 2,
+          "mode": "major"
+        },
+        "position": {
+          "x": -720,
+          "y": 220
+        },
+        "type": "tonePattern"
+      },
+      "stage": {
+        "definitionVersion": 1,
+        "id": "stage",
+        "label": "solid_stage",
+        "parameters": {
+          "color": [
+            0,
+            0,
+            0,
+            1
+          ]
+        },
+        "position": {
+          "x": -720,
+          "y": -60
+        },
+        "type": "solid"
+      },
+      "wheel": {
+        "definitionVersion": 1,
+        "id": "wheel",
+        "label": "wgsl_wheel",
+        "parameters": {
+          "c0": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('tones_song').chan.chroma0"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "expression"
+          },
+          "c1": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('tones_song').chan.chroma1"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "expression"
+          },
+          "c10": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('tones_song').chan.chroma10"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "expression"
+          },
+          "c11": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('tones_song').chan.chroma11"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "expression"
+          },
+          "c2": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('tones_song').chan.chroma2"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "expression"
+          },
+          "c3": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('tones_song').chan.chroma3"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "expression"
+          },
+          "c4": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('tones_song').chan.chroma4"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "expression"
+          },
+          "c5": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('tones_song').chan.chroma5"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "expression"
+          },
+          "c6": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('tones_song').chan.chroma6"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "expression"
+          },
+          "c7": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('tones_song').chan.chroma7"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "expression"
+          },
+          "c8": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('tones_song').chan.chroma8"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "expression"
+          },
+          "c9": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('tones_song').chan.chroma9"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "expression"
+          },
+          "lead": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('tones_song').chan.pitchClass"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "expression"
+          },
+          "leadOn": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('tones_song').chan.pitchConfidence"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "expression"
+          },
+          "quality": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('tones_song').chan.chordQuality"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "expression"
+          },
+          "root": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('tones_song').chan.root"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "expression"
+          },
+          "source": "struct SharedFrame {\n  time: f32,\n  deltaTime: f32,\n  frameIndex: f32,\n  randomSeed: f32,\n  wallTime: f32,\n  wallDelta: f32,\n  absTime: f32,\n  absFrame: f32,\n  resolution: vec2f,\n  pointer: vec4f,\n};\nstruct Params {\n  c0: f32, // @default 0  Pitch class C.\n  c1: f32, // @default 0  C sharp.\n  c2: f32, // @default 0  D.\n  c3: f32, // @default 0  D sharp.\n  c4: f32, // @default 0  E.\n  c5: f32, // @default 0  F.\n  c6: f32, // @default 0  F sharp.\n  c7: f32, // @default 0  G.\n  c8: f32, // @default 0  G sharp.\n  c9: f32, // @default 0  A.\n  c10: f32, // @default 0  A sharp.\n  c11: f32, // @default 0  B.\n  root: f32, // @default 0  The chord's root, as a pitch class.\n  quality: f32, // @default 0  0 none, 1 major, 2 minor.\n  lead: f32, // @default 0  The lead note's pitch class.\n  leadOn: f32, // @default 0  How surely there is a lead note.\n};\n@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n@group(0) @binding(2) var<uniform> frameU: SharedFrame;\n@group(0) @binding(3) var<uniform> params: Params;\n\nconst TAU = 6.28318530718;\n\nfn hue(h: f32) -> vec3f {\n  return 0.5 + 0.5 * cos(TAU * (h + vec3f(0.0, 0.3333, 0.6667)));\n}\n\nfn level(index: i32) -> f32 {\n  switch index {\n    case 0 { return params.c0; }\n    case 1 { return params.c1; }\n    case 2 { return params.c2; }\n    case 3 { return params.c3; }\n    case 4 { return params.c4; }\n    case 5 { return params.c5; }\n    case 6 { return params.c6; }\n    case 7 { return params.c7; }\n    case 8 { return params.c8; }\n    case 9 { return params.c9; }\n    case 10 { return params.c10; }\n    default { return params.c11; }\n  }\n}\n\n@fragment\nfn fs(@location(0) uv: vec2f) -> @location(0) vec4f {\n  let size = vec2f(textureDimensions(inputTexture));\n  let p = (uv - 0.5) * vec2f(size.x / size.y, 1.0) * 2.0;\n  let radius = length(p);\n  // C at the top, rising clockwise.\n  let turn = fract(atan2(p.x, -p.y) / TAU + 0.5 / 12.0);\n  let index = i32(floor(turn * 12.0));\n  let within = fract(turn * 12.0);\n  let sounding = level(index);\n  let colour = hue(f32(index) / 12.0);\n\n  // The ring: a wedge with a dark seam either side, bright by how much its class sounds.\n  let ring = smoothstep(0.34, 0.37, radius) * (1.0 - smoothstep(0.80, 0.83, radius));\n  let seam = smoothstep(0.0, 0.06, within) * (1.0 - smoothstep(0.94, 1.0, within));\n  var lit = colour * (0.035 + 0.965 * sounding * sounding) * ring * seam;\n\n  // The root's wedge wears a white rim, while a chord is claimed.\n  let claimed = step(0.5, params.quality);\n  let isRoot = claimed * (1.0 - step(0.5, abs(f32(index) - params.root)));\n  let rim = smoothstep(0.83, 0.85, radius) * (1.0 - smoothstep(0.87, 0.89, radius)) * seam;\n  lit += vec3f(0.9) * rim * isRoot;\n\n  // The hub: the root's hue, warmer for major and cooler for minor.\n  let hub = 1.0 - smoothstep(0.26, 0.29, radius);\n  let warmth = select(vec3f(0.75, 0.85, 1.15), vec3f(1.15, 0.95, 0.75), params.quality < 1.5);\n  lit += hue(params.root / 12.0) * warmth * hub * claimed * 0.55;\n\n  // The lead note: a bead on the outer edge at its pitch class.\n  let angle = (params.lead / 12.0) * TAU;\n  let bead = vec2f(sin(angle), -cos(angle)) * 0.94;\n  lit += vec3f(1.0) * (1.0 - smoothstep(0.035, 0.05, length(p - bead))) * params.leadOn;\n\n  return vec4f(lit, 1.0);\n}"
+        },
+        "position": {
+          "x": -360,
+          "y": -60
+        },
+        "type": "customWgsl"
+      }
+    },
+    "revision": 1
+  },
+  "name": "E90 Chord Wheel",
+  "projectId": "example-e90-chord-wheel",
+  "schemaVersion": 5,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 90,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}

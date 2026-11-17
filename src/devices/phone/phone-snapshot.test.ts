@@ -856,3 +856,52 @@ describe("T1593b — the phone captions a member by the role of its name", () =>
     });
   });
 });
+
+/**
+ * T1771b — ANY NODE NAMED ON A REMOTE PANEL'S BOARD IS ITS ON/OFF SWITCH ON THE PHONE. The
+ * phone is sent the toggle it already draws, so nothing about the page or the wire changes;
+ * what matters is on this side: a press must become the node's own switch (the state asked
+ * for, never a parameter write, never a flip), and a node that is not on a published board
+ * must stay out of reach.
+ */
+describe("T1771b — a node's on/off switch on the phone", () => {
+  const board = (members: readonly string[]): string =>
+    serializePanelBoard({ columns: 8, items: members.map((member, index) => ({ member, rect: { x: index * 2, y: 0, w: 2, h: 1 } })) });
+  const show = (blur: Record<string, unknown> = {}): GraphPatchOperation[] => [
+    { ...add("blur", "blur", "blur_soft", { size: 9 }), ...blur } as GraphPatchOperation,
+    add("other", "blur", "blur_private", { size: 9 }),
+    add("stage", "panel", "panel1", { title: "Show", remote: true, board: board(["blur_soft"]) }),
+    add("desk", "panel", "panel2", { title: "Desk only", board: board(["blur_private"]) }),
+  ];
+
+  it("is sent as a toggle captioned by the role of its name, on while the node is not bypassed", async () => {
+    const { bus, ids } = await documentWith(show());
+    const items = buildPhoneSnapshot(bus.store.getGraph(), 1).panels[0]?.board?.items;
+    expect(items).toEqual([{ kind: "widget", rect: { x: 0, y: 0, w: 2, h: 1 }, widget: { kind: "toggle", handle: ids["$blur"], caption: "soft", on: true } }]);
+    await bus.execute(
+      "graph.applyPatch",
+      { baseRevision: bus.store.getRevision(), operations: [{ op: "setNodeUi", nodeId: ids["$blur"]!, ui: { bypassed: true } }] },
+      contextFor(alice),
+    );
+    const after = buildPhoneSnapshot(bus.store.getGraph(), 2).panels[0]?.board?.items[0];
+    expect(after).toMatchObject({ widget: { kind: "toggle", on: false } });
+  });
+
+  it("a press is the node's switch, as the state asked for; a drag, a non-boolean and another key are refused", async () => {
+    const { bus, ids } = await documentWith(show());
+    const graph = bus.store.getGraph();
+    expect(vetPhoneSet(graph, set(ids["$blur"]!, { on: false }))).toEqual({ ok: true, action: "layerOn", nodeId: ids["$blur"], caption: "soft", on: false, what: "switch" });
+    expect(vetPhoneSet(graph, set(ids["$blur"]!, { on: false }, "live"))).toMatchObject({ ok: false, nodeId: ids["$blur"] });
+    expect(vetPhoneSet(graph, set(ids["$blur"]!, { on: 1 }))).toMatchObject({ ok: false, nodeId: ids["$blur"] });
+    // Its parameters are not the phone's: only the switch is published.
+    expect(vetPhoneSet(graph, set(ids["$blur"]!, { size: 40 }))).toMatchObject({ ok: false, nodeId: ids["$blur"] });
+  });
+
+  it("a node on a Panel that is not published is out of reach", async () => {
+    const { bus, ids } = await documentWith(show());
+    expect(vetPhoneSet(bus.store.getGraph(), set(ids["$other"]!, { on: false }))).toEqual({
+      ok: false,
+      reason: "A phone tried to move a control that is not published to the phone door.",
+    });
+  });
+});

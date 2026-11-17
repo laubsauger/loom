@@ -28,6 +28,12 @@
  *    data bytes, LSB first — so full resolution falls out of decoding it correctly and
  *    treating it as 7-bit would be the silent mangling the brief forbids. Its rest is the
  *    CENTRE, which is why `rest` is a mapping field rather than assumed to be `range[0]`.
+ *  - **A note, as a GATE** (T1787b; status 0x90 / 0x80): raw 127 while the key is down, 0
+ *    when it is up (a note-on with velocity 0 is the note-off it means). One key is one
+ *    learnable control, a button: this is how a key of a keyboard taps the tempo or fires
+ *    a cue. The gate does not carry the velocity, on purpose: a soft key press must cross
+ *    the half-way point a Button and a Toggle read, and velocity, pedals and voices are
+ *    MIDI Notes' (`midi-notes.ts`), which reads the same messages in order.
  *
  * ## WHAT IS NOT, and what happens instead
  *
@@ -37,9 +43,8 @@
  *    0..127 many times per knob turn. Learn the MSB (the lower cc number). Reassembly
  *    needs a per-device declaration that a pair IS a pair; guessing it from traffic would
  *    make a coarse knob and a fast knob indistinguishable.
- *  - **Note on/off and velocity**: not decoded. A note is a gate AND a velocity AND a
- *    pitch, and note-on with velocity 0 is a note-off — three channels and an encoding
- *    wart, which is a design rather than a decode. Out of scope for this row.
+ *  - **Note velocity and pitch as values**: not published here. A learned note is the
+ *    gate above; the keyboard as voices is the MIDI Notes node.
  *  - **MIDI clock / transport (0xF8, 0xFA-0xFC)**: not decoded. A clock is 24 pulses per
  *    quarter note and what anyone wants from it is a TEMPO, which is an estimator over a
  *    pulse train, not a reading. §T825 also records that we have no beat/bar surface for
@@ -53,14 +58,14 @@
  */
 
 /** The kinds of message a control can be learned from. See the module note for the rest. */
-export type MidiSourceKind = "cc" | "pitchBend";
+export type MidiSourceKind = "cc" | "pitchBend" | "note";
 
 /** WHICH physical control a learned channel is bound to. */
 export interface MidiSource {
   readonly kind: MidiSourceKind;
   /** MIDI channel, 1..16 — as the hardware numbers it, not as the wire encodes it. */
   readonly channel: number;
-  /** Controller number 0..127. Absent for `pitchBend`, which has no number. */
+  /** Controller number, or the note's key number, 0..127. Absent for `pitchBend`, which has no number. */
   readonly number?: number;
 }
 
@@ -117,7 +122,7 @@ export function midiSourceMax(kind: MidiSourceKind): number {
 export function midiSourceKey(source: MidiSource): string {
   return source.kind === "pitchBend"
     ? `bend${source.channel}`
-    : `cc${source.channel}.${source.number ?? 0}`;
+    : `${source.kind}${source.channel}.${source.number ?? 0}`;
 }
 
 /**
@@ -135,7 +140,7 @@ export function midiChannelName(deviceId: string, source: MidiSource): string {
 /** A decoded reading: which control moved, and how far. */
 export interface MidiReading {
   readonly source: MidiSource;
-  /** The controller's own units — 0..127 for a CC, 0..16383 for pitch bend. */
+  /** The controller's own units — 0..127 for a CC, 0..16383 for pitch bend, 0 or 127 for a note's gate. */
   readonly raw: number;
 }
 
@@ -154,6 +159,13 @@ export function decodeMidiMessage(data: Uint8Array | null | undefined): MidiRead
     case 0xb0: {
       if (data.length < 3) return null;
       return { source: { kind: "cc", channel, number: (data[1] ?? 0) & 0x7f }, raw: (data[2] ?? 0) & 0x7f };
+    }
+    case 0x90:
+    case 0x80: {
+      if (data.length < 3) return null;
+      // T1787b: a GATE. Note-on with velocity 0 is a note-off (running status' encoding).
+      const down = (status & 0xf0) === 0x90 && ((data[2] ?? 0) & 0x7f) > 0;
+      return { source: { kind: "note", channel, number: (data[1] ?? 0) & 0x7f }, raw: down ? 127 : 0 };
     }
     case 0xe0: {
       if (data.length < 3) return null;
@@ -289,7 +301,7 @@ function readRange(value: unknown): readonly [number, number] {
 function readSource(value: unknown): MidiSource | null {
   if (typeof value !== "object" || value === null) return null;
   const record = value as Record<string, unknown>;
-  const kind = record["kind"] === "pitchBend" ? "pitchBend" : record["kind"] === "cc" ? "cc" : null;
+  const kind = record["kind"] === "pitchBend" ? "pitchBend" : record["kind"] === "cc" ? "cc" : record["kind"] === "note" ? "note" : null;
   if (kind === null) return null;
   const channel = typeof record["channel"] === "number" ? Math.min(16, Math.max(1, Math.round(record["channel"]))) : 1;
   if (kind === "pitchBend") return { kind, channel };
@@ -316,5 +328,6 @@ export function serialiseMidiMapping(bindings: readonly MidiBinding[]): string {
 export function describeMidiSource(source: MidiSource | null): string {
   if (source === null) return "Not learned";
   if (source.kind === "pitchBend") return `Bend ch ${source.channel}`;
+  if (source.kind === "note") return `Note ${source.number ?? 0} ch ${source.channel}`;
   return `CC ${source.number ?? 0} ch ${source.channel}`;
 }

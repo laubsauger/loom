@@ -1,4 +1,4 @@
-import type { CompiledNodeDescription, NodeDefinition } from "../../domain/types/node-definition.ts";
+import type { CompiledNodeDescription, NodeCompileContext, NodeDefinition } from "../../domain/types/node-definition.ts";
 import type { MaterialPayload, MaterialSourceSpan } from "../../domain/types/scene.ts";
 import type { ParameterSchema } from "../../domain/types/parameters.ts";
 import { SHADER_SOURCE_PARAMETER } from "../../domain/commands/apply-patch.ts";
@@ -18,8 +18,9 @@ import {
   reflectedUniforms,
   remember,
 } from "./params-reflection.ts";
-import { readCompileInputs } from "./compile-context.ts";
+import { readCompileInputs, readValueInputs } from "./compile-context.ts";
 import { readColor, readNumber } from "./parameter-readers.ts";
+import type { Params } from "./parameter-readers.ts";
 import { endOf, placed, placedAroundCut } from "../../runtime/backend/wgsl-source-map.ts";
 
 /**
@@ -355,35 +356,47 @@ export const materialWgslNode: NodeDefinition = {
         suggestion: `Add a \`// @texture <name>\` line to the source (the ${["first", "second", "third", "fourth"][index]} one is ${inputLabel(index)}), or remove the wire.`,
       }));
 
-    const model = parameters["model"];
-    const base = readColor(parameters, "color", [1, 1, 1, 1]);
-    const payload: MaterialPayload = {
-      kind: "material",
-      model: model === "phong" || model === "lambert" || model === "unlit" ? model : "pbr",
-      baseColor: [base[0] ?? 1, base[1] ?? 1, base[2] ?? 1, base[3] ?? 1],
-      specularColor: [1, 1, 1],
-      shininess: 32,
-      metallic: readNumber(parameters, "metallic", 0),
-      roughness: readNumber(parameters, "roughness", 0.5),
-      maps: {},
-      custom: {
-        code,
-        paramsDeclaration: declaration,
-        fields: fields.map((field) => ({ name: field.name, wgsl: field.wgsl })),
-        uniforms: reflectedUniforms(fields, parameters),
-        ...(instanceFields.length === 0
-          ? {}
-          : {
-              instance: instanceFields.map((field) => ({
-                name: field.name,
-                wgsl: field.wgsl,
-                ...(field.declaredDefault === undefined ? {} : { default: typeof field.declaredDefault === "number" ? [field.declaredDefault] : field.declaredDefault }),
-              })),
-            }),
-        ...(textureNames.length === 0 ? {} : { textures: textureNames.map((name, index) => ({ name, resourceId: wired[index] as string })) }),
-        sourceMap: materialSourceMap(nodeId, source, shared.prelude, declaration, start),
-      },
+    /* T1719b: everything above is structure; what a frame can move is the colour, the model's
+       numbers and the reflected uniforms. One function assembles the payload from resolved
+       values, for this compile and for its value function, so the two cannot disagree. */
+    const instance =
+      instanceFields.length === 0
+        ? undefined
+        : instanceFields.map((field) => ({
+            name: field.name,
+            wgsl: field.wgsl,
+            ...(field.declaredDefault === undefined ? {} : { default: typeof field.declaredDefault === "number" ? [field.declaredDefault] : field.declaredDefault }),
+          }));
+    const textures = textureNames.length === 0 ? undefined : textureNames.map((name, index) => ({ name, resourceId: wired[index] as string }));
+    const sourceMap = materialSourceMap(nodeId, source, shared.prelude, declaration, start);
+    const payloadAt = (values: Params): MaterialPayload => {
+      const model = values["model"];
+      const base = readColor(values, "color", [1, 1, 1, 1]);
+      return {
+        kind: "material",
+        model: model === "phong" || model === "lambert" || model === "unlit" ? model : "pbr",
+        baseColor: [base[0] ?? 1, base[1] ?? 1, base[2] ?? 1, base[3] ?? 1],
+        specularColor: [1, 1, 1],
+        shininess: 32,
+        metallic: readNumber(values, "metallic", 0),
+        roughness: readNumber(values, "roughness", 0.5),
+        maps: {},
+        custom: {
+          code,
+          paramsDeclaration: declaration,
+          fields: fields.map((field) => ({ name: field.name, wgsl: field.wgsl })),
+          uniforms: reflectedUniforms(fields, values),
+          ...(instance === undefined ? {} : { instance }),
+          ...(textures === undefined ? {} : { textures }),
+          sourceMap,
+        },
+      };
     };
-    return { passes: [], scene: { out: payload }, ...(unread.length === 0 ? {} : { diagnostics: unread }) } as CompiledNodeDescription;
+    return {
+      passes: [],
+      scene: { out: payloadAt(parameters) },
+      values: (next: NodeCompileContext) => ({ passes: [], scene: { out: payloadAt(readValueInputs(next).parameters) } }),
+      ...(unread.length === 0 ? {} : { diagnostics: unread }),
+    } as CompiledNodeDescription;
   },
 };

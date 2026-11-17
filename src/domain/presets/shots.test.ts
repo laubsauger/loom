@@ -577,15 +577,23 @@ describe("a preset's `on` bypasses the layer as part of its one patch (S3's last
     expect(run.bypassed("l1")).toBe(true);
   });
 
-  it("a node that is not a Layer is not bypassed: on/off is the layer's, and the warning names it", async () => {
+  it("a node that is not a Layer is switched too: off is its bypass, in the same patch (T1770b)", async () => {
+    // The fence this replaced skipped `city` with `preset.on.notLayer`. On/off is one idea
+    // with one flag (ruling 9), so a bank can switch a source or an effect as it does a Layer.
     const run = session(layered([{ name: "swap", values: {}, on: { city: false, layer1: false } }]));
+    const revision = run.store.view.getRevision();
     const result = await recall(run, "looks", "swap");
     expect(result.status).toBe("applied");
-    expect(result.output.skipped).toEqual(["city.on"]);
-    expect(warnings(result)).toEqual(["preset.on.notLayer"]);
-    expect(result.diagnostics.map((each) => each.message).join("\n")).toContain('"city" is a level node');
-    expect(run.bypassed("city")).toBe(false);
+    expect(result.output.skipped).toEqual([]);
+    expect(warnings(result)).toEqual([]);
+    expect(result.output.applied).toEqual(["city.on", "layer1.on"]);
+    expect(run.store.view.getRevision()).toBe(revision + 1);
+    expect(run.bypassed("city")).toBe(true);
     expect(run.bypassed("l1")).toBe(true);
+
+    await run.bus.execute("graph.undo", {}, contextFor(alice));
+    expect(run.bypassed("city")).toBe(false);
+    expect(run.bypassed("l1")).toBe(false);
   });
 
   it("with only a missing layer to switch, the recall is refused", async () => {

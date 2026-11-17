@@ -38,7 +38,7 @@ const ROOT = join(HERE, "..", "..");
 const FPS = 60;
 
 /** One walk for the file; the render is pure and the walk is ~1 s. */
-const analysis = analyseOffline(renderShowcaseBeat(), SHOWCASE_BEAT.sampleRate, FPS, AUDIO_DETECTOR_DEFAULTS);
+const analysis = analyseOffline(renderShowcaseBeat(), SHOWCASE_BEAT.sampleRate, FPS, AUDIO_DETECTOR_DEFAULTS, false, 0);
 const frames = Array.from({ length: featureTrackLength(analysis.track) }, (_, index) =>
   readFeatureFrame(analysis.track, index),
 );

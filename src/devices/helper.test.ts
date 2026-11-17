@@ -239,6 +239,7 @@ describe("`--phone` arms the phone door, and `--all` does not (T1396b)", () => {
       kind: "devices",
       terminal: false,
       phone: true,
+      force: false,
     });
     expect(resolveHelperInvocation([HELPER_ALL_FLAG, HELPER_PHONE_FLAG]).kind === "stdio").toBe(true);
     const bare = resolveHelperInvocation([]);
@@ -292,7 +293,7 @@ describe("`--all` opens every door, and only when asked (T1343b)", () => {
     expect(exportOnly.kind === "stdio" && exportOnly.grantExport).toBe(true);
     expect(exportOnly.kind === "stdio" && exportOnly.terminal).toBe(false);
     const devicesTerminal = resolveHelperInvocation([HELPER_DEVICES_ONLY_FLAG, HELPER_TERMINAL_FLAG]);
-    expect(devicesTerminal).toEqual({ kind: "devices", terminal: true, phone: false });
+    expect(devicesTerminal).toEqual({ kind: "devices", terminal: true, phone: false, force: false });
   });
 
   /*

@@ -1,0 +1,2151 @@
+{
+  "assets": [],
+  "componentLibrary": {
+    "components": [
+      {
+        "componentId": "midiFeatures",
+        "description": "Music features from a MIDI keyboard, in six groups (levels, beats, tempo, notes, harmony, form): the same channel names MusicFeatures publishes, every channel on every frame, at its rest value where MIDI has nothing (no sound level, no drums, no detected tempo). A seventh output, lanes, is MIDI only: laneNOnset and laneNVelocity, every strike by where it lies between the bass and the top note.",
+        "graph": {
+          "edges": {
+            "e-count_keyschord-00-select_keyscc": {
+              "id": "e-count_keyschord-00-select_keyscc",
+              "source": {
+                "nodeId": "select_keyscc",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "count_keyschord",
+                "portId": "in"
+              }
+            },
+            "e-count_keysstrike-00-select_keysonset": {
+              "id": "e-count_keysstrike-00-select_keysonset",
+              "source": {
+                "nodeId": "select_keysonset",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "count_keysstrike",
+                "portId": "in"
+              }
+            },
+            "e-expression_keysbeat-00-select_keys": {
+              "id": "e-expression_keysbeat-00-select_keys",
+              "source": {
+                "nodeId": "select_keys",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "expression_keysbeat",
+                "portId": "in"
+              }
+            },
+            "e-expression_keysbeatrate-00-constant_keysdeclared": {
+              "id": "e-expression_keysbeatrate-00-constant_keysdeclared",
+              "source": {
+                "nodeId": "constant_keysdeclared",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "expression_keysbeatrate",
+                "portId": "in"
+              }
+            },
+            "e-expression_keysbeats-00-expression_keysbeat": {
+              "id": "e-expression_keysbeats-00-expression_keysbeat",
+              "source": {
+                "nodeId": "expression_keysbeat",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "expression_keysbeats",
+                "portId": "in"
+              }
+            },
+            "e-expression_keysfeatures-00-select_keysvoice": {
+              "id": "e-expression_keysfeatures-00-select_keysvoice",
+              "source": {
+                "nodeId": "select_keysvoice",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "expression_keysfeatures",
+                "portId": "in"
+              }
+            },
+            "e-expression_keysfeatures-01-count_keysstrike": {
+              "id": "e-expression_keysfeatures-01-count_keysstrike",
+              "source": {
+                "nodeId": "count_keysstrike",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "expression_keysfeatures",
+                "portId": "in"
+              }
+            },
+            "e-expression_keysfeatures-02-lag_keysenv": {
+              "id": "e-expression_keysfeatures-02-lag_keysenv",
+              "source": {
+                "nodeId": "lag_keysenv",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "expression_keysfeatures",
+                "portId": "in"
+              }
+            },
+            "e-expression_keysfeatures-03-select_keyshudfull": {
+              "id": "e-expression_keysfeatures-03-select_keyshudfull",
+              "source": {
+                "nodeId": "select_keyshudfull",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "expression_keysfeatures",
+                "portId": "in"
+              }
+            },
+            "e-expression_keysfeatures-04-lag_keyshold": {
+              "id": "e-expression_keysfeatures-04-lag_keyshold",
+              "source": {
+                "nodeId": "lag_keyshold",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "expression_keysfeatures",
+                "portId": "in"
+              }
+            },
+            "e-expression_keysfeatures-05-count_keyschord": {
+              "id": "e-expression_keysfeatures-05-count_keyschord",
+              "source": {
+                "nodeId": "count_keyschord",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "expression_keysfeatures",
+                "portId": "in"
+              }
+            },
+            "e-expression_keysfeatures-06-lag_keyssect": {
+              "id": "e-expression_keysfeatures-06-lag_keyssect",
+              "source": {
+                "nodeId": "lag_keyssect",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "expression_keysfeatures",
+                "portId": "in"
+              }
+            },
+            "e-expression_keysfeatures-07-lag_keyspedal": {
+              "id": "e-expression_keysfeatures-07-lag_keyspedal",
+              "source": {
+                "nodeId": "lag_keyspedal",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "expression_keysfeatures",
+                "portId": "in"
+              }
+            },
+            "e-expression_keysfeatures-08-expression_keysonsets": {
+              "id": "e-expression_keysfeatures-08-expression_keysonsets",
+              "source": {
+                "nodeId": "expression_keysonsets",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "expression_keysfeatures",
+                "portId": "in"
+              }
+            },
+            "e-expression_keysfeatures-09-expression_keyspedalraw": {
+              "id": "e-expression_keysfeatures-09-expression_keyspedalraw",
+              "source": {
+                "nodeId": "expression_keyspedalraw",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "expression_keysfeatures",
+                "portId": "in"
+              }
+            },
+            "e-expression_keysform-00-select_keysscores": {
+              "id": "e-expression_keysform-00-select_keysscores",
+              "source": {
+                "nodeId": "select_keysscores",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "expression_keysform",
+                "portId": "in"
+              }
+            },
+            "e-expression_keysform-01-select_keyshudfull": {
+              "id": "e-expression_keysform-01-select_keyshudfull",
+              "source": {
+                "nodeId": "select_keyshudfull",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "expression_keysform",
+                "portId": "in"
+              }
+            },
+            "e-expression_keysform-02-select_keyshudsect": {
+              "id": "e-expression_keysform-02-select_keyshudsect",
+              "source": {
+                "nodeId": "select_keyshudsect",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "expression_keysform",
+                "portId": "in"
+              }
+            },
+            "e-expression_keysgate-00-count_keyschord": {
+              "id": "e-expression_keysgate-00-count_keyschord",
+              "source": {
+                "nodeId": "count_keyschord",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "expression_keysgate",
+                "portId": "in"
+              }
+            },
+            "e-expression_keysharmony-00-expression_keyssect": {
+              "id": "e-expression_keysharmony-00-expression_keyssect",
+              "source": {
+                "nodeId": "expression_keyssect",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "expression_keysharmony",
+                "portId": "in"
+              }
+            },
+            "e-expression_keysharmony-01-select_keyskey": {
+              "id": "e-expression_keysharmony-01-select_keyskey",
+              "source": {
+                "nodeId": "select_keyskey",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "expression_keysharmony",
+                "portId": "in"
+              }
+            },
+            "e-expression_keysharmony-02-select_keysscores": {
+              "id": "e-expression_keysharmony-02-select_keysscores",
+              "source": {
+                "nodeId": "select_keysscores",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "expression_keysharmony",
+                "portId": "in"
+              }
+            },
+            "e-expression_keyslevels-00-lag_keysenv": {
+              "id": "e-expression_keyslevels-00-lag_keysenv",
+              "source": {
+                "nodeId": "lag_keysenv",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "expression_keyslevels",
+                "portId": "in"
+              }
+            },
+            "e-expression_keyslevels-01-select_keyshudsect": {
+              "id": "e-expression_keyslevels-01-select_keyshudsect",
+              "source": {
+                "nodeId": "select_keyshudsect",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "expression_keyslevels",
+                "portId": "in"
+              }
+            },
+            "e-expression_keyslevels-02-select_keyshudfull": {
+              "id": "e-expression_keyslevels-02-select_keyshudfull",
+              "source": {
+                "nodeId": "select_keyshudfull",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "expression_keyslevels",
+                "portId": "in"
+              }
+            },
+            "e-expression_keysmap-00-lag_keysbass": {
+              "id": "e-expression_keysmap-00-lag_keysbass",
+              "source": {
+                "nodeId": "lag_keysbass",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "expression_keysmap",
+                "portId": "in"
+              }
+            },
+            "e-expression_keysmap-01-lag_keysmelody": {
+              "id": "e-expression_keysmap-01-lag_keysmelody",
+              "source": {
+                "nodeId": "lag_keysmelody",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "expression_keysmap",
+                "portId": "in"
+              }
+            },
+            "e-expression_keysmap-02-select_keys": {
+              "id": "e-expression_keysmap-02-select_keys",
+              "source": {
+                "nodeId": "select_keys",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "expression_keysmap",
+                "portId": "in"
+              }
+            },
+            "e-expression_keysmap-03-lag_keyspedal": {
+              "id": "e-expression_keysmap-03-lag_keyspedal",
+              "source": {
+                "nodeId": "lag_keyspedal",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "expression_keysmap",
+                "portId": "in"
+              }
+            },
+            "e-expression_keysmap-04-expression_keyssensein": {
+              "id": "e-expression_keysmap-04-expression_keyssensein",
+              "source": {
+                "nodeId": "expression_keyssensein",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "expression_keysmap",
+                "portId": "in"
+              }
+            },
+            "e-expression_keysonset-00-lag_keysmelody": {
+              "id": "e-expression_keysonset-00-lag_keysmelody",
+              "source": {
+                "nodeId": "lag_keysmelody",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "expression_keysonset",
+                "portId": "in"
+              }
+            },
+            "e-expression_keysonset-01-lag_keysbass": {
+              "id": "e-expression_keysonset-01-lag_keysbass",
+              "source": {
+                "nodeId": "lag_keysbass",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "expression_keysonset",
+                "portId": "in"
+              }
+            },
+            "e-expression_keysonset-02-expression_keyssensein": {
+              "id": "e-expression_keysonset-02-expression_keyssensein",
+              "source": {
+                "nodeId": "expression_keyssensein",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "expression_keysonset",
+                "portId": "in"
+              }
+            },
+            "e-expression_keysonset-03-select_keys": {
+              "id": "e-expression_keysonset-03-select_keys",
+              "source": {
+                "nodeId": "select_keys",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "expression_keysonset",
+                "portId": "in"
+              }
+            },
+            "e-expression_keysonsets-00-select_keysonset": {
+              "id": "e-expression_keysonsets-00-select_keysonset",
+              "source": {
+                "nodeId": "select_keysonset",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "expression_keysonsets",
+                "portId": "in"
+              }
+            },
+            "e-expression_keyspedalraw-00-select_keyspedalsrc": {
+              "id": "e-expression_keyspedalraw-00-select_keyspedalsrc",
+              "source": {
+                "nodeId": "select_keyspedalsrc",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "expression_keyspedalraw",
+                "portId": "in"
+              }
+            },
+            "e-expression_keysrange-00-select_keysrange": {
+              "id": "e-expression_keysrange-00-select_keysrange",
+              "source": {
+                "nodeId": "select_keysrange",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "expression_keysrange",
+                "portId": "in"
+              }
+            },
+            "e-expression_keyssect-00-select_keyschroma": {
+              "id": "e-expression_keyssect-00-select_keyschroma",
+              "source": {
+                "nodeId": "select_keyschroma",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "expression_keyssect",
+                "portId": "in"
+              }
+            },
+            "e-expression_keyssect-01-rate_keys": {
+              "id": "e-expression_keyssect-01-rate_keys",
+              "source": {
+                "nodeId": "rate_keys",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "expression_keyssect",
+                "portId": "in"
+              }
+            },
+            "e-expression_keyssect-02-select_keyslevel": {
+              "id": "e-expression_keyssect-02-select_keyslevel",
+              "source": {
+                "nodeId": "select_keyslevel",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "expression_keyssect",
+                "portId": "in"
+              }
+            },
+            "e-expression_keyssensein-00-constant_keyssense": {
+              "id": "e-expression_keyssensein-00-constant_keyssense",
+              "source": {
+                "nodeId": "constant_keyssense",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "expression_keyssensein",
+                "portId": "in"
+              }
+            },
+            "e-expression_keystempogroup-00-speed_keysbeats": {
+              "id": "e-expression_keystempogroup-00-speed_keysbeats",
+              "source": {
+                "nodeId": "speed_keysbeats",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "expression_keystempogroup",
+                "portId": "in"
+              }
+            },
+            "e-expression_keystempogroup-01-constant_keysdeclared": {
+              "id": "e-expression_keystempogroup-01-constant_keysdeclared",
+              "source": {
+                "nodeId": "constant_keysdeclared",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "expression_keystempogroup",
+                "portId": "in"
+              }
+            },
+            "e-lag_keysbass-00-select_keysbass": {
+              "id": "e-lag_keysbass-00-select_keysbass",
+              "source": {
+                "nodeId": "select_keysbass",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "lag_keysbass",
+                "portId": "in"
+              }
+            },
+            "e-lag_keysenv-00-select_keysenv": {
+              "id": "e-lag_keysenv-00-select_keysenv",
+              "source": {
+                "nodeId": "select_keysenv",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "lag_keysenv",
+                "portId": "in"
+              }
+            },
+            "e-lag_keyshold-00-select_keysrc": {
+              "id": "e-lag_keyshold-00-select_keysrc",
+              "source": {
+                "nodeId": "select_keysrc",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "lag_keyshold",
+                "portId": "in"
+              }
+            },
+            "e-lag_keysmelody-00-select_keysmelody": {
+              "id": "e-lag_keysmelody-00-select_keysmelody",
+              "source": {
+                "nodeId": "select_keysmelody",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "lag_keysmelody",
+                "portId": "in"
+              }
+            },
+            "e-lag_keyspedal-00-select_keyspedalsrc": {
+              "id": "e-lag_keyspedal-00-select_keyspedalsrc",
+              "source": {
+                "nodeId": "select_keyspedalsrc",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "lag_keyspedal",
+                "portId": "in"
+              }
+            },
+            "e-lag_keyssect-00-select_keyssects": {
+              "id": "e-lag_keyssect-00-select_keyssects",
+              "source": {
+                "nodeId": "select_keyssects",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "lag_keyssect",
+                "portId": "in"
+              }
+            },
+            "e-rate_keys-00-select_keyson": {
+              "id": "e-rate_keys-00-select_keyson",
+              "source": {
+                "nodeId": "select_keyson",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "rate_keys",
+                "portId": "in"
+              }
+            },
+            "e-select_keys-00-keys_piano": {
+              "id": "e-select_keys-00-keys_piano",
+              "source": {
+                "nodeId": "keys_piano",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "select_keys",
+                "portId": "in"
+              }
+            },
+            "e-select_keysbass-00-expression_keysrange": {
+              "id": "e-select_keysbass-00-expression_keysrange",
+              "source": {
+                "nodeId": "expression_keysrange",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "select_keysbass",
+                "portId": "in"
+              }
+            },
+            "e-select_keyscc-00-keys_piano": {
+              "id": "e-select_keyscc-00-keys_piano",
+              "source": {
+                "nodeId": "keys_piano",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "select_keyscc",
+                "portId": "in"
+              }
+            },
+            "e-select_keyschroma-00-keys_piano": {
+              "id": "e-select_keyschroma-00-keys_piano",
+              "source": {
+                "nodeId": "keys_piano",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "select_keyschroma",
+                "portId": "in"
+              }
+            },
+            "e-select_keysenv-00-expression_keysmap": {
+              "id": "e-select_keysenv-00-expression_keysmap",
+              "source": {
+                "nodeId": "expression_keysmap",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "select_keysenv",
+                "portId": "in"
+              }
+            },
+            "e-select_keyshudfull-00-keys_piano": {
+              "id": "e-select_keyshudfull-00-keys_piano",
+              "source": {
+                "nodeId": "keys_piano",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "select_keyshudfull",
+                "portId": "in"
+              }
+            },
+            "e-select_keyshudsect-00-expression_keyssect": {
+              "id": "e-select_keyshudsect-00-expression_keyssect",
+              "source": {
+                "nodeId": "expression_keyssect",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "select_keyshudsect",
+                "portId": "in"
+              }
+            },
+            "e-select_keyskey-00-keys_piano": {
+              "id": "e-select_keyskey-00-keys_piano",
+              "source": {
+                "nodeId": "keys_piano",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "select_keyskey",
+                "portId": "in"
+              }
+            },
+            "e-select_keyslanes-00-expression_keysonset": {
+              "id": "e-select_keyslanes-00-expression_keysonset",
+              "source": {
+                "nodeId": "expression_keysonset",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "select_keyslanes",
+                "portId": "in"
+              }
+            },
+            "e-select_keyslevel-00-expression_keysmap": {
+              "id": "e-select_keyslevel-00-expression_keysmap",
+              "source": {
+                "nodeId": "expression_keysmap",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "select_keyslevel",
+                "portId": "in"
+              }
+            },
+            "e-select_keysmelody-00-expression_keysrange": {
+              "id": "e-select_keysmelody-00-expression_keysrange",
+              "source": {
+                "nodeId": "expression_keysrange",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "select_keysmelody",
+                "portId": "in"
+              }
+            },
+            "e-select_keysnotesout-00-expression_keysfeatures": {
+              "id": "e-select_keysnotesout-00-expression_keysfeatures",
+              "source": {
+                "nodeId": "expression_keysfeatures",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "select_keysnotesout",
+                "portId": "in"
+              }
+            },
+            "e-select_keyson-00-keys_piano": {
+              "id": "e-select_keyson-00-keys_piano",
+              "source": {
+                "nodeId": "keys_piano",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "select_keyson",
+                "portId": "in"
+              }
+            },
+            "e-select_keysonset-00-expression_keysmap": {
+              "id": "e-select_keysonset-00-expression_keysmap",
+              "source": {
+                "nodeId": "expression_keysmap",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "select_keysonset",
+                "portId": "in"
+              }
+            },
+            "e-select_keyspedalsrc-00-keys_piano": {
+              "id": "e-select_keyspedalsrc-00-keys_piano",
+              "source": {
+                "nodeId": "keys_piano",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "select_keyspedalsrc",
+                "portId": "in"
+              }
+            },
+            "e-select_keysrange-00-keys_piano": {
+              "id": "e-select_keysrange-00-keys_piano",
+              "source": {
+                "nodeId": "keys_piano",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "select_keysrange",
+                "portId": "in"
+              }
+            },
+            "e-select_keysrc-00-expression_keysmap": {
+              "id": "e-select_keysrc-00-expression_keysmap",
+              "source": {
+                "nodeId": "expression_keysmap",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "select_keysrc",
+                "portId": "in"
+              }
+            },
+            "e-select_keysscores-00-expression_keysfeatures": {
+              "id": "e-select_keysscores-00-expression_keysfeatures",
+              "source": {
+                "nodeId": "expression_keysfeatures",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "select_keysscores",
+                "portId": "in"
+              }
+            },
+            "e-select_keyssects-00-expression_keyssect": {
+              "id": "e-select_keyssects-00-expression_keyssect",
+              "source": {
+                "nodeId": "expression_keyssect",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "select_keyssects",
+                "portId": "in"
+              }
+            },
+            "e-select_keysvoice-00-expression_keysmap": {
+              "id": "e-select_keysvoice-00-expression_keysmap",
+              "source": {
+                "nodeId": "expression_keysmap",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "select_keysvoice",
+                "portId": "in"
+              }
+            },
+            "e-speed_keysbeats-00-expression_keysbeatrate": {
+              "id": "e-speed_keysbeats-00-expression_keysbeatrate",
+              "source": {
+                "nodeId": "expression_keysbeatrate",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "speed_keysbeats",
+                "portId": "in"
+              }
+            },
+            "out_beats_feed": {
+              "id": "out_beats_feed",
+              "source": {
+                "nodeId": "expression_keysbeats",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "out_beats",
+                "portId": "in"
+              }
+            },
+            "out_form_feed": {
+              "id": "out_form_feed",
+              "source": {
+                "nodeId": "expression_keysform",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "out_form",
+                "portId": "in"
+              }
+            },
+            "out_harmony_feed": {
+              "id": "out_harmony_feed",
+              "source": {
+                "nodeId": "expression_keysharmony",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "out_harmony",
+                "portId": "in"
+              }
+            },
+            "out_lanes_feed": {
+              "id": "out_lanes_feed",
+              "source": {
+                "nodeId": "select_keyslanes",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "out_lanes",
+                "portId": "in"
+              }
+            },
+            "out_levels_feed": {
+              "id": "out_levels_feed",
+              "source": {
+                "nodeId": "expression_keyslevels",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "out_levels",
+                "portId": "in"
+              }
+            },
+            "out_notes_feed": {
+              "id": "out_notes_feed",
+              "source": {
+                "nodeId": "select_keysnotesout",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "out_notes",
+                "portId": "in"
+              }
+            },
+            "out_tempo_feed": {
+              "id": "out_tempo_feed",
+              "source": {
+                "nodeId": "expression_keystempogroup",
+                "portId": "out"
+              },
+              "target": {
+                "nodeId": "out_tempo",
+                "portId": "in"
+              }
+            }
+          },
+          "groups": {},
+          "nodes": {
+            "constant_keysdeclared": {
+              "definitionVersion": 1,
+              "id": "constant_keysdeclared",
+              "label": "constant_keysdeclared",
+              "parameters": {
+                "value": 0
+              },
+              "position": {
+                "x": 0,
+                "y": -356
+              },
+              "type": "constant"
+            },
+            "constant_keyssense": {
+              "definitionVersion": 1,
+              "id": "constant_keyssense",
+              "label": "constant_keyssense",
+              "parameters": {
+                "value": 0.5
+              },
+              "position": {
+                "x": 0,
+                "y": -168
+              },
+              "type": "constant"
+            },
+            "constant_keyssmooth": {
+              "definitionVersion": 1,
+              "id": "constant_keyssmooth",
+              "label": "constant_keyssmooth",
+              "parameters": {
+                "value": 0.5
+              },
+              "position": {
+                "x": 0,
+                "y": 20
+              },
+              "type": "constant"
+            },
+            "count_keyschord": {
+              "definitionVersion": 1,
+              "id": "count_keyschord",
+              "label": "count_keyschord",
+              "parameters": {
+                "holdoff": {
+                  "bindings": {
+                    "expression": {
+                      "kind": "expression",
+                      "source": "1.5 + 2 * op('constant_keyssmooth').chan.value"
+                    },
+                    "static": {
+                      "kind": "static",
+                      "value": 2.5
+                    }
+                  },
+                  "mode": "expression"
+                },
+                "threshold": 0.5
+              },
+              "position": {
+                "x": 516,
+                "y": -270
+              },
+              "type": "valueCount"
+            },
+            "count_keysstrike": {
+              "definitionVersion": 1,
+              "id": "count_keysstrike",
+              "label": "count_keysstrike",
+              "parameters": {
+                "holdoff": {
+                  "bindings": {
+                    "expression": {
+                      "kind": "expression",
+                      "source": "1.2 + 1.2 * op('constant_keyssmooth').chan.value"
+                    },
+                    "static": {
+                      "kind": "static",
+                      "value": 1.8
+                    }
+                  },
+                  "mode": "expression"
+                },
+                "threshold": 0.5
+              },
+              "position": {
+                "x": 1806,
+                "y": -200
+              },
+              "type": "valueCount"
+            },
+            "expression_keysbeat": {
+              "definitionVersion": 1,
+              "id": "expression_keysbeat",
+              "label": "expression_keysbeat",
+              "parameters": {
+                "defaults": "",
+                "expressions": "onset = min(voice0OnsetCount * voice0Velocity + voice1OnsetCount * voice1Velocity + voice2OnsetCount * voice2Velocity + voice3OnsetCount * voice3Velocity + voice4OnsetCount * voice4Velocity + voice5OnsetCount * voice5Velocity + voice6OnsetCount * voice6Velocity + voice7OnsetCount * voice7Velocity, 1);\nonsetLow = min(voice0OnsetCount * voice0Velocity * (voice0Pitch < 48) + voice1OnsetCount * voice1Velocity * (voice1Pitch < 48) + voice2OnsetCount * voice2Velocity * (voice2Pitch < 48) + voice3OnsetCount * voice3Velocity * (voice3Pitch < 48) + voice4OnsetCount * voice4Velocity * (voice4Pitch < 48) + voice5OnsetCount * voice5Velocity * (voice5Pitch < 48) + voice6OnsetCount * voice6Velocity * (voice6Pitch < 48) + voice7OnsetCount * voice7Velocity * (voice7Pitch < 48), 1)"
+              },
+              "position": {
+                "x": 516,
+                "y": -474
+              },
+              "type": "valueExpression"
+            },
+            "expression_keysbeatrate": {
+              "definitionVersion": 1,
+              "id": "expression_keysbeatrate",
+              "label": "expression_keysbeatrate",
+              "parameters": {
+                "defaults": "",
+                "expressions": "beats = clamp((value > 1) * value + (value <= 1) * bpm, 20, 300) / 60"
+              },
+              "position": {
+                "x": 258,
+                "y": -936
+              },
+              "type": "valueExpression"
+            },
+            "expression_keysbeats": {
+              "definitionVersion": 1,
+              "id": "expression_keysbeats",
+              "label": "expression_keysbeats",
+              "parameters": {
+                "defaults": "",
+                "expressions": "onset = onset;\nonsetLow = onsetLow;\nkick = 0;\nsnare = 0;\nhat = 0;\nkickFast = 0;\nsnareFast = 0;\nhatFast = 0;\ndrumPresence = 0"
+              },
+              "position": {
+                "x": 774,
+                "y": -262
+              },
+              "type": "valueExpression"
+            },
+            "expression_keysfeatures": {
+              "definitionVersion": 1,
+              "id": "expression_keysfeatures",
+              "label": "expression_keysfeatures",
+              "parameters": {
+                "defaults": "ev0 = 0;\nev1 = 0;\nev2 = 0;\nev3 = 0;\nev4 = 0;\no0 = 0;\no1 = 0;\no2 = 0;\no3 = 0;\no4 = 0;\no0Since = 0;\no1Since = 0;\no2Since = 0;\no3Since = 0;\no4Since = 0;\nvl0 = 0.5;\nvl1 = 0.5;\nvl2 = 0.5;\nvl3 = 0.5;\nvl4 = 0.5;\npt0 = 48;\npt1 = 54;\npt2 = 60;\npt3 = 66;\npt4 = 72;\nrc = 0;\nchordChangeCount = 0;\nsE = 0.05;\nsL = 0.1;\nsD = 0.08;\nsT = 0.2;\nsustain = 0;\nsoft = 0",
+                "expressions": "voice0Start = (o0 > 0.5) * (abstime - o0Since) - (o0 < 0.5);\nvoice0Envelope = ev0;\nvoice0Velocity = vl0;\nvoice0Pitch = round(pt0);\nvoice0PitchClass = mod(round(pt0), 12);\nvoice0Onset = voice0Onset;\nvoice1Start = (o1 > 0.5) * (abstime - o1Since) - (o1 < 0.5);\nvoice1Envelope = ev1;\nvoice1Velocity = vl1;\nvoice1Pitch = round(pt1);\nvoice1PitchClass = mod(round(pt1), 12);\nvoice1Onset = voice1Onset;\nvoice2Start = (o2 > 0.5) * (abstime - o2Since) - (o2 < 0.5);\nvoice2Envelope = ev2;\nvoice2Velocity = vl2;\nvoice2Pitch = round(pt2);\nvoice2PitchClass = mod(round(pt2), 12);\nvoice2Onset = voice2Onset;\nvoice3Start = (o3 > 0.5) * (abstime - o3Since) - (o3 < 0.5);\nvoice3Envelope = ev3;\nvoice3Velocity = vl3;\nvoice3Pitch = round(pt3);\nvoice3PitchClass = mod(round(pt3), 12);\nvoice3Onset = voice3Onset;\nvoice4Start = (o4 > 0.5) * (abstime - o4Since) - (o4 < 0.5);\nvoice4Envelope = ev4;\nvoice4Velocity = vl4;\nvoice4Pitch = round(pt4);\nvoice4PitchClass = mod(round(pt4), 12);\nvoice4Onset = voice4Onset;\nnotesConfidence = 1;\nnoteDensity = noteDensity;\nsustainSlow = sustain;\nsoftSlow = soft;\nsustain = sustainRaw;\nsoft = softRaw;\nroot = mod(round(rc), 12);\nchordIndex = chordChangeCount;\nenergy = smoothstep(0.2, 0.85, sE);\nbrightness = smoothstep(0.2, 0.85, sL);\ndensity = smoothstep(0.2, 0.9, sD);\ntension = smoothstep(0.1, 0.7, sT)"
+              },
+              "position": {
+                "x": 2580,
+                "y": -60
+              },
+              "type": "valueExpression"
+            },
+            "expression_keysform": {
+              "definitionVersion": 1,
+              "id": "expression_keysform",
+              "label": "expression_keysform",
+              "parameters": {
+                "defaults": "",
+                "expressions": "energy = energy;\nbrightness = brightness;\ndensity = density;\ndense = 0;\nonsetRate = rn;\nfullness = clamp(noteDensity / 16, 0, 1)"
+              },
+              "position": {
+                "x": 3096,
+                "y": -122
+              },
+              "type": "valueExpression"
+            },
+            "expression_keysgate": {
+              "definitionVersion": 1,
+              "id": "expression_keysgate",
+              "label": "expression_keysgate",
+              "parameters": {
+                "defaults": "chordChangeCountSince = 99",
+                "expressions": "gr = chordChangeCountSince < 0.05"
+              },
+              "position": {
+                "x": 774,
+                "y": -58
+              },
+              "type": "valueExpression"
+            },
+            "expression_keysharmony": {
+              "definitionVersion": 1,
+              "id": "expression_keysharmony",
+              "label": "expression_keysharmony",
+              "parameters": {
+                "defaults": "",
+                "expressions": "root = root;\nchordQuality = chordQuality;\nchordConfidence = chordConfidence;\nchordIndex = chordIndex;\ntonalCenter = tonalCenter;\nkeyMode = keyMode;\nkeyConfidence = keyConfidence;\nchromaConfidence = chromaConfidence;\ndissonance = diss;\ntension = tension;\npitchSource = 3"
+              },
+              "position": {
+                "x": 3096,
+                "y": 114
+              },
+              "type": "valueExpression"
+            },
+            "expression_keyslevels": {
+              "definitionVersion": 1,
+              "id": "expression_keyslevels",
+              "label": "expression_keyslevels",
+              "parameters": {
+                "defaults": "",
+                "expressions": "inputLevel = 0;\ngate = noteDensity > 0;\nlevel = lvs;\nlevelFast = lvn;\nregion0 = 0;\nregion1 = 0;\nregion2 = 0;\nregion3 = 0;\nregion4 = 0"
+              },
+              "position": {
+                "x": 2322,
+                "y": -4
+              },
+              "type": "valueExpression"
+            },
+            "expression_keysmap": {
+              "definitionVersion": 1,
+              "id": "expression_keysmap",
+              "label": "expression_keysmap",
+              "parameters": {
+                "defaults": "kb = 999;\nkm = -1;\nsense = 0.5;\nsustain = 0;\nsoft = 0",
+                "expressions": "Bn = (kb < 200) * round(kb) + (kb > 199) * 48;\nMn = (km > -0.5) * round(km) + (km < -0.5) * 72;\nMx = max(Mn, Bn);\nsp = max(Mx - Bn, 1);\ngm = 1.6 - 1.2 * sense;\npl = 0.7 + 0.5 * sustain - 0.35 * soft;\nz0 = (voice0Pitch - Bn) / sp;\nn0 = (voice0Envelope > 0.015) * (voice0Pitch > Bn) * (voice0Pitch < Mx);\nz1 = (voice1Pitch - Bn) / sp;\nn1 = (voice1Envelope > 0.015) * (voice1Pitch > Bn) * (voice1Pitch < Mx);\nz2 = (voice2Pitch - Bn) / sp;\nn2 = (voice2Envelope > 0.015) * (voice2Pitch > Bn) * (voice2Pitch < Mx);\nz3 = (voice3Pitch - Bn) / sp;\nn3 = (voice3Envelope > 0.015) * (voice3Pitch > Bn) * (voice3Pitch < Mx);\nz4 = (voice4Pitch - Bn) / sp;\nn4 = (voice4Envelope > 0.015) * (voice4Pitch > Bn) * (voice4Pitch < Mx);\nz5 = (voice5Pitch - Bn) / sp;\nn5 = (voice5Envelope > 0.015) * (voice5Pitch > Bn) * (voice5Pitch < Mx);\nz6 = (voice6Pitch - Bn) / sp;\nn6 = (voice6Envelope > 0.015) * (voice6Pitch > Bn) * (voice6Pitch < Mx);\nz7 = (voice7Pitch - Bn) / sp;\nn7 = (voice7Envelope > 0.015) * (voice7Pitch > Bn) * (voice7Pitch < Mx);\nid1 = max(max(max(max(max(max(max((n0 * (z0 < 0.3334) * voice0Id), (n1 * (z1 < 0.3334) * voice1Id)), (n2 * (z2 < 0.3334) * voice2Id)), (n3 * (z3 < 0.3334) * voice3Id)), (n4 * (z4 < 0.3334) * voice4Id)), (n5 * (z5 < 0.3334) * voice5Id)), (n6 * (z6 < 0.3334) * voice6Id)), (n7 * (z7 < 0.3334) * voice7Id));\nid2 = max(max(max(max(max(max(max((n0 * (z0 > 0.3333) * (z0 < 0.6667) * voice0Id), (n1 * (z1 > 0.3333) * (z1 < 0.6667) * voice1Id)), (n2 * (z2 > 0.3333) * (z2 < 0.6667) * voice2Id)), (n3 * (z3 > 0.3333) * (z3 < 0.6667) * voice3Id)), (n4 * (z4 > 0.3333) * (z4 < 0.6667) * voice4Id)), (n5 * (z5 > 0.3333) * (z5 < 0.6667) * voice5Id)), (n6 * (z6 > 0.3333) * (z6 < 0.6667) * voice6Id)), (n7 * (z7 > 0.3333) * (z7 < 0.6667) * voice7Id));\nid3 = max(max(max(max(max(max(max((n0 * (z0 > 0.6666) * voice0Id), (n1 * (z1 > 0.6666) * voice1Id)), (n2 * (z2 > 0.6666) * voice2Id)), (n3 * (z3 > 0.6666) * voice3Id)), (n4 * (z4 > 0.6666) * voice4Id)), (n5 * (z5 > 0.6666) * voice5Id)), (n6 * (z6 > 0.6666) * voice6Id)), (n7 * (z7 > 0.6666) * voice7Id));\npr0 = min(((voice0Envelope > 0.015) * (voice0Pitch == Bn)) + ((voice1Envelope > 0.015) * (voice1Pitch == Bn)) + ((voice2Envelope > 0.015) * (voice2Pitch == Bn)) + ((voice3Envelope > 0.015) * (voice3Pitch == Bn)) + ((voice4Envelope > 0.015) * (voice4Pitch == Bn)) + ((voice5Envelope > 0.015) * (voice5Pitch == Bn)) + ((voice6Envelope > 0.015) * (voice6Pitch == Bn)) + ((voice7Envelope > 0.015) * (voice7Pitch == Bn)), 1);\nev0 = max(((voice0Envelope > 0.015) * (voice0Pitch == Bn)) * voice0Envelope + ((voice1Envelope > 0.015) * (voice1Pitch == Bn)) * voice1Envelope + ((voice2Envelope > 0.015) * (voice2Pitch == Bn)) * voice2Envelope + ((voice3Envelope > 0.015) * (voice3Pitch == Bn)) * voice3Envelope + ((voice4Envelope > 0.015) * (voice4Pitch == Bn)) * voice4Envelope + ((voice5Envelope > 0.015) * (voice5Pitch == Bn)) * voice5Envelope + ((voice6Envelope > 0.015) * (voice6Pitch == Bn)) * voice6Envelope + ((voice7Envelope > 0.015) * (voice7Pitch == Bn)) * voice7Envelope, 0) ^ gm * pl;\nvl0 = pr0 * max(((voice0Envelope > 0.015) * (voice0Pitch == Bn)) * voice0Velocity + ((voice1Envelope > 0.015) * (voice1Pitch == Bn)) * voice1Velocity + ((voice2Envelope > 0.015) * (voice2Pitch == Bn)) * voice2Velocity + ((voice3Envelope > 0.015) * (voice3Pitch == Bn)) * voice3Velocity + ((voice4Envelope > 0.015) * (voice4Pitch == Bn)) * voice4Velocity + ((voice5Envelope > 0.015) * (voice5Pitch == Bn)) * voice5Velocity + ((voice6Envelope > 0.015) * (voice6Pitch == Bn)) * voice6Velocity + ((voice7Envelope > 0.015) * (voice7Pitch == Bn)) * voice7Velocity, 0.001) ^ gm + (1 - pr0) * 0.5;\no0 = ((voice0Envelope > 0.015) * (voice0Pitch == Bn)) * voice0OnsetCount + ((voice1Envelope > 0.015) * (voice1Pitch == Bn)) * voice1OnsetCount + ((voice2Envelope > 0.015) * (voice2Pitch == Bn)) * voice2OnsetCount + ((voice3Envelope > 0.015) * (voice3Pitch == Bn)) * voice3OnsetCount + ((voice4Envelope > 0.015) * (voice4Pitch == Bn)) * voice4OnsetCount + ((voice5Envelope > 0.015) * (voice5Pitch == Bn)) * voice5OnsetCount + ((voice6Envelope > 0.015) * (voice6Pitch == Bn)) * voice6OnsetCount + ((voice7Envelope > 0.015) * (voice7Pitch == Bn)) * voice7OnsetCount;\npt0 = pr0 * (((voice0Envelope > 0.015) * (voice0Pitch == Bn)) * voice0Pitch + ((voice1Envelope > 0.015) * (voice1Pitch == Bn)) * voice1Pitch + ((voice2Envelope > 0.015) * (voice2Pitch == Bn)) * voice2Pitch + ((voice3Envelope > 0.015) * (voice3Pitch == Bn)) * voice3Pitch + ((voice4Envelope > 0.015) * (voice4Pitch == Bn)) * voice4Pitch + ((voice5Envelope > 0.015) * (voice5Pitch == Bn)) * voice5Pitch + ((voice6Envelope > 0.015) * (voice6Pitch == Bn)) * voice6Pitch + ((voice7Envelope > 0.015) * (voice7Pitch == Bn)) * voice7Pitch) + (1 - pr0) * round(Bn + (Mx - Bn) * 0.0);\npr1 = min((n0 * (z0 < 0.3334) * (voice0Id == id1) * (id1 > 0)) + (n1 * (z1 < 0.3334) * (voice1Id == id1) * (id1 > 0)) + (n2 * (z2 < 0.3334) * (voice2Id == id1) * (id1 > 0)) + (n3 * (z3 < 0.3334) * (voice3Id == id1) * (id1 > 0)) + (n4 * (z4 < 0.3334) * (voice4Id == id1) * (id1 > 0)) + (n5 * (z5 < 0.3334) * (voice5Id == id1) * (id1 > 0)) + (n6 * (z6 < 0.3334) * (voice6Id == id1) * (id1 > 0)) + (n7 * (z7 < 0.3334) * (voice7Id == id1) * (id1 > 0)), 1);\nev1 = max((n0 * (z0 < 0.3334) * (voice0Id == id1) * (id1 > 0)) * voice0Envelope + (n1 * (z1 < 0.3334) * (voice1Id == id1) * (id1 > 0)) * voice1Envelope + (n2 * (z2 < 0.3334) * (voice2Id == id1) * (id1 > 0)) * voice2Envelope + (n3 * (z3 < 0.3334) * (voice3Id == id1) * (id1 > 0)) * voice3Envelope + (n4 * (z4 < 0.3334) * (voice4Id == id1) * (id1 > 0)) * voice4Envelope + (n5 * (z5 < 0.3334) * (voice5Id == id1) * (id1 > 0)) * voice5Envelope + (n6 * (z6 < 0.3334) * (voice6Id == id1) * (id1 > 0)) * voice6Envelope + (n7 * (z7 < 0.3334) * (voice7Id == id1) * (id1 > 0)) * voice7Envelope, 0) ^ gm * pl;\nvl1 = pr1 * max((n0 * (z0 < 0.3334) * (voice0Id == id1) * (id1 > 0)) * voice0Velocity + (n1 * (z1 < 0.3334) * (voice1Id == id1) * (id1 > 0)) * voice1Velocity + (n2 * (z2 < 0.3334) * (voice2Id == id1) * (id1 > 0)) * voice2Velocity + (n3 * (z3 < 0.3334) * (voice3Id == id1) * (id1 > 0)) * voice3Velocity + (n4 * (z4 < 0.3334) * (voice4Id == id1) * (id1 > 0)) * voice4Velocity + (n5 * (z5 < 0.3334) * (voice5Id == id1) * (id1 > 0)) * voice5Velocity + (n6 * (z6 < 0.3334) * (voice6Id == id1) * (id1 > 0)) * voice6Velocity + (n7 * (z7 < 0.3334) * (voice7Id == id1) * (id1 > 0)) * voice7Velocity, 0.001) ^ gm + (1 - pr1) * 0.5;\no1 = (n0 * (z0 < 0.3334) * (voice0Id == id1) * (id1 > 0)) * voice0OnsetCount + (n1 * (z1 < 0.3334) * (voice1Id == id1) * (id1 > 0)) * voice1OnsetCount + (n2 * (z2 < 0.3334) * (voice2Id == id1) * (id1 > 0)) * voice2OnsetCount + (n3 * (z3 < 0.3334) * (voice3Id == id1) * (id1 > 0)) * voice3OnsetCount + (n4 * (z4 < 0.3334) * (voice4Id == id1) * (id1 > 0)) * voice4OnsetCount + (n5 * (z5 < 0.3334) * (voice5Id == id1) * (id1 > 0)) * voice5OnsetCount + (n6 * (z6 < 0.3334) * (voice6Id == id1) * (id1 > 0)) * voice6OnsetCount + (n7 * (z7 < 0.3334) * (voice7Id == id1) * (id1 > 0)) * voice7OnsetCount;\npt1 = pr1 * ((n0 * (z0 < 0.3334) * (voice0Id == id1) * (id1 > 0)) * voice0Pitch + (n1 * (z1 < 0.3334) * (voice1Id == id1) * (id1 > 0)) * voice1Pitch + (n2 * (z2 < 0.3334) * (voice2Id == id1) * (id1 > 0)) * voice2Pitch + (n3 * (z3 < 0.3334) * (voice3Id == id1) * (id1 > 0)) * voice3Pitch + (n4 * (z4 < 0.3334) * (voice4Id == id1) * (id1 > 0)) * voice4Pitch + (n5 * (z5 < 0.3334) * (voice5Id == id1) * (id1 > 0)) * voice5Pitch + (n6 * (z6 < 0.3334) * (voice6Id == id1) * (id1 > 0)) * voice6Pitch + (n7 * (z7 < 0.3334) * (voice7Id == id1) * (id1 > 0)) * voice7Pitch) + (1 - pr1) * round(Bn + (Mx - Bn) * 0.25);\npr2 = min((n0 * (z0 > 0.3333) * (z0 < 0.6667) * (voice0Id == id2) * (id2 > 0)) + (n1 * (z1 > 0.3333) * (z1 < 0.6667) * (voice1Id == id2) * (id2 > 0)) + (n2 * (z2 > 0.3333) * (z2 < 0.6667) * (voice2Id == id2) * (id2 > 0)) + (n3 * (z3 > 0.3333) * (z3 < 0.6667) * (voice3Id == id2) * (id2 > 0)) + (n4 * (z4 > 0.3333) * (z4 < 0.6667) * (voice4Id == id2) * (id2 > 0)) + (n5 * (z5 > 0.3333) * (z5 < 0.6667) * (voice5Id == id2) * (id2 > 0)) + (n6 * (z6 > 0.3333) * (z6 < 0.6667) * (voice6Id == id2) * (id2 > 0)) + (n7 * (z7 > 0.3333) * (z7 < 0.6667) * (voice7Id == id2) * (id2 > 0)), 1);\nev2 = max((n0 * (z0 > 0.3333) * (z0 < 0.6667) * (voice0Id == id2) * (id2 > 0)) * voice0Envelope + (n1 * (z1 > 0.3333) * (z1 < 0.6667) * (voice1Id == id2) * (id2 > 0)) * voice1Envelope + (n2 * (z2 > 0.3333) * (z2 < 0.6667) * (voice2Id == id2) * (id2 > 0)) * voice2Envelope + (n3 * (z3 > 0.3333) * (z3 < 0.6667) * (voice3Id == id2) * (id2 > 0)) * voice3Envelope + (n4 * (z4 > 0.3333) * (z4 < 0.6667) * (voice4Id == id2) * (id2 > 0)) * voice4Envelope + (n5 * (z5 > 0.3333) * (z5 < 0.6667) * (voice5Id == id2) * (id2 > 0)) * voice5Envelope + (n6 * (z6 > 0.3333) * (z6 < 0.6667) * (voice6Id == id2) * (id2 > 0)) * voice6Envelope + (n7 * (z7 > 0.3333) * (z7 < 0.6667) * (voice7Id == id2) * (id2 > 0)) * voice7Envelope, 0) ^ gm * pl;\nvl2 = pr2 * max((n0 * (z0 > 0.3333) * (z0 < 0.6667) * (voice0Id == id2) * (id2 > 0)) * voice0Velocity + (n1 * (z1 > 0.3333) * (z1 < 0.6667) * (voice1Id == id2) * (id2 > 0)) * voice1Velocity + (n2 * (z2 > 0.3333) * (z2 < 0.6667) * (voice2Id == id2) * (id2 > 0)) * voice2Velocity + (n3 * (z3 > 0.3333) * (z3 < 0.6667) * (voice3Id == id2) * (id2 > 0)) * voice3Velocity + (n4 * (z4 > 0.3333) * (z4 < 0.6667) * (voice4Id == id2) * (id2 > 0)) * voice4Velocity + (n5 * (z5 > 0.3333) * (z5 < 0.6667) * (voice5Id == id2) * (id2 > 0)) * voice5Velocity + (n6 * (z6 > 0.3333) * (z6 < 0.6667) * (voice6Id == id2) * (id2 > 0)) * voice6Velocity + (n7 * (z7 > 0.3333) * (z7 < 0.6667) * (voice7Id == id2) * (id2 > 0)) * voice7Velocity, 0.001) ^ gm + (1 - pr2) * 0.5;\no2 = (n0 * (z0 > 0.3333) * (z0 < 0.6667) * (voice0Id == id2) * (id2 > 0)) * voice0OnsetCount + (n1 * (z1 > 0.3333) * (z1 < 0.6667) * (voice1Id == id2) * (id2 > 0)) * voice1OnsetCount + (n2 * (z2 > 0.3333) * (z2 < 0.6667) * (voice2Id == id2) * (id2 > 0)) * voice2OnsetCount + (n3 * (z3 > 0.3333) * (z3 < 0.6667) * (voice3Id == id2) * (id2 > 0)) * voice3OnsetCount + (n4 * (z4 > 0.3333) * (z4 < 0.6667) * (voice4Id == id2) * (id2 > 0)) * voice4OnsetCount + (n5 * (z5 > 0.3333) * (z5 < 0.6667) * (voice5Id == id2) * (id2 > 0)) * voice5OnsetCount + (n6 * (z6 > 0.3333) * (z6 < 0.6667) * (voice6Id == id2) * (id2 > 0)) * voice6OnsetCount + (n7 * (z7 > 0.3333) * (z7 < 0.6667) * (voice7Id == id2) * (id2 > 0)) * voice7OnsetCount;\npt2 = pr2 * ((n0 * (z0 > 0.3333) * (z0 < 0.6667) * (voice0Id == id2) * (id2 > 0)) * voice0Pitch + (n1 * (z1 > 0.3333) * (z1 < 0.6667) * (voice1Id == id2) * (id2 > 0)) * voice1Pitch + (n2 * (z2 > 0.3333) * (z2 < 0.6667) * (voice2Id == id2) * (id2 > 0)) * voice2Pitch + (n3 * (z3 > 0.3333) * (z3 < 0.6667) * (voice3Id == id2) * (id2 > 0)) * voice3Pitch + (n4 * (z4 > 0.3333) * (z4 < 0.6667) * (voice4Id == id2) * (id2 > 0)) * voice4Pitch + (n5 * (z5 > 0.3333) * (z5 < 0.6667) * (voice5Id == id2) * (id2 > 0)) * voice5Pitch + (n6 * (z6 > 0.3333) * (z6 < 0.6667) * (voice6Id == id2) * (id2 > 0)) * voice6Pitch + (n7 * (z7 > 0.3333) * (z7 < 0.6667) * (voice7Id == id2) * (id2 > 0)) * voice7Pitch) + (1 - pr2) * round(Bn + (Mx - Bn) * 0.5);\npr3 = min((n0 * (z0 > 0.6666) * (voice0Id == id3) * (id3 > 0)) + (n1 * (z1 > 0.6666) * (voice1Id == id3) * (id3 > 0)) + (n2 * (z2 > 0.6666) * (voice2Id == id3) * (id3 > 0)) + (n3 * (z3 > 0.6666) * (voice3Id == id3) * (id3 > 0)) + (n4 * (z4 > 0.6666) * (voice4Id == id3) * (id3 > 0)) + (n5 * (z5 > 0.6666) * (voice5Id == id3) * (id3 > 0)) + (n6 * (z6 > 0.6666) * (voice6Id == id3) * (id3 > 0)) + (n7 * (z7 > 0.6666) * (voice7Id == id3) * (id3 > 0)), 1);\nev3 = max((n0 * (z0 > 0.6666) * (voice0Id == id3) * (id3 > 0)) * voice0Envelope + (n1 * (z1 > 0.6666) * (voice1Id == id3) * (id3 > 0)) * voice1Envelope + (n2 * (z2 > 0.6666) * (voice2Id == id3) * (id3 > 0)) * voice2Envelope + (n3 * (z3 > 0.6666) * (voice3Id == id3) * (id3 > 0)) * voice3Envelope + (n4 * (z4 > 0.6666) * (voice4Id == id3) * (id3 > 0)) * voice4Envelope + (n5 * (z5 > 0.6666) * (voice5Id == id3) * (id3 > 0)) * voice5Envelope + (n6 * (z6 > 0.6666) * (voice6Id == id3) * (id3 > 0)) * voice6Envelope + (n7 * (z7 > 0.6666) * (voice7Id == id3) * (id3 > 0)) * voice7Envelope, 0) ^ gm * pl;\nvl3 = pr3 * max((n0 * (z0 > 0.6666) * (voice0Id == id3) * (id3 > 0)) * voice0Velocity + (n1 * (z1 > 0.6666) * (voice1Id == id3) * (id3 > 0)) * voice1Velocity + (n2 * (z2 > 0.6666) * (voice2Id == id3) * (id3 > 0)) * voice2Velocity + (n3 * (z3 > 0.6666) * (voice3Id == id3) * (id3 > 0)) * voice3Velocity + (n4 * (z4 > 0.6666) * (voice4Id == id3) * (id3 > 0)) * voice4Velocity + (n5 * (z5 > 0.6666) * (voice5Id == id3) * (id3 > 0)) * voice5Velocity + (n6 * (z6 > 0.6666) * (voice6Id == id3) * (id3 > 0)) * voice6Velocity + (n7 * (z7 > 0.6666) * (voice7Id == id3) * (id3 > 0)) * voice7Velocity, 0.001) ^ gm + (1 - pr3) * 0.5;\no3 = (n0 * (z0 > 0.6666) * (voice0Id == id3) * (id3 > 0)) * voice0OnsetCount + (n1 * (z1 > 0.6666) * (voice1Id == id3) * (id3 > 0)) * voice1OnsetCount + (n2 * (z2 > 0.6666) * (voice2Id == id3) * (id3 > 0)) * voice2OnsetCount + (n3 * (z3 > 0.6666) * (voice3Id == id3) * (id3 > 0)) * voice3OnsetCount + (n4 * (z4 > 0.6666) * (voice4Id == id3) * (id3 > 0)) * voice4OnsetCount + (n5 * (z5 > 0.6666) * (voice5Id == id3) * (id3 > 0)) * voice5OnsetCount + (n6 * (z6 > 0.6666) * (voice6Id == id3) * (id3 > 0)) * voice6OnsetCount + (n7 * (z7 > 0.6666) * (voice7Id == id3) * (id3 > 0)) * voice7OnsetCount;\npt3 = pr3 * ((n0 * (z0 > 0.6666) * (voice0Id == id3) * (id3 > 0)) * voice0Pitch + (n1 * (z1 > 0.6666) * (voice1Id == id3) * (id3 > 0)) * voice1Pitch + (n2 * (z2 > 0.6666) * (voice2Id == id3) * (id3 > 0)) * voice2Pitch + (n3 * (z3 > 0.6666) * (voice3Id == id3) * (id3 > 0)) * voice3Pitch + (n4 * (z4 > 0.6666) * (voice4Id == id3) * (id3 > 0)) * voice4Pitch + (n5 * (z5 > 0.6666) * (voice5Id == id3) * (id3 > 0)) * voice5Pitch + (n6 * (z6 > 0.6666) * (voice6Id == id3) * (id3 > 0)) * voice6Pitch + (n7 * (z7 > 0.6666) * (voice7Id == id3) * (id3 > 0)) * voice7Pitch) + (1 - pr3) * round(Bn + (Mx - Bn) * 0.75);\npr4 = min(((voice0Envelope > 0.015) * (voice0Pitch == Mx)) + ((voice1Envelope > 0.015) * (voice1Pitch == Mx)) + ((voice2Envelope > 0.015) * (voice2Pitch == Mx)) + ((voice3Envelope > 0.015) * (voice3Pitch == Mx)) + ((voice4Envelope > 0.015) * (voice4Pitch == Mx)) + ((voice5Envelope > 0.015) * (voice5Pitch == Mx)) + ((voice6Envelope > 0.015) * (voice6Pitch == Mx)) + ((voice7Envelope > 0.015) * (voice7Pitch == Mx)), 1);\nev4 = max(((voice0Envelope > 0.015) * (voice0Pitch == Mx)) * voice0Envelope + ((voice1Envelope > 0.015) * (voice1Pitch == Mx)) * voice1Envelope + ((voice2Envelope > 0.015) * (voice2Pitch == Mx)) * voice2Envelope + ((voice3Envelope > 0.015) * (voice3Pitch == Mx)) * voice3Envelope + ((voice4Envelope > 0.015) * (voice4Pitch == Mx)) * voice4Envelope + ((voice5Envelope > 0.015) * (voice5Pitch == Mx)) * voice5Envelope + ((voice6Envelope > 0.015) * (voice6Pitch == Mx)) * voice6Envelope + ((voice7Envelope > 0.015) * (voice7Pitch == Mx)) * voice7Envelope, 0) ^ gm * pl;\nvl4 = pr4 * max(((voice0Envelope > 0.015) * (voice0Pitch == Mx)) * voice0Velocity + ((voice1Envelope > 0.015) * (voice1Pitch == Mx)) * voice1Velocity + ((voice2Envelope > 0.015) * (voice2Pitch == Mx)) * voice2Velocity + ((voice3Envelope > 0.015) * (voice3Pitch == Mx)) * voice3Velocity + ((voice4Envelope > 0.015) * (voice4Pitch == Mx)) * voice4Velocity + ((voice5Envelope > 0.015) * (voice5Pitch == Mx)) * voice5Velocity + ((voice6Envelope > 0.015) * (voice6Pitch == Mx)) * voice6Velocity + ((voice7Envelope > 0.015) * (voice7Pitch == Mx)) * voice7Velocity, 0.001) ^ gm + (1 - pr4) * 0.5;\no4 = ((voice0Envelope > 0.015) * (voice0Pitch == Mx)) * voice0OnsetCount + ((voice1Envelope > 0.015) * (voice1Pitch == Mx)) * voice1OnsetCount + ((voice2Envelope > 0.015) * (voice2Pitch == Mx)) * voice2OnsetCount + ((voice3Envelope > 0.015) * (voice3Pitch == Mx)) * voice3OnsetCount + ((voice4Envelope > 0.015) * (voice4Pitch == Mx)) * voice4OnsetCount + ((voice5Envelope > 0.015) * (voice5Pitch == Mx)) * voice5OnsetCount + ((voice6Envelope > 0.015) * (voice6Pitch == Mx)) * voice6OnsetCount + ((voice7Envelope > 0.015) * (voice7Pitch == Mx)) * voice7OnsetCount;\npt4 = pr4 * (((voice0Envelope > 0.015) * (voice0Pitch == Mx)) * voice0Pitch + ((voice1Envelope > 0.015) * (voice1Pitch == Mx)) * voice1Pitch + ((voice2Envelope > 0.015) * (voice2Pitch == Mx)) * voice2Pitch + ((voice3Envelope > 0.015) * (voice3Pitch == Mx)) * voice3Pitch + ((voice4Envelope > 0.015) * (voice4Pitch == Mx)) * voice4Pitch + ((voice5Envelope > 0.015) * (voice5Pitch == Mx)) * voice5Pitch + ((voice6Envelope > 0.015) * (voice6Pitch == Mx)) * voice6Pitch + ((voice7Envelope > 0.015) * (voice7Pitch == Mx)) * voice7Pitch) + (1 - pr4) * round(Bn + (Mx - Bn) * 1.0);\nlv = (voice0Envelope + voice1Envelope + voice2Envelope + voice3Envelope + voice4Envelope + voice5Envelope + voice6Envelope + voice7Envelope);\nspn = clamp((Mx - Bn) / 36, 0, 1);\nrc = (chordConfidence > 0.499) * root + (chordConfidence < 0.5) * mod(Bn, 12);\nlvs = lv / (lv + 1.5)"
+              },
+              "position": {
+                "x": 1290,
+                "y": 12
+              },
+              "type": "valueExpression"
+            },
+            "expression_keysonset": {
+              "definitionVersion": 1,
+              "id": "expression_keysonset",
+              "label": "expression_keysonset",
+              "parameters": {
+                "defaults": "kb = 999;\nkm = -1;\nsense = 0.5;\nvoice0Pitch = 60;\nvoice0Envelope = 0;\nvoice0Velocity = 0;\nvoice0OnsetCount = 0;\nvoice1Pitch = 60;\nvoice1Envelope = 0;\nvoice1Velocity = 0;\nvoice1OnsetCount = 0;\nvoice2Pitch = 60;\nvoice2Envelope = 0;\nvoice2Velocity = 0;\nvoice2OnsetCount = 0;\nvoice3Pitch = 60;\nvoice3Envelope = 0;\nvoice3Velocity = 0;\nvoice3OnsetCount = 0;\nvoice4Pitch = 60;\nvoice4Envelope = 0;\nvoice4Velocity = 0;\nvoice4OnsetCount = 0;\nvoice5Pitch = 60;\nvoice5Envelope = 0;\nvoice5Velocity = 0;\nvoice5OnsetCount = 0;\nvoice6Pitch = 60;\nvoice6Envelope = 0;\nvoice6Velocity = 0;\nvoice6OnsetCount = 0;\nvoice7Pitch = 60;\nvoice7Envelope = 0;\nvoice7Velocity = 0;\nvoice7OnsetCount = 0",
+                "expressions": "Bn = (kb < 200) * round(kb) + (kb > 199) * 48;\nMn = (km > -0.5) * round(km) + (km < -0.5) * 72;\nMx = max(Mn, Bn);\nsp = max(Mx - Bn, 1);\ngm = 1.6 - 1.2 * sense;\npa0 = round(clamp((voice0Pitch - Bn) / sp, 0, 1) * 4);\nst0 = (voice0OnsetCount > 0.5) * (voice0Envelope > 0.015);\npa1 = round(clamp((voice1Pitch - Bn) / sp, 0, 1) * 4);\nst1 = (voice1OnsetCount > 0.5) * (voice1Envelope > 0.015);\npa2 = round(clamp((voice2Pitch - Bn) / sp, 0, 1) * 4);\nst2 = (voice2OnsetCount > 0.5) * (voice2Envelope > 0.015);\npa3 = round(clamp((voice3Pitch - Bn) / sp, 0, 1) * 4);\nst3 = (voice3OnsetCount > 0.5) * (voice3Envelope > 0.015);\npa4 = round(clamp((voice4Pitch - Bn) / sp, 0, 1) * 4);\nst4 = (voice4OnsetCount > 0.5) * (voice4Envelope > 0.015);\npa5 = round(clamp((voice5Pitch - Bn) / sp, 0, 1) * 4);\nst5 = (voice5OnsetCount > 0.5) * (voice5Envelope > 0.015);\npa6 = round(clamp((voice6Pitch - Bn) / sp, 0, 1) * 4);\nst6 = (voice6OnsetCount > 0.5) * (voice6Envelope > 0.015);\npa7 = round(clamp((voice7Pitch - Bn) / sp, 0, 1) * 4);\nst7 = (voice7OnsetCount > 0.5) * (voice7Envelope > 0.015);\nlane0Onset = min(st0 * ((pa0 == 0)) + st1 * ((pa1 == 0)) + st2 * ((pa2 == 0)) + st3 * ((pa3 == 0)) + st4 * ((pa4 == 0)) + st5 * ((pa5 == 0)) + st6 * ((pa6 == 0)) + st7 * ((pa7 == 0)), 1);\nlane0Velocity = max(max(max(max(max(max(max(max(0, st0 * ((pa0 == 0)) * max(voice0Velocity, 0.001) ^ gm), st1 * ((pa1 == 0)) * max(voice1Velocity, 0.001) ^ gm), st2 * ((pa2 == 0)) * max(voice2Velocity, 0.001) ^ gm), st3 * ((pa3 == 0)) * max(voice3Velocity, 0.001) ^ gm), st4 * ((pa4 == 0)) * max(voice4Velocity, 0.001) ^ gm), st5 * ((pa5 == 0)) * max(voice5Velocity, 0.001) ^ gm), st6 * ((pa6 == 0)) * max(voice6Velocity, 0.001) ^ gm), st7 * ((pa7 == 0)) * max(voice7Velocity, 0.001) ^ gm);\nlane1Onset = min(st0 * ((pa0 == 1)) + st1 * ((pa1 == 1)) + st2 * ((pa2 == 1)) + st3 * ((pa3 == 1)) + st4 * ((pa4 == 1)) + st5 * ((pa5 == 1)) + st6 * ((pa6 == 1)) + st7 * ((pa7 == 1)), 1);\nlane1Velocity = max(max(max(max(max(max(max(max(0, st0 * ((pa0 == 1)) * max(voice0Velocity, 0.001) ^ gm), st1 * ((pa1 == 1)) * max(voice1Velocity, 0.001) ^ gm), st2 * ((pa2 == 1)) * max(voice2Velocity, 0.001) ^ gm), st3 * ((pa3 == 1)) * max(voice3Velocity, 0.001) ^ gm), st4 * ((pa4 == 1)) * max(voice4Velocity, 0.001) ^ gm), st5 * ((pa5 == 1)) * max(voice5Velocity, 0.001) ^ gm), st6 * ((pa6 == 1)) * max(voice6Velocity, 0.001) ^ gm), st7 * ((pa7 == 1)) * max(voice7Velocity, 0.001) ^ gm);\nlane2Onset = min(st0 * ((pa0 == 2)) + st1 * ((pa1 == 2)) + st2 * ((pa2 == 2)) + st3 * ((pa3 == 2)) + st4 * ((pa4 == 2)) + st5 * ((pa5 == 2)) + st6 * ((pa6 == 2)) + st7 * ((pa7 == 2)), 1);\nlane2Velocity = max(max(max(max(max(max(max(max(0, st0 * ((pa0 == 2)) * max(voice0Velocity, 0.001) ^ gm), st1 * ((pa1 == 2)) * max(voice1Velocity, 0.001) ^ gm), st2 * ((pa2 == 2)) * max(voice2Velocity, 0.001) ^ gm), st3 * ((pa3 == 2)) * max(voice3Velocity, 0.001) ^ gm), st4 * ((pa4 == 2)) * max(voice4Velocity, 0.001) ^ gm), st5 * ((pa5 == 2)) * max(voice5Velocity, 0.001) ^ gm), st6 * ((pa6 == 2)) * max(voice6Velocity, 0.001) ^ gm), st7 * ((pa7 == 2)) * max(voice7Velocity, 0.001) ^ gm);\nlane3Onset = min(st0 * ((pa0 == 3)) + st1 * ((pa1 == 3)) + st2 * ((pa2 == 3)) + st3 * ((pa3 == 3)) + st4 * ((pa4 == 3)) + st5 * ((pa5 == 3)) + st6 * ((pa6 == 3)) + st7 * ((pa7 == 3)), 1);\nlane3Velocity = max(max(max(max(max(max(max(max(0, st0 * ((pa0 == 3)) * max(voice0Velocity, 0.001) ^ gm), st1 * ((pa1 == 3)) * max(voice1Velocity, 0.001) ^ gm), st2 * ((pa2 == 3)) * max(voice2Velocity, 0.001) ^ gm), st3 * ((pa3 == 3)) * max(voice3Velocity, 0.001) ^ gm), st4 * ((pa4 == 3)) * max(voice4Velocity, 0.001) ^ gm), st5 * ((pa5 == 3)) * max(voice5Velocity, 0.001) ^ gm), st6 * ((pa6 == 3)) * max(voice6Velocity, 0.001) ^ gm), st7 * ((pa7 == 3)) * max(voice7Velocity, 0.001) ^ gm);\nlane4Onset = min(st0 * ((pa0 == 4) + (Mx - Bn < 0.5) * (pa0 == 0)) + st1 * ((pa1 == 4) + (Mx - Bn < 0.5) * (pa1 == 0)) + st2 * ((pa2 == 4) + (Mx - Bn < 0.5) * (pa2 == 0)) + st3 * ((pa3 == 4) + (Mx - Bn < 0.5) * (pa3 == 0)) + st4 * ((pa4 == 4) + (Mx - Bn < 0.5) * (pa4 == 0)) + st5 * ((pa5 == 4) + (Mx - Bn < 0.5) * (pa5 == 0)) + st6 * ((pa6 == 4) + (Mx - Bn < 0.5) * (pa6 == 0)) + st7 * ((pa7 == 4) + (Mx - Bn < 0.5) * (pa7 == 0)), 1);\nlane4Velocity = max(max(max(max(max(max(max(max(0, st0 * ((pa0 == 4) + (Mx - Bn < 0.5) * (pa0 == 0)) * max(voice0Velocity, 0.001) ^ gm), st1 * ((pa1 == 4) + (Mx - Bn < 0.5) * (pa1 == 0)) * max(voice1Velocity, 0.001) ^ gm), st2 * ((pa2 == 4) + (Mx - Bn < 0.5) * (pa2 == 0)) * max(voice2Velocity, 0.001) ^ gm), st3 * ((pa3 == 4) + (Mx - Bn < 0.5) * (pa3 == 0)) * max(voice3Velocity, 0.001) ^ gm), st4 * ((pa4 == 4) + (Mx - Bn < 0.5) * (pa4 == 0)) * max(voice4Velocity, 0.001) ^ gm), st5 * ((pa5 == 4) + (Mx - Bn < 0.5) * (pa5 == 0)) * max(voice5Velocity, 0.001) ^ gm), st6 * ((pa6 == 4) + (Mx - Bn < 0.5) * (pa6 == 0)) * max(voice6Velocity, 0.001) ^ gm), st7 * ((pa7 == 4) + (Mx - Bn < 0.5) * (pa7 == 0)) * max(voice7Velocity, 0.001) ^ gm)"
+              },
+              "position": {
+                "x": 1290,
+                "y": -240
+              },
+              "type": "valueExpression"
+            },
+            "expression_keysonsets": {
+              "definitionVersion": 1,
+              "id": "expression_keysonsets",
+              "label": "expression_keysonsets",
+              "parameters": {
+                "defaults": "",
+                "expressions": "voice0Onset = o0;\nvoice1Onset = o1;\nvoice2Onset = o2;\nvoice3Onset = o3;\nvoice4Onset = o4"
+              },
+              "position": {
+                "x": 1806,
+                "y": -12
+              },
+              "type": "valueExpression"
+            },
+            "expression_keyspedalraw": {
+              "definitionVersion": 1,
+              "id": "expression_keyspedalraw",
+              "label": "expression_keyspedalraw",
+              "parameters": {
+                "defaults": "",
+                "expressions": "sustainRaw = sustain;\nsoftRaw = soft"
+              },
+              "position": {
+                "x": 516,
+                "y": 106
+              },
+              "type": "valueExpression"
+            },
+            "expression_keysrange": {
+              "definitionVersion": 1,
+              "id": "expression_keysrange",
+              "label": "expression_keysrange",
+              "parameters": {
+                "defaults": "",
+                "expressions": "kb = min(min(min(min(min(min(min(((voice0Envelope > 0.015) * voice0Pitch + (1 - (voice0Envelope > 0.015)) * 999), ((voice1Envelope > 0.015) * voice1Pitch + (1 - (voice1Envelope > 0.015)) * 999)), ((voice2Envelope > 0.015) * voice2Pitch + (1 - (voice2Envelope > 0.015)) * 999)), ((voice3Envelope > 0.015) * voice3Pitch + (1 - (voice3Envelope > 0.015)) * 999)), ((voice4Envelope > 0.015) * voice4Pitch + (1 - (voice4Envelope > 0.015)) * 999)), ((voice5Envelope > 0.015) * voice5Pitch + (1 - (voice5Envelope > 0.015)) * 999)), ((voice6Envelope > 0.015) * voice6Pitch + (1 - (voice6Envelope > 0.015)) * 999)), ((voice7Envelope > 0.015) * voice7Pitch + (1 - (voice7Envelope > 0.015)) * 999));\nkm = max(max(max(max(max(max(max((voice0Held * voice0Pitch + (1 - voice0Held) * (-1)), (voice1Held * voice1Pitch + (1 - voice1Held) * (-1))), (voice2Held * voice2Pitch + (1 - voice2Held) * (-1))), (voice3Held * voice3Pitch + (1 - voice3Held) * (-1))), (voice4Held * voice4Pitch + (1 - voice4Held) * (-1))), (voice5Held * voice5Pitch + (1 - voice5Held) * (-1))), (voice6Held * voice6Pitch + (1 - voice6Held) * (-1))), (voice7Held * voice7Pitch + (1 - voice7Held) * (-1)));\nga = kb < 998;\ngh = km > -0.5"
+              },
+              "position": {
+                "x": 516,
+                "y": 498
+              },
+              "type": "valueExpression"
+            },
+            "expression_keyssect": {
+              "definitionVersion": 1,
+              "id": "expression_keyssect",
+              "label": "expression_keyssect",
+              "parameters": {
+                "defaults": "noteOnCount = 0;\nlv = 0;\nspn = 0;\nnoteDensity = 0",
+                "expressions": "S1 = chroma0 * chroma1 + chroma1 * chroma2 + chroma2 * chroma3 + chroma3 * chroma4 + chroma4 * chroma5 + chroma5 * chroma6 + chroma6 * chroma7 + chroma7 * chroma8 + chroma8 * chroma9 + chroma9 * chroma10 + chroma10 * chroma11 + chroma11 * chroma0;\nS2 = chroma0 * chroma2 + chroma1 * chroma3 + chroma2 * chroma4 + chroma3 * chroma5 + chroma4 * chroma6 + chroma5 * chroma7 + chroma6 * chroma8 + chroma7 * chroma9 + chroma8 * chroma10 + chroma9 * chroma11 + chroma10 * chroma0 + chroma11 * chroma1;\nS3 = chroma0 * chroma3 + chroma1 * chroma4 + chroma2 * chroma5 + chroma3 * chroma6 + chroma4 * chroma7 + chroma5 * chroma8 + chroma6 * chroma9 + chroma7 * chroma10 + chroma8 * chroma11 + chroma9 * chroma0 + chroma10 * chroma1 + chroma11 * chroma2;\nS4 = chroma0 * chroma4 + chroma1 * chroma5 + chroma2 * chroma6 + chroma3 * chroma7 + chroma4 * chroma8 + chroma5 * chroma9 + chroma6 * chroma10 + chroma7 * chroma11 + chroma8 * chroma0 + chroma9 * chroma1 + chroma10 * chroma2 + chroma11 * chroma3;\nS5 = chroma0 * chroma5 + chroma1 * chroma6 + chroma2 * chroma7 + chroma3 * chroma8 + chroma4 * chroma9 + chroma5 * chroma10 + chroma6 * chroma11 + chroma7 * chroma0 + chroma8 * chroma1 + chroma9 * chroma2 + chroma10 * chroma3 + chroma11 * chroma4;\nS6 = chroma0 * chroma6 + chroma1 * chroma7 + chroma2 * chroma8 + chroma3 * chroma9 + chroma4 * chroma10 + chroma5 * chroma11;\ndiss = (1.0 * S1 + 0.6 * S2 + 0.15 * S3 + 0.1 * S4 + 0.8 * S6) / (S1 + S2 + S3 + S4 + S5 + S6 + 0.001);\nrn = noteOnCount / (noteOnCount + 4);\nlvn = lv / (lv + 1.5);\nsE = 0.05 + 0.45 * rn + 0.5 * lvn;\nsL = 0.1 + 0.75 * lvn;\nsD = 0.08 + 0.4 * clamp(noteDensity / 16, 0, 1) + 0.35 * lvn;\nsT = 0.08 + 0.45 * diss + 0.1 * spn + 0.12 * rn"
+              },
+              "position": {
+                "x": 1806,
+                "y": 192
+              },
+              "type": "valueExpression"
+            },
+            "expression_keyssensein": {
+              "definitionVersion": 1,
+              "id": "expression_keyssensein",
+              "label": "expression_keyssensein",
+              "parameters": {
+                "defaults": "",
+                "expressions": "sense = value"
+              },
+              "position": {
+                "x": 258,
+                "y": -732
+              },
+              "type": "valueExpression"
+            },
+            "expression_keystempogroup": {
+              "definitionVersion": 1,
+              "id": "expression_keystempogroup",
+              "label": "expression_keystempogroup",
+              "parameters": {
+                "defaults": "",
+                "expressions": "bpm = clamp((value > 1) * value + (value <= 1) * bpm, 20, 300);\nbpmDetected = 0;\nbpmConfidence = value > 1;\nbeats = beats;\nbeatPhase = fract(beats)"
+              },
+              "position": {
+                "x": 774,
+                "y": -482
+              },
+              "type": "valueExpression"
+            },
+            "keys_piano": {
+              "definitionVersion": 1,
+              "id": "keys_piano",
+              "label": "keys_piano",
+              "parameters": {
+                "bendRange": 2,
+                "channel": 0,
+                "decay": 4,
+                "decayTracking": 0.5,
+                "device": "",
+                "halfPedal": true,
+                "pedalThreshold": 0.5,
+                "perKey": false,
+                "release": 0.15,
+                "voices": 8
+              },
+              "position": {
+                "x": 0,
+                "y": 208
+              },
+              "type": "midiNotes"
+            },
+            "lag_keysbass": {
+              "definitionVersion": 1,
+              "id": "lag_keysbass",
+              "label": "lag_keysbass",
+              "parameters": {
+                "lag": {
+                  "bindings": {
+                    "expression": {
+                      "kind": "expression",
+                      "source": "0.002 + 1000000000 * (1 - op('expression_keysrange').chan.ga)"
+                    },
+                    "static": {
+                      "kind": "static",
+                      "value": 0.002
+                    }
+                  },
+                  "mode": "expression"
+                },
+                "releaseRatio": 1
+              },
+              "position": {
+                "x": 1032,
+                "y": 20
+              },
+              "type": "valueLag"
+            },
+            "lag_keysenv": {
+              "definitionVersion": 1,
+              "id": "lag_keysenv",
+              "label": "lag_keysenv",
+              "parameters": {
+                "lag": {
+                  "bindings": {
+                    "expression": {
+                      "kind": "expression",
+                      "source": "0.05 + 0.3 * op('constant_keyssmooth').chan.value"
+                    },
+                    "static": {
+                      "kind": "static",
+                      "value": 0.2
+                    }
+                  },
+                  "mode": "expression"
+                },
+                "releaseRatio": 3
+              },
+              "position": {
+                "x": 1806,
+                "y": -388
+              },
+              "type": "valueLag"
+            },
+            "lag_keyshold": {
+              "definitionVersion": 1,
+              "id": "lag_keyshold",
+              "label": "lag_keyshold",
+              "parameters": {
+                "lag": {
+                  "bindings": {
+                    "expression": {
+                      "kind": "expression",
+                      "source": "0.002 + 1000000000 * (1 - op('expression_keysgate').chan.gr)"
+                    },
+                    "static": {
+                      "kind": "static",
+                      "value": 0.002
+                    }
+                  },
+                  "mode": "expression"
+                },
+                "releaseRatio": 1
+              },
+              "position": {
+                "x": 1806,
+                "y": 428
+              },
+              "type": "valueLag"
+            },
+            "lag_keysmelody": {
+              "definitionVersion": 1,
+              "id": "lag_keysmelody",
+              "label": "lag_keysmelody",
+              "parameters": {
+                "lag": {
+                  "bindings": {
+                    "expression": {
+                      "kind": "expression",
+                      "source": "0.002 + 1000000000 * (1 - op('expression_keysrange').chan.gh)"
+                    },
+                    "static": {
+                      "kind": "static",
+                      "value": 0.002
+                    }
+                  },
+                  "mode": "expression"
+                },
+                "releaseRatio": 1
+              },
+              "position": {
+                "x": 1032,
+                "y": 208
+              },
+              "type": "valueLag"
+            },
+            "lag_keyspedal": {
+              "definitionVersion": 1,
+              "id": "lag_keyspedal",
+              "label": "lag_keyspedal",
+              "parameters": {
+                "lag": 1.5,
+                "releaseRatio": 2.3
+              },
+              "position": {
+                "x": 516,
+                "y": 310
+              },
+              "type": "valueLag"
+            },
+            "lag_keyssect": {
+              "definitionVersion": 1,
+              "id": "lag_keyssect",
+              "label": "lag_keyssect",
+              "parameters": {
+                "lag": 6,
+                "releaseRatio": 1
+              },
+              "position": {
+                "x": 2322,
+                "y": -192
+              },
+              "type": "valueLag"
+            },
+            "out_beats": {
+              "definitionVersion": 1,
+              "id": "out_beats",
+              "label": "beats",
+              "parameters": {},
+              "position": {
+                "x": 3694,
+                "y": -746
+              },
+              "type": "componentOutValue"
+            },
+            "out_form": {
+              "definitionVersion": 1,
+              "id": "out_form",
+              "label": "form",
+              "parameters": {},
+              "position": {
+                "x": 3694,
+                "y": 14
+              },
+              "type": "componentOutValue"
+            },
+            "out_harmony": {
+              "definitionVersion": 1,
+              "id": "out_harmony",
+              "label": "harmony",
+              "parameters": {},
+              "position": {
+                "x": 3694,
+                "y": -176
+              },
+              "type": "componentOutValue"
+            },
+            "out_lanes": {
+              "definitionVersion": 1,
+              "id": "out_lanes",
+              "label": "lanes",
+              "parameters": {},
+              "position": {
+                "x": 3694,
+                "y": 204
+              },
+              "type": "componentOutValue"
+            },
+            "out_levels": {
+              "definitionVersion": 1,
+              "id": "out_levels",
+              "label": "levels",
+              "parameters": {},
+              "position": {
+                "x": 3694,
+                "y": -936
+              },
+              "type": "componentOutValue"
+            },
+            "out_notes": {
+              "definitionVersion": 1,
+              "id": "out_notes",
+              "label": "notes",
+              "parameters": {},
+              "position": {
+                "x": 3694,
+                "y": -366
+              },
+              "type": "componentOutValue"
+            },
+            "out_tempo": {
+              "definitionVersion": 1,
+              "id": "out_tempo",
+              "label": "tempo",
+              "parameters": {},
+              "position": {
+                "x": 3694,
+                "y": -556
+              },
+              "type": "componentOutValue"
+            },
+            "rate_keys": {
+              "definitionVersion": 1,
+              "id": "rate_keys",
+              "label": "rate_keys",
+              "parameters": {
+                "window": 8
+              },
+              "position": {
+                "x": 516,
+                "y": -82
+              },
+              "type": "valueRate"
+            },
+            "select_keys": {
+              "definitionVersion": 1,
+              "id": "select_keys",
+              "label": "select_keys",
+              "parameters": {
+                "channels": "voice[0-7]Pitch voice[0-7]Envelope voice[0-7]Held voice[0-7]Velocity voice[0-7]OnsetCount voice[0-7]Id chordConfidence root"
+              },
+              "position": {
+                "x": 258,
+                "y": -528
+              },
+              "type": "valueSelect"
+            },
+            "select_keysbass": {
+              "definitionVersion": 1,
+              "id": "select_keysbass",
+              "label": "select_keysbass",
+              "parameters": {
+                "channels": "kb"
+              },
+              "position": {
+                "x": 774,
+                "y": 146
+              },
+              "type": "valueSelect"
+            },
+            "select_keyscc": {
+              "definitionVersion": 1,
+              "id": "select_keyscc",
+              "label": "select_keyscc",
+              "parameters": {
+                "channels": "chordChangeCount"
+              },
+              "position": {
+                "x": 258,
+                "y": -340
+              },
+              "type": "valueSelect"
+            },
+            "select_keyschroma": {
+              "definitionVersion": 1,
+              "id": "select_keyschroma",
+              "label": "select_keyschroma",
+              "parameters": {
+                "channels": "chroma[0-9] chroma1[01] noteDensity"
+              },
+              "position": {
+                "x": 258,
+                "y": -152
+              },
+              "type": "valueSelect"
+            },
+            "select_keysenv": {
+              "definitionVersion": 1,
+              "id": "select_keysenv",
+              "label": "select_keysenv",
+              "parameters": {
+                "channels": "ev[0-4] lvs"
+              },
+              "position": {
+                "x": 1548,
+                "y": -356
+              },
+              "type": "valueSelect"
+            },
+            "select_keyshudfull": {
+              "definitionVersion": 1,
+              "id": "select_keyshudfull",
+              "label": "select_keyshudfull",
+              "parameters": {
+                "channels": "noteDensity"
+              },
+              "position": {
+                "x": 258,
+                "y": 36
+              },
+              "type": "valueSelect"
+            },
+            "select_keyshudsect": {
+              "definitionVersion": 1,
+              "id": "select_keyshudsect",
+              "label": "select_keyshudsect",
+              "parameters": {
+                "channels": "rn lvn"
+              },
+              "position": {
+                "x": 2064,
+                "y": -168
+              },
+              "type": "valueSelect"
+            },
+            "select_keyskey": {
+              "definitionVersion": 1,
+              "id": "select_keyskey",
+              "label": "select_keyskey",
+              "parameters": {
+                "channels": "chord[QC]* key* tonalCenter chromaConfidence"
+              },
+              "position": {
+                "x": 258,
+                "y": 224
+              },
+              "type": "valueSelect"
+            },
+            "select_keyslanes": {
+              "definitionVersion": 1,
+              "id": "select_keyslanes",
+              "label": "select_keyslanes",
+              "parameters": {
+                "channels": "lane*"
+              },
+              "position": {
+                "x": 1548,
+                "y": -544
+              },
+              "type": "valueSelect"
+            },
+            "select_keyslevel": {
+              "definitionVersion": 1,
+              "id": "select_keyslevel",
+              "label": "select_keyslevel",
+              "parameters": {
+                "channels": "lv spn"
+              },
+              "position": {
+                "x": 1548,
+                "y": -168
+              },
+              "type": "valueSelect"
+            },
+            "select_keysmelody": {
+              "definitionVersion": 1,
+              "id": "select_keysmelody",
+              "label": "select_keysmelody",
+              "parameters": {
+                "channels": "km"
+              },
+              "position": {
+                "x": 774,
+                "y": 334
+              },
+              "type": "valueSelect"
+            },
+            "select_keysnotesout": {
+              "definitionVersion": 1,
+              "id": "select_keysnotesout",
+              "label": "select_keysnotesout",
+              "parameters": {
+                "channels": "voice* note* sustain* soft*"
+              },
+              "position": {
+                "x": 2838,
+                "y": -168
+              },
+              "type": "valueSelect"
+            },
+            "select_keyson": {
+              "definitionVersion": 1,
+              "id": "select_keyson",
+              "label": "select_keyson",
+              "parameters": {
+                "channels": "noteOnCount"
+              },
+              "position": {
+                "x": 258,
+                "y": 412
+              },
+              "type": "valueSelect"
+            },
+            "select_keysonset": {
+              "definitionVersion": 1,
+              "id": "select_keysonset",
+              "label": "select_keysonset",
+              "parameters": {
+                "channels": "o[0-4]"
+              },
+              "position": {
+                "x": 1548,
+                "y": 20
+              },
+              "type": "valueSelect"
+            },
+            "select_keyspedalsrc": {
+              "definitionVersion": 1,
+              "id": "select_keyspedalsrc",
+              "label": "select_keyspedalsrc",
+              "parameters": {
+                "channels": "sustain soft"
+              },
+              "position": {
+                "x": 258,
+                "y": 600
+              },
+              "type": "valueSelect"
+            },
+            "select_keysrange": {
+              "definitionVersion": 1,
+              "id": "select_keysrange",
+              "label": "select_keysrange",
+              "parameters": {
+                "channels": "voice[0-7]Pitch voice[0-7]Envelope voice[0-7]Held"
+              },
+              "position": {
+                "x": 258,
+                "y": 788
+              },
+              "type": "valueSelect"
+            },
+            "select_keysrc": {
+              "definitionVersion": 1,
+              "id": "select_keysrc",
+              "label": "select_keysrc",
+              "parameters": {
+                "channels": "pt[0-4] rc"
+              },
+              "position": {
+                "x": 1548,
+                "y": 208
+              },
+              "type": "valueSelect"
+            },
+            "select_keysscores": {
+              "definitionVersion": 1,
+              "id": "select_keysscores",
+              "label": "select_keysscores",
+              "parameters": {
+                "channels": "root chordIndex tension energy brightness density"
+              },
+              "position": {
+                "x": 2838,
+                "y": 20
+              },
+              "type": "valueSelect"
+            },
+            "select_keyssects": {
+              "definitionVersion": 1,
+              "id": "select_keyssects",
+              "label": "select_keyssects",
+              "parameters": {
+                "channels": "sE sL sD sT"
+              },
+              "position": {
+                "x": 2064,
+                "y": 20
+              },
+              "type": "valueSelect"
+            },
+            "select_keysvoice": {
+              "definitionVersion": 1,
+              "id": "select_keysvoice",
+              "label": "select_keysvoice",
+              "parameters": {
+                "channels": "vl[0-4]"
+              },
+              "position": {
+                "x": 1548,
+                "y": 396
+              },
+              "type": "valueSelect"
+            },
+            "speed_keysbeats": {
+              "definitionVersion": 1,
+              "id": "speed_keysbeats",
+              "label": "speed_keysbeats",
+              "parameters": {
+                "limit": "loop",
+                "maximum": 1000000000,
+                "minimum": -1000000000
+              },
+              "position": {
+                "x": 516,
+                "y": -662
+              },
+              "type": "valueSpeed"
+            }
+          },
+          "revision": 2
+        },
+        "inputs": [],
+        "name": "MidiFeatures",
+        "outputs": [
+          {
+            "externalId": "levels",
+            "label": "levels",
+            "nodeId": "out_levels",
+            "portId": "out"
+          },
+          {
+            "externalId": "beats",
+            "label": "beats",
+            "nodeId": "out_beats",
+            "portId": "out"
+          },
+          {
+            "externalId": "tempo",
+            "label": "tempo",
+            "nodeId": "out_tempo",
+            "portId": "out"
+          },
+          {
+            "externalId": "notes",
+            "label": "notes",
+            "nodeId": "out_notes",
+            "portId": "out"
+          },
+          {
+            "externalId": "harmony",
+            "label": "harmony",
+            "nodeId": "out_harmony",
+            "portId": "out"
+          },
+          {
+            "externalId": "form",
+            "label": "form",
+            "nodeId": "out_form",
+            "portId": "out"
+          },
+          {
+            "externalId": "lanes",
+            "label": "lanes",
+            "nodeId": "out_lanes",
+            "portId": "out"
+          }
+        ],
+        "parameters": [
+          {
+            "definition": {
+              "default": "",
+              "description": "MIDI input port id. Empty = any attached input.",
+              "label": "Device",
+              "type": "string"
+            },
+            "key": "device",
+            "targets": [
+              {
+                "key": "device",
+                "nodeId": "keys_piano"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": 0,
+              "description": "The MIDI channel, 1 to 16. 0 listens to all of them.",
+              "label": "Channel",
+              "max": 16,
+              "min": 0,
+              "range": "bounded",
+              "step": 1,
+              "type": "number"
+            },
+            "key": "channel",
+            "targets": [
+              {
+                "key": "channel",
+                "nodeId": "keys_piano"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": 0.5,
+              "description": "The touch curve: 0 needs a firm touch, 1 reads a light touch as strong.",
+              "label": "Sensitivity",
+              "max": 1,
+              "min": 0,
+              "range": "bounded",
+              "step": 0.01,
+              "type": "number"
+            },
+            "key": "sensitivity",
+            "targets": [
+              {
+                "key": "value",
+                "nodeId": "constant_keyssense"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": 0.5,
+              "description": "0 quick, 1 slow: the envelope lag (0.05 to 0.35 s), the strike hold-off (1.2 to 2.4 s) and the chord hold-off (1.5 to 3.5 s).",
+              "label": "Smoothing",
+              "max": 1,
+              "min": 0,
+              "range": "bounded",
+              "step": 0.01,
+              "type": "number"
+            },
+            "key": "smoothing",
+            "targets": [
+              {
+                "key": "value",
+                "nodeId": "constant_keyssmooth"
+              }
+            ]
+          },
+          {
+            "definition": {
+              "default": 0,
+              "description": "Above 1: the tempo, claimed at confidence 1. 0: bpm is the project tempo, at confidence 0.",
+              "label": "Declared BPM",
+              "max": 300,
+              "min": 0,
+              "range": "bounded",
+              "step": 1,
+              "type": "number"
+            },
+            "key": "declaredBpm",
+            "targets": [
+              {
+                "key": "value",
+                "nodeId": "constant_keysdeclared"
+              }
+            ]
+          }
+        ],
+        "version": 1
+      }
+    ],
+    "schemaVersion": 1
+  },
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "e-level_pulse-00-circle_pulse": {
+        "id": "e-level_pulse-00-circle_pulse",
+        "source": {
+          "nodeId": "circle_pulse",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "level_pulse",
+          "portId": "input"
+        }
+      },
+      "e-output_main-00-level_pulse": {
+        "id": "e-output_main-00-level_pulse",
+        "source": {
+          "nodeId": "level_pulse",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "output_main",
+          "portId": "input"
+        }
+      },
+      "ed_midiFeatures2": {
+        "id": "ed_midiFeatures2",
+        "source": {
+          "nodeId": "nd_midiFeatures1",
+          "portId": "beats"
+        },
+        "target": {
+          "nodeId": "select_beats",
+          "portId": "in"
+        }
+      },
+      "ed_midiFeatures3": {
+        "id": "ed_midiFeatures3",
+        "source": {
+          "nodeId": "nd_midiFeatures1",
+          "portId": "form"
+        },
+        "target": {
+          "nodeId": "select_form",
+          "portId": "in"
+        }
+      },
+      "ed_midiFeatures4": {
+        "id": "ed_midiFeatures4",
+        "source": {
+          "nodeId": "nd_midiFeatures1",
+          "portId": "harmony"
+        },
+        "target": {
+          "nodeId": "select_harmony",
+          "portId": "in"
+        }
+      },
+      "ed_midiFeatures5": {
+        "id": "ed_midiFeatures5",
+        "source": {
+          "nodeId": "nd_midiFeatures1",
+          "portId": "lanes"
+        },
+        "target": {
+          "nodeId": "select_lanes",
+          "portId": "in"
+        }
+      },
+      "ed_midiFeatures6": {
+        "id": "ed_midiFeatures6",
+        "source": {
+          "nodeId": "nd_midiFeatures1",
+          "portId": "levels"
+        },
+        "target": {
+          "nodeId": "select_levels",
+          "portId": "in"
+        }
+      },
+      "ed_midiFeatures7": {
+        "id": "ed_midiFeatures7",
+        "source": {
+          "nodeId": "nd_midiFeatures1",
+          "portId": "notes"
+        },
+        "target": {
+          "nodeId": "select_notes",
+          "portId": "in"
+        }
+      },
+      "ed_midiFeatures8": {
+        "id": "ed_midiFeatures8",
+        "source": {
+          "nodeId": "nd_midiFeatures1",
+          "portId": "tempo"
+        },
+        "target": {
+          "nodeId": "select_tempo",
+          "portId": "in"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "circle_pulse": {
+        "definitionVersion": 1,
+        "id": "circle_pulse",
+        "label": "circle_pulse",
+        "parameters": {
+          "bgcolor": [
+            0.02,
+            0.02,
+            0.03,
+            1
+          ],
+          "center": [
+            0.5,
+            0.5
+          ],
+          "fillcolor": [
+            1,
+            0.86,
+            0.6,
+            1
+          ],
+          "radius": [
+            0.16,
+            0.28
+          ],
+          "softness": 0.02
+        },
+        "position": {
+          "x": 1142,
+          "y": 49
+        },
+        "type": "circle"
+      },
+      "level_pulse": {
+        "definitionVersion": 1,
+        "id": "level_pulse",
+        "label": "level_pulse",
+        "parameters": {
+          "brightness": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "0.3 + 0.9 * op('select_levels').chan.level"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.3
+              }
+            },
+            "mode": "expression"
+          }
+        },
+        "position": {
+          "x": 1482,
+          "y": 49
+        },
+        "type": "level"
+      },
+      "nd_midiFeatures1": {
+        "definitionVersion": 1,
+        "id": "nd_midiFeatures1",
+        "label": "midifeatures1",
+        "parameters": {},
+        "position": {
+          "x": 1482,
+          "y": 429
+        },
+        "type": "component:midiFeatures@1"
+      },
+      "output_main": {
+        "definitionVersion": 1,
+        "id": "output_main",
+        "label": "output_main",
+        "parameters": {},
+        "position": {
+          "x": 1822,
+          "y": 49
+        },
+        "type": "output"
+      },
+      "select_beats": {
+        "definitionVersion": 1,
+        "id": "select_beats",
+        "label": "select_beats",
+        "parameters": {
+          "channels": "*"
+        },
+        "position": {
+          "x": 1822,
+          "y": 619
+        },
+        "type": "valueSelect"
+      },
+      "select_form": {
+        "definitionVersion": 1,
+        "id": "select_form",
+        "label": "select_form",
+        "parameters": {
+          "channels": "*"
+        },
+        "position": {
+          "x": 1822,
+          "y": 1379
+        },
+        "type": "valueSelect"
+      },
+      "select_harmony": {
+        "definitionVersion": 1,
+        "id": "select_harmony",
+        "label": "select_harmony",
+        "parameters": {
+          "channels": "*"
+        },
+        "position": {
+          "x": 1822,
+          "y": 1189
+        },
+        "type": "valueSelect"
+      },
+      "select_lanes": {
+        "definitionVersion": 1,
+        "id": "select_lanes",
+        "label": "select_lanes",
+        "parameters": {
+          "channels": "*"
+        },
+        "position": {
+          "x": 1822,
+          "y": 1569
+        },
+        "type": "valueSelect"
+      },
+      "select_levels": {
+        "definitionVersion": 1,
+        "id": "select_levels",
+        "label": "select_levels",
+        "parameters": {
+          "channels": "*"
+        },
+        "position": {
+          "x": 1822,
+          "y": 429
+        },
+        "type": "valueSelect"
+      },
+      "select_notes": {
+        "definitionVersion": 1,
+        "id": "select_notes",
+        "label": "select_notes",
+        "parameters": {
+          "channels": "*"
+        },
+        "position": {
+          "x": 1822,
+          "y": 999
+        },
+        "type": "valueSelect"
+      },
+      "select_tempo": {
+        "definitionVersion": 1,
+        "id": "select_tempo",
+        "label": "select_tempo",
+        "parameters": {
+          "channels": "*"
+        },
+        "position": {
+          "x": 1822,
+          "y": 809
+        },
+        "type": "valueSelect"
+      }
+    },
+    "revision": 2
+  },
+  "name": "MidiFeatures",
+  "projectId": "component-midiFeatures",
+  "schemaVersion": 5,
+  "settings": {
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 360,
+      "width": 640
+    },
+    "previewFps": 30,
+    "previewLongEdge": 192,
+    "randomSeed": 7,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-08-29T00:00:00.000Z"
+}

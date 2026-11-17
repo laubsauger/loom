@@ -191,6 +191,8 @@ const PUBLISHED_INPUTS: Readonly<Record<string, readonly string[]>> = {
   kaleidoscope: ["picture"],
   mediaGrade: ["picture"],
   matteCut: ["picture"],
+  midiFeatures: [],
+  musicFeatures: ["audio", "tonal"],
   timeGrid: ["matte", "picture"],
 };
 

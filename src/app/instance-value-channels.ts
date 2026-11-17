@@ -2,6 +2,8 @@ import type { FlattenedGraph } from "@compiler/index.ts";
 import type { NodeId, PortId } from "@domain/types/ids.ts";
 import type { ValueChannels } from "@domain/types/node-definition.ts";
 import type { NodeRegistryView } from "@nodes/registry/registry.ts";
+import { isComponentNodeType } from "@domain/components/index.ts";
+import { nodeNames } from "@domain/graph/names.ts";
 
 /**
  * A component INSTANCE's channels, taken from the inner nodes its outputs expose
@@ -54,7 +56,7 @@ export interface InstanceValueChannels {
 }
 
 export function instanceValueChannels(
-  flattened: Pick<FlattenedGraph, "graph" | "instanceOutputs">,
+  flattened: Pick<FlattenedGraph, "graph" | "instanceOutputs"> & Partial<Pick<FlattenedGraph, "instanceChannels">>,
   registry: NodeRegistryView,
   bags: ReadonlyMap<NodeId, ValueChannels>,
 ): readonly InstanceValueChannels[] {
@@ -88,6 +90,31 @@ export function instanceValueChannels(
     }
     if (!published) continue;
     out.push({ nodeId: instanceId, channels });
+  }
+  /*
+   * T1779b (§V1035) — A BYPASSED INSTANCE IS NOT INLINED, so it has no `instanceOutputs`,
+   * and its value outputs pass the inputs they are paired with. Its plot is then the bags of
+   * the publishers behind those inputs, which flattening has already named
+   * (`instanceChannels`, the map `op('<instance>').chan` reads): the same channels, by the
+   * same prefix rule, so the plot and the expression cannot disagree about a bypassed look.
+   */
+  let byLabel: Map<string, NodeId> | null = null;
+  for (const [nodeId, node] of Object.entries(flattened.graph.nodes) as Array<[NodeId, (typeof flattened.graph.nodes)[NodeId]]>) {
+    if (node.label === undefined || node.ui?.bypassed !== true || node.ui.muted === true || flattened.instanceOutputs.has(nodeId)) continue;
+    const sources = flattened.instanceChannels?.get(node.label);
+    if (sources === undefined || sources.length === 0 || !isComponentNodeType(node.type)) continue;
+    byLabel ??= nodeNames(flattened.graph);
+    const prefixed = sources.length > 1;
+    const channels: Record<string, number> = {};
+    let published = false;
+    for (const source of sources) {
+      const publisher = byLabel.get(source.publisher);
+      const bag = publisher === undefined ? undefined : bags.get(publisher);
+      if (bag === undefined) continue;
+      published = true;
+      for (const [channel, value] of Object.entries(bag)) channels[prefixed ? `${source.port}:${channel}` : channel] = value;
+    }
+    if (published) out.push({ nodeId, channels });
   }
   return out;
 }

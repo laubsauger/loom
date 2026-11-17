@@ -12,9 +12,9 @@ const scope = self as unknown as {
 };
 
 scope.addEventListener("message", (event) => {
-  const { id, samples, sampleRate, fps, detector } = event.data;
+  const { id, samples, sampleRate, fps, detector, tonal, inputGainDb } = event.data;
   try {
-    scope.postMessage({ id, analysis: analyseOffline(samples, sampleRate, fps, detector) });
+    scope.postMessage({ id, analysis: analyseOffline(samples, sampleRate, fps, detector, tonal, inputGainDb) });
   } catch (error) {
     scope.postMessage({ id, failure: error instanceof Error ? error.message : String(error) });
   }

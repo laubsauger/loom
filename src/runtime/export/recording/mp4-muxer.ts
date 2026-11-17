@@ -1,5 +1,5 @@
 /**
- * A minimal, progressive MP4 muxer for H.264 (T111).
+ * A minimal, progressive MP4 muxer for H.264 (T111) and HEVC (T1741b).
  *
  * `VideoEncoder` produces H.264 access units; it does not produce a file. Something has to
  * write the container, and the locked decision is WebCodecs → mp4 with no MediaRecorder
@@ -103,7 +103,12 @@ export interface Mp4MuxInput {
   /** Media timescale. `fps * 1000` keeps every per-frame duration an exact integer. */
   readonly timescale: number;
   readonly samples: ReadonlyArray<Mp4Sample>;
-  /** `avcC` payload from the encoder's `decoderConfig.description`. */
+  /**
+   * The video codec (T1741b). Absent is H.264. Decides the sample entry: `avc1` + `avcC`,
+   * or `hvc1` + `hvcC`.
+   */
+  readonly codec?: Mp4VideoCodec;
+  /** `avcC` (or `hvcC`) payload from the encoder's `decoderConfig.description`. */
   readonly codecDescription: Uint8Array;
   /** Optional AAC-LC track. Samples are interleaved at chunk granularity after video. */
   readonly audio?: Mp4AudioTrack;
@@ -120,8 +125,13 @@ export function sampleDurationFor(fps: number): number {
   return Math.round(timescaleFor(fps) / fps);
 }
 
-export function mp4FileTypeBox(): Uint8Array {
-  return box("ftyp", ascii("isom"), u32(0x200), ascii("isom"), ascii("iso2"), ascii("avc1"), ascii("mp41"));
+export type Mp4VideoCodec = "avc" | "hevc";
+
+/** `avc1` is a compatible brand only of an H.264 file; an HEVC file does not claim it. */
+export function mp4FileTypeBox(codec: Mp4VideoCodec = "avc"): Uint8Array {
+  return codec === "hevc"
+    ? box("ftyp", ascii("isom"), u32(0x200), ascii("isom"), ascii("iso2"), ascii("mp41"))
+    : box("ftyp", ascii("isom"), u32(0x200), ascii("isom"), ascii("iso2"), ascii("avc1"), ascii("mp41"));
 }
 
 function durationRuns(samples: ReadonlyArray<{ readonly duration: number }>): Uint8Array {
@@ -306,13 +316,22 @@ export function mp4StreamParts(input: Mp4MuxInput): Mp4StreamParts {
 
 function buildMp4(input: Mp4MuxInput, streamed: StreamedMediaLengths | null): Uint8Array | Mp4StreamParts {
   const { samples, timescale } = input;
+  const codec = input.codec ?? "avc";
   if (samples.length === 0) throw new Error("Cannot mux an MP4 with no samples.");
   if (input.codecDescription.length === 0) {
     throw new Error(
-      "Cannot mux an MP4 without an avcC decoder description. The encoder must be configured " +
-        'with avc: { format: "avc" } so it reports one — annex-B output has no avcC and would ' +
-        "produce a file no player can decode.",
+      codec === "hevc"
+        ? "Cannot mux an MP4 without an hvcC decoder description. The encoder must be configured " +
+            'with hevc: { format: "hevc" } so it reports one — annex-B output has no hvcC and would ' +
+            "produce a file no player can decode."
+        : "Cannot mux an MP4 without an avcC decoder description. The encoder must be configured " +
+            'with avc: { format: "avc" } so it reports one — annex-B output has no avcC and would ' +
+            "produce a file no player can decode.",
     );
+  }
+  // HEVCDecoderConfigurationRecord: 23 bytes before its parameter-set arrays, version 1.
+  if (codec === "hevc" && (input.codecDescription.length < 23 || input.codecDescription[0] !== 1)) {
+    throw new Error("The hvcC decoder description is not an HEVCDecoderConfigurationRecord.");
   }
   if (input.audio) {
     if (input.audio.samples.length === 0) throw new Error("Cannot mux an AAC track with no samples.");
@@ -343,7 +362,7 @@ function buildMp4(input: Mp4MuxInput, streamed: StreamedMediaLengths | null): Ui
     : 0;
   const movieDuration = Math.max(videoMovieDuration, audioMovieDuration);
 
-  const ftyp = mp4FileTypeBox();
+  const ftyp = mp4FileTypeBox(codec);
   const videoBytes = streamed === null
     ? concat(samples.map((sample) => {
       if (sample.bytes === undefined) throw new Error("In-memory MP4 samples must carry bytes.");
@@ -381,9 +400,12 @@ function buildMp4(input: Mp4MuxInput, streamed: StreamedMediaLengths | null): Ui
       ? []
       : [fullBox("stss", 0, 0, u32(syncSamples.length), ...syncSamples.map(u32))];
 
-  const avcC = box("avcC", input.codecDescription);
-  const avc1 = box(
-    "avc1",
+  // T1741b: `hvc1`, not `hev1`, because the encoder's record carries every parameter set
+  // (array_completeness 1) and its key frames carry none in-band (measured: SEI + IDR only).
+  // `hvc1` is also the entry Apple's players require.
+  const configuration = box(codec === "hevc" ? "hvcC" : "avcC", input.codecDescription);
+  const sampleEntry = box(
+    codec === "hevc" ? "hvc1" : "avc1",
     u8(0, 0, 0, 0, 0, 0), // reserved
     u16(1), // data_reference_index
     u16(0), // pre_defined
@@ -400,9 +422,9 @@ function buildMp4(input: Mp4MuxInput, streamed: StreamedMediaLengths | null): Ui
     new Uint8Array(32), // compressorname
     u16(0x0018), // depth
     u16(0xffff), // pre_defined
-    avcC,
+    configuration,
   );
-  const stsd = fullBox("stsd", 0, 0, u32(1), avc1);
+  const stsd = fullBox("stsd", 0, 0, u32(1), sampleEntry);
   const stbl = box("stbl", stsd, stts, ...stss, stsc, stsz, stco);
 
   const dref = fullBox("dref", 0, 0, u32(1), fullBox("url ", 0, 1));
@@ -483,4 +505,29 @@ export function avcCodecString(description: Uint8Array): string {
   if (description.length < 4) return "avc1";
   const hex = (value: number): string => value.toString(16).padStart(2, "0");
   return `avc1.${hex(description[1] ?? 0)}${hex(description[2] ?? 0)}${hex(description[3] ?? 0)}`;
+}
+
+/**
+ * `hvc1.…` from an hvcC record (ISO/IEC 14496-15 Annex E), for the same reason: the level
+ * is the one the encoder wrote, not the one it was asked for (measured: VideoToolbox asked
+ * for `L93` writes level 123).
+ *
+ * Byte 1 is profile_space (2 bits), tier (1), profile_idc (5); bytes 2–5 the compatibility
+ * flags, written bit-reversed in hex; bytes 6–11 the constraint flags, trailing zero bytes
+ * dropped; byte 12 the level.
+ */
+export function hevcCodecString(description: Uint8Array): string {
+  if (description.length < 13) return "hvc1";
+  const first = description[1] ?? 0;
+  const space = ["", "A", "B", "C"][(first >> 6) & 0x3] ?? "";
+  const tier = (first >> 5) & 0x1 ? "H" : "L";
+  const profile = first & 0x1f;
+  const flags = (((description[2] ?? 0) << 24) | ((description[3] ?? 0) << 16) | ((description[4] ?? 0) << 8) | (description[5] ?? 0)) >>> 0;
+  let reversed = 0;
+  for (let bit = 0; bit < 32; bit += 1) if ((flags >>> bit) & 1) reversed |= 1 << (31 - bit);
+  const constraints = Array.from(description.subarray(6, 12));
+  while (constraints.length > 0 && constraints[constraints.length - 1] === 0) constraints.pop();
+  const level = description[12] ?? 0;
+  const tail = constraints.map((byte) => byte.toString(16).toUpperCase()).join(".");
+  return `hvc1.${space}${String(profile)}.${(reversed >>> 0).toString(16).toUpperCase()}.${tier}${String(level)}${tail === "" ? "" : `.${tail}`}`;
 }

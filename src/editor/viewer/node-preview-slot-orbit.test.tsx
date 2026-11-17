@@ -1,13 +1,16 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { ReactFlowProvider } from "@xyflow/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { ReactFlowProvider, useStoreApi } from "@xyflow/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { installDomStubs } from "@ui/testing/install-dom-stubs.ts";
 import { createDomainBus } from "@domain/commands/index.ts";
+import { alice, contextFor, createHarness, patch } from "@domain/commands/test-support.ts";
 import { createGraphStore } from "@domain/graph/store.ts";
 import { createSequentialIdFactory } from "@domain/graph/ids.ts";
 import { createTestRegistry } from "@nodes/registry/test-nodes.ts";
 import { CanvasFixture } from "@editor/graph-canvas/canvas-fixture.tsx";
+import { GraphCanvas } from "@editor/graph-canvas/graph-canvas.tsx";
+import { createNodeRuntimeStore } from "@editor/graph-canvas/node-runtime.ts";
 import { fixtureContext, installFlowStubs } from "@editor/graph-canvas/testing.tsx";
 import type { NodeId } from "@domain/types/ids.ts";
 import type { NodeRuntimeSource } from "@editor/graph-canvas/index.ts";
@@ -103,7 +106,92 @@ function drag(slot: HTMLElement, options: { alt?: boolean; shift?: boolean } = {
   fireEvent.pointerUp(slot, { pointerId: 1 });
 }
 
+type FlowStore = ReturnType<typeof useStoreApi>;
+
+function FlowProbe({ onStore }: { onStore: (store: FlowStore) => void }) {
+  onStore(useStoreApi());
+  return null;
+}
+
+/** A real primary mouse gesture, including the native events React Flow's drag sees. */
+function primaryShiftDrag(slot: HTMLElement): void {
+  const from = { clientX: 200, clientY: 180 };
+  const to = { clientX: 550, clientY: 480 };
+  const init = { button: 0, shiftKey: true, pointerId: 1, isPrimary: true };
+  const mouse = (target: Element | Document, type: string, at: MouseEventInit): void => {
+    const event = new MouseEvent(type, { bubbles: true, cancelable: true, ...at });
+    // d3-zoom reads event.view; jsdom does not accept it in the event initializer.
+    Object.defineProperty(event, "view", { value: window });
+    target.dispatchEvent(event);
+  };
+  // A canceled primary pointerdown suppresses compatibility mouse events in browsers.
+  const compatibilityMouse = fireEvent.pointerDown(slot, { ...init, buttons: 1, ...from });
+  if (compatibilityMouse) mouse(slot, "mousedown", { ...init, buttons: 1, ...from });
+  fireEvent.pointerMove(slot, { ...init, buttons: 1, ...to });
+  if (compatibilityMouse) mouse(document, "mousemove", { ...init, buttons: 1, ...to });
+  fireEvent.pointerUp(slot, { ...init, buttons: 0, ...to });
+  if (compatibilityMouse) mouse(document, "mouseup", { ...init, buttons: 0, ...to });
+}
+
 describe("the preview inspection mode (T656)", () => {
+  it("in the real graph SHIFT-drag pans an adjustable preview; HOME still box-selects", async () => {
+    const { bus } = createHarness("orbit");
+    const invocation = contextFor(alice);
+    await bus.execute("graph.applyPatch", patch(bus.store.getRevision(), [
+      { op: "addNode", ref: "$solid", type: "test.solid", position: { x: 0, y: 0 } },
+    ]), invocation);
+    const nodeId = Object.values(bus.store.getGraph().nodes)[0]!.id;
+    const runtime = createNodeRuntimeStore({ intervalMs: 0 });
+    const orbits = createPreviewOrbitStore();
+    const bounds = createPreviewSlotBounds();
+    let captured: FlowStore | null = null;
+    const view = render(
+      <GraphCanvas
+        bus={bus}
+        invocation={invocation}
+        runtime={runtime}
+        underlay={<FlowProbe onStore={(store) => { captured = store; }} />}
+        renderPreview={(id) => (
+          <NodePreviewSlot nodeId={id} runtime={runtime} bounds={bounds} orbits={orbits} orbitable />
+        )}
+      />,
+    );
+    await waitFor(() => expect(view.container.querySelector("[data-inspect]")).not.toBeNull());
+    if (captured === null) throw new Error("the graph store did not mount");
+    const flow = captured as FlowStore;
+    await waitFor(() => expect(flow.getState().nodeLookup.get(nodeId)?.measured.width).toBeGreaterThan(0));
+    const slot = view.container.querySelector<HTMLElement>("[data-inspect]");
+    if (slot === null) throw new Error("the preview slot did not mount");
+    await act(async () => {
+      flow.setState({ transform: [300, 250, 1] });
+      orbits.setMode(nodeId, "adjustable");
+      fireEvent.keyDown(document, { key: "Shift", code: "ShiftLeft", shiftKey: true });
+    });
+    const transform = flow.getState().transform;
+    const revision = bus.store.getRevision();
+    const graph = bus.store.getGraph();
+
+    await act(async () => primaryShiftDrag(slot));
+
+    expect(orbits.get(nodeId)).toMatchObject({ azimuth: 0, elevation: 0, panX: 1.75, panY: -1.5 });
+    expect(flow.getState().transform).toEqual(transform);
+    expect(flow.getState().userSelectionRect).toBeNull();
+    expect(flow.getState().nodes.some((node) => node.selected)).toBe(false);
+    expect(bus.store.getRevision()).toBe(revision);
+    expect(bus.store.getGraph()).toEqual(graph);
+
+    await act(async () => orbits.setMode(nodeId, "home"));
+    await act(async () => primaryShiftDrag(slot));
+
+    expect(orbits.get(nodeId)).toBeUndefined();
+    expect(flow.getState().nodes.find((node) => node.id === nodeId)?.selected).toBe(true);
+    expect(flow.getState().transform).toEqual(transform);
+    expect(bus.store.getRevision()).toBe(revision);
+    await act(async () => {
+      fireEvent.keyUp(document, { key: "Shift", code: "ShiftLeft" });
+    });
+  });
+
   it("HOME is the default, and the slot draws no control of its own (T675)", () => {
     const { orbits, slot } = mount(true);
     expect(orbits.mode(NODE)).toBe("home");

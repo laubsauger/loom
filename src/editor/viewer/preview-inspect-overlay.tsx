@@ -5,6 +5,7 @@ import type { NodeId } from "@domain/types/ids.ts";
 import { slotScreenRect } from "@runtime/previews/index.ts";
 import { cssVars } from "@editor/graph-canvas/css-vars.ts";
 import type { PreviewOrbitStore } from "./preview-orbit-store.ts";
+import { lookToggleTitle, moveToggleTitle, type LookMoveStore, type PictureCamera } from "./look-store.ts";
 import type { PreviewSlotBoundsStore } from "./preview-slot-bounds.ts";
 import styles from "./viewer.module.css";
 
@@ -244,6 +245,16 @@ export function PreviewInspectOverlays({ bounds, inspect, note, hint }: PreviewI
           >
             {placement.note}
           </p>
+        ) : isLookMove(placement.source) ? (
+          <PictureCameraToggles
+            key={placement.nodeId}
+            nodeId={placement.nodeId}
+            source={placement.source}
+            x={placement.x}
+            y={placement.y}
+            zoom={placement.zoom}
+            hint={placement.hint}
+          />
         ) : (
           <PreviewInspectToggle
             key={placement.nodeId}
@@ -307,5 +318,64 @@ function PreviewInspectToggle({
     >
       C
     </button>
+  );
+}
+
+const isLookMove = (source: PreviewOrbitStore): source is LookMoveStore => "arm" in source;
+
+
+/**
+ * §T1732b — A PICTURE DRAWN THROUGH A CAMERA NODE HAS TWO CAMERAS, and the corner names both:
+ * C looks around (view only, the default, the one alt arms) and M moves the camera node itself
+ * (an edit). One is lit at a time; pressing the lit one returns to the camera. M is absent
+ * where nothing here can move the camera (a camera in another component, a driven pose).
+ */
+function PictureCameraToggles({
+  nodeId,
+  source,
+  x,
+  y,
+  zoom,
+  hint,
+}: Pick<Placement, "nodeId" | "x" | "y" | "zoom" | "hint"> & { source: LookMoveStore }) {
+  const read = useCallback(() => source.armed(nodeId), [source, nodeId]);
+  const armed = useSyncExternalStore(
+    useCallback((listener: () => void) => source.subscribe(nodeId, listener), [source, nodeId]),
+    read,
+    read,
+  );
+  const style = { ...cssVars({ "--chrome-zoom": Math.max(zoom, TOGGLE_MIN_SCALE) }), left: `${String(x)}px`, top: `${String(y)}px` };
+  const press = (which: PictureCamera) => () => {
+    source.arm(nodeId, armed === which ? null : which);
+  };
+  return (
+    <>
+      <button
+        type="button"
+        className={styles.inspectToggle}
+        data-testid={`preview-inspect-${nodeId}`}
+        aria-label="Look around this picture"
+        title={lookToggleTitle(armed === "look", hint)}
+        aria-pressed={armed === "look"}
+        style={style}
+        onClick={press("look")}
+      >
+        C
+      </button>
+      {source.moves === null ? null : (
+        <button
+          type="button"
+          className={`${styles.inspectToggle} ${styles.inspectToggleSecond}`}
+          data-testid={`preview-move-${nodeId}`}
+          aria-label={`Move ${source.moves}`}
+          title={moveToggleTitle(source.moves, armed === "move", source.held)}
+          aria-pressed={armed === "move"}
+          style={style}
+          onClick={press("move")}
+        >
+          M
+        </button>
+      )}
+    </>
   );
 }

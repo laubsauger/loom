@@ -6,6 +6,9 @@ import { frameRangeLimit } from "@domain/transport/range-limit.ts";
 import { NumberField } from "@ui/controls/number-field.tsx";
 import { ResolutionControl } from "@ui/controls/resolution-control.tsx";
 import { BooleanField } from "@ui/controls/boolean-field.tsx";
+import { EnumField } from "@ui/controls/enum-field.tsx";
+import type { VideoFormatId } from "@runtime/export/index.ts";
+import { DEFAULT_VIDEO_FORMAT, VIDEO_FORMATS, videoFormatInfo } from "@runtime/export/index.ts";
 import type { EditPhase, NumericSpec } from "@ui/controls/types.ts";
 import { Button } from "@ui/primitives/button.tsx";
 import { ShareFill } from "@ui/primitives/share-fill.tsx";
@@ -29,6 +32,8 @@ export interface RenderVideoDialogProps {
   readonly settings: ProjectSettings;
   readonly session: RenderRangeSession;
   readonly onRender: () => void;
+  /** T1741b: the picker is an adapter over `export.setRenderFormat`; the host executes it. */
+  readonly onFormatChange: (format: VideoFormatId) => void;
 }
 
 /**
@@ -41,6 +46,7 @@ export function RenderVideoDialog({
   settings,
   session,
   onRender,
+  onFormatChange,
 }: RenderVideoDialogProps) {
   const [live, setLive] = useState<Readonly<Record<string, number>>>({});
   const shown = useCallback((key: string, stored: number) => live[key] ?? stored, [live]);
@@ -65,6 +71,7 @@ export function RenderVideoDialog({
   const totalFrames = session.frames;
   const duration = totalFrames / fps;
   const support = session.encoderSupport;
+  const format = videoFormatInfo(session.renderSettings.format ?? DEFAULT_VIDEO_FORMAT);
   const audioReady = !session.includeAudio || session.audioRequirement.kind === "none" ||
     (session.audioRequirement.kind === "required" && session.audioSupport?.supported === true);
   const soundtrackSummary = !session.includeAudio || session.audioRequirement.kind === "none"
@@ -115,7 +122,7 @@ export function RenderVideoDialog({
       <DialogContent data-testid="render-video-dialog" aria-describedby="render-video-description">
         <DialogTitle>Render video</DialogTitle>
         <DialogDescription id="render-video-description">
-          Exact-frame H.264 MP4 · slower than real time
+          Exact-frame MP4 · slower than real time
         </DialogDescription>
 
         <div className={styles.body}>
@@ -126,6 +133,21 @@ export function RenderVideoDialog({
                 labelPrefix="render " disabled={session.rendering}
                 onChange={(next) => session.setRenderSettings({ resolution: next })} />
             </div>
+            <div className={styles.row}>
+              <span className={styles.label}>format</span>
+              <EnumField
+                label="render format"
+                value={format.id}
+                options={VIDEO_FORMATS.map((entry) => ({ value: entry.id, label: entry.label }))}
+                disabled={session.rendering}
+                onChange={(next) => onFormatChange(next as VideoFormatId)}
+              />
+            </div>
+            {format.bitDepth === 10 ? (
+              <p className={styles.note}>
+                Reads every frame back from the float Output at full precision: slower than 8-bit.
+              </p>
+            ) : null}
             <div className={styles.row}>
               <span className={styles.label}>frame rate</span>
               <div className={styles.scalar}>
@@ -209,10 +231,10 @@ export function RenderVideoDialog({
 
           <div className={styles.support} data-supported={support?.supported ?? false}>
             {support === null
-              ? "Checking H.264 support…"
+              ? `Checking ${format.name} support…`
               : support.supported
-                ? `H.264 ready (${support.codec})`
-                : `H.264 unavailable: ${support.reason ?? "unsupported configuration"}`}
+                ? `${format.name} ready (${support.codec})`
+                : `${format.name} unavailable: ${support.reason ?? "unsupported configuration"}`}
             {support?.supported === true && !session.outputReady ? " · applying render resolution…" : ""}
           </div>
 

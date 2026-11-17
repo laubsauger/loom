@@ -66,6 +66,9 @@ export interface CameraPose {
    */
   readonly eyeMask?: readonly boolean[] | undefined;
   readonly lookAtMask?: readonly boolean[] | undefined;
+  /** Stored component values override the compound tuple even when all channels are static. */
+  readonly eyeComponents?: readonly boolean[] | undefined;
+  readonly lookAtComponents?: readonly boolean[] | undefined;
   /**
    * §T1671b — WHICH WAY THE WORLD'S UP POINTS, in the coordinates Eye and Look At are stored
    * in. Absent means +y, which it is for every node with no frame and every camera whose
@@ -120,6 +123,8 @@ interface GizmoSession {
   readonly startLookAt: Vec3;
   readonly eyeMask: readonly boolean[] | undefined;
   readonly lookAtMask: readonly boolean[] | undefined;
+  readonly eyeComponents: readonly boolean[] | undefined;
+  readonly lookAtComponents: readonly boolean[] | undefined;
   /** §T1671b: the world's up in the pose's coordinates, when it is not +y (read with the pose, §V657). */
   readonly up: Vec3 | undefined;
   /** True once any delta was written — release without movement commits nothing. */
@@ -152,6 +157,8 @@ export function createCameraGizmoStore(options: {
       startLookAt: pose.lookAt,
       eyeMask: pose.eyeMask,
       lookAtMask: pose.lookAtMask,
+      eyeComponents: pose.eyeComponents,
+      lookAtComponents: pose.lookAtComponents,
       up: pose.up,
       dirty: false,
       wheelTimer: undefined,
@@ -179,10 +186,16 @@ export function createCameraGizmoStore(options: {
     key: string,
     value: Vec3,
     mask: readonly boolean[] | undefined,
+    components: readonly boolean[] | undefined,
   ): void => {
     const rounded = asValue(value);
     if (mask === undefined || mask.every((free) => free)) {
       entries[key] = rounded;
+      // The compound and its existing static overrides move atomically. Otherwise
+      // the tuple changes while component precedence keeps the rendered pose still.
+      for (const [index, axis] of AXIS.entries()) {
+        if (components?.[index] === true) entries[componentKey(key, axis)] = rounded[index] as number;
+      }
       return;
     }
     // §V113: address the channels individually. The bare key would be written over the
@@ -195,8 +208,8 @@ export function createCameraGizmoStore(options: {
 
   const write = (nodeId: NodeId, s: GizmoSession, phase: "live" | "commit"): void => {
     const entries: Record<string, ParameterValue> = {};
-    putVector(entries, "eye", s.eye, s.eyeMask);
-    putVector(entries, "lookAt", s.lookAt, s.lookAtMask);
+    putVector(entries, "eye", s.eye, s.eyeMask, s.eyeComponents);
+    putVector(entries, "lookAt", s.lookAt, s.lookAtMask, s.lookAtComponents);
     // Defensive: `readPose` returns null when nothing is free, so an armed session always
     // has something to write. An empty patch would be an undo entry that changed nothing.
     if (Object.keys(entries).length === 0) return;

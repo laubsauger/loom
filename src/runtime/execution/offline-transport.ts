@@ -1,5 +1,6 @@
 import { frameFromClock } from "../../domain/types/frame.ts";
 import type { EvaluationFrame, TransportSource } from "../../domain/types/frame.ts";
+import type { TempoReader } from "../../domain/tempo/project-tempo.ts";
 
 export interface OfflineTransportOptions {
   /** Frames per second of the rendered sequence. */
@@ -21,6 +22,12 @@ export interface OfflineTransportOptions {
    * records were stamped with). Absent — every export — frames carry none.
    */
   readonly epoch?: string;
+  /**
+   * T1785b: the project tempo, stamped as `frame.tempo`. An offline caller passes
+   * `documentTempo(settings)`: the document's BPM along this transport's absolute clock,
+   * so a render's beat is a function of the frame and nothing else (§V1038).
+   */
+  readonly tempo?: TempoReader;
 }
 
 /**
@@ -68,6 +75,7 @@ export function offlineTransport(options: OfflineTransportOptions): TransportSou
       absFrameIndex += 1;
       const timeSeconds = current / options.fps;
       const step = current === startFrame && !wrapped ? 0 : deltaSeconds;
+      const absSeconds = absIndex / options.fps;
       return frameFromClock({
         // Divided, not accumulated: frame N always lands on exactly N/fps.
         timeSeconds,
@@ -90,6 +98,7 @@ export function offlineTransport(options: OfflineTransportOptions): TransportSou
         // T1426b/T1435b: the rates an expression reads as `fps` and `subframes`.
         fps: projectRate,
         subframes,
+        ...(options.tempo === undefined ? {} : { tempo: options.tempo({ absTimeSeconds: absSeconds, absDeltaSeconds: step, presenting: false }) }),
       });
     },
     /**

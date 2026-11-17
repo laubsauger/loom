@@ -90,6 +90,8 @@ describe("the shipped starter components are what the save path writes (§V94)",
       "Kaleidoscope",
       "MatteCut",
       "MediaGrade",
+      "MidiFeatures",
+      "MusicFeatures",
       "TimeGrid",
     ]);
   });

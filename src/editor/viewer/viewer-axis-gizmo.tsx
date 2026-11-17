@@ -22,15 +22,13 @@ import styles from "./viewer.module.css";
  * corridor, and a corridor looks the same facing either end. That is what this widget is
  * for, and it is why it belongs to the fly rather than being decoration on top of it.
  *
- * ## View-only, by having nothing to write with
+ * ## Follow the camera mode the user selected
  *
- * Every click lands in `PreviewOrbitStore`, which holds no bus and cannot reach the
- * document (§V527, gated by `no-document-store.test.ts` over this directory). That is the
- * same construction the orbit and the flight already stand on, not a new promise. ⚑ AND IT
- * IS THE REASON THIS IS NOT `PreviewGizmoOverlays`: that component (§T935) is the draggable
- * vec3 HANDLE, it writes the document through `Vec3GizmoStore`, and it is welded to React
- * Flow's node lookup besides. Mounting it here would have been a destructive path into the
- * pane the row's ruling exists to keep clean.
+ * Inspection clicks land in `PreviewOrbitStore`, which holds no bus and cannot reach the
+ * document (§V527). Explicit Fly camera mode supplies a controller: it reads the actual
+ * world-space pose, including its parent frame and roll, and performs each snap through
+ * the same undoable camera gesture path as a drag. This component holds no command bus;
+ * its caller owns that deliberate transition from looking to editing.
  *
  * ## §V986 — absent, never a confident default
  *
@@ -49,6 +47,15 @@ import styles from "./viewer.module.css";
  * so a frame that finds the camera still re-renders nothing.
  */
 
+export interface ViewerAxisCameraController {
+  readPose(): (OrbitCameraBasis & {
+    readonly right: readonly [number, number, number];
+    readonly up: readonly [number, number, number];
+  }) | null;
+  snap(mark: Pick<AxisMark, "axis" | "positive">): Promise<void>;
+  adjust(change: { panX?: number; panY?: number; zoom?: number }): Promise<void>;
+}
+
 export interface ViewerAxisGizmoProps {
   readonly orbits: PreviewOrbitStore | undefined;
   /** The node whose inspection camera this is. */
@@ -59,6 +66,8 @@ export interface ViewerAxisGizmoProps {
    * widget is absent rather than pointing somewhere it guessed.
    */
   readonly basis: OrbitCameraBasis | null;
+  /** Present only while the user explicitly flies the authored camera. */
+  readonly camera?: ViewerAxisCameraController | undefined;
 }
 
 /**
@@ -86,19 +95,30 @@ function sameMarks(a: readonly AxisMark[], b: readonly AxisMark[]): boolean {
 
 const EMPTY: readonly AxisMark[] = [];
 
-export function ViewerAxisGizmo({ orbits, nodeId, basis }: ViewerAxisGizmoProps) {
+export function ViewerAxisGizmo({ orbits, nodeId, basis, camera }: ViewerAxisGizmoProps) {
   const cached = useRef<readonly AxisMark[]>(EMPTY);
 
   const read = useCallback((): readonly AxisMark[] => {
-    if (basis === null || nodeId === null) return EMPTY;
+    if (nodeId === null) return EMPTY;
     // The SAME pose the uniform push delivers, from the same basis and the same deltas.
     // A second derivation of the camera would be a second truth, and it would disagree
     // precisely on the gestures that moved it.
-    const next = axisGizmoMarks(orbitPose(basis, orbits?.get(nodeId) ?? DEFAULT_PREVIEW_ORBIT));
+    const authored = camera === undefined ? null : camera.readPose();
+    const pose = camera === undefined
+      ? basis === null ? null : orbitPose(basis, orbits?.get(nodeId) ?? DEFAULT_PREVIEW_ORBIT)
+      : authored;
+    if (pose === null) return EMPTY;
+    const marks = axisGizmoMarks(pose);
+    // The authored camera's rolled screen axes come from its actual view basis.
+    const next = authored === null ? marks : marks.map((mark) => {
+      const axis = mark.axis === "x" ? 0 : mark.axis === "y" ? 1 : 2;
+      const sign = mark.positive ? 1 : -1;
+      return { ...mark, x: sign * authored.right[axis], y: sign * authored.up[axis] };
+    });
     if (sameMarks(cached.current, next)) return cached.current;
     cached.current = next;
     return next;
-  }, [basis, nodeId, orbits]);
+  }, [basis, camera, nodeId, orbits]);
 
   const subscribe = useCallback(
     (listener: () => void) => {
@@ -129,8 +149,21 @@ export function ViewerAxisGizmo({ orbits, nodeId, basis }: ViewerAxisGizmoProps)
 
   const marks = useSyncExternalStore(subscribe, read, read);
 
+  const adjust = (change: { panX?: number; panY?: number; zoom?: number }) => {
+    if (camera !== undefined) { void camera.adjust(change); return; }
+    if (orbits === undefined || nodeId === null) return;
+    orbits.setMode(nodeId, "adjustable");
+    if (change.zoom !== undefined) orbits.zoom(nodeId, change.zoom);
+    else orbits.apply(nodeId, change);
+    orbits.release?.(nodeId);
+  };
+
   const snap = useCallback(
     (mark: AxisMark) => {
+      if (camera !== undefined) {
+        void camera.snap(mark);
+        return;
+      }
       if (orbits === undefined || nodeId === null || basis === null) return;
       // Entering is the same latch a drag on the canvas uses (T656): a snap IS looking
       // around, so `h` returns from it exactly as it returns from a drag or a flight.
@@ -138,12 +171,13 @@ export function ViewerAxisGizmo({ orbits, nodeId, basis }: ViewerAxisGizmoProps)
       const orbit = orbits.get(nodeId) ?? DEFAULT_PREVIEW_ORBIT;
       orbits.apply(nodeId, axisSnapDelta(basis, orbit, mark));
     },
-    [basis, nodeId, orbits],
+    [basis, camera, nodeId, orbits],
   );
 
   if (marks.length === 0) return null;
   return (
-    <div className={styles.axisGizmo} data-testid="viewer-axis-gizmo" aria-label="View orientation">
+    <div className={styles.axisGizmo} data-testid="viewer-axis-gizmo" aria-label="View orientation"
+      onDoubleClick={(event) => event.stopPropagation()}>
       {/*
        * The stems, under every ball and out of the accessibility tree: they carry no
        * information the balls do not, they are what makes six dots read as one tripod.
@@ -190,6 +224,14 @@ export function ViewerAxisGizmo({ orbits, nodeId, basis }: ViewerAxisGizmoProps)
           {mark.positive ? AXIS_LABEL[mark.axis] : ""}
         </button>
       ))}
+      <div className={styles.cameraPad} role="group" aria-label="Camera navigation">
+        <button type="button" aria-label="Pan up" title="Pan up" onClick={() => adjust({ panY: 0.08 })}>↑</button>
+        <button type="button" aria-label="Pan left" title="Pan left" onClick={() => adjust({ panX: -0.08 })}>←</button>
+        <button type="button" aria-label="Pan right" title="Pan right" onClick={() => adjust({ panX: 0.08 })}>→</button>
+        <button type="button" aria-label="Pan down" title="Pan down" onClick={() => adjust({ panY: -0.08 })}>↓</button>
+        <button type="button" aria-label="Zoom in" title="Zoom in" onClick={() => adjust({ zoom: 0.85 })}>+</button>
+        <button type="button" aria-label="Zoom out" title="Zoom out" onClick={() => adjust({ zoom: 1 / 0.85 })}>−</button>
+      </div>
     </div>
   );
 }

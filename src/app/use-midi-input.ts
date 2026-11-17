@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChannelResolver } from "@domain/parameters/resolve.ts";
 import type { MidiReading } from "@domain/midi/midi-mapping.ts";
 import { decodeMidiMessage, midiSourceKey } from "@domain/midi/midi-mapping.ts";
+import { appendMidiEvent, packMidiEvent } from "@domain/midi/midi-events.ts";
 import type { MidiAccessState, MidiInputPort } from "@domain/midi/midi-status.ts";
+import { isMidiClockStatus } from "@domain/tempo/midi-clock.ts";
 
 /**
  * T942 tier 1 — the session's ONE Web MIDI access (§V182's one-listener rule, with knobs).
@@ -96,6 +98,12 @@ export interface MidiInputBinding {
  */
 export interface MidiInputOptions {
   readonly requestAccess?: ((options: MIDIOptions) => Promise<MIDIAccess>) | undefined;
+  /**
+   * T1786b: MIDI REALTIME — 0xF8 clock, 0xFA start, 0xFB continue, 0xFC stop — from any
+   * port, with the message's own timestamp in seconds. The project tempo follows it
+   * (`ProjectTempo.midiRealtime`); nothing here knows what a tempo is.
+   */
+  readonly onRealtime?: ((status: number, atSeconds: number) => void) | undefined;
 }
 
 const MIDI_PREFIX = "midi:";
@@ -113,16 +121,37 @@ export function useMidiInput(options: MidiInputOptions = {}): MidiInputBinding {
   const access = useRef<MIDIAccess | null>(null);
   const disposed = useRef(false);
 
+  const realtime = useRef(options.onRealtime);
+  realtime.current = options.onRealtime;
+
+  /** T1762b: how many messages each device's event ring has taken (`*` is every device, merged). */
+  const eventCounts = useRef<Map<string, number>>(new Map());
+
   const handle = useCallback((portId: string, data: Uint8Array | null): void => {
+    /*
+     * T1762b: EVERY channel-voice message, in arrival order, into the event ring — before
+     * the reading below, which keeps only a control's latest value. A keyboard needs the
+     * order (was the key released before the pedal went down?) and every event (two strikes
+     * between two frames are two notes). `midi-events.ts` owns the spelling; MIDI Notes
+     * reads it back.
+     */
+    const packed = packMidiEvent(data);
+    if (packed !== null) {
+      const publish = (name: string, value: number): void => void readings.current.set(name, value);
+      for (const device of [portId, ""]) {
+        eventCounts.current.set(device, appendMidiEvent(publish, device, eventCounts.current.get(device) ?? 0, packed));
+      }
+    }
     const reading = decodeMidiMessage(data);
-    // An unsupported message (a note, a clock tick, SysEx) does NOTHING — it cannot be
-    // learned and it cannot publish. See `midi-mapping.ts` for what that list is and why.
+    // A message that is not a learnable control (aftertouch, a clock tick, SysEx) does nothing
+    // HERE — it cannot be learned and it publishes no reading. See `midi-mapping.ts`.
     if (reading === null) return;
     const key = midiSourceKey(reading.source);
     readings.current.set(`${MIDI_PREFIX}${portId}:${key}`, reading.raw);
     readings.current.set(`${MIDI_PREFIX}*:${key}`, reading.raw);
     const listener = armed.current;
-    if (listener !== null) {
+    // T1787b: a key's RELEASE binds nothing: a learn armed while a key is down waits for a press.
+    if (listener !== null && !(reading.source.kind === "note" && reading.raw === 0)) {
       // Disarm BEFORE calling: a learn binds ONE control, and a knob that is still moving
       // sends a stream. Re-entrant re-arming from inside the listener still works.
       armed.current = null;
@@ -140,7 +169,16 @@ export function useMidiInput(options: MidiInputOptions = {}): MidiInputBinding {
         // Assigning `onmidimessage` rather than adding a listener is what makes this
         // idempotent: a port re-hooked on every statechange keeps exactly one handler,
         // where `addEventListener` would stack one per replug.
-        input.onmidimessage = (event) => handle(input.id, event.data);
+        input.onmidimessage = (event) => {
+          // T1786b: realtime is one status byte and never a control. It carries the event's
+          // own time, which is when the pulse arrived and not when this frame got to it.
+          const status = event.data?.[0];
+          if (status !== undefined && isMidiClockStatus(status)) {
+            realtime.current?.(status, (Number.isFinite(event.timeStamp) && event.timeStamp > 0 ? event.timeStamp : performance.now()) / 1000);
+            return;
+          }
+          handle(input.id, event.data);
+        };
       });
       found.sort((a, b) => a.id.localeCompare(b.id));
       // Identity churn is a re-render of everything below; only replace when the SET moved.

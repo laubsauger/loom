@@ -525,7 +525,9 @@ export const BOARD_NAMED_TYPES: ReadonlySet<string> = new Set([PRESETS_NODE_TYPE
  * each reading the bank through `bankOf`; an instance with none draws nothing there.
  */
 export function boardNamesMember(node: GraphNode): boolean {
-  return BOARD_NAMED_TYPES.has(node.type) || isComponentNodeType(node.type);
+  // T1771b: any node a board names is kept, because any node can be its on/off switch
+  // (`switchesOnBoard`). A widget is a member by its wire, and a Panel is not put on a Panel.
+  return !CONTROL_WIDGET_TYPES.has(node.type) && node.type !== "panel";
 }
 
 /**
@@ -539,6 +541,26 @@ export function boardNamesMember(node: GraphNode): boolean {
 export function joinsBoardByName(node: GraphNode, catalogue: BankCatalogue | undefined): boolean {
   if (BOARD_NAMED_TYPES.has(node.type)) return true;
   return isComponentNodeType(node.type) && bankViewOf(node, catalogue)?.kind === "instance";
+}
+
+/**
+ * T1771b — THIS NODE ON A BOARD IS ITS ON/OFF SWITCH: any node that is not already something
+ * else there (a widget, a Panel, a bank, a Layer, a cue list, a look's instance, which is its
+ * bank's strip). The switch is the Layer's own (`setNodeUi { bypassed }`, a state and never
+ * a flip): an effect passes its input, a source is silent, a component instance that is off
+ * is not inlined and costs nothing (§T1770b). One node, one flag, the surface is the same.
+ *
+ * It joins by name like a Layer, but only where the owner points at a Panel: a drop on it,
+ * or its board's "+ Add…". It is NOT offered the node's own "+ panel" button (`soloPanelFor`),
+ * which would put that button on every node of a document that holds one Panel.
+ *
+ * Whether an instance is a look only the catalogue can say, so with none no instance is a
+ * switch: it draws nothing rather than the wrong thing.
+ */
+export function switchesOnBoard(node: GraphNode, catalogue: BankCatalogue | undefined): boolean {
+  if (!boardNamesMember(node) || BOARD_NAMED_TYPES.has(node.type)) return false;
+  if (!isComponentNodeType(node.type)) return true;
+  return catalogue !== undefined && bankViewOf(node, catalogue)?.kind !== "instance";
 }
 
 /* ------------------------------------------------------------ membership */
@@ -949,6 +971,13 @@ export function panelLacks(graph: Pick<GraphDocument, "nodes" | "edges">, panel:
   }
   if (!CONTROL_WIDGET_TYPES.has(node.type)) return false;
   return !incomingEdgesInOrder(graph, panel.id, PANEL_INPUT).some((edge) => edge.source.nodeId === node.id);
+}
+
+/** T1771b: this Panel has a board that does not show this node's on/off switch yet (`switchesOnBoard`). */
+export function panelLacksSwitch(graph: Pick<GraphDocument, "nodes" | "edges">, panel: GraphNode, node: GraphNode, catalogue?: BankCatalogue): boolean {
+  if (panel.type !== "panel" || !switchesOnBoard(node, catalogue)) return false;
+  const board = panelBoard(graph, panel);
+  return board !== null && !board.items.some((item) => item.kind === "widget" && item.node.id === node.id);
 }
 
 /**

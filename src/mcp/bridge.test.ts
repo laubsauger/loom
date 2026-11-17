@@ -923,6 +923,16 @@ describe("bridge_status reports the bridge as it is NOW (T921, §V288)", () => {
     expect(status.data?.["pairingCode"]).toBe(code);
     expect(status.data?.["incumbent"]).toEqual({ port: incumbent.port, pid: process.pid });
 
+    // T1773b: and a PERSON reading the loser's own notices gets it without calling a tool.
+    // Until then the loser's terminal carried no pairing code at all.
+    expect(
+      loser.sent.some(
+        (message) =>
+          message["method"] !== undefined && JSON.stringify(message).includes(`Pairing code ${code} — that bridge's`),
+      ),
+      "the proxy's notice to carry the incumbent's pairing code",
+    ).toBe(true);
+
     // And the same code reaches the model through `instructions`, so a client that never
     // calls the tool is still told something true.
     const init = await loser.request("initialize", {}, 931);

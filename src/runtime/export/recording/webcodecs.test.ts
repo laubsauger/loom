@@ -1,6 +1,6 @@
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createWebCodecsEncoder, h264CodecFor } from "./webcodecs.ts";
+import { createWebCodecsEncoder, h264CodecFor, probeWebCodecsEncoder } from "./webcodecs.ts";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -310,4 +310,156 @@ it("encodes supplied PCM as AAC and returns one MP4 with video and sound tracks"
   await expect(finishing).rejects.toMatchObject({ name: "AbortError" });
   await stalledEncoder.close?.();
   releaseVideoFlush();
+});
+
+/**
+ * T1741b — the format reaches the browser as the codec and bitstream shape it names, and a
+ * 10-bit encoder takes only 10-bit planes. The fake below records what it was configured
+ * with and what each frame was constructed from, because those are the two things the real
+ * VideoEncoder decides the file by.
+ */
+describe("recording formats (T1741b)", () => {
+  /** Chrome 157's hvcC for a 1080p Main 10 take (measured), so finish() muxes a real record. */
+  const CHROME_HVCC = Uint8Array.from(
+    ("010220000000b000000000007bf000fcfdfafa00000f03a00001001840010c01ffff022000000300b00000030000" +
+      "03007b1b0240a10001002a420101022000000300b0000003000003007ba003c0801107cad881bb916452ffcb9fc4" +
+      "fea6a020202010a2000100074401c072f05324").match(/../g)!.map((pair) => parseInt(pair, 16)),
+  );
+
+  function stubWebCodecs(supported: (config: VideoEncoderConfig) => boolean = () => true) {
+    const asked: VideoEncoderConfig[] = [];
+    const configured: VideoEncoderConfig[] = [];
+    const frames: Array<{ data: unknown; init: VideoFrameBufferInit; closed: boolean }> = [];
+    class FakeVideoFrame {
+      readonly record: { data: unknown; init: VideoFrameBufferInit; closed: boolean };
+      constructor(data: unknown, init: VideoFrameBufferInit) {
+        this.record = { data, init, closed: false };
+        frames.push(this.record);
+      }
+      close(): void { this.record.closed = true; }
+    }
+    class FakeVideoEncoder {
+      static isConfigSupported = async (config: VideoEncoderConfig) => {
+        asked.push(config);
+        return { supported: supported(config), config };
+      };
+      readonly encodeQueueSize = 0;
+      private readonly init: VideoEncoderInit;
+      constructor(init: VideoEncoderInit) { this.init = init; }
+      configure(config: VideoEncoderConfig): void { configured.push(config); }
+      encode(): void {
+        this.init.output({
+          byteLength: 4,
+          type: "key",
+          copyTo: (target: AllowSharedBufferSource) => new Uint8Array(target as ArrayBuffer).set([0, 0, 0, 0]),
+        } as EncodedVideoChunk, {
+          decoderConfig: { codec: configured.at(-1)!.codec, description: configured.at(-1)!.codec.startsWith("hvc1") ? CHROME_HVCC : Uint8Array.from([1, 0x64, 0, 0x2a]) },
+        });
+      }
+      flush(): Promise<void> { return Promise.resolve(); }
+      close(): void {}
+    }
+    vi.stubGlobal("VideoFrame", FakeVideoFrame);
+    vi.stubGlobal("VideoEncoder", FakeVideoEncoder);
+    vi.stubGlobal("navigator", { storage: { getDirectory: () => undefined } });
+    return { asked, configured, frames };
+  }
+
+  const yuv = (width: number, height: number) => ({
+    width,
+    height,
+    data: Uint16Array.from({ length: width * height * 1.5 }, (_value, index) => 64 + (index % 877)),
+    colorSpace: { primaries: "bt709", transfer: "iec61966-2-1", matrix: "bt709", fullRange: false } as const,
+  });
+
+  it("configures HEVC Main 10 as length-prefixed HEVC with an hvcC record, never as H.264", async () => {
+    const { configured } = stubWebCodecs();
+    const encoder = createWebCodecsEncoder({ spool: "memory", format: "hevc-main10" });
+    await encoder.configure({ width: 1920, height: 1080, fps: 60 });
+    expect(configured).toHaveLength(1);
+    expect(configured[0]).toMatchObject({ codec: "hvc1.2.4.L123.B0", hevc: { format: "hevc" } });
+    expect(configured[0]).not.toHaveProperty("avc");
+    await encoder.close?.();
+  });
+
+  it("configures H.264 High as High profile, still with an avcC record", async () => {
+    const { configured } = stubWebCodecs();
+    const encoder = createWebCodecsEncoder({ spool: "memory", format: "h264-high" });
+    await encoder.configure({ width: 1920, height: 1080, fps: 60 });
+    expect(configured[0]).toMatchObject({ codec: "avc1.64002a", avc: { format: "avc" } });
+    expect(configured[0]).not.toHaveProperty("hevc");
+    await encoder.close?.();
+  });
+
+  it("hands HEVC Main 10 the 10-bit planes as I420P10, tagged, and closes every frame", async () => {
+    const { frames } = stubWebCodecs();
+    const encoder = createWebCodecsEncoder({ spool: "memory", format: "hevc-main10" });
+    await encoder.configure({ width: 4, height: 2, fps: 60 });
+    const planes = yuv(4, 2);
+    await encoder.encodeYuv10?.({ yuv: planes, frameIndex: 0, timestampMicros: 0, durationMicros: 16_667, keyFrame: true });
+    expect(frames).toHaveLength(1);
+    expect(frames[0]!.data).toBe(planes.data);
+    expect(frames[0]!.init).toMatchObject({
+      format: "I420P10", codedWidth: 4, codedHeight: 2, timestamp: 0, duration: 16_667,
+      colorSpace: { primaries: "bt709", transfer: "iec61966-2-1", matrix: "bt709", fullRange: false },
+    });
+    expect(frames[0]!.closed).toBe(true);
+    await expect(async () => encoder.encodeYuv10?.({ yuv: yuv(2, 2), frameIndex: 1, timestampMicros: 16_667, durationMicros: 16_667, keyFrame: false }))
+      .rejects.toThrow(/encoder requires 4x2/);
+    await encoder.close?.();
+  });
+
+  it("muxes an HEVC take into an hvc1 MP4 and names the codec the record carries", async () => {
+    stubWebCodecs();
+    const encoder = createWebCodecsEncoder({ spool: "memory", format: "hevc-main10" });
+    await encoder.configure({ width: 4, height: 2, fps: 60 });
+    await encoder.encodeYuv10?.({ yuv: yuv(4, 2), frameIndex: 0, timestampMicros: 0, durationMicros: 16_667, keyFrame: true });
+    const video = await encoder.finish();
+    expect(video.mimeType).toBe('video/mp4; codecs="hvc1.2.4.L123.B0"');
+    const bytes = video.bytes instanceof Blob ? new Uint8Array(await video.bytes.arrayBuffer()) : video.bytes;
+    const text = new TextDecoder("latin1").decode(bytes);
+    expect(text).toContain("hvc1");
+    expect(text).toContain("hvcC");
+    expect(text).not.toContain("avcC");
+  });
+
+  it("refuses 8-bit input into a 10-bit format, at the cause", async () => {
+    stubWebCodecs();
+    // The canvas capture is 8-bit: a 10-bit encoder built over it would label 8 bits as 10.
+    expect(() => createWebCodecsEncoder({
+      spool: "memory", format: "hevc-main10",
+      captureFrame: () => ({ codedWidth: 2, codedHeight: 2, timestamp: 0, duration: 0, close() {} }),
+    })).toThrow(/canvas holds 8 bits/);
+    const encoder = createWebCodecsEncoder({ spool: "memory", format: "hevc-main10" });
+    await encoder.configure({ width: 2, height: 2, fps: 60 });
+    expect(() => encoder.encode({ image: { width: 2, height: 2, data: new Uint8Array(16) }, frameIndex: 0, timestampMicros: 0, durationMicros: 16_667, keyFrame: true }))
+      .toThrow(/takes 10-bit planes/);
+    await encoder.close?.();
+  });
+
+  it("offers the 10-bit entry point only to a 10-bit format", () => {
+    stubWebCodecs();
+    expect(createWebCodecsEncoder({ spool: "memory", format: "hevc-main10" }).encodeYuv10).toBeTypeOf("function");
+    expect(createWebCodecsEncoder({ spool: "memory", format: "h264-high" }).encodeYuv10).toBeUndefined();
+    expect(createWebCodecsEncoder({ spool: "memory" }).encodeYuv10).toBeUndefined();
+  });
+
+  it("probes the format's own codec and explains a refusal with the format's own sentence", async () => {
+    // Chrome's default answer (measured, 157 and 151): Main 10 unsupported, H.264 supported.
+    const { asked } = stubWebCodecs((config) => !config.codec.startsWith("hvc1.2.4"));
+    const support = await probeWebCodecsEncoder({ width: 1920, height: 1080, fps: 60 }, { spool: "memory", format: "hevc-main10" });
+    expect(asked.at(-1)).toMatchObject({ codec: "hvc1.2.4.L123.B0", hevc: { format: "hevc" } });
+    expect(support).toEqual({
+      supported: false,
+      codec: "hvc1.2.4.L123.B0",
+      reason: expect.stringContaining("--enable-features=PlatformHEVCHbdEncoderSupport") as unknown,
+    });
+    await expect(probeWebCodecsEncoder({ width: 1920, height: 1080, fps: 60 }, { spool: "memory", format: "h264-high" }))
+      .resolves.toEqual({ supported: true, codec: "avc1.64002a", reason: null });
+
+    const encoder = createWebCodecsEncoder({ spool: "memory", format: "hevc-main10" });
+    await expect(encoder.configure({ width: 1920, height: 1080, fps: 60 })).rejects.toMatchObject({
+      diagnostic: { code: "export/encoder-unavailable", message: expect.stringContaining("no HEVC Main 10 encoder") as unknown },
+    });
+  });
 });

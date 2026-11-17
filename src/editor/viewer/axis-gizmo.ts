@@ -14,10 +14,9 @@ import type { OrbitCameraBasis, OrbitPose, PreviewOrbit } from "@runtime/preview
  * `preview-gizmo-overlay.tsx` (§T935) is the DRAGGABLE POINT — one handle per world-space
  * `vec3` PARAMETER, projected through the tile's own perspective matrix, and every drag
  * writes the DOCUMENT through the command bus. `camera-gizmo-store.ts` (§T692/§T1314b) is
- * the same idea for a `camera` node's own pose. Both are authoring surfaces and both are
- * destructive by design, which is exactly what §T1311b's ruling forbids here. Neither is a
- * corner gizmo: they have no axes, no corner, and nothing to say about which way the view
- * is facing. This module shares no code with them and must not grow any.
+ * the same idea for a `camera` node's own pose. Neither is a corner orientation widget.
+ * The arithmetic here remains pure: inspection uses its deltas as view state, while
+ * explicit Fly camera mode applies them through the existing undoable camera controller.
  *
  * ## The projection is ORTHOGRAPHIC, and that is the whole point of a corner widget
  *

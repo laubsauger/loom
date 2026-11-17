@@ -10,6 +10,9 @@
  * size or a threshold is chosen (§V747).
  */
 import type { HopAnalyserOptions, HopFeatures } from "@domain/audio/analysis/hop-analyser.ts";
+import type { TonalFrame } from "@domain/audio/analysis/tonal-analyser.ts";
+import type { LeadPitchFrame } from "@domain/audio/analysis/pitch.ts";
+import { PITCH_ANALYSIS, TONAL_ANALYSIS } from "@domain/audio/tonal-fields.ts";
 import { AUDIO_DETECTOR_BANDS_HZ, DETECTOR_EVENT_PICKER, ONSET_EVENT_THRESHOLD } from "./audio-features.ts";
 
 export const AUDIO_ANALYSIS_PROCESSOR_NAME = "loom-audio-analysis";
@@ -18,7 +21,28 @@ export const AUDIO_ANALYSIS_PROCESSOR_NAME = "loom-audio-analysis";
 export interface AudioAnalysisProcessorOptions extends Omit<HopAnalyserOptions, "sampleRate"> {
   /** Samples between analysed windows. */
   readonly hop: number;
+  /**
+   * T1751b: the tonal pass, a second and longer window on its own grid. Absent, the
+   * processor runs none: the pass costs audio-thread time, and a document with no tonal
+   * node does not pay it.
+   */
+  readonly tonal?: AudioTonalOptions;
 }
+
+/** T1751b: the tonal pass's window and the samples between two of them. */
+export interface AudioTonalOptions {
+  readonly windowSize: number;
+  readonly hop: number;
+  /** T1755b: the lead pitch reads the hop window on every this-many-th hop. */
+  readonly pitchEveryHops: number;
+}
+
+/** The tonal pass as shipped: `TONAL_ANALYSIS`, the recorded contract, and nothing chosen here. */
+export const AUDIO_TONAL_OPTIONS: AudioTonalOptions = {
+  windowSize: TONAL_ANALYSIS.windowSize,
+  hop: TONAL_ANALYSIS.hop,
+  pitchEveryHops: PITCH_ANALYSIS.everyHops,
+};
 
 /**
  * T1227 — which hop stream feeds which detector. Stream 0 is the whole spectrum (the
@@ -61,15 +85,31 @@ export interface DetectorSettings {
  * 48 kHz reproduce `DETECTOR_EVENT_PICKER` exactly (`use-audio-input.test.ts` pins it),
  * which is what keeps a document that never touched the knobs on the recorded contract.
  */
-export function analysisOptionsFor(detector: DetectorSettings, sampleRate: number): AudioAnalysisProcessorOptions {
+export function analysisOptionsFor(
+  detector: DetectorSettings,
+  sampleRate: number,
+  /** T1751b: whether the document holds a tonal node. Required: every caller decides. */
+  tonal: boolean,
+): AudioAnalysisProcessorOptions {
   return {
     ...AUDIO_ANALYSIS_OPTIONS,
+    ...(tonal ? { tonal: AUDIO_TONAL_OPTIONS } : {}),
     picker: {
       historyHops: AUDIO_ANALYSIS_OPTIONS.picker.historyHops,
       delta: Math.max(0, detector.threshold),
       minGapHops: Math.max(0, Math.round((detector.retrigger * sampleRate) / AUDIO_ANALYSIS_OPTIONS.hop)),
     },
   };
+}
+
+/**
+ * T1769b — the source node's Input Gain as the factor the samples are multiplied by:
+ * 10^(dB / 20), so 0 dB is exactly 1 and +20 dB exactly 10. The ONE conversion: the live
+ * capture hands it to its trim `GainNode` and the offline walk multiplies the decoded samples
+ * by it, so the two cannot disagree about what a decibel is.
+ */
+export function inputGainLinear(decibels: number): number {
+  return 10 ** (decibels / 20);
 }
 
 /** Streams per hop: the whole spectrum plus one per detector band. */
@@ -101,4 +141,20 @@ export interface AudioAnalysisStopMessage {
   readonly type: "stop";
 }
 
-export type AudioAnalysisWorkletMessage = AudioAnalysisHopMessage | AudioAnalysisPongMessage;
+/** T1751b — one tonal window, posted every `tonal.hop` samples once a whole window has been heard. */
+export interface AudioAnalysisTonalMessage extends TonalFrame {
+  readonly type: "tonal";
+  readonly end: number;
+}
+
+/** T1755b — one lead-pitch reading, posted on the hops the pitch pass reads. */
+export interface AudioAnalysisPitchMessage extends LeadPitchFrame {
+  readonly type: "pitch";
+  readonly end: number;
+}
+
+export type AudioAnalysisWorkletMessage =
+  | AudioAnalysisHopMessage
+  | AudioAnalysisTonalMessage
+  | AudioAnalysisPitchMessage
+  | AudioAnalysisPongMessage;

@@ -83,6 +83,10 @@ const ENTRY_POINTS = [
  */
 const NOT_CONSTRUCTED: ReadonlyArray<{ name: string; reason: string }> = [
   {
+    name: "createHarmonyAudioSession",
+    reason: "Composed by useHarmonyAudio in the same module. app.tsx calls that hook; its session tests exercise scheduling, clock ownership, and resource cleanup.",
+  },
+  {
     name: "createRetainedFiles",
     reason:
       "Composed by retainedFiles() in the SAME module. AssetField and useFileReferences share " +
@@ -175,6 +179,11 @@ const NOT_CONSTRUCTED: ReadonlyArray<{ name: string; reason: string }> = [
     name: "createMinimapStore",
     reason:
       "Composed by `minimapStore()` in the SAME module — a single per-PERSON store over one `localStorage` key, the shape of `createNodeTypeLabelStore` and for the same reason: a canvas inside a component dive runs on a session bus, and a bus-keyed store would let the root canvas and the dived one disagree about whether the map is on screen after one toggle (T1257). The product path is `registerMinimapCommand` in `graph-canvas.tsx`; `graph-canvas/minimap-command.test.ts` round-trips the preference through a fake storage and flips it through the bus command, and `tests/e2e/minimap.spec.ts` hides the map with `o` and asserts it stays hidden across a reload.",
+  },
+  {
+    name: "createScrollPanStore",
+    reason:
+      "Composed by `scrollPanStore()` in the SAME module, `createMinimapStore`'s shape and for its reason: one per-PERSON store over one `localStorage` key, so a canvas inside a component dive and the root canvas cannot disagree about what a scroll does (T1724b). The product path is `registerScrollPanCommand` in `graph-canvas.tsx`.",
   },
   {
     name: "createStarterPreferenceStore",

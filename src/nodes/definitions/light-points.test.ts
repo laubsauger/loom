@@ -455,13 +455,14 @@ describe("T1589b: a driven light and a moving camera are writes, never a rebuild
           .filter(([, count]) => count !== 0),
       );
       expect([frameIndex, ran, after.built - before.built]).toEqual([frameIndex, {}, 0]);
-      // They were asked, though, and answered from memory: the Light's pass, the Render's two
-      // gathers (its named rows' and the set's), its grid and the lit draw are each a
-      // remembered generator, and the frame re-emitted all five.
+      // What was asked was answered from memory: the Render's two gathers (its named rows' and
+      // the set's) and its grid, which its light table still plans. The Light's resolve pass and
+      // the lit draw's surface module are not asked at all: both nodes' values come from their
+      // value functions, which build no text (T1719b).
       const reused = Object.fromEntries(
         ["lightResolveWgsl", "lightGatherWgsl", "lightGridWgsl", "sceneSurfaceModule"].map((name) => [name, (after.byGenerator[name]?.reused ?? 0) - (before.byGenerator[name]?.reused ?? 0)]),
       );
-      expect([frameIndex, reused]).toEqual([frameIndex, { lightResolveWgsl: 1, lightGatherWgsl: 2, lightGridWgsl: 1, sceneSurfaceModule: 1 }]);
+      expect([frameIndex, reused]).toEqual([frameIndex, { lightResolveWgsl: 0, lightGatherWgsl: 2, lightGridWgsl: 1, sceneSurfaceModule: 0 }]);
       // The values moved: the Light's into its resolve pass, the camera's into the grid's build.
       expect(uniformsOf(spliced, "light_lamps:lights:resolve")["color"]).not.toEqual(first.resolve["color"]);
       expect(uniformsOf(spliced, "light_lamps:lights:resolve")["shape"]).not.toEqual(first.resolve["shape"]);

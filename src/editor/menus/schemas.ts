@@ -17,6 +17,7 @@ import { BEGIN_RENAME_COMMAND } from "@editor/nodes/rename-session.ts";
 // `@editor/edges` barrel.
 import { TOGGLE_REFERENCE_LINES_COMMAND } from "@editor/edges/reference-lines-command.ts";
 import { TOGGLE_MINIMAP_COMMAND } from "@editor/graph-canvas/minimap-command.ts";
+import { TOGGLE_SCROLL_PAN_COMMAND } from "@editor/graph-canvas/scroll-pan-command.ts";
 // Same reason again (T1010): the constant, from the module rather than the
 // `@editor/nodes` barrel, which exports React surfaces.
 import { TOGGLE_TIMING_OVERLAY_COMMAND } from "@editor/nodes/timing-overlay-command.ts";
@@ -156,9 +157,21 @@ export function canvasMenu(registry: NodeRegistryView): MenuSchema {
       // seam gate saw a reached registrar while the command it registers was named by no
       // binding, no menu row and no button. A plain row, like `node.toggleBypass`: the
       // command flips when `show` is omitted, which is what a menu item means.
-      { command: TOGGLE_REFERENCE_LINES_COMMAND, label: "Reference lines" },
-      // T1257: the same door for the overview map — this row and `o` are one command.
-      { command: TOGGLE_MINIMAP_COMMAND, label: "Overview map" },
+      /*
+       * T1724b — the VIEW submenu: how this person looks at and moves over the graph, none
+       * of it an edit. Opened when the scroll gesture made a twelfth row, as the cap's own
+       * instruction says (`schemas.test.ts`, "stays a menu rather than a list").
+       */
+      {
+        label: "View",
+        submenu: [
+          { command: TOGGLE_REFERENCE_LINES_COMMAND, label: "Reference lines" },
+          // T1257: the same door for the overview map — this row and `o` are one command.
+          { command: TOGGLE_MINIMAP_COMMAND, label: "Overview map" },
+          // T1724b: a two-finger scroll pans instead of zooming — a trackpad's own gesture.
+          { command: TOGGLE_SCROLL_PAN_COMMAND, label: "Scroll pans (trackpad)" },
+        ],
+      },
       { separator: true },
       /**
        * T1010 — the DEBUG submenu, and the owner asked for it by that name: *"it's not

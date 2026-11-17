@@ -98,7 +98,7 @@ export function NodePreviewSlot({ nodeId, runtime, bounds, views, orbits, orbita
    * TO SHIFT. That is a deliberate change to a T656 decision, and the reason it is safe is
    * the reason T656 avoided shift in the first place no longer applies here: T656 was
    * reasoning about the CANVAS, and an adjustable tile is outside React Flow's gesture
-   * space entirely — `nodrag`/`nopan` on the slot, `nowheel` while adjustable, and the
+   * space entirely — `nodrag`/`nopan`/`nokey` on the slot, `nowheel` while adjustable, and the
    * node view stops the pointer press from reaching the drag listener at all (§V20). The
    * rule is now one sentence: alt reaches the camera, shift pans instead of orbiting.
    *
@@ -383,9 +383,11 @@ export function NodePreviewSlot({ nodeId, runtime, bounds, views, orbits, orbita
       // the node's body and must drag it, even if the picture can also offer a camera.
       // Alt entry is guarded at mousedown capture below, before React Flow's native
       // drag listener, so it does not depend on the mode's classes updating first.
+      // React Flow captures Shift presses at its ancestor pane before our pointer
+      // handler. Its `nokey` exemption leaves Shift-drag with the adjustable camera.
       className={cx(
         styles.inspectHost,
-        adjustable ? "nowheel nodrag nopan" : undefined,
+        adjustable ? "nowheel nodrag nopan nokey" : undefined,
       )}
       data-inspect={orbitable ? mode : undefined}
       style={adjustable ? { cursor: "grab", touchAction: "none" } : undefined}

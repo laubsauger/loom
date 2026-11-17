@@ -474,3 +474,41 @@ same thing and stays told. Row text below.
 - **The channels in the lists that enumerate value bags**: the agent tool `get_channels`
   and the inspector's channel pickers read the value graph's bags, so a camera's channels
   are not in them. Completion in an expression field does offer them.
+
+## 11. Look: an inspection orbit around a picture drawn through a camera (§T1732b), built 2026-11-06
+
+**The ask.** The owner, building the PillarPreviz guest camera (Eye driven by expressions with a
+sway): *"I definitely need to be able to move geometry viewers, camera viewers equally"*, without
+losing the drivers, and on each node's own tile, not only in the viewer. Ctrl+Z is enough for the
+editing mode.
+
+**The ruling.** A picture drawn through a camera node has two cameras. LOOK is the default: view
+only, never an edit, so it works on a driven camera. MOVE is the camera node's own pose (T692's
+gizmo on the tile, §T970's lock in the viewer): every gesture is an edit that undo steps back.
+Tiles show both as a pair in the corner (C, M); alt over a tile arms LOOK; the viewer's unlocked
+drag looks, and "Fly" moves. No W A S D on tiles. "Set camera from this view" waits (T1735b).
+
+**Why §3's cheap route does not hold for a Render.** §3 proposed cloning the draw passes and
+writing the clone's camera uniforms. A Render derives far more than `viewProjection` from its
+camera: the eye, the view direction, the AO depth row and its projection, the half-height. An
+override is a second copy of every one of those derivations, and copies drift.
+
+**What was built instead: a second compile.** The editor sends a `look` sink while a look is moved
+off its camera (arming costs nothing). The compiler splices a nameless clone of the renderer into
+the flat graph (`<id>~look`, every edge into the renderer copied onto it), so the clone is the
+Render's own code with its own scratch. Only the payload on its camera input differs: the live
+camera's, with the eye and look-at moved by the orbit (`orbitPose`, deltas over the pose, so an
+identity look is the camera, byte for byte on Dawn). The orbit is read only at a frame; the values
+lane re-runs the clone every frame, so a driven camera's sway carries into the look. Nothing reads
+the clone's target but the tile and the viewer, so the Render's own output is byte-identical with
+a look on (`compiler/look.gpu.test.ts`).
+
+**How TouchDesigner and Notch compare** (from their known behaviour, not re-checked against
+their documentation for this note). Both keep a viewer's camera apart from the scene camera:
+TouchDesigner's node viewer tumbles a 3D COMP without touching the Camera COMP, and Notch's editor
+view is not the render camera. §2 holds the sourced comparison for the free view. Loom's difference
+is that the look lives on the node's own tile as well as in the viewer, and that a Render's tile
+shows the real picture until somebody looks.
+
+**What it costs.** While a look stands, the renderer draws twice, at full resolution (a cap is
+T1736b). Starting and ending a look is one structural compile each.

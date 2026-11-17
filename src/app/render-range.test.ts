@@ -410,6 +410,63 @@ describe("export.renderRange refuses by name (§V288)", () => {
 });
 
 /**
+ * T1741b — the recording format is set on the bus. What a caller reads back is what the
+ * session holds after the command, and the two refusals matter for the same reason the
+ * render command's do: no session means nothing to set, and a running take must keep the
+ * format it started in (a change mid-take would make the dialog describe a file it is not).
+ */
+describe("export.setRenderFormat sets the take's format through the bus (T1741b)", () => {
+  function session(busy = false) {
+    const formats: string[] = [];
+    return {
+      formats,
+      handlers: { busy: () => busy, render: vi.fn(), setFormat: (format: string) => { formats.push(format); } },
+    };
+  }
+
+  it("hands the session the format the caller chose and reports it back", async () => {
+    const { bus } = createHarness();
+    registerRenderRangeCommand(bus);
+    const { formats, handlers } = session();
+    renderRangeHolderFor(bus).current = handlers;
+    const result = await bus.execute("export.setRenderFormat", { format: "hevc-main10" }, contextFor(alice));
+    expect(result.status).toBe("applied");
+    expect(result.output).toEqual({ format: "hevc-main10" });
+    expect(formats).toEqual(["hevc-main10"]);
+  });
+
+  it("refuses a format the app does not offer, at the bus, before the session sees it", async () => {
+    const { bus } = createHarness();
+    registerRenderRangeCommand(bus);
+    const { formats, handlers } = session();
+    renderRangeHolderFor(bus).current = handlers;
+    const result = await bus.execute("export.setRenderFormat", { format: "prores" } as never, contextFor(alice));
+    expect(result.status).toBe("rejected");
+    expect(formats).toEqual([]);
+  });
+
+  it("refuses while a take is running, and leaves the running take's format alone", async () => {
+    const { bus } = createHarness();
+    registerRenderRangeCommand(bus);
+    const { formats, handlers } = session(true);
+    renderRangeHolderFor(bus).current = handlers;
+    const result = await bus.execute("export.setRenderFormat", { format: "h264-high" }, contextFor(alice));
+    expect(result.status).toBe("rejected");
+    expect(result.diagnostics?.[0]?.code).toBe("export.renderInFlight");
+    expect(formats).toEqual([]);
+  });
+
+  it("rejects when no session holds the renderer", async () => {
+    const { bus } = createHarness();
+    registerRenderRangeCommand(bus);
+    const result = await bus.execute("export.setRenderFormat", { format: "h264" }, contextFor(alice));
+    expect(result.status).toBe("rejected");
+    expect(result.diagnostics?.[0]?.code).toBe("export.noSession");
+    expect(result.output).toEqual({ format: null });
+  });
+});
+
+/**
  * T747 — THE EXPORT WAITS FOR THE FRAME'S INFERENCE.
  *
  * `depth` and `pose` publish "the latest completed result", which is right live (§V144:

@@ -38,25 +38,27 @@ describe("the cache is keyed by CONTENT and every input the walk reads", () => {
     const hash = await contentHash(bytesOf("abc"));
     // SHA-256("abc"), the standard test vector.
     expect(hash).toBe("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
-    expect(preAnalysisKey(hash, 60, { threshold: 0.05, retrigger: 0.032 })).toBe(`${hash}|60|0.05|0.032`);
+    expect(preAnalysisKey(hash, 60, { threshold: 0.05, retrigger: 0.032 }, false, 0)).toBe(`${hash}|60|0.05|0.032|plain|0`);
+    // T1751b: a track walked without the tonal pass is not the track a tonal node needs.
+    expect(preAnalysisKey(hash, 60, { threshold: 0.05, retrigger: 0.032 }, true, 0)).toBe(`${hash}|60|0.05|0.032|tonal|0`);
   });
 
   it("walks the same bytes once, a changed knob again, and hands out one analysis for both hits", async () => {
     const run = vi.fn((request: OfflineAnalysisRequest) =>
-      Promise.resolve(analyseOffline(request.samples, request.sampleRate, request.fps, request.detector)),
+      Promise.resolve(analyseOffline(request.samples, request.sampleRate, request.fps, request.detector, request.tonal, request.inputGainDb)),
     );
     const analyser = createPreAnalyser({ decode: () => Promise.resolve(tone(1, 0.5)), hash: contentHash, run });
 
-    const first = await analyser.analyse(bytesOf("same file"), 60, AUDIO_DETECTOR_DEFAULTS);
-    const second = await analyser.analyse(bytesOf("same file"), 60, AUDIO_DETECTOR_DEFAULTS);
+    const first = await analyser.analyse(bytesOf("same file"), 60, AUDIO_DETECTOR_DEFAULTS, false, 0);
+    const second = await analyser.analyse(bytesOf("same file"), 60, AUDIO_DETECTOR_DEFAULTS, false, 0);
     expect(run).toHaveBeenCalledTimes(1);
     expect(second).toBe(first);
     expect(first.fallback).toBeNull();
     expect(featureTrackLength(first.analysis.track)).toBe(61);
 
-    await analyser.analyse(bytesOf("same file"), 60, { ...AUDIO_DETECTOR_DEFAULTS, threshold: 0.2 });
+    await analyser.analyse(bytesOf("same file"), 60, { ...AUDIO_DETECTOR_DEFAULTS, threshold: 0.2 }, false, 0);
     expect(run).toHaveBeenCalledTimes(2);
-    await analyser.analyse(bytesOf("same file"), 30, AUDIO_DETECTOR_DEFAULTS);
+    await analyser.analyse(bytesOf("same file"), 30, AUDIO_DETECTOR_DEFAULTS, false, 0);
     expect(run).toHaveBeenCalledTimes(3);
   });
 
@@ -68,10 +70,10 @@ describe("the cache is keyed by CONTENT and every input the walk reads", () => {
         return attempts === 1 ? Promise.reject(new Error("EncodingError: Unable to decode audio data")) : Promise.resolve(tone(1, 0.5));
       },
       hash: contentHash,
-      run: (request) => Promise.resolve(analyseOffline(request.samples, request.sampleRate, request.fps, request.detector)),
+      run: (request) => Promise.resolve(analyseOffline(request.samples, request.sampleRate, request.fps, request.detector, request.tonal, request.inputGainDb)),
     });
-    await expect(analyser.analyse(bytesOf("file"), 60, AUDIO_DETECTOR_DEFAULTS)).rejects.toThrow("Unable to decode");
-    const retried = await analyser.analyse(bytesOf("file"), 60, AUDIO_DETECTOR_DEFAULTS);
+    await expect(analyser.analyse(bytesOf("file"), 60, AUDIO_DETECTOR_DEFAULTS, false, 0)).rejects.toThrow("Unable to decode");
+    const retried = await analyser.analyse(bytesOf("file"), 60, AUDIO_DETECTOR_DEFAULTS, false, 0);
     expect(retried.fallback).toBeNull();
     expect(attempts).toBe(2);
   });
@@ -84,10 +86,10 @@ describe("§V288 — where the walk cannot leave the main thread, the outcome sa
       hash: contentHash,
       run: () => Promise.reject(new Error("this environment has no Worker")),
     });
-    const outcome = await analyser.analyse(bytesOf("file"), 60, AUDIO_DETECTOR_DEFAULTS);
+    const outcome = await analyser.analyse(bytesOf("file"), 60, AUDIO_DETECTOR_DEFAULTS, false, 0);
     expect(outcome.fallback).toBe("Pre-analysis ran on the main thread: this environment has no Worker.");
     // The fallback is the SAME function: its track is the one the worker would have sent.
-    const direct = analyseOffline(tone(1, 0.5).samples, SAMPLE_RATE, 60, AUDIO_DETECTOR_DEFAULTS);
+    const direct = analyseOffline(tone(1, 0.5).samples, SAMPLE_RATE, 60, AUDIO_DETECTOR_DEFAULTS, false, 0);
     expect(outcome.analysis.track).toEqual(direct.track);
   });
 });

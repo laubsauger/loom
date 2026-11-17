@@ -65,6 +65,9 @@ describe("the Shaderloom → Loom rename holds (§T899)", () => {
       // T1257: "show the network overview map" — per person, like the node type label
       // above (`editor/graph-canvas/minimap-command.ts`).
       "shaderloom.graph.minimap.v1",
+      // T1724b: "a two-finger scroll pans the graph" — per person, beside the map
+      // (`editor/graph-canvas/scroll-pan-command.ts`).
+      "shaderloom.graph.scrollPan.v1",
       // "start on a starter network rather than an empty canvas" — per person, like the
       // node type label above (`editor/inspect/starter-preference.ts`).
       "shaderloom.project.startOnStarter.v1",

@@ -190,6 +190,20 @@ describe("camera gizmo store (T692)", () => {
     expect(Object.keys(writes[0]?.entries ?? {}).sort()).toEqual(["eye", "lookAt"]);
   });
 
+  it("moves existing static component overrides with their compound pose", () => {
+    const { store, writes } = harness({
+      eye: [0, 0, 3], lookAt: [0, 0, 0],
+      eyeMask: [true, true, true], lookAtMask: [true, true, true],
+      eyeComponents: [true, false, true], lookAtComponents: [false, true, false],
+    });
+    store.setMode(NODE, "adjustable");
+    store.apply(NODE, { azimuth: Math.PI / 2 });
+    store.release?.(NODE);
+    for (const write of writes) {
+      expect(write.entries).toEqual({ eye: [3, 0, 0], "eye.x": 3, "eye.z": 0, lookAt: [0, 0, 0], "lookAt.y": 0 });
+    }
+  });
+
   it("T1314b — the session holds what it WROTE, so tile and store cannot drift (§V964)", () => {
     // The store accumulates locally while the tile draws the DOCUMENT. An unrounded
     // accumulator and a `round6` write disagree by a little more every frame of a drag.

@@ -3,7 +3,9 @@ import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import { frameRangeLength, type FrameRange } from "@domain/types/graph.ts";
 import type { ExportInterface, OutputRef } from "@runtime/export/index.ts";
 import { createFrameRecorder } from "@runtime/export/index.ts";
-import type { RecordingReport, VideoEncoderSink } from "@runtime/export/index.ts";
+import type { RecordingReport, VideoEncoderSink, VideoFormatId } from "@runtime/export/index.ts";
+import { VIDEO_FORMAT_IDS } from "@runtime/export/index.ts";
+import { z } from "zod";
 import type { TransportHandlers } from "./transport-commands.ts";
 import { commandHolder } from "@domain/commands/command-holder.ts";
 import { NO_INPUT } from "@domain/commands/input-schema.ts";
@@ -50,6 +52,17 @@ declare module "@domain/types/commands.ts" {
       input: Record<string, never>;
       output: { rendered: boolean; frames: number; fileName: string | null };
     };
+    /**
+     * T1741b: chooses the recording format of the take the render dialog holds (H.264, H.264
+     * High, HEVC Main 10). Take-local like the job's range and rate: it lives in the app
+     * session, not the document, and resets with them when the dialog opens. A command, so
+     * the dialog's picker and any other caller set it on the bus with their actor, and
+     * `export.renderRange` renders the format the dialog shows.
+     */
+    "export.setRenderFormat": {
+      input: { format: VideoFormatId };
+      output: { format: VideoFormatId | null };
+    };
   }
 }
 
@@ -64,6 +77,8 @@ export interface RenderRangeHandlers {
   render(): Promise<RenderRangeOutcome>;
   /** Stops the active take at the next safe frame boundary. No-op while idle. */
   cancel?(): void;
+  /** T1741b: sets the format the next take is written in. Absent: this session has none. */
+  setFormat?(format: VideoFormatId): void;
 }
 
 /** Monotonic exact-frame progress. `completedFrames` advances only after encode accepts a frame. */
@@ -459,6 +474,38 @@ export function registerRenderRangeCommand(bus: LoomBus): RenderRangeHolder {
       };
     },
     rejectionOutput: () => ({ rendered: false, frames: 0, fileName: null }),
+  });
+
+  bus.registerCommand({
+    name: "export.setRenderFormat",
+    inSession: "app",
+    inputSchema: z.object({ format: z.enum(VIDEO_FORMAT_IDS) }).strict(),
+    description: "Choose the video format the next render is written in.",
+    handler: (input, context) => {
+      const revision = context.store.getRevision();
+      const handlers = holder.current;
+      if (handlers === null || handlers.setFormat === undefined) {
+        return { status: "rejected", revision, diagnostics: [NO_SESSION], output: { format: null } };
+      }
+      if (handlers.busy()) {
+        return {
+          status: "rejected",
+          revision,
+          diagnostics: [
+            {
+              severity: "info" as const,
+              code: "export.renderInFlight",
+              message: "A render is running in the format it started with; change the format once it ends.",
+            },
+          ],
+          output: { format: null },
+        };
+      }
+      if (context.dryRun) return { status: "validated", revision, output: { format: input.format } };
+      handlers.setFormat(input.format);
+      return { status: "applied", revision, output: { format: input.format } };
+    },
+    rejectionOutput: () => ({ format: null }),
   });
 
   return holder;

@@ -89,7 +89,7 @@ export function walkTrack(path: string, fps: number): TrackSeam {
   const { track } = analyseOffline(wav.samples, wav.sampleRate, fps, {
     threshold: AUDIO_DETECTOR_DEFAULTS.threshold,
     retrigger: AUDIO_DETECTOR_DEFAULTS.retrigger,
-  });
+  }, false, 0);
   const transport = mediaTransportFrom((key) => (key === "playMode" ? "timeline" : undefined));
   return {
     track,

@@ -1,8 +1,9 @@
 import type { NodeId, PortId } from "../domain/types/ids.ts";
 import type { FlatGraph, GraphNode } from "../domain/types/graph.ts";
+import type { NodeRegistryView } from "../nodes/registry/registry.ts";
 import { instanceShapeIndex } from "../nodes/definitions/render-instances.ts";
 import { attributeBinding } from "../nodes/definitions/point-storage.ts";
-import { bypassPassthroughPorts } from "../domain/graph/bypass.ts";
+import { bypassPassthroughPairs } from "../domain/graph/bypass.ts";
 import { supportsChannelMask } from "../domain/graph/channel-mask.ts";
 import { isDefaultChannelMask } from "../domain/types/graph.ts";
 import { prepareChannelMask } from "./channel-mask.ts";
@@ -11,7 +12,7 @@ import { compareEdgeOrder } from "../domain/graph/edge-order.ts";
 import type { ScenePayload } from "../domain/types/scene.ts";
 import type { RuntimeDiagnostic } from "../domain/types/diagnostics.ts";
 import type { LogicalExecutionPlan } from "../domain/types/backend.ts";
-import type { CompiledNodeDescription, NodeDefinition, PointsetAttributeRef, TextureFormat } from "../domain/types/node-definition.ts";
+import type { CompiledNodeDescription, NodeDefinition, NodeValueFunction, PointsetAttributeRef, TextureFormat } from "../domain/types/node-definition.ts";
 import { TEXTURE_FORMATS } from "../domain/types/node-definition.ts";
 import type { PortType } from "../domain/types/ports.ts";
 import type { DrawPassDescriptor, PassDescriptor } from "../runtime/backend/plan.ts";
@@ -41,6 +42,7 @@ import { declaredColorSpace } from "../domain/graph/port-compat.ts";
 import { colorPolicyOf, sinkTargetSpace } from "../domain/color/display.ts";
 import { CompilerDiagnosticCode, compilerDiagnostic, hasError } from "./diagnostics.ts";
 import { synthesizeSourceReferenceEdges } from "./source-reference-edges.ts";
+import { lookCameraInputs, lookCloneId, withLookClones, type LookClone } from "./look.ts";
 import { bindingOverflows, describeOverflow } from "./bindings.ts";
 import { compiledWithoutCatalogue, flattenComponents, redirectSink, withSourcePath } from "./flatten.ts";
 import type { ComponentSource } from "./flatten.ts";
@@ -91,6 +93,24 @@ import type { TimeProbe } from "./time-probe.ts";
 /** T1421b: a context field that is absent, not undefined, when there is no frame. */
 function withTimeProbe(probe: TimeProbe | undefined): { timeProbe?: TimeProbe } {
   return probe === undefined ? {} : { timeProbe: probe };
+}
+
+/**
+ * T1721b — WHO PUBLISHES A MOTION SOMETHING READS.
+ *
+ * A camera resolves its parameters at two more moments to publish its path's derivative
+ * (T1421b), and only an input declared `readsMotion` (Camera Blur's camera) ever reads it. The
+ * edges here include the synthesized source-reference ones, so a camera named by a parameter
+ * counts exactly as a wired one does.
+ */
+function motionReadSources(graph: FlatGraph, registry: NodeRegistryView): ReadonlySet<NodeId> {
+  const read = new Set<NodeId>();
+  for (const edge of Object.values(graph.edges)) {
+    const target = graph.nodes[edge.target.nodeId];
+    const port = target === undefined ? undefined : registry.get(target.type)?.inputs.find((input) => input.id === edge.target.portId);
+    if (port?.readsMotion === true) read.add(edge.source.nodeId);
+  }
+  return read;
 }
 import { effectiveParameterSchema } from "../domain/parameters/resolve.ts";
 import type { ParameterMorphs } from "../domain/parameters/resolve.ts";
@@ -677,12 +697,13 @@ function splicePassthroughNodes(validated: {
   for (const [nodeId, resolved] of validated.nodes) {
     if (resolved.node.ui?.muted === true) muted.add(nodeId);
   }
-  const wires = new Map<NodeId, { input: PortId; output: PortId }>();
+  /** Wire node → output port → the input port it passes (B301: per PORT, `bypassPassthroughPairs`). */
+  const wires = new Map<NodeId, ReadonlyMap<PortId, PortId>>();
   const bypassDiagnostics: RuntimeDiagnostic[] = [];
   for (const [nodeId, resolved] of validated.nodes) {
     if (muted.has(nodeId)) continue;
     if (resolved.definition.passthrough !== undefined) {
-      wires.set(nodeId, resolved.definition.passthrough);
+      wires.set(nodeId, new Map([[resolved.definition.passthrough.output, resolved.definition.passthrough.input]]));
       continue;
     }
     // T250 (B16): BYPASS makes any node a wire, TD-style — first input through to
@@ -697,11 +718,16 @@ function splicePassthroughNodes(validated: {
     // mutes instead, exactly like a source, with the reason said out loud.
     if (resolved.node.ui?.bypassed === true) {
       const output = resolved.definition.outputs[0];
-      // T541: the rule itself now lives in `bypassPassthroughPorts` — the value graph
-      // asks the same question and §V109 says it must not get a second answer.
-      const ports = bypassPassthroughPorts(resolved.definition);
-      if (ports !== undefined) {
-        wires.set(nodeId, ports);
+      // T541: the rule itself lives in `domain/graph/bypass.ts` — the value graph asks
+      // the same question and §V109 says it must not get a second answer.
+      //
+      // B301 (§V1035): asked per OUTPUT. Each output passes the input the rule pairs it
+      // with, and one with no partner reads disconnected. Until then every edge leaving a
+      // bypassed node took the FIRST output's producer whatever port and kind it left by,
+      // so a pointset consumer of an instance's second output was handed a texture.
+      const pairs = bypassPassthroughPairs(resolved.definition);
+      if (pairs.size > 0) {
+        wires.set(nodeId, pairs);
       } else {
         muted.add(nodeId);
         if (resolved.definition.inputs.length > 0 && output !== undefined) {
@@ -734,40 +760,50 @@ function splicePassthroughNodes(validated: {
       : validated.edges.filter(
           (edge) => !muted.has(edge.source.nodeId) && !muted.has(edge.target.nodeId),
         );
-  /** First edge into each wire's declared input. */
-  const feeding = new Map<NodeId, { nodeId: NodeId; portId: PortId }>();
+  const at = (nodeId: NodeId, portId: PortId): string => `${nodeId}\u0000${portId}`;
+  /** First edge into each input a wire passes, keyed by `at(wire, input)`. */
+  const feeding = new Map<string, { nodeId: NodeId; portId: PortId }>();
   for (const edge of edgesAfterMute) {
     const wire = wires.get(edge.target.nodeId);
-    if (wire !== undefined && edge.target.portId === wire.input && !feeding.has(edge.target.nodeId)) {
-      feeding.set(edge.target.nodeId, edge.source);
-    }
+    if (wire === undefined) continue;
+    const key = at(edge.target.nodeId, edge.target.portId);
+    if ([...wire.values()].includes(edge.target.portId) && !feeding.has(key)) feeding.set(key, edge.source);
   }
+  /** What feeds the input a wire's output passes; undefined when that output passes nothing, or nothing is wired. */
+  const feedingOutput = (nodeId: NodeId, portId: PortId): { nodeId: NodeId; portId: PortId } | undefined => {
+    const input = wires.get(nodeId)?.get(portId);
+    return input === undefined ? undefined : feeding.get(at(nodeId, input));
+  };
 
-  /** The real (non-wire) producer behind a wire, or undefined for an unconnected chain. */
-  const producerBehind = (wireId: NodeId): { nodeId: NodeId; portId: PortId } | undefined => {
-    const seen = new Set<NodeId>();
-    let current = feeding.get(wireId);
+  /** The real (non-wire) producer behind a wire's output, or undefined for an unconnected chain. */
+  const producerBehind = (wireId: NodeId, output: PortId): { nodeId: NodeId; portId: PortId } | undefined => {
+    const seen = new Set<string>();
+    let current = feedingOutput(wireId, output);
     while (current !== undefined && wires.has(current.nodeId)) {
-      if (seen.has(current.nodeId)) return undefined; // defensive: a loop of wires
-      seen.add(current.nodeId);
-      current = feeding.get(current.nodeId);
+      const key = at(current.nodeId, current.portId);
+      if (seen.has(key)) return undefined; // defensive: a loop of wires
+      seen.add(key);
+      current = feedingOutput(current.nodeId, current.portId);
     }
     return current;
   };
 
-  const producers = new Map<NodeId, { nodeId: NodeId; portId: PortId } | undefined>();
+  /** `at(wire, output)` → its producer. */
+  const producers = new Map<string, { nodeId: NodeId; portId: PortId } | undefined>();
   for (const wireId of [...wires.keys()].sort()) {
-    const producer = producerBehind(wireId);
-    producers.set(wireId, producer);
-    if (producer === undefined && feeding.has(wireId)) {
-      diagnostics.push(
-        compilerDiagnostic(
-          "warning",
-          CompilerDiagnosticCode.passthroughUnconnected,
-          `"${wireId}" passes through a chain that reaches no producer; its output is disconnected.`,
-          { nodeId: wireId },
-        ),
-      );
+    for (const [output, input] of wires.get(wireId) ?? []) {
+      const producer = producerBehind(wireId, output);
+      producers.set(at(wireId, output), producer);
+      if (producer === undefined && feeding.has(at(wireId, input))) {
+        diagnostics.push(
+          compilerDiagnostic(
+            "warning",
+            CompilerDiagnosticCode.passthroughUnconnected,
+            `"${wireId}" passes through a chain that reaches no producer; its output is disconnected.`,
+            { nodeId: wireId },
+          ),
+        );
+      }
     }
   }
 
@@ -785,8 +821,9 @@ function splicePassthroughNodes(validated: {
       edges.push(edge);
       continue;
     }
-    const producer = producers.get(edge.source.nodeId);
-    if (producer === undefined) continue; // unconnected wire: the consumer loses the edge
+    // An output the wire does not pass, or an unconnected wire: the consumer loses the edge.
+    const producer = producers.get(at(edge.source.nodeId, edge.source.portId));
+    if (producer === undefined) continue;
     edges.push({ ...edge, source: producer, temporal: temporalOf(producer) });
   }
 
@@ -797,14 +834,20 @@ function splicePassthroughNodes(validated: {
 
   const aliases: Array<[{ nodeId: NodeId; portId: PortId }, { nodeId: NodeId; portId: PortId }]> = [];
   for (const [wireId, wire] of [...wires.entries()].sort(([a], [b]) => a.localeCompare(b))) {
-    const producer = producers.get(wireId);
-    if (producer !== undefined) aliases.push([{ nodeId: wireId, portId: wire.output }, producer]);
+    for (const output of wire.keys()) {
+      const producer = producers.get(at(wireId, output));
+      if (producer !== undefined) aliases.push([{ nodeId: wireId, portId: output }, producer]);
+    }
   }
 
   const redirectSink = (sink: ActiveSink): ActiveSink | null => {
     const wire = wires.get(sink.nodeId);
     if (wire === undefined) return sink;
-    const producer = producers.get(sink.nodeId);
+    // A wire with ONE output is watched by whatever port the sink names (as it always was);
+    // one with several is watched by the output named.
+    const only = wire.size === 1 ? [...wire.keys()][0] : undefined;
+    const watched = only ?? sink.portId ?? [...wire.keys()][0];
+    const producer = watched === undefined ? undefined : producers.get(at(sink.nodeId, watched));
     /*
      * T607: DROPPED, not kept. This used to return the sink unchanged ("resolves to
      * nothing like any dangling sink") — but the wire node is spliced OUT of the
@@ -838,6 +881,12 @@ export interface RetainedNodeCompile {
   readonly passIds: ReadonlyArray<string>;
   /** `JSON.stringify` of the description's `scratch` and `pointsets` — the structural half. */
   readonly structureKey: string;
+  /** T1719b: the description's value function, kept only when every one of its passes was emitted. */
+  readonly values?: NodeValueFunction;
+  /** T1721b: an input that reads motion takes this node's scene output, so its frames get a time probe. */
+  readonly motionRead?: true;
+  /** T1719b: the outputs this node published a scene payload on; a value function gives one on each. */
+  readonly scenePorts?: ReadonlyArray<string>;
 }
 
 /** Everything `frame-compile.ts` needs from a full compile, besides the plan itself. */
@@ -873,6 +922,8 @@ export interface RetainedCompile {
    * against this one, so a value that changes what a diagnostic says is never spliced.
    */
   readonly said: ReadonlyMap<NodeId, ReadonlyArray<RuntimeDiagnostic>>;
+  /** §T1732b: the look clones this compile drew, by clone id: re-run at every frame, camera moved by their look. */
+  readonly looks: ReadonlyMap<NodeId, LookClone>;
 }
 
 export interface CompileGraphResult {
@@ -970,14 +1021,21 @@ export function compileGraphRetaining(request: CompileRequest): CompileGraphResu
    */
   const referenced = synthesizeSourceReferenceEdges(flatGraph, registry);
   diagnostics.push(...referenced.diagnostics);
-  const graph = referenced.graph;
+  // §T1732b: a renderer a `look` sink names is compiled twice; the second is a clone in the
+  // graph, wired as the renderer is, whose camera is substituted below (`compiler/look.ts`).
+  const looking = withLookClones(referenced.graph, request.sinks, registry);
+  const graph = looking.graph;
+  /** §T1732b: whether a node is a look clone, which no surface shows as a node of its own. */
+  const isLookClone = (nodeId: NodeId | undefined): boolean => nodeId !== undefined && looking.clones.has(nodeId);
 
   // A sink naming an instance has to follow it into the flattening (§V25, §V28).
+  // §T1732b: a `look` sink keeps nothing alive; it asked for its clone above.
+  const keepingSinks = request.sinks?.some((sink) => sink.kind === "look") === true ? request.sinks.filter((sink) => sink.kind !== "look") : request.sinks;
   const explicitSinks: ReadonlyArray<ActiveSink> | undefined =
     flattened === undefined
-      ? request.sinks
+      ? keepingSinks
       : [
-          ...(request.sinks ?? []).map((sink) => redirectSink(sink, flattened.instanceOutputs)),
+          ...(keepingSinks ?? []).map((sink) => redirectSink(sink, flattened.instanceOutputs)),
           ...flattened.sinks,
         ];
 
@@ -1096,7 +1154,14 @@ export function compileGraphRetaining(request: CompileRequest): CompileGraphResu
     const [width, height] = previewTargetSize();
     return width / height;
   };
-  const { kept, pruned } = pruneToActiveSinks(validated.nodes, validated.edges, sinkResolution.sinks, instancePages);
+  const pruning = pruneToActiveSinks(validated.nodes, validated.edges, sinkResolution.sinks, instancePages);
+  /* §T1732b: a clone is kept exactly when its renderer is (its inputs are the renderer's, so
+     they are kept already), and it is never reported pruned: it is not a node anybody made. */
+  const kept: ReadonlySet<NodeId> =
+    looking.clones.size === 0
+      ? pruning.kept
+      : new Set([...pruning.kept, ...[...looking.clones].flatMap(([clone, look]) => (pruning.kept.has(look.renderer) ? [clone] : []))]);
+  const pruned = looking.clones.size === 0 ? pruning.pruned : pruning.pruned.filter((nodeId) => !isLookClone(nodeId));
   diagnostics.push(...validateRequiredInputs(validated.nodes, validated.edges, kept));
 
   // 3. temporal split, cycle rejection, ordering (T25, §V4)
@@ -1144,12 +1209,20 @@ export function compileGraphRetaining(request: CompileRequest): CompileGraphResu
     const anchor = validated.nodes.get(nodeId)?.definition?.anchorOutput;
     if (anchor !== undefined && kept.has(nodeId)) materialized.add(outputKey(nodeId, anchor));
   }
+  // §T1732b: a look clone has no reader and no sink: it draws what its renderer draws.
+  for (const [clone, look] of looking.clones) {
+    const definition = kept.has(clone) ? validated.nodes.get(clone)?.definition : undefined;
+    for (const slot of definition === undefined ? [] : outputSlots(definition)) {
+      if (materialized.has(outputKey(look.renderer, slot.portId))) materialized.add(outputKey(clone, slot.portId));
+    }
+  }
 
   // T546: read the §V372/§V373 synthesized camera edges back, so a camera's preview can
   // follow the link that already exists. KEPT edges only — a renderer the prune dropped
   // frames nothing this compile, so it cannot be the answer to "what does this see".
   const renderersByCamera = renderersFramedByCamera(
-    [...topology.currentFrameEdges, ...topology.temporalEdges],
+    // §T1732b: a look clone frames nothing a camera's tile could borrow.
+    [...topology.currentFrameEdges, ...topology.temporalEdges].filter((edge) => !isLookClone(edge.target.nodeId)),
     (id) => validated.nodes.get(id)?.definition,
   );
 
@@ -1204,6 +1277,20 @@ export function compileGraphRetaining(request: CompileRequest): CompileGraphResu
   }
   /** T1432b: authored pixels -> output pixels, 1 when the project names no reference width. */
   const pixelScale = outputPixelScale(settings);
+  /** T1721b: the nodes whose scene output an input that reads motion takes; only they get a time probe. */
+  const motionRead = motionReadSources(graph, registry);
+  /**
+   * §T1732b: a clone's inputs with its camera moved by its look. The orbit is read only when
+   * this compile resolves a FRAME: a structural compile draws the clone through the camera's
+   * own pose, so it stays a pure function of its request.
+   */
+  const lookInputsOf = (nodeId: NodeId, inputs: Record<PortId, CompiledInputBinding[]>): Record<PortId, CompiledInputBinding[]> => {
+    const clone = looking.clones.get(nodeId);
+    if (clone === undefined || request.resolution?.frame === undefined) return inputs;
+    return lookCameraInputs(inputs, clone, clone.orbit());
+  };
+  /** §T1732b: each renderer's camera pose as it arrived, for its rows' `look.basis`. */
+  const lookBases = new Map<NodeId, { eye: readonly [number, number, number]; lookAt: readonly [number, number, number] }>();
   for (const nodeId of topology.order) {
     const resolved = validated.nodes.get(nodeId);
     if (resolved === undefined) continue;
@@ -1253,6 +1340,12 @@ export function compileGraphRetaining(request: CompileRequest): CompileGraphResu
       });
     }
 
+    for (const port of definition.inputs) {
+      if (port.type.kind !== "camera" || isLookClone(nodeId)) continue;
+      const camera = inputs[port.id]?.[0]?.scene;
+      if (camera?.kind === "camera") lookBases.set(nodeId, { eye: camera.eye, lookAt: camera.lookAt });
+    }
+
     const outputBindings: Record<PortId, CompiledOutputBinding> = {};
     let target: string | undefined;
     let resolution: readonly [number, number] | undefined;
@@ -1287,7 +1380,8 @@ export function compileGraphRetaining(request: CompileRequest): CompileGraphResu
       format: format ?? settings.workingFormat,
       space: space ?? colorSpaceForFormat(format ?? settings.workingFormat),
       target,
-      inputs,
+      // §T1732b: a look clone sees its camera moved by the look, at a frame (`look.ts`).
+      inputs: lookInputsOf(nodeId, inputs),
       outputs: outputBindings,
       sampler: SHARED_SAMPLER_ID,
       projectResolution: [settings.outputResolution.width, settings.outputResolution.height],
@@ -1295,8 +1389,9 @@ export function compileGraphRetaining(request: CompileRequest): CompileGraphResu
       // display transform in can read them. T84 recorded `colorPolicy` and nothing ever
       // read it — the §V220 shape, and the whole of B47.
       colorPolicy: colorPolicyOf(settings),
-      // T1421b: the node's parameters along its own path (the Camera's derivative).
-      ...withTimeProbe(timeProbeFor(node, definition, graph, registry, reading, settings)),
+      // T1421b: the node's parameters along its own path (the Camera's derivative), for a
+      // node whose motion something reads (T1721b).
+      ...withTimeProbe(motionRead.has(nodeId) ? timeProbeFor(node, definition, graph, registry, reading, settings) : undefined),
     };
     if (!isDefaultChannelMask(node.channelMask) && !supportsChannelMask(definition)) {
       diagnostics.push({ severity: "error", code: "node.channelMask.unsupported", nodeId,
@@ -1400,10 +1495,12 @@ export function compileGraphRetaining(request: CompileRequest): CompileGraphResu
     // Trusted as-is: producers are our own definitions, and a malformed payload fails
     // loudly at the consumer with the producer named (§V288).
     const sceneRaw = (description as { scene?: unknown }).scene;
+    const scenePorts: string[] = [];
     if (isRecord(sceneRaw)) {
       for (const [portId, payload] of Object.entries(sceneRaw)) {
         if (isRecord(payload) && typeof payload["kind"] === "string") {
           sceneInfoByOutput.set(outputKey(nodeId, portId), payload as unknown as ScenePayload);
+          scenePorts.push(portId);
         }
       }
     }
@@ -1675,6 +1772,9 @@ export function compileGraphRetaining(request: CompileRequest): CompileGraphResu
       context,
       passIds: emittedPassIds,
       structureKey: descriptionStructureKey(description),
+      ...(motionRead.has(nodeId) ? { motionRead: true } : {}),
+      ...(description.values !== undefined && emitted === description.passes.length ? { values: description.values } : {}),
+      ...(scenePorts.length === 0 ? {} : { scenePorts }),
     });
     for (const entry of channelProcessing.outputs) {
       if (!passes.some(pass => pass["nodeId"] === nodeId && pass["target"] === entry.processed)) {
@@ -2684,6 +2784,29 @@ export function compileGraphRetaining(request: CompileRequest): CompileGraphResu
         : pictureCameraControl(resolved.definition.inputs, resolved.parameters, cameraByRenderer.get(output.nodeId));
     return control === undefined ? output : { ...output, previewCamera: control };
   };
+  /**
+   * §T1732b: which pictures can be looked around, by the resource they show: a renderer's own
+   * row, a camera's borrowed one (T546) and a Null's alias all show the renderer's target,
+   * so all three answer to the renderer's look. `picture` is its clone's target, when kept.
+   */
+  const lookByResource = new Map<string, NonNullable<ResolvedOutput["look"]>>();
+  for (const [renderer, basis] of lookBases) {
+    const definition = validated.nodes.get(renderer)?.definition;
+    if (definition === undefined) continue;
+    const clone = lookCloneId(renderer);
+    for (const slot of outputSlots(definition)) {
+      const own = propagated.outputs.get(outputKey(renderer, slot.portId));
+      if (own === undefined || own.resourceKind === "pointset") continue;
+      const drawn = kept.has(clone) ? propagated.outputs.get(outputKey(clone, slot.portId)) : undefined;
+      lookByResource.set(own.resourceId, {
+        renderer,
+        basis,
+        ...(drawn === undefined
+          ? {}
+          : { picture: { resourceId: drawn.resourceId, size: drawn.size, format: drawn.format, space: drawn.space } }),
+      });
+    }
+  }
   const outputs = [...propagated.outputs.values()]
     .map(withPictureCamera)
     .map((output) => pointsPreviewOutputs.get(outputKey(output.nodeId, output.portId)) ?? output)
@@ -2695,10 +2818,17 @@ export function compileGraphRetaining(request: CompileRequest): CompileGraphResu
     // row under its own port id — never a replacement, because the authored row is still
     // what export, readback and every downstream consumer mean by this output.
     .concat([...viewportOutputs.values()])
+    .filter((output) => !isLookClone(output.nodeId))
+    .map((output) => {
+      if (output.resourceKind === "pointset") return output;
+      const look = lookByResource.get(output.resourceId);
+      return look === undefined ? output : { ...output, look };
+    })
     .sort((a, b) => outputKey(a.nodeId, a.portId).localeCompare(outputKey(b.nodeId, b.portId)));
 
   // §V82: every diagnostic that names a node inside a component carries its source path.
-  const reported = stamp(diagnostics);
+  // §T1732b: a look clone says what its renderer says, which the renderer has said already.
+  const reported = stamp(looking.clones.size === 0 ? diagnostics : diagnostics.filter((diagnostic) => !isLookClone(diagnostic.nodeId)));
 
   // T1176: per-entry keys and the whole-plan signature from ONE pass. The signature is
   // derived from the very keys the per-entry rows carry, so computing them separately
@@ -2721,7 +2851,7 @@ export function compileGraphRetaining(request: CompileRequest): CompileGraphResu
       signature: structure.signature,
       estimatedResourceBytes,
     },
-    retained: { request, graph, order: topology.order, nodes: retainedNodes, scenePayloads: sceneInfoByOutput, morphs, instances, instancePages, said },
+    retained: { request, graph, order: topology.order, nodes: retainedNodes, scenePayloads: sceneInfoByOutput, morphs, instances, instancePages, said, looks: looking.clones },
   };
 }
 

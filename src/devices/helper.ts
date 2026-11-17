@@ -95,6 +95,111 @@ export const DEVICE_HELPER_ALL_COMMAND = `${DEVICE_HELPER_COMMAND} ${HELPER_ALL_
 export const DEVICE_HELPER_PHONE_COMMAND = `${DEVICE_HELPER_COMMAND} ${HELPER_PHONE_FLAG}`;
 
 /**
+ * The flag that TAKES THE BRIDGE from another Loom helper (T1773b).
+ *
+ * The bridge port is one constant and the first helper to bind it holds it, so a helper an
+ * agent session started hours ago leaves the one a person starts at a terminal without a
+ * listener of its own. This flag stops that process and binds. It opens no door and grants
+ * nothing; it is on the command line because ending another session's process is an act a
+ * person chooses, never a default.
+ */
+export const HELPER_FORCE_FLAG = "--force";
+
+/** The command that takes the bridge over (T1773b). */
+export const DEVICE_HELPER_FORCE_COMMAND = `${DEVICE_HELPER_COMMAND} ${HELPER_FORCE_FLAG}`;
+
+/** Who holds the bridge port, as far as the operating system would say (T1773b). */
+export interface BridgeHolderDescription {
+  readonly pid: number;
+  /** The holder's command line, or "" when it could not be read. */
+  readonly command: string;
+  /** Whether that process was verified to be a Loom helper. */
+  readonly loom: boolean;
+}
+
+function holderName(holder: BridgeHolderDescription): string {
+  const command = holder.command === "" ? "command line unreadable" : holder.command;
+  return `PID ${holder.pid} (${holder.loom ? "a Loom helper" : "NOT a Loom helper"}: ${command})`;
+}
+
+/**
+ * T1773b — what a helper that lost the bind adds to that news: who holds the port and the
+ * one command that takes it. `null` holder means the platform could not name it.
+ */
+export function bridgeHeldRemedy(port: number, holder: BridgeHolderDescription | null): string {
+  if (holder === null) {
+    return `Port ${port} is held by a process this platform could not identify. Stop it by hand to get a pairing code from this helper.`;
+  }
+  if (!holder.loom) {
+    return `Port ${port} is held by ${holderName(holder)}. \`${HELPER_FORCE_FLAG}\` will not stop a process that is not Loom's; stop it by hand to get a pairing code from this helper.`;
+  }
+  return (
+    `Port ${port} is held by ${holderName(holder)}. The doors this command line asked for are NOT open while it holds the bridge. ` +
+    `Add \`${HELPER_FORCE_FLAG}\` (\`${DEVICE_HELPER_FORCE_COMMAND}\`, with your other flags) to stop that process and get a pairing code from this one.`
+  );
+}
+
+/** T1773b — the one line that says another session lost its bridge, and how. */
+export function bridgeTakenOver(port: number, holder: BridgeHolderDescription, signal: "SIGTERM" | "SIGKILL"): string {
+  return `\`${HELPER_FORCE_FLAG}\`: stopped ${holderName(holder)} with ${signal}; it held port ${port}, and whatever session started it has lost its bridge. This helper takes the port now.`;
+}
+
+/** T1773b — why `--force` stopped nothing and this helper did not start. */
+export function bridgeForceRefused(
+  port: number,
+  holder: BridgeHolderDescription | null,
+  why: "notLoom" | "unidentified" | "survived",
+): string {
+  if (holder === null || why === "unidentified") {
+    return `\`${HELPER_FORCE_FLAG}\` could not identify the process that holds port ${port} on this platform, so nothing was stopped and nothing was started. Stop it by hand.`;
+  }
+  if (why === "survived") {
+    return `\`${HELPER_FORCE_FLAG}\` sent SIGTERM and then SIGKILL to ${holderName(holder)} and it is still running, so port ${port} is still held. Nothing was started.`;
+  }
+  return `\`${HELPER_FORCE_FLAG}\` refused: port ${port} is held by ${holderName(holder)}, and only a Loom helper is ever stopped. Nothing was stopped and nothing was started.`;
+}
+
+/**
+ * T1778b — THE PAIRING CODE AS A BLOCK A PERSON CANNOT MISS.
+ *
+ * The code used to arrive inside a sentence inside a paragraph of startup text, and it is
+ * the one thing the reader came for. The entry points print this block after everything
+ * else, and again whenever the code that works changes. Letters are spaced for reading;
+ * the Connections field ignores spaces, so the line can be pasted as it is.
+ *
+ * `holderPid` set means the code belongs to ANOTHER helper, the one that holds the port
+ * (T921's proxy case). `emphasis` is for a terminal only: the caller passes false for a
+ * pipe or under `NO_COLOR`, and the block then carries no escape sequence.
+ */
+export function pairingCodeBlock(options: {
+  /** Named in full, not `code`: T1641b's census reads an object's `code` as a diagnostic code. */
+  readonly pairingCode: string;
+  readonly port: number;
+  readonly holderPid?: number | null;
+  readonly emphasis: boolean;
+}): string {
+  const rule = "  ========================================";
+  const whose =
+    options.holderPid === undefined
+      ? `this helper, port ${options.port}`
+      : `the helper that holds port ${options.port}${options.holderPid === null ? "" : `, PID ${options.holderPid}`}`;
+  const spaced = options.pairingCode.split("").join(" ");
+  const code = options.emphasis ? `\u001b[1;7m  ${spaced}  \u001b[0m` : spaced;
+  return [
+    "",
+    rule,
+    `  LOOM PAIRING CODE (${whose})`,
+    "",
+    `      ${code}`,
+    "",
+    "  Enter it in Loom: agent panel, Connections.",
+    rule,
+    "",
+    "",
+  ].join("\n");
+}
+
+/**
  * T1396b — WHAT `--phone` DID AT STARTUP, WHICH IS NOT MUCH, SAID SO.
  *
  * The flag arms a door that opens later, from the editor, so the line a person reads when

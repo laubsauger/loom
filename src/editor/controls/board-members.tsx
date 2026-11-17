@@ -21,7 +21,7 @@ import {
   parseMorphRecords,
   parsePresetBank,
 } from "@domain/presets/index.ts";
-import { LAYER_NODE_TYPE, layerPicture, surfaceNameOf, type BoardRect } from "@nodes/definitions/controls.ts";
+import { LAYER_NODE_TYPE, layerPicture, surfaceNameOf, switchesOnBoard, type BoardRect } from "@nodes/definitions/controls.ts";
 import { refusalMessage, type CommandAnswer } from "@editor/inspector/command-refusal.ts";
 import { ShareFill } from "@ui/primitives/share-fill.tsx";
 import { boardFit, boardValueEm, cueListBoardLayout, cueListShowsCues, layerBoardLayout, presetStripGrid, type BoardCells } from "./board-fit.ts";
@@ -284,6 +284,32 @@ function LayerStrip({ node, rect, cells, bus, invocation, write }: BoardMemberPr
 }
 
 /**
+ * T1771b — ANY OTHER NODE on a board is its on/off switch: on means not bypassed, the
+ * Layer's own flag and the Layer's own write (`setLayerOn`: the state asked for, never a
+ * flip). An effect then passes its input, a source goes silent, and a component instance
+ * that is off is not inlined and costs nothing (§T1770b, §V1035). Captioned by the role of
+ * its name, like every by-name member.
+ */
+function SwitchTile({ node, rect, cells, bus, invocation, name }: BoardMemberProps & { readonly name: string }) {
+  const on = node.ui?.bypassed !== true;
+  const fit = boardFit({ kind: "toggle", caption: name, valueEm: boardValueEm("toggle", {}), widthPx: cells.widthOf(rect.w), cellPx: cells.cellPx });
+  return (
+    <div className={`${styles.member} ${styles.parts}`} data-board-member="switch" data-switch-on={on ? "true" : "false"}>
+      <div className={styles.part} style={{ fontSize: px(fit.fontPx) }}>
+        <ControlWidget
+          nodeId={node.id}
+          type="toggle"
+          parameters={{ caption: name, on }}
+          write={(_nodeId, entries) => setLayerOn(bus, invocation, node.id, entries["on"] === true)}
+          size="board"
+          showValue={fit.value}
+        />
+      </div>
+    </div>
+  );
+}
+
+/**
  * T1527b — the cue list keeps its standby in view, as the phone's does (§T1526b): it
  * scrolls ITSELF, never the pane, and only when the standby MOVED — a list the performer
  * scrolled stays where they left it until the next GO or tap moves the standby.
@@ -380,5 +406,7 @@ export function BoardMember(props: BoardMemberProps) {
   if (Member !== undefined) return <Member {...props} />;
   // T1505b: a look's instance on the board by name is its bank — the strip, from its component.
   const view = bankViewOf(props.node, catalogue);
-  return view?.kind === "instance" ? <PresetStrip {...props} view={view} name={surfaceNameOf(props.node, catalogue)} /> : null;
+  if (view?.kind === "instance") return <PresetStrip {...props} view={view} name={surfaceNameOf(props.node, catalogue)} />;
+  // T1771b: anything else a board names is its on/off switch (an instance only once the catalogue can say it is no look).
+  return switchesOnBoard(props.node, catalogue) ? <SwitchTile {...props} name={surfaceNameOf(props.node, catalogue)} /> : null;
 }

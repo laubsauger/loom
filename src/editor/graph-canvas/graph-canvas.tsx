@@ -68,6 +68,8 @@ import { KindLabelDriver } from "./kind-label-driver.tsx";
 import { WireRangeDriver } from "./wire-range-driver.tsx";
 import { GraphMinimap } from "./graph-minimap.tsx";
 import { registerMinimapCommand } from "./minimap-command.ts";
+import { registerScrollPanCommand } from "./scroll-pan-command.ts";
+import { RightDragSelect } from "./right-drag-select.tsx";
 import { GraphCanvasContext } from "./canvas-context.ts";
 import type {
   GraphCanvasContextValue,
@@ -120,7 +122,12 @@ const NODE_TYPES: NodeTypes = {
 const EDGE_TYPES: EdgeTypes = { [SIGNAL_EDGE_TYPE]: SignalEdge as EdgeTypes[string] };
 const DEFAULT_EDGE_OPTIONS = { type: SIGNAL_EDGE_TYPE } as const;
 /**
- * §I.ui: middle-drag pans, alt-drag pans, left-drag rubber-band selects, scroll zooms.
+ * §I.ui, TouchDesigner's network editor (`docs.derivative.ca/Network_Editor`, owner
+ * 2026-11-03: middle-drag was the hardest thing in the editor to use, and unusable on a
+ * trackpad): LEFT-drag on empty canvas pans, Shift+left-drag box-selects, the wheel and a
+ * trackpad pinch zoom about the pointer, right-click opens the canvas menu. Middle-drag
+ * still pans, and alt-drag pans over nodes (B195 below). A trackpad pans by pressing and
+ * dragging, as in TouchDesigner, which has no two-finger pan either.
  *
  * ONE array for the life of the module (T1653b). React Flow's zoom pane keys an effect on
  * this prop's IDENTITY, and that effect re-binds its non-passive `wheel` listener on the
@@ -131,10 +138,14 @@ const DEFAULT_EDGE_OPTIONS = { type: SIGNAL_EDGE_TYPE } as const;
  * repainted, 0.1 ms a node, with no DOM change at all (measured: 900 objects visited for
  * one write on a 54-node document, 15 in a frame without one).
  */
-const PAN_MOUSE_BUTTONS: number[] = [1];
+const PAN_MOUSE_BUTTONS: number[] = [0, 1];
+/** TouchDesigner's second box-select gesture (its first, right-drag, is the canvas menu here). */
+const SELECTION_KEY = "Shift";
+/** Shift-click adds to a selection in TouchDesigner, and so does Ctrl-click; Cmd-click on a Mac. One array for the module's life, as above. */
+const MULTI_SELECTION_KEYS: string[] = ["Shift", "Meta", "Control"];
 /**
- * Alt-drag is `panActivationKeyCode`, and with a trackpad it is the ONLY pan gesture.
- * React Flow gives every node wrapper its `nopan` class and its node-drag filter ignores
+ * Alt-drag is `panActivationKeyCode`: the pan that works OVER a node, where a left drag moves
+ * the node instead. React Flow gives every node wrapper its `nopan` class and its node-drag filter ignores
  * modifier keys, so alt+press on a node — any part of it — starts a node drag instead of a
  * pan. At zoom 8 one preview tile is wider than the canvas: nothing but a node is under the
  * pointer, and the canvas cannot be panned at all (B195). While the key is held the canvas
@@ -280,6 +291,9 @@ export function GraphCanvas({
   const appBus = bus.root;
   const minimap = useMemo(() => registerMinimapCommand(appBus), [appBus]);
   const showMinimap = useSyncExternalStore(minimap.subscribe, minimap.get);
+  // T1724b: a two-finger scroll pans (pinch zooms), or the wheel zooms as in TouchDesigner.
+  const scrollPan = useMemo(() => registerScrollPanCommand(appBus), [appBus]);
+  const scrollPans = useSyncExternalStore(scrollPan.subscribe, scrollPan.get);
   // The map's DOM lands here (see `graph-minimap.tsx`); state, not a ref, so the portal
   // renders once the host exists.
   const [minimapHost, setMinimapHost] = useState<HTMLDivElement | null>(null);
@@ -1269,7 +1283,10 @@ export function GraphCanvas({
           deleteKeyCode={null}
           panOnDrag={PAN_MOUSE_BUTTONS}
           panActivationKeyCode={PAN_KEY}
-          selectionOnDrag
+          selectionKeyCode={SELECTION_KEY}
+          multiSelectionKeyCode={MULTI_SELECTION_KEYS}
+          panOnScroll={scrollPans}
+          zoomOnScroll={!scrollPans}
           selectionMode={SelectionMode.Partial}
           zoomOnDoubleClick={false}
           /*
@@ -1294,6 +1311,8 @@ export function GraphCanvas({
           <KindLabelDriver registry={kindLabels} />
           {/* T1639b: keeps the range a wire connects from the same size on screen. Renders nothing. */}
           <WireRangeDriver />
+          {/* T1724b: TouchDesigner's right-drag box selection; a right click stays the canvas menu. */}
+          <RightDragSelect />
           {underlay}
           <ReferenceLines dependencies={dependencies} />
           {showMinimap ? <GraphMinimap host={minimapHost} /> : null}

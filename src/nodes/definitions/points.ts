@@ -29,9 +29,10 @@ import { kernelDimOf, parseTopology } from "../../points/topology.ts";
 import { drawArgsWgsl } from "../../points/lifecycle.ts";
 import { DEFAULT_POINT_KERNEL, SPRITE_RENDER_WGSL, TEXTURE_TO_ATTRIBUTE_WGSL, pointRayWgsl, spriteRenderWgsl } from "../shaders/points.wgsl.ts";
 import { DATA_TEXTURE, RGBA_TEXTURE } from "./common-ports.ts";
-import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
+import { missingCompileResource, readCompileInputs, readValueInputs } from "./compile-context.ts";
 import { codeParametersLast } from "../../domain/parameters/code.ts";
 import { readColor, readNumber } from "./parameter-readers.ts";
+import type { Params } from "./parameter-readers.ts";
 import {
   REFLECTED_PARAMETER_KEYS_NOTE,
   extractParamsStruct,
@@ -786,6 +787,44 @@ export const pointKernelNode: NodeDefinition = {
       };
     }
 
+    /* T1719b: the kernel's uniform block from its resolved values, over the module compiled
+       above. The pass is filled through it and a values-only frame asks it again (`values`
+       below), so the two cannot disagree (V1032). */
+    const uniformsAt = (values: Params): NonNullable<DispatchPassDescriptor["uniforms"]> => ({
+      timeSeconds: 0,
+      deltaSeconds: 0,
+      frameIndex: 0,
+      // Preserve unsigned buffer packing: truncate fractions and wrap into u32.
+      seed: readNumber(values, "seed", 7) >>> 0,
+      count: capacity,
+      // T367: present exactly when the generated block declares it. The backend
+      // overwrites it every frame from the SAME value the shared block gets (§V182);
+      // this entry only reserves the name, because vgpu matches uniforms by name.
+      ...(module.usesPointer ? { pointer: [0, 0, 0, 0] } : {}),
+      // T510: reserved exactly when the module declared it — the backend overwrites it
+      // every dispatch (1u only when this pass's storage was just created or cleared).
+      ...(module.usesFirstRun ? { firstRun: 0 } : {}),
+      // T479: one entry per slot the module declared, and the value is the RESOLVED
+      // parameter — a driven slot arrives already channel-resolved, so the per-frame
+      // recompile-and-diff path (T259/§V5) pushes it like any other uniform, with no
+      // new machinery at all.
+      ...pointKernelValueUniforms(module.usesValues, values),
+      // T900: one member per reflected `struct Params` field the module declared, shaped by
+      // the SAME reflector that built the control (§V288's by-name mirror hazard — a member
+      // with no value reads zero in silence). The values are the RESOLVED parameters, so a
+      // driven colour or a bound number rides the per-frame uniform diff (§V5) with no new
+      // machinery, exactly as the value slots above do.
+      ...reflectedUniforms(module.usesParams, values, KERNEL_PARAM_PREFIX),
+      // T489 (B97): the absolute pair, reserved exactly when the module declared it —
+      // same by-name mirroring hazard as the pointer above. The backend overwrites both
+      // every frame from the numbers the shared block gets, so a kernel and a shader
+      // cannot disagree about how long the show has run (§V182).
+      ...(module.usesAbsClock ? { absTimeSeconds: 0, absFrameIndex: 0 } : {}),
+      // T1583b: the four step members, reserved exactly when the module declared them.
+      // The backend overwrites them for every run of a stepped frame; these values are
+      // what a kernel that is NOT stepped reads, and they say so — run 0 of 1.
+      ...(module.usesSteps ? { substep: 0, substeps: 1, iteration: 0, iterations: 1 } : {}),
+    });
     const pass: DispatchPassDescriptor = {
       kind: "dispatch",
       id: `${nodeId}:kernel`,
@@ -799,41 +838,7 @@ export const pointKernelNode: NodeDefinition = {
          (T297). Writes stay on this node's own pair, whose swap makes this frame's writes
          next frame's reads. */
       buffers: kernelBufferBindings(module.buffers, plan),
-      uniforms: {
-        timeSeconds: 0,
-        deltaSeconds: 0,
-        frameIndex: 0,
-        // Preserve unsigned buffer packing: truncate fractions and wrap into u32.
-        seed: readNumber(parameters, "seed", 7) >>> 0,
-        count: capacity,
-        // T367: present exactly when the generated block declares it. The backend
-        // overwrites it every frame from the SAME value the shared block gets (§V182);
-        // this entry only reserves the name, because vgpu matches uniforms by name.
-        ...(module.usesPointer ? { pointer: [0, 0, 0, 0] } : {}),
-        // T510: reserved exactly when the module declared it — the backend overwrites it
-        // every dispatch (1u only when this pass's storage was just created or cleared).
-        ...(module.usesFirstRun ? { firstRun: 0 } : {}),
-        // T479: one entry per slot the module declared, and the value is the RESOLVED
-        // parameter — a driven slot arrives already channel-resolved, so the per-frame
-        // recompile-and-diff path (T259/§V5) pushes it like any other uniform, with no
-        // new machinery at all.
-        ...pointKernelValueUniforms(module.usesValues, parameters),
-        // T900: one member per reflected `struct Params` field the module declared, shaped by
-        // the SAME reflector that built the control (§V288's by-name mirror hazard — a member
-        // with no value reads zero in silence). The values are the RESOLVED parameters, so a
-        // driven colour or a bound number rides the per-frame uniform diff (§V5) with no new
-        // machinery, exactly as the value slots above do.
-        ...reflectedUniforms(module.usesParams, parameters, KERNEL_PARAM_PREFIX),
-        // T489 (B97): the absolute pair, reserved exactly when the module declared it —
-        // same by-name mirroring hazard as the pointer above. The backend overwrites both
-        // every frame from the numbers the shared block gets, so a kernel and a shader
-        // cannot disagree about how long the show has run (§V182).
-        ...(module.usesAbsClock ? { absTimeSeconds: 0, absFrameIndex: 0 } : {}),
-        // T1583b: the four step members, reserved exactly when the module declared them.
-        // The backend overwrites them for every run of a stepped frame; these values are
-        // what a kernel that is NOT stepped reads, and they say so — run 0 of 1.
-        ...(module.usesSteps ? { substep: 0, substeps: 1, iteration: 0, iterations: 1 } : {}),
-      },
+      uniforms: uniformsAt(parameters),
       // T477: exactly when the module declared the texture (§V288's mirror hazard —
       // vgpu binds by name, and a declared texture with no binding fails loudly).
       ...(module.usesField && fieldTexture !== undefined
@@ -846,6 +851,7 @@ export const pointKernelNode: NodeDefinition = {
 
     return {
       passes: [pass],
+      values: (next) => ({ passes: [{ uniforms: uniformsAt(readValueInputs(next).parameters) }] }),
       // T587: the module compiled, and had something to say about the clock it reads.
       // Carried on a SUCCESSFUL compile on purpose — this is advice, not a refusal, and a
       // kernel that means to read the wrapping clock keeps running while it is shown.

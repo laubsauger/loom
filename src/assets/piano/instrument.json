@@ -1,0 +1,257 @@
+{
+  "revision": "3382bf9496bba2486f5ab0de55a264d1dfc38404",
+  "samples": {
+    "A1v3": {
+      "midi": 33,
+      "layer": 3,
+      "fundamental": 54.73515286046387,
+      "sha256": "25ae46408863b71f522c7ad5fea0088f46a69babef4e1a0c7be0bc9824b85571",
+      "source": "https://raw.githubusercontent.com/sfzinstruments/SalamanderGrandPiano/3382bf9496bba2486f5ab0de55a264d1dfc38404/Samples/A1v3.flac"
+    },
+    "A1v6": {
+      "midi": 33,
+      "layer": 6,
+      "fundamental": 54.733090266537,
+      "sha256": "48021c004e5b596d5d1dd8da535575b7787a209cdf6ea2ffb5b01331cd0d8d5b",
+      "source": "https://raw.githubusercontent.com/sfzinstruments/SalamanderGrandPiano/3382bf9496bba2486f5ab0de55a264d1dfc38404/Samples/A1v6.flac"
+    },
+    "C2v3": {
+      "midi": 36,
+      "layer": 3,
+      "fundamental": 64.97932729539482,
+      "sha256": "ef0ee9f9ce8d69280468727750827c4c7ef6258566369cdade8b9ac126701f3f",
+      "source": "https://raw.githubusercontent.com/sfzinstruments/SalamanderGrandPiano/3382bf9496bba2486f5ab0de55a264d1dfc38404/Samples/C2v3.flac"
+    },
+    "C2v6": {
+      "midi": 36,
+      "layer": 6,
+      "fundamental": 64.97615838421711,
+      "sha256": "8f6447953c23ee4147ac090740db1fa6aa7866fa71f50f6b79e11627b934d6f9",
+      "source": "https://raw.githubusercontent.com/sfzinstruments/SalamanderGrandPiano/3382bf9496bba2486f5ab0de55a264d1dfc38404/Samples/C2v6.flac"
+    },
+    "D#2v3": {
+      "midi": 39,
+      "layer": 3,
+      "fundamental": 77.27622764392096,
+      "sha256": "7cc27d9689e0cdd43b5f58db0317fe315a3324a0e7ac617669f27177686f7a41",
+      "source": "https://raw.githubusercontent.com/sfzinstruments/SalamanderGrandPiano/3382bf9496bba2486f5ab0de55a264d1dfc38404/Samples/D%232v3.flac"
+    },
+    "D#2v6": {
+      "midi": 39,
+      "layer": 6,
+      "fundamental": 77.27848551381238,
+      "sha256": "ae35b1e6edb7f02b7f561f545d54582a991686fae2b5ac36623ac969f5b558c8",
+      "source": "https://raw.githubusercontent.com/sfzinstruments/SalamanderGrandPiano/3382bf9496bba2486f5ab0de55a264d1dfc38404/Samples/D%232v6.flac"
+    },
+    "F#2v3": {
+      "midi": 42,
+      "layer": 3,
+      "fundamental": 92.2127719061304,
+      "sha256": "87a0bdd7b3d1df04d7bb7fcedaf39ac3f74b7239656f565e841dff2ec5c7be18",
+      "source": "https://raw.githubusercontent.com/sfzinstruments/SalamanderGrandPiano/3382bf9496bba2486f5ab0de55a264d1dfc38404/Samples/F%232v3.flac"
+    },
+    "F#2v6": {
+      "midi": 42,
+      "layer": 6,
+      "fundamental": 92.21218867493955,
+      "sha256": "bd9b013a9fc065180e249ba34f7fea87014bb49a0822a867756011c8c8b20d4d",
+      "source": "https://raw.githubusercontent.com/sfzinstruments/SalamanderGrandPiano/3382bf9496bba2486f5ab0de55a264d1dfc38404/Samples/F%232v6.flac"
+    },
+    "A2v3": {
+      "midi": 45,
+      "layer": 3,
+      "fundamental": 109.60812905840574,
+      "sha256": "9b65b973981c5e65923d335485686672e0547f9ca9e9c635c5749d6b0a581c2a",
+      "source": "https://raw.githubusercontent.com/sfzinstruments/SalamanderGrandPiano/3382bf9496bba2486f5ab0de55a264d1dfc38404/Samples/A2v3.flac"
+    },
+    "A2v6": {
+      "midi": 45,
+      "layer": 6,
+      "fundamental": 109.60760896483346,
+      "sha256": "5f4c946e63b95631d7cf014335cdc8bd1c9d8f08c0f15d81e7744a1b8bf5594a",
+      "source": "https://raw.githubusercontent.com/sfzinstruments/SalamanderGrandPiano/3382bf9496bba2486f5ab0de55a264d1dfc38404/Samples/A2v6.flac"
+    },
+    "C3v3": {
+      "midi": 48,
+      "layer": 3,
+      "fundamental": 130.75564157098202,
+      "sha256": "4a0fd7ec75a9d9b6bf3cc03a0ec18dcfc2901a96ffd94fa573ecae41b419e124",
+      "source": "https://raw.githubusercontent.com/sfzinstruments/SalamanderGrandPiano/3382bf9496bba2486f5ab0de55a264d1dfc38404/Samples/C3v3.flac"
+    },
+    "C3v6": {
+      "midi": 48,
+      "layer": 6,
+      "fundamental": 129.8231770910112,
+      "sha256": "ba2fc308c3a6cd20797df32cc67b786be510178f0e36e8906165fa0f56d89bc2",
+      "source": "https://raw.githubusercontent.com/sfzinstruments/SalamanderGrandPiano/3382bf9496bba2486f5ab0de55a264d1dfc38404/Samples/C3v6.flac"
+    },
+    "D#3v3": {
+      "midi": 51,
+      "layer": 3,
+      "fundamental": 155.41055046679492,
+      "sha256": "25ff52c8f24059d5d96ecc271cdf76d865b3b57d7fc9ffec0113b7d1d82201ec",
+      "source": "https://raw.githubusercontent.com/sfzinstruments/SalamanderGrandPiano/3382bf9496bba2486f5ab0de55a264d1dfc38404/Samples/D%233v3.flac"
+    },
+    "D#3v6": {
+      "midi": 51,
+      "layer": 6,
+      "fundamental": 155.40570137614216,
+      "sha256": "85b680ac6a5c723991400442bdb0f4d7f2c4034fcbb7150d7c65462026cc5daa",
+      "source": "https://raw.githubusercontent.com/sfzinstruments/SalamanderGrandPiano/3382bf9496bba2486f5ab0de55a264d1dfc38404/Samples/D%233v6.flac"
+    },
+    "F#3v3": {
+      "midi": 54,
+      "layer": 3,
+      "fundamental": 184.3670935722221,
+      "sha256": "af3a5e903335da49303d4accad92b6d22be77516248b406d478b8d712e4a2d03",
+      "source": "https://raw.githubusercontent.com/sfzinstruments/SalamanderGrandPiano/3382bf9496bba2486f5ab0de55a264d1dfc38404/Samples/F%233v3.flac"
+    },
+    "F#3v6": {
+      "midi": 54,
+      "layer": 6,
+      "fundamental": 184.41931472499283,
+      "sha256": "74450756324f4bd405dcb576c483349af159cf0f9e4696d75b1c0a5e222f107c",
+      "source": "https://raw.githubusercontent.com/sfzinstruments/SalamanderGrandPiano/3382bf9496bba2486f5ab0de55a264d1dfc38404/Samples/F%233v6.flac"
+    },
+    "A3v3": {
+      "midi": 57,
+      "layer": 3,
+      "fundamental": 220.12106619176225,
+      "sha256": "8c5608fb5b9963f07e9d65fe59bbe2a84a9160f922bb96a71ed235485e93a0ce",
+      "source": "https://raw.githubusercontent.com/sfzinstruments/SalamanderGrandPiano/3382bf9496bba2486f5ab0de55a264d1dfc38404/Samples/A3v3.flac"
+    },
+    "A3v6": {
+      "midi": 57,
+      "layer": 6,
+      "fundamental": 220.11027142450288,
+      "sha256": "dd193a700831d5f70bedbbee5b5dc444e7cc8bc591da7afd39435988b7d86041",
+      "source": "https://raw.githubusercontent.com/sfzinstruments/SalamanderGrandPiano/3382bf9496bba2486f5ab0de55a264d1dfc38404/Samples/A3v6.flac"
+    },
+    "C4v3": {
+      "midi": 60,
+      "layer": 3,
+      "fundamental": 261.7093345855757,
+      "sha256": "c3cb4ce2d16885ab6dfd8250e0d447b56d51a187546f96e2ee2f95a4c93669fb",
+      "source": "https://raw.githubusercontent.com/sfzinstruments/SalamanderGrandPiano/3382bf9496bba2486f5ab0de55a264d1dfc38404/Samples/C4v3.flac"
+    },
+    "C4v6": {
+      "midi": 60,
+      "layer": 6,
+      "fundamental": 261.7108967915369,
+      "sha256": "34483e5fc6aff00789419747af639bca5ac0e2d0740dd320ca009e0fb7795c31",
+      "source": "https://raw.githubusercontent.com/sfzinstruments/SalamanderGrandPiano/3382bf9496bba2486f5ab0de55a264d1dfc38404/Samples/C4v6.flac"
+    },
+    "D#4v3": {
+      "midi": 63,
+      "layer": 3,
+      "fundamental": 311.44919552490677,
+      "sha256": "f85d124728e8bd345848fe14d67957bbabaf16fe04609f9dbc2e76b39f49c647",
+      "source": "https://raw.githubusercontent.com/sfzinstruments/SalamanderGrandPiano/3382bf9496bba2486f5ab0de55a264d1dfc38404/Samples/D%234v3.flac"
+    },
+    "D#4v6": {
+      "midi": 63,
+      "layer": 6,
+      "fundamental": 311.4338002442771,
+      "sha256": "ce4e5efbc6a9c4901d671f1ac8157428b17759167fd90120a479d1483d2f9891",
+      "source": "https://raw.githubusercontent.com/sfzinstruments/SalamanderGrandPiano/3382bf9496bba2486f5ab0de55a264d1dfc38404/Samples/D%234v6.flac"
+    },
+    "F#4v3": {
+      "midi": 66,
+      "layer": 3,
+      "fundamental": 369.2651027020776,
+      "sha256": "e6a4c96e16191062502c11f4041c2fb0e46693da614371aee09b632ac8f7de3c",
+      "source": "https://raw.githubusercontent.com/sfzinstruments/SalamanderGrandPiano/3382bf9496bba2486f5ab0de55a264d1dfc38404/Samples/F%234v3.flac"
+    },
+    "F#4v6": {
+      "midi": 66,
+      "layer": 6,
+      "fundamental": 369.25425381539696,
+      "sha256": "c46b4f43f2dc73671c8636c3aafd6ec9c3a23411afd03d968511bd0e3b58e62c",
+      "source": "https://raw.githubusercontent.com/sfzinstruments/SalamanderGrandPiano/3382bf9496bba2486f5ab0de55a264d1dfc38404/Samples/F%234v6.flac"
+    },
+    "A4v3": {
+      "midi": 69,
+      "layer": 3,
+      "fundamental": 440.11644064884854,
+      "sha256": "9529b14e963a73a320d1a1f47915649e99d42832ca1d9d592624d9fb625b7544",
+      "source": "https://raw.githubusercontent.com/sfzinstruments/SalamanderGrandPiano/3382bf9496bba2486f5ab0de55a264d1dfc38404/Samples/A4v3.flac"
+    },
+    "A4v6": {
+      "midi": 69,
+      "layer": 6,
+      "fundamental": 440.0774821319928,
+      "sha256": "1b9a6fc43f87537aebbb59eb57d4e2c0ad4c3aad8412d148a5dae2b4bad2058b",
+      "source": "https://raw.githubusercontent.com/sfzinstruments/SalamanderGrandPiano/3382bf9496bba2486f5ab0de55a264d1dfc38404/Samples/A4v6.flac"
+    },
+    "C5v3": {
+      "midi": 72,
+      "layer": 3,
+      "fundamental": 524.7062806048501,
+      "sha256": "a5cbfa00f5c72db28dee402f813aadb451c2fc85a365aef49caf0844c615328a",
+      "source": "https://raw.githubusercontent.com/sfzinstruments/SalamanderGrandPiano/3382bf9496bba2486f5ab0de55a264d1dfc38404/Samples/C5v3.flac"
+    },
+    "C5v6": {
+      "midi": 72,
+      "layer": 6,
+      "fundamental": 524.707132151206,
+      "sha256": "9a941f71b43929327669990f999e91b1573ec320127cdba000c97964d8fd3ff1",
+      "source": "https://raw.githubusercontent.com/sfzinstruments/SalamanderGrandPiano/3382bf9496bba2486f5ab0de55a264d1dfc38404/Samples/C5v6.flac"
+    },
+    "D#5v3": {
+      "midi": 75,
+      "layer": 3,
+      "fundamental": 623.218530886192,
+      "sha256": "f182e55adb505b430079b4979011d9eebf04a18a377f17fe74f9ded5eb54a7e4",
+      "source": "https://raw.githubusercontent.com/sfzinstruments/SalamanderGrandPiano/3382bf9496bba2486f5ab0de55a264d1dfc38404/Samples/D%235v3.flac"
+    },
+    "D#5v6": {
+      "midi": 75,
+      "layer": 6,
+      "fundamental": 623.2033693175331,
+      "sha256": "271617dddc2be1b0c58f6dc4b11f8dc52cefbf5a6e0f3d769e26518adbcf4f86",
+      "source": "https://raw.githubusercontent.com/sfzinstruments/SalamanderGrandPiano/3382bf9496bba2486f5ab0de55a264d1dfc38404/Samples/D%235v6.flac"
+    },
+    "F#5v3": {
+      "midi": 78,
+      "layer": 3,
+      "fundamental": 740.9959174036795,
+      "sha256": "4ad35db4c2fd6f871ceab9aa9e13fbc452f637dc6a2f036a4cbc3eaab447e33c",
+      "source": "https://raw.githubusercontent.com/sfzinstruments/SalamanderGrandPiano/3382bf9496bba2486f5ab0de55a264d1dfc38404/Samples/F%235v3.flac"
+    },
+    "F#5v6": {
+      "midi": 78,
+      "layer": 6,
+      "fundamental": 742.2376080525316,
+      "sha256": "fe84fdd051a934c8bbc6975c1200cfd8c926624facdabb540092b06441d9659b",
+      "source": "https://raw.githubusercontent.com/sfzinstruments/SalamanderGrandPiano/3382bf9496bba2486f5ab0de55a264d1dfc38404/Samples/F%235v6.flac"
+    },
+    "A5v3": {
+      "midi": 81,
+      "layer": 3,
+      "fundamental": 883.9718953710837,
+      "sha256": "810e66dcec0ffa54d88b95a45bc0938d25347dc49132c5d736c4131d6294b77e",
+      "source": "https://raw.githubusercontent.com/sfzinstruments/SalamanderGrandPiano/3382bf9496bba2486f5ab0de55a264d1dfc38404/Samples/A5v3.flac"
+    },
+    "A5v6": {
+      "midi": 81,
+      "layer": 6,
+      "fundamental": 883.9282677112557,
+      "sha256": "aa49dd81b7b0c60c31cec7d156ce4ff480f5695fcc002d997ccc6eba04de6237",
+      "source": "https://raw.githubusercontent.com/sfzinstruments/SalamanderGrandPiano/3382bf9496bba2486f5ab0de55a264d1dfc38404/Samples/A5v6.flac"
+    },
+    "C6v3": {
+      "midi": 84,
+      "layer": 3,
+      "fundamental": 1051.537166680918,
+      "sha256": "d3db8d497c011a7de3429875c00fdf9864c7731d1621d98cb4989cf8706aa33c",
+      "source": "https://raw.githubusercontent.com/sfzinstruments/SalamanderGrandPiano/3382bf9496bba2486f5ab0de55a264d1dfc38404/Samples/C6v3.flac"
+    },
+    "C6v6": {
+      "midi": 84,
+      "layer": 6,
+      "fundamental": 1051.7030193730222,
+      "sha256": "b8cc34b987d343fd65fb886f092f64eded6ad9c35d3df25114e596d15bd42e98",
+      "source": "https://raw.githubusercontent.com/sfzinstruments/SalamanderGrandPiano/3382bf9496bba2486f5ab0de55a264d1dfc38404/Samples/C6v6.flac"
+    }
+  }
+}

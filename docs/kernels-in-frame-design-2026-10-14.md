@@ -1,6 +1,6 @@
 # Kernels inside the frame (§T1707b)
 
-Status: approved by the owner and built, 2026-10-14 (uncommitted). See "As built" at the end.
+Status: approved by the owner and built, 2026-10-14; committed `3cc42f53`. See "As built" at the end.
 
 ## The question
 
@@ -140,7 +140,7 @@ What it changes:
 - The `nativeObject` error-scope hunk (same §T1707b row) is independent of
   where a kernel is encoded. It stays until upstream reports every cause of a
   failed pipeline under the consumer's label.
-- Sharing one compute pass between consecutive kernels (step 1 above).
+- Sharing one compute pass between consecutive kernels (step 1 above): SPEC §T1711b.
 
 ## As built (2026-10-14)
 

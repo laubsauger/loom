@@ -65,3 +65,22 @@ describe("a pattern matches the WHOLE name, never a part of it", () => {
     expect(select(["x", "^", "y"], "[^x]")).toEqual(["x", "^"]);
   });
 });
+
+/**
+ * T1793b — a pattern list is parsed once per text and a pattern with no glob syntax is
+ * matched as an equality. Neither may change which names a Select publishes, or their order.
+ */
+describe("T1793b — literal patterns and a remembered parse select what the globs did", () => {
+  it("a literal is found by name, in PATTERN order, once, among globs and exclusions", () => {
+    const names = ["a", "b", "c", "b2"];
+    expect(select(names, "c missing a c")).toEqual(["c", "a"]);
+    expect(select(names, "b * ^b* b")).toEqual(["a", "c", "b"]);
+    expect(select(names, "^b")).toEqual(["a", "c", "b2"]);
+  });
+
+  it("the same text read again selects from the names it is given now, not the ones it saw first", () => {
+    expect(select(["x1", "y"], "x* y")).toEqual(["x1", "y"]);
+    expect(select(["y", "x2", "x3"], "x* y")).toEqual(["x2", "x3", "y"]);
+  });
+});
+

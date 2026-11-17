@@ -187,6 +187,15 @@ export function readCompileInputs(context: NodeCompileContext): NodeCompileInput
 }
 
 /**
+ * T1719b — what a value function reads: the frame's parameters and the time probe, without
+ * adapting every input binding the way `readCompileInputs` does.
+ */
+export function readValueInputs(context: NodeCompileContext): Pick<NodeCompileInputs, "parameters" | "timeProbe"> {
+  const raw = context as unknown as CompilerContextShape;
+  return raw.timeProbe === undefined ? { parameters: raw.parameters } : { parameters: raw.parameters, timeProbe: raw.timeProbe };
+}
+
+/**
  * Reported instead of emitting an unusable pass when the compiler has not (yet) assigned
  * a resource this node's `compile()` needs — see module doc. Matches `plan.ts`'s own
  * preference for a structured diagnostic over throwing on malformed input.

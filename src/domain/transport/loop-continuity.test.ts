@@ -9,7 +9,7 @@ import { createNodeRegistry } from "../../nodes/registry/registry.ts";
 import type { NodeRegistryView } from "../../nodes/registry/registry.ts";
 import type { FlatGraph, GraphDocument } from "../types/graph.ts";
 import { offlineTransport } from "../../runtime/execution/offline-transport.ts";
-import { FRAME_RATE_NAMES, scopeFromFrame, evaluateExpression } from "../expressions/evaluate.ts";
+import { FRAME_RATE_NAMES, TEMPO_NAMES, scopeFromFrame, evaluateExpression } from "../expressions/evaluate.ts";
 import { NO_FLATTENING, type FlatteningReads } from "../parameters/node-references.ts";
 import { STORED_READ, resolveParameters } from "../parameters/resolve.ts";
 import { dispatchFrameUniforms, sharedUniformsFromFrame, SHARED_UNIFORMS_WGSL } from "../../runtime/backend/shared-uniforms.ts";
@@ -282,10 +282,17 @@ const CLOCK_OWNERSHIP: Readonly<Record<string, "free-running" | "timeline-anchor
   // FREE-RUNNING: "always going" is the idea of the node, so a timeline lap must not touch
   // it. TD's LFO CHOP is free-running, which is why it laps seamlessly at any frequency.
   lfo: "free-running",
+  harmony: "free-running",
+  noteField: "free-running",
+  // T1787b: the project beat counts along the wall clock live and the absolute clock
+  // offline (§V1038), never the timeline position: a lap does not restart the bar.
+  tempo: "free-running",
   // TIMELINE-ANCHORED: where you are IN the piece is the point, so it wraps BY DESIGN.
   // Turning either of these free-running would be a different bug, not the same fix.
   timer: "timeline-anchored",
   audioPattern: "timeline-anchored",
+  // T1757b: Tone Pattern stands in for a piece playing along the timeline, as Audio Pattern does.
+  tonePattern: "timeline-anchored",
   // VN61: a lane is a position in the piece, read at the playhead, like the Timer.
   automation: "timeline-anchored",
   // DELTA-DRIVEN: reads the frame STEP, never a clock position. A lap carries a real step
@@ -343,11 +350,23 @@ const CLOCK_OWNERSHIP: Readonly<Record<string, "free-running" | "timeline-anchor
   // tempo and reads no clock). Both descriptions say both halves.
   audioIn: "timeline-anchored",
   audioFileIn: "timeline-anchored",
+  // T1751b: Chroma reports what was heard (clockless, like the sources' analysis channels)
+  // through an Attack/Release follower that reads the frame STEP and no clock position —
+  // Lag's reading. A lap is one real step through the follower, never a restart.
+  audioChroma: "delta-driven",
+  // T1753b: Chord is a stateless projection of what the record claims: no clock, no step.
+  audioChord: "clockless",
+  // T1755b: Notes reports what was heard through a Glide that reads the frame STEP: Chroma's reading.
+  audioNotes: "delta-driven",
   // T942: MIDI In reports where the CONTROLS are, exactly as `mouse` reports where the
   // cursor is. There is no phase to lap and no position to wrap; a timeline loop passes
   // straight through it. Its one piece of state (a Toggle's latch) is a per-node bag that
   // clears with the transport (§V181), which is a RESET rule rather than a clock.
   midiIn: "clockless",
+  // T1762b: MIDI Notes reads the keys as MIDI In reads the knobs, but its levels are a model
+  // that moves by the frame STEP (a string's decay, the dampers' release) and reads no clock
+  // position — Lag's reading. A held chord crosses a lap as one real step of decay.
+  midiNotes: "delta-driven",
   // T942 tier 3: OSC In reports where the CONTROLS are, exactly as MIDI In does — no
   // phase to lap, no position to wrap. OSC Out FORWARDS its input bag and reads no clock
   // of its own, so like valueSwitch and componentOutValue it INHERITS whatever clock the
@@ -970,7 +989,8 @@ describe("T489 — the frameless resolve scope offers the same names as a real f
       };
       // Every CLOCK reads the deterministic zero; a RATE (T1426b/T1435b: `fps`, `subframes`)
       // reads its default, because a rate of 0 is a division by zero, not a quiet start.
-      const expected = (FRAME_RATE_NAMES as readonly string[]).includes(name) ? zero[name] : 0;
+      // T1785b: so does the project tempo (`bpm` is 120 at the zero frame, never 0).
+      const expected = ([...FRAME_RATE_NAMES, ...TEMPO_NAMES] as readonly string[]).includes(name) ? zero[name] : 0;
       expect(resolveParameters(node, ABSTIME_DEFINITION, STORED_READ).values["amount"], `frameless scope knows "${name}"`).toBe(expected);
     }
   });

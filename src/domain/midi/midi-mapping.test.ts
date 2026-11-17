@@ -77,6 +77,32 @@ describe("decode — pitch bend at its real 14-bit resolution, not truncated to 
   });
 });
 
+describe("decode — a note is a GATE (T1787b)", () => {
+  /*
+   * A key is a button here: 127 while it is down and 0 when it is up, whatever the
+   * velocity. A Button and a Toggle read "past half way", so a gate that carried the
+   * velocity would not fire on a softly played key, which is exactly the key a performer
+   * taps a tempo on.
+   */
+  it("note on is 127 at any velocity, on the key's own number and channel", () => {
+    expect(decodeMidiMessage(new Uint8Array([0x90, 60, 100]))).toEqual({ source: { kind: "note", channel: 1, number: 60 }, raw: 127 });
+    expect(decodeMidiMessage(new Uint8Array([0x93, 36, 1]))).toEqual({ source: { kind: "note", channel: 4, number: 36 }, raw: 127 });
+  });
+
+  it("note off, and note on with velocity 0, are both the release", () => {
+    expect(decodeMidiMessage(new Uint8Array([0x80, 60, 64]))).toEqual({ source: { kind: "note", channel: 1, number: 60 }, raw: 0 });
+    expect(decodeMidiMessage(new Uint8Array([0x90, 60, 0]))).toEqual({ source: { kind: "note", channel: 1, number: 60 }, raw: 0 });
+  });
+
+  it("is named apart from the controller of the same number, and survives the stored mapping", () => {
+    expect(midiSourceKey({ kind: "note", channel: 1, number: 60 })).toBe("note1.60");
+    expect(midiSourceKey({ kind: "cc", channel: 1, number: 60 })).toBe("cc1.60");
+    const stored = serialiseMidiMapping([{ channel: "tap", source: { kind: "note", channel: 1, number: 36 }, range: [0, 1], mode: "absolute" }]);
+    expect(parseMidiMapping(stored).bindings[0]?.source).toEqual({ kind: "note", channel: 1, number: 36 });
+    expect(midiBindingValue(parseMidiMapping(stored).bindings[0]!, 127, {})).toBe(1);
+  });
+});
+
 describe("decode — everything out of scope decodes to NOTHING, never to something", () => {
   /*
    * Each of these is a message this row deliberately does not read. Returning null means
@@ -84,10 +110,6 @@ describe("decode — everything out of scope decodes to NOTHING, never to someth
    * all, which is a state the user can diagnose, where "a control that behaves oddly" is
    * not.
    */
-  it("note on and note off", () => {
-    expect(decodeMidiMessage(new Uint8Array([0x90, 60, 100]))).toBeNull();
-    expect(decodeMidiMessage(new Uint8Array([0x80, 60, 0]))).toBeNull();
-  });
 
   it("MIDI clock and transport", () => {
     expect(decodeMidiMessage(new Uint8Array([0xf8]))).toBeNull();

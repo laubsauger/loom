@@ -9,7 +9,7 @@ import type { LoomBus } from "@domain/commands/index.ts";
 import { authoredGraph, type GraphDocument } from "@domain/types/graph.ts";
 import type { NodeId, PortId } from "@domain/types/ids.ts";
 import { publishesValueChannels } from "@domain/types/node-definition.ts";
-import { bypassPassthroughPorts } from "@domain/graph/bypass.ts";
+import { bypassPassesKind } from "@domain/graph/bypass.ts";
 import { previewAspectOf } from "@domain/graph/node-box.ts";
 import type { GraphPatchOperation } from "@domain/types/patch.ts";
 import type { PortType } from "@domain/types/ports.ts";
@@ -30,15 +30,19 @@ import {
   NodePreviewSlot,
   PreviewGizmoOverlays,
   PreviewInspectOverlays,
+  createLookStore,
   createPreviewOrbitStore,
+  lookOrMove,
+  rekeyedOrbitStore,
   createPreviewSlotBounds,
   createVec3GizmoStore,
   gizmoTilesFor,
   lensMarker,
   usePreviewViews,
 } from "@editor/viewer/index.ts";
-import type { GridLineActions, PreviewGizmoTile } from "@editor/viewer/index.ts";
+import type { GridLineActions, LookMoveStore, LookStore, PreviewGizmoTile } from "@editor/viewer/index.ts";
 import { prefixedOrbitStore } from "@editor/viewer/index.ts";
+import { fromInstance } from "@domain/components/addressing.ts";
 import { ValuePlot } from "@editor/nodes/value-plot.tsx";
 import { plotValues } from "@editor/nodes/value-function.ts";
 import { resolveValuePlotChain } from "@editor/nodes/value-plot-chain.ts";
@@ -78,11 +82,15 @@ export interface PortDragOrigin {
 export interface GraphActions {
   /** Adds a node at the centre of the current viewport, optionally wiring it up. */
   addNode(type: string, connectTo?: NodeDragPayload["connectTo"]): void;
+  /** §B300: the centre of the current viewport in graph coordinates, where a library click lands. */
+  viewportCentre(): { x: number; y: number };
 }
 
 export interface GraphPaneProps {
   /** T379: the shared inspection-orbit store (the viewer pane holds the same one). */
   orbits?: import("@editor/viewer/index.ts").PreviewOrbitStore | undefined;
+  /** §T1732b: the shared looks (the viewer pane holds the same one), keyed by renderer. */
+  looks?: LookStore | undefined;
   /** T756: the viewer's preview interest — consumed by useNodePreviews as a pin. */
   interest?: import("@editor/viewer/index.ts").PreviewInterestStore | undefined;
   /** Current canvas selection, so a right-click inside one acts on all of it (§V78). */
@@ -202,6 +210,7 @@ function GraphPaneInner({
   valueHistory,
   componentPath,
   orbits,
+  looks,
   interest,
   onCommandRefused,
   phone,
@@ -241,7 +250,15 @@ function GraphPaneInner({
      preview hook and the value plots: the canvas speaks inner ids, everything keyed
      off the compiled/flattened document speaks prefixed ones. */
   const flatPrefix = (componentPath ?? []).join("/");
+  /* The other direction, for facts keyed by the plan's row ids: the id a node in THIS pane
+     has, or null for a row that is not one (a root row seen from inside, a nested interior). */
+  const localOf = useCallback(
+    (flat: string): NodeId | null => fromInstance(componentPath ?? [], flat as NodeId) ?? null,
+    [componentPath],
+  );
   const localOrbits = usePerDocument(documentIdentity, createPreviewOrbitStore);
+  const localLooks = usePerDocument(documentIdentity, createLookStore);
+  const lookStore = looks ?? localLooks;
   /* T1051 follow-up: the SHARED store, addressed by this pane's flat prefix — an
      interior `grid` orbits under `wall/grid`, never the root `grid` (see the
      adapter's docblock). Identity at the root; local fallback when the app passes
@@ -379,10 +396,11 @@ function GraphPaneInner({
     useMemo(() => {
       const nodes = new Set<NodeId>();
       for (const output of compiledOutputs) {
-        if (output.synthesis?.orbit !== undefined) nodes.add(output.nodeId as NodeId);
+        const local = localOf(output.nodeId);
+        if (local !== null && output.synthesis?.orbit !== undefined) nodes.add(local);
       }
       return nodes;
-    }, [compiledOutputs]),
+    }, [compiledOutputs, localOf]),
   );
 
   /**
@@ -399,10 +417,11 @@ function GraphPaneInner({
         // T1655b: the compiler's own answer, on the row. A camera with exactly one Render
         // borrows that Render's row (T546), which has no `synthesis` to read a kind off, so
         // the gizmo used to be offered only on a camera nothing rendered through.
-        if (output.previewCamera?.kind === "pose") nodes.add(output.nodeId as NodeId);
+        const local = localOf(output.nodeId);
+        if (local !== null && output.previewCamera?.kind === "pose") nodes.add(local);
       }
       return nodes;
-    }, [compiledOutputs]),
+    }, [compiledOutputs, localOf]),
   );
 
   /**
@@ -449,12 +468,13 @@ function GraphPaneInner({
   const cameraAbsences = useMemo(() => {
     const reasons = new Map<NodeId, PreviewCameraAbsence>();
     for (const output of compiledOutputs) {
-      if (output.previewCamera?.kind === "none" && !reasons.has(output.nodeId as NodeId)) {
-        reasons.set(output.nodeId as NodeId, output.previewCamera.reason);
+      const local = localOf(output.nodeId);
+      if (local !== null && output.previewCamera?.kind === "none" && !reasons.has(local)) {
+        reasons.set(local, output.previewCamera.reason);
       }
     }
     return reasons;
-  }, [compiledOutputs]);
+  }, [compiledOutputs, localOf]);
   const poseSaidCache = useRef<{ graph: GraphDocument | null; said: Map<NodeId, ReturnType<typeof cameraPoseSaid>> }>({ graph: null, said: new Map() });
   /**
    * What a pose tile has to say, off the store by the read `readCameraPose` makes (T1652b:
@@ -482,9 +502,9 @@ function GraphPaneInner({
       if (reason === undefined) return null;
       // The NAMES, by the one read of the store this pane's pose readers share.
       const { nodes } = poseSubject(nodeId).current;
-      return previewCameraAbsenceSentence(reason, (id) => nodes[id]?.label ?? id);
+      return previewCameraAbsenceSentence(reason, (id) => nodes[localOf(id) ?? id]?.label ?? id);
     },
-    [cameraAbsences, cameraGizmoNodes, poseSaid, poseSubject],
+    [cameraAbsences, cameraGizmoNodes, localOf, poseSaid, poseSubject],
   );
   /** §T970: on a tile that has its gizmo, the channels a partly driven pose holds back. */
   const previewCameraHint = useCallback(
@@ -529,6 +549,40 @@ function GraphPaneInner({
   );
 
   /**
+   * §T1732b — THE TILES THAT CAN BE LOOKED AROUND: a picture drawn through a camera node (a
+   * Render's own, and its camera's that borrows it, T546), as the compiler says on the row.
+   * Each gets ONE store holding two cameras: its LOOK (view only, keyed by the renderer, so the
+   * Render's tile, its camera's and the viewer share one look at one picture) and MOVE, the
+   * camera node's own pose through the T692 gizmo, where this pane edits that camera and its
+   * pose can be read. Built per compile, so a tile's store keeps its identity between them.
+   */
+  const lookTiles = useMemo(() => {
+    const tiles = new Map<NodeId, LookMoveStore>();
+    for (const output of compiledOutputs) {
+      const local = localOf(output.nodeId);
+      const renderer = output.look?.renderer;
+      if (local === null || renderer === undefined || tiles.has(local)) continue;
+      const control = output.previewCamera;
+      const framing =
+        control?.kind === "pose"
+          ? local
+          : control?.kind === "none" && control.reason.because === "through-camera"
+            ? localOf(control.reason.camera)
+            : null;
+      const move =
+        framing === null || readCameraPose(framing) === null
+          ? null
+          : framing === local
+            ? cameraGizmos
+            : rekeyedOrbitStore(cameraGizmos, () => framing);
+      const name = framing === null ? null : (graph.nodes[framing]?.label ?? framing);
+      const held = framing === null ? "" : (poseSaid(framing)?.held ?? "");
+      tiles.set(local, lookOrMove(rekeyedOrbitStore(lookStore, () => renderer), move, name, held));
+    }
+    return tiles;
+  }, [cameraGizmos, compiledOutputs, graph, localOf, lookStore, poseSaid, readCameraPose]);
+
+  /**
    * T892 — WHICH TILES ARE OFFERED A CAMERA, for the overlay layer at the bottom of this
    * component. The same gate the node header used to consult, moved rather than rewritten:
    * a node with nothing to inspect returns `null` and is drawn no control at all — a
@@ -538,13 +592,22 @@ function GraphPaneInner({
    */
   const previewInspect = useCallback(
     (nodeId: NodeId) => {
+      // §T1732b: a picture drawn through a camera node: look around it, or move the camera.
+      const look = lookTiles.get(nodeId);
+      if (look !== undefined) return look;
       if (orbitableNodes.has(nodeId)) return previewOrbits;
       // T692: a camera tile's toggle arms the DOCUMENT gizmo — offered only while the
       // pose is plainly readable, so a driven camera shows no control that cannot work.
       if (cameraGizmoNodes.has(nodeId) && readCameraPose(nodeId) !== null) return cameraGizmos;
       return null;
     },
-    [cameraGizmoNodes, cameraGizmos, orbitableNodes, previewOrbits, readCameraPose],
+    [cameraGizmoNodes, cameraGizmos, lookTiles, orbitableNodes, previewOrbits, readCameraPose],
+  );
+
+  /** §T1732b: a look tile wears its toggles where its sentence was ("Framed by …"), so the sentence moves into their hover text. */
+  const lookHint = useCallback(
+    (nodeId: NodeId): string => (lookTiles.has(nodeId) ? (previewCameraNote(nodeId) ?? "") : previewCameraHint(nodeId)),
+    [lookTiles, previewCameraHint, previewCameraNote],
   );
 
   /**
@@ -675,13 +738,15 @@ function GraphPaneInner({
          * kind publishes nothing. BYPASS is not the same question: a node with a coherent
          * passthrough keeps publishing (its input's bag, unchanged), and its plot is then
          * TRUE. Only a bypassed node with nothing to pass through is silent, which is
-         * exactly what `bypassPassthroughPorts` returning undefined means — the same
-         * predicate the value graph and the texture compiler splice by.
+         * exactly what the bypass rule pairing no value output means — the same
+         * rule the value graph and the texture compiler splice by. T1779b: asked of the
+         * VALUE outputs (`bypassPassesKind`), because an instance has outputs of several
+         * kinds and its first one passing a texture says nothing about its values.
          */
         const silence =
           node?.ui?.muted === true
             ? "muted"
-            : node?.ui?.bypassed === true && bypassPassthroughPorts(definition) === undefined
+            : node?.ui?.bypassed === true && !bypassPassesKind(definition, "value")
               ? "bypassed"
               : null;
         /*
@@ -714,6 +779,7 @@ function GraphPaneInner({
           />
         );
       }
+      const look = lookTiles.get(nodeId);
       const orbitable = orbitableNodes.has(nodeId);
       const gizmo = !orbitable && cameraGizmoNodes.has(nodeId) && readCameraPose(nodeId) !== null;
       return (
@@ -722,12 +788,12 @@ function GraphPaneInner({
           runtime={nodeRuntime}
           bounds={previewBounds}
           views={previewViews}
-          orbits={gizmo ? cameraGizmos : previewOrbits}
-          orbitable={orbitable || gizmo}
+          orbits={look ?? (gizmo ? cameraGizmos : previewOrbits)}
+          orbitable={look !== undefined || orbitable || gizmo}
         />
       );
     },
-    [bus, cameraGizmoNodes, cameraGizmos, flatPrefix, invocation, nodeRuntime, orbitableNodes, previewBounds, previewOrbits, previewViews, readCameraPose, registry, settings, valueHistory],
+    [bus, cameraGizmoNodes, cameraGizmos, flatPrefix, invocation, lookTiles, nodeRuntime, orbitableNodes, previewBounds, previewOrbits, previewViews, readCameraPose, registry, settings, valueHistory],
   );
 
   /** Hands back the applied result, for the one caller that needs `createdIds`. */
@@ -824,6 +890,7 @@ function GraphPaneInner({
   useEffect(() => {
     const actions: GraphActions = {
       addNode: (type, connectTo) => addNodeAt(type, viewportCentre(), connectTo, portDrag),
+      viewportCentre,
     };
     actionsRef.current = actions;
     return () => {
@@ -1160,7 +1227,7 @@ function GraphPaneInner({
           }
         />
       </GraphMenuHost>
-      <PreviewInspectOverlays bounds={previewBounds} inspect={previewInspect} note={previewCameraNote} hint={previewCameraHint} />
+      <PreviewInspectOverlays bounds={previewBounds} inspect={previewInspect} note={previewCameraNote} hint={lookHint} />
       <PreviewGizmoOverlays
         bounds={previewBounds}
         tile={gizmoTile}

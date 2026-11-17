@@ -14,6 +14,10 @@ import { setListDocument } from "./documents/set-list.ts";
 import { photoMappingMoonlitStoneDocument, photoMappingContourEngravingDocument, photoMappingVideoDocument, photoMappingPointCloudDocument, photoMappingFallingFacadeDocument, photoMappingRibbonPeelDocument } from "./documents/photo-mapping-samples.ts";
 export { cymaticsDocument } from "./documents/cymatics.ts";
 import { cymaticsDocument } from "./documents/cymatics.ts";
+export { chordWheelDocument } from "./documents/chord-wheel.ts";
+import { chordWheelDocument } from "./documents/chord-wheel.ts";
+export { musicFeaturesDocument } from "./documents/music-features.ts";
+import { musicFeaturesDocument } from "./documents/music-features.ts";
 import type { ProjectDocument } from "../domain/types/graph.ts";
 export { EXAMPLE_TIMESTAMP } from "./documents/builders.ts";
 export { feedbackEchoDocument } from "./documents/feedback-echo.ts";
@@ -225,4 +229,6 @@ export const EXAMPLE_DOCUMENTS: readonly ProjectDocument[] = [
   photoMappingFallingFacadeDocument,
   photoMappingRibbonPeelDocument,
   cymaticsDocument,
+  chordWheelDocument,
+  musicFeaturesDocument,
 ];

@@ -45,8 +45,12 @@ export interface ComponentLibraryProps {
   components: ComponentRegistryView;
   /** Current canvas selection — what save-selection would capture. */
   selection?: readonly NodeId[];
-  /** Where a placement lands, in graph coordinates. */
-  position?: { x: number; y: number };
+  /**
+   * Where a placement lands, in graph coordinates, asked AT THE CLICK (§B300): the canvas
+   * may have panned since this pane rendered. Undefined (no canvas mounted) leaves the
+   * command's own default, the origin.
+   */
+  position?: () => { x: number; y: number } | undefined;
   /** Select the instance the user just placed or upgraded. */
   onPlaced?: (nodeIds: readonly NodeId[]) => void;
 }
@@ -152,13 +156,14 @@ export function ComponentLibrary({
     mode: "linked" | "detached",
   ): Promise<void> => {
     setBusy({ componentId: summary.componentId, mode });
+    const at = position?.();
     try {
       const outcome = await bus.execute(
         "component.instantiate",
         {
           componentId: summary.componentId,
           mode,
-          ...(position === undefined ? {} : { position }),
+          ...(at === undefined ? {} : { position: at }),
         },
         context,
       );

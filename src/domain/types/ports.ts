@@ -92,4 +92,10 @@ export interface PortDefinition {
   variadic?: boolean;
   optional?: boolean;
   description?: string;
+  /**
+   * T1721b: this input reads the MOTION of the scene payload it takes (a camera's path
+   * derivative, T1421b). The compiler gives a time probe only to a node whose scene output
+   * such an input takes, so a camera nothing blurs by does not resolve itself three times.
+   */
+  readsMotion?: boolean;
 }

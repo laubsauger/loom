@@ -43,6 +43,11 @@ export interface TopBarProps {
    */
   scrubber?: ReactNode;
   /**
+   * T1785b: the project tempo (beat lamp, BPM, Tap, source), beside the transport. A slot
+   * for the same §V16 reason `scrubber` is one: the lamp runs on its own tick.
+   */
+  tempo?: ReactNode;
+  /**
    * T433: render the timeline's range out. Omitted, no button renders — a session with no
    * device has nothing to render and must not grow a control that can only refuse.
    */
@@ -73,6 +78,7 @@ export function TopBar({
   rendering = false,
   renderFrames = 0,
   scrubber,
+  tempo,
   fps = null,
   gpuMs = null,
   gpuMetric,
@@ -137,6 +143,8 @@ export function TopBar({
           </Tooltip>
         )}
       </div>
+
+      {tempo}
 
       {scrubber === undefined ? null : <div className={styles.timeline}>{scrubber}</div>}
 

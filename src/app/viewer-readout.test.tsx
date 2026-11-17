@@ -295,6 +295,35 @@ describe("T329 — the mounted viewer inspects pixels (T36, §V7, §V48)", () =>
     expect(gpu.presented.filter((entry) => !entry.startsWith("setOutput:")).length).toBe(attachesBefore);
     runtime.dispose();
   });
+
+  it("finds outputs by name or kind without switching the picture while typing", async () => {
+    const runtime = newRuntime();
+    await seedTwoOutputs(runtime);
+    const gpu = fixture();
+    await mountViewer(runtime, gpu.backend);
+    const select = screen.getByTestId("viewer-output-select") as HTMLSelectElement;
+    const search = screen.getByRole("searchbox", { name: "Find output" });
+    const initial = select.value;
+    const revision = runtime.bus.store.getRevision();
+    const presentations = [...gpu.presented];
+
+    fireEvent.change(search, { target: { value: "NOISE" } });
+    expect(select.value).toBe(initial);
+    const noise = [...select.options].find((option) => option.textContent?.includes("noise"));
+    expect(noise).toBeDefined();
+    expect(select.options).toHaveLength(2); // The matching node and the current picture.
+    expect(gpu.presented).toEqual(presentations);
+
+    await act(async () => { fireEvent.change(select, { target: { value: noise!.value } }); });
+    expect(gpu.presented.at(-1)).toContain("setOutput:");
+    fireEvent.change(search, { target: { value: "no-such-output" } });
+    expect(select.value).toBe(noise!.value);
+    expect((screen.getByRole("option", { name: "No matching outputs" }) as HTMLOptionElement).disabled).toBe(true);
+    fireEvent.change(search, { target: { value: "" } });
+    expect(select.options.length).toBeGreaterThan(2);
+    expect(runtime.bus.store.getRevision()).toBe(revision);
+    runtime.dispose();
+  });
 });
 
 /**

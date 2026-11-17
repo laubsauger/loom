@@ -90,6 +90,8 @@ describe("T645 — every registered node type is classified, or this fails (§V4
       // deliberately NOT async-cached despite sharing analyze's `channels` seam — a MIDI
       // message is at most one frame old by construction, so there is no age to show.
       "midiIn:external-live",
+      // T1762b: the same live device, read as notes.
+      "midiNotes:external-live",
       "mouse:external-live",
       "ndiIn:external-live",
       // T942 tier 3: OSC arriving over the device bridge. `external-live` for midiIn's

@@ -499,6 +499,10 @@ export default tseslint.config(
       ".claude/worktrees/**",
       // Generated Python dependencies may contain vendored JavaScript.
       "**/.venv/**",
+      // Project deliverables are .loom.json; the perfumery pillar also keeps browser scripts
+      // that are not Loom source (art-direction mock-ups, a forked three.js scene under MIT).
+      "projects/perfumery-pillar/art-direction/**",
+      "projects/perfumery-pillar/tier3/**",
     ],
   },
   js.configs.recommended,
