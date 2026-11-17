@@ -96,3 +96,36 @@ public/media/sentinel-bot/
 projects/sentinel-bot/inspo/
 # T1561b: the sentinel built to a track of somebody's own (build.ts --track --out); the committed project plays the shipped beat
 projects/sentinel-bot/local/
+
+# 2026-11-17 (owner): planning notes, not part of the product
+moonshot/
+
+# 2026-11-17 (owner): a project folder commits its network and its notes. Renders, previews, review
+# clips, reference images and 3D sources stay local: they are large and several are not ours to publish.
+projects/**/*.mp4
+projects/**/*.mov
+projects/**/*.webm
+projects/**/*.wav
+projects/**/*.m4a
+projects/**/*.png
+projects/**/*.jpg
+projects/**/*.jpeg
+projects/**/*.webp
+projects/**/*.blend
+projects/**/*.blend1
+projects/**/*.glb
+projects/**/reference/
+projects/**/*_bak.json
+
+# 2026-11-17 (owner): client work stays out of the public repository
+projects/joy-lisbon/
+projects/perfumery-pillar/
+
+# 2026-11-17 (owner): the Harmony piano recordings (58 MB, CC BY 3.0, see LICENSE.txt beside them) stay local;
+# harmony-piano.ts reports a missing recording by name when it is asked to play one
+src/assets/piano/*.flac
+
+# 2026-11-17 (owner): Silk Medusa's recorded source derives from MAESTRO v3 (CC BY-NC-SA 4.0); never commit
+public/media/silk-medusa/
+# Embrace meshes are exports of the project's .blend files, which stay local too
+public/media/embrace/
