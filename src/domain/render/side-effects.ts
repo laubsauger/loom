@@ -323,6 +323,9 @@ export const NODE_SIDE_EFFECTS: Readonly<Record<string, SideEffect>> = {
   // surface as the viewer, and a headless build never opens one.
   window: "none",
   ndiOut: "emits",
+  // §T1809b: its picture leaves the process as WebRTC video (and Loom's sound, when asked)
+  // to the WHIP server the document names. The send is `src/app/use-whip-outputs.ts`.
+  whipOut: "emits",
   spoutOut: "emits",
   audioIn: "none",
   mouse: "none",

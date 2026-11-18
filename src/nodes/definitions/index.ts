@@ -37,9 +37,11 @@ import { ndiInNode } from "./ndi-in.ts";
 import { syphonOutNode } from "./syphon-out.ts";
 import { windowOutNode } from "./window-out.ts";
 import { ndiOutNode } from "./ndi-out.ts";
+import { whipOutNode } from "./whip-out.ts";
 import { spoutInNode, spoutOutNode } from "./spout.ts";
 export { spoutInNode, spoutOutNode, SPOUT_IN_TYPE, SPOUT_OUT_TYPE } from "./spout.ts";
 export { ndiOutNode, NDI_OUT_TYPE } from "./ndi-out.ts";
+export { whipOutNode, WHIP_OUT_TYPE } from "./whip-out.ts";
 export { syphonOutNode, SYPHON_OUT_TYPE } from "./syphon-out.ts";
 export { windowOutNode, WINDOW_OUT_TYPE } from "./window-out.ts";
 export { syphonInNode, SYPHON_IN_TYPE } from "./syphon-in.ts";
@@ -317,6 +319,7 @@ export const coreNodeDefinitions: readonly NodeDefinition[] = [
   syphonOutNode,
   windowOutNode,
   ndiOutNode,
+  whipOutNode,
   spoutInNode,
   spoutOutNode,
   ...valueGraphNodeDefinitions,

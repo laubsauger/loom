@@ -203,6 +203,8 @@ export interface InspectorPaneProps {
   laser?: import("@editor/inspector/laser-section.tsx").LaserSectionSurface;
   /** §T1391b: the perform windows, for the Inspector's Window section on Window Out. */
   performWindows?: import("@editor/inspector/window-section.tsx").WindowSectionSurface;
+  /** §T1809b: the WHIP sessions, for the Inspector's Stream section on WHIP Out. */
+  whip?: import("@editor/inspector/whip-section.tsx").WhipSectionSurface;
 }
 
 /**
@@ -306,6 +308,7 @@ export function InspectorPane({
   midi,
   laser,
   performWindows,
+  whip,
 }: InspectorPaneProps) {
   const { bus, invocation, registry, settings, flattened } = useAppRuntime();
   // T1550b: the one flattened document, so an instance lists the files it actually reads.
@@ -392,6 +395,7 @@ export function InspectorPane({
       {...(midi === undefined ? {} : { midi })}
       {...(laser === undefined ? {} : { laser })}
       {...(performWindows === undefined ? {} : { performWindows })}
+      {...(whip === undefined ? {} : { whip })}
       {...(selection === undefined ? {} : { selection })}
     />
   );

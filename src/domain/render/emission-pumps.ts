@@ -64,6 +64,13 @@ export const EMISSION_PUMPS: Readonly<Record<string, string>> = {
    * and THIS file is where the reviewer finds the seam.
    */
   laserOut: "src/app/use-laser-bridge.ts",
+  /*
+   * T1809b. The WHIP pump: presents the node's target into a canvas of its own, captures
+   * it and publishes it over WebRTC from the page (no helper). It consults
+   * `emissionRefusal` per node per tick, so a take closes the stream, and a headless
+   * build has neither a canvas nor a peer connection to send with.
+   */
+  whipOut: "src/app/use-whip-outputs.ts",
 };
 
 /**

@@ -559,6 +559,7 @@ Generated from `NODE_KINDS`. The code is the source; this is a snapshot of 2026-
 | `syphonOut` | Syphon Out | `syphonout` | `syphonout1` | same |  |
 | `window` | Window Out | `window` | `window1` | same |  |
 | `ndiOut` | NDI Out | `ndiout` | `ndiout1` | same |  |
+| `whipOut` | WHIP Out | `whipout` | `whipout1` | same | T1809b |
 | `spoutOut` | Spout Out | `spoutout` | `spoutout1` | same |  |
 | `oscOut` | OSC Out | `oscout` | `oscout1` | same |  |
 | `laserOut` | Laser Out | `laserout` | `laserout1` | same |  |

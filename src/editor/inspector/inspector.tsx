@@ -48,6 +48,9 @@ import { isComponentNodeType } from "@domain/components/component-type.ts";
 import { supportsChannelMask } from "@domain/graph/channel-mask.ts";
 import { LASER_OUT_TYPE } from "@nodes/definitions/laser-out.ts";
 import { WINDOW_OUT_TYPE } from "@nodes/definitions/window-out.ts";
+import { WHIP_OUT_TYPE } from "@nodes/definitions/whip-out.ts";
+import { WhipSection, whipSectionParameters } from "./whip-section.tsx";
+import type { WhipSectionSurface } from "./whip-section.tsx";
 import type { MidiSectionSurface } from "./midi-section.tsx";
 import { ADVANCED_GROUP, DEFAULT_GROUP, groupParameters } from "./parameter-groups.ts";
 import { createParameterEditor } from "./parameter-editor.ts";
@@ -237,6 +240,11 @@ export interface InspectorProps {
    * stays an ordinary text row.
    */
   performWindows?: WindowSectionSurface;
+  /**
+   * §T1809b: the WHIP sessions, for the Stream section on WHIP Out nodes — the measured
+   * state and the session-only token. Absent (tests, embeds): section hidden.
+   */
+  whip?: WhipSectionSurface;
   variant?: ControlVariant;
   /**
    * The channel resolver a `driven` parameter reads through (B46, T374, §V61).
@@ -378,6 +386,7 @@ export function Inspector({
   midi,
   laser,
   performWindows,
+  whip,
   components,
   flattened,
   instanceParameters,
@@ -730,6 +739,8 @@ export function Inspector({
   // in session code as an unregistered pump's tell, and this section is a surface.
   const showsLaserSection = laser !== undefined && node.type === LASER_OUT_TYPE;
   const showsWindowSection = performWindows !== undefined && node.type === WINDOW_OUT_TYPE;
+  // The CONSTANT, as for the laser: an emitting type's literal here reads as a pump (§T1005).
+  const showsWhipSection = whip !== undefined && node.type === WHIP_OUT_TYPE;
   /* T1065 — the instance's session controls (version, upgrade, enter, detach), only
      when a registry view is supplied: headless mounts and plain-node inspectors carry
      no components and render no section. */
@@ -752,6 +763,7 @@ export function Inspector({
     ...(showsMidiSection ? midiSectionParameters() : []),
     ...(showsLaserSection ? laserSectionParameters() : []),
     ...(showsWindowSection ? windowSectionParameters() : []),
+    ...(showsWhipSection ? whipSectionParameters() : []),
     ...(showsComponentSection ? componentSectionParameters() : []),
     ...(showsPresetBankSection ? presetBankSectionParameters() : []),
     // T1505b: the instance's own preset state is the section's to show, never two JSON rows on the page.
@@ -1022,6 +1034,9 @@ export function Inspector({
       />
     ) : null;
 
+  /* §T1809b: the stream's state and its session-only token, on the WHIP Out node. */
+  const whipSection = showsWhipSection && whip !== undefined ? <WhipSection nodeId={node.id} whip={whip} /> : null;
+
   const componentSection =
     showsComponentSection && components !== undefined ? (
       <ComponentSection
@@ -1281,6 +1296,7 @@ export function Inspector({
         {midiSection}
         {laserSection}
         {windowSection}
+        {whipSection}
         {componentSection}
         {presetBankSection}
         {cueListSection}
@@ -1309,6 +1325,7 @@ export function Inspector({
           {midiSection}
           {laserSection}
           {windowSection}
+        {whipSection}
         {componentSection}
           {presetBankSection}
           {cueListSection}

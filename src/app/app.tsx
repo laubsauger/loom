@@ -117,6 +117,7 @@ import { useMeshSources } from "./use-mesh-sources.ts";
 import { useNativeInputs } from "./use-native-inputs.ts";
 import { usePhoneCameras } from "./use-phone-cameras.ts";
 import { useNativeOutputs } from "./use-native-outputs.ts";
+import { useWhipOutputs } from "./use-whip-outputs.ts";
 import { drainNativeViewerOutputs } from "./native-viewer-outputs.ts";
 import { createMediaControlRegistry, useMediaCommands } from "./media-commands.ts";
 import { useProject } from "./use-project.ts";
@@ -421,9 +422,15 @@ export function App({
      compile for a second drawing of its renderer while it is moved off the camera. Shared by
      the tiles and the viewer (one picture, one look), view state, per document. */
   const looks = usePerDocument(runtime.documentIdentity, createLookStore);
+  // §T1809b: which WHIP Outs are publishing — they render only then (the pump writes it).
+  const streamSinks = usePerDocument(runtime.documentIdentity, createDisplaySinkStore);
   const compileSinks = useMemo(
-    () => mergeSinkStores(mergeSinkStores(previewSinks, displaySinks), { get: () => looks.sinks, subscribe: looks.subscribeSinks }),
-    [previewSinks, displaySinks, looks],
+    () =>
+      mergeSinkStores(mergeSinkStores(mergeSinkStores(previewSinks, displaySinks), streamSinks), {
+        get: () => looks.sinks,
+        subscribe: looks.subscribeSinks,
+      }),
+    [previewSinks, displaySinks, streamSinks, looks],
   );
   /* T379 — ONE inspection-orbit store, shared by the graph pane's tiles and the viewer
      pane: both surfaces show the SAME preview target per node (the tile's request is
@@ -1477,6 +1484,14 @@ export function App({
    * accounting and warn twice about the same read.
    */
   const nativeOutputs = useNativeOutputs(runtime, backend ?? null, compile.flatGraph, frameLoop.installedPlan);
+  // §T1809b: WHIP Out — the live sessions, their state and the session-only tokens.
+  const whipOutputs = useWhipOutputs({
+    runtime,
+    backend: backend ?? null,
+    graph: compile.flatGraph,
+    compiled: frameLoop.installedPlan,
+    sinks: streamSinks,
+  });
   // §T1391b: Window Out perform windows — the commands, the open set, the inspector surface.
   const perform = usePerformWindows({
     bus: runtime.bus,
@@ -1586,6 +1601,7 @@ export function App({
       { id: "nativeInputs", read: () => nativeInputs.diagnostics },
       { id: "phoneCameras", read: () => phoneCameras.diagnostics },
       { id: "nativeOutputs", read: () => nativeOutputs.diagnostics },
+      { id: "whipOutputs", read: () => whipOutputs.diagnostics },
       // T1340b — the host-level limitation a node declares about itself. Same list as
       // everything else, which is what makes the node badge and this panel agree.
       { id: "requirements", read: () => requirements },
@@ -2387,6 +2403,7 @@ export function App({
                 midi={midi}
                 laser={laser.session}
                 performWindows={perform.surface}
+                whip={whipOutputs.surface}
               />
               )}</LiveGraph>
               </AppRuntimeContext.Provider>

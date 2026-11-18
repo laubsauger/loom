@@ -20,7 +20,7 @@ import { defineConfig, devices } from "@playwright/test";
  * connection cleared it never jumped in the lane without an adapter.
  */
 const NEEDS_A_REAL_ADAPTER =
-  /(header-timeline|canvas-render|device-loss|presentation-pixels|still-pixels|example-parity|node-layering-pixels|mediapipe-matte|viewer-aspect|max-zoom-orbit-tile|pane-resize-hold|value-card-dom|wire-snap|preview-camera|canvas-paint|camera-fly|ten-bit-video|chroma-node|audio-input-gain)\.spec\.ts$/;
+  /(header-timeline|canvas-render|device-loss|presentation-pixels|still-pixels|example-parity|node-layering-pixels|mediapipe-matte|viewer-aspect|max-zoom-orbit-tile|pane-resize-hold|value-card-dom|wire-snap|preview-camera|canvas-paint|camera-fly|ten-bit-video|chroma-node|audio-input-gain|whip-out)\.spec\.ts$/;
 
 export default defineConfig({
   testDir: "./src/tests/e2e",

@@ -178,6 +178,7 @@ describe("core catalogue (T70, T40)", () => {
       "syphonOut",
       "window",
       "ndiOut",
+      "whipOut",
       "spoutIn",
       "spoutOut",
       "mouse",

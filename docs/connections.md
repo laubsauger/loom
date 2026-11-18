@@ -104,3 +104,78 @@ node tools/osc-listen.mjs 9001
 ```
 
 The test tools also use `127.0.0.1`.
+
+## Live video out (WHIP)
+
+A WHIP Out node publishes its input as live H.264 video over WebRTC to a WHIP server
+such as MediaMTX. It needs no helper and no desktop app. Design and measurements:
+`docs/whip-out-design-2026-11-17.md`.
+
+Run a MediaMTX on this machine, bound to loopback (`brew install mediamtx`):
+
+```yaml
+# mediamtx.yml
+rtmp: no
+hls: no
+srt: no
+moq: no
+rtspTransports: [tcp]
+rtspAddress: 127.0.0.1:8554
+webrtcAddress: 127.0.0.1:8889
+webrtcLocalUDPAddress: 127.0.0.1:8189
+webrtcLocalTCPAddress: ''
+webrtcIPsFromInterfaces: no
+webrtcAdditionalHosts: [127.0.0.1]
+paths:
+  all_others:
+```
+
+```bash
+mediamtx mediamtx.yml
+```
+
+In Loom, add **WHIP Out** (Output), wire the picture into it and set:
+
+| Parameter | Value |
+| --- | --- |
+| Server | `http://127.0.0.1:8889` |
+| Stream path | `loom` |
+| Width × Height | `1920` × `1080` (both even) |
+| Frame rate | `30` |
+| Bitrate (kbit/s) | `16000` |
+| H.264 profile | High, or Baseline / Constrained Baseline (see below) |
+| Publish | on |
+
+The node's **Stream** section shows the state, and once a second what was actually sent
+(size, frames per second, kbit/s, profile). To watch it back, open
+`http://127.0.0.1:8889/loom` in a browser (MediaMTX's own WebRTC player), or read it over
+RTSP:
+
+```bash
+ffplay -rtsp_transport tcp rtsp://127.0.0.1:8554/loom
+```
+
+Things to know:
+
+- **Keep Loom visible.** A hidden tab renders nothing, so the stream freezes on its last
+  picture and the node says "Frozen". Give Loom a window of its own, or keep a perform
+  window showing.
+- **Logins.** A login or query string in Server is refused, because the URL is saved with
+  the project. For a server that asks for one, type a token into the Stream section's
+  Token field: it is held for the session and never saved. MediaMTX reads it as its JWT,
+  or as `user:pass` for its internal users.
+- **Profile.** The profile you choose is the only one offered. On a Mac, Chromium encodes
+  Constrained Baseline in software and Baseline and High in hardware: High is the default.
+  Choose Constrained Baseline only for a receiver that decodes nothing else.
+- **Bitrate.** The frame rate is held; when the picture needs more than Bitrate, the
+  stream is sent at a smaller size (the Stream section shows it; measured: noise at 6000
+  went out at 640 × 360 to 960 × 540, 31 fps). On a local network keep it high (16000): a key frame is about ten frames of data,
+  and at 5000 each one arrives a quarter of a second late, which shows as a stutter.
+- **Key frames.** Leave "Key frame every" at 0: the server asks for them. Raise it only
+  when receivers take too long to recover from lost data.
+- **Audio** adds what Loom itself plays on the speakers (movie sound, a monitored Audio
+  In or Audio File In) as Opus. The Harmony synth is not in it yet.
+- **A server on another machine.** A Loom opened from `localhost` can publish to a plain
+  `http://` server on the LAN. A hosted `https://` Loom cannot unless the server has TLS,
+  and the browser will ask for local network access.
+- A take (Render) ends the stream while it runs. Syphon Out and NDI Out do the same.

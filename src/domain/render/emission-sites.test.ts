@@ -147,6 +147,8 @@ describe("T1005 — the pump ledger, held to the side-effect ledger", () => {
       ["oscOut", "src/app/use-osc-bridge.ts"],
       ["spoutOut", "src/app/use-native-outputs.ts"],
       ["syphonOut", "src/app/use-native-outputs.ts"],
+      // T1809b: live video over WebRTC, from the page.
+      ["whipOut", "src/app/use-whip-outputs.ts"],
     ]);
   });
 

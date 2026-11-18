@@ -61,7 +61,9 @@ export function ownsSinkTarget(definition: NodeDefinition): boolean {
   return (
     isDeclaredSink(definition) &&
     definition.measuredChannel !== true &&
-    definition.sideEffect !== "emits"
+    // §T1809b: an emitter draws nothing (Laser Out, OSC Out, Syphon Out) UNLESS it declares
+    // itself a display sink: WHIP Out emits the very target it draws.
+    (definition.sideEffect !== "emits" || definition.sinkRole === "display")
   );
 }
 

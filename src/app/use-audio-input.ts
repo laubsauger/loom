@@ -12,7 +12,7 @@ import { createLeadPitch } from "@domain/audio/analysis/pitch.ts";
 import { createTonalAnalyser } from "@domain/audio/analysis/tonal-analyser.ts";
 import { mediaTransportFrom, type MediaPlayhead, type MediaTransportValues } from "@domain/media/transport.ts";
 import { awaitMediaReady } from "./media-sources.ts";
-import { appAudioContext } from "./app-audio-context.ts";
+import { appAudioContext, appProgramOutput } from "./app-audio-context.ts";
 import { createAudioHopReducer } from "./audio-analysis-frame.ts";
 import {
   AUDIO_ANALYSIS_PROCESSOR_NAME,
@@ -663,7 +663,8 @@ export function useAudioInput(
           const gain = made(context.createGain());
           gain.gain.value = monitorGainLevel(monitorLevelRef.current, renderMutedRef.current);
           input.connect(gain);
-          if (config.monitor) gain.connect(context.destination);
+          // §T1809b: through the program bus, so a stream can carry what is heard.
+          if (config.monitor) gain.connect(appProgramOutput(context));
           // T493/§V369: kicked, never AWAITED. `play()` on a source that never decodes
           // stays pending forever, so awaiting it left the capture in `idle` — reading
           // exactly like "everything is fine" — for a file that could not be opened.

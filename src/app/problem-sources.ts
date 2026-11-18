@@ -61,6 +61,8 @@ export const HEADLESS_ABSENT_PROBLEM_SOURCES: Readonly<Record<string, string>> =
   phoneCameras: "phone cameras arrive over a page's device client and phone door, and a headless session has none.",
   nativeOutputs:
     "native video outputs (Syphon, NDI, Spout) are opened through the desktop shell's bridge in a page, and this process opens none.",
+  whipOutputs:
+    "a WHIP stream is a canvas capture and an RTCPeerConnection in a page, and this process has neither. It never names a WHIP Out as a sink, so the node renders and sends nothing here.",
   requirements:
     "the host facts a node's requirements are checked against (browser or desktop, helper reachable) are a page's facts (`pageHostFacts`), and this process has no such model.",
   osc: "the OSC session belongs to the page's bridge hook. This process only hosts the door that page dials.",

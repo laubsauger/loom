@@ -70,6 +70,7 @@ const NOT_A_NODE_PATH: Readonly<Record<string, string>> = {
   "src/app/audio-offline-analysis.ts": "two rates in an error message",
   "src/app/use-mesh-sources.ts": "a mesh's sizes, as a memo key",
   "src/app/use-osc-bridge.ts": "an OSC address",
+  "src/app/whip-publisher.ts": "a WHIP endpoint's URL",
   "src/domain/audio/analysis/stft.ts": "two sizes in an error message",
   "src/domain/components/instance.ts": "an instance's internal PARAMETER path, `<node>/<key>`",
   "src/domain/components/save-selection.ts": "a node and one of its ports, as a map key",

@@ -96,6 +96,8 @@ export const NODE_REPRODUCIBILITY: Readonly<Record<string, Reproducibility>> = {
   // §T1391b: a function of its input like Output; the window it feeds is app-side.
   window: "pure",
   ndiOut: "pure",
+  // §T1809b: a function of its input like Window Out; the stream it feeds is app-side.
+  whipOut: "pure",
   spoutOut: "pure",
   // FOUND BY THIS EXERCISE, not by the brief. The session's microphone, read through
   // `valueEvaluate({ audio })`. §V353 makes the ABSENCE of a track deterministic — no

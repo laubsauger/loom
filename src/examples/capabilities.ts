@@ -101,7 +101,7 @@ const MEDIUM_SIGNATURES: readonly Capability<ExampleCategory>[] = [
     tag: "video",
     label: "video",
     meaning: "Footage, a live camera, or an external video stream is in the chain.",
-    nodeTypes: new Set(["movieFileIn", "webcam", "depth", "slitScan", "syphonIn", "syphonOut", "ndiIn", "ndiOut", "spoutIn", "spoutOut"]),
+    nodeTypes: new Set(["movieFileIn", "webcam", "depth", "slitScan", "syphonIn", "syphonOut", "ndiIn", "ndiOut", "spoutIn", "spoutOut", "whipOut"]),
   },
   {
     tag: "3d",

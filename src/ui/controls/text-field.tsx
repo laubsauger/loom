@@ -23,6 +23,8 @@ export interface TextFieldProps {
    * effect: `readOnly`, never `disabled`.
    */
   readOnly?: boolean;
+  /** §T1809b: masked while typed and kept out of autofill — a token, never a document value. */
+  secret?: boolean;
   id?: string;
   describedBy?: string;
   onChange: ValueListener<string>;
@@ -34,6 +36,7 @@ export function TextField({
   multiline = false,
   disabled = false,
   readOnly = false,
+  secret = false,
   id,
   describedBy,
   onChange,
@@ -83,7 +86,8 @@ export function TextField({
 
   return (
     <input
-      type="text"
+      type={secret ? "password" : "text"}
+      {...(secret ? { autoComplete: "off", spellCheck: false } : {})}
       className={cx(styles.text, "nodrag")}
       value={draft}
       disabled={disabled}

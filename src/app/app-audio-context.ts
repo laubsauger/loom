@@ -59,12 +59,54 @@ function resumeOnGesture(context: AudioContext): void {
   for (const type of GESTURES) window.addEventListener(type, onGesture, true);
 }
 
+/**
+ * §T1809b — THE PROGRAM BUS: what Loom itself sends to the speakers, as one node.
+ *
+ * A unity gain into `destination`, one per context. Movie sound and the Audio In / Audio
+ * File In monitor connect here and not to `destination`, so a stream (WHIP Out's Audio)
+ * can tap exactly what is heard: `appProgramStream`. The Harmony synth still connects to
+ * `destination` itself and is not on the bus (§T1811b).
+ */
+const programs = new WeakMap<AudioContext, { readonly bus: GainNode; tap: MediaStreamAudioDestinationNode | null }>();
+
+function programOf(context: AudioContext): { readonly bus: GainNode; tap: MediaStreamAudioDestinationNode | null } {
+  let program = programs.get(context);
+  if (program === undefined) {
+    const bus = context.createGain();
+    bus.connect(context.destination);
+    program = { bus, tap: null };
+    programs.set(context, program);
+  }
+  return program;
+}
+
+/** Where a source that should be HEARD connects, in place of `context.destination`. */
+export function appProgramOutput(context: AudioContext): AudioNode {
+  return programOf(context).bus;
+}
+
+/**
+ * The program bus as a `MediaStream` (one audio track), made on first ask and kept: the
+ * caller clones the track and stops its clone. Null where there is no Web Audio, or no
+ * stream destination.
+ */
+export function appProgramStream(): MediaStream | null {
+  const context = appAudioContext();
+  if (context === null || typeof context.createMediaStreamDestination !== "function") return null;
+  const program = programOf(context);
+  if (program.tap === null) {
+    program.tap = context.createMediaStreamDestination();
+    program.bus.connect(program.tap);
+  }
+  return program.tap.stream;
+}
+
 /** Per element, for its life: `createMediaElementSource` may be called once per element, ever. */
 const routes = new WeakMap<HTMLMediaElement, { readonly context: AudioContext; readonly gain: GainNode }>();
 
 /**
  * §T1548b — movie elements into the app context: element → its own `GainNode` →
- * destination. The gain is the element's volume and mute (Chrome ignores `element.volume`
+ * the program bus → destination. The gain is the element's volume and mute (Chrome ignores `element.volume`
  * on a routed element). Routing the same element again reconnects the route it already
  * has; an element routed into another context, or not a real media element, is refused
  * (null) and plays through its own output.
@@ -90,7 +132,7 @@ export function appMovieAudioOutput(): MovieAudioOutput | null {
         }
       }
       const { gain } = route;
-      gain.connect(context.destination);
+      gain.connect(appProgramOutput(context));
       return {
         gain: gain.gain,
         release: () => {

@@ -683,5 +683,6 @@ export const DIAGNOSTIC_CLASS_REASONS: Readonly<Record<string, string>> = {
   "vision.native.retirement": "this session's device, helper or file",
   "vision.native.starting": "this session's device, helper or file",
   "vision.refused": "this session's device, helper or file",
+  "whip.output": "this session's stream: its server, its network or its tab",
   "wgsl/compile": "the device's own message for a stored shader: an error, or a remark",
 };

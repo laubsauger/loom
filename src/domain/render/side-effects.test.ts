@@ -76,6 +76,8 @@ describe("T949 — the scan is finding the real catalogue, or it is measuring no
       "oscOut:emits",
       "spoutOut:emits",
       "syphonOut:emits",
+      // T1809b. Live video to a WHIP server the document names; its pump is registered.
+      "whipOut:emits",
     ]);
   });
 });

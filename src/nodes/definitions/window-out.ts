@@ -1,4 +1,4 @@
-import type { NodeDefinition, CompiledNodeDescription, ResolutionPolicy } from "../../domain/types/node-definition.ts";
+import type { NodeDefinition, CompiledNodeDescription, NodeCompileContext, ResolutionPolicy } from "../../domain/types/node-definition.ts";
 import type { EffectPassDescriptor } from "../../runtime/backend/plan.ts";
 import { RGBA_TEXTURE } from "./common-ports.ts";
 import { missingCompileResource, readCompileInputs } from "./compile-context.ts";
@@ -11,6 +11,36 @@ import type { ToneMapOperator } from "../../domain/color/display.ts";
 export const WINDOW_OUT_TYPE = "window";
 
 const FIT_MODES = ["fit", "fill", "stretch"] as const;
+
+/**
+ * The pass of a display sink sized by its own Width × Height (§T1391b; shared with WHIP
+ * Out, §T1809b): the input placed by Fit into the node's `$target`, display-encoded.
+ * `key` names the pass and `label` is what timings show.
+ */
+export function compileFittedSink(context: NodeCompileContext, key: string, label: string): CompiledNodeDescription {
+  const { nodeId, inputs, target, format, space, colorPolicy, parameters, resolution } = readCompileInputs(context);
+  const source = inputs["input"];
+  if (source === undefined || target === undefined) {
+    const what = source === undefined ? 'input port "input"' : "its render target";
+    return { passes: [], diagnostics: [missingCompileResource(nodeId, what)] };
+  }
+  const requested: ToneMapOperator = isToneMapOperator(parameters["toneMap"]) ? parameters["toneMap"] : "none";
+  const transform = sinkDisplayTransform(colorPolicy, format, space, requested);
+  const fit = FIT_MODES.indexOf(parameters["fit"] as (typeof FIT_MODES)[number]);
+  const pass: EffectPassDescriptor = {
+    kind: "effect",
+    id: transform.toneMap === "none" ? `${nodeId}:${key}` : `${nodeId}:${key}:${transform.toneMap}`,
+    shader: windowOutShader(transform),
+    target,
+    textures: [{ binding: "inputTexture", resourceId: source.resource }],
+    samplers: [{ binding: "inputSampler", resourceId: source.sampler }],
+    uniformBinding: "params",
+    uniforms: { mode: fit < 0 ? 0 : fit, targetAspect: resolution[0] / resolution[1] },
+    nodeId,
+    label,
+  };
+  return { passes: [pass] };
+}
 
 /**
  * Window Out — a perform window on a chosen screen (§T1391b; TouchDesigner's Window COMP).
@@ -130,28 +160,5 @@ export const windowOutNode: NodeDefinition = {
   // kind (the reader, `isParameterPolicy`, tolerates the cast).
   resolutionPolicy: { kind: "parameter", width: "width", height: "height" } as unknown as ResolutionPolicy,
   formatPolicy: { kind: "project" },
-  compile(context): CompiledNodeDescription {
-    const { nodeId, inputs, target, format, space, colorPolicy, parameters, resolution } = readCompileInputs(context);
-    const source = inputs["input"];
-    if (source === undefined || target === undefined) {
-      const what = source === undefined ? 'input port "input"' : "its render target";
-      return { passes: [], diagnostics: [missingCompileResource(nodeId, what)] };
-    }
-    const requested: ToneMapOperator = isToneMapOperator(parameters["toneMap"]) ? parameters["toneMap"] : "none";
-    const transform = sinkDisplayTransform(colorPolicy, format, space, requested);
-    const fit = FIT_MODES.indexOf(parameters["fit"] as (typeof FIT_MODES)[number]);
-    const pass: EffectPassDescriptor = {
-      kind: "effect",
-      id: transform.toneMap === "none" ? `${nodeId}:window` : `${nodeId}:window:${transform.toneMap}`,
-      shader: windowOutShader(transform),
-      target,
-      textures: [{ binding: "inputTexture", resourceId: source.resource }],
-      samplers: [{ binding: "inputSampler", resourceId: source.sampler }],
-      uniformBinding: "params",
-      uniforms: { mode: fit < 0 ? 0 : fit, targetAspect: resolution[0] / resolution[1] },
-      nodeId,
-      label: "Window Out",
-    };
-    return { passes: [pass] };
-  },
+  compile: (context) => compileFittedSink(context, "window", "Window Out"),
 };
