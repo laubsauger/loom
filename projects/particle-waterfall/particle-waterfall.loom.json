@@ -1,0 +1,2376 @@
+{
+  "assets": [],
+  "createdAt": "2026-11-17T00:00:00.000Z",
+  "graph": {
+    "edges": {
+      "ed_0d4c8024d0533": {
+        "id": "ed_0d4c8024d0533",
+        "order": 0,
+        "source": {
+          "nodeId": "nd_0d4c8024d0532",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_81cda603b4ec1d",
+          "portId": "controls"
+        }
+      },
+      "ed_0d4c8024d0535": {
+        "id": "ed_0d4c8024d0535",
+        "order": 10,
+        "source": {
+          "nodeId": "nd_0d4c8024d0534",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_81cda603b4ec1d",
+          "portId": "controls"
+        }
+      },
+      "ed_81cda603b4ec14": {
+        "id": "ed_81cda603b4ec14",
+        "source": {
+          "nodeId": "nd_81cda603b4ec11",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_81cda603b4ec12",
+          "portId": "more"
+        }
+      },
+      "ed_81cda603b4ec16": {
+        "id": "ed_81cda603b4ec16",
+        "source": {
+          "nodeId": "nd_81cda603b4ec12",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_81cda603b4ec15",
+          "portId": "input"
+        }
+      },
+      "ed_81cda603b4ec18": {
+        "id": "ed_81cda603b4ec18",
+        "source": {
+          "nodeId": "nd_81cda603b4ec12",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_81cda603b4ec17",
+          "portId": "input"
+        }
+      },
+      "ed_81cda603b4ec19": {
+        "id": "ed_81cda603b4ec19",
+        "order": 0,
+        "source": {
+          "nodeId": "nd_81cda603b4ec15",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_81cda603b4ec17",
+          "portId": "more"
+        }
+      },
+      "ed_81cda603b4ec1a": {
+        "id": "ed_81cda603b4ec1a",
+        "order": 1,
+        "source": {
+          "nodeId": "nd_81cda603b4ec6",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_81cda603b4ec17",
+          "portId": "more"
+        }
+      },
+      "ed_81cda603b4ec1c": {
+        "id": "ed_81cda603b4ec1c",
+        "source": {
+          "nodeId": "nd_81cda603b4ec17",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_81cda603b4ec1b",
+          "portId": "input"
+        }
+      },
+      "ed_81cda603b4ec1f": {
+        "id": "ed_81cda603b4ec1f",
+        "order": 1,
+        "source": {
+          "nodeId": "nd_81cda603b4ec1e",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_81cda603b4ec1d",
+          "portId": "controls"
+        }
+      },
+      "ed_81cda603b4ec1h": {
+        "id": "ed_81cda603b4ec1h",
+        "order": 2,
+        "source": {
+          "nodeId": "nd_81cda603b4ec1g",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_81cda603b4ec1d",
+          "portId": "controls"
+        }
+      },
+      "ed_81cda603b4ec1j": {
+        "id": "ed_81cda603b4ec1j",
+        "order": 3,
+        "source": {
+          "nodeId": "nd_81cda603b4ec1i",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_81cda603b4ec1d",
+          "portId": "controls"
+        }
+      },
+      "ed_81cda603b4ec1l": {
+        "id": "ed_81cda603b4ec1l",
+        "order": 4,
+        "source": {
+          "nodeId": "nd_81cda603b4ec1k",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_81cda603b4ec1d",
+          "portId": "controls"
+        }
+      },
+      "ed_81cda603b4ec1n": {
+        "id": "ed_81cda603b4ec1n",
+        "order": 5,
+        "source": {
+          "nodeId": "nd_81cda603b4ec1m",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_81cda603b4ec1d",
+          "portId": "controls"
+        }
+      },
+      "ed_81cda603b4ec1p": {
+        "id": "ed_81cda603b4ec1p",
+        "order": 6,
+        "source": {
+          "nodeId": "nd_81cda603b4ec1o",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_81cda603b4ec1d",
+          "portId": "controls"
+        }
+      },
+      "ed_81cda603b4ec1r": {
+        "id": "ed_81cda603b4ec1r",
+        "order": 7,
+        "source": {
+          "nodeId": "nd_81cda603b4ec1q",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_81cda603b4ec1d",
+          "portId": "controls"
+        }
+      },
+      "ed_81cda603b4ec1t": {
+        "id": "ed_81cda603b4ec1t",
+        "order": 8,
+        "source": {
+          "nodeId": "nd_81cda603b4ec1s",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_81cda603b4ec1d",
+          "portId": "controls"
+        }
+      },
+      "ed_81cda603b4ec22": {
+        "id": "ed_81cda603b4ec22",
+        "order": 9,
+        "source": {
+          "nodeId": "nd_81cda603b4ec21",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_81cda603b4ec1d",
+          "portId": "controls"
+        }
+      },
+      "ed_81cda603b4ec3": {
+        "id": "ed_81cda603b4ec3",
+        "source": {
+          "nodeId": "nd_81cda603b4ec1",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_81cda603b4ec2",
+          "portId": "input"
+        }
+      },
+      "ed_81cda603b4ec5": {
+        "id": "ed_81cda603b4ec5",
+        "source": {
+          "nodeId": "nd_81cda603b4ec2",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_81cda603b4ec4",
+          "portId": "in"
+        }
+      },
+      "ed_81cda603b4ec7": {
+        "id": "ed_81cda603b4ec7",
+        "source": {
+          "nodeId": "nd_81cda603b4ec4",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_81cda603b4ec6",
+          "portId": "input"
+        }
+      },
+      "ed_81cda603b4ec9": {
+        "id": "ed_81cda603b4ec9",
+        "source": {
+          "nodeId": "nd_81cda603b4ec6",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_81cda603b4ec8",
+          "portId": "input"
+        }
+      },
+      "ed_81cda603b4ecb": {
+        "id": "ed_81cda603b4ecb",
+        "source": {
+          "nodeId": "nd_81cda603b4ec8",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_81cda603b4eca",
+          "portId": "input"
+        }
+      },
+      "ed_81cda603b4ecd": {
+        "id": "ed_81cda603b4ecd",
+        "source": {
+          "nodeId": "nd_81cda603b4eca",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_81cda603b4ecc",
+          "portId": "input"
+        }
+      },
+      "ed_81cda603b4ecf": {
+        "id": "ed_81cda603b4ecf",
+        "source": {
+          "nodeId": "nd_81cda603b4ecc",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_81cda603b4ece",
+          "portId": "input"
+        }
+      },
+      "ed_81cda603b4ech": {
+        "id": "ed_81cda603b4ech",
+        "source": {
+          "nodeId": "nd_81cda603b4ece",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_81cda603b4ecg",
+          "portId": "input"
+        }
+      },
+      "ed_81cda603b4ecj": {
+        "id": "ed_81cda603b4ecj",
+        "source": {
+          "nodeId": "nd_81cda603b4ecg",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_81cda603b4eci",
+          "portId": "input"
+        }
+      },
+      "ed_81cda603b4ecl": {
+        "id": "ed_81cda603b4ecl",
+        "source": {
+          "nodeId": "nd_81cda603b4eci",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_81cda603b4eck",
+          "portId": "input"
+        }
+      },
+      "ed_81cda603b4ecn": {
+        "id": "ed_81cda603b4ecn",
+        "source": {
+          "nodeId": "nd_81cda603b4eck",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_81cda603b4ecm",
+          "portId": "input"
+        }
+      },
+      "ed_81cda603b4ecp": {
+        "id": "ed_81cda603b4ecp",
+        "source": {
+          "nodeId": "nd_81cda603b4ecm",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_81cda603b4eco",
+          "portId": "input"
+        }
+      },
+      "ed_81cda603b4ecr": {
+        "id": "ed_81cda603b4ecr",
+        "source": {
+          "nodeId": "nd_81cda603b4eco",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_81cda603b4ecq",
+          "portId": "input"
+        }
+      },
+      "ed_81cda603b4ect": {
+        "id": "ed_81cda603b4ect",
+        "source": {
+          "nodeId": "nd_81cda603b4ecq",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_81cda603b4ecs",
+          "portId": "input"
+        }
+      },
+      "ed_81cda603b4ecv": {
+        "id": "ed_81cda603b4ecv",
+        "source": {
+          "nodeId": "nd_81cda603b4ecs",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_81cda603b4ecu",
+          "portId": "input"
+        }
+      },
+      "ed_81cda603b4ecw": {
+        "id": "ed_81cda603b4ecw",
+        "order": 0,
+        "source": {
+          "nodeId": "nd_81cda603b4ec6",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_81cda603b4ecu",
+          "portId": "more"
+        }
+      },
+      "ed_81cda603b4ecy": {
+        "id": "ed_81cda603b4ecy",
+        "source": {
+          "nodeId": "nd_81cda603b4ecu",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_81cda603b4ecx",
+          "portId": "field"
+        }
+      },
+      "ed_977e2459088b3": {
+        "id": "ed_977e2459088b3",
+        "order": 11,
+        "source": {
+          "nodeId": "nd_977e2459088b2",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_81cda603b4ec1d",
+          "portId": "controls"
+        }
+      },
+      "ed_977e2459088b5": {
+        "id": "ed_977e2459088b5",
+        "order": 12,
+        "source": {
+          "nodeId": "nd_977e2459088b4",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_81cda603b4ec1d",
+          "portId": "controls"
+        }
+      },
+      "ed_977e2459088b7": {
+        "id": "ed_977e2459088b7",
+        "order": 13,
+        "source": {
+          "nodeId": "nd_977e2459088b6",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_81cda603b4ec1d",
+          "portId": "controls"
+        }
+      },
+      "ed_977e2459088b9": {
+        "id": "ed_977e2459088b9",
+        "order": 14,
+        "source": {
+          "nodeId": "nd_977e2459088b8",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_81cda603b4ec1d",
+          "portId": "controls"
+        }
+      },
+      "ed_977e2459088bb": {
+        "id": "ed_977e2459088bb",
+        "order": 15,
+        "source": {
+          "nodeId": "nd_977e2459088ba",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_81cda603b4ec1d",
+          "portId": "controls"
+        }
+      },
+      "ed_977e2459088bg": {
+        "id": "ed_977e2459088bg",
+        "source": {
+          "nodeId": "nd_81cda603b4ecx",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_977e2459088be",
+          "portId": "points"
+        }
+      },
+      "ed_977e2459088bj": {
+        "id": "ed_977e2459088bj",
+        "source": {
+          "nodeId": "nd_81cda603b4ec1x",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_977e2459088bh",
+          "portId": "points"
+        }
+      },
+      "ed_977e2459088bk": {
+        "id": "ed_977e2459088bk",
+        "source": {
+          "nodeId": "nd_977e2459088bf",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_81cda603b4ec12",
+          "portId": "input"
+        }
+      },
+      "ed_977e2459088bl": {
+        "id": "ed_977e2459088bl",
+        "order": 2,
+        "source": {
+          "nodeId": "nd_977e2459088bi",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_81cda603b4ec17",
+          "portId": "more"
+        }
+      },
+      "ed_cf03f7df4d973": {
+        "id": "ed_cf03f7df4d973",
+        "order": 16,
+        "source": {
+          "nodeId": "nd_cf03f7df4d972",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_81cda603b4ec1d",
+          "portId": "controls"
+        }
+      },
+      "ed_cf03f7df4d975": {
+        "id": "ed_cf03f7df4d975",
+        "order": 17,
+        "source": {
+          "nodeId": "nd_cf03f7df4d974",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_81cda603b4ec1d",
+          "portId": "controls"
+        }
+      },
+      "ed_cf03f7df4d977": {
+        "id": "ed_cf03f7df4d977",
+        "order": 18,
+        "source": {
+          "nodeId": "nd_cf03f7df4d976",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_81cda603b4ec1d",
+          "portId": "controls"
+        }
+      },
+      "ed_cf03f7df4d97a": {
+        "id": "ed_cf03f7df4d97a",
+        "source": {
+          "nodeId": "nd_cf03f7df4d978",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_cf03f7df4d979",
+          "portId": "input"
+        }
+      },
+      "ed_cf03f7df4d97b": {
+        "id": "ed_cf03f7df4d97b",
+        "order": 1,
+        "source": {
+          "nodeId": "nd_cf03f7df4d979",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_81cda603b4ecu",
+          "portId": "more"
+        }
+      },
+      "ed_cf03f7df4d97c": {
+        "id": "ed_cf03f7df4d97c",
+        "source": {
+          "nodeId": "nd_81cda603b4ecu",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_81cda603b4ec1x",
+          "portId": "field"
+        }
+      },
+      "ed_cf03f7df4d97e": {
+        "id": "ed_cf03f7df4d97e",
+        "source": {
+          "nodeId": "nd_81cda603b4ecx",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_cf03f7df4d97d",
+          "portId": "points"
+        }
+      },
+      "ed_cf03f7df4d97g": {
+        "id": "ed_cf03f7df4d97g",
+        "source": {
+          "nodeId": "nd_81cda603b4ec1x",
+          "portId": "out"
+        },
+        "target": {
+          "nodeId": "nd_cf03f7df4d97f",
+          "portId": "points"
+        }
+      }
+    },
+    "groups": {},
+    "nodes": {
+      "nd_0d4c8024d0532": {
+        "definitionVersion": 2,
+        "id": "nd_0d4c8024d0532",
+        "label": "slider_drag",
+        "parameters": {
+          "caption": "Air drag",
+          "channel": "drag",
+          "defaultValue": 0.5,
+          "max": 3,
+          "min": 0,
+          "step": 0.001,
+          "value": 0.5
+        },
+        "position": {
+          "x": 0,
+          "y": -850
+        },
+        "type": "slider"
+      },
+      "nd_0d4c8024d0534": {
+        "definitionVersion": 2,
+        "id": "nd_0d4c8024d0534",
+        "label": "slider_velocityShade",
+        "parameters": {
+          "caption": "Impact glints",
+          "channel": "velocityShade",
+          "defaultValue": 0.65,
+          "max": 1,
+          "min": 0,
+          "step": 0.001,
+          "value": 0.65
+        },
+        "position": {
+          "x": 300,
+          "y": -850
+        },
+        "type": "slider"
+      },
+      "nd_81cda603b4ec1": {
+        "definitionVersion": 1,
+        "id": "nd_81cda603b4ec1",
+        "label": "solid_mask_canvas",
+        "parameters": {
+          "color": [
+            0,
+            0,
+            0,
+            1
+          ]
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "resolution": {
+          "height": 360,
+          "mode": "fixed",
+          "width": 640
+        },
+        "type": "solid"
+      },
+      "nd_81cda603b4ec11": {
+        "definitionVersion": 1,
+        "id": "nd_81cda603b4ec11",
+        "label": "feedback_rain_trails",
+        "parameters": {
+          "clearColor": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "persistence": 1,
+          "reset": false,
+          "source": "wgsl_rain_trails",
+          "substeps": 1
+        },
+        "position": {
+          "x": 1850,
+          "y": 320
+        },
+        "type": "feedback"
+      },
+      "nd_81cda603b4ec12": {
+        "definitionVersion": 1,
+        "id": "nd_81cda603b4ec12",
+        "label": "wgsl_rain_trails",
+        "parameters": {
+          "amount": 0.032,
+          "source": "struct SharedFrame { time: f32, deltaTime: f32, frameIndex: f32, randomSeed: f32, wallTime: f32, wallDelta: f32, absTime: f32, absFrame: f32, resolution: vec2f, pointer: vec4f, };\n@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n@group(0) @binding(2) var<uniform> frameU: SharedFrame;\n@group(0) @binding(3) var<uniform> params: Params;\n@group(0) @binding(4) var inputTexture1: texture_2d<f32>;\nstruct Params {amount:f32, trailTime:f32, // @default 0.032 Short exposure, in seconds; grains remain visible.\n};\n@fragment fn fs(@location(0) uv:vec2f)->@location(0) vec4f {\n let a=textureSampleLevel(inputTexture,inputSampler,uv,0.).rgb;\n let d=vec2i(textureDimensions(inputTexture1));let b=textureLoad(inputTexture1,clamp(vec2i(uv*vec2f(d)),vec2i(0),d-1),0).rgb;\n let decay=exp(-frameU.deltaTime/max(params.trailTime,.001));return vec4f(max(a,b*decay),1.);\n}",
+          "trailTime": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('slider_trailTime').par.value"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.032
+              }
+            },
+            "mode": "expression"
+          }
+        },
+        "position": {
+          "x": 2150,
+          "y": 0
+        },
+        "type": "customWgslMulti"
+      },
+      "nd_81cda603b4ec15": {
+        "definitionVersion": 1,
+        "id": "nd_81cda603b4ec15",
+        "label": "blur_waterfall_glow",
+        "parameters": {
+          "extend": "zero",
+          "filter": "gaussian",
+          "size": 10
+        },
+        "position": {
+          "x": 2450,
+          "y": 320
+        },
+        "type": "blur"
+      },
+      "nd_81cda603b4ec17": {
+        "definitionVersion": 1,
+        "id": "nd_81cda603b4ec17",
+        "label": "wgsl_waterfall_light",
+        "parameters": {
+          "amount": 0.4,
+          "glow": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('slider_glow').par.value"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.4
+              }
+            },
+            "mode": "expression"
+          },
+          "source": "struct SharedFrame { time: f32, deltaTime: f32, frameIndex: f32, randomSeed: f32, wallTime: f32, wallDelta: f32, absTime: f32, absFrame: f32, resolution: vec2f, pointer: vec4f, };\n@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n@group(0) @binding(2) var<uniform> frameU: SharedFrame;\n@group(0) @binding(3) var<uniform> params: Params;\n@group(0) @binding(4) var inputTexture1: texture_2d<f32>;\n@group(0) @binding(5) var inputTexture2: texture_2d<f32>;\n@group(0) @binding(6) var inputTexture3: texture_2d<f32>;\nstruct Params {amount:f32, glow:f32, // @default 0.22 Light around the separate droplets.\n};\n@fragment fn fs(@location(0) uv:vec2f)->@location(0) vec4f {\n let c=textureSampleLevel(inputTexture,inputSampler,uv,0.).rgb;\n let d=vec2i(textureDimensions(inputTexture1));let halo=textureLoad(inputTexture1,clamp(vec2i(uv*vec2f(d)),vec2i(0),d-1),0).rgb;\n let md=vec2i(textureDimensions(inputTexture2));let mask=textureLoad(inputTexture2,clamp(vec2i(uv*vec2f(md)),vec2i(0),md-1),0).r;\n let bd=vec2i(textureDimensions(inputTexture3));let rear=textureLoad(inputTexture3,clamp(vec2i(uv*vec2f(bd)),vec2i(0),bd-1),0).rgb;\n let radiance=c+rear+halo*params.glow;\n return vec4f((vec3f(1.)-exp(-radiance*3.0))*(1.-mask),1.);\n}"
+        },
+        "position": {
+          "x": 2750,
+          "y": 0
+        },
+        "type": "customWgslMulti"
+      },
+      "nd_81cda603b4ec1b": {
+        "definitionVersion": 1,
+        "id": "nd_81cda603b4ec1b",
+        "label": "output_waterfall",
+        "parameters": {
+          "toneMap": "none"
+        },
+        "position": {
+          "x": 3050,
+          "y": 0
+        },
+        "type": "output"
+      },
+      "nd_81cda603b4ec1d": {
+        "definitionVersion": 1,
+        "id": "nd_81cda603b4ec1d",
+        "label": "panel_waterfall",
+        "parameters": {
+          "board": "",
+          "layout": "# Water and air\nslider_motionRate slider_folds\nslider_swirl slider_drag\nslider_speed slider_gravity slider_splash\nslider_grainSize slider_strandLength\n# Velocity LUT\nslider_colorSpeed slider_colorCurve\nslider_palettePhase slider_paletteRate\n# Light\nslider_brightness slider_glow\nslider_velocityShade slider_depth slider_trailTime\n# Collider\nslider_demo\n> Edit ramp_velocity for speed colours. Palette rate 0 freezes hue progression.\n> Large drops retain ballistic momentum; fine spray follows the shared air field.\n> Collision is ON. Replace the input of null_mask_input with a live matte.",
+          "remote": false,
+          "title": "Waterfall — turbulent spray + velocity LUT"
+        },
+        "position": {
+          "x": 1550,
+          "y": -560
+        },
+        "type": "panel"
+      },
+      "nd_81cda603b4ec1e": {
+        "definitionVersion": 2,
+        "id": "nd_81cda603b4ec1e",
+        "label": "slider_speed",
+        "parameters": {
+          "caption": "Feed speed",
+          "channel": "speed",
+          "defaultValue": 0.38,
+          "max": 2.5,
+          "min": 0.1,
+          "step": 0.001,
+          "value": 0.38
+        },
+        "position": {
+          "x": 0,
+          "y": -560
+        },
+        "type": "slider"
+      },
+      "nd_81cda603b4ec1g": {
+        "definitionVersion": 2,
+        "id": "nd_81cda603b4ec1g",
+        "label": "slider_gravity",
+        "parameters": {
+          "caption": "Gravity",
+          "channel": "gravity",
+          "defaultValue": 2.2,
+          "max": 6,
+          "min": 0.1,
+          "step": 0.001,
+          "value": 2.2
+        },
+        "position": {
+          "x": 300,
+          "y": -560
+        },
+        "type": "slider"
+      },
+      "nd_81cda603b4ec1i": {
+        "definitionVersion": 2,
+        "id": "nd_81cda603b4ec1i",
+        "label": "slider_splash",
+        "parameters": {
+          "caption": "Impact spray",
+          "channel": "splash",
+          "defaultValue": 1.15,
+          "max": 1.6,
+          "min": 0,
+          "step": 0.001,
+          "value": 1.15
+        },
+        "position": {
+          "x": 600,
+          "y": -560
+        },
+        "type": "slider"
+      },
+      "nd_81cda603b4ec1k": {
+        "definitionVersion": 2,
+        "id": "nd_81cda603b4ec1k",
+        "label": "slider_swirl",
+        "parameters": {
+          "caption": "Air turbulence",
+          "channel": "swirl",
+          "defaultValue": 2.4,
+          "max": 4.5,
+          "min": 0,
+          "step": 0.001,
+          "value": 2.4
+        },
+        "position": {
+          "x": 900,
+          "y": -560
+        },
+        "type": "slider"
+      },
+      "nd_81cda603b4ec1m": {
+        "definitionVersion": 2,
+        "id": "nd_81cda603b4ec1m",
+        "label": "slider_brightness",
+        "parameters": {
+          "caption": "Brightness",
+          "channel": "brightness",
+          "defaultValue": 0.85,
+          "max": 2,
+          "min": 0.1,
+          "step": 0.001,
+          "value": 0.85
+        },
+        "position": {
+          "x": 0,
+          "y": -310
+        },
+        "type": "slider"
+      },
+      "nd_81cda603b4ec1o": {
+        "definitionVersion": 2,
+        "id": "nd_81cda603b4ec1o",
+        "label": "slider_grainSize",
+        "parameters": {
+          "caption": "Drop size",
+          "channel": "grainSize",
+          "defaultValue": 1.1,
+          "max": 3.5,
+          "min": 0.5,
+          "step": 0.001,
+          "value": 1.1
+        },
+        "position": {
+          "x": 300,
+          "y": -310
+        },
+        "type": "slider"
+      },
+      "nd_81cda603b4ec1q": {
+        "definitionVersion": 2,
+        "id": "nd_81cda603b4ec1q",
+        "label": "slider_trailTime",
+        "parameters": {
+          "caption": "Afterglow",
+          "channel": "trailTime",
+          "defaultValue": 0.045,
+          "max": 0.3,
+          "min": 0.008,
+          "step": 0.001,
+          "value": 0.045
+        },
+        "position": {
+          "x": 600,
+          "y": -310
+        },
+        "type": "slider"
+      },
+      "nd_81cda603b4ec1s": {
+        "definitionVersion": 2,
+        "id": "nd_81cda603b4ec1s",
+        "label": "slider_glow",
+        "parameters": {
+          "caption": "Glow",
+          "channel": "glow",
+          "defaultValue": 0.22,
+          "max": 1.5,
+          "min": 0,
+          "step": 0.001,
+          "value": 0.22
+        },
+        "position": {
+          "x": 900,
+          "y": -310
+        },
+        "type": "slider"
+      },
+      "nd_81cda603b4ec1x": {
+        "definitionVersion": 1,
+        "id": "nd_81cda603b4ec1x",
+        "label": "kernel_rear_curtain",
+        "parameters": {
+          "aspect": 1.7777777777777777,
+          "attributes": "[{\"name\": \"position\", \"type\": \"vec3f\", \"semantic\": \"position\", \"default\": [0, 0, 0]}, {\"name\": \"motion\", \"type\": \"vec4f\", \"default\": [0, 0, 0, 0]}, {\"name\": \"tint\", \"type\": \"vec4f\", \"semantic\": \"color\", \"default\": [1, 1, 1, 1]}, {\"name\": \"diameter\", \"type\": \"f32\", \"default\": [1]}, {\"name\": \"tip\", \"type\": \"vec3f\", \"default\": [0, 0, 0]}, {\"name\": \"droplet\", \"type\": \"f32\", \"default\": [0]}]",
+          "brightness": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('slider_brightness').par.value"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.4
+              }
+            },
+            "mode": "expression"
+          },
+          "capacity": 65536,
+          "colorCurve": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('slider_colorCurve').par.value"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.8
+              }
+            },
+            "mode": "expression"
+          },
+          "colorSpeed": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('slider_colorSpeed').par.value"
+              },
+              "static": {
+                "kind": "static",
+                "value": 2.4
+              }
+            },
+            "mode": "expression"
+          },
+          "depth": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('slider_depth').par.value"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.35
+              }
+            },
+            "mode": "expression"
+          },
+          "drag": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('slider_drag').par.value"
+              },
+              "static": {
+                "kind": "static",
+                "value": 1.1
+              }
+            },
+            "mode": "expression"
+          },
+          "folds": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('slider_folds').par.value"
+              },
+              "static": {
+                "kind": "static",
+                "value": 1.05
+              }
+            },
+            "mode": "expression"
+          },
+          "grainSize": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('slider_grainSize').par.value"
+              },
+              "static": {
+                "kind": "static",
+                "value": 1.3
+              }
+            },
+            "mode": "expression"
+          },
+          "gravity": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('slider_gravity').par.value"
+              },
+              "static": {
+                "kind": "static",
+                "value": 1.4
+              }
+            },
+            "mode": "expression"
+          },
+          "group": "",
+          "iterations": 1,
+          "kernel": "struct Params {\n depth:f32, // @default 0.10 The second curtain stays dim enough to preserve open gaps.\n\n speed:f32, // @default 0.38 Feed velocity at the uneven lip.\n gravity:f32, // @default 2.2 Downward acceleration for ballistic drops.\n drag:f32, // @default 0.5 Air resistance, scaled by droplet size.\n splash:f32, // @default 1.2 Fraction of incoming momentum redistributed into spray.\n swirl:f32, // @default 1.2 Shared air turbulence; sampled from the middle atlas panel.\n brightness:f32, // @default 0.85 Optical energy in the water.\n velocityShade:f32, // @default 0.6 Speed-dependent highlight contrast.\n grainSize:f32, // @default 1.1 Drop size multiplier.\n aspect:f32, // @default 1.7777778 Width over height in world units.\n motionRate:f32, // @default 0.45 Simulation time scale.\n folds:f32, // @default 0.9 Growth of breakup with falling distance.\n strandLength:f32, // @default 0.038 Exposure of a coarse drop, in simulation seconds.\n colorSpeed:f32, // @default 2.4 Speed at the top end of the colour ramp.\n colorCurve:f32, // @default 0.8 Curve applied before the velocity LUT lookup.\n}\nfn hash01(v:u32)->f32 {let s=v*747796405u+2891336453u;let w=((s>>((s>>28u)+4u))^s)*277803737u;return f32((w>>22u)^w)*(1./4294967296.);}\nfn noise2(p:vec2f)->f32 {\n let i=vec2i(floor(p));let f=fract(p);let u=f*f*(3.-2.*f);\n let a=hash01((bitcast<u32>(i.x)*1597334677u)^(bitcast<u32>(i.y)*3812015801u));\n let b=hash01((bitcast<u32>(i.x+1)*1597334677u)^(bitcast<u32>(i.y)*3812015801u));\n let c=hash01((bitcast<u32>(i.x)*1597334677u)^(bitcast<u32>(i.y+1)*3812015801u));\n let d=hash01((bitcast<u32>(i.x+1)*1597334677u)^(bitcast<u32>(i.y+1)*3812015801u));\n return mix(mix(a,b,u.x),mix(c,d,u.x),u.y)*2.-1.;\n}\nfn turbulence(p:vec2f)->f32 {\n return .57*noise2(p)+.28*noise2(p*2.07+vec2f(17.1,9.3))+.15*noise2(p*4.13-vec2f(8.2,3.7));\n}\n// Atlas contract: three 640x360 panels, saved as a fixed 1920x360 texture.\nfn atlas(uv:vec2f,panel:f32)->vec4f {\n let xy=clamp(uv,vec2f(0.),vec2f(1.));let texel=panel*640.+xy.x*639.;\n return fieldAt(vec3f(2.*texel/1919.-1.,1.-2.*xy.y,0.));\n}\nfn sampleWorld(p:vec2f,aspect:f32,panel:f32)->vec4f {return atlas(vec2f(p.x/(2.*aspect)+.5,.5-p.y*.5),panel);}\nfn emitter(channel:u32,t:f32,aspect:f32)->vec2f {\n let h=hash01(channel^91733u)*43.;let bank=u32(floor(h));let within=fract(h);\n let span=2.*aspect/43.;let at=-aspect+(f32(bank)+.12+.76*hash01(bank^842u))*span;\n let centre=at+.10*noise2(vec2f(at*3.3,t*.1+9.));\n let pressure=.5+.5*noise2(vec2f(f32(bank)*.21,t*.24));\n let width=span*(.35+.75*pressure);\n let x=centre+(within-.5)*width+.012*noise2(vec2f(f32(bank),t*.2));\n return vec2f(x,1.045+.018*noise2(vec2f(f32(bank)*2.3,7.)));\n}\nfn birthVelocity(channel:u32,t:f32,feed:f32)->vec2f {\n let bank=floor(hash01(channel^91733u)*18.);\n let angle=.22*noise2(vec2f(bank*1.7,t*.35))+.08*noise2(vec2f(f32(channel)*.07,3.));\n return vec2f(feed*angle,-feed*(.8+.4*hash01(channel^991u)));\n}\nfn velocityColor(v:vec2f,hit:f32,maxSpeed:f32,curve:f32)->vec3f {\n let u=pow(clamp(length(v)/maxSpeed+hit*.18,0.,1.),curve);\n return atlas(vec2f(u,.5),2.).rgb;\n}\nfn process(p:Point,ctx:PointCtx)->Point {\n var q=p;let id=ctx.index;var channel=select(u32(q.motion.w),id/64u,q.motion.z<.5);\n let grain=hash01(id^71891u);let kind=select(.40,1.,hash01(id^81911u)>.43);\n let impactKind=select(.40,1.,hash01(id^6171u)>.32);\n let dt=ctx.delta*ctx.params.motionRate;let t=ctx.absTime*ctx.params.motionRate+13.7;\n var pos=q.position.xy;var vel=q.motion.xy;var hit=max(q.motion.z-1.,0.)*exp(-dt*1.5);\n var lip=emitter(channel,t,ctx.params.aspect);\n if(q.motion.z<.5){\n  pos.y=hash01(id^8177u)*2.2-1.1;let d=max(lip.y-pos.y,0.);\n  let age=(sqrt(ctx.params.speed*ctx.params.speed+2.*ctx.params.gravity*d)-ctx.params.speed)/ctx.params.gravity;\n  lip=emitter(channel,t-age,ctx.params.aspect);vel=birthVelocity(channel,t-age,ctx.params.speed);\n  pos.x=lip.x+vel.x*age;vel.y=-sqrt(vel.y*vel.y+2.*ctx.params.gravity*d);\n  \n }\n let fallen=max(1.045-pos.y,0.);\n let fractureAt=.12+1.4*hash01(id^393u);\n let broken=smoothstep(fractureAt,fractureAt+.30,fallen)*ctx.params.folds;\n var drop=max(broken*kind,smoothstep(.015,.22,hit)*impactKind);\n let radius=mix(.95+.35*grain,.12+.14*grain,drop);\n let air=sampleWorld(pos,ctx.params.aspect,1.);\n let relative=vel-air.xy;\n let resistance=ctx.params.drag*.35/(radius*radius);\n vel=air.xy+relative*exp(-resistance*length(relative)*dt);vel.y-=ctx.params.gravity*dt;\n let steps=u32(clamp(ceil(length(vel)*dt/.004),1.,24.));let ds=dt/f32(steps);\n for(var j=0u;j<steps;j++){\n  pos+=vel*ds;\n\n }\n if(pos.y< -1.18||abs(pos.x)>ctx.params.aspect+.70){\n  channel=u32(pointRand(id,71u)*f32(ctx.count/64u));pos=emitter(channel,t,ctx.params.aspect);\n  pos.y+=grain*.055;vel=birthVelocity(channel,t,ctx.params.speed);hit=0.;drop=0.;\n }\n drop=max(drop,smoothstep(.015,.22,hit)*impactKind);\n q.position=vec3f(pos,0.);q.motion=vec4f(vel,1.+hit,f32(channel));q.droplet=drop;\n let speed=length(vel);let color=velocityColor(vel,hit,ctx.params.colorSpeed,ctx.params.colorCurve);\n let pulse=.45+.55*smoothstep(-.65,.65,noise2(vec2f(f32(channel%31u)*.39,t*.6-fallen*.45)));\n let moving=max(smoothstep(.03,.7,speed),hit*.7);\n let optical=select(select(.085,.065+.55*pow(grain,5.),drop>.12),.15,drop>=.62)*ctx.params.brightness*ctx.params.depth*(.55+.45*grain)*pulse*moving;\n let glint=1.+hit*(.4+2.*ctx.params.velocityShade)+air.z*drop*.25;\n q.tint=vec4f(mix(color,vec3f(1.,.94,.82),hit*.18)*optical*glint,.65);\n q.diameter=ctx.params.grainSize*mix(.65+.65*grain,.8+1.25*grain,drop);\n let exposure=ctx.params.strandLength*(.4+.9*grain)*mix(1.,.24,smoothstep(.06,.40,drop));\n var end=pos-vel*exposure;end.y-=.5*ctx.params.gravity*exposure*exposure;\n if(sampleWorld(end,ctx.params.aspect,0.).r<.002){\n  var lo=0.;var hi=1.;\n  for(var b=0;b<5;b++){let m=(lo+hi)*.5;let at=mix(pos,end,m);if(sampleWorld(at,ctx.params.aspect,0.).r>=.002){lo=m;}else{hi=m;}}\n  end=mix(pos,end,lo);\n }\n q.tip=vec3f(end,0.);return q;\n}\n",
+          "motionRate": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('slider_motionRate').par.value"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.42
+              }
+            },
+            "mode": "expression"
+          },
+          "seed": 228,
+          "speed": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('slider_speed').par.value"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.65
+              }
+            },
+            "mode": "expression"
+          },
+          "splash": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('slider_splash').par.value"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.3
+              }
+            },
+            "mode": "expression"
+          },
+          "strandLength": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('slider_strandLength').par.value"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.09
+              }
+            },
+            "mode": "expression"
+          },
+          "substeps": 3,
+          "swirl": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('slider_swirl').par.value"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.42
+              }
+            },
+            "mode": "expression"
+          },
+          "velocityShade": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('slider_velocityShade').par.value"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.65
+              }
+            },
+            "mode": "expression"
+          }
+        },
+        "position": {
+          "x": 1850,
+          "y": 1180
+        },
+        "type": "pointKernel"
+      },
+      "nd_81cda603b4ec2": {
+        "definitionVersion": 1,
+        "id": "nd_81cda603b4ec2",
+        "label": "wgsl_demo_person",
+        "parameters": {
+          "amount": 1,
+          "enabled": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('slider_demo').par.value"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "expression"
+          },
+          "motion": 1,
+          "source": "struct SharedFrame { time: f32, deltaTime: f32, frameIndex: f32, randomSeed: f32, wallTime: f32, wallDelta: f32, absTime: f32, absFrame: f32, resolution: vec2f, pointer: vec4f, };\n@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n@group(0) @binding(2) var<uniform> frameU: SharedFrame;\n@group(0) @binding(3) var<uniform> params: Params;\nstruct Params { enabled:f32, // @default 0 Demonstration collider; replace null_mask_input with your own mask.\n amount: f32, motion: f32, // @default 1 Animate the demonstration silhouette; replace null_mask_input with your own matte.\n};\nfn cap(p:vec2f,a:vec2f,b:vec2f,r:f32)->f32 {let ba=b-a;let t=clamp(dot(p-a,ba)/dot(ba,ba),0.,1.);return length(p-a-ba*t)-r;}\n@fragment fn fs(@location(0) uv:vec2f)->@location(0) vec4f {\n let aspect=frameU.resolution.x/frameU.resolution.y;\n var p=vec2f((uv.x-.5)*2.*aspect,1.-2.*uv.y);\n let t=frameU.absTime*params.motion;\n p.x-=.06*sin(t*.42);\n let hand=vec2f(.92,.17+.15*sin(t*.55));\n var d=length((p-vec2f(-.10,.43))/vec2f(.12,.155))-1.;d*=.12;\n d=min(d,cap(p,vec2f(-.11,.23),vec2f(-.10,-.27),.16));\n d=min(d,cap(p,vec2f(-.20,.20),vec2f(-.35,-.05),.066));\n d=min(d,cap(p,vec2f(-.35,-.05),vec2f(-.44,-.34),.052));\n d=min(d,cap(p,vec2f(.0,.22),vec2f(.46,.17),.065));\n d=min(d,cap(p,vec2f(.46,.17),hand,.048));\n d=min(d,length(p-hand)-.060);\n d=min(d,cap(p,vec2f(-.18,-.28),vec2f(-.24,-.95),.075));\n d=min(d,cap(p,vec2f(-.025,-.28),vec2f(.10,-.95),.075));\n let m=1.-smoothstep(-.003,.003,d);return vec4f(vec3f(m*params.enabled),1.);\n}"
+        },
+        "position": {
+          "x": 300,
+          "y": 0
+        },
+        "type": "customWgsl"
+      },
+      "nd_81cda603b4ec21": {
+        "definitionVersion": 2,
+        "id": "nd_81cda603b4ec21",
+        "label": "slider_depth",
+        "parameters": {
+          "caption": "Rear curtain",
+          "channel": "depth",
+          "defaultValue": 0.1,
+          "max": 1,
+          "min": 0,
+          "step": 0.001,
+          "value": 0.1
+        },
+        "position": {
+          "x": 1200,
+          "y": -310
+        },
+        "type": "slider"
+      },
+      "nd_81cda603b4ec4": {
+        "definitionVersion": 1,
+        "id": "nd_81cda603b4ec4",
+        "label": "null_mask_input",
+        "parameters": {},
+        "position": {
+          "x": 600,
+          "y": 0
+        },
+        "type": "null"
+      },
+      "nd_81cda603b4ec6": {
+        "definitionVersion": 1,
+        "id": "nd_81cda603b4ec6",
+        "label": "wgsl_mask_threshold",
+        "parameters": {
+          "alphaChannel": 0,
+          "amount": 0.5,
+          "mirror": 0,
+          "source": "struct SharedFrame { time: f32, deltaTime: f32, frameIndex: f32, randomSeed: f32, wallTime: f32, wallDelta: f32, absTime: f32, absFrame: f32, resolution: vec2f, pointer: vec4f, };\n@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n@group(0) @binding(2) var<uniform> frameU: SharedFrame;\n@group(0) @binding(3) var<uniform> params: Params;\nstruct Params { amount:f32, threshold:f32, // @default 0.5 Foreground threshold; white means solid.\n alphaChannel:f32, // @default 0 0 reads luminance; 1 reads alpha from a background-removed video.\n mirror:f32, // @default 0 Set to 1 to mirror the mask horizontally.\n};\n@fragment fn fs(@location(0) uv:vec2f)->@location(0) vec4f {\n let dim=vec2f(textureDimensions(inputTexture));\n let u=vec2f(mix(uv.x,1.-uv.x,params.mirror),uv.y);\n let c=textureLoad(inputTexture,clamp(vec2i(u*dim),vec2i(0),vec2i(dim)-1),0);\n let v=mix(dot(c.rgb,vec3f(.2126,.7152,.0722)),c.a,params.alphaChannel);\n let m=select(0.,1.,v>=params.threshold);return vec4f(vec3f(m),1.);\n}",
+          "threshold": 0.5
+        },
+        "position": {
+          "x": 900,
+          "y": 0
+        },
+        "resolution": {
+          "height": 360,
+          "mode": "fixed",
+          "width": 640
+        },
+        "type": "customWgsl"
+      },
+      "nd_81cda603b4ec8": {
+        "definitionVersion": 1,
+        "id": "nd_81cda603b4ec8",
+        "label": "wgsl_boundary_seeds",
+        "parameters": {
+          "amount": 1,
+          "source": "struct SharedFrame { time: f32, deltaTime: f32, frameIndex: f32, randomSeed: f32, wallTime: f32, wallDelta: f32, absTime: f32, absFrame: f32, resolution: vec2f, pointer: vec4f, };\n@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n@group(0) @binding(2) var<uniform> frameU: SharedFrame;\n@group(0) @binding(3) var<uniform> params: Params;\nstruct Params {amount:f32,};\nfn mask(p:vec2i)->f32 {let d=vec2i(textureDimensions(inputTexture));if(any(p<vec2i(0))||any(p>=d)){return 0.;}return textureLoad(inputTexture,p,0).r;}\n@fragment fn fs(@location(0) uv:vec2f)->@location(0) vec4f {\n let d=vec2i(textureDimensions(inputTexture));let p=clamp(vec2i(uv*vec2f(d)),vec2i(0),d-1);let m=mask(p);\n let edge=abs(m-mask(p+vec2i(1,0)))+abs(m-mask(p-vec2i(1,0)))+abs(m-mask(p+vec2i(0,1)))+abs(m-mask(p-vec2i(0,1)));\n return vec4f((vec2f(p)+.5)/vec2f(d),select(0.,1.,edge>.5),1.);\n}"
+        },
+        "position": {
+          "x": 0,
+          "y": 650
+        },
+        "type": "customWgsl"
+      },
+      "nd_81cda603b4eca": {
+        "definitionVersion": 1,
+        "id": "nd_81cda603b4eca",
+        "label": "wgsl_distance_512",
+        "parameters": {
+          "amount": 1,
+          "jump": 512,
+          "source": "struct SharedFrame { time: f32, deltaTime: f32, frameIndex: f32, randomSeed: f32, wallTime: f32, wallDelta: f32, absTime: f32, absFrame: f32, resolution: vec2f, pointer: vec4f, };\n@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n@group(0) @binding(2) var<uniform> frameU: SharedFrame;\n@group(0) @binding(3) var<uniform> params: Params;\nstruct Params { amount:f32, jump:f32, // @default 1 Jump-flood radius in field texels.\n};\n@fragment fn fs(@location(0) uv:vec2f)->@location(0) vec4f {\n let d=vec2i(textureDimensions(inputTexture));let p=clamp(vec2i(uv*vec2f(d)),vec2i(0),d-1);\n let at=(vec2f(p)+.5)/vec2f(d);let metric=vec2f(f32(d.x)/f32(d.y),1.);\n var best=vec4f(0.);var bestD=1e6;\n for(var y=-1;y<=1;y++){for(var x=-1;x<=1;x++){\n let s=p+vec2i(x,y)*i32(params.jump);if(any(s<vec2i(0))||any(s>=d)){continue;}\n let c=textureLoad(inputTexture,s,0);let delta=(at-c.xy)*metric;let dist=dot(delta,delta);\n if(c.z>.5&&dist<bestD){best=c;bestD=dist;}\n }}return best;\n}"
+        },
+        "position": {
+          "x": 300,
+          "y": 650
+        },
+        "type": "customWgsl"
+      },
+      "nd_81cda603b4ecc": {
+        "definitionVersion": 1,
+        "id": "nd_81cda603b4ecc",
+        "label": "wgsl_distance_256",
+        "parameters": {
+          "amount": 1,
+          "jump": 256,
+          "source": "struct SharedFrame { time: f32, deltaTime: f32, frameIndex: f32, randomSeed: f32, wallTime: f32, wallDelta: f32, absTime: f32, absFrame: f32, resolution: vec2f, pointer: vec4f, };\n@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n@group(0) @binding(2) var<uniform> frameU: SharedFrame;\n@group(0) @binding(3) var<uniform> params: Params;\nstruct Params { amount:f32, jump:f32, // @default 1 Jump-flood radius in field texels.\n};\n@fragment fn fs(@location(0) uv:vec2f)->@location(0) vec4f {\n let d=vec2i(textureDimensions(inputTexture));let p=clamp(vec2i(uv*vec2f(d)),vec2i(0),d-1);\n let at=(vec2f(p)+.5)/vec2f(d);let metric=vec2f(f32(d.x)/f32(d.y),1.);\n var best=vec4f(0.);var bestD=1e6;\n for(var y=-1;y<=1;y++){for(var x=-1;x<=1;x++){\n let s=p+vec2i(x,y)*i32(params.jump);if(any(s<vec2i(0))||any(s>=d)){continue;}\n let c=textureLoad(inputTexture,s,0);let delta=(at-c.xy)*metric;let dist=dot(delta,delta);\n if(c.z>.5&&dist<bestD){best=c;bestD=dist;}\n }}return best;\n}"
+        },
+        "position": {
+          "x": 600,
+          "y": 650
+        },
+        "type": "customWgsl"
+      },
+      "nd_81cda603b4ece": {
+        "definitionVersion": 1,
+        "id": "nd_81cda603b4ece",
+        "label": "wgsl_distance_128",
+        "parameters": {
+          "amount": 1,
+          "jump": 128,
+          "source": "struct SharedFrame { time: f32, deltaTime: f32, frameIndex: f32, randomSeed: f32, wallTime: f32, wallDelta: f32, absTime: f32, absFrame: f32, resolution: vec2f, pointer: vec4f, };\n@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n@group(0) @binding(2) var<uniform> frameU: SharedFrame;\n@group(0) @binding(3) var<uniform> params: Params;\nstruct Params { amount:f32, jump:f32, // @default 1 Jump-flood radius in field texels.\n};\n@fragment fn fs(@location(0) uv:vec2f)->@location(0) vec4f {\n let d=vec2i(textureDimensions(inputTexture));let p=clamp(vec2i(uv*vec2f(d)),vec2i(0),d-1);\n let at=(vec2f(p)+.5)/vec2f(d);let metric=vec2f(f32(d.x)/f32(d.y),1.);\n var best=vec4f(0.);var bestD=1e6;\n for(var y=-1;y<=1;y++){for(var x=-1;x<=1;x++){\n let s=p+vec2i(x,y)*i32(params.jump);if(any(s<vec2i(0))||any(s>=d)){continue;}\n let c=textureLoad(inputTexture,s,0);let delta=(at-c.xy)*metric;let dist=dot(delta,delta);\n if(c.z>.5&&dist<bestD){best=c;bestD=dist;}\n }}return best;\n}"
+        },
+        "position": {
+          "x": 900,
+          "y": 650
+        },
+        "type": "customWgsl"
+      },
+      "nd_81cda603b4ecg": {
+        "definitionVersion": 1,
+        "id": "nd_81cda603b4ecg",
+        "label": "wgsl_distance_64",
+        "parameters": {
+          "amount": 1,
+          "jump": 64,
+          "source": "struct SharedFrame { time: f32, deltaTime: f32, frameIndex: f32, randomSeed: f32, wallTime: f32, wallDelta: f32, absTime: f32, absFrame: f32, resolution: vec2f, pointer: vec4f, };\n@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n@group(0) @binding(2) var<uniform> frameU: SharedFrame;\n@group(0) @binding(3) var<uniform> params: Params;\nstruct Params { amount:f32, jump:f32, // @default 1 Jump-flood radius in field texels.\n};\n@fragment fn fs(@location(0) uv:vec2f)->@location(0) vec4f {\n let d=vec2i(textureDimensions(inputTexture));let p=clamp(vec2i(uv*vec2f(d)),vec2i(0),d-1);\n let at=(vec2f(p)+.5)/vec2f(d);let metric=vec2f(f32(d.x)/f32(d.y),1.);\n var best=vec4f(0.);var bestD=1e6;\n for(var y=-1;y<=1;y++){for(var x=-1;x<=1;x++){\n let s=p+vec2i(x,y)*i32(params.jump);if(any(s<vec2i(0))||any(s>=d)){continue;}\n let c=textureLoad(inputTexture,s,0);let delta=(at-c.xy)*metric;let dist=dot(delta,delta);\n if(c.z>.5&&dist<bestD){best=c;bestD=dist;}\n }}return best;\n}"
+        },
+        "position": {
+          "x": 1200,
+          "y": 650
+        },
+        "type": "customWgsl"
+      },
+      "nd_81cda603b4eci": {
+        "definitionVersion": 1,
+        "id": "nd_81cda603b4eci",
+        "label": "wgsl_distance_32",
+        "parameters": {
+          "amount": 1,
+          "jump": 32,
+          "source": "struct SharedFrame { time: f32, deltaTime: f32, frameIndex: f32, randomSeed: f32, wallTime: f32, wallDelta: f32, absTime: f32, absFrame: f32, resolution: vec2f, pointer: vec4f, };\n@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n@group(0) @binding(2) var<uniform> frameU: SharedFrame;\n@group(0) @binding(3) var<uniform> params: Params;\nstruct Params { amount:f32, jump:f32, // @default 1 Jump-flood radius in field texels.\n};\n@fragment fn fs(@location(0) uv:vec2f)->@location(0) vec4f {\n let d=vec2i(textureDimensions(inputTexture));let p=clamp(vec2i(uv*vec2f(d)),vec2i(0),d-1);\n let at=(vec2f(p)+.5)/vec2f(d);let metric=vec2f(f32(d.x)/f32(d.y),1.);\n var best=vec4f(0.);var bestD=1e6;\n for(var y=-1;y<=1;y++){for(var x=-1;x<=1;x++){\n let s=p+vec2i(x,y)*i32(params.jump);if(any(s<vec2i(0))||any(s>=d)){continue;}\n let c=textureLoad(inputTexture,s,0);let delta=(at-c.xy)*metric;let dist=dot(delta,delta);\n if(c.z>.5&&dist<bestD){best=c;bestD=dist;}\n }}return best;\n}"
+        },
+        "position": {
+          "x": 1500,
+          "y": 650
+        },
+        "type": "customWgsl"
+      },
+      "nd_81cda603b4eck": {
+        "definitionVersion": 1,
+        "id": "nd_81cda603b4eck",
+        "label": "wgsl_distance_16",
+        "parameters": {
+          "amount": 1,
+          "jump": 16,
+          "source": "struct SharedFrame { time: f32, deltaTime: f32, frameIndex: f32, randomSeed: f32, wallTime: f32, wallDelta: f32, absTime: f32, absFrame: f32, resolution: vec2f, pointer: vec4f, };\n@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n@group(0) @binding(2) var<uniform> frameU: SharedFrame;\n@group(0) @binding(3) var<uniform> params: Params;\nstruct Params { amount:f32, jump:f32, // @default 1 Jump-flood radius in field texels.\n};\n@fragment fn fs(@location(0) uv:vec2f)->@location(0) vec4f {\n let d=vec2i(textureDimensions(inputTexture));let p=clamp(vec2i(uv*vec2f(d)),vec2i(0),d-1);\n let at=(vec2f(p)+.5)/vec2f(d);let metric=vec2f(f32(d.x)/f32(d.y),1.);\n var best=vec4f(0.);var bestD=1e6;\n for(var y=-1;y<=1;y++){for(var x=-1;x<=1;x++){\n let s=p+vec2i(x,y)*i32(params.jump);if(any(s<vec2i(0))||any(s>=d)){continue;}\n let c=textureLoad(inputTexture,s,0);let delta=(at-c.xy)*metric;let dist=dot(delta,delta);\n if(c.z>.5&&dist<bestD){best=c;bestD=dist;}\n }}return best;\n}"
+        },
+        "position": {
+          "x": 300,
+          "y": 910
+        },
+        "type": "customWgsl"
+      },
+      "nd_81cda603b4ecm": {
+        "definitionVersion": 1,
+        "id": "nd_81cda603b4ecm",
+        "label": "wgsl_distance_8",
+        "parameters": {
+          "amount": 1,
+          "jump": 8,
+          "source": "struct SharedFrame { time: f32, deltaTime: f32, frameIndex: f32, randomSeed: f32, wallTime: f32, wallDelta: f32, absTime: f32, absFrame: f32, resolution: vec2f, pointer: vec4f, };\n@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n@group(0) @binding(2) var<uniform> frameU: SharedFrame;\n@group(0) @binding(3) var<uniform> params: Params;\nstruct Params { amount:f32, jump:f32, // @default 1 Jump-flood radius in field texels.\n};\n@fragment fn fs(@location(0) uv:vec2f)->@location(0) vec4f {\n let d=vec2i(textureDimensions(inputTexture));let p=clamp(vec2i(uv*vec2f(d)),vec2i(0),d-1);\n let at=(vec2f(p)+.5)/vec2f(d);let metric=vec2f(f32(d.x)/f32(d.y),1.);\n var best=vec4f(0.);var bestD=1e6;\n for(var y=-1;y<=1;y++){for(var x=-1;x<=1;x++){\n let s=p+vec2i(x,y)*i32(params.jump);if(any(s<vec2i(0))||any(s>=d)){continue;}\n let c=textureLoad(inputTexture,s,0);let delta=(at-c.xy)*metric;let dist=dot(delta,delta);\n if(c.z>.5&&dist<bestD){best=c;bestD=dist;}\n }}return best;\n}"
+        },
+        "position": {
+          "x": 600,
+          "y": 910
+        },
+        "type": "customWgsl"
+      },
+      "nd_81cda603b4eco": {
+        "definitionVersion": 1,
+        "id": "nd_81cda603b4eco",
+        "label": "wgsl_distance_4",
+        "parameters": {
+          "amount": 1,
+          "jump": 4,
+          "source": "struct SharedFrame { time: f32, deltaTime: f32, frameIndex: f32, randomSeed: f32, wallTime: f32, wallDelta: f32, absTime: f32, absFrame: f32, resolution: vec2f, pointer: vec4f, };\n@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n@group(0) @binding(2) var<uniform> frameU: SharedFrame;\n@group(0) @binding(3) var<uniform> params: Params;\nstruct Params { amount:f32, jump:f32, // @default 1 Jump-flood radius in field texels.\n};\n@fragment fn fs(@location(0) uv:vec2f)->@location(0) vec4f {\n let d=vec2i(textureDimensions(inputTexture));let p=clamp(vec2i(uv*vec2f(d)),vec2i(0),d-1);\n let at=(vec2f(p)+.5)/vec2f(d);let metric=vec2f(f32(d.x)/f32(d.y),1.);\n var best=vec4f(0.);var bestD=1e6;\n for(var y=-1;y<=1;y++){for(var x=-1;x<=1;x++){\n let s=p+vec2i(x,y)*i32(params.jump);if(any(s<vec2i(0))||any(s>=d)){continue;}\n let c=textureLoad(inputTexture,s,0);let delta=(at-c.xy)*metric;let dist=dot(delta,delta);\n if(c.z>.5&&dist<bestD){best=c;bestD=dist;}\n }}return best;\n}"
+        },
+        "position": {
+          "x": 900,
+          "y": 910
+        },
+        "type": "customWgsl"
+      },
+      "nd_81cda603b4ecq": {
+        "definitionVersion": 1,
+        "id": "nd_81cda603b4ecq",
+        "label": "wgsl_distance_2",
+        "parameters": {
+          "amount": 1,
+          "jump": 2,
+          "source": "struct SharedFrame { time: f32, deltaTime: f32, frameIndex: f32, randomSeed: f32, wallTime: f32, wallDelta: f32, absTime: f32, absFrame: f32, resolution: vec2f, pointer: vec4f, };\n@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n@group(0) @binding(2) var<uniform> frameU: SharedFrame;\n@group(0) @binding(3) var<uniform> params: Params;\nstruct Params { amount:f32, jump:f32, // @default 1 Jump-flood radius in field texels.\n};\n@fragment fn fs(@location(0) uv:vec2f)->@location(0) vec4f {\n let d=vec2i(textureDimensions(inputTexture));let p=clamp(vec2i(uv*vec2f(d)),vec2i(0),d-1);\n let at=(vec2f(p)+.5)/vec2f(d);let metric=vec2f(f32(d.x)/f32(d.y),1.);\n var best=vec4f(0.);var bestD=1e6;\n for(var y=-1;y<=1;y++){for(var x=-1;x<=1;x++){\n let s=p+vec2i(x,y)*i32(params.jump);if(any(s<vec2i(0))||any(s>=d)){continue;}\n let c=textureLoad(inputTexture,s,0);let delta=(at-c.xy)*metric;let dist=dot(delta,delta);\n if(c.z>.5&&dist<bestD){best=c;bestD=dist;}\n }}return best;\n}"
+        },
+        "position": {
+          "x": 1200,
+          "y": 910
+        },
+        "type": "customWgsl"
+      },
+      "nd_81cda603b4ecs": {
+        "definitionVersion": 1,
+        "id": "nd_81cda603b4ecs",
+        "label": "wgsl_distance_1",
+        "parameters": {
+          "amount": 1,
+          "jump": 1,
+          "source": "struct SharedFrame { time: f32, deltaTime: f32, frameIndex: f32, randomSeed: f32, wallTime: f32, wallDelta: f32, absTime: f32, absFrame: f32, resolution: vec2f, pointer: vec4f, };\n@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n@group(0) @binding(2) var<uniform> frameU: SharedFrame;\n@group(0) @binding(3) var<uniform> params: Params;\nstruct Params { amount:f32, jump:f32, // @default 1 Jump-flood radius in field texels.\n};\n@fragment fn fs(@location(0) uv:vec2f)->@location(0) vec4f {\n let d=vec2i(textureDimensions(inputTexture));let p=clamp(vec2i(uv*vec2f(d)),vec2i(0),d-1);\n let at=(vec2f(p)+.5)/vec2f(d);let metric=vec2f(f32(d.x)/f32(d.y),1.);\n var best=vec4f(0.);var bestD=1e6;\n for(var y=-1;y<=1;y++){for(var x=-1;x<=1;x++){\n let s=p+vec2i(x,y)*i32(params.jump);if(any(s<vec2i(0))||any(s>=d)){continue;}\n let c=textureLoad(inputTexture,s,0);let delta=(at-c.xy)*metric;let dist=dot(delta,delta);\n if(c.z>.5&&dist<bestD){best=c;bestD=dist;}\n }}return best;\n}"
+        },
+        "position": {
+          "x": 1500,
+          "y": 910
+        },
+        "type": "customWgsl"
+      },
+      "nd_81cda603b4ecu": {
+        "definitionVersion": 1,
+        "id": "nd_81cda603b4ecu",
+        "label": "wgsl_collision_field",
+        "parameters": {
+          "airStrength": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('slider_swirl').par.value"
+              },
+              "static": {
+                "kind": "static",
+                "value": 1.2
+              }
+            },
+            "mode": "expression"
+          },
+          "amount": 1,
+          "motionRate": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('slider_motionRate').par.value"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.45
+              }
+            },
+            "mode": "expression"
+          },
+          "source": "struct SharedFrame { time: f32, deltaTime: f32, frameIndex: f32, randomSeed: f32, wallTime: f32, wallDelta: f32, absTime: f32, absFrame: f32, resolution: vec2f, pointer: vec4f, };\n@group(0) @binding(0) var inputSampler: sampler;\n@group(0) @binding(1) var inputTexture: texture_2d<f32>;\n@group(0) @binding(2) var<uniform> frameU: SharedFrame;\n@group(0) @binding(3) var<uniform> params: Params;\n@group(0) @binding(4) var inputTexture1: texture_2d<f32>;\n@group(0) @binding(5) var inputTexture2: texture_2d<f32>;\nstruct Params {\n amount:f32,\n motionRate:f32, // @default 0.45 Simulation time scale shared with the droplets.\n airStrength:f32, // @default 1.2 Strength of the shared turbulent air field.\n};\nfn hash01(v:u32)->f32 {let s=v*747796405u+2891336453u;let w=((s>>((s>>28u)+4u))^s)*277803737u;return f32((w>>22u)^w)*(1./4294967296.);}\nfn noise2(p:vec2f)->f32 {\n let i=vec2i(floor(p));let f=fract(p);let u=f*f*(3.-2.*f);\n let a=hash01((bitcast<u32>(i.x)*1597334677u)^(bitcast<u32>(i.y)*3812015801u));\n let b=hash01((bitcast<u32>(i.x+1)*1597334677u)^(bitcast<u32>(i.y)*3812015801u));\n let c=hash01((bitcast<u32>(i.x)*1597334677u)^(bitcast<u32>(i.y+1)*3812015801u));\n let d=hash01((bitcast<u32>(i.x+1)*1597334677u)^(bitcast<u32>(i.y+1)*3812015801u));\n return mix(mix(a,b,u.x),mix(c,d,u.x),u.y)*2.-1.;\n}\nfn turbulence(p:vec2f)->f32 {\n return .57*noise2(p)+.28*noise2(p*2.07+vec2f(17.1,9.3))+.15*noise2(p*4.13-vec2f(8.2,3.7));\n}\nfn potential(p:vec2f,t:f32)->f32 {\n let warp=vec2f(noise2(p*.55+vec2f(7.,t*.08)),noise2(p*.63+vec2f(19.,-t*.07)));\n return .55*noise2(p+warp*.6)+.22*noise2(p*2.13+vec2f(17.,t*.2))+.08*noise2(p*4.1+vec2f(-7.,-t*.25));\n}\nfn airAt(uv:vec2f)->vec4f {\n let world=vec2f((uv.x-.5)*3.55555556,1.-2.*uv.y);\n let t=frameU.absTime*params.motionRate;let p=world*2.2+vec2f(0.,t*.9);let e=.045;\n let c=potential(p,t);let l=potential(p-vec2f(e,0.),t);let r=potential(p+vec2f(e,0.),t);\n let b=potential(p-vec2f(0.,e),t);let u=potential(p+vec2f(0.,e),t);\n var v=vec2f(u-b,l-r)/(2.*e)*.6;\n // Bounded kinetic energy, with substantially more entrainment further down the fall.\n v=v/(1.+length(v)*.45);\n let depth=smoothstep(.08,.85,uv.y);\n v*=params.airStrength*(.09+1.25*depth);v.y-=.13+.13*depth;\n let curl=clamp(abs(l+r+b+u-4.*c)/(e*e)*.02,0.,1.);\n return vec4f(v,curl,1.);\n}\nfn signedAt(p0:vec2i)->f32 {\n let d=vec2i(textureDimensions(inputTexture));let p=clamp(p0,vec2i(0),d-1);\n let c=textureLoad(inputTexture,p,0);let m=textureLoad(inputTexture1,p,0).r;\n let at=(vec2f(p)+.5)/vec2f(d);let v=(at-c.xy)*vec2f(f32(d.x)/f32(d.y),1.)*2.;\n // An empty mask has no seeds: distance is positive everywhere. An all-solid mask has border seeds.\n let distance=select(8.,length(v),c.z>.5);return distance*select(1.,-1.,m>.5);\n}\n@fragment fn fs(@location(0) atlasUV:vec2f)->@location(0) vec4f {\n let uv=vec2f(fract(atlasUV.x*3.),atlasUV.y);\n if(atlasUV.x>=.666666667){let d=vec2i(textureDimensions(inputTexture2));return textureLoad(inputTexture2,clamp(vec2i(uv*vec2f(d)),vec2i(0),d-1),0);}\n if(atlasUV.x>=.333333333){return airAt(uv);}\n let d=vec2i(textureDimensions(inputTexture));let p=clamp(vec2i(uv*vec2f(d)),vec2i(0),d-1);\n let s=signedAt(p);let g=vec2f(signedAt(p+vec2i(1,0))-signedAt(p-vec2i(1,0)),signedAt(p-vec2i(0,1))-signedAt(p+vec2i(0,1)));\n let nearest=textureLoad(inputTexture,p,0).xy;\n let delta=((vec2f(p)+.5)/vec2f(d)-nearest)*vec2f(f32(d.x)/f32(d.y),-1.);\n let outward=delta*select(1.,-1.,s<0.);\n // Use the nearest-boundary direction away from the boundary, including medial-axis ties.\n let direction=select(g,outward,abs(s)>2.1/f32(d.y));\n let n=direction/max(length(direction),1e-6);return vec4f(s,n,textureLoad(inputTexture1,p,0).r);\n}\n"
+        },
+        "position": {
+          "x": 1200,
+          "y": 320
+        },
+        "resolution": {
+          "height": 360,
+          "mode": "fixed",
+          "width": 1920
+        },
+        "type": "customWgslMulti"
+      },
+      "nd_81cda603b4ecx": {
+        "definitionVersion": 1,
+        "id": "nd_81cda603b4ecx",
+        "label": "kernel_waterfall",
+        "parameters": {
+          "aspect": 1.7777777777777777,
+          "attributes": "[{\"name\": \"position\", \"type\": \"vec3f\", \"semantic\": \"position\", \"default\": [0, 0, 0]}, {\"name\": \"motion\", \"type\": \"vec4f\", \"default\": [0, 0, 0, 0]}, {\"name\": \"tint\", \"type\": \"vec4f\", \"semantic\": \"color\", \"default\": [1, 1, 1, 1]}, {\"name\": \"diameter\", \"type\": \"f32\", \"default\": [1]}, {\"name\": \"tip\", \"type\": \"vec3f\", \"default\": [0, 0, 0]}, {\"name\": \"droplet\", \"type\": \"f32\", \"default\": [0]}]",
+          "brightness": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('slider_brightness').par.value"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.4
+              }
+            },
+            "mode": "expression"
+          },
+          "capacity": 196608,
+          "colorCurve": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('slider_colorCurve').par.value"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.8
+              }
+            },
+            "mode": "expression"
+          },
+          "colorSpeed": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('slider_colorSpeed').par.value"
+              },
+              "static": {
+                "kind": "static",
+                "value": 2.4
+              }
+            },
+            "mode": "expression"
+          },
+          "drag": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('slider_drag').par.value"
+              },
+              "static": {
+                "kind": "static",
+                "value": 1.1
+              }
+            },
+            "mode": "expression"
+          },
+          "folds": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('slider_folds').par.value"
+              },
+              "static": {
+                "kind": "static",
+                "value": 1.05
+              }
+            },
+            "mode": "expression"
+          },
+          "grainSize": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('slider_grainSize').par.value"
+              },
+              "static": {
+                "kind": "static",
+                "value": 1.3
+              }
+            },
+            "mode": "expression"
+          },
+          "gravity": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('slider_gravity').par.value"
+              },
+              "static": {
+                "kind": "static",
+                "value": 1.4
+              }
+            },
+            "mode": "expression"
+          },
+          "group": "",
+          "iterations": 1,
+          "kernel": "struct Params {\n speed:f32, // @default 0.38 Feed velocity at the uneven lip.\n gravity:f32, // @default 2.2 Downward acceleration for ballistic drops.\n drag:f32, // @default 0.5 Air resistance, scaled by droplet size.\n splash:f32, // @default 1.2 Fraction of incoming momentum redistributed into spray.\n swirl:f32, // @default 1.2 Shared air turbulence; sampled from the middle atlas panel.\n brightness:f32, // @default 0.85 Optical energy in the water.\n velocityShade:f32, // @default 0.6 Speed-dependent highlight contrast.\n grainSize:f32, // @default 1.1 Drop size multiplier.\n aspect:f32, // @default 1.7777778 Width over height in world units.\n motionRate:f32, // @default 0.45 Simulation time scale.\n folds:f32, // @default 0.9 Growth of breakup with falling distance.\n strandLength:f32, // @default 0.038 Exposure of a coarse drop, in simulation seconds.\n colorSpeed:f32, // @default 2.4 Speed at the top end of the colour ramp.\n colorCurve:f32, // @default 0.8 Curve applied before the velocity LUT lookup.\n}\nfn hash01(v:u32)->f32 {let s=v*747796405u+2891336453u;let w=((s>>((s>>28u)+4u))^s)*277803737u;return f32((w>>22u)^w)*(1./4294967296.);}\nfn noise2(p:vec2f)->f32 {\n let i=vec2i(floor(p));let f=fract(p);let u=f*f*(3.-2.*f);\n let a=hash01((bitcast<u32>(i.x)*1597334677u)^(bitcast<u32>(i.y)*3812015801u));\n let b=hash01((bitcast<u32>(i.x+1)*1597334677u)^(bitcast<u32>(i.y)*3812015801u));\n let c=hash01((bitcast<u32>(i.x)*1597334677u)^(bitcast<u32>(i.y+1)*3812015801u));\n let d=hash01((bitcast<u32>(i.x+1)*1597334677u)^(bitcast<u32>(i.y+1)*3812015801u));\n return mix(mix(a,b,u.x),mix(c,d,u.x),u.y)*2.-1.;\n}\nfn turbulence(p:vec2f)->f32 {\n return .57*noise2(p)+.28*noise2(p*2.07+vec2f(17.1,9.3))+.15*noise2(p*4.13-vec2f(8.2,3.7));\n}\n// Atlas contract: three 640x360 panels, saved as a fixed 1920x360 texture.\nfn atlas(uv:vec2f,panel:f32)->vec4f {\n let xy=clamp(uv,vec2f(0.),vec2f(1.));let texel=panel*640.+xy.x*639.;\n return fieldAt(vec3f(2.*texel/1919.-1.,1.-2.*xy.y,0.));\n}\nfn sampleWorld(p:vec2f,aspect:f32,panel:f32)->vec4f {return atlas(vec2f(p.x/(2.*aspect)+.5,.5-p.y*.5),panel);}\nfn emitter(channel:u32,t:f32,aspect:f32)->vec2f {\n let h=hash01(channel^19871u)*43.;let bank=u32(floor(h));let within=fract(h);\n let span=2.*aspect/43.;let at=-aspect+(f32(bank)+.12+.76*hash01(bank^451u))*span;\n let centre=at+.10*noise2(vec2f(at*3.3,t*.1+9.));\n let pressure=.5+.5*noise2(vec2f(f32(bank)*.21,t*.24));\n let width=span*(.35+.75*pressure);\n let x=centre+(within-.5)*width+.012*noise2(vec2f(f32(bank),t*.2));\n return vec2f(x,1.045+.018*noise2(vec2f(f32(bank)*2.3,7.)));\n}\nfn birthVelocity(channel:u32,t:f32,feed:f32)->vec2f {\n let bank=floor(hash01(channel^19871u)*18.);\n let angle=.22*noise2(vec2f(bank*1.7,t*.35))+.08*noise2(vec2f(f32(channel)*.07,3.));\n return vec2f(feed*angle,-feed*(.8+.4*hash01(channel^991u)));\n}\nfn velocityColor(v:vec2f,hit:f32,maxSpeed:f32,curve:f32)->vec3f {\n let u=pow(clamp(length(v)/maxSpeed+hit*.18,0.,1.),curve);\n return atlas(vec2f(u,.5),2.).rgb;\n}\nfn process(p:Point,ctx:PointCtx)->Point {\n var q=p;let id=ctx.index;var channel=select(u32(q.motion.w),id/64u,q.motion.z<.5);\n let grain=hash01(id^71891u);let kind=select(.40,1.,hash01(id^81911u)>.43);\n let impactKind=select(.40,1.,hash01(id^6171u)>.32);\n let dt=ctx.delta*ctx.params.motionRate;let t=ctx.absTime*ctx.params.motionRate;\n var pos=q.position.xy;var vel=q.motion.xy;var hit=max(q.motion.z-1.,0.)*exp(-dt*1.5);\n var lip=emitter(channel,t,ctx.params.aspect);\n if(q.motion.z<.5){\n  pos.y=hash01(id^8177u)*2.2-1.1;let d=max(lip.y-pos.y,0.);\n  let age=(sqrt(ctx.params.speed*ctx.params.speed+2.*ctx.params.gravity*d)-ctx.params.speed)/ctx.params.gravity;\n  lip=emitter(channel,t-age,ctx.params.aspect);vel=birthVelocity(channel,t-age,ctx.params.speed);\n  pos.x=lip.x+vel.x*age;vel.y=-sqrt(vel.y*vel.y+2.*ctx.params.gravity*d);\n  if(sampleWorld(pos,ctx.params.aspect,0.).a>.5){pos=emitter(channel,t,ctx.params.aspect);vel=birthVelocity(channel,t,ctx.params.speed);}\n }\n let fallen=max(1.045-pos.y,0.);\n let fractureAt=.12+1.4*hash01(id^393u);\n let broken=smoothstep(fractureAt,fractureAt+.30,fallen)*ctx.params.folds;\n var drop=max(broken*kind,smoothstep(.015,.22,hit)*impactKind);\n let radius=mix(.95+.35*grain,.12+.14*grain,drop);\n let air=sampleWorld(pos,ctx.params.aspect,1.);\n let relative=vel-air.xy;\n let resistance=ctx.params.drag*.35/(radius*radius);\n vel=air.xy+relative*exp(-resistance*length(relative)*dt);vel.y-=ctx.params.gravity*dt;\n let steps=u32(clamp(ceil(length(vel)*dt/.004),1.,24.));let ds=dt/f32(steps);\n for(var j=0u;j<steps;j++){\n  pos+=vel*ds;\n  for(var k=0;k<3;k++){\n   let f=sampleWorld(pos,ctx.params.aspect,0.);let clearance=.0035+.002*(1.-drop);\n   if(f.r>=clearance){break;}\n   let n=f.gb/max(length(f.gb),1e-6);pos+=n*(clearance-f.r+.001);\n   let incoming=dot(vel,n);\n   if(incoming<0.){\n    let tangent=vec2f(-n.y,n.x);let energy=-incoming;\n    if(energy>.20){\n     let fan=pointRand(id,81u);let sign=select(-1.,1.,fan>.5);\n     let along=dot(vel,tangent)*.45+sign*(.30+.65*abs(fan*2.-1.))*energy*ctx.params.splash;\n     let out=(.20+.42*pointRand(id,82u))*energy*ctx.params.splash;\n     vel=tangent*along+n*out;\n     hit=max(hit,clamp(energy/1.7,0.,1.));\n    }else{\n     vel-=n*incoming;vel+=tangent*select(-1.,1.,hash01(channel^71u)>.5)*max(n.y,0.)*.5*ds;\n    }\n   }\n  }\n }\n if(pos.y< -1.18||abs(pos.x)>ctx.params.aspect+.70){\n  channel=u32(pointRand(id,71u)*f32(ctx.count/64u));pos=emitter(channel,t,ctx.params.aspect);\n  pos.y+=grain*.055;vel=birthVelocity(channel,t,ctx.params.speed);hit=0.;drop=0.;\n }\n drop=max(drop,smoothstep(.015,.22,hit)*impactKind);\n q.position=vec3f(pos,0.);q.motion=vec4f(vel,1.+hit,f32(channel));q.droplet=drop;\n let speed=length(vel);let color=velocityColor(vel,hit,ctx.params.colorSpeed,ctx.params.colorCurve);\n let pulse=.45+.55*smoothstep(-.65,.65,noise2(vec2f(f32(channel%31u)*.39,t*.6-fallen*.45)));\n let moving=max(smoothstep(.03,.7,speed),hit*.7);\n let optical=select(select(.085,.065+.55*pow(grain,5.),drop>.12),.15,drop>=.62)*ctx.params.brightness*(.55+.45*grain)*pulse*moving;\n let glint=1.+hit*(.4+2.*ctx.params.velocityShade)+air.z*drop*.25;\n q.tint=vec4f(mix(color,vec3f(1.,.94,.82),hit*.18)*optical*glint,.65);\n q.diameter=ctx.params.grainSize*mix(.65+.65*grain,.8+1.25*grain,drop);\n let exposure=ctx.params.strandLength*(.4+.9*grain)*mix(1.,.24,smoothstep(.06,.40,drop));\n var end=pos-vel*exposure;end.y-=.5*ctx.params.gravity*exposure*exposure;\n if(sampleWorld(end,ctx.params.aspect,0.).r<.002){\n  var lo=0.;var hi=1.;\n  for(var b=0;b<5;b++){let m=(lo+hi)*.5;let at=mix(pos,end,m);if(sampleWorld(at,ctx.params.aspect,0.).r>=.002){lo=m;}else{hi=m;}}\n  end=mix(pos,end,lo);\n }\n q.tip=vec3f(end,0.);return q;\n}\n",
+          "motionRate": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('slider_motionRate').par.value"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.42
+              }
+            },
+            "mode": "expression"
+          },
+          "seed": 217,
+          "speed": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('slider_speed').par.value"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.65
+              }
+            },
+            "mode": "expression"
+          },
+          "splash": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('slider_splash').par.value"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.3
+              }
+            },
+            "mode": "expression"
+          },
+          "strandLength": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('slider_strandLength').par.value"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.09
+              }
+            },
+            "mode": "expression"
+          },
+          "substeps": 3,
+          "swirl": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('slider_swirl').par.value"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.42
+              }
+            },
+            "mode": "expression"
+          },
+          "velocityShade": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "op('slider_velocityShade').par.value"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.65
+              }
+            },
+            "mode": "expression"
+          }
+        },
+        "position": {
+          "x": 1550,
+          "y": 0
+        },
+        "type": "pointKernel"
+      },
+      "nd_977e2459088b2": {
+        "definitionVersion": 2,
+        "id": "nd_977e2459088b2",
+        "label": "slider_motionRate",
+        "parameters": {
+          "caption": "Motion rate",
+          "channel": "motionRate",
+          "defaultValue": 0.45,
+          "max": 1,
+          "min": 0.08,
+          "step": 0.001,
+          "value": 0.45
+        },
+        "position": {
+          "x": 0,
+          "y": -1150
+        },
+        "type": "slider"
+      },
+      "nd_977e2459088b4": {
+        "definitionVersion": 2,
+        "id": "nd_977e2459088b4",
+        "label": "slider_folds",
+        "parameters": {
+          "caption": "Downstream breakup",
+          "channel": "folds",
+          "defaultValue": 0.95,
+          "max": 1,
+          "min": 0,
+          "step": 0.001,
+          "value": 0.95
+        },
+        "position": {
+          "x": 300,
+          "y": -1150
+        },
+        "type": "slider"
+      },
+      "nd_977e2459088b6": {
+        "definitionVersion": 2,
+        "id": "nd_977e2459088b6",
+        "label": "slider_strandLength",
+        "parameters": {
+          "caption": "Coarse-drop exposure",
+          "channel": "strandLength",
+          "defaultValue": 0.038,
+          "max": 0.18,
+          "min": 0.01,
+          "step": 0.001,
+          "value": 0.038
+        },
+        "position": {
+          "x": 600,
+          "y": -1150
+        },
+        "type": "slider"
+      },
+      "nd_977e2459088b8": {
+        "definitionVersion": 2,
+        "id": "nd_977e2459088b8",
+        "label": "slider_palettePhase",
+        "parameters": {
+          "caption": "Palette phase",
+          "channel": "palettePhase",
+          "defaultValue": -20,
+          "max": 180,
+          "min": -180,
+          "step": 1,
+          "value": -20
+        },
+        "position": {
+          "x": 900,
+          "y": -1150
+        },
+        "type": "slider"
+      },
+      "nd_977e2459088ba": {
+        "definitionVersion": 2,
+        "id": "nd_977e2459088ba",
+        "label": "slider_demo",
+        "parameters": {
+          "caption": "Demo collider",
+          "channel": "demo",
+          "defaultValue": 1,
+          "max": 1,
+          "min": 0,
+          "step": 1,
+          "value": 1
+        },
+        "position": {
+          "x": 0,
+          "y": -1400
+        },
+        "type": "slider"
+      },
+      "nd_977e2459088bc": {
+        "definitionVersion": 1,
+        "id": "nd_977e2459088bc",
+        "label": "material_filament_light",
+        "parameters": {
+          "color": [
+            1,
+            1,
+            1,
+            1
+          ],
+          "mapExtendU": "hold",
+          "mapExtendV": "hold"
+        },
+        "position": {
+          "x": 1850,
+          "y": 700
+        },
+        "type": "materialUnlit"
+      },
+      "nd_977e2459088bd": {
+        "definitionVersion": 1,
+        "id": "nd_977e2459088bd",
+        "label": "camera_curtain",
+        "parameters": {
+          "eye": [
+            0,
+            0,
+            4
+          ],
+          "far": 10,
+          "fov": 55,
+          "frame": "level",
+          "heading": [
+            0,
+            0,
+            0
+          ],
+          "lookAt": [
+            0,
+            0,
+            0
+          ],
+          "near": 0.1,
+          "origin": [
+            0,
+            0,
+            0
+          ],
+          "ortho": true,
+          "orthoHeight": 2,
+          "roll": 0
+        },
+        "position": {
+          "x": 2450,
+          "y": 700
+        },
+        "type": "camera"
+      },
+      "nd_977e2459088be": {
+        "definitionVersion": 1,
+        "id": "nd_977e2459088be",
+        "label": "geometry_front_strands",
+        "parameters": {
+          "blend": "additive",
+          "endpoint": "tip",
+          "group": "p.droplet < 0.62",
+          "inDepthOutput": false,
+          "instanceAttributes": "",
+          "instanceTranslate": [
+            0,
+            0,
+            0
+          ],
+          "material": "material_filament_light",
+          "materialOverrides": "",
+          "mode": "beam",
+          "objectScale": [
+            1,
+            1,
+            1
+          ],
+          "orient": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "pivot": [
+            0,
+            0,
+            0
+          ],
+          "rotate": [
+            0,
+            0,
+            0
+          ],
+          "scale": {
+            "bindings": {
+              "map": {
+                "attribute": "diameter",
+                "kind": "map"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.0015
+              }
+            },
+            "mode": "map"
+          },
+          "shadowOnly": false,
+          "shape": "box",
+          "soft": 1,
+          "spherical": false,
+          "taper": 0.15,
+          "tint": {
+            "bindings": {
+              "map": {
+                "attribute": "tint",
+                "kind": "map"
+              },
+              "static": {
+                "kind": "static",
+                "value": [
+                  1,
+                  1,
+                  1,
+                  1
+                ]
+              }
+            },
+            "mode": "map"
+          },
+          "translate": [
+            0,
+            0,
+            0
+          ]
+        },
+        "position": {
+          "x": 1850,
+          "y": 0
+        },
+        "type": "geometry"
+      },
+      "nd_977e2459088bf": {
+        "definitionVersion": 1,
+        "id": "nd_977e2459088bf",
+        "label": "render_front_strands",
+        "parameters": {
+          "albedoOutput": false,
+          "ambientColor": [
+            1,
+            1,
+            1,
+            1
+          ],
+          "ambientIntensity": 0,
+          "ambientOcclusion": false,
+          "antialias": "ssaa",
+          "aoIntensity": 1,
+          "aoQuality": "medium",
+          "aoRadius": 0.35,
+          "background": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "camera": "camera_curtain",
+          "depthOutput": false,
+          "environmentFilter": "taps",
+          "environmentIntensity": 0,
+          "environmentTaps": 8,
+          "lightDepthOutput": false,
+          "lights": "",
+          "normalOutput": false,
+          "projectors": "",
+          "scenes": "geometry_front_strands geometry_front_mist",
+          "shadowOutput": false,
+          "showEnvironment": false
+        },
+        "position": {
+          "x": 2150,
+          "y": 0
+        },
+        "type": "render"
+      },
+      "nd_977e2459088bh": {
+        "definitionVersion": 1,
+        "id": "nd_977e2459088bh",
+        "label": "geometry_rear_strands",
+        "parameters": {
+          "blend": "additive",
+          "endpoint": "tip",
+          "group": "p.droplet < 0.62",
+          "inDepthOutput": false,
+          "instanceAttributes": "",
+          "instanceTranslate": [
+            0,
+            0,
+            0
+          ],
+          "material": "material_filament_light",
+          "materialOverrides": "",
+          "mode": "beam",
+          "objectScale": [
+            1,
+            1,
+            1
+          ],
+          "orient": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "pivot": [
+            0,
+            0,
+            0
+          ],
+          "rotate": [
+            0,
+            0,
+            0
+          ],
+          "scale": {
+            "bindings": {
+              "map": {
+                "attribute": "diameter",
+                "kind": "map"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.0015
+              }
+            },
+            "mode": "map"
+          },
+          "shadowOnly": false,
+          "shape": "box",
+          "soft": 1,
+          "spherical": false,
+          "taper": 0.15,
+          "tint": {
+            "bindings": {
+              "map": {
+                "attribute": "tint",
+                "kind": "map"
+              },
+              "static": {
+                "kind": "static",
+                "value": [
+                  1,
+                  1,
+                  1,
+                  1
+                ]
+              }
+            },
+            "mode": "map"
+          },
+          "translate": [
+            0,
+            0,
+            0
+          ]
+        },
+        "position": {
+          "x": 1850,
+          "y": 1180
+        },
+        "type": "geometry"
+      },
+      "nd_977e2459088bi": {
+        "definitionVersion": 1,
+        "id": "nd_977e2459088bi",
+        "label": "render_rear_strands",
+        "parameters": {
+          "albedoOutput": false,
+          "ambientColor": [
+            1,
+            1,
+            1,
+            1
+          ],
+          "ambientIntensity": 0,
+          "ambientOcclusion": false,
+          "antialias": "ssaa",
+          "aoIntensity": 1,
+          "aoQuality": "medium",
+          "aoRadius": 0.35,
+          "background": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "camera": "camera_curtain",
+          "depthOutput": false,
+          "environmentFilter": "taps",
+          "environmentIntensity": 0,
+          "environmentTaps": 8,
+          "lightDepthOutput": false,
+          "lights": "",
+          "normalOutput": false,
+          "projectors": "",
+          "scenes": "geometry_rear_strands geometry_rear_mist",
+          "shadowOutput": false,
+          "showEnvironment": false
+        },
+        "position": {
+          "x": 2150,
+          "y": 1180
+        },
+        "type": "render"
+      },
+      "nd_cf03f7df4d972": {
+        "definitionVersion": 2,
+        "id": "nd_cf03f7df4d972",
+        "label": "slider_colorSpeed",
+        "parameters": {
+          "caption": "Velocity LUT range",
+          "channel": "colorSpeed",
+          "defaultValue": 2.4,
+          "max": 6,
+          "min": 0.25,
+          "step": 0.01,
+          "value": 2.4
+        },
+        "position": {
+          "x": 0,
+          "y": -1650
+        },
+        "type": "slider"
+      },
+      "nd_cf03f7df4d974": {
+        "definitionVersion": 2,
+        "id": "nd_cf03f7df4d974",
+        "label": "slider_colorCurve",
+        "parameters": {
+          "caption": "Velocity LUT curve",
+          "channel": "colorCurve",
+          "defaultValue": 0.8,
+          "max": 3,
+          "min": 0.2,
+          "step": 0.01,
+          "value": 0.8
+        },
+        "position": {
+          "x": 300,
+          "y": -1650
+        },
+        "type": "slider"
+      },
+      "nd_cf03f7df4d976": {
+        "definitionVersion": 2,
+        "id": "nd_cf03f7df4d976",
+        "label": "slider_paletteRate",
+        "parameters": {
+          "caption": "Palette cycle degrees/s",
+          "channel": "paletteRate",
+          "defaultValue": 4,
+          "max": 20,
+          "min": 0,
+          "step": 0.01,
+          "value": 4
+        },
+        "position": {
+          "x": 600,
+          "y": -1650
+        },
+        "type": "slider"
+      },
+      "nd_cf03f7df4d978": {
+        "definitionVersion": 2,
+        "id": "nd_cf03f7df4d978",
+        "label": "ramp_velocity",
+        "parameters": {
+          "interp": "smooth",
+          "period": 1,
+          "phase": 0,
+          "stops": [
+            {
+              "color": [
+                0.025,
+                0.1,
+                0.18,
+                1
+              ],
+              "position": 0
+            },
+            {
+              "color": [
+                0.045,
+                0.48,
+                0.62,
+                1
+              ],
+              "position": 0.24
+            },
+            {
+              "color": [
+                0.16,
+                0.78,
+                0.91,
+                1
+              ],
+              "position": 0.52
+            },
+            {
+              "color": [
+                0.74,
+                0.92,
+                1,
+                1
+              ],
+              "position": 0.8
+            },
+            {
+              "color": [
+                1,
+                0.98,
+                0.96,
+                1
+              ],
+              "position": 1
+            }
+          ],
+          "type": "horizontal"
+        },
+        "position": {
+          "x": 900,
+          "y": -1650
+        },
+        "resolution": {
+          "height": 16,
+          "mode": "fixed",
+          "width": 512
+        },
+        "type": "ramp"
+      },
+      "nd_cf03f7df4d979": {
+        "definitionVersion": 1,
+        "id": "nd_cf03f7df4d979",
+        "label": "hsv_palette_cycle",
+        "parameters": {
+          "hueoffset": {
+            "bindings": {
+              "expression": {
+                "kind": "expression",
+                "source": "mod(op('slider_palettePhase').par.value + abstime * op('slider_paletteRate').par.value + 180, 360) - 180"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0
+              }
+            },
+            "mode": "expression"
+          },
+          "saturation": 1,
+          "value": 1
+        },
+        "position": {
+          "x": 1200,
+          "y": -1650
+        },
+        "type": "hsv"
+      },
+      "nd_cf03f7df4d97d": {
+        "definitionVersion": 1,
+        "id": "nd_cf03f7df4d97d",
+        "label": "geometry_front_mist",
+        "parameters": {
+          "blend": "additive",
+          "endpoint": "",
+          "group": "p.droplet >= 0.62",
+          "inDepthOutput": false,
+          "instanceAttributes": "",
+          "instanceTranslate": [
+            0,
+            0,
+            0
+          ],
+          "material": "material_filament_light",
+          "materialOverrides": "",
+          "mode": "points",
+          "objectScale": [
+            1,
+            1,
+            1
+          ],
+          "orient": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "pivot": [
+            0,
+            0,
+            0
+          ],
+          "rotate": [
+            0,
+            0,
+            0
+          ],
+          "scale": {
+            "bindings": {
+              "map": {
+                "attribute": "diameter",
+                "kind": "map"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.009
+              }
+            },
+            "mode": "map"
+          },
+          "shadowOnly": false,
+          "shape": "quad",
+          "soft": 1,
+          "spherical": true,
+          "taper": 1,
+          "tint": {
+            "bindings": {
+              "map": {
+                "attribute": "tint",
+                "kind": "map"
+              },
+              "static": {
+                "kind": "static",
+                "value": [
+                  1,
+                  1,
+                  1,
+                  1
+                ]
+              }
+            },
+            "mode": "map"
+          },
+          "translate": [
+            0,
+            0,
+            0
+          ]
+        },
+        "position": {
+          "x": 1850,
+          "y": 330
+        },
+        "type": "geometry"
+      },
+      "nd_cf03f7df4d97f": {
+        "definitionVersion": 1,
+        "id": "nd_cf03f7df4d97f",
+        "label": "geometry_rear_mist",
+        "parameters": {
+          "blend": "additive",
+          "endpoint": "",
+          "group": "p.droplet >= 0.62",
+          "inDepthOutput": false,
+          "instanceAttributes": "",
+          "instanceTranslate": [
+            0,
+            0,
+            0
+          ],
+          "material": "material_filament_light",
+          "materialOverrides": "",
+          "mode": "points",
+          "objectScale": [
+            1,
+            1,
+            1
+          ],
+          "orient": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "pivot": [
+            0,
+            0,
+            0
+          ],
+          "rotate": [
+            0,
+            0,
+            0
+          ],
+          "scale": {
+            "bindings": {
+              "map": {
+                "attribute": "diameter",
+                "kind": "map"
+              },
+              "static": {
+                "kind": "static",
+                "value": 0.009
+              }
+            },
+            "mode": "map"
+          },
+          "shadowOnly": false,
+          "shape": "quad",
+          "soft": 1,
+          "spherical": true,
+          "taper": 1,
+          "tint": {
+            "bindings": {
+              "map": {
+                "attribute": "tint",
+                "kind": "map"
+              },
+              "static": {
+                "kind": "static",
+                "value": [
+                  1,
+                  1,
+                  1,
+                  1
+                ]
+              }
+            },
+            "mode": "map"
+          },
+          "translate": [
+            0,
+            0,
+            0
+          ]
+        },
+        "position": {
+          "x": 1850,
+          "y": 1510
+        },
+        "type": "geometry"
+      }
+    },
+    "revision": 26,
+    "viewport": {
+      "x": 40,
+      "y": 320,
+      "zoom": 0.38
+    }
+  },
+  "name": "Particle Waterfall",
+  "projectId": "particle-waterfall",
+  "schemaVersion": 5,
+  "settings": {
+    "fps": 60,
+    "limits": {
+      "maxBufferBytes": 268435456,
+      "maxDispatch": 65535,
+      "maxResolution": 4096,
+      "memoryBudgetBytes": 1073741824
+    },
+    "outputResolution": {
+      "height": 720,
+      "width": 1280
+    },
+    "previewFps": 30,
+    "previewLongEdge": 256,
+    "randomSeed": 217,
+    "workingFormat": "rgba16float"
+  },
+  "updatedAt": "2026-11-19T00:56:55.778Z"
+}
