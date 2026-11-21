@@ -1,6 +1,6 @@
 import type { RuntimeDiagnostic } from "../types/diagnostics.ts";
 import type { GraphDocument, ProjectDocument, ProjectSettings } from "../types/graph.ts";
-import type { TextureFormat } from "../types/node-definition.ts";
+import type { NodeDefinition, TextureFormat } from "../types/node-definition.ts";
 
 /**
  * Resource caps (T44, §V24).
@@ -201,17 +201,28 @@ export function clampNodeResolutions(
 /**
  * Coarse whole-project texture-memory estimate (§V24 "project memory budget reported").
  *
- * One full-size target per node, at the node's own resolution when it fixes one and the
- * project resolution otherwise. Deliberately an over-estimate of the naive kind: it is
- * computed before compilation, so it knows nothing about pruning (§V25) or reuse (§V6).
- * The authoritative figure is the compiler's `estimatedResourceBytes` over a real plan;
- * this one exists so an obviously unopenable project says so at the door.
+ * One full-size target per node that can own one, at the node's own resolution when it
+ * fixes one and the project resolution otherwise. Naive on purpose: it is computed before
+ * compilation, so it knows nothing about pruning (§V25), reuse (§V6), media textures or a
+ * node that owns several targets, and can land on either side of the real figure. The authoritative figure is the compiler's `estimatedResourceBytes` over a real
+ * plan; this one exists so an obviously unopenable project says so at the door.
+ *
+ * With `definitions`, a node whose definition has no texture port at all is charged
+ * nothing: a slider, a button, an expression or a preset bank draws no picture. Without
+ * that, a control surface of a hundred sliders was a hundred output-resolution targets, and
+ * a 4K show warned 9 GB at the door where its plan needed 2.8 GB. A node whose definition
+ * is unknown (a placeholder, a component instance) is still charged: over, never under.
  */
-export function estimateProjectMemoryBytes(document: ProjectDocument): number {
+export function estimateProjectMemoryBytes(
+  document: ProjectDocument,
+  definitions?: { get(type: string): Pick<NodeDefinition, "inputs" | "outputs"> | undefined },
+): number {
   const perTexel = bytesPerTexel(document.settings.workingFormat);
   const { width, height } = document.settings.outputResolution;
   let total = 0;
   for (const node of Object.values(document.graph.nodes)) {
+    const definition = definitions?.get(node.type);
+    if (definition !== undefined && !ownsATexture(definition)) continue;
     const resolution = node.resolution;
     const fixed =
       resolution !== undefined &&
@@ -223,9 +234,20 @@ export function estimateProjectMemoryBytes(document: ProjectDocument): number {
   return total;
 }
 
+/**
+ * Can this node own a texture? A texture output is one; so is a texture input, because a
+ * sink (the Output node) renders into a target of its own and declares no output port.
+ */
+function ownsATexture(definition: Pick<NodeDefinition, "inputs" | "outputs">): boolean {
+  return [...definition.inputs, ...definition.outputs].some((port) => port.type.kind === "texture2d");
+}
+
 /** Warns when the coarse estimate is already over the project's own budget. */
-export function checkMemoryBudget(document: ProjectDocument): RuntimeDiagnostic | null {
-  const estimate = estimateProjectMemoryBytes(document);
+export function checkMemoryBudget(
+  document: ProjectDocument,
+  definitions?: { get(type: string): Pick<NodeDefinition, "inputs" | "outputs"> | undefined },
+): RuntimeDiagnostic | null {
+  const estimate = estimateProjectMemoryBytes(document, definitions);
   const budget = document.settings.limits.memoryBudgetBytes;
   if (estimate <= budget) return null;
   return {

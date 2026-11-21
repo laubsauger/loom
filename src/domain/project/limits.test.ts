@@ -122,6 +122,31 @@ describe("the project memory budget is reported", () => {
     expect(checkMemoryBudget(document)).toBeNull();
   });
 
+  // VNB27: a 4K show with ~100 sliders warned 9 GB at the door; its plan needed 2.8 GB.
+  it("charges nothing for a node that has no texture port, when definitions are known", () => {
+    const document = testDocument();
+    const texture = { kind: "texture2d", sample: "float", channels: 4 } as const;
+    const definitions = definitionSource([
+      testDefinition({ type: "gradient", outputs: [{ id: "out", label: "Out", type: texture }] }),
+      // A sink: no output port, but it renders into a target of its own.
+      testDefinition({ type: "output", inputs: [{ id: "in", label: "In", type: texture }] }),
+      testDefinition({ type: "slider", outputs: [{ id: "value", label: "Value", type: { kind: "value" } }] }),
+    ]);
+    const frame = 1920 * 1080 * 8;
+    for (let index = 0; index < 100; index += 1) {
+      document.graph.nodes[`s${index}`] = { id: `s${index}`, type: "slider", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: {} };
+    }
+    // An unknown type (a placeholder, a component instance) is still charged.
+    document.graph.nodes["mystery"] = { id: "mystery", type: "not-registered", definitionVersion: 1, position: { x: 0, y: 0 }, parameters: {} };
+    expect(estimateProjectMemoryBytes(document, definitions)).toBe(3 * frame);
+    // Without definitions the estimate is the old one: every node, sliders included.
+    expect(estimateProjectMemoryBytes(document)).toBe(103 * frame);
+    // The warning follows: a budget that holds the three pictures is not exceeded.
+    const tight = { ...document, settings: testSettings({ limits: { ...limits, memoryBudgetBytes: 4 * frame } }) };
+    expect(checkMemoryBudget(tight, definitions)).toBeNull();
+    expect(checkMemoryBudget(tight)?.code).toBe("project.limit.memoryBudget");
+  });
+
   it("warns when the estimate is already over the project's budget", () => {
     const document = testDocument({
       settings: testSettings({ limits: { ...limits, memoryBudgetBytes: 1024 } }),
