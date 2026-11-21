@@ -43,6 +43,29 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   return clamp(textureSample(blitSource, blitSampler, uv), vec4f(0.0), vec4f(1.0));
 }`;
 
+/**
+ * VNB25 — the display encode on a premultiplied surface (a native output that keeps alpha
+ * AND owes its source the encode).
+ *
+ * The receiver composites these bytes in display space, as `rgb + under * (1 - a)`, so what
+ * it needs is the ENCODED colour times alpha. Encoding the premultiplied value instead
+ * (`encode(rgb * a)`) is too bright wherever alpha is fractional, because the curve is
+ * concave: an edge at a = 0.5 over white would leave 188 where 128 belongs. So: back to
+ * the straight colour, encode, premultiply again. Alpha is coverage and is never encoded.
+ *
+ * Where alpha is 0 there is no straight colour to recover; the value is light added with
+ * no coverage (a glow), and it is encoded as it stands.
+ */
+export const ENCODE_PREMULTIPLIED_BLIT_WGSL = wgsl`${BINDINGS}
+${SRGB_TRANSFER_WGSL}
+@fragment
+fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
+  let raw = textureSample(blitSource, blitSampler, uv);
+  let a = clamp(raw.a, 0.0, 1.0);
+  let covered = encodeDisplay(raw.rgb / max(a, 1e-6)) * a;
+  return vec4f(select(encodeDisplay(raw.rgb), covered, a > 0.0), a);
+}`;
+
 /** Viewer inspection of display-encoded RGB with straight alpha; never an output transform. */
 export const RGBA_BLIT_WGSL = wgsl`${BINDINGS}
 ${SRGB_TRANSFER_WGSL}

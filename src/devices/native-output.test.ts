@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, describe, it, expect, vi } from "vitest";
 import type { LoomBackend } from "@runtime/backend/index.ts";
-import { attachNativeOutput, desktopOutputBridge, nativeOutputEncodes, type DesktopOutputBridge } from "./native-output.ts";
+import { attachNativeOutput, desktopOutputBridge, nativeOutputColorOf, nativeOutputEncodes, NATIVE_OUTPUT_COLORS, type DesktopOutputBridge } from "./native-output.ts";
 import { DEFAULT_COLOR_POLICY } from "@domain/types/graph.ts";
+import { syphonOutNode } from "@nodes/definitions/syphon-out.ts";
+import { effectiveParameterSchema } from "@domain/parameters/resolve.ts";
 
 afterEach(() => { delete (window as Window & { loomDesktop?: unknown }).loomDesktop; });
 
@@ -106,6 +108,32 @@ describe("native output display encode", () => {
     ["rgba16float", "linear", none, false],
   ] as const)("%s %s under %o encodes: %s", (format, space, policy, expected) => {
     expect(nativeOutputEncodes({ format, space }, policy)).toBe(expected);
+  });
+  // The colour choice on the node overrides the decision above, per output.
+  it.each([
+    // raw: never, even where auto encodes.
+    ["rgba16float", "linear", DEFAULT_COLOR_POLICY, "raw", false],
+    // srgb: always. A hand-written shader's output the compiler published as encoded, a
+    // project whose display transform is none: both encode, where auto leaves them.
+    ["rgba16float", "encoded", DEFAULT_COLOR_POLICY, "srgb", true],
+    ["rgba16float", "linear", none, "srgb", true],
+    // ... except an -srgb storage, whose presented bytes are display values already.
+    ["rgba8unorm-srgb", "linear", DEFAULT_COLOR_POLICY, "srgb", false],
+    // auto is the rule above.
+    ["rgba16float", "encoded", DEFAULT_COLOR_POLICY, "auto", false],
+    ["rgba16float", "linear", DEFAULT_COLOR_POLICY, "auto", true],
+  ] as const)("%s %s under %o with colour %s encodes: %s", (format, space, policy, color, expected) => {
+    expect(nativeOutputEncodes({ format, space }, policy, color)).toBe(expected);
+  });
+  it("reads a stored value as a colour choice, and a node without one as auto", () => {
+    for (const color of NATIVE_OUTPUT_COLORS) expect(nativeOutputColorOf(color)).toBe(color);
+    for (const other of [undefined, "", "linear", 1]) expect(nativeOutputColorOf(other)).toBe("auto");
+  });
+  it("Syphon Out offers exactly the colour choices the decision knows, defaulting to auto", () => {
+    const parameter = effectiveParameterSchema(syphonOutNode, {})["colorSpace"]!;
+    if (parameter.type !== "enum") throw new Error("colorSpace must be an enum");
+    expect(parameter.options.map(option => (typeof option === "string" ? option : option.value))).toEqual([...NATIVE_OUTPUT_COLORS]);
+    expect(parameter.default).toBe("auto");
   });
   it("swaps the presentation in place on an encode change, and the frame count never drops", () => {
     const made: Array<{ setOutput: ReturnType<typeof vi.fn>; dispose: ReturnType<typeof vi.fn>; describe: () => { presentedFrames: number } }> = [];

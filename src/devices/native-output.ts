@@ -37,8 +37,30 @@ export interface NativeOutputSelection {
 export function nativeOutputEncodes(
   source: { readonly format: TextureFormat; readonly space: ColorSpace },
   policy: ColorPolicy,
+  color: NativeOutputColor = "auto",
 ): boolean {
+  if (color === "raw") return false;
+  // VNB25 `srgb`: the author says the values are linear light, whatever the compiler
+  // published (a Custom WGSL output has no way to declare it) and whatever the project's
+  // display transform is. Still the one decision, so an `-srgb` storage, whose bytes the
+  // backend already presents as display values (T1307), is not encoded twice.
+  if (color === "srgb") return sinkDisplayTransform(FORCED_SRGB, source.format, "linear", "none").encode;
   return source.space === "linear" && sinkDisplayTransform(policy, source.format, source.space, "none").encode;
+}
+const FORCED_SRGB: ColorPolicy = { workingSpace: "linear", displayTransform: "srgb" };
+
+/**
+ * VNB25 — a native output's own colour choice (Syphon Out's `colorSpace`).
+ *
+ *  - `auto`: what the Output node shows for the same input (VNB25, the rules above);
+ *  - `srgb`: always the display encode;
+ *  - `raw`: never: the input's values as they are (an input encoded by hand, or data).
+ */
+export const NATIVE_OUTPUT_COLORS = ["auto", "srgb", "raw"] as const;
+export type NativeOutputColor = typeof NATIVE_OUTPUT_COLORS[number];
+/** A stored parameter value as a colour choice; anything else (a node without one) is `auto`. */
+export function nativeOutputColorOf(value: unknown): NativeOutputColor {
+  return NATIVE_OUTPUT_COLORS.find(color => color === value) ?? "auto";
 }
 /** A compiled output row, as the plan publishes it (`ResolvedOutput`'s fields this reads). */
 export interface NativeOutputSource {
@@ -60,18 +82,20 @@ export function nativeOutputSelection(
   nodeId: string,
   outputs: ReadonlyArray<NativeOutputSource>,
   policy: ColorPolicy,
+  color: NativeOutputColor = "auto",
 ): NativeOutputSelection | null {
   const edge = Object.values(graph.edges).find(edge => edge.target.nodeId === nodeId && edge.target.portId === "input");
   const source = outputs.find(output => output.nodeId === edge?.source.nodeId && output.portId === edge.source.portId);
-  return source ? nativeOutputSelectionOf(source, policy) : null;
+  return source ? nativeOutputSelectionOf(source, policy, color) : null;
 }
 
 /** The selection for one known source row: the viewer's pinned output, or a wired input. */
 export function nativeOutputSelectionOf(
   source: Pick<NativeOutputSource, "resourceId" | "size" | "format" | "space">,
   policy: ColorPolicy,
+  color: NativeOutputColor = "auto",
 ): NativeOutputSelection {
-  return { resourceId: source.resourceId, size: source.size, encode: nativeOutputEncodes(source, policy) };
+  return { resourceId: source.resourceId, size: source.size, encode: nativeOutputEncodes(source, policy, color) };
 }
 
 export interface DesktopOutputBridge {

@@ -6,7 +6,7 @@ import { isSilencedSource } from "@domain/graph/bypass.ts";
 import { parameterReadOptions, resolveParameters, resolveStored } from "@domain/parameters/index.ts";
 import { EMISSION_PUMPS } from "@domain/render/emission-pumps.ts";
 import { emissionRefusal } from "@domain/render/side-effects.ts";
-import { desktopOutputBridge, nativeOutputSelection } from "@devices/native-output.ts";
+import { desktopOutputBridge, nativeOutputColorOf, nativeOutputSelection } from "@devices/native-output.ts";
 import { colorPolicyOf } from "@domain/color/display.ts";
 import { NATIVE_OUTPUT_TRANSPORTS, NATIVE_VIDEO_LABELS } from "@devices/native-video.ts";
 import { createNativeOutputSession } from "@devices/native-output-session.ts";
@@ -42,14 +42,18 @@ export function useNativeOutputs(runtime: AppRuntime, backend: LoomBackend | nul
         // VNB25: with what the Output node would show for that source, decided from the space
         // the compiler published for it and the project's display transform.
         const selection = demanded.has(node.id)
-          ? nativeOutputSelection(graph, node.id, compiled?.outputs ?? [], colorPolicyOf(runtime.settings))
+          ? nativeOutputSelection(graph, node.id, compiled?.outputs ?? [], colorPolicyOf(runtime.settings),
+            nativeOutputColorOf(values["colorSpace"]))
           : null;
+        // VNB25: the colour choice travels in the SELECTION (its encode), so changing it swaps
+        // the presentation in place. Out of the session key: the publisher stays up.
+        const { colorSpace: _colorSpace, ...sessionValues } = values;
         const transport = NATIVE_OUTPUT_TRANSPORTS[node.type];
         if (!transport) throw new Error(`No native output transport for ${node.type}`);
         return { id: node.id, definition, transport, name: String(values["name"]), alpha: values["alpha"] === true, enabled,
           // VNB25: a change of encode is a selection change: `attachNativeOutput` swaps the
           // presentation in place and the publisher stays up.
-          selection, selectionKey: JSON.stringify(selection), key: JSON.stringify([transport, values]) };
+          selection, selectionKey: JSON.stringify(selection), key: JSON.stringify([transport, sessionValues]) };
       });
   }, [graph, compiled, runtime.registry, runtime.bus, runtime.settings]);
   const latest = useRef(requests); latest.current = requests;

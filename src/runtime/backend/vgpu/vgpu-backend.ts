@@ -76,7 +76,7 @@ import { authoredPosition, type AuthoredPosition, type WgslSourceMap } from "../
 import { describeCapabilities, meetsBaseline } from "./capabilities.ts";
 import { browserGpuHost, type GpuHost, type GpuSession } from "./gpu-host.ts";
 import { preparedShader } from "./prepared-shader.ts";
-import { BLIT_WGSL, ENCODE_BLIT_WGSL, PREMULTIPLIED_BLIT_WGSL, RGBA_BLIT_WGSL } from "./presentation-shaders.ts";
+import { BLIT_WGSL, ENCODE_BLIT_WGSL, ENCODE_PREMULTIPLIED_BLIT_WGSL, PREMULTIPLIED_BLIT_WGSL, RGBA_BLIT_WGSL } from "./presentation-shaders.ts";
 import {
   ResourceBuildError,
   bufferRegion,
@@ -2298,8 +2298,13 @@ export function createVgpuBackend(options: VgpuBackendOptions = {}): VgpuBackend
       if (isPair(source)) preparePresentationView(source.write);
       const bindValue = presentationBinding(readTarget);
       if (!p.blit) {
-        // VNB25 + VN132: the encode blit already bounds colour and alpha, so it serves a premultiplied surface too.
-        p.blit = effect(active.gpu, preparedShader(p.displayEncode ? ENCODE_BLIT_WGSL : p.alphaDisplay === "rgba" ? RGBA_BLIT_WGSL : p.surfaceAlpha === "premultiplied" ? PREMULTIPLIED_BLIT_WGSL : BLIT_WGSL, `present:${p.id}`), {
+        // VNB25 + VN132: four blits. An encode on a premultiplied surface encodes the
+        // straight colour, so the frame stays premultiplied in display space.
+        const blitSource = p.displayEncode
+          ? (p.surfaceAlpha === "premultiplied" ? ENCODE_PREMULTIPLIED_BLIT_WGSL : ENCODE_BLIT_WGSL)
+          : p.alphaDisplay === "rgba" ? RGBA_BLIT_WGSL
+          : p.surfaceAlpha === "premultiplied" ? PREMULTIPLIED_BLIT_WGSL : BLIT_WGSL;
+        p.blit = effect(active.gpu, preparedShader(blitSource, `present:${p.id}`), {
           set: { blitSampler: presentSampler, blitSource: bindValue },
           label: `present:${p.id}`,
         });

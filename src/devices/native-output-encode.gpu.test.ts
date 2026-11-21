@@ -8,7 +8,7 @@ import { linearToSrgb, srgbToLinear } from "@runtime/export/pixel-format.ts";
 import type { GpuSession } from "@runtime/backend/vgpu/gpu-host.ts";
 import { nodeGpuHost, probeDawn } from "@runtime/backend/vgpu/node-gpu-host.ts";
 import { createVgpuBackend } from "@runtime/backend/vgpu/vgpu-backend.ts";
-import { attachNativeOutput, nativeOutputEncodes, nativeOutputSelection } from "./native-output.ts";
+import { attachNativeOutput, nativeOutputColorOf, nativeOutputEncodes, nativeOutputSelection } from "./native-output.ts";
 
 /**
  * VNB25 — a native output (Syphon / NDI / Spout Out) sends what the Output node shows.
@@ -38,6 +38,8 @@ const SIZE = 8;
 
 /** Display value whose linear light is 0.5: the Solid's colour picker is display space. */
 const LINEAR_HALF_AS_DISPLAY = linearToSrgb(0.5);
+/** Display value whose linear light is 0.25: premultiplied 0.25 at alpha 0.5 is straight 0.5. */
+const QUARTER_AS_DISPLAY = linearToSrgb(0.25);
 /** sRGB encode of linear 0.5 (0.735357…), as an 8-bit surface byte. */
 const ENCODED_HALF = Math.round(255 * linearToSrgb(0.5));
 
@@ -66,11 +68,18 @@ function graph(): GraphDocument {
     solid_half: node("solid_half", "solid", { color: [v, v, v, 1] }),
     syphon_solid: node("syphon_solid", "syphonOut", { name: "solid" }),
     ndi_solid: node("ndi_solid", "ndiOut", { name: "solid" }),
+    // Colour: Raw. The same linear source, sent as it is.
+    syphon_raw: node("syphon_raw", "syphonOut", { name: "raw", colorSpace: "raw" }),
+    // Keep alpha over a half-covered source: the encode on a premultiplied surface.
+    solid_veil: node("solid_veil", "solid", { color: [QUARTER_AS_DISPLAY, QUARTER_AS_DISPLAY, QUARTER_AS_DISPLAY, 0.5] }),
+    syphon_veil: node("syphon_veil", "syphonOut", { name: "veil", alpha: true }),
     output_main: node("output_main", "output"),
   }, edges: {
     a: edge("a", "solid_half", "syphon_solid"),
     b: edge("b", "solid_half", "output_main"),
     c: edge("c", "solid_half", "ndi_solid"),
+    d: edge("d", "solid_half", "syphon_raw"),
+    e: edge("e", "solid_veil", "syphon_veil"),
   } };
 }
 
@@ -129,12 +138,17 @@ async function publish(workingFormat: ProjectSettings["workingFormat"]) {
     const compiled = await backend.compile(plan);
     const doc = graph();
     // The hook's own selection: only demanded native sinks publish.
-    for (const id of ["syphon_solid", "ndi_solid"]) expect(plan.order).toContain(id);
+    for (const id of ["syphon_solid", "ndi_solid", "syphon_raw", "syphon_veil"]) expect(plan.order).toContain(id);
+    // As the hook selects: the node's own Colour (`colorSpace`) beside the project's policy.
+    const select = (id: string) => nativeOutputSelection(doc, id, plan.outputs, DEFAULT_COLOR_POLICY,
+      nativeOutputColorOf(doc.nodes[id]!.parameters["colorSpace"]));
     const outputRow = plan.outputs.find(row => row.nodeId === "output_main");
     if (outputRow === undefined) throw new Error("Output target missing");
     const selections = {
       syphonSolid: nativeOutputSelection(doc, "syphon_solid", plan.outputs, DEFAULT_COLOR_POLICY),
       ndiSolid: nativeOutputSelection(doc, "ndi_solid", plan.outputs, DEFAULT_COLOR_POLICY),
+      syphonRaw: select("syphon_raw"),
+      syphonVeil: select("syphon_veil"),
       // The Output node's own target, `encoded`: a native output of it must not encode again.
       output: { resourceId: outputRow.resourceId, size: outputRow.size, encode: nativeOutputEncodes(outputRow, DEFAULT_COLOR_POLICY) },
     };
@@ -142,7 +156,7 @@ async function publish(workingFormat: ProjectSettings["workingFormat"]) {
     const surfaces = Object.fromEntries(Object.entries(selections).map(([key, selection]) => {
       if (selection === null) throw new Error(`${key} selected nothing`);
       const canvas = stubCanvas(device); canvases.push(canvas);
-      attached[key] = attachNativeOutput(backend, selection, canvas as never);
+      attached[key] = attachNativeOutput(backend, selection, canvas as never, key === "syphonVeil" ? { alpha: true } : {});
       return [key, canvas];
     })) as Record<keyof typeof selections, ReturnType<typeof stubCanvas>>;
     const render = async (frameIndex: number) => {
@@ -198,6 +212,33 @@ it("Syphon Out of a linear 0.5 source publishes the Output node's 188, not the r
   // NDI Out shares the path: the same source, the same picture.
   expect(selections.ndiSolid?.encode).toBe(true);
   for (const x of [0, 3, 7]) expect(rgbaAt(bytes["ndiSolid"]!, x)).toEqual([188, 188, 188, 255]);
+}, 60_000);
+
+it("Colour: Raw sends the linear source as it is, and Keep alpha encodes the straight colour", async () => {
+  if (dawnError !== undefined) throw new Error(`Dawn unavailable: ${dawnError}`);
+  const { plan, selections, bytes } = await publish("rgba16float");
+  // Raw: the same linear 0.5 the first test encodes to 188, left at 127.5 (rounded either way).
+  expect(selections.syphonRaw?.encode).toBe(false);
+  expect([127, 128]).toContain(rgbaAt(bytes["syphonRaw"]!, 3)[0]);
+  expect(rgbaAt(bytes["syphonRaw"]!, 3)[3]).toBe(255);
+  // Keep alpha, auto colour, a source at alpha 0.5.
+  const veil = plan.outputs.find(row => row.nodeId === "solid_veil")!;
+  expect([veil.format, veil.space]).toEqual(["rgba16float", "linear"]);
+  expect(selections.syphonVeil?.encode).toBe(true);
+  /*
+   * The surface is premultiplied and the receiver composites it in display space, so it is
+   * owed encode(straight) * alpha. Stored 0.25 at alpha 0.5 is straight 0.5:
+   * 0.735357 * 0.5 * 255 = 93.76 -> 94. Encoding the premultiplied 0.25 instead leaves 137,
+   * the too-bright edge; the raw premultiplied copy leaves 64.
+   */
+  expect(Math.round(255 * linearToSrgb(0.25))).toBe(137);
+  expect(Math.round(255 * linearToSrgb(0.5) * 0.5)).toBe(94);
+  for (const x of [0, 3, 7]) {
+    const [r, g, b, a] = rgbaAt(bytes["syphonVeil"]!, x);
+    expect([r, g, b]).toEqual([94, 94, 94]);
+    // Alpha is coverage, never encoded: 0.5 as 127.5, rounded either way.
+    expect([127, 128]).toContain(a);
+  }
 }, 60_000);
 
 it("an rgba8unorm-srgb source is already display bytes on the native surface: 188, never encoded twice", async () => {

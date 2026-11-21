@@ -59,6 +59,27 @@ it("syphonOut Keep alpha opens an alpha session, and toggling it reopens", async
   expect(h.sessions[0]!.close).toHaveBeenCalledOnce();
   expect(createNativeOutputSession).toHaveBeenLastCalledWith(expect.anything(), expect.anything(), { resourceId: "source:out", size: [1920, 1080], encode: false }, "Test");
 });
+// VNB25: Syphon Out's Colour overrides the encode decision, and a change of it reaches the
+// SAME session as a selection change. The publisher and its receivers stay up.
+it("syphonOut Colour decides the encode and swaps it without reopening the publisher", async () => {
+  const h = setup();
+  // A source the compiler published as already encoded: auto leaves it alone.
+  const compiled = { ...h.compiled, outputs: h.compiled.outputs.map(output => ({ ...output, format: "rgba16float", space: "encoded" })) } as unknown as CompiledGraph;
+  h.view.rerender({ graph: h.graph, compiled }); await h.tick();
+  expect(createNativeOutputSession).toHaveBeenCalledWith(expect.anything(), expect.anything(), { resourceId: "source:out", size: [1920, 1080], encode: false }, "Test");
+  const colored = (revision: number, colorSpace: string) => ({ ...h.graph, revision,
+    nodes: { ...h.graph.nodes, sink: { ...h.graph.nodes["sink"]!, parameters: { name: "Test", colorSpace } } } });
+  h.view.rerender({ graph: colored(2, "srgb"), compiled }); await h.tick();
+  expect(h.sessions[0]!.update).toHaveBeenLastCalledWith({ resourceId: "source:out", size: [1920, 1080], encode: true });
+  // Raw over a linear source, which auto would encode.
+  const linear = { ...compiled, outputs: compiled.outputs.map(output => ({ ...output, space: "linear" })) } as unknown as CompiledGraph;
+  h.view.rerender({ graph: colored(3, "raw"), compiled: linear }); await h.tick();
+  expect(h.sessions[0]!.update).toHaveBeenLastCalledWith({ resourceId: "source:out", size: [1920, 1080], encode: false });
+  h.view.rerender({ graph: colored(4, "auto"), compiled: linear }); await h.tick();
+  expect(h.sessions[0]!.update).toHaveBeenLastCalledWith({ resourceId: "source:out", size: [1920, 1080], encode: true });
+  expect(h.sessions).toHaveLength(1);
+  expect(h.sessions[0]!.close).not.toHaveBeenCalled();
+});
 /* T1409b: with a perform window driving the show, the pump runs on ITS frames. The editor's
    rAF is the stub `setup` installs, and nothing here ever calls it — a hidden editor. */
 it("publishes on the perform window's frames while the editor's are parked", async () => {
