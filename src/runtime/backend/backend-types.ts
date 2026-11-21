@@ -104,6 +104,13 @@ export interface PresentationOptions {
    * Exclusive with `alphaDisplay: "rgba"`, which is a viewer inspection of encoded values.
    */
   readonly displayEncode?: boolean;
+  /**
+   * VN132 — how the SURFACE composites alpha. `"opaque"` (the default): every presentation
+   * owns its pane and alpha never shows the page through (T674). `"premultiplied"`: the
+   * sink's alpha reaches the surface, read as premultiplied and clamped to [0, 1] — a
+   * native output (Syphon Out's Keep alpha) whose receiver keys on it.
+   */
+  readonly surfaceAlpha?: "opaque" | "premultiplied";
 }
 
 /**

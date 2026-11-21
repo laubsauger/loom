@@ -16,9 +16,19 @@ function harness(ready = true, options = {}) {
   owner.getURL = () => 'http://127.0.0.1:5187/';
   const native = { publish(_surface, name) { calls++; publishedNames.push(name); return new Promise(resolve => { resume = resolve; }); }, stop(name) { stopped++; stoppedNames.push(name); }, stats() { return { publishers: 1, queuesCreated: 1 }; } };
   const module = { exports: {} };
+  const windows = [];
+  class BrowserWindow {
+    constructor(windowOptions) {
+      this.options = windowOptions; this.urls = []; windows.push(this);
+      this.webContents = new EventEmitter(); this.webContents.mainFrame = {};
+      this.webContents.startPainting = () => {}; this.webContents.stopPainting = () => {};
+    }
+    loadURL(url) { this.urls.push(url); return Promise.resolve(); }
+    once() {} isDestroyed() { return false; } close() {} setContentSize() {}
+  }
   runInNewContext(readFileSync(join(__dirname, 'native-output.cjs'), 'utf8'), {
     module, __dirname, require: name => name === 'node:path' ? { join }
-      : name === 'node:buffer' ? require(name) : ({ ipcMain: { handle(name, fn) { ipc[name] = fn; } } }),
+      : name === 'node:buffer' ? require(name) : ({ ipcMain: { handle(name, fn) { ipc[name] = fn; } }, BrowserWindow }),
   });
   const contents = new EventEmitter();
   contents.mainFrame = {};
@@ -54,7 +64,8 @@ function harness(ready = true, options = {}) {
     reattach: (name = 'test') => adapter.attach(owner, window, name, name === 'test' ? 'Test publisher' : name),
     publishedNames, stoppedNames,
     diagnostics: () => adapter.diagnostics(),
-    open: (publisherName, suffix = '0') => ipc[`${prefix}-open`](event(owner), `loom-native-output-00000000-0000-0000-0000-00000000000${suffix}`, 1920, 1080, publisherName),
+    open: (publisherName, suffix = '0', ...rest) => ipc[`${prefix}-open`](event(owner), `loom-native-output-00000000-0000-0000-0000-00000000000${suffix}`, 1920, 1080, publisherName, ...rest),
+    windows,
     stopWith: callback => { native.stop = callback; },
     strictClose: () => { strictDestroyedClose = true; },
     retireOwner: () => adapter.retireOwner(owner),
@@ -209,6 +220,23 @@ test('invalid and duplicate publisher names are rejected before creating a windo
   for (const name of ['', ' ', null, 'x\0y', 'x'.repeat(257)]) await assert.rejects(h.open(name), /Invalid Syphon/);
   await assert.rejects(h.open('Test publisher'), /already in use/);
   assert.equal(h.calls, 0); h.close();
+});
+
+// VN132: Keep alpha opens a TRANSPARENT output window, so the shared BGRA texture the addon
+// publishes holds the sink's alpha; without it the window is opaque exactly as before.
+test('alpha opens a transparent output window; the default stays opaque; the flag is validated', async () => {
+  const h = harness();
+  await h.open('Alpha', '1', true);
+  await h.open('Opaque', '2');
+  const [alpha, opaque] = h.windows;
+  assert.equal(alpha.options.transparent, true);
+  assert.equal(alpha.options.backgroundColor, '#00000000');
+  assert.match(alpha.urls[0], /&alpha=1$/);
+  assert.equal(opaque.options.transparent, undefined);
+  assert.doesNotMatch(opaque.urls[0], /alpha/);
+  await assert.rejects(h.open('Bad', '3', 'yes'), /Invalid Syphon alpha flag/);
+  assert.equal(h.windows.length, 2);
+  h.close();
 });
 
 test('asynchronous SDK stop retains its slot and close acknowledgment until drainage', async () => {

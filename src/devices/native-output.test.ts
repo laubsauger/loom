@@ -72,6 +72,14 @@ describe("native output surface ownership", () => {
     expect(h.present).toHaveBeenCalledTimes(1);
     h.attached.dispose();
   });
+  // VN132: the surface keeps the sink's alpha only when asked; opaque stays the default above.
+  it("asks the backend for a premultiplied surface when alpha is kept", () => {
+    const doc = document.implementation.createHTMLDocument();
+    const canvas = doc.createElement("canvas");
+    const present = vi.fn(() => ({ setOutput: vi.fn(), dispose: vi.fn() }));
+    attachNativeOutput({ present } as unknown as LoomBackend, { resourceId: "a", size: [64, 32] }, canvas, { alpha: true });
+    expect(present).toHaveBeenCalledWith(canvas, { outputId: "a", label: "native-sdr-output", displayEncode: false, surfaceAlpha: "premultiplied" });
+  });
   it("close retires the presentation once and prevents stale updates", () => {
     const h = fixture();
     h.attached.dispose();

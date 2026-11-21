@@ -97,10 +97,13 @@ function createInputBridge(prefix) {
 function createOutputBridge(prefix) {
   return {
     nativeOutput: true,
-    open: async (name, width, height, publisherName) => {
+    open: async (name, width, height, publisherName, options) => {
       if (retiring) throw new Error('Native output document is retiring');
       usedNativeInput = true; // All native activity participates in the unload gate.
-      const pending = ipcRenderer.invoke(`${prefix}-open`, name, width, height, publisherName);
+      // VN132: only a literal `alpha: true` crosses; the main process validates it again.
+      const pending = options?.alpha === true
+        ? ipcRenderer.invoke(`${prefix}-open`, name, width, height, publisherName, true)
+        : ipcRenderer.invoke(`${prefix}-open`, name, width, height, publisherName);
       opening.add(pending);
       try { await pending; } finally { opening.delete(pending); }
     },

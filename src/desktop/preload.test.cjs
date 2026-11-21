@@ -120,6 +120,15 @@ test('denied NDI open during unload preserves its error but does not bypass or p
   assert.equal(h.beforeunload().prevented, false);
 });
 
+// VN132: only a literal alpha:true crosses to the main process; anything else opens opaque.
+test('output open forwards a literal alpha flag and nothing looser', async () => {
+  const h = harness({ ndi: true });
+  await h.api.ndiOutput.open('alpha', 1920, 1080, 'Alpha', { alpha: true });
+  await h.api.ndiOutput.open('loose', 1920, 1080, 'Loose', { alpha: 'yes' });
+  assert.deepEqual(h.calls[0], ['loom-ndi-output-open', 'alpha', 1920, 1080, 'Alpha', true]);
+  assert.deepEqual(h.calls[1], ['loom-ndi-output-open', 'loose', 1920, 1080, 'Loose']);
+});
+
 test('NDI output is explicit, namespaced and participates in document unload', async () => {
   assert.equal(harness().api.ndiOutput, undefined);
   const h = harness({ ndi: true }); let finish;

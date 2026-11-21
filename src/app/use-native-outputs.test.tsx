@@ -46,6 +46,19 @@ it.each(["syphonOut", "ndiOut", "spoutOut"])("%s publishes full input size, surv
   h.view.rerender({ graph: { ...h.graph, nodes: {} }, compiled: h.compiled }); await h.tick();
   expect(h.sessions[0]!.close).toHaveBeenCalledOnce();
 });
+// VN132: Syphon Out's Keep alpha reaches the session; switching it reopens the publisher.
+it("syphonOut Keep alpha opens an alpha session, and toggling it reopens", async () => {
+  const h = setup();
+  const sink = h.graph.nodes["sink"]!;
+  const withAlpha = { ...h.graph, revision: 2, nodes: { ...h.graph.nodes, sink: { ...sink, parameters: { name: "Test", alpha: true } } } };
+  h.view.rerender({ graph: withAlpha, compiled: h.compiled }); await h.tick();
+  expect(createNativeOutputSession).toHaveBeenCalledWith(expect.anything(), expect.anything(), { resourceId: "source:out", size: [1920, 1080], encode: false }, "Test", { alpha: true });
+  // the old publisher drains before the replacement opens (one tick to close, one to open)
+  h.view.rerender({ graph: { ...h.graph, revision: 3 }, compiled: h.compiled }); await h.tick(); await h.tick();
+  expect(h.sessions).toHaveLength(2);
+  expect(h.sessions[0]!.close).toHaveBeenCalledOnce();
+  expect(createNativeOutputSession).toHaveBeenLastCalledWith(expect.anything(), expect.anything(), { resourceId: "source:out", size: [1920, 1080], encode: false }, "Test");
+});
 /* T1409b: with a perform window driving the show, the pump runs on ITS frames. The editor's
    rAF is the stub `setup` installs, and nothing here ever calls it — a hidden editor. */
 it("publishes on the perform window's frames while the editor's are parked", async () => {

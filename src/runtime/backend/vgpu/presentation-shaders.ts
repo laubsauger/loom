@@ -32,6 +32,17 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   return vec4f(encodeDisplay(raw.rgb), clamp(raw.a, 0.0, 1.0));
 }`;
 
+/**
+ * VN132 — a premultiplied surface (a native output that keeps alpha): the payload as it is,
+ * clamped to [0, 1] so arithmetic alpha (T674: ±65504 from a feedback loop) cannot reach the
+ * compositor as an out-of-range premultiplied pixel.
+ */
+export const PREMULTIPLIED_BLIT_WGSL = wgsl`${BINDINGS}
+@fragment
+fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
+  return clamp(textureSample(blitSource, blitSampler, uv), vec4f(0.0), vec4f(1.0));
+}`;
+
 /** Viewer inspection of display-encoded RGB with straight alpha; never an output transform. */
 export const RGBA_BLIT_WGSL = wgsl`${BINDINGS}
 ${SRGB_TRANSFER_WGSL}

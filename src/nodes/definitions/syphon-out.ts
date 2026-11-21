@@ -12,6 +12,8 @@ export const syphonOutNode: NodeDefinition = {
   parameters: {
     name: { type: "string", label: "Publisher name", default: "Loom", description: "Unique name shown in receiving apps." },
     enabled: { type: "boolean", label: "Publish", default: true },
+    alpha: { type: "boolean", label: "Keep alpha", default: false,
+      description: "Publishes the input's alpha, read as premultiplied, for receivers that key on it. Off: an opaque frame." },
   },
   // T1340b: declared here, read by every surface that states it.
   requires: ["desktop", "macos"],

@@ -1,11 +1,11 @@
 import type { LoomBackend } from "@runtime/backend/index.ts";
 import { attachNativeOutput } from "./native-output.ts";
-import type { DesktopOutputBridge, NativeOutputSelection } from "./native-output.ts";
+import type { DesktopOutputBridge, NativeOutputOptions, NativeOutputSelection } from "./native-output.ts";
 import { nativeOutputSender } from "./native-output-channel.ts";
 
 /** One graph sink, one bounded transfer channel, the existing graph backend. */
 export function createNativeOutputSession(backend: LoomBackend, bridge: DesktopOutputBridge,
-  selection: NativeOutputSelection, publisherName: string) {
+  selection: NativeOutputSelection, publisherName: string, options: NativeOutputOptions = {}) {
   const name = `loom-native-output-${crypto.randomUUID()}`;
   const sender = nativeOutputSender(name);
   let disposed = false;
@@ -14,11 +14,13 @@ export function createNativeOutputSession(backend: LoomBackend, bridge: DesktopO
   let lastFrame = 0;
   let closing: Promise<void> | undefined;
   let updates = 0;
-  const opened = bridge.open(name, selection.size[0], selection.size[1], publisherName);
+  const opened = options.alpha
+    ? bridge.open(name, selection.size[0], selection.size[1], publisherName, { alpha: true })
+    : bridge.open(name, selection.size[0], selection.size[1], publisherName);
   const ready = Promise.all([opened, sender.promise]).then(() => {
     if (disposed) return;
     canvas = new OffscreenCanvas(selection.size[0], selection.size[1]);
-    attached = attachNativeOutput(backend, selection, canvas);
+    attached = attachNativeOutput(backend, selection, canvas, options);
   });
   let updating = ready;
   return {
