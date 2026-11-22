@@ -36,8 +36,10 @@ import { PhotoPreviewCrop } from "./photo-preview-crop.tsx";
 import { PhotoDepthWorkspace } from "./photo-depth-workspace.tsx";
 import { DEFAULT_PHOTO_DEPTH_RECIPE, DEFAULT_MARIGOLD_RECIPE, MARIGOLD_INPUT_SIDES, DEFAULT_DEPTH_REFINEMENT, photoDepthRecipeSchema,
   depthRecipeKey, depthInferenceKey, depthRecipeParameters, depthRecipeFromParameters, depthRefinementSize,
+  DEFAULT_DEPTH_PRO2_FIELD_OF_VIEW, DEFAULT_DEPTH_PRO2_RECIPE, DEPTH_PRO2_PHOTO_SIDES, depthPro2BoxLabel, isDepthPro2PhotoModel,
   type PhotoDepthRecipe } from "@domain/media/photo-depth-recipe.ts";
-import { photoDepthSidesFor, photoDepthUnavailableReason } from "@runtime/models/photo-depth-models.ts";
+import { PHOTO_DEPTH_PRO2_MODELS, photoDepthSidesFor, photoDepthUnavailableReason } from "@runtime/models/photo-depth-models.ts";
+import { horizontalFieldOfView } from "@runtime/media/exif-focal.ts";
 import { probeNativePreparation, type NativePreparationCapability } from "@devices/native-preparation.ts";
 import { orderRequirements } from "@domain/types/requirements.ts";
 import { TypeBadge } from "@ui/primitives/node-identity.tsx";
@@ -231,6 +233,10 @@ function PhotoMappingEditor({ runtime, initial, open, close }: { runtime: AppRun
   const [modelId, setModelId] = useState(initial.depthRecipe?.modelId ?? DEFAULT_PHOTO_DEPTH_RECIPE.modelId);
   const [backend, setBackend] = useState<PhotoDepthRecipe["backend"]>(initial.depthRecipe?.backend ?? DEFAULT_PHOTO_DEPTH_RECIPE.backend);
   const [seed, setSeed] = useState(initial.depthRecipe?.version === 2 ? initial.depthRecipe.seed : DEFAULT_MARIGOLD_RECIPE.seed);
+  /* T1817b: Depth Pro 2's field of view. A recipe that carries one keeps it; otherwise the
+     photo's EXIF suggests one, until the person types their own. */
+  const [fieldOfView, setFieldOfView] = useState(initial.depthRecipe?.version === 3 ? initial.depthRecipe.fieldOfView : DEFAULT_DEPTH_PRO2_FIELD_OF_VIEW);
+  const fieldOfViewChosen = useRef(initial.depthRecipe?.version === 3);
   const [nativeCapability, setNativeCapability] = useState<NativePreparationCapability>({ available: false, reason: "Checking desktop preparation…" });
   const [refinement, setRefinement] = useState<PhotoDepthRecipe["refinement"]>(initial.depthRecipe?.refinement ?? null);
   const refinementRadiusEdited = useRef(initial.depthRecipe?.refinement !== undefined && initial.depthRecipe.refinement !== null);
@@ -288,9 +294,16 @@ function PhotoMappingEditor({ runtime, initial, open, close }: { runtime: AppRun
   const existing = initial.depthId !== undefined || initial.maskId !== undefined;
   const [photoUrl, depthUrl, maskUrl, previewPhotoUrl, nativeUrl, videoUrl] = useFileUrls([photoRef, depthRef, maskRef, previewPhotoRef, nativeDepthRef, videoRef]);
   const marigold = modelId === DEFAULT_MARIGOLD_RECIPE.modelId;
+  const metric = isDepthPro2PhotoModel(modelId);
   const depthRecipe = useMemo<PhotoDepthRecipe>(() => marigold
     ? { ...DEFAULT_MARIGOLD_RECIPE, seed, inputSide: side as typeof MARIGOLD_INPUT_SIDES[number], refinement }
-    : { version: 1, modelId, backend: backend as "wasm" | "webgpu", inputSide: side, refinement }, [marigold, seed, modelId, backend, side, refinement]);
+    : metric ? { version: 3, modelId, backend: backend as "wasm" | "webgpu", inputSide: side as typeof DEPTH_PRO2_PHOTO_SIDES[number], fieldOfView, refinement }
+    : { version: 1, modelId, backend: backend as "wasm" | "webgpu", inputSide: side, refinement }, [marigold, metric, seed, modelId, backend, side, fieldOfView, refinement]);
+  const photoFieldOfView = photo?.focalLength35 === undefined ? undefined
+    : Math.round(horizontalFieldOfView(photo.focalLength35, photo.bitmap.width, photo.bitmap.height) * 10) / 10;
+  useEffect(() => {
+    if (photoFieldOfView !== undefined && !fieldOfViewChosen.current) setFieldOfView(photoFieldOfView);
+  }, [photoFieldOfView]);
   useEffect(() => {
     let owned = true;
     void probeNativePreparation().then(value => { if (owned) setNativeCapability(value); }).catch(cause => {
@@ -300,7 +313,7 @@ function PhotoMappingEditor({ runtime, initial, open, close }: { runtime: AppRun
   }, [busy]);
   const webgpuAvailable = globalThis.navigator?.gpu !== undefined;
   const depthUnavailable = photoDepthUnavailableReason(depthRecipe, webgpuAvailable, nativeCapability);
-  const selectedModel = PHOTO_DEPTH_MODELS.find(model => model.id === modelId);
+  const selectedModel = [...PHOTO_DEPTH_MODELS, ...PHOTO_DEPTH_PRO2_MODELS].find(model => model.id === modelId);
   const depthSides = photoDepthSidesFor(modelId, backend);
   const readInspectionMaps = useCallback(() => {
     const metadata = depth === null ? null : preparedMetadata(depth);
@@ -318,6 +331,7 @@ function PhotoMappingEditor({ runtime, initial, open, close }: { runtime: AppRun
     refinementRadiusEdited.current = recipe.refinement !== null;
     setModelId(recipe.modelId); setBackend(recipe.backend); setSide(recipe.inputSide); setRefinement(recipe.refinement);
     if (recipe.version === 2) setSeed(recipe.seed);
+    if (recipe.version === 3) { fieldOfViewChosen.current = true; setFieldOfView(recipe.fieldOfView); }
   }, []);
   useEffect(() => {
     let owned = true;
@@ -919,8 +933,15 @@ function PhotoMappingEditor({ runtime, initial, open, close }: { runtime: AppRun
           <label>Model <select value={modelId} disabled={busy} onChange={event => { const nextModel = event.target.value;
             setModelId(nextModel);
             if (nextModel === DEFAULT_MARIGOLD_RECIPE.modelId) { setBackend("mlx"); setSide(DEFAULT_MARIGOLD_RECIPE.inputSide); }
-            else if (backend === "mlx") { setBackend("wasm"); setSide(DEFAULT_PHOTO_DEPTH_RECIPE.inputSide); } }}>
+            else if (isDepthPro2PhotoModel(nextModel)) {
+              // Each family's sizes are its own, so a switch lands on the new family's default.
+              // Entering the family takes its WebGPU default; B has no CPU path at all.
+              if (!metric) setSide(DEFAULT_DEPTH_PRO2_RECIPE.inputSide);
+              if (!metric || nextModel !== DEFAULT_DEPTH_PRO2_RECIPE.modelId) setBackend(webgpuAvailable ? "webgpu" : "wasm");
+            }
+            else if (backend === "mlx" || metric) { if (backend === "mlx") setBackend("wasm"); setSide(DEFAULT_PHOTO_DEPTH_RECIPE.inputSide); } }}>
             {PHOTO_DEPTH_MODELS.map(model => <option key={model.id} value={model.id}>{model.label} ({(model.bytes / 1024 / 1024).toFixed(1)} MB)</option>)}
+            {PHOTO_DEPTH_PRO2_MODELS.map(model => <option key={model.id} value={model.id}>{model.label} ({(model.bytes / 1024 / 1024).toFixed(1)} MB)</option>)}
             <option value="marigold-v2-q4">Marigold V2 · mixed Q4/Q8 · Desktop</option>
             {selectedModel === undefined && modelId !== "marigold-v2-q4" ? <option value={modelId}>Saved model: {modelId}</option> : null}
           </select></label>
@@ -932,10 +953,22 @@ function PhotoMappingEditor({ runtime, initial, open, close }: { runtime: AppRun
           </select></label>
           {depthUnavailable !== null ? <p role="note" className={styles.warning}>{depthUnavailable}</p> : null}
           {selectedModel?.license === "CC-BY-NC-4.0" ? <p role="note" className={styles.warning}>Large weights carry CC-BY-NC-4.0 · non-commercial use</p> : null}
+          {metric ? <p role="note" className={styles.warning}>Apple ML Research licence · research use only, not commercial or client work</p> : null}
           <label>Detail <select value={side} disabled={busy} onChange={event => { const nextSide = Number(event.target.value); setSide(nextSide);
             if (!refinementRadiusEdited.current) setRefinement(current => current === null ? null : { ...current, radius: nextSide >= 1280 ? 1 : DEFAULT_DEPTH_REFINEMENT.radius }); }}>
-            {(marigold ? MARIGOLD_INPUT_SIDES : PHOTO_DEPTH_INPUT_SIDES).map(size => <option key={size} value={size} disabled={!depthSides.includes(size) || (marigold && nativeCapability.available && nativeCapability.inputSides !== undefined && !nativeCapability.inputSides.includes(size as typeof MARIGOLD_INPUT_SIDES[number]))}>{marigold ? `${size} px long edge` : `${size} × ${size}`}</option>)}
+            {(marigold ? MARIGOLD_INPUT_SIDES : metric ? DEPTH_PRO2_PHOTO_SIDES : PHOTO_DEPTH_INPUT_SIDES).map(size => <option key={size} value={size} disabled={!depthSides.includes(size) || (marigold && nativeCapability.available && nativeCapability.inputSides !== undefined && !nativeCapability.inputSides.includes(size as typeof MARIGOLD_INPUT_SIDES[number]))}>{marigold ? `${size} px long edge` : metric ? depthPro2BoxLabel(size as typeof DEPTH_PRO2_PHOTO_SIDES[number]) : `${size} × ${size}`}</option>)}
           </select></label>
+          {metric ? <>
+            <label>Field of view <input type="number" min={1} max={170} step={0.1} value={fieldOfView} disabled={busy} onChange={event => {
+              const next = Number(event.target.value);
+              if (!Number.isFinite(next) || next < 1 || next > 170) { setError("Field of view must be between 1° and 170°."); return; }
+              setError(null); fieldOfViewChosen.current = true; setFieldOfView(next);
+            }} /> °</label>
+            <p className={styles.hint}>{photo?.focalLength35 === undefined
+              ? "Horizontal, in degrees. The photo records no 35 mm focal length, so set it: a wider view reads nearer."
+              : `Horizontal, in degrees. The photo says ${photo.focalLength35} mm equivalent, ${photoFieldOfView}°.`}</p>
+            <p className={styles.hint}>Metric: saves inverse metres, sky at 0</p>
+          </> : null}
           {marigold ? <>
             <label>Depth seed <input type="number" min={0} max={4294967295} step={1} value={seed} disabled={busy} onChange={event => {
               const next = Number(event.target.value);

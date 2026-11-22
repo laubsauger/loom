@@ -32,6 +32,7 @@ export function preparedMapFilename(map: FloatMap, name: string, sha256: string)
       const recipe = depthRecipeOf(map);
       settings.push(recipe.backend);
       if (recipe.version === 2) settings.push(`seed${recipe.seed}`);
+      if (recipe.version === 3) settings.push(`fov${numberPart(recipe.fieldOfView)}`);
       if (metadata.version === 2 && metadata.stage === "refined") {
         const refinement = recipe.refinement!;
         settings.push("refined", `${map.width}x${map.height}`, `r${refinement.radius}`,

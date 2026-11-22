@@ -2,9 +2,8 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, type PointerE
 import { Button } from "@ui/primitives/button.tsx";
 import { cx } from "@ui/cx.ts";
 import type { FloatMap } from "@runtime/media/float-map.ts";
-import { preparedMetadata, rasterizeFloatMap } from "@runtime/media/prepared-map.ts";
+import { farIsHigh, letterboxOccupancy, preparedMetadata, rasterizeFloatMap } from "@runtime/media/prepared-map.ts";
 import { remapDepthValues, type DepthRangeSettings } from "@runtime/media/depth-tools.ts";
-import { occOf } from "@runtime/models/depth-runner.ts";
 import type { PreparationPhoto } from "./photo-preparation.ts";
 import { DEPTH_PALETTES, depthPaletteLut, type DepthPalette } from "./photo-depth-palette.ts";
 import styles from "./photo-depth-workspace.module.css";
@@ -61,8 +60,7 @@ function displayRaster(photo: PreparationPhoto, maps: Maps, view: View, compare:
   }
   // Compare both predictions in the refined map's full-frame coordinates.
   const sizing = compare && maps.depth !== null ? maps.depth : map;
-  const registration = preparedMetadata(sizing).registration;
-  const [occX, occY] = registration === "letterbox" ? occOf(sourceWidth, sourceHeight) : [1, 1];
+  const [occX, occY] = letterboxOccupancy(sizing, preparedMetadata(sizing));
   const width = Math.max(1, Math.round(sizing.width * occX));
   const height = Math.max(1, Math.round(sizing.height * occY));
   const workingDepth = (shown: FloatMap) => depthRange === undefined ? rasterizeFloatMap(shown, "depth", width, height)
@@ -73,7 +71,7 @@ function displayRaster(photo: PreparationPhoto, maps: Maps, view: View, compare:
 
 function sampleMap(map: FloatMap, point: Point) {
   const metadata = preparedMetadata(map);
-  const [occX, occY] = metadata.registration === "letterbox" ? occOf(metadata.source.width, metadata.source.height) : [1, 1];
+  const [occX, occY] = letterboxOccupancy(map, metadata);
   const minX = Math.max(0, Math.ceil((1 - occX) * map.width / 2 - 0.5));
   const minY = Math.max(0, Math.ceil((1 - occY) * map.height / 2 - 0.5));
   const maxX = Math.min(map.width - 1, Math.floor((1 + occX) * map.width / 2 - 0.5));
@@ -82,7 +80,7 @@ function sampleMap(map: FloatMap, point: Point) {
   const y = Math.max(minY, Math.min(maxY, Math.round(((point.y - 0.5) * occY + 0.5) * map.height - 0.5)));
   const raw = map.values[y * map.width + x]!;
   let near = metadata.range.high === metadata.range.low ? 0.5 : (raw - metadata.range.low) / (metadata.range.high - metadata.range.low);
-  if (metadata.version === 2 && metadata.semantics !== "inverse-relative") near = 1 - near;
+  if (metadata.version === 2 && farIsHigh(metadata.semantics)) near = 1 - near;
   return { x, y, raw, near };
 }
 

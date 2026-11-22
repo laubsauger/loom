@@ -56,6 +56,8 @@ export interface WorkerRunTarget {
   readonly smoothing: number;
   /** Preserve native float32 output for explicit preparation, independently of encoding. */
   readonly captureRaw?: boolean;
+  /** T1816b: horizontal field of view in degrees, for a model that takes a focal length. */
+  readonly fieldOfView?: number;
 }
 
 /** What a completed run turned out to have used. Measured, never echoed (§V672). */
@@ -207,6 +209,7 @@ export function createWorkerRunner(options: WorkerRunnerOptions): WorkerRunner {
       modelId: target.modelId,
       ratio: target.ratio,
       smoothing: target.smoothing,
+      ...(target.fieldOfView === undefined ? {} : { fieldOfView: target.fieldOfView }),
       ...((captureRaw ?? target.captureRaw) === true ? { captureRaw: true } : {}),
     };
     const settled = new Promise<CompletedRun>((resolve, reject) => {

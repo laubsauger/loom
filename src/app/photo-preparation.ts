@@ -4,7 +4,7 @@ import { createModelAcquisition, progressText, type ModelDescriptor } from "@run
 import { cacheModelStore } from "@runtime/models/cache-model-store.ts";
 import { createWorkerRunner, type WorkerRunTarget } from "@runtime/models/worker-runner.ts";
 import type { WorkerLike } from "@runtime/models/inference-protocol.ts";
-import { occOf } from "@runtime/models/depth-runner.ts";
+import { decodeSrgb, inverseMetres, occOf } from "@runtime/models/depth-runner.ts";
 import { makePreparedMap, withDepthRecipe, preparedMetadata, depthRecipeOf, rasterizeFloatMap } from "@runtime/media/prepared-map.ts";
 import { refineFacadeMask, type FacadeMaskSettings } from "@runtime/media/facade-mask.ts";
 import type { FloatMap } from "@runtime/media/float-map.ts";
@@ -12,10 +12,11 @@ import { encodePreparedMap, PREPARED_MAP_EXTENSION, PREPARED_MAP_MIME_TYPE } fro
 import { photoDepthRecipeSchema, photoDepthInputSize, MARIGOLD_BUNDLE_ID, depthInferenceKey, depthRefinementSize, type PhotoDepthRecipe } from "@domain/media/photo-depth-recipe.ts";
 import { refineBrowserPhotoDepth } from "@runtime/backend/photo-depth-refinement.ts";
 import type { WorkerRunner } from "@runtime/models/worker-runner.ts";
-import { photoDepthUnavailableReason } from "@runtime/models/photo-depth-models.ts";
+import { PHOTO_DEPTH_PRO2_FILES, photoDepthPro2Descriptor, photoDepthUnavailableReason } from "@runtime/models/photo-depth-models.ts";
 import { hasNativePreparation, probeNativePreparation, runNativePreparation } from "@devices/native-preparation.ts";
 import { encodeDepthImage, DEPTH_IMAGE_FORMATS, type DepthImageFormat } from "@runtime/media/depth-image.ts";
 import { preparedMapFilename } from "@runtime/media/prepared-map-name.ts";
+import { focalLength35FromJpeg } from "@runtime/media/exif-focal.ts";
 import { retainedFiles, type RetainedFileHandle } from "@ui/files/retained-files.ts";
 import bundledFacadeUrl from "../runtime/models/assets/topformer-ade20k.onnx?url";
 
@@ -23,6 +24,8 @@ export interface PreparationPhoto {
   readonly bitmap: ImageBitmap;
   readonly sha256: string;
   readonly name: string;
+  /** T1817b: the JPEG's 35 mm equivalent focal length, when it records one (Depth Pro 2's field of view). */
+  readonly focalLength35?: number;
 }
 
 export type PhotoPreparationRequest =
@@ -43,27 +46,39 @@ export async function decodePreparationPhoto(url: string, name: string, signal: 
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   const bitmap = await createImageBitmap(new Blob([bytes]));
   if (signal.aborted) { bitmap.close(); throw signal.reason; }
-  return { bitmap, sha256: [...new Uint8Array(digest)].map(value => value.toString(16).padStart(2, "0")).join(""), name };
+  const focalLength35 = focalLength35FromJpeg(new Uint8Array(bytes));
+  return { bitmap, sha256: [...new Uint8Array(digest)].map(value => value.toString(16).padStart(2, "0")).join(""), name,
+    ...(focalLength35 === undefined ? {} : { focalLength35 }) };
 }
 
-/** Only colour photographs use canvas decoding. Inferred depth never passes through it. */
-function photoTexels(photo: PreparationPhoto, side: number, letterbox: boolean): Float32Array {
+/**
+ * Only colour photographs use canvas decoding. Inferred depth never passes through it.
+ *
+ * `width × height` is the model's box: square for Depth Anything, 4:3 or 16:9 for Depth Pro
+ * 2 (T1817b), and the letterbox fits the photo into THAT aspect. `linear` decodes the
+ * canvas's display bytes for a model whose packer encodes them again (Depth Pro 2's, which
+ * the live node feeds from the linear working space); alpha is never decoded.
+ */
+function photoTexels(photo: PreparationPhoto, width: number, height: number, letterbox: boolean, linear = false): Float32Array {
   const canvas = document.createElement("canvas");
-  canvas.width = side;
-  canvas.height = side;
+  canvas.width = width;
+  canvas.height = height;
   const context = canvas.getContext("2d", { willReadFrequently: true });
   if (context === null) throw new Error("Photo preparation requires a 2D canvas.");
-  context.drawImage(photo.bitmap, 0, 0, side, side);
-  const rgba = context.getImageData(0, 0, side, side).data;
-  const [occX, occY] = letterbox ? occOf(photo.bitmap.width, photo.bitmap.height) : [1, 1];
-  const texels = new Float32Array(side * side * 4);
-  for (let y = 0; y < side; y++) {
-    for (let x = 0; x < side; x++) {
-      const sx = Math.max(0, Math.min(side - 1, Math.floor((((x + 0.5) / side - 0.5) / occX + 0.5) * side)));
-      const sy = Math.max(0, Math.min(side - 1, Math.floor((((y + 0.5) / side - 0.5) / occY + 0.5) * side)));
-      const source = 4 * (sy * side + sx);
-      const target = 4 * (y * side + x);
-      for (let channel = 0; channel < 4; channel++) texels[target + channel] = rgba[source + channel]! / 255;
+  context.drawImage(photo.bitmap, 0, 0, width, height);
+  const rgba = context.getImageData(0, 0, width, height).data;
+  const [occX, occY] = letterbox ? occOf(photo.bitmap.width, photo.bitmap.height, width / height) : [1, 1];
+  const texels = new Float32Array(width * height * 4);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const sx = Math.max(0, Math.min(width - 1, Math.floor((((x + 0.5) / width - 0.5) / occX + 0.5) * width)));
+      const sy = Math.max(0, Math.min(height - 1, Math.floor((((y + 0.5) / height - 0.5) / occY + 0.5) * height)));
+      const source = 4 * (sy * width + sx);
+      const target = 4 * (y * width + x);
+      for (let channel = 0; channel < 4; channel++) {
+        const display = rgba[source + channel]! / 255;
+        texels[target + channel] = linear && channel < 3 ? decodeSrgb(display) : display;
+      }
     }
   }
   return texels;
@@ -73,7 +88,7 @@ function photoTexels(photo: PreparationPhoto, side: number, letterbox: boolean):
 export function createPhotoPreparer(onProgress: (progress: PreparationProgress) => void) {
   const store = cacheModelStore();
   if (store === null && !hasNativePreparation()) throw new Error("Model caching is unavailable in this browser context.");
-  const descriptors = new Map<string, ModelDescriptor>([...PHOTO_DEPTH_MODELS, PHOTO_MASK, PHOTO_FACADE].map(model => [model.id, model]));
+  const descriptors = new Map<string, ModelDescriptor>([...PHOTO_DEPTH_MODELS, ...PHOTO_DEPTH_PRO2_FILES, PHOTO_MASK, PHOTO_FACADE].map(model => [model.id, model]));
   const acquisition = store === null ? null : createModelAcquisition({
     store,
     // TopFormer's upstream download rejects browser Fetch Metadata. This exact,
@@ -102,6 +117,45 @@ export function createPhotoPreparer(onProgress: (progress: PreparationProgress) 
     runner = null;
     targets.clear();
     active = null;
+  };
+  const openRunner = (models: NonNullable<typeof acquisition>, abort: AbortController): WorkerRunner => {
+    const worker = new Worker(new URL("../runtime/models/inference.worker.ts", import.meta.url), { type: "module" }) as unknown as WorkerLike;
+    return createWorkerRunner({ worker, describe: id => targets.get(id), weightsFor: async id => {
+      onProgress({ phase: "preparing", message: "Opening the model cache…" });
+      const weights = await models.acquire(descriptors.get(id)!);
+      abort.signal.throwIfAborted();
+      if (weights !== undefined) onProgress({ phase: "processing", message: "Running the model on your photo…" });
+      return weights;
+    }, onMeasured: (_id, measurement) => onProgress({ phase: "finishing",
+      message: `${measurement.backend} · ${Math.round(measurement.millis)} ms · preparing float32 output` }) });
+  };
+  /**
+   * T1817b — Depth Pro 2 on a photo. The model's box (4:3 or 16:9) with the photo
+   * letterboxed into it, the recipe's field of view as its focal length, and its metres kept
+   * as inverse metres at the box's own resolution: the first prepared depth with a unit.
+   * The map's `model.id` is the model the recipe names; its `url` is the file the box chose.
+   */
+  const runDepthPro2 = async (photo: PreparationPhoto, recipe: Extract<PhotoDepthRecipe, { version: 3 }>, abort: AbortController): Promise<FloatMap> => {
+    if (acquisition === null) throw new Error("Browser model caching is unavailable in this context.");
+    const descriptor = photoDepthPro2Descriptor(recipe);
+    const box = photoDepthInputSize(recipe, photo.bitmap.width, photo.bitmap.height);
+    const nodeId = crypto.randomUUID();
+    targets.set(nodeId, { modelId: descriptor.id, nodeType: "depth", width: box.width, height: box.height, side: box.width,
+      sourceWidth: photo.bitmap.width, sourceHeight: photo.bitmap.height, providers: [recipe.backend], ratio: 0, smoothing: 1,
+      fieldOfView: recipe.fieldOfView });
+    runner = openRunner(acquisition, abort);
+    onProgress({ phase: "preparing", message: "Preparing depth input…" });
+    const texels = photoTexels(photo, box.width, box.height, true, true);
+    onProgress({ phase: "processing", message: `Processing depth · ${box.width} × ${box.height} · ${recipe.fieldOfView}° field of view` });
+    const { raw } = await runner.runRaw(nodeId, texels.buffer as ArrayBuffer);
+    abort.signal.throwIfAborted();
+    if (raw.width !== box.width || raw.height !== box.height) {
+      throw new Error(`Depth Pro 2 returned ${raw.width} × ${raw.height} for a ${box.width} × ${box.height} box.`);
+    }
+    const map = makePreparedMap(inverseMetres(raw.values), raw.width, raw.height, { kind: "depth",
+      source: { sha256: photo.sha256, width: photo.bitmap.width, height: photo.bitmap.height },
+      model: { id: recipe.modelId, url: descriptor.url }, inputSide: recipe.inputSide, registration: "letterbox" });
+    return withDepthRecipe(map, { ...recipe, refinement: null }, null, "inverse-metric");
   };
   return {
     async run(request: PhotoPreparationRequest): Promise<FloatMap> {
@@ -140,6 +194,7 @@ export function createPhotoPreparer(onProgress: (progress: PreparationProgress) 
           if (reason !== null) throw new Error(reason);
         }
         const facade = request.kind === "mask" ? request.facade : undefined;
+        if (recipe?.version === 3) return await runDepthPro2(photo, recipe, abort);
         const descriptor = recipe !== null ? PHOTO_DEPTH_MODELS.find(model => model.id === recipe.modelId)
           : facade === undefined ? PHOTO_MASK : PHOTO_FACADE;
         if (descriptor === undefined) throw new Error(`The selected photo depth model is unavailable: ${recipe!.modelId}.`);
@@ -152,17 +207,9 @@ export function createPhotoPreparer(onProgress: (progress: PreparationProgress) 
         targets.set(nodeId, { modelId: descriptor.id, nodeType: kind === "depth" ? "depth" : "matte",
           width: side, height: side, side, sourceWidth: photo.bitmap.width, sourceHeight: photo.bitmap.height,
           providers: [recipe?.backend ?? "wasm"], ratio: 0, smoothing: 1 });
-        const worker = new Worker(new URL("../runtime/models/inference.worker.ts", import.meta.url), { type: "module" }) as unknown as WorkerLike;
-        runner = createWorkerRunner({ worker, describe: id => targets.get(id), weightsFor: async id => {
-          onProgress({ phase: "preparing", message: "Opening the model cache…" });
-          const weights = await acquisition.acquire(descriptors.get(id)!);
-          abort.signal.throwIfAborted();
-          if (weights !== undefined) onProgress({ phase: "processing", message: "Running the model on your photo…" });
-          return weights;
-        }, onMeasured: (_id, measurement) => onProgress({ phase: "finishing",
-          message: `${measurement.backend} · ${Math.round(measurement.millis)} ms · preparing float32 output` }) });
+        runner = openRunner(acquisition, abort);
         onProgress({ phase: "preparing", message: `Preparing ${kind} input…` });
-        const texels = photoTexels(photo, side, kind === "depth");
+        const texels = photoTexels(photo, side, side, kind === "depth");
         onProgress({ phase: "processing", message: `Processing ${kind} · ${side} × ${side}` });
         const { raw } = await runner.runRaw(nodeId, texels.buffer as ArrayBuffer);
         abort.signal.throwIfAborted();
@@ -174,7 +221,7 @@ export function createPhotoPreparer(onProgress: (progress: PreparationProgress) 
         if (facade === undefined) return map;
         onProgress({ phase: "finishing", message: "Refining walls, openings and reflective glass…" });
         return refineFacadeMask(map, { width: detailSide, height: detailSide,
-          texels: photoTexels(photo, detailSide, false) }, facade);
+          texels: photoTexels(photo, detailSide, detailSide, false) }, facade);
       } catch (error) {
         if (error instanceof AggregateError) throw error;
         abort.signal.throwIfAborted();
@@ -206,11 +253,17 @@ export function createPhotoPreparer(onProgress: (progress: PreparationProgress) 
           onStage: (stage, total, width, height) => onProgress({ phase: "processing", message: `Guided depth refinement · pass ${stage} of ${total} · ${width} × ${height}` }),
         });
         abort.signal.throwIfAborted();
-        const map = makePreparedMap(refined, target.width, target.height, { kind: "depth", source: metadata.source,
+        /* T1817b: a metric native keeps its unit through refinement. The guided filter ran on
+           the normalized view, and that normalization is affine, so mapping back through the
+           native range gives 1/metres again rather than a relative 0..1 map. */
+        const metric = metadata.version === 2 && metadata.semantics === "inverse-metric";
+        const { low, high } = metadata.range;
+        const samples = metric ? refined.map(value => low + value * (high - low)) : refined;
+        const map = makePreparedMap(samples, target.width, target.height, { kind: "depth", source: metadata.source,
           model: metadata.model, inputSide: metadata.inputSide, registration: "stretch" });
-        const registered = { ...map, metadata: { preparation: { ...preparedMetadata(map), range: { low: 0, high: 1 } } } };
+        const registered = metric ? map : { ...map, metadata: { preparation: { ...preparedMetadata(map), range: { low: 0, high: 1 } } } };
         return withDepthRecipe(registered, recipe, { sha256: nativeSha256,
-          width: native.width, height: native.height });
+          width: native.width, height: native.height }, metric ? "inverse-metric" : undefined);
       } catch (error) { abort.signal.throwIfAborted(); throw error; }
       finally { retire(); }
     },

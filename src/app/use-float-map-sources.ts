@@ -68,7 +68,7 @@ function requestsFor(graph: FlatGraph, compiled: CompiledGraph | null): readonly
     const interpretation = storedStaticValue(node.parameters["interpretation"]);
     // An old Float Map In may carry only inputSide. Its existing depth validation
     // remains independent of the selectors introduced with persisted recipes.
-    const recipeKeys = ["depthModel", "depthBackend", "depthSeed", "depthBundle", "refinementTarget", "refineRadius", "refineSpatialSigma", "refineColorSigma"] as const;
+    const recipeKeys = ["depthModel", "depthBackend", "depthSeed", "depthBundle", "depthFieldOfView", "refinementTarget", "refineRadius", "refineSpatialSigma", "refineColorSigma"] as const;
     const hasRecipe = recipeKeys.some(key => node.parameters[key] !== undefined);
     requests.push({
       nodeId,

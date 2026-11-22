@@ -68,7 +68,7 @@ export function registerPhotoMappingCommands(bus: LoomBus, options: { refresh?: 
       depthRange: depthRangeSchema.optional(), patternShader: z.string().trim().min(1).optional(),
       testPattern: z.boolean().optional(), video: z.string().trim().min(1).optional(),
     }).strict().refine(input => input.inputSide === undefined ||
-      (input.depthRecipe?.version === 2 ? input.inputSide === input.depthRecipe.inputSide : supportsPhotoDepthSize(input.inputSide)), {
+      (input.depthRecipe !== undefined && input.depthRecipe.version !== 1 ? input.inputSide === input.depthRecipe.inputSide : supportsPhotoDepthSize(input.inputSide)), {
       message: "Unsupported depth input size.", path: ["inputSide"],
     }).refine(input => input.previewPhoto === undefined || input.previz !== false, {
       message: "A preview photo requires reference-photo previz.", path: ["previewPhoto"],

@@ -77,6 +77,35 @@ const runnerOver = (fake: ReturnType<typeof fakeWorker>) =>
   });
 
 describe("the main thread's half", () => {
+  /**
+   * T1816b: Depth Pro 2's `f_px` comes from the node's Field of View, and the worker defaults
+   * to 60° when a request carries none. The target used to drop the field on the floor, so
+   * every live Depth Pro 2 node ran at 60° whatever it said: a 90° wide-angle photo read as
+   * 1.7× further away than it is.
+   */
+  it("carries a node's field of view to the worker, and leaves it out when the node has none", async () => {
+    const fake = fakeWorker();
+    const fields = new Map<string, number | undefined>([["wide", 90], ["plain", undefined]]);
+    const runner = createWorkerRunner({
+      worker: fake.worker,
+      describe: (id) => {
+        const fieldOfView = fields.get(id);
+        return fieldOfView === undefined ? target : { ...target, fieldOfView };
+      },
+      weightsFor: async () => new ArrayBuffer(8),
+    });
+    void runner.run("wide", new ArrayBuffer(4)).catch(() => undefined);
+    void runner.run("plain", new ArrayBuffer(4)).catch(() => undefined);
+    await Promise.resolve();
+    fake.deliver({ kind: "loaded", sessionKey: sessionKeyFor("m", PROVIDERS), backend: "wasm", millis: 1, isolated: true });
+    await Promise.resolve();
+    await Promise.resolve();
+    const runs = fake.sent.filter((message): message is Extract<InferenceRequest, { kind: "run" }> => message.kind === "run");
+    expect(runs.map((request) => [request.nodeId, request.fieldOfView])).toEqual([["wide", 90], ["plain", undefined]]);
+    expect("fieldOfView" in runs[1]!).toBe(false);
+    runner.dispose();
+  });
+
   it("captures native raw values explicitly while preserving the encoded result", async () => {
     const fake = fakeWorker();
     const runner = createWorkerRunner({

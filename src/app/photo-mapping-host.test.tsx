@@ -73,6 +73,14 @@ beforeEach(() => {
   mocks.create.mockReturnValue({ run: mocks.run, refine: mocks.refine, cancel: mocks.cancel, dispose: mocks.dispose });
   mocks.run.mockImplementation(async (request: PhotoPreparationRequest) => {
     if (request.kind === "mask") return request.facade === undefined ? map("mask", request.inputSide) : facadeMap(request.inputSide, request.facade, request.photo);
+    if (request.recipe.version === 3) {
+      // T1817b: Depth Pro 2's map is its box, letterboxed, in inverse metres.
+      const box = request.recipe.inputSide === 640 ? [640, 480] : [672, 384];
+      const metric = makePreparedMap(new Float32Array(box[0]! * box[1]!).fill(0.25), box[0]!, box[1]!, { kind: "depth",
+        source: { sha256, width: 4, height: 2 }, model: { id: request.recipe.modelId, url: "https://models.test/dp2" },
+        inputSide: request.recipe.inputSide, registration: "letterbox" });
+      return withDepthRecipe(metric, { ...request.recipe, refinement: null }, null, "inverse-metric");
+    }
     const prepared = map("depth", request.recipe.inputSide);
     const model = request.recipe.modelId === PHOTO_DEPTH_LARGE_Q4F16.id ? PHOTO_DEPTH_LARGE_Q4F16 : DEPTH_ACCURATE;
     return withDepthRecipe({ ...prepared, metadata: { preparation: { ...preparedMetadata(prepared), model: { id: model.id, url: model.url } } } }, { ...request.recipe, refinement: null });
@@ -1601,6 +1609,45 @@ describe("photo depth model and refinement workflow", () => {
     expect(fetch).not.toHaveBeenCalled();
     expect((screen.getByRole("button", { name: "Create mapping network" }) as HTMLButtonElement).disabled).toBe(true);
     expect(Object.keys(target.bus.store.getGraph().nodes)).toHaveLength(0);
+  });
+
+  /**
+   * T1817b: Depth Pro 2 at selection says its licence, offers its own two boxes, and takes
+   * its field of view from the photo's EXIF until the person sets one — and what reaches
+   * the run and the network is what the form said.
+   */
+  it("offers Depth Pro 2 with its licence, boxes and an EXIF field of view, and runs and saves what the form says", async () => {
+    enableWebGpu();
+    photo = { ...photo, focalLength35: 24 };
+    const target = runtime(); await open(target); await choosePhoto();
+    fireEvent.click(screen.getByRole("switch", { name: "Use surface mask" }));
+    const preparation = within(screen.getByRole("region", { name: "Depth preparation" }));
+    fireEvent.change(preparation.getByRole("combobox", { name: "Model" }), { target: { value: "depthpro2-s-fp32" } });
+    expect(preparation.getAllByRole("note").map(note => note.textContent).join(" ")).toMatch(/research use only/);
+    expect((preparation.getByRole("combobox", { name: "Inference backend" }) as HTMLSelectElement).value).toBe("webgpu");
+    const sizes = preparation.getByRole("combobox", { name: "Detail" }) as HTMLSelectElement;
+    expect(sizes.value).toBe("640");
+    expect(within(sizes).getAllByRole("option").map(option => option.textContent)).toEqual(["640 × 480 (4:3)", "672 × 384 (16:9)"]);
+    // 24 mm equivalent on a 2:1 frame: 43.27 mm × 2/√5 = 38.7 mm across, 2·atan(38.7/48) = 77.8°.
+    expect((preparation.getByRole("spinbutton", { name: /Field of view/ }) as HTMLInputElement).value).toBe("77.8");
+    expect(preparation.getByText(/24 mm equivalent, 77.8°/)).toBeDefined();
+    // Leaving the family lands on Depth Anything's own sizes, not a Depth Pro 2 box; coming back, on its 4:3 box.
+    const models = preparation.getByRole("combobox", { name: "Model" });
+    fireEvent.change(models, { target: { value: DEFAULT_PHOTO_DEPTH_RECIPE.modelId } });
+    expect(sizes.value).toBe("518");
+    expect(preparation.queryByRole("spinbutton", { name: /Field of view/ })).toBeNull();
+    fireEvent.change(models, { target: { value: "depthpro2-s-fp32" } });
+    expect(sizes.value).toBe("640");
+    fireEvent.change(sizes, { target: { value: "672" } });
+    fireEvent.change(preparation.getByRole("spinbutton", { name: /Field of view/ }), { target: { value: "70" } });
+    await click("Run depth");
+    expect(mocks.run.mock.calls[0]![0]).toMatchObject({ kind: "depth",
+      recipe: { version: 3, modelId: "depthpro2-s-fp32", backend: "webgpu", inputSide: 672, fieldOfView: 70, refinement: null } });
+    await click("Save depth…");
+    await waitFor(() => expect((screen.getByRole("button", { name: "Create mapping network" }) as HTMLButtonElement).disabled).toBe(false));
+    await click("Create mapping network");
+    const depth = Object.values(target.bus.store.getGraph().nodes).find(node => node.type === "floatMapIn")!;
+    expect(depth.parameters).toMatchObject({ depthModel: "depthpro2-s-fp32", depthBackend: "webgpu", inputSide: "672", depthFieldOfView: 70 });
   });
 
   it("saves the native parent before the refined result and persists the selected recipe in the network", async () => {

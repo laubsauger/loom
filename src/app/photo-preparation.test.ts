@@ -1,17 +1,19 @@
 // @vitest-environment jsdom
 import { createHash, webcrypto } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DEPTH_ACCURATE, PHOTO_DEPTH_MODELS, PHOTO_DEPTH_LARGE_FP16, PHOTO_DEPTH_LARGE_Q4F16, PHOTO_FACADE, PHOTO_MASK } from "@runtime/models/model-catalogue.ts";
+import { DEPTH_ACCURATE, DEPTH_PRO2_B, DEPTH_PRO2_S, DEPTH_PRO2_WIDE, PHOTO_DEPTH_MODELS, PHOTO_DEPTH_LARGE_FP16, PHOTO_DEPTH_LARGE_Q4F16, PHOTO_FACADE, PHOTO_MASK } from "@runtime/models/model-catalogue.ts";
 import type { WorkerRunner, WorkerRunnerOptions } from "@runtime/models/worker-runner.ts";
 import type { createModelAcquisition } from "@runtime/models/model-acquisition.ts";
 import { decodeDepthExr } from "@runtime/media/depth-exr.ts";
 import { encodePreparedMap } from "@runtime/media/prepared-map-file.ts";
 import { FACADE_MASK_DEFAULTS, facadeMaskSettings } from "@runtime/media/facade-mask.ts";
 import { depthRecipeOf, preparedMetadata, rasterizeFloatMap } from "@runtime/media/prepared-map.ts";
-import { DEFAULT_DEPTH_REFINEMENT, DEFAULT_MARIGOLD_RECIPE, DEFAULT_PHOTO_DEPTH_RECIPE, MARIGOLD_BUNDLE_ID, type PhotoDepthRecipe } from "@domain/media/photo-depth-recipe.ts";
+import { DEFAULT_DEPTH_PRO2_RECIPE, DEFAULT_DEPTH_REFINEMENT, DEFAULT_MARIGOLD_RECIPE, DEFAULT_PHOTO_DEPTH_RECIPE, MARIGOLD_BUNDLE_ID, type PhotoDepthRecipe } from "@domain/media/photo-depth-recipe.ts";
+import { decodeSrgb } from "@runtime/models/depth-runner.ts";
 import type { NativePreparationCapability, NativePreparationRequest } from "@devices/native-preparation.ts";
 import { createFileReference, parseFileReference } from "@domain/media/file-reference.ts";
 import { createPhotoPreparer, decodePreparationPhoto, savePreparedMap, type PreparationPhoto } from "./photo-preparation.ts";
+import { PHOTO_DEPTH_PRO2_FILES } from "@runtime/models/photo-depth-models.ts";
 
 const mocks = vi.hoisted(() => ({ acquisition: vi.fn(), acquire: vi.fn(), cancel: vi.fn(), cache: vi.fn(), runner: vi.fn(), remember: vi.fn(), refine: vi.fn() }));
 vi.mock("@runtime/backend/photo-depth-refinement.ts", () => ({ refineBrowserPhotoDepth: mocks.refine }));
@@ -45,7 +47,7 @@ function runnerWith(result = rawResult()) {
     runRaw: vi.fn(async (nodeId: string, bytes: ArrayBuffer) => {
       const target = options.describe(nodeId);
       if (target === undefined) throw new Error("Missing preparation target");
-      expect(bytes.byteLength).toBe(target.side * target.side * 16);
+      expect(bytes.byteLength).toBe(target.width * target.height * 16);
       await options.weightsFor(target.modelId);
       return result;
     }),
@@ -392,7 +394,9 @@ describe("photo preparation sessions", () => {
     finish(rawResult());
     await rejected;
     expect(fake.runner.dispose).toHaveBeenCalledTimes(1);
-    expect(mocks.cancel.mock.calls.map(call => call[0])).toEqual([...PHOTO_DEPTH_MODELS.map(model => model.id), PHOTO_MASK.id, PHOTO_FACADE.id]);
+    // T1817b: Depth Pro 2's four photo files are acquisitions too, and a close cancels them.
+    expect(mocks.cancel.mock.calls.map(call => call[0])).toEqual([...PHOTO_DEPTH_MODELS.map(model => model.id),
+      ...PHOTO_DEPTH_PRO2_FILES.map(model => model.id), PHOTO_MASK.id, PHOTO_FACADE.id]);
     await expect(preparer.run(depthRequest())).rejects.toThrow("Photo preparation was closed");
   });
 
@@ -709,5 +713,123 @@ describe("saved prepared maps", () => {
     expect(writable.abort).toHaveBeenCalledTimes(1);
     expect(writable.close).not.toHaveBeenCalled();
     expect(mocks.remember).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * T1817b — DEPTH PRO 2 ON A PHOTO. What differs from Depth Anything, each pinned where a
+ * wrong answer would still produce a plausible map: the model's own non-square box with
+ * the photo letterboxed into THAT aspect, the recipe's field of view reaching the worker,
+ * the canvas's display bytes decoded for a packer that encodes, and metres kept as inverse
+ * metres with the letterbox bars out of the range.
+ */
+describe("Depth Pro 2 photo preparation (T1817b)", () => {
+  /** A 4:3 box holding a 2:1 photo: the band is rows 80–399 (occ 2/3), not the square rule's 120–359. */
+  function metresResult(width = 640, height = 480) {
+    const values = new Float32Array(width * height).fill(4);
+    for (let x = 0; x < width; x++) { values[x] = 0.01; values[(height - 1) * width + x] = 0.01; } // bars: 100 /m
+    values[100 * width + 10] = 2; // inside the 4:3 band, outside the square rule's
+    values[240 * width + 320] = Infinity; // sky
+    values[241 * width + 320] = Number.NaN;
+    return { bytes: new Uint8Array([1]), raw: { width, height, values } };
+  }
+  // The default recipe asks for WebGPU; jsdom has none, so these say there is one.
+  beforeEach(() => { vi.stubGlobal("navigator", { gpu: {} }); });
+  const request = (recipe: Partial<Extract<PhotoDepthRecipe, { version: 3 }>> = {}) =>
+    ({ kind: "depth" as const, photo: photograph(), recipe: { ...DEFAULT_DEPTH_PRO2_RECIPE, fieldOfView: 75, ...recipe } });
+
+  it("runs the box's own file at the recipe's field of view, and saves inverse metres with the bars out of range", async () => {
+    // Canvas rows carry their own index (halved, to fit a byte), so the letterbox is readable.
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation((() => ({
+      drawImage: vi.fn(),
+      getImageData: (_x: number, _y: number, width: number, height: number) => ({
+        data: Uint8ClampedArray.from({ length: width * height * 4 }, (_, index) => index % 4 === 3 ? 128 : Math.floor(Math.floor(index / 4 / width) / 2)) }),
+    })) as unknown as typeof HTMLCanvasElement.prototype.getContext);
+    const fake = runnerWith(metresResult());
+    let texels!: Float32Array;
+    const recorded = fake.runner.runRaw.getMockImplementation()!;
+    fake.runner.runRaw.mockImplementation(async (id, bytes) => { texels = new Float32Array(bytes.slice(0)); return recorded(id, bytes); });
+    const preparer = createPhotoPreparer(() => {});
+    const map = await preparer.run(request());
+    const nodeId = fake.runner.runRaw.mock.calls[0]![0];
+    expect(mocks.acquire).toHaveBeenCalledWith(DEPTH_PRO2_S);
+    // The run's target, read back the way the worker runner reads it (it is retired after).
+    const target = fake.options().describe;
+    expect(target(nodeId)).toBeUndefined();
+    expect(mocks.runner).toHaveBeenCalledTimes(1);
+    expect(texels.length).toBe(640 * 480 * 4);
+    // Row 300 of a 4:3 box samples canvas row 330 (occ 2/3); the square rule would give 361.
+    // Decoded, because the packer encodes again; alpha is coverage and stays as read.
+    expect(texels[(300 * 640) * 4]).toBe(Math.fround(decodeSrgb(165 / 255)));
+    expect(texels[(300 * 640) * 4 + 3]).toBe(Math.fround(128 / 255));
+    expect([map.width, map.height]).toEqual([640, 480]);
+    expect(map.values[240 * 640 + 320]).toBe(0); // sky: no distance
+    expect(map.values[241 * 640 + 320]).toBe(0);
+    expect(map.values[100 * 640 + 10]).toBe(0.5);
+    expect(map.values[300 * 640]).toBe(0.25);
+    expect(map.values[0]).toBe(100); // the bar is kept as the model said it…
+    expect(preparedMetadata(map)).toMatchObject({ version: 2, kind: "depth", stage: "native", parent: null,
+      semantics: "inverse-metric", registration: "letterbox", inputSide: 640,
+      model: { id: "depthpro2-s-fp32", url: DEPTH_PRO2_S.url },
+      // …but is not in the range: low is the sky's 0, high the 2 m sample, not the bar's 100.
+      range: { low: 0, high: 0.5 }, recipe: { ...DEFAULT_DEPTH_PRO2_RECIPE, fieldOfView: 75 } });
+    const reopened = decodeDepthExr(encodePreparedMap(map));
+    expect(preparedMetadata(reopened)).toEqual(preparedMetadata(map));
+    expect(new Uint32Array(reopened.values.buffer)).toEqual(new Uint32Array(map.values.buffer));
+    preparer.dispose();
+  });
+
+  it("hands the worker the photo's size and the field of view, and the 16:9 box its own file", async () => {
+    const fake = runnerWith(metresResult(672, 384));
+    let seen: ReturnType<WorkerRunnerOptions["describe"]>;
+    const recorded = fake.runner.runRaw.getMockImplementation()!;
+    fake.runner.runRaw.mockImplementation(async (id, bytes) => { seen = fake.options().describe(id); return recorded(id, bytes); });
+    const preparer = createPhotoPreparer(() => {});
+    const map = await preparer.run(request({ modelId: "depthpro2-b-fp16", inputSide: 672 }));
+    expect(seen).toMatchObject({ modelId: DEPTH_PRO2_WIDE[DEPTH_PRO2_B.id]!.id, nodeType: "depth", width: 672, height: 384,
+      sourceWidth: 4, sourceHeight: 2, providers: ["webgpu"], fieldOfView: 75 });
+    expect(mocks.acquire).toHaveBeenCalledWith(DEPTH_PRO2_WIDE[DEPTH_PRO2_B.id]);
+    expect(preparedMetadata(map)).toMatchObject({ inputSide: 672, model: { id: "depthpro2-b-fp16", url: DEPTH_PRO2_WIDE[DEPTH_PRO2_B.id]!.url } });
+    preparer.dispose();
+  });
+
+  it("refuses B on the CPU, and a box Depth Pro 2 has no file for, before a worker or a download", async () => {
+    runnerWith(metresResult());
+    const preparer = createPhotoPreparer(() => {});
+    await expect(preparer.run(request({ modelId: "depthpro2-b-fp16", backend: "wasm" }))).rejects.toThrow(/half-precision/);
+    await expect(preparer.run({ ...request(), recipe: { ...request().recipe, inputSide: 518 } as never })).rejects.toThrow();
+    expect(mocks.runner).not.toHaveBeenCalled();
+    expect(mocks.acquire).not.toHaveBeenCalled();
+    preparer.dispose();
+  });
+
+  it("refines a metric map back into inverse metres instead of a relative 0..1 map", async () => {
+    runnerWith(metresResult());
+    const preparer = createPhotoPreparer(() => {});
+    const reference = photograph();
+    const native = await preparer.run({ ...request(), photo: reference });
+    const recipe = { ...request().recipe, refinement: { ...DEFAULT_DEPTH_REFINEMENT } };
+    mocks.refine.mockImplementationOnce(async () => Float32Array.from([0, 0.25, 0.5, 1, 1, 0.5, 0.25, 0]));
+    const refined = await preparer.refine(reference, native, recipe, 16384);
+    // Native range 0..0.5 /m: the filter's normalized 0.25 is 0.125 /m again.
+    expect([...refined.values]).toEqual([0, 0.125, 0.25, 0.5, 0.5, 0.25, 0.125, 0]);
+    expect(preparedMetadata(refined)).toMatchObject({ stage: "refined", semantics: "inverse-metric", range: { low: 0, high: 0.5 }, recipe });
+    preparer.dispose();
+  });
+
+  it("reads a JPEG's 35 mm equivalent focal length when decoding the photo, and nothing from a PNG", async () => {
+    const tiff = new Uint8Array(40);
+    const view = new DataView(tiff.buffer);
+    view.setUint16(0, 0x4949); view.setUint16(2, 42, true); view.setUint32(4, 8, true);
+    view.setUint16(8, 1, true); view.setUint16(10, 0x8769, true); view.setUint16(12, 4, true); view.setUint32(14, 1, true); view.setUint32(18, 26, true);
+    view.setUint16(26, 1, true); view.setUint16(28, 0xa405, true); view.setUint16(30, 3, true); view.setUint32(32, 1, true); view.setUint16(36, 24, true);
+    const app1Length = 2 + 6 + tiff.length;
+    const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe1, app1Length >> 8, app1Length & 0xff, 0x45, 0x78, 0x69, 0x66, 0, 0, ...tiff, 0xff, 0xd9]);
+    vi.stubGlobal("createImageBitmap", vi.fn(async () => ({ width: 4, height: 2, close: vi.fn() })));
+    for (const [bytes, expected] of [[jpeg, 24], [new Uint8Array([0x89, 0x50, 0x4e, 0x47]), undefined]] as const) {
+      vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, arrayBuffer: async () => bytes.slice().buffer })));
+      const photo = await decodePreparationPhoto("/photo", "photo", new AbortController().signal);
+      expect(photo.focalLength35).toBe(expected);
+    }
   });
 });

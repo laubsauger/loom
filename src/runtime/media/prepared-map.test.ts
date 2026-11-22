@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 import { type FloatMap } from "./float-map.ts";
 import { decodeDepthExr, encodeDepthExr } from "./depth-exr.ts";
 import { beginMaskStroke, depthRecipeOf, makePreparedMap, paintMaskStroke, preparedMetadata, rasterizeFloatMap, withDepthRecipe,
-  type PreparedDepthMetadataV2, type PreparedMapMetadataV1 } from "./prepared-map.ts";
-import { DEFAULT_DEPTH_REFINEMENT, DEFAULT_PHOTO_DEPTH_RECIPE } from "../../domain/media/photo-depth-recipe.ts";
+  letterboxOccupancy, type PreparedDepthMetadataV2, type PreparedMapMetadataV1 } from "./prepared-map.ts";
+import { DEFAULT_DEPTH_PRO2_RECIPE, DEFAULT_DEPTH_REFINEMENT, DEFAULT_PHOTO_DEPTH_RECIPE } from "../../domain/media/photo-depth-recipe.ts";
+import { depthImageEnvelope } from "./depth-image-envelope.ts";
 
 function input(kind: "depth" | "mask" = "depth", width = 6, height = 6): Omit<PreparedMapMetadataV1, "version" | "range"> {
   return {
@@ -274,5 +275,72 @@ describe("versioned depth preparation recipes", () => {
     const reopened = decodeDepthExr(original);
     expect((preparedMetadata(reopened) as PreparedDepthMetadataV2).semantics).toBe(semantics);
     expect(encodeDepthExr(prepared)).toEqual(original);
+  });
+});
+
+/**
+ * T1817b — DEPTH PRO 2'S MAPS: a non-square letterbox, and the first depth with a unit.
+ *
+ * A 4:3 box holding a 16:9 photo (1920 × 1080): the photo covers the full width and 3/4 of
+ * the height, rows 60–419 of 480. The square rule every Depth Anything map uses would put
+ * the band at rows 105–374 and read the bars as depth.
+ */
+describe("Depth Pro 2 prepared maps (T1817b)", () => {
+  const source = { sha256: "b".repeat(64), width: 1920, height: 1080 };
+  function nativeMetric(fill: (x: number, y: number) => number = () => 0.25): FloatMap {
+    const values = Float32Array.from({ length: 640 * 480 }, (_, index) => fill(index % 640, Math.floor(index / 640)));
+    const map = makePreparedMap(values, 640, 480, { kind: "depth", source,
+      model: { id: "depthpro2-s-fp32", url: "https://models.example/model.onnx" }, inputSide: 640, registration: "letterbox" });
+    return withDepthRecipe(map, DEFAULT_DEPTH_PRO2_RECIPE, null, "inverse-metric");
+  }
+
+  it("finds the photo's band in the box's own aspect, so the bars stay out of the range", () => {
+    // Bars at 10 /m; the band 0.1 /m at its top row (60) and 0.5 /m below it.
+    const map = nativeMetric((_x, y) => y < 60 || y > 419 ? 10 : y === 60 ? 0.1 : 0.5);
+    expect(letterboxOccupancy(map, preparedMetadata(map))).toEqual([1, 0.75]);
+    expect(preparedMetadata(map).range).toEqual({ low: Math.fround(0.1), high: 0.5 });
+    // Depth Anything's square box is the same rule at aspect 1: 16:9 in a square fills 9/16.
+    const square = makePreparedMap(new Float32Array(36), 6, 6, { ...input(), source });
+    expect(letterboxOccupancy(square, preparedMetadata(square))).toEqual([1, 1080 / 1920]);
+  });
+
+  it("samples the band, never a bar, when resampled into the photo's frame", () => {
+    const map = nativeMetric((_x, y) => y < 60 || y > 419 ? 10 : 0.1 + 0.4 * (y - 60) / 359);
+    const raw = rasterizeFloatMap(map, "raw", 640, 480);
+    expect(raw[0]).toBe(map.values[0]); // raw at native size is the samples as saved
+    const depth = rasterizeFloatMap(map, "depth", 16, 9);
+    // A sampled bar would read (10 − 0.1) / 0.4 ≈ 25 in the normalized view.
+    expect(Math.min(...depth)).toBeGreaterThanOrEqual(0);
+    expect(Math.max(...depth)).toBeLessThanOrEqual(1);
+  });
+
+  it("reads inverse metres as nearer-is-higher, as Depth Anything's maps read, and exports them unflipped", () => {
+    const map = nativeMetric((x) => (x < 320 ? 0.5 : 0.1));
+    const [left, right] = rasterizeFloatMap(map, "depth", 2, 1);
+    expect([left, right]).toEqual([1, 0]);
+    expect(depthImageEnvelope(map, "unorm16").inverse).toBe(false);
+  });
+
+  it("refuses a metric map that is not Depth Pro 2's, a Depth Pro 2 map that is not metric, a wrong box or a negative 1/m", () => {
+    const map = nativeMetric();
+    expect(() => preparedMetadata(withMetadata(map, { semantics: "inverse-relative" }))).toThrow(/metric depth semantics/);
+    expect(() => preparedMetadata(withMetadata(map, { recipe: { ...DEFAULT_PHOTO_DEPTH_RECIPE, modelId: "depthpro2-s-fp32", inputSide: 518 }, inputSide: 518 }))).toThrow(/metric depth semantics/);
+    const stretched = makePreparedMap(new Float32Array(640 * 480).fill(0.25), 640, 480, { kind: "depth", source,
+      model: { id: "depthpro2-s-fp32", url: "x" }, inputSide: 640, registration: "stretch" });
+    expect(() => withDepthRecipe(stretched, DEFAULT_DEPTH_PRO2_RECIPE, null, "inverse-metric")).toThrow(/letterbox registration/);
+    const small = makePreparedMap(new Float32Array(640 * 360).fill(0.25), 640, 360, { kind: "depth", source,
+      model: { id: "depthpro2-s-fp32", url: "x" }, inputSide: 640, registration: "letterbox" });
+    expect(() => withDepthRecipe(small, DEFAULT_DEPTH_PRO2_RECIPE, null, "inverse-metric")).toThrow(/dimensions/);
+    const negative = makePreparedMap(new Float32Array(640 * 480).fill(-0.25), 640, 480, { kind: "depth", source,
+      model: { id: "depthpro2-s-fp32", url: "x" }, inputSide: 640, registration: "letterbox" });
+    expect(() => withDepthRecipe(negative, DEFAULT_DEPTH_PRO2_RECIPE, null, "inverse-metric")).toThrow(/cannot be negative/);
+    expect(() => withDepthRecipe(negative, { ...DEFAULT_PHOTO_DEPTH_RECIPE, inputSide: 640 } as never)).toThrow();
+  });
+
+  it("keeps its unit and recipe through the .loom.exr file", () => {
+    const map = nativeMetric();
+    const reopened = decodeDepthExr(encodeDepthExr(map));
+    expect(preparedMetadata(reopened)).toEqual(preparedMetadata(map));
+    expect(preparedMetadata(reopened)).toMatchObject({ semantics: "inverse-metric", recipe: DEFAULT_DEPTH_PRO2_RECIPE });
   });
 });

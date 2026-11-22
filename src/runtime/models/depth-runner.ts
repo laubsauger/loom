@@ -90,6 +90,30 @@ function encodeSrgb(linear: number): number {
 }
 
 /**
+ * T1817b: the inverse of `encodeSrgb`, for a picture that is ALREADY display-referred — a
+ * photo read through a 2D canvas. Photo preparation decodes it so that the one packer,
+ * which encodes, hands the model the photo's own bytes back (within float rounding).
+ */
+export function decodeSrgb(display: number): number {
+  const value = Math.min(1, Math.max(0, display));
+  return value <= 0.04045 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4);
+}
+
+/** 1/metres of one Depth Pro 2 sample; +inf (sky), NaN and non-positive have no distance: 0. */
+function inverseMetre(metres: number): number {
+  return metres > 0 && Number.isFinite(metres) ? 1 / metres : 0;
+}
+
+/**
+ * T1817b: Depth Pro 2's `depth_meters` → inverse metres, sample for sample, at the model's
+ * own box. Photo preparation keeps the native grid (letterbox bars included, which the
+ * prepared map's band excludes); the live node resamples into the picture instead.
+ */
+export function inverseMetres(depth: Float32Array): Float32Array {
+  return depth.map(inverseMetre);
+}
+
+/**
  * T1816b — our letterboxed `vec4f` box → Depth Pro 2's `pixel_values`, NCHW float32.
  *
  * RAW [0,1] RGB, because ImageNet normalisation is inside the exported graph — feeding
@@ -160,9 +184,8 @@ export function depthPro2ToInverse(
     for (let x = 0; x < width; x += 1) {
       const u = ((x + 0.5) / width - 0.5) * occX + 0.5;
       const sx = Math.min(box.width - 1, Math.max(0, Math.floor(u * box.width)));
-      const metres = depth[sy * box.width + sx]!;
       // +inf (sky) → 0. A NaN or non-positive sample has no distance either: also 0, far.
-      floats[y * width + x] = metres > 0 && Number.isFinite(metres) ? 1 / metres : 0;
+      floats[y * width + x] = inverseMetre(depth[sy * box.width + sx]!);
     }
   }
   return new Uint8Array(floats.buffer);

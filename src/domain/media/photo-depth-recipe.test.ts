@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { PHOTO_DEPTH_INPUT_SIDES } from "./preparation-sizes.ts";
 import { DEFAULT_DEPTH_REFINEMENT, DEFAULT_PHOTO_DEPTH_RECIPE, DEFAULT_MARIGOLD_RECIPE,
   MARIGOLD_MODEL_ID, MARIGOLD_BUNDLE_ID, MARIGOLD_INPUT_SIDES, depthInferenceKey, depthRecipeKey,
-  depthRefinementSize, photoDepthInputSize, photoDepthRecipeSchema, depthRecipeParameters, depthRecipeFromParameters, type PhotoDepthRecipe } from "./photo-depth-recipe.ts";
+  depthRefinementSize, photoDepthInputSize, photoDepthRecipeSchema, depthRecipeParameters, depthRecipeFromParameters, type PhotoDepthRecipe,
+  DEFAULT_DEPTH_PRO2_RECIPE, DEPTH_PRO2_PHOTO_SIDES } from "./photo-depth-recipe.ts";
 
 const refined = (target: NonNullable<PhotoDepthRecipe["refinement"]>["target"] = "source"): Extract<PhotoDepthRecipe, { version: 1 }> => ({
   ...DEFAULT_PHOTO_DEPTH_RECIPE, refinement: { ...DEFAULT_DEPTH_REFINEMENT, target },
@@ -149,5 +150,49 @@ describe("photo depth preparation recipe", () => {
       expect(() => photoDepthInputSize(recipe, dimension, 2000)).toThrow(/Source width/);
       expect(() => photoDepthInputSize(recipe, 2000, dimension)).toThrow(/Source height/);
     }
+  });
+});
+
+/**
+ * T1817b — the Depth Pro 2 recipe. Its field of view is an INFERENCE input (the model
+ * scales every metre by the focal length), so it belongs to the native identity: a map
+ * prepared at 60° must read out of date once the node says 75°, and refining it must not.
+ */
+describe("the Depth Pro 2 photo recipe (T1817b)", () => {
+  it("round trips through the node's parameters, field of view included, and a bare model id gets its defaults", () => {
+    const recipe = { ...DEFAULT_DEPTH_PRO2_RECIPE, modelId: "depthpro2-b-fp16" as const, inputSide: 672 as const, fieldOfView: 82.5,
+      refinement: { ...DEFAULT_DEPTH_REFINEMENT, target: "4096" as const } };
+    expect(depthRecipeParameters(recipe)).toMatchObject({ depthModel: "depthpro2-b-fp16", inputSide: "672", depthFieldOfView: 82.5 });
+    expect(depthRecipeFromParameters(depthRecipeParameters(recipe))).toEqual(recipe);
+    expect(depthRecipeFromParameters({ depthModel: "depthpro2-s-fp32" })).toEqual(DEFAULT_DEPTH_PRO2_RECIPE);
+    // A Depth Anything node never grows a field of view, and one left on it is not read.
+    expect(depthRecipeParameters(DEFAULT_PHOTO_DEPTH_RECIPE)).not.toHaveProperty("depthFieldOfView");
+    expect(depthRecipeFromParameters({ depthFieldOfView: 30 })).toEqual(DEFAULT_PHOTO_DEPTH_RECIPE);
+  });
+
+  it("keys the field of view as inference, and refinement as refinement only", () => {
+    const at = (fieldOfView: number) => ({ ...DEFAULT_DEPTH_PRO2_RECIPE, fieldOfView });
+    expect(depthInferenceKey(at(75))).not.toBe(depthInferenceKey(at(60)));
+    expect(depthRecipeKey(at(75))).not.toBe(depthRecipeKey(at(60)));
+    const refinedRecipe = { ...at(60), refinement: DEFAULT_DEPTH_REFINEMENT };
+    expect(depthInferenceKey(refinedRecipe)).toBe(depthInferenceKey(at(60)));
+    expect(depthRecipeKey(refinedRecipe)).not.toBe(depthRecipeKey(at(60)));
+    // The same model at another box is another file, so another native map.
+    expect(depthInferenceKey({ ...at(60), inputSide: 672 })).not.toBe(depthInferenceKey(at(60)));
+  });
+
+  it("takes the model's fixed box whatever the photo's shape: the photo is letterboxed into it", () => {
+    expect(photoDepthInputSize(DEFAULT_DEPTH_PRO2_RECIPE, 6000, 4000)).toEqual({ width: 640, height: 480 });
+    expect(photoDepthInputSize(DEFAULT_DEPTH_PRO2_RECIPE, 4000, 6000)).toEqual({ width: 640, height: 480 });
+    expect(photoDepthInputSize({ ...DEFAULT_DEPTH_PRO2_RECIPE, inputSide: 672 }, 1920, 1080)).toEqual({ width: 672, height: 384 });
+    expect(DEPTH_PRO2_PHOTO_SIDES).toEqual([640, 672]);
+  });
+
+  it.each([
+    { inputSide: 518 }, { inputSide: 480 }, { modelId: "depthpro2-s-stream4-fp16" }, { modelId: "depth-anything-v2-small" },
+    { backend: "mlx" }, { fieldOfView: 0.5 }, { fieldOfView: 171 }, { fieldOfView: NaN }, { fieldOfView: undefined },
+    { seed: 1 }, { version: 1 },
+  ])("rejects a Depth Pro 2 recipe it cannot run: %j", change => {
+    expect(photoDepthRecipeSchema.safeParse({ ...DEFAULT_DEPTH_PRO2_RECIPE, ...change }).success).toBe(false);
   });
 });

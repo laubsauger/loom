@@ -18,6 +18,32 @@ describe("Float Map In", () => {
     expect(floatMapInNode.requires).toBeUndefined();
   });
 
+  /**
+   * T1817b: Depth Pro 2 has two fixed boxes, not Depth Anything's sides, and its field of
+   * view matters only to it. B is half precision and is not offered on the CPU.
+   */
+  it("offers Depth Pro 2 its two boxes on the backends it runs on, and its field of view only to it", () => {
+    const sizes = (depthModel: string, depthBackend: string) => {
+      const size = effectiveParameterSchema(floatMapInNode, { interpretation: "depth", depthModel, depthBackend }).inputSide;
+      if (size?.type !== "enum") throw new Error("Depth input size must be an enum");
+      return { values: size.options.map(option => option.value), labels: size.options.map(option => option.label), fallback: size.default };
+    };
+    expect(sizes("depthpro2-s-fp32", "webgpu")).toEqual({ values: ["640", "672"], labels: ["640 × 480 (4:3)", "672 × 384 (16:9)"], fallback: "640" });
+    expect(sizes("depthpro2-s-fp32", "wasm").values).toEqual(["640", "672"]);
+    expect(sizes("depthpro2-b-fp16", "webgpu").values).toEqual(["640", "672"]);
+    expect(sizes("depthpro2-b-fp16", "wasm").values).toEqual([]);
+    const backend = effectiveParameterSchema(floatMapInNode, { depthModel: "depthpro2-s-fp32" }).depthBackend;
+    expect(backend?.type === "enum" && backend.default).toBe("webgpu");
+    const model = effectiveParameterSchema(floatMapInNode, {}).depthModel;
+    if (model?.type !== "enum") throw new Error("Depth model must be an enum");
+    expect(model.options.filter(option => option.value.startsWith("depthpro2")).map(option => option.label))
+      .toEqual(["Depth Pro 2 S FP32 · research only (94.0 MB)", "Depth Pro 2 B FP16 · research only (190.0 MB)"]);
+    const fieldOfView = effectiveParameterSchema(floatMapInNode, {}).depthFieldOfView;
+    expect(fieldOfView?.inactiveWhen?.({ interpretation: "depth", depthModel: "depthpro2-b-fp16" })).toBeNull();
+    expect(fieldOfView?.inactiveWhen?.({ interpretation: "depth", depthModel: "depth-anything-v2-small" })).toBeTruthy();
+    expect(fieldOfView?.inactiveWhen?.({ interpretation: "raw", depthModel: "depthpro2-s-fp32" })).toBeTruthy();
+  });
+
   it("declares a data source with float32 storage and project resolution", () => {
     expect(validateNodeDefinition(floatMapInNode)).toEqual([]);
     expect(floatMapInNode.inputs).toEqual([expect.objectContaining({ id: "picture", optional: true })]);

@@ -688,3 +688,76 @@ it("T1816b: the sizes readout names the node's own box and the share of it the p
   const square = inferenceShapeOf({ settings: { inputSide: 266 } as never, sourceSize: [1920, 1080], size: [960, 540] });
   expect(square).toEqual({ picture: [1920, 1080], box: [266, 266], fill: 1080 / 1920, output: [960, 540] });
 });
+
+/**
+ * T1816b — THE NODE'S FIELD OF VIEW REACHES THE WORKER, through the hook the app mounts.
+ *
+ * Depth Pro 2 turns Field of View into its focal-length input. The value is read here
+ * and then handed to the worker runner, and that handoff dropped it: every live Depth
+ * Pro 2 node ran at the worker's 60° default whatever the node said. So this drives E44's
+ * real Depth node, switched to Depth Pro 2 at 90°, down to the run request the worker gets.
+ */
+it("T1816b: a Depth Pro 2 node's Field of View is in the run request its worker receives", async () => {
+  const createAcquisition = acquisitionModule.createModelAcquisition;
+  vi.spyOn(acquisitionModule, "createModelAcquisition").mockImplementation(options => ({
+    ...createAcquisition(options),
+    refresh: async descriptor => {
+      options.onStateChange?.(descriptor.id, { kind: "ready" });
+      return { kind: "ready" };
+    },
+    // Stand-in bytes: the stub worker below never opens a session on them.
+    acquire: async () => new ArrayBuffer(8),
+  }));
+  const sent: InferenceRequest[] = [];
+  vi.stubGlobal("Worker", class {
+    private listener: ((event: { data: InferenceResponse }) => void) | null = null;
+    postMessage(message: InferenceRequest) {
+      sent.push(message);
+      if (message.kind === "load") {
+        queueMicrotask(() => this.listener?.({ data: { kind: "loaded", sessionKey: message.sessionKey,
+          backend: "wasm", millis: 1, isolated: true } }));
+      }
+      // The request is the claim; answer it so the hook's settle has something to wait on.
+      if (message.kind === "run") {
+        queueMicrotask(() => this.listener?.({ data: { kind: "error", requestId: message.requestId,
+          message: "stub worker runs nothing" } }));
+      }
+    }
+    addEventListener(type: string, handler: (event: { data: InferenceResponse }) => void) {
+      if (type === "message") this.listener = handler;
+    }
+    terminate() {}
+  });
+  const gates = dispatchGates();
+  const backend = {
+    status: { framesSubmitted: 0 },
+    registerDispatchGate: gates.registerDispatchGate,
+    readBuffer: async () => new ArrayBuffer(640 * 480 * 16),
+    registerMediaSource: () => () => undefined,
+  } as unknown as LoomBackend;
+  const document = structuredClone(sounding!.graph) as GraphDocument;
+  const depthId = Object.keys(document.nodes).find(id => document.nodes[id]!.type === "depth")!;
+  const runAt = async (fieldOfView: number | undefined) => {
+    sent.length = 0;
+    const node = document.nodes[depthId]!;
+    const { fieldOfView: _previous, ...rest } = node.parameters;
+    void _previous;
+    node.parameters = { ...rest, model: "depthpro2-s-fp32", ...(fieldOfView === undefined ? {} : { fieldOfView }) };
+    const graph = flatDocument(document);
+    const plan = planFor(graph);
+    const view = renderHook(() => useModelInference(backend));
+    act(() => view.result.current.track(graph, plan));
+    await settleRefresh();
+    const release = await view.result.current.prepareForRender();
+    expect(gates.gates.get(preprocessId(plan, depthId))!(inferenceFrame(0))).toBe(true);
+    await act(async () => { await view.result.current.settle(0); });
+    release();
+    view.unmount();
+    const run = sent.find((message): message is Extract<InferenceRequest, { kind: "run" }> => message.kind === "run");
+    expect(run?.modelId).toBe("depthpro2-s-fp32");
+    return run?.fieldOfView;
+  };
+  expect(await runAt(90)).toBe(90);
+  // A fresh node carries the definition's default, not the worker's fallback.
+  expect(await runAt(undefined)).toBe(60);
+});

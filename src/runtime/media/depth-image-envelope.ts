@@ -1,5 +1,5 @@
 import { validateFloatMap, type FloatMap } from "./float-map.ts";
-import { preparedMetadata } from "./prepared-map.ts";
+import { farIsHigh, preparedMetadata } from "./prepared-map.ts";
 
 export interface DepthImageEnvelope {
   readonly version: 1;
@@ -20,7 +20,7 @@ export function depthImageEnvelope(map: FloatMap, encoding: DepthImageEnvelope["
     const preparation = preparedMetadata(map);
     low = preparation.range.low; high = preparation.range.high;
     // Integer exports normalize the actual source range, clipping unused model padding.
-    inverse = preparation.version === 2 && preparation.semantics !== "inverse-relative";
+    inverse = preparation.version === 2 && farIsHigh(preparation.semantics);
   }
   return { version: 1, encoding, low, high, inverse, ...(map.metadata === undefined ? {} : { metadata: map.metadata }) };
 }

@@ -18,6 +18,15 @@ selection. GPU inputs reach 1288 × 1288. Large CPU preparation offers the verif
 266 and 518 sizes. Large weights carry a non-commercial license; see
 [model verification](models/photo-depth-verification-2026-10-09.md).
 
+Depth Pro 2 S (FP32, 94 MB) and B (FP16, 190 MB) are metric. They save inverse metres
+(1/m, 0 for the sky) instead of a relative map, and refinement keeps that unit. Each model
+takes a fixed box, 640 × 480 or 672 × 384, and the photo is letterboxed into it: a 16:9
+photo fills 75 % of the first box and 98 % of the second. Set the horizontal field of
+view: the model scales its metres by the focal length, so a wider view reads nearer. A
+JPEG that records a 35 mm equivalent focal length fills it in. S runs on the GPU or the
+CPU; B needs WebGPU. The weights are licensed for research use only; see
+[Depth Pro 2](models/depth-pro-2.md).
+
 Marigold V2 uses the local quantized Swift/MLX worker in Electron on macOS/Apple Silicon
 with at least 36 GiB unified memory. Select 512, 768, 1024, 1280 or 1536 pixels on the
 long edge, and a reproducible seed. First Run downloads and verifies 15.3 GB; subsequent

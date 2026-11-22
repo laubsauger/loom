@@ -12,10 +12,24 @@ export interface PreparedMapMetadataV1 {
   readonly range: { readonly low: number; readonly high: number };
 }
 
+/**
+ * What a depth sample MEANS. The three relative conventions have no unit; `inverse-metric`
+ * (T1817b, Depth Pro 2) is 1/metres of z-depth, 0 where the model saw no distance (sky).
+ * Inverse rather than metres because the sky is +inf in metres, and a prepared map is
+ * finite by contract; 1/m keeps every sample finite and nearer brighter, like DAV2's.
+ */
+export type DepthSemantics = "inverse-relative" | "relative-linear" | "relative-log" | "inverse-metric";
+const DEPTH_SEMANTICS: readonly DepthSemantics[] = ["inverse-relative", "relative-linear", "relative-log", "inverse-metric"];
+
+/** The conventions whose LARGER values are FARTHER: normalized views flip these, never the inverse ones. */
+export function farIsHigh(semantics: DepthSemantics): boolean {
+  return semantics === "relative-linear" || semantics === "relative-log";
+}
+
 export interface PreparedDepthMetadataV2 extends Omit<PreparedMapMetadataV1, "version" | "kind"> {
   readonly version: 2;
   readonly kind: "depth";
-  readonly semantics: "inverse-relative" | "relative-linear" | "relative-log";
+  readonly semantics: DepthSemantics;
   readonly recipe: PhotoDepthRecipe;
   readonly stage: "native" | "refined";
   readonly parent: { readonly sha256: string; readonly width: number; readonly height: number } | null;
@@ -71,16 +85,22 @@ export function preparedMetadata(map: FloatMap): PreparedMapMetadata {
   if (metadata.kind === "mask" && (range.low !== 0 || range.high !== 1)) invalid("mask range must be 0..1");
   if (metadata.version === 2) {
     if (metadata.kind !== "depth") invalid("version 2 preparation must be depth");
-    if (!["inverse-relative", "relative-linear", "relative-log"].includes(String(metadata.semantics))) invalid("unknown depth semantics");
+    if (!(DEPTH_SEMANTICS as readonly unknown[]).includes(metadata.semantics)) invalid("unknown depth semantics");
     const recipe = photoDepthRecipeSchema.safeParse(metadata.recipe);
     if (!recipe.success) invalid(`depth recipe: ${recipe.error.message}`);
     if (recipe.data.modelId !== model.id || recipe.data.inputSide !== metadata.inputSide) invalid("recipe must match model and inputSide");
+    // A metric map is Depth Pro 2's, native or refined, and Depth Pro 2's map is metric.
+    if ((metadata.semantics === "inverse-metric") !== (recipe.data.version === 3)) invalid("metric depth semantics belong to a Depth Pro 2 recipe, and only to one");
     if (metadata.stage !== "native" && metadata.stage !== "refined") invalid("unknown depth stage");
     if (metadata.stage === "native") {
       if (metadata.parent !== null || recipe.data.refinement !== null) invalid("native depth has no parent or refinement");
       if (recipe.data.version === 2) {
         const expected = photoDepthInputSize(recipe.data, source.width, source.height);
         if (map.width !== expected.width || map.height !== expected.height || metadata.registration !== "stretch" || metadata.semantics !== "relative-log") invalid("native Marigold dimensions, full-frame registration or log-depth semantics differ from its recipe");
+      }
+      if (recipe.data.version === 3) {
+        const expected = photoDepthInputSize(recipe.data, source.width, source.height);
+        if (map.width !== expected.width || map.height !== expected.height || metadata.registration !== "letterbox") invalid("native Depth Pro 2 dimensions or letterbox registration differ from its recipe box");
       }
     } else {
       if (recipe.data.refinement === null || metadata.registration !== "stretch") invalid("refined depth requires a refinement recipe and registered full frame");
@@ -105,19 +125,29 @@ function dimensions(width: number, height: number): void {
   if (width * height > 64_000_000) invalid("dimensions exceed 64000000 samples");
 }
 
-function validateSamples(map: FloatMap, kind?: "depth" | "mask"): void {
+function validateSamples(map: FloatMap, kind?: "depth" | "mask", semantics?: DepthSemantics): void {
   dimensions(map.width, map.height);
   if (!(map.values instanceof Float32Array) || map.values.length !== map.width * map.height) invalid("sample count must match dimensions");
   for (const value of map.values) {
     finite(value, "sample");
     if (kind === "mask" && (value < 0 || value > 1)) invalid("mask samples must be probabilities in 0..1");
+    if (semantics === "inverse-metric" && value < 0) invalid("inverse-metric samples are 1/metres and cannot be negative");
   }
+}
+
+/**
+ * The share of the map's width and height the source picture occupies. A letterboxed map
+ * is the model's box, so the box aspect is the map's own: square for Depth Anything (where
+ * this is the 1:1 rule it always was), 4:3 or 16:9 for Depth Pro 2 (T1817b).
+ */
+export function letterboxOccupancy(map: { readonly width: number; readonly height: number }, metadata?: PreparedMapMetadata): readonly [number, number] {
+  return metadata?.registration === "letterbox"
+    ? occOf(metadata.source.width, metadata.source.height, map.width / map.height) : [1, 1];
 }
 
 /** Bounds include only texel centers within the source's occupied band. */
 function occupiedBounds(map: FloatMap, metadata?: PreparedMapMetadata): readonly [number, number, number, number] {
-  const [occX, occY] = metadata?.registration === "letterbox"
-    ? occOf(metadata.source.width, metadata.source.height) : [1, 1];
+  const [occX, occY] = letterboxOccupancy(map, metadata);
   const x0 = Math.max(0, Math.ceil((1 - occX) * map.width / 2 - 0.5));
   const y0 = Math.max(0, Math.ceil((1 - occY) * map.height / 2 - 0.5));
   const x1 = Math.min(map.width - 1, Math.floor((1 + occX) * map.width / 2 - 0.5));
@@ -171,7 +201,7 @@ export function withDepthRecipe(
   };
   const result = { ...map, metadata: { ...map.metadata, preparation } };
   preparedMetadata(result);
-  validateSamples(result, "depth");
+  validateSamples(result, "depth", semantics);
   return result;
 }
 
@@ -192,11 +222,10 @@ export function rasterizeFloatMap(
   if (!["raw", "depth", "mask"].includes(interpretation)) invalid("unknown interpretation");
   const metadata = interpretation === "raw" ? undefined : preparedMetadata(map);
   if (metadata && interpretation !== metadata.kind) invalid(`interpretation ${interpretation} does not match ${metadata.kind}`);
-  validateSamples(map, metadata?.kind);
+  validateSamples(map, metadata?.kind, metadata?.version === 2 ? metadata.semantics : undefined);
   if (interpretation !== "depth" && width === map.width && height === map.height) return map.values.slice();
   const [x0, y0, x1, y1] = occupiedBounds(map, metadata);
-  const [occX, occY] = metadata?.registration === "letterbox"
-    ? occOf(metadata.source.width, metadata.source.height) : [1, 1];
+  const [occX, occY] = letterboxOccupancy(map, metadata);
   const result = new Float32Array(width * height);
   for (let y = 0; y < height; y += 1) {
     const sy = Math.min(y1, Math.max(y0, (((y + 0.5) / height - 0.5) * occY + 0.5) * map.height - 0.5));
@@ -215,7 +244,7 @@ export function rasterizeFloatMap(
       const raw = top + (bottom - top) * (sy - ya);
       let value = interpretation === "depth" && metadata
         ? (metadata.range.high === metadata.range.low ? 0.5 : (raw - metadata.range.low) / (metadata.range.high - metadata.range.low)) : raw;
-      if (interpretation === "depth" && metadata?.version === 2 && metadata.semantics !== "inverse-relative") value = 1 - value;
+      if (interpretation === "depth" && metadata?.version === 2 && farIsHigh(metadata.semantics)) value = 1 - value;
       result[y * width + x] = value;
     }
   }

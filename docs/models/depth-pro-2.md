@@ -1,4 +1,4 @@
-# Depth Pro 2 on the live Depth node (T1816b)
+# Depth Pro 2 on the live Depth node and in photo preparation (T1816b, T1817b)
 
 Verified 2026-11-21 on one machine: Apple M3 Max, macOS, Chromium 151 (Playwright, new headless, real Metal adapter), ONNX Runtime Web 1.29.0.
 
@@ -67,5 +67,18 @@ In the 672×384 box (same day, WebGPU, warm): S streaming FP32 96 ms, S streamin
 - **Steadiness.** On a real sequence panned 4 px a frame, frame-to-frame change (mean abs-rel) was 0.055–0.114 for streaming FP32, 0.059–0.230 for streaming FP16 and 0.19–0.75 for single-frame S FP32.
 - **Streaming FP32 is the faithful stream.** With an empty cache, its first frame equals single-frame S FP32 exactly; the FP16 stream's first frame is already 5.3 % off. By the twelfth frame the two streams' median distances were 67 m (FP32) and 55 m (FP16).
 - **Plausibility.** Through the shipped worker, a decoded street-crossing frame read nearest 8–10 m and furthest 278–770 m.
+
+## Photo preparation (T1817b)
+
+Photo preparation offers the two single-frame builds, S FP32 and B FP16, each in both boxes. A photo has no previous frame, so the streaming builds would only carry an empty cache.
+
+- **Recipe.** Version 3: model, backend (WebGPU or CPU), box (`inputSide` 640 or 672, the box's long edge), field of view in degrees, and refinement. The field of view is part of the inference identity: a map prepared at 60° is out of date at 75°.
+- **Field of view.** A JPEG's EXIF `FocalLengthIn35mmFilm` (tag 0xA405) suggests one, as the horizontal angle of a 35 mm equivalent lens by diagonal equivalence. A photo without that tag (HEIC, PNG, or a JPEG that omits it) gets 60° until the person sets it.
+- **Input.** The photo is drawn into the box through a 2D canvas and letterboxed into the box's aspect. The canvas gives display-referred bytes. The worker's packer sRGB-encodes, because the live node feeds it linear light, so photo preparation decodes first and the model sees the photo's own bytes.
+- **Output.** The worker returns `depth_meters` at the box's resolution. Preparation stores 1/metres sample for sample, with the sky, NaN and non-positive samples at 0, as a new depth semantics, `inverse-metric`. The prepared map's band, range and resampling use the box's own aspect. The bars stay in the file but out of the range.
+- **Refinement.** The guided filter runs on the normalized view. That normalization is affine, so the refined map is mapped back through the native range and is inverse metres again.
+- **Backends.** S runs on WebGPU or the CPU. B is refused on the CPU: it has no native half floats there, and S's FP16 stream took 78 s a frame.
+
+Measured 2026-11-22 through the shipped preparer and worker on WebGPU (`depth-pro2.spec.ts`), on a 1280 × 720 street frame in the 672 × 384 box. The nearest surface read 20.4 m at 40° and 8.8 m at 80°. Every pixel's ratio between the two runs was 2.305407 (5th–95th percentile spread 4e-7), which is tan 40° / tan 20°. The model scales its metres by the focal length and by nothing else.
 
 Native Core ML (T1818b) and MLX streaming (T1819b) are separate rows and are not implemented here.

@@ -125,3 +125,70 @@ for (const { build, wide } of CASES) test(`${build}${wide ? " 672×384" : ""}: f
   }
   expect(result.changed).toEqual([true, true, true]);
 });
+
+/**
+ * T1817b — Depth Pro 2 in PHOTO PREPARATION, through the real preparer: the 2D canvas, the
+ * letterbox into the 16:9 box, the shipped worker on WebGPU, the raw metres it returns and
+ * the prepared map they become. The headless suite drives each piece with fakes; this is
+ * where they meet the model. Run twice on one photo at two fields of view, because the
+ * field of view is the one input a wrong wire would leave silently at its default.
+ */
+test("photo preparation: S FP32 in the 16:9 box at 40° and 80°, saved as inverse metres", async ({ page }) => {
+  test.setTimeout(300_000);
+  await page.goto("/");
+  const result = await page.evaluate(async (paths) => {
+    const { createPhotoPreparer } = (await import(paths.preparation)) as typeof import("@/app/photo-preparation.ts");
+    const { preparedMetadata, letterboxOccupancy } = (await import(paths.preparedMap)) as typeof import("@runtime/media/prepared-map.ts");
+    const video = document.createElement("video");
+    video.muted = true;
+    video.src = "/media/shibuya-crossing.mp4";
+    document.body.append(video);
+    await new Promise((resolve, reject) => { video.onloadeddata = resolve; video.onerror = reject; });
+    video.currentTime = 2;
+    await new Promise((resolve) => { video.onseeked = resolve; });
+    const frame = new OffscreenCanvas(1280, 720);
+    frame.getContext("2d")!.drawImage(video, 0, 0, 1280, 720);
+    const photo = { bitmap: await createImageBitmap(frame), sha256: "c".repeat(64), name: "crossing.png" };
+    const preparer = createPhotoPreparer(() => {});
+    const at = (fieldOfView: number) => preparer.run({ kind: "depth", photo,
+      recipe: { version: 3, modelId: "depthpro2-s-fp32", backend: "webgpu", inputSide: 672, fieldOfView, refinement: null } });
+    const narrow = await at(40);
+    const wide = await at(80);
+    preparer.dispose();
+    const metadata = preparedMetadata(narrow);
+    const [occX, occY] = letterboxOccupancy(narrow, metadata);
+    // The band's samples, both runs, where both saw a distance.
+    const y0 = Math.ceil((1 - occY) * narrow.height / 2 - 0.5), y1 = Math.floor((1 + occY) * narrow.height / 2 - 0.5);
+    const ratios: number[] = [];
+    for (let y = y0; y <= y1; y += 1) for (let x = 0; x < narrow.width; x += 1) {
+      const a = narrow.values[y * narrow.width + x]!, b = wide.values[y * wide.width + x]!;
+      if (a > 0 && b > 0) ratios.push(b / a);
+    }
+    ratios.sort((p, q) => p - q);
+    return {
+      size: [narrow.width, narrow.height], occ: [occX, occY], metadata, wideRange: preparedMetadata(wide).range,
+      finite: [...narrow.values, ...wide.values].every(Number.isFinite),
+      samples: ratios.length, band: (y1 - y0 + 1) * narrow.width,
+      ratio: { p05: ratios[Math.floor(ratios.length * 0.05)]!, median: ratios[Math.floor(ratios.length / 2)]!, p95: ratios[Math.floor(ratios.length * 0.95)]! },
+    };
+  }, { preparation: "/src/app/photo-preparation.ts", preparedMap: "/src/runtime/media/prepared-map.ts" });
+  expect(result.size).toEqual([672, 384]);
+  // 1280 × 720 is 1.778 against the box's 1.75: full width, 98.4 % of the height.
+  expect(result.occ[0]).toBe(1);
+  expect(result.occ[1]).toBeCloseTo(1.75 / (16 / 9), 12);
+  expect(result.metadata).toMatchObject({ kind: "depth", semantics: "inverse-metric", registration: "letterbox", stage: "native",
+    inputSide: 672, recipe: { modelId: "depthpro2-s-fp32", fieldOfView: 40 } });
+  expect(result.finite).toBe(true);
+  // Street scale: the nearest surface 20.4 m away at 40° on 2026-11-22, sky at 0.
+  expect(result.metadata.range.low).toBe(0);
+  expect(1 / result.metadata.range.high).toBeGreaterThan(5);
+  expect(1 / result.metadata.range.high).toBeLessThan(60);
+  // Most of the band saw a distance in both runs (84 % measured; the rest is sky).
+  expect(result.samples).toBeGreaterThan(result.band * 0.5);
+  /* The field of view reaches the model, and the model scales its metres by the focal
+     length and nothing else: every pixel at 80° reads nearer by f(40°)/f(80°) =
+     tan(40°)/tan(20°) = 2.3054. Measured 2.305407 at the 5th, 50th and 95th percentiles
+     alike (spread 4e-7), so a field of view lost on the way pins the ratio at 1. */
+  const focalRatio = Math.tan((40 * Math.PI) / 180) / Math.tan((20 * Math.PI) / 180);
+  for (const ratio of [result.ratio.p05, result.ratio.median, result.ratio.p95]) expect(ratio).toBeCloseTo(focalRatio, 5);
+});
