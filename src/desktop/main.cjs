@@ -23,13 +23,21 @@ let nativeInference = null;
 let nativeNdiInput = null;
 let nativeNdiOutput = null;
 const inferenceReady = process.env.LOOM_NATIVE_VISION_DIRECTORY
-  ? import('../devices/native/vision-workers.mjs').then(({ createVisionWorkers }) => {
-    const directory = process.env.LOOM_NATIVE_VISION_DIRECTORY;
-    const workers = createVisionWorkers({ directory, library: join(directory, 'vision-service.dylib'),
-      native: require(join(directory, 'vision-client.node')),
-      ...(process.env.LOOM_NATIVE_PYTHON ? { python: process.env.LOOM_NATIVE_PYTHON } : {}) });
-    nativeInference = require('./native-inference.cjs').installNativeInference({ ipcMain, BrowserWindow, sharedTexture, workers, origin });
-  }) : Promise.resolve();
+  ? Promise.all([import('../devices/native/vision-workers.mjs'), import('../devices/native/depth-models.mjs')])
+    .then(([{ createVisionWorkers }, { createDepthModels }]) => {
+      const directory = process.env.LOOM_NATIVE_VISION_DIRECTORY;
+      const native = require(join(directory, 'vision-client.node'));
+      const python = process.env.LOOM_NATIVE_PYTHON ? { python: process.env.LOOM_NATIVE_PYTHON } : {};
+      const workers = createVisionWorkers({ directory, library: join(directory, 'vision-service.dylib'), native, ...python });
+      // T1818b: Depth Pro 2 rides the same client, launcher and capture. Below macOS 15
+      // its service is not built, and the probe says why instead of failing startup.
+      const library = join(directory, 'depth-service.dylib');
+      const depth = { workers: createVisionWorkers({ kind: 'depth', directory, library, native, ...python }),
+        models: createDepthModels({ directory: process.env.LOOM_DEPTH_PRO2_DIRECTORY ?? join(__dirname, '../../.cache/depthpro2-coreml'),
+          manifest: require('../devices/native/depth-model-manifest.json'), compiler: join(directory, 'depth-compile'), library }) };
+      nativeInference = require('./native-inference.cjs').installNativeInference({ ipcMain, BrowserWindow, sharedTexture,
+        workers, depth, origin });
+    }) : Promise.resolve();
 // Read-only main-process test seam; never exposed through renderer IPC/preload.
 module.exports.nativeOutputDiagnostics = () => [...(nativeOutput?.diagnostics() ?? []), ...(nativeNdiOutput?.diagnostics() ?? [])];
 module.exports.nativeInputDiagnostics = () => [...(nativeInput?.diagnostics() ?? []), ...(nativeNdiInput?.diagnostics() ?? [])];

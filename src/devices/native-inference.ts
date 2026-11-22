@@ -20,6 +20,43 @@ export function desktopVisionBridge(): DesktopVisionBridge | undefined {
   return (window as Window & { loomDesktop?: { vision?: DesktopVisionBridge } }).loomDesktop?.vision;
 }
 
+/**
+ * T1818b — the desktop app's Core ML depth service, beside Vision. The same capture and
+ * transport (`open` adds the model and its function); `probe`/`prepare` are the native
+ * half of model acquisition: a pinned, per-file hash-verified download into the native
+ * cache, compiled once. Results are rgbaf16 with R = Core ML's focal-normalised
+ * `inverse_depth`, un-letterboxed to the output size; the graph scales it to 1/m.
+ */
+export type DesktopDepthModelId = "depthpro2-s-coreml" | "depthpro2-b-coreml";
+export type DesktopDepthProgress =
+  | { readonly phase: "downloading"; readonly received: number; readonly total: number }
+  | { readonly phase: "verifying" }
+  | { readonly phase: "compiling" };
+export interface DesktopDepthBridge {
+  probe(): Promise<{ available: boolean; reason?: string; models: { id: DesktopDepthModelId; bytes: number; cached: boolean }[] }>;
+  prepare(modelId: DesktopDepthModelId, onProgress: (progress: DesktopDepthProgress) => void): Promise<void>;
+  open(name: string, modelId: DesktopDepthModelId, functionName: string, width: number, height: number,
+    outputWidth: number, outputHeight: number,
+    consume: (frame: VideoFrame, metadata: NativeVisionMetadata) => Promise<void>): Promise<string>;
+  close(name: string): Promise<void>;
+  status(name: string): Promise<{ frames: number; busy: boolean; error: string | null }>;
+  reset(name: string): Promise<void>;
+}
+export function desktopDepthBridge(): DesktopDepthBridge | undefined {
+  return typeof window === "undefined" ? undefined
+    : (window as Window & { loomDesktop?: { depth?: DesktopDepthBridge } }).loomDesktop?.depth;
+}
+
+/** One depth model and function on the depth service, seen through the Vision source's bridge shape. */
+export function depthAsVisionBridge(depth: DesktopDepthBridge, modelId: DesktopDepthModelId, functionName: string): DesktopVisionBridge {
+  return {
+    open: (name, width, height, outputWidth, outputHeight, consume) =>
+      depth.open(name, modelId, functionName, width, height, outputWidth, outputHeight, consume),
+    close: (name) => depth.close(name),
+    status: (name) => depth.status(name),
+  };
+}
+
 /** Graph buffer → GPU capture → Python → GPU media source. One owned result at a time. */
 export function createNativeVisionSource(backend: LoomBackend, bridge: DesktopVisionBridge, options: {
   inputResourceId: string;
@@ -27,8 +64,10 @@ export function createNativeVisionSource(backend: LoomBackend, bridge: DesktopVi
   outputSize: readonly [number, number];
   /** Prior document/session GPU drainage; presentation can attach before it completes. */
   beforeOpen?: Promise<void>;
+  /** T1818b: the session name's prefix; the main process validates it per service. */
+  namePrefix?: "loom-native-vision-" | "loom-native-depth-";
 }) {
-  const name = `loom-native-vision-${crypto.randomUUID()}`;
+  const name = `${options.namePrefix ?? "loom-native-vision-"}${crypto.randomUUID()}`;
   const [width, height] = nativeInputTransportSize(options.inputSize);
   const canvas = new OffscreenCanvas(width, height);
   const presentation = backend.present(canvas, { outputId: options.inputResourceId,

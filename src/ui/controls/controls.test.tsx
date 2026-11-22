@@ -476,6 +476,26 @@ describe("manifest-driven dispatch covers every ParameterDefinition variant", ()
     expect(onChange).toHaveBeenCalledWith("add", "commit");
   });
 
+  /**
+   * T1818b: an option that exists but cannot be chosen HERE (a Core ML build in a browser)
+   * is listed, disabled, and carries its reason; a document already standing on it keeps
+   * showing it rather than snapping to another choice.
+   */
+  it("lists an unavailable option disabled with its reason, and keeps it shown when it is the stored value", () => {
+    const definition = {
+      type: "enum" as const, label: "Model", default: "web",
+      options: [{ value: "web", label: "WebGPU" }, { value: "native", label: "Core ML — desktop app only", unavailable: "Open this project in the desktop app." }],
+    };
+    const onChange = vi.fn();
+    render(<ParameterControl parameterKey="model" definition={definition} value="native" onChange={onChange} />);
+    const select = screen.getByLabelText("Model") as HTMLSelectElement;
+    const native = [...select.options].find((option) => option.value === "native")!;
+    expect(native.disabled).toBe(true);
+    expect(native.title).toBe("Open this project in the desktop app.");
+    expect(select.value).toBe("native");
+    expect([...select.options].find((option) => option.value === "web")!.disabled).toBe(false);
+  });
+
   it("edits one axis of a vector without disturbing the others", () => {
     const onChange = vi.fn();
     render(

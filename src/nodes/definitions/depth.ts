@@ -8,6 +8,9 @@ import {
   DEPTH_ACCURATE,
   DEPTH_LIVE,
   DEPTH_PRO2_B,
+  DEPTH_PRO2_COREML_B,
+  DEPTH_PRO2_COREML_MODELS,
+  DEPTH_PRO2_COREML_S,
   DEPTH_PRO2_S,
   DEPTH_PRO2_S_STREAM,
   DEPTH_PRO2_S_STREAM_FP32,
@@ -15,7 +18,7 @@ import {
   LIVE_DEPTH_MODELS,
   measuredOn,
 } from "../../runtime/models/model-catalogue.ts";
-import { DEPTH_PRO2_BOXES } from "../../runtime/models/depth-runner.ts";
+import { DEPTH_PRO2_BOXES, occOf } from "../../runtime/models/depth-runner.ts";
 import { signatureFor } from "../../runtime/models/model-signatures.ts";
 import {
   inferenceAcceptsInputSize,
@@ -144,6 +147,32 @@ interface DepthModelChoice {
    * `descriptor`/`millis` above are the 4:3 box's (640×480), the default.
    */
   readonly wide?: { readonly descriptor: ModelDescriptor; readonly millis: number };
+  /**
+   * T1818b — Apple's Core ML package, run by the DESKTOP APP's native service rather than
+   * the browser's worker. Its boxes are the package's functions (`DEPTH_COREML_BOXES`), and
+   * `millis` per box is what this build measured there; `millis` above is the default box's.
+   */
+  readonly coreml?: { readonly millis: Readonly<Record<DepthCoreMlBoxKey, number>> };
+}
+
+/**
+ * T1818b — the input boxes Apple's Core ML packages carry, one function each, named
+ * `res_<W>x<H>`. All are (near) 16:9: a 4:3 picture is letterboxed into them. 854×480 is
+ * Apple's default and this node's.
+ */
+export const DEPTH_COREML_BOXES = {
+  "640x360": { width: 640, height: 360 },
+  "854x480": { width: 854, height: 480 },
+  "896x512": { width: 896, height: 512 },
+  "1138x640": { width: 1138, height: 640 },
+  "1280x720": { width: 1280, height: 720 },
+} as const;
+export type DepthCoreMlBoxKey = keyof typeof DEPTH_COREML_BOXES;
+const DEPTH_COREML_DEFAULT_BOX: DepthCoreMlBoxKey = "854x480";
+
+/** The Core ML function a box runs. */
+export function coreMlFunctionFor(box: DepthCoreMlBoxKey): string {
+  return `res_${box}`;
 }
 
 /** T1816b — which of Depth Pro 2's two published boxes a node runs in. */
@@ -151,6 +180,10 @@ export type DepthPro2BoxKey = keyof typeof DEPTH_PRO2_BOXES;
 
 const V2_SMALL_COST = `on the CPU path at ${DEPTH_INPUT_SIDE} px, ${measuredOn("2026-09-01")}`;
 const DEPTH_PRO2_COST = `on WebGPU at 640×480, ${measuredOn("2026-11-21")}`;
+/* T1818b: bare Core ML on the GPU (`.cpuAndGPU`, stream state reused, median of 20), before
+   the desktop app's capture and transport. Rerun on the same machine moved 854×480 between
+   48 and 56 ms and 1280×720 between 161 and 187 ms: the GPU is shared. */
+const DEPTH_COREML_COST = `in Core ML on the GPU at 854×480, before the desktop app's transport, ${measuredOn("2026-11-22")}`;
 const wideOf = (descriptor: ModelDescriptor, millis: number) => ({ descriptor: DEPTH_PRO2_WIDE[descriptor.id]!, millis });
 
 const DEPTH_MODEL_CHOICES: readonly DepthModelChoice[] = [
@@ -175,6 +208,14 @@ const DEPTH_MODEL_CHOICES: readonly DepthModelChoice[] = [
   },
   { value: DEPTH_PRO2_S.id, descriptor: DEPTH_PRO2_S, millis: 84, measuredAt: DEPTH_PRO2_COST, metric: true, wide: wideOf(DEPTH_PRO2_S, 69) },
   { value: DEPTH_PRO2_B.id, descriptor: DEPTH_PRO2_B, millis: 184, measuredAt: DEPTH_PRO2_COST, metric: true, wide: wideOf(DEPTH_PRO2_B, 152) },
+  {
+    value: DEPTH_PRO2_COREML_S.id, descriptor: DEPTH_PRO2_COREML_S, millis: 48, measuredAt: DEPTH_COREML_COST, metric: true,
+    coreml: { millis: { "640x360": 37, "854x480": 48, "896x512": 53, "1138x640": 114, "1280x720": 187 } },
+  },
+  {
+    value: DEPTH_PRO2_COREML_B.id, descriptor: DEPTH_PRO2_COREML_B, millis: 134, measuredAt: DEPTH_COREML_COST, metric: true,
+    coreml: { millis: { "640x360": 80, "854x480": 134, "896x512": 148, "1138x640": 298, "1280x720": 450 } },
+  },
 ];
 
 const DEFAULT_CHOICE: DepthModelChoice = DEPTH_MODEL_CHOICES[0] as DepthModelChoice;
@@ -222,6 +263,17 @@ export function depthDescriptorFor(stored: Readonly<Record<string, unknown>>): M
   return choice.wide !== undefined && depthPro2BoxKeyFor(stored) === "672x384" ? choice.wide.descriptor : choice.descriptor;
 }
 
+/** T1818b — a Core ML node's box: its Model Input when the package has that function, else Apple's default. */
+export function depthCoreMlBoxKeyFor(stored: Readonly<Record<string, unknown>>): DepthCoreMlBoxKey {
+  const raw = stored["modelInput"];
+  return typeof raw === "string" && Object.hasOwn(DEPTH_COREML_BOXES, raw) ? (raw as DepthCoreMlBoxKey) : DEPTH_COREML_DEFAULT_BOX;
+}
+
+/** T1818b — whether a model id is one of Apple's Core ML packages, which only the desktop app runs. */
+export function isCoreMlDepthModel(modelId: string): boolean {
+  return DEPTH_PRO2_COREML_MODELS.some((model) => model.id === modelId);
+}
+
 /** T1816b — whether a model id is one of the METRIC (Depth Pro 2) artefacts, either box. */
 export function isMetricDepthModel(modelId: string): boolean {
   return DEPTH_MODEL_CHOICES.some((choice) => choice.metric && (choice.descriptor.id === modelId || choice.wide?.descriptor.id === modelId));
@@ -236,6 +288,11 @@ export function isMetricDepthModel(modelId: string): boolean {
  * machine. `inference-node.test.ts` gates it.
  */
 function measuredCost(choice: DepthModelChoice, stored: Readonly<Record<string, unknown>> = {}): string {
+  if (choice.coreml !== undefined) {
+    const box = depthCoreMlBoxKeyFor(stored);
+    const millis = choice.coreml.millis[box];
+    return `${millis} ms per run ${choice.measuredAt.replace("854×480", box.replace("x", "×"))}`;
+  }
   const wide = choice.wide !== undefined && depthPro2BoxKeyFor(stored) === "672x384";
   const millis = wide ? choice.wide!.millis : choice.millis;
   const time = millis >= 1000 ? `${(millis / 1000).toFixed(1)} s` : `${millis} ms`;
@@ -244,6 +301,7 @@ function measuredCost(choice: DepthModelChoice, stored: Readonly<Record<string, 
 
 /** The measured per-run cost, ms, of the artefact these parameters select. */
 function measuredMillis(choice: DepthModelChoice, stored: Readonly<Record<string, unknown>>): number {
+  if (choice.coreml !== undefined) return choice.coreml.millis[depthCoreMlBoxKeyFor(stored)];
   return choice.wide !== undefined && depthPro2BoxKeyFor(stored) === "672x384" ? choice.wide.millis : choice.millis;
 }
 
@@ -314,6 +372,20 @@ function machineHasWebNn(): boolean {
   return typeof navigator !== "undefined" && (navigator as { ml?: unknown }).ml !== undefined;
 }
 
+/**
+ * T1818b — whether THIS page is the desktop app with its native depth service: the preload
+ * exposes `loomDesktop.depth` only there. Probed like the two above. It cannot see the
+ * service's own answer (an Intel Mac or macOS 14 has the bridge and refuses the model); the
+ * node's runtime diagnostic says that, with the service's reason.
+ */
+function machineHasCoreMlDepth(): boolean {
+  return typeof window !== "undefined" && (window as { loomDesktop?: { depth?: unknown } }).loomDesktop?.depth !== undefined;
+}
+
+/** T1818b — what a Core ML choice says where it cannot run: what it needs, and where to go. */
+export const DEPTH_COREML_UNAVAILABLE =
+  "Core ML runs in the Loom desktop app, on a Mac with Apple Silicon and macOS 15 or later. Open this project in the desktop app to use it. In the browser, the Depth Pro 2 ONNX builds run on WebGPU.";
+
 function backendOptions(stored: unknown): readonly BackendOption[] {
   const options: BackendOption[] = [
     { value: "auto", label: "Automatic — best available, then CPU" },
@@ -365,6 +437,8 @@ export interface DepthNodeSettings {
   readonly inputBox: { readonly width: number; readonly height: number };
   /** T1816b — horizontal field of view, degrees, for a metric model's focal input; absent otherwise. */
   readonly fieldOfView?: number;
+  /** T1818b — present when Apple's Core ML package runs it, in the desktop app: the package function. */
+  readonly coreml?: { readonly function: string };
 }
 
 function storedNumber(stored: Readonly<Record<string, unknown>>, key: string): number | undefined {
@@ -393,11 +467,14 @@ export function depthSettingsFor(stored: Readonly<Record<string, unknown>>): Dep
   // model would accept it, and the shipped default when it would not.
   const fallback = pinnedInputSide(choice.descriptor.id) ?? DEPTH_DEFAULT_INPUT_SIDE;
   const side = legal && requested !== undefined ? requested : fallback;
-  const box = DEPTH_PRO2_BOXES[depthPro2BoxKeyFor(stored)];
+  const coremlBox = depthCoreMlBoxKeyFor(stored);
+  const box = choice.coreml !== undefined ? DEPTH_COREML_BOXES[coremlBox] : DEPTH_PRO2_BOXES[depthPro2BoxKeyFor(stored)];
   const settings = {
     modelId: depthDescriptorFor(stored).id,
     inputSide: choice.metric ? box.width : side,
-    providers: depthProvidersFor(stored),
+    // T1818b: a Core ML package has one runtime and no ladder; the node says which.
+    providers: choice.coreml !== undefined ? ["coreml"] : depthProvidersFor(stored),
+    ...(choice.coreml !== undefined ? { coreml: { function: coreMlFunctionFor(coremlBox) } } : {}),
     minIntervalSeconds: rateLimit > 0 ? 1 / rateLimit : 0,
     hold: stored["refresh"] === "held",
     inputBox: choice.metric ? box : { width: side, height: side },
@@ -464,6 +541,9 @@ function modelParameter(
       `picture; its streaming builds look at the three frames before each one, which keeps ` +
       `the map steady from frame to frame. Streaming FP32 is the faithful one: on WebGPU ` +
       `the FP16 builds measured 2.5–7.9 % off FP32 per frame, ${measuredOn("2026-11-21")}. ` +
+      `The Core ML builds are Apple's own and run in the Loom desktop app on Apple Silicon ` +
+      `(macOS 15 or later), about twice as fast as WebGPU; in a browser they are listed but ` +
+      `cannot be chosen. ` +
       `Depth Pro 2 is for RESEARCH USE ONLY under ` +
       `Apple's Machine Learning Research Model License: not for commercial work or product ` +
       `development.`,
@@ -485,7 +565,15 @@ function modelParameter(
       return { value: entry.value, label: `${twin?.label ?? entry.choice.descriptor.label} — as saved` };
     },
   );
-  return { ...base, group: "Model", options: [...base.options, ...legacy] };
+  /* T1818b: Apple's Core ML builds, after the browser's. Listed everywhere so a person can
+     see they exist and what they need; choosable only where the desktop service is. */
+  const nativeHere = machineHasCoreMlDepth();
+  const coreml = DEPTH_PRO2_COREML_MODELS.map((model) => ({
+    value: model.id,
+    label: `${model.label} (${(model.bytes / 1_000_000).toFixed(1)} MB)${nativeHere ? "" : " — desktop app only"}`,
+    ...(nativeHere ? {} : { unavailable: DEPTH_COREML_UNAVAILABLE }),
+  }));
+  return { ...base, group: "Model", options: [...base.options, ...coreml, ...legacy] };
 }
 
 function depthParameters(stored: Readonly<Record<string, unknown>>): ParameterSchema {
@@ -505,7 +593,11 @@ function depthParameters(stored: Readonly<Record<string, unknown>>): ParameterSc
      * exactly where someone is about to pick the smaller one.
      */
     model: modelParameter(choice, stored),
-    backend: {
+  };
+  /* T1818b: a Core ML package has ONE runtime, so it has no Backend to choose — a structural
+     difference read from the chosen model, like `inputSide` (§T965(c)). The stored choice is
+     retained for the switch back. */
+  if (choice.coreml === undefined) schema["backend"] = {
       type: "enum",
       label: "Backend",
       group: "Model",
@@ -519,7 +611,6 @@ function depthParameters(stored: Readonly<Record<string, unknown>>): ParameterSc
         "somewhere else. What it ACTUALLY ran on is measured after the fact and shown on " +
         "the node's info popup with the time it took — this control is the request, that " +
         "readout is the answer.",
-    },
   };
 
   if (acceptsInputSize(choice.descriptor.id)) {
@@ -611,7 +702,27 @@ function depthParameters(stored: Readonly<Record<string, unknown>>): ParameterSc
       const descriptor = depthDescriptorFor({ ...stored, modelInput: key, model: choice.descriptor.id });
       return `${millis} ms, ${(descriptor.bytes / 1_048_576).toFixed(1)} MB`;
     };
-    schema["modelInput"] = {
+    if (choice.coreml !== undefined) {
+      const millis = choice.coreml.millis;
+      schema["modelInput"] = {
+        type: "enum",
+        label: "Model Input",
+        group: "Model",
+        // A box is a different FUNCTION of the one package, and it sizes the preprocess.
+        compileTime: true,
+        default: DEPTH_COREML_DEFAULT_BOX,
+        options: (Object.keys(DEPTH_COREML_BOXES) as DepthCoreMlBoxKey[]).map((key) => ({
+          value: key,
+          label: `${key.replace("x", "×")}${key === DEPTH_COREML_DEFAULT_BOX ? " — Apple's default" : ""} (${millis[key]} ms)`,
+        })),
+        description:
+          `The size Depth Pro 2 sees. Apple's package carries five, all about 16:9; whatever ` +
+          `comes in is scaled into the box keeping its shape, with bars filling the rest. A ` +
+          `bigger box sees finer detail and costs more: times are bare Core ML on the GPU, ` +
+          `before the desktop app's transport, ${measuredOn("2026-11-22")}. Apple's README ` +
+          `puts S at about 1.5 GB of memory at 854×480 and 5 GB at 1280×720.`,
+      };
+    } else schema["modelInput"] = {
       type: "enum",
       label: "Model Input",
       group: "Model",
@@ -741,6 +852,8 @@ function depthParameters(stored: Readonly<Record<string, unknown>>): ParameterSc
 const DEPTH_PREPROCESS_WGSL = letterboxPreprocessWgsl();
 /** T1816b — Depth Pro 2's 640×480 box; same rule, `boxAspect` 4/3 (see the shader's docblock). */
 const DEPTH_RECT_PREPROCESS_WGSL = letterboxRectPreprocessWgsl();
+/** T1818b — the same box rule for Core ML, sRGB-encoded: its transport carries the model's own input bytes. */
+const DEPTH_COREML_PREPROCESS_WGSL = letterboxRectPreprocessWgsl({ srgb: true });
 
 /* T965: the ENCODING half of the node's parameters lives here rather than in the worker,
    and that placement is the point. Flipping near/far or narrowing the published range is a
@@ -752,7 +865,11 @@ const DEPTH_RECT_PREPROCESS_WGSL = letterboxRectPreprocessWgsl();
    `depthPro2ToInverse`), and its range stage lives here for the same reason the rest does —
    Near and Far are a drag, not a re-run. `metric` 0 leaves Depth Anything's path exactly as
    it was: the ranged value is mixed out and `metres` is 0. */
-const DEPTH_BLIT_WGSL = wgsl`struct DepthOutput { invert: f32, low: f32, high: f32, metric: f32, nearInv: f32, farInv: f32, metres: f32, far: f32 };
+/* T1818b: `scale` turns the result texel into inverse metres. 1 for the browser's worker,
+   which publishes inverse metres already; Core ML returns `inverse_depth` normalised by the
+   focal length (metres = f_px / (W · inverse_depth), Apple's README), so its scale is
+   W / f_px = 2 · tan(fov / 2) / occX. A negative texel (pending) stays negative. */
+const DEPTH_BLIT_WGSL = wgsl`struct DepthOutput { invert: f32, low: f32, high: f32, metric: f32, nearInv: f32, farInv: f32, metres: f32, far: f32, scale: f32 };
 
 @group(0) @binding(0) var<uniform> params: DepthOutput;
 @group(0) @binding(1) var depthTexture: texture_2d<f32>;
@@ -761,7 +878,7 @@ const DEPTH_BLIT_WGSL = wgsl`struct DepthOutput { invert: f32, low: f32, high: f
 fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   let dims = vec2f(textureDimensions(depthTexture, 0));
   let texel = vec2i(clamp(uv, vec2f(0.0), vec2f(1.0)) * (dims - vec2f(1.0)));
-  let raw = textureLoad(depthTexture, texel, 0).r;
+  let raw = textureLoad(depthTexture, texel, 0).r * params.scale;
   let span = params.nearInv - params.farInv;
   let ranged = clamp((raw - params.farInv) / select(span, 1.0, span == 0.0), 0.0, 1.0);
   let unit = mix(raw, ranged, params.metric);
@@ -793,6 +910,23 @@ function metricUniformsOf(stored: Readonly<Record<string, unknown>>, metric: boo
   return { metric: 1, nearInv: 1 / near, farInv: 1 / far, metres: stored["publish"] === "metres" ? 1 : 0, far };
 }
 
+/**
+ * T1818b — what turns a Core ML result texel into inverse metres: W / f_px for the box,
+ * with f_px the focal length of the PICTURE's horizontal field of view inside the box's
+ * letterbox, exactly as the browser path's `depthPro2FocalPixels` reads it. 1 otherwise.
+ */
+export function depthResultScaleOf(
+  stored: Readonly<Record<string, unknown>>,
+  picture: readonly [number, number],
+): number {
+  const settings = depthSettingsFor(stored);
+  if (settings.coreml === undefined) return 1;
+  const { width, height } = settings.inputBox;
+  const [occX] = occOf(picture[0], picture[1], width / height);
+  const fov = Math.min(170, Math.max(1, settings.fieldOfView ?? DEPTH_PRO2_FIELD_OF_VIEW)) * (Math.PI / 180);
+  return (2 * Math.tan(fov / 2)) / occX;
+}
+
 /** The stored output range, or the identity. A malformed pair falls back rather than throws. */
 function outputRangeOf(stored: Readonly<Record<string, unknown>>): readonly [number, number] {
   const raw = stored["outputRange"];
@@ -808,7 +942,7 @@ export const depthNode: NodeDefinition = {
   title: "Depth",
   category: "filter",
   description:
-    "Estimates a depth map from an image — near is bright, far is dark — running in the browser: Depth Anything V2 Small (relative depth), or Depth Pro 2 (metric depth in metres; research use only). The model is downloaded once per machine on first use, with your consent and a progress readout, and is never bundled. Until it is available the node publishes flat mid-grey, which Displace reads as no displacement, so a document using Depth opens and renders on a machine that cannot run it. Results arrive at the model's own rate rather than once per frame: live playback shows the most recent one and reports its age, while an offline render waits for each frame so a take reproduces.",
+    "Estimates a depth map from an image — near is bright, far is dark — running in the browser: Depth Anything V2 Small (relative depth), or Depth Pro 2 (metric depth in metres; research use only). Apple's Core ML builds of Depth Pro 2 run in the Loom desktop app on Apple Silicon, about twice as fast; a browser lists them but cannot choose them. The model is downloaded once per machine on first use, with your consent and a progress readout, and is never bundled. Until it is available the node publishes flat mid-grey, which Displace reads as no displacement, so a document using Depth opens and renders on a machine that cannot run it. Results arrive at the model's own rate rather than once per frame: live playback shows the most recent one and reports its age, while an offline render waits for each frame so a take reproduces.",
   tags: ["depth", "ml", "inference", "3d", "displace"],
   inputs: [{ id: "input", label: "Picture", type: RGBA_TEXTURE }],
   outputs: [{ id: "out", label: "Depth", type: RGBA_TEXTURE }],
@@ -828,7 +962,15 @@ export const depthNode: NodeDefinition = {
   },
   /* T1816b: each model family's own settings survive a switch to the other and back —
      a Depth Pro 2 node keeps its Input Size, a Depth Anything one its Field of View. */
-  retainedParameterKeys: ["inputSide", "modelInput", "fieldOfView", "nearMetres", "farMetres", "publish"],
+  retainedParameterKeys: ["inputSide", "modelInput", "fieldOfView", "nearMetres", "farMetres", "publish", "backend"],
+  /**
+   * T1818b — the FUNCTION form, as Person Mask's: Apple's Core ML builds need the desktop
+   * app on Apple Silicon, and macOS is where Core ML is; every other choice runs in any
+   * browser and needs nothing extra.
+   */
+  requires(values) {
+    return isCoreMlDepthModel(String(values["model"] ?? "")) ? ["desktop", "macos", "apple-silicon"] : [];
+  },
   /**
    * The OUTPUT follows the input's shape, not the model's. The model works at its own
    * square whatever the picture is; the depth map is then sampled back up to the source's
@@ -841,7 +983,7 @@ export const depthNode: NodeDefinition = {
   // video's eight-bit storage loses small depth differences and signed output ranges.
   formatPolicy: { kind: "fixed", format: "rgba16float" },
   compile(context): CompiledNodeDescription {
-    const { nodeId, inputs, outputs, parameters } = readCompileInputs(context);
+    const { nodeId, inputs, outputs, parameters, resolution } = readCompileInputs(context);
     const source = inputs["input"];
     const target = outputs["out"];
     // No input or nothing consuming the output: compile to nothing. §V585 — an unwired
@@ -850,7 +992,7 @@ export const depthNode: NodeDefinition = {
 
     // Resolved through `parametersFor`, so a node on a model with a pinned input shape
     // resolves to the export size here whatever is stored (§T965's degrade rule).
-    const { inputSide, inputBox } = depthSettingsFor(parameters);
+    const { inputSide, inputBox, coreml } = depthSettingsFor(parameters);
     const metric = depthModelChoiceFor(parameters).metric;
     const [low, high] = outputRangeOf(parameters);
 
@@ -858,7 +1000,7 @@ export const depthNode: NodeDefinition = {
       kind: "dispatch",
       id: `${nodeId}:preprocess`,
       // T1816b: the square shader stays byte-identical for Depth Anything.
-      shader: metric ? DEPTH_RECT_PREPROCESS_WGSL : DEPTH_PREPROCESS_WGSL,
+      shader: coreml !== undefined ? DEPTH_COREML_PREPROCESS_WGSL : metric ? DEPTH_RECT_PREPROCESS_WGSL : DEPTH_PREPROCESS_WGSL,
       entryPoint: "main",
       workgroups: [Math.ceil(inputBox.width / 8), Math.ceil(inputBox.height / 8), 1],
       buffers: [{ binding: "modelInput", resourceId: scratchResourceId(nodeId, DEPTH_INPUT_KEY) }],
@@ -875,7 +1017,9 @@ export const depthNode: NodeDefinition = {
       target,
       textures: [{ binding: "depthTexture", resourceId: scratchResourceId(nodeId, DEPTH_RESULT_KEY), sampled: "unfiltered" }],
       // The model emits near-bright already, so "Near Is Bright" ON is NO inversion.
-      uniforms: { invert: 1 - flag(parameters["nearIsBright"], true), low, high, ...metricUniformsOf(parameters, metric) },
+      uniforms: { invert: 1 - flag(parameters["nearIsBright"], true), low, high, ...metricUniformsOf(parameters, metric),
+        // The picture's size is the node's own (it inherits its input), so it is this resolution.
+        scale: depthResultScaleOf(parameters, resolution) },
       uniformBinding: "params",
       nodeId,
     };
@@ -898,7 +1042,9 @@ export const depthNode: NodeDefinition = {
           // result texture quantised every consumer to 256 depth levels (visible
           // terracing on T958's metric unprojection). Single channel is the truth of a
           // depth map; readers that luma-weight a colour map read .r when g+b are zero.
-          format: "r32float",
+          // T1818b: the desktop service hands back an rgbaf16 surface, R the value, as the
+          // native Person Mask's does.
+          format: coreml !== undefined ? "rgba16float" : "r32float",
         },
       ],
     };

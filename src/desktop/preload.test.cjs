@@ -8,20 +8,22 @@ const { runInNewContext } = require('node:vm');
 function harness({ ndi = false, video = true } = {}) {
   let api, receive, handler = async name => name.endsWith('open') ? 'session' : { kind: 'sent' };
   const calls = [];
-  const listeners = new Map();
+  const listeners = new Map(), ipcListeners = new Map();
   runInNewContext(readFileSync(join(__dirname, 'preload.cjs'), 'utf8'), {
     process: { argv: [...(video ? ['--loom-native-video'] : []), ...(ndi ? ['--loom-ndi-input'] : [])] },
     Event: class { constructor(type) { this.type = type; } },
     window: { addEventListener(name, callback) { listeners.set(name, callback); }, dispatchEvent(event) { listeners.get(event.type)?.(event); } },
     require: () => ({
       contextBridge: { exposeInMainWorld(_name, value) { assert.equal(Boolean(receive), video); api = value; } },
-      ipcRenderer: { invoke(...args) { calls.push(args); return handler(...args); } },
+      ipcRenderer: { invoke(...args) { calls.push(args); return handler(...args); },
+        on(channel, listener) { ipcListeners.set(channel, listener); } },
       sharedTexture: { setSharedTextureReceiver(callback) { receive = callback; } },
     }),
   });
   let framesClosed = 0, importsReleased = 0;
   const frame = { close() { framesClosed++; } };
   return { api, calls, pagehide: () => listeners.get('pagehide')(),
+    send: (channel, ...args) => ipcListeners.get(channel)?.({}, ...args), listening: channel => ipcListeners.has(channel),
     beforeunload: () => { const event = { prevented: false, preventDefault() { this.prevented = true; } }; listeners.get('beforeunload')(event); return event; },
     handle(fn) { handler = fn; },
     deliver() { return receive({ importedSharedTexture: {
@@ -239,4 +241,47 @@ test('failed pending static start preserves its error while main retirement rema
   assert.equal(h.calls.length, 1);
   assert.equal(h.beforeunload().prevented, true);
   h.api.lifecycle.commitUnload(); assert.equal(h.beforeunload().prevented, false);
+});
+
+test('depth rides the native video route only, and its sessions use the shared receiver and their own IPC', async () => {
+  assert.equal(harness({ video: false }).api.depth, undefined);
+  const h = harness(), consumed = [];
+  assert.equal(h.listening('loom-native-depth-progress'), true);
+  h.handle(async name => name.endsWith('probe') ? { available: true, models: [] } : name.endsWith('open') ? 'session' : undefined);
+  assert.deepEqual(await h.api.depth.probe(), { available: true, models: [] });
+  assert.equal(h.beforeunload().prevented, false, 'a probe owns nothing to drain');
+  const name = 'loom-native-depth-12345678-1234-1234-1234-123456789abc';
+  await assert.rejects(h.api.depth.open(name, 'depthpro2-s-coreml', 'res_854x480', 854, 480, 1920, 1080), /frame consumer/);
+  const id = await h.api.depth.open(name, 'depthpro2-s-coreml', 'res_854x480', 854, 480, 1920, 1080,
+    (frame, metadata) => { consumed.push(metadata); });
+  assert.deepEqual(h.calls.at(-1), ['loom-native-depth-open', name, 'depthpro2-s-coreml', 'res_854x480', 854, 480, 1920, 1080]);
+  assert.equal(h.beforeunload().prevented, true);
+  await h.deliver();
+  assert.deepEqual(consumed, [{ session: 'session', sequence: 1, width: 1920, height: 1080 }]);
+  assert.equal(h.released, 1);
+  await h.api.depth.reset(id);
+  await h.api.depth.status(id);
+  await h.api.depth.close(id);
+  assert.deepEqual(h.calls.slice(-3), [['loom-native-depth-reset', id], ['loom-native-depth-status', id], ['loom-native-depth-close', id]]);
+  await assert.rejects(h.api.depth.reset(id), /closed or unknown/);
+});
+
+test('depth preparation routes progress to its own job only and cannot start while the document retires', async () => {
+  const h = harness(), finish = [], seen = { a: [], b: [] };
+  h.handle(name => name.endsWith('prepare') ? new Promise(resolve => finish.push(resolve)) : Promise.resolve());
+  await assert.rejects(h.api.depth.prepare('depthpro2-s-coreml'), /progress consumer/);
+  const a = h.api.depth.prepare('depthpro2-s-coreml', progress => seen.a.push(progress));
+  const b = h.api.depth.prepare('depthpro2-b-coreml', progress => seen.b.push(progress));
+  const [jobA, jobB] = h.calls.map(call => call[1]);
+  assert.deepEqual(h.calls, [['loom-native-depth-prepare', jobA, 'depthpro2-s-coreml'], ['loom-native-depth-prepare', jobB, 'depthpro2-b-coreml']]);
+  assert.notEqual(jobA, jobB);
+  assert.equal(h.beforeunload().prevented, true, 'main retirement must be able to abandon the download');
+  h.send('loom-native-depth-progress', jobB, { phase: 'compiling' });
+  assert.deepEqual(seen, { a: [], b: [{ phase: 'compiling' }] });
+  finish[0](); await a;
+  h.send('loom-native-depth-progress', jobA, { phase: 'verifying' });
+  assert.deepEqual(seen.a, [], 'a settled job receives nothing');
+  finish[1](); await b;
+  await h.api.lifecycle.prepareForUnload();
+  await assert.rejects(h.api.depth.prepare('depthpro2-s-coreml', () => {}), /retiring/);
 });

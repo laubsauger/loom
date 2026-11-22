@@ -16,6 +16,8 @@ import {
   depthSettingsFor,
   depthDescriptorFor,
   isMetricDepthModel,
+  isCoreMlDepthModel,
+  DEPTH_COREML_UNAVAILABLE,
   matteDescriptorFor,
   matteInputSideFor,
   matteRatioFor,
@@ -67,6 +69,9 @@ import type { LoomBus } from "@domain/commands/bus.ts";
 import type { DeviceClient } from "@devices/device-client.ts";
 import { MODEL_NEEDS_HELPER } from "@devices/helper.ts";
 import { createModelFetch } from "./model-fetch.ts";
+import { DEPTH_NATIVE_SOURCES, withNativeDepthAcquisition } from "./native-depth.ts";
+import { createNativeVisionSources, type NativeVisionTarget } from "./native-vision-sources.ts";
+import type { RuntimeDiagnostic } from "@domain/types/diagnostics.ts";
 import { inferenceParametersAt, type InferenceParameterReads } from "./inference-parameters.ts";
 import type { Notice } from "./notices.tsx";
 import type { InferenceNote } from "@editor/graph-canvas/node-runtime.ts";
@@ -195,7 +200,10 @@ interface InferenceRunSettings {
   readonly fieldOfView?: number;
   /** T1816b — a non-square model box (Depth Pro 2); absent means `inputSide` square. */
   readonly inputBox?: { readonly width: number; readonly height: number };
+  /** T1818b — run by the desktop app's Core ML service, this package function; absent for the worker's models. */
+  readonly coreml?: { readonly function: string };
 }
+
 
 /**
  * §T957's HANDOFF, taken (the matte session's ~15 lines in this file).
@@ -274,6 +282,7 @@ const INFERENCE_KINDS: readonly InferenceKind[] = [
            downloaded V2 Small for a node that says Depth Pro 2 (T1040's hazard, again). */
         descriptor: depthDescriptorFor(parameters),
         ...(settings.fieldOfView === undefined ? {} : { fieldOfView: settings.fieldOfView }),
+        ...(settings.coreml === undefined ? {} : { coreml: settings.coreml }),
         inputBox: settings.inputBox,
         inputSide: settings.inputSide,
         providers: settings.providers,
@@ -458,6 +467,8 @@ export interface ModelInferenceBinding {
   readonly prepareForRender: () => Promise<() => void>;
   /** Consent, progress and failure, for the notice strip at the foot of the window. */
   readonly notices: readonly Notice[];
+  /** T1818b — the Core ML depth sessions' own sentences (starting, refused, retirement), per node. */
+  readonly diagnostics: readonly RuntimeDiagnostic[];
   /**
    * §T976 — the fourth resolver in the composition root's `externalChannels` merge.
    *
@@ -558,7 +569,7 @@ export function useModelInference(
   const store = useMemo(() => cacheModelStore(), []);
 
   const acquisition = useMemo(
-    () =>
+    () => withNativeDepthAcquisition(
       createModelAcquisition({
         store: store ?? {
           // No Cache API (a non-secure context, or a private mode that withholds it).
@@ -580,8 +591,34 @@ export function useModelInference(
         }),
         onStateChange: (id, state) => setStates((prior) => ({ ...prior, [id]: state })),
       }),
+      (id, state) => setStates((prior) => ({ ...prior, [id]: state })),
+    ),
     [store],
   );
+
+  /* T1818b: Core ML depth nodes, run by the desktop app. A session opens only once its
+     package is on the machine (`ready`): opening asks the service for a compiled model, and
+     downloading one is the person's decision, made in the node's notice like any other. */
+  const native = useMemo(() => createNativeVisionSources(DEPTH_NATIVE_SOURCES), []);
+  const nativeTargetsRef = useRef<ReadonlyArray<NativeVisionTarget & { readonly modelId: string }>>([]);
+  const [nativeDiagnostics, setNativeDiagnostics] = useState<readonly RuntimeDiagnostic[]>([]);
+  const nativeDiagnosticsRef = useRef<readonly RuntimeDiagnostic[]>([]);
+  const refreshNative = useCallback(() => {
+    const next = native.diagnostics();
+    const prior = nativeDiagnosticsRef.current;
+    if (prior.length === next.length && prior.every((value, index) =>
+      value.code === next[index]?.code && value.nodeId === next[index]?.nodeId &&
+      value.severity === next[index]?.severity && value.message === next[index]?.message)) return;
+    nativeDiagnosticsRef.current = next;
+    setNativeDiagnostics(next);
+  }, [native]);
+  const trackNative = useCallback(() => {
+    const ready = nativeTargetsRef.current.filter((target) => statesRef.current[target.modelId]?.kind === "ready");
+    native.track(ready, backendRef.current ?? null);
+    refreshNative();
+  }, [native, refreshNative]);
+  useEffect(() => { trackNative(); }, [states, trackNative]);
+  useEffect(() => () => native.dispose(), [native]);
 
   /**
    * The inference thread (T382), created LAZILY on first need.
@@ -918,6 +955,9 @@ export function useModelInference(
       }
 
       const targets: DepthTarget[] = [];
+      // T1818b: Core ML depth nodes — tracked for their notices, run by the native manager.
+      const nativeTracked: DepthTarget[] = [];
+      const nativeTargets: Array<NativeVisionTarget & { readonly modelId: string }> = [];
       for (const nodeId of Object.keys(graph.nodes).sort()) {
         const node = graph.nodes[nodeId];
         if (node === undefined) continue;
@@ -936,6 +976,15 @@ export function useModelInference(
         // definition still applies its own defaults (§T965). Per-run keys re-read in `describe`,
         // the freshness policy at each frame in the dispatch gate (T1530b).
         const settings = kind.settings(inferenceParametersAt(node, graph, parametersRef.current, undefined));
+        if (settings.coreml !== undefined) {
+          const box = settings.inputBox ?? { width: settings.inputSide, height: settings.inputSide };
+          nativeTracked.push({ nodeId, preprocessPassId: preprocess.passId, kind, descriptor: settings.descriptor,
+            size: sized.get(resultId) ?? [1, 1], sourceSize: sized.get(preprocess.sourceId) ?? [1, 1], settings, channel: node.label });
+          nativeTargets.push({ nodeId, modelId: settings.descriptor.id, size: sized.get(resultId) ?? [1, 1],
+            minIntervalSeconds: settings.minIntervalSeconds, ...(node.label === undefined ? {} : { channel: node.label }),
+            input: { key: kind.inputKey, size: [box.width, box.height], session: `${settings.descriptor.id}|${settings.coreml.function}` } });
+          continue;
+        }
         targets.push({
           nodeId,
           preprocessPassId: preprocess.passId,
@@ -959,7 +1008,10 @@ export function useModelInference(
       );
       // Only when the SET changed: a values-only recompile re-derives the same targets
       // sixty times a second and must not re-render the notice strip (§V16).
-      setTracked((prior) => (sameTargets(prior, targets) ? prior : targets));
+      const noticed = [...targets, ...nativeTracked];
+      setTracked((prior) => (sameTargets(prior, noticed) ? prior : noticed));
+      nativeTargetsRef.current = nativeTargets;
+      trackNative();
 
       // T1044: a DIFFERENT backend holds none of these registrations, so the whole map is
       // dropped rather than consulted — every source below then re-registers on the live
@@ -1041,16 +1093,18 @@ export function useModelInference(
 
       // Reading the cache is free and opens no connection, so it is safe to do on every
       // compile. It is what turns "unknown" into a consent prompt or a ready node.
-      for (const descriptor of new Set(targets.map((target) => target.descriptor))) {
+      for (const descriptor of new Set(noticed.map((target) => target.descriptor))) {
         void acquisition.refresh(descriptor);
       }
     },
-    [acquisition, sources],
+    [acquisition, sources, trackNative],
   );
 
   const observe = useCallback(
     (frame: FrameEvaluationInput) => {
       frameRef.current = frame;
+      native.observe(frame);
+      refreshNative();
       const target = sink;
       if (target !== undefined) {
         for (const age of sources.resultAges(frame.frameIndex)) {
@@ -1112,11 +1166,14 @@ export function useModelInference(
         sources.samplePrepared(frame, offlineLeasesRef.current === 0);
       });
     },
-    [sink, sources, states],
+    [sink, sources, states, native, refreshNative],
   );
 
   const settle = useCallback(
     async (frameIndex: number) => {
+      // T1818b: a Core ML node waits for its frame too (it has entries only once ready).
+      await native.settle(frameIndex);
+      refreshNative();
       // Only once weights are held. Otherwise `settle` would call `acquire` through the
       // runner and a take would start a 94 MB download nobody agreed to (§V721), and
       // block on it — the worst possible moment to ask.
@@ -1126,7 +1183,7 @@ export function useModelInference(
       if (!ready) return;
       await sources.settlePrepared(frameIndex);
     },
-    [sources, states],
+    [sources, states, native, refreshNative],
   );
 
   const notices = useMemo(
@@ -1144,13 +1201,13 @@ export function useModelInference(
    * HEAD passed. A hook whose consumer keys effects on it must return a stable value.
    */
   const resolver = useCallback<ChannelResolver>(
-    (channel, context) => sources.resolver(channel, context),
-    [sources],
+    (channel, context) => sources.resolver(channel, context) ?? native.resolver(channel, context),
+    [sources, native],
   );
 
   return useMemo(
-    () => ({ observe, track, settle, prepareForRender, notices, resolver }),
-    [observe, track, settle, prepareForRender, notices, resolver],
+    () => ({ observe, track, settle, prepareForRender, notices, resolver, diagnostics: nativeDiagnostics }),
+    [observe, track, settle, prepareForRender, notices, resolver, nativeDiagnostics],
   );
 }
 
@@ -1256,7 +1313,20 @@ export function buildNotices(
         tone: "info",
         message: `Downloading ${descriptor.label}…`,
         detail: progressText(state.received, state.total),
-        actions: [{ label: "Cancel", onSelect: () => acquisition.cancel(descriptor.id), variant: "ghost" }],
+        // T1818b: the desktop service's download cannot be stopped from the page; no button
+        // that does nothing.
+        actions: isCoreMlDepthModel(descriptor.id) ? []
+          : [{ label: "Cancel", onSelect: () => acquisition.cancel(descriptor.id), variant: "ghost" }],
+      });
+    } else if (state.kind === "failed" && state.reason === DEPTH_COREML_UNAVAILABLE) {
+      // T1818b: not a failed download — this page is not the desktop app. Say where it runs;
+      // "Try again" would only fail the same way.
+      notices.push({
+        id: `model-host-${descriptor.id}`,
+        tone: "warn",
+        message: `${label} runs ${descriptor.label.split(" · ").slice(0, 2).join(" · ")} only in the Loom desktop app — showing ${target.kind.neutralPicture}.`,
+        detail: state.reason,
+        actions: [],
       });
     } else if (state.kind === "failed") {
       notices.push({

@@ -68,6 +68,7 @@ export const HEADLESS_ABSENT_PROBLEM_SOURCES: Readonly<Record<string, string>> =
   osc: "the OSC session belongs to the page's bridge hook. This process only hosts the door that page dials.",
   laser: "the laser session belongs to the page's bridge hook. This process only hosts the door that page dials.",
   vision: "the Vision session belongs to the page's bridge hook. This process only hosts the door that page dials.",
+  depth: "a Core ML depth session is the desktop app's native service behind a page's preload, and this process has neither.",
   rejection:
     "a refused GESTURE has nowhere else to show. An agent's refused command already returns its diagnostics in the tool result.",
   autosave: "the autosave snapshot ring is IndexedDB in a browser tab.",

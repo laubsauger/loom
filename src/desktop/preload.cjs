@@ -6,6 +6,8 @@ const inputs = new Map();
 const preparationJobs = new Map();
 const deliveries = new Set();
 const opening = new Set();
+const depthProgress = new Map();
+let depthJobs = 0;
 let retiring = false;
 let unloadPrepared = false;
 let usedNativeInput = false;
@@ -109,6 +111,36 @@ function createOutputBridge(prefix) {
     status: name => ipcRenderer.invoke(`${prefix}-status`, name),
   };
 }
+// T1818b: Person Mask and Depth Pro 2 share one capture transport and receiver.
+async function openInference(channel, args, consume) {
+  if (retiring) throw new Error('Native inference document is retiring');
+  if (typeof consume !== 'function') throw new Error('Native inference requires a frame consumer');
+  usedNativeInput = true;
+  const pending = ipcRenderer.invoke(channel, ...args);
+  opening.add(pending);
+  let id;
+  try { id = await pending; } finally { opening.delete(pending); }
+  inputs.set(id, { consume, closed: false, polling: false, consuming: false, error: null });
+  return id;
+}
+function createInferenceSessions(kind) {
+  return {
+    status: async id => {
+      const record = input(id);
+      const result = await ipcRenderer.invoke(`loom-native-${kind}-status`, id);
+      if (record.error) throw new Error(record.error);
+      return result;
+    },
+    close: async id => {
+      const record = inputs.get(id);
+      if (record) record.closed = true;
+      try { return await ipcRenderer.invoke(`loom-native-${kind}-close`, id); }
+      finally { if (record) forget(id, record); }
+    },
+  };
+}
+// Progress for a consented acquisition arrives as events; the job id routes it.
+if (nativeVideo) ipcRenderer.on('loom-native-depth-progress', (_event, job, progress) => depthProgress.get(job)?.(progress));
 function preparationJob(id) {
   const record = preparationJobs.get(id);
   if (!record) throw new Error('Native preparation job is closed or unknown');
@@ -156,29 +188,27 @@ contextBridge.exposeInMainWorld('loomDesktop', {
     close: closePreparation,
   },
   ...(nativeVideo ? { vision: {
-    open: async (name, width, height, outputWidth, outputHeight, consume) => {
-      if (retiring) throw new Error('Native inference document is retiring');
-      if (typeof consume !== 'function') throw new Error('Native inference requires a frame consumer');
-      usedNativeInput = true;
-      const pending = ipcRenderer.invoke('loom-native-vision-open', name, width, height, outputWidth, outputHeight);
-      opening.add(pending);
-      let id;
-      try { id = await pending; } finally { opening.delete(pending); }
-      inputs.set(id, { consume, closed: false, polling: false, consuming: false, error: null });
-      return id;
+    open: (name, width, height, outputWidth, outputHeight, consume) =>
+      openInference('loom-native-vision-open', [name, width, height, outputWidth, outputHeight], consume),
+    ...createInferenceSessions('vision'),
+  }, depth: {
+    // Never downloads or compiles: it reports what prepare would fetch and whether it is cached.
+    probe: () => ipcRenderer.invoke('loom-native-depth-probe'),
+    // The consented acquisition: pinned, hash-verified download, then one compile.
+    prepare: async (modelId, onProgress) => {
+      if (retiring) throw new Error('Native depth document is retiring');
+      if (typeof onProgress !== 'function') throw new Error('Native depth preparation requires a progress consumer');
+      usedNativeInput = true; // main retirement abandons an acquisition no other document awaits
+      const job = `depth-${++depthJobs}`;
+      depthProgress.set(job, onProgress);
+      try { await ipcRenderer.invoke('loom-native-depth-prepare', job, modelId); }
+      finally { depthProgress.delete(job); }
     },
-    status: async id => {
-      const record = input(id);
-      const result = await ipcRenderer.invoke('loom-native-vision-status', id);
-      if (record.error) throw new Error(record.error);
-      return result;
-    },
-    close: async id => {
-      const record = inputs.get(id);
-      if (record) record.closed = true;
-      try { return await ipcRenderer.invoke('loom-native-vision-close', id); }
-      finally { if (record) forget(id, record); }
-    },
+    open: (name, modelId, functionName, inputWidth, inputHeight, outputWidth, outputHeight, consume) =>
+      openInference('loom-native-depth-open', [name, modelId, functionName, inputWidth, inputHeight, outputWidth, outputHeight], consume),
+    // A new stream: the next captured frame starts from a fresh model state.
+    reset: async id => { input(id); return ipcRenderer.invoke('loom-native-depth-reset', id); },
+    ...createInferenceSessions('depth'),
   } } : {}),
   lifecycle,
   ...(nativeVideo ? { input: { ...lifecycle, ...createInputBridge('loom-native-input') } } : {}),

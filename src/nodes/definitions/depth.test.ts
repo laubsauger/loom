@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-import { depthDescriptorFor, depthNode, depthProvidersFor, depthSettingsFor } from "./depth.ts";
+import { DEPTH_COREML_UNAVAILABLE, depthDescriptorFor, depthNode, depthProvidersFor, depthResultScaleOf, depthSettingsFor } from "./depth.ts";
 import { effectiveParameterSchema } from "../../domain/parameters/resolve.ts";
 import { DEPTH_ACCURATE, DEPTH_LIVE } from "../../runtime/models/model-catalogue.ts";
 import type { EnumParameter } from "../../domain/types/parameters.ts";
@@ -74,6 +74,8 @@ describe("§T965(b)/§V827(1) — the chooser names the model, the size AND the 
     // from the start, so they have no legacy spelling to duplicate them.
     expect(fresh.map((option) => option.value)).toEqual([
       DEPTH_ACCURATE.id, DEPTH_LIVE.id, "depthpro2-s-stream4-fp32", "depthpro2-s-stream4-fp16", "depthpro2-s-fp32", "depthpro2-b-fp16",
+      // T1818b: Apple's Core ML builds, also by id.
+      "depthpro2-s-coreml", "depthpro2-b-coreml",
     ]);
     // And where it IS shown it wears its twin's label, so the sizes cannot disagree.
     const shown = enumOf({ model: "accurate" }, "model").options.find((o) => o.value === "accurate");
@@ -426,5 +428,113 @@ describe("T1816b — Depth Pro 2's surface follows the chosen model", () => {
     expect(preprocess!.uniforms).toEqual({ side: 266 });
     expect(String(preprocess!.shader)).not.toContain("boxAspect");
     expect(blit!.uniforms).toMatchObject({ metric: 0, metres: 0 });
+  });
+});
+
+/**
+ * T1818b — APPLE'S CORE ML BUILDS: listed everywhere, choosable only in the desktop app.
+ *
+ * The owner's words: make it clear why an option does not work in the browser and point to
+ * the desktop app. So in a browser (no `loomDesktop.depth` behind the page) each Core ML
+ * option is in the list, marked, disabled, and carries the sentence; in the desktop app
+ * it is a plain choice. And the node then asks for nothing a browser would answer.
+ */
+describe("T1818b — Depth Pro 2 on Core ML", () => {
+  const withDesktop = <T>(run: () => T): T => {
+    const global = globalThis as { window?: unknown };
+    const had = "window" in global;
+    const previous = global.window;
+    global.window = { loomDesktop: { depth: {} } };
+    try { return run(); } finally { if (had) global.window = previous; else delete global.window; }
+  };
+  const coreml = (options: EnumParameter["options"]) => options.filter((option) => option.value.endsWith("-coreml"));
+
+  it("lists both builds in a browser, disabled, saying what they need and where to go", () => {
+    const options = coreml(enumOf({}, "model").options);
+    expect(options.map((option) => option.label)).toEqual([
+      "Depth Pro 2 S · Core ML · desktop app · research only (53.0 MB) — desktop app only",
+      "Depth Pro 2 B · Core ML · desktop app · research only (197.4 MB) — desktop app only",
+    ]);
+    for (const option of options) expect(option.unavailable).toBe(DEPTH_COREML_UNAVAILABLE);
+    expect(DEPTH_COREML_UNAVAILABLE).toMatch(/desktop app.*Apple Silicon.*macOS 15/);
+  });
+
+  it("makes them plain choices where the desktop app's depth service is behind the page", () => {
+    const options = withDesktop(() => coreml(enumOf({}, "model").options));
+    expect(options.map((option) => option.unavailable)).toEqual([undefined, undefined]);
+    expect(options[0]!.label).not.toContain("desktop app only");
+  });
+
+  it("requires the desktop app on Apple Silicon for Core ML, and nothing for every other model", () => {
+    const requires = depthNode.requires as (values: Record<string, unknown>) => readonly string[];
+    expect(requires({ model: "depthpro2-s-coreml" })).toEqual(["desktop", "macos", "apple-silicon"]);
+    expect(requires({ model: "depthpro2-s-stream4-fp32" })).toEqual([]);
+    expect(requires({})).toEqual([]);
+  });
+
+  it("has no Backend to pick, and offers the package's five boxes with Apple's default first-class", () => {
+    const schema = schemaFor({ model: "depthpro2-s-coreml" });
+    expect(schema["backend"]).toBeUndefined();
+    expect(schemaFor({ model: "depthpro2-s-stream4-fp32" })["backend"]).toBeDefined();
+    const input = enumOf({ model: "depthpro2-s-coreml" }, "modelInput");
+    expect(input.default).toBe("854x480");
+    expect(input.options.map((option) => option.label)).toEqual([
+      "640×360 (37 ms)", "854×480 — Apple's default (48 ms)", "896×512 (53 ms)", "1138×640 (114 ms)", "1280×720 (187 ms)",
+    ]);
+    expect(enumOf({ model: "depthpro2-b-coreml" }, "modelInput").options[1]!.label).toBe("854×480 — Apple's default (134 ms)");
+    expect(Object.keys(schema)).toEqual(expect.arrayContaining(["fieldOfView", "nearMetres", "farMetres", "publish"]));
+    expect(depthNode.retainedParameterKeys).toContain("backend");
+  });
+
+  it("runs the chosen box's function and says Core ML, never a browser provider", () => {
+    expect(depthSettingsFor({ model: "depthpro2-s-coreml" })).toMatchObject({
+      modelId: "depthpro2-s-coreml", providers: ["coreml"], coreml: { function: "res_854x480" },
+      inputBox: { width: 854, height: 480 }, inputSide: 854, fieldOfView: 60,
+    });
+    expect(depthSettingsFor({ model: "depthpro2-b-coreml", modelInput: "1280x720" })).toMatchObject({
+      coreml: { function: "res_1280x720" }, inputBox: { width: 1280, height: 720 } });
+    // A box that is not the package's falls back to Apple's default, not to a browser box.
+    expect(depthSettingsFor({ model: "depthpro2-s-coreml", modelInput: "640x480" }).coreml?.function).toBe("res_854x480");
+    expect(depthSettingsFor({ model: "depthpro2-s-fp32" }).coreml).toBeUndefined();
+  });
+
+  /**
+   * Core ML hands back `inverse_depth` normalised by the focal length: metres =
+   * f_px / (W · inverse_depth). The result pass multiplies by W / f_px, which for a picture
+   * letterboxed into the box is 2 · tan(fov / 2) / occX — the same focal length the browser
+   * path computes (`depthPro2FocalPixels`). A 4:3 picture in a 16:9 box fills 3/4 of the
+   * width, which makes its focal length 3/4 as many box pixels and the scale 4/3 larger.
+   */
+  it("scales Core ML's focal-normalised output into inverse metres; 1 for every browser model", () => {
+    const at60 = 2 * Math.tan(Math.PI / 6);
+    expect(depthResultScaleOf({ model: "depthpro2-s-coreml", modelInput: "640x360" }, [1920, 1080])).toBeCloseTo(at60, 12);
+    expect(depthResultScaleOf({ model: "depthpro2-s-coreml", modelInput: "640x360" }, [1440, 1080])).toBeCloseTo(at60 / 0.75, 12);
+    expect(depthResultScaleOf({ model: "depthpro2-s-coreml", modelInput: "640x360", fieldOfView: 90 }, [1920, 1080])).toBeCloseTo(2, 12);
+    expect(depthResultScaleOf({ model: "depthpro2-s-fp32", fieldOfView: 90 }, [1920, 1080])).toBe(1);
+    expect(depthResultScaleOf({}, [1920, 1080])).toBe(1);
+  });
+
+  it("compiles an sRGB-encoding preprocess over the box, an rgba16float result and the scale", () => {
+    const compile = (parameters: Record<string, unknown>) => depthNode.compile({
+      nodeId: "depth1",
+      inputs: { input: [{ resourceId: "tex:source", samplerId: "smp" }] },
+      outputs: { out: { resourceId: "tex:out" } },
+      resolution: [1920, 1080],
+      parameters,
+    } as never);
+    const native = compile({ model: "depthpro2-s-coreml", modelInput: "640x360", fieldOfView: 90 });
+    const [preprocess, blit] = native.passes as unknown as Array<{ uniforms: Record<string, number>; workgroups?: number[]; shader: string }>;
+    expect(preprocess!.uniforms).toEqual({ width: 640, height: 360 });
+    expect(preprocess!.workgroups).toEqual([80, 45, 1]);
+    expect(String(preprocess!.shader)).toContain("1.0 / 2.4");
+    expect(native.scratch?.find((entry) => entry.key === "modelInput")).toMatchObject({ capacity: 640 * 360 });
+    expect(native.scratch?.find((entry) => entry.kind === "external")).toMatchObject({ format: "rgba16float" });
+    expect(blit!.uniforms["scale"]).toBeCloseTo(2, 12);
+    // The browser's Depth Pro 2 is untouched: its own shader, float32 result, scale 1.
+    const browser = compile({ model: "depthpro2-s-stream4-fp32" });
+    const [browserPreprocess, browserBlit] = browser.passes as unknown as Array<{ uniforms: Record<string, number>; shader: string }>;
+    expect(String(browserPreprocess!.shader)).not.toContain("1.0 / 2.4");
+    expect(browser.scratch?.find((entry) => entry.kind === "external")).toMatchObject({ format: "r32float" });
+    expect(browserBlit!.uniforms["scale"]).toBe(1);
   });
 });

@@ -7,6 +7,8 @@ export interface EnumOption {
   label: string;
   /** Rendered but not selectable — used for a format the device cannot provide (§V12). */
   disabled?: boolean;
+  /** T1818b: why it is not selectable, as the option's tooltip and accessible description. */
+  title?: string;
 }
 
 /**
@@ -56,7 +58,8 @@ export function EnumField({
         <option value={value}>{value === "" ? "(unset)" : `${value} (unknown)`}</option>
       )}
       {options.map((option) => (
-        <option key={option.value} value={option.value} disabled={option.disabled === true}>
+        <option key={option.value} value={option.value} disabled={option.disabled === true}
+          {...(option.title === undefined ? {} : { title: option.title })}>
           {option.label}
         </option>
       ))}

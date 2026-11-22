@@ -237,6 +237,32 @@ export const DEPTH_PRO2_WIDE: Readonly<Record<string, ModelDescriptor>> = {
 /** The live Depth node's choices: the two V2 Small builds first, so the default is unchanged. */
 export const LIVE_DEPTH_MODELS: readonly ModelDescriptor[] = [...DEPTH_MODELS, ...DEPTH_PRO2_MODELS];
 
+/**
+ * T1818b — Apple's OWN Depth Pro 2 builds, Core ML packages that run in the desktop app.
+ * `apple/DepthPro2-coreml@4e607a6`: each is a 4-frame streaming model (`w4`) with one
+ * function per input box. They are three files, so the browser never fetches them: the
+ * desktop app's native service downloads, verifies (per-file SHA-256, recorded in its own
+ * manifest under `src/devices/native/`) and compiles them. `bytes` is the three files'
+ * sum; `url` names the package folder at the pinned revision, for provenance only.
+ * NOT in `ALL_MODELS`: nothing in the browser can acquire one.
+ */
+const DP2_COREML = "https://huggingface.co/apple/DepthPro2-coreml/tree/4e607a682f993bbf95035054fc78ba9ffc81faf2";
+export const DEPTH_PRO2_COREML_S: ModelDescriptor = {
+  id: "depthpro2-s-coreml",
+  label: "Depth Pro 2 S · Core ML · desktop app · research only",
+  url: `${DP2_COREML}/depthpro2-s_w4.mlpackage`,
+  bytes: 617 + 1_515_717 + 51_437_056,
+  license: DEPTH_PRO2_LICENSE,
+};
+export const DEPTH_PRO2_COREML_B: ModelDescriptor = {
+  id: "depthpro2-b-coreml",
+  label: "Depth Pro 2 B · Core ML · desktop app · research only",
+  url: `${DP2_COREML}/depthpro2-b_w4.mlpackage`,
+  bytes: 617 + 1_516_748 + 195_845_120,
+  license: DEPTH_PRO2_LICENSE,
+};
+export const DEPTH_PRO2_COREML_MODELS: readonly ModelDescriptor[] = [DEPTH_PRO2_COREML_S, DEPTH_PRO2_COREML_B];
+
 /** Photo surface selection. Artifact, signature and preprocessing verified 2026-10-08. */
 export const PHOTO_MASK_PERSON: ModelDescriptor = {
   id: "ormbg-quantized",

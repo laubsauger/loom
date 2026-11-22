@@ -64,3 +64,14 @@ test('Vision main-process client never blocks IPC or reads image bytes', () => {
   assert.match(source, /napi_tsfn_nonblocking/);
   assert.match(source, /uncertain leases retained/);
 });
+
+test('Depth surface provider keeps pixels on the GPU, and the depth worker has no second serve loop (T1818b)', () => {
+  const source = readFileSync(join(__dirname, '../devices/native/depth-surface.mm'), 'utf8');
+  assert.doesNotMatch(source, /CVPixelBufferGetBaseAddress|CVPixelBufferLockBaseAddress|IOSurfaceGetBaseAddress|IOSurfaceLock|memcpy|getBytes|dataPointer/);
+  assert.match(source, /initWithPixelBuffer/);
+  assert.match(source, /outputBackings/);
+  assert.match(source, /waitUntilCompleted/);
+  const service = readFileSync(join(__dirname, '../devices/native/depth-service.mm'), 'utf8');
+  assert.match(service, /loom_native_serve\(/);
+  assert.doesNotMatch(service, /xpc_connection_create_mach_service|IOSurfaceLookupFromXPCObject/);
+});

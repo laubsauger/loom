@@ -567,7 +567,8 @@ function ParameterControlImpl({
           {...sharedLocked}
           id={controlId}
           value={typeof shown === "string" ? shown : definition.default}
-          options={definition.options}
+          options={definition.options.map((option) => option.unavailable === undefined
+            ? option : { value: option.value, label: option.label, disabled: true, title: option.unavailable })}
           onChange={(next, phase) => emit(next, phase)}
         />,
       );

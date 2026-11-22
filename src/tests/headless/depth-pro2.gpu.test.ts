@@ -242,3 +242,104 @@ describe("T1816b — the metric result stage", () => {
     expect(await publish({ nearMetres: 0.25, farMetres: 1 / 1.5 }, [1.5, 2.75])).toEqual([0, 0.5]);
   }, 60_000);
 });
+
+/**
+ * T1818b — Depth Pro 2 on Core ML, the graph's two halves on Dawn.
+ *
+ *  - IN: the preprocess sRGB-ENCODES, because the desktop app's transport carries the model's
+ *    input bytes as they are and Core ML wants display values. Picture = box (640×360), so
+ *    each cell reads its own source texel; the linear branch of the encode is one f32
+ *    multiply and is asserted exactly, the power branch by direction (it brightens).
+ *  - OUT: the result arrives as rgba16float (the service's IOSurface), R = Core ML's
+ *    focal-normalised inverse depth, and `scale` = W / f_px turns it into inverse metres
+ *    before the same metric stage. At 90° on a picture wider than the box, the scale is
+ *    exactly 2.
+ */
+describe("T1818b — the Core ML path", () => {
+  it("encodes the box's input to sRGB: exact on the linear branch, brighter on the power branch", async () => {
+    const document = graph([
+      node("ramp", "ramp", [0, 0], { type: "vertical", interp: "linear", phase: 0, period: 1, stops: STOPS }),
+      node("depth", "depth", [200, 0], { model: "depthpro2-s-coreml", modelInput: "640x360" }),
+      node("out", "output", [400, 0]),
+    ], [
+      edge("a", ["ramp", "out"], ["depth", "input"]),
+      edge("b", ["depth", "out"], ["out", "input"]),
+    ]);
+    const plan = compileGraph({ graph: document, registry, capabilities,
+      settings: settings({ workingFormat: "rgba16float", outputResolution: { width: 640, height: 360 } }) });
+    expect(plan.ok, JSON.stringify(plan.diagnostics)).toBe(true);
+    const ramp = plan.outputs.find((entry) => entry.nodeId === "ramp");
+    if (ramp === undefined) throw new Error("Missing ramp output");
+    const backend = await dawn();
+    try {
+      backend.registerMediaSource(inferenceSourceIdFor("depth"), { currentFrame: () => ({ frameId: 1, bytes: new Uint8Array(640 * 360 * 8) }) });
+      const compiled = await backend.compile(plan);
+      backend.render(compiled, FRAME(0, 640, 360));
+      const encoded = new Float32Array(await backend.readBuffer("scratch:depth:modelInput"));
+      const image = await backend.readOutput(ramp.resourceId);
+      const view = new DataView(image.bytes.buffer, image.bytes.byteOffset, image.bytes.byteLength);
+      const channels = new Float32Array(4);
+      let linearCells = 0, powerCells = 0;
+      for (let y = 0; y < 360; y += 1) {
+        readChannels(image.bytes, view, (y * 640 + 7) * 4 * 2, image.format, channels);
+        const linear = channels[0]!;
+        const cell = encoded[(y * 640 + 7) * 4]!;
+        if (linear <= Math.fround(0.0031308)) {
+          expect(cell, `row ${y}`).toBe(Math.fround(Math.fround(12.92) * linear));
+          linearCells += 1;
+        } else {
+          expect(cell, `row ${y}`).toBeGreaterThan(linear);
+          powerCells += 1;
+        }
+        // Alpha is coverage, never encoded.
+        expect(encoded[(y * 640 + 7) * 4 + 3]).toBe(channels[3]);
+      }
+      expect(linearCells).toBeGreaterThan(0);
+      expect(powerCells).toBeGreaterThan(300);
+    } finally { backend.dispose(); }
+  }, 60_000);
+
+  it("reads the rgba16float result times W / f_px into the metric stage", async () => {
+    const document = graph([
+      node("image", "solid", [0, 0]),
+      node("depth", "depth", [200, 0], { model: "depthpro2-s-coreml", modelInput: "640x360", fieldOfView: 90, nearMetres: 0.5, farMetres: 1 }),
+      node("copy", "null", [400, 0]),
+      node("out", "output", [600, 0]),
+    ], [
+      edge("a", ["image", "out"], ["depth", "input"]),
+      edge("b", ["depth", "out"], ["copy", "in"]),
+      edge("c", ["copy", "out"], ["out", "input"]),
+    ]);
+    const plan = compileGraph({ graph: document, registry, capabilities,
+      settings: settings({ workingFormat: "rgba16float", outputResolution: { width: 4, height: 1 } }) });
+    expect(plan.ok, JSON.stringify(plan.diagnostics)).toBe(true);
+    const result = plan.resources.find((resource) => resource.kind === "externalTexture"
+      && resource.sourceId === inferenceSourceIdFor("depth"));
+    if (result?.kind !== "externalTexture") throw new Error("Missing depth result texture");
+    expect(result.format).toBe("rgba16float");
+    // Half-float bits: -1 (pending), 0.5, 0.625, 1; G = B = 0, A = 1.
+    const HALF = { "-1": 0xbc00, "0.5": 0x3800, "0.625": 0x3900, "1": 0x3c00 } as const;
+    const pixels = new Uint16Array(result.size[0] * result.size[1] * 4);
+    const backend = await dawn();
+    try {
+      let frameId = 1;
+      backend.registerMediaSource(inferenceSourceIdFor("depth"), { currentFrame: () => ({ frameId, bytes: new Uint8Array(pixels.buffer) }) });
+      const compiled = await backend.compile(plan);
+      const output = plan.outputs.find((entry) => entry.nodeId === "copy");
+      if (output === undefined) throw new Error("Missing depth consumer output");
+      const samples: number[] = [];
+      for (const value of ["-1", "0.5", "0.625", "1"] as const) {
+        for (let i = 0; i < pixels.length; i += 4) { pixels[i] = HALF[value]; pixels[i + 1] = 0; pixels[i + 2] = 0; pixels[i + 3] = 0x3c00; }
+        backend.render(compiled, FRAME(frameId, 4, 1));
+        const image = await backend.readOutput(output.resourceId);
+        const view = new DataView(image.bytes.buffer, image.bytes.byteOffset, image.bytes.byteLength);
+        const channels = new Float32Array(4);
+        readChannels(image.bytes, view, 0, image.format, channels);
+        samples.push(channels[0]!);
+        frameId += 1;
+      }
+      // ×2: pending stays pending (0.5); 1 /m is Far (0); 1.25 /m a quarter; 2 /m is Near (1).
+      expect(samples).toEqual([0.5, 0, 0.25, 1]);
+    } finally { backend.dispose(); }
+  }, 60_000);
+});

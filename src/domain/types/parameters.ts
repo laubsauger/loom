@@ -129,7 +129,21 @@ export interface BooleanParameter extends ParameterBase {
 export interface EnumParameter extends ParameterBase {
   type: "enum";
   default: string;
-  options: ReadonlyArray<{ value: string; label: string }>;
+  options: ReadonlyArray<EnumParameterOption>;
+}
+
+export interface EnumParameterOption {
+  value: string;
+  label: string;
+  /**
+   * T1818b — why this option cannot be chosen HERE, when it can be chosen elsewhere: a
+   * Core ML build listed in a browser that has no desktop app behind it. The option is
+   * still listed, so a person sees it exists and what it needs, and is shown disabled with
+   * this sentence, which says where it does work. Absent means choosable. A stored value
+   * that is unavailable stays selected (a document is never rewritten to another choice);
+   * the node's runtime diagnostic says it cannot run.
+   */
+  unavailable?: string;
 }
 
 export interface ColorParameter extends ParameterBase {

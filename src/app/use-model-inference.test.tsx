@@ -13,6 +13,12 @@ import type { FrameEvaluationInput } from "@domain/types/frame.ts";
 import { EXAMPLE_DOCUMENTS } from "@/examples/documents.ts";
 import { TIER_B_CAPABILITIES, exampleRegistry } from "@/examples/runner.ts";
 import { buildNotices, claimsNothingAfter, runNote, useModelInference } from "./use-model-inference.ts";
+import * as nativeInference from "@devices/native-inference.ts";
+import { DEPTH_COREML_UNAVAILABLE } from "@nodes/definitions/index.ts";
+
+vi.mock("@devices/native-inference.ts", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@devices/native-inference.ts")>(), createNativeVisionSource: vi.fn(),
+}));
 
 /**
  * THE CONSTRUCTION SITE FOR THE MODEL NOTICES (B156, §V205, §T743).
@@ -760,4 +766,84 @@ it("T1816b: a Depth Pro 2 node's Field of View is in the run request its worker 
   expect(await runAt(90)).toBe(90);
   // A fresh node carries the definition's default, not the worker's fallback.
   expect(await runAt(undefined)).toBe(60);
+});
+
+/**
+ * T1818b — A CORE ML DEPTH NODE, THROUGH THE HOOK THE APP MOUNTS.
+ *
+ * E44's real Depth node switched to Depth Pro 2 S on Core ML. In a browser it must never
+ * start the worker or fetch a byte, and its notice must say it runs in the desktop app —
+ * not that a download failed. In the desktop app nothing downloads until the person presses
+ * Download, and then the session that opens is this node's model, function and box.
+ */
+it("T1818b: a Core ML Depth node says 'desktop app' in a browser, and in the app downloads on consent, then opens its session", async () => {
+  const createAcquisition = acquisitionModule.createModelAcquisition;
+  vi.spyOn(acquisitionModule, "createModelAcquisition").mockImplementation(options => ({
+    ...createAcquisition(options),
+    refresh: async descriptor => { options.onStateChange?.(descriptor.id, { kind: "ready" }); return { kind: "ready" }; },
+    acquire: async () => undefined,
+  }));
+  let workers = 0;
+  vi.stubGlobal("Worker", class { constructor() { workers++; } postMessage() {} addEventListener() {} terminate() {} });
+  const fetches = vi.fn();
+  vi.stubGlobal("fetch", fetches);
+  const gates = dispatchGates();
+  const backend = {
+    status: { framesSubmitted: 0 },
+    registerDispatchGate: gates.registerDispatchGate,
+    readBuffer: async () => new ArrayBuffer(16),
+    registerMediaSource: () => () => undefined,
+    present: () => ({ dispose() {}, describe: () => ({ presentedFrames: 0 }) }),
+  } as unknown as LoomBackend;
+  const document = structuredClone(sounding!.graph) as GraphDocument;
+  const depthId = Object.keys(document.nodes).find(id => document.nodes[id]!.type === "depth")!;
+  document.nodes[depthId]!.parameters = { ...document.nodes[depthId]!.parameters, model: "depthpro2-s-coreml", modelInput: "640x360" };
+  const graph = flatDocument(document);
+  const plan = planFor(graph);
+
+  // A browser: no desktop app behind the page.
+  const browser = renderHook(() => useModelInference(backend));
+  act(() => browser.result.current.track(graph, plan));
+  await settleRefresh();
+  const said = browser.result.current.notices.find(notice => notice.id === "model-host-depthpro2-s-coreml");
+  expect(said?.message).toMatch(/only in the Loom desktop app/);
+  expect(said?.detail).toBe(DEPTH_COREML_UNAVAILABLE);
+  expect(said?.actions).toEqual([]);
+  expect(browser.result.current.notices.some(notice => /could not be downloaded/.test(notice.message))).toBe(false);
+  // The worker's path starts at the preprocess gate; a Core ML node has none.
+  expect(gates.gates.has(preprocessId(plan, depthId))).toBe(false);
+  browser.unmount();
+
+  // The desktop app: the service answers, nothing is cached yet.
+  let finish!: () => void;
+  const depth = {
+    probe: vi.fn(async () => ({ available: true, models: [{ id: "depthpro2-s-coreml", bytes: 52_953_390, cached: false }] })),
+    prepare: vi.fn(() => new Promise<void>(resolve => { finish = resolve; })),
+    open: vi.fn(async (name: string) => name), close: vi.fn(async () => {}),
+    status: vi.fn(async () => ({ frames: 0, busy: false, error: null })), reset: vi.fn(async () => {}),
+  };
+  vi.stubGlobal("window", Object.assign(window, { loomDesktop: { depth } }));
+  const sessions = vi.mocked(nativeInference.createNativeVisionSource);
+  sessions.mockImplementation((_backend, bridge, options) => {
+    void bridge.open(`${options.namePrefix}session`, ...options.inputSize, ...options.outputSize, async () => {});
+    return { source: { currentFrame: () => undefined }, ready: new Promise(() => {}), available: false,
+      run: vi.fn(), close: vi.fn(async () => {}) } as never;
+  });
+  const app = renderHook(() => useModelInference(backend));
+  act(() => app.result.current.track(graph, plan));
+  await settleRefresh();
+  const consent = app.result.current.notices.find(notice => notice.id === "model-consent-depthpro2-s-coreml");
+  expect(consent?.actions?.map(action => action.label)).toEqual(["Download"]);
+  expect(depth.prepare).not.toHaveBeenCalled();
+  expect(depth.open).not.toHaveBeenCalled();
+  await act(async () => { consent!.actions![0]!.onSelect(); await Promise.resolve(); });
+  expect(depth.prepare).toHaveBeenCalledWith("depthpro2-s-coreml", expect.any(Function));
+  await act(async () => { finish(); await Promise.resolve(); await Promise.resolve(); });
+  const [width, height] = plan.outputs.find(output => output.nodeId === depthId)!.size;
+  expect(depth.open).toHaveBeenCalledWith("loom-native-depth-session", "depthpro2-s-coreml", "res_640x360", 640, 360, width, height, expect.any(Function));
+  expect(workers).toBe(0);
+  expect(fetches).not.toHaveBeenCalled();
+  expect(gates.gates.has(preprocessId(plan, depthId))).toBe(false);
+  app.unmount();
+  delete (window as { loomDesktop?: unknown }).loomDesktop;
 });

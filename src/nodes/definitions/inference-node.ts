@@ -404,7 +404,15 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
  * `boxAspect`, and `depth-pro2-letterbox.gpu.test.ts` runs both shaders on a square box and
  * requires identical buffers, then checks the rect registration against `occOf`.
  */
-export function letterboxRectPreprocessWgsl(): EmittedWgsl {
+export function letterboxRectPreprocessWgsl(options: { readonly srgb?: boolean } = {}): EmittedWgsl {
+  /* T1818b: `srgb` encodes the linear working space for a model fed DISPLAY values with
+     no worker in between to do it — Core ML in the desktop app, whose transport carries these
+     texels as bytes. Without it the shader is exactly the ONNX path's, byte for byte. */
+  const store = options.srgb === true
+    ? `let linear = clamp(textureLoad(sourceTexture, texel, 0), vec4f(0.0), vec4f(1.0));
+  let encoded = select(1.055 * pow(linear.rgb, vec3f(1.0 / 2.4)) - vec3f(0.055), 12.92 * linear.rgb, linear.rgb <= vec3f(0.0031308));
+  modelInput[gid.y * box.x + gid.x] = vec4f(encoded, linear.a);`
+    : "modelInput[gid.y * box.x + gid.x] = textureLoad(sourceTexture, texel, 0);";
   return wgsl`struct PreprocessParams { width: f32, height: f32 };
 
 @group(0) @binding(0) var<uniform> params: PreprocessParams;
@@ -423,6 +431,6 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   let occ = select(vec2f(aspect / boxAspect, 1.0), vec2f(1.0, boxAspect / aspect), aspect >= boxAspect);
   let sourceUv = (uv - vec2f(0.5)) / occ + vec2f(0.5);
   let texel = clamp(vec2i(sourceUv * dimsF), vec2i(0), dims - vec2i(1));
-  modelInput[gid.y * box.x + gid.x] = textureLoad(sourceTexture, texel, 0);
+  ${store}
 }`;
 }

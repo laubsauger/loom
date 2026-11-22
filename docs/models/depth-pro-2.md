@@ -81,4 +81,25 @@ Photo preparation offers the two single-frame builds, S FP32 and B FP16, each in
 
 Measured 2026-11-22 through the shipped preparer and worker on WebGPU (`depth-pro2.spec.ts`), on a 1280 × 720 street frame in the 672 × 384 box. The nearest surface read 20.4 m at 40° and 8.8 m at 80°. Every pixel's ratio between the two runs was 2.305407 (5th–95th percentile spread 4e-7), which is tan 40° / tan 20°. The model scales its metres by the focal length and by nothing else.
 
-Native Core ML (T1818b) and MLX streaming (T1819b) are separate rows and are not implemented here.
+## Core ML in the desktop app (T1818b)
+
+The live Depth node also offers Apple's own Core ML builds, `apple/DepthPro2-coreml@4e607a6`: S (52.95 MB) and B (197.36 MB), each a streaming model with a 4-frame window. These run only in the Loom desktop app, on Apple Silicon with macOS 15 or later. A browser lists them but marks them disabled, with the reason. A document already set to one opens in a browser with a notice that it runs only in the desktop app.
+
+- **Acquisition.** Each package is three files, pinned with their lengths and SHA-256 in `src/devices/native/depth-model-manifest.json`. The desktop service downloads them only after the person presses Download in the node's notice, verifies each file, and compiles the package once. Compiling also opens all five functions, so a package that compiles but cannot run is refused at that point.
+- **Input.** Each package has five input boxes, one function each: 640×360, 854×480 (Apple's default), 896×512, 1138×640 and 1280×720. The node's preprocess letterboxes the picture into the chosen box and sRGB-encodes it, because Core ML is fed display values with no worker in between. The bytes reach the service through the same capture as the native Person Mask.
+- **Output.** Core ML returns `inverse_depth`, normalized by the focal length: metres = f_px / (W · inverse_depth). The service un-letterboxes it to the node's size by `occOf`'s rule and returns it as an rgbaf16 surface. The node's result pass multiplies it by W / f_px = 2 · tan(fov / 2) / occX to get inverse metres, then applies Near, Far and Publish as for the browser builds.
+- **State.** One `MLState` per session, kept across frames. A new session, or a reset, starts a new stream.
+
+Measured 2026-11-22 on the M3 Max, GPU (`.cpuAndGPU`), median ms per frame. The machine was shared, so expect ±15 %:
+
+| Box | S, bare Core ML | S, through the service | B, bare Core ML | B, through the service |
+| --- | ---: | ---: | ---: | ---: |
+| 640×360 | 37 | 35 | 80 | 57 |
+| 854×480 | 48 | 47 | 134 | 111 |
+| 896×512 | 53 | 55 | 148 | not run |
+| 1138×640 | 114 | 108 | 298 | not run |
+| 1280×720 | 187 | 166 | 450 | not run |
+
+`.all` (letting Core ML use the Neural Engine) was slower: 44 and 86 ms for S at the two smaller boxes. `.cpuAndNeuralEngine` refuses a package's named functions. Two sessions running at once put S at 854×480 at about 62–74 ms each. The bare WebGPU path's fastest live build, S streaming FP16 at 672×384, measured 83 ms.
+
+Photo preparation on Core ML (§T1828b) and MLX streaming (§T1819b) are separate rows and are not implemented here.

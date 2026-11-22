@@ -10,6 +10,8 @@ import console from 'node:console';
 import { setTimeout, clearTimeout } from 'node:timers';
 import { buildNativeOutput } from '../devices/native/build-native.mjs';
 import { buildNativeVision } from '../devices/native/vision-build.mjs';
+import { buildNativeDepth } from '../devices/native/depth-build.mjs';
+import { depthSupport } from '../devices/native/depth-models.mjs';
 import { buildNativeNdi } from '../devices/native/ndi-build.mjs';
 import { retireVisionServices } from '../devices/native/vision-workers.mjs';
 import { createRequire } from 'node:module';
@@ -63,6 +65,8 @@ nativeDirectory = process.platform === 'darwin' && process.arch === 'arm64'
 const nativeAddon = process.platform === 'darwin' && process.arch === 'arm64'
   ? buildNativeOutput(nativeDirectory, { receiver: smoke }) : undefined;
 if (nativeDirectory) buildNativeVision(nativeDirectory);
+// T1818b: below macOS 15 Depth Pro 2 is not built; its probe gives the reason in the app.
+if (nativeDirectory && depthSupport().supported) buildNativeDepth(nativeDirectory);
 if (process.env.LOOM_NDI_SDK && !nativeDirectory) throw new Error('NDI development currently requires the Apple Silicon desktop host');
 if (process.env.LOOM_NDI_OUTPUT_MODE !== undefined && !process.env.LOOM_NDI_SDK)
   throw new Error('NDI output mode requires the explicitly configured external SDK');

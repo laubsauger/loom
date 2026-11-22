@@ -752,8 +752,8 @@ export function App({
    */
   const requirements = useRequirementDiagnostics(runtime, hostFacts);
   const sessionNodeDiagnostics = useMemo(
-    () => [...vision.diagnostics, ...laser.diagnostics, ...requirements],
-    [vision.diagnostics, laser.diagnostics, requirements],
+    () => [...vision.diagnostics, ...depth.diagnostics, ...laser.diagnostics, ...requirements],
+    [vision.diagnostics, depth.diagnostics, laser.diagnostics, requirements],
   );
   const projectRenderDefaults = useCallback((): RenderJobSettings => ({
     resolution: runtime.settings.outputResolution,
@@ -1613,6 +1613,8 @@ export function App({
       // T950 — the laser pump's honest state, on the same one-list rule as OSC's.
       { id: "laser", read: () => laser.diagnostics },
       { id: "vision", read: () => vision.diagnostics },
+      // T1818b — Depth on Core ML: its desktop session's own sentences, as Vision's.
+      { id: "depth", read: () => depth.diagnostics },
       { id: "rejection", read: () => rejection, clear: () => setRejection(NO_DIAGNOSTICS) },
       { id: "autosave", read: () => autosave.diagnostics, clear: () => autosave.clearDiagnostics() },
       { id: "project", read: () => project.diagnostics, clear: () => project.clearDiagnostics() },

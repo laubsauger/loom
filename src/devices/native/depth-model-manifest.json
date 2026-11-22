@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "repository": "apple/DepthPro2-coreml",
+  "revision": "4e607a682f993bbf95035054fc78ba9ffc81faf2",
+  "license": "Apple Machine Learning Research Model License: research use only",
+  "functions": [
+    "res_640x360",
+    "res_854x480",
+    "res_896x512",
+    "res_1138x640",
+    "res_1280x720"
+  ],
+  "models": [
+    {
+      "id": "depthpro2-s-coreml",
+      "label": "Depth Pro 2 S",
+      "package": "depthpro2-s_w4.mlpackage",
+      "totalBytes": 52953390,
+      "files": [
+        {
+          "path": "depthpro2-s_w4.mlpackage/Manifest.json",
+          "url": "https://huggingface.co/apple/DepthPro2-coreml/resolve/4e607a682f993bbf95035054fc78ba9ffc81faf2/depthpro2-s_w4.mlpackage/Manifest.json",
+          "bytes": 617,
+          "sha256": "13f6b10d8e6888a82c235fbe74e02f4c514c63d91c509da0777e2fc310aa69c1"
+        },
+        {
+          "path": "depthpro2-s_w4.mlpackage/Data/com.apple.CoreML/model.mlmodel",
+          "url": "https://huggingface.co/apple/DepthPro2-coreml/resolve/4e607a682f993bbf95035054fc78ba9ffc81faf2/depthpro2-s_w4.mlpackage/Data/com.apple.CoreML/model.mlmodel",
+          "bytes": 1515717,
+          "sha256": "ebd01de2bc689c93fd51c6d7f3495eb65f1d31e2de8a6c0435eedc5ceee1ea8f"
+        },
+        {
+          "path": "depthpro2-s_w4.mlpackage/Data/com.apple.CoreML/weights/weight.bin",
+          "url": "https://huggingface.co/apple/DepthPro2-coreml/resolve/4e607a682f993bbf95035054fc78ba9ffc81faf2/depthpro2-s_w4.mlpackage/Data/com.apple.CoreML/weights/weight.bin",
+          "bytes": 51437056,
+          "sha256": "24b741e5608cbdd99bc2b26d4925c410b2d415637c36b1c0b51050af9c9be1db"
+        }
+      ]
+    },
+    {
+      "id": "depthpro2-b-coreml",
+      "label": "Depth Pro 2 B",
+      "package": "depthpro2-b_w4.mlpackage",
+      "totalBytes": 197362485,
+      "files": [
+        {
+          "path": "depthpro2-b_w4.mlpackage/Manifest.json",
+          "url": "https://huggingface.co/apple/DepthPro2-coreml/resolve/4e607a682f993bbf95035054fc78ba9ffc81faf2/depthpro2-b_w4.mlpackage/Manifest.json",
+          "bytes": 617,
+          "sha256": "f7a13538bebe8b592ae19fbf6c3aac303c8bfba44384109c00f69275be34be39"
+        },
+        {
+          "path": "depthpro2-b_w4.mlpackage/Data/com.apple.CoreML/model.mlmodel",
+          "url": "https://huggingface.co/apple/DepthPro2-coreml/resolve/4e607a682f993bbf95035054fc78ba9ffc81faf2/depthpro2-b_w4.mlpackage/Data/com.apple.CoreML/model.mlmodel",
+          "bytes": 1516748,
+          "sha256": "b322cf6d7773bc3e7b79c56072d09a4ac8ad0ffc38262f34a27b1dace4e064a6"
+        },
+        {
+          "path": "depthpro2-b_w4.mlpackage/Data/com.apple.CoreML/weights/weight.bin",
+          "url": "https://huggingface.co/apple/DepthPro2-coreml/resolve/4e607a682f993bbf95035054fc78ba9ffc81faf2/depthpro2-b_w4.mlpackage/Data/com.apple.CoreML/weights/weight.bin",
+          "bytes": 195845120,
+          "sha256": "6f47f78fcc7054239bd1f9653b82179e622b0adff0c30877b495f62bf56c37bc"
+        }
+      ]
+    }
+  ]
+}

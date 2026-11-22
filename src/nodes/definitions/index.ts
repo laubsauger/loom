@@ -244,6 +244,8 @@ export {
   depthProvidersFor,
   depthSettingsFor,
   isMetricDepthModel,
+  isCoreMlDepthModel,
+  DEPTH_COREML_UNAVAILABLE,
   DEPTH_INPUT_KEY,
   DEPTH_INPUT_SIDE,
   DEPTH_RESULT_KEY,

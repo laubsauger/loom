@@ -6,13 +6,53 @@ import type { LoomBackend } from "@runtime/backend/index.ts";
 import { inferenceSourceIdFor } from "@runtime/execution/inference-sources.ts";
 import { scratchResourceId } from "@compiler/resources.ts";
 import { PERSON_MASK_INPUT_KEY, PERSON_MASK_INPUT_SIDE } from "@nodes/definitions/person-mask.ts";
-import { createNativeVisionSource, desktopVisionBridge } from "@devices/native-inference.ts";
+import { createNativeVisionSource, desktopVisionBridge, type DesktopVisionBridge } from "@devices/native-inference.ts";
 
 export interface NativeVisionTarget {
   nodeId: string;
   size: readonly [number, number];
   minIntervalSeconds: number;
   channel?: string;
+  /**
+   * T1818b — what the node feeds the service, when it is not Person Mask's square: its
+   * preprocess buffer's key and box, and the bridge that opens this node's session (the
+   * depth service with this node's model and function). A change to any of these is a new
+   * session, as a size change is.
+   */
+  input?: { readonly key: string; readonly size: readonly [number, number]; readonly session: string };
+}
+
+/**
+ * T1818b — what differs between the native models this manager runs. Person Mask's is the
+ * default and is exactly the behaviour this file had before Depth joined it.
+ */
+export interface NativeSourcesConfig {
+  /** The bridge for one target, or undefined where this page has none. */
+  readonly bridgeFor: (target: NativeVisionTarget) => DesktopVisionBridge | undefined;
+  readonly namePrefix: "loom-native-vision-" | "loom-native-depth-";
+  /** Said on the node when there is no bridge. No other transport is substituted. */
+  readonly unavailable: string;
+  readonly starting: string;
+  /** Diagnostic codes `<family>.native.refused`, `.starting`, `.retirement`. */
+  readonly family: "vision" | "depth";
+  /** What the node shows before the first result: rgba16float bytes for `size`. */
+  readonly empty: (size: readonly [number, number]) => Uint8Array;
+}
+
+const PERSON_MASK_NATIVE: NativeSourcesConfig = {
+  bridgeFor: () => desktopVisionBridge(),
+  namePrefix: "loom-native-vision-",
+  unavailable: "Native Person Mask requires the Apple Silicon Electron app; no helper/CPU transport is substituted.",
+  starting: "Native Person Mask is starting its Python worker; no result yet.",
+  family: "vision",
+  // Same never-yet empty mask as the helper path, in the declared format.
+  empty: (size) => new Uint8Array(size[0] * size[1] * 8),
+};
+
+function sameInput(a: NativeVisionTarget, b: NativeVisionTarget): boolean {
+  return a.size[0] === b.size[0] && a.size[1] === b.size[1] &&
+    a.input?.key === b.input?.key && a.input?.session === b.input?.session &&
+    a.input?.size[0] === b.input?.size[0] && a.input?.size[1] === b.input?.size[1];
 }
 type NativeSource = ReturnType<typeof createNativeVisionSource>;
 interface Entry {
@@ -41,7 +81,7 @@ function retire(backend: LoomBackend, entry: Entry) {
 }
 
 /** Native ownership and frame scheduling; helper byte inference stays unchanged. */
-export function createNativeVisionSources() {
+export function createNativeVisionSources(config: NativeSourcesConfig = PERSON_MASK_NATIVE) {
   let backend: LoomBackend | null = null;
   let latest: FrameEvaluationInput | undefined;
   const entries = new Map<string, Entry>();
@@ -51,7 +91,7 @@ export function createNativeVisionSources() {
   };
   const run = (entry: Entry, frame: FrameEvaluationInput) => {
     if (entry.error) return Promise.reject(new Error(entry.error));
-    if (!entry.source) return Promise.reject(new Error("Native Vision source is unavailable"));
+    if (!entry.source) return Promise.reject(new Error(config.unavailable));
     const seconds = absTimeSecondsOf(frame);
     entry.issued = seconds;
     const pending = entry.source.run().then(result => {
@@ -72,7 +112,7 @@ export function createNativeVisionSources() {
       const wanted = new Map(next.map(target => [target.nodeId, target]));
       for (const [id, entry] of entries) {
         const target = wanted.get(id);
-        if (target && target.size[0] === entry.target.size[0] && target.size[1] === entry.target.size[1]) {
+        if (target && sameInput(target, entry.target)) {
           entry.target = target; continue;
         }
         if (backend) retire(backend, entry);
@@ -82,21 +122,21 @@ export function createNativeVisionSources() {
         if (entries.has(target.nodeId)) continue;
         const entry: Entry = { target, initialized: false, closed: false };
         entries.set(target.nodeId, entry);
-        const bridge = desktopVisionBridge();
+        const bridge = config.bridgeFor(target);
         if (!backend || !bridge) {
-          entry.error = "Native Person Mask requires the Apple Silicon Electron app; no helper/CPU transport is substituted.";
+          entry.error = config.unavailable;
           continue;
         }
         try {
           const source = createNativeVisionSource(backend, bridge, {
-            inputResourceId: scratchResourceId(target.nodeId, PERSON_MASK_INPUT_KEY),
-            inputSize: [PERSON_MASK_INPUT_SIDE, PERSON_MASK_INPUT_SIDE], outputSize: target.size,
+            inputResourceId: scratchResourceId(target.nodeId, target.input?.key ?? PERSON_MASK_INPUT_KEY),
+            inputSize: target.input?.size ?? [PERSON_MASK_INPUT_SIDE, PERSON_MASK_INPUT_SIDE], outputSize: target.size,
             beforeOpen: Promise.all([...(drains.get(backend)?.keys() ?? [])]).then(() => undefined),
+            namePrefix: config.namePrefix,
           });
           entry.source = source;
-          // Same never-yet empty mask as the helper path, in the declared format.
           // This is initial state, never a substitute transport after failure.
-          let empty: Uint8Array | undefined = new Uint8Array(target.size[0] * target.size[1] * 8);
+          let empty: Uint8Array | undefined = config.empty(target.size);
           entry.unregister = backend.registerMediaSource(inferenceSourceIdFor(target.nodeId), {
             currentFrame: () => {
               const frame = source.source.currentFrame();
@@ -136,11 +176,11 @@ export function createNativeVisionSources() {
     },
     diagnostics(): RuntimeDiagnostic[] {
       const active: RuntimeDiagnostic[] = [...entries.values()].filter(entry => entry.error || !entry.initialized).map(entry => ({
-        severity: "warning", code: entry.error ? "vision.native.refused" : "vision.native.starting",
-        message: entry.error ?? "Native Person Mask is starting its Python worker; no result yet.", nodeId: entry.target.nodeId,
+        severity: "warning", code: entry.error ? `${config.family}.native.refused` : `${config.family}.native.starting`,
+        message: entry.error ?? config.starting, nodeId: entry.target.nodeId,
       }));
       if (backend) for (const error of drains.get(backend)?.values() ?? []) {
-        if (error) active.push({ severity: "error", code: "vision.native.retirement",
+        if (error) active.push({ severity: "error", code: `${config.family}.native.retirement`,
           message: `Native Vision retirement failed; new sessions and exports remain blocked: ${error}` });
       }
       return active;

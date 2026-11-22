@@ -111,6 +111,13 @@ const LISTED: Ledger<readonly string[]> = {
     // Every status of a retained file but `ready`, which never reports.
     "`asset.reference.${status!.kind}`": ["asset.reference.pending", "asset.reference.permission", "asset.reference.missing", "asset.reference.error"],
   },
+  "src/app/native-vision-sources.ts": {
+    // T1818b: one manager runs both native models; its config's `family` is "vision"
+    // (Person Mask) or "depth" (Depth on Core ML, `native-depth.ts`).
+    "`${config.family}.native.refused`": ["vision.native.refused", "depth.native.refused"],
+    "`${config.family}.native.starting`": ["vision.native.starting", "depth.native.starting"],
+    "`${config.family}.native.retirement`": ["vision.native.retirement", "depth.native.retirement"],
+  },
   "src/domain/components/parent-scope.ts": {
     "`component.parentScope.${lookup.reason}`": ["component.parentScope.no-scope", "component.parentScope.too-deep", "component.parentScope.unknown-key"],
   },
