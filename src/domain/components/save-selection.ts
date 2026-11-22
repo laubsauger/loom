@@ -1,7 +1,7 @@
 import type { ExposedPort, GraphComponentDefinition } from "../types/components.ts";
 import type { RuntimeDiagnostic } from "../types/diagnostics.ts";
-import type { GraphDocument, GraphEdge, GraphNode } from "../types/graph.ts";
-import type { ComponentId, EdgeId, NodeId, PortId } from "../types/ids.ts";
+import type { GraphDocument, GraphEdge, GraphNode, GraphTie } from "../types/graph.ts";
+import type { ComponentId, EdgeId, NodeId, PortId, TieId } from "../types/ids.ts";
 import type { NodeRegistryView } from "../../nodes/registry/registry.ts";
 import { boundaryTypeFor } from "../../nodes/definitions/component-io.ts";
 import { arePortsCompatible } from "../graph/port-compat.ts";
@@ -24,6 +24,16 @@ import { liveSourceReferenceTokens } from "../graph/source-references.ts";
  * picked three nodes in the middle of a chain — so every edge with exactly one end inside
  * becomes an exposed port, and the outer end reconnects to the instance. Get that wrong
  * and "make this a component" silently deletes the user's wiring.
+ *
+ * T1821b(b) — WIRE TIES. A wire with both ends inside goes into the component with its route,
+ * and the ties it passes go into the component's graph with it (same ids and positions, as
+ * the nodes keep theirs). A wire that CROSSES the boundary is split by the In or Out the
+ * save makes: its whole route stays on the OUTER half, in the parent, because the ties were
+ * drawn in the parent's space and the outer half is the part still drawn there; the inner
+ * half, In → consumer or producer → Out, is born unrouted. Where several crossing wires from
+ * one outer source become one outer wire to one In (the fan-in below), that wire takes the
+ * route of the first of them by id. A tie the parent then has no wire through goes
+ * (§V1040), in the same step.
  */
 
 export interface SelectionWiring {
@@ -32,6 +42,8 @@ export interface SelectionWiring {
   outer: { nodeId: NodeId; portId: PortId };
   /** Retain its slot at the original consumer, including mixed internal/external inputs. */
   order?: number;
+  /** T1821b(b): the route of the crossing wire this outer wire replaces, in the parent. */
+  via?: TieId[];
 }
 
 export interface ComponentFromSelection {
@@ -220,6 +232,8 @@ export function buildComponentFromSelection(input: SaveSelectionInput): Componen
   diagnostics.push(...fixedInputOrderProblems(input, inside));
 
   const edges: Record<EdgeId, GraphEdge> = {};
+  /** T1821b(b): the ties the inside wires pass, which the component's graph keeps. */
+  const ties: Record<TieId, GraphTie> = {};
   // An absent or tied order is resolved by edge ID. Reminting a crossing edge would
   // change that decision, so preserve the ORIGINAL total order for the whole input,
   // including peers left outside the selection and feeds that move inside it.
@@ -305,9 +319,16 @@ export function buildComponentFromSelection(input: SaveSelectionInput): Componen
     if (!sourceInside && !targetInside) continue;
 
     removedEdgeIds.push(edgeId);
+    // T1821b(b): a crossing wire's route rides on the outer wire that replaces it.
+    const route = edge.via === undefined || edge.via.length === 0 ? {} : { via: [...edge.via] };
 
     if (sourceInside && targetInside) {
       edges[edgeId] = edge;
+      // ...and an inside wire's ties go into the component with it.
+      for (const tieId of edge.via ?? []) {
+        const tie = input.graph.ties?.[tieId];
+        if (tie !== undefined) ties[tieId] = { id: tieId, position: { ...tie.position } };
+      }
       continue;
     }
 
@@ -362,7 +383,7 @@ export function buildComponentFromSelection(input: SaveSelectionInput): Componen
         };
         // No exposure row: the register-time derivation mints the socket from the In
         // node itself, named by its label — one mapping, not two (§V109).
-        inputWiring.push({ externalId: name, outer: { ...edge.source }, ...(edge.order === undefined ? {} : { order: edge.order }) });
+        inputWiring.push({ externalId: name, outer: { ...edge.source }, ...(edge.order === undefined ? {} : { order: edge.order }), ...route });
         continue;
       }
 
@@ -374,7 +395,7 @@ export function buildComponentFromSelection(input: SaveSelectionInput): Componen
         nodeId: edge.target.nodeId,
         portId: edge.target.portId,
       });
-      inputWiring.push({ externalId, outer: { ...edge.source }, ...(edge.order === undefined ? {} : { order: edge.order }) });
+      inputWiring.push({ externalId, outer: { ...edge.source }, ...(edge.order === undefined ? {} : { order: edge.order }), ...route });
       continue;
     }
 
@@ -393,6 +414,7 @@ export function buildComponentFromSelection(input: SaveSelectionInput): Componen
         externalId: (nodes[standingOut] as GraphNode).label ?? standingOut,
         outer: { ...edge.target },
         ...(edge.order === undefined ? {} : { order: edge.order }),
+        ...route,
       });
       continue;
     }
@@ -418,7 +440,7 @@ export function buildComponentFromSelection(input: SaveSelectionInput): Componen
         source: { ...edge.source },
         target: { nodeId: boundaryId, portId: "in" },
       };
-      outputWiring.push({ externalId: name, outer: { ...edge.target }, ...(edge.order === undefined ? {} : { order: edge.order }) });
+      outputWiring.push({ externalId: name, outer: { ...edge.target }, ...(edge.order === undefined ? {} : { order: edge.order }), ...route });
       continue;
     }
 
@@ -433,7 +455,7 @@ export function buildComponentFromSelection(input: SaveSelectionInput): Componen
         portId: edge.source.portId,
       });
     }
-    outputWiring.push({ externalId, outer: { ...edge.target }, ...(edge.order === undefined ? {} : { order: edge.order }) });
+    outputWiring.push({ externalId, outer: { ...edge.target }, ...(edge.order === undefined ? {} : { order: edge.order }), ...route });
   }
 
   if (inside.size === 0) {
@@ -459,7 +481,7 @@ export function buildComponentFromSelection(input: SaveSelectionInput): Componen
     version: input.version ?? 1,
     name: input.name,
     ...(input.description === undefined ? {} : { description: input.description }),
-    graph: { revision: 0, nodes, edges, groups: {} },
+    graph: { revision: 0, nodes, edges, groups: {}, ...(Object.keys(ties).length === 0 ? {} : { ties }) },
     inputs,
     outputs,
     // Nothing is published yet: publishing is a separate, deliberate act of re-authoring

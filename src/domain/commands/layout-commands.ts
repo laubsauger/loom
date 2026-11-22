@@ -6,6 +6,7 @@ import type { GraphDocument } from "../types/graph.ts";
 import type { NodeId, Revision } from "../types/ids.ts";
 import type { GraphPatchOperation, GraphPatchResult } from "../types/patch.ts";
 import { applyGraphPatch } from "./apply-patch.ts";
+import { carriedTiePositions } from "./wire-tie-commands.ts";
 import { z } from "zod";
 import { NO_INPUT, nodeIdsInput } from "./input-schema.ts";
 import type { CommandContext, CommandOutcome, LoomBus } from "./bus.ts";
@@ -49,7 +50,7 @@ import type { CommandContext, CommandOutcome, LoomBus } from "./bus.ts";
  */
 declare module "../types/commands.ts" {
   interface CommandMap {
-    /** Tidy the whole document. One `moveNodes` patch, one undo group. */
+    /** Tidy the whole document. One `moveNodes` patch (and the ties it carries, T1821b), one undo group. */
     "graph.layoutAll": { input: LayoutAllInput; output: GraphPatchResult };
     /** Tidy only these nodes, into the positions the whole-graph tidy would give them. */
     "graph.layout": { input: LayoutInput; output: GraphPatchResult };
@@ -124,6 +125,10 @@ function tidy(
     );
   }
   const operations: GraphPatchOperation[] = [{ op: "moveNodes", positions: moved }];
+  // T1821b(a): the ties on the moved nodes' wires go with them, in the same patch, so the
+  // tidy is still one undo step and no wire is left bent round a place that moved away.
+  const carried = carriedTiePositions(context.graph, moved);
+  if (Object.keys(carried).length > 0) operations.push({ op: "moveTies", positions: carried });
   return applyGraphPatch(
     { baseRevision: context.graph.revision, label, operations },
     context,

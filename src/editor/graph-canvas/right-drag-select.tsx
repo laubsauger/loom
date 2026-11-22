@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { useReactFlow, useStore, useStoreApi } from "@xyflow/react";
+import { tiesTouching } from "@editor/edges/tie-view.ts";
+import { TIE_DOT_RADIUS } from "@editor/edges/wire-ties.tsx";
+import { useGraphCanvas } from "./canvas-context.ts";
 
 /**
  * T1724b — TOUCHDESIGNER'S BOX SELECTION: THE RIGHT BUTTON, DRAGGED ON EMPTY CANVAS.
@@ -19,6 +22,9 @@ import { useReactFlow, useStore, useStoreApi } from "@xyflow/react";
  * before the menu host hears of it: a `contextmenu` while a right press is in progress is
  * held back and OWED; one right after a drag is dropped; a press that never moved pays the
  * owed one back on release, at the press's point, and the menu opens as it always did.
+ *
+ * T1821b(c): the box takes the wire ties it touches too, after the nodes, so the node
+ * selection's own reset (`graph-canvas.tsx` lets the ties go on it) cannot undo it.
  */
 const DRAG_THRESHOLD = 4;
 
@@ -32,6 +38,7 @@ interface Box {
 export function RightDragSelect(): ReactNode {
   const store = useStoreApi();
   const flow = useReactFlow();
+  const { ties } = useGraphCanvas();
   // The library sets its root after the first render; read it as it arrives.
   const root = useStore((state) => state.domNode);
   const [box, setBox] = useState<Box | null>(null);
@@ -91,11 +98,14 @@ export function RightDragSelect(): ReactNode {
       const at = root.getBoundingClientRect();
       const corner = flow.screenToFlowPosition({ x: at.left + drawn.left, y: at.top + drawn.top });
       const far = flow.screenToFlowPosition({ x: at.left + drawn.left + drawn.width, y: at.top + drawn.top + drawn.height });
-      const crossed = flow.getIntersectingNodes({ x: corner.x, y: corner.y, width: far.x - corner.x, height: far.y - corner.y }, true).map((node) => node.id);
+      const area = { x: corner.x, y: corner.y, width: far.x - corner.x, height: far.y - corner.y };
+      const crossed = flow.getIntersectingNodes(area, true).map((node) => node.id);
       const state = store.getState();
       const held = ended.add ? state.nodes.filter((node) => node.selected === true).map((node) => node.id) : [];
+      const heldTies = ended.add ? [...ties.selection()] : [];
       if (!ended.add) state.resetSelectedElements();
       state.addSelectedNodes([...new Set([...held, ...crossed])]);
+      ties.select([...heldTies, ...tiesTouching(ties, area, TIE_DOT_RADIUS)]);
     };
 
     const onContextMenu = (event: MouseEvent): void => {
@@ -129,7 +139,7 @@ export function RightDragSelect(): ReactNode {
       win.removeEventListener("pointermove", onPointerMove);
       win.removeEventListener("pointerup", onPointerUp);
     };
-  }, [root, store, flow]);
+  }, [root, store, flow, ties]);
 
   if (box === null) return null;
   return (

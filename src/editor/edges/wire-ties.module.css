@@ -27,3 +27,9 @@
 .hit:active {
   cursor: grabbing;
 }
+
+/* T1821b(c): a selected tie is ringed in the selection colour, as a selected node is bordered. */
+.dot.selected {
+  stroke: var(--signal);
+  stroke-width: 2;
+}

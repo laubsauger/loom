@@ -1,6 +1,6 @@
 import type { GraphDocument, GraphNode, ValuePlotMode } from "../types/graph.ts";
 import { internalChannelMasks } from "../components/internal-channel-masks.ts";
-import type { NodeId, Revision } from "../types/ids.ts";
+import type { NodeId, Revision, TieId } from "../types/ids.ts";
 import type { StoredParameter } from "../types/parameters.ts";
 import type { GraphPatchOperation, GraphPatchResult } from "../types/patch.ts";
 import type { RuntimeDiagnostic } from "../types/diagnostics.ts";
@@ -121,11 +121,21 @@ interface ClipboardNode {
 interface ClipboardEdge {
   readonly source: { nodeId: NodeId; portId: string };
   readonly target: { nodeId: NodeId; portId: string };
+  /** T1821b(b): the wire's route, by the copied ties' source ids. Absent = unrouted. */
+  readonly via?: readonly TieId[];
+}
+
+/** T1821b(b): a tie a copied wire passes, re-created with the copy at the same offset. */
+interface ClipboardTie {
+  readonly sourceId: TieId;
+  readonly position: { x: number; y: number };
 }
 
 interface Clipboard {
   readonly nodes: readonly ClipboardNode[];
   readonly edges: readonly ClipboardEdge[];
+  /** Absent on a copy whose wires pass no tie, and on one written before ties existed. */
+  readonly ties?: readonly ClipboardTie[];
 }
 
 /** Successive pastes of one clipboard cascade instead of stacking on each other. */
@@ -180,9 +190,24 @@ function internalEdges(graph: GraphDocument, nodeIds: readonly NodeId[]): Clipbo
     const edge = graph.edges[edgeId];
     if (edge === undefined) continue;
     if (!inside.has(edge.source.nodeId) || !inside.has(edge.target.nodeId)) continue;
-    edges.push({ source: { ...edge.source }, target: { ...edge.target } });
+    // T1821b(b): the route goes with the wire — only through ties the document holds.
+    const via = (edge.via ?? []).filter((tieId) => graph.ties?.[tieId] !== undefined);
+    edges.push({ source: { ...edge.source }, target: { ...edge.target }, ...(via.length === 0 ? {} : { via }) });
   }
   return edges;
+}
+
+/**
+ * T1821b(b) — the ties the copied wires pass, each once, whatever else passes it. The copy
+ * is a NEW tie carrying only the copied wires; the original keeps every wire it had.
+ */
+function copiedTies(graph: GraphDocument, edges: readonly ClipboardEdge[]): ClipboardTie[] {
+  const ids = new Set<TieId>();
+  for (const edge of edges) for (const tieId of edge.via ?? []) ids.add(tieId);
+  return [...ids].sort().flatMap((tieId) => {
+    const tie = graph.ties?.[tieId];
+    return tie === undefined ? [] : [{ sourceId: tieId, position: { ...tie.position } }];
+  });
 }
 
 function snapshot(graph: GraphDocument, nodeIds: readonly NodeId[]): Clipboard {
@@ -198,7 +223,9 @@ function snapshot(graph: GraphDocument, nodeIds: readonly NodeId[]): Clipboard {
     channelMask: node.channelMask,
     internalChannelMasks: Object.keys(internalChannelMasks(node)).length === 0 ? undefined : internalChannelMasks(node),
   }));
-  return { nodes, edges: internalEdges(graph, nodes.map((node) => node.sourceId)) };
+  const edges = internalEdges(graph, nodes.map((node) => node.sourceId));
+  const ties = copiedTies(graph, edges);
+  return { nodes, edges, ...(ties.length === 0 ? {} : { ties }) };
 }
 
 /**
@@ -310,11 +337,18 @@ function recreateOperations(
     }
   }
 
+  // T1821b(b): the copied wires' ties, new ones, offset like the nodes; then each wire is
+  // born through them (`connect.via`), so the copy is drawn as the original was.
+  const tieRef = (sourceId: TieId): `$${string}` => `$tie:${sourceId}`;
+  for (const tie of clipboard.ties ?? []) {
+    operations.push({ op: "addTie", ref: tieRef(tie.sourceId), position: { x: tie.position.x + offset.x, y: tie.position.y + offset.y } });
+  }
   for (const edge of clipboard.edges) {
     operations.push({
       op: "connect",
       source: { nodeId: ref(edge.source.nodeId), portId: edge.source.portId },
       target: { nodeId: ref(edge.target.nodeId), portId: edge.target.portId },
+      ...(edge.via === undefined || edge.via.length === 0 ? {} : { via: edge.via.map(tieRef) }),
     });
   }
 
@@ -397,7 +431,7 @@ function registerToggle(
  * definitions do not read — has no arrival and is refused by name exactly as before.
  */
 function foreignClipboard(
-  payload: { readonly nodes: readonly unknown[]; readonly edges: readonly unknown[] },
+  payload: { readonly nodes: readonly unknown[]; readonly edges: readonly unknown[]; readonly ties?: readonly unknown[] },
   registry: CommandContext["registry"],
   arrival: ClipboardArrival | null,
 ): Clipboard | { readonly refusal: string } {
@@ -428,11 +462,22 @@ function foreignClipboard(
       internalChannelMasks: node.internalChannelMasks,
     });
   }
-  const edges = payload.edges.filter((raw): raw is ClipboardEdge => {
+  // T1821b(b): the ties the copy carried, read back; a route keeps only the ties it carried,
+  // so a copy whose route and ties disagree lands unrouted rather than refused.
+  const ties: ClipboardTie[] = [];
+  for (const raw of payload.ties ?? []) {
+    const tie = raw as Partial<ClipboardTie>;
+    if (typeof tie.sourceId !== "string" || typeof tie.position?.x !== "number" || typeof tie.position.y !== "number") continue;
+    ties.push({ sourceId: tie.sourceId, position: { x: tie.position.x, y: tie.position.y } });
+  }
+  const carried = new Set(ties.map((tie) => tie.sourceId));
+  const edges = payload.edges.flatMap((raw): ClipboardEdge[] => {
     const edge = raw as Partial<ClipboardEdge>;
-    return typeof edge.source?.nodeId === "string" && typeof edge.target?.nodeId === "string";
+    if (typeof edge.source?.nodeId !== "string" || typeof edge.target?.nodeId !== "string") return [];
+    const via = Array.isArray(edge.via) ? [...new Set(edge.via.filter((tieId) => carried.has(tieId)))] : [];
+    return [{ source: edge.source, target: edge.target, ...(via.length === 0 ? {} : { via }) }];
   });
-  return { nodes, edges };
+  return { nodes, edges, ...(ties.length === 0 ? {} : { ties }) };
 }
 
 /** §T1393b: where a node copy is mirrored so another window can paste it. */
@@ -470,6 +515,7 @@ export function registerEditorCommands(bus: LoomBus, options: EditorCommandOptio
       kind: "nodes",
       nodes: copied.nodes,
       edges: copied.edges,
+      ...(copied.ties === undefined ? {} : { ties: copied.ties }),
       ...(components.length === 0 ? {} : { components }),
     });
     options.systemClipboard.write(written, written);

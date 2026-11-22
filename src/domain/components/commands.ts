@@ -9,7 +9,7 @@ import type { ComponentId, NodeId, PortId, Revision } from "../types/ids.ts";
 import type { ParameterDefinition, ParameterSchema, ParameterValue } from "../types/parameters.ts";
 import type { GraphPatchResult } from "../types/patch.ts";
 import type { CommandContext, CommandOutcome, LoomBus } from "../commands/bus.ts";
-import { applyGraphPatch } from "../commands/apply-patch.ts";
+import { applyGraphPatch, dropUnusedTies } from "../commands/apply-patch.ts";
 import { z } from "zod";
 import { idInput, nodeIdsInput, pointInput } from "../commands/input-schema.ts";
 import { parameterValueSchema } from "../types/schemas.ts";
@@ -827,6 +827,7 @@ export function registerComponentCommands(bus: LoomBus, options: ComponentComman
               source: { ...wiring.outer },
               target: { nodeId: instanceNodeId, portId: wiring.externalId },
               ...(wiring.order === undefined ? {} : { order: wiring.order }),
+              ...(wiring.via === undefined ? {} : { via: [...wiring.via] }),
             };
           }
           for (const wiring of built.outputWiring) {
@@ -836,8 +837,12 @@ export function registerComponentCommands(bus: LoomBus, options: ComponentComman
               source: { nodeId: instanceNodeId, portId: wiring.externalId },
               target: { ...wiring.outer },
               ...(wiring.order === undefined ? {} : { order: wiring.order }),
+              ...(wiring.via === undefined ? {} : { via: [...wiring.via] }),
             };
           }
+          // T1821b(b), §V1040: the inside wires took their ties into the component; a tie
+          // no wire left in the parent passes goes, in this same undo step.
+          dropUnusedTies(draft);
         },
       });
 

@@ -367,13 +367,7 @@ const UNROUTING_OPERATIONS: ReadonlySet<GraphPatchOperation["op"]> = new Set([
  * caller that adds a tie and routes nothing through it has made nothing.
  */
 function releaseUnusedTies(draft: GraphDocument, run: PatchRun): void {
-  const ties = draft.ties;
-  if (ties === undefined) return;
-  const used = new Set<TieId>();
-  for (const edge of Object.values(draft.edges)) for (const tieId of edge.via ?? []) used.add(tieId);
-  for (const tieId of Object.keys(ties).sort()) {
-    if (used.has(tieId)) continue;
-    delete ties[tieId];
+  for (const tieId of dropUnusedTies(draft)) {
     if (run.createdTies.has(tieId)) {
       run.diagnostics.push({
         severity: "info",
@@ -383,7 +377,26 @@ function releaseUnusedTies(draft: GraphDocument, run: PatchRun): void {
       });
     }
   }
+}
+
+/**
+ * §V1040's sweep itself: deletes from `draft` every tie no wire passes, and names them. A
+ * command that edits a draft directly rather than through operations (`component.saveSelection`
+ * takes wires out of the parent) runs it too, so the rule stays in this one place.
+ */
+export function dropUnusedTies(draft: GraphDocument): TieId[] {
+  const ties = draft.ties;
+  if (ties === undefined) return [];
+  const used = new Set<TieId>();
+  for (const edge of Object.values(draft.edges)) for (const tieId of edge.via ?? []) used.add(tieId);
+  const dropped: TieId[] = [];
+  for (const tieId of Object.keys(ties).sort()) {
+    if (used.has(tieId)) continue;
+    delete ties[tieId];
+    dropped.push(tieId);
+  }
   if (Object.keys(ties).length === 0) delete draft.ties;
+  return dropped;
 }
 
 function executeOperation(

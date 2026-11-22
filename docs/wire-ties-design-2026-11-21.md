@@ -142,8 +142,28 @@ and a tie it leaves empty goes with it.
 - A component session writes its graph back when `ties` moved, as it does for nodes,
   edges and groups.
 
+## Follow-ups landed 2026-11-22 (§T1821b a–c)
+
+- **Layout carries ties.** `graph.layoutAll` and `graph.layout` move each tie on a moved
+  node's wire in the same patch: a tie `s` of the way along its route moves by the blend
+  of its wire's two ends' moves (all of the output's at the output end, all of the input's
+  at the input end), a bundle by the mean over its wires. A tie on a straight run stays on
+  it, and a bend keeps its depth — a feedback wire routed under a chain stays under it,
+  where placing ties on the new straight run would draw it back through the nodes.
+- **Copies keep routes.** Copy, cut, paste and duplicate re-create the ties of every
+  copied wire (both ends copied) as new ties, offset like the nodes; the system clipboard
+  carries them between windows. Save as component takes an inside wire's ties into the
+  component's graph; a wire crossing the boundary keeps its whole route on its outer half
+  in the parent (the ties were drawn there), and the inner In/Out half is unrouted.
+- **Ties are in box selection**, as Houdini's network dots are: both boxes (Shift-drag
+  and right-drag) take the ties they touch, a selected tie is ringed, and dragging the
+  selected nodes moves the selected ties in the same undo step. Any other change of the
+  node selection lets them go, unless it added to it (Shift, Cmd, Ctrl).
+
 ## Left open (rows in §T1821b's STILL OPEN)
 
-- `graph.layoutAll` moves nodes and leaves ties where they were.
-- Copy/paste, duplicate and "save as component" re-create wires without their routes.
-- Ties are not part of box selection; moving a selection of nodes leaves its ties.
+- No pinned tie (one that outlives its wires).
+- Detach (and a detached instantiate) re-creates a component's inside wires without
+  their routes.
+- Delete and a drag of a selected tie act on the tie or the nodes alone, not the whole
+  selection.

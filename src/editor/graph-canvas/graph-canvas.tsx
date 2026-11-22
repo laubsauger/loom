@@ -4,7 +4,7 @@ import "@xyflow/react/dist/style.css";
 import "./xyflow-theme.css";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import type { MouseEvent as ReactMouseEvent, ReactNode, TouchEvent as ReactTouchEvent } from "react";
+import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode, TouchEvent as ReactTouchEvent } from "react";
 import {
   ConnectionLineType,
   Position,
@@ -370,11 +370,13 @@ export function GraphCanvas({
   const selectNodes = useCallback(
     (nodeIds: readonly NodeId[]) => {
       const wanted = new Set<string>(nodeIds);
+      // T1821b(c): a selection made by name is of nodes; the box's ties are let go.
+      ties.select([]);
       setViewNodes((previous) =>
         withSelection(projectNodes(bus.store.getGraph().nodes, previous), wanted),
       );
     },
-    [bus],
+    [bus, ties],
   );
 
   /**
@@ -461,6 +463,43 @@ export function GraphCanvas({
    * `resizing` explicitly rather than reacting to `dimensions` being present.
    */
   const dragSizes = useRef(new Map<NodeId, { width: number; height: number }>());
+
+  /**
+   * T1821b(c) — whether the last press on the canvas held a multi-selection key, i.e. ADDED
+   * to the selection rather than replacing it. Read when the node selection changes, which
+   * the library reports without the event that caused it.
+   */
+  const additivePress = useRef(false);
+  const notePress = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    additivePress.current = event.shiftKey || event.metaKey || event.ctrlKey;
+  }, []);
+  /** T1821b(c): a click on the empty canvas lets the ties go with the nodes. */
+  const releaseTies = useCallback(() => ties.select([]), [ties]);
+
+  /**
+   * T1821b(c) — the selected ties' `moveTies` for a drag that put `nodeId` at
+   * `committed[nodeId]`: every selected node moved by the same offset, so the ties move by
+   * it too. `null` when no tie is selected or nothing moved.
+   */
+  const selectedTiesMove = useCallback(
+    (nodeId: NodeId, committed: Readonly<Record<NodeId, { x: number; y: number }>>): GraphPatchOperation | null => {
+      const graph = bus.store.getGraph();
+      const from = graph.nodes[nodeId]?.position;
+      const to = committed[nodeId];
+      const selected = [...ties.selection()].sort().filter((tieId) => graph.ties?.[tieId] !== undefined);
+      if (from === undefined || to === undefined || selected.length === 0) return null;
+      const dx = to.x - from.x;
+      const dy = to.y - from.y;
+      if (dx === 0 && dy === 0) return null;
+      const positions: Record<string, { x: number; y: number }> = {};
+      for (const tieId of selected) {
+        const at = graph.ties?.[tieId]?.position as { x: number; y: number };
+        positions[tieId] = { x: at.x + dx, y: at.y + dy };
+      }
+      return { op: "moveTies", positions };
+    },
+    [bus, ties],
+  );
 
   /**
    * T213 / §V14b's sibling — a NODE dropped on an edge SPLICES into it.
@@ -564,12 +603,27 @@ export function GraphCanvas({
         onNodeLayoutChange();
       }
 
+      /*
+       * T1821b(c) — the box's ties are part of the selection, Houdini's network-dot rule. A
+       * change of the node selection lets them go, unless the press that made it ADDED to the
+       * selection (Shift, Cmd or Ctrl, the library's multi-selection keys). A box selection
+       * takes its ties after its nodes (`wire-ties.tsx`, `right-drag-select.tsx`), so the
+       * reset a fresh box makes cannot undo it.
+       */
+      if (!additivePress.current && changes.some((change) => change.type === "select")) ties.select([]);
+
       const committed: Record<NodeId, { x: number; y: number }> = {};
       const resized: Array<[NodeId, { width: number; height: number }]> = [];
       const removed: NodeId[] = [];
+      let carry: { x: number; y: number } | null = null;
       for (const change of changes) {
         if (change.type === "position") {
           if (change.position !== undefined) dragPositions.current.set(change.id, change.position);
+          // T1821b(c): the selected ties are drawn moved with the drag, by the drag's offset.
+          if (change.dragging === true && change.position !== undefined && carry === null && ties.selection().size > 0) {
+            const from = bus.store.getGraph().nodes[change.id]?.position;
+            if (from !== undefined) carry = { x: change.position.x - from.x, y: change.position.y - from.y };
+          }
           if (change.dragging === false) {
             const position = dragPositions.current.get(change.id);
             dragPositions.current.delete(change.id);
@@ -587,6 +641,7 @@ export function GraphCanvas({
           removed.push(change.id);
         }
       }
+      if (carry !== null) ties.carry(carry);
 
       if (resized.length > 0) {
         // ONE patch for the whole gesture (§V15, §V32). Dragging a top or left handle
@@ -612,6 +667,10 @@ export function GraphCanvas({
       const movedIds = Object.keys(committed);
       if (movedIds.length > 0) {
         const operations: GraphPatchOperation[] = [{ op: "moveNodes", positions: committed }];
+        // T1821b(c): the selected ties land with the nodes they were dragged with, in the
+        // same patch, so one Cmd+Z puts both back.
+        const tieMove = selectedTiesMove(movedIds[0] as NodeId, committed);
+        if (tieMove !== null) operations.push(tieMove);
         // Only a single-node drop can splice. Dropping a whole selection on a wire has no
         // one answer — which of them goes inline? — and picking one silently would be a
         // guess the user cannot see or undo separately from the move.
@@ -628,13 +687,23 @@ export function GraphCanvas({
         // cut into. Two patches would make the user undo twice for one drop, and would
         // leave a graph rewired around a node that had moved back.
         operations.push(...join, ...splice);
-        dispatch(operations, joined !== null && join.length > 0 ? joined.label : splice.length > 0 ? "Insert node into edge" : "Move node");
+        const label = joined !== null && join.length > 0 ? joined.label : splice.length > 0 ? "Insert node into edge" : "Move node";
+        if (tieMove === null) {
+          ties.carry(null);
+          dispatch(operations, label);
+        } else {
+          // Drawn where they were let go until the document says so too (`tie-view.ts`).
+          ties.releaseCarry();
+          void apply(operations, label).then((applied) => {
+            if (!applied) ties.carry(null);
+          });
+        }
       }
       if (removed.length > 0) {
         dispatch([{ op: "removeNodes", nodeIds: removed }], "Delete node");
       }
     },
-    [dispatch, spliceAt, dropJoinAt, onNodeLayoutChange],
+    [dispatch, apply, spliceAt, dropJoinAt, onNodeLayoutChange, ties, bus, selectedTiesMove],
   );
 
   const onEdgesChange = useCallback(
@@ -1313,6 +1382,8 @@ export function GraphCanvas({
         // to both.
         onMouseDownCapture={grabConnectedEnd}
         onTouchStartCapture={grabConnectedEnd}
+        // T1821b(c): did this press add to the selection? (`additivePress`).
+        onPointerDownCapture={notePress}
       >
         <ReactFlow<LoomNode, LoomEdge>
           nodes={viewNodes}
@@ -1339,6 +1410,7 @@ export function GraphCanvas({
           onInit={onInit}
           isValidConnection={isValidConnection}
           onSelectionChange={reportSelection}
+          onPaneClick={releaseTies}
           onNodeClick={promoteClicked}
           onNodeMouseEnter={reportEnter}
           onNodeMouseLeave={reportLeave}

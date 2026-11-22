@@ -1,4 +1,4 @@
-import { memo, useRef, useSyncExternalStore } from "react";
+import { memo, useEffect, useRef, useSyncExternalStore } from "react";
 import type { PointerEvent as ReactPointerEvent, MouseEvent as ReactMouseEvent } from "react";
 import { ViewportPortal, useStoreApi } from "@xyflow/react";
 import type { TieId } from "@domain/types/ids.ts";
@@ -6,7 +6,7 @@ import type { GraphPatchOperation } from "@domain/types/patch.ts";
 import { useGraphCanvas } from "@editor/graph-canvas/canvas-context.ts";
 import { EDGE_HIT_TOLERANCE_PX } from "./edge-geometry.ts";
 import { joinTieOperations, mergeTiesOperations, moveTieOperations, removeTieOperations } from "./tie-gestures.ts";
-import type { TiePoint } from "./tie-view.ts";
+import { tiesTouching, type TiePoint } from "./tie-view.ts";
 import styles from "./wire-ties.module.css";
 
 /**
@@ -26,6 +26,12 @@ import styles from "./wire-ties.module.css";
  * Each is one patch through `apply` — the canvas's `graph.applyPatch` door — so each is one
  * undo step. A tie is made by double-clicking a wire or the edge menu's "Add tie", both
  * `graph.rerouteEdge`, which the canvas owns.
+ *
+ * T1821b(c): a box selection takes the ties it touches, as Houdini's takes network dots —
+ * the library's Shift-drag box is read here, off its store, and the right-drag box in
+ * `right-drag-select.tsx`. A selected tie is drawn ringed and moves with the selected nodes
+ * (`graph-canvas.tsx`); any other change of the node selection, or a click on the empty
+ * canvas, lets it go.
  */
 
 /** The dot, and the invisible ring around it that takes the press, in graph units. */
@@ -60,7 +66,22 @@ export const WireTies = memo(function WireTies({
   // Renders when a tie moves (the view's version), and reads the view then.
   useSyncExternalStore(ties.subscribe, ties.version);
   const drawn = ties.all();
+  const selected = ties.selection();
   const gesture = useRef<Gesture | null>(null);
+
+  // T1821b(c): the library's own box (Shift-drag) takes the ties it touches, live, as it
+  // takes the nodes. It always starts a fresh selection, so the box's ties replace the last.
+  useEffect(
+    () =>
+      api.subscribe((state, previous) => {
+        const rect = state.userSelectionRect;
+        if (rect === previous.userSelectionRect || rect === null || !state.userSelectionActive) return;
+        const [x, y, zoom] = state.transform;
+        const area = { x: (rect.x - x) / zoom, y: (rect.y - y) / zoom, width: rect.width / zoom, height: rect.height / zoom };
+        ties.select(tiesTouching(ties, area, TIE_DOT_RADIUS));
+      }),
+    [api, ties],
+  );
 
   const finish = (operations: GraphPatchOperation[], label: string): void => {
     if (operations.length === 0) {
@@ -162,10 +183,16 @@ export const WireTies = memo(function WireTies({
         data-testid="wire-ties"
       >
         {drawn.map((tie) => (
-          <g key={tie.id} data-testid={`wire-tie-${tie.id}`} data-x={tie.position.x} data-y={tie.position.y}>
+          <g
+            key={tie.id}
+            data-testid={`wire-tie-${tie.id}`}
+            data-x={tie.position.x}
+            data-y={tie.position.y}
+            data-selected={selected.has(tie.id) ? "" : undefined}
+          >
             <title>Tie — drag to move, drop on another tie to merge, Shift-drop on a wire to add it, double-click to remove</title>
             <circle
-              className={styles.dot}
+              className={selected.has(tie.id) ? `${styles.dot} ${styles.selected}` : styles.dot}
               cx={tie.position.x}
               cy={tie.position.y}
               r={TIE_DOT_RADIUS}

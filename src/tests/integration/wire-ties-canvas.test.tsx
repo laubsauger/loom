@@ -239,3 +239,156 @@ describe("T1821b — ties on the composed canvas", () => {
     expect(view.container.ownerDocument.querySelector('[data-testid="node-search"]')).toBeNull();
   }, 20_000);
 });
+
+/** A pointer event (the library's box and the right-drag box listen for these), `view` attached after. */
+function pointer(target: Element | Document, type: string, init: PointerEventInit): void {
+  const doc = target instanceof Document ? target : target.ownerDocument;
+  const win = doc.defaultView as (Window & typeof globalThis) | null;
+  if (win === null) throw new Error("no window");
+  const fired = new win.PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 1, isPrimary: true, ...init });
+  Object.defineProperty(fired, "view", { value: win });
+  target.dispatchEvent(fired);
+}
+
+/** A box drawn on the empty canvas with `button`, between two GRAPH points. */
+async function box(container: HTMLElement, from: { x: number; y: number }, to: { x: number; y: number }, button: 0 | 2) {
+  const pane = container.querySelector(".react-flow__pane");
+  if (pane === null) throw new Error("no pane");
+  const start = toScreen(container, from);
+  const end = toScreen(container, to);
+  const buttons = button === 0 ? 1 : 2;
+  await act(async () => {
+    pointer(pane, "pointerdown", { button, buttons, clientX: start.x, clientY: start.y, shiftKey: button === 0 });
+    for (let step = 1; step <= 10; step += 1) {
+      pointer(pane, "pointermove", {
+        button,
+        buttons,
+        clientX: start.x + ((end.x - start.x) * step) / 10,
+        clientY: start.y + ((end.y - start.y) * step) / 10,
+        shiftKey: button === 0,
+      });
+    }
+    pointer(pane, "pointerup", { button, buttons: 0, clientX: end.x, clientY: end.y, shiftKey: button === 0 });
+  });
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  });
+}
+
+const isSelected = (container: HTMLElement, tieId: string): boolean =>
+  container.querySelector(`[data-testid="wire-tie-${tieId}"]`)?.hasAttribute("data-selected") === true;
+
+/** Two chains, each wire through its own tie; the top chain and its tie fit one box, the bottom does not. */
+const TWO_CHAINS: GraphPatchOperation[] = [
+  { op: "addNode", ref: "$a", type: "solid", position: { x: 0, y: 0 } },
+  { op: "addNode", ref: "$b", type: "blur", position: { x: 500, y: 0 } },
+  { op: "addNode", ref: "$c", type: "solid", position: { x: 0, y: 600 } },
+  { op: "addNode", ref: "$d", type: "blur", position: { x: 500, y: 600 } },
+  { op: "addTie", ref: "$t", position: { x: 340, y: 260 } },
+  { op: "addTie", ref: "$u", position: { x: 340, y: 860 } },
+  { op: "connect", source: { nodeId: "$a", portId: "out" }, target: { nodeId: "$b", portId: "input" }, via: ["$t"] },
+  { op: "connect", source: { nodeId: "$c", portId: "out" }, target: { nodeId: "$d", portId: "input" }, via: ["$u"] },
+];
+
+describe("T1821b(c) — ties are part of a box selection and move with it, as Houdini's network dots do", () => {
+  it("a right-drag box takes the tie it touches, and dragging the selection takes the tie along in the same undo step", async () => {
+    const { runtime, view, ids } = await mount(TWO_CHAINS, 2);
+    const [a, b, t, u] = (["$a", "$b", "$t", "$u"] as const).map((ref) => ids[ref] as string) as [string, string, string, string];
+
+    // The box spans the top chain and its tie, and stops short of the bottom chain.
+    await box(view.container, { x: 720, y: 320 }, { x: -60, y: -60 }, 2);
+    await waitFor(() => expect(isSelected(view.container, t)).toBe(true));
+    expect(isSelected(view.container, u), "the box took a tie it does not touch").toBe(false);
+    expect(view.container.querySelector(`.react-flow__node[data-id="${a}"]`)?.classList.contains("selected")).toBe(true);
+    expect(view.container.querySelector(`.react-flow__node[data-id="${b}"]`)?.classList.contains("selected")).toBe(true);
+
+    const graph = () => runtime.bus.store.getGraph();
+    const nodeAt = (nodeId: string) => ({ ...(graph().nodes[nodeId]?.position as { x: number; y: number }) });
+    const tieAt = (tieId: string) => ({ ...(graph().ties?.[tieId]?.position as { x: number; y: number }) });
+    const before = { a: nodeAt(a), b: nodeAt(b), t: tieAt(t), u: tieAt(u) };
+    const actor = runtime.invocation.actor;
+    const undos = runtime.bus.store.getHistory(actor).undo.length;
+
+    // Drag one of the selected nodes: the selection moves, and the tie with it.
+    const element = view.container.querySelector(`.react-flow__node[data-id="${a}"]`);
+    if (element === null) throw new Error("node a is not drawn");
+    const from = toScreen(view.container, { x: 60, y: 30 });
+    await act(async () => {
+      event(element, "mousedown", { button: 0, buttons: 1, clientX: from.x, clientY: from.y });
+      for (let step = 1; step <= 6; step += 1) {
+        event(element.ownerDocument, "mousemove", { button: 0, buttons: 1, clientX: from.x + 10 * step, clientY: from.y + 7 * step });
+      }
+      event(element.ownerDocument, "mouseup", { button: 0, buttons: 0, clientX: from.x + 60, clientY: from.y + 42 });
+    });
+
+    await waitFor(() => expect(nodeAt(a)).not.toEqual(before.a));
+    const moved = { x: nodeAt(a).x - before.a.x, y: nodeAt(a).y - before.a.y };
+    expect(nodeAt(b)).toEqual({ x: before.b.x + moved.x, y: before.b.y + moved.y });
+    expect(tieAt(t), "the selected tie stayed behind its nodes").toEqual({ x: before.t.x + moved.x, y: before.t.y + moved.y });
+    expect(tieAt(u), "a tie outside the selection moved").toEqual(before.u);
+    // One gesture, one undo step, and the undo takes the tie back with the nodes.
+    expect(runtime.bus.store.getHistory(actor).undo.length).toBe(undos + 1);
+    await act(async () => {
+      await runtime.bus.execute("graph.undo", {}, runtime.invocation);
+    });
+    expect(tieAt(t)).toEqual(before.t);
+    expect(nodeAt(a)).toEqual(before.a);
+  }, 20_000);
+
+  it("the library's Shift-drag box takes a tie too; a Shift-click on a node keeps it, and a click on the canvas or a plain click on a node lets it go", async () => {
+    const { view, ids } = await mount(TWO_CHAINS, 2);
+    const [c, d, t] = (["$c", "$d", "$t"] as const).map((ref) => ids[ref] as string) as [string, string, string];
+    const doc = view.container.ownerDocument;
+    /** A click on a node, Shift held or not. */
+    const clickNode = async (nodeId: string, at: { x: number; y: number }, shiftKey: boolean) => {
+      const element = view.container.querySelector(`.react-flow__node[data-id="${nodeId}"]`);
+      if (element === null) throw new Error(`node ${nodeId} is not drawn`);
+      const on = toScreen(view.container, at);
+      await act(async () => {
+        if (shiftKey) doc.dispatchEvent(new KeyboardEvent("keydown", { key: "Shift", code: "ShiftLeft", shiftKey: true, bubbles: true }));
+        pointer(element, "pointerdown", { button: 0, buttons: 1, clientX: on.x, clientY: on.y, shiftKey });
+        event(element, "mousedown", { button: 0, buttons: 1, clientX: on.x, clientY: on.y, shiftKey });
+        pointer(element, "pointerup", { button: 0, buttons: 0, clientX: on.x, clientY: on.y, shiftKey });
+        event(element.ownerDocument, "mouseup", { button: 0, buttons: 0, clientX: on.x, clientY: on.y, shiftKey });
+        event(element, "click", { button: 0, clientX: on.x, clientY: on.y, shiftKey });
+        if (shiftKey) doc.dispatchEvent(new KeyboardEvent("keyup", { key: "Shift", code: "ShiftLeft", bubbles: true }));
+      });
+      return element;
+    };
+
+    // A Shift-drag around the top tie only.
+    await act(async () => {
+      doc.dispatchEvent(new KeyboardEvent("keydown", { key: "Shift", code: "ShiftLeft", shiftKey: true, bubbles: true }));
+    });
+    await box(view.container, { x: 300, y: 230 }, { x: 380, y: 290 }, 0);
+    await act(async () => {
+      doc.dispatchEvent(new KeyboardEvent("keyup", { key: "Shift", code: "ShiftLeft", bubbles: true }));
+    });
+    await waitFor(() => expect(isSelected(view.container, t)).toBe(true));
+
+    // A click on the empty canvas: the tie is let go, as a node is.
+    const pane = view.container.querySelector(".react-flow__pane");
+    if (pane === null) throw new Error("no pane");
+    const empty = toScreen(view.container, { x: 1200, y: 300 });
+    await act(async () => {
+      pointer(pane, "pointerdown", { button: 0, buttons: 1, clientX: empty.x, clientY: empty.y });
+      event(pane, "mousedown", { button: 0, buttons: 1, clientX: empty.x, clientY: empty.y });
+      pointer(pane, "pointerup", { button: 0, buttons: 0, clientX: empty.x, clientY: empty.y });
+      event(pane.ownerDocument, "mouseup", { button: 0, buttons: 0, clientX: empty.x, clientY: empty.y });
+      event(pane, "click", { button: 0, clientX: empty.x, clientY: empty.y });
+    });
+    await waitFor(() => expect(isSelected(view.container, t)).toBe(false));
+
+    // Boxed again, with its nodes. A Shift-click ADDS a node, as in Houdini, and the tie
+    // stays in the selection; a plain click on a node replaces the selection, and the tie
+    // is let go with the nodes.
+    await box(view.container, { x: 720, y: 320 }, { x: -60, y: -60 }, 2);
+    await waitFor(() => expect(isSelected(view.container, t)).toBe(true));
+    const added = await clickNode(d, { x: 560, y: 630 }, true);
+    await waitFor(() => expect(added.classList.contains("selected")).toBe(true));
+    expect(isSelected(view.container, t), "a Shift-click let the tie go").toBe(true);
+    const other = await clickNode(c, { x: 60, y: 630 }, false);
+    await waitFor(() => expect(other.classList.contains("selected")).toBe(true));
+    expect(isSelected(view.container, t)).toBe(false);
+  }, 20_000);
+});

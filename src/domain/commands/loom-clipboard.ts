@@ -48,6 +48,8 @@ export type LoomClipboardPayload =
        * nest. Absent on a copy with no instances, and on one written before this existed.
        */
       readonly components?: readonly unknown[];
+      /** T1821b(b): the ties the copied wires pass. Absent when none do, and on older copies. */
+      readonly ties?: readonly unknown[];
     }
   | { readonly kind: "parameter"; readonly parameter: Readonly<Record<string, unknown>> }
   | { readonly kind: "channel"; readonly channel: ChannelCopy };
@@ -83,6 +85,7 @@ export function decodeLoomClipboard(text: string | null): LoomClipboardPayload |
             nodes: record["nodes"],
             edges: record["edges"],
             ...(Array.isArray(record["components"]) ? { components: record["components"] } : {}),
+            ...(Array.isArray(record["ties"]) ? { ties: record["ties"] } : {}),
           }
         : null;
     case "parameter":

@@ -115,6 +115,68 @@ export function cheapestRouteIndex(graph: GraphDocument, edge: GraphEdge, at: Po
   return best;
 }
 
+/**
+ * T1821b(a) — where the ties go when nodes move under them in one step (`graph.layoutAll`,
+ * `graph.layout`): every tie a moved node's wire passes, carried with that wire's two ends.
+ *
+ * A tie `s` of the way along its wire (measured along the route, port to port) moves by the
+ * blend of the moves of the wire's two ends: all of its output's move at the output end,
+ * all of its input's at the input end, half of each halfway. So a tie that sat on the
+ * straight run between two nodes still sits on it after they move, and a bend keeps its
+ * depth beside the wire — a feedback wire routed under a chain stays under the chain when the
+ * chain moves. Placing the ties ON the new straight run instead would read tidier for a
+ * forward wire and would draw every feedback wire straight back through the nodes it was
+ * routed around. A tie several wires pass (a bundle) moves by the mean of what each of its
+ * wires asks, so the strand stays one point. A tie whose wires' ends did not move stays.
+ */
+export function carriedTiePositions(
+  graph: GraphDocument,
+  moved: Readonly<Record<string, Point>>,
+): Record<TieId, { x: number; y: number }> {
+  const ties = graph.ties;
+  if (ties === undefined) return {};
+  const shiftOf = (nodeId: string): Point => {
+    const to = moved[nodeId];
+    const node = graph.nodes[nodeId];
+    return to === undefined || node === undefined ? { x: 0, y: 0 } : { x: to.x - node.position.x, y: to.y - node.position.y };
+  };
+  const asked = new Map<TieId, { x: number; y: number; wires: number }>();
+  for (const edgeId of Object.keys(graph.edges).sort()) {
+    const edge = graph.edges[edgeId] as GraphEdge;
+    const via = edge.via ?? [];
+    if (via.length === 0) continue;
+    const anchors = portAnchors(graph, edge);
+    if (anchors === null) continue;
+    const points: Point[] = [anchors.from, ...via.map((tieId) => ties[tieId]?.position ?? anchors.from), anchors.to];
+    const along: number[] = [0];
+    for (let index = 1; index < points.length; index += 1) {
+      along.push((along[index - 1] as number) + distance(points[index - 1] as Point, points[index] as Point));
+    }
+    const total = along[along.length - 1] as number;
+    const from = shiftOf(edge.source.nodeId);
+    const to = shiftOf(edge.target.nodeId);
+    via.forEach((tieId, index) => {
+      const s = total > 0 ? (along[index + 1] as number) / total : (index + 1) / (via.length + 1);
+      const sum = asked.get(tieId) ?? { x: 0, y: 0, wires: 0 };
+      sum.x += from.x + (to.x - from.x) * s;
+      sum.y += from.y + (to.y - from.y) * s;
+      sum.wires += 1;
+      asked.set(tieId, sum);
+    });
+  }
+  const positions: Record<TieId, { x: number; y: number }> = {};
+  for (const tieId of [...asked.keys()].sort()) {
+    const tie = ties[tieId];
+    const sum = asked.get(tieId);
+    if (tie === undefined || sum === undefined) continue;
+    const dx = sum.x / sum.wires;
+    const dy = sum.y / sum.wires;
+    if (dx === 0 && dy === 0) continue;
+    positions[tieId] = { x: tie.position.x + dx, y: tie.position.y + dy };
+  }
+  return positions;
+}
+
 /** Idempotent: the bus has no unregister, and tests build more than one bus per module. */
 export function registerWireTieCommands(bus: LoomBus): void {
   if (bus.hasCommand(REROUTE_EDGE_COMMAND)) return;
