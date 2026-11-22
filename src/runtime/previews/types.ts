@@ -1,3 +1,4 @@
+import type { ColormapId } from "../../domain/color/colormaps.ts";
 import type { OutputRef as DomainOutputRef } from "../../domain/types/ids.ts";
 import type { TextureFormat } from "../../domain/types/node-definition.ts";
 import type { ColorSpace } from "../../domain/types/ports.ts";
@@ -55,6 +56,7 @@ export const PREVIEW_MODES = [
   "exposure",
   "nan",
   "signed",
+  "colormap",
 ] as const;
 
 export type PreviewModeKind = (typeof PREVIEW_MODES)[number];
@@ -87,6 +89,10 @@ export interface PreviewView {
   readonly checkerSize: number;
   /** Value mapped to full intensity by `mode: "signed"`. */
   readonly signedScale: number;
+  /** `mode: "colormap"`'s map, `colormapIndex`'s number; 0 elsewhere. */
+  readonly colormap?: number;
+  /** `mode: "colormap"` maps luminance (true, the default) or the isolated `channel` (false). */
+  readonly colormapLuminance?: boolean;
 }
 
 /**
@@ -115,6 +121,8 @@ export const DEFAULT_PREVIEW_VIEW: PreviewView = Object.freeze({
   tonemap: false,
   checkerSize: 8,
   signedScale: 1,
+  colormap: 0,
+  colormapLuminance: true,
 });
 
 /**
@@ -138,21 +146,30 @@ export interface PreviewLens {
   readonly exposureStops: number;
   /** Filmic tonemap. Off means "show me the clipping" — which is the useful default. */
   readonly tonemap: boolean;
+  /**
+   * Show the value through a colour map instead of as grey (owner 2026-11-22, for depth).
+   * Maps the luminance, or the one channel an R/G/B/A lens isolates. "none" (or absent) is the
+   * picture.
+   */
+  readonly colormap?: ColormapId | "none";
 }
 
 export const DEFAULT_PREVIEW_LENS: PreviewLens = Object.freeze({
   lens: "rgba",
   exposureStops: 0,
   tonemap: false,
+  colormap: "none",
 });
+
+/** Two lenses that show the same picture. */
+export function sameLens(a: PreviewLens, b: PreviewLens): boolean {
+  return a.lens === b.lens && a.exposureStops === b.exposureStops && a.tonemap === b.tonemap &&
+    (a.colormap ?? "none") === (b.colormap ?? "none");
+}
 
 /** True when nothing is being done to the picture — the state that needs no indicator. */
 export function isDefaultLens(lens: PreviewLens): boolean {
-  return (
-    lens.lens === DEFAULT_PREVIEW_LENS.lens &&
-    lens.exposureStops === DEFAULT_PREVIEW_LENS.exposureStops &&
-    lens.tonemap === DEFAULT_PREVIEW_LENS.tonemap
-  );
+  return sameLens(lens, DEFAULT_PREVIEW_LENS);
 }
 
 /**

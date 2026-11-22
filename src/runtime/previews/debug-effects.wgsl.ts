@@ -1,4 +1,5 @@
 import { SRGB_TRANSFER_WGSL, TONE_MAP_WGSL } from "../../domain/color/display.ts";
+import { COLORMAP_WGSL } from "../../domain/color/colormaps.ts";
 import type { ColorSpace } from "../../domain/types/ports.ts";
 import type { PreviewModeKind } from "./types.ts";
 import { wgsl } from "../backend/wgsl.ts";
@@ -44,6 +45,8 @@ const PREVIEW_UNIFORMS_WGSL = wgsl`struct PreviewParams {
   checkerSize: f32,
   tonemap: f32,
   signedScale: f32,
+  colormap: f32,
+  colormapLuminance: f32,
 };
 @group(0) @binding(0) var<uniform> params: PreviewParams;`;
 export const PREVIEW_PARAMS_WGSL = wgsl`${PREVIEW_UNIFORMS_WGSL}
@@ -272,6 +275,28 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
  * in miniature and §V272's shape ("an optional prop for a required capability"). Making it
  * a parameter turns every unwired call site into a type error instead.
  */
+/**
+ * A value through a colour map (owner 2026-11-22: depth previews read better red to blue).
+ *
+ * The luminance of the masked, graded picture — or the one channel an R/G/B/A lens isolates —
+ * clamped to [0, 1] and looked up in `colormaps.ts`'s table. The maps are display-referred
+ * already, so there is no encode after; a data map is read as the number it holds, which is
+ * the point of mapping it.
+ */
+const colormapShader = (prefix: string): EmittedWgsl => wgsl`${prefix}
+
+${COLORMAP_WGSL}
+
+@fragment
+fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
+  let source = sourceTexel(uv);
+  let graded = maybeTonemap(exposed(source.rgb));
+  let luma = dot(graded, vec3f(0.2126, 0.7152, 0.0722));
+  let picked = pickChannel(vec4f(graded, source.a), params.channel);
+  let value = select(picked, luma, params.colormapLuminance > 0.5);
+  return vec4f(colormap(u32(params.colormap + 0.5), value), 1.0);
+}`;
+
 const BODIES: Readonly<Record<PreviewModeKind, (prefix: string) => EmittedWgsl>> = {
   color: colorShader,
   rgb: rgbShader,
@@ -281,10 +306,12 @@ const BODIES: Readonly<Record<PreviewModeKind, (prefix: string) => EmittedWgsl>>
   exposure: exposureShader,
   nan: nanShader,
   signed: signedShader,
+  colormap: colormapShader,
 };
 
 export function previewShaderSource(mode: PreviewModeKind, space: ColorSpace, scalar = false): EmittedWgsl {
   // Ordinary display lenses show scalar data as grayscale. Channel inspection remains
   // literal: an r32 texture's G/B are zero and A is one, as the hardware publishes them.
+  // A colour map reads a scalar the way the grey lenses do: its one value, on all three.
   return BODIES[mode](prelude(space, scalar, scalar && mode !== "channel" && mode !== "signed"));
 }

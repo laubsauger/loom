@@ -2,7 +2,7 @@
 // never executed against here and nothing in this file writes the document.
 import type { LoomBus } from "@domain/commands/bus.ts";
 import type { NodeId } from "@domain/types/ids.ts";
-import { DEFAULT_PREVIEW_LENS, isDefaultLens, viewForLens } from "@runtime/previews/index.ts";
+import { DEFAULT_PREVIEW_LENS, sameLens, viewForLens } from "@runtime/previews/index.ts";
 import type { PreviewLens, PreviewView } from "@runtime/previews/index.ts";
 import { sharedForBus } from "@domain/commands/command-holder.ts";
 
@@ -50,7 +50,14 @@ export interface PreviewViewStore extends PreviewViewSource {
   reset(nodeId: NodeId): void;
 }
 
-export function createPreviewViewStore(): PreviewViewStore {
+/**
+ * `defaultFor` is the lens a node STARTS in when nobody has set one: the plain picture, or
+ * the colour map its definition asks for (`previewColormap`, Depth's Turbo). A lens equal to
+ * it is stored as absence, so "default" keeps meaning "nobody touched this node".
+ */
+export function createPreviewViewStore(
+  defaultFor: (nodeId: NodeId) => PreviewLens = () => DEFAULT_PREVIEW_LENS,
+): PreviewViewStore {
   const lenses = new Map<NodeId, PreviewLens>();
   const listeners = new Map<NodeId, Set<() => void>>();
 
@@ -58,21 +65,15 @@ export function createPreviewViewStore(): PreviewViewStore {
     for (const listener of [...(listeners.get(nodeId) ?? [])]) listener();
   };
 
-  const read = (nodeId: NodeId): PreviewLens => lenses.get(nodeId) ?? DEFAULT_PREVIEW_LENS;
+  const read = (nodeId: NodeId): PreviewLens => lenses.get(nodeId) ?? defaultFor(nodeId);
 
   const write = (nodeId: NodeId, next: PreviewLens): PreviewLens => {
     const current = read(nodeId);
-    if (
-      current.lens === next.lens &&
-      current.exposureStops === next.exposureStops &&
-      current.tonemap === next.tonemap
-    ) {
-      return current;
-    }
+    if (sameLens(current, next)) return current;
     // Back to default drops the entry rather than storing a default: `isDefault` then costs a
     // map lookup, and a long session that inspects and un-inspects hundreds of nodes leaves
     // nothing behind.
-    if (isDefaultLens(next)) lenses.delete(nodeId);
+    if (sameLens(next, defaultFor(nodeId))) lenses.delete(nodeId);
     else lenses.set(nodeId, next);
     notify(nodeId);
     return next;
@@ -84,7 +85,7 @@ export function createPreviewViewStore(): PreviewViewStore {
     isDefault: (nodeId) => !lenses.has(nodeId),
     set: (nodeId, patch) => write(nodeId, { ...read(nodeId), ...patch }),
     reset: (nodeId) => {
-      write(nodeId, DEFAULT_PREVIEW_LENS);
+      write(nodeId, defaultFor(nodeId));
     },
     subscribe: (nodeId, listener) => {
       const bucket = listeners.get(nodeId) ?? new Set<() => void>();
@@ -120,5 +121,21 @@ export function previewViewStoreFor(bus: LoomBus): PreviewViewStore {
    * an import cycle. `#store` distinguishes it from the `#target` holder that command
    * keeps on the same bus.
    */
-  return sharedForBus<PreviewViewStore>(bus, "ui.setPreviewView#store", createPreviewViewStore);
+  return sharedForBus<PreviewViewStore>(bus, "ui.setPreviewView#store", () => createPreviewViewStore((nodeId) => {
+    const type = bus.store.getGraph().nodes[nodeId]?.type;
+    const colormap = type === undefined ? undefined : bus.registry.get(type)?.previewColormap;
+    return colormap === undefined ? DEFAULT_PREVIEW_LENS : colormapLens(colormap);
+  }));
+}
+
+/* One frozen lens per map: a snapshot read through `useSyncExternalStore` must be the same
+   object on every read, or React re-renders forever. */
+const COLORMAP_LENSES = new Map<string, PreviewLens>();
+function colormapLens(colormap: NonNullable<PreviewLens["colormap"]>): PreviewLens {
+  let lens = COLORMAP_LENSES.get(colormap);
+  if (lens === undefined) {
+    lens = Object.freeze({ ...DEFAULT_PREVIEW_LENS, colormap });
+    COLORMAP_LENSES.set(colormap, lens);
+  }
+  return lens;
 }

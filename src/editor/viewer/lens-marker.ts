@@ -34,5 +34,6 @@ export function lensMarker(lens: PreviewLens | undefined): string | null {
     parts.push(`${lens.exposureStops > 0 ? "+" : ""}${lens.exposureStops} EV`);
   }
   if (lens.tonemap) parts.push("TM");
+  if (lens.colormap !== undefined && lens.colormap !== "none") parts.push(lens.colormap.toUpperCase());
   return parts.length === 0 ? null : parts.join(" ");
 }

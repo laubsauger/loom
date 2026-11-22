@@ -1,3 +1,4 @@
+import { COLORMAP_IDS, type ColormapId } from "@domain/color/colormaps.ts";
 import { useEffect, useMemo } from "react";
 // v16-allow-command-bus: registers `preview.setView`/`preview.resetView`, which make no patch
 // and open no undo group — the lens is session state, not document state.
@@ -43,10 +44,12 @@ declare module "@domain/types/commands.ts" {
         lens?: PreviewLensKind;
         exposureStops?: number;
         tonemap?: boolean;
+        /** Show the value through a colour map, or "none" for the picture (owner 2026-11-22). */
+        colormap?: ColormapId | "none";
       };
       output: { nodeId: NodeId | null; view: PreviewLens | null };
     };
-    /** Back to the plain picture: no isolation, no exposure, no tonemap. */
+    /** Back to the node's own default: no isolation, no exposure, no tonemap, and its own colour map (Depth's Turbo) or none. */
     "preview.resetView": {
       input: { nodeId?: NodeId };
       output: { nodeId: NodeId | null; view: PreviewLens | null };
@@ -96,8 +99,9 @@ export function registerPreviewViewCommands(bus: LoomBus): PreviewViewStore {
     name: SET_PREVIEW_VIEW_COMMAND,
     // T1697b: `app` for now. It takes the id its door sends; whether it is an `instance` command is that task's look.
     inSession: "app",
-    inputSchema: z.object({ nodeId: idInput.optional(), lens: z.enum(PREVIEW_LENSES).optional(), exposureStops: finiteInput.optional(), tonemap: z.boolean().optional() }).strict(),
-    description: "Set a node preview's lens — isolate a channel, change exposure, tonemap.",
+    inputSchema: z.object({ nodeId: idInput.optional(), lens: z.enum(PREVIEW_LENSES).optional(), exposureStops: finiteInput.optional(), tonemap: z.boolean().optional(),
+      colormap: z.enum(["none", ...COLORMAP_IDS] as unknown as ["none", ...ColormapId[]]).optional() }).strict(),
+    description: "Set a node preview's lens — isolate a channel, change exposure, tonemap, or show the value through a colour map (turbo, spectral, viridis, inferno; none for the picture).",
     handler: (input, context) => {
       const revision = context.store.getRevision();
       const nodeId = input.nodeId ?? target.current ?? undefined;
@@ -143,6 +147,7 @@ export function registerPreviewViewCommands(bus: LoomBus): PreviewViewStore {
           ? {}
           : { exposureStops: clampStops(input.exposureStops) }),
         ...(input.tonemap === undefined ? {} : { tonemap: input.tonemap }),
+        ...(input.colormap === undefined ? {} : { colormap: input.colormap }),
       };
 
       // §V36 — a dry run answers what WOULD happen and changes nothing.

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { ReactNode } from "react";
@@ -842,6 +842,31 @@ describe("the preview lens (T336)", () => {
     ]);
     expect(screen.getByRole("button", { name: "G" }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByRole("button", { name: "RGB" }).getAttribute("aria-pressed")).toBe("false");
+  });
+
+  /**
+   * Owner 2026-11-22: a value reads better through a colour map. The row offers the picture
+   * and each map, says which is on, and — for a node whose OWN default is a map (Depth's
+   * Turbo) — offers no reset while it is in that default.
+   */
+  it("offers the colour maps, says which is on, and asks for one by name", () => {
+    const calls: unknown[] = [];
+    const { rerender } = render(
+      <NodeInfoPopup info={lensInfo()} lens={{ lens: "rgba", exposureStops: 0, tonemap: false, colormap: "turbo" }}
+        lensIsDefault onLens={(patch) => calls.push(patch)} onLensReset={() => {}} />,
+    );
+    const group = screen.getByRole("group", { name: "Colour map" });
+    expect([...group.querySelectorAll("button")].map((button) => button.textContent)).toEqual(["off", "turbo", "spectral", "viridis", "inferno"]);
+    expect(screen.getByRole("button", { name: "turbo" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.queryByRole("button", { name: "reset" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "viridis" }));
+    expect(calls).toEqual([{ colormap: "viridis" }]);
+    rerender(
+      <NodeInfoPopup info={lensInfo()} lens={{ lens: "rgba", exposureStops: 0, tonemap: false, colormap: "none" }}
+        lensIsDefault={false} onLens={() => {}} onLensReset={() => {}} />,
+    );
+    expect(screen.getByRole("button", { name: "off" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "reset" })).toBeDefined();
   });
 
   it("reports one field at a time, so picking a channel does not clear the exposure", async () => {

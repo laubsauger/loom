@@ -1,3 +1,4 @@
+import { COLORMAPS, COLORMAP_IDS } from "@domain/color/colormaps.ts";
 import type { ReactNode } from "react";
 import { DEFAULT_PREVIEW_LENS, PREVIEW_LENSES, isDefaultLens } from "@runtime/previews/index.ts";
 import type { PreviewLens, PreviewLensKind } from "@runtime/previews/index.ts";
@@ -34,6 +35,12 @@ export interface NodeInfoPopupProps {
   readonly lens?: PreviewLens | undefined;
   readonly onLens?: ((patch: Partial<PreviewLens>) => void) | undefined;
   readonly onLensReset?: (() => void) | undefined;
+  /**
+   * Whether the lens is the one this node STARTS in — the plain picture, or its definition's
+   * colour map (Depth's Turbo). Reset is offered only when it is not. Absent: compared with
+   * the plain picture.
+   */
+  readonly lensIsDefault?: boolean | undefined;
 }
 
 const LENS_LABEL: Readonly<Record<PreviewLensKind, string>> = {
@@ -87,12 +94,15 @@ function PreviewLensControls({
   lens,
   onLens,
   onLensReset,
+  lensIsDefault,
 }: {
   lens: PreviewLens;
   onLens: (patch: Partial<PreviewLens>) => void;
   onLensReset: (() => void) | undefined;
+  lensIsDefault: boolean | undefined;
 }) {
-  const dirty = !isDefaultLens(lens);
+  const dirty = lensIsDefault === undefined ? !isDefaultLens(lens) : !lensIsDefault;
+  const colormap = lens.colormap ?? "none";
   const step = (delta: number): void => {
     const next = Math.max(-MAX_EXPOSURE_STOPS, Math.min(MAX_EXPOSURE_STOPS, lens.exposureStops + delta));
     onLens({ exposureStops: next });
@@ -169,6 +179,27 @@ function PreviewLensControls({
           </button>
         ) : null}
       </div>
+
+      {/* Owner 2026-11-22: a value — a depth map above all — reads better through a colour map. */}
+      <div className={styles.lensRow} role="group" aria-label="Colour map">
+        <span className={styles.lensLabel}>colours</span>
+        {(["none", ...COLORMAP_IDS] as const).map((id) => {
+          const map = COLORMAPS.find((entry) => entry.id === id);
+          return (
+            <button
+              key={id}
+              type="button"
+              className={styles.lensButton}
+              aria-pressed={colormap === id}
+              data-active={colormap === id}
+              title={map === undefined ? "The picture itself" : `${map.title} — preview only`}
+              onClick={() => onLens({ colormap: id })}
+            >
+              {map === undefined ? "off" : map.label.toLowerCase()}
+            </button>
+          );
+        })}
+      </div>
     </section>
   );
 }
@@ -195,7 +226,7 @@ function Badge({ tone, children }: { tone?: "warn" | "error" | "signal"; childre
   );
 }
 
-export function NodeInfoPopup({ info, lens, onLens, onLensReset }: NodeInfoPopupProps) {
+export function NodeInfoPopup({ info, lens, onLens, onLensReset, lensIsDefault }: NodeInfoPopupProps) {
   const { timing, output } = info;
   const severity = info.errorCount > 0 ? "error" : info.warningCount > 0 ? "warning" : "info";
 
@@ -369,6 +400,7 @@ export function NodeInfoPopup({ info, lens, onLens, onLensReset }: NodeInfoPopup
           lens={lens ?? DEFAULT_PREVIEW_LENS}
           onLens={onLens}
           onLensReset={onLensReset}
+          lensIsDefault={lensIsDefault}
         />
       )}
 

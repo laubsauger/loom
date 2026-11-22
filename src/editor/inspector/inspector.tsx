@@ -752,11 +752,12 @@ export function Inspector({
   const bankView = bankViewOf(node, presetCatalogue);
   const showsPresetBankSection = bankView !== undefined;
   const showsCueListSection = node.type === CUE_LIST_NODE_TYPE;
-  const imageFit = resolved.entries.find(
-    (entry) => entry.key === "imageFit" && entry.definition.group === "Common",
-  );
+  /* Every parameter a node files under "Common" is drawn INSIDE the Common section. Image fit
+     was special-cased alone; the media framing rows that joined it (anchor X/Y, zoom,
+     262d69ab) then drew a second "Common" section of their own. */
+  const commonEntries = resolved.entries.filter((entry) => entry.definition.group === "Common");
   const presentedBySections = new Set<string>([
-    ...(imageFit === undefined ? [] : [imageFit.key]),
+    ...commonEntries.map((entry) => entry.key),
     ...(showsAudioSection ? audioSectionParameters(node.type as "audioIn" | "audioFileIn") : []),
     ...(showsWebcamSection ? webcamSectionParameters() : []),
     ...(showsSyphonSection ? nativeInputSectionParameters() : []),
@@ -927,23 +928,24 @@ export function Inspector({
       editor={editor}
       variant={variant}
     >
-      {imageFit === undefined ? null : (
-        <div data-parameter-key={imageFit.key}>
+      {commonEntries.map((entry) => (
+        <div key={entry.key} data-parameter-key={entry.key}>
           <ParameterControl
-            parameterKey={imageFit.key}
-            definition={imageFit.definition}
-            value={imageFit.value}
-            {...(live === null ? {} : { liveValue: live.get(imageFit.key)?.value })}
+            parameterKey={entry.key}
+            definition={entry.definition}
+            value={entry.value}
+            {...(live === null ? {} : { liveValue: live.get(entry.key)?.value })}
             variant={variant}
-            driven={imageFit.driven}
-            slot={imageFit.slot}
+            driven={entry.driven}
+            inactive={entry.definition.inactiveWhen?.(resolved.values) ?? null}
+            slot={entry.slot}
             references={references}
-            diagnostic={imageFit.diagnostic}
+            diagnostic={entry.diagnostic}
             onStoredChange={rowWriters.stored}
-            onChange={rowWriters.changeFor(imageFit.key)}
+            onChange={rowWriters.changeFor(entry.key)}
           />
         </div>
-      )}
+      ))}
     </CommonSection>
   );
 

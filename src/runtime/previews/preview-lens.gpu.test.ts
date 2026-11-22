@@ -289,3 +289,85 @@ describe("B118 — a pushed lens value reaches the preview pixel without a rebui
     }
   }, 60_000);
 });
+
+/**
+ * Owner 2026-11-22 — a depth map's preview through a COLOUR MAP, on Dawn.
+ *
+ * A float map holding 0..1 across 64 texels, previewed through each map; every pixel must be
+ * the CPU table's colour (`colormapRgb`, the one the photo surface draws with) to within one
+ * 8-bit step. That step is the whole tolerance: the GPU evaluates the same polynomial or stop
+ * table in f32 against the CPU's f64, and both round to 8 bits once. It is how the preview
+ * and the photo surface stay the same Turbo.
+ */
+describe("the colour-map lens on Dawn", () => {
+  it.each(["turbo", "spectral", "viridis", "inferno"] as const)("%s: every pixel is the shared table's colour", async (id) => {
+    if (dawnError !== undefined) throw new Error(`Dawn did not start: ${dawnError}`);
+    const { colormapIndex, colormapRgb } = await import("../../domain/color/colormaps.ts");
+    const registry = createNodeRegistry(allNodeDefinitions).view();
+    const graph = solidThroughOutput();
+    graph.nodes["solid"]!.type = "floatMapIn";
+    graph.nodes["solid"]!.parameters = { interpretation: "raw" };
+    delete graph.nodes["out"];
+    graph.edges = {};
+    const plan = compileGraph({ graph, settings: SETTINGS, registry, capabilities: CAPS,
+      sinks: [{ nodeId: "solid", portId: "out", kind: "readback" }] });
+    const output = plan.outputs.find((entry) => entry.nodeId === "solid");
+    if (output === undefined) throw new Error("the preview source materialized no target");
+    let captured: { gpu: { gpu: unknown } } | undefined;
+    const base = nodeGpuHost();
+    const backend = createVgpuBackend({ host: { label: base.label, async create(options) {
+      const session = await base.create(options); captured = session as never; return session;
+    } } });
+    const errors: string[] = [];
+    backend.onDiagnostic((diagnostic) => { if (diagnostic.severity !== "info") errors.push(`${diagnostic.code}: ${diagnostic.message}`); });
+    try {
+      await backend.initialize({});
+      const device = captured?.gpu.gpu as GPUDevice;
+      const compiled = await backend.compile(plan);
+      const values = Float32Array.from({ length: SIZE * SIZE }, (_, index) => index / (SIZE * SIZE - 1));
+      backend.registerMediaSource(floatMapSourceIdFor("solid"), {
+        currentFrame: () => ({ frameId: 1, bytes: new Uint8Array(values.buffer) }), ended: true,
+      });
+      backend.render(compiled, {
+        frame: { timeSeconds: 0, deltaSeconds: 1 / 60, frameIndex: 0, mode: "offline", randomSeed: 7 },
+        pointer: { x: 0, y: 0, buttons: 0 }, resolution: [SIZE, SIZE],
+      });
+      const previewCanvas = stubCanvas(device, SIZE, SIZE);
+      const handle = backend.previewHost(previewCanvas as never);
+      const view = { ...DEFAULT_PREVIEW_VIEW, mode: "colormap" as const, colormap: colormapIndex(id), colormapLuminance: true };
+      const request: PreviewRequest = {
+        ref: { nodeId: output.nodeId, portId: output.portId },
+        source: { resourceId: output.resourceId, size: output.size, format: output.format, space: output.space },
+        rect: { x: 0, y: 0, width: SIZE, height: SIZE }, area: { width: SIZE, height: SIZE },
+        view, visible: true, collapsed: false, occluded: false, pinned: false,
+      };
+      const program = buildPreviewProgram([{ ref: request.ref, request, tileSize: [SIZE, SIZE] }], createTileAtlas({ capacity: 4 }));
+      handle.setPreviewProgram(program);
+      const passId = program.passes[0]!.id;
+      handle.presentPreviews({
+        refresh: [passId],
+        composite: [{ ref: request.ref, resourceId: program.passes[0]!.target, dest: { x: 0, y: 0, width: SIZE, height: SIZE } }],
+        uniforms: [{ passId, values: previewUniforms(view) }],
+        surface: { size: [SIZE, SIZE], dpr: 1 },
+      });
+      await device.queue.onSubmittedWorkDone();
+      const bytes = await readTexture(device, previewCanvas.texture()!, SIZE, SIZE);
+      expect(previewCanvas.format()).toBe("bgra8unorm");
+      for (let index = 0; index < SIZE * SIZE; index += 1) {
+        const [r, g, b] = colormapRgb(id, values[index]!).map((value) => Math.round(value * 255));
+        const [pb, pg, pr, pa] = bytes.subarray(index * 4, index * 4 + 4);
+        for (const [got, want, name] of [[pr, r, "r"], [pg, g, "g"], [pb, b, "b"]] as const) {
+          expect(Math.abs(got! - want!), `${id} texel ${index} ${name}: ${got} vs ${want}`).toBeLessThanOrEqual(1);
+        }
+        expect(pa).toBe(255);
+      }
+      // Not grey: the map is doing something (a lost lens would draw r = g = b). Mid-ramp,
+      // because Inferno's low end IS black.
+      const [midB, midG, midR] = bytes.subarray(32 * 4, 32 * 4 + 3);
+      expect(new Set([midR, midG, midB]).size).toBeGreaterThan(1);
+      expect(errors).toEqual([]);
+    } finally {
+      backend.dispose();
+    }
+  }, 60_000);
+});

@@ -69,7 +69,8 @@ describe("registered photo depth inspection", () => {
   });
 
   it("uses a focusable native range to change the comparison without changing map data", () => {
-    render(<PhotoDepthWorkspace photo={photo} readMaps={readMaps} active="depth" />);
+    // Grey, so a pixel's level is the sample this test reads; colour is the next test's.
+    render(<PhotoDepthWorkspace photo={photo} readMaps={readMaps} active="depth" palette="grayscale" />);
     fireEvent.click(screen.getByRole("checkbox", { name: "Compare depth stages" }));
     const slider = screen.getByRole("slider", { name: "Native and refined comparison split" }) as HTMLInputElement;
     slider.focus();
@@ -135,14 +136,16 @@ describe("registered photo depth inspection", () => {
     const result = render(<PhotoDepthWorkspace photo={null} readMaps={readMaps} />);
     const palette = screen.getByRole("combobox", { name: "Depth colours" }) as HTMLSelectElement;
     expect(palette.disabled).toBe(false);
-    expect([...palette.options].map(option => option.text)).toEqual(["Grayscale", "Ocean", "Heat", "Spectrum"]);
-    fireEvent.change(palette, { target: { value: "spectrum" } });
+    // Owner 2026-11-22: the shared maps first, Turbo (red near, blue far) the default.
+    expect([...palette.options].map(option => option.text)).toEqual(["Turbo", "Spectral", "Viridis", "Inferno", "Grayscale", "Ocean", "Heat"]);
+    expect(palette.value).toBe("turbo");
+    fireEvent.change(palette, { target: { value: "spectral" } });
     result.rerender(<PhotoDepthWorkspace photo={photo} readMaps={readMaps} />);
-    expect(palette.value).toBe("spectrum");
+    expect(palette.value).toBe("spectral");
     maps.native = prepared("depth", new Float32Array([0, 1, 2, 3, 4, 5, 6, 7]), 4, 2);
     result.rerender(<PhotoDepthWorkspace photo={photo} readMaps={readMaps} />);
     select("Native depth"); select("Photo"); select("Native depth");
-    expect(palette.value).toBe("spectrum");
+    expect(palette.value).toBe("spectral");
     expect(screen.getByRole("img", { name: "Relative depth colours from far to near" })).toBeDefined();
     expect(screen.queryByText(/brighter means nearer/)).toBeNull();
   });
@@ -168,6 +171,7 @@ describe("registered photo depth inspection", () => {
   it("applies one selected palette to both comparison halves without recolouring masks", () => {
     render(<PhotoDepthWorkspace photo={photo} readMaps={readMaps} />);
     select("Native depth"); fireEvent.click(screen.getByRole("checkbox", { name: "Compare depth stages" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Depth colours" }), { target: { value: "grayscale" } });
     const grayscale = (put.mock.calls.at(-1)![0] as ImageData).data.slice();
     fireEvent.change(screen.getByRole("combobox", { name: "Depth colours" }), { target: { value: "heat" } });
     const coloured = (put.mock.calls.at(-1)![0] as ImageData).data;
@@ -178,22 +182,22 @@ describe("registered photo depth inspection", () => {
     }
     select("Surface mask");
     const maskDisplay = (put.mock.calls.at(-1)![0] as ImageData).data.slice();
-    fireEvent.change(screen.getByRole("combobox", { name: "Depth colours" }), { target: { value: "spectrum" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Depth colours" }), { target: { value: "spectral" } });
     expect((put.mock.calls.at(-1)![0] as ImageData).data).toEqual(maskDisplay);
     select("Refined depth");
-    expect((screen.getByRole("combobox", { name: "Depth colours" }) as HTMLSelectElement).value).toBe("spectrum");
+    expect((screen.getByRole("combobox", { name: "Depth colours" }) as HTMLSelectElement).value).toBe("spectral");
   });
 
   it("reports controlled palette changes and redraws when the host supplies the next choice", () => {
     const onPaletteChange = vi.fn();
     const result = render(<PhotoDepthWorkspace photo={photo} readMaps={readMaps} active="depth" palette="ocean" onPaletteChange={onPaletteChange} />);
     const original = (put.mock.calls.at(-1)![0] as ImageData).data.slice();
-    fireEvent.change(screen.getByRole("combobox", { name: "Depth colours" }), { target: { value: "spectrum" } });
-    expect(onPaletteChange).toHaveBeenCalledWith("spectrum");
+    fireEvent.change(screen.getByRole("combobox", { name: "Depth colours" }), { target: { value: "spectral" } });
+    expect(onPaletteChange).toHaveBeenCalledWith("spectral");
     expect((screen.getByRole("combobox", { name: "Depth colours" }) as HTMLSelectElement).value).toBe("ocean");
-    result.rerender(<PhotoDepthWorkspace photo={photo} readMaps={readMaps} active="depth" palette="spectrum" onPaletteChange={onPaletteChange} />);
+    result.rerender(<PhotoDepthWorkspace photo={photo} readMaps={readMaps} active="depth" palette="spectral" onPaletteChange={onPaletteChange} />);
     expect((put.mock.calls.at(-1)![0] as ImageData).data).not.toEqual(original);
-    expect((screen.getByRole("combobox", { name: "Depth colours" }) as HTMLSelectElement).value).toBe("spectrum");
+    expect((screen.getByRole("combobox", { name: "Depth colours" }) as HTMLSelectElement).value).toBe("spectral");
   });
 
   function editor(change: Partial<MaskEditing> = {}): MaskEditing {

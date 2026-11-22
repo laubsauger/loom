@@ -116,7 +116,7 @@ describe("preview uniforms", () => {
   it("keeps one block shape for every mode, so a view change cannot rebuild a pipeline (§V5)", () => {
     const keys = PREVIEW_MODES.map(() => Object.keys(previewUniforms(DEFAULT_PREVIEW_VIEW)).sort());
     for (const entry of keys) {
-      expect(entry).toEqual(["channel", "checkerSize", "exposure", "mask", "signedScale", "tonemap"]);
+      expect(entry).toEqual(["channel", "checkerSize", "colormap", "colormapLuminance", "exposure", "mask", "signedScale", "tonemap"]);
     }
   });
 

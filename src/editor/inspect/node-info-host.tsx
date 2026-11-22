@@ -293,6 +293,7 @@ function NodeInfoPopover({
         <NodeInfoPopup
           info={info}
           lens={lens}
+          lensIsDefault={lensStore.isDefault(nodeId)}
           {...(lensAvailable ? { onLens, onLensReset } : {})}
         />
       </PopoverContent>

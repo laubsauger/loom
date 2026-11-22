@@ -30,7 +30,7 @@ import { floatMapPhotoUrlFor } from "./use-float-map-sources.ts";
 import { PHOTO_MAPPING_SHADER, PHOTO_MAPPING_EFFECTS, PHOTO_ALIGNMENT_SHADER } from "./photo-mapping-effects.ts";
 import { PhotoMappingPreview } from "./photo-mapping-preview.tsx";
 import { hasMatchingPhotoAspect, previewPhotoPlacement, type PreviewImageFit } from "./photo-preview-framing.ts";
-import { depthPaletteLut, type DepthPalette } from "./photo-depth-palette.ts";
+import { DEFAULT_DEPTH_PALETTE, depthPaletteLut, type DepthPalette } from "./photo-depth-palette.ts";
 import { DEFAULT_IMAGE_FRAMING, imageFramingSchema, imageFramingFromParameters, imageFramingParameters, type ImageFraming } from "@domain/media/image-framing.ts";
 import { PhotoPreviewCrop } from "./photo-preview-crop.tsx";
 import { PhotoDepthWorkspace } from "./photo-depth-workspace.tsx";
@@ -240,7 +240,7 @@ function PhotoMappingEditor({ runtime, initial, open, close }: { runtime: AppRun
   const [nativeCapability, setNativeCapability] = useState<NativePreparationCapability>({ available: false, reason: "Checking desktop preparation…" });
   const [refinement, setRefinement] = useState<PhotoDepthRecipe["refinement"]>(initial.depthRecipe?.refinement ?? null);
   const refinementRadiusEdited = useRef(initial.depthRecipe?.refinement !== undefined && initial.depthRecipe.refinement !== null);
-  const [depthPalette, setDepthPalette] = useState<DepthPalette>("grayscale");
+  const [depthPalette, setDepthPalette] = useState<DepthPalette>(DEFAULT_DEPTH_PALETTE);
   const [inspectionView, setInspectionView] = useState<"photo" | "native" | "depth" | "mask" | "effect">("photo");
   const [previewPhotoRef, setPreviewPhotoRef] = useState(initial.previewPhoto);
   const [previewPhoto, setPreviewPhoto] = useState<PreparationPhoto | null>(null);

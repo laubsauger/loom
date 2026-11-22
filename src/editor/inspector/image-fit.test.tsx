@@ -79,6 +79,12 @@ describe("media Image fit on Common", () => {
     const common = screen.getByRole("region", { name: "Common" });
     expect(within(common).getByRole("combobox", { name: "Image fit" })).toBeTruthy();
     expect(container.querySelectorAll('[data-parameter-key="imageFit"]')).toHaveLength(1);
+    // The framing rows filed under Common with it (anchor, zoom) are in the SAME section,
+    // not a second "Common" of their own.
+    for (const key of ["imageAnchorX", "imageAnchorY", "imageZoom"]) {
+      expect(common.querySelectorAll(`[data-parameter-key="${key}"]`), key).toHaveLength(1);
+      expect(container.querySelectorAll(`[data-parameter-key="${key}"]`), key).toHaveLength(1);
+    }
   });
 
   it("Text keeps its existing Common controls without Image fit", async () => {

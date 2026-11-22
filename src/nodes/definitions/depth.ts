@@ -971,6 +971,9 @@ export const depthNode: NodeDefinition = {
   requires(values) {
     return isCoreMlDepthModel(String(values["model"] ?? "")) ? ["desktop", "macos", "apple-silicon"] : [];
   },
+  /* Owner 2026-11-22: a depth map reads more easily red (near) to blue (far) than grey.
+     The preview only; the node still publishes grey data for Displace and the rest. */
+  previewColormap: "turbo",
   /**
    * The OUTPUT follows the input's shape, not the model's. The model works at its own
    * square whatever the picture is; the depth map is then sampled back up to the source's

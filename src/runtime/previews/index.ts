@@ -16,6 +16,7 @@ export {
   PREVIEW_MODES,
   SUSPEND_REASONS,
   isDefaultLens,
+  sameLens,
   previewKey,
 } from "./types.ts";
 export type {

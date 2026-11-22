@@ -670,7 +670,8 @@ function GraphPaneInner({
    */
   const lensSource = useMemo(
     () => ({
-      marker: (nodeId: NodeId) => lensMarker(previewViews.get(nodeId)),
+      // A node in its own default lens (Depth starts in Turbo) is not "altered": no marker.
+      marker: (nodeId: NodeId) => (previewViews.isDefault(nodeId) ? null : lensMarker(previewViews.get(nodeId))),
       subscribe: (nodeId: NodeId, listener: () => void) => previewViews.subscribe(nodeId, listener),
     }),
     [previewViews],

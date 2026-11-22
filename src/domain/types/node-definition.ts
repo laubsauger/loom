@@ -1,3 +1,4 @@
+import type { ColormapId } from "../color/colormaps.ts";
 import type { PortId } from "./ids.ts";
 import type { PortDefinition } from "./ports.ts";
 import type { ParameterSchema, ParameterValue, StoredParameter } from "./parameters.ts";
@@ -607,6 +608,13 @@ export interface NodeDefinition {
   requires?:
     | readonly RuntimeRequirementId[]
     | ((values: Readonly<Record<string, unknown>>) => readonly RuntimeRequirementId[]);
+  /**
+   * The colour map this node's PREVIEW starts in, for a node whose output is one value read
+   * as a picture — Depth (owner 2026-11-22: depth reads better red to blue). Display only:
+   * the node renders the same grey data either way, and a person can change or clear it in
+   * the preview lens. Absent means the plain picture.
+   */
+  previewColormap?: ColormapId;
   /**
    * Kernel ABI version this definition was written against (§V77). Checked before a
    * point kernel runs; a mismatch refuses with a diagnostic rather than running a

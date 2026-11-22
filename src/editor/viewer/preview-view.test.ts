@@ -53,7 +53,7 @@ describe("the lens store", () => {
     const store = createPreviewViewStore();
     store.set("n1", { exposureStops: 2 });
     const lens = store.set("n1", { lens: "g" });
-    expect(lens).toEqual({ lens: "g", exposureStops: 2, tonemap: false });
+    expect(lens).toEqual({ lens: "g", exposureStops: 2, tonemap: false, colormap: "none" });
   });
 
   it("scopes a lens to its own node", () => {
@@ -134,7 +134,7 @@ describe("preview.setView / preview.resetView (§V78)", () => {
     );
 
     expect(result.status).toBe("applied");
-    expect(result.output.view).toEqual({ lens: "g", exposureStops: 1, tonemap: false });
+    expect(result.output.view).toEqual({ lens: "g", exposureStops: 1, tonemap: false, colormap: "none" });
     expect(store.viewFor(nodeId).mode).toBe("channel");
     expect(store.viewFor(nodeId).channel).toBe("g");
   });
@@ -253,5 +253,64 @@ describe("preview.setView / preview.resetView (§V78)", () => {
     expect(result.status).toBe("applied");
     expect(store.isDefault(nodeId)).toBe(true);
     expect(store.viewFor(nodeId)).toEqual(DEFAULT_PREVIEW_VIEW);
+  });
+});
+
+/**
+ * Owner 2026-11-22 — a Depth node's preview STARTS in a colour map (Turbo: near red, far
+ * blue), because its output is one value read as a picture. That start is the node's
+ * default, not an alteration: no marker, no reset, and stored as absence. Everything else
+ * still starts as the plain picture.
+ */
+describe("a node's own default lens (previewColormap)", () => {
+  async function busWithDepth() {
+    const { createGraphStore } = await import("@domain/graph/store.ts");
+    const { createSequentialIdFactory } = await import("@domain/graph/ids.ts");
+    const { createDomainBus } = await import("@domain/commands/index.ts");
+    const { createNodeRegistry } = await import("@nodes/registry/registry.ts");
+    const { allNodeDefinitions } = await import("@nodes/definitions/index.ts");
+    const store = createGraphStore({ ids: createSequentialIdFactory("n"), now: () => "2026-11-22T00:00:00.000Z" });
+    const { bus } = createDomainBus({ store, registry: createNodeRegistry(allNodeDefinitions).view() });
+    const result = await bus.execute("graph.applyPatch", {
+      baseRevision: bus.store.getRevision(), label: "seed",
+      operations: [
+        { op: "addNode", ref: "$depth", type: "depth", position: { x: 0, y: 0 } },
+        { op: "addNode", ref: "$blur", type: "blur", position: { x: 200, y: 0 } },
+      ],
+    }, contextFor(alice));
+    return { bus, depth: result.output.createdIds["$depth"]!, blur: result.output.createdIds["$blur"]! };
+  }
+
+  it("starts Depth in Turbo and everything else in the picture, both as 'default'", async () => {
+    const { bus, depth, blur } = await busWithDepth();
+    const store = previewViewStoreFor(bus);
+    expect(store.get(depth)).toEqual({ ...DEFAULT_PREVIEW_LENS, colormap: "turbo" });
+    expect(store.viewFor(depth)).toMatchObject({ mode: "colormap", colormap: 1, colormapLuminance: true });
+    expect(store.isDefault(depth)).toBe(true);
+    expect(store.get(blur)).toBe(DEFAULT_PREVIEW_LENS);
+    // The same object each read, or a React snapshot of it never settles.
+    expect(store.get(depth)).toBe(store.get(depth));
+  });
+
+  it("lets a person turn it off, which IS an alteration, and reset returns to Turbo", async () => {
+    const { bus, depth } = await busWithDepth();
+    const store = registerPreviewViewCommands(bus);
+    const off = await bus.execute(SET_PREVIEW_VIEW_COMMAND, { nodeId: depth, colormap: "none" }, contextFor(alice));
+    expect(off.output.view).toMatchObject({ colormap: "none" });
+    expect(store.isDefault(depth)).toBe(false);
+    expect(store.viewFor(depth).mode).toBe("color");
+    await bus.execute(RESET_PREVIEW_VIEW_COMMAND, { nodeId: depth }, contextFor(alice));
+    expect(store.get(depth).colormap).toBe("turbo");
+    expect(store.isDefault(depth)).toBe(true);
+    // Choosing Turbo by hand on a Depth node changes nothing and stores nothing.
+    store.set(depth, { colormap: "turbo" });
+    expect(store.isDefault(depth)).toBe(true);
+  });
+
+  it("maps the one channel an R/G/B/A lens isolates, and luminance otherwise", async () => {
+    const { bus, depth } = await busWithDepth();
+    const store = previewViewStoreFor(bus);
+    store.set(depth, { lens: "g", colormap: "viridis" });
+    expect(store.viewFor(depth)).toMatchObject({ mode: "colormap", colormap: 3, colormapLuminance: false, channel: "g" });
   });
 });

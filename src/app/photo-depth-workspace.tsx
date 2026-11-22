@@ -5,7 +5,7 @@ import type { FloatMap } from "@runtime/media/float-map.ts";
 import { farIsHigh, letterboxOccupancy, preparedMetadata, rasterizeFloatMap } from "@runtime/media/prepared-map.ts";
 import { remapDepthValues, type DepthRangeSettings } from "@runtime/media/depth-tools.ts";
 import type { PreparationPhoto } from "./photo-preparation.ts";
-import { DEPTH_PALETTES, depthPaletteLut, type DepthPalette } from "./photo-depth-palette.ts";
+import { DEFAULT_DEPTH_PALETTE, DEPTH_PALETTES, depthPaletteLut, type DepthPalette } from "./photo-depth-palette.ts";
 import styles from "./photo-depth-workspace.module.css";
 
 type View = "photo" | "native" | "depth" | "mask" | "effect";
@@ -99,7 +99,7 @@ export interface PhotoDepthWorkspaceProps {
 /** Inspect preparation assets independently of live rendering or model inference. */
 export function PhotoDepthWorkspace({ photo, readMaps, active, onSelect, palette, onPaletteChange, maskEditing, effectPreview, depthRange }: PhotoDepthWorkspaceProps) {
   const maps = readMaps();
-  const [localPalette, setLocalPalette] = useState<DepthPalette>("grayscale");
+  const [localPalette, setLocalPalette] = useState<DepthPalette>(DEFAULT_DEPTH_PALETTE);
   const selectedPalette = palette ?? localPalette;
   const paletteTable = useMemo(() => depthPaletteLut(selectedPalette), [selectedPalette]);
   const colourGradient = useMemo(() => {

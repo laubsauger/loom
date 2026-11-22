@@ -2,6 +2,7 @@ import type { UniformValues } from "../backend/plan.ts";
 import type { ColorSpace } from "../../domain/types/ports.ts";
 import { previewShaderSource } from "./debug-effects.wgsl.ts";
 import { ALL_CHANNELS, DEFAULT_PREVIEW_VIEW, PREVIEW_CHANNELS } from "./types.ts";
+import { colormapIndex } from "../../domain/color/colormaps.ts";
 import type {
   ChannelMask,
   PreviewChannel,
@@ -54,6 +55,8 @@ export function previewUniforms(view: PreviewView): UniformValues {
     checkerSize: Math.max(1, view.checkerSize),
     tonemap: view.tonemap ? 1 : 0,
     signedScale: Math.max(1e-6, view.signedScale),
+    colormap: view.colormap ?? 0,
+    colormapLuminance: view.colormapLuminance === false ? 0 : 1,
   };
 }
 
@@ -109,6 +112,13 @@ export function viewForLens(
     exposureStops: lens.exposureStops,
     tonemap: lens.tonemap,
   };
+  /* A colour map is the value shown through a map: the luminance of the picture, or the one
+     channel an R/G/B/A lens isolates. Exposure and the tonemap still apply first. */
+  if (lens.colormap !== undefined && lens.colormap !== "none") {
+    const isolated = lens.lens === "r" || lens.lens === "g" || lens.lens === "b" || lens.lens === "a";
+    return { ...graded, mode: "colormap", channels: ALL_CHANNELS, colormap: colormapIndex(lens.colormap),
+      colormapLuminance: !isolated, channel: isolated ? lens.lens as PreviewChannel : base.channel };
+  }
   switch (lens.lens) {
     case "rgba":
       return { ...graded, mode: "color", channels: ALL_CHANNELS };
