@@ -111,6 +111,15 @@ const FILES: Readonly<Record<string, string>> = {
   // useful output are DIFFERENT names, so re-reading it is what keeps that recorded fact
   // honest across a version bump.
   "rvm-mobilenetv3": "matte-rvm.onnx",
+  // T1816b — Depth Pro 2, the names `extract-model-signatures.ts` reads them under.
+  "depthpro2-s-stream4-fp16": "depthpro2-s-stream4-fp16.onnx",
+  "depthpro2-s-stream4-fp32": "depthpro2-s-stream4-fp32.onnx",
+  "depthpro2-s-fp32": "depthpro2-s-fp32.onnx",
+  "depthpro2-b-fp16": "depthpro2-b-fp16.onnx",
+  "depthpro2-s-stream4-fp32-672x384": "depthpro2-s-stream4-fp32-672x384.onnx",
+  "depthpro2-s-stream4-fp16-672x384": "depthpro2-s-stream4-fp16-672x384.onnx",
+  "depthpro2-s-fp32-672x384": "depthpro2-s-fp32-672x384.onnx",
+  "depthpro2-b-fp16-672x384": "depthpro2-b-fp16-672x384.onnx",
 };
 
 describe.skipIf(MODEL_DIR === undefined)("the recorded signatures still match the real weights", () => {

@@ -18,6 +18,7 @@ import { registerViewerCommands } from "@/app/viewer-commands.ts";
 import { registerControlCommands } from "@editor/controls/control-commands.ts";
 import { registerEdgeFlowCommand } from "@editor/edges/edge-flow-command.ts";
 import { registerReferenceLinesCommand } from "@editor/edges/reference-lines-command.ts";
+import { registerWireStyleCommand } from "@editor/edges/wire-style-command.ts";
 import { registerMinimapCommand } from "@editor/graph-canvas/minimap-command.ts";
 import { registerScrollPanCommand } from "@editor/graph-canvas/scroll-pan-command.ts";
 import { registerHelpCommand } from "@editor/help/command.ts";
@@ -77,6 +78,7 @@ for (const register of [
   registerTransportCommands,
   registerMinimapCommand,
   registerScrollPanCommand,
+  registerWireStyleCommand,
   registerProjectSettingsCommand,
   registerPipelineCommand,
   registerNodeInfoCommand,

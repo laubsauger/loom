@@ -214,6 +214,7 @@ describe("T645 — the node info popup shows §V329's staleness and classificati
       inferenceBackend: string | null;
       inferenceMs: number | null;
       inferenceIsolated: boolean | null;
+      inferenceShape: { picture: readonly [number, number]; box: readonly [number, number]; fill: number; output: readonly [number, number] } | null;
     }>,
   ) =>
     buildNodeInfo({
@@ -228,6 +229,7 @@ describe("T645 — the node info popup shows §V329's staleness and classificati
         inferenceBackend: null,
         inferenceMs: null,
         inferenceIsolated: null,
+        inferenceShape: null,
         inferenceNote: null,
         message: null,
         errorCount: 0,
@@ -251,6 +253,22 @@ describe("T645 — the node info popup shows §V329's staleness and classificati
     render(<NodeInfoPopup info={infoFor("analyze")} />);
     expect(screen.getByText("no result yet")).toBeTruthy();
     expect(screen.queryByText("0 frames behind")).toBeNull();
+  });
+
+  it("T1816b — shows a Depth node what came in, what the model saw, and what went out", () => {
+    // A 16:9 picture in Depth Pro 2's 4:3 box fills three quarters of it.
+    render(<NodeInfoPopup info={infoFor("depth", {
+      inferenceBackend: "webgpu", inferenceMs: 118,
+      inferenceShape: { picture: [1920, 1080], box: [640, 480], fill: 0.75, output: [1920, 1080] },
+    })} />);
+    expect(screen.getByText("picture → model → out")).toBeTruthy();
+    expect(screen.getByText("1920×1080 → 640×480 (fills 75 %) → 1920×1080")).toBeTruthy();
+  });
+
+  it("T1816b — says 'no run yet' for the sizes before a run, never a guessed box", () => {
+    render(<NodeInfoPopup info={infoFor("depth")} />);
+    expect(screen.getByText("picture → model → out")).toBeTruthy();
+    expect(screen.getAllByText("no run yet").length).toBeGreaterThanOrEqual(2);
   });
 
   it("names a Webcam as a live device and says what would make it reproduce (§V403)", () => {

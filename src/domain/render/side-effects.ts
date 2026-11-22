@@ -155,6 +155,8 @@ export const NODE_SIDE_EFFECTS: Readonly<Record<string, SideEffect>> = {
   mirror: "none",
   crop: "none",
   tile: "none",
+  fit: "none",
+  resolution: "none",
   cornerPin: "none",
   gridWarp: "none",
   level: "none",
@@ -252,6 +254,9 @@ export const NODE_SIDE_EFFECTS: Readonly<Record<string, SideEffect>> = {
   // Structure.
   output: "none",
   null: "none",
+  // T1822b: the points and value Nulls are the same wire.
+  pointNull: "none",
+  valueNull: "none",
   // T1262: a note box touches nothing outside the document.
   annotate: "none",
   switch: "none",

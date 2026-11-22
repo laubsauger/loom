@@ -1013,6 +1013,8 @@ const LEDGER: Readonly<Record<string, Row>> = {
   "renderSurface.points": flat("as Render Points."),
   "componentInPoints.in": flat("a component's socket: it forwards the edge."),
   "componentOutPoints.in": flat("a component's socket: it forwards the edge."),
+  // T1822b: a Null is spliced out; its consumers read the producer's edge.
+  "pointNull.in": flat("a Null: it forwards the edge."),
 
   /* kernels */
   "pointKernel.in": flat("it reads, by reference, the incoming attributes its own schema shares; the rest of the edge is not in its text."),

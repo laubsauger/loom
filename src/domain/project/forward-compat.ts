@@ -8,6 +8,7 @@ import {
   graphEdgeSchema,
   graphGroupSchema,
   graphNodeSchema,
+  graphTieSchema,
   nodeFormatOverrideSchema,
   nodeResolutionOverrideSchema,
   projectDocumentSchema,
@@ -87,6 +88,7 @@ export const openGraphDocumentSchema = graphDocumentSchema
     nodes: z.record(openGraphNodeSchema),
     edges: z.record(graphEdgeSchema.passthrough()),
     groups: z.record(graphGroupSchema.passthrough()),
+    ties: z.record(graphTieSchema.passthrough()).optional(),
   })
   .passthrough();
 

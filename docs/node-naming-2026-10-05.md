@@ -56,7 +56,7 @@ How each kind was chosen:
 4. A compound stays whole when no single word says it: `cornerpin`, `camerablur`, `personmask`.
 5. Wherever possible the kind is the word the library shows as the title, so it can be found by typing it.
 
-**Kinds are unique except for 11 declared families** (`KIND_FAMILIES`; a test holds the declaration equal to what the table actually shares, both ways). Two reasons a kind is shared, and no third:
+**Kinds are unique except for 12 declared families** (`KIND_FAMILIES`; a test holds the declaration equal to what the table actually shares, both ways). Two reasons a kind is shared, and no third:
 
 | Why | Kind | Types |
 | --- | --- | --- |
@@ -71,6 +71,7 @@ How each kind was chosen:
 | | `range` | `valueRange`, `pointRange` |
 | | `transform` | `transform`, `pointTransform` |
 | | `circle` | `circle`, `pointCircle` |
+| | `null` | `null`, `pointNull`, `valueNull` (T1822b) |
 
 The second group is TouchDesigner's own model: a Transform TOP and a Transform SOP are both `transform1`. Members of a family are numbered in one sequence (`limit1`, `limit2`), so names stay unique.
 
@@ -569,6 +570,8 @@ Generated from `NODE_KINDS`. The code is the source; this is a snapshot of 2026-
 | `mirror` | Mirror | `mirror` | `mirror1` | same |  |
 | `crop` | Crop | `crop` | `crop1` | same |  |
 | `tile` | Tile | `tile` | `tile1` | same |  |
+| `fit` | Fit | `fit` | `fit1` | new (T1824b) |  |
+| `resolution` | Resolution | `resolution` | `resolution1` | new (T1825b) |  |
 | `cornerPin` | Corner Pin | `cornerpin` | `cornerpin1` | same |  |
 | `gridWarp` | Grid Warp | `gridwarp` | `gridwarp1` | same |  |
 | `blur` | Blur | `blur` | `blur1` | same |  |
@@ -635,7 +638,9 @@ Generated from `NODE_KINDS`. The code is the source; this is a snapshot of 2026-
 | `laserPath` | Laser Path | `laserpath` | `laserpath1` | same |  |
 | `pointKernelAdvanced` | Point Kernel (Advanced) | `kernel` | `kernel1` | `pointkerneladvanced1` | family |
 | **utility** | | | | | |
-| `null` | Null | `null` | `null1` | same |  |
+| `null` | Null | `null` | `null1` | same | family |
+| `pointNull` | Null | `null` | `null1` | new (T1822b) | family |
+| `valueNull` | Null | `null` | `null1` | new (T1822b) | family |
 | `switch` | Switch | `switch` | `switch1` | same | family |
 | `annotate` | Annotation | `note` | `note1` | `annotate1` |  |
 | **component** | | | | | |

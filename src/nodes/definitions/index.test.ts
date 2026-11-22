@@ -104,6 +104,9 @@ describe("core catalogue (T70, T40)", () => {
       "mirror",
       "crop",
       "tile",
+      // T1824b/T1825b: TD's Fit and Resolution TOPs.
+      "fit",
+      "resolution",
       // T1491b: the 2D projection-mapping warp.
       "cornerPin",
       "gridWarp",
@@ -149,6 +152,9 @@ describe("core catalogue (T70, T40)", () => {
       "textureToAttribute",
       "renderPoints",
       "null",
+      // T1822b: the Null of the points and value families, TD's Null POP and Null CHOP.
+      "pointNull",
+      "valueNull",
       // T607: the component boundary sockets — the TD In/Out idiom, one per wired
       // port kind (the deliberate scoping; a generic typed In is deferred, §V349).
       "componentIn",
@@ -526,6 +532,7 @@ describe("T438 (§V316) — the channel publishers are DECLARED, not a category"
         "valueStep",
         "valueSwitch",
         "valueTrigger",
+        "valueNull", // T1822b: forwards its input bag under its own name
       ].sort(),
     );
     // And the shape that caused T438: a scene node is NOT a publisher, whatever shelf

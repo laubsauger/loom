@@ -7,6 +7,10 @@ import type { GraphDocument, GraphNode } from "../../domain/types/graph.ts";
 import type { NodeId } from "../../domain/types/ids.ts";
 import type { ProjectSettings } from "../../domain/types/graph.ts";
 import type { BackendCapabilities } from "../../domain/types/backend.ts";
+import { pointsPreviewResourceId } from "../../compiler/resources.ts";
+import { flatDocument } from "../../compiler/test-support.ts";
+import { createValueGraphSession } from "../../domain/channels/value-graph.ts";
+import { NO_FLATTENING } from "../../domain/parameters/node-references.ts";
 
 const capabilities: BackendCapabilities = {
   tier: "B",
@@ -212,5 +216,138 @@ describe("bypass and mute reach the compiler (T250, B16)", () => {
     const compiled = compileGraph({ graph, settings, registry: registry(), capabilities });
     expect(compiled.diagnostics.some((d) => d.code === "compiler/input-missing")).toBe(true);
     expect(compiled.passes.some((p) => "nodeId" in p && p["nodeId"] === "gen")).toBe(false);
+  });
+});
+
+/**
+ * T1822b — the Null of the POINTS family. Same splice as the texture Null (zero cost, proven
+ * by the plan signature), and B305/T1823b's half of it: a WATCHED points Null previews as a
+ * splat of its own, drawing its producer's points. The §V130 alias alone handed it the
+ * producer's pointset MARKER, which no preview (tile or viewer) can show.
+ */
+describe("Points Null (T1822b, B305)", () => {
+  const sinks = (nodeId: string) => [{ nodeId: nodeId as NodeId, portId: "out", kind: "preview" as const }];
+  const direct = graphOf(
+    [node("gen", "pointGrid"), node("draw", "renderPoints"), node("sink", "output")],
+    [
+      ["gen", "out", "draw", "points"],
+      ["draw", "out", "sink", "input"],
+    ],
+  );
+  const viaNull = graphOf(
+    [node("gen", "pointGrid"), node("wire", "pointNull"), node("draw", "renderPoints"), node("sink", "output")],
+    [
+      ["gen", "out", "wire", "in"],
+      ["wire", "out", "draw", "points"],
+      ["draw", "out", "sink", "input"],
+    ],
+  );
+
+  it("compiles to the IDENTICAL plan with and without the null — no pass, no buffer", () => {
+    const a = compileGraph({ graph: direct, settings, registry: registry(), capabilities });
+    const b = compileGraph({ graph: viaNull, settings, registry: registry(), capabilities });
+    expect(a.ok).toBe(true);
+    expect(b.ok).toBe(true);
+    expect(b.signature).toBe(a.signature);
+    expect(b.passes.length).toBe(a.passes.length);
+    expect(b.resources.length).toBe(a.resources.length);
+  });
+
+  it("cut the wire into it and the renderer loses its points: it IS the wire", () => {
+    const cut = graphOf(
+      [node("gen", "pointGrid"), node("wire", "pointNull"), node("draw", "renderPoints"), node("sink", "output")],
+      [
+        ["wire", "out", "draw", "points"],
+        ["draw", "out", "sink", "input"],
+      ],
+    );
+    const compiled = compileGraph({ graph: cut, settings, registry: registry(), capabilities });
+    expect(compiled.diagnostics.some((d) => d.code === "compiler/input-missing" && d.nodeId === "draw")).toBe(true);
+  });
+
+  it("watched, it previews its producer's points under its OWN target and pass", () => {
+    const own = compileGraph({ graph: viaNull, settings, registry: registry(), capabilities, sinks: sinks("gen") });
+    const wire = compileGraph({ graph: viaNull, settings, registry: registry(), capabilities, sinks: sinks("wire") });
+    const producerRow = own.outputs.find((output) => output.nodeId === "gen" && output.portId === "out");
+    const nullRow = wire.outputs.find((output) => output.nodeId === "wire" && output.portId === "out");
+    // The producer's own splat, as T373 has always made it: the reference.
+    expect(producerRow?.synthesis?.kind).toBe("pointset");
+    // The null's row is a PICTURE — a target the preview program draws — not the marker.
+    expect(nullRow?.resourceKind).toBe("target");
+    expect(nullRow?.resourceId).toBe(pointsPreviewResourceId("wire" as NodeId, "out"));
+    const nullPass = nullRow?.synthesis?.passes[0];
+    const producerPass = producerRow?.synthesis?.passes[0];
+    expect(nullPass?.id).toBe("wire#pointsPreview:out");
+    expect(nullPass?.target).toBe(pointsPreviewResourceId("wire" as NodeId, "out"));
+    // …drawing EXACTLY the producer's points: the same buffer, the same count, the same framing.
+    expect(nullPass?.buffers).toEqual(producerPass?.buffers);
+    expect(nullPass?.instances).toBe(producerPass?.instances);
+    expect(nullPass?.uniforms).toEqual(producerPass?.uniforms);
+    // And the main plan is untouched by the preview: the splat lives in the preview program.
+    expect(wire.signature).toBe(own.signature);
+  });
+
+  it("a BYPASSED point node is the same wire, so it previews its input's points the same way", () => {
+    const bypassed = graphOf(
+      [node("gen", "pointGrid"), { ...node("fx", "pointTransform"), ui: { bypassed: true } }],
+      [["gen", "out", "fx", "points"]],
+    );
+    const compiled = compileGraph({ graph: bypassed, settings, registry: registry(), capabilities, sinks: sinks("fx") });
+    const own = compileGraph({ graph: bypassed, settings, registry: registry(), capabilities, sinks: sinks("gen") });
+    const row = compiled.outputs.find((output) => output.nodeId === "fx" && output.portId === "out");
+    expect(row?.resourceId).toBe(pointsPreviewResourceId("fx" as NodeId, "out"));
+    expect(row?.synthesis?.passes[0]?.buffers).toEqual(
+      own.outputs.find((output) => output.nodeId === "gen")?.synthesis?.passes[0]?.buffers,
+    );
+  });
+
+  it("unwatched, it costs nothing: no splat is synthesized for it", () => {
+    const compiled = compileGraph({ graph: viaNull, settings, registry: registry(), capabilities, sinks: sinks("gen") });
+    const nullRow = compiled.outputs.find((output) => output.nodeId === "wire" && output.portId === "out");
+    expect(nullRow?.synthesis).toBeUndefined();
+  });
+});
+
+/**
+ * T1822b — the Null of the VALUE family: a channel bag under a stable name. The claim a
+ * person relies on is `op('null_x').chan.<channel>` reading the source's number THROUGH the
+ * null, so that is what is asserted — by exact value, against a source whose number is not
+ * a default, and with the wire cut to show the read really goes through it.
+ */
+describe("Value Null (T1822b)", () => {
+  const reader = (): GraphNode =>
+    ({
+      ...node("reader", "constant"),
+      label: "constant_reader",
+      parameters: {
+        value: { mode: "expression", bindings: { expression: { kind: "expression", source: "op('null_level').chan.value * 2" } } },
+      },
+    }) as GraphNode;
+  const chain = (wired: boolean) =>
+    graphOf(
+      [
+        { ...node("src", "constant", { value: 0.37 }), label: "constant_src" },
+        { ...node("wire", "valueNull"), label: "null_level" },
+        reader(),
+      ],
+      wired ? [["src", "out", "wire", "in"]] : [],
+    );
+  const frame = { timeSeconds: 0, deltaSeconds: 1 / 60, frameIndex: 0, mode: "realtime", randomSeed: 1 } as const;
+
+  it("publishes its input's bag unchanged under its own name, and op() reads it there", () => {
+    const result = createValueGraphSession(registry()).evaluate(flatDocument(chain(true)), frame, { flattening: NO_FLATTENING });
+    expect(result.byName.get("null_level")).toEqual({ value: 0.37 });
+    expect(result.byName.get("constant_reader")).toEqual({ value: 0.74 });
+  });
+
+  it("cut the wire into it and it publishes NOTHING — absence, not an empty bag (T541)", () => {
+    const result = createValueGraphSession(registry()).evaluate(flatDocument(chain(false)), frame, { flattening: NO_FLATTENING });
+    expect(result.byName.has("null_level")).toBe(false);
+    expect(result.byName.get("constant_reader")).not.toEqual({ value: 0.74 });
+  });
+
+  it("costs the plan nothing either: it splices out of the compile like every Null", () => {
+    const compiled = compileGraph({ graph: chain(true), settings, registry: registry(), capabilities });
+    expect(compiled.passes.some((pass) => "nodeId" in pass && pass["nodeId"] === "wire")).toBe(false);
   });
 });

@@ -115,6 +115,12 @@ export type InferenceRequest =
        * plan table, so "what does this model want" has one answer.
        */
       readonly smoothing: number;
+      /**
+       * T1816b — the picture's HORIZONTAL field of view in degrees, for a model that takes
+       * a focal length (Depth Pro 2's `f_px`). Absent for every model without one; the
+       * worker turns it into pixels of the model box after the letterbox.
+       */
+      readonly fieldOfView?: number;
       /** Explicit preparation capture; ordinary live runs transfer only encoded output. */
       readonly captureRaw?: boolean;
     };

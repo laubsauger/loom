@@ -1,5 +1,5 @@
 import { memo, useLayoutEffect, useRef } from "react";
-import { Position, getBezierPath, useStoreApi } from "@xyflow/react";
+import { Position, useStoreApi } from "@xyflow/react";
 import type { ConnectionInProgress, ConnectionState, Transform } from "@xyflow/react";
 import { parseHandleId } from "@domain/graph/edge-order.ts";
 import { describePortType } from "@domain/graph/port-compat.ts";
@@ -10,6 +10,8 @@ import { useGraphCanvas } from "@editor/graph-canvas/canvas-context.ts";
 import { edgeFamilyColor } from "./flow.ts";
 import { arcBolt, arcBranch, arcTick, polylinePath } from "./wire-arc.ts";
 import { wireAnswer, wireScale } from "./wire-range.ts";
+import { wirePath, wirePathFromInput } from "./wire-path.ts";
+import { wireStyleStore } from "./wire-style-command.ts";
 import styles from "./wire-in-flight.module.css";
 
 /**
@@ -167,14 +169,12 @@ function attachWireInFlight(
     // `pointer` is the cursor in the canvas's own pixels, whether or not the library has
     // snapped `to` onto a handle. The tip is always drawn there.
     const tip = { x: (connection.pointer.x - panX) / zoom, y: (connection.pointer.y - panY) / zoom };
-    const [wire] = getBezierPath({
-      sourceX: connection.from.x,
-      sourceY: connection.from.y,
-      sourcePosition: connection.fromPosition,
-      targetX: tip.x,
-      targetY: tip.y,
-      targetPosition: connection.fromPosition === Position.Left ? Position.Right : Position.Left,
-    });
+    // T1820b: the person's wire style, so the wire in the hand is the one that lands. A wire
+    // pulled from an input has its output end at the tip, and is written from the port held.
+    const from = { x: connection.from.x, y: connection.from.y };
+    const style = wireStyleStore().get();
+    const wire =
+      connection.fromPosition === Position.Left ? wirePathFromInput(style, [tip, from]) : wirePath(style, [from, tip]);
     parts.wire.setAttribute("d", wire);
     place(parts.tip, tip.x, tip.y);
 

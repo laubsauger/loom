@@ -288,7 +288,8 @@ describe("the catalogue compiles through the real compiler", () => {
       // outputs) legitimately contributes NO pass: the sink declaration keeps its
       // upstream compiled and the session pump reads the planner's buffers from outside
       // the plan. `presentsPicture` is the predicate the compiler itself allocates by.
-      if (definition.sink === true && definition.outputs.length === 0 && definition.sideEffect === "emits") {
+      // §B306: a DISPLAY sink that also emits (WHIP Out) draws its own target, so it is not one.
+      if (definition.sink === true && definition.outputs.length === 0 && definition.sideEffect === "emits" && !isDisplaySink(definition)) {
         expect(passes.length, definition.type).toBe(0);
         continue;
       }

@@ -5,6 +5,7 @@ import type { NodeId } from "@domain/types/ids.ts";
 import type { GraphPatchOperation } from "@domain/types/patch.ts";
 import type { GraphStoreView } from "@domain/graph/store.ts";
 import type { EdgeGeometryStore } from "@editor/edges/edge-geometry.ts";
+import type { TieView } from "@editor/edges/tie-view.ts";
 import type { RenameSessionStore } from "@editor/nodes/rename-session.ts";
 import type { KindLabelRegistry } from "@editor/nodes/kind-label.ts";
 import type { NodeRegistryView } from "@nodes/registry/registry.ts";
@@ -45,6 +46,12 @@ export interface GraphCanvasContextValue {
    * renders from it (§V16).
    */
   edgeGeometry: EdgeGeometryStore;
+  /**
+   * T1821b — where each wire tie is drawn: the document's positions, and the tie in the
+   * hand while it is dragged (`tie-view.ts`). A wire reads its route's points here, so it
+   * follows a dragged tie without the document being written until the drop (§V15).
+   */
+  ties: TieView;
   /** Every semantic edit the view makes, as one atomic patch on the bus (§V29, §V32). */
   dispatch: GraphDispatch;
   /**

@@ -60,7 +60,7 @@ export interface ModelSignature {
   readonly outputs: readonly string[];
 }
 
-export const MODEL_SIGNATURES: readonly ModelSignature[] = [
+const EXTRACTED_ROWS: readonly ModelSignature[] = [
   // Extracted from Large FP16 at 1fa1591 on 2026-10-09. IO stays float32.
   {
     modelId: "depth-anything-v2-large-fp16",
@@ -160,7 +160,58 @@ export const MODEL_SIGNATURES: readonly ModelSignature[] = [
     inputs: ["src", "r1i", "r2i", "r3i", "r4i", "downsample_ratio"],
     outputs: ["fgr", "pha", "r1o", "r2o", "r3o", "r4o"],
   },
+  /*
+   * T1816b — Depth Pro 2, extracted 2026-11-21 by `extract-model-signatures.ts` from the
+   * hash-verified files at the catalogue's revisions. STATIC 480×640 (no symbolic axis, so
+   * the node offers no Input Size). The streaming build's cache tensors are fed back by
+   * name: `present_<x>` becomes `past_<x>` on the next run.
+   */
+  {
+    modelId: "depthpro2-s-stream4-fp16",
+    input: { name: "pixel_values", type: "float32", shape: ["1", "3", "480", "640"] },
+    output: { name: "depth_meters", type: "float32" },
+    inputs: ["pixel_values", "f_px", "past_filled", "past_keys_5", "past_values_5", "past_prefixes_5", "past_keys_7", "past_values_7", "past_prefixes_7", "past_keys_9", "past_values_9", "past_prefixes_9", "past_keys_11", "past_values_11", "past_prefixes_11"],
+    outputs: ["depth_meters", "present_filled", "present_keys_5", "present_values_5", "present_prefixes_5", "present_keys_7", "present_values_7", "present_prefixes_7", "present_keys_9", "present_values_9", "present_prefixes_9", "present_keys_11", "present_values_11", "present_prefixes_11"],
+  },
+  // The FP32 stream: the same names, float32 caches.
+  {
+    modelId: "depthpro2-s-stream4-fp32",
+    input: { name: "pixel_values", type: "float32", shape: ["1", "3", "480", "640"] },
+    output: { name: "depth_meters", type: "float32" },
+    inputs: ["pixel_values", "f_px", "past_filled", "past_keys_5", "past_values_5", "past_prefixes_5", "past_keys_7", "past_values_7", "past_prefixes_7", "past_keys_9", "past_values_9", "past_prefixes_9", "past_keys_11", "past_values_11", "past_prefixes_11"],
+    outputs: ["depth_meters", "present_filled", "present_keys_5", "present_values_5", "present_prefixes_5", "present_keys_7", "present_values_7", "present_prefixes_7", "present_keys_9", "present_values_9", "present_prefixes_9", "present_keys_11", "present_values_11", "present_prefixes_11"],
+  },
+  {
+    modelId: "depthpro2-s-fp32",
+    input: { name: "pixel_values", type: "float32", shape: ["1", "3", "480", "640"] },
+    output: { name: "depth_meters", type: "float32" },
+    inputs: ["pixel_values", "f_px"],
+    outputs: ["depth_meters"],
+  },
+  {
+    modelId: "depthpro2-b-fp16",
+    input: { name: "pixel_values", type: "float32", shape: ["1", "3", "480", "640"] },
+    output: { name: "depth_meters", type: "float32" },
+    inputs: ["pixel_values", "f_px"],
+    outputs: ["depth_meters"],
+  },
+  /*
+   * The 16:9 builds, extracted the same day from `onnx/384x672/`: every name identical to
+   * the 4:3 build beside it, the box 384×672. Written through `wideBox` so the identity is
+   * visible; the re-read in `model-signatures.test.ts` still checks each against its file.
+   */
 ];
+
+export const MODEL_SIGNATURES: readonly ModelSignature[] = [
+  ...EXTRACTED_ROWS,
+  ...["depthpro2-s-stream4-fp32", "depthpro2-s-stream4-fp16", "depthpro2-s-fp32", "depthpro2-b-fp16"].map(wideBox),
+];
+
+/** The 4:3 row's names at Depth Pro 2's 16:9 box. */
+function wideBox(modelId: string): ModelSignature {
+  const square = EXTRACTED_ROWS.find((row) => row.modelId === modelId)!;
+  return { ...square, modelId: `${modelId}-672x384`, input: { ...square.input, shape: ["1", "3", "384", "672"] } };
+}
 
 export function signatureFor(modelId: string): ModelSignature | undefined {
   return MODEL_SIGNATURES.find((signature) => signature.modelId === modelId);

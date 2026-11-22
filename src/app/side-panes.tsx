@@ -1492,6 +1492,17 @@ export function ViewerPane({
           disabled={choices.length === 0}
         >
           {choices.length === 0 ? <option value="">no outputs</option> : null}
+          {/* T1823b (B305): NOTHING chosen is a state the select has to be able to show. With
+              no declared sink (a points-only graph has none: the Output takes a picture) the
+              value is "", which matched no option, so the browser displayed the FIRST choice
+              as if it were on screen while the surface said "No output" — and a native select
+              fires no change for the option it already shows, so that one could not be
+              picked at all. Disabled: it is what is shown, never a choice. */}
+          {choices.length > 0 && selectedOutputKey === "" ? (
+            <option value="" disabled>
+              no output
+            </option>
+          ) : null}
           {currentOutsideSearch === undefined ? null : (
             <optgroup label="Current output">
               <option value={outputKey(currentOutsideSearch)}>

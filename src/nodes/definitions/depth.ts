@@ -4,13 +4,25 @@ import type { DispatchPassDescriptor, EffectPassDescriptor } from "../../runtime
 import { inferenceSourceIdFor } from "../../runtime/execution/inference-sources.ts";
 import { scratchResourceId } from "../../compiler/resources.ts";
 import type { ModelDescriptor } from "../../runtime/models/model-acquisition.ts";
-import { DEPTH_ACCURATE, DEPTH_LIVE, DEPTH_MODELS, measuredOn } from "../../runtime/models/model-catalogue.ts";
+import {
+  DEPTH_ACCURATE,
+  DEPTH_LIVE,
+  DEPTH_PRO2_B,
+  DEPTH_PRO2_S,
+  DEPTH_PRO2_S_STREAM,
+  DEPTH_PRO2_S_STREAM_FP32,
+  DEPTH_PRO2_WIDE,
+  LIVE_DEPTH_MODELS,
+  measuredOn,
+} from "../../runtime/models/model-catalogue.ts";
+import { DEPTH_PRO2_BOXES } from "../../runtime/models/depth-runner.ts";
 import { signatureFor } from "../../runtime/models/model-signatures.ts";
 import {
   inferenceAcceptsInputSize,
   inferenceModelSchema,
   inferenceResetSchema,
   letterboxPreprocessWgsl,
+  letterboxRectPreprocessWgsl,
 } from "./inference-node.ts";
 import { RGBA_TEXTURE } from "./common-ports.ts";
 import { readCompileInputs } from "./compile-context.ts";
@@ -117,13 +129,52 @@ interface DepthModelChoice {
   /** The stored enum value. */
   readonly value: string;
   readonly descriptor: ModelDescriptor;
-  /** Measured on the CPU path at 518x518, ms (§T753). */
-  readonly cpuMillisAt518: number;
+  /** The MEASURED per-run cost, ms — §T753's CPU figure for V2 Small, T1816b's WebGPU one for Depth Pro 2. */
+  readonly millis: number;
+  /** Where that cost was measured, ending in `measuredOn(…)` (§V899). */
+  readonly measuredAt: string;
+  /**
+   * T1816b — METRIC depth in metres from a static 640×480 box (Depth Pro 2), rather than
+   * relative inverse depth from a square the node sizes. Decides the input box, the Field
+   * of View input, and the result pass's range stage.
+   */
+  readonly metric: boolean;
+  /**
+   * T1816b — the same build in Depth Pro 2's 16:9 box (672×384) and what it measured.
+   * `descriptor`/`millis` above are the 4:3 box's (640×480), the default.
+   */
+  readonly wide?: { readonly descriptor: ModelDescriptor; readonly millis: number };
 }
 
+/** T1816b — which of Depth Pro 2's two published boxes a node runs in. */
+export type DepthPro2BoxKey = keyof typeof DEPTH_PRO2_BOXES;
+
+const V2_SMALL_COST = `on the CPU path at ${DEPTH_INPUT_SIDE} px, ${measuredOn("2026-09-01")}`;
+const DEPTH_PRO2_COST = `on WebGPU at 640×480, ${measuredOn("2026-11-21")}`;
+const wideOf = (descriptor: ModelDescriptor, millis: number) => ({ descriptor: DEPTH_PRO2_WIDE[descriptor.id]!, millis });
+
 const DEPTH_MODEL_CHOICES: readonly DepthModelChoice[] = [
-  { value: "accurate", descriptor: DEPTH_ACCURATE, cpuMillisAt518: 2670 },
-  { value: "fast", descriptor: DEPTH_LIVE, cpuMillisAt518: 3833 },
+  { value: "accurate", descriptor: DEPTH_ACCURATE, millis: 2670, measuredAt: V2_SMALL_COST, metric: false },
+  { value: "fast", descriptor: DEPTH_LIVE, millis: 3833, measuredAt: V2_SMALL_COST, metric: false },
+  /* T1816b — stored by id from the start: no document holds a legacy spelling of these. */
+  {
+    value: DEPTH_PRO2_S_STREAM_FP32.id,
+    descriptor: DEPTH_PRO2_S_STREAM_FP32,
+    millis: 118,
+    measuredAt: `${DEPTH_PRO2_COST.replace(", measured", " with its frame cache kept on the GPU, measured")}`,
+    metric: true,
+    wide: wideOf(DEPTH_PRO2_S_STREAM_FP32, 96),
+  },
+  {
+    value: DEPTH_PRO2_S_STREAM.id,
+    descriptor: DEPTH_PRO2_S_STREAM,
+    millis: 102,
+    measuredAt: `${DEPTH_PRO2_COST.replace(", measured", " with its frame cache kept on the GPU, measured")}`,
+    metric: true,
+    wide: wideOf(DEPTH_PRO2_S_STREAM, 83),
+  },
+  { value: DEPTH_PRO2_S.id, descriptor: DEPTH_PRO2_S, millis: 84, measuredAt: DEPTH_PRO2_COST, metric: true, wide: wideOf(DEPTH_PRO2_S, 69) },
+  { value: DEPTH_PRO2_B.id, descriptor: DEPTH_PRO2_B, millis: 184, measuredAt: DEPTH_PRO2_COST, metric: true, wide: wideOf(DEPTH_PRO2_B, 152) },
 ];
 
 const DEFAULT_CHOICE: DepthModelChoice = DEPTH_MODEL_CHOICES[0] as DepthModelChoice;
@@ -145,9 +196,35 @@ export function depthModelChoiceFor(stored: Readonly<Record<string, unknown>>): 
   const raw = stored["model"];
   return (
     DEPTH_MODEL_CHOICES.find(
-      (choice) => choice.value === raw || choice.descriptor.id === raw,
+      (choice) => choice.value === raw || choice.descriptor.id === raw || choice.wide?.descriptor.id === raw,
     ) ?? DEFAULT_CHOICE
   );
+}
+
+/**
+ * T1816b — the box a Depth Pro 2 node runs in: its Model Input, or 16:9 when the stored
+ * model is itself a 16:9 id (an agent may write one). 4:3 when absent, so a node saved
+ * before the choice existed keeps the file it downloaded (§V831).
+ */
+export function depthPro2BoxKeyFor(stored: Readonly<Record<string, unknown>>): DepthPro2BoxKey {
+  const choice = depthModelChoiceFor(stored);
+  if (choice.wide !== undefined && stored["model"] === choice.wide.descriptor.id) return "672x384";
+  return stored["modelInput"] === "672x384" ? "672x384" : "640x480";
+}
+
+/**
+ * The ARTEFACT a node's parameters select — the one that is downloaded and run. For Depth
+ * Pro 2 that is the model AND the box; everything that acquires or names the file reads
+ * this, never `depthModelChoiceFor(…).descriptor`, which is the 4:3 build.
+ */
+export function depthDescriptorFor(stored: Readonly<Record<string, unknown>>): ModelDescriptor {
+  const choice = depthModelChoiceFor(stored);
+  return choice.wide !== undefined && depthPro2BoxKeyFor(stored) === "672x384" ? choice.wide.descriptor : choice.descriptor;
+}
+
+/** T1816b — whether a model id is one of the METRIC (Depth Pro 2) artefacts, either box. */
+export function isMetricDepthModel(modelId: string): boolean {
+  return DEPTH_MODEL_CHOICES.some((choice) => choice.metric && (choice.descriptor.id === modelId || choice.wide?.descriptor.id === modelId));
 }
 
 /**
@@ -158,8 +235,16 @@ export function depthModelChoiceFor(stored: Readonly<Record<string, unknown>>): 
  * measuring machine here is what stops all three of them reading as a claim about every
  * machine. `inference-node.test.ts` gates it.
  */
-function measuredCost(choice: DepthModelChoice): string {
-  return `${(choice.cpuMillisAt518 / 1000).toFixed(1)} s per run on the CPU path at ${DEPTH_INPUT_SIDE} px, ${measuredOn("2026-09-01")}`;
+function measuredCost(choice: DepthModelChoice, stored: Readonly<Record<string, unknown>> = {}): string {
+  const wide = choice.wide !== undefined && depthPro2BoxKeyFor(stored) === "672x384";
+  const millis = wide ? choice.wide!.millis : choice.millis;
+  const time = millis >= 1000 ? `${(millis / 1000).toFixed(1)} s` : `${millis} ms`;
+  return `${time} per run ${wide ? choice.measuredAt.replace("640×480", "672×384") : choice.measuredAt}`;
+}
+
+/** The measured per-run cost, ms, of the artefact these parameters select. */
+function measuredMillis(choice: DepthModelChoice, stored: Readonly<Record<string, unknown>>): number {
+  return choice.wide !== undefined && depthPro2BoxKeyFor(stored) === "672x384" ? choice.wide.millis : choice.millis;
 }
 
 /**
@@ -273,6 +358,13 @@ export interface DepthNodeSettings {
   readonly minIntervalSeconds: number;
   /** Stop after the first result and keep publishing it (§T384's freshness policy). */
   readonly hold: boolean;
+  /**
+   * T1816b — the box the preprocess letterboxes into, width × height. Square
+   * `inputSide` for Depth Anything; Depth Pro 2's static 640×480 otherwise.
+   */
+  readonly inputBox: { readonly width: number; readonly height: number };
+  /** T1816b — horizontal field of view, degrees, for a metric model's focal input; absent otherwise. */
+  readonly fieldOfView?: number;
 }
 
 function storedNumber(stored: Readonly<Record<string, unknown>>, key: string): number | undefined {
@@ -300,14 +392,25 @@ export function depthSettingsFor(stored: Readonly<Record<string, unknown>>): Dep
   // A pinned graph gets ITS OWN declared side; a free one gets the stored choice when the
   // model would accept it, and the shipped default when it would not.
   const fallback = pinnedInputSide(choice.descriptor.id) ?? DEPTH_DEFAULT_INPUT_SIDE;
-  return {
-    modelId: choice.descriptor.id,
-    inputSide: legal && requested !== undefined ? requested : fallback,
+  const side = legal && requested !== undefined ? requested : fallback;
+  const box = DEPTH_PRO2_BOXES[depthPro2BoxKeyFor(stored)];
+  const settings = {
+    modelId: depthDescriptorFor(stored).id,
+    inputSide: choice.metric ? box.width : side,
     providers: depthProvidersFor(stored),
     minIntervalSeconds: rateLimit > 0 ? 1 / rateLimit : 0,
     hold: stored["refresh"] === "held",
+    inputBox: choice.metric ? box : { width: side, height: side },
   };
+  if (!choice.metric) return settings;
+  return { ...settings, fieldOfView: storedNumber(stored, "fieldOfView") ?? DEPTH_PRO2_FIELD_OF_VIEW };
 }
+
+/** T1816b — a webcam's horizontal field of view is typically 60–80°; the low end is the default. */
+const DEPTH_PRO2_FIELD_OF_VIEW = 60;
+/** T1816b — the metric range a fresh node maps to 1..0: a room, not a street. */
+const DEPTH_PRO2_NEAR = 0.5;
+const DEPTH_PRO2_FAR = 10;
 
 /**
  * THE NODE'S SCHEMA, COMPUTED FROM ITS CHOSEN MODEL (§T965(c), §T960).
@@ -345,18 +448,25 @@ export function depthSettingsFor(stored: Readonly<Record<string, unknown>>): Dep
  * looked complete.
  */
 const LEGACY_MODEL_VALUES: ReadonlyArray<{ value: string; choice: DepthModelChoice }> =
-  DEPTH_MODEL_CHOICES.map((choice) => ({ value: choice.value, choice }));
+  DEPTH_MODEL_CHOICES.filter((choice) => choice.value !== choice.descriptor.id).map((choice) => ({ value: choice.value, choice }));
 
 function modelParameter(
   choice: DepthModelChoice,
   stored: Readonly<Record<string, unknown>>,
 ): ParameterSchema[string] {
-  const base = inferenceModelSchema(DEPTH_MODELS, {
+  const base = inferenceModelSchema(LIVE_DEPTH_MODELS, {
     what:
-      `Which weights to use — currently ${choice.descriptor.label}, ${measuredCost(choice)}. ` +
-      `Both produce a depth map and differ in download size and detail. The 4-bit variant ` +
+      `Which weights to use — currently ${depthDescriptorFor(stored).label}, ${measuredCost(choice, stored)}. ` +
+      `Depth Anything V2 Small estimates RELATIVE depth. Its 4-bit variant ` +
       `is a fifth of the bytes and is NOT faster: unpacking 4-bit weights costs more than ` +
-      `the memory it saves, so pick it to save the download, never to save time.`,
+      `the memory it saves, so pick it to save the download, never to save time. ` +
+      `Depth Pro 2 estimates METRIC depth, in metres, from a fixed 640×480 view of the ` +
+      `picture; its streaming builds look at the three frames before each one, which keeps ` +
+      `the map steady from frame to frame. Streaming FP32 is the faithful one: on WebGPU ` +
+      `the FP16 builds measured 2.5–7.9 % off FP32 per frame, ${measuredOn("2026-11-21")}. ` +
+      `Depth Pro 2 is for RESEARCH USE ONLY under ` +
+      `Apple's Machine Learning Research Model License: not for commercial work or product ` +
+      `development.`,
   });
   /*
    * The legacy row is offered ONLY to the document that is standing on it, and it wears
@@ -487,21 +597,113 @@ function depthParameters(stored: Readonly<Record<string, unknown>>): ParameterSc
       `The most runs per second this node will start. 0 is no cap. A run is never started ` +
       `while one is in flight, so this can only ever make it slower — it is there to stop a ` +
       `multi-second model from re-running the instant it finishes and pinning a core. ` +
-      `${choice.descriptor.label} measured ${measuredCost(choice)}, which is about ` +
-      `${(1000 / choice.cpuMillisAt518).toFixed(2)} runs per second, so a cap above that ` +
+      `${depthDescriptorFor(stored).label} measured ${measuredCost(choice, stored)}, which is about ` +
+      `${(1000 / measuredMillis(choice, stored)).toFixed(2)} runs per second, so a cap above that ` +
       `changes nothing. Measured on the TIMELINE clock, and applied to live playback only: ` +
       `an offline render computes a result for every frame so a take reproduces (§V586).`,
   };
+
+  if (choice.metric) {
+    /* T1816b — the metric stage. Present only for Depth Pro 2: a structural difference read
+       from the chosen model, like `inputSide` is (§T965(c)), never `inactiveWhen`. */
+    const sizes = (key: DepthPro2BoxKey) => {
+      const millis = measuredMillis(choice, { ...stored, modelInput: key, model: choice.descriptor.id });
+      const descriptor = depthDescriptorFor({ ...stored, modelInput: key, model: choice.descriptor.id });
+      return `${millis} ms, ${(descriptor.bytes / 1_048_576).toFixed(1)} MB`;
+    };
+    schema["modelInput"] = {
+      type: "enum",
+      label: "Model Input",
+      group: "Model",
+      // A box is a different FILE (the graphs are static), and it sizes the preprocess.
+      compileTime: true,
+      default: "640x480",
+      options: [
+        { value: "640x480", label: `640×480 — 4:3 (${sizes("640x480")})` },
+        { value: "672x384", label: `672×384 — 16:9 (${sizes("672x384")})` },
+      ],
+      description:
+        `The size Depth Pro 2 sees. Whatever comes in is scaled down into this box, keeping ` +
+        `its shape, with black bars filling the rest — and the model spends its time on the ` +
+        `bars too. A 16:9 picture (a webcam, most video) fills only 75 % of 640×480 and 98 % ` +
+        `of 672×384, and 672×384 is 16 % fewer pixels: faster and better used. A 4:3 or ` +
+        `portrait picture is better in 640×480. Each box is its own download. Times ` +
+        `${measuredOn("2026-11-21")}, WebGPU. The node's info popup shows the picture, the ` +
+        `box and how much of it the picture fills.`,
+    };
+    schema["fieldOfView"] = {
+      type: "number",
+      label: "Field of View",
+      group: "Model",
+      default: DEPTH_PRO2_FIELD_OF_VIEW,
+      min: 20,
+      max: 120,
+      range: "bounded",
+      step: 1,
+      unit: "degrees",
+      description:
+        "The picture's HORIZONTAL field of view, which Depth Pro 2 needs as a focal length " +
+        "to give distances in metres. It scales every distance and changes no shape: too " +
+        "wide reads everything nearer, too narrow everything further. A webcam is usually " +
+        "60–80°; a phone's main camera about 70°.",
+    };
+    schema["nearMetres"] = {
+      type: "number",
+      label: "Near",
+      group: "Output",
+      default: DEPTH_PRO2_NEAR,
+      min: 0.05,
+      max: 100,
+      range: "floor",
+      scale: "log",
+      step: 0.01,
+      description:
+        "The distance, in metres, that publishes as fully bright (before Output Range). " +
+        "Anything nearer clamps to it.",
+    };
+    schema["farMetres"] = {
+      type: "number",
+      label: "Far",
+      group: "Output",
+      default: DEPTH_PRO2_FAR,
+      min: 0.1,
+      max: 1000,
+      range: "floor",
+      scale: "log",
+      step: 0.1,
+      description:
+        "The distance, in metres, that publishes as black (before Output Range). Anything " +
+        "further, and the sky, clamps to it. The map between Near and Far is spaced by " +
+        "inverse distance, as the eye reads depth, so nearby detail gets most of the range.",
+    };
+    schema["publish"] = {
+      type: "enum",
+      label: "Publish",
+      group: "Output",
+      default: "range",
+      options: [
+        { value: "range", label: "Near to Far as 1 to 0" },
+        { value: "metres", label: "Metres" },
+      ],
+      description:
+        "Near to Far maps the metric map into a picture through Near, Far, Near Is Bright " +
+        "and Output Range — the SAME mapping every frame, so a steady model stays steady. " +
+        "Metres publishes the distance itself, capped at Far, for a consumer that unprojects " +
+        "points or measures; Near Is Bright and Output Range do not apply to it.",
+    };
+  }
 
   schema["nearIsBright"] = {
     type: "boolean",
     label: "Near Is Bright",
     group: "Output",
     default: true,
-    description:
-      "Depth Anything emits INVERSE relative depth, so close is a high value and the map " +
-      "reads near-bright by default. Turn this off to publish far-bright instead, which is " +
-      "what a fog or a depth-of-field mask usually wants.",
+    description: choice.metric
+      ? "Near to Far reads near-bright by default. Turn this off to publish far-bright " +
+        "instead, which is what a fog or a depth-of-field mask usually wants."
+      : "Depth Anything emits INVERSE relative depth, so close is a high value and the map " +
+        "reads near-bright by default. Turn this off to publish far-bright instead, which is " +
+        "what a fog or a depth-of-field mask usually wants.",
   };
 
   schema["outputRange"] = {
@@ -516,9 +718,11 @@ function depthParameters(stored: Readonly<Record<string, unknown>>): ParameterSc
     description:
       "The low and high value the normalised map is stretched into before it leaves the " +
       "node. Displace reads 0.5 as no displacement, so [0.4, 0.6] is a gentler relief " +
-      "without touching Displace's own amount, and [1, 0] is another way to flip it. The " +
-      "map is normalised across each frame's own range first — Depth Anything's scale is " +
-      "relative and differs per image, so brightness is not comparable between frames.",
+      "without touching Displace's own amount, and [1, 0] is another way to flip it. " +
+      (choice.metric
+        ? "The map is first placed between Near and Far, in metres, the same way every frame."
+        : "The map is normalised across each frame's own range first — Depth Anything's " +
+          "scale is relative and differs per image, so brightness is not comparable between frames."),
   };
 
   return schema;
@@ -535,6 +739,8 @@ function depthParameters(stored: Readonly<Record<string, unknown>>): ParameterSc
  * monocular estimator plausibly, which is the failure no pixel gate catches.
  */
 const DEPTH_PREPROCESS_WGSL = letterboxPreprocessWgsl();
+/** T1816b — Depth Pro 2's 640×480 box; same rule, `boxAspect` 4/3 (see the shader's docblock). */
+const DEPTH_RECT_PREPROCESS_WGSL = letterboxRectPreprocessWgsl();
 
 /* T965: the ENCODING half of the node's parameters lives here rather than in the worker,
    and that placement is the point. Flipping near/far or narrowing the published range is a
@@ -542,7 +748,11 @@ const DEPTH_PREPROCESS_WGSL = letterboxPreprocessWgsl();
    a protocol field, a re-run of a multi-second model to see a change, and a knob whose
    effect arrives seconds after the drag. The model's numbers are untouched; only how they
    are published changes. */
-const DEPTH_BLIT_WGSL = wgsl`struct DepthOutput { invert: f32, low: f32, high: f32 };
+/* T1816b: a METRIC model's result texel is INVERSE metres (0 = infinitely far, see
+   `depthPro2ToInverse`), and its range stage lives here for the same reason the rest does —
+   Near and Far are a drag, not a re-run. `metric` 0 leaves Depth Anything's path exactly as
+   it was: the ranged value is mixed out and `metres` is 0. */
+const DEPTH_BLIT_WGSL = wgsl`struct DepthOutput { invert: f32, low: f32, high: f32, metric: f32, nearInv: f32, farInv: f32, metres: f32, far: f32 };
 
 @group(0) @binding(0) var<uniform> params: DepthOutput;
 @group(0) @binding(1) var depthTexture: texture_2d<f32>;
@@ -552,14 +762,35 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
   let dims = vec2f(textureDimensions(depthTexture, 0));
   let texel = vec2i(clamp(uv, vec2f(0.0), vec2f(1.0)) * (dims - vec2f(1.0)));
   let raw = textureLoad(depthTexture, texel, 0).r;
-  let oriented = mix(raw, 1.0 - raw, params.invert);
+  let span = params.nearInv - params.farInv;
+  let ranged = clamp((raw - params.farInv) / select(span, 1.0, span == 0.0), 0.0, 1.0);
+  let unit = mix(raw, ranged, params.metric);
+  let oriented = mix(unit, 1.0 - unit, params.invert);
   let value = mix(params.low, params.high, oriented);
-  return vec4f(value, value, value, 1.0);
+  let metres = 1.0 / max(raw, 1.0 / max(params.far, 1e-6));
+  let published = mix(value, metres, params.metres);
+  /* No result yet: a metric model's fallback is -1, an inverse distance no model returns,
+     and it publishes the same flat 0.5 identity Depth Anything's does (Displace: no move). */
+  let pending = params.metric > 0.5 && raw < 0.0;
+  let shown = select(published, 0.5, pending);
+  return vec4f(shown, shown, shown, 1.0);
 }`;
 
 /** Booleans reach a uniform block as 0/1 floats; the shader `mix`es on them. */
 function flag(value: unknown, fallback: boolean): number {
   return (typeof value === "boolean" ? value : fallback) ? 1 : 0;
+}
+
+/** T1816b — the metric range stage's uniforms; all zero (and `far` 1) for a relative model. */
+function metricUniformsOf(stored: Readonly<Record<string, unknown>>, metric: boolean) {
+  if (!metric) return { metric: 0, nearInv: 0, farInv: 0, metres: 0, far: 1 };
+  const number = (key: string, fallback: number): number => {
+    const raw = Number(stored[key]);
+    return Number.isFinite(raw) && raw > 0 ? raw : fallback;
+  };
+  const near = number("nearMetres", DEPTH_PRO2_NEAR);
+  const far = number("farMetres", DEPTH_PRO2_FAR);
+  return { metric: 1, nearInv: 1 / near, farInv: 1 / far, metres: stored["publish"] === "metres" ? 1 : 0, far };
 }
 
 /** The stored output range, or the identity. A malformed pair falls back rather than throws. */
@@ -577,7 +808,7 @@ export const depthNode: NodeDefinition = {
   title: "Depth",
   category: "filter",
   description:
-    "Estimates a depth map from an image — near is bright, far is dark — using Depth Anything V2 running in the browser. The model is downloaded once per machine on first use, with your consent and a progress readout, and is never bundled. Until it is available the node publishes flat mid-grey, which Displace reads as no displacement, so a document using Depth opens and renders on a machine that cannot run it. Results arrive at the model's own rate rather than once per frame: live playback shows the most recent one and reports its age, while an offline render waits for each frame so a take reproduces.",
+    "Estimates a depth map from an image — near is bright, far is dark — running in the browser: Depth Anything V2 Small (relative depth), or Depth Pro 2 (metric depth in metres; research use only). The model is downloaded once per machine on first use, with your consent and a progress readout, and is never bundled. Until it is available the node publishes flat mid-grey, which Displace reads as no displacement, so a document using Depth opens and renders on a machine that cannot run it. Results arrive at the model's own rate rather than once per frame: live playback shows the most recent one and reports its age, while an offline render waits for each frame so a take reproduces.",
   tags: ["depth", "ml", "inference", "3d", "displace"],
   inputs: [{ id: "input", label: "Picture", type: RGBA_TEXTURE }],
   outputs: [{ id: "out", label: "Depth", type: RGBA_TEXTURE }],
@@ -595,6 +826,9 @@ export const depthNode: NodeDefinition = {
   parametersFor(stored) {
     return depthParameters(stored);
   },
+  /* T1816b: each model family's own settings survive a switch to the other and back —
+     a Depth Pro 2 node keeps its Input Size, a Depth Anything one its Field of View. */
+  retainedParameterKeys: ["inputSide", "modelInput", "fieldOfView", "nearMetres", "farMetres", "publish"],
   /**
    * The OUTPUT follows the input's shape, not the model's. The model works at its own
    * square whatever the picture is; the depth map is then sampled back up to the source's
@@ -616,19 +850,20 @@ export const depthNode: NodeDefinition = {
 
     // Resolved through `parametersFor`, so a node on a model with a pinned input shape
     // resolves to the export size here whatever is stored (§T965's degrade rule).
-    const { inputSide } = depthSettingsFor(parameters);
-    const workgroups = Math.ceil(inputSide / 8);
+    const { inputSide, inputBox } = depthSettingsFor(parameters);
+    const metric = depthModelChoiceFor(parameters).metric;
     const [low, high] = outputRangeOf(parameters);
 
     const preprocess: DispatchPassDescriptor = {
       kind: "dispatch",
       id: `${nodeId}:preprocess`,
-      shader: DEPTH_PREPROCESS_WGSL,
+      // T1816b: the square shader stays byte-identical for Depth Anything.
+      shader: metric ? DEPTH_RECT_PREPROCESS_WGSL : DEPTH_PREPROCESS_WGSL,
       entryPoint: "main",
-      workgroups: [workgroups, workgroups, 1],
+      workgroups: [Math.ceil(inputBox.width / 8), Math.ceil(inputBox.height / 8), 1],
       buffers: [{ binding: "modelInput", resourceId: scratchResourceId(nodeId, DEPTH_INPUT_KEY) }],
       textures: [{ binding: "sourceTexture", resourceId: source.resource, sampled: "unfiltered" }],
-      uniforms: { side: inputSide },
+      uniforms: metric ? { width: inputBox.width, height: inputBox.height } : { side: inputSide },
       uniformBinding: "params",
       nodeId,
     };
@@ -640,7 +875,7 @@ export const depthNode: NodeDefinition = {
       target,
       textures: [{ binding: "depthTexture", resourceId: scratchResourceId(nodeId, DEPTH_RESULT_KEY), sampled: "unfiltered" }],
       // The model emits near-bright already, so "Near Is Bright" ON is NO inversion.
-      uniforms: { invert: 1 - flag(parameters["nearIsBright"], true), low, high },
+      uniforms: { invert: 1 - flag(parameters["nearIsBright"], true), low, high, ...metricUniformsOf(parameters, metric) },
       uniformBinding: "params",
       nodeId,
     };
@@ -652,7 +887,7 @@ export const depthNode: NodeDefinition = {
           key: DEPTH_INPUT_KEY,
           kind: "buffer",
           stride: 16,
-          capacity: inputSide * inputSide,
+          capacity: inputBox.width * inputBox.height,
         },
         {
           key: DEPTH_RESULT_KEY,

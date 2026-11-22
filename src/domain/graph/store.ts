@@ -3,9 +3,9 @@ import { createStore, type StoreApi } from "zustand/vanilla";
 
 import type { Actor, AuditEntry } from "../types/commands.ts";
 import type { RuntimeDiagnostic } from "../types/diagnostics.ts";
-import type { EdgeId, GroupId, NodeId, Revision } from "../types/ids.ts";
+import type { EdgeId, GroupId, NodeId, Revision, TieId } from "../types/ids.ts";
 import { DEFAULT_PROJECT_SETTINGS } from "../types/graph.ts";
-import type { GraphDocument, GraphEdge, GraphGroup, GraphNode, ProjectSettings } from "../types/graph.ts";
+import type { GraphDocument, GraphEdge, GraphGroup, GraphNode, GraphTie, ProjectSettings } from "../types/graph.ts";
 import { createIdFactory, type IdFactory } from "./ids.ts";
 
 /**
@@ -71,6 +71,12 @@ export interface UndoGroup {
    * because a group that touched no settings should not carry an empty record.
    */
   settings?: Record<string, EntityChange<ProjectSettings>>;
+  /**
+   * T1821b — wire ties, the fourth entity collection (§V1040). Optional for the reason
+   * `settings` is: every construction of an `UndoGroup` before ties existed, and every
+   * group that moved no tie, carries none.
+   */
+  ties?: Record<TieId, EntityChange<GraphTie>>;
 }
 
 export interface ActorHistory {
@@ -231,7 +237,10 @@ function diffRecordKeys<T>(
   return changes;
 }
 
-type CollectionName = "nodes" | "edges" | "groups";
+type CollectionName = "nodes" | "edges" | "groups" | "ties";
+
+/** A document with no ties holds no `ties` record at all (§V1040); read it as empty. */
+const NO_TIES: Readonly<Record<TieId, GraphTie>> = Object.freeze({});
 
 /**
  * Touched entity ids per collection, read off immer's patch list. A patch path deeper
@@ -292,6 +301,7 @@ export function createGraphStore(options: GraphStoreOptions = {}): GraphStore {
     ...Object.keys(group.edges).map((id) => `edge:${id}`),
     ...Object.keys(group.groups).map((id) => `group:${id}`),
     ...Object.keys(group.settings ?? {}).map((id) => `settings:${id}`),
+    ...Object.keys(group.ties ?? {}).map((id) => `tie:${id}`),
   ];
 
   function commit(
@@ -301,6 +311,7 @@ export function createGraphStore(options: GraphStoreOptions = {}): GraphStore {
       edges: Record<EdgeId, EntityChange<GraphEdge>>;
       groups: Record<GroupId, EntityChange<GraphGroup>>;
       settings?: Record<string, EntityChange<ProjectSettings>>;
+      ties?: Record<TieId, EntityChange<GraphTie>>;
     },
     /** The settings to write alongside the graph. Undefined leaves the current ones. */
     nextSettings: ProjectSettings | undefined,
@@ -345,6 +356,7 @@ export function createGraphStore(options: GraphStoreOptions = {}): GraphStore {
           ...(top.settings === undefined && changes.settings === undefined
             ? {}
             : { settings: { ...top.settings } }),
+          ...(top.ties === undefined && changes.ties === undefined ? {} : { ties: { ...top.ties } }),
         };
         mergeChanges(merged.nodes, changes.nodes);
         mergeChanges(merged.edges, changes.edges);
@@ -354,6 +366,7 @@ export function createGraphStore(options: GraphStoreOptions = {}): GraphStore {
         if (changes.settings !== undefined) {
           mergeChanges((merged.settings ??= {}), changes.settings);
         }
+        if (changes.ties !== undefined) mergeChanges((merged.ties ??= {}), changes.ties);
         undoStack = [...undoStack.slice(0, -1), merged];
         undoGroupId = merged.id;
       } else {
@@ -370,6 +383,7 @@ export function createGraphStore(options: GraphStoreOptions = {}): GraphStore {
           edges: changes.edges,
           groups: changes.groups,
           ...(changes.settings === undefined ? {} : { settings: changes.settings }),
+          ...(changes.ties === undefined ? {} : { ties: changes.ties }),
         };
         undoStack = [...undoStack, group].slice(-historyLimit);
         undoGroupId = group.id;
@@ -396,6 +410,7 @@ export function createGraphStore(options: GraphStoreOptions = {}): GraphStore {
       ...Object.keys(changes.edges).map((id) => `edge:${id}`),
       ...Object.keys(changes.groups).map((id) => `group:${id}`),
       ...Object.keys(changes.settings ?? {}).map((id) => `settings:${id}`),
+      ...Object.keys(changes.ties ?? {}).map((id) => `tie:${id}`),
     ];
     for (const entity of touched) owners[entity] = { actorKey: key, revision };
     // T103: owner rows for long-gone entities (deleted nodes keep theirs so §V41 can
@@ -458,12 +473,16 @@ export function createGraphStore(options: GraphStoreOptions = {}): GraphStore {
       return { committed: false, changed: false, revision: base.revision, undoGroupId: undefined };
     }
 
+    const tiesBefore = base.ties ?? NO_TIES;
+    const tiesAfter = drafted.ties ?? NO_TIES;
+    const ties = diffRecordKeys(tiesBefore, tiesAfter, touchedKeys(patches, "ties", tiesBefore, tiesAfter));
     return commit(
       drafted,
       {
         nodes: diffRecordKeys(base.nodes, drafted.nodes, touchedKeys(patches, "nodes", base.nodes, drafted.nodes)),
         edges: diffRecordKeys(base.edges, drafted.edges, touchedKeys(patches, "edges", base.edges, drafted.edges)),
         groups: diffRecordKeys(base.groups, drafted.groups, touchedKeys(patches, "groups", base.groups, drafted.groups)),
+        ...(Object.keys(ties).length === 0 ? {} : { ties }),
       },
       undefined,
       {
@@ -641,7 +660,8 @@ export function createGraphStore(options: GraphStoreOptions = {}): GraphStore {
       Object.keys(group.nodes).length +
       Object.keys(group.edges).length +
       Object.keys(group.groups).length +
-      Object.keys(group.settings ?? {}).length;
+      Object.keys(group.settings ?? {}).length +
+      Object.keys(group.ties ?? {}).length;
     if (totalEntities > 0 && blocked.size >= totalEntities) {
       return {
         status: "rejected",
@@ -680,6 +700,14 @@ export function createGraphStore(options: GraphStoreOptions = {}): GraphStore {
         if (value === undefined) delete draft.groups[id];
         else draft.groups[id] = value;
       }
+      // T1821b: ties restore like groups; an emptied record goes, as the patch layer's does.
+      for (const [id, change] of Object.entries(group.ties ?? {})) {
+        if (blocked.has(`tie:${id}`)) continue;
+        const value = pick(change);
+        if (value === undefined) delete draft.ties?.[id];
+        else (draft.ties ??= {})[id] = value;
+      }
+      if (draft.ties !== undefined && Object.keys(draft.ties).length === 0) delete draft.ties;
     });
 
     // Settings restore through the same pick(): whole values, no cascade to reason about.
@@ -694,11 +722,13 @@ export function createGraphStore(options: GraphStoreOptions = {}): GraphStore {
     }
 
     // The group already names every entity a restore may touch — no scan needed (T103).
+    const tieChanges = diffRecordKeys(state.graph.ties ?? NO_TIES, nextGraph.ties ?? NO_TIES, Object.keys(group.ties ?? {}));
     const changes = {
       nodes: diffRecordKeys(state.graph.nodes, nextGraph.nodes, Object.keys(group.nodes)),
       edges: diffRecordKeys(state.graph.edges, nextGraph.edges, Object.keys(group.edges)),
       groups: diffRecordKeys(state.graph.groups, nextGraph.groups, Object.keys(group.groups)),
       ...(Object.keys(settingsChanges).length === 0 ? {} : { settings: settingsChanges }),
+      ...(Object.keys(tieChanges).length === 0 ? {} : { ties: tieChanges }),
     };
 
     const result = commit(nextGraph, changes, nextSettings, {

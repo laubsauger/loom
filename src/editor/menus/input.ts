@@ -71,10 +71,11 @@ const portRef: InputBuilder = (_item, target) =>
     ? { ok: false, reason: "No port under the cursor." }
     : { ok: true, input: { nodeId: target.nodeId, portId: target.portId } };
 
-const edgeRef: InputBuilder = (_item, target) =>
-  target.edgeId === undefined
-    ? { ok: false, reason: "No edge under the cursor." }
-    : { ok: true, input: { edgeId: target.edgeId } };
+/** T1821b: the wire under the cursor and the click's graph point — where its new tie goes. */
+const edgeAtCursor: InputBuilder = (_item, target) =>
+  target.edgeId === undefined || target.position === undefined
+    ? { ok: false, reason: "No wire under the cursor." }
+    : { ok: true, input: { edgeIds: [target.edgeId], position: { x: target.position.x, y: target.position.y } } };
 
 const parameterRef: InputBuilder = (_item, target) =>
   target.nodeId === undefined || target.parameterKey === undefined
@@ -264,7 +265,7 @@ const BUILDERS: Record<string, InputBuilder> = {
   "ui.createComponent": nodeIds,
 
   "graph.insertConversion": portRef,
-  "graph.rerouteEdge": edgeRef,
+  "graph.rerouteEdge": edgeAtCursor,
 
   "parameter.copy": parameterRef,
   "parameter.copyValue": parameterRef,

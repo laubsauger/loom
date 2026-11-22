@@ -5,6 +5,7 @@ import { outputNode } from "./output.ts";
 import { noiseNode } from "./noise.ts";
 import { generatorNodes } from "./generators.ts";
 import { transformNodes } from "./transforms.ts";
+import { fitNodes } from "./fit.ts";
 import { cornerPinNode } from "./corner-pin.ts";
 import { gridWarpNode } from "./grid-warp.ts";
 import { colorNodes } from "./color.ts";
@@ -18,7 +19,7 @@ import { layerNode } from "./layer.ts";
 import { temporalNodes } from "./feedback.ts";
 import { cacheNode } from "./cache.ts";
 import { pointNodeDefinitions } from "./points.ts";
-import { nullNode } from "./null-node.ts";
+import { nullNodes } from "./null-node.ts";
 import { componentIoDefinitions } from "./component-io.ts";
 import { switchNode } from "./switch.ts";
 import { valueNodeDefinitions } from "./values.ts";
@@ -87,7 +88,7 @@ import { oscInNode, oscOutNode } from "./osc.ts";
 import { annotateNode } from "./annotate.ts";
 
 export { solidNode } from "./solid.ts";
-export { nullNode } from "./null-node.ts";
+export { nullNode, nullNodes, pointNullNode, valueNullNode } from "./null-node.ts";
 export {
   boundaryTypeFor,
   componentInput,
@@ -237,9 +238,12 @@ export { cameraBlurNode } from "./camera-blur.ts";
 export { echoNode, ECHO_RING_KEY } from "./echo.ts";
 export {
   depthNode,
+  depthDescriptorFor,
   depthModelChoiceFor,
+  depthPro2BoxKeyFor,
   depthProvidersFor,
   depthSettingsFor,
+  isMetricDepthModel,
   DEPTH_INPUT_KEY,
   DEPTH_INPUT_SIDE,
   DEPTH_RESULT_KEY,
@@ -284,6 +288,8 @@ export const coreNodeDefinitions: readonly NodeDefinition[] = [
   noiseNode,
   ...generatorNodes,
   ...transformNodes,
+  // T1824b/T1825b: TD's Fit and Resolution TOPs, sized by the Common page.
+  ...fitNodes,
   // T1491b: the 2D projection-mapping warp, the stack's mapping stage.
   cornerPinNode,
   // T1509b: the grid warp, for curved and irregular surfaces.
@@ -302,7 +308,8 @@ export const coreNodeDefinitions: readonly NodeDefinition[] = [
   cacheNode,
   echoNode,
   ...pointNodeDefinitions,
-  nullNode,
+  // T1822b: a Null per wired family — texture, points, value.
+  ...nullNodes,
   ...componentIoDefinitions,
   switchNode,
   ...valueNodeDefinitions,

@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-import { depthNode, depthProvidersFor, depthSettingsFor } from "./depth.ts";
+import { depthDescriptorFor, depthNode, depthProvidersFor, depthSettingsFor } from "./depth.ts";
 import { effectiveParameterSchema } from "../../domain/parameters/resolve.ts";
 import { DEPTH_ACCURATE, DEPTH_LIVE } from "../../runtime/models/model-catalogue.ts";
 import type { EnumParameter } from "../../domain/types/parameters.ts";
@@ -70,7 +70,11 @@ describe("§T965(b)/§V827(1) — the chooser names the model, the size AND the 
     // (94.5), so one model appeared twice at two different sizes. That reads as two
     // different downloads.
     const fresh = enumOf({}, "model").options;
-    expect(fresh.map((option) => option.value)).toEqual([DEPTH_ACCURATE.id, DEPTH_LIVE.id]);
+    // T1816b: one row per offered model — the three Depth Pro 2 builds are stored by id
+    // from the start, so they have no legacy spelling to duplicate them.
+    expect(fresh.map((option) => option.value)).toEqual([
+      DEPTH_ACCURATE.id, DEPTH_LIVE.id, "depthpro2-s-stream4-fp32", "depthpro2-s-stream4-fp16", "depthpro2-s-fp32", "depthpro2-b-fp16",
+    ]);
     // And where it IS shown it wears its twin's label, so the sizes cannot disagree.
     const shown = enumOf({ model: "accurate" }, "model").options.find((o) => o.value === "accurate");
     expect(shown?.label).toContain("94.5 MB");
@@ -312,5 +316,115 @@ describe("§B171 — the worker points onnxruntime at a wasm URL this build serv
 
   it("absolutises it, because ORT re-resolves the path inside a blob-URL worker", () => {
     expect(source).toContain("new URL(wasmUrl, self.location.href)");
+  });
+});
+
+/**
+ * T1816b — DEPTH PRO 2 ON THE SAME NODE.
+ *
+ * What changes with the model is structural (§T965(c)): a static 640×480 graph offers no
+ * Input Size, needs a Field of View, and publishes through a metric range stage. The
+ * compile has to size its box from the same answer, or the readback strides a 640×480
+ * buffer at 266 and the model reads garbage that looks like a picture.
+ */
+describe("T1816b — Depth Pro 2's surface follows the chosen model", () => {
+  const DP2 = ["depthpro2-s-stream4-fp32", "depthpro2-s-stream4-fp16", "depthpro2-s-fp32", "depthpro2-b-fp16"] as const;
+
+  it("labels every Depth Pro 2 option research only, with its download", () => {
+    const labels = enumOf({}, "model").options.map((option) => option.label);
+    expect(labels).toContain("Depth Pro 2 S streaming FP32 · research only (93.4 MB)");
+    expect(labels).toContain("Depth Pro 2 S streaming FP16 · research only (48.2 MB)");
+    expect(labels).toContain("Depth Pro 2 S FP32 · research only (94.0 MB)");
+    expect(labels).toContain("Depth Pro 2 B FP16 · research only (190.0 MB)");
+    expect(schemaFor({})["model"]?.description).toContain("RESEARCH USE ONLY");
+  });
+
+  it("keeps Depth Anything V2 Small the default — an added option never moves a document (§V831)", () => {
+    expect(enumOf({}, "model").default).toBe(DEPTH_ACCURATE.id);
+    expect(depthSettingsFor({}).modelId).toBe(DEPTH_ACCURATE.id);
+  });
+
+  it.each(DP2)("%s: no Input Size; Field of View, Near, Far and Publish instead", (model) => {
+    const schema = schemaFor({ model });
+    expect(schema["inputSide"]).toBeUndefined();
+    expect(Object.keys(schema)).toEqual(expect.arrayContaining(["fieldOfView", "nearMetres", "farMetres", "publish"]));
+    expect(schema["model"]?.description).toContain("ms per run on WebGPU at 640×480");
+  });
+
+  it("offers Depth Anything none of the metric controls", () => {
+    const schema = schemaFor({ model: DEPTH_ACCURATE.id });
+    for (const key of ["fieldOfView", "nearMetres", "farMetres", "publish"]) expect(schema[key]).toBeUndefined();
+    expect(schema["inputSide"]).toBeDefined();
+  });
+
+  it("retains each family's settings across a switch, so going back finds them", () => {
+    expect(depthNode.retainedParameterKeys).toEqual(
+      expect.arrayContaining(["inputSide", "modelInput", "fieldOfView", "nearMetres", "farMetres", "publish"]),
+    );
+  });
+
+  it("offers both published boxes, 4:3 by default, each naming its measured time and download", () => {
+    const input = enumOf({ model: "depthpro2-s-stream4-fp32" }, "modelInput");
+    expect(input.default).toBe("640x480");
+    expect(input.options.map((option) => option.label)).toEqual([
+      "640×480 — 4:3 (118 ms, 93.4 MB)",
+      "672×384 — 16:9 (96 ms, 93.3 MB)",
+    ]);
+    expect(schemaFor({ model: DEPTH_ACCURATE.id })["modelInput"]).toBeUndefined();
+  });
+
+  it("downloads and runs the 16:9 FILE when the box is 16:9 — a box is an artefact, not a dial", () => {
+    const settings = depthSettingsFor({ model: "depthpro2-s-stream4-fp32", modelInput: "672x384" });
+    expect(settings.modelId).toBe("depthpro2-s-stream4-fp32-672x384");
+    expect(settings.inputBox).toEqual({ width: 672, height: 384 });
+    expect(depthDescriptorFor({ model: "depthpro2-b-fp16", modelInput: "672x384" }).url).toContain("/onnx/384x672/model_fp16.onnx");
+    // A node saved before Model Input existed keeps the 4:3 file it already downloaded.
+    expect(depthSettingsFor({ model: "depthpro2-s-stream4-fp32" }).modelId).toBe("depthpro2-s-stream4-fp32");
+    // An agent writing the 16:9 id as the model gets that box without Model Input.
+    expect(depthSettingsFor({ model: "depthpro2-s-fp32-672x384" }).inputBox).toEqual({ width: 672, height: 384 });
+    // Depth Anything ignores it.
+    expect(depthSettingsFor({ model: DEPTH_ACCURATE.id, modelInput: "672x384" }).modelId).toBe(DEPTH_ACCURATE.id);
+  });
+
+  it("quotes the chosen box's time where the cost is stated", () => {
+    expect(schemaFor({ model: "depthpro2-s-fp32", modelInput: "672x384" })["rateLimit"]?.description).toContain("69 ms per run on WebGPU at 672×384");
+    expect(schemaFor({ model: "depthpro2-s-fp32" })["rateLimit"]?.description).toContain("84 ms per run on WebGPU at 640×480");
+  });
+
+  it("runs Depth Pro 2 in its own 640×480 box with the field of view, whatever Input Size says", () => {
+    const settings = depthSettingsFor({ model: "depthpro2-s-fp32", inputSide: "518", fieldOfView: 72 });
+    expect(settings.inputBox).toEqual({ width: 640, height: 480 });
+    expect(settings.fieldOfView).toBe(72);
+    expect(depthSettingsFor({ model: "depthpro2-b-fp16" }).fieldOfView).toBe(60);
+    expect(depthSettingsFor({ model: DEPTH_ACCURATE.id, inputSide: "518" }).inputBox).toEqual({ width: 518, height: 518 });
+    expect(depthSettingsFor({ model: DEPTH_ACCURATE.id }).fieldOfView).toBeUndefined();
+  });
+
+  it("compiles the rect preprocess over the box and a buffer the box's size", () => {
+    const compiled = depthNode.compile({
+      nodeId: "depth1",
+      inputs: { input: [{ resourceId: "tex:source", samplerId: "smp" }] },
+      outputs: { out: { resourceId: "tex:out" } },
+      parameters: { model: "depthpro2-s-stream4-fp16", nearMetres: 0.5, farMetres: 4, publish: "metres" },
+    } as never);
+    const [preprocess, blit] = compiled.passes as unknown as Array<{ uniforms: Record<string, number>; workgroups?: number[]; shader: string }>;
+    expect(preprocess!.uniforms).toEqual({ width: 640, height: 480 });
+    expect(preprocess!.workgroups).toEqual([80, 60, 1]);
+    expect(String(preprocess!.shader)).toContain("boxAspect");
+    expect(compiled.scratch?.find((entry) => entry.key === "modelInput")).toMatchObject({ capacity: 640 * 480, stride: 16 });
+    expect(blit!.uniforms).toMatchObject({ metric: 1, nearInv: 2, farInv: 0.25, metres: 1, far: 4 });
+  });
+
+  it("leaves Depth Anything's compile as it was: square shader, side uniform, no metric stage", () => {
+    const compiled = depthNode.compile({
+      nodeId: "depth1",
+      inputs: { input: [{ resourceId: "tex:source", samplerId: "smp" }] },
+      outputs: { out: { resourceId: "tex:out" } },
+      parameters: { model: "accurate" },
+    } as never);
+    const [preprocess, blit] = compiled.passes as unknown as Array<{ uniforms: Record<string, number>; shader: string }>;
+    expect(preprocess!.uniforms).toEqual({ side: 266 });
+    expect(String(preprocess!.shader)).not.toContain("boxAspect");
+    expect(blit!.uniforms).toMatchObject({ metric: 0, metres: 0 });
   });
 });

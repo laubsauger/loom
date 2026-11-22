@@ -178,7 +178,7 @@ const parameters = z
 export const graphPatchOperationSchema = domainGraphPatchOperationSchema
   .refine(
     (operation) =>
-      (operation.op !== "addNode" && operation.op !== "addGroup") || operation.ref.startsWith("$"),
+      (operation.op !== "addNode" && operation.op !== "addGroup" && operation.op !== "addTie") || operation.ref.startsWith("$"),
     { message: "A patch-local ref must start with `$`.", path: ["ref"] },
   )
   // T1208: the same refusal on the OTHER agent route. `apply_graph_patch` carries the

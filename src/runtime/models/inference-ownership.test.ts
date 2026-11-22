@@ -478,7 +478,10 @@ describe("inference results own transferable storage", () => {
   });
 
   it.each(Object.entries(MODEL_PLANS))("%s encodes a fresh exact buffer without retaining or detaching model output", (_modelId, plan) => {
-    const output = Float32Array.from({ length: 51 }, (_, i) => (i % 4) / 3);
+    // T1816b: Depth Pro 2's encoder refuses any length but its own static box, by design.
+    const box = plan.picture === "depth_meters" ? plan.dims(0) : undefined;
+    const length = box === undefined ? 51 : box[2]! * box[3]!;
+    const output = Float32Array.from({ length }, (_, i) => (i % 4) / 3);
     const before = output.slice();
     const first = plan.encode(output, 2, 2, 2, 2, 2);
     const second = plan.encode(output, 2, 2, 2, 2, 2);

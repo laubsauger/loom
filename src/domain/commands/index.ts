@@ -4,6 +4,7 @@ import { createGraphStore, type GraphStore, type GraphStoreOptions } from "../gr
 import { createCommandBus, type LoomBus, type ReferenceCycleHost, type SessionScope } from "./bus.ts";
 import { registerEditorCommands } from "./editor-commands.ts";
 import { registerLayoutCommands } from "./layout-commands.ts";
+import { registerWireTieCommands } from "./wire-tie-commands.ts";
 import { registerGraphCommands } from "./graph-commands.ts";
 import type { CapabilityGrantStore } from "./grants.ts";
 import { registerNodeOutputCommands } from "./node-output-commands.ts";
@@ -48,6 +49,8 @@ export type {
 export { SHADER_SOURCE_PARAMETER, applyGraphPatch } from "./apply-patch.ts";
 export { registerEditorCommands } from "./editor-commands.ts";
 export { registerLayoutCommands } from "./layout-commands.ts";
+export { REROUTE_EDGE_COMMAND, registerWireTieCommands } from "./wire-tie-commands.ts";
+export type { RerouteEdgeInput } from "./wire-tie-commands.ts";
 export type {
   ClipboardCommandOutput,
   DuplicateInput,
@@ -143,6 +146,8 @@ export function createDomainBus(options: DomainBusOptions = {}): { bus: LoomBus;
   registerNodeOutputCommands(bus);
   registerEditorCommands(bus, systemClipboard === undefined ? {} : { systemClipboard });
   registerLayoutCommands(bus);
+  // T1821b: wire ties — a route on a wire is a document edit, so every bus has it.
+  registerWireTieCommands(bus);
   registerParameterCommands(bus, {
     ...(clipboard === undefined ? {} : { writeClipboard: clipboard }),
     ...(systemClipboard === undefined ? {} : { systemClipboard }),

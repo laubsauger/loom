@@ -186,6 +186,11 @@ const NOT_CONSTRUCTED: ReadonlyArray<{ name: string; reason: string }> = [
       "Composed by `scrollPanStore()` in the SAME module, `createMinimapStore`'s shape and for its reason: one per-PERSON store over one `localStorage` key, so a canvas inside a component dive and the root canvas cannot disagree about what a scroll does (T1724b). The product path is `registerScrollPanCommand` in `graph-canvas.tsx`.",
   },
   {
+    name: "createWireStyleStore",
+    reason:
+      "Composed by `wireStyleStore()` in the SAME module, `createMinimapStore`'s shape and for its reason: one per-PERSON store over one `localStorage` key, so a canvas inside a component dive and the root canvas draw the same wires (T1820b). The product path is `registerWireStyleCommand` in `graph-canvas.tsx`, and every `SignalEdge` reads `wireStyleStore()`.",
+  },
+  {
     name: "createStarterPreferenceStore",
     reason:
       "Composed by `starterPreferenceStore()` in the SAME module — a single per-PERSON store, for the same reason `createNodeTypeLabelStore` is one: the settings dialog that writes it and the composition root's boot decision that reads it are nowhere near each other in the tree, and two identities over one `localStorage` key would only be a way for the switch and the boot to disagree. The product path is `starterPreferenceStore` in `project-settings.tsx` and in `app.tsx`, which feeds `useStarterProject`; `app/starter-boot.test.tsx` flips it and asserts which document is on screen after a boot, and that a starter never loads over an autosave.",

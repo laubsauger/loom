@@ -130,6 +130,113 @@ export const PHOTO_DEPTH_MODELS: readonly ModelDescriptor[] = [
   ...DEPTH_MODELS, PHOTO_DEPTH_LARGE_FP16, PHOTO_DEPTH_LARGE_Q4F16,
 ];
 
+/**
+ * T1816b — Depth Pro 2, METRIC depth, on the live Depth node (owner 2026-11-21).
+ *
+ * An UNOFFICIAL ONNX conversion of `apple/DepthPro2-S@30e6471` and `-B@281dc98`, made by
+ * its uploader with the Apache-2.0 exporter `protortyp/depthpro2-onnx`. Apple publishes no
+ * ONNX build; its own artefacts are safetensors and Core ML (§T1818b). Revision-pinned,
+ * and every length and SHA-256 below was checked against the downloaded bytes 2026-11-21.
+ *
+ * ⚠ RESEARCH USE ONLY. The weights are under the Apple Machine Learning Research Model
+ * License: "non-commercial scientific research and academic development", and it names
+ * "any commercial exploitation, product development" as excluded. A conversion is a Model
+ * Derivative under the same licence. The owner ruled to add them labelled that way
+ * (2026-11-21), so the label says it at the moment of choosing and no default selects one.
+ *
+ * WHAT IS DIFFERENT FROM DEPTH ANYTHING, read from the files (`model-signatures.ts`):
+ * the graph is STATIC at 480×640, takes RAW RGB in [0,1] (ImageNet normalisation is inside
+ * the graph) and a second input `f_px` — the horizontal focal length in pixels — and
+ * returns `depth_meters`, z-depth in metres with +inf for the sky. The streaming build also
+ * carries thirteen `past_*` cache tensors in and `present_*` out: one frame per call,
+ * attending to the previous three.
+ *
+ * MEASURED 2026-11-21 on `MEASUREMENT_MACHINE` (Chromium 151 new headless), ORT-web 1.29,
+ * WebGPU, warm, 480×640: S FP32 84 ms, S streaming FP16 102 ms with its cache kept on the
+ * GPU, B FP16 184 ms. On ORT-web's wasm in Node the S FP32 build took 733 ms and the
+ * streaming FP16 one 78 s — the CPU has no native half precision, so FP16 there is
+ * emulated. On a real panned sequence the streaming build's frame-to-frame change was
+ * 0.06–0.23 (mean abs-rel) against 0.19–0.75 for single-frame S FP32: that steadiness is
+ * what the streaming option is for.
+ */
+const DEPTH_PRO2_LICENSE = "Apple ML Research Model License — research use only";
+const dp2Weights = (repo: string, revision: string, file: string): string =>
+  `https://huggingface.co/christianengel/${repo}/resolve/${revision}/onnx/${file}`;
+const DP2_S = ["DepthPro2-S-ONNX", "feb41e6075fd295590ea47619c039aef59cfb929"] as const;
+const DP2_B = ["DepthPro2-B-ONNX", "ff8dceef904da6e026011760bc162bede72bbf61"] as const;
+
+export const DEPTH_PRO2_S_STREAM: ModelDescriptor = {
+  id: "depthpro2-s-stream4-fp16",
+  label: "Depth Pro 2 S streaming FP16 · research only",
+  url: dp2Weights(...DP2_S, "model_stream4_fp16.onnx"),
+  bytes: 50_586_135,
+  sha256: "62c32407c4ad6061936363ee77b0d04041c7362b52f9766fbfeb1770784577ed",
+  license: DEPTH_PRO2_LICENSE,
+};
+
+/**
+ * Streaming at FULL precision (owner 2026-11-21, added after the first three). Measured the
+ * same day on `MEASUREMENT_MACHINE`, WebGPU, a real panned clip: 118 ms warm; frame-to-frame
+ * change 0.055–0.114 against 0.059–0.230 for the FP16 stream; its first frame (empty cache)
+ * equals single-frame FP32 exactly, where the FP16 stream's is already 5.3 % off.
+ */
+export const DEPTH_PRO2_S_STREAM_FP32: ModelDescriptor = {
+  id: "depthpro2-s-stream4-fp32",
+  label: "Depth Pro 2 S streaming FP32 · research only",
+  url: dp2Weights(...DP2_S, "model_stream4.onnx"),
+  bytes: 97_931_001,
+  sha256: "9228dff05c888754dd24c67487ecd90ce3b2f8587119b9fe6723d012351e4e45",
+  license: DEPTH_PRO2_LICENSE,
+};
+
+export const DEPTH_PRO2_S: ModelDescriptor = {
+  id: "depthpro2-s-fp32",
+  label: "Depth Pro 2 S FP32 · research only",
+  url: dp2Weights(...DP2_S, "model.onnx"),
+  bytes: 98_538_392,
+  sha256: "862865578e43f5b212f003400f61ce6a18ebef40e3fe1961b2c47e41cc0f5f2f",
+  license: DEPTH_PRO2_LICENSE,
+};
+
+export const DEPTH_PRO2_B: ModelDescriptor = {
+  id: "depthpro2-b-fp16",
+  label: "Depth Pro 2 B FP16 · research only",
+  url: dp2Weights(...DP2_B, "model_fp16.onnx"),
+  bytes: 199_273_471,
+  sha256: "47ed2c85dd4e79c66a24be1ee4e42cfb4ff41f7702a62d57175a8b663f0876fa",
+  license: DEPTH_PRO2_LICENSE,
+};
+
+export const DEPTH_PRO2_MODELS: readonly ModelDescriptor[] = [DEPTH_PRO2_S_STREAM_FP32, DEPTH_PRO2_S_STREAM, DEPTH_PRO2_S, DEPTH_PRO2_B];
+
+/**
+ * The same four builds with a 16:9 box, 672×384, from the converter's `onnx/384x672/`
+ * folder at the same revisions (owner 2026-11-21: "make sure we are not wasting stuff").
+ * A 16:9 picture fills 75 % of the 640×480 box and 98 % of this one, and the box itself is
+ * 16 % fewer pixels. Measured that day on `MEASUREMENT_MACHINE`, WebGPU, warm: streaming
+ * FP32 96 ms, streaming FP16 83 ms, S FP32 69 ms, B FP16 152 ms — against 115–118 / 102 /
+ * 84 / 184 ms in the 4:3 box. Lengths and SHA-256 checked against the downloaded bytes.
+ * Keyed by the 4:3 build's id: the node's Model Input picks between the two.
+ */
+const wide = (base: ModelDescriptor, repo: readonly [string, string], file: string, bytes: number, sha256: string): ModelDescriptor => ({
+  id: `${base.id}-672x384`,
+  label: base.label.replace(" · research only", " · 672×384 · research only"),
+  url: dp2Weights(...repo, `384x672/${file}`),
+  bytes,
+  sha256,
+  license: DEPTH_PRO2_LICENSE,
+});
+
+export const DEPTH_PRO2_WIDE: Readonly<Record<string, ModelDescriptor>> = {
+  [DEPTH_PRO2_S_STREAM_FP32.id]: wide(DEPTH_PRO2_S_STREAM_FP32, DP2_S, "model_stream4.onnx", 97_832_697, "22d09a28b697ad669bebc6e628d9d7948ebc99c478e92943994c8a54ecc67da3"),
+  [DEPTH_PRO2_S_STREAM.id]: wide(DEPTH_PRO2_S_STREAM, DP2_S, "model_stream4_fp16.onnx", 50_487_831, "7bc313c35ef669d8cf6b1b5468a1498ab80ef8687ea597e6fc7b3f57210c7281"),
+  [DEPTH_PRO2_S.id]: wide(DEPTH_PRO2_S, DP2_S, "model.onnx", 98_341_784, "2d47b8aebc593c0046ef25559014e81934e9f51b899d9814ddb9fc0c0136c855"),
+  [DEPTH_PRO2_B.id]: wide(DEPTH_PRO2_B, DP2_B, "model_fp16.onnx", 199_076_863, "37397d52796861e3a144d62baddbe0b38926048d118fc02fcdabaeb99186ab6a"),
+};
+
+/** The live Depth node's choices: the two V2 Small builds first, so the default is unchanged. */
+export const LIVE_DEPTH_MODELS: readonly ModelDescriptor[] = [...DEPTH_MODELS, ...DEPTH_PRO2_MODELS];
+
 /** Photo surface selection. Artifact, signature and preprocessing verified 2026-10-08. */
 export const PHOTO_MASK_PERSON: ModelDescriptor = {
   id: "ormbg-quantized",
@@ -475,7 +582,7 @@ export function isMediaPipeMatte(modelId: string): boolean {
   return modelId === MATTE_MEDIAPIPE.id;
 }
 
-export const ALL_MODELS: readonly ModelDescriptor[] = [...PHOTO_DEPTH_MODELS, ...POSE_MODELS, ...MATTE_MODELS, PHOTO_MASK_PERSON, PHOTO_MASK, PHOTO_FACADE];
+export const ALL_MODELS: readonly ModelDescriptor[] = [...PHOTO_DEPTH_MODELS, ...DEPTH_PRO2_MODELS, ...Object.values(DEPTH_PRO2_WIDE), ...POSE_MODELS, ...MATTE_MODELS, PHOTO_MASK_PERSON, PHOTO_MASK, PHOTO_FACADE];
 
 export function modelById(id: string): ModelDescriptor | undefined {
   return ALL_MODELS.find((model) => model.id === id);

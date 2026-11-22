@@ -159,6 +159,8 @@ export interface NodeInfo {
    *  the WORKER's own measurement either way, so a hosted document SAYS which regime its
    *  numbers come from (§V827) instead of looking mysteriously slow. */
   readonly inferenceIsolated: boolean | null;
+  /** T1816b — picture → model box (filled share) → output, in pixels; `null` until a run lands. */
+  readonly inferenceShape: NodeRuntimeSnapshot["inferenceShape"];
 }
 
 export interface NodeInfoRequest {
@@ -401,6 +403,7 @@ export function buildNodeInfo(request: NodeInfoRequest): NodeInfo {
     inferenceBackend: runtime.inferenceBackend,
     inferenceMs: runtime.inferenceMs,
     inferenceIsolated: runtime.inferenceIsolated,
+    inferenceShape: runtime.inferenceShape,
   };
 }
 

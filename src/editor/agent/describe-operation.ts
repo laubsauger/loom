@@ -56,6 +56,20 @@ export function describeOperation(operation: GraphPatchOperation): OperationRow 
       };
     case "moveNodes":
       return { kind: operation.op, targets: Object.keys(operation.positions).sort(), detail: null };
+    // T1821b: wire ties.
+    case "addTie":
+      return { kind: operation.op, targets: [operation.ref], detail: null };
+    case "removeTies":
+      return { kind: operation.op, targets: operation.tieIds, detail: null };
+    case "moveTies":
+      return { kind: operation.op, targets: Object.keys(operation.positions).sort(), detail: null };
+    case "setEdgeVia":
+      return {
+        kind: operation.op,
+        targets: [operation.edgeId],
+        // The route, in order, which is the whole content of the operation.
+        detail: operation.via.length === 0 ? "cleared" : operation.via.join(" > "),
+      };
     case "setNodeSize":
       return {
         kind: operation.op,

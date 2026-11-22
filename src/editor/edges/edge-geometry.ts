@@ -11,10 +11,10 @@ import type { EdgeId } from "@domain/types/ids.ts";
  * source of truth: whatever the user sees is what they can drop on, including while a
  * node is mid-drag and the wire is following it.
  *
- * The path string React Flow's `getBezierPath` returns is exactly one cubic segment
- * (`M p0 C c0 c1 p1`), so parsing it recovers the control points EXACTLY rather than
- * re-deriving them from a curvature constant that could drift out of step with the
- * library's own.
+ * The path an edge draws (`wire-path.ts`, T1820b) is one cubic segment per leg —
+ * `M p0 C c0 c1 p1`, then one more `C` for each tie the wire passes (T1821b) — so parsing
+ * it recovers the control points EXACTLY rather than re-deriving them from a curvature
+ * constant that could drift out of step with the drawing.
  *
  * ## Why a store and not React state
  *
@@ -77,32 +77,43 @@ export const SPLICE_BAND_FRACTION = 0.25;
 const SAMPLES = 16;
 
 const NUMBER = "(-?\\d+(?:\\.\\d+)?(?:e[-+]?\\d+)?)";
-const CUBIC_PATH = new RegExp(
-  `^M${NUMBER},${NUMBER}\\s*C${NUMBER},${NUMBER}\\s+${NUMBER},${NUMBER}\\s+${NUMBER},${NUMBER}$`,
-  "i",
-);
+const MOVE = new RegExp(`^M${NUMBER},${NUMBER}`, "i");
+const CURVE = new RegExp(`^\\s*C${NUMBER},${NUMBER}\\s+${NUMBER},${NUMBER}\\s+${NUMBER},${NUMBER}`, "i");
 
 /**
- * Parses the single-cubic path React Flow's bezier helper emits.
+ * Parses a wire's path: one `M`, then one or more `C` segments, each starting where the
+ * last ended (T1821b — one per leg of a wire routed through ties).
  *
- * Returns null for anything else — a smooth-step path, a straight path, a future edge
- * shape — rather than guessing. An edge whose geometry cannot be read is simply not a
- * drop target, which degrades to today's behaviour instead of to a wrong drop.
+ * Returns null for anything else — a smooth-step path, a straight `L` path, a future edge
+ * shape — rather than guessing. An edge whose geometry cannot be read is simply not a drop
+ * target, which degrades to "no drop" instead of to a wrong drop.
  */
+export function parseWirePath(path: string): EdgeCubic[] | null {
+  let rest = path.trim();
+  const move = MOVE.exec(rest);
+  if (move === null) return null;
+  let start: Point = { x: Number(move[1]), y: Number(move[2]) };
+  if (!Number.isFinite(start.x) || !Number.isFinite(start.y)) return null;
+  rest = rest.slice(move[0].length);
+  const segments: EdgeCubic[] = [];
+  while (rest.trim() !== "") {
+    const curve = CURVE.exec(rest);
+    if (curve === null) return null;
+    const numbers = curve.slice(1, 7).map(Number);
+    if (numbers.some((value) => !Number.isFinite(value))) return null;
+    const [cx0, cy0, cx1, cy1, x1, y1] = numbers as [number, number, number, number, number, number];
+    const end = { x: x1, y: y1 };
+    segments.push({ p0: start, c0: { x: cx0, y: cy0 }, c1: { x: cx1, y: cy1 }, p1: end });
+    start = end;
+    rest = rest.slice(curve[0].length);
+  }
+  return segments.length === 0 ? null : segments;
+}
+
+/** A path that is exactly one cubic segment, or null — the single-leg form of `parseWirePath`. */
 export function parseCubicPath(path: string): EdgeCubic | null {
-  const match = CUBIC_PATH.exec(path.trim());
-  if (match === null) return null;
-  const numbers = match.slice(1, 9).map(Number);
-  if (numbers.some((value) => !Number.isFinite(value))) return null;
-  const [x0, y0, cx0, cy0, cx1, cy1, x1, y1] = numbers as [
-    number, number, number, number, number, number, number, number,
-  ];
-  return {
-    p0: { x: x0, y: y0 },
-    c0: { x: cx0, y: cy0 },
-    c1: { x: cx1, y: cy1 },
-    p1: { x: x1, y: y1 },
-  };
+  const segments = parseWirePath(path);
+  return segments?.length === 1 ? (segments[0] as EdgeCubic) : null;
 }
 
 function pointAt(cubic: EdgeCubic, t: number): Point {
@@ -129,6 +140,16 @@ function distanceToSegment(point: Point, a: Point, b: Point): number {
   return Math.hypot(point.x - cx, point.y - cy);
 }
 
+/** The point of a line SEGMENT nearest `point`. */
+function closestOnSegment(point: Point, a: Point, b: Point): Point {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const lengthSquared = dx * dx + dy * dy;
+  const t =
+    lengthSquared === 0 ? 0 : Math.max(0, Math.min(1, ((point.x - a.x) * dx + (point.y - a.y) * dy) / lengthSquared));
+  return { x: a.x + t * dx, y: a.y + t * dy };
+}
+
 /** Shortest distance from `point` to the drawn curve, in the same units as the curve. */
 export function distanceToCubic(cubic: EdgeCubic, point: Point): number {
   let previous = cubic.p0;
@@ -140,6 +161,32 @@ export function distanceToCubic(cubic: EdgeCubic, point: Point): number {
     previous = next;
   }
   return best;
+}
+
+/** The point of the drawn curve nearest `point`, to the sampler's chord. */
+export function closestOnCubic(cubic: EdgeCubic, point: Point): Point {
+  let previous = cubic.p0;
+  let best = Number.POSITIVE_INFINITY;
+  let closest = cubic.p0;
+  for (let step = 1; step <= SAMPLES; step += 1) {
+    const next = step === SAMPLES ? cubic.p1 : pointAt(cubic, step / SAMPLES);
+    const candidate = closestOnSegment(point, previous, next);
+    const distance = Math.hypot(point.x - candidate.x, point.y - candidate.y);
+    if (distance < best) {
+      best = distance;
+      closest = candidate;
+    }
+    previous = next;
+  }
+  return closest;
+}
+
+/** A wire under a point, and which leg of it: leg k runs from route point k to k + 1 (T1821b). */
+export interface EdgeHit {
+  readonly edgeId: EdgeId;
+  readonly segment: number;
+  /** The point on the drawn wire nearest the query, where a tie dropped there sits. */
+  readonly point: Point;
 }
 
 export interface EdgeGeometryStore {
@@ -154,36 +201,45 @@ export interface EdgeGeometryStore {
    * for this gesture — the ones already attached to the node being dropped (T213).
    */
   nearest(point: Point, tolerance: number, skip?: (edgeId: EdgeId) => boolean): EdgeId | null;
+  /** `nearest`, saying which leg of the wire was hit and where on it (T1821b). */
+  hit(point: Point, tolerance: number, skip?: (edgeId: EdgeId) => boolean): EdgeHit | null;
 }
 
 export function createEdgeGeometry(): EdgeGeometryStore {
-  const curves = new Map<EdgeId, EdgeCubic>();
-  return {
-    publish(edgeId, path) {
-      const cubic = parseCubicPath(path);
-      if (cubic === null) curves.delete(edgeId);
-      else curves.set(edgeId, cubic);
-    },
-    clear(edgeId) {
-      curves.delete(edgeId);
-    },
-    nearest(point, tolerance, skip) {
-      if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) return null;
-      let bestId: EdgeId | null = null;
-      let best = tolerance;
-      // Sorted, so two edges at the same distance resolve the same way every time
-      // rather than by map insertion order (§V40's determinism, applied to a gesture).
-      for (const edgeId of [...curves.keys()].sort()) {
-        if (skip?.(edgeId) === true) continue;
-        const cubic = curves.get(edgeId);
-        if (cubic === undefined) continue;
+  const wires = new Map<EdgeId, EdgeCubic[]>();
+  const hit = (point: Point, tolerance: number, skip?: (edgeId: EdgeId) => boolean): EdgeHit | null => {
+    if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) return null;
+    let found: { edgeId: EdgeId; segment: number; cubic: EdgeCubic } | null = null;
+    let best = tolerance;
+    // Sorted, so two edges at the same distance resolve the same way every time
+    // rather than by map insertion order (§V40's determinism, applied to a gesture).
+    for (const edgeId of [...wires.keys()].sort()) {
+      if (skip?.(edgeId) === true) continue;
+      const segments = wires.get(edgeId) ?? [];
+      for (let segment = 0; segment < segments.length; segment += 1) {
+        const cubic = segments[segment] as EdgeCubic;
         const distance = distanceToCubic(cubic, point);
         if (distance <= best) {
           best = distance;
-          bestId = edgeId;
+          found = { edgeId, segment, cubic };
         }
       }
-      return bestId;
+    }
+    if (found === null) return null;
+    return { edgeId: found.edgeId, segment: found.segment, point: closestOnCubic(found.cubic, point) };
+  };
+  return {
+    publish(edgeId, path) {
+      const segments = parseWirePath(path);
+      if (segments === null) wires.delete(edgeId);
+      else wires.set(edgeId, segments);
     },
+    clear(edgeId) {
+      wires.delete(edgeId);
+    },
+    nearest(point, tolerance, skip) {
+      return hit(point, tolerance, skip)?.edgeId ?? null;
+    },
+    hit,
   };
 }

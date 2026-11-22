@@ -98,6 +98,8 @@ describe("command bus — registration surface (§V39)", () => {
       "graph.paste",
       "graph.redo",
       "graph.removeNodes",
+      // T1821b: a wire routed through a tie.
+      "graph.rerouteEdge",
       "graph.revertTransaction",
       "graph.undo",
       // T1534b: a Grid Warp's row/column insert and delete at a place on its surface.

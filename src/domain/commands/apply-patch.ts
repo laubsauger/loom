@@ -3,7 +3,7 @@ import { current } from "immer";
 import { channelMaskSchema, graphPatchSchema, nodeFormatOverrideSchema, nodeResolutionOverrideSchema } from "../types/schemas.ts";
 import type { CapabilityClass } from "../types/commands.ts";
 import type { RuntimeDiagnostic } from "../types/diagnostics.ts";
-import type { EdgeId, GroupId, NodeId, PortId } from "../types/ids.ts";
+import type { EdgeId, GroupId, NodeId, PortId, TieId } from "../types/ids.ts";
 import { isDefaultChannelMask, MIN_NODE_SIZE } from "../types/graph.ts";
 import { supportsChannelMask } from "../graph/channel-mask.ts";
 import { COMPONENT_OVERRIDES_STATE_KEY, internalParameterPath, isComponentInstance, parseDescendantParameterPath, readComponentInstance } from "../components/instance.ts";
@@ -118,6 +118,8 @@ interface PatchRun {
   readonly internalGraph: FlatGraph | undefined;
   readonly authoredGraph: GraphDocument;
   readonly referenceCycles: (graph: GraphDocument, nodeId: NodeId) => RuntimeDiagnostic[];
+  /** T1821b: ties this patch created, so one it leaves unused is reported rather than vanishing. */
+  readonly createdTies: Set<TieId>;
 }
 
 export function applyGraphPatch(
@@ -158,6 +160,7 @@ export function applyGraphPatch(
     internalGraph,
     authoredGraph: context.graph,
     referenceCycles: context.referenceCycles,
+    createdTies: new Set(),
   };
 
   let applied;
@@ -167,6 +170,11 @@ export function applyGraphPatch(
       recipe: (draft) => {
         for (const [index, operation] of patch.operations.entries()) {
           executeOperation(operation, index, draft, context.registry, context.ids, run);
+        }
+        // §V1040: a tie exists only while a wire passes it. Only a patch that can take a
+        // wire off a tie pays for the walk; a parameter drag never does.
+        if (draft.ties !== undefined && patch.operations.some((operation) => UNROUTING_OPERATIONS.has(operation.op))) {
+          releaseUnusedTies(draft, run);
         }
       },
     });
@@ -338,12 +346,52 @@ function rejected(revision: number, diagnostics: RuntimeDiagnostic[]): CommandOu
   };
 }
 
+/**
+ * T1821b — the operations after which a tie may have no wire left through it (§V1040):
+ * every way a wire goes or is re-routed, and a tie made by this patch that no operation
+ * routed anything through.
+ */
+const UNROUTING_OPERATIONS: ReadonlySet<GraphPatchOperation["op"]> = new Set([
+  "addTie",
+  "removeTies",
+  "setEdgeVia",
+  "disconnect",
+  "removeNodes",
+]);
+
+/**
+ * §V1040 — removes every tie no wire passes through, the rule Houdini applies to an
+ * unpinned network dot. One place, after the last operation, so it covers every way a wire
+ * can leave a tie (a disconnect, a deleted node, a replace drop, a re-route) and the undo of
+ * the patch restores the tie with the wire. A tie this same patch created is reported: a
+ * caller that adds a tie and routes nothing through it has made nothing.
+ */
+function releaseUnusedTies(draft: GraphDocument, run: PatchRun): void {
+  const ties = draft.ties;
+  if (ties === undefined) return;
+  const used = new Set<TieId>();
+  for (const edge of Object.values(draft.edges)) for (const tieId of edge.via ?? []) used.add(tieId);
+  for (const tieId of Object.keys(ties).sort()) {
+    if (used.has(tieId)) continue;
+    delete ties[tieId];
+    if (run.createdTies.has(tieId)) {
+      run.diagnostics.push({
+        severity: "info",
+        code: "tie.unused",
+        message: `Tie "${tieId}" has no wire through it, so it was not kept (§V1040).`,
+        suggestion: "Route a wire through it in the same patch: setEdgeVia, or connect with via.",
+      });
+    }
+  }
+  if (Object.keys(ties).length === 0) delete draft.ties;
+}
+
 function executeOperation(
   operation: GraphPatchOperation,
   index: number,
   draft: GraphDocument,
   registry: NodeRegistryView,
-  ids: { node: () => string; edge: () => string; group: () => string },
+  ids: { node: () => string; edge: () => string; group: () => string; next: (prefix: string) => string },
   run: PatchRun,
 ): void {
   /**
@@ -395,6 +443,22 @@ function executeOperation(
     const node = draft.nodes[nodeId];
     if (node === undefined) fail("node.missing", `node "${nodeId}" does not exist.`, { nodeId });
     return node as GraphNode;
+  };
+
+  /**
+   * T1821b — a wire's route, resolved and checked: every tie exists, and none is passed
+   * twice (a wire through the same point twice draws a loop of zero length and says
+   * nothing). `$temp` refs resolve like a node's (§V35).
+   */
+  const resolveRoute = (via: readonly string[]): TieId[] => {
+    const route: TieId[] = [];
+    for (const ref of via) {
+      const tieId = resolveNodeId(ref);
+      if (draft.ties?.[tieId] === undefined) fail("tie.missing", `tie "${tieId}" does not exist.`);
+      if (route.includes(tieId)) fail("tie.repeated", `the route passes tie "${tieId}" twice.`);
+      route.push(tieId);
+    }
+    return route;
   };
 
   /**
@@ -641,6 +705,12 @@ function executeOperation(
       if (targetPort.variadic === true) {
         compactPortOrder(draft, targetNode.id, targetPort.id);
       }
+      // T1821b: born routed — how a splice keeps each half of the route it cut.
+      if (operation.via !== undefined && operation.via.length > 0) {
+        const route = resolveRoute(operation.via);
+        const edge = draft.edges[edgeId];
+        if (edge !== undefined) edge.via = route;
+      }
       return;
     }
 
@@ -661,6 +731,69 @@ function executeOperation(
       // would make the next `connect` — which appends at `count` — collide with a
       // position that is still in use.
       for (const port of emptiedPorts) compactPortOrder(draft, port.nodeId, port.portId);
+      return;
+    }
+
+    case "addTie": {
+      let tieId: TieId;
+      if (isTempId(operation.ref)) {
+        if (run.createdIds[operation.ref] !== undefined) {
+          fail("patch.duplicateRef", `temp id "${operation.ref}" was already used in this patch.`);
+        }
+        // §V36: a dry run mints nothing from the real factory (see `mint` above).
+        tieId = run.dryRun ? `pending-tie-${operation.ref}` : ids.next("ti");
+        run.createdIds[operation.ref] = tieId;
+      } else {
+        tieId = operation.ref;
+      }
+      if (draft.ties?.[tieId] !== undefined) fail("tie.exists", `tie "${tieId}" already exists.`);
+      (draft.ties ??= {})[tieId] = { id: tieId, position: { x: operation.position.x, y: operation.position.y } };
+      run.createdTies.add(tieId);
+      return;
+    }
+
+    case "removeTies": {
+      const doomed = new Set<TieId>();
+      for (const tieId of [...new Set(operation.tieIds)].sort()) {
+        if (draft.ties?.[tieId] === undefined) fail("tie.missing", `tie "${tieId}" does not exist.`);
+        doomed.add(tieId);
+      }
+      // Every wire through a removed tie is released from it, and runs as it would without it.
+      for (const edgeId of Object.keys(draft.edges).sort()) {
+        const edge = draft.edges[edgeId];
+        if (edge?.via === undefined || !edge.via.some((tieId) => doomed.has(tieId))) continue;
+        const kept = edge.via.filter((tieId) => !doomed.has(tieId));
+        if (kept.length === 0) delete edge.via;
+        else edge.via = kept;
+      }
+      for (const tieId of doomed) delete draft.ties?.[tieId];
+      return;
+    }
+
+    case "moveTies": {
+      for (const tieId of Object.keys(operation.positions).sort()) {
+        const position = operation.positions[tieId];
+        if (position === undefined) continue;
+        const tie = draft.ties?.[tieId];
+        if (tie === undefined) {
+          fail("tie.missing", `tie "${tieId}" does not exist.`);
+          return;
+        }
+        tie.position = { x: position.x, y: position.y };
+      }
+      return;
+    }
+
+    case "setEdgeVia": {
+      const edgeId = resolveNodeId(operation.edgeId);
+      const edge = draft.edges[edgeId];
+      if (edge === undefined) {
+        fail("edge.missing", `edge "${edgeId}" does not exist.`);
+        return;
+      }
+      const route = resolveRoute(operation.via);
+      if (route.length === 0) delete edge.via;
+      else edge.via = route;
       return;
     }
 

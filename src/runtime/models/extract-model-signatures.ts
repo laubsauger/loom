@@ -31,6 +31,14 @@ const FILES: ReadonlyArray<readonly [string, string]> = [
   ["movenet-lightning-int8", "pose-int8.onnx"],
   ["modnet-photographic", "matte.onnx"],
   ["modnet-photographic-quantized", "matte-quantized.onnx"],
+  ["depthpro2-s-stream4-fp16", "depthpro2-s-stream4-fp16.onnx"],
+  ["depthpro2-s-stream4-fp32", "depthpro2-s-stream4-fp32.onnx"],
+  ["depthpro2-s-fp32", "depthpro2-s-fp32.onnx"],
+  ["depthpro2-b-fp16", "depthpro2-b-fp16.onnx"],
+  ["depthpro2-s-stream4-fp32-672x384", "depthpro2-s-stream4-fp32-672x384.onnx"],
+  ["depthpro2-s-stream4-fp16-672x384", "depthpro2-s-stream4-fp16-672x384.onnx"],
+  ["depthpro2-s-fp32-672x384", "depthpro2-s-fp32-672x384.onnx"],
+  ["depthpro2-b-fp16-672x384", "depthpro2-b-fp16-672x384.onnx"],
 ];
 
 const dir = process.argv[2];

@@ -1259,6 +1259,85 @@ export function compileGraphRetaining(request: CompileRequest): CompileGraphResu
   const pointsetInfoByOutput = new Map<string, PointsetEdgeInfo>();
   /** T373: synthesized preview targets, later swapped into the outputs projection. */
   const pointsPreviewOutputs = new Map<string, ResolvedOutput>();
+  /**
+   * T373's splat row for ONE watched pointset port (the loop below says when): the address
+   * the row answers to is `rowNodeId:portId`, the points it draws are `info`'s.
+   *
+   * T1823b (B305): a function, because a spliced points Null (and a bypassed point node)
+   * needs the same row under ITS OWN address while drawing its PRODUCER's points. The §V130
+   * alias hands a texture Null its producer's resource, which IS a picture; a pointset
+   * producer's propagated row is a marker no preview can show, and borrowing the producer's
+   * splat instead would put one target and one pass id in the preview program twice whenever
+   * both tiles are on screen. So the alias gets a splat of its own, keyed on its own id.
+   */
+  const pointsPreviewRow = (rowNodeId: NodeId, portId: PortId, info: PointsetEdgeInfo): ResolvedOutput | undefined => {
+    const position = info.pairs["position"];
+    if (position === undefined) return undefined;
+    // T502/T563: the size here is NOMINAL — the preview program owns the target now
+    // and sizes it to the granted tile, so a zoom boost buys real pixels and a
+    // ladder-crossing rebuild happens outside the frame, transport-independent.
+    const previewSize = previewTargetSize();
+    const previewAspect = previewTargetAspect();
+    const previewId = pointsPreviewResourceId(rowNodeId, portId);
+    const pointsOrbit = previewOrbitBasis("pointset", {
+      aspect: previewAspect,
+      passIds: [`${rowNodeId}#pointsPreview:${portId}`],
+    });
+    return {
+      nodeId: rowNodeId,
+      portId,
+      resourceId: previewId,
+      resourceKind: "target",
+      size: previewSize,
+      format: "rgba8unorm",
+      space: colorSpaceForFormat("rgba8unorm"),
+      temporal: false,
+      previewCamera: previewCameraControl("pointset", pointsOrbit),
+      synthesis: {
+        kind: "pointset",
+        depth: false,
+        // T561/T675: the stock framing's basis, so the inspection orbit reproduces it at
+        // identity and replaces only the VALUE (§V5) — read from the ONE orbit table, so
+        // the numbers cannot drift from `pointsPreviewCamera` above, and T663's same
+        // ASPECT: an orbit through a projection the target does not share renders
+        // stretched.
+        // Spread, not assigned, for the same reason the scene site does it:
+        // `exactOptionalPropertyTypes` refuses an `undefined` here, and a kind the table
+        // declares un-orbitable must land as an ABSENT key — that is what "not
+        // orbitable" means to every reader downstream (`types.ts`, `graph-pane.tsx`).
+        ...(pointsOrbit === undefined ? {} : { orbit: pointsOrbit }),
+        passes: [
+          {
+            kind: "draw",
+            id: `${rowNodeId}#pointsPreview:${portId}`,
+            nodeId: rowNodeId,
+            shader: pointsPreviewWgsl({ counted: info.count !== undefined }),
+            target: previewId,
+            topology: "triangle-list",
+            instances: info.capacity,
+            vertexCount: POINTS_PREVIEW_VERTEX_COUNT,
+            buffers: [
+              // Half "read", not the in-plan half: the preview program runs BETWEEN
+              // main frames, after the swap has landed the latest state on the read
+              // half (T563; §V168 governs in-plan consumers only).
+              attributeBinding("positions", position, "read"),
+              ...(info.count === undefined
+                ? []
+                : [{ binding: "counts", resourceId: info.count.buffer }]),
+            ],
+            uniforms: {
+              // Fixed default framing for now; T379's viewer camera can drive this as a
+              // VALUE update — the uniform is data, never structure (§V5, §V330).
+              viewProjection: Array.from(pointsPreviewCamera(previewAspect)),
+              pointSize: pointSplatNdcExtent(previewSize),
+            },
+            uniformBinding: "params",
+            blend: "alpha",
+          },
+        ],
+      },
+    };
+  };
   /** T462: synthesized scene-payload preview targets, concatenated into the projection
    *  (a scene producer materializes no row of its own to replace). */
   const scenePreviewOutputs = new Map<string, ResolvedOutput>();
@@ -1925,72 +2004,8 @@ export function compileGraphRetaining(request: CompileRequest): CompileGraphResu
       const key = outputKey(nodeId, slot.portId);
       if (!previewSinkKeys.has(key)) continue;
       const info = pointsetInfoByOutput.get(key);
-      const position = info?.pairs["position"];
-      if (info === undefined || position === undefined) continue;
-      // T502/T563: the size here is NOMINAL — the preview program owns the target now
-      // and sizes it to the granted tile, so a zoom boost buys real pixels and a
-      // ladder-crossing rebuild happens outside the frame, transport-independent.
-      const previewSize = previewTargetSize();
-      const previewAspect = previewTargetAspect();
-      const previewId = pointsPreviewResourceId(nodeId, slot.portId);
-      const pointsOrbit = previewOrbitBasis("pointset", {
-        aspect: previewAspect,
-        passIds: [`${nodeId}#pointsPreview:${slot.portId}`],
-      });
-      pointsPreviewOutputs.set(key, {
-        nodeId,
-        portId: slot.portId,
-        resourceId: previewId,
-        resourceKind: "target",
-        size: previewSize,
-        format: "rgba8unorm",
-        space: colorSpaceForFormat("rgba8unorm"),
-        temporal: false,
-        previewCamera: previewCameraControl("pointset", pointsOrbit),
-        synthesis: {
-          kind: "pointset",
-          depth: false,
-          // T561/T675: the stock framing's basis, so the inspection orbit reproduces it at
-          // identity and replaces only the VALUE (§V5) — read from the ONE orbit table, so
-          // the numbers cannot drift from `pointsPreviewCamera` above, and T663's same
-          // ASPECT: an orbit through a projection the target does not share renders
-          // stretched.
-          // Spread, not assigned, for the same reason the scene site does it:
-          // `exactOptionalPropertyTypes` refuses an `undefined` here, and a kind the table
-          // declares un-orbitable must land as an ABSENT key — that is what "not
-          // orbitable" means to every reader downstream (`types.ts`, `graph-pane.tsx`).
-          ...(pointsOrbit === undefined ? {} : { orbit: pointsOrbit }),
-          passes: [
-            {
-              kind: "draw",
-              id: `${nodeId}#pointsPreview:${slot.portId}`,
-              nodeId,
-              shader: pointsPreviewWgsl({ counted: info.count !== undefined }),
-              target: previewId,
-              topology: "triangle-list",
-              instances: info.capacity,
-              vertexCount: POINTS_PREVIEW_VERTEX_COUNT,
-              buffers: [
-                // Half "read", not the in-plan half: the preview program runs BETWEEN
-                // main frames, after the swap has landed the latest state on the read
-                // half (T563; §V168 governs in-plan consumers only).
-                attributeBinding("positions", position, "read"),
-                ...(info.count === undefined
-                  ? []
-                  : [{ binding: "counts", resourceId: info.count.buffer }]),
-              ],
-              uniforms: {
-                // Fixed default framing for now; T379's viewer camera can drive this as a
-                // VALUE update — the uniform is data, never structure (§V5, §V330).
-                viewProjection: Array.from(pointsPreviewCamera(previewAspect)),
-                pointSize: pointSplatNdcExtent(previewSize),
-              },
-              uniformBinding: "params",
-              blend: "alpha",
-            },
-          ],
-        },
-      });
+      const row = info === undefined ? undefined : pointsPreviewRow(nodeId, slot.portId, info);
+      if (row !== undefined) pointsPreviewOutputs.set(key, row);
     }
 
     /*
@@ -2755,12 +2770,27 @@ export function compileGraphRetaining(request: CompileRequest): CompileGraphResu
 
   // §V130: a spliced Null's output resolves to its producer's resource — same id, same
   // pixels, zero cost — so previews and readbacks of the Null keep working.
+  //
+  // T1823b (B305): a POINTSET producer's propagated row is a marker, not a picture, so a
+  // watched points Null (or bypassed point node) gets a splat of its own instead, drawing
+  // its producer's points (`pointsPreviewRow`). Watched means a preview sink named the wire
+  // itself: the splice redirected that sink to the producer, which is why the gate reads
+  // the sinks as they were asked for.
+  const watchedWires = new Set(
+    (explicitSinks ?? []).filter((sink) => sink.kind === "preview").map((sink) => `${sink.nodeId}\u0000${sink.portId ?? ""}`),
+  );
   const aliasOutputs: ResolvedOutput[] = [];
   for (const [alias, upstream] of splice.aliases) {
     const resolved = propagated.outputs.get(outputKey(upstream.nodeId, upstream.portId));
-    if (resolved !== undefined) {
-      aliasOutputs.push({ ...resolved, nodeId: alias.nodeId, portId: alias.portId });
-    }
+    if (resolved === undefined) continue;
+    const watched =
+      watchedWires.has(`${alias.nodeId}\u0000${alias.portId}`) || watchedWires.has(`${alias.nodeId}\u0000`);
+    const points =
+      resolved.resourceKind === "pointset" && watched
+        ? pointsetInfoByOutput.get(outputKey(upstream.nodeId, upstream.portId))
+        : undefined;
+    const splat = points === undefined ? undefined : pointsPreviewRow(alias.nodeId, alias.portId, points);
+    aliasOutputs.push(splat ?? { ...resolved, nodeId: alias.nodeId, portId: alias.portId });
   }
   // T373: a pointset output with a synthesized preview projects as that TARGET — a row
   // the preview system can bind — replacing the marker row for the same port. Without

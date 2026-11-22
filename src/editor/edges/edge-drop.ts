@@ -3,6 +3,7 @@ import type { GraphDocument, GraphEdge } from "@domain/types/graph.ts";
 import type { EdgeId, NodeId, PortId } from "@domain/types/ids.ts";
 import type { GraphPatchOperation } from "@domain/types/patch.ts";
 import type { NodeRegistryView } from "@nodes/registry/registry.ts";
+import { splitRoute } from "./tie-gestures.ts";
 
 /**
  * What a drop ON AN EDGE means (T212, T213, §V14b, §V13, §V32).
@@ -176,6 +177,12 @@ export function spliceNodeOperations(
   registry: NodeRegistryView,
   edge: GraphEdge,
   nodeId: NodeId,
+  /**
+   * T1821b: the leg of a tied wire the node was dropped on. The ties before it stay with the
+   * upstream wire and the rest go downstream, so the route survives on both sides. Absent on
+   * an untied wire, which has one leg.
+   */
+  segment = 0,
 ): GraphPatchOperation[] {
   if (edge.source.nodeId === nodeId || edge.target.nodeId === nodeId) return [];
   const ports = splicePorts(graph, registry, nodeId, edge);
@@ -191,13 +198,19 @@ export function spliceNodeOperations(
 
   const target = { nodeId, portId: ports.input };
   const replaced = new Set<EdgeId>([edge.id]);
+  const { upstream, downstream } = splitRoute(edge, segment);
   return [
     { op: "disconnect", edgeIds: [edge.id] },
     // The downstream input needs no displacement: the only thing on it is the edge
     // being spliced. The node's own input might be occupied, though — a node already
     // wired elsewhere is a perfectly ordinary thing to drop on a wire.
     ...displace(registry, graph, target, replaced),
-    { op: "connect", source: { ...edge.source }, target },
-    { op: "connect", source: { nodeId, portId: ports.output }, target: { ...edge.target } },
+    { op: "connect", source: { ...edge.source }, target, ...(upstream.length === 0 ? {} : { via: upstream }) },
+    {
+      op: "connect",
+      source: { nodeId, portId: ports.output },
+      target: { ...edge.target },
+      ...(downstream.length === 0 ? {} : { via: downstream }),
+    },
   ];
 }

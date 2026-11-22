@@ -238,7 +238,8 @@ export function openComponentSession(options: ComponentSessionOptions): Componen
     // §T1546b: a step with no graph entity in it (a definition-only edit, its undo or redo)
     // moves only the store's revision. The definition keeps its graph object, so nothing
     // keyed on it sees a change and a saved component's graph does not churn its revision.
-    const graphMoved = state.graph.nodes !== previous.graph.nodes || state.graph.edges !== previous.graph.edges || state.graph.groups !== previous.graph.groups;
+    // T1821b: a moved tie is a graph edit too — it is saved in the definition's graph.
+    const graphMoved = state.graph.nodes !== previous.graph.nodes || state.graph.edges !== previous.graph.edges || state.graph.groups !== previous.graph.groups || state.graph.ties !== previous.graph.ties;
     if (!graphMoved && step.direction === "push") {
       // Nothing to write back: the command registers the edit itself, inside this step.
       if (step.id !== undefined) lastPush = { id: step.id, before: startOf(step.id, step.coalesced, shell) };

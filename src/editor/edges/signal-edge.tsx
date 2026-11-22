@@ -1,5 +1,5 @@
-import { memo, useEffect, useSyncExternalStore } from "react";
-import { BaseEdge, getBezierPath } from "@xyflow/react";
+import { memo, useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
+import { BaseEdge } from "@xyflow/react";
 import type { EdgeProps } from "@xyflow/react";
 import type { NodeId } from "@domain/types/ids.ts";
 import { cx } from "@ui/cx.ts";
@@ -8,6 +8,8 @@ import { useGraphCanvas, useNodeRuntime } from "@editor/graph-canvas/canvas-cont
 import { cssVars } from "@editor/graph-canvas/css-vars.ts";
 import type { LoomEdge } from "@editor/graph-canvas/derive.ts";
 import { FLOW_DASH_ON_PX, FLOW_DASH_PX, describeFlow, edgeFamilyColor } from "./flow.ts";
+import { wirePath } from "./wire-path.ts";
+import { wireStyleStore } from "./wire-style-command.ts";
 import styles from "./signal-edge.module.css";
 
 /**
@@ -57,25 +59,42 @@ export const SignalEdge = memo(function SignalEdge({
   selected,
   sourceX,
   sourceY,
-  sourcePosition,
   targetX,
   targetY,
-  targetPosition,
   markerEnd,
   interactionWidth,
 }: EdgeProps<LoomEdge>) {
-  const { edgeGeometry, edgeFlow } = useGraphCanvas();
+  const { edgeGeometry, edgeFlow, ties } = useGraphCanvas();
   const reducedMotion = useReducedMotion();
   const showFlow = useSyncExternalStore(edgeFlow.subscribe, edgeFlow.get);
+  // T1820b: the person's wire style. One store for the person (`wire-style-command.ts`);
+  // the canvas registers its command, every edge reads the same answer.
+  const wireStyles = wireStyleStore();
+  const wireStyle = useSyncExternalStore(wireStyles.subscribe, wireStyles.get);
 
-  const [path] = getBezierPath({
-    sourceX,
-    sourceY,
-    sourcePosition,
-    targetX,
-    targetY,
-    targetPosition,
-  });
+  /*
+   * T1821b: the ties this wire passes, at the positions they are DRAWN (`tie-view.ts`), so
+   * the wire follows a tie in the hand. The snapshot is a string of this route's points
+   * alone: a drag repaints the wires through the dragged tie and no other (§V16).
+   */
+  const via = data?.via;
+  const getRoute = useCallback(() => ties.routeKey(via), [ties, via]);
+  const route = useSyncExternalStore(ties.subscribe, getRoute);
+
+  // An output leaves to the right and an input is entered from the left (`node-view.tsx`
+  // places the handles), which is the orientation `wirePath` draws in. A tie is passed the
+  // same way: in from the left, out to the right.
+  const path = useMemo(() => {
+    const through =
+      route === ""
+        ? []
+        : route.split(";").flatMap((point) => {
+            if (point === "-") return [];
+            const [x, y] = point.split(",").map(Number);
+            return [{ x: x as number, y: y as number }];
+          });
+    return wirePath(wireStyle, [{ x: sourceX, y: sourceY }, ...through, { x: targetX, y: targetY }]);
+  }, [route, wireStyle, sourceX, sourceY, targetX, targetY]);
 
   /**
    * §V14b/§V14c — publish the path THIS edge drew, so the canvas can hit-test a drop

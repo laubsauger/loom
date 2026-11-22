@@ -201,6 +201,8 @@ export const NODE_REPRODUCIBILITY: Readonly<Record<string, Reproducibility>> = {
   mirror: "pure",
   crop: "pure",
   tile: "pure",
+  fit: "pure",
+  resolution: "pure",
   cornerPin: "pure",
   gridWarp: "pure",
   level: "pure",
@@ -349,6 +351,9 @@ export const NODE_REPRODUCIBILITY: Readonly<Record<string, Reproducibility>> = {
   // Structure: no state, no clock, no device.
   output: "pure",
   null: "pure",
+  // T1822b: the points and value Nulls are the same wire.
+  pointNull: "pure",
+  valueNull: "pure",
   // T1262: a note box — no ports, no passes; the plan is byte-identical with or without it.
   annotate: "pure",
   switch: "pure",

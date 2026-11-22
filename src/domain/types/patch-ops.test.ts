@@ -31,6 +31,11 @@ const OPERATIONS: Record<GraphPatchOperation["op"], true> = {
   removeNodes: true,
   connect: true,
   disconnect: true,
+  // T1821b: wire ties.
+  addTie: true,
+  removeTies: true,
+  moveTies: true,
+  setEdgeVia: true,
   reorderEdges: true,
   setParameters: true,
   removeParameters: true,

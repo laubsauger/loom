@@ -90,6 +90,18 @@ export interface NodeMetricSink {
        *  ONE thread (no SharedArrayBuffer). Hosted pages without COOP/COEP land false. */
       inferenceIsolated?: boolean | null;
       /**
+       * T1816b — what went IN, what the model SAW and what came OUT, in pixels: the picture,
+       * the box the preprocess fitted it into, the share of that box the picture filled
+       * (the rest is bars the model still pays for), and the published map. Owner: "give
+       * the user clarity as to what is actually coming in, going in, coming out".
+       */
+      inferenceShape?: {
+        readonly picture: readonly [number, number];
+        readonly box: readonly [number, number];
+        readonly fill: number;
+        readonly output: readonly [number, number];
+      } | null;
+      /**
        * T1487b — the model's run state as one line ON THE NODE (still computing, could not
        * run, found nothing). Published on a transition only, never per frame.
        */

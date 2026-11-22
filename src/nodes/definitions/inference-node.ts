@@ -392,3 +392,37 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   modelInput[gid.y * side + gid.x] = textureLoad(sourceTexture, texel, 0);
 }`;
 }
+
+/**
+ * T1816b — the same letterbox into a NON-SQUARE box, for a graph whose static input is
+ * not square (Depth Pro 2: 640×480).
+ *
+ * A second shader rather than a widened first one, because the square one is pinned by
+ * four nodes' compiled uniforms and their GPU tests; widening it would touch all of them to
+ * serve one model. The cost of two copies is the one `depth-runner.ts` warns about — two
+ * statements of the aspect rule that can disagree — so the rule here is `occOf` with its
+ * `boxAspect`, and `depth-pro2-letterbox.gpu.test.ts` runs both shaders on a square box and
+ * requires identical buffers, then checks the rect registration against `occOf`.
+ */
+export function letterboxRectPreprocessWgsl(): EmittedWgsl {
+  return wgsl`struct PreprocessParams { width: f32, height: f32 };
+
+@group(0) @binding(0) var<uniform> params: PreprocessParams;
+@group(0) @binding(1) var sourceTexture: texture_2d<f32>;
+@group(0) @binding(2) var<storage, read_write> modelInput: array<vec4f>;
+
+@compute @workgroup_size(8, 8)
+fn main(@builtin(global_invocation_id) gid: vec3u) {
+  let box = vec2u(u32(params.width), u32(params.height));
+  if (gid.x >= box.x || gid.y >= box.y) { return; }
+  let dims = vec2i(textureDimensions(sourceTexture, 0));
+  let uv = (vec2f(f32(gid.x), f32(gid.y)) + 0.5) / vec2f(params.width, params.height);
+  let dimsF = vec2f(dims);
+  let boxAspect = params.width / max(params.height, 1.0);
+  let aspect = dimsF.x / max(dimsF.y, 1.0);
+  let occ = select(vec2f(aspect / boxAspect, 1.0), vec2f(1.0, boxAspect / aspect), aspect >= boxAspect);
+  let sourceUv = (uv - vec2f(0.5)) / occ + vec2f(0.5);
+  let texel = clamp(vec2i(sourceUv * dimsF), vec2i(0), dims - vec2i(1));
+  modelInput[gid.y * box.x + gid.x] = textureLoad(sourceTexture, texel, 0);
+}`;
+}

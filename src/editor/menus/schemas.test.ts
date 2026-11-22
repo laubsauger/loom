@@ -127,6 +127,9 @@ const APP_REGISTERED = [
   // T1724b: registered beside it by the mounted graph canvas (`scroll-pan-command.ts`): what
   // a two-finger scroll does, persisted per person. Live, not planned: the canvas menu's row.
   "view.toggleScrollPan",
+  // T1820b: registered beside them by the mounted graph canvas (`wire-style-command.ts`): how
+  // the data wires are drawn, persisted per person. Live, not planned: View ▸ Wires ▸ rows.
+  "view.setWireStyle",
   // T1514b: registered by the composition root (`registerControlCommands` in
   // `app-runtime.ts`), like the component commands — the plans live with the controls
   // editor, not in the domain. Live, not planned: the parameter menu's three control rows.
@@ -156,11 +159,12 @@ describe("what the menus promise but nobody has built", () => {
     // would mean the walk broke rather than that the menus got finished.
     // T463 displaced the planned "Set colour…" row (still keymap-reachable) and B84 built
     // the canvas menu's "Layout", so the menus promised four unbuilt commands rather than
-    // six; T423 built "Dive in" and it is three; T709 built "Search nodes…" and it is two.
+    // six; T423 built "Dive in" and it is three; T709 built "Search nodes…" and it is two;
+    // T1821b built the edge menu's "Reroute" (now "Add tie") and it is one.
     // The floor tracks that number down as rows get built — it is a non-vacuity guard, not
     // a quota, and the day it reaches zero this assertion should be DELETED along with the
     // disabled-item machinery, not weakened to `>= 0`.
-    expect(missing.length).toBeGreaterThan(1);
+    expect(missing.length).toBeGreaterThan(0);
   });
 
   it("every command it treats as live is really on a bus", () => {

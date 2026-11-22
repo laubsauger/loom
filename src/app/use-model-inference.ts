@@ -14,6 +14,8 @@ import {
   POSE_INPUT_KEY,
   POSE_RESULT_KEY,
   depthSettingsFor,
+  depthDescriptorFor,
+  isMetricDepthModel,
   matteDescriptorFor,
   matteInputSideFor,
   matteRatioFor,
@@ -37,8 +39,6 @@ import { cacheModelStore } from "@runtime/models/cache-model-store.ts";
 import { createWorkerRunner, type WorkerRunner } from "@runtime/models/worker-runner.ts";
 import type { InferenceNodeType, WorkerLike } from "@runtime/models/inference-protocol.ts";
 import {
-  DEPTH_ACCURATE,
-  DEPTH_LIVE,
   isMediaPipeMatte,
   POSE_ACCURATE,
   POSE_LIVE,
@@ -54,7 +54,7 @@ import {
   neutralMatte,
   packMatteInput,
 } from "@runtime/models/matte-runner.ts";
-import { depthToRgba, neutralDepth, packModelInput } from "@runtime/models/depth-runner.ts";
+import { depthToRgba, neutralDepth, noDepthPro2Result, occOf, packModelInput } from "@runtime/models/depth-runner.ts";
 import {
   POSE_INPUT_CHANNELS,
   POSE_INPUT_DTYPE,
@@ -155,12 +155,29 @@ interface InferenceKind {
     size: readonly [number, number],
     sourceSize: readonly [number, number],
   ): Uint8Array;
-  fallback(size: readonly [number, number]): Uint8Array;
+  /** T1816b: `descriptor` too — a metric depth model's "no result" is not its relative twin's. */
+  fallback(size: readonly [number, number], descriptor: ModelDescriptor): Uint8Array;
   /**
    * HOW MUCH OF THE FRAME A RESULT CLAIMS, or absent for a node where the question has no
    * answer (§V288). Only the matte supplies one — see the row's own note.
    */
   coverage?(bytes: Uint8Array): number;
+}
+
+/**
+ * T1816b — picture → model box → output for the node's info popup. The box is the node's
+ * own (Depth Pro 2's static one, or the square Input Size), and the fill is T974's
+ * letterbox rule (`occOf`) for that box: the share of the model's input that is picture.
+ */
+export function inferenceShapeOf(target: Pick<DepthTarget, "settings" | "sourceSize" | "size">) {
+  const box = target.settings.inputBox ?? { width: target.settings.inputSide, height: target.settings.inputSide };
+  const [occX, occY] = occOf(target.sourceSize[0], target.sourceSize[1], box.width / box.height);
+  return {
+    picture: target.sourceSize,
+    box: [box.width, box.height] as const,
+    fill: occX * occY,
+    output: target.size,
+  };
 }
 
 /** What a node instance's parameters say about running it. */
@@ -174,6 +191,10 @@ interface InferenceRunSettings {
   readonly smoothing: number;
   readonly minIntervalSeconds: number;
   readonly hold: boolean;
+  /** T1816b — Depth Pro 2's horizontal field of view, degrees; absent for every other model. */
+  readonly fieldOfView?: number;
+  /** T1816b — a non-square model box (Depth Pro 2); absent means `inputSide` square. */
+  readonly inputBox?: { readonly width: number; readonly height: number };
 }
 
 /**
@@ -249,7 +270,11 @@ const INFERENCE_KINDS: readonly InferenceKind[] = [
     settings: (parameters) => {
       const settings = depthSettingsFor(parameters);
       return {
-        descriptor: settings.modelId === DEPTH_LIVE.id ? DEPTH_LIVE : DEPTH_ACCURATE,
+        /* T1816b: resolved by the DEFINITION — the V2-only ternary that stood here would have
+           downloaded V2 Small for a node that says Depth Pro 2 (T1040's hazard, again). */
+        descriptor: depthDescriptorFor(parameters),
+        ...(settings.fieldOfView === undefined ? {} : { fieldOfView: settings.fieldOfView }),
+        inputBox: settings.inputBox,
         inputSide: settings.inputSide,
         providers: settings.providers,
         minIntervalSeconds: settings.minIntervalSeconds,
@@ -262,7 +287,8 @@ const INFERENCE_KINDS: readonly InferenceKind[] = [
     },
     pack: (texels, side) => packModelInput(texels, side),
     encode: (output, size) => depthToRgba(output, DEPTH_INPUT_SIDE, size[0], size[1]),
-    fallback: (size) => neutralDepth(size[0], size[1]),
+    fallback: (size, descriptor) =>
+      isMetricDepthModel(descriptor.id) ? noDepthPro2Result(size[0], size[1]) : neutralDepth(size[0], size[1]),
   },
   {
     nodeType: "pose",
@@ -609,6 +635,7 @@ export function useModelInference(
           // T1040: the worker's plan table is per MODEL now, and these two ride with it.
           ratio: run.ratio,
           smoothing: run.smoothing,
+          ...(run.fieldOfView === undefined ? {} : { fieldOfView: run.fieldOfView }),
           side: found.settings.inputSide,
           providers: found.settings.providers,
         };
@@ -628,10 +655,12 @@ export function useModelInference(
        * the value of the node's Backend parameter, which is only ever a request.
        */
       onMeasured: (nodeId, measurement) => {
+        const target = targetsRef.current.find((candidate) => candidate.nodeId === nodeId);
         sinkRef.current?.publish(nodeId, {
           inferenceBackend: measurement.backend,
           inferenceMs: measurement.millis,
           inferenceIsolated: measurement.isolated,
+          ...(target === undefined ? {} : { inferenceShape: inferenceShapeOf(target) }),
         });
       },
     });
@@ -995,7 +1024,7 @@ export function useModelInference(
         nodeId: target.nodeId,
         inputResourceId: scratchResourceId(target.nodeId, target.kind.inputKey),
         sourceId: inferenceSourceIdFor(target.nodeId),
-        fallback: target.kind.fallback(target.size),
+        fallback: target.kind.fallback(target.size, target.descriptor),
         // §T384's freshness policy, carried per node rather than assumed: how often this
         // one is allowed to start, and whether it stops after its first result. At no frame
         // here; the dispatch gate retunes both at each frame it decides (T1530b).

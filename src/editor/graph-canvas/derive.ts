@@ -1,7 +1,7 @@
 import type { Edge, Node } from "@xyflow/react";
 import { incomingEdgesInOrder, variadicHandleId } from "@domain/graph/edge-order.ts";
 import type { GraphEdge, GraphNode } from "@domain/types/graph.ts";
-import type { NodeId } from "@domain/types/ids.ts";
+import type { NodeId, TieId } from "@domain/types/ids.ts";
 import type { PortKind } from "@domain/types/ports.ts";
 import { ANNOTATE_TYPE } from "@nodes/definitions/annotate.ts";
 import { isOneSocketInput } from "@nodes/definitions/controls.ts";
@@ -58,8 +58,22 @@ export type SignalEdgeData = {
   sourceNodeId: NodeId;
   /** Source pass is bypassed or muted: it does no GPU work, so the edge cannot flow. */
   inactive: boolean;
+  /**
+   * T1821b — the ties this wire is routed through, in order (§V1040). Ids only: where each
+   * tie is DRAWN is the canvas's tie view (`tie-view.ts`), which follows a tie in the hand.
+   * Absent on an untied wire.
+   */
+  via?: readonly TieId[];
 };
 export type LoomEdge = Edge<SignalEdgeData, typeof SIGNAL_EDGE_TYPE>;
+
+/** T1821b: two routes through the same ties in the same order (absent and empty agree). */
+function sameRoute(a: readonly TieId[] | undefined, b: readonly TieId[] | undefined): boolean {
+  if (a === b) return true;
+  const left = a ?? [];
+  const right = b ?? [];
+  return left.length === right.length && left.every((tieId, index) => tieId === right[index]);
+}
 
 function samePosition(a: { x: number; y: number }, b: { x: number; y: number }): boolean {
   return a.x === b.x && a.y === b.y;
@@ -246,6 +260,7 @@ export function projectEdges(
         portKind: port?.type.kind ?? null,
         sourceNodeId: domain.source.nodeId,
         inactive: isInactive(sourceNode),
+        ...(domain.via === undefined || domain.via.length === 0 ? {} : { via: domain.via }),
       };
       /*
        * T1639b — WHICH END OF A WIRE CAN BE PULLED OFF ITS PORT: the input end, and only
@@ -269,7 +284,8 @@ export function projectEdges(
         prior.reconnectable === reconnectable &&
         prior.data?.portKind === data.portKind &&
         prior.data.sourceNodeId === data.sourceNodeId &&
-        prior.data.inactive === data.inactive
+        prior.data.inactive === data.inactive &&
+        sameRoute(prior.data.via, data.via)
       ) {
         return [prior];
       }

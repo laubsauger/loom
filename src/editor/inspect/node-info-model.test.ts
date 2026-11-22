@@ -109,6 +109,7 @@ describe("the TD field set (§I.info)", () => {
         inferenceBackend: null,
         inferenceMs: null,
         inferenceIsolated: null,
+        inferenceShape: null,
         inferenceNote: null,
         message: "shader compile failed; showing the last valid plan",
         errorCount: 0,

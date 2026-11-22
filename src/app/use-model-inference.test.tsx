@@ -676,3 +676,15 @@ it.each(["depth", "pose", "matte"])("%s skips unsubmitted input and preserves ca
   view.unmount();
   expect(gates.gates.size).toBe(0);
 });
+
+it("T1816b: the sizes readout names the node's own box and the share of it the picture fills", async () => {
+  const { inferenceShapeOf } = await import("./use-model-inference.ts");
+  const settings = { inputSide: 640, inputBox: { width: 672, height: 384 } } as never;
+  // 1920×1080 into 672×384: 1.778 against 1.75 — full width, 98.4 % of the height.
+  const wide = inferenceShapeOf({ settings, sourceSize: [1920, 1080], size: [1920, 1080] });
+  expect(wide.box).toEqual([672, 384]);
+  expect(wide.fill).toBeCloseTo(1.75 / (16 / 9), 12);
+  // The same picture in a square Input Size box (Depth Anything at 266): 56 %.
+  const square = inferenceShapeOf({ settings: { inputSide: 266 } as never, sourceSize: [1920, 1080], size: [960, 540] });
+  expect(square).toEqual({ picture: [1920, 1080], box: [266, 266], fill: 1080 / 1920, output: [960, 540] });
+});

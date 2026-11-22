@@ -196,6 +196,14 @@ export const graphEdgeSchema = z.object({
    * the value is an index the UI shows and a node reads as "input 1, input 2".
    */
   order: z.number().int().nonnegative().optional(),
+  /** T1821b: the ties this wire is routed through, in order. Optional (§V68): absent = none. */
+  via: z.array(z.string().min(1)).optional(),
+});
+
+/** T1821b: a wire tie — a point wires pass through (§V1040). */
+export const graphTieSchema = z.object({
+  id: z.string().min(1),
+  position: vec2,
 });
 
 export const graphGroupSchema = z.object({
@@ -212,6 +220,7 @@ export const graphDocumentSchema = z.object({
   edges: z.record(graphEdgeSchema),
   groups: z.record(graphGroupSchema),
   viewport: z.object({ x: z.number(), y: z.number(), zoom: z.number() }).optional(),
+  ties: z.record(graphTieSchema).optional(),
 });
 
 export const assetReferenceSchema = z.object({
@@ -355,9 +364,17 @@ export const graphPatchOperationSchema = z.discriminatedUnion("op", [
       // it meant before the field existed (§V68). Out-of-range is clamped at apply time
       // rather than rejected here — the schema cannot know how many edges the port holds.
       order: z.number().int().min(0).optional(),
+      // T1821b: the wire is born routed through these ties (a splice keeps its halves' routes).
+      via: z.array(refString).optional(),
     })
     .strict(),
   z.object({ op: z.literal("disconnect"), edgeIds: z.array(z.string().min(1)) }).strict(),
+  // T1821b: wire ties (§V1040). A route changes no connection, so none of these is checked
+  // against a port; the operations check that the ties and the wire exist.
+  z.object({ op: z.literal("addTie"), ref: refString, position: patchPoint }).strict(),
+  z.object({ op: z.literal("removeTies"), tieIds: z.array(z.string().min(1)) }).strict(),
+  z.object({ op: z.literal("moveTies"), positions: z.record(patchPoint) }).strict(),
+  z.object({ op: z.literal("setEdgeVia"), edgeId: refString, via: z.array(refString) }).strict(),
   z
     .object({
       op: z.literal("reorderEdges"),

@@ -1,4 +1,4 @@
-import type { AssetId, EdgeId, GroupId, NodeId, PortId, Revision } from "./ids.ts";
+import type { AssetId, EdgeId, GroupId, NodeId, PortId, Revision, TieId } from "./ids.ts";
 import type { StoredParameter } from "./parameters.ts";
 import type { SelectableColorFormat, TextureFormat } from "./node-definition.ts";
 
@@ -204,6 +204,28 @@ export interface GraphEdge {
    * field existed, which is why an absent order sorts last (§V68, `compareEdgeOrder`).
    */
   order?: number;
+  /**
+   * T1821b — the TIES this wire is routed through, in order from its output (§V1040).
+   *
+   * A route, not a connection: the wire still runs `source → target` and nothing that
+   * compiles reads this. Absent (the common case, and every document written before the
+   * field) means the wire runs straight from port to port. Kept dense by the patch layer:
+   * an id here names a tie in `GraphDocument.ties`.
+   */
+  via?: TieId[];
+}
+
+/**
+ * T1821b — a WIRE TIE: a point that data wires are routed through, to bend a route or to
+ * bind several wires into one strand. Not a node: no ports, no name, nothing compiles it
+ * (design: docs/wire-ties-design-2026-11-21.md). Which wires pass it is on the wires
+ * (`GraphEdge.via`); the tie holds only where it is, so a tie shared by five wires is moved
+ * by one write and no two wires can disagree about its place. It exists only while a wire
+ * passes through it (§V1040).
+ */
+export interface GraphTie {
+  id: TieId;
+  position: { x: number; y: number };
 }
 
 export interface GraphGroup {
@@ -227,6 +249,12 @@ export interface GraphDocument {
   edges: Record<EdgeId, GraphEdge>;
   groups: Record<GroupId, GraphGroup>;
   viewport?: ViewportState;
+  /**
+   * T1821b — wire ties (§V1040). Optional and absent while there are none, so an untied
+   * document is byte-identical to one written before ties existed: no migration (the
+   * `edge.order`, `ui.z` precedent; docs/wire-ties-design-2026-11-21.md).
+   */
+  ties?: Record<TieId, GraphTie>;
 }
 
 /** Phantom keys: no module can write them, so only a cast (gated) or a spread of one makes either brand. */

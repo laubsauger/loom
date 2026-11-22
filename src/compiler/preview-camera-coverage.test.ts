@@ -85,6 +85,13 @@ interface Recipe {
  * why; a recipe for a type that draws without it is stale and the test says so.
  */
 const RECIPES: Readonly<Record<string, Recipe>> = {
+  // T1822b: a Null's input is optional, so the default producers leave it unwired, and an
+  // unwired Null has nothing to show. Wired, its row is a splat of its producer's points.
+  pointNull: {
+    nodes: [["grid", "pointGrid"]],
+    wires: [["grid", "$", "in"]],
+    why: "a Null's input is optional, and a Null with nothing wired produces nothing",
+  },
   pointSweep: {
     nodes: [
       ["line", "pointLine"],

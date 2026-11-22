@@ -41,6 +41,8 @@ export type PatchOperationClass = "value" | "structural";
 export const NODE_ENTITY_PREFIX = "node:";
 export const EDGE_ENTITY_PREFIX = "edge:";
 export const GROUP_ENTITY_PREFIX = "group:";
+/** T1821b: a wire tie, named as the store's owner map names it. */
+export const TIE_ENTITY_PREFIX = "tie:";
 
 const isTemp = (ref: NodeRef): boolean => ref.startsWith("$");
 
@@ -64,6 +66,15 @@ export function operationClass(operation: GraphPatchOperation): PatchOperationCl
     // let a reorder computed against three layers land on four.
     case "reorderEdges":
       return "structural";
+    // T1821b: making, removing and re-routing through a tie are structural like a group's
+    // making — they change which entities exist and which wire names which tie. Moving one
+    // is layout, `moveNodes`' class.
+    case "addTie":
+    case "removeTies":
+    case "setEdgeVia":
+      return "structural";
+    case "moveTies":
+      return "value";
     // `setNodeSize` is here for the same reason `moveNodes` is (T208, §V190): a size is
     // layout. It changes what the canvas draws and nothing the compiler reads, so it
     // contends with an edit to the same node and with nobody's structural work.
@@ -212,6 +223,32 @@ export function touchedEntities(
 
     case "setGroup": {
       into.add(`${GROUP_ENTITY_PREFIX}${operation.groupId}`);
+      return into;
+    }
+
+    case "addTie": {
+      if (!isTemp(operation.ref)) into.add(`${TIE_ENTITY_PREFIX}${operation.ref}`);
+      return into;
+    }
+
+    case "removeTies": {
+      const doomed = new Set(operation.tieIds);
+      for (const tieId of operation.tieIds) into.add(`${TIE_ENTITY_PREFIX}${tieId}`);
+      // The wires through them are released, so they are part of what this patch changes.
+      for (const edge of Object.values(graph.edges)) {
+        if (edge.via?.some((tieId) => doomed.has(tieId)) === true) into.add(`${EDGE_ENTITY_PREFIX}${edge.id}`);
+      }
+      return into;
+    }
+
+    case "moveTies": {
+      for (const tieId of Object.keys(operation.positions)) into.add(`${TIE_ENTITY_PREFIX}${tieId}`);
+      return into;
+    }
+
+    case "setEdgeVia": {
+      if (!isTemp(operation.edgeId)) into.add(`${EDGE_ENTITY_PREFIX}${operation.edgeId}`);
+      for (const tieId of operation.via) if (!isTemp(tieId)) into.add(`${TIE_ENTITY_PREFIX}${tieId}`);
       return into;
     }
 

@@ -18,6 +18,7 @@ import { BEGIN_RENAME_COMMAND } from "@editor/nodes/rename-session.ts";
 import { TOGGLE_REFERENCE_LINES_COMMAND } from "@editor/edges/reference-lines-command.ts";
 import { TOGGLE_MINIMAP_COMMAND } from "@editor/graph-canvas/minimap-command.ts";
 import { TOGGLE_SCROLL_PAN_COMMAND } from "@editor/graph-canvas/scroll-pan-command.ts";
+import { SET_WIRE_STYLE_COMMAND } from "@editor/edges/wire-style-command.ts";
 // Same reason again (T1010): the constant, from the module rather than the
 // `@editor/nodes` barrel, which exports React surfaces.
 import { TOGGLE_TIMING_OVERLAY_COMMAND } from "@editor/nodes/timing-overlay-command.ts";
@@ -170,6 +171,15 @@ export function canvasMenu(registry: NodeRegistryView): MenuSchema {
           { command: TOGGLE_MINIMAP_COMMAND, label: "Overview map" },
           // T1724b: a two-finger scroll pans instead of zooming — a trackpad's own gesture.
           { command: TOGGLE_SCROLL_PAN_COMMAND, label: "Scroll pans (trackpad)" },
+          // T1820b: how the data wires are drawn, per person. One command, three static inputs.
+          {
+            label: "Wires",
+            submenu: [
+              { command: SET_WIRE_STYLE_COMMAND, input: { style: "curved" }, label: "Curved" },
+              { command: SET_WIRE_STYLE_COMMAND, input: { style: "gentle" }, label: "Gentle" },
+              { command: SET_WIRE_STYLE_COMMAND, input: { style: "straight" }, label: "Straight" },
+            ],
+          },
         ],
       },
       { separator: true },
@@ -293,7 +303,9 @@ export const EDGE_MENU: MenuSchema = {
   surface: "edge",
   entries: [
     { command: "graph.applyPatch", label: "Delete", danger: true },
-    { command: planned("graph.rerouteEdge"), label: "Reroute" },
+    // T1821b: a tie on this wire at the click — the planned "Reroute" row, built. Double-
+    // clicking the wire is the same command (`graph-canvas.tsx`).
+    { command: "graph.rerouteEdge", label: "Add tie" },
   ],
 };
 

@@ -95,6 +95,8 @@ export interface NodeRuntimeSnapshot {
   inferenceMs: number | null;
   /** T1041 — worker-measured cross-origin isolation; false = single-threaded wasm. */
   inferenceIsolated: boolean | null;
+  /** T1816b — picture → model box (and how much of it the picture fills) → output, in pixels. */
+  inferenceShape: InferenceShape | null;
   /**
    * T1487b — what an inference node's MODEL is doing, when the picture cannot say it: still
    * computing its first result, could not run, or ran and found nothing. It sits on the node
@@ -126,6 +128,22 @@ export interface NodeRuntimeSnapshot {
 }
 
 /** T1487b — one line about an inference node's run state, with the tone it reads in. */
+export interface InferenceShape {
+  readonly picture: readonly [number, number];
+  readonly box: readonly [number, number];
+  readonly fill: number;
+  readonly output: readonly [number, number];
+}
+
+function sameShape(a: InferenceShape | null, b: InferenceShape | null): boolean {
+  if (a === b) return true;
+  if (a === null || b === null) return false;
+  return a.fill === b.fill && [a.picture, a.box, a.output].every((pair, i) => {
+    const other = [b.picture, b.box, b.output][i]!;
+    return pair[0] === other[0] && pair[1] === other[1];
+  });
+}
+
 export interface InferenceNote {
   readonly tone: "info" | "warn" | "error";
   readonly text: string;
@@ -148,6 +166,7 @@ export const IDLE_RUNTIME: NodeRuntimeSnapshot = Object.freeze({
   inferenceBackend: null,
   inferenceMs: null,
   inferenceIsolated: null,
+  inferenceShape: null,
   inferenceNote: null,
   message: null,
   errorCount: 0,
@@ -230,6 +249,7 @@ function sameSnapshot(a: NodeRuntimeSnapshot, b: NodeRuntimeSnapshot): boolean {
     a.inferenceBackend === b.inferenceBackend &&
     a.inferenceMs === b.inferenceMs &&
     a.inferenceIsolated === b.inferenceIsolated &&
+    sameShape(a.inferenceShape, b.inferenceShape) &&
     sameNote(a.inferenceNote, b.inferenceNote) &&
     a.message === b.message &&
     a.errorCount === b.errorCount &&

@@ -1,6 +1,7 @@
 import { Position } from "@xyflow/react";
 import type { EdgeProps, NodeProps } from "@xyflow/react";
 import { createEdgeGeometry } from "@editor/edges/edge-geometry.ts";
+import { createTieView } from "@editor/edges/tie-view.ts";
 import { createRenameSessionStore } from "@editor/nodes/rename-session.ts";
 import { createKindLabelRegistry } from "@editor/nodes/kind-label.ts";
 import { createTimingOverlayStore } from "@editor/nodes/timing-overlay-command.ts";
@@ -173,6 +174,8 @@ export interface FixtureContextOptions {
   registry: GraphCanvasContextValue["registry"];
   runtime?: NodeRuntimeStore;
   edgeGeometry?: GraphCanvasContextValue["edgeGeometry"];
+  /** T1821b: pass one to place ties from a test; an empty one otherwise. */
+  ties?: GraphCanvasContextValue["ties"];
   dispatch?: GraphDispatch;
   selection?: GraphCanvasContextValue["selection"];
   toggleUi?: GraphCanvasContextValue["toggleUi"];
@@ -214,6 +217,7 @@ export function fixtureContext(options: FixtureContextOptions): {
       registry: options.registry,
       runtime,
       edgeGeometry: options.edgeGeometry ?? createEdgeGeometry(),
+      ties: options.ties ?? createTieView(),
       dispatch: options.dispatch ?? (() => {}),
       selection: options.selection ?? (() => []),
       toggleUi: options.toggleUi ?? (() => {}),

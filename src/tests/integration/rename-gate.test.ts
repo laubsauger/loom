@@ -68,6 +68,9 @@ describe("the Shaderloom → Loom rename holds (§T899)", () => {
       // T1724b: "a two-finger scroll pans the graph" — per person, beside the map
       // (`editor/graph-canvas/scroll-pan-command.ts`).
       "shaderloom.graph.scrollPan.v1",
+      // T1820b: "draw the wires curved, gentle or straight" — per person, beside them
+      // (`editor/edges/wire-style-command.ts`).
+      "shaderloom.graph.wireStyle.v1",
       // "start on a starter network rather than an empty canvas" — per person, like the
       // node type label above (`editor/inspect/starter-preference.ts`).
       "shaderloom.project.startOnStarter.v1",

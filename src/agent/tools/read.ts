@@ -80,6 +80,8 @@ export interface AgentEdgeView {
   readonly id: EdgeId;
   readonly source: { readonly nodeId: NodeId; readonly portId: PortId };
   readonly target: { readonly nodeId: NodeId; readonly portId: PortId };
+  /** T1821b: the ties the wire is routed through, in order. Present only on a routed wire. */
+  readonly via?: readonly string[];
 }
 
 export interface GraphView {
@@ -87,6 +89,8 @@ export interface GraphView {
   readonly nodes: readonly AgentNodeView[];
   readonly edges: readonly AgentEdgeView[];
   readonly groupIds: readonly string[];
+  /** T1821b: wire ties by id, with their positions. Present only when the graph has any. */
+  readonly ties?: Readonly<Record<string, { readonly x: number; readonly y: number }>>;
   readonly truncated: boolean;
 }
 
@@ -190,6 +194,7 @@ export function edgeViews(graph: GraphDocument): AgentEdgeView[] {
           id: edge.id,
           source: { nodeId: edge.source.nodeId, portId: edge.source.portId },
           target: { nodeId: edge.target.nodeId, portId: edge.target.portId },
+          ...(edge.via === undefined || edge.via.length === 0 ? {} : { via: [...edge.via] }),
         },
       ];
     });
@@ -310,6 +315,15 @@ export const getGraph: AgentTool<GetGraphInput, GraphView> = {
       nodes,
       edges: edgeViews(graph),
       groupIds: Object.keys(graph.groups).sort(),
+      ...(graph.ties === undefined || Object.keys(graph.ties).length === 0
+        ? {}
+        : {
+            ties: Object.fromEntries(
+              Object.keys(graph.ties)
+                .sort()
+                .map((tieId) => [tieId, { x: graph.ties?.[tieId]?.position.x ?? 0, y: graph.ties?.[tieId]?.position.y ?? 0 }]),
+            ),
+          }),
       truncated,
     };
     return ok("get_graph", view, {

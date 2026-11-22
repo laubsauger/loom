@@ -1,0 +1,29 @@
+/*
+ * Wire ties (T1821b). The dot's colour arrives inline from the component — the hue of the
+ * first wire through it, a port family token (§V26) — so this file names no colour of its
+ * own beyond the ring that sets the dot off the wires it sits on.
+ */
+
+.layer {
+  position: absolute;
+  overflow: visible;
+  /* The layer spans every tie; only the hit rings take a press (see `.hit`). */
+  pointer-events: none;
+}
+
+.dot {
+  stroke: var(--bg-void);
+  stroke-width: 1.5;
+  pointer-events: none;
+}
+
+/* The press target: invisible, larger than the dot, so a tie is aimed at with an arm. */
+.hit {
+  fill: transparent;
+  pointer-events: all;
+  cursor: grab;
+}
+
+.hit:active {
+  cursor: grabbing;
+}

@@ -52,9 +52,120 @@ export function packModelInput(texels: Float32Array, side: number): Float32Array
  * fills x and a 1/aspect band of y; a tall one the transpose. The WGSL preprocess
  * computes the identical expression; the two are pinned together by the aspect gate.
  */
-export function occOf(width: number, height: number): readonly [number, number] {
+export function occOf(width: number, height: number, boxAspect = 1): readonly [number, number] {
+  /* T1816b: `boxAspect` is the model box's width/height — 1 for every square graph, 4/3 for
+     Depth Pro 2's static 640×480. A source wider than the box fills x; a taller one fills y.
+     At boxAspect 1 this is the original expression exactly, and `letterboxRectPreprocessWgsl`
+     is its WGSL twin (pinned to the square shader by `depth-pro2-letterbox.gpu.test.ts`). */
   const aspect = width / Math.max(height, 1);
-  return aspect >= 1 ? [1, 1 / aspect] : [aspect, 1];
+  return aspect >= boxAspect ? [1, boxAspect / aspect] : [aspect / boxAspect, 1];
+}
+
+/**
+ * T1816b — Depth Pro 2's static input box, read from its recorded signature
+ * (`["1","3","480","640"]`). Width first, as every caller here addresses a texture.
+ */
+export const DEPTH_PRO2_BOX = { width: 640, height: 480 } as const;
+
+/** A Depth Pro 2 artefact's static input box, width × height. */
+export interface DepthPro2Box {
+  readonly width: number;
+  readonly height: number;
+}
+
+/**
+ * The boxes the converter published, by the node's stored key: 4:3 (the default, the
+ * first one shipped) and 16:9 from its `onnx/384x672/` folder. Each is its own file —
+ * the graphs are static, so a box is a download, not a dial.
+ */
+export const DEPTH_PRO2_BOXES = {
+  "640x480": DEPTH_PRO2_BOX,
+  "672x384": { width: 672, height: 384 },
+} as const satisfies Record<string, DepthPro2Box>;
+
+/** Linear working space → the display-referred value a camera file holds (sRGB OETF). */
+function encodeSrgb(linear: number): number {
+  const value = Math.min(1, Math.max(0, linear));
+  return value <= 0.0031308 ? 12.92 * value : 1.055 * Math.pow(value, 1 / 2.4) - 0.055;
+}
+
+/**
+ * T1816b — our letterboxed `vec4f` box → Depth Pro 2's `pixel_values`, NCHW float32.
+ *
+ * RAW [0,1] RGB, because ImageNet normalisation is inside the exported graph — feeding
+ * `packModelInput`'s normalised values would normalise twice. And SRGB-ENCODED, because
+ * the reference (`depth_pro_2.load_rgb`, then `/255`) feeds display-referred bytes while
+ * this preprocess reads the LINEAR working space (§V13's decode at load). The other depth
+ * packers feed linear as they always have; that difference is per model, like RVM's raw
+ * against MODNet's signed packing.
+ */
+export function packDepthPro2Input(texels: Float32Array, box: DepthPro2Box = DEPTH_PRO2_BOX): Float32Array {
+  const { width, height } = box;
+  const pixels = width * height;
+  if (texels.length !== pixels * 4) {
+    throw new Error(`Depth Pro 2 takes a ${width}×${height} box; received ${texels.length / 4} texels.`);
+  }
+  const out = new Float32Array(3 * pixels);
+  for (let i = 0; i < pixels; i += 1) {
+    for (let c = 0; c < 3; c += 1) out[c * pixels + i] = encodeSrgb(texels[i * 4 + c]!);
+  }
+  return out;
+}
+
+/**
+ * T1816b — `f_px`, the horizontal focal length in pixels of the 640×480 box the model sees.
+ *
+ * The node asks for a horizontal field of view of the PICTURE, the unit a camera states.
+ * The picture occupies `occX` of the box's width once letterboxed, so its width in box
+ * pixels is `640 · occX`, and a pinhole gives `f = (w / 2) / tan(fov / 2)`. Metres scale
+ * linearly with this (`depth = f_px / (W · inverse_depth)`), so a wrong field of view
+ * scales every distance and changes no shape.
+ */
+export function depthPro2FocalPixels(
+  fieldOfViewDegrees: number,
+  sourceWidth: number,
+  sourceHeight: number,
+  box: DepthPro2Box = DEPTH_PRO2_BOX,
+): number {
+  const { width, height } = box;
+  const [occX] = occOf(sourceWidth, sourceHeight, width / height);
+  const fov = Math.min(170, Math.max(1, fieldOfViewDegrees)) * (Math.PI / 180);
+  return (width * occX) / 2 / Math.tan(fov / 2);
+}
+
+/**
+ * T1816b — Depth Pro 2's metres → INVERSE metres at the node's resolution, r32float bytes.
+ *
+ * Inverse, not metres, for two reasons. The sky is +inf metres, and a non-finite texel is
+ * not something a WGSL consumer can be trusted with (an implementation may assume finite
+ * floats); its inverse is exactly 0, the far end. And near-is-bright is then the model's
+ * own orientation, as it is for Depth Anything, so the result pass shares its meaning.
+ * NOT normalised: the range and the metres readout are uniforms on the result pass, so a
+ * temporally stable model is never re-stretched per frame.
+ */
+export function depthPro2ToInverse(
+  depth: Float32Array,
+  width: number,
+  height: number,
+  box: DepthPro2Box = DEPTH_PRO2_BOX,
+): Uint8Array {
+  if (depth.length !== box.width * box.height) {
+    throw new Error(`Depth Pro 2 returned ${depth.length} samples for a ${box.width}×${box.height} box.`);
+  }
+  const [occX, occY] = occOf(width, height, box.width / box.height);
+  const floats = new Float32Array(width * height);
+  for (let y = 0; y < height; y += 1) {
+    const v = ((y + 0.5) / height - 0.5) * occY + 0.5;
+    const sy = Math.min(box.height - 1, Math.max(0, Math.floor(v * box.height)));
+    for (let x = 0; x < width; x += 1) {
+      const u = ((x + 0.5) / width - 0.5) * occX + 0.5;
+      const sx = Math.min(box.width - 1, Math.max(0, Math.floor(u * box.width)));
+      const metres = depth[sy * box.width + sx]!;
+      // +inf (sky) → 0. A NaN or non-positive sample has no distance either: also 0, far.
+      floats[y * width + x] = metres > 0 && Number.isFinite(metres) ? 1 / metres : 0;
+    }
+  }
+  return new Uint8Array(floats.buffer);
 }
 
 export function depthToRgba(
@@ -143,6 +254,16 @@ export function depthToRgbaBytes(
     }
   }
   return out;
+}
+
+/**
+ * T1816b — Depth Pro 2's "no result yet": -1, an inverse distance the encoder never emits
+ * (it writes 1/metres or 0). The result pass publishes it as the same flat 0.5 identity
+ * `neutralDepth` gives Depth Anything; a 0.5 here would instead read as 2 metres and be
+ * placed between Near and Far like a measurement.
+ */
+export function noDepthPro2Result(width: number, height: number): Uint8Array {
+  return new Uint8Array(new Float32Array(width * height).fill(-1).buffer);
 }
 
 /** Flat mid-grey at a given size — the identity a Depth node publishes with no result. */

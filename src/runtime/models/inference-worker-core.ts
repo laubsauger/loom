@@ -1,4 +1,4 @@
-import { depthToRgba, packModelInput } from "./depth-runner.ts";
+import { depthPro2FocalPixels, depthPro2ToInverse, depthToRgba, DEPTH_PRO2_BOXES, packDepthPro2Input, packModelInput, type DepthPro2Box } from "./depth-runner.ts";
 import { POSE_INPUT_SIDE, keypointsToTexture, packPoseInput } from "./pose-runner.ts";
 import { matteToFloats, packMatteInput, smoothMatte } from "./matte-runner.ts";
 import { describeRuntimeLoadFailure } from "./runtime-load-failure.ts";
@@ -19,6 +19,12 @@ import type { InferenceNodeType, InferenceRequest, InferenceResponse } from "./i
 export interface InferenceSessionLike {
   readonly inputNames: readonly string[];
   readonly outputNames: readonly string[];
+  /**
+   * T1816b — what the artefact itself declares for each input. Read ONLY to shape a
+   * recurrent model's first-frame zeros when its graph is static (§V742: the file is the
+   * contract, so the zeros are shaped by the file rather than by a typed table).
+   */
+  readonly inputMetadata?: ReadonlyArray<{ readonly name: string; readonly type?: string; readonly shape?: readonly unknown[] }>;
   run(feeds: Record<string, unknown>): Promise<Record<string, { data: Float32Array; dims?: readonly number[] }>>;
 }
 
@@ -33,9 +39,18 @@ export interface WorkerCoreOptions {
    * the REQUEST. Walking the ladder out here means the provider that returned is the
    * provider that ran, measured rather than assumed.
    */
-  createSession(weights: ArrayBuffer, provider: string): Promise<InferenceSessionLike>;
+  createSession(
+    weights: ArrayBuffer,
+    provider: string,
+    /**
+     * T1816b — outputs to leave ON THE DEVICE (`preferredOutputLocation: "gpu-buffer"`),
+     * asked only of the WebGPU provider. Depth Pro 2's stream cache is ~30 MB a frame; a
+     * round trip through the CPU every run would cost more than the model.
+     */
+    placement?: { readonly gpuOutputs: readonly string[] },
+  ): Promise<InferenceSessionLike>;
   /** Builds the runtime's tensor. The real one is `new ort.Tensor(type, data, dims)`. */
-  createTensor(type: string, data: Float32Array | Uint8Array, dims: readonly number[]): unknown;
+  createTensor(type: string, data: Float32Array | Uint8Array | Uint16Array, dims: readonly number[]): unknown;
   post(response: InferenceResponse, transfer?: Transferable[]): void;
   /**
    * T1041 — the thread's own `crossOriginIsolated`, passed by the shim because only the
@@ -121,6 +136,24 @@ export interface ModelPlan extends Packing {
   /** The `f32[1]` scalar input the node's ratio parameter drives, if the model has one. */
   readonly ratioInput?: string;
   /**
+   * T1816b — the `f32[1]` focal-length input (pixels of the model box), computed here from
+   * the node's horizontal Field of View and the picture's letterbox. Depth Pro 2's `f_px`.
+   * `pixels` belongs to the plan because the box does: the same field of view is a
+   * different focal length in a 640-wide box than in a 672-wide one.
+   */
+  readonly focal?: {
+    readonly input: string;
+    pixels(fieldOfViewDegrees: number, sourceWidth: number, sourceHeight: number): number;
+  };
+  /**
+   * T1816b — how a recurrent model's FIRST frame is fed. Absent: RVM's documented
+   * `[1,1,1,1]` zeros. `declared`: zeros in the exact type and shape the session declares
+   * for each fed-back input, for a static graph that refuses anything else.
+   */
+  readonly zeroState?: "declared";
+  /** T1816b — keep the fed-back outputs on the GPU when the WebGPU provider runs. */
+  readonly gpuFeedback?: boolean;
+  /**
    * The temporal EMA's DEFAULT blend for this model — the node may override it, and 1
    * means none. Per model because the right answer is a property of the architecture:
    * MODNet is per-frame and flickers, RVM already carries the past in `feedback` above.
@@ -154,6 +187,41 @@ const MODNET_PACKING: Packing = {
   dims: (side) => [1, 3, side, side],
   encode: (output, width, height, side) => matteToFloats(output, side, width, height),
 };
+
+/**
+ * T1816b — Depth Pro 2: raw sRGB [0,1] in its static box (640×480 or 672×384), `f_px`
+ * beside it, metres out. `side` is ignored: the box is the artefact's shape, so it is
+ * read from the plan the model id selects, never from the request.
+ */
+function depthPro2Plan(box: DepthPro2Box): ModelPlan {
+  return {
+    tensorType: "float32",
+    pack: (texels) => packDepthPro2Input(texels, box),
+    dims: () => [1, 3, box.height, box.width],
+    encode: (output, width, height) => depthPro2ToInverse(output, width, height, box),
+    picture: "depth_meters",
+    focal: { input: "f_px", pixels: (fov, sourceWidth, sourceHeight) => depthPro2FocalPixels(fov, sourceWidth, sourceHeight, box) },
+    smoothing: 1,
+  };
+}
+
+/** The stream graph's cache, by name: every `present_<x>` is next run's `past_<x>`. */
+const DEPTH_PRO2_STREAM_CACHE = ["filled", ...[5, 7, 9, 11].flatMap((layer) =>
+  [`keys_${layer}`, `values_${layer}`, `prefixes_${layer}`])];
+
+/* One frame per call attending to the three before it, the cache carried as tensors.
+   No EMA (1): like RVM, the past is already in the state. The FP16 and FP32 builds share
+   every name; their caches differ only in type, which `declared` zeros read from the file. */
+function depthPro2StreamPlan(box: DepthPro2Box): ModelPlan {
+  return {
+    ...depthPro2Plan(box),
+    feedback: Object.fromEntries(DEPTH_PRO2_STREAM_CACHE.map((name) => [`present_${name}`, `past_${name}`])),
+    zeroState: "declared",
+    gpuFeedback: true,
+  };
+}
+
+const [DP2_43, DP2_169] = [DEPTH_PRO2_BOXES["640x480"], DEPTH_PRO2_BOXES["672x384"]];
 
 /**
  * The per-MODEL differences, and only these — keyed by model id since T1040, because two
@@ -281,7 +349,38 @@ export const MODEL_PLANS: Readonly<Record<string, ModelPlan>> = {
        other side of it. */
     smoothing: 1,
   },
+  "depthpro2-s-fp32": depthPro2Plan(DP2_43),
+  "depthpro2-b-fp16": depthPro2Plan(DP2_43),
+  "depthpro2-s-fp32-672x384": depthPro2Plan(DP2_169),
+  "depthpro2-b-fp16-672x384": depthPro2Plan(DP2_169),
+  "depthpro2-s-stream4-fp16": depthPro2StreamPlan(DP2_43),
+  "depthpro2-s-stream4-fp32": depthPro2StreamPlan(DP2_43),
+  "depthpro2-s-stream4-fp16-672x384": depthPro2StreamPlan(DP2_169),
+  "depthpro2-s-stream4-fp32-672x384": depthPro2StreamPlan(DP2_169),
 };
+
+/** T1816b — release a device-resident tensor the loop no longer holds; a CPU one is left to GC. */
+function releaseIfOnDevice(tensor: unknown): void {
+  const held = tensor as { location?: string; dispose?: () => void } | null;
+  if (held !== null && typeof held === "object" && held.location === "gpu-buffer" && typeof held.dispose === "function") held.dispose();
+}
+
+/** T1816b — zeros in the exact type and static shape the artefact declares for `name`. */
+function declaredZeros(
+  session: InferenceSessionLike,
+  name: string,
+  createTensor: WorkerCoreOptions["createTensor"],
+): unknown {
+  const declared = session.inputMetadata?.find((entry) => entry.name === name);
+  const dims = declared?.shape?.map(Number);
+  if (dims === undefined || dims.some((axis) => !Number.isInteger(axis) || axis < 1)) {
+    throw new Error(`the model declares no static shape for its recurrent input "${name}"`);
+  }
+  const count = dims.reduce((product, axis) => product * axis, 1);
+  if (declared!.type === "float16") return createTensor("float16", new Uint16Array(count), dims);
+  if (declared!.type === "float32") return createTensor("float32", new Float32Array(count), dims);
+  throw new Error(`the recurrent input "${name}" is ${declared!.type ?? "untyped"}, which has no zero state here`);
+}
 
 /** The plan for a run. Unknown ids fail LOUDLY — the alternative is guessing by index. */
 function planFor(modelId: string, nodeType: InferenceNodeType): ModelPlan {
@@ -350,10 +449,15 @@ export function createWorkerCore(options: WorkerCoreOptions) {
       for (const provider of dropped) refusals.push(`[${provider}] ${outcome.reason}`);
     }
 
+    /* T1816b: only a plan that asks, and only of the provider that has a device. */
+    const plan = MODEL_PLANS[modelId];
+    const gpuOutputs = plan?.gpuFeedback === true && plan.feedback !== undefined ? Object.keys(plan.feedback) : [];
     for (const provider of ladder) {
       const started = now();
       try {
-        const session = await options.createSession(bytes, provider);
+        const session = provider === "webgpu" && gpuOutputs.length > 0
+          ? await options.createSession(bytes, provider, { gpuOutputs })
+          : await options.createSession(bytes, provider);
         return { session, backend: provider, millis: now() - started };
       } catch (error) {
         const raw = error instanceof Error ? error.message : String(error);
@@ -372,6 +476,7 @@ export function createWorkerCore(options: WorkerCoreOptions) {
           for (const nodeId of request.nodeIds) {
             const stream = streams.get(nodeId);
             stream?.previousMatte.clear();
+            for (const held of stream?.recurrent.values() ?? []) Object.values(held.tensors).forEach(releaseIfOnDevice);
             stream?.recurrent.clear();
             streams.delete(nodeId);
           }
@@ -457,8 +562,17 @@ export function createWorkerCore(options: WorkerCoreOptions) {
           for (const inputSlot of Object.values(plan.feedback)) {
             feeds[inputSlot] = usable
               ? held!.tensors[inputSlot]
-              : options.createTensor("float32", new Float32Array(1), [1, 1, 1, 1]);
+              : plan.zeroState === "declared"
+                ? declaredZeros(session, inputSlot, options.createTensor)
+                : options.createTensor("float32", new Float32Array(1), [1, 1, 1, 1]);
           }
+        }
+        if (plan.focal !== undefined) {
+          feeds[plan.focal.input] = options.createTensor(
+            "float32",
+            new Float32Array([plan.focal.pixels(request.fieldOfView ?? 60, request.sourceWidth, request.sourceHeight)]),
+            [1],
+          );
         }
         if (plan.ratioInput !== undefined) {
           feeds[plan.ratioInput] = options.createTensor(
@@ -494,6 +608,10 @@ export function createWorkerCore(options: WorkerCoreOptions) {
             }
             tensors[inputSlot] = carried;
           }
+          /* T1816b: the state just fed in is spent. On WebGPU it is device memory that only
+             an explicit dispose returns — ~30 MB a frame for Depth Pro 2's stream. */
+          const spent = recurrent.get(temporalKey);
+          if (spent !== undefined) Object.values(spent.tensors).forEach(releaseIfOnDevice);
           recurrent.set(temporalKey, { ratio: request.ratio, side, tensors });
         }
 

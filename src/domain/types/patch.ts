@@ -1,4 +1,4 @@
-import type { EdgeId, GroupId, NodeId, PortId, Revision } from "./ids.ts";
+import type { EdgeId, GroupId, NodeId, PortId, Revision, TieId } from "./ids.ts";
 import type { StoredParameter } from "./parameters.ts";
 import type { ChannelMask, NodeFormatOverride, NodeResolutionOverride, ViewportState } from "./graph.ts";
 import type { RuntimeDiagnostic } from "./diagnostics.ts";
@@ -10,6 +10,9 @@ import type { RuntimeDiagnostic } from "./diagnostics.ts";
 export type TempId = `$${string}`;
 export type NodeRef = NodeId | TempId;
 export type GroupRef = GroupId | TempId;
+/** T1821b: a tie or a wire this patch creates may be named by its `$temp` ref. */
+export type TieRef = TieId | TempId;
+export type EdgeRef = EdgeId | TempId;
 
 /**
  * A parameter operation carries a `StoredParameter`, not a bare `ParameterValue`.
@@ -41,8 +44,19 @@ export type GraphPatchOperation =
    * by the edge that used to follow it, and inserting is what puts the new wire back in
    * front of it. Ignored on a non-variadic port, which has no position to carry.
    */
-  | { op: "connect"; ref?: TempId; source: { nodeId: NodeRef; portId: PortId }; target: { nodeId: NodeRef; portId: PortId }; order?: number }
+  | { op: "connect"; ref?: TempId; source: { nodeId: NodeRef; portId: PortId }; target: { nodeId: NodeRef; portId: PortId }; order?: number; via?: TieRef[] }
   | { op: "disconnect"; edgeIds: EdgeId[] }
+  /**
+   * T1821b — WIRE TIES (§V1040, docs/wire-ties-design-2026-11-21.md). A tie is a point wires
+   * are routed through; nothing that compiles reads one. `setEdgeVia` states a wire's
+   * COMPLETE route, in order from its output (`reorderEdges`' shape); `[]` clears it.
+   * `removeTies` releases every wire through the ties it removes. After the last operation
+   * a tie no wire passes is removed in the same patch.
+   */
+  | { op: "addTie"; ref: TieRef; position: { x: number; y: number } }
+  | { op: "removeTies"; tieIds: TieId[] }
+  | { op: "moveTies"; positions: Record<TieId, { x: number; y: number }> }
+  | { op: "setEdgeVia"; edgeId: EdgeRef; via: TieRef[] }
   /**
    * The new order of the edges landing on one VARIADIC input port (T225, §V131).
    *

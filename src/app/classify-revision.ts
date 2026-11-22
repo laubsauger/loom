@@ -5,7 +5,7 @@ import { effectiveParameterSchema, resolveStored } from "@domain/parameters/reso
 import { isParameterSlot } from "@domain/parameters/slots.ts";
 import { PRESETS_NODE_TYPE } from "@domain/presets/bank.ts";
 import { CUE_LIST_NODE_TYPE } from "@domain/presets/cue-list.ts";
-import type { GraphDocument, GraphNode } from "@domain/types/graph.ts";
+import type { GraphDocument, GraphEdge, GraphNode } from "@domain/types/graph.ts";
 import type { NodeId } from "@domain/types/ids.ts";
 import type { NodeDefinition } from "@domain/types/node-definition.ts";
 import type { NodeRegistryView } from "@nodes/registry/registry.ts";
@@ -184,6 +184,19 @@ function editsForNode(previous: GraphNode, next: GraphNode): GraphEdit[] {
  * nothing in `src/compiler/` reads either, so a group rename or a camera move is
  * `editor-only` — which is also §V142 restated at this layer.
  */
+/** Two edge records describe one connection: the same ends and order, whatever their route. */
+function sameConnection(a: GraphEdge | undefined, b: GraphEdge | undefined): boolean {
+  if (a === b) return true;
+  if (a === undefined || b === undefined) return false;
+  return (
+    a.source.nodeId === b.source.nodeId &&
+    a.source.portId === b.source.portId &&
+    a.target.nodeId === b.target.nodeId &&
+    a.target.portId === b.target.portId &&
+    a.order === b.order
+  );
+}
+
 export function graphEdits(previous: GraphDocument, next: GraphDocument): GraphEdit[] {
   if (previous === next) return [];
 
@@ -208,7 +221,11 @@ export function graphEdits(previous: GraphDocument, next: GraphDocument): GraphE
       // §V131/T225: an edge can be REORDERED without appearing or disappearing, and
       // variadic order is the operation (layer order in a composite). Reference equality
       // catches that where a key comparison would not.
-      nextEdges.some((id) => previous.edges[id] !== next.edges[id]);
+      //
+      // T1821b (§V1040): a wire re-routed through a tie is a new object and the SAME
+      // connection, so it is compared by what compiles — its ends and its order — and a
+      // tie added, moved or removed is editor-only work, never a recompile or a reset.
+      nextEdges.some((id) => !sameConnection(previous.edges[id], next.edges[id]));
     if (rewired) edits.push({ kind: "topology", nodeIds: nextIds.sort() as NodeId[] });
   }
 
@@ -374,6 +391,8 @@ const DOCUMENT_FIELDS: Record<keyof GraphDocument, "revision" | "nodes" | "struc
   edges: "structure",
   groups: "structure",
   viewport: "structure",
+  // T1821b: the canvas redraws for a moved tie; the compiler never reads one (`graphEdits`).
+  ties: "structure",
 };
 
 /**

@@ -140,14 +140,12 @@ export type QueryName = keyof QueryMap;
  */
 export type PlannedCommandName =
   | "graph.insertConversion"
-  | "graph.rerouteEdge"
   | "node.openColorPalette"
   | "ui.cancel"
   | "ui.openShaderEditor";
 
 export const PLANNED_COMMANDS: readonly PlannedCommandName[] = [
   "graph.insertConversion",
-  "graph.rerouteEdge",
   "node.openColorPalette",
   "ui.cancel",
   "ui.openShaderEditor",

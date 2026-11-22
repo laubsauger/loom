@@ -299,6 +299,17 @@ export function NodeInfoPopup({ info, lens, onLens, onLensReset }: NodeInfoPopup
                         : ""
                     }`}
               </Value>
+              {/* T1816b — in, seen, out. The middle figure is the model's own input box
+                  and the share of it the picture fills after the letterbox: the bars are
+                  work the model does for nothing, and the reason Depth Pro 2 offers a
+                  16:9 box. */}
+              <dt>picture → model → out</dt>
+              <Value absent={info.inferenceShape === null}>
+                {info.inferenceShape === null
+                  ? "no run yet"
+                  : `${info.inferenceShape.picture.join("×")} → ${info.inferenceShape.box.join("×")} ` +
+                    `(fills ${Math.round(info.inferenceShape.fill * 100)} %) → ${info.inferenceShape.output.join("×")}`}
+              </Value>
             </>
           ) : null}
         </dl>

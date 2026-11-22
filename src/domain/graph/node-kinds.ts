@@ -138,6 +138,9 @@ export const NODE_KINDS: Readonly<Record<string, string>> = {
   mirror: "mirror",
   crop: "crop",
   tile: "tile",
+  // T1824b/T1825b: TD's Fit TOP and Resolution TOP are `fit1` and `resolution1`.
+  fit: "fit",
+  resolution: "resolution",
   cornerPin: "cornerpin",
   gridWarp: "gridwarp",
   blur: "blur",
@@ -185,6 +188,10 @@ export const NODE_KINDS: Readonly<Record<string, string>> = {
 
   // utility
   null: "null",
+  // T1822b: the Null of the points and value families. TD's Null POP and Null CHOP are
+  // `null1` like its Null TOP; the payload is drawn on the node.
+  pointNull: "null",
+  valueNull: "null",
   switch: "switch",
   // The library calls it an Annotation and every shipped one is named `note…`.
   annotate: "note",
@@ -337,7 +344,7 @@ export const NODE_KINDS: Readonly<Record<string, string>> = {
  *  - VARIANTS of one thing: the library titles them `X · variant` or `X (variant)`.
  *    `wgsl`, `kernel`, `material`, `in`, `out`.
  *  - THE SAME OPERATION on another payload, under the same title. `limit`, `slope`,
- *    `switch`, `range`, `transform`, `circle`. This is TouchDesigner's own model (a
+ *    `switch`, `range`, `transform`, `circle`, `null`. This is TouchDesigner's own model (a
  *    Transform TOP and a Transform SOP are both `transform1`); the payload is drawn on
  *    the node.
  *
@@ -356,6 +363,7 @@ export const KIND_FAMILIES: Readonly<Record<string, readonly string[]>> = {
   range: ["valueRange", "pointRange"],
   transform: ["transform", "pointTransform"],
   circle: ["circle", "pointCircle"],
+  null: ["null", "pointNull", "valueNull"],
 };
 
 /**

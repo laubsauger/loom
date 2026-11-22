@@ -3,6 +3,8 @@ export type NodeId = string;
 export type EdgeId = string;
 export type PortId = string;
 export type GroupId = string;
+/** T1821b: a wire tie — a point data wires are routed through, never a node. */
+export type TieId = string;
 export type AssetId = string;
 export type ComponentId = string;
 

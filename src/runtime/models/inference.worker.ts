@@ -80,10 +80,15 @@ const core = createWorkerCore({
    * `["webgpu", "wasm"]` would let it fall back inside and leave us describing a session
    * we cannot identify.
    */
-  createSession: async (weights, provider) => {
+  createSession: async (weights, provider, placement) => {
     const ort = await loadRuntime();
     return (await ort.InferenceSession.create(new Uint8Array(weights), {
       executionProviders: [provider as "webgpu" | "wasm"],
+      /* T1816b: the recurrent outputs stay on the device and go straight back in as the
+         next run's inputs; every other output still downloads, as before. */
+      ...(placement === undefined
+        ? {}
+        : { preferredOutputLocation: Object.fromEntries(placement.gpuOutputs.map((name) => [name, "gpu-buffer" as const])) }),
     })) as never;
   },
   createTensor: (type, data, dims) => {

@@ -3,7 +3,7 @@
 import "@xyflow/react/dist/style.css";
 import "./xyflow-theme.css";
 
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { MouseEvent as ReactMouseEvent, ReactNode, TouchEvent as ReactTouchEvent } from "react";
 import {
   ConnectionLineType,
@@ -53,6 +53,10 @@ import { playWireLanding } from "@editor/edges/wire-snap.ts";
 import type { WireEnd } from "@editor/edges/wire-snap.ts";
 import { ReferenceLines } from "@editor/edges/reference-lines.tsx";
 import { registerReferenceLinesCommand } from "@editor/edges/reference-lines-command.ts";
+import { registerWireStyleCommand } from "@editor/edges/wire-style-command.ts";
+import { createTieView } from "@editor/edges/tie-view.ts";
+import { WireTies } from "@editor/edges/wire-ties.tsx";
+import { REROUTE_EDGE_COMMAND } from "@domain/commands/wire-tie-commands.ts";
 import { registerEdgeFlowCommand } from "@editor/edges/edge-flow-command.ts";
 import { registerTimingOverlayCommand } from "@editor/nodes/timing-overlay-command.ts";
 import { createNodeTimingScaleStore } from "@editor/nodes/node-timing.ts";
@@ -243,6 +247,16 @@ export function GraphCanvas({
 
   // One per mounted canvas: every edge writes where it is, the drop handlers read it.
   const edgeGeometry = useMemo(() => createEdgeGeometry(), []);
+  /*
+   * T1821b — where each wire tie is drawn: the document's positions, and the tie in the hand
+   * (`tie-view.ts`). Fed the document's ties before paint, so a wire and its tie's dot move
+   * in the same frame.
+   */
+  const ties = useMemo(() => createTieView(), []);
+  const domainTies = structureGraph.ties;
+  useLayoutEffect(() => {
+    ties.setDocument(domainTies);
+  }, [ties, domainTies]);
 
   const fallbackRuntime = useMemo(() => createNodeRuntimeStore(), []);
   useEffect(() => () => fallbackRuntime.dispose(), [fallbackRuntime]);
@@ -294,6 +308,9 @@ export function GraphCanvas({
   // T1724b: a two-finger scroll pans (pinch zooms), or the wheel zooms as in TouchDesigner.
   const scrollPan = useMemo(() => registerScrollPanCommand(appBus), [appBus]);
   const scrollPans = useSyncExternalStore(scrollPan.subscribe, scrollPan.get);
+  // T1820b: curved, gentle or straight wires. Registered here for its command; every edge
+  // reads the one per-person store itself (`signal-edge.tsx`).
+  useMemo(() => registerWireStyleCommand(appBus), [appBus]);
   // The map's DOM lands here (see `graph-minimap.tsx`); state, not a ref, so the portal
   // renders once the host exists.
   const [minimapHost, setMinimapHost] = useState<HTMLDivElement | null>(null);
@@ -317,6 +334,17 @@ export function GraphCanvas({
   useEffect(() => {
     setViewEdges((previous) => projectEdges(domainEdges, domainNodes, registry, previous));
   }, [domainEdges, domainNodes, registry]);
+
+  /** T1821b: a tie's dot takes the hue of the first wire through it (§V26), sorted by wire id. */
+  const tieColors = useMemo(() => {
+    const colors = new Map<string, string>();
+    for (const edge of viewEdges) {
+      for (const tieId of edge.data?.via ?? []) {
+        if (!colors.has(tieId)) colors.set(tieId, edgeFamilyColor(edge.data?.portKind));
+      }
+    }
+    return colors;
+  }, [viewEdges]);
 
   /**
    * `graph.selectNodes`' performer, and the ONE place that knows what selecting means
@@ -458,14 +486,15 @@ export function GraphCanvas({
       const graph = bus.store.getGraph();
       const centre = { x: position.x + width / 2, y: position.y + height / 2 };
       const tolerance = Math.max(EDGE_HIT_TOLERANCE_PX, height * SPLICE_BAND_FRACTION);
-      const edgeId = edgeGeometry.nearest(centre, tolerance, (candidate) => {
+      const hit = edgeGeometry.hit(centre, tolerance, (candidate) => {
         const edge = graph.edges[candidate];
         return edge === undefined || edge.source.nodeId === nodeId || edge.target.nodeId === nodeId;
       });
-      if (edgeId === null) return [];
-      const edge = graph.edges[edgeId];
+      if (hit === null) return [];
+      const edge = graph.edges[hit.edgeId];
       if (edge === undefined) return [];
-      return spliceNodeOperations(graph, registry, edge, nodeId);
+      // T1821b: the leg it landed on decides which ties stay upstream of the node.
+      return spliceNodeOperations(graph, registry, edge, nodeId, hit.segment);
     },
     [bus, edgeGeometry, registry],
   );
@@ -1138,6 +1167,38 @@ export function GraphCanvas({
    * (node-view.tsx already owns those and stops propagation) and never opens a browser
    * on top of the node you just double-clicked.
    */
+  /**
+   * T1821b — a double-click on a WIRE puts a tie on it, where it was clicked (Unreal's
+   * gesture; Houdini's Alt-click is taken by Alt-pan here, B195). The same
+   * `graph.rerouteEdge` as the edge menu's "Add tie" (§V78). The hit is asked of the wire
+   * that was double-clicked alone, so the tie lands ON it — at the nearest point of the
+   * drawn curve — and in the leg of its route that was clicked.
+   */
+  const onEdgeDoubleClick = useCallback(
+    (event: ReactMouseEvent, edge: LoomEdge) => {
+      const flow = flowRef.current;
+      if (flow === null) return;
+      const zoom = flow.getZoom();
+      if (!(zoom > 0)) return;
+      const point = flow.screenToFlowPosition({ x: event.clientX, y: event.clientY });
+      const hit = edgeGeometry.hit(point, (2 * EDGE_HIT_TOLERANCE_PX) / zoom, (edgeId) => edgeId !== edge.id);
+      const at = hit?.point ?? point;
+      if (!(Number.isFinite(at.x) && Number.isFinite(at.y))) return;
+      void bus
+        .execute(
+          REROUTE_EDGE_COMMAND,
+          {
+            edgeIds: [edge.id],
+            position: { x: at.x, y: at.y },
+            ...(hit === null ? {} : { index: hit.segment }),
+          },
+          invocation,
+        )
+        .then((result) => onPatchResult?.(result));
+    },
+    [bus, edgeGeometry, invocation, onPatchResult],
+  );
+
   const onCanvasDoubleClick = useCallback(
     (event: ReactMouseEvent<HTMLDivElement>) => {
       const element = canvasRef.current;
@@ -1192,6 +1253,7 @@ export function GraphCanvas({
       registry,
       runtime: runtimeSource,
       edgeGeometry,
+      ties,
       dispatch,
       selection: getSelection,
       toggleUi,
@@ -1215,6 +1277,7 @@ export function GraphCanvas({
       registry,
       runtimeSource,
       edgeGeometry,
+      ties,
       dispatch,
       getSelection,
       toggleUi,
@@ -1263,6 +1326,7 @@ export function GraphCanvas({
           connectionLineComponent={WireInFlight}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
+          onEdgeDoubleClick={onEdgeDoubleClick}
           onConnectStart={onConnectStart}
           onConnect={onConnect}
           onConnectEnd={onConnectEnd}
@@ -1315,6 +1379,8 @@ export function GraphCanvas({
           <RightDragSelect />
           {underlay}
           <ReferenceLines dependencies={dependencies} />
+          {/* T1821b: the wire ties — above wires and nodes, so a tie can always be grabbed. */}
+          <WireTies colors={tieColors} apply={apply} />
           {showMinimap ? <GraphMinimap host={minimapHost} /> : null}
         </ReactFlow>
         {showMinimap ? <div className={styles.minimapHost} ref={setMinimapHost} /> : null}
