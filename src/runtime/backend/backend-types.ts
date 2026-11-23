@@ -96,6 +96,21 @@ export interface PresentationOptions {
   readonly sizing?: "layout" | "source";
   /** Display-only coverage inspection. Raw RGB is the default for transport integrity. */
   readonly alphaDisplay?: "rgba" | "rgb";
+  /**
+   * VNB25: apply the sRGB display encode in the blit — the Output node's encode, for a
+   * surface that shows a texture with no Output node in front of it (a native SDR output).
+   * The CALLER decides from the source's published space (`nativeOutputEncodes`); the
+   * backend never infers it. Absent or false is the raw copy every other surface gets.
+   * Exclusive with `alphaDisplay: "rgba"`, which is a viewer inspection of encoded values.
+   */
+  readonly displayEncode?: boolean;
+  /**
+   * VN132 — how the SURFACE composites alpha. `"opaque"` (the default): every presentation
+   * owns its pane and alpha never shows the page through (T674). `"premultiplied"`: the
+   * sink's alpha reaches the surface, read as premultiplied and clamped to [0, 1] — a
+   * native output (Syphon Out's Keep alpha) whose receiver keys on it.
+   */
+  readonly surfaceAlpha?: "opaque" | "premultiplied";
 }
 
 /**

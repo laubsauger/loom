@@ -1,7 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, describe, it, expect, vi } from "vitest";
 import type { LoomBackend } from "@runtime/backend/index.ts";
-import { attachNativeOutput, desktopOutputBridge, type DesktopOutputBridge } from "./native-output.ts";
+import { attachNativeOutput, desktopOutputBridge, nativeOutputColorOf, nativeOutputEncodes, NATIVE_OUTPUT_COLORS, type DesktopOutputBridge } from "./native-output.ts";
+import { DEFAULT_COLOR_POLICY } from "@domain/types/graph.ts";
+import { syphonOutNode } from "@nodes/definitions/syphon-out.ts";
+import { effectiveParameterSchema } from "@domain/parameters/resolve.ts";
 
 afterEach(() => { delete (window as Window & { loomDesktop?: unknown }).loomDesktop; });
 
@@ -64,12 +67,20 @@ describe("native output surface ownership", () => {
     const canvas = h.canvas;
     expect(canvas.ownerDocument).toBe(h.doc);
     expect([canvas.width, canvas.height]).toEqual([1920, 1080]);
-    expect(h.present).toHaveBeenCalledWith(canvas, { outputId: "a", label: "native-sdr-output" });
+    expect(h.present).toHaveBeenCalledWith(canvas, { outputId: "a", label: "native-sdr-output", displayEncode: false });
     h.attached.update({ resourceId: "b", size: [1280, 720] });
     expect([canvas.width, canvas.height]).toEqual([1280, 720]);
     expect(h.presentation.setOutput).toHaveBeenCalledWith("b");
     expect(h.present).toHaveBeenCalledTimes(1);
     h.attached.dispose();
+  });
+  // VN132: the surface keeps the sink's alpha only when asked; opaque stays the default above.
+  it("asks the backend for a premultiplied surface when alpha is kept", () => {
+    const doc = document.implementation.createHTMLDocument();
+    const canvas = doc.createElement("canvas");
+    const present = vi.fn(() => ({ setOutput: vi.fn(), dispose: vi.fn() }));
+    attachNativeOutput({ present } as unknown as LoomBackend, { resourceId: "a", size: [64, 32] }, canvas, { alpha: true });
+    expect(present).toHaveBeenCalledWith(canvas, { outputId: "a", label: "native-sdr-output", displayEncode: false, surfaceAlpha: "premultiplied" });
   });
   it("close retires the presentation once and prevents stale updates", () => {
     const h = fixture();
@@ -77,5 +88,72 @@ describe("native output surface ownership", () => {
     h.attached.dispose();
     expect(h.presentation.dispose).toHaveBeenCalledTimes(1);
     expect(() => h.attached.update({ resourceId: "b", size: [1, 1] })).toThrow("closed");
+  });
+});
+
+/*
+ * VNB25: the Output node's decision (`sinkDisplayTransform`, tone map `none`), read against
+ * the space the compiler published for the source a native output is wired to.
+ */
+describe("native output display encode", () => {
+  const none = { workingSpace: "linear", displayTransform: "none" } as const;
+  it.each([
+    ["rgba16float", "linear", DEFAULT_COLOR_POLICY, true],
+    ["rgba8unorm", "linear", DEFAULT_COLOR_POLICY, true],
+    // Presented through a non-decoding view (T1307): the bytes are already display values.
+    ["rgba8unorm-srgb", "linear", DEFAULT_COLOR_POLICY, false],
+    ["rgba16float", "encoded", DEFAULT_COLOR_POLICY, false],
+    ["rgba8unorm", "encoded", DEFAULT_COLOR_POLICY, false],
+    ["rgba16float", "data", DEFAULT_COLOR_POLICY, false],
+    ["rgba16float", "linear", none, false],
+  ] as const)("%s %s under %o encodes: %s", (format, space, policy, expected) => {
+    expect(nativeOutputEncodes({ format, space }, policy)).toBe(expected);
+  });
+  // The colour choice on the node overrides the decision above, per output.
+  it.each([
+    // raw: never, even where auto encodes.
+    ["rgba16float", "linear", DEFAULT_COLOR_POLICY, "raw", false],
+    // srgb: always. A hand-written shader's output the compiler published as encoded, a
+    // project whose display transform is none: both encode, where auto leaves them.
+    ["rgba16float", "encoded", DEFAULT_COLOR_POLICY, "srgb", true],
+    ["rgba16float", "linear", none, "srgb", true],
+    // ... except an -srgb storage, whose presented bytes are display values already.
+    ["rgba8unorm-srgb", "linear", DEFAULT_COLOR_POLICY, "srgb", false],
+    // auto is the rule above.
+    ["rgba16float", "encoded", DEFAULT_COLOR_POLICY, "auto", false],
+    ["rgba16float", "linear", DEFAULT_COLOR_POLICY, "auto", true],
+  ] as const)("%s %s under %o with colour %s encodes: %s", (format, space, policy, color, expected) => {
+    expect(nativeOutputEncodes({ format, space }, policy, color)).toBe(expected);
+  });
+  it("reads a stored value as a colour choice, and a node without one as auto", () => {
+    for (const color of NATIVE_OUTPUT_COLORS) expect(nativeOutputColorOf(color)).toBe(color);
+    for (const other of [undefined, "", "linear", 1]) expect(nativeOutputColorOf(other)).toBe("auto");
+  });
+  it("Syphon Out offers exactly the colour choices the decision knows, defaulting to auto", () => {
+    const parameter = effectiveParameterSchema(syphonOutNode, {})["colorSpace"]!;
+    if (parameter.type !== "enum") throw new Error("colorSpace must be an enum");
+    expect(parameter.options.map(option => (typeof option === "string" ? option : option.value))).toEqual([...NATIVE_OUTPUT_COLORS]);
+    expect(parameter.default).toBe("auto");
+  });
+  it("swaps the presentation in place on an encode change, and the frame count never drops", () => {
+    const made: Array<{ setOutput: ReturnType<typeof vi.fn>; dispose: ReturnType<typeof vi.fn>; describe: () => { presentedFrames: number } }> = [];
+    const present = vi.fn(() => {
+      const handle = { setOutput: vi.fn(), dispose: vi.fn(), describe: () => ({ presentedFrames: 5 }) };
+      made.push(handle); return handle;
+    });
+    const canvas = { width: 0, height: 0, getContext: () => null };
+    const attached = attachNativeOutput({ present } as unknown as LoomBackend, { resourceId: "a", size: [4, 4], encode: true }, canvas);
+    expect(present).toHaveBeenLastCalledWith(canvas, { outputId: "a", label: "native-sdr-output", displayEncode: true });
+    attached.update({ resourceId: "b", size: [4, 4], encode: true });
+    expect(made[0]!.setOutput).toHaveBeenCalledWith("b");
+    expect(present).toHaveBeenCalledTimes(1);
+    expect(attached.presentedFrames()).toBe(5);
+    attached.update({ resourceId: "c", size: [8, 8], encode: false });
+    expect(made[0]!.dispose).toHaveBeenCalledOnce();
+    expect(present).toHaveBeenLastCalledWith(canvas, { outputId: "c", label: "native-sdr-output", displayEncode: false });
+    expect([canvas.width, canvas.height]).toEqual([8, 8]);
+    expect(attached.presentedFrames()).toBe(10);
+    attached.dispose();
+    expect(made[1]!.dispose).toHaveBeenCalledOnce();
   });
 });

@@ -58,7 +58,8 @@ function installNativeOutput(native, origin, { transport = 'syphon', beforeAcces
   const extent = (width, height) => {
     if (![width, height].every(n => Number.isInteger(n) && n > 0 && n <= 16384)) throw new Error('Invalid native output dimensions');
   };
-  ipcMain.handle(`${prefix}-open`, async (event, name, width, height, publisherName) => {
+  ipcMain.handle(`${prefix}-open`, async (event, name, width, height, publisherName, alpha = false) => {
+    if (typeof alpha !== 'boolean') throw new Error(`Invalid ${label} alpha flag`);
     authorize(event);
     if (typeof name !== 'string' || !/^loom-native-output-[a-f0-9-]{36}$/.test(name)) throw new Error('Invalid native output session');
     extent(width, height);
@@ -81,14 +82,16 @@ function installNativeOutput(native, origin, { transport = 'syphon', beforeAcces
       if (beforeAccess) await beforeAccess(event);
       if (pending.cancelled) throw new Error('Native output owner retired during open');
       authorize(event);
+      // VN132: a transparent window keeps the sink's alpha in the shared BGRA texture.
       const window = new BrowserWindow({ width, height, show: false, useContentSize: true,
+        ...(alpha ? { transparent: true, backgroundColor: '#00000000' } : {}),
         webPreferences: { ...webPreferences, preload: join(__dirname, 'output-preload.cjs'), backgroundThrottling: false,
           additionalArguments: transport === 'ndi' ? ['--loom-ndi-output'] : [],
           offscreen: { useSharedTexture: true, sharedTexturePixelFormat: 'argb', deviceScaleFactor: 1 } } });
       const output = attach(owner, window, name, publisherName);
       pending.attached = true;
       try {
-        await window.loadURL(`${origin}/src/desktop/output.html?name=${name}&width=${width}&height=${height}`);
+        await window.loadURL(`${origin}/src/desktop/output.html?name=${name}&width=${width}&height=${height}${alpha ? '&alpha=1' : ''}`);
         if (pending.cancelled || output.closed) throw new Error('Native output owner retired during load');
       } catch (error) {
         output.close(); await output.acknowledge(); throw error;

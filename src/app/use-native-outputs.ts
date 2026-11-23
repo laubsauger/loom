@@ -6,7 +6,8 @@ import { isSilencedSource } from "@domain/graph/bypass.ts";
 import { parameterReadOptions, resolveParameters, resolveStored } from "@domain/parameters/index.ts";
 import { EMISSION_PUMPS } from "@domain/render/emission-pumps.ts";
 import { emissionRefusal } from "@domain/render/side-effects.ts";
-import { desktopOutputBridge } from "@devices/native-output.ts";
+import { desktopOutputBridge, nativeOutputColorOf, nativeOutputSelection } from "@devices/native-output.ts";
+import { colorPolicyOf } from "@domain/color/display.ts";
 import { NATIVE_OUTPUT_TRANSPORTS, NATIVE_VIDEO_LABELS } from "@devices/native-video.ts";
 import { createNativeOutputSession } from "@devices/native-output-session.ts";
 import type { LoomBackend } from "@runtime/backend/index.ts";
@@ -38,15 +39,23 @@ export function useNativeOutputs(runtime: AppRuntime, backend: LoomBackend | nul
          */
         const enabled = () =>
           resolveParameters(node, definition, parameterReadOptions({ ...runtime.bus.readScope(), graph })).values["enabled"] === true;
-        const edge = Object.values(graph.edges).find(edge => edge.target.nodeId === node.id && edge.target.portId === "input");
-        const source = compiled?.outputs.find(output => output.nodeId === edge?.source.nodeId && output.portId === edge.source.portId);
-        const selection = source && demanded.has(node.id) ? { resourceId: source.resourceId, size: source.size } : null;
+        // VNB25: with what the Output node would show for that source, decided from the space
+        // the compiler published for it and the project's display transform.
+        const selection = demanded.has(node.id)
+          ? nativeOutputSelection(graph, node.id, compiled?.outputs ?? [], colorPolicyOf(runtime.settings),
+            nativeOutputColorOf(values["colorSpace"]))
+          : null;
+        // VNB25: the colour choice travels in the SELECTION (its encode), so changing it swaps
+        // the presentation in place. Out of the session key: the publisher stays up.
+        const { colorSpace: _colorSpace, ...sessionValues } = values;
         const transport = NATIVE_OUTPUT_TRANSPORTS[node.type];
         if (!transport) throw new Error(`No native output transport for ${node.type}`);
-        return { id: node.id, definition, transport, name: String(values["name"]), enabled,
-          selection, selectionKey: JSON.stringify(selection), key: JSON.stringify([transport, values]) };
+        return { id: node.id, definition, transport, name: String(values["name"]), alpha: values["alpha"] === true, enabled,
+          // VNB25: a change of encode is a selection change: `attachNativeOutput` swaps the
+          // presentation in place and the publisher stays up.
+          selection, selectionKey: JSON.stringify(selection), key: JSON.stringify([transport, sessionValues]) };
       });
-  }, [graph, compiled, runtime.registry, runtime.bus]);
+  }, [graph, compiled, runtime.registry, runtime.bus, runtime.settings]);
   const latest = useRef(requests); latest.current = requests;
   const controller = useRef<{ suspend(): Promise<void> } | null>(null);
   // A replacement document/backend cannot reuse publisher names while the prior
@@ -116,7 +125,9 @@ export function useNativeOutputs(runtime: AppRuntime, backend: LoomBackend | nul
           entries.set(request.id, entry);
           const current = entry;
           try {
-            const session = createNativeOutputSession(backend, bridge, request.selection, request.name);
+            const session = (request.alpha
+              ? createNativeOutputSession(backend, bridge, request.selection, request.name, { alpha: true })
+              : createNativeOutputSession(backend, bridge, request.selection, request.name));
             current.session = session;
             void session.ready.then(() => { if (entries.get(request.id) === current) report(request.id, null); }, error => {
               if (entries.get(request.id) !== current) return;

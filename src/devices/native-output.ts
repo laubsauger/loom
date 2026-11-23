@@ -1,18 +1,114 @@
 import type { LoomBackend } from "@runtime/backend/index.ts";
 import type { PresentableCanvas } from "@runtime/backend/backend-types.ts";
+import type { ColorPolicy } from "@domain/types/graph.ts";
+import type { TextureFormat } from "@domain/types/node-definition.ts";
+import type { ColorSpace } from "@domain/types/ports.ts";
+import { sinkDisplayTransform } from "@domain/color/display.ts";
 import type { NativeVideoTransport } from "./native-video.ts";
 
 /** Transferred native-output surface, existing backend; never a graph copy. */
 export interface NativeOutputSelection {
   readonly resourceId: string;
   readonly size: readonly [number, number];
+  /**
+   * VNB25: the presentation blit applies the display encode (`nativeOutputEncodes`). Absent
+   * is the raw copy. Every product caller sets it, through `nativeOutputSelectionOf`.
+   */
+  readonly encode?: boolean;
 }
+
+/**
+ * VNB25 — does a native output owe its source the display encode?
+ *
+ * A native output must send what the Output node would show for the same input. Its
+ * receiver (Resolume, OBS, …) displays 8-bit bytes as display values, and the session
+ * presents the upstream texture directly, so a working-space LINEAR source published raw
+ * reached every receiver ~gamma 2.2 too dark. The answer is the Output node's own decision,
+ * `sinkDisplayTransform`, with no tone map (a native output has none — Output's `none`,
+ * which clamps), read against the space the COMPILER published for the source:
+ *
+ *  - `linear` on a non-sRGB format, `displayTransform: "srgb"` → encode;
+ *  - `linear` on `rgba8unorm-srgb` → no: the backend presents that storage through a
+ *    non-decoding view (T1307), so its bytes are already display values (and the decision
+ *    says so: the hardware encodes);
+ *  - `encoded` (an Output's target, or any source that declares it) → as is: encoding twice is wrong;
+ *  - `data`, or `displayTransform: "none"` → raw values out, as the Output node does.
+ */
+export function nativeOutputEncodes(
+  source: { readonly format: TextureFormat; readonly space: ColorSpace },
+  policy: ColorPolicy,
+  color: NativeOutputColor = "auto",
+): boolean {
+  if (color === "raw") return false;
+  // VNB25 `srgb`: the author says the values are linear light, whatever the compiler
+  // published (a Custom WGSL output has no way to declare it) and whatever the project's
+  // display transform is. Still the one decision, so an `-srgb` storage, whose bytes the
+  // backend already presents as display values (T1307), is not encoded twice.
+  if (color === "srgb") return sinkDisplayTransform(FORCED_SRGB, source.format, "linear", "none").encode;
+  return source.space === "linear" && sinkDisplayTransform(policy, source.format, source.space, "none").encode;
+}
+const FORCED_SRGB: ColorPolicy = { workingSpace: "linear", displayTransform: "srgb" };
+
+/**
+ * VNB25 — a native output's own colour choice (Syphon Out's `colorSpace`).
+ *
+ *  - `auto`: what the Output node shows for the same input (VNB25, the rules above);
+ *  - `srgb`: always the display encode;
+ *  - `raw`: never: the input's values as they are (an input encoded by hand, or data).
+ */
+export const NATIVE_OUTPUT_COLORS = ["auto", "srgb", "raw"] as const;
+export type NativeOutputColor = typeof NATIVE_OUTPUT_COLORS[number];
+/** A stored parameter value as a colour choice; anything else (a node without one) is `auto`. */
+export function nativeOutputColorOf(value: unknown): NativeOutputColor {
+  return NATIVE_OUTPUT_COLORS.find(color => color === value) ?? "auto";
+}
+/** A compiled output row, as the plan publishes it (`ResolvedOutput`'s fields this reads). */
+export interface NativeOutputSource {
+  readonly nodeId: string;
+  readonly portId: string;
+  readonly resourceId: string;
+  readonly size: readonly [number, number];
+  readonly format: TextureFormat;
+  readonly space: ColorSpace;
+}
+
+/**
+ * What a native output node presents: the compiled output wired to its `input`, at that
+ * output's size, with the display encode the Output node would apply to it (VNB25). Null
+ * when nothing compiled is wired in.
+ */
+export function nativeOutputSelection(
+  graph: { readonly edges: Readonly<Record<string, { readonly source: { readonly nodeId: string; readonly portId: string }; readonly target: { readonly nodeId: string; readonly portId: string } }>> },
+  nodeId: string,
+  outputs: ReadonlyArray<NativeOutputSource>,
+  policy: ColorPolicy,
+  color: NativeOutputColor = "auto",
+): NativeOutputSelection | null {
+  const edge = Object.values(graph.edges).find(edge => edge.target.nodeId === nodeId && edge.target.portId === "input");
+  const source = outputs.find(output => output.nodeId === edge?.source.nodeId && output.portId === edge.source.portId);
+  return source ? nativeOutputSelectionOf(source, policy, color) : null;
+}
+
+/** The selection for one known source row: the viewer's pinned output, or a wired input. */
+export function nativeOutputSelectionOf(
+  source: Pick<NativeOutputSource, "resourceId" | "size" | "format" | "space">,
+  policy: ColorPolicy,
+  color: NativeOutputColor = "auto",
+): NativeOutputSelection {
+  return { resourceId: source.resourceId, size: source.size, encode: nativeOutputEncodes(source, policy, color) };
+}
+
 export interface DesktopOutputBridge {
   readonly nativeOutput: true;
-  open(name: string, width: number, height: number, publisherName: string): Promise<void>;
+  /** VN132: `alpha` opens a transparent output window, so the published frame keeps the sink's alpha. */
+  open(name: string, width: number, height: number, publisherName: string, options?: NativeOutputOptions): Promise<void>;
   close(name: string): Promise<void>;
   resize(name: string, width: number, height: number): Promise<void>;
   status(name: string): Promise<{ copied: number; dropped: number; error: string | null }>;
+}
+export interface NativeOutputOptions {
+  /** VN132: publish the sink's alpha, read as premultiplied. Off: an opaque frame, as before. */
+  readonly alpha?: boolean;
 }
 export type NativeOutputTransport = NativeVideoTransport;
 export function desktopOutputBridge(transport: NativeOutputTransport = "syphon"): DesktopOutputBridge | undefined {
@@ -24,25 +120,42 @@ export function desktopOutputBridge(transport: NativeOutputTransport = "syphon")
     throw new Error(`Invalid ${transport} native output bridge: an advertised output requires open, close, resize and status methods.`);
   return candidate as DesktopOutputBridge;
 }
-export function attachNativeOutput(backend: LoomBackend, selection: NativeOutputSelection, canvas: PresentableCanvas) {
+export function attachNativeOutput(backend: LoomBackend, selection: NativeOutputSelection, canvas: PresentableCanvas,
+  options: NativeOutputOptions = {}) {
   canvas.width = selection.size[0]; canvas.height = selection.size[1];
   let disposed = false;
-  const presentation = backend.present(canvas, { outputId: selection.resourceId, label: "native-sdr-output" });
+  let encode = selection.encode === true;
+  const present = (outputId: string) =>
+    backend.present(canvas, { outputId, label: "native-sdr-output", displayEncode: encode,
+      ...(options.alpha ? { surfaceAlpha: "premultiplied" as const } : {}) });
+  let presentation = present(selection.resourceId);
+  const framesOf = (handle: typeof presentation) => {
+    if (!handle.describe) throw new Error("Native output requires presentation progress diagnostics");
+    return handle.describe().presentedFrames;
+  };
+  // Frames presented by retired presentations, so the count the pump compares never drops.
+  let carried = 0;
   const dispose = () => {
     if (disposed) return;
     disposed = true;
     presentation.dispose();
   };
   return {
-    presentedFrames() {
-      if (!presentation.describe) throw new Error("Native output requires presentation progress diagnostics");
-      return presentation.describe().presentedFrames;
-    },
+    presentedFrames: () => carried + framesOf(presentation),
     update(next: NativeOutputSelection) {
       if (disposed) throw new Error("Native output is closed");
       if (canvas.width !== next.size[0]) canvas.width = next.size[0];
       if (canvas.height !== next.size[1]) canvas.height = next.size[1];
-      presentation.setOutput(next.resourceId);
+      const nextEncode = next.encode === true;
+      if (nextEncode === encode) { presentation.setOutput(next.resourceId); return; }
+      // VNB25: the blit's shader is fixed for a presentation's life, so a change of encode
+      // (a rewire between a linear and an encoded source, a display-transform setting)
+      // replaces the PRESENTATION on the same canvas. The native session, its publisher
+      // name and the receivers subscribed to it stay as they are.
+      carried += framesOf(presentation);
+      presentation.dispose();
+      encode = nextEncode;
+      presentation = present(next.resourceId);
     },
     dispose,
   };

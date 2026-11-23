@@ -11,7 +11,8 @@ canvas.style.cssText = 'display:block;width:100%;height:100%';
 document.body.append(canvas);
 // Adopt the transferred GPU image into the compositor instead of allocating a
 // second WebGPU device and copying it into another swapchain texture.
-const context = canvas.getContext('bitmaprenderer', { alpha: false });
+// VN132: `alpha=1` keeps the frame's alpha for a receiver that keys on it.
+const context = canvas.getContext('bitmaprenderer', { alpha: query.get('alpha') === '1' });
 if (!context) throw new Error('Native output has no ImageBitmap presentation context');
 const channel = nativeOutputChannel(name);
 channel.onerror = () => { throw new Error('Native output shared worker failed'); };

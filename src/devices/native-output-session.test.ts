@@ -19,6 +19,16 @@ function setup() {
   const open = () => createNativeOutputSession({} as LoomBackend, bridge, { resourceId: "full-hd", size: [1920, 1080] }, "Stage");
   return { bridge, sender, presentation, transfer, bitmap, open };
 }
+// VN132: Keep alpha reaches both halves: the window (bridge.open) and the surface (attach).
+it("forwards alpha to the output window and the presentation; omits it when off", async () => {
+  const h = setup();
+  const session = createNativeOutputSession({} as LoomBackend, h.bridge, { resourceId: "full-hd", size: [1920, 1080] }, "Stage", { alpha: true });
+  await session.ready;
+  expect(h.bridge.open).toHaveBeenCalledWith(expect.any(String), 1920, 1080, "Stage", { alpha: true });
+  expect(attachNativeOutput).toHaveBeenCalledWith(expect.anything(), { resourceId: "full-hd", size: [1920, 1080] }, expect.anything(), { alpha: true });
+  const plain = h.open(); await plain.ready;
+  expect(h.bridge.open).toHaveBeenLastCalledWith(expect.any(String), 1920, 1080, "Stage");
+});
 it("uses an opaque transport ID and named full-resolution publisher; sends each frame once", async () => {
   const h = setup(); const session = h.open(); await session.ready;
   expect(h.bridge.open).toHaveBeenCalledWith(expect.stringMatching(/^loom-native-output-/), 1920, 1080, "Stage");

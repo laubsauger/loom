@@ -150,3 +150,17 @@ it("pane unmount cannot hide a failed native release from the export preflight",
   await expect(drainNativeViewerOutputs(h.backend)).rejects.toThrow("GPU release failed");
   await expect(drainNativeViewerOutputs(h.backend)).rejects.toThrow("GPU release failed");
 });
+
+/* VNB25: the viewer's selection carries the display encode; a change reaches the attached
+   presentation as an update, and the publisher (its window, channel and name) stays up. */
+it("forwards a change of display encode to the attached presentation without reopening", async () => {
+  const h = setup(); await h.finish();
+  expect(attachNativeOutput).toHaveBeenCalledWith(h.backend, { resourceId: "first", size: [1280, 720] }, expect.anything());
+  h.view.rerender({ selection: { resourceId: "first", size: [1280, 720], encode: true }, documentIdentity: "document" });
+  expect(h.owner.update).toHaveBeenLastCalledWith({ resourceId: "first", size: [1280, 720], encode: true });
+  h.view.rerender({ selection: { resourceId: "first", size: [1280, 720], encode: false }, documentIdentity: "document" });
+  expect(h.owner.update).toHaveBeenLastCalledWith({ resourceId: "first", size: [1280, 720], encode: false });
+  expect(h.bridge.open).toHaveBeenCalledOnce();
+  expect(h.bridge.close).not.toHaveBeenCalled();
+  expect(h.view.result.current.active).toBe(true);
+});

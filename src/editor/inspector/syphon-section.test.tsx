@@ -28,7 +28,7 @@ it("lists exact sources, never opens one while inspecting, and commits through t
   fireEvent.change(screen.getByLabelText("Syphon source"), { target: { value: "uuid" } });
   expect(setParameter).toHaveBeenCalledWith("input", "source", "uuid", "commit");
   expect(open).not.toHaveBeenCalled();
-  expect(nativeInputSectionParameters()).toEqual(["source"]);
+  expect(nativeInputSectionParameters()).toEqual(["source", "sourceApp", "sourceName"]);
 });
 it("names what this machine is missing in the library's own tags, not a sentence of its own", () => {
   /* T1340b: this used to read "macOS desktop required" — a fourth wording for a fact the
@@ -82,4 +82,30 @@ it("injected Spout discovery commits exact source names without opening a feed",
   fireEvent.change(screen.getByLabelText("Spout source"), { target: { value: "Exact Spout name" } });
   expect(setParameter).toHaveBeenCalledWith("input", "source", "Exact Spout name", "commit");
   expect(open).not.toHaveBeenCalled();
+});
+
+/* VN113: Syphon In is kept by app + server name; the picker writes all three in ONE patch,
+   and the section names what the node is bound to by the hook's own resolution. */
+it("Syphon picker writes the id, app and name together, and names the binding", async () => {
+  const list = vi.fn(async () => [{ id: "launch-2", name: "LED FX", app: "Arena" }]);
+  const setStored = vi.fn(), setParameter = vi.fn();
+  vi.mocked(desktopInputBridge).mockReturnValue({ list } as never);
+  render(<NativeInputSection transport="syphon" requirements={requires.syphon} nodeId="input" source="launch-1"
+    identity={{ app: "Arena", name: "LED FX" }} editor={{ setStored, setParameter } as unknown as ParameterEditor} />);
+  // The stored UUID is from an earlier launch; the name still finds the server.
+  expect(await screen.findByText("Bound to Arena – LED FX")).toBeTruthy();
+  expect((screen.getByLabelText("Syphon source") as HTMLSelectElement).value).toBe("launch-2");
+  fireEvent.change(screen.getByLabelText("Syphon source"), { target: { value: "" } });
+  fireEvent.change(screen.getByLabelText("Syphon source"), { target: { value: "launch-2" } });
+  expect(setStored).toHaveBeenLastCalledWith("input", { source: "launch-2", sourceApp: "Arena", sourceName: "LED FX" }, "commit");
+  expect(setParameter).not.toHaveBeenCalled();
+});
+
+it("Syphon section says what it waits for while the named server is not running", async () => {
+  const list = vi.fn(async () => [{ id: "other", name: "Composition", app: "Arena" }]);
+  vi.mocked(desktopInputBridge).mockReturnValue({ list } as never);
+  render(<NativeInputSection transport="syphon" requirements={requires.syphon} nodeId="input" source="launch-1"
+    identity={{ app: "Arena", name: "LED FX" }} editor={{} as ParameterEditor} />);
+  expect(await screen.findByText("Waiting for Arena – LED FX")).toBeTruthy();
+  expect(screen.getByText("Arena – LED FX (not running)")).toBeTruthy();
 });
