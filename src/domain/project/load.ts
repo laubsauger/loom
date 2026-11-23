@@ -149,7 +149,7 @@ export function loadProject(text: string, options: LoadProjectOptions = {}): Loa
   diagnostics.push(...graph.diagnostics);
   document = { ...document, settings: settings.settings, graph: graph.graph };
 
-  const budget = checkMemoryBudget(document);
+  const budget = checkMemoryBudget(document, options.nodes);
   if (budget !== null) diagnostics.push(budget);
 
   const assetsToRelink = findUnresolvedAssets(document.assets, options.resolveAsset);
